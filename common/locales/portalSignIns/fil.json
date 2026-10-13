@@ -1,0 +1,23 @@
+{
+  "heading": "Ang iyong mga kamakailang pag-sign in",
+  "sub": "Sinusuri ang bawat pag-sign in sa account mo kung gaano ito kakaiba — kung saan ito nanggaling, at gamit ang ano — kumpara sa karaniwan mong pag-sign in. Kung may isa rito na hindi ikaw, sabihin mo: tatapusin agad ang bawat session sa account mo, at dapat mong palitan ang iyong password.",
+  "none": "Walang pag-sign in mo na nasuri sa nakalipas na {days, plural, one {# araw} other {# araw}}.",
+  "when": "Kailan",
+  "from": "Mula saan",
+  "with": "Gamit ang",
+  "through": "Sa pamamagitan ng",
+  "risk": "Panganib",
+  "wasItYou": "Ikaw ba ito?",
+  "nowhere": "isang lugar na hindi pinangangalanan ng mga dataset",
+  "deviceOn": "{family} sa {os}",
+  "noDevice": "isang device na walang pangalan",
+  "level": "{level, select, LOW {MABABA} MEDIUM {KATAMTAMAN} HIGH {MATAAS} UNSCORED {WALANG ISKOR} other {{level}}}",
+  "thisSession": "ang session na ito",
+  "saidYes": "Sinabi mong ikaw ito.",
+  "saidNo": "<strong>Sinabi mong hindi ikaw ito.</strong>",
+  "yes": "Ako ito",
+  "no": "Hindi ako ito",
+  "doneDenied": "Salamat. Tinatapos na ang bawat session sa account mo, kasama ang isang ito, at sinasabihan na ang mga application na ginagamit mo. Mag-sign in muli at palitan ang iyong password sa {path}.",
+  "doneConfirmed": "Salamat — naitala bilang ikaw.",
+  "doneConfirmedLow": "Salamat — naitala bilang ikaw. Bumalik na sa mababa ang panganib ng account mo."
+}

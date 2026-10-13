@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -110,6 +110,8 @@ import sigstore = require('./spiffe_sigstore');
 // for the `broker` surface and binds nothing; the listener is this module's.
 import broker = require('./spiffe_broker');
 import mode = require('../common/mode');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 // The console, for one slot and nothing else. `admin.js` cannot require THIS
 // module — `common/protocol_stack.ts` requires admin.js first, and until
 // #50's R1 the require would have pulled the bundle endpoint and /spiffe into
@@ -148,6 +150,16 @@ const BUNDLE_PATH = config.value('spiffe.bundlePath') || '/spiffe/bundle';
 // this service uses, so `''` is a realm here rather than a missing value.
 const listeners = new Map();
 let started = false;
+// WHAT THE FRONT PROCESS HOLDS, IN A PROCESS THAT HOLDS NONE (#337). A socket
+// is held by one process and reachable from no other, so a request worker —
+// which answers `/admin/spiffe` and `/admin-api/spiffe`, both dispatched on
+// purpose (tests/request_routing.js) — has no listeners of its own and
+// reported none. The front process hands its bindings down as a snapshot, at
+// fork and on every reconcile (common/request_pool.js), the way it hands down
+// the directory's connections; `bindingsNow()` answers from it in a process
+// that never started listening.
+let handedBindings: any = null;
+let bindingsWatcher: any = null;
 
 // What `SpiffeServer` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -182,6 +194,70 @@ const WORKLOAD_ATTESTATION: { table: any } = { table: null };
 // `handlersInRealm()` like the other two surfaces.
 const BROKER_HANDLERS: { table: Record<string, any> | null } = { table: null };
 
+// ---------------------------------------------------------------------------
+// WHAT A CALLER HAS TO PRESENT ON EACH LISTENER, IN WORDS (#543 phase 2b):
+// every sentence a binding's `authentication` can carry, and the note a
+// Workload API connection gets when nothing can attest it. Each reaches
+// `GET /admin-api/spiffe` (the listeners and `workloadAttestation`) and
+// `GET /admin-api/spiffe/brokers` (the Broker API's listeners), and the
+// server translates one there when it is EXACTLY one of these or a filling
+// of one of the templates. A `{{problem}}` is the native module's own
+// reason, a failure, and is carried over in English.
+//
+// The Workload API TCP port's two sentences are whole, rather than the
+// socket's sentence and a second one appended, so that each is ONE message
+// a translation can reorder.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  localTrusted: 'No credential. This socket is the `local` entity and is ' +
+                'trusted outright, which is how the spire-server CLI works.',
+  localVerified: 'No credential, from a process running as this service\'s ' +
+                 'own uid: product mode verifies per connection that the ' +
+                 'socket is private and reads the caller\'s uid from the ' +
+                 'kernel before it is the `local` entity.',
+  nobodyLocal: 'Nobody is the `local` entity here: product mode verifies ' +
+               'the socket\'s boundary and cannot ({{reason}}). Present an ' +
+               'administrator\'s X509-SVID on the TCP port.',
+  uidUnreadable: 'the peer\'s uid cannot be read — {{problem}}',
+  svidRequired: 'An X509-SVID is required even here ' +
+                '(spiffe.trustLocalSocket is off).',
+  workloadNone: 'None, and there must be none: the Workload Endpoint ' +
+                'specification forbids requiring one.',
+  mutualTls: 'Mutual TLS. Verify this server against the trust bundle, ' +
+             'present your own X509-SVID, and expect to be authorized per ' +
+             'method.',
+  serverOpen: 'None — authentication is off, so this port is plain gRPC ' +
+              'and every method is open to everybody.',
+  workloadTcpDeclared: 'None, and there must be none: the Workload Endpoint ' +
+                       'specification forbids requiring one. The network ' +
+                       'is DECLARED to authenticate source addresses ' +
+                       '(spiffe.workloadTcpSourceAuthenticated), so a ' +
+                       'caller is answered with the entries its peer: ' +
+                       'address selects.',
+  workloadTcpUnattested: 'None, and there must be none: the Workload ' +
+                         'Endpoint specification forbids requiring one. ' +
+                         'Nothing attests a caller here (development): ' +
+                         'the deployment secures this port by other means ' +
+                         'or does not expose it.',
+  nothingListening: 'Nothing is listening here.',
+  brokerMutualTls: 'Mutual TLS. Verify this server as ' +
+                   'spiffe://<trust domain>/spire/server against the trust ' +
+                   'bundle, present the X509-SVID of a broker named in ' +
+                   'spiffe.brokers, and send broker.spiffe.io: true on ' +
+                   'every call.',
+  attestationUnavailable: 'workload attestation is unavailable here: ' +
+                          '{{problem}}',
+  // Phrases that appear only INSIDE a template above.
+  param: Object.freeze({
+    notPrivate: 'the socket is not private'
+  })
+});
+
+/**
+ * The `/admin-api` routes whose answers carry this module's prose.
+ */
+const PROSE_ROUTES = ['/admin-api/spiffe', '/admin-api/spiffe/brokers'];
+
 /**
  * The SPIFFE family's socket owner: the bundle endpoint, the `/spiffe` page,
  * and the gRPC listeners of every realm with SPIFFE turned on.
@@ -201,6 +277,59 @@ class SpiffeServer {
   constructor(private readonly deps: SpiffeServerDeps) {
     deps.log.debug("Entering SpiffeServer.constructor().");
     deps.log.debug("Leaving SpiffeServer.constructor().");
+  }
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * the listener sentences and their templates, and what each workload
+   * attestor of the table this module builds verifies.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeServer.prose().");
+    const out: Record<string, string> = {};
+    Object.keys(SENTENCES).forEach(function (key) {
+      if (key !== 'param') {
+        out['spiffe.server.sentences.' + key] = SENTENCES[key];
+      }
+    });
+    Object.keys(SENTENCES.param).forEach(function (key) {
+      out['spiffe.server.param.' + key] = SENTENCES.param[key];
+    });
+    // Keyed by each one's type, as `spiffe.workloadAttestors` names it.
+    const attestors: Array<[string, { VERIFIES: string }]> = [
+      ['unix', unixAttestor.UnixWorkloadAttestor],
+      ['docker', dockerAttestor.DockerWorkloadAttestor],
+      ['k8s', k8sAttestor.K8sWorkloadAttestor],
+      ['systemd', systemdAttestor.SystemdWorkloadAttestor]];
+    attestors.forEach(function (pair) {
+      out['spiffe.workloadAttestors.' + pair[0] + '.verifies'] =
+        pair[1].VERIFIES;
+    });
+    helpers.log.debug("Leaving SpiffeServer.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
+  /**
+   * Fills a template of `SENTENCES` through `ServerProse.fill()`, required
+   * LAZILY: that module requires `config.js` at its load.
+   *
+   * @param template - the template
+   * @param params - name → value
+   * @returns the sentence
+   */
+  static fill(template: string, params: Record<string, unknown>): string {
+    helpers.log.debug("Entering SpiffeServer.fill().");
+    const serverProse = require('../common/server_prose');
+    helpers.log.debug("Leaving SpiffeServer.fill().");
+    return serverProse.fill(template, params);
   }
 
   // What the composition root passes, from the real modules.
@@ -308,7 +437,7 @@ class SpiffeServer {
   // ---------------------------------------------------------------------------
   // WHAT THIS IS, FOR A PERSON — and, with ?format=json, for a program.
   //
-  // The same shape `GET /admin/ldap/service` and `GET /tls` have, and it
+  // The same shape `GET /admin/ldap/service` has (and `GET /tls` had), and it
   // carries the same kind of thing: what the surfaces are, where they are,
   // whether the sockets actually bound, and — at length — what is NOT checked.
   // That last part is most of the page on purpose. A mock that quietly issued
@@ -593,13 +722,18 @@ class SpiffeServer {
       workloadAttestation: this.workloadAttestationState(),
       links: {
         bundle: base + BUNDLE_PATH,
-        console: base + '/admin/spiffe',
-        entries: base + '/admin/spiffe/entries',
-        agents: base + '/admin/spiffe/agents',
-        brokers: base + '/admin/spiffe/brokers',
-        api: base + '/admin-api/spiffe',
-        directory: base + '/admin/ldap/spiffe',
-        metadata: base + '/admin/sts-metadata'
+        console: helpers.rebaseTo(base, 'admin-console') + '/admin/spiffe',
+        entries: helpers.rebaseTo(base, 'admin-console') +
+                 '/admin/spiffe/entries',
+        agents: helpers.rebaseTo(base, 'admin-console') +
+                '/admin/spiffe/agents',
+        brokers: helpers.rebaseTo(base, 'admin-console') +
+                 '/admin/spiffe/brokers',
+        api: helpers.rebaseTo(base, 'management-api') + '/admin-api/spiffe',
+        directory: helpers.rebaseTo(base, 'admin-console') +
+                   '/admin/ldap/spiffe',
+        metadata: helpers.rebaseTo(base, 'admin-console') +
+                  '/admin/sts-metadata'
       }
     };
     log.debug('Leaving SpiffeServer.description().');
@@ -622,335 +756,6 @@ class SpiffeServer {
     const parts = String(methodPath || '').split('/');
     log.debug("Leaving SpiffeServer.protoNameOf().");
     return parts[parts.length - 1] || '';
-  }
-
-  /**
-   * Escapes a value for HTML.
-   *
-   * @param value - the value
-   * @returns the escaped text
-   */
-  esc(value) {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering SpiffeServer.esc().");
-    log.debug("Leaving SpiffeServer.esc().");
-    return xmlEscape(value == null ? '' : String(value));
-  }
-
-  // A listener, and WHAT A CALLER HAS TO PRESENT ON IT. The third column is not
-  // decoration: the four sockets have three different postures — plain, plain
-  // and trusted as `local`, and mutual TLS — and a reader who cannot see which
-  // is which meets the difference as a handshake failure. Same reason
-  // `tls_server.js` says on the page which port needs verification turned off.
-  /**
-   * Draws the listener table's rows, each with what a caller has to present on
-   * it.
-   *
-   * @param bindings - the bindings
-   * @returns the rows' HTML
-   */
-  listenerRows(bindings) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug('Entering SpiffeServer.listenerRows().');
-    if (!bindings.length) {
-      log.debug('Leaving SpiffeServer.listenerRows().');
-      return '<tr><td colspan="4">Nothing bound. Either this listener is ' +
-             'turned off in configuration, or <code>listen()</code> has not ' +
-             'run yet.</td></tr>';
-    }
-    log.debug('Leaving SpiffeServer.listenerRows().');
-    return bindings.map(function (binding) {
-      return '<tr><td>' + self.esc(binding.realm || 'default') +
-             '</td><td><code>' +
-        self.esc(binding.address) + '</code>' +
-        (binding.tls ? ' <span class="note">(mutual TLS)</span>' : '') +
-        '</td><td>' +
-        (binding.listening
-          ? 'listening'
-          : '<strong>did not bind</strong>: ' + self.esc(binding.error)) +
-        '</td><td>' + self.esc(binding.authentication || '') + '</td></tr>';
-    }).join('');
-  }
-
-  /**
-   * Draws the method table's rows.
-   *
-   * @param methods - the methods
-   * @returns the rows' HTML
-   */
-  methodRows(methods) {
-    const { log } = this.deps;
-    const self = this;
-    log.debug("Entering SpiffeServer.methodRows().");
-    log.debug("Leaving SpiffeServer.methodRows().");
-    return methods.map(function (method) {
-      return '<tr><td><code>' + self.esc(method.name) + '</code>' +
-        (method.streaming ? ' <span class="note">(stream)</span>' : '') +
-        '</td><td>' + (method.implemented ? 'yes' : '<strong>no</strong>') +
-        '</td><td>' + self.esc(method.what) + '</td></tr>';
-    }).join('');
-  }
-
-  /**
-   * Draws the `/spiffe` page from the description document.
-   *
-   * @param document - what `description()` returned
-   * @returns the page's HTML
-   */
-  page(document) {
-    const { log, ca, config } = this.deps;
-    const self = this;
-    log.debug('Entering SpiffeServer.page().');
-    const state = ca.state();
-    log.debug('Leaving SpiffeServer.page().');
-    return '<!doctype html><html><head><meta charset="utf-8"><title>SPIFFE — ' +
-      'mock STS</title><style>body{font-family:system-ui,sans-serif;' +
-      'margin:2rem;max-width:60rem;line-height:1.5}' +
-      'table{border-collapse:collapse;margin:1rem ' +
-      '0;width:100%}th,td{border:1px solid #ccc;padding:.4rem .6rem;' +
-      'text-align:left;vertical-align:top}th{background:#f4f4f4}' +
-      'code{background:#f4f4f4;padding:.1rem ' +
-      '.3rem}.note{color:#666}.warn{background:#fff6e5;border-left:4px solid ' +
-      '#e69500;padding:.6rem ' +
-      '1rem}</style></head><body><h1>SPIFFE</h1><p>This service ' +
-      'is the issuing authority for the trust domain <code>' +
-      this.esc(document.trustDomainId) +
-      '</code>. Three server-side surfaces: the ' +
-      'bundle endpoint below (plain HTTPS), the <strong>Workload ' +
-      'API</strong> and the <strong>SPIRE Server API</strong> (both gRPC, on ' +
-      'their own sockets — this page cannot see a socket, so it reports ' +
-      'whether each one actually bound).</p>' +
-      (document.enabled ? '' :
-        '<p class="warn">SPIFFE is turned OFF on this service ' +
-        '(<code>spiffe.enabled</code>). The bundle endpoint answers 404 and ' +
-        'every gRPC call is refused with <code>Unavailable</code>. Turning ' +
-        'it back on needs no restart.</p>') +
-      (state.ready ? '' :
-        '<p class="warn">' + (state.error
-          ? 'The issuing authority could not be built, so nothing here will ' +
-            'issue an SVID: ' + this.esc(state.error)
-          : 'The issuing authority is still being generated. An RSA-4096 key ' +
-            'takes a few seconds; reload.') + '</p>') +
-      // **THIS SAID *NOTHING HERE IS ATTESTED. No workload and no node* UNTIL
-      // 2026-09-22**, which #40 had made false in both halves a day earlier —
-      // every one of SPIRE's node attestors verifies or refuses, and the
-      // Workload API's Unix socket attests its caller. A page that
-      // OVERSTATES what a service checks is the worse of the two errors, so
-      // what is left here is the narrow, true version, READ from the state
-      // rather than asserted; the `notChecked` list below has the detail.
-      '<p class="' +
-      (document.workloadAttestation &&
-       document.workloadAttestation.nativeModule ? 'note' : 'warn') + '">' +
-      '<strong>WHAT IS ATTESTED HERE, AND WHAT IS NOT.</strong> A node ' +
-      'attesting through the SPIRE Server API is VERIFIED (#40, ' +
-      '2026-09-21) — an agent\'s payload used to be written down as claimed ' +
-      'and is checked now — and a workload on the Workload API\'s ' +
-      '<strong>Unix socket</strong> is attested from the kernel\'s own ' +
-      'account of the connecting process. ' +
-      (document.workloadAttestation &&
-       document.workloadAttestation.nativeModule
-        ? 'This build attests it.'
-        : '<strong>THIS BUILD DOES NOT</strong>: it holds no ' +
-          'peer-credentials module (' +
-          this.esc(String((document.workloadAttestation &&
-                           document.workloadAttestation.problem) ||
-                          'not built')) +
-          '), so the socket is served unattested here and any caller on it ' +
-          'obtains an identity in this trust domain. Product mode does not ' +
-          'serve it at all.') +
-      ' <strong>A caller over TCP is not attested</strong> — there is no ' +
-      'peer process to ask — so its source address is the only identity it ' +
-      'carries. Here the TCP port is <strong>' +
-      this.esc(String((document.workloadAttestation &&
-                       document.workloadAttestation.tcp &&
-                       document.workloadAttestation.tcp.state) || 'unknown')) +
-      '</strong>: product mode serves it only where ' +
-      '<code>spiffe.workloadTcpSourceAuthenticated</code> declares that the ' +
-      'network authenticates source addresses, on a named address, and ' +
-      'refuses an entry that selects nothing but the transport and ' +
-      'endpoint; development serves it to anybody who can reach it. It ' +
-      'matters more here than anywhere else in this service, because what ' +
-      'comes out is a credential another service will believe.</p>' +
-      '<p class="' + (document.authentication.enforced ? 'note' : 'warn') +
-      '">' +
-      (document.authentication.enforced
-        ? '<strong>The SPIRE Server API is the exception, and it is ' +
-          'on.</strong> Its TCP port is mutual TLS, a caller presents an ' +
-          'X509-SVID from this trust domain, and every method is authorized ' +
-          'against SPIRE\'s own table — the whole of which is below. Its ' +
-          'Unix socket is the <code>local</code> entity and needs no ' +
-          'credential. The Workload API is ' +
-          'deliberately untouched by this: its ' +
-          'specification says a client MUST NOT be required to authenticate.'
-        : '<strong>And the SPIRE Server API is not authenticating anybody ' +
-          'either.</strong> That port is plain gRPC and anybody who can ' +
-          'reach it can create a registration entry granting any identity ' +
-          'here and then collect an SVID for it. Restart with it on — the ' +
-          'socket is bound once, because it decides how the socket is bound ' +
-          '— to get the behaviour of a real spire-server.') +
-      '</p>' +
-
-      '<h2>The bundle endpoint</h2>' +
-      '<p><a href="' + this.esc(document.bundle.url) + '"><code>' +
-      this.esc(document.bundle.url) + '</code></a> — a JWK Set with ' +
-      '<code>spiffe_sequence</code> (' + this.esc(document.bundle.sequence) +
-      ') ' +
-      'and <code>spiffe_refresh_hint</code> ' +
-      '(' + this.esc(document.bundle.refreshHint) +
-      ' seconds). Each key carries <code>use</code> of ' +
-      '<code>x509-svid</code> or <code>jwt-svid</code>; a consumer MUST ' +
-      'IGNORE a key whose <code>use</code> it does not recognise, which is ' +
-      'why a bundle with the member missing ' +
-      'verifies nothing and reports no error.</p><p ' +
-      'class="' + (config.value('global.https') ? 'note' : 'warn') + '">' +
-      this.esc(document.bundle.schemeNote) + '</p>' +
-
-      '<h2>The trust domain\'s authorities</h2>' +
-      // **THE TABLE ANSWERS "WHAT SIGNS" AND THE ONE BELOW IT ANSWERS "WHAT DO
-      // I TRUST".** They were one table until 2026-09-11, because a self-signed
-      // authority is both. Merging them again would be the single most
-      // misleading thing this page could do about key material: a reader who
-      // installed the SPIFFE Issuing CA as an anchor would have something that
-      // works until the first rotation and then stops, with no error naming it.
-      '<table><tr><th>Kind</th><th>Id</th><th>Key</th><th>State</th></tr>' +
-      document.authorities.x509.map(function (a) {
-        return '<tr><td>X.509</td><td><code>' + self.esc(a.id) +
-               '</code></td><td>' +
-          self.esc(a.keyType) + '</td><td>' +
-          (a.active ? 'active' : 'retired, ' +
-          'still published') + ', until ' + self.esc(a.notAfter) + '</td></tr>';
-      }).join('') +
-      document.authorities.jwt.map(function (a) {
-        return '<tr><td>JWT</td><td><code>' + self.esc(a.kid) +
-               '</code></td><td>' +
-          self.esc(a.keyType) + ' / ' + self.esc(a.alg) + '</td><td>' +
-          (a.active ? 'active' : 'retired, still published') + '</td></tr>';
-      }).join('') +
-      '</table>' +
-      (document.authorities.chainSubjects.length
-        ? '<p>An X509-SVID travels with its chain: ' +
-          document.authorities.chainSubjects.map(function (subject) {
-            return '<code>' + self.esc(subject) + '</code>';
-          }).join(' &rarr; ') + '. The anchor below is NOT sent with it — it ' +
-          'is what the bundle publishes.</p>'
-        : '') +
-      '<h3>What a consumer trusts</h3>' +
-      '<table><tr><th>Anchor</th><th>Subject</th><th>Until</th></tr>' +
-      document.authorities.trustAnchors.map(function (a) {
-        return '<tr><td><code>' + self.esc(a.id) + '</code></td><td>' +
-          self.esc(a.subject) + '</td><td>' + self.esc(a.notAfter) +
-          '</td></tr>';
-      }).join('') +
-      '</table>' +
-      '<p class="' + (document.authorities.source === 'pki' ? 'note' : 'warn') +
-      '">' + this.esc(document.authorities.note) + '</p>' +
-
-      '<h2>The Workload API</h2>' +
-      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
-      '<th>What a caller presents</th></tr>' +
-      this.listenerRows(document.workloadApi.listeners) + '</table>' +
-      '<p>Every call must carry the metadata header <code>' +
-      this.esc(document.workloadApi.securityHeader) + '</code>' +
-      (document.workloadApi.securityHeaderRequired
-        ? '. This service enforces that, which is the one conformance check ' +
-          'it makes: a client that omits it has a bug that nothing else will ' +
-          'ever report.'
-        : ', and this service is NOT enforcing it at the moment ' +
-          '(<code>spiffe.requireSecurityHeader</code> is off).') + '</p>' +
-      '<table><tr><th>Method</th><th>Implemented</th><th>What</th></tr>' +
-      this.methodRows(document.workloadApi.methods) + '</table>' +
-
-      '<h2>The SPIRE Server API</h2>' +
-      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
-      '<th>What a caller presents</th></tr>' +
-      this.listenerRows(document.serverApi.listeners) + '</table>' +
-      document.serverApi.services.map(function (service) {
-        return '<h3>' + self.esc(service.name) + '</h3><p>' +
-               self.esc(service.what) +
-          '</p><table><tr><th>Method</th><th>Implemented</th>' +
-          '<th>What</th></tr>' +
-          self.methodRows(service.methods) + '</table>';
-      }).join('') +
-
-      '<h2>The SPIFFE Broker API</h2>' +
-      '<table><tr><th>Realm</th><th>Address</th><th>State</th>' +
-      '<th>What a caller presents</th></tr>' +
-      this.listenerRows(document.brokerApi.listeners) + '</table>' +
-      '<p>A broker authenticates with its X509-SVID over mutual TLS, sends ' +
-      '<code>' + this.esc(document.brokerApi.securityHeader) + '</code>, and ' +
-      'names a workload by reference — a process id or a Kubernetes pod — ' +
-      'which this service attests itself before answering with that ' +
-      'workload\'s SVIDs. Brokers (<code>spiffe.brokers</code>): ' +
-      (document.brokerApi.brokers.length
-        ? document.brokerApi.brokers.map(function (one) {
-            return '<code>' + self.esc(one.id) + '</code> (' +
-              self.esc(one.problem || one.types.join(', ')) + ')';
-          }).join(', ')
-        : 'none, so every call is refused PERMISSION_DENIED') + '.</p>' +
-
-      '<h2>Who may call the SPIRE Server API</h2>' +
-      '<p>' + this.esc(document.authentication.what) + '</p>' +
-      '<p class="note">' + this.esc(document.authentication.bootstrapping) +
-      '</p><p class="note">' + this.esc(document.authentication.identityNote) +
-      '</p><p class="note">' +
-      this.esc(document.authentication.credentialStatusNote || '') + '</p>' +
-      (document.authentication.adminIds.length
-        ? '<p>Administrators by configuration ' +
-          '(<code>spiffe.adminIds</code>): ' +
-          document.authentication.adminIds.map(function (id) {
-            return '<code>' + self.esc(id) + '</code>';
-          }).join(', ') +
-            '. A registration entry marked <code>admin</code> is ' +
-          'the other way, and both are read on every call.</p>'
-        : '<p>No SPIFFE ID is an administrator by configuration ' +
-          '(<code>spiffe.adminIds</code> is empty). The other way in is a ' +
-          'registration entry marked <code>admin</code>, which the form on ' +
-          '<a href="/admin/spiffe/entries">/admin/spiffe/entries</a> sets, ' +
-          'and the <code>local</code> Unix socket, which needs no credential ' +
-          'at all.</p>') +
-      '<table><tr><th>Entity</th><th>What it means</th></tr>' +
-      document.authentication.entities.map(function (entity) {
-        return '<tr><td><code>' + self.esc(entity.id) + '</code></td><td>' +
-          self.esc(entity.what) + '</td></tr>';
-      }).join('') + '</table>' +
-      '<h3>The per-method table</h3>' +
-      '<p>Copied from SPIRE\'s own <code>policy_data.json</code> rather than ' +
-      'reasoned out, because a table somebody derived from what each method ' +
-      '"obviously" needs is one that disagrees with SPIRE in two or three ' +
-      'places — and the client author who meets the disagreement has no way ' +
-      'to tell which end is wrong. <code>any</code> means the method is open ' +
-      'here and in a real server too.</p>' +
-      '<table><tr><th>Method</th><th>Allowed to</th></tr>' +
-      document.authentication.policy.map(function (row) {
-        return '<tr><td><code>' + self.esc(row.method) + '</code></td><td>' +
-          self.esc(row.allow.join(', ')) + '</td></tr>';
-      }).join('') + '</table>' +
-
-      '<h2>What is not checked</h2><ul>' +
-      document.notChecked.map(function (line) {
-        return '<li>' + self.esc(line) + '</li>';
-      }).join('') + '</ul><h2>What is refused</h2><p>A short list, and it is ' +
-      'here because a page that only said "nothing is checked" would be ' +
-      'wrong.</p><ul>' +
-      document.refused.map(function (line) {
-        return '<li>' + self.esc(line) + '</li>';
-      }).join('') + '</ul>' +
-
-      '<h2>The registry</h2><p>' + this.esc(document.registry.entries) +
-      ' registration entry/entries and ' +
-      this.esc(document.registry.agents) + ' agent(s). ' +
-      this.esc(document.registry.note) + '</p>' +
-
-      '<h2>Elsewhere</h2><ul>' +
-      Object.keys(document.links).map(function (key) {
-        return '<li><a href="' + self.esc(document.links[key]) + '">' +
-               self.esc(key) +
-          '</a> — <code>' + self.esc(document.links[key]) + '</code></li>';
-      }).join('') + '</ul>' +
-      '<p class="note">Add <code>?format=json</code> to this page for the ' +
-      'machine-readable form.</p>' +
-      '</body></html>';
   }
 
   // ---------------------------------------------------------------------------
@@ -1181,7 +986,7 @@ class SpiffeServer {
         results.push({ address: entry.address, listening: false, error: why,
                        port: 0, tls: false, socket: !!entry.socketPath,
                        realm: realmId || '',
-                       authentication: 'Nothing is listening here.' });
+                       authentication: SENTENCES.nothingListening });
         continue;
       }
       // THE WORKLOAD API'S UNIX SOCKET IS ATTESTED (#40 phase four), and in
@@ -1201,7 +1006,7 @@ class SpiffeServer {
         results.push({ address: entry.address, listening: false, error: why,
                        port: 0, tls: false, socket: true,
                        realm: realmId || '',
-                       authentication: 'Nothing is listening here.' });
+                       authentication: SENTENCES.nothingListening });
         continue;
       }
       // THE WORKLOAD API'S TCP PORT IS SERVED ONLY WHERE THE NETWORK
@@ -1228,7 +1033,7 @@ class SpiffeServer {
                          listening: false, error: posture.why,
                          port: 0, tls: false, socket: false,
                          realm: realmId || '',
-                         authentication: 'Nothing is listening here.' },
+                         authentication: SENTENCES.nothingListening },
                        posture.errorCode));
           continue;
         }
@@ -1275,51 +1080,34 @@ class SpiffeServer {
       // What a caller has to do to use this address, said on the page rather
       // than left to be met as a handshake failure — the rule `tls_server.js`
       // follows about the main port.
+      // The sentences are `SENTENCES`' (#543), one per case.
       bound.authentication = entry.socketPath
         ? (surface === 'server'
             ? (auth.trustLocalSocket()
                 ? (this.deps.mode.trustsUnverifiedLocalSocket()
-                    ? 'No credential. This socket is the `local` entity and ' +
-                      'is trusted outright, which is how the spire-server ' +
-                      'CLI works.'
+                    ? SENTENCES.localTrusted
                     : (peerRead && bound.restricted
-                        ? 'No credential, from a process running as this ' +
-                          'service\'s own uid: product mode verifies per ' +
-                          'connection that the socket is private and reads ' +
-                          'the caller\'s uid from the kernel before it is ' +
-                          'the `local` entity.'
-                        : 'Nobody is the `local` entity here: product mode ' +
-                          'verifies the socket\'s boundary and cannot (' +
-                          (peerRead ? 'the socket is not private'
-                                    : 'the peer\'s uid cannot be read — ' +
-                                      this.deps.peer.availability().problem) +
-                          '). Present an administrator\'s X509-SVID on the ' +
-                          'TCP port.'))
-                : 'An X509-SVID is required even here ' +
-                  '(spiffe.trustLocalSocket is off).')
-            : 'None, and there must be none: the Workload Endpoint ' +
-              'specification forbids requiring one.')
+                        ? SENTENCES.localVerified
+                        : SpiffeServer.fill(SENTENCES.nobodyLocal, {
+                            reason: peerRead
+                              ? SENTENCES.param.notPrivate
+                              : SpiffeServer.fill(SENTENCES.uidUnreadable, {
+                                  problem:
+                                    this.deps.peer.availability().problem })
+                          })))
+                : SENTENCES.svidRequired)
+            : SENTENCES.workloadNone)
         : (tls
-            ? 'Mutual TLS. Verify this server against the trust bundle, ' +
-              'present your own X509-SVID, and expect to be authorized per ' +
-              'method.'
+            ? SENTENCES.mutualTls
             : (surface === 'server'
-                ? 'None — authentication is off, so this port is plain ' +
-                  'gRPC and every method is open to everybody.'
-                : 'None, and there must be none: the Workload Endpoint ' +
-                  'specification forbids requiring one. ' +
-                  (this.inRealm(realmId, function () {
+                ? SENTENCES.serverOpen
+                : (this.inRealm(realmId, function () {
                     return auth.workloadTcpPosture().declared;
                   }) && !this.inRealm(realmId, function () {
                     return self.deps.mode.servesUnattestedWorkloadTcp();
                   })
-                    ? 'The network is DECLARED to authenticate source ' +
-                      'addresses (spiffe.workloadTcpSourceAuthenticated), ' +
-                      'so a caller is answered with the entries its ' +
-                      'peer: address selects.'
-                    : 'Nothing attests a caller here (development): the ' +
-                      'deployment secures this port by other means or does ' +
-                      'not expose it.')));
+                    ? SENTENCES.workloadTcpDeclared
+                    : SENTENCES.workloadTcpUnattested)));
       bound.realm = realmId || '';
       results.push(bound);
     }
@@ -1617,8 +1405,8 @@ class SpiffeServer {
       // DEVELOPMENT WITHOUT THE NATIVE MODULE: served on transport selectors
       // alone, as the socket always was, and GET /spiffe says so.
       facts.error = '';
-      facts.note = 'workload attestation is unavailable here: ' +
-                   peer.availability().problem;
+      facts.note = SpiffeServer.fill(SENTENCES.attestationUnavailable,
+                                     { problem: peer.availability().problem });
     }
     log.debug('Leaving SpiffeServer.attestConnection(). ' + facts.tag + ' ' +
               facts.selectors.length + ' selector(s)' +
@@ -1767,7 +1555,7 @@ class SpiffeServer {
       const row: Record<string, any> = {
         address: wanted, listening: false, error: '', port: 0, tls: false,
         socket: false, realm: realmId || '',
-        authentication: 'Nothing is listening here.' };
+        authentication: SENTENCES.nothingListening };
       const taken = this.claimedBy(wanted, realmId);
       if (taken !== null) {
         row.error = 'the "' + (taken || 'default') + '" realm already ' +
@@ -1805,10 +1593,7 @@ class SpiffeServer {
       bound.tls = true;
       bound.socket = false;
       bound.realm = realmId || '';
-      bound.authentication = 'Mutual TLS. Verify this server as ' +
-        'spiffe://<trust domain>/spire/server against the trust bundle, ' +
-        'present the X509-SVID of a broker named in spiffe.brokers, and send ' +
-        'broker.spiffe.io: true on every call.';
+      bound.authentication = SENTENCES.brokerMutualTls;
       results.push(bound);
     }
     log.debug('Leaving SpiffeServer.bindBroker(). ' + results.length);
@@ -1833,6 +1618,12 @@ class SpiffeServer {
     // The attested socket's accepting listener is this module's, not
     // grpc-js's, and is closed here.
     this.deps.rpc.closeAttested(entry.workloadServer);
+    // Their credentials stop being re-keyed by the listeners' policy (#423).
+    [entry.apiCredentials, entry.brokerCredentials].forEach(function (one) {
+      if (one && typeof one.stsUnregisterPolicy === 'function') {
+        one.stsUnregisterPolicy();
+      }
+    });
     [entry.workloadServer, entry.apiServer,
      entry.brokerServer].forEach(function (server) {
       if (!server) return;
@@ -1867,10 +1658,62 @@ class SpiffeServer {
                 'SPIFFE socket.');
       return Promise.resolve([]);
     }
+    const self = this;
     pending = pending.then(this.reconcileNow.bind(this),
-                           this.reconcileNow.bind(this));
+                           this.reconcileNow.bind(this))
+      .then(function (entries) {
+        self.tellBindingsWatcher();
+        return entries;
+      });
     log.debug('Leaving SpiffeServer.reconcile(). Queued.');
     return pending;
+  }
+
+  /**
+   * Hands the current bindings to whoever asked to be told (the request
+   * pool, which passes them to its workers — #337). A watcher that throws
+   * costs a snapshot, never a reconcile.
+   */
+  tellBindingsWatcher() {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.tellBindingsWatcher().');
+    if (typeof bindingsWatcher === 'function') {
+      try {
+        bindingsWatcher(this.bindingsNow());
+      } catch (e) {
+        log.debug('Caught in SpiffeServer.tellBindingsWatcher(): ' +
+                  ((e && e.message) || e));
+      }
+    }
+    log.debug('Leaving SpiffeServer.tellBindingsWatcher().');
+  }
+
+  /**
+   * Installs the function told the bindings after every reconcile.
+   *
+   * @param fn - called with `{ workload, api, broker }`
+   */
+  setBindingsWatcher(fn) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.setBindingsWatcher().');
+    bindingsWatcher = typeof fn === 'function' ? fn : null;
+    log.debug('Leaving SpiffeServer.setBindingsWatcher().');
+  }
+
+  /**
+   * Takes the front process's bindings, in a process that binds none (#337).
+   *
+   * @param snapshot - `{ workload, api, broker }` as `bindingsNow()` answers
+   */
+  adoptBindings(snapshot) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.adoptBindings().');
+    handedBindings = snapshot && typeof snapshot === 'object'
+      ? { workload: Array.isArray(snapshot.workload) ? snapshot.workload : [],
+          api: Array.isArray(snapshot.api) ? snapshot.api : [],
+          broker: Array.isArray(snapshot.broker) ? snapshot.broker : [] }
+      : null;
+    log.debug('Leaving SpiffeServer.adoptBindings().');
   }
 
   /**
@@ -1919,7 +1762,7 @@ class SpiffeServer {
    *   bound
    */
   listen() {
-    const { log } = this.deps;
+    const { log, rpc } = this.deps;
     const self = this;
     log.debug('Entering SpiffeServer.listen().');
     if (started) {
@@ -1927,6 +1770,13 @@ class SpiffeServer {
       return { whenReady: Promise.resolve(this.bindingsNow()) };
     }
     started = true;
+    // THE PROTOS, LOADED HERE AND SYNCHRONOUSLY (#348). `spiffe_grpc.ts`
+    // loads them at first use so that a request worker never does; this is
+    // the front process's first use, and it is made before anything binds
+    // so that a proto missing from the image throws out of `listen()` — a
+    // service that does not start, as it was when they loaded at require —
+    // rather than rejecting inside a realm's asynchronous start.
+    rpc.services();
     const whenReady = this.reconcile().then(function () {
       return self.bindingsNow();
     });
@@ -1947,6 +1797,10 @@ class SpiffeServer {
   bindingsNow() {
     const { log } = this.deps;
     log.debug("Entering SpiffeServer.bindingsNow().");
+    if (!started && handedBindings) {
+      log.debug("Leaving SpiffeServer.bindingsNow(). The front process's.");
+      return handedBindings;
+    }
     const workloadAll = [];
     const apiAll = [];
     const brokerAll = [];
@@ -1981,7 +1835,7 @@ class SpiffeServer {
    * @param app - the express app
    */
   registerRoutes(app: RouteApp): void {
-    const { log, errorCodes, ca, audit } = this.deps;
+    const { log, errorCodes, ca, audit, config } = this.deps;
     const self = this;
     log.debug("Entering SpiffeServer.registerRoutes().");
     // -------------------------------------------------------------------------
@@ -2067,19 +1921,37 @@ class SpiffeServer {
       log.debug('Leaving the federated bundle view. trustDomain=' + name);
     });
 
+    // THE DESCRIPTION PAGE (#584): this service's own, for a person, and
+    // so a static surface's shell since #584, drawn in the browser
+    // (`web_spiffe_description.ts`) from the document `?format=json`
+    // answers — to the byte as before — beside the two facts the page read
+    // that the document does not hold: the issuing authority's readiness
+    // and whether the main port is HTTPS. The bundle endpoints are
+    // SPIFFE's and are unchanged.
     app.get('/spiffe', function (req, res) {
       log.debug('Entering the /spiffe view.');
       const document = self.description(req);
-      if (String(req.query.format || '') === 'json') {
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '') === 'json')) {
         res.status(200).type('application/json')
           .set('Cache-Control', 'no-store')
            .send(JSON.stringify(document, null, 2));
         log.debug('Leaving the /spiffe view. JSON.');
         return;
       }
-      res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         .send(self.page(document));
-      log.debug('Leaving the /spiffe view. HTML.');
+      const state = ca.state();
+      DescriptionPages.send(req, res, { base: '/spiffe', title: 'SPIFFE',
+        view: { kind: 'spiffe', document: document,
+                authority: { ready: !!state.ready,
+                             error: String(state.error || '') },
+                https: !!config.value('global.https') } });
+      log.debug('Leaving the /spiffe view. The shell.');
+    });
+    // Its script (#584), on this application's own path (#472).
+    app.get(DescriptionPages.scriptPath('/spiffe'), function (req, res) {
+      log.debug('Entering GET /spiffe/description.js.');
+      DescriptionPages.script(req, res);
+      log.debug('Leaving GET /spiffe/description.js.');
     });
     log.debug("Leaving SpiffeServer.registerRoutes().");
   }
@@ -2286,10 +2158,16 @@ slot.buildNowUnlessDeferred();
 export = {
   registerRoutes: (target: any): void => slot.get().registerRoutes(target),
   SpiffeServer: SpiffeServer,
+  // The `spiffe` namespace's routes and English (#543).
+  PROSE_ROUTES: SpiffeServer.PROSE_ROUTES,
+  prose: (): Record<string, string> => SpiffeServer.prose(),
   installInstance: (instance: SpiffeServer): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   listen: slot.forward('listen'),
   close: slot.forward('close'),
+  // The front process's bindings, handed to a request worker (#337).
+  setBindingsWatcher: slot.forward('setBindingsWatcher'),
+  adoptBindings: slot.forward('adoptBindings'),
   description: slot.forward('description'),
   // What is attested on the Workload API, for `server.js`'s startup line as
   // well as `/spiffe` (#40): a banner that ASSERTS what this service checks

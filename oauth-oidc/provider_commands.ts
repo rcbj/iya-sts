@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -74,7 +74,7 @@
 // `common/protocol_stack.ts` registers after `oauth2`'s.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -166,8 +166,21 @@ const learned = realms.map({ persist: 'oauth2.commandMetadata' });
 // every minted flush failed from the first command onward (2026-09-27).
 const issuerLearned = realms.map({ persist: 'oauth2.commandIssuer' });
 const callbacks = realms.map({ persist: 'oauth2.commandCallbacks',
-                               retain: 'age' });
-const runs = realms.map({ persist: 'oauth2.tenantCommandRuns' });
+                               retain: 'age',
+                               // #333: the callback token's own expiry, ms.
+                               expiresAt: realms.expiryField('expiresAt', 1) });
+// `expiresAt` (#333): the sweep's rule — a finished run is kept
+// `oauth2.commandRetentionS` past its end; a running one never expires.
+const runs = realms.map({
+  persist: 'oauth2.tenantCommandRuns',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (run: Json): number | null {
+    const ended = Number(run && (run.finishedAt || run.startedAt));
+    const keepS = Number(config.value('oauth2.commandRetentionS'));
+    return run && run.state !== 'running' && ended > 0 && keepS > 0
+      ? ended + keepS * 1000 : null;
+  }
+});
 
 interface ProviderCommandsDeps {
   log: typeof helpers.log;
@@ -395,8 +408,7 @@ class ProviderCommands {
   static digest(token: string): string {
     helpers.log.debug("Entering ProviderCommands.digest().");
     helpers.log.debug("Leaving ProviderCommands.digest().");
-    return nodeCrypto.createHash('sha256').update(String(token))
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(token), 'base64url');
   }
 
   // -------------------------------------------------------------------------
@@ -420,8 +432,9 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.issuer(). From the request.");
       return iss;
     }
-    const pinned = String(config.value('global.publicBaseUrl') || '').trim()
-      .replace(/\/+$/, '');
+    // The authorization server's advertised base (#99, #472), as every URL
+    // of it is built.
+    const pinned = helpers.pinnedBaseUrl('oauth-oidc');
     if (config.value('oauth2.issuer') || pinned) {
       log.debug("Leaving ProviderCommands.issuer(). Pinned.");
       return jwtAccessToken.issuerFor(pinned + realms.currentPrefix());
@@ -555,11 +568,41 @@ class ProviderCommands {
     return found ? found.slice(prefix.length) : '';
   }
 
+  // COMMITTED BEFORE IT IS HANDED OUT (2026-09-30). A callback token is
+  // found by its `oauth2.commandCallbacks` row, which this process writes
+  // into its own store and flushes later; the Command Token carrying the
+  // token went out at once. A relying party calling back to ANOTHER process
+  // or node — a request worker, or the other node behind the balancer —
+  // then presented a token nobody there had, and was answered 401:
+  // `sts_provider_commands` waited thirty seconds for `suspended` in
+  // single-node twice. So what hands a token out waits for the minted
+  // flush first, as `oidc_rp.ts` waits before it signs with a key it has
+  // just issued. A flush that fails is reported by persistence.js; the
+  // command goes out anyway, and a callback it cannot find is a 401 the
+  // relying party can retry.
+  /**
+   * Runs `fn` once the rows this process has minted are committed.
+   *
+   * @param fn - what to do then
+   * @returns a promise of what `fn` returns
+   */
+  private afterMintedCommit(fn: () => unknown): Promise<unknown> {
+    const { log } = this.deps;
+    log.debug("Entering ProviderCommands.afterMintedCommit().");
+    log.debug("Leaving ProviderCommands.afterMintedCommit().");
+    return Promise.resolve().then(function () {
+      return require('../persistence/persistence').flushMinted();
+    }).catch(function (e: Json) {
+      log.debug("Caught in ProviderCommands.afterMintedCommit(): " +
+                ((e && e.message) || e));
+    }).then(fn);
+  }
+
   // A callback token, minted and stored hashed with what it answers for.
   private mintCallback(fields: Json): string {
     const { log, now } = this.deps;
     log.debug("Entering ProviderCommands.mintCallback().");
-    const token = nodeCrypto.randomBytes(32).toString('base64url');
+    const token = stsCrypto.randomBytes(32).toString('base64url');
     callbacks.set(ProviderCommands.digest(token), Object.assign({
       expiresAt: now() + this.setting('oauth2.commandCallbackTtlS') * 1000
     }, fields));
@@ -691,7 +734,8 @@ class ProviderCommands {
   async signedToken(row: Json): Promise<Json> {
     const { log, applications, signJwtAsAsync, errorCodes } = this.deps;
     log.debug("Entering ProviderCommands.signedToken(). " + row.clientId);
-    const registered: Json = applications.registrationOf(row.clientId) || {};
+    // From the client's attributes (#290), whoever set them.
+    const registered: Json = applications.clientConfigOf(row.clientId);
     const alg = String(registered.id_token_signed_response_alg || 'RS256');
     if (alg === 'none') {
       log.debug("Leaving ProviderCommands.signedToken(). alg none.");
@@ -928,7 +972,10 @@ class ProviderCommands {
         purpose: 'refresh', clientId: String(clientId), command: cmd });
     }
     const queued = this.outbox.queue(fields);
-    this.outbox.dispatch([queued.row]).catch(function (e) {
+    const outbox = this.outbox;
+    this.afterMintedCommit(function () {
+      return outbox.dispatch([queued.row]);
+    }).catch(function (e) {
       log.debug("Caught in ProviderCommands.send(): " +
                 ((e && e.message) || e));
     });
@@ -993,13 +1040,16 @@ class ProviderCommands {
     }
     runs.set(run.id, run);
     const realm = realms.current();
-    setImmediate(function () {
+    this.afterMintedCommit(function () {
       realms.run(realm, function () {
         return self.executeRun(run.id).catch(function (e) {
           log.debug("Caught in ProviderCommands.startTenant(): " +
                     ((e && e.message) || e));
         });
       });
+    }).catch(function (e) {
+      log.debug("Caught in ProviderCommands.startTenant(): " +
+                ((e && e.message) || e));
     });
     audit.audit({
       action: 'oauth2.command.tenant', actor: run.actor,
@@ -1050,7 +1100,7 @@ class ProviderCommands {
       log.debug("Leaving ProviderCommands.executeRun(). No issuer.");
       return fail('STS-OAUTH-0767', 'no issuer is known for this realm');
     }
-    const registered: Json = applications.registrationOf(run.clientId) || {};
+    const registered: Json = applications.clientConfigOf(run.clientId);
     const alg = String(registered.id_token_signed_response_alg || 'RS256');
     const maxResumes = this.setting('oauth2.commandStreamResumes');
     let token = '';
@@ -1689,14 +1739,20 @@ class ProviderCommands {
                    learnedAt: new Date(known.learnedAt).toISOString() }
                    : null };
       }),
-      accounts: accountRows.slice(0, Number(o.limit) || 500),
+      // WHOLE, unless a caller asks for a `limit` (#313's sweep). These were
+      // cut at 500 accounts, 500 deliveries and 100 runs, silently: a row
+      // past the cut could not be reached from anywhere. `/admin-api/
+      // commands` pages them instead (`provider_commands_api.ts`).
+      accounts: Number(o.limit) > 0
+        ? accountRows.slice(0, Number(o.limit)) : accountRows,
       deliveries: this.outbox.rows({ state: o.state, q: o.q })
-        .slice(0, Number(o.limit) || 500)
+        .slice(0, Number(o.limit) > 0 ? Number(o.limit) : undefined)
         .map(function (row: Json) {
           return self.outbox.view(row);
         }),
       counts: this.outbox.counts(),
-      runs: runRows.slice(0, 100),
+      runs: Number(o.limit) > 0 ? runRows.slice(0, Number(o.limit))
+                                : runRows,
       accountCommands: ACCOUNT_COMMANDS.slice(0),
       tenantCommands: TENANT_COMMANDS.slice(0)
     };

@@ -1,0 +1,3 @@
+{
+  "bcOfferedNo": " — no se emitirá ningún juego NUEVO. <strong>Un juego ya emitido sigue funcionando</strong>, que es el contrato que mantienen tanto la fila TOTP de la política de autenticación como <code>webauthn.enabled</code>: un interruptor que quitara la única forma de volver a una cuenta cuyo móvil se ha perdido sería el peor de esta consola."
+}

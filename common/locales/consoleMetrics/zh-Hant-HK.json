@@ -1,0 +1,6 @@
+{
+  "calls.noteA": "依 Express 比對到的路由而非要求的 URL 統計，因此 <code>/oauth2/register/:client_id</code> 只佔一列，而不是每個客戶端一列。這些路由樣式與下列頁面列出的相同：",
+  "sessions.noteA": "這兩個數字意義不同，刻意不一致。<strong>登入工作階段</strong>是真實的工作階段：瀏覽器持有 <code>sts_session</code> Cookie，由 OAuth 2.0 / OIDC 登入畫面與 WS-Federation 共用，這正是兩者之間單一登入得以運作的原因。<strong>由成品推斷的工作階段</strong>是一種推斷：某個主體至少持有該協定家族中一個仍然有效的成品。<code>client_credentials</code> 權杖屬於後者而非前者（背後沒有人，也沒有瀏覽器）；已登入但尚未獲核發任何東西的瀏覽器屬於前者而非後者；Kerberos 客戶端從不屬於前者。兩者在這裡都依家族計數；",
+  "link.usersPage": "用戶頁面",
+  "th.user": "用戶"
+}

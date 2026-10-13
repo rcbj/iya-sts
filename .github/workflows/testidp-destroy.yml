@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 
 name: testidp destroy
 
@@ -26,6 +26,19 @@ name: testidp destroy
 # does not delete a running deployment. It shares `testidp-deploy.yml`'s
 # concurrency group, so it waits for an apply in progress rather than racing it.
 #
+# `environment: testidpna` (#98, 2026-09-28) destroys the multi-cell form:
+# the entrypoint takes every cell's dependent stacks down first, then the
+# global stack (the global database's replicas and writer, the peerings, the
+# replicated secrets), then each cell — `confirm` must then be typed as
+# `testidpna`.
+#
+# `environment: globalidp` (#367, 2026-09-30) is the six-region test case,
+# six cells behind global-idp.iyasec.io (environment/envs/globalidp.*). It
+# has a name of its own, so it has a concurrency group of its own and may
+# exist beside either of the other two. Before its first deploy an
+# administrator enables ap-southeast-5 on the account and re-applies
+# foundation/ (deploy/aws/CLAUDE.md, *globalidp*).
+#
 # NOTE: a workflow_dispatch workflow can only be dispatched once the file is on
 # the default branch.
 # ---------------------------------------------------------------------------
@@ -33,8 +46,16 @@ name: testidp destroy
 on:
   workflow_dispatch:
     inputs:
+      environment:
+        description: "testidp (one region), testidpna (cells usw2 + cac1, #98) or globalidp (six cells, global-idp.iyasec.io, #367)"
+        type: choice
+        options:
+          - testidp
+          - testidpna
+          - globalidp
+        default: testidp
       confirm:
-        description: "Type testidp to confirm the environment and all its data are deleted"
+        description: "Type the environment's name again to confirm it and all its data are deleted"
         type: string
         required: true
 
@@ -42,19 +63,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: aws-cluster-testidp
+  group: aws-cluster-${{ github.event.inputs.environment == 'globalidp' && 'globalidp' || 'testidp' }}
   cancel-in-progress: false
 
 env:
   AWS_REGION: us-west-2
-  TF_ENV: testidp
-  TF_IMAGE: mock-sts-terraform
+  TF_ENV: ${{ github.event.inputs.environment }}
+  TF_IMAGE: iya-sts-terraform
 
 jobs:
   destroy:
-    if: ${{ github.event.inputs.confirm == 'testidp' }}
+    if: ${{ github.event.inputs.confirm == github.event.inputs.environment }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Longer for cells (#98): the global stack's replicas, then each cell.
+    timeout-minutes: ${{ github.event.inputs.environment == 'testidp' && 90 || 180 }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -62,7 +84,7 @@ jobs:
       - name: Build terraform image
         run: docker build -t "${TF_IMAGE}" -f deploy/aws/Dockerfile .
 
-      - name: Terraform destroy (testidp)
+      - name: Terraform destroy (${{ github.event.inputs.environment }})
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -78,13 +100,13 @@ jobs:
       - name: Say so if it did not come down
         if: failure()
         run: |
-          echo "::error::terraform destroy failed; testidp may still be running and billing. Re-run this workflow."
+          echo "::error::terraform destroy failed; ${TF_ENV} may still be running and billing. Re-run this workflow."
 
   refused:
-    if: ${{ github.event.inputs.confirm != 'testidp' }}
+    if: ${{ github.event.inputs.confirm != github.event.inputs.environment }}
     runs-on: ubuntu-latest
     steps:
       - name: Refuse
         run: |
-          echo "::error::confirm must be exactly 'testidp'; nothing was destroyed."
+          echo "::error::confirm must be exactly '${TF_ENV}'; nothing was destroyed."
           exit 1

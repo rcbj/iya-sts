@@ -1,0 +1,1742 @@
+{
+  "crypto.sentences.oneModule": {
+    "en": "89ae1e6707cdc9ab",
+    "text": "common/crypto.js 是本服务进行签名、验证、加密和解密的唯一位置。在 2026-08-27 之前，这四项操作分散在大约二十处，其中包括六个 XML 签名器和四个 XML 签名验证器。"
+  },
+  "crypto.sentences.signingCertificateIssued": {
+    "en": "ccb74c3fcf226008",
+    "text": "由本领域在服务根 CA 之下的 JOSE 签发 CA 签发"
+  },
+  "crypto.sentences.signingWhat": {
+    "en": "f7404c1e2d82ed3b",
+    "text": "本领域唯一的 RSA 密钥。它为每个访问令牌、每个刷新令牌、默认 ID 令牌以及本服务铸造的每个 XML 文档签名。"
+  },
+  "crypto.sentences.postQuantumWhat": {
+    "en": "d1e5e7645744f3f2",
+    "text": "在首次使用时而非启动时生成——一次 SLH-DSA 密钥生成就要将近两秒，无论是否有人请求后量子签名，每个领域都要付出这一代价。某个领域上的第一次 JWKS 获取才会让这些密钥生成。"
+  },
+  "crypto.sentences.bbsWhat": {
+    "en": "906077034776820c",
+    "text": "与后量子密钥一样在首次使用时生成。它以 `publicKeyMultibase` 的形式发布在 DID 文档上，而不是作为 JWK 发布，因为 BLS 密钥没有可以强行套用的 JWK 表示。"
+  },
+  "crypto.sentences.tlsWhat": {
+    "en": "35681a509d8441ff",
+    "text": "{{summary}}。该密钥在每次启动时生成，只要存在层级结构，就由进程中间 CA 之下的 TLS 签发 CA 认证——除非由 `tls.certificateFile` 提供密钥对。由 LDAPS 636 共享，并且在 `global.https` 开启时由主端口和调试器监听器共享。"
+  },
+  "crypto.sentences.listenerSummary": {
+    "en": "2a1315844d834040",
+    "text": "{{key}}，{{issuer}}，有效期至 {{notAfter}}"
+  },
+  "crypto.sentences.listenerUnreadable": {
+    "en": "724ae89d2a9a816d",
+    "text": "node 无法读取，有效期至 {{notAfter}}"
+  },
+  "crypto.sentences.listenerIssuedBy": {
+    "en": "637d641d5f35ce2e",
+    "text": "由 {{issuer}} 签发"
+  },
+  "crypto.sentences.listenerIssuedByChainOne": {
+    "en": "bc6822b39335d61a",
+    "text": "由 {{issuer}} 签发（出示时附带其上的 {{n}} 个证书）"
+  },
+  "crypto.sentences.listenerIssuedByChainMany": {
+    "en": "2f869cd5d1f97c09",
+    "text": "由 {{issuer}} 签发（出示时附带其上的 {{n}} 个证书）"
+  },
+  "crypto.sentences.pkiCertificateBinding": {
+    "en": "2d72d4ec39f7cf95",
+    "text": "{{member}}——对 DER 计算的 SHA-256，base64url 编码"
+  },
+  "crypto.sentences.ldapsTransport": {
+    "en": "29459972b5e8fe87",
+    "text": "TLS，使用共享的服务器证书"
+  },
+  "crypto.sentences.spiffeAuthorityPki": {
+    "en": "c60444730e80e729",
+    "text": "{{keyType}}——本领域在服务根 CA 之下的 SPIFFE 签发 CA"
+  },
+  "crypto.sentences.spiffeAuthoritySelfSigned": {
+    "en": "9ad0068d9cf973fe",
+    "text": "{{keyType}}——自签名：本领域没有证书颁发机构"
+  },
+  "crypto.sentences.spiffeAuthorityNone": {
+    "en": "98ca0d518997f8a4",
+    "text": "尚无"
+  },
+  "crypto.sentences.webauthnUvChecked": {
+    "en": "a16940eb3be81667",
+    "text": "{{mode}}——既会请求，也会对照已签名的 UV 标志进行检查"
+  },
+  "crypto.sentences.webauthnUvRequested": {
+    "en": "46a9952f4713d986",
+    "text": "{{mode}}——仅请求；不会据此拒绝任何内容"
+  },
+  "crypto.sentences.totpInUse": {
+    "en": "491869a05f6f78db",
+    "text": "{{name}}——新注册所得到的"
+  },
+  "crypto.sentences.totpSecret": {
+    "en": "bb442c325bb6fe24",
+    "text": "{{bits}} 位，{{encoding}}"
+  },
+  "crypto.sentences.totpLive": {
+    "en": "87c1e9d28ffb4842",
+    "text": "{{digits}} 位数字，每 {{period}} 秒一个，两侧各容忍 {{window}} 步时钟偏差"
+  },
+  "crypto.sentences.codesEntropy": {
+    "en": "c4d0c03046e6da5f",
+    "text": "每个代码 {{bits}} 位，共 {{count}} 个代码，每个 {{length}} 个字符，取自 {{size}} 个字符的字母表"
+  },
+  "crypto.sentences.codesAlphabet": {
+    "en": "d8a72dc58f835d17",
+    "text": "{{alphabet}}——base32 字符，此处选用它是因为其中没有任何一对容易混淆，并且不与上面的 TOTP 行共享"
+  },
+  "crypto.sentences.codesLegacyComparison": {
+    "en": "0461fbbf6b72b08d",
+    "text": "2026-09-11 之前写入的代码集：{{comparison}}"
+  },
+  "crypto.sentences.emailCode": {
+    "en": "7d9bef7355b70ed9",
+    "text": "由 crypto.randomInt() 生成的六位十进制数字，保留前导零"
+  },
+  "crypto.sentences.emailLinkToken": {
+    "en": "4f34264954dc7cc2",
+    "text": "由 crypto.randomBytes() 生成的 256 位，base64url 编码"
+  },
+  "crypto.sentences.emailAtRest": {
+    "en": "270607a9609c73d2",
+    "text": "scrypt，通过 crypto.hashSecret()，存储在登录步骤上"
+  },
+  "crypto.sentences.jweGcmNote": {
+    "en": "738d45485f10fb8b",
+    "text": "AEAD：一个密钥，一个标签。"
+  },
+  "crypto.sentences.jweCbcNote": {
+    "en": "31dbbd47a0e04c86",
+    "text": "CEK 由 MAC 密钥后接 AES 密钥组成，标签是截断为一半长度的 HMAC-{{hash}}。"
+  },
+  "crypto.sentences.tlsDefaults": {
+    "en": "404bc0f7f4f4729a",
+    "text": "使用 Node 的 OpenSSL 默认值，但 LDAPS 636 和主端口上的协议下限（`tls.minVersion`，默认 TLS 1.2）和密码套件列表（`tls.ciphers`，为空时使用 node 的列表）除外。本服务不选择曲线——它另外配置的只是哪些套接字使用 TLS 以及它们提供哪个证书。"
+  },
+  "crypto.sentences.socketMain": {
+    "en": "83b9398392ab48f7",
+    "text": "主端口（global.https 开启时）"
+  },
+  "crypto.sentences.socketDebugger": {
+    "en": "277abe82f40632d7",
+    "text": "调试器监听器（global.https 开启时）"
+  },
+  "crypto.param.selfSigned": {
+    "en": "125ce3085aa6bf99",
+    "text": "自签名"
+  },
+  "crypto.keyEstablishment.jweOutSurface": {
+    "en": "d2aa3e07f69c7123",
+    "text": "本服务加密发往客户端的 JWE——ID 令牌、Logout Token、UserInfo、JARM、JWT 内省、OID4VCI Credential Response"
+  },
+  "crypto.keyEstablishment.jweOutOn": {
+    "en": "185d94e3a2bf618d",
+    "text": "客户端注册 ML-KEM 或 HPKE-8 至 HPKE-16 的 `alg`（`id_token_encrypted_response_alg` 及其同类参数）并发布匹配的 AKP 密钥——HPKE-10-KE 即 X-Wing——上述每一项都会用它加密（`keys.offerKemEncryption` 已开启）。"
+  },
+  "crypto.keyEstablishment.jweOutOff": {
+    "en": "7277b2789e28697b",
+    "text": "默认关闭：`keys.offerKemEncryption` 处于关闭状态，因此注册时不公布也不接受任何 ML-KEM 或 HPKE 算法。OpenID 一致性测试套件和一些客户端库会拒绝列出其不认识的算法的发现列表。"
+  },
+  "crypto.keyEstablishment.jweInSurface": {
+    "en": "c10485c5cccaca78",
+    "text": "发往本领域的 JWE——加密的请求对象、RFC 7523 / 7522 断言、OID4VCI Credential Request"
+  },
+  "crypto.keyEstablishment.jweInHeld": {
+    "en": "210505600241cdc0",
+    "text": "本领域持有 {{algs}} 的解密密钥（`keys.encryptionKemAlgs`），发布在其 JWKS 中，并在解密列表中公布。"
+  },
+  "crypto.keyEstablishment.jweInOff": {
+    "en": "8d920fdcbb4ea950",
+    "text": "关闭，且是有意为之：`keys.encryptionKemAlgs` 为空，因此本领域的 JWKS 中没有 AKP 密钥，也不为解密公布任何 ML-KEM 或 HPKE 算法。AKP 是许多客户端的 JOSE 库尚无法解析的密钥类型，因此是否发布由管理员选择（rcbj，#82）。"
+  },
+  "crypto.keyEstablishment.federationSurface": {
+    "en": "3f594dc7fbebb416",
+    "text": "联合——OpenID Connect 合作方的 ID 令牌加密到联合关系的密钥"
+  },
+  "crypto.keyEstablishment.federationHeld": {
+    "en": "358d8a6a9b318fca",
+    "text": "{{relationships}}持有 x-wing 或 ml-kem-768 密钥（fedEncryptionKeyType），发布在联合关系的 JWKS 中。"
+  },
+  "crypto.keyEstablishment.federationNone": {
+    "en": "14fd09aadd8a0fcd",
+    "text": "按联合关系配置：在 OpenID Connect 联合关系上将 fedEncryptionKeyType 设为 x-wing（HPKE-10-KE）或 ml-kem-768。目前没有任何关系配置了；SAML 2.0 和 WS-Federation 无法配置（XML Encryption）。"
+  },
+  "crypto.keyEstablishment.vpSurface": {
+    "en": "6baf471c665ac6b8",
+    "text": "OID4VP 加密响应（direct_post.jwt、dc_api.jwt）"
+  },
+  "crypto.keyEstablishment.vpOffered": {
+    "en": "849d86b5d19e6d58",
+    "text": "每个请求在 HAIP 要求的 P-256 ECDH-ES 密钥之前或旁边提供 {{algs}}（为该事务单独生成的密钥），这样能使用它的钱包就会使用它（`oid4vp.responseEncryptionKeyAlgs`）。"
+  },
+  "crypto.keyEstablishment.vpOnly": {
+    "en": "44a7464ddcf375d6",
+    "text": "只提供 ECDH-ES（`oid4vp.responseEncryptionKeyAlgs`）。"
+  },
+  "crypto.keyEstablishment.refreshSurface": {
+    "en": "3f22f83a49b55c9e",
+    "text": "刷新令牌（封存给本领域自身）"
+  },
+  "crypto.keyEstablishment.refreshPq": {
+    "en": "6758fcba4a4a35dd",
+    "text": "使用 {{alg}} 封存到由本领域刷新令牌机密派生的密钥对。"
+  },
+  "crypto.keyEstablishment.refreshClassical": {
+    "en": "24e071b986638635",
+    "text": "使用 {{alg}} 封存；可以在 `oauth2.refreshTokenEncryptionAlg` 中选择任何 ML-KEM 或 HPKE-8 至 16 算法，它不需要密钥，也不会改变客户端看到的任何内容。"
+  },
+  "crypto.keyEstablishment.tlsSurface": {
+    "en": "416b130491f7d0f2",
+    "text": "TLS——主端口、LDAPS 和调试器监听器"
+  },
+  "crypto.keyEstablishment.tlsPq": {
+    "en": "b68367c2a8d321c1",
+    "text": "混合组（X25519MLKEM768、SecP256r1MLKEM768、SecP384r1MLKEM1024）在 `tls.groups` 中排在最前（#212），服务镜像中的 node——OpenSSL 3.5——会与任何提供这些组的客户端协商使用它们。"
+  },
+  "crypto.keyEstablishment.tlsNone": {
+    "en": "b032759b3e0d7e2f",
+    "text": "`tls.groups` 未列出任何 ML-KEM 混合组。"
+  },
+  "crypto.keyEstablishment.xmlSurface": {
+    "en": "5eae0076f7a6157c",
+    "text": "XML Encryption——SAML 断言、WS-Federation、WS-Trust"
+  },
+  "crypto.keyEstablishment.xmlHow": {
+    "en": "c37ae0c7c030acc0",
+    "text": "RSA-OAEP 密钥传输或 ECDH-ES 密钥协商。XML Encryption 1.1 没有定义 KEM，也没有定义后量子密钥传输，W3C 或 IETF 也没有任何文档予以补充——CMS 的方案，即 RFC 9629 的 KEMRecipientInfo，没有 XML 对应物。这是规范体系中的空白，而不是一个未打开的设置。"
+  },
+  "crypto.keyEstablishment.draftMlKem": {
+    "en": "f6d7c744b504a044",
+    "text": "draft-ietf-jose-pqc-kem-05——最后一个包含 JOSE 文本的修订版；-06（2026-07-06）仅涉及 COSE。AKP 的 `priv` 是 64 字节的 d||z 种子，-06 将 -05 的 32 字节更正为此。"
+  },
+  "crypto.keyEstablishment.draftHpke": {
+    "en": "185d1e99a7a7ab4e",
+    "text": "draft-ietf-jose-hpke-encrypt-22（HPKE-0 至 HPKE-7），基于 draft-ietf-hpke-hpke；KEM 来自 draft-ietf-hpke-pq-05"
+  },
+  "crypto.keyEstablishment.draftHybrid": {
+    "en": "14ac1097493134f5",
+    "text": "draft-reddy-cose-jose-pqc-hybrid-hpke-11（HPKE-8 至 HPKE-16），一份已于 2026-08-20 过期的个人草案，也是唯一命名混合 JWE 算法的文档"
+  },
+  "crypto.keyEstablishment.what": {
+    "en": "b84af2bfe888da27",
+    "text": "这是最快会产生影响的一半：签名在出示时被检查，因此一个在 2035 年被攻破的签名算法是 2035 年的问题，而今天截获的密文可以被保存下来，等那台机器出现时再打开。此处的 JWE 具备后量子和 PQ/T 混合密钥建立——ML-KEM，以及基于 ML-KEM 或混合方案的 HPKE（X-Wing 即 HPKE-10）——TLS 则将混合组排在最前。仍然保持经典算法的部分在下方列出并附有原因，而这里的每一个 JWE 算法都来自 Internet-Draft。"
+  },
+  "crypto.keyEstablishment.whatWouldClose": {
+    "en": "ea8450559eeb91ec",
+    "text": "XML Encryption 需要先有规范才能有实现。JWE 算法会在其草案成为标准时成为标准；在此之前，由管理员选择让某个领域为它们发布密钥，由客户端通过注册密钥来选择使用。"
+  },
+  "crypto.standards.jws.coverage": {
+    "en": "a0c6c0c5333f0961",
+    "text": "full：适用于下列算法。紧凑序列化在所有地方生成和读取；扁平化 JSON 序列化只有一个协议族——ACME——会读取，因为 RFC 8555 第 6.2 节要求如此（每个请求都会重组为紧凑形式，并由同一函数验证）。通用 JSON 序列化既不生成也不读取；这里没有任何地方需要它。"
+  },
+  "crypto.standards.jws.what": {
+    "en": "862303371dc5663b",
+    "text": "本服务铸造的每个令牌以及它收到的每个断言的封装格式。整个服务只有一张表——`common/crypto.js` 的 `JWS_ALGS`——因为曾经有过两张，DPoP 正是因此在没有任何人做出选择的情况下接受了一组与其他所有地方都不同的算法。"
+  },
+  "crypto.standards.jwe.coverage": {
+    "en": "251f48e95fd0f14b",
+    "text": "partial：紧凑序列化，且它用于加密的算法列表比用于解密的更长。这种不对称是有意的——它接收的内容是加密到它所发布的 RSA 密钥的，而它不持有可用于密钥协商的 EC 私钥。"
+  },
+  "crypto.standards.jwe.what": {
+    "en": "991c797c32f2038b",
+    "text": "加密的 UserInfo 响应，以及客户端加密到本服务密钥后发送的任何内容。之所以包含 CBC-HMAC 系列，是因为 `A128CBC-HS256` 是 OpenID Connect 客户端默认得到的：注册 `userinfo_encrypted_response_alg` 而不指定 `enc`，注册规范第 2 节就已经替你选定了它。"
+  },
+  "crypto.standards.jwk.coverage": {
+    "en": "30637f1756016b71",
+    "text": "full：适用于发布。发布的 JWKS 不包含 `alg` 成员，这种缺失是有意的：RFC 7517 第 4.4 节将其定为可选，并说明它指明的是预期算法，而这里的一个 RSA 密钥要签名六种算法。在 2026-08-28 之前它写的是 `RS256`，而那是本服务早已不再遵守的承诺——Web Crypto 会拒绝导入 `alg` 与所请求操作不一致的 JWK。"
+  },
+  "crypto.standards.jwk.what": {
+    "en": "c0a4c4242da20c76",
+    "text": "这里每个公钥的发布方式，以及读取客户端自身密钥的方式。DPoP 绑定的是 RFC 7638 指纹。"
+  },
+  "crypto.standards.jwt.coverage": {
+    "en": "007e59f3363125e7",
+    "text": "full：适用于其铸造的内容；对其读取的内容为 `partial`，因为除 UserInfo 外，它不验证任何非自己签发的访问令牌。"
+  },
+  "crypto.standards.jwt.what": {
+    "en": "71a4f9ece0aa9a3b",
+    "text": "JWS 内部的声明集。只要本服务读回自己签名的令牌，就会应用 `oauth2.clockSkewS`，自 2026-08-27 起只在一个地方应用——以前这样做的十个调用点中，有四个已悄然停止应用。"
+  },
+  "crypto.standards.thumbprint.coverage": {
+    "en": "43bf5a528e56416c",
+    "text": "full：适用于 RSA、EC、OKP 和 oct，这涵盖了该 RFC 为之定义成员的所有密钥类型。后量子密钥类型 `AKP` 没有指纹，这正是 PQ 算法被排除在 DPoP 之外的原因。"
+  },
+  "crypto.standards.thumbprint.what": {
+    "en": "3738772040c6c429",
+    "text": "一种规范化，一次 SHA-256，一个位置——在 2026-08-27 之前，这里有两套实现。"
+  },
+  "crypto.standards.dpop.coverage": {
+    "en": "97405f66eaffc812",
+    "text": "full：第 4.3 节的全部十二项检查、访问令牌“和”刷新令牌上的 `cnf.jkt` 绑定、`dpop_jkt`、`jti` 重放检测，以及两种形式的 nonce 握手。默认并非必需——nonce 模式让证明更新鲜，而不是强制要求证明——但领域可以要求它：在每个资源上使用 `oauth2.accessTokenRequireDpop`，在令牌端点上使用 `oauth2.refreshTokenRequireDpop`，两者默认均关闭。FAPI 配置文件要求发送方约束（DPoP 或双向 TLS），而管理控制台和用户门户的公共客户端始终绑定 DPoP。"
+  },
+  "crypto.standards.dpop.what": {
+    "en": "fd2e6cef9f5dc069",
+    "text": "发送方约束，使被盗的访问令牌在没有密钥时毫无用处。其算法列表是对共享 JWS 表的过滤——非对称且非后量子——而不是一张独立的表。"
+  },
+  "crypto.standards.mtls.coverage": {
+    "en": "d10a6eaf8ebf09b2",
+    "text": "partial：两种客户端身份验证方法以及证书绑定的访问令牌。它把已验证的证书转换为指纹，而绝不转换为登录。"
+  },
+  "crypto.standards.mtls.what": {
+    "en": "3e588c6d2a0eca04",
+    "text": "`x5t#S256` 是证书 DER 的 base64url SHA-256——是 DER 而不是 PEM，后者是一种在日志中看起来正确却什么也匹配不上的错误。"
+  },
+  "crypto.standards.pkce.coverage": {
+    "en": "2727b9104835cdc1",
+    "text": "full：适用于 `S256` 和 `plain`。在 RFC 9700 模式下 `plain` 被撤回，公布的列表只剩 `S256`。"
+  },
+  "crypto.standards.pkce.what": {
+    "en": "71ccd02e8a1c70cf",
+    "text": "对代码验证器计算的 SHA-256。这是本服务中唯一一处由哈希单独构成全部安全属性的地方。"
+  },
+  "crypto.standards.xmldsig.coverage": {
+    "en": "6ac11d8fcf045168",
+    "text": "partial：本服务只用 RSA-SHA256 签名，而验证下表中的任何算法——RSA、RSASSA-PSS、ECDSA 和 HMAC，涵盖四种摘要。只支持封装签名；除 Redirect 绑定的签名（那是另一种机制）之外，它不生成分离签名或包络签名。"
+  },
+  "crypto.standards.xmldsig.what": {
+    "en": "65d7098a43b07f40",
+    "text": "本服务铸造的每个 XML 文档的封装格式。自 2026-08-27 起它就是父项目自己的 `xmldsig.js`，按字节原样引入，而父项目正是其中大多数交换的另一端——因此双方用同一份代码进行规范化，关于 c14n 的分歧不会一直隐形，直到变成一个在一方验证通过、在另一方验证失败的签名。"
+  },
+  "crypto.standards.xmlenc.coverage": {
+    "en": "dbb840eef5ab3a75",
+    "text": "partial：四种分组密码和两种密钥传输，一次包装一个元素。它不是引入的那份实现，这是有意的例外——两者的输出已经按字节兼容，而这一份所具备、另一份所没有的是诊断能力。"
+  },
+  "crypto.standards.xmlenc.what": {
+    "en": "88fff06d7d7b1664",
+    "text": "这里有意明确说出的每一条信息：两种 CBC 密码不提供认证，而 `rsa-1_5` 已被 Bleichenbacher 攻破。之所以都提供，是因为真实的服务提供方要求使用它们，而一个只提供安全选项的服务无法用来展示不安全选项会造成什么。"
+  },
+  "crypto.standards.c14n.coverage": {
+    "en": "dcdbea06a9c35da8",
+    "text": "partial：两种算法及其两个 `#WithComments` 变体。不提供 C14N 1.1——它唯一的区别在于 `xml:base`、`xml:lang` 和 `xml:space` 如何继承到分离的子树中，而引擎没有实现这种继承；一个声称某种方法却并不执行它的选项比没有这个选项更糟。"
+  },
+  "crypto.standards.c14n.what": {
+    "en": "ca991439b4559070",
+    "text": "排他式规范化至关重要，并且在这里处处都是默认值。断言先被独立签名，然后嵌入到声明了自身前缀的 RSTR、Response 或 `wresult` 中，因此包含式 c14n 会在验证时把这些祖先声明拉入摘要——签名随后对每个依赖方都验证失败，而在这里却验证完美，这是最难追查的一类缺陷。"
+  },
+  "crypto.standards.wss.coverage": {
+    "en": "e9f03a57b2d7e863",
+    "text": "minimal，在要求“WS-Integrity”或“WS-Encryption”之前应先阅读这一行——这两份文档都不存在。WSS 是一份规范，其完整性部分是在 `<wsse:Security>` 头内对 SOAP Body 和 Timestamp 进行 XML Signature，其机密性部分是以同样方式应用的 XML Encryption。本服务两者都不做。它不签名任何 SOAP 信封，不加密任何 SOAP 正文，不生成 Timestamp，也不验证请求上的任何消息级签名。"
+  },
+  "crypto.standards.wss.what": {
+    "en": "d6dcd66e6476aa91",
+    "text": "它所做的是 SAML Token Profile：在 SOAP 正文中携带一个已签名的 SAML 断言，用 `<wsse:SecurityTokenReference>` 通过 `KeyIdentifier` 指明它，并在请求 X.509 令牌时附上 `<wsse:BinarySecurityToken>`。它会读取请求方的 `<wsse:Security>` 头，以获取凭据和用于加密的证书。引入的 `xmldsig.js` 能够生成真正的 `<wsse:Security>` 签名——其中有 `signSoapMessage()`，调试器也在使用它——但这里没有任何地方调用它。"
+  },
+  "crypto.standards.krb5.coverage": {
+    "en": "33a060bc7143a706",
+    "text": "partial：执行四种 AES 配置文件和 RC4-HMAC，DES 和 3DES 只能解码。简化配置文件、按密钥用途进行的密钥派生、混淆块和 CTS 全部是真实的——向量测试会单独触及每一层，因为端到端加密通过可能掩盖两个相互抵消的错误。"
+  },
+  "crypto.standards.krb5.what": {
+    "en": "6c3cb428090dfdcf",
+    "text": "这里唯一不含公钥密码学的协议族。机密性和完整性都来自一个长期对称密钥，这也正是它成为本服务中真正验证凭据的那一道门的原因。"
+  },
+  "crypto.standards.gssapi.coverage": {
+    "en": "3955b6b4a25e305e",
+    "text": "partial：仅 Kerberos 机制，带 MIC 交换。没有 NTLM，也没有名副其实的机制协商——只有一种机制可协商。"
+  },
+  "crypto.standards.gssapi.what": {
+    "en": "4aaf48ef02c4f689",
+    "text": "在 HTTP 上承载 AP-REQ 的封装。它本身不增加任何密码学：MIC 是用该机制的密钥计算的 Kerberos 校验和。"
+  },
+  "crypto.standards.x509.coverage": {
+    "en": "5e34667c87a2bbca",
+    "text": "partial：整个服务一个根 CA，每个信任领域一个中间 CA（进程也有一个），每个用例一个签发 CA，因此叶证书路径长四个证书，而 SPIFFE 下游 CA 之下的 SVID 长五个。每个 CA 都发布 RFC 5280 CRL 和 RFC 6960 OCSP，所出示的证书会在 pki.revocationCheck 的控制下对照它们进行检查。仅在产品模式下保留，此时密钥库会持久化；在开发模式下，层级结构在每次启动时重建。没有层级结构时（pki.autoBuild 关闭），密钥保留其生成时的自签名证书，领域的 SPIFFE 机构也退回为自签名机构。"
+  },
+  "crypto.standards.x509.what": {
+    "en": "0bd1dc7400215c5a",
+    "text": "CA 密钥属于层级结构，在 /admin/pki 上选择（`pki.keyAlgorithm`，默认 RSA 2048；SPIFFE 签发 CA 优先使用 EC P-256）；签名密钥是 RSA 2048，TLS 证书则使用 `tls.certificateAlgorithms` 所要求的任何算法。`spiffe.x509KeyType` 决定每个 SVID 中的密钥。subjectAltName 是 TLS 证书上唯一存放名称的地方——RFC 6125 自 2011 年起就规定忽略 CN。"
+  },
+  "crypto.standards.tls.coverage": {
+    "en": "33822c9691deb784",
+    "text": "minimal：使用 node 的 OpenSSL 默认值，但在 LDAPS 636 和主端口上有两个设置对其加以收紧——`tls.minVersion`（默认 TLS 1.2）和 `tls.ciphers`（为空时使用 node 的列表）。本服务不选择曲线；它另外配置的只是哪些套接字使用 TLS 以及它们提供哪个证书。"
+  },
+  "crypto.standards.tls.what": {
+    "en": "a3c8abc13508c6c3",
+    "text": "LDAPS 636、主端口和调试器监听器共享一个证书。`STS_HTTPS=false` 是回到纯 HTTP 的受支持方式，而不是一个逃生口。"
+  },
+  "crypto.standards.cose.coverage": {
+    "en": "35d0b5526ad54ff2",
+    "text": "partial：针对下列算法的 COSE_Key 解析和签名验证。它不写入任何 COSE 结构，也不读取 COSE_Encrypt。"
+  },
+  "crypto.standards.cose.what": {
+    "en": "7b6ab5c285065ab0",
+    "text": "WebAuthn 凭据的公钥以这种方式到达。CBOR 读取器和 COSE 映射是本仓库自己的，与调试器的实现不共享任何代码，这使两者成为彼此的独立检查。"
+  },
+  "crypto.standards.webauthn.coverage": {
+    "en": "4610e926ac80ab7d",
+    "text": "partial：依赖方这一半。注册和断言签名都会被真正验证，证明声明（#105）也是如此——全部八种格式、其证书链以及 FIDO Metadata Service——受 webauthn.attestationPolicy 控制。"
+  },
+  "crypto.standards.webauthn.what": {
+    "en": "ea84aed02de27496",
+    "text": "签名覆盖 `authenticatorData || SHA-256(clientDataJSON)`，该验证器数据中的 RP ID 哈希会与源站域名的 SHA-256 逐字节比较。"
+  },
+  "crypto.standards.digest.coverage": {
+    "en": "427fc3ecbf538bfc",
+    "text": "partial：`qop=auth`，支持 SHA-256、SHA-512-256 和 MD5 及其 `-sess` 变体，带 nonce 计数、过时 nonce 和 `Authentication-Info`。不支持 `qop=auth-int`。"
+  },
+  "crypto.standards.digest.what": {
+    "en": "cf6005726f6143e0",
+    "text": "本服务中真正检查密码的两个地方之一，而且必须如此：密码是哈希的输入，因此一个接受任何内容的服务器无法计算出客户端所期望的响应。"
+  },
+  "crypto.standards.hoba.coverage": {
+    "en": "b17c97ab09503261",
+    "text": "partial：仅算法 0（RSA-SHA256），签名会对照已注册的密钥真正验证。"
+  },
+  "crypto.standards.hoba.what": {
+    "en": "519e56806159f70f",
+    "text": "一种密码替代方案：客户端持有一个限定于某个源站的密钥对，注册其公钥部分，并对由 nonce、算法、源站、领域、密钥 id 和服务器质询组成的数据块签名。任何人都可以注册密钥——这就是闸口——但若签名无法对照在该 `kid` 下注册的密钥通过验证，则会被拒绝。"
+  },
+  "crypto.standards.sdjwt.coverage": {
+    "en": "2d231e5864c82088",
+    "text": "partial：使用 `_sd_alg: sha-256` 的 `_sd` 摘要、披露项，以及 `dc+sd-jwt` 类型。密钥绑定通过钱包在签发时的持有证明实现。"
+  },
+  "crypto.standards.sdjwt.what": {
+    "en": "2e65e3747a37aeb8",
+    "text": "通过哈希实现选择性披露：凭据携带每个声明的摘要，持有者交出它选择公开的那些声明。"
+  },
+  "crypto.standards.dataintegrity.coverage": {
+    "en": "a3a1c4d7b9f3d4d4",
+    "text": "partial：签发、验证基础证明，以及验证派生证明。BLS12381-SHA-256 密码套件。"
+  },
+  "crypto.standards.dataintegrity.what": {
+    "en": "28e302a01c047d5c",
+    "text": "本服务中唯一基于配对的签名，也是这里唯一不依靠哈希的选择性披露。必须与远端共享的是规范形式——bbs-2023 对规范化的 RDF 语句签名——这就是 JSON-LD 上下文被引入而不是获取的原因。"
+  },
+  "crypto.standards.did.coverage": {
+    "en": "c5075ca6beddd229",
+    "text": "partial：`did:web` 解析、发布本服务密钥的文档，以及域链接凭据。"
+  },
+  "crypto.standards.did.what": {
+    "en": "40ddc5fd877325e6",
+    "text": "当凭据的 `iss` 是 DID 时，钱包借此找到验证该凭据的密钥。BBS 密钥以 `publicKeyMultibase` 形式发布，因为它没有可以强行套用的 JWK 表示。"
+  },
+  "crypto.standards.httpsig.coverage": {
+    "en": "ce26dda6f26f398b",
+    "text": "partial：请求和响应的签名与验证，支持每个派生组件和组件参数、将响应绑定到其请求的 `;req`、多重签名、除六种已注册算法之外本服务支持的每一种 JWS 算法（包括后量子算法），以及使用 sha-256 和 sha-512 的 Content-Digest。未实现 Repr-Digest、Want- 字段和尾部字段。"
+  },
+  "crypto.standards.httpsig.what": {
+    "en": "e5ca4ef8dd596c94",
+    "text": "GNAP 首选的密钥证明，以及 OAuth 资源服务器上的 FAPI 2.0 HTTP Signatures 配置文件（签名的请求进，签名的响应出）。签名基础串是两端必须逐字节完全一致地构建的东西，而各自依据的是自己单独解析的消息——因此结构化字段序列化器在 `common/structured_fields.ts` 中自行编写而非借用，并以 RFC 自身的测试向量加以约束。签名和验证位于 `common/crypto.js` 第 14 节。"
+  },
+  "crypto.standards.macaroon.coverage": {
+    "en": "cd6de0c7e0abd87e",
+    "text": "partial：第一方附加条件和权限收窄。没有第三方附加条件，因此没有解除 macaroon。"
+  },
+  "crypto.standards.macaroon.what": {
+    "en": "8fd19c5836aec908",
+    "text": "一种持有者凭据，持有者无需询问任何人就可以收窄它，方法是追加一个附加条件并对 HMAC 链重新取密钥。验证方必须持有根密钥，这就是 macaroon 成为唯一没有公开验证材料的 GNAP 格式的原因。"
+  },
+  "crypto.standards.biscuit.coverage": {
+    "en": "80fb7c8db4101849",
+    "text": "partial：Ed25519 根签名和块签名、Datalog 事实、检查和收窄块，由在限制下运行的授权器验证。没有第三方块。"
+  },
+  "crypto.standards.biscuit.what": {
+    "en": "d26de21ef48f4222",
+    "text": "一种公钥令牌，持有者可以像 macaroon 一样离线收窄它，但任何持有根公钥的人都能验证它。其授权逻辑是令牌内携带的 Datalog，因此验证方总是在时间和迭代次数的限制下运行。"
+  },
+  "crypto.standards.cms.coverage": {
+    "en": "abe1a25e47d96baf",
+    "text": "partial：带一个签名者和已签名属性的 SignedData，按接收到的属性字节验证，按 DER 排序写入；带 KeyTransRecipientInfo（RSA PKCS#1 v1.5 和 OAEP）和 AES-CBC 内容的 EnvelopedData；带证书和 CRL 的退化型仅证书 SignedData。没有 KeyAgreeRecipientInfo，没有认证数据或压缩数据，没有副署签名。"
+  },
+  "crypto.standards.cms.what": {
+    "en": "0f35f026a507dc11",
+    "text": "SCEP（scep/scep_cms.ts）读写的封装：由请求方签名并加密给 RA 的请求，以及由 RA 签名、其中证书加密给请求方的 CertRep。"
+  },
+  "crypto.families.pki.signs": {
+    "en": "f1ce79cf624ab6f5",
+    "text": "证书。根 CA 为整个服务自签名一次；它为每个信任领域签名一个中间 CA，并为进程签名一个；每个中间 CA 为每个用例签名一个签发 CA；每个签发 CA 签名其用例的叶证书——本服务自己的签名密钥和监听器密钥，以及签发给应用和人员的密钥对。签名算法是为层级结构选定的算法，受颁发者而非主体的密钥族约束，这正是 `common/vendored/x509.js` 自己的文件头花了一整段讨论的错误：以一种摘要导入密钥、却用另一种摘要签名，会生成一个声明的算法与实际签名不一致的证书，而 `openssl verify` 会将其报告为签名错误，却不指明二者中的任何一个。"
+  },
+  "crypto.families.pki.verifies": {
+    "en": "e27202f2b20a852a",
+    "text": "证书路径。当 RFC 7523 断言携带 `x5c` 头到达时，每一环都会被检查——签名、颁发者名称和有效期——并且路径必须终止于服务根 CA，并经过本领域自己的中间 CA。后半部分就是领域边界：所有领域共享根 CA，因此仅仅到达根 CA 的链无法证明是哪个领域签发的——而锚定在其他地方的链即使每一环都验证通过，在这里也什么都证明不了。"
+  },
+  "crypto.families.pki.encrypts": {
+    "en": "15a9d95d58ee2384",
+    "text": "本身不加密任何内容。在产品模式下，它构建的层级结构由 common/keystore.js 在密钥加密密钥下以 AES-256-GCM 封存，与签名密钥位于同一 `sts_keys` 行族中——本模块只负责交出它，不执行加密。"
+  },
+  "crypto.families.pki.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.pki.hashes": {
+    "en": "fed52b623a3769f0",
+    "text": "证书签名默认使用 SHA-256，若层级结构以 SHA-384 或 SHA-512 构建则使用它们。证书指纹以及派生已签发 `kid` 所用的 RFC 7638 JWK 指纹同样使用 SHA-256——本服务中 kid 处处都由密钥材料派生，因此两个实例不可能在两个密钥上发布同一个名称。**提供 SHA-1，并将其标记为弱算法**：“我的技术栈会拒绝 SHA-1 证书吗？”是调试器应当能够提出的问题，而没有任何东西默认使用它。"
+  },
+  "crypto.families.pki.keys": {
+    "en": "8e818de04abfd952",
+    "text": "“整个服务只有一个根密钥对”，每个信任领域一个中间 CA，进程也有一个，每个中间 CA 之下按用例各一个签发 CA，另外每签发一个密钥对就多一个。CA 私钥从不离开此进程。应用的私钥“会”离开：它在签发时交出一次，并以 `oauthAssertionPrivateKey` 写入该应用的目录条目——**凡是该密钥比进程存活更久之处，都在与其上层层级结构相同的密钥加密密钥下以 AES-256-GCM 封存**，因此目录转储、ldif 文件、数据库行或备份中保存的都是密文。控制台和管理 API 会为持有凭据的调用方打开它，因为运维人员无法取走的已签发密钥对，就是谁也无法使用的已签发密钥对。在“开发”模式下则以明文写入，因为那里的密钥加密密钥是临时的，无法像条目那样在重启后存续。无论哪种情况，本服务都“不”保留第二份副本。“并且自 2026-09-11 起，人员也可以持有一个”，以 `stsAssertionPrivateKey` 存放在其自己的 `ou=users` 条目上，以相同的密钥、相同的机制封存。区别在于“取出”的方式：应用的由 `applications.js` 为持有凭据的读取者打开，而人员的由签发操作交出一次、此后不再交出，因为这里没有任何东西会通过能打开它的模块来绘制人员的条目。"
+  },
+  "crypto.families.pki.algorithms.0.what": {
+    "en": "3f46b56fa1d40dc3",
+    "text": "证书编码"
+  },
+  "crypto.families.pki.algorithms.0.how": {
+    "en": "d40c79caa059f986",
+    "text": "X.509 v3、DER，通过 pkijs 和 asn1js——common/vendored/x509.js，即父项目自己的 PKI 代码，逐字节相同。本服务与该项目的 PKI / X.509 页面使用同一个编码器。"
+  },
+  "crypto.families.pki.algorithms.1.what": {
+    "en": "1b9e0c9e96801219",
+    "text": "提供的 CA 密钥算法"
+  },
+  "crypto.families.pki.algorithms.2.what": {
+    "en": "9c2f276500b33a1d",
+    "text": "提供的证书签名算法"
+  },
+  "crypto.families.pki.algorithms.3.what": {
+    "en": "d7548daf57cc5a45",
+    "text": "其中有意提供并标记为弱的"
+  },
+  "crypto.families.pki.algorithms.4.what": {
+    "en": "f048d7205f8503a3",
+    "text": "三个层级"
+  },
+  "crypto.families.pki.algorithms.5.what": {
+    "en": "a44bc2db8740f560",
+    "text": "证书指纹"
+  },
+  "crypto.families.pki.algorithms.5.how": {
+    "en": "a4f69d39eeec5cec",
+    "text": "对 DER 计算 SHA-256"
+  },
+  "crypto.families.pki.algorithms.6.what": {
+    "en": "57afb1b90615a720",
+    "text": "所签发密钥的 `kid`"
+  },
+  "crypto.families.pki.algorithms.6.how": {
+    "en": "81f96a08bbb65569",
+    "text": "RFC 7638 JWK 指纹，SHA-256，截断为 16 个字符"
+  },
+  "crypto.families.pki.algorithms.7.what": {
+    "en": "4ced5cc355ad9abc",
+    "text": "发布的吊销信息"
+  },
+  "crypto.families.pki.algorithms.7.how": {
+    "en": "df05e121a9b3e0b0",
+    "text": "RFC 5280 CRL 和 RFC 6960 OCSP，“每个证书颁发机构各一份”——列表由颁发者签名，因此按领域各一份的列表将没有有效的颁发者。使用 CA 本身签名，而不是委托的响应者证书（RFC 6960 第 4.2.2.2 节），因此客户端可以用其已有的信任锚验证。本服务签发的每张证书都会通过纯 http 和 ldap 指明其自己的 CRL，并在 Authority Information Access 中指明其响应者——绝不使用 https 或 ldaps，RFC 5280 第 8 节指出 CA 不应（SHOULD NOT）将其写入扩展中。"
+  },
+  "crypto.families.pki.algorithms.8.what": {
+    "en": "5b01411fa6de40bb",
+    "text": "吊销检查"
+  },
+  "crypto.families.pki.algorithms.9.what": {
+    "en": "55718f5523bcb7a5",
+    "text": "吊销检查——如何信任外部 CRL"
+  },
+  "crypto.families.pki.algorithms.9.how": {
+    "en": "52dc68ed3e333313",
+    "text": "其签名对照“颁发者”的证书（所出示证书链中的上一张证书）验证，其颁发者名称必须匹配，带有本服务未实现的关键扩展的 CRL 不可用（RFC 5280 第 6.3.3 节），其使用期限至 nextUpdate 或 pki.revocationCrlMaxAgeS 两者中较早者为止。传输不进行证书检查：签名本身就是身份验证，而且 CRL 服务器自己的证书通常链接到被检查的 CA。“间接” CRL 对照所出示证书指明的 cRLIssuer 的证书验证，该证书必须带有 cRLSign 并链接到所出示的路径——取自证书链、本服务的证书颁发机构、pki.revocationCrlIssuersFile，或 CRL 自身 Authority Information Access 中的 caIssuers 地址；“增量” CRL 则对照与其基础 CRL 相同的签名者。列表通过 http、https 或 ldaps 获取（仅在 pki.revocationLdap 允许时才使用纯 ldap）；ldaps 目录的证书必须链接到 node 的证书存储或 pki.revocationLdapCaFile。位于不会被连接的地址上的列表属于无法确定的状态，在硬失败模式下会被拒绝（STS-PKI-0188）；未指明任何列表和响应者的证书在产品模式下会被拒绝（pki.revocationRequireDistributionPoint=auto，STS-PKI-0190），而带有 RFC 9608 noRevAvail 的证书则不检查。"
+  },
+  "crypto.families.pki.algorithms.10.what": {
+    "en": "d3bae1bd728d5ec3",
+    "text": "吊销检查——如何信任外部 OCSP 响应"
+  },
+  "crypto.families.pki.algorithms.10.how": {
+    "en": "26cd67f1d656bdd9",
+    "text": "请求携带 SHA-1 CertID（RFC 5019 配置文件的标识符，而非签名）和 32 个八位字节的 nonce。响应必须由证书的颁发者签名，或由颁发者以 id-kp-OCSPSigning 为其证书签名的委托响应者签名（RFC 6960 第 4.2.2.2 节）；回显不同的 nonce 会被视为重放而拒绝；thisUpdate 和 nextUpdate 必须在 pki.revocationClockSkewS 范围内保持新鲜。委托响应者“自身”的状态会在其证书指明的 CRL 上查询（绝不通过 OCSP），除非它带有 id-pkix-ocsp-nocheck；已吊销者的应答不予采用，状态未知者的应答在硬失败模式下也不予采用。"
+  },
+  "crypto.families.pki.algorithms.11.what": {
+    "en": "41d27abb839f6ea4",
+    "text": "吊销检查——“已注册”的证书"
+  },
+  "crypto.families.pki.algorithms.11.how": {
+    "en": "066dcdbbf97f711a",
+    "text": "已注册而非出示的证书——RFC 7523 密钥的 x5c、RFC 7522 证书、fedSigningCertificate 或联合合作方密钥的 x5c、oid4vp.trustedIssuerCertificates 中的证书——在用于验证签名时会以相同方式检查，其颁发者从其自身的 caIssuers 地址获取。没有证书的裸密钥没有可检查的内容，并会如实报告。"
+  },
+  "crypto.families.pki.algorithms.12.what": {
+    "en": "20d318d0fe44aae4",
+    "text": "CA 私钥存放位置"
+  },
+  "crypto.families.user-portal.signs": {
+    "en": "9febb36f585ca159",
+    "text": "不签发任何东西。门户不铸造任何令牌、断言或证书——它更改凭据，而不是铸造凭据。它在浏览器中的运行时只签名一样东西：每次调用 `/account-api` 以及在令牌端点时附带的 RFC 9449 DPoP 证明（ES256），使用 WebCrypto 为该次页面加载生成的不可导出 P-256 密钥。"
+  },
+  "crypto.families.user-portal.verifies": {
+    "en": "8a095d27cbed0ab1",
+    "text": "“每一次 `/account-api` 调用”，都在其关卡处验证（account-api/account_api.ts）：访问令牌是 RFC 9068 `at+jwt`，依据“本”领域的签名密钥（任一代）验证，检查其颁发者和受众，并以关卡验证的证明匹配其 DPoP 绑定——绝不作为 Bearer 接受。它所指名的那个人是它唯一操作的账户。此外，“所出示的密码”（更改密码时会重新证明当前密码）对照此人自己条目上的 scrypt 哈希验证；“激活链接或密码重置链接”的令牌对照已签发令牌的 scrypt 哈希验证，两者都通过 common/crypto.js 以恒定时间比较。当领域发送 JARM 授权响应时，运行时依据领域的 JWKS 对其进行验证。WebAuthn 断言由 authn/webauthn.js 验证；运行时只负责执行该仪式。"
+  },
+  "crypto.families.user-portal.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.user-portal.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.user-portal.hashes": {
+    "en": "2955567f83fe0eee",
+    "text": "密码以及激活或重置链接的令牌使用 SCRYPT（RFC 7914），各带 16 个随机字节的盐，成本由 security.passwordHashLogN、passwordHashR 和 passwordHashP 指定（默认 N=2^15，r=8，p=1），存储为 `$scrypt$N$r$p$salt$hash`，这样日后可以提高成本而不会使已存储的内容失效。**不是摘要**：密码熵很低，对其进行快速哈希，离被字典还原出密码只有一步之遥。浏览器中使用 SHA-256 计算 PKCE S256 质询和 DPoP 证明的 `ath`，这是另一项工作——把请求绑定到一次登录、把证明绑定到一个令牌，而不是保护静态存储的机密。"
+  },
+  "crypto.families.user-portal.keys": {
+    "en": "7a356445be1d2a7b",
+    "text": "服务器上没有。DPoP 密钥对位于浏览器中：P-256，由 WebCrypto 生成，其私钥部分不可导出，保存在内存中，随页面关闭而消失，门户获得的每个令牌都绑定到它的指纹。令牌本身由领域的授权服务器签名（见 OAuth2 / OIDC 一行）。不再有 CSRF 密钥：每进程的 HMAC 密钥已随 CSRF 令牌及其所保护的会话 Cookie 一同移除（#568）。"
+  },
+  "crypto.families.user-portal.algorithms.0.what": {
+    "en": "2e88a42ac4b1c9fa",
+    "text": "静态存储的密码和链接令牌"
+  },
+  "crypto.families.user-portal.algorithms.0.how": {
+    "en": "51254f21a3bc3036",
+    "text": "scrypt，默认 N=32768，r=8，p=1（security.passwordHash*），32 字节密钥，16 字节随机盐"
+  },
+  "crypto.families.user-portal.algorithms.1.what": {
+    "en": "8117839e71d9cf2c",
+    "text": "比较两者"
+  },
+  "crypto.families.user-portal.algorithms.1.how": {
+    "en": "3c3507a38f025c3d",
+    "text": "常量时间相等比较"
+  },
+  "crypto.families.user-portal.algorithms.2.what": {
+    "en": "e9ec660a650f5513",
+    "text": "/account-api 处的访问令牌"
+  },
+  "crypto.families.user-portal.algorithms.2.how": {
+    "en": "87be1920112e9844",
+    "text": "RFC 9068 at+jwt，依据本领域的签名密钥验证，绑定 DPoP"
+  },
+  "crypto.families.user-portal.algorithms.3.what": {
+    "en": "e097c8970e32cda3",
+    "text": "DPoP 证明（浏览器）"
+  },
+  "crypto.families.user-portal.algorithms.3.how": {
+    "en": "9bebf9949394145f",
+    "text": "ES256，使用每次页面加载生成的不可导出 WebCrypto P-256 密钥"
+  },
+  "crypto.families.user-portal.algorithms.4.what": {
+    "en": "7e09ecc318c42463",
+    "text": "PKCE"
+  },
+  "crypto.families.user-portal.algorithms.4.how": {
+    "en": "363f58a2eab8e37c",
+    "text": "S256"
+  },
+  "crypto.families.gnap.signs": {
+    "en": "ad4b982edb070f2c",
+    "text": "五种访问令牌格式，其中三种不是 JWT。jwt-signed 与这里的其他所有 JWT 经过同一个签名器，其头部 `typ` 为 gnap-at+jwt（#157）；biscuit 用领域的 Ed25519 密钥签名（Biscuit 自己的块签名）；ZCAP-LD 能力携带一个使用 gnap.zcapCryptosuite 所指定套件的 Data Integrity 证明——默认 eddsa-jcs-2022，使用领域的后量子密钥时为 mldsa44-jcs-2024 或 slhdsa128-jcs-2024，或者为了兼容使用 Ed25519Signature2020；macaroon 是在按资源服务器派生的密钥下的 HMAC-SHA256 链。当客户端实例请求时，它还会用 RFC 9421 为 HTTP 响应签名。"
+  },
+  "crypto.families.gnap.verifies": {
+    "en": "0128ae60345397de",
+    "text": "客户端实例发出的每个请求，依据其出示的密钥：RFC 9421 HTTP 消息签名（正文由 RFC 9530 Content-Digest 覆盖）、双向 TLS 证书（会查询撤销状态；在 gnap.mtlsTrust=pki——产品模式的默认值——下，需要一条通往客户端信任库的链以及与应用条目的绑定）、对正文的分离 JWS 或携带正文的附加 JWS。密钥轮换会在新旧两个密钥下都进行验证。调用内省或注册的资源服务器以同样方式证明，每种令牌格式都会在内省时被验证。"
+  },
+  "crypto.families.gnap.encrypts": {
+    "en": "fd3d73b7072a0617",
+    "text": "jwt-encrypted：JWE 中的已签名 GNAP JWT——当资源服务器的应用条目带有自己的密钥时，加密到该密钥（RSA-OAEP-256 或 ECDH-ES+A256KW，使用 `gnap.jweEnc`），否则以 `dir` 和 A256GCM 在领域派生的密钥下加密，这样只有本授权服务器能打开它。"
+  },
+  "crypto.families.gnap.decrypts": {
+    "en": "5a6336f65e8343ba",
+    "text": "在内省时解密以 `dir` 加密的 jwt-encrypted 令牌。加密到资源服务器密钥的令牌在这里是不透明的，这正是加密给它的意义所在。"
+  },
+  "crypto.families.gnap.hashes": {
+    "en": "a478d2fd912623b6",
+    "text": "Content-Digest 使用 SHA-256 和 SHA-512；第 4.2.3 节的交互哈希可使用 node 能计算的任何 Named Information 哈希方法（SHA-2 和 SHA-3，包括截断形式）；JWK 指纹、证书指纹和已记住批准的摘要使用 SHA-256；JWS 证明中的 `ath` 使用访问令牌的 SHA-256。"
+  },
+  "crypto.families.gnap.keys": {
+    "en": "596e3e172bf64684",
+    "text": "客户端实例的密钥就是客户端的身份——JWK、证书、证书指纹，或对应用条目上某个密钥的引用。共享对称密钥（gnapSymmetricKey）和 macaroon 根密钥（gnapMacaroonKey）在进程密钥加密密钥下静态封存。macaroon 密钥和 dir 密钥是以 HKDF-SHA256 从领域机密派生的，各自带有一个域分隔符。"
+  },
+  "crypto.families.gnap.whatItDoesNot": {
+    "en": "a0a7f11d9b8bed02",
+    "text": "它不接受为绑定令牌发出的未经证明的请求，也没有任何设置可以让它接受：GNAP 密钥证明是协议本身，而不是一个加固选项。可选的是持有者令牌，可通过 gnap.bearerTokens 关闭。未实现 Macaroon 第三方附加条件、Biscuit 第三方块和 ZCAP 调用证明。"
+  },
+  "crypto.families.gnap.algorithms.0.what": {
+    "en": "0acd0a9999d15131",
+    "text": "访问令牌格式"
+  },
+  "crypto.families.gnap.algorithms.1.what": {
+    "en": "9b4d9be6956c3850",
+    "text": "密钥证明方法"
+  },
+  "crypto.families.gnap.algorithms.2.what": {
+    "en": "3017e5b92c8dca35",
+    "text": "密钥格式"
+  },
+  "crypto.families.gnap.algorithms.3.what": {
+    "en": "6b925880a910e023",
+    "text": "HTTP 消息签名算法"
+  },
+  "crypto.families.gnap.algorithms.4.what": {
+    "en": "7d3b20ad8cfcdfc1",
+    "text": "Content-Digest 算法"
+  },
+  "crypto.families.gnap.algorithms.5.what": {
+    "en": "3d3974ea5d2bc632",
+    "text": "jwt-encrypted 内容加密，通过 gnap.jweEnc"
+  },
+  "crypto.families.openid-federation.signs": {
+    "en": "deb6cc962655484e",
+    "text": "领域作出的每一项联合声明——其 Entity Configuration、Subordinate Statement、它签发的 Trust Mark，以及其解析、Trust Mark Status 和 Historical Keys 响应——作为带类型的 JWT（RFC 8725 3.11），使用领域的 Federation Entity Key 签名，该密钥与所有协议密钥分开保存（OpenID Federation 1.1 3.1.1）。"
+  },
+  "crypto.families.openid-federation.verifies": {
+    "en": "3d96827548ae76be",
+    "text": "Trust Chain 中的每一项声明，对照其上一项声明所指明的密钥验证，最后一项则对照为 Trust Anchor 配置的密钥验证（10.2）；Entity Configuration 对照其自身的密钥；Trust Mark 对照通过颁发者自身的链确立的颁发者密钥（7.3），其委托则对照锚所指明的所有者（7.2.2）。kid 必须恰好指明一个密钥；HMAC 和 none 会被拒绝。"
+  },
+  "crypto.families.openid-federation.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.openid-federation.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.openid-federation.hashes": {
+    "en": "de5f85f4b8049f51",
+    "text": "SHA-256 用于计算作为每个密钥 kid 的 RFC 7638 指纹，以及以注册表条目所涉及的实体或标记来命名该条目。"
+  },
+  "crypto.families.openid-federation.keys": {
+    "en": "8407e160ab2fe530",
+    "text": "每个领域一个 Federation Entity Key 表（oidfed.signingAlg，默认 ES256，也提供 ML-DSA），位于领域的 ou=oidfed 条目上，凡是密钥持久化之处，其私钥部分都在密钥加密密钥下封存；下一个密钥会提前发布，已退役的密钥在 oidfed.keyOverlapDays 期间继续发布，并为 Historical Keys 端点永久保留，其私钥部分在退役时丢弃。每个 Trust Anchor 和下级实体的固定密钥是登记册中的公钥。"
+  },
+  "crypto.families.openid-federation.whatItDoesNot": {
+    "en": "bb73b0a66ac9741b",
+    "text": "它不在联合端点上对客户端进行身份验证（8.8——“none”是默认值，也是这里唯一的方法），它也不会用协议密钥签名联合声明，反之亦然。"
+  },
+  "crypto.families.openid-federation.algorithms.0.what": {
+    "en": "b8a1589c947f6093",
+    "text": "提供的 Federation Entity Key 算法"
+  },
+  "crypto.families.openid-federation.algorithms.1.what": {
+    "en": "38bc9028c0d9c2d4",
+    "text": "本领域的新密钥，通过 oidfed.signingAlg"
+  },
+  "crypto.families.openid-federation.algorithms.2.what": {
+    "en": "b0e042f34dd410d1",
+    "text": "在联合声明中验证的签名"
+  },
+  "crypto.families.xacml.signs": {
+    "en": "f25654e9962f4f24",
+    "text": "无。决策不是令牌，不带签名。"
+  },
+  "crypto.families.xacml.verifies": {
+    "en": "876b7d98bbc03953",
+    "text": "决策路径中无。远程 PEP 的客户端证书由 TLS 层验证（参见 TLS / mutual TLS），而不是在这里。"
+  },
+  "crypto.families.xacml.encrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.xacml.decrypts": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.xacml.hashes": {
+    "en": "cb519e6f900e9b51",
+    "text": "一处，而且与安全无关。远程 PEP 的同步令牌是对每个已启用策略的文档以及哪个是根策略计算的 SHA-256——这是 PEP 询问“是否有任何变化”并得到 304 的廉价方式，仅此而已。它不对任何东西进行身份验证，也不与调用方作为凭据提供的任何内容比较，因此即使换成 CRC 也依然正确。"
+  },
+  "crypto.families.xacml.keys": {
+    "en": "b8e87648cce690ed",
+    "text": "无。没有任何类型的密钥参与作出决策。"
+  },
+  "crypto.families.xacml.whatItDoesNot": {
+    "en": "6d7c9938306101b5",
+    "text": "它不签名任何决策，因此在两个进程之间传递的决策自身不带任何完整性保护，完全依赖传输层。这是一种立场而不是缺陷：签名决策需要 PEP 持有密钥并进行验证，而本服务的整个前提是，值得关注的是策略本身而不是管道。"
+  },
+  "crypto.families.xacml.algorithms.0.what": {
+    "en": "c10d5f9e12000a4e",
+    "text": "这里不进行任何签名、验证、加密或解密"
+  },
+  "crypto.families.xacml.algorithms.1.what": {
+    "en": "00642c75836a2377",
+    "text": "远程 PEP 同步令牌，它是变化检测器而不是安全机制"
+  },
+  "crypto.families.oauth2-oidc.signs": {
+    "en": "ba9dd042c619d87e",
+    "text": "每个访问令牌和刷新令牌，以及 ID 令牌，用领域的 RSA 密钥以 RS256 签名。注册了 `id_token_signed_response_alg` 的客户端会改为得到该算法，其 ID 令牌和后端通道 Logout Token 均如此（第 2.4 节：与 ID 令牌使用相同的密钥），算法取自共享 JWS 表——所有曲线、两种 Edwards 曲线，以及后量子和复合算法。已签名的 UserInfo 响应同理，另外还有 HMAC 系列（用该客户端自己的 `client_secret` 签名，因此不需要发布的密钥）和 `none`。**还有 RFC 9701 JWT 内省响应**（2026-09-13），类型为 `token-introspection+jwt`，使用 RS256 或资源服务器注册的 `introspection_signed_response_alg`——同一张表加上 HMAC 系列，绝不使用 `none`。**还有资源响应**（#178）：标记为 `fapi-2-response` 的 RFC 9421 HTTP 消息签名，使用 `oauth2.httpSignatureResponseAlg` 所指定的领域密钥（默认 ES256；提供 ML-DSA），覆盖响应以及通过 `;req` 覆盖其所应答的请求。"
+  },
+  "crypto.families.oauth2-oidc.verifies": {
+    "en": "8f530ebb541fc71d",
+    "text": "请求对象（RFC 9101，2026-09-13），由客户端用其注册的密钥或其机密签名；并解密加密到本领域所发布的 `use: \"enc\"` RSA 或 EC 密钥或该机密的请求对象。DPoP 证明（RFC 9449）、`private_key_jwt` 和 `client_secret_jwt` 客户端断言，以及在受保护端点收到的每个访问令牌——对照其自己的 JWKS，并应用 `oauth2.clockSkewS`。**还有 XML 签名**，这是本协议族中唯一不是 JWS 的东西：RFC 7522 把 SAML 2.0 断言放在 RFC 7523 放置 JWT 的同样两个请求参数中，因此令牌端点会通过 `/saml2` 签名所用的同一个引入引擎，验证 <saml:Assertion> 上的封装 XML 签名。它会对照针对断言方注册的证书进行检查，而绝不对照仅仅链接到本领域 CA 的证书——这比 RFC 7523 允许的 `x5c` 路径更严格，因为一条链只能证明本领域签发了某个密钥，却无法说明是哪个应用持有它。**还有已签名的资源请求**（#178）：每个资源服务器上标记为 `fapi-2-request` 的 RFC 9421 签名，使用其 keyid 在客户端注册的 jwks 或 jwks_uri 中所指明的密钥，以及请求的 RFC 9530 Content-Digest。"
+  },
+  "crypto.families.oauth2-oidc.encrypts": {
+    "en": "e3a5330c42e05359",
+    "text": "为注册了 `userinfo_encrypted_response_alg` 的客户端加密 UserInfo 响应，为注册了 `introspection_encrypted_response_alg` 的客户端加密 JWT 内省响应：JWE 紧凑格式，使用 RSA-OAEP 或 ECDH-ES 加密到客户端自己的密钥，签名时为嵌套 JWT。**还有每个刷新令牌**（2026-09-12）：已签名的 JWT 作为嵌套 JWT（`cty: JWT`，RFC 7519 第 11.2 节）封存到本领域自己的密钥，使用 `oauth2.refreshTokenEncryptionAlg` 和 `…Enc`——共享 JWE 表所实现的任何密钥管理算法，加密到领域的 RSA 密钥、EC 密钥或其自己的机密。任何客户端都不会看到也不需要这些密钥。"
+  },
+  "crypto.families.oauth2-oidc.decrypts": {
+    "en": "2b53f4f465776fac",
+    "text": "加密到本服务 RSA 密钥的 JWE，仅限 RSA-OAEP-256——有意比其加密所用的列表更短，因为它不持有可用于密钥协商的 EC 私钥。**还有刷新令牌**，在刷新授权、内省、撤销或令牌交换读取其中任何内容之前，按其自身头部指明的算法解密；未加密的刷新令牌会被拒绝。"
+  },
+  "crypto.families.oauth2-oidc.hashes": {
+    "en": "4e7cfb95ddd04fc5",
+    "text": "`at_hash` 和 `c_hash` 是令牌 SHA-256 值的左半部分；PKCE `S256` 是对验证码计算的 SHA-256；`cnf.jkt` 是 RFC 7638 JWK 指纹（SHA-256），`cnf[\"x5t#S256\"]` 是客户端证书 DER 的 SHA-256。"
+  },
+  "crypto.families.oauth2-oidc.whatItDoesNot": {
+    "en": "8d259f93358c4bbf",
+    "text": "除 UserInfo 外，它不验证任何非本服务签发的访问令牌。客户端的 `jwks_uri` 只在出站策略下获取（#120），且仅针对未注册内联 `jwks` 的客户端。"
+  },
+  "crypto.families.oauth2-oidc.algorithms.0.what": {
+    "en": "6b88c7f4acfda628",
+    "text": "本服务默认铸造的令牌"
+  },
+  "crypto.families.oauth2-oidc.algorithms.1.what": {
+    "en": "4061cd4b31da8060",
+    "text": "资源响应签名（RFC 9421，oauth2.httpSignatureResponseAlg）"
+  },
+  "crypto.families.oauth2-oidc.algorithms.2.what": {
+    "en": "56ef2b0cc6f54335",
+    "text": "ID 令牌，当客户端注册了算法时"
+  },
+  "crypto.families.oauth2-oidc.algorithms.3.what": {
+    "en": "7f4c7f19d506a5ac",
+    "text": "UserInfo 响应"
+  },
+  "crypto.families.oauth2-oidc.algorithms.4.what": {
+    "en": "1bd11ab0955e8290",
+    "text": "JWT 内省响应（RFC 9701）"
+  },
+  "crypto.families.oauth2-oidc.algorithms.5.what": {
+    "en": "f80ef0758c850e59",
+    "text": "JWT 内省响应加密（RFC 9701）"
+  },
+  "crypto.families.oauth2-oidc.algorithms.6.what": {
+    "en": "ee79eb44634d7a69",
+    "text": "请求对象签名（RFC 9101）"
+  },
+  "crypto.families.oauth2-oidc.algorithms.7.what": {
+    "en": "bc7822342ad3ba50",
+    "text": "请求对象解密（RFC 9101）"
+  },
+  "crypto.families.oauth2-oidc.algorithms.8.what": {
+    "en": "4f2f583388edb490",
+    "text": "DPoP 证明"
+  },
+  "crypto.families.oauth2-oidc.algorithms.9.what": {
+    "en": "ba753c9e11eb8f43",
+    "text": "客户端断言"
+  },
+  "crypto.families.oauth2-oidc.algorithms.10.what": {
+    "en": "648f1a07777e17bd",
+    "text": "JWE 密钥管理（出站）"
+  },
+  "crypto.families.oauth2-oidc.algorithms.11.what": {
+    "en": "30e457f0295c4b6a",
+    "text": "JWE 密钥管理（入站）"
+  },
+  "crypto.families.oauth2-oidc.algorithms.12.what": {
+    "en": "dce5f5fa4d35a642",
+    "text": "JWE 内容加密"
+  },
+  "crypto.families.oauth2-oidc.algorithms.13.what": {
+    "en": "66653d219c100db3",
+    "text": "刷新令牌加密（加密到本领域自己的密钥）"
+  },
+  "crypto.families.federation.signs": {
+    "en": "4f58817f19139f26",
+    "text": "它发送给外部身份提供者的 SAML 2.0 `<AuthnRequest>`，采用封装签名，以 RSA-SHA256 基于排他性 c14n 签名——与这里其他所有文档经过的是同一个签名器——以及通知合作方此处发生注销的 `<LogoutRequest>`，采用封装签名，或采用 Redirect 绑定的分离式查询签名。"
+  },
+  "crypto.families.federation.verifies": {
+    "en": "b986e6fffdabc6e3",
+    "text": "“这是该功能的全部意义所在”。合作方的 SAML Response 及其中的 Assertion 各自“分别”检查，且各自都对照关系上配置的证书——绝不对照文档在其自身 `ds:KeyInfo` 中携带的证书，而这正是天真的实现会跳过的检查。合作方的 ID 令牌则作为普通 JWS，对照合作方发布的密钥验证。合作方的“注销”——SAML `<LogoutRequest>` 或 Back-Channel Logout Token——对照相同的已配置密钥验证，未签名的会被拒绝，除非该关系关闭 `fedRequireSignedLogout`，而只有开发模式允许这样做。"
+  },
+  "crypto.families.federation.decrypts": {
+    "en": "c5308d3c65d9cca0",
+    "text": "合作方加密到联合关系自身密钥的内容：`<EncryptedAssertion>`、已验证断言或 `<LogoutRequest>` 中的 `<EncryptedID>` 或 `<EncryptedAttribute>`、WS-Federation 令牌，以及 JWE ID 令牌或 Logout Token——且仅限该关系接受的那一种密钥管理算法和那一种内容加密算法。断言的签名在其明文上验证，Response 的签名在到达时的密文上验证；JWE 必须包含已签名的 JWT。每种解密失败都得到同一个应答，因此 ACS 不会成为预言机（oracle）。"
+  },
+  "crypto.families.federation.hashes": {
+    "en": "2d3c2fd5b62d8002",
+    "text": "合作方 `DigestMethod` 所指明的任何算法，取自下方的内置副本表。"
+  },
+  "crypto.families.federation.keys": {
+    "en": "8f9899d181079f3d",
+    "text": "每个 SAML 2.0、WS-Federation 或 OpenID Connect 联合关系一个加密密钥对，在创建关系时生成：在领域中间 CA 之下的 RSA 3072 或 EC P-256，或者对于 OpenID Connect 为 X-Wing 或 ML-KEM-768，它们不带证书。凡是密钥持久化之处，其私钥部分都在密钥加密密钥下封存；轮换会将被替换的密钥保留 `federation.encryptionKeyGraceS`，且只发布当前密钥。它签名的内容，使用领域的签名密钥签名。"
+  },
+  "crypto.families.federation.whatItDoesNot": {
+    "en": "76366a6354696014",
+    "text": "它不加密其发送的任何内容，也不就会话向任何合作方轮询：登录后影响会话的，是合作方的注销（会结束会话），以及登录时合作方发送的 SAML `SessionNotOnOrAfter`（为会话设定上限）。在产品模式下，除非该关系设置了 `fedAllowUnencrypted`，否则它会拒绝经过浏览器的明文断言；AES-CBC 和 RSA PKCS #1 v1.5 在所有模式下均被拒绝。“关卡同时设在签名者和主体上”（#109）：通过签名验证之后，只有与合作方主体相关联的那个人才会被登录。这是这里唯一一个缺少检查就会导致进程中每个协议都被绕过身份验证的界面——参见 federation/CLAUDE.md。"
+  },
+  "crypto.families.federation.algorithms.0.what": {
+    "en": "7c3206a1a259cf99",
+    "text": "出站请求签名"
+  },
+  "crypto.families.federation.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "入站签名，以下任一"
+  },
+  "crypto.families.federation.algorithms.2.what": {
+    "en": "1a25a971a5ba739e",
+    "text": "入站 ID 令牌"
+  },
+  "crypto.families.federation.algorithms.3.what": {
+    "en": "c53f0beeb485d23e",
+    "text": "加密密钥类型"
+  },
+  "crypto.families.federation.algorithms.4.what": {
+    "en": "51df0d2b33ed2512",
+    "text": "XML Encryption 密钥管理，以下之一"
+  },
+  "crypto.families.federation.algorithms.5.what": {
+    "en": "b6c8a81b07dedcf0",
+    "text": "XML Encryption 内容加密，以下之一"
+  },
+  "crypto.families.federation.algorithms.6.what": {
+    "en": "1cabfdebd09f6040",
+    "text": "JWE 密钥管理，以下之一"
+  },
+  "crypto.families.federation.algorithms.7.what": {
+    "en": "97af5681ca47c186",
+    "text": "JWE 内容加密，以下之一"
+  },
+  "crypto.families.federation.algorithms.8.what": {
+    "en": "4912e5bb4c7ef303",
+    "text": "在所有模式下均拒绝"
+  },
+  "crypto.families.saml-2-0.signs": {
+    "en": "cae50b198b378a2b",
+    "text": "断言、Response、LogoutRequest 以及每个服务提供者的元数据——封装签名，RSA-SHA256，排他性规范化，`<ds:Signature>` 紧跟在 `<Issuer>` 之后，即模式规定的位置。HTTP Redirect 绑定的签名方式不同，这是规范而非本服务所致：它是对查询字符串八位字节的分离签名，并以 `SigAlg` 参数指明算法。"
+  },
+  "crypto.families.saml-2-0.verifies": {
+    "en": "4e8292c2dfea891b",
+    "text": "服务提供者的 AuthnRequest、LogoutRequest、LogoutResponse 和 ArtifactResolve 签名（自 2026-09-17 起）——Redirect 绑定的分离查询签名、SimpleSign 绑定对表单值的签名，或封装签名——对照服务提供者已注册的证书（RSA、EC、EdDSA、DSA、ML-DSA、SLH-DSA）验证，绝不对照请求中携带的证书；所使用的元数据文档自身的签名，对照条目的证书或领域的信任锚验证；以及它自己的工件。服务提供者的 `<EncryptedID>` 是被解密而不是被验证。"
+  },
+  "crypto.families.saml-2-0.encrypts": {
+    "en": "fc0f0e879fca3b40",
+    "text": "Response 中的断言，作为 `<EncryptedAssertion>`；LogoutRequest 中的 NameID，作为 `<EncryptedID>`——按应用加密到其条目上保存的证书。先签名后加密，这是每个服务提供者所期望的顺序：签名位于密文之内，解密后依然保留。"
+  },
+  "crypto.families.saml-2-0.decrypts": {
+    "en": "428824d407f646cc",
+    "text": "服务提供者在 LogoutRequest 中发送的 `<EncryptedID>`，使用领域的 RSA 密钥解密。"
+  },
+  "crypto.families.saml-2-0.hashes": {
+    "en": "d825722f0bd1bef5",
+    "text": "Reference 摘要使用 SHA-256；RSA-OAEP-MGF1P 内部使用 SHA-1，因为这是该 URI 本身的含义，而不是本服务所作的选择。"
+  },
+  "crypto.families.saml-2-0.whatItDoesNot": {
+    "en": "30efb1054d4e7582",
+    "text": "除非开启 saml.allowSha1Signatures，否则它不接受 SHA-1 签名——产品模式下绝不接受，产品模式也绝不用 rsa-sha1 签名、用 rsa-1_5 包装或解包密钥——也完全不接受 MD5、MAC 或有状态的基于哈希的签名。对于它未持有证书、但开启了加密的服务提供者，开发模式下会以明文发送断言并醒目地提示，产品模式下则拒绝；元数据中发布了加密密钥的服务提供者在两种模式下都会被加密。"
+  },
+  "crypto.families.saml-2-0.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "签名"
+  },
+  "crypto.families.saml-2-0.algorithms.1.what": {
+    "en": "6859a4ea02817207",
+    "text": "入站签名，以下任一"
+  },
+  "crypto.families.saml-2-0.algorithms.2.what": {
+    "en": "652091f367e363c5",
+    "text": "分组密码（saml2.encryptionAlgorithm）"
+  },
+  "crypto.families.saml-2-0.algorithms.3.what": {
+    "en": "62bf49b6ee453a1e",
+    "text": "密钥传输（saml2.keyTransportAlgorithm）"
+  },
+  "crypto.families.saml-2-0.algorithms.4.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "提供的分组密码"
+  },
+  "crypto.families.saml-2-0.algorithms.5.what": {
+    "en": "b224b153758d7f54",
+    "text": "提供的密钥传输"
+  },
+  "crypto.families.saml-1-1.signs": {
+    "en": "60dc72ccb0685a15",
+    "text": "断言和 Browser/POST Response，以 RSA-SHA256 基于排他性 c14n 签名，经过同一个签名器。不同的是位置，原因在于语法而非密码学：1.1 断言没有 `<Issuer>` 元素——在 1.1 中颁发者是一个属性——所以“在颁发者之后”这个位置并不存在，签名放在最后。Response 的签名放在最前，位于其携带的断言之前。"
+  },
+  "crypto.families.saml-1-1.verifies": {
+    "en": "f11251a4b826b873",
+    "text": "无：SAML 1.1 没有可供验证签名的请求消息。"
+  },
+  "crypto.families.saml-1-1.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "Reference 摘要使用 SHA-256。"
+  },
+  "crypto.families.saml-1-1.whatItDoesNot": {
+    "en": "035395f48a6d34a3",
+    "text": "SAML 1.1 根本没有加密——`<EncryptedAssertion>` 随 2.0 才出现——也没有可供验证签名的请求消息。引用 URI 指明的是 `AssertionID` 或 `ResponseID`，这正是共享签名器通过搜索来解析 id、而不是被告知其名称的全部原因。"
+  },
+  "crypto.families.saml-1-1.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "签名"
+  },
+  "crypto.families.ws-federation.signs": {
+    "en": "038da0701eacf8e7",
+    "text": "`wresult` 中的 SAML 断言，采用依赖方所要求的版本，经过共享签名器。"
+  },
+  "crypto.families.ws-federation.verifies": {
+    "en": "02c1a08782ac0629",
+    "text": "无：登录请求不带签名。"
+  },
+  "crypto.families.ws-federation.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "Reference 摘要使用 SHA-256。"
+  },
+  "crypto.families.ws-federation.whatItDoesNot": {
+    "en": "c0aea7549def7066",
+    "text": "它不伪造 `wauth`——会话无法满足的要求会触发升级认证，而 AuthenticationMethod 记录的是会话实际完成的操作——也不解引用 `wreqptr`——获取别人登记的 URL，就是附带了引用出处的服务端请求伪造。"
+  },
+  "crypto.families.ws-federation.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "签名"
+  },
+  "crypto.families.ws-trust.signs": {
+    "en": "65b99eb9fa477ac2",
+    "text": "RequestSecurityTokenResponse 中的 SAML 断言（1.1 或 2.0），经过共享签名器。"
+  },
+  "crypto.families.ws-trust.verifies": {
+    "en": "e1450965d276d357",
+    "text": "它“读取”请求方的 `<wsse:Security>` 凭据以及已签名请求中的 `<ds:X509Certificate>`——后者用于确定要“加密”给谁。在产品模式下，UsernameToken 的密码会对照该人员的 `userPassword` 或应用的客户端密钥验证；开发模式则照单全收，保留值 `invalid` 除外。"
+  },
+  "crypto.families.ws-trust.encrypts": {
+    "en": "fa359afa3450379c",
+    "text": "使用 `?encrypt=1` 时，加密所签发的 2.0 断言，加密到请求签名中找到的证书。与 SAML 2.0 使用同样的两张表，因为是同一套代码——由 `saml/saml2.ts` 重新导出。"
+  },
+  "crypto.families.ws-trust.hashes": {
+    "en": "4c6a8bf52c842baa",
+    "text": "Reference 摘要使用 SHA-256。"
+  },
+  "crypto.families.ws-trust.whatItDoesNot": {
+    "en": "a65f60d0f2191130",
+    "text": "它不会应答每一个为他人请求令牌的请求：`OnBehalfOf`（模拟）和 `ActAs`（委托）由签发策略根据请求方和主体条目上的委托控制来决定——在产品模式下拒绝，在开发模式下则记录为本会被拒绝的情况。它也不生成自己的已签名 SOAP 信封——参见下方的 WS-Security，那一行说明了本服务对该规范做什么、不做什么。"
+  },
+  "crypto.families.ws-trust.algorithms.0.what": {
+    "en": "f1a73e2204a11407",
+    "text": "签名"
+  },
+  "crypto.families.ws-trust.algorithms.1.what": {
+    "en": "94af3e2f6fec20e2",
+    "text": "提供的分组密码"
+  },
+  "crypto.families.ws-trust.algorithms.2.what": {
+    "en": "b224b153758d7f54",
+    "text": "提供的密钥传输"
+  },
+  "crypto.families.kerberos.signs": {
+    "en": "d0004d29106d6b55",
+    "text": "PKINIT 应答（#179）：KDCDHKeyInfo，置于使用 SHA-256 的 CMS SignedData 中，由领域的 KDC 证书签名（默认 ECDSA）。除此之外，没有公钥意义上的签名。完整性来自带密钥的校验和（HMAC-SHA1-96、HMAC-SHA-256-128、HMAC-SHA-384-192 或 HMAC-MD5），所用密钥由长期密钥按该消息的密钥用途编号派生。"
+  },
+  "crypto.families.kerberos.verifies": {
+    "en": "fac18bcfa8ced4dd",
+    "text": "预身份验证——包括 PKINIT 的已签名 AuthPack 及其证书路径——每个 AP-REQ 认证符，以及上述校验和。这是本服务中唯一真正验证凭据的入口，而且这不是策略选择：在 Kerberos 中密码就是密钥，因此即使 KDC 接受任何输入，也仍须选定一个客户端无法猜到的密钥。宽松性转而体现在账户策略中——一个共享密码，任何名称都会创建账户。"
+  },
+  "crypto.families.kerberos.encrypts": {
+    "en": "4f7b84df5e4c1070",
+    "text": "每条消息的每个加密部分：AS-REP enc-part、票据、认证符、TGS-REP。带混淆码的 CTS 模式 AES，或 RC4-HMAC。"
+  },
+  "crypto.families.kerberos.decrypts": {
+    "en": "b736df153bccfa13",
+    "text": "同上，方向相反，包括在 `/authn/spnego` 出示的真实服务票据。"
+  },
+  "crypto.families.kerberos.hashes": {
+    "en": "6b01eb6b40541434",
+    "text": "字符串到密钥的转换使用 PBKDF2-HMAC-SHA1（RFC 3962）或 PBKDF2-HMAC-SHA-256/384（RFC 8009）；RC4-HMAC 使用 MD4（NT 哈希），它不加盐，这就是盐值发现仅对 AES 有意义的原因。"
+  },
+  "crypto.families.kerberos.whatItDoesNot": {
+    "en": "564dfc55115cbde1",
+    "text": "PKINIT 中没有 RSA 密钥传输（应答密钥始终通过 Diffie-Hellman 协商），也没有后量子 PKINIT，因为尚无任何标准。DES 和 3DES 仅支持解码——列出它们是为了如实呈现抓包内容，绝不实际执行。"
+  },
+  "crypto.families.kerberos.algorithms.0.what": {
+    "en": "8b12881e65e625c4",
+    "text": "实际执行的加密类型"
+  },
+  "crypto.families.spnego.signs": {
+    "en": "df250490aa6ca80f",
+    "text": "自身不签名任何内容。`negTokenResp` 中的 MIC 是对协商过程计算的 Kerberos 校验和，使用该机制的密钥。"
+  },
+  "crypto.families.spnego.verifies": {
+    "en": "d809021f4e9d84a9",
+    "text": "GSS 令牌内的 AP-REQ，经由 Kerberos 接受方验证——包括重放缓存，这是此入口处唯一一项缺失时会构成安全缺陷而非保真度缺陷的检查。"
+  },
+  "crypto.families.spnego.decrypts": {
+    "en": "a46cdba23bd3e592",
+    "text": "AP-REQ 认证符，使用服务的长期密钥解密。"
+  },
+  "crypto.families.spnego.hashes": {
+    "en": "2230ed54174ccefc",
+    "text": "所协商加密类型的校验和使用的任何算法。"
+  },
+  "crypto.families.spnego.whatItDoesNot": {
+    "en": "85057be5d17ba628",
+    "text": "它在接受方的检查之外不增加任何自己的检查，也不协商 Kerberos v5 以外的任何机制。"
+  },
+  "crypto.families.spnego.algorithms.0.what": {
+    "en": "d09ab09f9ee0e400",
+    "text": "协商的机制"
+  },
+  "crypto.families.spiffe.signs": {
+    "en": "99f5793498f36e41",
+    "text": "X509-SVID，由本领域的 SPIFFE 签发 CA 签发——该 CA 位于领域的中间 CA 和服务根 CA 之下，因此信任包发布根 CA，而 SVID 的链中携带签发 CA 和中间 CA。没有层级结构的领域会退而使用自签名的颁发机构，它即是自己的信任锚。JWT-SVID 是普通的 JWS，来自在两种模式下每次启动时生成的 JWT 颁发机构。每种密钥类型同时决定证书签名算法和 JWS `alg`——声明的算法与实际签名不一致的证书可以完全正常解析，却会被拒绝，报出一条关于签名的消息，且不指明任何一个哈希。"
+  },
+  "crypto.families.spiffe.verifies": {
+    "en": "3d9b175cf83a0c70",
+    "text": "SPIRE Server API 的 TCP 端口上通过双向 TLS 出示的 X509-SVID，以及在 `ValidateJWTSVID` 收到的 JWT-SVID。"
+  },
+  "crypto.families.spiffe.hashes": {
+    "en": "3d8ab87bbee0aaf7",
+    "text": "凡记录 SVID 之处，均对 SVID DER 计算 SHA-256；证书签名自身的摘要则随密钥类型而定。"
+  },
+  "crypto.families.spiffe.whatItDoesNot": {
+    "en": "34749d8581fa8262",
+    "text": "它不对通过 TCP 调用 Workload API 的调用方进行证明——Unix 套接字的调用方和每个代理都会被证明，而 Workload API 的规范规定它不得进行身份验证。它不记录所铸造的 SVID，因此只能手动指明序列号来撤销某个 SVID；在 /admin/pki 上撤销领域的 SPIFFE 签发 CA，才会让 SPIRE Server API 拒绝其下的每个 SVID。目录记录的是谁仍可被签发 SVID，这是另一种主张。Ed25519 可用于 X509-SVID 密钥（以及自签名的后备颁发机构），但不可用于 JWT 颁发机构，这是 `jsonwebtoken` 的限制，而非规范的限制。"
+  },
+  "crypto.families.spiffe.algorithms.0.what": {
+    "en": "ab46510f58c0af97",
+    "text": "提供的密钥类型（SVID、后备颁发机构、JWT 颁发机构）"
+  },
+  "crypto.families.spiffe.algorithms.1.what": {
+    "en": "1ab9e59d403cfe7f",
+    "text": "本领域的 X.509 颁发机构"
+  },
+  "crypto.families.spiffe.algorithms.2.what": {
+    "en": "bddc2c1047bd1bfb",
+    "text": "本领域的 X509-SVID 密钥"
+  },
+  "crypto.families.spiffe.algorithms.3.what": {
+    "en": "e0c4b0f50d03be7d",
+    "text": "本领域的 JWT 颁发机构"
+  },
+  "crypto.families.scim.signs": {
+    "en": "0f56021e8d3293fb",
+    "text": "无。它不铸造任何凭据——它是这里唯一一个只检查凭据的协议族。"
+  },
+  "crypto.families.scim.verifies": {
+    "en": "90704e4d59344987",
+    "text": "RFC 7644 第 2 节所列六种方案中任一种的凭据。OAuth 方案需要一个由本服务签发且带有 `scim:read` 或 `scim:write` 的令牌，HOBA 签名则对照客户端注册的公钥检查。在“开发”模式下，HTTP Digest 基于唯一配置的密码计算响应，Basic 除一个密码外任何密码都能通过；在“产品”模式下，Basic 对照此人经过哈希的 `userPassword` 验证密码，并且不提供 Digest。"
+  },
+  "crypto.families.scim.hashes": {
+    "en": "8b5fd034b1743a03",
+    "text": "RFC 7616 Digest：SHA-256、SHA-512-256 和 MD5，各自带有 `-sess` 变体，按强度从高到低提供，因为第 3.7 节如此规定，也因为客户端会采用它所理解的第一个。每一种都会对照本进程实际拥有的 openssl 进行检查，因此质询绝不会指明服务器无法计算的算法。"
+  },
+  "crypto.families.scim.whatItDoesNot": {
+    "en": "9d23420bb1b23ff7",
+    "text": "它不存储自己的密码——Digest 密码是一项设置。（自 2026-09-17 起，`active: false` 确实会禁用账户。）"
+  },
+  "crypto.families.scim.algorithms.0.what": {
+    "en": "61a2c91673703a02",
+    "text": "身份验证方案"
+  },
+  "crypto.families.scim.algorithms.1.what": {
+    "en": "6e2f80bf9cfaabad",
+    "text": "Digest"
+  },
+  "crypto.families.scim.algorithms.2.what": {
+    "en": "8ffb36406b3f2925",
+    "text": "HOBA"
+  },
+  "crypto.families.shared-signals.signs": {
+    "en": "ad10748a9c91a0d6",
+    "text": "每一个安全事件令牌，而它是本服务中最值得斟酌算法的文档。SET 记录的是某件事已经发生，RFC 8417 第 4.1.4 节禁止它过期，因此它会在写下很久之后仍被读取——这正是“先收集、后解密”论点真正针对的情形。签名经过与这里其他每个 JWT 相同的签名器，因此 `ssf.signingAlgorithm` 可选用整张表：默认 RS256，PS 和 ES 系列，EdDSA，以及后量子算法——三种规格的 ML-DSA、两种规格的 SLH-DSA，以及六种 ML-DSA + 传统算法的复合算法。一个 SLH-DSA 签名最多需要一秒，在 libuv 的线程池上运行，因此本服务始终保持响应，而接收方需要等待。"
+  },
+  "crypto.families.shared-signals.verifies": {
+    "en": "eb64e2686979148b",
+    "text": "每次流管理调用中的访问令牌（通过此处所有其他受保护端点使用的同一检查），以及推送到控制台或门户自身接收方的 SET（对照本服务的 JWKS）。"
+  },
+  "crypto.families.shared-signals.encrypts": {
+    "en": "3a0ce36975e5d5a1",
+    "text": "无。SSF 没有加密 SET 配置文件——RFC 8417 允许用 JWE 包装的 SET，但本服务和任何已部署的发送方都不会生成这种 SET，因此在传输中保护事件的是投递端点上的 TLS，这就是要验证接收方证书的原因——而且自 #171 起，在产品模式下无论 `ssf.pushSkipTlsVerification` 如何设置都会验证。"
+  },
+  "crypto.families.shared-signals.decrypts": {
+    "en": "58ee378a4cea46f2",
+    "text": "无，原因同上。"
+  },
+  "crypto.families.shared-signals.hashes": {
+    "en": "022790fa40b66490",
+    "text": "所选签名算法所隐含的任何算法，自身不使用其他哈希：SET 不像 ID 令牌携带 `at_hash` 那样携带任何内容的摘要。"
+  },
+  "crypto.families.shared-signals.whatItDoesNot": {
+    "en": "66fb8f17d972a92b",
+    "text": "被要求时，它会故意签出错误的签名。`ssf.breakSetSignature` 在签名后改动签名中的一个字符，使不进行验证的接收方接受一个无人签名的事件。特意改动一个字符而非截断：截断的签名无法通过 base64url 解码，会被报告为格式错误的令牌，对于被测试的一方而言，这与签名错误是不同的缺陷。仅限开发模式：产品领域会忽略它并拒绝设置它（#104）。"
+  },
+  "crypto.families.shared-signals.algorithms.0.what": {
+    "en": "e1abd835e83344ac",
+    "text": "当前的安全事件令牌"
+  },
+  "crypto.families.shared-signals.algorithms.1.what": {
+    "en": "0011f3fa76892e63",
+    "text": "以下任一，通过 ssf.signingAlgorithm"
+  },
+  "crypto.families.shared-signals.algorithms.2.what": {
+    "en": "61a2c91673703a02",
+    "text": "身份验证方案"
+  },
+  "crypto.families.ldap.signs": {
+    "en": "9cc3e24fe9d0a9d8",
+    "text": "无。"
+  },
+  "crypto.families.ldap.verifies": {
+    "en": "77beffdc6d964fc9",
+    "text": "在产品模式下，简单绑定的密码对照条目的 scrypt `userPassword` 验证——此前会先拒绝匿名绑定、明文端口 389 上的任何绑定、空密码，以及超过绑定失败次数上限的 DN 或地址。之后在那里对写入进行授权（管理员可写任何内容，其他人只能写自己条目的少数属性），读取需要先绑定。在开发模式下，每次绑定都会成功——任何 DN、任何密码、匿名，389 和 636 均如此——且不进行任何授权。在两种模式下，拼写为 `invalid` 的那个密码都会被拒绝，以便演练客户端的失败路径。"
+  },
+  "crypto.families.ldap.encrypts": {
+    "en": "de2261d41092316b",
+    "text": "636 上的 LDAPS 监听器使用 TLS，使用 `tls/tls_server.js` 持有的证书——由服务根 CA 认证——主端口和调试器监听器也出示该证书。两个目录端口背后是同一组处理程序和同一个存储。"
+  },
+  "crypto.families.ldap.decrypts": {
+    "en": "f009e2342690a9e8",
+    "text": "同一连接，方向相反。"
+  },
+  "crypto.families.ldap.hashes": {
+    "en": "2486a4ede1f05d87",
+    "text": "在两种模式下，`userPassword` 都通过 crypto.hashSecret() 存储为 scrypt 哈希，无论由哪个入口写入——包括 LDAP add 或 modify。产品模式拒绝已经哈希过的值，因为这种值无法受密码策略约束；开发模式则按原样保存，目录正是借此在两个实例之间迁移的。"
+  },
+  "crypto.families.ldap.whatItDoesNot": {
+    "en": "b5fd76f7abc4adab",
+    "text": "它不响应任何 SASL 机制——根 DSE 省略 `supportedSASLMechanisms`，而不是将其发布为空，因为 LDAP 属性总是至少有一个值，空值并不是更弱的声明，而是格式错误的声明。因此没有 GSSAPI 绑定、没有 EXTERNAL 绑定，也没有 StartTLS：636 从第一个字节起就是 TLS。"
+  },
+  "crypto.families.ldap.algorithms.0.what": {
+    "en": "896a443631bae685",
+    "text": "LDAPS 传输"
+  },
+  "crypto.families.pki-x-509.signs": {
+    "en": "ece532b86564b74e",
+    "text": "自身不签名——本服务出示的证书由 `common/pki.js`（上方的 PKI 行）基于在此生成的密钥签发。签名证书是领域的 RSA 2048 密钥，由 JOSE 签发 CA 和 XML 签发 CA 各认证一次。TLS 服务器证书由进程中间 CA 之下的 TLS 签发 CA 签发，所用密钥在每次启动时生成，名称只出现在 subjectAltName 中，因为 RFC 6125 自 2011 年起就规定忽略 CN。SPIFFE 的颁发机构是领域的 SPIFFE 签发 CA。它们全部链接到同一个根 CA，产品模式将其保存在密钥库中，开发模式则在每次启动时重建。没有层级结构或设置了 `tls.certificateFile` 时，证书为自签名证书或所提供的证书。"
+  },
+  "crypto.families.pki-x-509.verifies": {
+    "en": "9a6b03049e4c72de",
+    "text": "在主端口（或以同样方式请求证书的调试器监听器）上出示的客户端证书，对照信任库的信任锚验证（在 `tls.trustIssuedClientCertificates` 下包括服务根 CA），并在 `pki.revocationCheck` 下检查其撤销状态——之后 `GET /tls/sign-in` 将验证通过的证书转换为签名该证书的颁发机构所在领域中的一个会话，而 RFC 8705 客户端身份验证则将其绑定到令牌。LDAPS 636 不请求客户端证书。"
+  },
+  "crypto.families.pki-x-509.encrypts": {
+    "en": "36e58d75de057d83",
+    "text": "LDAPS 636 上的每个字节，以及在开启 `global.https` 时（自 2026-08-30 起 env/ 中的每个 appconfig 文件都会设置它）主端口和调试器监听器上的每个字节。密钥交换使用 node 的 OpenSSL 默认值；在 636 和主端口上，协议下限为 `tls.minVersion`（默认 TLS 1.2），密码套件为 `tls.ciphers`（为空时使用 node 的列表）。"
+  },
+  "crypto.families.pki-x-509.decrypts": {
+    "en": "002a94032db09f02",
+    "text": "同上。"
+  },
+  "crypto.families.pki-x-509.hashes": {
+    "en": "c6bb4311866e3099",
+    "text": "凡命名证书之处均使用 SHA-256：对 DER 计算，用于 RFC 8705 的 `x5t#S256` 确认和 `/tls` 的指纹；对公钥计算，用于测试套件携带的 SPKI 固定值。"
+  },
+  "crypto.families.pki-x-509.whatItDoesNot": {
+    "en": "d82e95d63fdba050",
+    "text": "首次获取信任锚无法被验证——已经没有可用于获取它的明文监听器，因此获取时关闭了验证。在开发模式下，由于根 CA 会重建，每次重启后都需要重新获取一次；在产品模式下以及使用所提供的证书时，只需获取一次。应用的证书不能用于登录：它是 RFC 8705 客户端凭据。"
+  },
+  "crypto.families.pki-x-509.algorithms.0.what": {
+    "en": "4293457d8bfdfe50",
+    "text": "服务器证书"
+  },
+  "crypto.families.pki-x-509.algorithms.1.what": {
+    "en": "2c65407a378b57b8",
+    "text": "证书绑定"
+  },
+  "crypto.families.webauthn-ctap.signs": {
+    "en": "4da1e2515e736e7d",
+    "text": "无。签名的是认证器；本服务是依赖方，即只负责检查的那一方。"
+  },
+  "crypto.families.webauthn-ctap.verifies": {
+    "en": "d8daa1e1b9b11704",
+    "text": "注册及其证明声明（packed、tpm、android-key、android-safetynet、fido-u2f、apple 和复合签名，COSE ES256/384/512、RS256/384/512、PS256/384/512、EdDSA 和 ML-DSA-44/65/87），以及每个断言：对 `authenticatorData || SHA-256(clientDataJSON)` 的签名，对照凭据注册时的 COSE 公钥验证。"
+  },
+  "crypto.families.webauthn-ctap.hashes": {
+    "en": "2e2a1dacb370539f",
+    "text": "两处使用 SHA-256——签名所覆盖的客户端数据哈希，以及认证器数据中的 RP ID 哈希，后者会与源域名的 SHA-256 逐字节比较。"
+  },
+  "crypto.families.webauthn-ctap.whatItDoesNot": {
+    "en": "d1ebaf94158094a0",
+    "text": "自 #105 起，它在 `webauthn.attestationPolicy` 下验证证明声明——全部八种 WebAuthn Level 3 第 8 节格式、对照配置的信任锚和 FIDO Metadata Service 根证书的链、撤销状态以及 MDS 状态报告——该策略仅在开发模式下默认关闭。注册时提供的算法少于验证器所接受的算法，这是有意为之：平台认证器实际生成的内容，正是人们来这里想看的。本服务同样会检查的唯一仪式选项是 `webauthn.userVerification`，因为 UV 标志位于认证器所签名的字节之内。"
+  },
+  "crypto.families.webauthn-ctap.algorithms.0.what": {
+    "en": "5fc293ab8b154f42",
+    "text": "注册时提供"
+  },
+  "crypto.families.webauthn-ctap.algorithms.1.what": {
+    "en": "8931ff19e45887e4",
+    "text": "验证时接受"
+  },
+  "crypto.families.webauthn-ctap.algorithms.2.what": {
+    "en": "4c2c115ca08db2af",
+    "text": "曲线"
+  },
+  "crypto.families.webauthn-ctap.algorithms.3.what": {
+    "en": "8b134177fe992d91",
+    "text": "用户验证"
+  },
+  "crypto.families.one-time-passwords-totp.signs": {
+    "en": "4d15a52bf511dc2e",
+    "text": "不签名任何离开本服务的内容。HOTP 值本身就是截断的 HMAC——RFC 4226 第 5.3 节——因此该协议族先计算带密钥的 MAC 再进行比较，这就是该原语与这里其他所有签名一起放在 common/crypto.js 中、而不是放在决定策略的模块中的原因。"
+  },
+  "crypto.families.one-time-passwords-totp.verifies": {
+    "en": "071552dc11014cdd",
+    "text": "所出示的代码，方法是为偏差窗口内的每个时间步计算 HMAC 并以恒定时间比较。即使已经匹配，也会有意计算每一个时间步：提前返回会使耗时取决于匹配的是哪个时间步，这比特意做成恒定时间的数字比较更容易成为预言机。"
+  },
+  "crypto.families.one-time-passwords-totp.encrypts": {
+    "en": "c18d0d11279cb6c0",
+    "text": "在产品模式下，静态存储的共享机密——通过 common/keystore.js，使用保护签名密钥的同一个密钥加密密钥以 AES-256-GCM 加密。在开发模式下以 base32 存储，因为那里的密钥加密密钥每次运行都会重新生成，封存就意味着认证器会在下次重启时悄无声息地失效。"
+  },
+  "crypto.families.one-time-passwords-totp.decrypts": {
+    "en": "d2cefc498eff5443",
+    "text": "同一个机密，用于验证代码。**这是本服务中唯一可以被读回的凭据**——密码是 scrypt 哈希，只能用于比较，而验证一次性代码意味着要计算它。这不是 RFC 6238 的弱点；这正是“共享机密”的含义，也正是该机制在这里只能作为第二因素、永远不能成为第一因素的原因。"
+  },
+  "crypto.families.one-time-passwords-totp.hashes": {
+    "en": "decb0b31d14255e5",
+    "text": "SHA-1、SHA-256 或 SHA-512，仅用于 HMAC 内部。"
+  },
+  "crypto.families.one-time-passwords-totp.whatItDoesNot": {
+    "en": "512b47bf629fcfe5",
+    "text": "它从不告诉任何人当前代码是什么，也从不在登录界面为任何人注册——注册意味着要显示一个机密，因此只在此人已通过身份验证或持有激活链接的地方进行。没有作为身份验证机制的基于计数器的 HOTP，也没有重新同步协议：偏差窗口就是为时钟漂移所提供的全部手段。"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.0.what": {
+    "en": "0c410835b8ade404",
+    "text": "HMAC（注册时的参数，而非实时参数）"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.1.what": {
+    "en": "89645198ddad3fa6",
+    "text": "截断"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.2.what": {
+    "en": "7f1e853e5a5aa7bf",
+    "text": "共享机密"
+  },
+  "crypto.families.one-time-passwords-totp.algorithms.3.what": {
+    "en": "e08e19def21e22b2",
+    "text": "实时设置"
+  },
+  "crypto.families.recovery-codes.signs": {
+    "en": "e07d5c09c87dcaf1",
+    "text": "无。该机制中没有任何 MAC 或签名——恢复码是一个随机字符串，对照其存储的哈希进行检查，这正是它与上方 TOTP 行的全部区别，那里的“代码”是截断的 HMAC。"
+  },
+  "crypto.families.recovery-codes.verifies": {
+    "en": "430daa72e518a39a",
+    "text": "出示的代码，与该人员代码集中的每一条目逐一比对——每条都是一个 scrypt 哈希，在登录界面上通过 crypto.verifySecret() 在 libuv 的线程池上并行检查——即使匹配之后也会检查全部条目，因此所用时间不取决于匹配的是哪一个代码。首先检查格式，因此输入框中键入的密码会因其字符而被拒绝，完全不产生哈希开销。2026-09-11 之前写入的条目就是代码本身，使用 crypto.constantTimeEquals() 进行比较。"
+  },
+  "crypto.families.recovery-codes.decrypts": {
+    "en": "b54e014c105f44df",
+    "text": "仅限 2026-09-11 之前在产品模式中写入的代码集，它们在密钥加密密钥下以 AES-256-GCM 封存，检查代码时通过 common/keystore.js 打开。此后写入的任何内容都未加密。"
+  },
+  "crypto.families.recovery-codes.hashes": {
+    "en": "8fbdc5e4a28b0f77",
+    "text": "每个代码各一个 scrypt 哈希，通过 crypto.hashSecret() 生成——与 userPassword 和 stsActivationToken 使用相同的函数和存储形式——在代码以明文存在的唯一时刻进行：即该人员确认已保存它们之时。这些哈希并非机密，以一个 JSON 数组明文存储在该人员的条目上，旁边附有计数，因此控制台无需遍历数组即可显示“10 个中 7 个未使用”。"
+  },
+  "crypto.families.recovery-codes.whatItDoesNot": {
+    "en": "650840850ca2aba6",
+    "text": "它绝不会再次显示已存储的代码——不向控制台、/admin-api 显示，也不向其拥有者显示：代码集只在生成它的响应中显示一次，并且在其拥有者确认之前完全不存储。它绝不会自行生成代码集：由人员在 /portal/mfa 上生成，注册第二因素只会提示其这样做。确认新代码集会替换旧代码集，操作员的“清除”会移除代码集而不签发新的。旧版本写入的代码集不会迁移。这里也没有基于计数器或派生的方案：这些是随机字符串，一个代码不会透露下一个代码的任何信息。"
+  },
+  "crypto.families.recovery-codes.algorithms.0.what": {
+    "en": "40536dd8a0e2d0c7",
+    "text": "生成"
+  },
+  "crypto.families.recovery-codes.algorithms.1.what": {
+    "en": "bb846881f6a5075c",
+    "text": "熵"
+  },
+  "crypto.families.recovery-codes.algorithms.2.what": {
+    "en": "ac57b0e667bf3ec1",
+    "text": "字母表"
+  },
+  "crypto.families.recovery-codes.algorithms.3.what": {
+    "en": "571527339d0e3e34",
+    "text": "比较"
+  },
+  "crypto.families.recovery-codes.algorithms.4.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "静态存储"
+  },
+  "crypto.families.email-codes-and-links.signs": {
+    "en": "469daea0865e7d80",
+    "text": "无。代码或链接是一个随机机密，与存储的该机密哈希进行比对；承载它的邮件仅在 SMTP 传输为此配置时才由 DKIM 签名（参见“邮件”）。"
+  },
+  "crypto.families.email-codes-and-links.verifies": {
+    "en": "3368b2038045996a",
+    "text": "出示的代码或链接令牌，在工作池上用 crypto.verifySecret() 与登录步骤上的 scrypt 哈希比对；以及链接的浏览器绑定，即发送时设置的 cookie 的 SHA-256。"
+  },
+  "crypto.families.email-codes-and-links.hashes": {
+    "en": "f7ea8e1a659a8cce",
+    "text": "每个机密在铸造时用 crypto.hashSecret()（scrypt）哈希一次——代码或令牌本身从不存储，邮件通道会丢弃已发送邮件的正文。绑定 cookie 以 SHA-256 哈希。"
+  },
+  "crypto.families.email-codes-and-links.whatItDoesNot": {
+    "en": "ce5ddd6002061926",
+    "text": "它绝不算作抗网络钓鱼因素或风险升级，绝不向未经验证的地址发送邮件，也绝不将机密保留超过十分钟或第二次使用。"
+  },
+  "crypto.families.email-codes-and-links.algorithms.0.what": {
+    "en": "340f463033e0fd5d",
+    "text": "代码"
+  },
+  "crypto.families.email-codes-and-links.algorithms.1.what": {
+    "en": "d93d75ab47922b92",
+    "text": "链接令牌"
+  },
+  "crypto.families.email-codes-and-links.algorithms.2.what": {
+    "en": "7b4099bae09b5ac9",
+    "text": "静态存储"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.signs": {
+    "en": "30d11da1c63a38f1",
+    "text": "SD-JWT VC 以带 `_sd_alg: sha-256` 的 RS256 JWS 签名，W3C `ldp_vc` 则带有 `bbs-2023` Data Integrity 证明——BLS12-381-SHA-256，这是一种基于配对的签名，也是本服务中唯一的一种。其密钥不是 JWK，以 `publicKeyMultibase` 发布，而不是强行塞进一个并不适合它的 JWK。"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.verifies": {
+    "en": "c0036a45ed2b60bc",
+    "text": "钱包在凭据端点出示的持有证明，它必须是非对称 JWS——绝不是 MAC，也绝不是 `none`——以及验证方收到的呈现，包括派生的 bbs-2023 证明，这正是选择性披露在不采用 SD-JWT 时的形态。"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.hashes": {
+    "en": "c5832c6dab4733ea",
+    "text": "每个 SD-JWT 披露摘要使用 SHA-256，BBS 密码套件内部的消息映射也使用它。"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.whatItDoesNot": {
+    "en": "30ac22a7b1387e83",
+    "text": "它不验证凭据中的任何值，这些值是虚构的；经过验证的呈现只在 /authn/wallet 让某人登录，且仅限本领域签发的、绑定持有者的 SD-JWT VC——绝不在别的入口，也绝不凭外部颁发者的签名。"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.0.what": {
+    "en": "7bea7584da7de03b",
+    "text": "凭据签名"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.1.what": {
+    "en": "5c9c19ca8b4d7044",
+    "text": "钱包持有证明"
+  },
+  "crypto.families.verifiable-credentials-oid4vci-oid4vp.algorithms.2.what": {
+    "en": "82a6225da8149a43",
+    "text": "披露摘要"
+  },
+  "crypto.families.acme.signs": {
+    "en": "0e2e7b69729b7927",
+    "text": "它发出的每一张证书，使用本领域的 ACME 签发 CA 密钥，通过 common/pki.js 的 issueEnrolled() 签名。除此之外别无其他：ACME 响应是 TLS 上的普通 JSON，Replay-Nonce 携带的是 HMAC 而不是签名。"
+  },
+  "crypto.families.acme.verifies": {
+    "en": "b6ea5d2aab528d1d",
+    "text": "每个请求的扁平化 JWS，使用 jwk 或 kid 指定的账户密钥，并且只用标头指定的算法（通过 common/crypto.js 的 verifyCompactJws）；密钥更换请求中用新密钥签名的内层 JWS；External Account Binding 的 HMAC，使用在其 kid 下签发的密钥，以常数时间、在所有模式中验证；以及 common/cert_enrollment.ts 中 CSR 的持有证明。"
+  },
+  "crypto.families.acme.encrypts": {
+    "en": "e233f6d30d606df3",
+    "text": "External Account Binding 的 HMAC 密钥，凡在密钥加密密钥比进程存活更久之处，都以 AES-256-GCM 在其下封存到为之签发的条目上。"
+  },
+  "crypto.families.acme.decrypts": {
+    "en": "3f1b161b12e519d1",
+    "text": "该 HMAC 密钥，用于验证绑定。线路上没有任何内容。"
+  },
+  "crypto.families.acme.hashes": {
+    "en": "6817583ce52ea878",
+    "text": "SHA-256，用于账户密钥指纹（RFC 7638）、Replay-Nonce MAC，以及条目记录上每张证书的指纹。"
+  },
+  "crypto.families.acme.keys": {
+    "en": "2c6d9e02c3b932ed",
+    "text": "每个信任领域一个 ACME 签发 CA 密钥，位于领域中间 CA 之下；每个账户的公钥（至少 2048 位的 RSA、P-256/P-384/P-521 或 Ed25519），以公开 JWK 形式保存，并按其 RFC 7638 指纹查找；客户端为每张证书使用的自己的密钥；以及每次运行的一个机密，Replay-Nonce MAC 由其派生，与派生出的请求工作进程共享，且从不写下。"
+  },
+  "crypto.families.acme.whatItDoesNot": {
+    "en": "61718f6daa70f201",
+    "text": "从不接触任何私钥：ACME 只接受 CSR。后量子账户密钥会被拒绝，因为其密钥类型没有 RFC 7638 指纹，而账户是通过其密钥查找的。KEM 密钥无法获得证书，因为它不能为持有证明签名。JWS 采用 RFC 8555 要求的扁平化 JSON 序列化，本服务只在这里读取这种形式。"
+  },
+  "crypto.families.acme.algorithms.0.what": {
+    "en": "6fd2e09cab511244",
+    "text": "账户密钥签名"
+  },
+  "crypto.families.acme.algorithms.1.what": {
+    "en": "ee010a599d2a0404",
+    "text": "External Account Binding MAC"
+  },
+  "crypto.families.acme.algorithms.2.what": {
+    "en": "394a5e94275d9df1",
+    "text": "接受订阅者提供的吊销原因"
+  },
+  "crypto.families.acme.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "证书容器"
+  },
+  "crypto.families.est.signs": {
+    "en": "e9aa41aa13c5b6e9",
+    "text": "它发出的每一张证书，使用本领域的 EST 签发 CA 密钥，通过 common/pki.js 的 issueEnrolled() 签名——这里所有其他证书也出自同一个编码器。它返回的仅含证书的 CMS 消息是退化形式：带证书而无签名者的 SignedData，因此它们自身不带签名，其可信度来自其中的证书。"
+  },
+  "crypto.families.est.verifies": {
+    "en": "d40d37c4bd83de49",
+    "text": "PKCS#10 持有证明——请求用其自身公钥做出的签名，包括传统算法和后量子算法，在 common/cert_enrollment.ts 中验证——以及在证书身份验证时，客户端证书到本领域中间 CA 和服务根 CA 的路径，并查询吊销状态。/serverkeygen 模板不验证：其密钥会被替换。"
+  },
+  "crypto.families.est.encrypts": {
+    "en": "2f48e10a9ad6494d",
+    "text": "服务器生成的密钥对的私钥，凡在密钥加密密钥比进程存活更久之处，都以 AES-256-GCM 在其下封存到条目上。它不会针对客户端加密（RFC 7030 section 4.4.1.2）：提出该要求的请求会被拒绝，密钥仅在 TLS 内传输。"
+  },
+  "crypto.families.est.decrypts": {
+    "en": "8d5c676935439726",
+    "text": "线路上没有任何内容。"
+  },
+  "crypto.families.est.hashes": {
+    "en": "78ff84df2eb09c64",
+    "text": "SHA-256，用于条目记录上每张证书的指纹。"
+  },
+  "crypto.families.est.keys": {
+    "en": "ff234d2e35568446",
+    "text": "每个信任领域一个 EST 签发 CA 密钥，位于领域中间 CA 之下；客户端为其注册的一切所使用的自己的密钥；以及对于 /serverkeygen，在此按模板的算法生成的密钥对（包括用于 key-encipherment 的 ML-KEM），只返回一次。"
+  },
+  "crypto.families.est.whatItDoesNot": {
+    "en": "0fbae781db5fb46b",
+    "text": "完整的 CMC、tls-unique 通道绑定（TLS 1.3 没有该绑定）以及加密的服务器生成密钥。KEM 密钥无法通过 /simpleenroll 注册，因为它不能为持有证明签名。"
+  },
+  "crypto.families.est.algorithms.0.what": {
+    "en": "42710d1e9ca4dc7a",
+    "text": "/csrattrs 公布的 CSR 签名算法"
+  },
+  "crypto.families.est.algorithms.1.what": {
+    "en": "0d5abf11fe24b9c0",
+    "text": "服务器生成的密钥算法"
+  },
+  "crypto.families.est.algorithms.2.what": {
+    "en": "c62bb06b4e213c58",
+    "text": "私钥容器"
+  },
+  "crypto.families.est.algorithms.3.what": {
+    "en": "e81949dda7a6dd17",
+    "text": "证书容器"
+  },
+  "crypto.families.scep.signs": {
+    "en": "9cbcb1a72f470540",
+    "text": "它签发的每一张证书，使用本领域的 SCEP 签发 CA 密钥，通过 common/pki.js 的 issueEnrolled() 签名；以及每个 CertRep，使用 RA 密钥——对按 DER 排序的已签名属性做 CMS SignedData，采用 sha256WithRSAEncryption（请求使用 SHA-384/512 时则用它们）。"
+  },
+  "crypto.families.scep.verifies": {
+    "en": "cf05562a26d80aaf",
+    "text": "请求方对其已签名属性和内容的 messageDigest 所做的 SignedData 签名（SHA-256、SHA-384、SHA-512；RSA 或 ECDSA 签名者都会被验证，而 ECDSA 签名者随后会被拒绝，因为无法针对它加密应答）；PKCS#10 持有证明；对于 RenewalReq、GetCert 和 GetCRL，签名者证书到本领域中间 CA 的路径，并查询吊销状态；以及质询密码，以常数时间的 SHA-256 比较进行。"
+  },
+  "crypto.families.scep.encrypts": {
+    "en": "e41a0442f653089f",
+    "text": "SUCCESS CertRep 的仅含证书内容，针对请求方的签名者证书加密：RSAES-PKCS1-v1_5 密钥传输，以及请求所用的 AES-CBC 密钥长度。"
+  },
+  "crypto.families.scep.decrypts": {
+    "en": "902b7d23d39fba20",
+    "text": "用 RA 私钥解开 pkcsPKIEnvelope：RSAES-PKCS1-v1_5（通过 node-forge，因为 node 拒绝 PKCS#1 v1.5 私钥解密）或 RSAES-OAEP，然后是 AES-128/192/256-CBC。解包失败时以随机密钥字节代替，因此填充错误和错误密钥给出同一个答复。"
+  },
+  "crypto.families.scep.hashes": {
+    "en": "47b332491bb2a39b",
+    "text": "质询机密、CSR 和签名者密钥的 SHA-256，用于事务幂等；以及上述消息摘要算法。"
+  },
+  "crypto.families.scep.keys": {
+    "en": "555e1d50d89646a1",
+    "text": "每个信任领域一个 SCEP 签发 CA 密钥，以及每个领域一个 RA 密钥对——scep.raKeyAlgorithm 指定的 RSA，是该 CA 签发的叶证书，保存在领域的 PKI 行中（在产品模式下与层级结构一同封存），并在到期前三十天内重新签发。请求者的密钥从不可见。"
+  },
+  "crypto.families.scep.whatItDoesNot": {
+    "en": "4a19c5629d38be11",
+    "text": "SHA-1 或 MD5 签名、DES 或 3DES 内容加密（以 badAlg 拒绝）、非 RSA 的请求方密钥、KeyAgreeRecipientInfo、GetNextCACert 以及 PENDING。"
+  },
+  "crypto.families.scep.algorithms.0.what": {
+    "en": "19e34a0379a1db34",
+    "text": "接受的请求摘要"
+  },
+  "crypto.families.scep.algorithms.1.what": {
+    "en": "96ce29f429f2a103",
+    "text": "验证的请求签名"
+  },
+  "crypto.families.scep.algorithms.2.what": {
+    "en": "3ada8d30fb7fbaa7",
+    "text": "接受的内容加密算法"
+  },
+  "crypto.families.scep.algorithms.3.what": {
+    "en": "ce3dfd4aca5eb72b",
+    "text": "接受的密钥传输"
+  },
+  "crypto.families.scep.algorithms.4.what": {
+    "en": "ce72ec23c64b378f",
+    "text": "拒绝的摘要"
+  },
+  "crypto.families.scep.algorithms.5.what": {
+    "en": "2a3243f281f3be54",
+    "text": "拒绝的加密算法"
+  },
+  "crypto.families.scep.algorithms.6.what": {
+    "en": "88868db59d8a7d1e",
+    "text": "CertRep 签名"
+  },
+  "crypto.families.scep.algorithms.7.what": {
+    "en": "b8d71b508570c5bd",
+    "text": "CertRep 密钥传输"
+  },
+  "crypto.hashing.fixed.0.what": {
+    "en": "572fc67678eccd94",
+    "text": "规范化 JWK 的哈希。`cnf.jkt` 正是用它把 DPoP 绑定令牌绑定起来，这也是后量子算法无法用于 DPoP 的原因——RFC 7638 定义了 RSA、EC、OKP 和 oct 的必需成员，而 `AKP` 不在其中任何一个列表上。"
+  },
+  "crypto.hashing.fixed.1.what": {
+    "en": "789f03952b2a25a9",
+    "text": "对证书的 DER 计算，base64url 编码。是 DER 而不是 PEM——用 PEM 是那种在日志里看起来没错却什么都匹配不上的错误。"
+  },
+  "crypto.hashing.fixed.2.what": {
+    "en": "8b86d10dedfeb4c0",
+    "text": "对代码验证器计算。在 RFC 9700 模式中，`plain` 被撤除，这成为唯一公布的方法。"
+  },
+  "crypto.hashing.fixed.3.what": {
+    "en": "af8ddc4be27e9471",
+    "text": "第 3.1.3.6 节：ASCII 令牌摘要的最左半部分，base64url 编码。“一半”正是人们常常漏掉的部分。"
+  },
+  "crypto.hashing.fixed.4.what": {
+    "en": "f40f7e4f1dcfa612",
+    "text": "SD-JWT VC 中的每个披露摘要。"
+  },
+  "crypto.hashing.fixed.5.what": {
+    "en": "2181a5f9381ac153",
+    "text": "签名覆盖 `authenticatorData || SHA-256(clientDataJSON)`，而该认证器数据中的 RP ID 哈希是源域名的 SHA-256，逐字节比较。"
+  },
+  "crypto.hashing.fixed.5.where": {
+    "en": "5b03dda25987cfe3",
+    "text": "WebAuthn 客户端数据哈希"
+  },
+  "crypto.hashing.fixed.6.what": {
+    "en": "5b899812c1a1ae4a",
+    "text": "对 SVID 的 DER 计算，凡是针对目录条目记录签发之处都使用。"
+  },
+  "crypto.hashing.fixed.6.where": {
+    "en": "f28d649163220153",
+    "text": "SPIFFE SVID 标识"
+  },
+  "crypto.hashing.fixed.7.what": {
+    "en": "c49939c25a7e8ccc",
+    "text": "`kid` 命名的是一个密钥，因此由密钥自身的公开材料派生。它曾经是常量，于是本服务的两个实例在两个不同的密钥上发布了同一个名称——验证方精确匹配 kid，尝试该密钥，然后报告签名无效。"
+  },
+  "crypto.hashing.fixed.7.where": {
+    "en": "5a3cb59275a8e560",
+    "text": "密钥标识符（`kid`）"
+  },
+  "crypto.hashing.fixed.8.what": {
+    "en": "8274ca190e064807",
+    "text": "AES-SHA1 配置使用 RFC 3962，AES-SHA2 配置使用 RFC 8009。迭代次数和盐值取自 KDC 的 ETYPE-INFO2。"
+  },
+  "crypto.hashing.fixed.8.where": {
+    "en": "cb8714e609cbe20f",
+    "text": "Kerberos string-to-key"
+  },
+  "crypto.hashing.weak.0.why": {
+    "en": "212d04701d52594e",
+    "text": "XMLDSIG 的这些写法是 2000 年的原始推荐，也是大量已部署的依赖方至今仍在发送的。`rsa-oaep-mgf1p` 按定义就是 SHA-1——该 URI 即表示此义——而较新的 `rsa-oaep` 在子元素中携带其摘要，自 #168 起以 SHA-256 和 MGF1-SHA-256 提供，这正是联合关系发布并要求的。RFC 3962 中的 HMAC-SHA1-96 是 MAC，而非抗碰撞性声明，Active Directory 至今仍在使用。"
+  },
+  "crypto.hashing.weak.0.where": {
+    "en": "13f9c1ea5d995805",
+    "text": "XMLDSIG `#sha1` 和 `rsa-sha1`；RSA-OAEP-MGF1P；Kerberos etype 17 和 18 的 HMAC-SHA1-96"
+  },
+  "crypto.hashing.weak.1.why": {
+    "en": "04261c070ac406f5",
+    "text": "RC4-HMAC 是现有大多数 Kerberos 客户端的回退选项，MD5 Digest 是现有大多数 Digest 客户端所使用的。两者都放在最后提供，都不是推荐选项。"
+  },
+  "crypto.hashing.weak.1.where": {
+    "en": "5a60ff8915455c4c",
+    "text": "Kerberos RC4-HMAC（etype 23）；HTTP Digest"
+  },
+  "crypto.hashing.weak.2.why": {
+    "en": "21b7cc730abd3500",
+    "text": "该 etype 本身就是如此。它不加盐，这也是为什么盐值发现只对 AES 重要。"
+  },
+  "crypto.hashing.weak.2.where": {
+    "en": "cf9bbd71941b23b8",
+    "text": "NT 哈希，位于 RC4-HMAC 的 string-to-key 内部"
+  },
+  "crypto.signatures.other.0.what": {
+    "en": "cccbf692b80811e7",
+    "text": "采用 SHA-256 密码套件的 BLS12-381 G2，作为 W3C Data Integrity 证明。这是这里唯一基于配对的签名，也是唯一不靠哈希实现的选择性披露。"
+  },
+  "crypto.signatures.other.1.what": {
+    "en": "183b0aafb0db82b8",
+    "text": "RFC 7486。对由 nonce、算法、源、领域、密钥 id 和服务器质询组成的数据块签名，使用客户端注册的公钥验证。"
+  },
+  "crypto.signatures.other.1.label": {
+    "en": "c99c992832df60da",
+    "text": "HOBA 算法 0（RSA-SHA256）"
+  },
+  "crypto.signatures.other.2.what": {
+    "en": "080c17e1422d21ee",
+    "text": "HMAC-SHA1-96（etype 17、18）、HMAC-SHA-256-128（19）、HMAC-SHA-384-192（20）和 HMAC-MD5（23），各自使用由长期密钥针对该消息的密钥用途编号派生出的密钥。出错的正是用途编号：用错一个只会产生校验和不匹配，没有其他任何症状。"
+  },
+  "crypto.signatures.other.2.label": {
+    "en": "4a4b2ce0b267e0cb",
+    "text": "Kerberos 带密钥校验和"
+  },
+  "crypto.signatures.other.3.what": {
+    "en": "9b34ad7078774fa9",
+    "text": "签名证书和 TLS 证书使用 SHA-256 with RSA；SVID 则使用 `spiffe.x509KeyType` 所隐含的算法。"
+  },
+  "crypto.signatures.other.3.label": {
+    "en": "fe859f25e5d2fbae",
+    "text": "X.509 证书签名"
+  },
+  "crypto.pq.algorithms.what": {
+    "en": "86c7af6a76fda4b9",
+    "text": "ML-DSA 是 FIPS 204，SLH-DSA 是 FIPS 205——一个格签名，一个基于哈希的签名，两者押注不同，正因如此才都在这里。六种组合算法是 draft-ietf-jose-pq-composite-sigs：对同一消息做一个 ML-DSA 签名和一个传统签名，两者都必须验证通过，因此这一对不弱于其中较强的一半。每个都在组合消息和 ML-DSA 上下文字符串中携带一个域分隔符，正是它阻止了为某一组合算法做出的签名被当作另一种重放。"
+  },
+  "crypto.pq.algorithms.independence": {
+    "en": "3cdf2b7a57681a4e",
+    "text": "格原语来自 node 的 OpenSSL 3.5（#363），而调试器使用 @noble/post-quantum，因此 ML-DSA 本身在两个实现之间交叉检验。它周围的一切都是在这里依据规范编写的，每个组合算法的传统一半运行在 node 的 OpenSSL 上，而不是对端所用的曲线库上。交叉检验的价值正在于此：对封装方式的共同误解会完美地自洽，却无法与任何东西互通。"
+  },
+  "crypto.pq.signatures.0.surface": {
+    "en": "43b13a17ca0ec49f",
+    "text": "ID 令牌"
+  },
+  "crypto.pq.signatures.0.how": {
+    "en": "529fa3a0343d70ce",
+    "text": "客户端注册 `id_token_signed_response_alg`，而公布的列表就是共享的 JWS 表——因此每种 ML-DSA、SLH-DSA 和组合算法都可选。"
+  },
+  "crypto.pq.signatures.1.surface": {
+    "en": "fe8507eede42f0e1",
+    "text": "签名的 UserInfo 响应"
+  },
+  "crypto.pq.signatures.1.how": {
+    "en": "c088631501cab27c",
+    "text": "后量子条目通过过滤器从共享表中取出，而不是逐一列出，因此此列表不会落后于共享表。"
+  },
+  "crypto.pq.signatures.2.surface": {
+    "en": "cf12c2348883a409",
+    "text": "JWKS 发布"
+  },
+  "crypto.pq.signatures.2.how": {
+    "en": "6278d02404536b1e",
+    "text": "每个后量子密钥都以带有自己 `kid` 的 `AKP` JWK 发布，因此客户端能够真正验证它，而不只是被提供它。它们在首次使用时生成，这正是某个领域上首次获取 JWKS 较慢的原因。"
+  },
+  "crypto.pq.signatures.3.surface": {
+    "en": "627636b4e140b9ec",
+    "text": "访问令牌和刷新令牌"
+  },
+  "crypto.pq.signatures.3.how": {
+    "en": "b1af7e79ec3085c8",
+    "text": "始终为 RS256。`signJwt()` 是在控制台计数器中记录令牌的唯一路径，它使用领域的 RSA 密钥签名。"
+  },
+  "crypto.pq.signatures.4.surface": {
+    "en": "9199abebcef8fe6e",
+    "text": "DPoP 证明"
+  },
+  "crypto.pq.signatures.4.how": {
+    "en": "0b0a7888ad6cfa27",
+    "text": "这是有意为之，也是这里最有意思的排除项。DPoP 证明通过 `cnf.jkt`，即 RFC 7638 JWK 指纹进行绑定——而 RFC 7638 只定义了 RSA、EC、OKP 和 oct 的必需成员。ML-DSA 密钥是 `kty: \"AKP\"`，没有为其注册指纹，因此用它签名的证明会完美地通过验证，却绑定不到任何东西。缺口在绑定上，而不在签名上。"
+  },
+  "crypto.pq.signatures.5.surface": {
+    "en": "85f00831d63f0dfa",
+    "text": "所有 XML 签名——SAML 2.0、SAML 1.1、WS-Federation、WS-Trust、联合"
+  },
+  "crypto.pq.signatures.5.how": {
+    "en": "2835531d7d7db342",
+    "text": "RSA-SHA256。XMLDSIG 没有已注册的后量子 SignatureMethod，因此没有可选项：这是规范体系的缺口，而不是本服务的缺口。"
+  },
+  "crypto.pq.signatures.6.surface": {
+    "en": "fa5f732d88799b31",
+    "text": "X.509 证书和 SPIFFE SVID"
+  },
+  "crypto.pq.signatures.6.how": {
+    "en": "eb2d0cae1421130c",
+    "text": "RSA 2048 或椭圆曲线。SPIFFE 颁发机构密钥类型为 EC P-256/384/521、RSA 2048/4096 和 Ed25519——全都可被 Shor 算法攻破。"
+  },
+  "crypto.pq.signatures.7.surface": {
+    "en": "3ed217bd349c451a",
+    "text": "可验证凭据"
+  },
+  "crypto.pq.signatures.7.how": {
+    "en": "197a934d4f2a9aa9",
+    "text": "SD-JWT VC 使用 RS256，`ldp_vc` 使用 `bbs-2023`——一种基于配对的签名，要说的话，它比普通 ECDSA 暴露得更多。"
+  },
+  "crypto.pq.signatures.8.surface": {
+    "en": "03f7f9d91f479718",
+    "text": "WebAuthn 断言"
+  },
+  "crypto.pq.signatures.8.how": {
+    "en": "d2274d309abdae8b",
+    "text": "ES256、RS256 或 EdDSA，而且这并非本服务的选择：签名的是认证器，而 COSE 没有注册任何平台认证器会生成的后量子算法。"
+  },
+  "crypto.pq.symmetric.what": {
+    "en": "657d0ce4c2df4646",
+    "text": "Grover 算法的代价是开平方，而不是直接攻破这些算法，因此对策是密钥长度。AES-256 和 SHA-384 在任何实际意义上都不受影响；AES-128 和 SHA-256 的安全余量有所降低，但仍被认为足够。因此 Kerberos 是这里受所有这些影响最小的协议族——它是唯一完全不含公钥密码学的协议族——这与它的名声恰恰相反。RC4-HMAC、MD5 和 MD4 的问题与量子计算机毫无关系。"
+  },
+  "crypto.pq.symmetric.strongest": {
+    "en": "d169ec1de3f8e13c",
+    "text": "aes256-cts-hmac-sha384-192（etype 20），XML Encryption 使用 AES-256-GCM，JWE 使用 A256GCM。"
+  },
+  "crypto.codes.source": {
+    "en": "cfde0ca5c8d97444",
+    "text": "每个字符调用一次 crypto.randomInt()——在 node 内部进行拒绝采样，因此均匀性不依赖于字母表大小能否整除 256。"
+  },
+  "crypto.codes.atRest": {
+    "en": "c12e485fcef80c57",
+    "text": "每个代码的 scrypt 哈希，通过 crypto.hashSecret() 生成——与 userPassword 使用相同的函数和相同的存储形式——因此本服务可以检查代码，却永远无法再次显示代码，对其拥有者也是如此。2026-09-11 之前的版本写入的代码集保存的是代码本身，在其拥有者生成新代码集之前，仍逐个代码地被接受。"
+  },
+  "crypto.codes.comparisonOfAHash": {
+    "en": "44128280e8823464",
+    "text": "crypto.verifySecret() 以常数时间依次与每个存储的哈希比较，在入口为异步之处于 libuv 的线程池上进行。"
+  },
+  "crypto.param.codes.comparison": {
+    "en": "0862bafae6ad7324",
+    "text": "crypto.constantTimeEquals()，在转换为大写并去掉本服务自己打印的空格和短横线之后进行。"
+  },
+  "crypto.param.totp.encoding": {
+    "en": "d9613131364834bc",
+    "text": "RFC 4648 base32，无填充，符合 otpauth Key Uri Format 的要求。"
+  }
+}

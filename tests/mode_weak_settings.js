@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -40,13 +40,14 @@
 //      XML SignatureMethod, the SHA-1 verdict, the SAML 2.0 assertion
 //      signature service-wide and per application, the key transport
 //      service-wide and per application, the SAML 1.1 Response signature, the
-//      Workload API's header, the KDC's clock (`GET /krb5/principals`), the
+//      Workload API's header, the KDC's clock (its `clockOffsetSeconds()`), the
 //      CA's signature algorithm — and an rsa-1_5 EncryptedKey unwrapped in
 //      development and refused, STS-KEYS-0070, in product. Each ignored
 //      setting, and each overriding attribute, logged ONCE (STS-CORE-0106).
 //   C. THE REPORT AND ITS TWO ROUTES: `mode.report()` carries the three new
 //      requirements and every marked row with its stored and in-force value;
-//      `GET /admin-api/mode` answers it; `GET /admin/mode` is registered.
+//      `GET /admin-api/mode` answers it; `GET /admin/mode` is the static
+//      console's page drawn from it (#446).
 //
 // The same over HTTP, against a running service in two throwaway realms, is
 // `tests/vendored/sts_mode_weak_settings.js`.
@@ -179,7 +180,10 @@ function childMain() {
         const configured = pki.algorithmsFrom({ keyAlg: 'rsa-2048' });
         const named = pki.algorithmsFrom({ keyAlg: 'rsa-2048',
                                            signatureAlg: 'sha1-rsa' });
-        const principals = await getJson('/krb5/principals');
+        // The KDC's own reading of its clock, from the module: the
+        // document that published it, /krb5/principals, was a demonstration
+        // (#585) and is gone (#595).
+        const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
         const spiffe = await getJson('/spiffe?format=json');
         return {
           risc: Object.prototype.hasOwnProperty.call(subject,
@@ -199,9 +203,7 @@ function childMain() {
           header: grpc.requireSecurityHeader(),
           headerView: !!(spiffe.json && spiffe.json.workloadApi &&
                          spiffe.json.workloadApi.securityHeaderRequired),
-          clockOffset: principals.json ?
-            principals.json.clockOffsetSeconds : 'status ' +
-            principals.status,
+          clockOffset: kdc.clockOffsetSeconds(),
           caConfigured: configured.ok ? configured.signatureAlg : 'refused',
           caNamed: named.ok ? named.signatureAlg : errorCodes.codeOf(named)
         };
@@ -326,7 +328,7 @@ function childMain() {
       out.routes = [];
       (app._router ? app._router.stack : app.router.stack)
         .forEach(function (layer) {
-          if (layer.route && (layer.route.path === '/admin/mode' ||
+          if (layer.route && (layer.route.path === '/admin/*' ||
                               layer.route.path === '/admin-api/mode')) {
             out.routes.push(layer.route.path);
           }
@@ -336,7 +338,7 @@ function childMain() {
       // In DEVELOPMENT, where `adminApi.authRequired` off opens the API: in
       // product the same setting means the console's own sign-in.
       out.api = await getJson('/admin-api/mode');
-      out.page = await getJson('/admin/mode?format=json');
+      out.page = await getJson('/admin/mode');
 
       // ---- the verdicts ------------------------------------------------
       const d0 = out.devOff;
@@ -436,12 +438,14 @@ function childMain() {
            Array.isArray(out.api.json.developmentOnlySettings),
            'C. GET /admin-api/mode answers the report',
            out.api.status + ' ' + out.api.text.slice(0, 300));
-      note(out.routes.indexOf('/admin/mode') >= 0 &&
+      // `/admin/mode` is a page of the static console (#446): the shell
+      // answers every `/admin/*` path and draws it from /admin-api/mode.
+      note(out.routes.indexOf('/admin/*') >= 0 &&
            out.routes.indexOf('/admin-api/mode') >= 0,
-           'C. GET /admin/mode and GET /admin-api/mode are registered',
+           'C. the console\'s shell and GET /admin-api/mode are registered',
            out.routes.join(', '));
       note(out.page.status !== 404,
-           'C. GET /admin/mode answers (behind the console gate)',
+           'C. GET /admin/mode answers (the console\'s shell)',
            out.page.status + ' ' + out.page.text.slice(0, 200));
       server.close();
     } catch (e) {

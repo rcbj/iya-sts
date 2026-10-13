@@ -31,7 +31,7 @@ The short version:
 | `token-claims-change` | **yes** — a directory change, a role, an identity verification, an address proved, a claims provider unlinked, or a configuration change (permissions, allowed scopes, claim sets, claim settings, a federation release list) that moves a claim of somebody holding live tokens or assertions, and a modified [GNAP](gnap.md) grant |
 | `credential-change` | **yes** — any credential of a person created, changed, revoked or deleted, at every door that changes one |
 | `assurance-level-change` | **yes** — a re-authentication on a held session that moves its `acr`, and an identity verification recorded or removed that moves a person's identity assurance level |
-| `device-compliance-change` | no — by hand only, until [#164](https://github.com/rcbj/iya-sts/issues/164) gives it a source |
+| `device-compliance-change` | **yes** — a registered device's compliance changes: set by an administrator, the MDM feed or development's test control ([#164](https://github.com/rcbj/iya-sts/issues/164), [Devices](devices.md)) |
 | `risk-level-change` | **yes** — when a person's risk level changes and the `risk-response` policy permits announcing it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) |
 
 ## Three gates every event passes, whatever fired it
@@ -203,13 +203,13 @@ presents its credential again (*Sessions that are not a browser's*, below):
 | Protocol | Activity | `via` |
 |---|---|---|
 | OAuth 2.0 / OIDC | an authorization request at `/oauth2/authorize` answered out of a session that already existed — no screen drawn | `OAuth 2.0 / OIDC` |
-| SAML 2.0 | an `AuthnRequest` at `/saml2/sso`, over any of the three bindings, that reaches the answer step on an existing session | `SAML 2.0` |
+| SAML 2.0 | an `AuthnRequest` at `/saml2/sso`, over any of its three request bindings (Redirect, POST, POST-SimpleSign), that reaches the answer step on an existing session | `SAML 2.0` |
 | SAML 1.1 | an arrival at the inter-site transfer service carrying a `TARGET`, answered on an existing session | `SAML 1.1` |
 | WS-Federation | a `wsignin1.0` at the passive requestor endpoint answered on an existing session | `WS-Federation` |
 | GNAP | an interaction that meets a live sign-on session and approves without a new authentication | `GNAP` |
 | OpenID Connect CIBA | a person **approving** a backchannel request on `/portal/ciba`: the client is issued tokens on the strength of the session's `acr`, `amr` and `auth_time`, and the tokens are issued ON that session. A denial honours nothing and sends nothing | `OpenID Connect CIBA` |
 | OpenID Connect Native SSO | a second app's token exchange at `/oauth2/token`: it is issued tokens on the sign-on session the first app's ID Token names, with no new authentication. Sent after the tokens are issued, so a refused exchange sends nothing | `OpenID Connect Native SSO` |
-| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer made for the signed-in person, where the test controls are closed: the pre-authorized code is the authorization for a credential about them, made on the session's authority. A same-device offer carries no authorization, and development mints the pre-authorized offer for a fixed test person without reading any session, so neither sends it | `OpenID4VCI` |
+| OpenID4VCI | a **pre-authorized** (cross-device or deferred) Credential Offer a person makes for their own wallet on `/portal/wallet` (`POST /account-api/credentials/offers`, #589; `/issuer/offer` until then), in both modes: the pre-authorized code is the authorization for a credential about them, made on the authority of the sign-on session the portal's token was issued on. A same-device offer carries no authorization, so it sends nothing | `OpenID4VCI` |
 
 All of them go through `authn.notePresented()`, which is protocol-independent: the
 event names the **session**, and `via` records which door it came back through.
@@ -285,7 +285,7 @@ through it:
 | a registered device removed or marked compromised | **`admin`** or **`user`** | *an administrator removing device …*, *the owner removing device …*, *an administrator marking device … compromised* |
 | an **emergency key rotation** — every session of the realm | **`admin`** when an administrator requested it, **`system`** otherwise | *an emergency key rotation* |
 | **risk scoring** ending or disabling a person | **`policy`** | *the person's risk going to …*, *risk scoring disabling the account (…)* |
-| a received SET's signal-response rule | **`policy`** | *a … Security Event Token from the foreign transmitter …*, or *the admin console receiving …* |
+| a received SET's signal-response rule | **`policy`** | *a … Security Event Token from the partner of the federation relationship …*, or *the admin console receiving …* |
 | the console's or portal's own session, ended with the sign-on session it came from | the parent's | *the end of the sign-on session it was derived from (…)* |
 | the relying-party session a surface could not renew | **`system`** | *a token renewal that did not complete* |
 | **the session lifetime running out** | **`policy`** | its own sentence: *The session lifetime ran out. Nobody signed out …* |
@@ -376,8 +376,15 @@ standing still belongs to [risk scoring](risk-scoring.md).
 - a refresh token retired by rotation, since its successor carries the grant
   on;
 - a refresh refused because its Grant Management grant was merged or replaced;
-- an ID Token;
-- a grant with no person behind it (client credentials).
+- an ID Token.
+
+**An application's own grant** (client credentials, with no person behind it)
+is announced since [#221](https://github.com/rcbj/iya-sts/issues/221): the
+same `session-revoked`, with the grant as the session and the APPLICATION as
+the subject — `{ "format": "complex", "application": { "format": "opaque",
+"id": "<client_id>" }, "session": { "format": "opaque", "id":
+"oauth-grant:<grant>" } }` — and no `user` member (see *Applications and
+workloads* below).
 
 CIBA's tokens are issued on the sign-on session the person approved on, so
 signing out of that session revokes their refresh token as it does every
@@ -448,7 +455,7 @@ rather than a language map.
 
 Two things are **carried with a warning** rather than refused, and both are
 deliberate: an **open** enum's unlisted value, because refusing would make this
-service unable to carry a vendor's own type — precisely what a mock is for — and
+service unable to carry a vendor's own type — precisely what a test service is for — and
 a member the event does not define, because an event vocabulary extends and a
 receiver is expected to ignore what it does not know.
 
@@ -527,8 +534,12 @@ somebody left the group that authorises them.
   does `appRequiredRole`, which changes who may be issued a token rather than
   any claim in one. The UserInfo claim set sends nothing: a UserInfo response
   is built on every call. **An application's own tokens** (a
-  `client_credentials` grant, with no person) are not the subject of these
-  events yet — see [#221](https://github.com/rcbj/iya-sts/issues/221).
+  `client_credentials` grant, with no person) are told too
+  ([#221](https://github.com/rcbj/iya-sts/issues/221)): the application is the
+  holder, the event names it by its `application` member, and the claims are
+  what its newest live token would carry now. A role given to or taken from an
+  application (`roleMemberApplication`) is the same event with its roles
+  claim.
 
 ## `credential-change`
 
@@ -594,6 +605,25 @@ session should be allowed to do next.
   A certificate that an earlier act already orphaned is not announced again.
   The events go out in batches, so a realm with thousands of certificates does
   not flood the queue.
+
+  **An application's credentials are sent too**
+  ([#221](https://github.com/rcbj/iya-sts/issues/221)), about the APPLICATION
+  (*Applications and workloads*, below):
+
+  | Credential | `credential_type` | Doors |
+  |---|---|---|
+  | Client secret | `urn:iya:sts:credential-type:client-secret` | add (`create`), regenerate or rotate (`update`), remove or expire (`revoke`) — the console, `/admin-api`, RFC 7591/7592 registration, the expiry job |
+  | Registered keys (`jwks` / `jwks_uri`) | `urn:iya:sts:credential-type:jwk` | set, replaced or cleared on the application |
+  | RFC 7523 signing key pair | `x509` (with its certificate), else `...:jwk` | issued or uploaded on `/admin/pki`; one event per act |
+  | RFC 7522 key pair and registered signing certificate, SAML signing and encryption certificates | `x509` | written on the application |
+  | TLS client certificate (RFC 8705 `tls_client_auth`) | `x509` | issued or revoked on `/admin/applications`; revoked on `/admin/pki`; an act on the authority above it |
+  | ACME, EST or SCEP certificate | `x509` | issue and revoke over the protocol; an act on the authority above it |
+  | ACME EAB key, SCEP challenge | `...:acme-eab-key`, `password` | created or deleted |
+
+  A certificate revoked for `keyCompromise` (or an authority above it for
+  `cACompromise`) also sends RISC `credential-compromise` about the
+  application. The applications this service seeds for its own surfaces are
+  not announced when they are seeded.
 
 ## `assurance-level-change`
 
@@ -713,12 +743,45 @@ families that are not a browser start one, through the same
   ended;
 - a **SPIRE Server API** caller, keyed by its SPIFFE ID, the same way.
 
-**Where the session has no person as its subject** — a SPIFFE workload, or an
-application's own credential rather than a person's — the event's `user`
-names whatever the directory filed that caller under. What a non-human
-subject should be, and whether such a session should be announced at all, is
-[#221](https://github.com/rcbj/iya-sts/issues/221)'s question (service
-accounts), which is open.
+**Where the session has no person as its subject**
+([#221](https://github.com/rcbj/iya-sts/issues/221)), it is still announced,
+and its subject names the principal that authenticated instead of a `user`:
+
+- a SPIRE Server API caller — or any caller named by a SPIFFE ID — is the
+  WORKLOAD: `application` with format `uri` and the SPIFFE ID;
+- a SCIM or WS-Trust caller that authenticated as an application entry (its
+  own client credentials) is the APPLICATION: `application` with format
+  `opaque` and the application's identifier;
+- a caller whose name is a person's — a service account among them — is the
+  person, as before.
+
+## Applications and workloads
+
+A non-human principal is named by SSF 1.0's complex subject's
+`application` member:
+
+```json
+{ "format": "complex",
+  "application": { "format": "opaque", "id": "my-client-id" } }
+```
+
+`opaque`, with the identifier the realm's application registry holds the
+entry under — the `client_id` for an OAuth client — because that is the value
+a receiver already holds, and a `client_id` is usually not a URI. A SPIFFE
+workload is the same member with `"format": "uri"` and its SPIFFE ID. A
+receiver subscribes to one with `POST /ssf/subjects/add`, naming the complex
+subject or the bare member (`{ "format": "opaque", "id": "my-client-id" }`);
+either covers every event about the application, with or without a session.
+
+A **SPIFFE registration entry removed** is `credential-change` about the
+workload, with a plain `uri` subject (its SPIFFE ID) and `credential_type`
+`urn:iya:sts:credential-type:spiffe-registration`: `update` while another
+entry still names the SPIFFE ID, `delete` when the last one goes. No
+`session-revoked` is sent: SPIFFE has no revocation, and an SVID already
+issued stays valid until it expires.
+
+A **service account** is a person entry flagged as one, so it is named and
+told exactly as a person is.
 
 ## What never produces a CAEP event
 
@@ -739,9 +802,9 @@ None of these is the subject of a session event:
 - **SPIFFE**'s Workload API, **OpenID4VCI** and **OpenID4VP** requests — a
   presentation at the Verifier's own pages included. There are two
   exceptions. A wallet sign-in at `/authn/wallet` ends in a browser sign-on
-  session like any other door. A pre-authorized OpenID4VCI offer made for the
-  signed-in person is `session-presented` (above), because it is made on that
-  session's authority;
+  session like any other door. A pre-authorized OpenID4VCI offer a person makes
+  on `/portal/wallet` is `session-presented` (above), because it is made on
+  the authority of the sign-on session the portal's token was issued on;
 - the **token, refresh, introspection and UserInfo** endpoints. A revoked
   grant is the exception: it is `session-revoked` about the GRANT (above),
   never about a sign-on session;
@@ -780,7 +843,9 @@ do*.
   means no stream asked for that type.
 - **`GET /admin-api/caep`** and **`GET /admin-api/caep/sessions`** — the same,
   without a browser; the per-receiver rows are the `applications` member of
-  both, searched with `appq` and paged with `applicationsPage`.
+  both, searched with `appq` and paged with `applicationsPage`. On
+  `/admin/caep-sessions` and `GET /admin-api/caep/sessions` the streams table
+  is paged as well, with `streamsPage`; `streamCounts` counts the whole list.
 
 ## The settings
 

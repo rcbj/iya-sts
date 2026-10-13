@@ -8,10 +8,61 @@ itself.
 
 | File | What it does |
 |---|---|
-| `generate-tls.sh` | makes the server key pair on first start |
+| `generate-tls.sh` | makes the server key pair on first start, and with `POSTGRES_TLS_PUBLIC_DIR` copies the certificate (never the key) there as `<CN>.crt` on every start |
 | `require-tls.sh` | rewrites every `host` rule in `pg_hba.conf` to `hostssl` |
 | `schema.sql` | **builds the schema and the least-privileged role this service dials with.** Plain SQL, idempotent, takes psql variables, and runnable by hand against any database |
 | `apply-schema.sh` | runs `schema.sql` once, on the start that creates the cluster, with the role name and password the stack was given |
+
+## How `docker-compose.yml` runs them
+
+Moved here from the compose file's comments on 2026-10-07, when that file lost
+them all.
+
+* **`postgres:18`, not `-alpine`**: the alpine image has busybox and no bash,
+  and the scripts here are bash. The Debian image already has openssl.
+* **One mount, at `/var/lib/postgresql`, not `.../data`.** From 18 the image
+  keeps the cluster in a version-specific directory (`/var/lib/postgresql/18/docker`)
+  so `pg_upgrade --link` works within one mount, and it REFUSES TO START with
+  a volume at the old `.../data` path ("unused mount/volume", which reads as a
+  warning and is fatal; docker-library/postgres#1259). The TLS pair lives
+  inside that volume (`/var/lib/postgresql/tls`) because a second mount
+  under it is the shape the image refuses.
+* **`generate-tls.sh` runs from a `command` wrapper, not as an initdb
+  script**: `ssl_cert_file` is read when the server boots, and initdb scripts
+  run after a first boot. The wrapper `exec`s `docker-entrypoint.sh` so
+  postgres keeps pid 1 and gets the stop signal.
+* **The certificate leaves the container through a SECOND volume, and the
+  key never does (2026-10-12).** The service verifies the database's
+  certificate by default, and a self-signed one verifies only against
+  itself, so `POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca` (the `sts-db-ca`
+  volume) receives `postgres.crt`, which `sts` mounts read-only and names in
+  `STS_DATABASE_TLS_CA_FILE`. The key stays in `/var/lib/postgresql/tls`,
+  inside `sts-db`, which only this container mounts — sharing the TLS
+  directory itself would have handed `sts` the key. It is a mount at
+  `/run`, NOT under `/var/lib/postgresql`, for the reason the bullet above
+  gives. Copied on every start, after a generation or not, and written to a
+  hidden temporary name and renamed, so a restored data volume and a fresh
+  share agree and a reader never sees half a file. **It exists by the time
+  `sts` starts**: the copy runs before `exec docker-entrypoint.sh`, and `sts`
+  waits for `service_healthy`. One file per CN, so the cells test layer's
+  `postgres-global` and `postgres-cellb` (which `extends` this service and
+  inherits the volume and the variable) write beside it without a race.
+* **`require-tls.sh` is `00-` and `apply-schema.sh` is `10-`** in
+  `/docker-entrypoint-initdb.d`, so TLS hardening runs first. `schema.sql`
+  is mounted OUTSIDE that directory on purpose: the entrypoint runs every
+  `*.sql` there itself, with no way to pass the role name and password, so
+  it would run a second time with the defaults and undo `STS_DB_APP_PASSWORD`.
+* **The service waits on `pg_isready` (`service_healthy`), and the wait is
+  not optional**: without it the service starts first about half the time,
+  and since 2026-08-28 a configured store that cannot be opened is fatal
+  (`persistence/CLAUDE.md`), so the stack restart-loops.
+* **5432 is not published**, for the reason 389 and 636 are not: a host
+  already running postgres fails to start the stack on a port nobody was
+  thinking about.
+* **`sts_app` is spelt twice in the compose file** — `STS_DB_APP_USER` and
+  inside `STS_DATABASE_URL` — because a connection string is one string and
+  building it from the parts would make an override of the whole string
+  ambiguous. `tests/postgres_schema.js` notices when they disagree.
 
 ## The schema is built by an OWNER and used by somebody who cannot change it
 
@@ -26,7 +77,17 @@ since the cluster's tables arrived with schema version 5 (#46), and
 twenty-eight since the thirteen `sts_risk_*` tables of risk scoring arrived with
 version 7 (#62, 2026-09-22), and twenty-nine since `sts_risk_terms_acceptances`
 arrived with version 8 (2026-09-23) — version 10 (#262) added a column,
-`sts_realms.retiring_at`, and no table; `sts_app` holds
+`sts_realms.retiring_at`, and no table, and thirty since
+`sts_node_snapshots` arrived with version 11 (#332, 2026-09-28) — which
+develop's version 11 also numbers `sts_cell_routing` (#98); the two were
+merged on 2026-09-29 and both tables are created by name — and version
+12 (#333) added a column, `sts_minted.expires_at`, with the partial index
+`sts_minted_expires`, and no table, and version 13 (#349, after #333's
+12) six GENERATED lookup columns on `sts_ldap_entries` and seven indexes over
+them, for a request worker that holds the people and devices as a window
+(`persistence/directory_queries.js`) — and version 15 (#432 phase 5)
+`sts_cluster_budgets`, a GNAP right's limits spent with one conditional
+upsert (`cluster/cluster_counters.js`); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.
@@ -40,6 +101,17 @@ table, and it writes schema version 4 beside the 3 already there. That was
 checked against a real version-3 database rather than reasoned about.
 `persistence/CLAUDE.md` and `common/used_assertions.js` argue why the history
 is a table of its own rather than a handle in `sts_minted`.
+
+**A COLUMN IS THE SAME UPGRADE, AND ITS INDEX WAITS FOR IT (#333).** A
+version-11 database has no `sts_minted.expires_at`; `sts_app` cannot `ALTER`
+a table it does not own, so the service refuses with `STS-STORE-0029` until the
+owner runs `schema.sql` again, whose `ALTER … ADD COLUMN IF NOT EXISTS` adds it
+(existing rows get NULL — no expiry — and fall under the write-age rule once;
+there is no other migration). The script creates `sts_minted_expires` after
+that `ALTER`, and the driver's own `open()` does the same: an object marked
+`afterColumns` in `SCHEMA_OBJECTS` is created after `SCHEMA_COLUMNS`, because
+an index on a column an older table does not have yet cannot be built before
+it.
 
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that
@@ -79,10 +151,11 @@ rules means the database refuses, so both ends say it and neither can be quietly
 relaxed.
 
 **The argument for both is in `persistence/CLAUDE.md`** — *TLS TO THE DATABASE,
-REQUIRED AT BOTH ENDS* — along with the thing this arrangement deliberately does
-NOT do: the certificate is signed by nobody, so the connection is encrypted and
-the server is not authenticated, and `/admin/persistence` reports those as two
-facts rather than one tick. Do not argue it again here.
+REQUIRED AT BOTH ENDS* — along with how the server is AUTHENTICATED since
+2026-10-12 (verification on by default, the certificate shared as above and
+trusted for the database alone through `persistence.databaseTlsCaFile`,
+`sslmode=verify-full`), and `/admin/persistence` reporting encryption and
+authentication as two facts rather than one tick. Do not argue it again here.
 
 ## On a managed database the owner is not a superuser (2026-09-15)
 

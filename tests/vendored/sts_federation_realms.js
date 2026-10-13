@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // FEDERATION OVER THE NETWORK, BETWEEN TWO TRUST REALMS OF ONE SERVICE.
@@ -104,6 +104,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -330,6 +332,44 @@ function postForm(cookies, url, fields) {
     headers: { "content-type": "application/x-www-form-urlencoded" } });
 }
 
+// The service's sign-in screen at `url`, answered with a password over
+// `/authn-api` (#571, `authn_signin.js`) with this jar's cookies, and
+// answered in `hop()`'s shape: a 303 to where the act says the walk goes
+// next, as the form's POST was answered.
+async function signInAt(cookies, url, username) {
+  log.debug("Entering signInAt(). " + username);
+  const at = new URL(url);
+  const answer = await authnSignin.submit(at.origin +
+    at.pathname.replace(/\/authn\/login$/, ""), url,
+    { action: "login", username: username, password: PASSWORD },
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: answer.headers });
+  }
+  log.debug("Leaving signInAt(). " + answer.next);
+  return { status: authnSignin.responseLike(answer).status,
+           headers: answer.headers,
+           body: answer.text || JSON.stringify(answer.json), url: url,
+           location: answer.location };
+}
+
+// THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576: answered
+// over `/authn-api/consent` through the one helper (`authn_signin.js`)
+// with this jar's cookies, and in `hop()`'s shape — a 303 back to the
+// authorization request, as the form's POST was answered.
+async function consentAt(cookies, url) {
+  log.debug("Entering consentAt().");
+  const answer = await authnSignin.consentFor(url, cookies && cookies.has() ? cookies.header() : "");
+  if (cookies) {
+    cookies.take({ headers: answer.headers });
+  }
+  log.debug("Leaving consentAt(). " + answer.next);
+  return { status: authnSignin.responseLike(answer).status,
+           headers: answer.headers,
+           body: answer.text || JSON.stringify(answer.json), url: url,
+           location: answer.location };
+}
+
 // Did this response START a session? A refusal must not — and the session
 // cookie is the first place that would show, before any listing catches up.
 function startsSession(r) {
@@ -399,6 +439,18 @@ async function toTheDoor(cookies, startUrl, username) {
         log.debug("Leaving toTheDoor(). A redirect to the ACS.");
         return { method: "GET", url: next, fields: null, trail: trail };
       }
+      // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // answered through the one helper where the walk is sent to it.
+      if (/\/authn\/login\?authn=/.test(next)) {
+        trail.screens.push({ kind: "sign-in", at: next });
+        r = await signInAt(cookies, next, username);
+        continue;
+      }
+      if (authnSignin.isConsent(next)) {
+        trail.screens.push({ kind: "consent", at: next });
+        r = await consentAt(cookies, next);
+        continue;
+      }
       r = await hop(cookies, next);
       continue;
     }
@@ -406,9 +458,6 @@ async function toTheDoor(cookies, startUrl, username) {
       break;
     }
     const forms = formsIn(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
@@ -417,13 +466,6 @@ async function toTheDoor(cookies, startUrl, username) {
              ("SAMLResponse" in f.fields || "SAMLRequest" in f.fields ||
               "id_token" in f.fields || "code" in f.fields);
     });
-    if (signIn) {
-      const to = new URL(signIn.action || r.url, r.url).toString();
-      trail.screens.push({ kind: "sign-in", at: to });
-      r = await postForm(cookies, to, Object.assign({}, signIn.fields, {
-        username: username, password: PASSWORD, action: "login" }));
-      continue;
-    }
     if (consent) {
       const to = new URL(consent.action || r.url, r.url).toString();
       trail.screens.push({ kind: "consent", at: to });
@@ -749,10 +791,9 @@ async function partnerOidc() {
   return { issuer: discovery.issuer, discovery: discovery, jwks: jwks };
 }
 
-// The IdP realm's SAML 2.0 metadata FOR one service provider: with
-// `saml2.perApplicationEntityId` the entityID differs per service provider, so
-// a document fetched without that name would name an issuer the assertions
-// will not carry.
+// The IdP realm's SAML 2.0 metadata FOR one service provider: its endpoints
+// are that service provider's own; its entityID is the realm's one issuer,
+// its OAuth issuer, since #523.
 async function partnerSaml(spEntityId) {
   log.debug("Entering partnerSaml().");
   const url = realmBase(IDP) + "/saml2/metadata/" +
@@ -1099,9 +1140,11 @@ async function provisioning() {
   const ldapOn = String(await facts.setting(realmBase(SP) + "/admin-api",
                                             "ldap.autocreateUsers")) !==
                  "false";
-  // mode.autoCreates(): a product-mode directory creates nobody because a
-  // sign-in named them, whatever either switch says.
-  const creates = switchOn && ldapOn && !isProduct;
+  // THE RELATIONSHIP'S SWITCH ALONE, IN EITHER MODE (#325; rcbj,
+  // 2026-09-30): fedAutocreateUsers overrides both mode.autoCreates() and the
+  // realm's ldap.autocreateUsers for a federated sign-in. ldapOn is logged,
+  // not asked.
+  const creates = switchOn;
   log.info("  fedAutocreateUsers=" + rel.fields.fedAutocreateUsers +
            ", ldap.autocreateUsers=" + ldapOn + ", mode=" +
            (isProduct ? "product" : "development") + " — so the SP realm " +
@@ -1223,9 +1266,12 @@ async function oidcRefusals(world, genuine) {
 
   // NOBODY CONFIGURED: an unknown id here, and this relationship's id in the
   // PARTNER's realm, whose register is empty.
+  // THE LOGIN ENDPOINT'S REFUSALS ARE THE FEDERATION PAGES' SHELL SINCE
+  // #580: the view in `data-sts-state` names the kind of page, and the
+  // browser draws the words.
   r = await hop(jar(), realmBase(SP) + "/federation/login/" + NOBODY);
   await assertRefused("a login at a relationship nobody configured", r, 404,
-                      /No such federation relationship/i, null, 0);
+                      /&quot;kind&quot;:&quot;noRelationship&quot;/, null, 0);
   begun = await beginAt(REL.front);
   r = await postForm(jar(), realmBase(SP) + "/federation/acs/" + NOBODY, {
     id_token: genuine.idToken,
@@ -1297,7 +1343,12 @@ async function samlFederation(world) {
     assert.ok(/<button[^>]*type="submit"/.test(outbound.page) &&
               !/<script/i.test(outbound.page),
       "the page should carry a submit button and no script");
-    const request = samlXml(formsIn(outbound.page)[0].fields.SAMLRequest);
+    // The form that CARRIES the request: since #539 a language chooser is
+    // drawn on the hand-off page too, ahead of it.
+    const carrier = formsIn(outbound.page).find(function (f) {
+      return "SAMLRequest" in f.fields;
+    }) || { fields: {} };
+    const request = samlXml(carrier.fields.SAMLRequest);
     assert.ok(request.indexOf("<saml:Issuer>" + world.ours.entityId +
                               "</saml:Issuer>") >= 0, request.slice(0, 300));
     assert.ok(request.indexOf("AssertionConsumerServiceURL=\"" + acs +
@@ -1350,7 +1401,9 @@ async function samlFederation(world) {
   // A FORGERY: right issuer, audience, recipient and InResponseTo, signed by
   // a key the relationship does not name, with that key's certificate inside.
   const begun = await beginAt(REL.saml);
-  const pending = formsIn(begun.r.body)[0] || { fields: {} };
+  const pending = formsIn(begun.r.body).find(function (f) {
+    return "SAMLRequest" in f.fields;
+  }) || { fields: {} };
   const requestId = (/ ID="([^"]+)"/.exec(samlXml(pending.fields.SAMLRequest))
                      || [])[1] || "_unknown";
   r = await postForm(begun.cookies, acs, {

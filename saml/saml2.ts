@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -49,9 +49,9 @@ import InstanceSlot = require('../common/instance_slot');
 // here still does.
 // ---------------------------------------------------------------------------
 import stsCrypto = require('../common/crypto');
-// saml.issuer, read per assertion rather than captured at require time so
-// that /admin/config can change what the next one says it came from.
 import config = require('../common/config');
+// #523: the one name this service issues under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
 import errorCodes = require('../common/error_codes');
@@ -99,6 +99,13 @@ interface BuildOptions {
   attributeQuery?: boolean;
   nameQualifier?: string;
   spNameQualifier?: string;
+  // #186: the parties that acted, least to most recent.
+  delegates?: Array<{ nameId: string; format?: string;
+                      instant?: string }>;
+  // #483: the application whose claim settings govern the custom
+  // attributes, when the audience is not its identifier (a WS-Trust
+  // AppliesTo).
+  application?: string;
   [member: string]: unknown;
 }
 
@@ -270,16 +277,14 @@ class Saml2Assertions {
   //
   // AND TWO MORE, which are about the DOCUMENT rather than about its contents:
   //
-  //   issuer                who signed it. It defaults to `saml.issuer`, which
-  //                         is what the two older callers get and is the shared
-  //                         value WS-Trust and WS-Federation both want. The Web
-  //                         SSO profile has to override it because that profile
-  //                         publishes an entityID PER SERVICE PROVIDER, and a
-  //                         service provider checks the assertion's Issuer
-  //                         against the entityID in the metadata it was
-  //                         configured from — an assertion issued by a name
-  //                         that is not in that document is refused, and the
-  //                         refusal reads as a trust-store problem.
+  //   issuer                who signed it. It defaults to the realm's one
+  //                         issuer, its OAuth issuer (#523), at the ambient
+  //                         request's base; a caller that already read it for
+  //                         its request passes it, so the Response around the
+  //                         assertion and the metadata name the same string —
+  //                         a service provider refuses an assertion whose
+  //                         Issuer is not the entityID it was configured from,
+  //                         and the refusal reads as a trust-store problem.
   //   nameQualifier,        the NameID's qualifiers, where the answer must
   //   spNameQualifier       repeat a query's (#189): saml-core-2.0-os section
   //                         3.3.4 has the returned Subject STRONGLY match the
@@ -289,6 +294,14 @@ class Saml2Assertions {
   //                         the assertion says what the subject's attributes
   //                         are, not that anybody authenticated just now, and
   //                         saml-profiles-2.0-os section 6 asks for no more.
+  //   delegates             #186: the parties that ACTED for the subject,
+  //                         least to most recent — WS-Trust's ActAs. They
+  //                         become the SAML V2.0 Condition for Delegation
+  //                         Restriction (sstc-saml-delegation-cs-01): one
+  //                         <del:Delegate> each, in that order, which is the
+  //                         profile's own ("the earliest element is the
+  //                         farthest removed from the immediate use of the
+  //                         assertion"). Absent or empty, no condition.
   //   sign                  false to return the assertion unsigned. Default
   //                         true, which is what every existing caller gets. It
   //                         is a supported state and not a failure: a service
@@ -308,7 +321,8 @@ class Saml2Assertions {
    * @param lifetimeMin - the lifetime in minutes; 60 when absent
    * @param opts - `authnContextClassRef`, `attributes`, `nameIdFormat`,
    * `nameIdValue`, `subjectConfirmation`, `sessionIndex`, `authnInstant`,
-   * `issuer`, `nameQualifier`, `spNameQualifier`, `attributeQuery` and `sign`
+   * `issuer`, `nameQualifier`, `spNameQualifier`, `attributeQuery`,
+ * `delegates` and `sign`
    * @returns the assertion's XML
    */
   buildSamlAssertion(subject: string, audience?: string | null,
@@ -334,6 +348,19 @@ class Saml2Assertions {
       ? '<saml:AudienceRestriction><saml:Audience>' + xmlEscape(audience) +
         '</saml:Audience></saml:AudienceRestriction>'
       : '';
+    const delegates = Array.isArray(opts.delegates) ? opts.delegates : [];
+    const delegationEl = delegates.length
+      ? '<saml:Condition xmlns:xsi="http://www.w3.org/2001/XMLSchema-' +
+        'instance" xmlns:del="urn:oasis:names:tc:SAML:2.0:conditions:' +
+        'delegation" xsi:type="del:DelegationRestrictionType">' +
+        delegates.map(function (one) {
+          return '<del:Delegate' + (one.instant
+            ? ' DelegationInstant="' + xmlEscape(one.instant) + '"' : '') +
+            '><saml:NameID Format="' + xmlEscape(one.format ||
+              'urn:oasis:names:tc:SAML:2.0:nameid-format:entity') + '">' +
+            xmlEscape(one.nameId) + '</saml:NameID></del:Delegate>';
+        }).join('') + '</saml:Condition>'
+      : '';
     // THE DEFAULT IS `unspecified` SINCE 2026-09-12, and it was
     // PasswordProtectedTransport. A caller that names no class has not said a
     // password was used, and this builder putting one in the AuthnStatement on
@@ -346,7 +373,9 @@ class Saml2Assertions {
     // Who signed it. Read once, because it appears in the Issuer element and in
     // the default `issuedBy` attribute, and two reads of a runtime-changeable
     // setting inside one document can disagree with each other.
-    const issuer = opts.issuer || config.value('saml.issuer');
+    // #523: the realm's one name, its OAuth issuer, unless the caller passed
+    // the one it read for this request (`common/issuer_names.ts`).
+    const issuer = opts.issuer || IssuerNames.issuer();
     const attributes: AttributeRow[] =
       (opts.attributes && opts.attributes.length) ? opts.attributes : [
         { name: 'name', value: subject },
@@ -358,9 +387,16 @@ class Saml2Assertions {
     // does not) both carry them. A configured attribute that displaced the
     // claim a relying party keys off would break the sign-in and look like a
     // bug in the relying party.
+    // `application` (#483): the entry whose settings govern them, where the
+    // caller resolved it — WS-Trust names the AppliesTo's application, which
+    // the audience string alone does not reach (see wstrust.ts). Absent, the
+    // audience is looked up as it always was.
     const custom = stats.samlAttributes('saml2',
-                                        { subject: subject,
-                                          audience: audience });
+                                        Object.assign({ subject: subject,
+                                                        audience: audience },
+                                          opts.application
+                                            ? { application: opts.application }
+                                            : {}));
     // Appended, and FILTERED against what is already there by name. The rule is
     // the one the JWT builders follow — the protocol's own claims win — but it
     // has to be written as a filter rather than as an assignment order, because
@@ -434,7 +470,8 @@ class Saml2Assertions {
           xmlEscape(nameIdValue) + '</saml:NameID>' +
         (opts.attributeQuery ? '' : confirmation) + '</saml:Subject>' +
         '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
-        '">' + audienceEl + '</saml:Conditions>' + authnStatement +
+        '">' + delegationEl + audienceEl + '</saml:Conditions>' +
+        authnStatement +
         '<saml:AttributeStatement>' + attributeEls +
         '</saml:AttributeStatement></saml:Assertion>';
     // Counted here rather than at the call sites: WS-Trust and WS-Federation

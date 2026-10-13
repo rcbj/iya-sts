@@ -24,19 +24,43 @@ exchange and the assertion grants) are on that page too.
 
 ## Two things to know first
 
-**A client registered in the console or through `/admin-api` may use every
-response type the server advertises.** `oauthResponseType` and
-`oauthGrantType` record what the client is for, but they are not enforced. A
-client that registers itself with `POST /oauth2/register` (RFC 7591) *is*
-held to the `response_types` and `grant_types` it registered, and is refused
-anything else with `unauthorized_client`. To restrict a client, register it
-[dynamically](#dynamic-client-registration).
+**A client is held to the response types and grant types it declares.**
+`oauthResponseType` and `oauthGrantType` are the lists, whether a dynamic
+registration wrote them (`POST /oauth2/register`, RFC 7591 `response_types`
+and `grant_types`) or an administrator set them in the console or through
+`/admin-api`. A response type or grant not on a list is refused with
+`unauthorized_client`, in both modes. An empty list restricts nothing, so a
+client with neither list may use every response type the server advertises.
+Write each response type as one value, its words separated by spaces
+(`code id_token`). What a client has actually used is recorded separately, in
+`oauthResponseTypeObserved` and `oauthGrantTypeObserved`.
 
-**Some client metadata exists only as registration members.** That includes
-the JARM algorithms, the signing and encryption algorithms for UserInfo and
-the ID Token, and `default_acr_values` / `default_max_age`. No console or API
-attribute holds them, so a client that needs them must use dynamic
-registration.
+**How responses are signed and encrypted is an attribute too.** The JARM
+algorithms, the signing and encryption algorithms for the ID Token and
+UserInfo, and `default_acr_values` / `default_max_age` are held on the
+application entry, whether a registration wrote them or an administrator set
+them on the console or through `/admin-api`:
+
+| Registration member | Attribute |
+|---|---|
+| `id_token_signed_response_alg` | `oauthIdTokenSignedResponseAlg` |
+| `id_token_encrypted_response_alg` / `_enc` | `oauthIdTokenEncryptedResponseAlg` / `Enc` |
+| `userinfo_signed_response_alg` | `oauthUserinfoSignedResponseAlg` |
+| `userinfo_encrypted_response_alg` / `_enc` | `oauthUserinfoEncryptedResponseAlg` / `Enc` |
+| `authorization_signed_response_alg` | `oauthAuthorizationSignedResponseAlg` |
+| `authorization_encrypted_response_alg` / `_enc` | `oauthAuthorizationEncryptedResponseAlg` / `Enc` |
+| `default_acr_values` | `oauthDefaultAcrValues` (space-separated, most preferred first) |
+| `default_max_age` | `oauthDefaultMaxAge` (seconds) |
+
+The console, the API and a registration refuse the same values. An RFC 7592
+update replaces them: a member it leaves out is cleared. An encryption
+algorithm encrypts to the key in `oauthJwks` or `oauthJwksUri`. For example,
+an ES256 ID Token for a client created through the API:
+
+```bash
+api applications/set '{"application":"parmon-a",
+  "attribute":"oauthIdTokenSignedResponseAlg","value":"ES256"}'
+```
 
 **Consent is on by default.** Unless the person has already approved the
 client, the flow stops at `/oauth2/consent`. For a first-party client, grant
@@ -79,7 +103,7 @@ Taken from `sts_oauth2_monitor.js` and `sts_oidc_core.js`.
    - **Where responses go back to**: `https://rp.parmon.example.test/cb`.
    - **The client secret**: click **Generate Secret**.
 4. Click **Create the application**.
-5. On the application's page, **Set** `oauthTokenEndpointAuthMethod` to `client_secret_basic`.
+5. On the application's page, **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
 6. Grant consent for `openid` on **Consent**, as described above.
 
 **API:**
@@ -119,8 +143,13 @@ returned in the fragment, and an explicit `response_mode=query` is refused.
   `id_token` alone the scope's claims go into the ID Token.
 * **`id_token token`**, and any other type containing `token`, is refused in
   RFC 9700 mode and in product mode. In those modes it is also removed from
-  `response_types_supported`. To use it you need development mode with
-  `oauth2.rfc9700` off.
+  `response_types_supported`, so the request is refused as a type the
+  server does not advertise: `unsupported_response_type`, recorded as
+  `STS-OAUTH-0163`. With nobody signed in the error is shown on a page whose
+  link carries it to the client (RFC 9700 section 4.11.2: no redirect before
+  the user is authenticated); with somebody signed in it is redirected to the
+  client. The job `sts_admin_client_policies.js` checks both. To use it you
+  need development mode with `oauth2.rfc9700` off.
 
 A client that registers itself must list `implicit` in `grant_types`
 whenever one of its `response_types` contains `token`.
@@ -134,10 +163,12 @@ goes in the fragment. `code id_token` and `code id_token token` require a
 
 * **`code id_token`** works in every mode. The job `sts_oidc_core.js` runs it
   across `id_token_signed_response_alg` values `RS256`, `RS384`, `PS512`,
-  `ES512`, `EdDSA` and `ML-DSA-44`. That algorithm is a registration member,
-  so those clients are registered dynamically.
+  `ES512`, `EdDSA` and `ML-DSA-44`, registering each client dynamically, and
+  sets `oauthIdTokenSignedResponseAlg` on a client it creates through
+  `/admin-api`.
 * **`code token`** and **`code id_token token`** are refused in RFC 9700 mode
-  and product mode.
+  and product mode, the same way as `id_token token` above
+  (`sts_admin_client_policies.js` checks `code token`).
 
 The OpenID conformance job (`sts_oidcc_conformance.js`) registers its hybrid
 client like this, after setting `oauth2.openRegistration` to `true` in the
@@ -159,7 +190,7 @@ POST /realm/<id>/oauth2/register
 | `query` | none | The default for `code` and `none`. |
 | `fragment` | none | The default for everything else. |
 | `form_post` | none | Answers with a self-submitting form (`/oauth2/autopost.js`) that also has a real submit button. Refused to a private-use (native) redirect URI. |
-| `jwt`, `query.jwt`, `fragment.jwt`, `form_post.jwt` (JARM) | optional registration members `authorization_signed_response_alg` (default `RS256`), `authorization_encrypted_response_alg` and `_enc` | Works in every mode. `query.jwt` carrying a token is refused unless the response is encrypted. `oauth2.jarmResponseLifetimeS` defaults to 600. |
+| `jwt`, `query.jwt`, `fragment.jwt`, `form_post.jwt` (JARM) | optional `oauthAuthorizationSignedResponseAlg` (registration member `authorization_signed_response_alg`, default `RS256`), `oauthAuthorizationEncryptedResponseAlg` and `Enc` | Works in every mode. `query.jwt` carrying a token is refused unless the response is encrypted. `oauth2.jarmResponseLifetimeS` defaults to 600. |
 
 Taken from `sts_form_post.js`, which sets `oauth2.openRegistration` and
 `oauth2.rfc9700` to `true` in its realm and registers:
@@ -188,8 +219,9 @@ The token must carry the `openid` scope, or the answer is 403
     "street":"1 Main St","l":"Springfield","postalCode":"12345","c":"US"}}'
   ```
   (These attributes are the ones `sts_oidc_core.js` creates.)
-* **Signed or encrypted UserInfo** is chosen by the registration members
-  `userinfo_signed_response_alg` and `userinfo_encrypted_response_alg`. The
+* **Signed or encrypted UserInfo** is chosen by `oauthUserinfoSignedResponseAlg`
+  and `oauthUserinfoEncryptedResponseAlg` (registration members
+  `userinfo_signed_response_alg` and `userinfo_encrypted_response_alg`). The
   job for this is `sts_userinfo_protected.js`.
 * **`claims=`** (OIDC Core 5.5) needs no configuration. `essential`, `value`
   and `values` are carried through but not enforced, except that an essential
@@ -215,6 +247,12 @@ uses at `/oauth2/authorize`. PAR is on by default.
 api applications/set '{"application":"parmon-a",
   "attribute":"oauthRequirePushedAuthorizationRequests","value":"TRUE"}'
 ```
+
+With the attribute `TRUE`, a plain authorization request from that client is
+answered `400 invalid_request` on a page and is never redirected
+(`STS-OAUTH-0419`); written `FALSE` again, the plain request reaches the
+sign-in screen. The job `sts_admin_client_policies.js` checks this for a
+client created through `/admin-api`, in a development and a product realm.
 
 **Requests** (from `sts_oauth2_monitor.js`, with the `parmon-a` client above):
 ```
@@ -250,9 +288,24 @@ The realm settings `oauth2.requireSignedRequestObject`,
 `oauth2.requireRequestObjectType` and
 `oauth2.requireRequestObjectIssuerAudience` (all `false` by default) apply the
 same checks to every client. Development mode accepts an `http` request URI
-and an `alg: none` object. Product mode refuses both. The job that covers this
-is `tests/rfc9101_request_objects.js`, which signs with `ES256` and
-`typ: oauth-authz-req+jwt`.
+and an `alg: none` object. Product mode refuses both, and refuses an `http`
+request URI when it is registered, before any request is made (RFC 9101
+section 5.2). The `https` host is verified under the federation outbound
+policy, so a private CA is named by `federation.outboundCaFile`.
+
+The job `sts_jar_admin_client.js` creates such a client through `/admin-api`
+and serves its request objects and key set itself. It checks that:
+* a registered `request_uri` is fetched, and its object is verified with the
+  key at the registered `jwks_uri`;
+* the flow ends at the client with the object's `state`, not the query's;
+* a `request_uri` that was not registered is refused and never fetched;
+* an object signed with another algorithm, or with a key that is not in the
+  set, is refused;
+* an unsigned object is refused while `oauthRequireSignedRequestObject` is
+  `TRUE`.
+
+`tests/rfc9101_request_objects.js` covers the rest in process, signing with
+`ES256` and `typ: oauth-authz-req+jwt`.
 
 ## CIBA
 
@@ -378,7 +431,9 @@ retried and, if it keeps failing, dead-lettered.
 `oauth2.backchannelLogoutOnExpiry` (default `true`). There are also tuning
 settings such as `…TokenTtlS` (120), `…Attempts` (3) and `…TimeoutMs` (5000).
 
-**Client** (from the in-process job `tests/backchannel_logout.js`):
+**Client** (from the in-process job `tests/backchannel_logout.js`; the job
+`sts_backchannel_logout.js` registers the same attributes through
+`/admin-api`):
 ```bash
 api applications/create '{"identifier":"bcl-ok","name":"bcl-ok","protocols":["oauth2","oidc"],
   "fields":{"oauthClientId":"bcl-ok","oauthClientSecret":"'"$SECRET"'",
@@ -390,7 +445,18 @@ api applications/create '{"identifier":"bcl-ok","name":"bcl-ok","protocols":["oa
 ```
 
 A public client cannot have an `http` back-channel URI, and product mode never
-sends to `http`. Failed deliveries are listed on **Sign-out**
+sends to `http`. **Product mode also never sends to an address on a private,
+loopback, link-local or reserved network**: the delivery is dead-lettered
+with `STS-OAUTH-0534` and nothing is dialled. A relying party on a private
+network is reached only from a development-mode realm.
+
+The job `sts_backchannel_logout.js` delivers to the test peer, which plays
+the relying party and verifies each Logout Token as section 2.6 asks (the
+signature, `typ: logout+jwt`, `iss`, `aud`, `iat`, `jti`, the event, `sub` or
+`sid`, no `nonce`, no replay). In a development realm, RP-initiated logout and
+the console's global logout each send one token, naming the ID Token's `sub`
+and `sid`. In a product realm the same sign-out sends nothing to the peer's
+private address and records `STS-OAUTH-0534`. Failed deliveries are listed on **Sign-out**
 (`/admin/logout`) → **Back-channel Logout Tokens**, which has a State filter
 and a **Retry** button on each dead row, and on **Outbound deliveries**
 (`/admin/deliveries`). The API equivalents are

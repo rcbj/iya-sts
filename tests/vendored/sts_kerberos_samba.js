@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -252,12 +252,26 @@ async function call(method, url, body) {
 // ---------------------------------------------------------------------------
 // 0. THE REALM, ITS PRINCIPALS AND THEIR KEYS.
 // ---------------------------------------------------------------------------
+// THE KDC'S DATABASE, THROUGH /admin-api SINCE #595: the demonstration
+// document `GET /krb5/principals` was deleted, and the operation lists the
+// same rows — principal, salt, kvno, enctypes — as `database`, a page at a
+// time.
 async function principalRows(prefix) {
   log.debug("Entering principalRows().");
-  const r = await call("GET", prefix + "/krb5/principals");
-  assert.strictEqual(r.status, 200, "GET /krb5/principals: " + r.status);
-  log.debug("Leaving principalRows().");
-  return r.json.principals || [];
+  let rows = [];
+  for (let page = 1; ; page++) {
+    const r = await call("GET", prefix + "/admin-api/kerberos/principals" +
+                         "?per=100&databasePage=" + page);
+    assert.strictEqual(r.status, 200, "GET /admin-api/kerberos/principals: " +
+                       r.status + " " + r.text.slice(0, 200));
+    rows = rows.concat(r.json.database || []);
+    const paging = r.json.databasePaging || {};
+    if (!paging.pages || page >= paging.pages) {
+      break;
+    }
+  }
+  log.debug("Leaving principalRows(). " + rows.length);
+  return rows;
 }
 
 function rowFor(rows, principal) {
@@ -265,7 +279,7 @@ function rowFor(rows, principal) {
   const row = rows.filter(function (one) {
     return one.principal === principal;
   })[0];
-  assert.ok(row, principal + " is not in /krb5/principals");
+  assert.ok(row, principal + " is not in the KDC's database");
   log.debug("Leaving rowFor().");
   return row;
 }
@@ -287,8 +301,16 @@ async function setUp(k) {
   log.debug("Entering setUp().");
   const made = await call("POST", api + "/realms/create",
     { id: RID, domain: DOMAIN, name: "#204 Samba raw Kerberos tests",
+      // krb5.pkinitRequireFreshness off: a KDC that requires RFC 8070's
+      // freshness token offers PA-AS-FRESHNESS in every
+      // KDC_ERR_PREAUTH_REQUIRED (section 2.2), and Samba's raw tests model
+      // one that offers it only to a client that sent an empty one — so
+      // every preauth-required answer they check fails on padata 150 (#179,
+      // 2026-10-05). The requirement is held by tests/kerberos_pkinit.js
+      // and sts_kerberos_pkinit.js.
       overrides: { "krb5.enabled": true, "krb5.realm": KREALM,
-                   "global.mode": "development" } });
+                   "global.mode": "development",
+                   "krb5.pkinitRequireFreshness": false } });
   assert.strictEqual(made.status, 200, "realm: " + made.text.slice(0, 300));
   k.password = String(await facts.setting(realmApi, "krb5.userPassword"));
   k.kvno = Number(await facts.setting(realmApi, "krb5.kvno"));

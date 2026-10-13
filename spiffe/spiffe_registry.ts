@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -91,7 +91,7 @@
 // exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log } = helpers;
@@ -169,6 +169,31 @@ class SpiffeRegistry {
   constructor(private readonly deps: SpiffeRegistryDeps) {
     deps.log.debug("Entering SpiffeRegistry.constructor().");
     deps.log.debug("Leaving SpiffeRegistry.constructor().");
+  }
+
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * what each object class and attribute of the schema holds, and the short
+   * phrases its `where` and `from` columns say in words — once each, rather
+   * than once per row that carries them. A `where` that cites an RFC is a
+   * citation and is not translated.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeRegistry.prose().");
+    // LAZILY: `server_prose` requires `config.js` at its load, and this is
+    // asked only when the namespace is first built.
+    const harvest = require('../common/server_prose').harvest;
+    const out: Record<string, string> =
+      harvest('spiffe.registry.schema', SCHEMA, ['what']);
+    out['spiffe.registry.schema.where.thisService'] = 'this service';
+    out['spiffe.registry.schema.from.thisRegistry'] = 'this registry';
+    out['spiffe.registry.schema.from.theCaller'] = 'the caller';
+    out['spiffe.registry.schema.from.theAgent'] = 'the agent';
+    helpers.log.debug("Leaving SpiffeRegistry.prose(). " +
+                      Object.keys(out).length);
+    return out;
   }
 
   // What the composition root passes, from the real modules.
@@ -1048,6 +1073,89 @@ class SpiffeRegistry {
     return { ok: true, errors: [], id: id, entry: this.entryById(id) };
   }
 
+  // -------------------------------------------------------------------------
+  // A REGISTRATION ENTRY REMOVED, SAID OVER CAEP (#221 P5).
+  //
+  // A registration entry is what lets a workload be ISSUED an SVID here, so
+  // its removal is a change to the workload's credential: CAEP
+  // `credential-change` about the WORKLOAD, named by its SPIFFE ID as a
+  // plain `uri` subject (`ssf_subjects.js` argues it), with this service's
+  // `urn:iya:sts:credential-type:spiffe-registration`. `delete` when it was
+  // the LAST entry naming that SPIFFE ID — no SVID can be issued for it here
+  // any more — and `update` when others still name it, because the
+  // conditions under which one may be issued narrowed and did not end.
+  //
+  // **NOT `session-revoked`.** Nothing ended: SPIFFE has no revocation, an
+  // SVID already issued verifies until it expires (the paragraph above), and
+  // a workload holds no session here — the Workload API has none. Sending one
+  // would tell a receiver to tear down something that is still valid.
+  //
+  // Found through `ssf/account_signals.ts` (a `require.cache` lookup, never a
+  // load of SSF), and never into the delete.
+  // -------------------------------------------------------------------------
+  private signalRegistrationRemoved(existing, id, remaining, actor): void {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeRegistry.signalRegistrationRemoved().');
+    try {
+      const signals = require('../ssf/account_signals');
+      signals.credentialChanged({ workload: String(existing.spiffeId),
+        username: '',
+        credentialType: signals.SPIFFE_REGISTRATION_CREDENTIAL_TYPE,
+        changeType: remaining ? 'update' : 'delete',
+        friendlyName: 'SPIFFE registration entry ' + id,
+        initiatingEntity: actor ? 'admin' : 'system',
+        via: 'the SPIFFE registry',
+        reasonAdmin: 'The SPIFFE registration entry ' + id + ' for ' +
+          existing.spiffeId + ' was deleted' + (remaining
+            ? '; ' + remaining + ' other entry/entries still name it.'
+            : ', the last naming it, so no SVID can be issued for it here.'),
+        reasonUser: 'A registration that lets this workload be issued an ' +
+          'SVID was removed.' });
+    } catch (e) {
+      log.debug('Caught in SpiffeRegistry.signalRegistrationRemoved(): ' +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-SSF-0140') + 'spiffe: the ' +
+               'credential-change for the removed registration entry ' + id +
+               ' could not be started: ' + ((e && e.message) || e));
+    }
+    log.debug('Leaving SpiffeRegistry.signalRegistrationRemoved().');
+  }
+
+  // A REGISTRATION ENTRY DELETED OVER THE LDAP SOCKET (#221, the gap P5
+  // left): the directory removed it itself, so `deleteEntry()` never ran.
+  // What follows the removal is the same — the holder's identity marked
+  // revoked where this was the last entry naming it, and the
+  // credential-change — told from the entry as it was.
+  /**
+   * Reports a registration entry the directory deleted without the registry —
+   * an LDAP delete over the socket — as `deleteEntry()` reports its own.
+   *
+   * @param entry - the stored entry as it was
+   * @param actor - the bound DN that deleted it, or ''
+   */
+  noteEntryRemovedOutside(entry, actor) {
+    const { log, stats } = this.deps;
+    log.debug('Entering SpiffeRegistry.noteEntryRemovedOutside().');
+    const existing = this.recordFromEntry(entry);
+    if (!existing || !existing.spiffeId) {
+      log.debug('Leaving SpiffeRegistry.noteEntryRemovedOutside(). Not an ' +
+                'entry.');
+      return;
+    }
+    const remaining = this.entriesForSpiffeId(existing.spiffeId).length;
+    if (!remaining) {
+      stats.recordCredentialStatus(existing.spiffeId, 'revoked', {
+        reason: 'the last SPIFFE registration entry naming this identity (' +
+                existing.id + ') was deleted over LDAP, so no further SVID ' +
+                'can be issued for it here. Nothing was revoked — SPIFFE has ' +
+                'no revocation — and any SVID already issued verifies until ' +
+                'it expires.'
+      });
+    }
+    this.signalRegistrationRemoved(existing, existing.id, remaining, actor);
+    log.debug('Leaving SpiffeRegistry.noteEntryRemovedOutside().');
+  }
+
   /**
    * Deletes a registration entry, and audits it.
    *
@@ -1094,6 +1202,7 @@ class SpiffeRegistry {
                 'entries still name ' + existing.spiffeId + ', so its ' +
                 'directory entry is left active.');
     }
+    this.signalRegistrationRemoved(existing, id, remaining, actor);
     log.debug('Leaving SpiffeRegistry.deleteEntry(). Removed.');
     return { ok: true, errors: [], id: id };
   }
@@ -1428,8 +1537,8 @@ class SpiffeRegistry {
     const { log, crypto } = this.deps;
     log.debug("Entering SpiffeRegistry.agentCnFor().");
     log.debug("Leaving SpiffeRegistry.agentCnFor().");
-    return 'agent-' + crypto.createHash('sha256').update(String(id))
-      .digest('hex').slice(0, 12);
+    return 'agent-' + crypto.digest('sha256', String(id), 'hex')
+      .slice(0, 12);
   }
 
   /**
@@ -1665,14 +1774,21 @@ const SCHEMA = {
             'API verbatim; nothing here reads it.' },
     { name: 'spiffeAdmin', kind: 'single', from: 'the caller', editable: true,
       what: 'TRUE where the holder may call the SPIRE Server API\'s ' +
-            'administrative methods. RECORDED AND NOT ENFORCED, like every ' +
-            'other authorization fact in this service: no call here is ' +
-            'refused for want of it.' },
+            'administrative methods — entries, agents, bundles, federation ' +
+            'relationships, minting an SVID — over mutual TLS. ENFORCED in ' +
+            'both modes: the server API makes a caller `admin` when an ' +
+            'unexpired entry for its identity carries this flag or ' +
+            'spiffe.adminIds names it, and refuses those methods to a remote ' +
+            'caller that is neither (the private Unix socket\'s `local` ' +
+            'caller is the other way in). Read on every call, so a change ' +
+            'applies to the next one.' },
     { name: 'spiffeDownstream', kind: 'single', from: 'the caller',
       editable: true,
       what: 'TRUE where the holder is a downstream SPIRE server that may ask ' +
-            'for an intermediate CA (NewDownstreamX509CA). Recorded, not ' +
-            'enforced.' },
+            'for an intermediate CA (NewDownstreamX509CA) and publish a JWT ' +
+            'or WIT authority. ENFORCED in both modes: those methods are ' +
+            'refused to a caller no unexpired entry marks downstream, and ' +
+            'the flag grants nothing else.' },
     { name: 'spiffeStoreSvid', kind: 'single', from: 'the caller',
       editable: true,
       what: 'TRUE where the SVID is to be written to an SVID store plugin ' +
@@ -1807,6 +1923,10 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: SCHEMA,
   EDITABLE: EDITABLE,
+  // The `spiffe` namespace's route and English (#543): the schema is on the
+  // directory's own view of `ou=spiffe`.
+  PROSE_ROUTES: ['/admin-api/ldap/spiffe'],
+  prose: (): Record<string, string> => SpiffeRegistry.prose(),
   setDirectory: slot.forward('setDirectory'),
   parseSelector: slot.forward('parseSelector'),
   selectorText: slot.forward('selectorText'),
@@ -1826,6 +1946,7 @@ export = {
   createEntry: slot.forward('createEntry'),
   updateEntry: slot.forward('updateEntry'),
   deleteEntry: slot.forward('deleteEntry'),
+  noteEntryRemovedOutside: slot.forward('noteEntryRemovedOutside'),
   noteSvidIssued: slot.forward('noteSvidIssued'),
   allAgents: slot.forward('allAgents'),
   agentById: slot.forward('agentById'),

@@ -1,11 +1,16 @@
 # home/
 
-The front door. One module, two routes, one image:
+The front door. One server module, one page drawn in the browser, one image —
+**a static surface since #579 (2026-10-12)**, the first of #569's public pages
+and the first to follow #570's recipe (`common/CLAUDE.md` 3cl):
 
 | File | What it is |
 |---|---|
-| `home.ts` | `GET /` — the page — and `GET /logo.png`, the only image this service serves. |
-| `assets/debugger-logo.png` | That image. A DERIVATIVE of the parent project's artwork, not a copy of it — see below. |
+| `home.ts` | The server half: `GET /` (the shell), `GET /home.js` (the bundle), `GET /home.css` (the card's own rules), `GET /home-api` (the API's index) and `GET /home-api/front` (the page's view), `GET /realms`, and `GET /logo.png`, the only image this service serves. |
+| `web_home_front.ts` | The renderer: the card's body from the view, its band (the logo) for the surface's frame, in the page's language from the `home` catalogs. |
+| `web_home_pages.ts` | The page table (`PAGES`, `render`, `frame`), and the renderers' bundle `home.bundle.js` (`StsHome`) the tests load. |
+| `web_home.ts` | The entry: `new WebSurface(...).start()`. Built to `home-spa.js` — never `home.js`, which is `home.ts` compiled — and served at `/home.js`. |
+| `assets/logo.png` | That image: this project's own logo, a byte-for-byte copy of `docs/logo.png`, the one README.md shows — see below. |
 
 It is a directory of its own rather than a route in `common/`, and the entry
 test that file states is the reason: *a file lands there because more than one
@@ -14,7 +19,8 @@ package root, where there are exactly two modules and both earn it.
 
 ## Its place in the require order (6a)
 
-No constraint. Two EXACT paths (`/` and `/logo.png`) and nothing but the app
+No constraint. Exact paths (`/`, `/home.js`, `/home.css`, `/realms`,
+`/logo.png`) and the `/home-api` prefix, and nothing but the app and libraries
 behind them; first among the route modules — the first `register()` call in
 `common/protocol_stack.ts`, since #50's R1 moved registration out of the
 require — so that the page a person meets first heads the list on
@@ -60,7 +66,10 @@ The fourth and fifth, `/admin` and `/portal`, are **relative on purpose**. This
 service is reached as localhost, as `sts` on a compose network and through a
 published port; `baseUrlOf()` exists because documents carrying absolute URLs
 have to follow the request, and a same-origin link does not have to know any of
-that.
+that. **The one exception is #472's**: where the console or the portal is on a
+listener this request did not arrive on, the view carries that listener's
+advertised base instead (`Home.linkTo()`), since a relative link would land on
+a listener that answers it with a 404.
 
 **`/portal` arrived 2026-09-10 and closed a door that had never been opened.**
 The user portal has existed since 2026-09-06, and the only ways to reach it
@@ -72,11 +81,12 @@ row lists none of the portal's pages, for the endpoint rule one section up:
 so a set of highlights here would be a second copy that goes stale the first
 time a page is added there.
 
-**What a sign-in here MEANS is one sentence shared by both rows**, read per
-request, in `signInMeans()`. What a sign-in screen actually CHECKS is a
-property of `global.mode` — `mode.verifiesCredentials()` — rather than of
-either surface, so a copy on each row would disagree the first time somebody
-corrected one of them.
+**What a sign-in here MEANS is one sentence shared by both rows**, chosen once
+by `web_home_front.ts`'s `signInMeans()` from the view's
+`mode.verifiesCredentials`, which the server reads per request. What a sign-in
+screen actually CHECKS is a property of `global.mode` —
+`mode.verifiesCredentials()` — rather than of either surface, so a copy on
+each row would disagree the first time somebody corrected one of them.
 
 **It replaced a clause that was wrong in two ways at once**, and adding the
 portal link is what put the first of them in front of a reader. The console's
@@ -122,33 +132,47 @@ at it, so saying who you are is the entire question.
   **404 in its own words**. That last part is load-bearing for the link check in
   `tests/vendored/sts_metadata.js`, which fails on Express's `Cannot GET` and passes on an
   endpoint answering for itself.
-* **It sits on a BLACK band, and that is not a style choice.** The artwork is
-  white lettering with a dark outline, a green wordmark and a pale-blue mark,
-  drawn for a dark ground; on the card's own background the "IYA CYBER SECURITY"
-  half all but disappears. The parent project ships a black-backed copy of the
-  same artwork on its error pages for the same reason.
-* **It is a derivative and therefore NOT in `common/vendored/`.** That
-  directory's rule is that its files are byte-identical to the parent's, and two
-  of the parent's tests hold them to it. This one was produced from
-  `client/public/images/oauth2oidcdebugger+iyasec-logo-transparent.png` (2172 ×
-  724, 745 kB) with:
+* **It is this project's own logo (2026-10-01, rcbj)**: `docs/logo.png`, the
+  one README.md shows, copied byte for byte (906 × 269, opaque, 22 kB, drawn
+  at half that width so it stays sharp on a 2× display). It replaced a
+  derivative of the parent project's debugger artwork, which was white
+  lettering drawn for a black band. This one is dark lettering on an off-white
+  ground, so the band behind it is the image's own colour (`#fbfaf8`). Copy
+  `docs/logo.png` over it again if the README's logo changes.
 
-  ```bash
-  convert <source> -resize 720x -strip PNG32:debugger-logo.png
-  convert debugger-logo.png -colors 256 PNG8:debugger-logo.png
-  optipng -o5 debugger-logo.png
-  ```
+## A static surface since #579
 
-  720px is twice the width it is drawn at, so it stays sharp on a 2× display,
-  and 256 colours takes it to 31 kB. Re-run those three lines if the parent's
-  artwork changes.
+Until #579 `homePage()` drew the card on the server with no script at all.
+#569 converts every human-facing page into a static application, and the front
+door went first, being the smallest, to prove #570's foundation. What it is
+now, by the recipe:
 
-## No script and no external resource
-
-`app.js` sets `script-src 'none'` service-wide and this page needs no exception:
-it has no behaviour. Its one `<style>` block is covered by the
-`style-src 'unsafe-inline'` several pages here already rely on, and the image is
-same-origin, which `img-src 'self' data:` already allows. A page that fetched a
-font from a CDN would need the policy widened for a decoration — so it does not.
-Seven pages here have a script on them and each had to argue for it
-separately (the root `CLAUDE.md` lists them); this is not an eighth.
+* **`GET /` answers the shell** (`ShellDocument.document()` and `serve()`):
+  `/web/card.css` and `/home.css`, the deferred `/home.js`, the language
+  attributes (`PageLocale.shellAttributes()`), `data-sts-prefix` in a realm,
+  and `data-sts-authn` where the sign-in service — the chooser posts to
+  `/authn/language` — is on another listener. **Script is required** (rcbj on
+  #569): the `<noscript>` notice says so and links the documentation, the one
+  link that works with nothing drawn.
+* **The policy is the shell's**: `script-src 'self'`, `style-src 'self'` — the
+  page's old inline `<style>` is `/home.css` now, over the sign-in card's
+  stylesheet, whose centring and width it overrides — `connect-src 'self'`
+  plus the sign-in service's origin where it is elsewhere, `img-src 'self'`
+  for the logo, and `frame-ancestors` re-added by
+  `app.contentSecurityPolicy()` whatever is asked.
+* **`GET /home-api/front` is the page's view, and it has no words**: the
+  name, the version and its build (the tooltip), the mode's two facts, the
+  logo (or `null`, see *The image*), and the five links as `{ id, href,
+  external }`. `GET /home-api` is the index, `/account-api`'s convention: the
+  view's operation `mirrors` `GET /`, and nothing posts. Both `no-store`,
+  because the mode and the listeners can change while the process runs.
+* **The browser draws it in its language** from the `home` catalog namespace,
+  the same messages the server-drawn page used (translated for #539), and the
+  chooser is the surface runtime's. The band with the logo is drawn by the
+  surface's `frame`, above the chooser as before — which is why #579 gave
+  `WebSurface`'s frame the page's `view` in its context.
+* **Held by** `tests/web_surfaces.js` (the round trip, from the row in
+  `tests/tools/web_surfaces.js`: both modes, with and without the image, a
+  console elsewhere, English and French) and `tests/home_static_surface.js`
+  (the shell, its policy and attributes in and out of a realm, the bundle,
+  the API, and the bundle drawing the live view).

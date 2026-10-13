@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE TERRAFORM AND SUITE-LAUNCHER IMAGE FOR THE AWS CLUSTER (issue #51).
@@ -18,7 +18,7 @@
 # environment's VPC; that runner was removed that day.)
 #
 # Built from the repository root:
-#   docker build -t mock-sts-terraform -f deploy/aws/Dockerfile .
+#   docker build -t iya-sts-terraform -f deploy/aws/Dockerfile .
 # ---------------------------------------------------------------------------
 FROM ubuntu:latest
 

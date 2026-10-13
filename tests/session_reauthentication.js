@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -330,13 +330,11 @@ function run(t) {
             JSON.stringify(portalFacts));
     // And the portal's card is drawn from that answer — as SOURCE, because
     // requiring the portal registers its routes in run.js's one process.
-    const portalSource = require('fs').readFileSync(
-      path.join(__dirname, '..', 'portal', 'portal.ts'), 'utf8');
-    const overviewAt = portalSource.indexOf(
-      'overviewPage(session, message, error) {');
-    const overview = portalSource.slice(overviewAt,
-      portalSource.indexOf('directoryBlock(session, entry)', overviewAt));
-    t.check(/authn\.signOnFactsFor\(session\)/.test(overview) &&
+    // Since #568 the card's view is `account_overview.ts`'s, from the
+    // sign-on session the account API's token was issued on.
+    const overview = require('fs').readFileSync(
+      path.join(__dirname, '..', 'portal', 'account_overview.ts'), 'utf8');
+    t.check(/authn\.signOnFactsFor\(caller\.signOn/.test(overview) &&
             !/session\.(authTime|acr|amr)\b/.test(overview),
             'the portal\'s "You" card reads the sign-on facts and not its ' +
             'own session\'s copy');

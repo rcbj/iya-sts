@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -283,10 +283,17 @@ function run(t) {
         const sealed = rt.seal(INNER, null, { alg: alg, enc: enc });
         const header = headerOf(sealed);
         const kind = rt.kindOf(alg);
+        // An ML-KEM or HPKE alg (#82) seals to a key pair derived from the
+        // realm's secret, named by the secret's kid and the alg; an HPKE
+        // Integrated alg carries no `enc` at all.
         const expectedKid = kind === 'secret' ? keys.secretKid :
+                            kind === 'kem' ? rt.kemKeyFor(keys, alg)
+                              .publicJwk.kid :
                             keys[kind].publicJwk.kid;
-        if (header.alg !== alg || header.enc !== enc || header.cty !== 'JWT' ||
-            header.kid !== expectedKid) {
+        const expectedEnc = stsCrypto.isIntegratedJweAlg(alg) ? undefined
+          : enc;
+        if (header.alg !== alg || header.enc !== expectedEnc ||
+            header.cty !== 'JWT' || header.kid !== expectedKid) {
           kidsWrong.push(alg + '/' + enc + ' ' + JSON.stringify(header));
         }
         if (rt.open(sealed) !== INNER) {
@@ -373,8 +380,7 @@ function run(t) {
                blob.refreshTokenEncKeys.secret),
             'the serialised set carries the refresh-token keys, secret ' +
             'included');
-    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)),
-                                          require('crypto'));
+    const restored = keystore.deserialise(JSON.parse(JSON.stringify(blob)));
     t.check(!!restored.refreshTokenEncKeys &&
             restored.refreshTokenEncKeys.rsa.publicJwk.kid === kA.rsa.publicJwk.kid &&
             Buffer.from(restored.refreshTokenEncKeys.secret)

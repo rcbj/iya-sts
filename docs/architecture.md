@@ -22,7 +22,6 @@ stays in the leader, including when worker pools are turned on.
 | 88 TCP / UDP | The Kerberos KDC |
 | 389, 636 | The embedded directory, over plain LDAP and over LDAPS |
 | 8081 HTTPS | The main port: every path-based protocol, `/admin`, `/portal` and `/admin-api`. It asks every connection for a client certificate and requires none; `GET /tls/sign-in` signs the holder of a verified one in (there are no separate 8443 and 9443 TLS endpoints) |
-| 8888 TCP | The Kerberized test service that accepts an AP-REQ |
 | 8092, 8181 gRPC | The SPIFFE Workload API, and the SPIRE Server API (always mutual TLS) |
 | Domain sockets | The Workload API at `/tmp/spire-agent/public/api.sock` (on), and the SPIRE Server API's private socket at `/tmp/spire-server/private/api.sock` (off by default) |
 
@@ -37,19 +36,57 @@ store is the one exception: if it can't be opened, the service doesn't start.
 
 ## The request dispatcher and the worker pools
 
-The dispatcher hands work from the leader to three pools of child processes:
+The dispatcher hands work from the leader to worker threads — each a
+`worker_threads` Worker inside the same process, with its own JavaScript heap
+and event loop (#364; they were separate child processes until then):
 
 | Pool | What a worker runs | Setting | Default |
 |---|---|---|---|
-| **Crypto** | Post-quantum signing and verification, key generation, password hashing: slow computations that would otherwise freeze every listener | `workers.count` | 2, forked only when the first such job arrives |
-| **Admin** | Only the admin console and the user portal | `workers.surfaceCount` | 0 (off) |
-| **Request** | The whole protocol stack | `workers.requestCount` | 0 (off) |
+| **Request** | The whole protocol stack, the admin console and the user portal included | `workers.requestCount` | 1 where the store coordinates (PostgreSQL); 0 on the memory or LDIF store |
+| **Admin** | Only the admin console and the user portal, when you want them kept apart from protocol traffic | `workers.surfaceCount` | 0 (off: they go to the request workers) |
+
+The sockets that do not speak HTTP hand their work to the same workers as
+*operations*: the leader keeps the connection and the framing and a worker
+answers the request. That covers every LDAP operation, every message to the
+KDC on port 88, the unary SPIFFE Workload and SPIRE Server API calls, and the
+Broker API's FetchJWTSVID once the leader has attested the workload it names.
+Streams stay in the leader.
+
+`workers.dispatch` (default `*`, everything) says what goes to a worker, and
+`workers.readYourWrite` (default on) makes a worker catch up with what the
+leader wrote before it answers. Every worker is a whole second copy of the
+service's memory, so one is the default; add more only where the node has
+the cores to use them.
+
+Post-quantum signing, verification and key generation, and password
+hashing, are not a pool. They run natively on Node's OpenSSL, on libuv's
+thread pool, so they neither freeze the listeners nor start a process of
+their own (#363; a third pool of forked processes did this until then).
 
 With the admin and request pools off, the leader answers every request itself.
-When they are on, the processes share state through the persistence store and
-not through memory. For that reason, turning dispatch on without
+When they are on, **their workers start one at a time**
+(`workers.startConcurrency`, default 1), because each one loads the whole
+store into its own memory as it starts. The listener opens once the first
+worker of each pool is up, and the rest start behind it. **Every thread has a
+heap limit** derived from the container's memory limit and the number of
+threads (`workers.heapLimitMb`: 0 to derive, -1 for none). Each thread logs its
+memory every five minutes (the `process.memory-report` job). A worker whose
+heap reaches its limit ends on its own and is replaced, and the service goes
+on (`STS-WORKER-0046`); a container that reaches its memory limit loses the
+whole process, which is why few threads are better than many.
+
+Monitoring → Worker Pools (`/admin/worker-pools`) shows each pool of the node:
+its workers now, busy and free, its maximum and initial size, its crashes and
+restarts, and its average response time. Monitoring → Node Health
+(`/admin/node-health`) shows the container's CPU and memory, the process's,
+and each worker thread's heap.
+
+When they are on, the leader and the workers share state through the
+persistence store and not through memory. For that reason, asking for workers
+explicitly without
 [coordination](persistence.md#processes-against-one-store-coordinate) is refused
-at startup: it would give wrong answers, not just slow ones.
+at startup: it would give wrong answers, not just slow ones. The default of one
+worker simply becomes none on a store that can't coordinate.
 
 **Several nodes work the same way.** A cluster is several containers against
 one PostgreSQL store. [A cluster in AWS](aws-cluster.md) shows three of them
@@ -72,7 +109,7 @@ routes, in one order, and that order is the order in which routes match; see
 | OAuth2, OIDC | The authorization server and OpenID provider: `/oauth2/*`. [JWT assertions](jwt-assertions.md), [GNAP](gnap.md) |
 | SAML profiles | SAML 2.0 and SAML 1.1, each with its own identity provider. [SAML assertions](saml-assertions.md) |
 | WS-Trust, WS-Federation | `/wstrust`, `/wsfed` |
-| Kerberos, SPNEGO | A KDC per trust realm on the shared port 88, told apart by the Kerberos realm name in each request, plus the protected service and MS-KKDCP. SPNEGO also signs a person in with a Kerberos ticket. [Trust realms](trust-realms.md) |
+| Kerberos, SPNEGO | A KDC per trust realm on the shared port 88, told apart by the Kerberos realm name in each request, plus MS-KKDCP. SPNEGO signs a person in with a Kerberos ticket (the Kerberos-protected test service is the development companion's). [Trust realms](trust-realms.md) |
 | LDAP protocol | The directory's socket view of the embedded LDAP store below |
 | SCIM | `/scim/v2`, provisioning into the same directory with no store of its own |
 | SPIFFE | A trust domain per realm: the bundle endpoint, the Workload API and the SPIRE Server API |
@@ -182,8 +219,8 @@ disagree about which handler wins.
 **Some modules exist to break require cycles, not to group code.**
 `oid4vc/vc_configs.ts` holds the credential configurations, which both the
 issuer and the authorization server read. `oid4vc/vc_offers.ts` holds the
-Credential Offer's pre-authorized codes, which are *minted* by the offer pages
-and *redeemed at the token endpoint*, so that state cannot live in either
+Credential Offer's pre-authorized codes, which are *minted* by the portal's
+offer and *redeemed at the token endpoint*, so that state cannot live in either
 OID4VCI or OAuth 2.0 without the two requiring each other. A require cycle in
 node does not fail loudly: it hands back a half-initialised module whose exports
 are `undefined`, and the symptom arrives later as something that is not a
@@ -338,11 +375,11 @@ cross-implementation test runs `webauthn.js` and the debugger's own independent
 decoder over the same real ceremonies and requires the same verdict from both.
 That last one is why `webauthn.js` must stay loadable on its own.
 
-**WS-Federation's tests are thin**, which is worth saying plainly because the
-mock relying party makes it *look* covered: `/wsfed/rp` verifies a sign-in
-response check by check and shows every verdict, but a person has to click it
-and read the page. `tests/wsfed_wauth_step_up.js` holds the `wauth` step-up and
-its refusals. What a real test would add is the other negatives: a `wctx` that
+**WS-Federation's tests are thin**, which is worth saying plainly.
+`sts_saml11.js` posts a sign-in response to the test peer's relying party,
+which verifies it (the demonstration relying party that once made the profile *look*
+covered was deleted, #592), and `tests/wsfed_wauth_step_up.js` holds the
+`wauth` step-up and its refusals. What a real test would add is the other negatives: a `wctx` that
 came back altered, `wfresh` read as seconds, and an assertion whose signature
 reference does not resolve because the SAML 1.1 id attribute was not named. A
 passive requestor that issues a good token and posts it to a working relying

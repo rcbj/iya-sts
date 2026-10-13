@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -201,6 +201,24 @@ async function credential(alg) {
   log.debug("Entering credential(). alg=" + alg);
   const a = Number(alg || -7);
   let out;
+  // EVERY ALGORITHM THE VERIFIER CHECKS (2026-10-01): node's curve, the COSE
+  // curve and the hash for each ECDSA one; the key type and COSE curve for
+  // each EdDSA one; the padding for each RSA one.
+  const ec = { '-7': ['prime256v1', 1, 'sha256'],
+               '-9': ['prime256v1', 1, 'sha256'],
+               '-35': ['secp384r1', 2, 'sha384'],
+               '-51': ['secp384r1', 2, 'sha384'],
+               '-36': ['secp521r1', 3, 'sha512'],
+               '-52': ['secp521r1', 3, 'sha512'],
+               '-47': ['secp256k1', 8, 'sha256'] }[String(a)];
+  const okp = { '-8': ['ed25519', 6], '-19': ['ed25519', 6],
+                '-53': ['ed448', 7] }[String(a)];
+  const rsa = { '-257': ['sha256', 0], '-258': ['sha384', 0],
+                '-259': ['sha512', 0], '-37': ['sha256', 32],
+                '-38': ['sha384', 48], '-39': ['sha512', 64],
+                // RS1, SHA-1: insecure, accepted only behind
+                // webauthn.insecureAlgorithms.
+                '-65535': ['sha1', 0] }[String(a)];
   if (a === -7) {
     const pair = await keyPair('ec');
     const jwk = pair.publicKey.export({ format: 'jwk' });
@@ -209,23 +227,31 @@ async function credential(alg) {
     }, cose: new Map([[1, 2], [3, -7], [-1, 1],
                       [-2, Buffer.from(jwk.x, 'base64url')],
                       [-3, Buffer.from(jwk.y, 'base64url')]]) };
-  } else if (a === -257 || a === -37) {
+  } else if (ec) {
+    const pair = nodeCrypto.generateKeyPairSync('ec', { namedCurve: ec[0] });
+    const jwk = pair.publicKey.export({ format: 'jwk' });
+    out = { pair: pair, sign: function (data) {
+      return nodeCrypto.sign(ec[2], data, pair.privateKey);
+    }, cose: new Map([[1, 2], [3, a], [-1, ec[1]],
+                      [-2, Buffer.from(jwk.x, 'base64url')],
+                      [-3, Buffer.from(jwk.y, 'base64url')]]) };
+  } else if (rsa) {
     const pair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
     const jwk = pair.publicKey.export({ format: 'jwk' });
     out = { pair: pair, sign: function (data) {
-      return a === -257
-        ? nodeCrypto.sign('sha256', data, pair.privateKey)
-        : nodeCrypto.sign('sha256', data, { key: pair.privateKey,
+      return rsa[1] === 0
+        ? nodeCrypto.sign(rsa[0], data, pair.privateKey)
+        : nodeCrypto.sign(rsa[0], data, { key: pair.privateKey,
             padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
-            saltLength: 32 });
+            saltLength: rsa[1] });
     }, cose: new Map([[1, 3], [3, a], [-1, Buffer.from(jwk.n, 'base64url')],
                       [-2, Buffer.from(jwk.e, 'base64url')]]) };
-  } else if (a === -8) {
-    const pair = nodeCrypto.generateKeyPairSync('ed25519');
+  } else if (okp) {
+    const pair = nodeCrypto.generateKeyPairSync(okp[0]);
     const jwk = pair.publicKey.export({ format: 'jwk' });
     out = { pair: pair, sign: function (data) {
       return nodeCrypto.sign(null, data, pair.privateKey);
-    }, cose: new Map([[1, 1], [3, -8], [-1, 6],
+    }, cose: new Map([[1, 1], [3, a], [-1, okp[1]],
                       [-2, Buffer.from(jwk.x, 'base64url')]]) };
   } else {
     const name = { '-48': 'ML-DSA-44', '-49': 'ML-DSA-65',
@@ -276,19 +302,28 @@ function aaguidExtension(aaguid, critical) {
 
 // packed, Basic: an attestation certificate under `anchor` (section 8.2.1's
 // subject, CA false, the AAGUID extension). spoil: 'signature', 'ou',
-// 'aaguid-extension', 'ca'. `crl` names a distribution point.
-async function packed(ctx, anchor, spoil, crl) {
+// 'aaguid-extension', 'ca'. `crl` names a distribution point. `serial`
+// (#532) puts a device serial where an enterprise attestation does:
+// `{ subject: '...' }` as the subject's serialNumber, `{ yubico: n }` as
+// Yubico's serial extension (an INTEGER).
+async function packed(ctx, anchor, spoil, crl, serial) {
   log.debug("Entering packed().");
   const att = await keyPair('ec');
+  const extra = [];
+  if (serial && serial.yubico !== undefined) {
+    extra.push(extension('1.3.6.1.4.1.41482.13.1', false,
+      new asn1js.Integer({ value: Number(serial.yubico) }).toBER(false)));
+  }
   const leaf = await certificate({
     subject: [['2.5.4.6', 'US'], ['2.5.4.10', 'Synthetic Vendor'],
               ['2.5.4.11', spoil === 'ou' ? 'Something Else'
                                           : 'Authenticator Attestation'],
-              ['2.5.4.3', 'Synthetic Attestation']],
+              ['2.5.4.3', 'Synthetic Attestation']]
+      .concat(serial && serial.subject ? [['2.5.4.5', serial.subject]] : []),
     publicKey: att.crypto.publicKey, issuer: anchor, crl: crl,
     ca: spoil === 'ca' ? true : false,
     extensions: [aaguidExtension(spoil === 'aaguid-extension'
-      ? Buffer.alloc(16, 0xee) : ctx.aaguid)] });
+      ? Buffer.alloc(16, 0xee) : ctx.aaguid)].concat(extra) });
   const signed = Buffer.concat([ctx.authData, ctx.clientDataHash]);
   let sig = nodeCrypto.sign('sha256', signed, att.privateKey);
   if (spoil === 'signature') {

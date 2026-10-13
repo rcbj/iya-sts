@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -43,6 +43,9 @@ import bunyan = require('bunyan');
 import net = require('net');
 import config = require('../common/config');
 import InstanceSlot = require('../common/instance_slot');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-risk-store' });
 config.registerLogger(log);
@@ -71,7 +74,9 @@ const RISK_GROUP = ['riskListDatasets', 'riskListVersions', 'riskBeginVersion',
                     'riskGeography',
                     // #215: an import's progress, and the ones a stopped
                     // process left loading.
-                    'riskTouchVersion', 'riskAbandonStalled'];
+                    'riskTouchVersion', 'riskAbandonStalled',
+                    // #259: an assessment amended with its device.
+                    'riskAmendAssessment'];
 
 // The most assessments one realm holds in memory, as for failures.
 const MAX_MEMORY_ASSESSMENTS = 50000;
@@ -531,7 +536,7 @@ class RiskStore {
       realm: String(v.realm || ''), attribution: '', sourceUri: '',
       rowCount: 0, parameters: {}, nextUpdateAt: 0, loadedAt: 0,
       activatedAt: 0, supersededAt: 0, rowsDeletedAt: 0, refusal: '',
-      errorCode: '', origin: String(process.pid)
+      errorCode: '', origin: WorkerChannel.processTag()
     }, v, { realm: String(v.realm || ''), state: 'loading' }));
     log.debug("Leaving RiskStore.beginVersion(). Begun.");
     return Promise.resolve(true);
@@ -953,7 +958,7 @@ class RiskStore {
     const held = this.failures.get(realm) || [];
     this.failureSeq += 1;
     held.push(Object.assign({ id: String(this.failureSeq),
-                              origin: String(process.pid) }, row,
+                              origin: WorkerChannel.processTag() }, row,
                             { realm: realm }));
     if (held.length > MAX_MEMORY_FAILURES) {
       held.splice(0, held.length - MAX_MEMORY_FAILURES);
@@ -1586,6 +1591,39 @@ class RiskStore {
     return Promise.resolve(false);
   }
 
+  // AN ASSESSMENT AMENDED WITH THE DEVICE ITS SIGN-IN PROVED (#259): the
+  // same row, its signals, score and level rewritten — `risk_engine.ts`'s
+  // `amend()`. In the database `riskAmendAssessment()`; in memory the row is
+  // found and amended. The decision on it is `settleAssessment()`'s.
+  /**
+   * Rewrites an assessment's signals, score and level, for one amended with
+   * the registered device its sign-in proved.
+   *
+   * @param a - the assessment's id, realm, signals, score and level
+   * @param sealing - whether there is a key to seal under
+   * @returns whether it was found and amended
+   */
+  amendAssessment(a: Json, sealing: boolean): Promise<boolean> {
+    const { log } = this.deps;
+    log.debug("Entering RiskStore.amendAssessment(). " + a.id);
+    if (this.failuresInDatabase(sealing)) {
+      log.debug("Leaving RiskStore.amendAssessment(). Database.");
+      return Promise.resolve(this.driver.riskAmendAssessment(a));
+    }
+    const held = this.assessments.get(String(a.realm || '')) || [];
+    for (let i = held.length - 1; i >= 0; i--) {
+      if (held[i].id === a.id) {
+        held[i].signals = a.signals || [];
+        held[i].score = Number(a.score);
+        held[i].level = String(a.level || '');
+        log.debug("Leaving RiskStore.amendAssessment(). Memory.");
+        return Promise.resolve(true);
+      }
+    }
+    log.debug("Leaving RiskStore.amendAssessment(). Not held.");
+    return Promise.resolve(false);
+  }
+
   // A reaction to a change of risk, claimed once per assessment (#62 P4) —
   // see the driver's `riskClaimAction()`. True when this caller may take it.
   /**
@@ -1984,6 +2022,7 @@ export = {
   bandOf: RiskStore.bandOf,
   BANDS: RiskStore.BANDS,
   settleAssessment: slot.forward('settleAssessment'),
+  amendAssessment: slot.forward('amendAssessment'),
   subjectOf: slot.forward('subjectOf'),
   claimAction: slot.forward('claimAction'),
   setFeedback: slot.forward('setFeedback'),

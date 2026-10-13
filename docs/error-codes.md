@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **3748** of them, in **39** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4320** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -51,42 +51,49 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 66
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 43
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 63
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 28
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 16
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 79
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 204
-* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 53
+* [Service core (`STS-CORE`)](#sts-core) — 89
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 48
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 79
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
+* [Cells and residency (`STS-CELL`)](#sts-cell) — 87
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 18
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 206
+* [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
-* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 26
+* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 251
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 666
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 97
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 21
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 16
-* [Federation (`STS-FED`)](#sts-fed) — 134
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 293
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
+* [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 169
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 87
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 96
+* [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
+* [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
+* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 30
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 144
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 37
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 110
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 116
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 44
-* [Mail (`STS-MAIL`)](#sts-mail) — 39
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 282
-* [Device register (`STS-DEVICE`)](#sts-device) — 45
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 80
-* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 32
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 210
-* [Management API (`STS-API`)](#sts-api) — 75
-* [User portal (`STS-PORTAL`)](#sts-portal) — 75
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 133
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 120
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 47
+* [Mail (`STS-MAIL`)](#sts-mail) — 40
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
+* [Device register (`STS-DEVICE`)](#sts-device) — 50
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
+* [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 236
+* [Management API (`STS-API`)](#sts-api) — 84
+* [User portal (`STS-PORTAL`)](#sts-portal) — 92
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 19
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
+* [Registries (`STS-REG`)](#sts-reg) — 176
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 
 ## STS-HTTP
@@ -138,7 +145,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -156,7 +163,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0012` | A trust realm was defined with an id that is already in use. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0013` | A trust realm was named that is not defined. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0014` | A realms.* setting was set on one trust realm; those settings decide how a realm is reached and may only be set service-wide. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-CORE-0015` | A per-process setting (such as workers.count) was set on one trust realm, where it would change every realm at once. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-CORE-0015` | A per-process setting (such as workers.requestCount) was set on one trust realm, where it would change every realm at once. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0016` | A setting was cleared on a trust realm that does not set it. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0017` | The router could not be read to reserve realm ids, so a realm id may shadow an endpoint without being refused. | — |
 | `STS-CORE-0018` | A trust realm change watcher threw; the change stands but what watches it (persistence, most often) may not have recorded it. | — |
@@ -208,21 +215,44 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0121` | A sign-in or an issuance was refused because its trust realm is being removed (#262): realms.retire() marks the realm retiring before it ends its sessions and announces the removal, and from then on no session, token, authorization code, assertion, ticket, credential, certificate or SVID is started or issued in it, in either mode. Also logged once, as information, when the mark is set. | the protocol's own refusal — invalid_grant at the token endpoint, access_denied at the authorization endpoint, credential_request_denied at OpenID4VCI, a SAML Responder / RequestDenied status, a SOAP fault, a 503 problem at ACME, EST and SCEP, and a refused session at every sign-in door |
 | `STS-CORE-0122` | A trust realm's removal was refused because a removal of it is already in progress (#294): realms.retire() marked it less than realms.removalDeliveryTimeoutS plus a 30-second margin ago, or is running in this process. Starting a second one would end and announce everything twice. Once that time has passed the removal is taken to be interrupted, and removing the realm again finishes it. | none — the console and /admin-api refuse the remove action |
 | `STS-CORE-0123` | A trust realm is stuck half removed (#294): it carries the retiring mark (#262) from longer ago than a removal can take, so the process that was removing it stopped before it finished. Every new sign-in and issuance in it is refused (STS-CORE-0121) until an administrator removes it again, from another realm. Logged when such a realm is restored at start, and when the removal is finished. | none — logged; /admin/realms and GET /admin-api/realms show it |
+| `STS-CORE-0124` | The /admin/node-health page or GET /admin-api/node-health could not build its report of the node's container and processes (#329). | HTTP 500 page or JSON |
+| `STS-CORE-0125` | ECS_CONTAINER_METADATA_URI_V4 is set, but the ECS task metadata endpoint did not answer Monitoring → Node Health within its bound, or answered with an error (#329). Logged when it starts failing, not on every page; the page says so in a sentence and draws the cgroup figures without the cross-check. | none — the page and GET /admin-api/node-health still answer 200 |
+| `STS-CORE-0126` | Monitoring → Worker Pools or → Node Health, or their management API operations, were asked about a node (?node=) that is neither this node nor any node with a snapshot or a membership row (#332). | HTTP 404, with the names there are |
+| `STS-CORE-0127` | A cluster node's snapshot of Monitoring → Worker Pools and → Node Health could not be written to the shared store, or the other nodes' snapshots could not be read from it (#332). Logged when it starts failing, not on every run or page; the page draws this node alone and says why. | none — the pages and their API still answer 200 |
+| `STS-CORE-0128` | The hourly cluster.node-snapshot-purge job could not delete the snapshots of nodes that are no longer live cluster members (#332). Logged when it starts failing, not on every run; the rows stay, and the pages go on drawing those nodes as gone. | none — the scheduler records the failed run |
+| `STS-CORE-0140` | A package this service requires at first use rather than at start (common/lazy_module.ts, #348) — the gRPC runtime, its proto loader, jsonld through the vendored bbs2023.js — failed to load when it was first needed, so the call that needed it fails. The image is missing or has a broken copy of the package. | none — logged; the call fails as it would have at start |
+| `STS-CORE-0141` | An uncaught exception reached a started process — the front process, a request worker or a computation worker — and was contained there rather than ending it (#355, common/fault_boundary.ts). The line carries the stack. Logged at the first three occurrences of each distinct fault and then at each power of ten, with the count. | none — logged; the process carries on |
+| `STS-CORE-0142` | A promise rejection nobody handled reached a started process and was contained there rather than ending it (#355). The line carries the stack, throttled as STS-CORE-0141 is. | none — logged; the process carries on |
+| `STS-CORE-0143` | An Express handler returned a promise that rejected (an `async` handler that failed, #355). The request is answered with a plain 500 through Express's final handler, as a thrown error is, unless the handler had already answered or called next(); the line carries the stack, throttled as STS-CORE-0141 is. | HTTP 500 Internal Server Error, with no detail |
+| `STS-CORE-0144` | The Express guard (#355) could not be installed, because express/lib/router/layer is missing or not the shape it knows: a rejected async handler reaches the process handlers (STS-CORE-0142) instead of being answered with a 500. | none — logged at start |
+| `STS-CORE-0145` | listeners.realm was given to the default realm, whose listeners are the service's (listeners.custom); a realm's own listeners are set on that realm (#99, #472). | the write is refused; nothing is changed |
+| `STS-CORE-0146` | A custom listener's publicBaseUrl (listeners.custom or listeners.realm, #472) is not an https origin with no path, query or user, or is missing. | the write is refused; nothing is changed |
+| `STS-CORE-0147` | A custom listener's port (#472) is already another listener's or one of this process's own sockets' (every node binds every listener, so each must be its own). | the write is refused; nothing is changed |
+| `STS-CORE-0148` | A custom listener (#99, #472) was asked for while this service runs as several cells, which is not supported yet. | the write is refused; nothing is changed |
+| `STS-CORE-0149` | A module told of changed settings (config.onOverridesChanged()) or asked to judge a write between settings (config.addWriteRule()) threw. The change is in force; what that module does with it, or the rule it holds, did not run this time. | logged; the write is not refused by the failed rule |
+| `STS-CORE-0150` | A secret delivered as a file at start (<ENV>_FILE, #254) could not be read. The service does not start: it was told where its secret is, and starting without it would mint a different one. | none — fatal at startup, logged |
+| `STS-CORE-0151` | A secret delivered as a file at start (<ENV>_FILE, #254) was empty. The service does not start. | none — fatal at startup, logged |
+| `STS-CORE-0152` | A secret delivered as a file at start (<ENV>_FILE, #254) was read and could not be deleted afterwards, so it is still readable where it was delivered. The service starts with it. | none — logged |
+| `STS-CORE-0153` | A custom listener definition (listeners.custom or listeners.realm, #472) is not well formed: not a JSON array of objects, an id that is malformed, reserved or used twice, a port out of range, a member or tls setting no listener takes, half of a certificate pair, or a clientAuth that is not none, optional or required. | the write is refused; nothing is changed (400 at the management API) |
+| `STS-CORE-0154` | A mapping of hosted applications to listeners (listeners.applications, #472) is not well formed or names what is not there: an unknown application, a listener not defined or another realm's, an advertised listener the application is not on, the removal of a listener a mapping names, or oidfed off the listener oauth-oidc is advertised on (the Entity Configuration is fetched at the issuer). | the write is refused; nothing is changed (400 at the management API) |
+| `STS-CORE-0155` | A write would put the applications that read the sign-on session on listeners whose host names its cookie cannot reach: several host names with authn.cookieDomain empty (the cookie is host-only), a host name not under authn.cookieDomain, or an authn.cookieDomain that is not a DNS name (#472). | the write is refused; nothing is changed |
+| `STS-CORE-0156` | A write would take the management API off the listener the request making it arrived on, with no confirmation: nothing on that listener would answer the next one. PUT /admin-api/listeners/applications with confirm, or listeners.adminOnMain at the next start (#472). | the write is refused; nothing is changed |
+| `STS-CORE-0157` | The custom listeners and their mapping this process was started with (the environment, an appconfig file, or the store) break a rule a write of them would be refused for, or could not be read (#472). | the service does not start; logged when the listeners cannot be reconciled |
 
 ## STS-WORKER
 
-**Worker pools.** The child processes post-quantum signing runs in, and the request workers the whole protocol stack can be dispatched to.
+**Worker pools.** The request workers the whole protocol stack can be dispatched to (and, until #363, the child processes post-quantum signing ran in).
 
-Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, common/request_worker.ts, common/service_state.ts.
+Raised from: common/request_pool.js, common/request_worker.ts, common/service_state.ts, admin-ui/worker_pools_admin.ts.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-WORKER-0001` | The IPC channel to a post-quantum worker process failed, so a job sent to it may not arrive or its answer may not come back. | — |
-| `STS-WORKER-0002` | A post-quantum worker process exited or was killed with jobs in flight; every one of those jobs was failed and its caller told it can be retried. | — |
-| `STS-WORKER-0003` | Post-quantum worker processes kept exiting immediately without finishing a job, so the pool stopped forking them and computes in the front process (blocking) — usually an unreadable CONFIG_FILE or a machine out of memory. | — |
-| `STS-WORKER-0004` | A post-quantum worker stayed alive and did not answer a job within workers.jobTimeoutS, so the request waiting on it was failed rather than left to hang. | — |
-| `STS-WORKER-0005` | During shutdown a post-quantum worker did not finish within the drain bound and was killed. | — |
-| `STS-WORKER-0006` | A job (post-quantum sign, verify or generate, or a scrypt derivation) threw inside a worker process and was answered as a failure. | — |
+| `STS-WORKER-0001` *(retired)* | The IPC channel to a post-quantum worker process failed, so a job sent to it may not arrive or its answer may not come back. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0002` *(retired)* | A post-quantum worker process exited or was killed with jobs in flight; every one of those jobs was failed and its caller told it can be retried. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0003` *(retired)* | Post-quantum worker processes kept exiting immediately without finishing a job, so the pool stopped forking them and computes in the front process (blocking) — usually an unreadable CONFIG_FILE or a machine out of memory. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0004` *(retired)* | A post-quantum worker stayed alive and did not answer a job within workers.jobTimeoutS, so the request waiting on it was failed rather than left to hang. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0005` *(retired)* | During shutdown a post-quantum worker did not finish within the drain bound and was killed. Retired by #363: the post-quantum worker pool was removed. | — |
+| `STS-WORKER-0006` *(retired)* | A job (post-quantum sign, verify or generate, or a scrypt derivation) threw inside a worker process and was answered as a failure. Retired by #363: the post-quantum worker pool was removed. | — |
 | `STS-WORKER-0007` | A dispatched read waited the full 2000ms barrier bound for an earlier write to be reported committed and was served without it, so it may be stale. | — |
 | `STS-WORKER-0008` | Read-barrier tickets that had been answered for longer than the reap threshold without any worker reporting them committed were dropped — a lost commit announcement, or a flush running that long. | — |
 | `STS-WORKER-0009` | A TLS client certificate was too large to forward to a request worker in a header, so the worker saw the request as having presented no certificate. | — |
@@ -260,6 +290,11 @@ Raised from: common/worker_pool.js, common/worker.js, common/request_pool.js, co
 | `STS-WORKER-0041` | A batch request (workers.batch) waited workers.batchQueueTimeoutS for the pool's batch lane and was refused. | HTTP 503 with Retry-After |
 | `STS-WORKER-0042` | The connection to a request worker failed before any byte of a dispatched request reached it, and the request was sent again on a new connection (#77). | Nothing: the client gets the worker's answer |
 | `STS-WORKER-0043` | A request worker exited (or could not start) and a replacement was forked into its pool and slot. | Nothing directly: requests in flight on the dead worker were answered 502 (STS-WORKER-0030) |
+| `STS-WORKER-0044` | The /admin/worker-pools page or GET /admin-api/worker-pools could not build its report of the worker pools (#327). | HTTP 500 page or JSON |
+| `STS-WORKER-0045` | A request worker could not be forked at all (the fork call threw); the start gate moved on to the next (#342). | — |
+| `STS-WORKER-0046` | A request worker ran out of heap: its heap reached its limit (workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker thread since #364, a SIGABRT of a worker process before. | Nothing directly: requests in flight on it were answered 502 |
+| `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
+| `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
 
 ## STS-STORE
 
@@ -270,7 +305,7 @@ Raised from: persistence/.
 | Code | What failed | Client sees |
 |---|---|---|
 | `STS-STORE-0001` | A scheduled persistence flush threw past its own handler. | — |
-| `STS-STORE-0002` | Writing the directory, the realm registry or the settings overrides to the persistence store failed; the service keeps answering from memory and retries on the next change. | — |
+| `STS-STORE-0002` | Writing the directory, the realm registry or the settings overrides to the persistence store failed; the change stays in memory, the write is retried with a backoff, and in postgres mode a request whose change was in it is answered 503 (STS-STORE-0066). | — |
 | `STS-STORE-0003` | persistence.mode names a mode the persistence module does not know, so nothing is persisted. | — |
 | `STS-STORE-0004` | The service refused to start: a persisting mode is configured and no directory module is installed to persist. | — |
 | `STS-STORE-0005` | The service refused to start: the database password comes from a secret store but persistence.databaseUrl is not a URL it can be injected into. | — |
@@ -289,11 +324,11 @@ Raised from: persistence/.
 | `STS-STORE-0018` | Minted state could not be written because no key-encryption key is available to seal it. | — |
 | `STS-STORE-0019` | A handle that is not a declared store reported a minted write; its rows cannot be written. | — |
 | `STS-STORE-0020` | A minted store holds a value that will not serialise, so that row cannot be written. | — |
-| `STS-STORE-0021` | Writing minted state (sessions, tokens, codes, the audit log) to the store failed; the keys stay journalled and the next flush retries. | — |
+| `STS-STORE-0021` | Writing minted state (sessions, tokens, codes, the audit log) to the store failed; the keys stay journalled, the write is retried with a backoff, and in postgres mode a request whose rows were in it is answered 503 (STS-STORE-0066). | — |
 | `STS-STORE-0022` | The service refused to start: minted state is persisted but no key-encryption key is available to open it. | — |
 | `STS-STORE-0023` | An earlier run's unreadable minted rows could not be cleared from the store. | — |
 | `STS-STORE-0024` | A store refused a minted row restored at startup; the row was dropped. | — |
-| `STS-STORE-0025` | Minted rows older than persistence.mintedRetention could not be purged from the store. | — |
+| `STS-STORE-0025` *(retired)* | Minted rows older than persistence.mintedRetention could not be purged from the store at startup. Retired (#333): a start deletes nothing; the persistence.minted-expiry-purge job does, and its failure is STS-STORE-0065. | — |
 | `STS-STORE-0026` | The service refused to start: the minted state in the store could not be read. | — |
 | `STS-STORE-0027` | The service refused to start: persistence.mode is postgres and persistence.databaseUrl was set to empty. | — |
 | `STS-STORE-0028` | The service refused to start: persistence.mode is postgres and the pg package is not installed. | — |
@@ -332,6 +367,22 @@ Raised from: persistence/.
 | `STS-STORE-0061` | A process lost the claim on its persistence origin while running — another process took it — and exits rather than go on refusing every write. | none — logged, then the process exits |
 | `STS-STORE-0062` | The claim on this process's persistence origin could not be renewed because the store did not answer. Not fatal: the claim outlives a short outage and every write checks it. | none — logged |
 | `STS-STORE-0063` | A minted store journalled a key holding a NUL character, which PostgreSQL text cannot hold; the row is left out of the write rather than failing every write after it. | none — logged |
+| `STS-STORE-0064` | A minted store's expiresAt hook threw while its row was being written; the row is written as not expiring, so it is restored and kept until the store deletes it. Said once per store. | none — logged |
+| `STS-STORE-0065` | The persistence.minted-expiry-purge job could not delete the expired, orphaned or stale minted rows; a start skips them anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0066` | A request changed the store and the commit of that change failed, so it was answered 503 with Retry-After instead of its success (#351); the change is still in memory and its write is retried. | RFC 9110 section 15.6.4 |
+| `STS-STORE-0067` | An LDAP operation changed the store and the commit of that change failed, so it was answered unavailable (52) instead of its result (#351); the change is still in memory and its write is retried. | RFC 4511 section 4.1.9 |
+| `STS-STORE-0068` | This process's event loop was blocked past the warning threshold in the last report window; timers such as the origin renewal and the cluster heartbeat ran that late too. | none — logged |
+| `STS-STORE-0069` | The renewal of this process's origin claim started or answered more than half the claim's lifetime late; the line names the event loop's delay, so a lost origin says why. | none — logged |
+| `STS-STORE-0070` | The liveness connection (origin renewal, heartbeat, leases) dropped or could not be opened; the next statement reconnects, and one that cannot goes through the pool. | none — logged |
+| `STS-STORE-0071` | A secret setting saved in the store (sts_appconfig or a realm's overrides) is sealed and did not open; it is ignored and the setting has its configured value until it is set again (#222). | — |
+| `STS-STORE-0072` | A directory entry is sealed and did not open in this process (a data key it does not hold, or a blob that names another DN); it is left out of what the store answered (#391). | — |
+| `STS-STORE-0073` | The directory could not be walked to count or re-seal what its entries hold under a data key; nothing in it was counted or changed, so no key is destroyed on that count (#391). | — |
+| `STS-STORE-0074` | The PostgreSQL store was built before schema version 14: its directory lookup columns are generated from plaintext attributes, and this build seals every entry. The start is refused; recreate the database (#391). | none — fatal at start |
+| `STS-STORE-0075` | The sequence numbers of the audit log and the delegation register could not be leased from the shared store at start-up, so this process numbers its rows with its own counter, unique only within this process (#465). | — |
+| `STS-STORE-0076` | A sequence stream spent both of its leased blocks with no new lease from the store, so it numbers from this process's own fallback range until the process restarts (#465). | — |
+| `STS-STORE-0077` | A block of sequence numbers could not be leased from the store; the next half-spent block asks again (#465). | — |
+| `STS-STORE-0078` | A postgres connection string (persistence.databaseUrl, the read or global database, or cell_convert's) was not dialled: its sslmode is disable or allow, or it is not a postgres:// URL, so it would or might connect in the clear. Every connection is TLS (#273). Fatal at persistence.start(). | — |
+| `STS-STORE-0079` | persistence.databaseTlsCaFile names a file that could not be read, or that holds no PEM certificate, so the database connection has no trust anchor anybody chose. Fatal at persistence.start(); the out-of-process tools that dial the database refuse the same way. | none — fatal at start |
 
 ## STS-CLUSTER
 
@@ -359,7 +410,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0016` | A secret every node must share could not be written to or read from the store; the service does not start. | — |
 | `STS-CLUSTER-0017` | A shared secret could not be sealed or opened with the key-encryption key; the service does not start. | — |
 | `STS-CLUSTER-0018` | A request could not catch up with the other nodes' committed writes before it was served; it is answered from this process's copy. | — |
-| `STS-CLUSTER-0019` | A response held until its writes committed could not commit them; it is sent anyway and the writes are retried. | — |
+| `STS-CLUSTER-0019` | An outbound message held until this node's writes committed could not commit them; it is sent anyway and the writes are retried. (A held RESPONSE whose commit fails is STS-STORE-0066 since #351.) | — |
 | `STS-CLUSTER-0020` | Active-active mode is running with capabilities an operator accepted as missing; each named one is a known way nodes disagree. | — |
 | `STS-CLUSTER-0021` | A request worker could not attach to its node's cluster membership; the worker does not start. | — |
 | `STS-CLUSTER-0022` | A counter that may only go up (a WebAuthn signature counter, a one-time code step) could not be advanced because the store could not be asked; the credential is refused. | — |
@@ -369,6 +420,104 @@ Raised from: cluster/.
 | `STS-CLUSTER-0026` | Active-active mode was refused because global.publicBaseUrl is empty, so each node would name itself by the address it was reached on. | — |
 | `STS-CLUSTER-0040` | A cluster mode was configured with persistence.minted off, so nodes would not share sessions, pending sign-ins, codes or tokens; the service does not start. | — |
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
+| `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
+| `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
+
+## STS-CELL
+
+**Cells and residency.** One service deployed as several cells in several jurisdictions: the global and cell tiers of the store, the routing index that says where a person is homed, the inter-cell channel, relaying a request to the cell that owns it, the sealed locators, the transfer decisions and the revocations pushed between cells.
+
+Raised from: common/cells.ts, common/cell_*.ts, persistence/tiers.js, persistence/persistence_tiered.js, admin-ui/cells_admin.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-CELL-0001` | The cell settings are inconsistent (an id without a jurisdiction, a malformed cells.peers, a peer with this cell's id, or a cell id that is not [a-z0-9]{1,16}); the service does not start. | — |
+| `STS-CELL-0002` | cells.id is set and persistence.globalDatabaseUrl is empty, or the store is not postgres; a cell keeps its global rows in the global database, so the service does not start. | — |
+| `STS-CELL-0003` | A multi-cell deployment in product mode has no cell key-encryption key (keys.cellKekProvider is none), so one cell's rows would open in every other; the service does not start. | — |
+| `STS-CELL-0004` | A service deployed as cells does not persist its signing keys or has no operator key-encryption key, so its cells would sign with different keys and could not open each other's global rows; the service does not start. | — |
+| `STS-CELL-0005` | A service deployed as cells has no global.publicBaseUrl, so a cell would build addresses from the name a request reached it by; the service does not start. | — |
+| `STS-CELL-0010` | The global tier database password was read and is empty; the service does not start. | — |
+| `STS-CELL-0011` | The cell key-encryption key has no location of its own, or names the service key's; it has no fallback, so the service does not start. | — |
+| `STS-CELL-0012` | The cell key-encryption key is the same key as the service key-encryption key; the service does not start. | — |
+| `STS-CELL-0020` | A person was written in this cell whose login name or entryUUID the routing index already places in another cell (a creation raced the index check); sign-in routing will not find the copy here. | — |
+| `STS-CELL-0021` | The routing index could not be updated at a directory flush; it is retried at the next write of the same person. | — |
+| `STS-CELL-0022` | Group membership rows in this cell belong to a group the global tier no longer has; they are not restored. | — |
+| `STS-CELL-0030` | A request could not be relayed to the cell that owns it, or that cell could not be dialled; the request is answered 503 here (fail-closed). | — |
+| `STS-CELL-0031` | This process's inter-cell certificate could not be issued (the process branch or its inter-cell Issuing CA is missing or refused). | — |
+| `STS-CELL-0032` | A peer on the inter-cell channel was refused: its chain does not verify to the service Root, its leaf is not from the inter-cell Issuing CA, or it names a cell that is not one of this cell's peers or not the one dialled. | — |
+| `STS-CELL-0033` | The inter-cell listener could not bind its port; requests relayed to this cell and questions from other cells fail at them. | — |
+| `STS-CELL-0034` | A relayed request did not carry its sending cell and exactly one hop, or a relayed request would have been relayed again; refused. | — |
+| `STS-CELL-0035` | An inter-cell operation call was refused: no such operation, not a POST, a body that is not JSON, or a body over the size limit. | — |
+| `STS-CELL-0036` | An inter-cell operation failed, at this cell for another's call or at another cell for this one's. | — |
+| `STS-CELL-0040` | The routing index could not be read while finding a person's home cell; the request is served here as if the person were unknown. | — |
+| `STS-CELL-0041` | A pushed authorization request could not be handed to the home cell of a flow restarting there; the flow restarts without it. | — |
+| `STS-CELL-0042` | A request another cell selected this one for (?cell=) was refused: the release policy does not permit this cell's people to be released to a reader in that cell's jurisdiction. | — |
+| `STS-CELL-0043` | A person's creation named a home cell this service does not have, or one in a jurisdiction the realm may not place people in (cells.jurisdictions); refused. | — |
+| `STS-CELL-0044` | A person's creation was refused because the routing index already places that login name in another cell: a login name is unique in a realm across every cell. | — |
+| `STS-CELL-0045` | A re-homing was refused: the target is not a cell of this service, is this one, is in a jurisdiction the realm may not place people in, or the person is not homed here. | — |
+| `STS-CELL-0046` | A re-homing was refused: a value sealed on the person's entry or device will not open in this cell, so it cannot be moved. | — |
+| `STS-CELL-0047` | A re-homing failed part way: the target did not take the person, the routing index could not be moved, or what was left here could not be removed. The log line says which, and what is left. | — |
+| `STS-CELL-0048` | A re-homed person could not be put back in one of their groups at the receiving cell. | — |
+| `STS-CELL-0050` | A change made in this cell to a projected person could not be sent to their home cell; it is held here only until the session ends. | — |
+| `STS-CELL-0051` | The cells holding a projection of a changed person could not be told; each finds out at its next check against home. | — |
+| `STS-CELL-0052` | A session could not be exported to the cell a relayed request came from; it stays at home and the browser stays pinned there. | — |
+| `STS-CELL-0053` | What this cell held for a person homed elsewhere could not be ended when their home said to. | — |
+| `STS-CELL-0054` | Another cell sent a change to an attribute of a person homed here that no other cell may write (a credential, the name, the entryUUID, memberOf); refused. | — |
+| `STS-CELL-0055` | A cell holding a person's exported session could not be told to end it; it finds out at its next check against home. | — |
+| `STS-CELL-0056` | The home cell of a projected person could not be reached to confirm the account; refused fail-closed, or allowed within cells.failOpenGraceS when cells.homeUnreachable is fail-open. | — |
+| `STS-CELL-0060` | An inter-cell delivery was not sent: the outbound kill switch is on. | — |
+| `STS-CELL-0061` | An inter-cell delivery names no cell this service has; it is dead-lettered. | — |
+| `STS-CELL-0062` | An inter-cell delivery could not be prepared; it is dead-lettered. | — |
+| `STS-CELL-0063` | An inter-cell delivery could not reach the other cell (a timeout or a connection failure); it is tried again with a doubling backoff. | — |
+| `STS-CELL-0064` | The other cell refused an inter-cell delivery, or it was given up after its last attempt; it is dead-lettered and retried by hand from /admin/deliveries. | — |
+| `STS-CELL-0065` | An inter-cell delivery was deferred to a later attempt. | — |
+| `STS-CELL-0066` | An inter-cell delivery stayed pending past cells.deliveryRetentionS and was dead-lettered. | — |
+| `STS-CELL-0067` | The periodic summary of inter-cell deliveries in a realm: sent, retried and dead-lettered since the last line. | — |
+| `STS-CELL-0068` | The inter-cell delivery sweep failed; it runs again at its next slot. | — |
+| `STS-CELL-0069` | An inter-cell dead letter could not be retried. | — |
+| `STS-CELL-0100` | An ACME request naming its account only by key (a newAccount with no External Account Binding) or an RFC 9773 renewal-info request could not be asked of every other cell; it is refused 503 rather than answered by a cell that could not know. | RFC 8555 section 7.3.1; RFC 9773 section 4 |
+| `STS-CELL-0101` | An EST enrollment on behalf of a person homed in another cell was refused: the certificate is written onto their entry only in that cell, and the administrator's own credential is checked only in theirs. | RFC 7030 section 4.2 |
+| `STS-CELL-0120` | Two cells' short keyed tags collide, so a SAML artifact whose handle carries one is served where it arrives rather than relayed to either. | — |
+| `STS-CELL-0121` | A cell could not be asked whether it holds the session a SAML attribute or authentication query names; the query is answered without it. | — |
+| `STS-CELL-0122` | A federation partner's sign-out could not reach every cell; sessions held in a cell not reached last until they end by themselves, and the partner is told where its protocol allows. | — |
+| `STS-CELL-0123` | A cell could not be asked whether a person homed there carries a federation partner's link; the partner's subject is decided without it. | — |
+| `STS-CELL-0124` | A person's home cell did not release their attributes to the cell serving a token about them (the transfer policy refused, or no policy was available); the token is refused. | — |
+| `STS-CELL-0125` | A person's home cell could not be reached for their attributes; a token about them is refused (fail-closed, D6). | — |
+| `STS-CELL-0140` | A SCIM create names a home cell (the iya-sts User extension's homeCell, or the realm's default) that this service does not have or that is outside the jurisdictions the realm may home people in; refused 400 invalidValue and nothing is created. | RFC 7644 section 3.12 |
+| `STS-CELL-0141` | A SCIM create reached a cell that is not the home it resolves to and could not be relayed again (it arrived relayed, or inside a relayed BulkRequest); refused 400 invalidValue rather than made in the wrong region. | RFC 7644 section 3.12 |
+| `STS-CELL-0142` | A SCIM create names a login name the routing index already places in another cell of this realm; refused 409 uniqueness. | RFC 7644 section 3.12 |
+| `STS-CELL-0143` | A SCIM Group write names members homed in more than one cell; one request is performed in one cell, so it is refused 400 invalidValue whole and nothing is changed. | RFC 7644 section 3.12 |
+| `STS-CELL-0144` | A SCIM BulkRequest's operations belong to people homed in more than one cell; it is refused 400 invalidValue whole before any operation runs. | RFC 7644 section 3.7 |
+| `STS-CELL-0145` | A SCIM write to an existing User names a homeCell other than the one the person is homed in; re-homing is an administrator's act, so it is refused 400 mutability. | RFC 7644 section 3.12 |
+| `STS-CELL-0146` | The routing index could not be asked to claim a SCIM create's login name; the create is refused 500 and nothing is written. | — |
+| `STS-CELL-0147` | An LDAP simple bind names a person homed in another cell, and that cell could not be asked to verify the password; the bind is refused LDAP_UNAVAILABLE (52), fail-closed, and not counted as a failed bind. | RFC 4511 section 4.1.9 |
+| `STS-CELL-0160` | A GNAP continuation for a grant that moved to another cell reached the cell it moved from by way of a third cell, and a relayed request is not relayed again; answered 503 too_fast so the client tries again once every cell knows where the grant went. | RFC 9635 section 5 |
+| `STS-CELL-0161` | The cell that minted a GNAP grant did not hand it to the cell the resource owner's browser is pinned to — it had issued tokens, was no longer waiting, or was not held there; the browser is told nothing is waiting. | — |
+| `STS-CELL-0162` | A GNAP grant waiting at an interaction handle could not be fetched from the cell that minted it; the browser pinned here is told nothing is waiting. | — |
+| `STS-CELL-0163` | Another cell could not be asked whether it holds a GNAP access token, user code or user reference; the request is served here as if no cell did. | — |
+| `STS-CELL-0164` | Another cell could not be told that a GNAP grant moved; a continuation it receives goes to the minting cell by the grant's tag and is forwarded from there. | — |
+| `STS-CELL-0165` | A GNAP inter-cell operation was malformed: an unknown realm, an unknown kind, or a grant handed to no other cell; the calling cell is answered with a failure. | — |
+| `STS-CELL-0180` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a transfer question (hold-session or serve-request) — a defect; the strict default was read from the facts instead: a session is held only in the same jurisdiction or a listed transfer, a request refused only under a hard geofence (#98). | none — a warning in the log |
+| `STS-CELL-0181` | The built-in issuance policy could not be evaluated for a transfer question in a process with no issuance PEP — a defect; the strict default was read from the facts instead (#98). | none — an error in the log |
+| `STS-CELL-0182` | A transfer question named a realm this service does not have; the session is not held away from home, the request is not served and nothing is released (#98). | — |
+| `STS-CELL-0183` | A request about a person homed in another jurisdiction was refused under the realm's hard geofence (cells.hardGeofence): the issuance policy answered serve-request with refuse, so it is neither served nor relayed (#98). | — |
+| `STS-CELL-0184` | Personal data of the people homed in this cell was withheld from a reader at a cell in another jurisdiction (a directory listing or a management-API call relayed with ?cell=): the issuance policy answered release-attributes with withhold (#98 D11). | — |
+| `STS-CELL-0190` *(retired)* | Server configuration -> Cells (/admin/cells) could not be drawn: the cell map or its peers could not be read; the page answers 500 and the reason is logged. | — |
+| `STS-CELL-0191` | GET /admin-api/cells could not read the cell map; the call answers 500 server_error. | — |
+| `STS-CELL-0192` | POST /admin-api/cells/rehome failed without a refusal of its own (the move threw, or a refusal carried no code); the call answers an error and the person stays where they were homed. | — |
+| `STS-CELL-0193` | A person's creation from the console or /admin-api arrived relayed from another cell for a home that is not this cell (the two cells' settings disagree); it is refused 400 rather than relayed again, and nothing is created. | — |
+| `STS-CELL-0194` | Another cell did not answer cluster-summary (#361): the Cluster page and GET /admin-api/cluster draw that cell as unreachable, with the reason, and every other cell as it answered. | — |
+| `STS-CELL-0200` | The one-time conversion of a single-cell store into a cell (persistence/cell_convert.js) was refused before it read anything: an unknown argument, no cells.id, a store that is not postgres, no global database, or keys not persisted under an operator key-encryption key. Nothing is changed and it exits non-zero. | none — an operator tool |
+| `STS-CELL-0201` | The conversion found the cell or the global database at a schema version other than this service's; postgres/schema.sql has to be run against both first. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0202` | The conversion found nothing to convert: the cell database holds no realm and no key and the global database is empty — the cell's database URL does not name the single-cell deployment's database. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0203` | The conversion refused a second source: the global database already holds realms or keys that are not the cell database's, or a routing index row naming another cell. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0204` | The conversion's copy into the global database (or an already-converted store's missing routing index rows) could not be written; the transaction was rolled back and the cell database is unchanged. Running it again is safe. | none — an operator tool |
+| `STS-CELL-0205` | The conversion read the global database back after the copy and it did not hold what was copied (a row missing or different, or a person indexed in another cell); the cell database is unchanged. | none — an operator tool |
+| `STS-CELL-0206` | The conversion copied and verified the global rows and then could not take them out of the cell database; that transaction was rolled back. Running it again finds the copy and finishes. | none — an operator tool |
+| `STS-CELL-0207` | The conversion could not hold the service key-encryption key, or it did not open the stored key sets: the routing index's digests are keyed under it and would route nobody. Nothing is changed. | none — an operator tool |
+| `STS-CELL-0208` | The conversion could not dial or read the cell or the global database the way the service does (a connection, a password provider or a statement failed). Nothing is changed. | none — an operator tool |
+| `STS-CELL-0209` | A conversion finished with something worth a look: the sts_risk_* counts moved while it ran (something else was writing the cell database), or an already-converted cell database holds a global-tier directory row or a person indexed in another cell. Nothing is changed for it. | none — a warning in the log |
+| `STS-CELL-0210` | A cell conversion found a sealed directory entry it could not open, so it could not decide the entry's tier; nothing was converted (#391). | cell_convert — refused |
 
 ## STS-SCHED
 
@@ -393,7 +542,9 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0013` | The scheduler's tick failed unexpectedly; it is tried again at the next tick. | — |
 | `STS-SCHED-0014` | The scheduler's leader could not stand down; its lease expires on its own. | — |
 | `STS-SCHED-0015` | A per-process job's run in this process threw or rejected; its row for this process says so, and it runs again at its next slot. | — |
-| `STS-SCHED-0016` | A run was asked for that does not exist (an unknown run id). | — |
+| `STS-SCHED-0016` *(retired)* | A run was asked for that does not exist (an unknown run id). | — |
+| `STS-SCHED-0017` | Purging the scheduler's run history past its bound (scheduler.runHistoryCount, scheduler.runHistoryHours) failed; the rows stay until the next run of scheduler.history, and a start still skips the ones past their expiry. | — |
+| `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
 
 ## STS-KEYS
 
@@ -408,7 +559,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0003` | This runtime cannot generate ML-DSA keys (it needs OpenSSL 3.5 / node 24); ML-DSA certificates are unavailable. | — |
 | `STS-KEYS-0004` | A stored password or secret hash is not decodable and was treated as no match. | — |
 | `STS-KEYS-0005` | A stored password or secret hash names scrypt parameters this process cannot compute and was treated as no match. | — |
-| `STS-KEYS-0006` | The worker pool could not run a scrypt derivation, so it was computed in the front process instead. | — |
+| `STS-KEYS-0006` *(retired)* | The worker pool could not run a scrypt derivation, so it was computed in the front process instead. Retired by #363: scrypt runs on libuv's thread pool and there is no worker pool to fail. | — |
 | `STS-KEYS-0007` | An XML signature was not verified: the document is not well-formed XML. | refusal by the calling protocol (e.g. SAML Responder status, SOAP fault) |
 | `STS-KEYS-0008` | An XML signature was not verified: the named element is absent or carries no ds:Signature of its own. | refusal by the calling protocol |
 | `STS-KEYS-0009` | An XML signature was refused because its Reference names a different element than the one it is attached to (signature wrapping). | refusal by the calling protocol |
@@ -482,6 +633,70 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0077` | An XML signature was checked with an ECDSA key on a curve weaker than P-256 (secp160, secp192, secp224 and the like), and the realm is in product mode, where such a key verifies nothing (#202). | the caller's refusal: the signature does not verify, and each protocol answers that as it answers a wrong signature |
 | `STS-KEYS-0078` | An AES-CBC XML-encrypted element did not decrypt to a well-formed element: its padding, its UTF-8 or its XML was wrong, and which is deliberately one answer — the padding oracle of XML Encryption 1.1 section 6.1.3, closed (#202). | refusal by the calling protocol |
 | `STS-KEYS-0090` | An XML element encrypted by ECDH-ES key agreement derives its key with something other than a SHA-256/384/512 ConcatKDF (PBKDF2, a SHA-1 digest, none), or names its originator key on a curve this service does not agree over; refused before any key operation (#193 — it was reported as a key encrypted to another certificate). | the caller's refusal |
+| `STS-KEYS-0091` | A stored data encryption key could not be unwrapped under the key-encryption key — almost always the wrong key-encryption key. At startup the service does not start (#391). | — |
+| `STS-KEYS-0092` | A sealed value names a data encryption key this process does not hold, so it does not open; the stored data-key rows are read again in the background. Said once per key (#391). | — |
+| `STS-KEYS-0093` | A data-key row could not be written to the store; what was sealed under its new keys will not open after a restart until it is (#391). | — |
+| `STS-KEYS-0094` | A stored data-key row could not be read, so the data encryption keys in it are not held (#391). It is not overwritten. | — |
+| `STS-KEYS-0095` | A stored key row is not a version-2 envelope: the store was written before data encryption keys (#391) and this build does not read it. The service does not start; recreate the store. | — |
+| `STS-KEYS-0096` | Data encryption keys wrapped under the PREVIOUS key-encryption key (keys.previousKek*) were re-wrapped under the current one at start. Once every node runs with the current key, the previous one may be removed (#391). | — |
+| `STS-KEYS-0097` | A key-set or certificate-authority row under a superseded data encryption key could not be re-sealed; it stays under the old key, which is then not destroyed (#391). | — |
+| `STS-KEYS-0098` | keys.previousKekProvider names a provider and its location is empty, so the previous key-encryption key could not be read. The service does not start (#391). | — |
+| `STS-KEYS-0099` | A pass of the data-key re-encryption job failed: what is sealed under superseded data encryption keys could not be counted or re-sealed. Nothing is destroyed; the next pass tries again (#391). | — |
+| `STS-KEYS-0100` | A data-key rotation was asked for where data encryption keys are derived per run and not stored, or for a realm or class no stored key serves (#391). | the console's and the API's refusal, 400 |
+| `STS-KEYS-0101` | A secret other than the key-encryption key names a key management service (vault-transit, aws-kms, gcp-kms, azure-keys) as its provider; a KMS wraps keys and holds nothing to read. The read is refused (#391). | — |
+| `STS-KEYS-0102` | The key management service's key is not one data keys can be wrapped under: a Transit key that is not AEAD (associated data is required), an AWS KMS key that is not an enabled symmetric ENCRYPT_DECRYPT key, or a Transit mount that is not a plain path. The service does not start (#391). | — |
+| `STS-KEYS-0103` | A key management service did not wrap or unwrap a data encryption key: it refused, answered nothing, or the wrapped key is under another KMS key. A new data key is not written; one that does not unwrap at start stops the start (#391). | — |
+| `STS-KEYS-0104` | A rotation of the key-encryption key was asked for where it is not in a key management service (it is read into the process, or data keys are derived per run): its successor has to be configured with keys.previousKek* and the nodes restarted (#391). | the console's and the API's refusal, 400 |
+| `STS-KEYS-0105` | The key management service refused to rotate the key-encryption key (commonly: the identity this service runs as may use the key but not rotate it). Nothing was re-wrapped (#391). | — |
+| `STS-KEYS-0106` | Counting the values sealed under each data encryption key failed; the counts shown are the previous ones (#391). | — |
+| `STS-KEYS-0107` | A Content-Digest algorithm this service was asked to compute or accept is not sha-256 or sha-512 (for example a key's content-digest-alg). | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0108` | A GNAP request with content carries no Content-Digest field. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0109` | A Content-Digest field is not a Structured Field Dictionary. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0110` | A Content-Digest member is not a Byte Sequence. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0111` | A Content-Digest does not match the request content. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0112` | A Content-Digest field carries no digest in an accepted algorithm. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0113` | An HTTP message signature's covered component identifier is malformed, or the covered components are not an Inner List. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0114` | A covered component carries a parameter that is not understood or is of the wrong type. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0115` | A covered component carries ;req in a signature over a request message, which RFC 9421 section 2.4 forbids. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0116` | An HTTP message signature covers a derived component this verifier does not understand. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0117` | An HTTP message signature covers @status (or another response-only component) on a request, or a response status is malformed. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0118` | A request has no method or no absolute target URI to derive a covered component from. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0119` | A covered @query-param has no name parameter, or names a parameter the target URI does not have. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0120` | A covered @query-param names a parameter that occurs more than once. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0121` | A covered component carries ;tr, and trailers are not part of the message this verifier is given. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0122` | A covered component combines ;bs with ;sf or ;key. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0123` | A covered HTTP field is not present in the message. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0124` | A covered component asks for ;sf or ;key on a field whose Structured Field type is unknown or is not a Dictionary. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0125` | A covered ;key names a Dictionary member the field does not have. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0126` | A covered field does not parse as its Structured Field type. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0127` | An HTTP message signature lists @signature-params among its covered components. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0128` | A covered component's value contains a newline or a character outside ASCII. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0129` | A signature parameter is of the wrong type or is a negative timestamp, or the signature parameters cannot be serialized. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0130` | An HTTP message signature covers the same component more than once. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0131` | The key for an HTTP message signature algorithm is the wrong kind, too weak or unreadable (a shared secret shorter than its hash, an asymmetric key of the wrong type, an RSA key under 2048 bits or with a forgeable exponent or modulus, a JWK whose use is not sig, a post-quantum key in the wrong form). | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0132` | A signature label handed to the HTTP message signer is not a valid Dictionary key. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0133` | No signature algorithm could be determined: neither the key nor an alg parameter names one. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0134` | A signature algorithm, or a signature's alg parameter, is not one this verifier supports. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0135` | A JWS algorithm was signalled with the alg parameter, or an alg parameter disagrees with the key's algorithm. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0136` | Signing or verifying an HTTP message signature failed inside the cryptographic library. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0137` | An HTTP message signature could not be appended to a message: it is not a successful sign() result, or its label is already used. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0138` | A Signature or Signature-Input field is not a Structured Field Dictionary. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0139` | A Signature or Signature-Input field uses one label more than once. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0140` | A GNAP request proved by httpsig carries no HTTP message signature (no Signature-Input and no Signature field). | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0141` | A signature label is present in only one of the Signature and Signature-Input fields. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0142` | A Signature-Input member is not an Inner List of string component identifiers, or a Signature member is not a Byte Sequence. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0143` | The message carries no HTTP message signature with the label the verifier asked for. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0144` | No HTTP message signature carries the required tag (tag="gnap"). | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0145` | An HTTP message signature carries the alg parameter, which RFC 9635 section 7.3.1 forbids. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0146` | An HTTP message signature has no created parameter. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0147` | An HTTP message signature is older than the allowed age (gnap.signatureMaxAgeS). | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0148` | An HTTP message signature claims a created time further in the future than the allowed clock skew. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0149` | An HTTP message signature has passed its expires parameter. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0150` | An HTTP message signature does not cover a required component (@method, @target-uri, content-digest, authorization). | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0151` | No verification key is known for an HTTP message signature (its tag or keyid does not name the presented key). | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0152` | An HTTP message signature uses an algorithm the verifier does not allow. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0153` | An HTTP message signature does not verify over the signature base rebuilt from the message. | the caller's: GNAP answers HTTP 401 invalid_client (400 invalid_resource_server at the RS-facing endpoints), a FAPI resource server HTTP 401 |
+| `STS-KEYS-0154` | A response signature covers a ;req component, and no request message was given to read it from (RFC 9421 section 2.4). | the caller's: a signing resource server's defect, logged; a client verifying a response refuses it |
 
 ## STS-PKI
 
@@ -591,9 +806,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0098` | A key pair export named a keystore format that does not exist. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0099` | A key pair export found no key pair to export. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0100` | The keystore export of a key pair failed (for example a password PKCS#12 needs, or a format the key cannot take). | Console refusal page; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0101` | A PKI console action or export was attempted by a session without Admin Write. | HTTP 403 text/plain (export) or console refusal banner |
-| `STS-PKI-0102` | A PKI console action threw an unexpected exception. | Console refusal banner or page |
-| `STS-PKI-0103` | The PKI console key-pair export threw an unexpected exception. | Console refusal page |
+| `STS-PKI-0101` *(retired)* | A PKI console action or export was attempted by a session without Admin Write. | HTTP 403 text/plain (export) or console refusal banner |
+| `STS-PKI-0102` *(retired)* | A PKI console action threw an unexpected exception. | Console refusal banner or page |
+| `STS-PKI-0103` *(retired)* | The PKI console key-pair export threw an unexpected exception. | Console refusal page |
 | `STS-PKI-0104` | After the Root CA was replaced, a branch could not be rebuilt under it. | — |
 | `STS-PKI-0105` | A PKI console or API action was refused by the module behind it without a more specific code (a missing code at that module). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0106` | A person key-pair issue or removal named no person. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
@@ -681,8 +896,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0203` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
-| `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
-| `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at /oid4vp/start |
+| `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /admin-api/verifications/start |
+| `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /admin-api/verifications/start |
 | `STS-PKI-0206` | A key pair was not pinned in a slot that certifies a key the realm signs with: a pinned key does not sign, and the pin would have replaced that key's published certificate (#245). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0207` | A key pair was not pinned as a signer: its key type does not match the slot's algorithm (an RSA key under 2048 bits, a curve other than the slot's, a post-quantum key of another parameter set) (#263). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0208` | A key pair was not pinned as a signer: the slot is not one a pinned key can sign from — a signer-group slot, a composite post-quantum algorithm, or an xml slot other than RS256 (#263). | console / /admin-api refusal (HTTP 400) |
@@ -695,6 +910,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0215` | A write or reset of pki.pinnedSigners was refused: it would turn the setting off in a realm holding a live or pending pinned signing key, which would change the signer with no signing-key-rotated. Unpin first (#263). | console / /admin-api refusal (HTTP 400) |
 | `STS-PKI-0216` | At start, a realm holds pinned signing keys but pki.pinnedSigners is off there (environment, appconfig or a stored override), so it signs with its generated keys (#263). | log only (a warning, at start) |
 | `STS-PKI-0217` | A key pair was not pinned into the xml slot: the certificate supplied with it has a keyUsage without keyEncipherment, and an xml pin is also the key partners encrypt to (#263). | console / /admin-api refusal (HTTP 400) |
+| `STS-PKI-0218` | A certificate authority branch finished building for a realm that had been removed while it was built, and was discarded rather than saved. | none (logged; the realm is gone) |
+| `STS-PKI-0219` | A KDC certificate for PKINIT was asked for with no slot, no principal name, or a key algorithm it is not issued with (#179). | none (the KDC refuses PKINIT, STS-KRB-0197) |
 
 ## STS-ENROLL
 
@@ -757,6 +974,9 @@ Raised from: common/cert_enrollment.ts, common/enrollment_monitor.ts.
 | `STS-ENROLL-0091` | An ACME External Account Binding key or a SCEP challenge password could not be proved unspent because the cluster store could not be asked, so it was refused. | ACME unauthorized / SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0092` | A renewal named a certificate that is not recorded as issued to the entry in this realm, so it could not be superseded and nothing was issued. | EST 400 / SCEP CertRep FAILURE badRequest |
 | `STS-ENROLL-0093` | A renewal was issued but the certificate it renews could not be revoked as superseded, so the renewal was revoked and the request refused. | EST 503 / SCEP CertRep FAILURE badRequest |
+| `STS-ENROLL-0094` | In product mode a certificate was refused to an application declared for some protocol families but not this enrollment protocol (ACME, EST or SCEP); the issuance policy's protocol-not-declared rule decided it. | each protocol's own refusal (an RFC 8555 problem document, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
+| `STS-ENROLL-0095` | The profile is not in the application's own <family>AllowedProfiles, which replaces the realm's list for it. | each protocol's own refusal (ACME invalidProfile, an RFC 7030 HTTP 403, an RFC 8894 failInfo) |
+| `STS-ENROLL-0096` | EST refused an application an authentication method or /serverkeygen that its own estBasicAuthentication, estCertificateAuthentication or estServerKeyGeneration turns off. | RFC 7030 HTTP 403 |
 
 ## STS-ACME
 
@@ -873,6 +1093,9 @@ Raised from: est/.
 | `STS-EST-0031` | An EST console or /admin-api action body failed validation. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0032` | An EST console or /admin-api action named an action that does not exist. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0033` | An EST /admin-api action was refused and carried no more specific code. | HTTP 400 on /admin-api |
+| `STS-EST-0034` | An EST /nonce request (draft-ietf-lamps-attestation-freshness section 5.1) was malformed: a body that is not one JSON object, a member the nonce-request CDDL does not define, a "len" outside 8..64, a "reqTypeInfo" without a dotted-decimal "type", or a body larger than est.maxRequestBytes (#257). | HTTP 400, a sentence and no nonce (section 5.1) |
+| `STS-EST-0035` | An EST /nonce POST did not carry application/est-attestation-freshness+json, the one media type draft-ietf-lamps-attestation-freshness section 5.1 allows (#257). | HTTP 400 (section 5.1 answers every error 400) |
+| `STS-EST-0036` | An EST /nonce request named a "reqTypeInfo" type this service defines no reqInfo/respInfo for, so it is unable to answer it (draft-ietf-lamps-attestation-freshness section 5.1) (#257). | HTTP 503 (section 5.1) |
 
 ## STS-SCEP
 
@@ -939,14 +1162,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | Code | What failed | Client sees |
 |---|---|---|
 | `STS-AUTHN-0001` | A request to the sign-in screen or the federation chooser carried a pending sign-in id that failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0002` | The sign-in form POST failed input validation (an unknown action, an oversized field, a malformed id). | invalid_request (HTTP 400) |
+| `STS-AUTHN-0002` | An act on the sign-in API (/authn-api, the sign-in form until #571) failed input validation: a field the operation does not take, an oversized field, a malformed value. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0003` | No sign-in is pending under the id the sign-in screen, the federation chooser or the form POST named: it expired, was already spent, or never existed. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0004` | The person pressed Cancel at the sign-in screen; the calling protocol is told the user declined. | HTTP 303 back to the calling protocol with authn_error=access_denied |
-| `STS-AUTHN-0005` | The issuance policy refused an unauthenticated ('continue without signing in') session for the application at the sign-in screen. | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0006` | The sign-in form was submitted with no username. | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0007` | A passwordless security-key sign-in was asked for where the calling protocol demanded a second factor. | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0008` | Too many sign-in attempts for this identity or address; the password check was not attempted (rate limiter lockout). | HTTP 200 sign-in page, redrawn with the reason |
-| `STS-AUTHN-0009` | The issuance policy refused a session for the application to the person who just authenticated at the sign-in screen (a required role is not held). | HTTP 200 sign-in page, redrawn with the reason |
+| `STS-AUTHN-0005` | The issuance policy refused an unauthenticated ('continue without signing in') session for the application at the sign-in screen. | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0006` | The sign-in form was submitted with no username. | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0007` | A passwordless security-key sign-in was asked for where the calling protocol demanded a second factor. | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0008` | Too many sign-in attempts for this identity or address; the password check was not attempted (rate limiter lockout). | the sign-in API's refusal (HTTP 429, `next: refused`), the screen drawn again with the reason (#571) |
+| `STS-AUTHN-0009` | The issuance policy refused a session for the application to the person who just authenticated at the sign-in screen (a required role is not held). | the sign-in API's refusal (HTTP 400, `next: refused`), the screen drawn again with the reason (#571) |
 | `STS-AUTHN-0010` | The issuance policy refused to start a sign-on session at the session funnel, for a door other than the sign-in screen (federation, SPNEGO, client certificate, WS-Trust, a second-factor screen). | — |
 | `STS-AUTHN-0011` | A sign-out was asked for and there was no session to end: it had already expired or been signed out. | — |
 | `STS-AUTHN-0012` | An arrival session could not be started for a browser reaching a protocol front door; the request continued without one. | — |
@@ -957,14 +1180,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0017` | The federation register threw while resolving a brokering relationship or building the sign-in screen's partner buttons; they were omitted. | — |
 | `STS-AUTHN-0018` | A request to a second-factor screen (security key, one-time code, recovery code) carried a step id that failed input validation. | invalid_request (HTTP 400) |
 | `STS-AUTHN-0019` | The second-factor step named by the request has expired or does not exist. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0020` | The WebAuthn ceremony POST failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0021` | The WebAuthn ceremony result posted by the browser was not JSON. | HTTP 200 security-key page, redrawn with the reason |
-| `STS-AUTHN-0022` | The browser reported that the WebAuthn ceremony failed (declined, timed out, no authenticator), or sent no credential at all. | HTTP 200 security-key page, redrawn with the reason; on the portal, its own refusal |
-| `STS-AUTHN-0023` | In product mode the configured webauthn.rpId does not fit the host the request arrived on, so the ceremony is refused. | HTTP 200 security-key page with the reason |
+| `STS-AUTHN-0020` | The WebAuthn ceremony POST (the passkey step's act on /authn-api since #572) failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
+| `STS-AUTHN-0021` | The WebAuthn ceremony result posted by the browser was not JSON. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0022` | The browser reported that the WebAuthn ceremony failed (declined, timed out, no authenticator), or sent no credential at all. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; on the portal, its own refusal |
+| `STS-AUTHN-0023` | In product mode the configured webauthn.rpId does not fit the host the request arrived on, so the ceremony is refused. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0024` | Product mode refused to enrol a credential (security key or authenticator app) for a person who has no directory entry, because enrolling would create them. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0025` | No security key is enrolled for this person in the role the step needs (second factor or passwordless). | invalid_request (HTTP 400), or HTTP 200 security-key page with the reason |
-| `STS-AUTHN-0026` | A WebAuthn assertion named a credential that is not one of the security keys enrolled for this person in this role. | HTTP 200 security-key page with the reason |
-| `STS-AUTHN-0027` | The WebAuthn registration or assertion could not be parsed or checked (malformed CBOR, authenticator data or clientDataJSON). | HTTP 200 security-key page with the reason; on the portal, its own refusal |
+| `STS-AUTHN-0026` | A WebAuthn assertion named a credential that is not one of the security keys enrolled for this person in this role. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0027` | The WebAuthn registration or assertion could not be parsed or checked (malformed CBOR, authenticator data or clientDataJSON). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; on the portal, its own refusal |
 | `STS-AUTHN-0028` | WebAuthn verification failed: clientDataJSON's type is not the ceremony's (webauthn.create / webauthn.get). | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0029` | WebAuthn verification failed: the challenge in clientDataJSON is not the one this service issued for the step. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0030` | WebAuthn verification failed: the origin in clientDataJSON is not this service's origin or on webauthn.allowedOrigins. | HTTP 200 page naming the failed check |
@@ -976,11 +1199,11 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0036` | WebAuthn assertion failed: the signature over authenticatorData and the clientDataJSON hash does not verify against the enrolled public key. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0037` | A WebAuthn ceremony failed a check this service has no specific code for; the check-name table in authn/webauthn_policy.ts is behind the verifier. | HTTP 200 page naming the failed check |
 | `STS-AUTHN-0038` | A security key's signature counter could not be recorded after a successful assertion; the sign-in stands and the replay defence has nothing new to check next time. | — |
-| `STS-AUTHN-0039` | The one-time code form POST failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0040` | Too many one-time code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 200 one-time code page, redrawn with the reason |
-| `STS-AUTHN-0041` | The recovery code form POST failed input validation. | invalid_request (HTTP 400) |
-| `STS-AUTHN-0042` | Too many recovery code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 200 recovery code page, redrawn with the reason |
-| `STS-AUTHN-0043` | Checking a recovery code threw (the worker pool or the store failed part way). | HTTP 200 recovery code page asking to try again |
+| `STS-AUTHN-0039` | The one-time code form POST failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
+| `STS-AUTHN-0040` | Too many one-time code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0041` | The recovery code form POST failed input validation. | HTTP 400 { ok: false, errors } from /authn-api (#572) |
+| `STS-AUTHN-0042` | Too many recovery code attempts for this identity or address; the code was not checked (rate limiter lockout). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0043` | Checking a recovery code threw (the worker pool or the store failed part way). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0044` | Security keys are switched off in this realm (webauthn.enabled), so no new key may be enrolled. | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0045` | A passwordless (primary) security key may not be enrolled in this realm (webauthn.primaryAllowed). | HTTP 200 page / action result with the reason |
 | `STS-AUTHN-0046` | A second-factor security key may not be enrolled in this realm (webauthn.mfaAllowed). | HTTP 200 page / action result with the reason |
@@ -1029,7 +1252,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0089` | The person's stored recovery codes cannot be read, so a presented code was refused rather than let through. | HTTP 200 recovery code page with the reason |
 | `STS-AUTHN-0090` | A presented recovery code is not the shape of one (letters and digits of the code alphabet); no comparison was made. | HTTP 200 recovery code page with the reason |
 | `STS-AUTHN-0091` | A presented recovery code has already been spent. | HTTP 200 recovery code page with the reason |
-| `STS-AUTHN-0092` | A presented recovery code is not one of the person's codes. | HTTP 200 recovery code page with the reason |
+| `STS-AUTHN-0092` | A presented recovery code is not one of the person's codes. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0093` | A recovery code verified but could not be marked spent, so it was refused: a code that cannot be spent works for ever. | HTTP 200 recovery code page with the reason |
 | `STS-AUTHN-0094` | A security-key enrolment was confirmed with an enrolment id that is not the one in progress (another tab). | action result with the reason |
 | `STS-AUTHN-0095` | A security-key enrolment was refused because that authenticator is already enrolled for the person. | action result with the reason |
@@ -1042,7 +1265,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0102` | A spent activation token could not be cleared from the credential store, so the link may still work. | — |
 | `STS-AUTHN-0103` | A presented one-time code is not the configured number of digits; no comparison was made. | HTTP 200 one-time code page with the reason; action result at enrolment |
 | `STS-AUTHN-0104` | A stored TOTP shared secret could not be decoded from base32, so the code could not be checked. | HTTP 200 one-time code page with the reason |
-| `STS-AUTHN-0105` | A presented one-time code matched no time step in the allowed window: wrong, or expired. | HTTP 200 one-time code page with the reason; action result at enrolment |
+| `STS-AUTHN-0105` | A presented one-time code matched no time step in the allowed window: wrong, or expired. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it; action result at enrolment |
 | `STS-AUTHN-0106` | A presented one-time code was already used (RFC 6238 section 5.2): its time step is at or below the last one accepted. | HTTP 200 one-time code page with the reason |
 | `STS-AUTHN-0107` | A password policy save or reset named a profile other than 'default'. | action result with the reason |
 | `STS-AUTHN-0108` | A password policy save was refused because a field is missing, out of range, unreadable, or inconsistent with another. | action result with the reason |
@@ -1098,10 +1321,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0171` | A passwordless security-key sign-in was refused because a second factor is required of the person (their account or the realm's authentication policy). | the sign-in screen again with the reason |
 | `STS-AUTHN-0172` | A sign-in was refused: a second factor is required of the person, they hold none, and neither an authenticator app nor a security key can be enrolled in the realm. | the sign-in screen again with the reason |
 | `STS-AUTHN-0173` | The second-factor set-up step named by the request is expired, unknown, or not a set-up step. | OAuth-style invalid_request page, HTTP 400 |
-| `STS-AUTHN-0174` | A request to the second-factor set-up step was malformed, or asked to confirm a code before an authenticator app was chosen. | HTTP 400 page |
-| `STS-AUTHN-0175` | A second-factor set-up choice was refused: the mechanism is switched off in the realm, or the person holds a second factor already. | HTTP 400 page |
-| `STS-AUTHN-0176` | An authenticator app enrolment at sign-in could not be started. | HTTP 400 page |
-| `STS-AUTHN-0177` | The code confirming an authenticator app enrolled at sign-in was refused; the same secret is drawn again. | HTTP 400 page |
+| `STS-AUTHN-0174` | A request to the second-factor set-up step was malformed, or asked to confirm a code before an authenticator app was chosen. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0175` | A second-factor set-up choice was refused: the mechanism is switched off in the realm, or the person holds a second factor already. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0176` | An authenticator app enrolment at sign-in could not be started. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0177` | The code confirming an authenticator app enrolled at sign-in was refused; the same secret is drawn again. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0180` | A signed-in session was refused because the directory holds no entry for the person, so there is no subject to give it (ldap.autocreateUsers off, or a federation relationship with dynamic provisioning off and nobody provisioned). | the calling door's own refusal |
 | `STS-AUTHN-0181` | A security-key assertion verified and was refused because its ceremony challenge had already been answered, by another node or a request racing this one (#46). | HTTP 200 security-key page with the reason |
 | `STS-AUTHN-0182` | A single-use credential (a one-time code step, a recovery code, a security-key assertion, an activation or password reset link) could not be proved unspent because the cluster store could not be asked, so it was refused. | the calling door's own refusal page |
@@ -1115,7 +1338,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0193` | A security key registration was refused because the same credential id was being (or had just been) registered by another request or node. | WebAuthn Level 3 section 7.1 step 26 (a credential id already registered is refused) |
 | `STS-AUTHN-0194` | A security key registration was refused because the store that decides whether its credential id is already registered elsewhere could not be asked. | none — fail closed |
 | `STS-AUTHN-0195` | A recovery-code set written before 2026-09-11 (codes, not hashes) could not be sealed under the key-encryption key when it was rewritten, so the change was not stored. | none — the spend that asked is refused (STS-AUTHN-0093) |
-| `STS-AUTHN-0196` | A password presented as the second factor after a wallet sign-in was refused. | HTTP 200 page at /authn/password-factor, with the reason |
+| `STS-AUTHN-0196` | A password presented as the second factor after a wallet sign-in was refused. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0200` | A password was presented for an account that is disabled (pwdAccountLockedTime on its entry), and it was refused before it was compared, in every mode. | the door's own refusal: "authentication failed" on the sign-in screen, LDAP 49, invalid_grant, a SOAP fault, SCIM 401 |
 | `STS-AUTHN-0201` | A session, or anything issued on a person's behalf, was refused because the account is disabled — at authn.startSession(), a live session presented again, or the issuance gate. | the door's own refusal (the sign-in screen again, a 403 page, access_denied) |
 | `STS-AUTHN-0202` | Disabling or enabling an account could not write pwdAccountLockedTime onto the person's entry. | the caller's refusal (errors on a console or /admin-api reply) |
@@ -1173,22 +1396,64 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0254` | A new security key was refused as a second factor: this realm's authentication policy does not accept one (#64). | sign-in screen or portal page with the reason |
 | `STS-AUTHN-0255` | A password was refused as a first factor: this realm's authentication policy does not accept one (#64). | sign-in screen with the reason |
 | `STS-AUTHN-0256` | A second factor was needed after a first and none this realm accepts was available: the person holds none, and the policy does not accept a password as one (#64). | sign-in refused with the reason |
-| `STS-AUTHN-0257` | No more emailed codes or links may be sent for one sign-in step (#64). | the page, with the reason |
-| `STS-AUTHN-0258` | Another emailed code or link was asked for sooner than the policy's resend interval (#64). | the page, with the reason |
-| `STS-AUTHN-0259` | An emailed code or link could not be queued by the mail channel; the line names the channel's refusal (#64). | the page offers the other factors |
+| `STS-AUTHN-0257` | No more emailed codes or links may be sent for one sign-in step (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0258` | Another emailed code or link was asked for sooner than the policy's resend interval (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0259` | An emailed code or link could not be queued by the mail channel; the line names the channel's refusal (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0260` | An emailed code or link was asked for as a first factor where this realm does not offer one, or where a key or a password is demanded (#64). | sign-in screen with the reason |
 | `STS-AUTHN-0261` | An emailed first factor was asked for an account that has no verified address, is disabled, or does not exist; nothing was mailed and the page does not say so (#64). | the same page as a sent one |
-| `STS-AUTHN-0262` | An emailed code or link was presented after it had already been used (#64). | the page, with the reason |
-| `STS-AUTHN-0263` | Whether an emailed code or link had been used could not be asked of the store, so it was not accepted (#64). | the page, with the reason |
-| `STS-AUTHN-0264` | A wrong emailed code or link was presented (#64). | the page, with the attempts left |
-| `STS-AUTHN-0265` | An emailed code or link was presented after it expired (#64). | the page, with the reason |
-| `STS-AUTHN-0266` | An emailed sign-in link was opened in a browser other than the one that started the sign-in (#64, D3). | the page, with the reason |
-| `STS-AUTHN-0267` | The emailed code or link door failed unexpectedly; the line carries the stack (#64). | an error page |
+| `STS-AUTHN-0262` | An emailed code or link was presented after it had already been used (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0263` | Whether an emailed code or link had been used could not be asked of the store, so it was not accepted (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0264` | A wrong emailed code or link was presented (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0265` | An emailed code or link was presented after it expired (#64). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0266` | An emailed sign-in link was opened in a browser other than the one that started the sign-in (#64, D3). | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
+| `STS-AUTHN-0267` | The emailed code or link door failed unexpectedly; the line carries the stack (#64). | HTTP 500 { ok: false, errors } from /authn-api (#573) |
 | `STS-AUTHN-0268` | A session was refused: this realm's authentication policy does not accept the mechanism the door named as a first factor (a certificate, a Kerberos ticket, a federation partner, a wallet, a passkey, a password or an emailed code or link) (#64). | the door's own refusal page |
 | `STS-AUTHN-0269` | A session was refused: this realm's authentication policy does not accept the mechanism that answered as a second factor (a password or wallet after another factor, or an emailed code or link) (#64). | the door's own refusal page |
-| `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400, the set-up page again |
+| `STS-AUTHN-0270` | Ignore was posted on a second-factor set-up step that was REQUIRED rather than offered (#246): only an administrator the authentication policy OFFERS a second factor may decline it. | HTTP 400 (429 rate limited) { ok: false, errors } from /authn-api (#572, #573); the step's page draws it |
 | `STS-AUTHN-0290` | A session was ended by a caller that did not say who initiated it (#242): CAEP session-revoked says `system`, and the caller should state admin, user, policy or system. | none — logged; the session is ended |
 | `STS-AUTHN-0291` | Reporting a session's end (its audit row, CAEP session-revoked and back-channel Logout Tokens) threw after the claim that decides who reports it was won (#242); it is not tried again, because a second try could tell a receiver twice. | none — logged |
+| `STS-AUTHN-0292` | A realm held authn.maxSessions sign-on sessions when another was created, so the least recently used session was ended to make room (#345) — through the same end an expiry takes: its audit row (which carries this code), CAEP session-revoked and back-channel Logout Tokens. | none — audited; logged at most once a minute per process |
+| `STS-AUTHN-0293` | The directory's credential census threw (#352), so the users list's counts and second-factor filter asked each person's credentials one at a time instead — slower, and the same answer. | none — logged |
+| `STS-AUTHN-0294` | A passkey assertion was refused because the key's algorithm is insecure (SHA-1's RS1) and webauthn.insecureAlgorithms is off in this realm, or the service is in product mode. | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0295` | A person's delegation semantics named something other than delegation or impersonation (#186). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0296` | A security key's attestation, revoked by Google's Android attestation status list, could not be recorded as untrusted on the person's entry (#256). | none — an error in the log |
+| `STS-AUTHN-0297` | A WebAuthn android-key attestation is untrusted: a certificate of its chain is revoked or suspended in Google's Android attestation status list, or its revocation could not be checked where the realm requires it (#256). At registration a policy demanding trust refuses it; at a recheck a stored key's attestation becomes untrusted. | the registration's own refusal where trust is demanded (STS-AUTHN-0235); none at a recheck |
+| `STS-AUTHN-0298` | A sign-in was refused at the sign-in door because it used a mechanism the application being signed in to does not allow (appAuthnMechanism, #457). The screen is drawn again, naming the mechanisms it allows. | the sign-in screen, drawn again |
+| `STS-AUTHN-0299` | Renaming a passkey named a credential id that is not registered for that person (#470). | action result with the reason |
+| `STS-AUTHN-0300` | Renaming a passkey was refused: the name is longer than 60 characters or carries a control character (#470). | action result with the reason |
+| `STS-AUTHN-0301` | A passkey sign-in with no username was asked for where it is not offered: the passkey policy's allowUsernameless (#527; webauthn.usernameless until then), webauthn.primaryAllowed or webauthn.enabled is off, the authentication policy does not accept a passkey as a first factor, the application does not allow one, or the sign-in is linking an account (#474). | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0302` | A passkey sign-in with no username named no account: the authenticator returned no user handle, or one nobody in this realm holds (#474). Where only one realm and one cell exist, the page asks the browser to forget the credential (signalUnknownCredential). | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0303` | A passkey assertion's user handle is not the one its key was registered under — WebAuthn Level 3 section 7.2 step 6 (#474). | none — the sign-in screen or the passkey step is drawn again |
+| `STS-AUTHN-0304` | A passkey registered before #474 — under the username's bytes as its user handle — was used to sign in with no username. It works only where the username is typed; registering it again makes it usable without one. | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0305` | A sign-in was refused at the sign-in door because its second factor is one the application being signed in to does not allow (appMfaMechanism, #475). The screen is drawn again, naming the second factors it allows. | the sign-in screen, drawn again |
+| `STS-AUTHN-0306` | A second factor was needed of a person who holds none the application allows (appMfaMechanism, #475), and none of the allowed ones (a security key, an authenticator app) can be set up at sign-in in this realm; refused rather than signed in on one factor. | the sign-in screen, drawn again |
+| `STS-AUTHN-0307` | A second factor was DEMANDED — a security key by the relying party or on risk, or a second factor on risk — and the second factors the application allows (appMfaMechanism, #475) leave the person none that answers it. A step-up never enrols one. | the sign-in screen, drawn again |
+| `STS-AUTHN-0308` | A passkey policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#527, #535). | HTTP 400 (management API) |
+| `STS-AUTHN-0309` | A passkey policy save was refused: a field was missing, not a yes-or-no value, or not one of its values — discouraged, preferred, required; allow, disallow; or a minimum PIN length outside 4 to 63; or a hint list that is not one, or contradicts the attachment its request sends (#527, #528, #529, #531). | HTTP 400 (management API) |
+| `STS-AUTHN-0310` | There is no embedded directory in this process, so a passkey policy could not be saved (#527). | HTTP 400 (management API) |
+| `STS-AUTHN-0311` | The directory would not store the passkey policy profile: it holds its maximum number of entries (#527). | HTTP 400 (management API) |
+| `STS-AUTHN-0312` | A synced passkey was not registered: its authenticator data set the backup-eligible flag (BE, WebAuthn Level 3 section 6.1) and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). Asked where every key is written, so the sign-in screen, /portal/keys and an activation link all refuse it. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0313` | A sign-in with a synced passkey was refused: the key's assertion set the backup-eligible flag and the realm's passkey policy takes only device-bound passkeys (backupEligibility disallow, #528). BE never changes for a credential, so this is what refuses a synced key registered before the realm said no. | the sign-in screen, drawn again with the reason |
+| `STS-AUTHN-0314` | A passkey was not registered: the realm's passkey policy enforces a minimum security-key PIN length (enforcePinLength, #529) and the key reported a shorter minimum through CTAP 2.1's minPinLength extension, or reported none while pinLengthOnlyIfSupported is off. Asked where every key is written. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0315` | A sign-in with a passkey was refused: the realm's passkey policy enforces a minimum security-key PIN length (#529) and the minimum the key reported at registration — recorded on its row — is shorter, or none was recorded while pinLengthOnlyIfSupported is off. | the sign-in screen, drawn again with the reason |
+| `STS-AUTHN-0316` | A passkey sign-in was refused by the attestation rules in force (#530, the passkey policy's enforceAttestationAtSignIn): the key's recorded attestation is not trusted where a rule demands it, its AAGUID is not on webauthn.attestationAllowedAaguids, its model is below the certification level or FIPS asked for, or the FIDO Metadata Service now reports the model compromised. The first refusal of a key for a reason marks its row and sends a CAEP credential-change. | the passkey page or the sign-in screen, with the reason |
+| `STS-AUTHN-0317` | A passkey's attestation could not be held to the rules at sign-in: the FIDO metadata lookup or the check threw (#530). The sign-in is refused, since the rule is on and an unchecked key is not a checked one. | the passkey page or the sign-in screen, with the reason |
+| `STS-AUTHN-0318` | The mark of a passkey the attestation rules refused at sign-in could not be written to its row (#530); the refusal stands and no credential-change is sent for it. | none — logged |
+| `STS-AUTHN-0319` | A passkey-policy hint list contradicts webauthn.authenticatorAttachment, which changed after the policy was saved (#531): client-device implies platform, security-key and hybrid cross-platform. The contradicting hints are not sent; save the policy again to fix it. | none — logged; the ceremony is sent without them |
+| `STS-AUTHN-0320` | A security key was not registered: the realm binds keys to the serials issued to each person (the passkey policy's enterpriseSerialAttribute, #532), and the serial its trusted enterprise attestation names is not among the person's values. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0321` | A security key was not registered: the realm binds keys to serials (#532), and the key's attestation names no device serial this service can read — no subject serialNumber and no Yubico serial extension, or no trusted enterprise attestation at all. | the ceremony's page, drawn again with the reason |
+| `STS-AUTHN-0322` | A passkey was refused by a rule of the realm's own issuance policy (#536) that named no error code of its own and gave a reason the built-in passkey rules do not give. | the ceremony's page or the sign-in screen, with the reason |
+| `STS-AUTHN-0323` | No issuance policy, not even the built-in one, gave a verdict on a passkey question (#536); the passkey rules read from the facts answered instead. A defect: the built-in document should always answer. | none: the passkey is decided by the same rules |
+| `STS-AUTHN-0324` | The engine could not be loaded to ask the built-in issuance policy a passkey question (#536); the passkey rules read from the facts decided instead. | none: the passkey is decided by the same rules |
+| `STS-AUTHN-0325` | An act on the sign-in API (/authn-api, #571) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. | HTTP 415, { ok: false, errors } |
+| `STS-AUTHN-0326` | An act on the sign-in API (/authn-api, #571) carried no Origin header, or one this service does not answer on: it was not sent by a page of this service. | HTTP 403, { ok: false, errors } |
+| `STS-AUTHN-0327` | An act on the sign-in API (/authn-api, #571) carried no X-CSRF-Token, or one that is not the token of the session its sts_session cookie names, or the browser holds no session at all. | HTTP 403, { ok: false, errors } |
+| `STS-AUTHN-0328` | An operation of the sign-in API (/authn-api, #571) threw; the browser is told the sign-in could not continue. | HTTP 500, { ok: false, errors } |
+| `STS-AUTHN-0329` | The passkey step's ceremony was asked to be armed (POST /authn-api/mfa/{id}/webauthn/options, #572) while the person had still to choose one of several passkeys (the passkey policy offers them one by one, #534). | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0330` | An act on a second-factor or emailed-factor step of the sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the operation does not take, or a page that is not one. | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0331` | A Start over at a sign-in step (/authn-api/mfa/{id}/start-over or /authn-api/password-change/{id}/start-over) named a step that has already ended: spent, expired or never minted. Nothing is put back. | HTTP 400, { ok: false, errors } |
+| `STS-AUTHN-0332` | Too many usernameless passkey ceremonies were armed from this address (POST /authn-api/pending/{id}/passkey/options): its own per-address budget, security.rateLimitPerAddress in security.rateLimitWindowS. No challenge was minted. | HTTP 429 with Retry-After, { ok: false, next: refused, errors } |
+| `STS-AUTHN-0333` | A sign-in at the sign-in screen named a person where the passkey policy requires a passkey sign-in with no username (requireUsernameless, #608): the application signs in with a passkey alone, and the screen asks for no username. | none — the sign-in screen is drawn again |
 
 ## STS-OAUTH
 
@@ -1375,9 +1640,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0175` | The access token presented at UserInfo was not issued with the openid scope. | insufficient_scope (HTTP 403, WWW-Authenticate challenge) |
 | `STS-OAUTH-0176` | A claims request sent directly to UserInfo is malformed. | invalid_request (HTTP 400, WWW-Authenticate challenge) |
 | `STS-OAUTH-0177` | The client's registered UserInfo signing or encryption could not be applied (unusable algorithm, or no usable recipient key). | server_error (HTTP 500) |
-| `STS-OAUTH-0178` | POST /dpop/nonce-mode was refused because the realm is in product mode, where test controls are closed. | access_denied (HTTP 403) |
-| `STS-OAUTH-0179` | POST /dpop/nonce-mode carried something other than required=true or required=false. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0180` | The DPoP nonce setting could not be written. | server_error (HTTP 500) |
+| `STS-OAUTH-0178` *(retired)* | POST /dpop/nonce-mode was refused because the realm is in product mode, where test controls are closed. Retired by #585: a product realm has no /dpop/nonce-mode, and answers as for a path nothing is registered on. | — |
+| `STS-OAUTH-0179` *(retired)* | POST /dpop/nonce-mode carried something other than required=true or required=false. Retired by #597: the endpoint is gone, and oauth2.dpopNonceRequired is set like any other setting. | — |
+| `STS-OAUTH-0180` *(retired)* | The DPoP nonce setting could not be written through POST /dpop/nonce-mode. Retired by #597, with the endpoint. | — |
 | `STS-OAUTH-0181` | The directory threw while a person's profile claims were being read; the claims were omitted from what was issued. | — |
 | `STS-OAUTH-0182` | A token this service had just issued could not be re-read for its jti, so the delegation register records no identifier for it. | — |
 | `STS-OAUTH-0183` | The RFC 8414 signed_metadata document could not be signed; the metadata was published without it. | — |
@@ -1582,9 +1847,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0502` | The session did not meet an authorization request's acr_values or max_age, and prompt=none forbids sending the person to sign in again. | login_required (redirected error) |
 | `STS-OAUTH-0503` | A resource server here challenged an access token whose acr meets none of the acr values the resource requires (RFC 9470 section 3). | insufficient_user_authentication (HTTP 401, WWW-Authenticate challenge with acr_values) |
 | `STS-OAUTH-0504` | A resource server here challenged an access token whose auth_time is older than the max_age the resource requires, or absent (RFC 9470 section 3). | insufficient_user_authentication (HTTP 401, WWW-Authenticate challenge with max_age) |
-| `STS-OAUTH-0505` | The step-up stand-in resource was asked for an application this realm has no entry for. | invalid_request (HTTP 404) |
-| `STS-OAUTH-0506` | An access token presented at the step-up stand-in resource does not name that application in its aud (RFC 9068 section 4 step 4). | invalid_token (HTTP 401, WWW-Authenticate challenge) |
-| `STS-OAUTH-0507` | An access token presented where only a token this realm can verify is accepted — the step-up stand-in resource, or an OpenID4VCI endpoint in product mode — did not verify against this realm's signing key. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
+| `STS-OAUTH-0505` *(retired)* | The step-up stand-in resource was asked for an application this realm has no entry for. Retired 2026-10-12 (#593): the stand-in resource was deleted; the test peer plays that resource server | invalid_request (HTTP 404) |
+| `STS-OAUTH-0506` | An access token presented to a resource answering for a registered application does not name that application in its aud (RFC 9068 section 4 step 4). | invalid_token (HTTP 401, WWW-Authenticate challenge) |
+| `STS-OAUTH-0507` | An access token presented where only a token this realm can verify is accepted — an OpenID4VCI endpoint in product mode, or the VC-API — did not verify against this realm's signing key. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-OAUTH-0508` | A configured step-up requirement (oauth2.stepUpAcrValues, or an application's oauthStepUpAcrValues or oauthStepUpMaxAge written by hand) holds a value that cannot be one, and it was ignored. | none — logged only |
 | `STS-OAUTH-0509` | An authorization request's acr_values carries a value that cannot be an acr value (a double quote, a backslash or a control character). | invalid_request (redirected error) |
 | `STS-OAUTH-0510` | A password or assertion grant was refused because the directory holds no entry for the person, so there is no subject to issue a token about. | invalid_grant (HTTP 400) |
@@ -1635,7 +1900,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0555` | Product mode: an RFC 8693 subject_token that did not verify against this realm's signing key (a forged, foreign, expired or unreadable token) was refused. Development exchanges it unverified (mode.exchangesUnverifiedTokens()). | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0556` | Product mode: an RFC 8693 actor_token that did not verify against this realm's signing key was refused. Development reads its sub unverified into the act claim. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0557` | An RFC 8693 subject_token or actor_token that verified was refused because this realm has revoked it. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
-| `STS-OAUTH-0558` | A client authenticated with a client_secret past its expiry (oauthClientSecretExpiresAt, or the registration's client_secret_expires_at), in product mode. | invalid_client (RFC 6749 section 5.2) |
+| `STS-OAUTH-0558` | A client authenticated with a client_secret past its expiry (the expiry on that secret's record on oauthClientSecret), in product mode. | invalid_client (RFC 6749 section 5.2) |
 | `STS-OAUTH-0559` | A client authenticated with an expired client_secret and was accepted, because the service is in development mode. | none — logged; the request is answered |
 | `STS-OAUTH-0560` | An authorization request asked for an ID Token without the openid scope (OIDC Core section 3.1.2.1). | redirect: error=invalid_scope |
 | `STS-OAUTH-0561` | An authorization request combined prompt=none with another prompt value (OIDC Core section 3.1.2.1). | redirect: error=invalid_request |
@@ -1674,10 +1939,10 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0594` | A discovery path named no issuer: not [realm/<id>][/<server>], an unknown realm, or more than one server segment. Answered with Express's 404 and no authorization server created (#119). | HTTP 404 |
 | `STS-OAUTH-0595` | An RFC 7592 update named a client_id other than the one it updates, or a client_secret other than the one this server issued (section 2.2) (#120). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0596` | A registration access token was presented for a client that no longer exists; the token was revoked and refused (RFC 7592 section 3) (#120). Logged at warn. | HTTP 401 {error: invalid_token} |
-| `STS-OAUTH-0597` | An authorization request asked for a response_type the client did not register in response_types (OpenID Connect Registration section 2) (#120). | redirect {error: unauthorized_client} |
-| `STS-OAUTH-0598` | A token request used a grant_type the client did not register in grant_types (RFC 7591 section 2) (#120). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0597` | An authorization request asked for a response_type the client did not declare in oauthResponseType — registered as response_types (OpenID Connect Registration section 2) or written by an administrator (#120, #289). | redirect {error: unauthorized_client} |
+| `STS-OAUTH-0598` | A token request used a grant_type the client did not declare in oauthGrantType — registered as grant_types (RFC 7591 section 2) or written by an administrator (#120, #289). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0599` | A client's registered jwks_uri could not be read: the outbound policy refused it, it did not answer 200, or it did not answer a JSON Web Key Set (#120). Logged at warn; the verification or encryption that needed the key is refused with its own code. | none (log only) |
-| `STS-OAUTH-0600` | A client that registered grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120). Recorded, not refused. | none (the token response omits refresh_token) |
+| `STS-OAUTH-0600` | A client that declares grant_types without refresh_token was answered with no refresh token (RFC 7591 section 2) (#120, #289). Recorded, not refused. | none (the token response omits refresh_token) |
 | `STS-OAUTH-0601` | The OP iframe or its script was asked for while oauth2.sessionManagement is off in the realm (#121): a 404 naming the setting. | HTTP 404 |
 | `STS-OAUTH-0602` | An RP-Initiated Logout id_token_hint did not verify as an ID Token this authorization server issued to the client the request names — or a client_id it was not issued to was given beside it (section 2's MUST, #124, #115). Refused in every mode; the session is not ended. | HTTP 400 (an HTML page) |
 | `STS-OAUTH-0603` | In product mode, an RP-Initiated Logout post_logout_redirect_uri named no client that registered it (#124): not followed. Development still follows one. | none (the sign-out page says so) |
@@ -1695,11 +1960,11 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0615` | A refresh was refused because a consent its grant stood on — the person's own, or the application's global consent that the person had not given themselves — was withdrawn at or after the grant was made (#172). The refresh token's grant is revoked. | HTTP 400 {error: invalid_grant} |
 | `STS-OAUTH-0616` | A refresh of a grant made at the authorization endpoint was refused because no recorded consent covered one of its scopes when it was granted, while consent is required and oauth2.refreshRequiresConsent is on (#172). | HTTP 400 {error: invalid_grant} |
 | `STS-OAUTH-0617` | Withdrawing a consent could not revoke a refresh family by id; its members known on this node were revoked, and the refresh grant refuses any other at its first use (#172). | none — logged |
-| `STS-OAUTH-0618` | A token exchange was refused by the delegation policy (#108): the subject may not be delegated (stsNotDelegated, or a member of the console roster), the client has no application entry, is not trusted to impersonate (appTrustedToImpersonate), or may not act for this subject (appDelegationSubjectGroup), or no target was named. Product mode only; development records what would have been refused. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0618` | A token exchange was refused by the delegation policy (#108): the subject may not be delegated (stsNotDelegated, or a member of the console roster, a protected group), the actor has no entry or is a person without delegation.actorRole, or may not act for this subject (appDelegationSubjectGroup) — the issuance policy's rules since #186. Product mode only; development records what would have been refused. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0619` | A token exchange was refused because the delegation policy allows no target it names: neither appAllowedToDelegateTo on the client nor appAllowedToActOnBehalfOf on the target lists the other (#108). Product mode only. | invalid_target (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0620` | A token exchange was refused because the verified subject_token carries a may_act claim naming a party other than the actor (the actor_token's subject, or the client when there is no actor_token). Held in every mode (#108). | invalid_request (HTTP 400), RFC 8693 sections 2.2.2 and 4.4 |
 | `STS-OAUTH-0621` | A token exchange asked for a scope wider than the verified subject_token's own scope claim, and product mode refuses an exchange that widens what the subject granted (#108). | invalid_scope (HTTP 400), RFC 6749 section 5.2 |
-| `STS-OAUTH-0622` | A token exchange the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` — the deny-only XACML layer (#108). Product mode only. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
+| `STS-OAUTH-0622` | A token exchange was refused because no issuance policy gave a verdict on it, or a realm's policy refused it with no rule this service names (#186). Product mode only. | invalid_request (HTTP 400), RFC 8693 section 2.2.2 |
 | `STS-OAUTH-0623` | A person's recorded identity verifications (OpenID Connect for Identity Assurance, #127) could not be read — the value on the entry is not a JSON list — or recording one after a wallet or certificate sign-in threw. Read as none; the sign-in stands. | none — verified_claims is omitted |
 | `STS-OAUTH-0624` | device_sso (OpenID Connect Native SSO, #130) was asked for by a client not enabled for it — oauthNativeSso TRUE and an oauthNativeSsoGroup on its entry. In every mode. | invalid_scope (HTTP 400, or at the redirect URI) |
 | `STS-OAUTH-0625` | A Native SSO grant could not store its device in ou=devices — no entry for the person, or the directory full — so no device_secret was issued; the rest of the token response stood (#130). | none — the response carries no device_secret |
@@ -1769,7 +2034,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0689` | The device authorization grant or endpoint was used in a realm where oauth2.deviceAuthorization is off (RFC 8628, #150). | HTTP 404 {error: invalid_request} at the endpoint; {error: unsupported_grant_type} at the token endpoint |
 | `STS-OAUTH-0690` | A device authorization request was malformed (RFC 8628 section 3.1, #150). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0691` | A device authorization request's client did not authenticate as it registered to (RFC 8628 section 3.1, #150). | HTTP 401 {error: invalid_client} |
-| `STS-OAUTH-0692` | A client that did not register the device_code grant asked the device authorization endpoint for codes (#150). | HTTP 400 {error: unauthorized_client} |
+| `STS-OAUTH-0692` | A client whose declared grant types omit device_code asked the device authorization endpoint for codes (#150, #289). | HTTP 400 {error: unauthorized_client} |
 | `STS-OAUTH-0693` | The DPoP proof on a device authorization request did not verify (RFC 9449, OpenID Connect Key Binding, #150). | HTTP 400 {error: invalid_dpop_proof} |
 | `STS-OAUTH-0694` | The device authorization endpoint failed unexpectedly (#150). | HTTP 500 {error: server_error} |
 | `STS-OAUTH-0695` | A device_code grant named no device authorization of this client (RFC 8628 section 3.5, #150). | HTTP 400 {error: invalid_grant} |
@@ -1859,11 +2124,57 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0779` | A call to /oauth2/commands/callback carried no callback token, or an unknown or expired one (#151). | HTTP 401 {error: invalid_token} with WWW-Authenticate |
 | `STS-OAUTH-0780` | A call to /oauth2/commands/callback was malformed: an async result not naming the command's sub and an account_state, or a command_requested other than metadata or audit_tenant (#151). | HTTP 400 {error: invalid_request} |
 | `STS-OAUTH-0781` | An automatic OpenID Provider Command could not be queued after a directory change or a sign-out; the change stands (#151). | none (a log line) |
-| `STS-OAUTH-0782` | The mock relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). | HTTP 400, 401, 409 or 404 {error} |
+| `STS-OAUTH-0782` *(retired)* | The demonstration relying party's command endpoint refused a command — the development test control answering as a relying party would (#151). Retired 2026-10-12 (#596): the demonstration relying party was deleted; the test peer plays a Provider Commands relying party | HTTP 400, 401 or 409 {error} |
 | `STS-OAUTH-0783` | Under FAPI 1.0 Advanced, an authorization request asked for response_type code with a response mode that is not JARM (Part 2 section 5.2.2 item 2, #187). | invalid_request |
 | `STS-OAUTH-0784` | Under FAPI 1.0 Advanced, an authorization request (its signed request object) named no scope; RFC 6749 section 3.3's refusal rather than a default (#187). | invalid_request |
 | `STS-OAUTH-0785` | An RP-Initiated Logout request carried a post_logout_redirect_uri with neither an id_token_hint nor a client_id, so it was not followed (section 2: nothing confirms the address, #187). | none (the sign-out page says so; no redirect) |
 | `STS-OAUTH-0786` | A CAEP session-revoked (or, for a replay, risk-level-change) about a revoked OAuth grant could not be delivered; the revocation stands (#239). | none (a log line) |
+| `STS-OAUTH-0787` | A realm's register of revoked token ids reached oauth2.maxRevokedJtis and none of its entries had expired, so the revocation whose token expires soonest was forgotten to make room (#345): that token, if it is still unexpired, is accepted again by a check that asks only this register. | none — logged, at most once a minute per process |
+| `STS-OAUTH-0788` | A person's identity verifications could not be sealed under a durable key-encryption key, so they were not written; or the sealed value on the entry will not open under this process's key and is read as none. | none (a refusal of the console or API write; verified_claims is omitted on a read) |
+| `STS-OAUTH-0789` | An authorization code was presented at the token endpoint a second time, and its first presentation redeemed nothing (it was refused, or is still being answered). A code is presented once whatever the outcome (#424) unless oauth2.codeReplayIdempotent relaxes it outside RFC 9700 mode. | 400 invalid_grant (RFC 6749 section 4.1.2); the flow starts over |
+| `STS-OAUTH-0790` | A token exchange was refused because the semantics chosen (delegation or impersonation) are not allowed by the actor's or the subject's entry (#186). | 400 invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0791` | A token exchange was refused because the subject has no authority for the application the act stands on: it holds none of the roles that application requires (#186). | 400 invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0792` | A token exchange named more than one audience or resource; an exchange is issued for exactly one (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0793` | A token exchange named an audience or resource no application in the realm registers (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0794` | A delegation or impersonation token exchange named no audience or resource; only a self exchange defaults to the subject token's own audience (#186). | 400 invalid_target (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0795` | A token exchange's exchange_semantics parameter was neither delegation nor impersonation, or was repeated (#186). | 400 invalid_request (RFC 6749 section 5.2) |
+| `STS-OAUTH-0796` | An RFC 7523 / RFC 7522 / SAML 1.1 assertion presented to a token exchange was addressed to an audience oauth2.tokenExchangeAudience does not accept: not this authorization server, nor (under any-declared-relying-party) an application registered here (#114). | 400 invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0797` | A SAML assertion presented to a token exchange is not the version its declared token type says: saml2 for SAML 2.0, saml1 for SAML 1.1 (#114). | 400 invalid_request (RFC 8693 sections 2.2.2 and 3) |
+| `STS-OAUTH-0798` | An assertion presented to a token exchange verified, and the person it names has no directory entry, so there is nobody to issue a token about or to name as the actor (#114). | 400 invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0816` | No index in the realm's access-token status list could be allocated because the claim store could not be asked, so the OAuth or GNAP JWT access token was not minted (#432). | server_error at the endpoint that was minting the token |
+| `STS-OAUTH-0817` | The realm's access-token status list had no free index in thirty-two random attempts (it holds 1,048,576), so the access token was not minted rather than share a live token's index (draft-ietf-oauth-status-list section 13.3; #432). | server_error at the endpoint that was minting the token |
+| `STS-OAUTH-0818` | The access-token status list could not be built or signed (#432). | HTTP 500 |
+| `STS-OAUTH-0819` | A historical access-token status list was asked for (`?time=`, draft-ietf-oauth-status-list section 8.4); none is kept (#432). | HTTP 501 |
+| `STS-OAUTH-0820` | An access token was asked for without a reserved status-list index in a process with a shared claims table, where none can be claimed synchronously; the caller must mint with accessTokenAsync(). A defect in the caller, refused rather than minted on an index no other node was asked about (#432). | server_error at the endpoint that was minting the token |
+| `STS-OAUTH-0876` | An authorization_details entry carried limits, and its type declares no limits schema in the access-type catalogue (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
+| `STS-OAUTH-0877` | An authorization_details entry's limits did not meet the limits schema its type declares (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
+| `STS-OAUTH-0878` | An access token would carry authorization_details of a type the access-type catalogue declares bearer: false, and the request presented neither a DPoP proof nor a client certificate (#432). | 400 invalid_authorization_details (RFC 9396 section 5) |
+| `STS-OAUTH-0916` | An authorization detail's limits are not ones this service can read: an amount, count, receiver, repeating interval or window that common/access_limits.ts gives no meaning (#432 phase 5). | 400 invalid_authorization_details (RFC 9396 section 5) |
+| `STS-OAUTH-0917` | The authorization_details an Allow on the consent screen lowered would raise a limit, or are not the details the request carries; nothing was issued (#432 phase 5). | RFC 9396 section 5 (invalid_authorization_details) |
+| `STS-OAUTH-0918` | The consent screen was sent limits that raise an authorization detail's limits rather than lower them, or that cannot be read (#432 phase 5). | HTTP 400 invalid_request (the consent form) |
+| `STS-OAUTH-0919` | Limits lowered on the consent screen no longer meet the authorization detail type's limits schema (#432 phase 5). | HTTP 400 invalid_request (the consent form) |
+| `STS-OAUTH-0936` | An authorization request's authorization_details carry a type whose catalogue entry requires an authentication level, and the session — after one sign-in for it — does not meet it (#432 phase 6, RFC 9470). | RFC 9470 section 5 (unmet_authentication_requirements) |
+| `STS-OAUTH-0937` | A token request would issue authorization_details of a type whose catalogue entry requires an authentication level the grant's authentication does not meet — or a grant with no person behind it (#432 phase 6). | RFC 9396 (invalid_authorization_details, HTTP 400) |
+| `STS-OAUTH-0938` | An OID4VCI pre-authorized code was redeemed for a person the directory holds no entry for (the offer recorded no subject and none could be resolved at redemption), so there is no subject to issue a token about (#158). | invalid_grant (HTTP 400) |
+| `STS-OAUTH-0939` | A resource server refused an unsigned request where FAPI 2.0 HTTP Signatures requires a signed one (oauth2.httpSignatures is require-requests, or the client set oauthHttpSignedRequests) (#178). | HTTP 401, invalid_request |
+| `STS-OAUTH-0940` | A resource server refused a request whose fapi-2-request signature or Content-Digest did not hold, where the refusal carried no more specific STS-KEYS code (#178). | HTTP 401, invalid_request |
+| `STS-OAUTH-0941` | A resource server refused a signed request whose access token names no client registered here, so no key could verify the signature (#178). | HTTP 401, invalid_request |
+| `STS-OAUTH-0942` | A resource response that FAPI 2.0 HTTP Signatures should sign went out unsigned: the realm holds no key for oauth2.httpSignatureResponseAlg, the signature was refused, or the response had begun writing before it ended (#178). | none: the response is sent unsigned, and a client requiring a signature refuses it |
+| `STS-OAUTH-0943` | The admin console, declared as a public client, asked the token endpoint for tokens with no DPoP proof. Every token issued to it as a public client is bound to a key it proves (#446). | invalid_dpop_proof (HTTP 400) |
+| `STS-OAUTH-0944` | An access token issued to the admin console as a public client was presented at a resource carrying no cnf.jkt. Such a token is honoured only DPoP-bound (#446). | invalid_token (HTTP 401) |
+| `STS-OAUTH-0945` | An authorization request reached a session whose sign-in mechanism the client does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does. | HTTP 302 to the sign-in screen |
+| `STS-OAUTH-0946` | An authorization request with prompt=none reached a session whose sign-in mechanism the client does not allow (appAuthnMechanism, #457), and prompt=none forbids asking. | login_required (OIDC Core 3.1.2.6) |
+| `STS-OAUTH-0947` | Product mode: an authorization request (or a pushed one) named a client_id that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was decided or recorded (#496). | invalid_client (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
+| `STS-OAUTH-0948` | Product mode: an authorization request named no client_id, so there is no registered client to serve (#496). | invalid_request (HTTP 400, not redirected, RFC 6749 4.1.2.1) |
+| `STS-OAUTH-0949` | Product mode: a token request named a client that is no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the client was counted or recorded (#496). | invalid_client (HTTP 401, RFC 6749 section 5.2) |
+| `STS-OAUTH-0950` | Product mode: an authorization request or a pushed authorization request named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application (no appRegisteredBy) by its oauthAudience, permission base URI, client_id or identifier (#505). | invalid_target (RFC 8707 section 2), redirected; HTTP 400 at PAR |
+| `STS-OAUTH-0951` | Product mode: a token request (any grant but the token exchange) named an RFC 8707 resource that is no registered target — none of this service's own resource servers, and no registered application — and was refused before anything was spent (#505). | invalid_target (HTTP 400, RFC 8707 section 2) |
+| `STS-OAUTH-0952` | An authorization request reached a session whose second factor the client does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does. | HTTP 302 to the sign-in screen |
+| `STS-OAUTH-0953` | An authorization request with prompt=none reached a session whose second factor the client does not allow (appMfaMechanism, #475), and prompt=none forbids asking. | login_required (OIDC Core 3.1.2.6) |
+| `STS-OAUTH-0954` | A token exchange asked for a delegated permission (oauthPermissionBaseUri plus a name) that was not delegated to the calling client (oauthDelegatedPermission), and the issuance policy left it out of the issued token, in every mode (#549). | none: the token is issued with a narrower scope (RFC 6749 section 3.3, RFC 8693 section 2.2.1) |
+| `STS-OAUTH-0955` | A token exchange presented an actor_token that was not issued to the exchanging client: its client_id (or azp) names another client, a token carrying neither does not name the client in aud, or a client_credentials token is about another client. Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0956` | A token exchange presented an actor_token whose aud names neither this authorization server (its issuer or token endpoint) nor the exchanging client (its client_id, identifier or oauthAudience). Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
+| `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
 
 ## STS-SAML
 
@@ -1876,8 +2187,8 @@ Raised from: saml/.
 | `STS-SAML-0001` | A SAML 2.0 sign-in resumed with a held-request id that is unknown or has expired (saml2.requestTtlMin), so there is no AuthnRequest to answer. | HTTP 400 page |
 | `STS-SAML-0002` | The SAMLRequest at the SAML 2.0 Single Sign-On service is not a readable <samlp:AuthnRequest>: malformed XML, or another message. | HTTP 400 page |
 | `STS-SAML-0003` | A SAML 2.0 AuthnRequest names no <saml:Issuer> and the path names no service provider, so there is no audience to issue for. | HTTP 400 page |
-| `STS-SAML-0004` | saml2.entityId is empty in a product-mode realm, so the SAML 2.0 identity provider has no name to issue or publish metadata under. | HTTP 503 (a page at the SSO service, text/plain at the metadata endpoint) |
-| `STS-SAML-0005` | In product mode, a SAML 2.0 AuthnRequest's AssertionConsumerServiceURL is not a samlAssertionConsumerService registered on the service provider's entry, or none is registered. | HTTP 400 page |
+| `STS-SAML-0004` *(retired)* | saml2.entityId is empty in a product-mode realm, so the SAML 2.0 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 (a page at the SSO service, text/plain at the metadata endpoint) |
+| `STS-SAML-0005` | In product mode, a SAML 2.0 AuthnRequest's AssertionConsumerServiceURL is not a samlAssertionConsumerService registered on the service provider's entry, or none is registered; in either mode, the request names none and none is registered (#592). | HTTP 400 page |
 | `STS-SAML-0006` | The SAML 2.0 assertion consumer service URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0007` | A SAML 2.0 AuthnRequest asked for a ProtocolBinding this identity provider does not implement (for example PAOS). | HTTP 400 page |
 | `STS-SAML-0008` | A SAML 2.0 AuthnRequest set IsPassive and there is no usable session, so the identity provider may not show the sign-in screen. | samlp:Response with status Responder / NoPassive |
@@ -1886,36 +2197,36 @@ Raised from: saml/.
 | `STS-SAML-0011` | In product mode, a SAML 2.0 assertion configured to be encrypted could not be encrypted (no usable certificate), so none was sent. | samlp:Response with status Responder and no assertion |
 | `STS-SAML-0012` | A SAML 2.0 assertion or logout NameID could not be encrypted to the service provider's certificate (usually a non-RSA key) and went out in clear. | — |
 | `STS-SAML-0013` | A SAML 2.0 protocol message (Response, LogoutResponse or LogoutRequest) could not be signed and was sent unsigned. | — |
-| `STS-SAML-0014` | The SAML 2.0 identity provider metadata could not be signed and was served unsigned. | — |
+| `STS-SAML-0014` | The realm's identity provider metadata (one document for SAML 2.0, SAML 1.1 and WS-Federation since #523 and #524) could not be signed and was served unsigned. | — |
 | `STS-SAML-0015` | The body posted to the SAML 2.0 Artifact Resolution Service is not XML. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0016` | The SOAP body posted to the SAML 2.0 Artifact Resolution Service carries no <samlp:ArtifactResolve>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
 | `STS-SAML-0017` | A SAML 2.0 ArtifactResolve carries no <samlp:Artifact>. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
-| `STS-SAML-0018` | A SAML 2.0 artifact does not resolve: never issued here, expired (saml2.artifactTtlS), or already resolved once. | SOAP samlp:ArtifactResponse with status Requester (HTTP 200) |
+| `STS-SAML-0018` | A SAML 2.0 artifact does not resolve: never issued here, expired (saml2.artifactTtlS), or already resolved once. | SOAP samlp:ArtifactResponse with status Success and no message (HTTP 200) — saml-core-2.0-os 3.5.3's empty response (#160) |
 | `STS-SAML-0019` | The SAMLRequest at the SAML 2.0 Single Logout service is not a readable <samlp:LogoutRequest>. | HTTP 400 page |
 | `STS-SAML-0020` | A SAML 2.0 LogoutRequest carried an <saml:EncryptedID> this service could not decrypt, so the session was not ended. | HTTP 400 page |
-| `STS-SAML-0021` | The mock SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 200 error page |
-| `STS-SAML-0022` | A response delivered to the mock SAML 2.0 service provider failed at least one of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-SAML-0021` *(retired)* | The demonstration SAML 2.0 service provider was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the demonstration relying parties were deleted. | — |
+| `STS-SAML-0022` *(retired)* | A response delivered to the demonstration SAML 2.0 service provider failed at least one of its verification checks. Retired by #592: the demonstration relying parties were deleted. | — |
 | `STS-SAML-0023` | A SAML 2.0 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0024` | A SAML 1.1 assertion could not be signed and was returned unsigned. | — |
 | `STS-SAML-0025` | A SAML 1.1 browser flow resumed with a held-flow id that is unknown or has expired (saml11.requestTtlMin). | HTTP 400 page |
 | `STS-SAML-0026` | A SAML 1.1 flow named a profile other than post or artifact in the non-spec profile parameter. | HTTP 400 page |
-| `STS-SAML-0027` | saml11.providerId is empty in a product-mode realm, so the SAML 1.1 identity provider has no name to issue or publish metadata under. | HTTP 503 page or text/plain at the inter-site transfer service and metadata; samlp:Response status Responder at the SAML responder |
-| `STS-SAML-0028` | In product mode, a SAML 1.1 flow's shire is not a samlAssertionConsumerService registered on the relying party's entry, or none is registered. | HTTP 400 page |
+| `STS-SAML-0027` *(retired)* | saml11.providerId is empty in a product-mode realm, so the SAML 1.1 identity provider has no name to issue or publish metadata under. Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 page or text/plain at the inter-site transfer service and metadata; samlp:Response status Responder at the SAML responder |
+| `STS-SAML-0028` | In product mode, a SAML 1.1 flow's shire is not a samlAssertionConsumerService registered on the relying party's entry, or none is registered; in either mode, the flow names no shire and none is registered (#592). | HTTP 400 page |
 | `STS-SAML-0029` | The SAML 1.1 assertion consumer URL is not an absolute http(s) URL. | HTTP 400 page |
 | `STS-SAML-0030` | A SAML 1.1 flow names no relying party: no providerId, no path segment and no TARGET origin to take one from. | HTTP 400 page |
 | `STS-SAML-0031` | The sign-in screen reported that a SAML 1.1 sign-in was cancelled or failed. | HTTP 400 page |
 | `STS-SAML-0032` | The issuance policy refused a SAML 1.1 assertion for this person to this relying party. | HTTP 403 page |
 | `STS-SAML-0033` | A SAML 1.1 <samlp:Response> could not be signed and was sent unsigned. | — |
-| `STS-SAML-0034` | The SAML 1.1 identity provider metadata could not be signed and was served unsigned. | — |
+| `STS-SAML-0034` *(retired)* | The SAML 1.1 identity provider metadata could not be signed and was served unsigned. Retired 2026-10-08 (#523): there is one document for both SAML versions, and STS-SAML-0014 names its failure. | — |
 | `STS-SAML-0035` | The body posted to the SAML 1.1 SAML responder is not XML. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0036` | The SOAP body posted to the SAML 1.1 SAML responder carries no <samlp:Request>. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
+| `STS-SAML-0037` | A SAML 1.1 artifact does not resolve: never issued here, expired (saml11.artifactTtlS), or already resolved once. | SOAP samlp:Response with status samlp:Success and no assertion (HTTP 200) — saml-bindings-1.1 4.1.1.6 (#160) |
 | `STS-SAML-0038` | A SAML 1.1 AssertionIDReference names an assertion this service does not hold. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0039` | A SAML 1.1 AttributeQuery or AuthenticationQuery was refused in product mode: it names no registered relying party (Resource or the path segment), or its caller did not authenticate as that relying party (a signed Request or its registered certificate at the TLS handshake). Until #189 every query was refused in product. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0040` | A SAML 1.1 query carries no <saml:Subject> with a NameIdentifier. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0041` | A SAML 1.1 <samlp:Request> carries none of the four request types the responder answers (an AuthorizationDecisionQuery included). | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
-| `STS-SAML-0042` | The mock SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). | HTTP 400 page |
-| `STS-SAML-0043` | A response delivered to the mock SAML 1.1 relying party failed at least one of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-SAML-0042` *(retired)* | The demonstration SAML 1.1 relying party was handed an artifact that does not resolve (already resolved, expired or never issued). Retired by #592: the demonstration relying parties were deleted. | — |
+| `STS-SAML-0043` *(retired)* | A response delivered to the demonstration SAML 1.1 relying party failed at least one of its verification checks. Retired by #592: the demonstration relying parties were deleted. | — |
 | `STS-SAML-0044` | A service provider metadata refresh named an application that is not in the registry. | — |
 | `STS-SAML-0045` | Service provider metadata was not fetched because federation.outbound is off. | — |
 | `STS-SAML-0046` | Service provider metadata was not fetched because samlSpMetadataUrl is empty, not a URL, or not a scheme the outbound policy dials. | — |
@@ -1929,10 +2240,10 @@ Raised from: saml/.
 | `STS-SAML-0054` | The application entry refused the metadata and encryption certificate a refresh fetched. | — |
 | `STS-SAML-0055` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen without a fresh authentication (ForceAuthn) or without a session, and was answered AuthnFailed rather than sent again. | Response status AuthnFailed |
 | `STS-SAML-0056` | A SAML 2.0 sign-in came back from its one trip to the sign-in screen with a session that still does not meet the RequestedAuthnContext, and was answered NoAuthnContext. | Response status NoAuthnContext |
-| `STS-SAML-0057` | A SAML 2.0 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); section 3.6.4.1 allows one resolution. | ArtifactResponse with StatusCode Requester (HTTP 200) |
-| `STS-SAML-0058` | A SAML 1.1 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution. | samlp:Response with StatusCode samlp:Requester (HTTP 200) |
-| `STS-SAML-0059` | The cluster claim store could not be asked whether a SAML artifact (2.0 or 1.1) was already resolved, so it was refused rather than resolved unproven. | StatusCode Responder (HTTP 200) |
-| `STS-SAML-0060` | An artifact resolution (2.0 or 1.1) failed while its answer was being built or sent, after the artifact had been spent. | StatusCode Responder (HTTP 200) when nothing was sent yet |
+| `STS-SAML-0057` | A SAML 2.0 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); section 3.6.4.1 allows one resolution. | ArtifactResponse with StatusCode Success and no message (HTTP 200) — the empty response (#160) |
+| `STS-SAML-0058` | A SAML 1.1 artifact this process still held was already resolved by another process against the same store (the cluster claim, #46); saml-bindings-1.1 section 3.2.3 allows one resolution. | samlp:Response with StatusCode samlp:Success and no assertion (HTTP 200) — the empty response (#160) |
+| `STS-SAML-0059` | The cluster claim store could not be asked whether a SAML artifact (2.0 or 1.1) was already resolved, so it was refused rather than resolved unproven. | the empty response: StatusCode Success and no message or assertion (HTTP 200) (#160) |
+| `STS-SAML-0060` | An artifact resolution (2.0 or 1.1) failed while its answer was being built or sent, after the artifact had been spent. | the empty response (StatusCode Success, nothing embedded; HTTP 200) when nothing was sent yet (#160) |
 | `STS-SAML-0061` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest or LogoutResponse carried a signature (the Redirect binding's query signature or an enveloped one) that does not verify against any of its registered signing certificates. Refused in every mode. | an HTTP 403 page; no Response is sent and no session ends |
 | `STS-SAML-0062` | A SAML 2.0 service provider's request signature could not be checked at all — an algorithm common/crypto.js does not verify (MD5, a MAC, HSS/LMS…), an unreadable key, a reference naming something other than the message (signature wrapping), a malformed signature, or a Signature parameter without the SAMLRequest and SigAlg it signs. Refused in every mode. | an HTTP 403 page; no Response is sent and no session ends |
 | `STS-SAML-0063` | An unsigned SAML 2.0 AuthnRequest, LogoutRequest or LogoutResponse — or a signed one with no registered certificate to verify it — was refused because signed requests are required (saml2.requireSignedAuthnRequests, on in product by default, or the service provider's metadata saying AuthnRequestsSigned). | an HTTP 403 page; no Response is sent and no session ends |
@@ -1945,12 +2256,12 @@ Raised from: saml/.
 | `STS-SAML-0070` | An AuthnRequest named an AssertionConsumerServiceURL that is not one of the endpoints in the service provider's consumed metadata (in every mode). | an HTTP 400 page; no Response is sent |
 | `STS-SAML-0071` | An AuthnRequest's NameIDPolicy asked for a Format the service provider's consumed metadata does not declare. | a Response with StatusCode Requester / InvalidNameIDPolicy |
 | `STS-SAML-0072` | An AuthnRequest named no assertion consumer service, and no endpoint in the service provider's consumed metadata is on a binding this identity provider delivers on (or on the ProtocolBinding asked for). | an HTTP 400 page; no Response is sent |
-| `STS-SAML-0073` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was signed with SHA-1 (its SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is off, the default. Refused in every mode. | an HTTP 403 page (a SOAP ArtifactResponse with StatusCode Requester for ArtifactResolve); no Response is sent |
-| `STS-SAML-0074` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was refused because the metadata consumed for it has EXPIRED — its effective validUntil (the earliest on the EntitiesDescriptor, EntityDescriptor and SPSSODescriptor) has passed. Refused in every mode until a newer document is consumed. | an HTTP 403 page (a SOAP ArtifactResponse with StatusCode Requester for ArtifactResolve); no Response is sent |
+| `STS-SAML-0073` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was signed with SHA-1 (its SignatureMethod or a DigestMethod) and saml.allowSha1Signatures is off, the default. Refused in every mode. | an HTTP 403 page (for an ArtifactResolve, the empty ArtifactResponse: StatusCode Success, no message, #160); no Response is sent |
+| `STS-SAML-0074` | A SAML 2.0 service provider's AuthnRequest, LogoutRequest, LogoutResponse or ArtifactResolve was refused because the metadata consumed for it has EXPIRED — its effective validUntil (the earliest on the EntitiesDescriptor, EntityDescriptor and SPSSODescriptor) has passed. Refused in every mode until a newer document is consumed. | an HTTP 403 page (for an ArtifactResolve, the empty ArtifactResponse: StatusCode Success, no message, #160); no Response is sent |
 | `STS-SAML-0075` | A Metadata Query (MDQ) import was asked for and saml2.mdqBaseUrl is not set in the realm. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-SAML-0076` | The background refresh of a service provider's stale metadata failed (the fetch, or consuming what it fetched). Recorded when the state changes and summarised hourly while it persists; the last good document stays in force until its validUntil. | — |
-| `STS-SAML-0077` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came from a caller that is not authenticated — no signature verifying against the party's registered certificates and no TLS client certificate that is one of them — where authenticated callers are required (saml2.requireSignedAuthnRequests, on in product by default). The artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
-| `STS-SAML-0078` | An artifact was asked for by a party other than the one it was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 responder path, names another). Refused in every mode; the artifact is not spent. | a SOAP response with StatusCode Requester (HTTP 200) |
+| `STS-SAML-0077` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request came from a caller that is not authenticated — no signature verifying against the party's registered certificates and no TLS client certificate that is one of them — where authenticated callers are required (saml2.requireSignedAuthnRequests, on in product by default). The artifact is not spent. | a SOAP response with StatusCode Success and nothing embedded (HTTP 200) — the empty response (#160) |
+| `STS-SAML-0078` | An artifact was asked for by a party other than the one it was issued to (an ArtifactResolve whose Issuer, or a SAML 1.1 responder path, names another). Refused in every mode; the artifact is not spent. | a SOAP response with StatusCode Success and nothing embedded (HTTP 200) — the empty response (#160) |
 | `STS-SAML-0079` | A service provider metadata fetch (a refresh, the background refresher or an MDQ lookup) was refused because the host resolves to a loopback, private, link-local or reserved address, or did not resolve, in product mode (federation_http.ts vetHost()). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-SAML-0080` | A Metadata Query (MDQ) lookup started by a request from an entityID nobody registered was not made: the realm is in product mode (mode.registersFromMetadataQuery()) and has no saml2.metadataTrustAnchors, so no answer could be verified. Nothing is fetched or created; the entityID is listed as refused on the SAML 2.0 page. | — |
 | `STS-SAML-0081` | A Metadata Query (MDQ) answer for an entityID nobody registered, fetched for a lookup a request started, did not verify against any of the realm's saml2.metadataTrustAnchors (product mode). Nothing is created; the entityID is listed as refused on the SAML 2.0 page. | — |
@@ -1970,6 +2281,18 @@ Raised from: saml/.
 | `STS-SAML-0095` | The SAML 2.0 attribute authority received no <samlp:AttributeQuery>, or one naming no Issuer. #189. | SOAP samlp:Response, Requester (HTTP 200) |
 | `STS-SAML-0096` | A SAML 1.1 AttributeQuery or AuthenticationQuery in product mode named a subject no live session here gave the asking relying party (by the NameIdentifier it was issued). #189. | SOAP samlp:Response with status samlp:Requester (HTTP 200) |
 | `STS-SAML-0097` | The TLS certificate the SAML back channel presents (this process's main-port leaves, or another cluster node's off its membership row) could not be read while a SAML 2.0 or SAML 1.1 metadata document was built, so the document went out without that KeyDescriptor and a service provider authenticating the back channel from metadata will refuse the node it names none for. #248. | none — the metadata is served (HTTP 200) without the key |
+| `STS-SAML-0098` | A SAML 2.0 ArtifactResolve or SAML 1.1 artifact Request reached a resolver whose entityID (providerID) the artifact's SourceID does not name — since #523 every artifact of a realm is minted under its one issuer, so an artifact of another realm, or one minted at another base URL. The artifact is not spent; it stays resolvable at its own resolver. #160. | SOAP response with status Success and nothing embedded (HTTP 200) — the empty response |
+| `STS-SAML-0099` | A SAML 2.0 sign-in reached a session whose sign-in mechanism the service provider does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0100` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a sign-in mechanism the service provider does not allow (appAuthnMechanism, #457). | Responder / RequestDenied |
+| `STS-SAML-0101` | A SAML 1.1 sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0102` | A SAML 1.1 flow back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
+| `STS-SAML-0103` | Product mode: an AuthnRequest named an Issuer that is no registered SAML 2.0 service provider (no appRegisteredBy; an entry a sighting filed is not a registration), or none, and was refused before its signature was checked or anything recorded (#496). | HTTP 403 page (no Response to an unregistered ACS) |
+| `STS-SAML-0104` | Product mode: a LogoutRequest named an Issuer that is no registered SAML 2.0 service provider, or none; no session was ended (#496). | HTTP 403 page |
+| `STS-SAML-0105` | Product mode: a SAML 1.1 browser flow named (or let this service infer) a relying party that is not registered, and was refused before its addresses were read (#496). | HTTP 403 page |
+| `STS-SAML-0106` | A SAML 2.0 sign-in reached a session whose second factor the service provider does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0107` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a second factor the service provider does not allow (appMfaMechanism, #475). | Responder / RequestDenied |
+| `STS-SAML-0108` | A SAML 1.1 sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-SAML-0109` | A SAML 1.1 flow back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
 
 ## STS-WSTRUST
 
@@ -1979,31 +2302,42 @@ Raised from: ws-trust/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-WSTRUST-0001` | The RequestSecurityToken body is not well-formed XML (or is empty), so no operation could be read from it. | SOAP Fault soap:Sender / soap:Client (HTTP 400) |
-| `STS-WSTRUST-0002` | A WS-Security UsernameToken was presented without a username or without a password. | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0003` | A WS-Security UsernameToken's password was refused by the credential verifier (the reserved string in development, the stored userPassword in product). The fault does not say whether the user or the password was wrong. | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0004` | Product mode: a SAML assertion presented as the requester's credential or inside OnBehalfOf/ActAs does not verify against this STS's own signing certificate. | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0005` | Product mode: a SAML assertion presented to the STS is not yet valid (its Conditions NotBefore is in the future beyond the clock skew). | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0006` | Product mode: a SAML assertion presented to the STS has expired (its Conditions NotOnOrAfter has passed beyond the clock skew). | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0007` | Product mode: a SAML assertion presented to the STS carries no NameID, so it names nobody. | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0008` | Product mode: a wst:OnBehalfOf or wst14:ActAs element carries no SAML assertion, so the delegated subject is only a name. | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0009` | Product mode: a request delegates (OnBehalfOf/ActAs) but presents no credential of its own for the requester. | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0010` | Product mode: a WS-Trust request presented no credential at all in its security header. | SOAP Fault soap:Sender / soap:Client (HTTP 500) |
-| `STS-WSTRUST-0011` | The issuance policy (the role gate) refused a token for this subject to this AppliesTo. | SOAP Fault soap:Sender / soap:Client (HTTP 403) |
-| `STS-WSTRUST-0012` | ?encrypt=1 was requested but the request carries no recipient X509Certificate to encrypt the assertion to. Product mode refuses; development returns the assertion in clear and logs this. | SOAP Fault soap:Sender / soap:Client (HTTP 500) in product; none in development |
-| `STS-WSTRUST-0013` | ?encrypt=1 was requested and encrypting the assertion to the request's certificate failed. Product mode refuses; development returns the assertion in clear and logs this. | SOAP Fault soap:Sender / soap:Client (HTTP 500) in product; none in development |
+| `STS-WSTRUST-0001` | The RequestSecurityToken body is not well-formed XML (or is empty), so no operation could be read from it. | SOAP Fault wst:InvalidRequest (HTTP 400), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0002` | A WS-Security UsernameToken was presented without a username or without a password. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0003` | A WS-Security UsernameToken's password was refused by the credential verifier (the reserved string in development, the stored userPassword in product). The fault does not say whether the user or the password was wrong. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0004` | Product mode: a SAML assertion presented as the requester's credential or inside OnBehalfOf/ActAs does not verify against this STS's own signing certificate. | SOAP Fault wst:FailedAuthentication as the requester's credential, wst:InvalidRequest inside OnBehalfOf/ActAs (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0005` | Product mode: a SAML assertion presented to the STS is not yet valid (its Conditions NotBefore is in the future beyond the clock skew). | SOAP Fault wst:FailedAuthentication as the requester's credential, wst:InvalidRequest inside OnBehalfOf/ActAs (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0006` | Product mode: a SAML assertion presented to the STS has expired (its Conditions NotOnOrAfter has passed beyond the clock skew). | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0007` | Product mode: a SAML assertion presented to the STS carries no NameID, so it names nobody. | SOAP Fault wst:FailedAuthentication as the requester's credential, wst:InvalidRequest inside OnBehalfOf/ActAs (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0008` | Product mode: a wst:OnBehalfOf or wst14:ActAs element carries no SAML assertion, so the delegated subject is only a name. | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0009` | Product mode: a request delegates (OnBehalfOf/ActAs) but presents no credential of its own for the requester. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0010` | Product mode: a WS-Trust request presented no credential at all in its security header. | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0011` | The issuance policy (the role gate) refused a token for this subject to this AppliesTo. | SOAP Fault wst:RequestFailed (HTTP 403), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0012` | ?encrypt=1 was requested but the request carries no recipient X509Certificate to encrypt the assertion to. Product mode refuses; development returns the assertion in clear and logs this. | SOAP Fault wst:InvalidRequest (HTTP 500) in product; none in development |
+| `STS-WSTRUST-0013` | ?encrypt=1 was requested and encrypting the assertion to the request's certificate failed. Product mode refuses; development returns the assertion in clear and logs this. | SOAP Fault wst:RequestFailed (HTTP 500) in product; none in development |
 | `STS-WSTRUST-0014` | A Validate request carried no token in its ValidateTarget, so it was answered with a status of invalid. | wst:Status wst:Code .../status/invalid (HTTP 200) |
-| `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP 1.2 Fault soap:Sender (HTTP 500) |
+| `STS-WSTRUST-0015` | The STS endpoint threw an unexpected exception while handling a RequestSecurityToken. | SOAP Fault soap:Receiver (SOAP 1.2) / soap:Server (SOAP 1.1), in the request's SOAP version (HTTP 500) |
 | `STS-WSTRUST-0016` | A token was issued but starting the browser sign-on session the exchange also starts threw; the RSTR is unaffected. | — |
-| `STS-WSTRUST-0017` | A JWT was refused because the directory holds no entry for the person, so there is no subject to issue it about. | SOAP Fault (HTTP 400) |
-| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the delegation policy (#108): the subject may not be delegated, the requester is not trusted to impersonate or may not act for this subject, or no attribute allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester authenticated as a PERSON (or as a name with no application entry): in product mode only an application entry may delegate (#108). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
-| `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request the delegation attributes allowed was refused because the issuance policy answered Deny for action-id `delegate` (#108). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0017` | A JWT was refused because the directory holds no entry for the person, so there is no subject to issue it about. | SOAP Fault wst:RequestFailed (HTTP 400), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0018` | An OnBehalfOf or ActAs request was refused by the issuance policy (#186): the subject may not be delegated, the requester may not act for this subject, the subject token's may_act names somebody else, or no delegation relationship allows the AppliesTo. Product mode only; development records what would have been refused. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0019` | An OnBehalfOf or ActAs request was refused because its requester may not act for anybody here: it has no entry in this realm, or it is a person who does not hold the role delegation.actorRole names (#186). | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0020` | An OnBehalfOf or ActAs request was refused because no issuance policy gave a verdict on it, or a realm's policy refused it with no rule this service names (#186). Product mode only. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0021` | A Cancel request in the WS-Trust 2004/04 namespace, which defines no Cancel binding (no CancelTarget, no RequestedTokenCancelled); it was added in 2005/02 (#188). | SOAP Fault wst:InvalidRequest (HTTP 500), in the request's trust namespace |
+| `STS-WSTRUST-0022` | An OnBehalfOf or ActAs request was refused because the semantics it asked for (impersonation or delegation) are not allowed by the requester's or the subject's entry (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0023` | An OnBehalfOf or ActAs request was refused because the subject has no authority for the application the act stands on (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0024` | An OnBehalfOf or ActAs request named no AppliesTo, or one no application registers, and is not a self request (#186). | SOAP Fault wst:RequestFailed (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0025` | A request carried both <wst:OnBehalfOf> and <wst14:ActAs>, which ask for impersonation and delegation at once (#186). | SOAP Fault wst:InvalidRequest (WS-Trust 1.4 section 11) |
+| `STS-WSTRUST-0026` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), does not verify with this STS's own key, or was not issued by this realm (its iss is not the realm's OAuth issuer, #480). | SOAP Fault wst:InvalidRequest for a delegated JWT, wst:FailedAuthentication for the requester's (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0027` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), has expired. | SOAP Fault wst:ExpiredData (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0028` | Product mode: a JWT inside OnBehalfOf/ActAs (#477), or presented as the requester's credential (#519), names, in its sub, nobody this directory holds. | SOAP Fault wst:InvalidRequest for a delegated JWT, wst:FailedAuthentication for the requester's (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0029` *(retired)* | A SAML token was asked for with no name to sign it under: product mode, saml2.entityId empty and saml.issuer unset (#494). Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0030` | Product mode: an RST asked for a token for an AppliesTo that resolves to no registered application (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidScope (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0031` | Product mode: an RST asked for a token and carried no AppliesTo, so it names no application a token could be for; refused before anything was issued or recorded (#496). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0032` | Product mode: a SAML assertion or JWT presented as the requester's credential is addressed neither to its holder (an audience the holder's application registers) nor to this IdP (its WS-Trust issuer name, SAML entityID, OAuth issuer or /sts address) (#519). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 
-**WS-Federation.** The passive requestor profile and the mock relying party.
+**WS-Federation.** The passive requestor profile.
 
 Raised from: ws-federation/.
 
@@ -2011,7 +2345,7 @@ Raised from: ws-federation/.
 |---|---|---|
 | `STS-WSFED-0001` | A wsignin1.0 request carried wreqptr, which this service refuses to dereference (fetching a URL from a query parameter would be a server-side request forgery). | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0002` | A wsignin1.0 request named no wtrealm, so there is no relying party to issue a token for. | HTTP 400 error page (the profile defines no error response) |
-| `STS-WSFED-0003` | Product mode: the wreply is not one of the wsfedReplyUrl values registered on the wtrealm's application entry (or none is registered). | HTTP 400 error page (the profile defines no error response) |
+| `STS-WSFED-0003` | Product mode: the wreply is not one of the wsfedReplyUrl values registered on the wtrealm's application entry (or none is registered); either mode: the request names no wreply and none is registered (#592). | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0004` | The resolved wreply is not an absolute http(s) URL, so the sign-in response form would post back to this service. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0005` | The request (wreq TokenType or the non-spec tokenType parameter) asked for a token type other than SAML 1.1 or SAML 2.0. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0006` | wauth demanded an authentication method this identity provider cannot perform or report. | HTTP 400 error page (the profile defines no error response) |
@@ -2023,8 +2357,15 @@ Raised from: ws-federation/.
 | `STS-WSFED-0012` | The request asked for wattr1.0 (attribute service) or wpseudo1.0 (pseudonym service), neither of which is implemented. | HTTP 501 error page |
 | `STS-WSFED-0013` | The passive requestor endpoint was sent a wa value it does not understand. | HTTP 400 error page (the profile defines no error response) |
 | `STS-WSFED-0014` | The wreq parameter is not readable XML; it is ignored and the default token type is used. | — |
-| `STS-WSFED-0015` | The WS-Federation metadata document could not be signed and was served unsigned. | — |
-| `STS-WSFED-0016` | The mock relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. | HTTP 200 page listing the failed checks |
+| `STS-WSFED-0015` *(retired)* | The WS-Federation metadata document could not be signed and was served unsigned. Retired 2026-10-08 (#524): the realm has one metadata document, and STS-SAML-0014 names its failure. | — |
+| `STS-WSFED-0016` *(retired)* | The demonstration relying party at /wsfed/rp received a sign-in response that failed one or more of its verification checks. Retired by #592: the demonstration relying parties were deleted. | — |
+| `STS-WSFED-0017` | A WS-Federation sign-in reached a session whose sign-in mechanism the relying party does not allow (appAuthnMechanism, #457); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-WSFED-0018` | A WS-Federation request back from its one sign-in trip still rested on a sign-in mechanism the relying party does not allow (appAuthnMechanism, #457). | HTTP 403 page |
+| `STS-WSFED-0019` | /wsfed/metadata/{rp} named no registered relying party, which has no metadata of its own: an unregistered wtrealm is issued under the shared entityID (#494). | HTTP 404, text/plain |
+| `STS-WSFED-0020` *(retired)* | A WS-Federation sign-in or metadata document had no name to issue or publish under: product mode, saml2.entityId empty and saml.issuer or wsfed.entityId unset (#494). Retired 2026-10-08 (#523): the name is the realm's OAuth issuer, which is never empty. | HTTP 503 page or text/plain |
+| `STS-WSFED-0021` | Product mode: a wsignin1.0 named a wtrealm that is no registered relying party (no appRegisteredBy; an entry a sighting filed is not a registration), and was refused before the sign-in screen and before anything was issued or recorded (#496). | HTTP 404 error page (the profile defines no error response) |
+| `STS-WSFED-0022` | A WS-Federation sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
+| `STS-WSFED-0023` | A WS-Federation request back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
 
 ## STS-FED
 
@@ -2168,6 +2509,13 @@ Raised from: federation/.
 | `STS-FED-0148` | A relationship whose OpenID Provider is discovered through an OpenID Federation could not resolve it to its fedTrustAnchor (#134). | HTTP 502 page |
 | `STS-FED-0149` | An OpenID Provider resolved through an OpenID Federation cannot be used: no openid_provider metadata, an issuer that is not its Entity Identifier, no https endpoints, no automatic registration, or no keys (#134). | HTTP 502 page |
 | `STS-FED-0150` | A federation relationship field that takes a closed set of values (fedAuthnMechanism, fedBinding, fedResponseType, or any row with an enum) was set to a value outside it (#86). | HTTP 400 (console and API) |
+| `STS-FED-0151` | A fedAttributeMap value was not a mapping: it is <incoming name>=<LDAP attribute> (#94). | HTTP 400 (console and API) |
+| `STS-FED-0152` | A fedAttributeMap value named a target no partner may write — an attribute this service keeps (sts*, app*, fed*, pwd*) or the entry's identity, structure or authorization (uid, memberOf, userPassword, the operational attributes) (#94). | HTTP 400 (console and API) |
+| `STS-FED-0153` | A partner's attribute was dropped at sign-in because the relationship maps it onto an attribute no partner may write (a mapping written before #94, or by an ldapmodify) (#94). | none (logged; the sign-in proceeds without it) |
+| `STS-FED-0154` | A federation relationship's Shared Signals credential (fedSignalsClientSecret or fedSignalsBearer) could not be sealed under the key-encryption key where keys persist, so it was not written (#373). | HTTP 400 (console and API) |
+| `STS-FED-0155` | A federated sign-in was started through an ssf relationship, which only sends Shared Signals and signs nobody in (#374). | HTTP 400 page |
+| `STS-FED-0156` | A federated sign-in was refused because the partner's own Shared Signals (a verified account-disabled) blocked its sign-ins of this person; its account-enabled, or an administrator, lifts it (#373). | HTTP 403 page |
+| `STS-FED-0157` | A federation relationship's client secret (fedClientSecret) could not be sealed under a durable key-encryption key, so it was not written. | HTTP 400 (console and API) |
 
 ## STS-OIDFED
 
@@ -2262,9 +2610,9 @@ Raised from: kerberos/.
 | `STS-KRB-0007` | An S4U2Proxy request set cname-in-addl-tkt but carried no additional ticket. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0008` | An S4U2Proxy evidence ticket was addressed to a service other than the requester. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0009` | An S4U2Proxy evidence ticket did not decrypt with the requester's long-term key. | KDC_ERR_BADOPTION (13) |
-| `STS-KRB-0010` | S4U2Proxy was refused: neither msDS-AllowedToDelegateTo on the requester nor msDS-AllowedToActOnBehalfOfOtherIdentity on the target permits the delegation. | KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0010` | S4U2Proxy was refused: neither appAllowedToDelegateTo on the requester's entry nor appAllowedToActOnBehalfOf on the target's (msDS-AllowedToDelegateTo and msDS-AllowedToActOnBehalfOfOtherIdentity) permits the delegation. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0011` | S4U2Proxy permitted only by resource-based delegation was refused because PA-PAC-OPTIONS with the resource-based bit was missing. | KDC_ERR_BADOPTION (13) |
-| `STS-KRB-0012` | Classic constrained delegation was refused because the evidence ticket is not forwardable. | KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0012` | Classic constrained delegation was refused because the evidence ticket is not forwardable (the S4U2Self service does not allow impersonation, or the user is protected). | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0013` | An AS-REQ for an account that requires pre-authentication carried no PA-ENC-TIMESTAMP; the KDC answered with the pre-authentication methods it accepts. | KDC_ERR_PREAUTH_REQUIRED (25) |
 | `STS-KRB-0014` | The PA-ENC-TIMESTAMP, or the PA-ENC-TS-ENC inside it, was not well formed. | KDC_ERR_PREAUTH_FAILED (24) |
 | `STS-KRB-0015` | The PA-ENC-TIMESTAMP was encrypted with a different encryption type from the one the request negotiated. | KDC_ERR_PREAUTH_FAILED (24) |
@@ -2294,7 +2642,7 @@ Raised from: kerberos/.
 | `STS-KRB-0039` | The issuance policy refused a service ticket because the client does not hold a role the service requires. | KDC_ERR_POLICY (12) |
 | `STS-KRB-0040` | A TGS-REQ was refused because the service and the request share no encryption type. | KDC_ERR_ETYPE_NOSUPP (14) |
 | `STS-KRB-0041` | A FORWARDED request was refused because the presented ticket is not forwardable. | KDC_ERR_BADOPTION (13) |
-| `STS-KRB-0042` | A FORWARDED request was refused because the client account is flagged NOT_DELEGATED. | KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0042` | A FORWARDED request was refused because the client is protected from delegation (stsNotDelegated or a protected group: NOT_DELEGATED, Protected Users). | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0043` | A RENEW request was refused because the ticket is not renewable. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0044` | A RENEW request was refused because the renewable ticket carries no renew-till. | KDC_ERR_BADOPTION (13) |
 | `STS-KRB-0045` | A RENEW request was refused because the ticket's renew-till has passed. | KRB_AP_ERR_TKT_EXPIRED (32) |
@@ -2330,10 +2678,10 @@ Raised from: kerberos/.
 | `STS-KRB-0075` | The Kerberos acceptor refused a new Authenticator because its replay cache is full of entries still inside the replay window. | KRB_ERR_GENERIC (60) |
 | `STS-KRB-0076` | The Authenticator's 0x8003 GSS checksum presented to the Kerberos acceptor is malformed. | KRB_AP_ERR_INAPP_CKSUM (50) |
 | `STS-KRB-0077` | The Authenticator presented to the Kerberos acceptor carried a checksum type other than 0x8003. | KRB_AP_ERR_INAPP_CKSUM (50) |
-| `STS-KRB-0078` | A request to the Kerberos service's TCP listener exceeded krb5.serviceMaxTokenBytes and the connection was closed. | connection closed |
-| `STS-KRB-0079` | A request to the Kerberos service's TCP listener carried a length prefix with the reserved top bit set and the connection was closed. | connection closed |
-| `STS-KRB-0080` | The Kerberos service failed to build a reply and closed the connection. | connection closed |
-| `STS-KRB-0081` | The Kerberos service's TCP listener failed, usually because its port could not be bound. | — |
+| `STS-KRB-0078` *(retired)* | A request to the Kerberos service's TCP listener exceeded krb5.serviceMaxTokenBytes and the connection was closed. Retired by #595: the demonstration that raised it moved to the development companion. | connection closed |
+| `STS-KRB-0079` *(retired)* | A request to the Kerberos service's TCP listener carried a length prefix with the reserved top bit set and the connection was closed. Retired by #595: the demonstration that raised it moved to the development companion. | connection closed |
+| `STS-KRB-0080` *(retired)* | The Kerberos service failed to build a reply and closed the connection. Retired by #595: the demonstration that raised it moved to the development companion. | connection closed |
+| `STS-KRB-0081` *(retired)* | The Kerberos service's TCP listener failed, usually because its port could not be bound. Retired by #595: the demonstration that raised it moved to the development companion. | — |
 | `STS-KRB-0082` | A SPNEGO request carried no Authorization header and was answered with the bare Negotiate challenge. | HTTP 401 WWW-Authenticate: Negotiate |
 | `STS-KRB-0083` | A SPNEGO request carried an Authorization header naming a scheme other than Negotiate. | HTTP 401 WWW-Authenticate: Negotiate |
 | `STS-KRB-0084` | A SPNEGO request carried Negotiate with an empty token. | HTTP 401 WWW-Authenticate: Negotiate |
@@ -2348,7 +2696,7 @@ Raised from: kerberos/.
 | `STS-KRB-0093` | The SPNEGO acceptor sent request-mic and is waiting for the client's mechListMIC. | HTTP 401, NegTokenResp negState request-mic |
 | `STS-KRB-0094` | A bare SPNEGO NegTokenResp arrived with no negotiation in progress to continue. | HTTP 401, NegTokenResp negState reject |
 | `STS-KRB-0095` | A SPNEGO continuation carried no mechListMIC. | HTTP 401, NegTokenResp negState reject |
-| `STS-KRB-0096` | An unhandled failure on /spnego/protected. | HTTP 500 page |
+| `STS-KRB-0096` *(retired)* | An unhandled failure on /spnego/protected. Retired by #595: the demonstration that raised it moved to the development companion. | HTTP 500 page |
 | `STS-KRB-0097` | A SPNEGO sign-in at /authn/spnego was refused because krb5.spnegoAuthentication is off. | HTTP 403 page |
 | `STS-KRB-0098` | A valid Kerberos ticket was accepted at /authn/spnego and the issuance policy refused to start a session. | HTTP 403 page |
 | `STS-KRB-0099` | An unhandled failure on the SPNEGO sign-in at /authn/spnego. | HTTP 500 page |
@@ -2422,6 +2770,49 @@ Raised from: kerberos/.
 | `STS-KRB-0167` | A TGS-REQ's ticket or Authenticator carried AD-fx-fast-armor (71), which marks FAST armor that may not be used to obtain a ticket. | RFC 6113 section 5.4.1.1: KRB_ERR_GENERIC (60) |
 | `STS-KRB-0168` | A TGS-REQ's ticket or Authenticator carried AD-fx-fast-used (72) and the request was not armored with FAST. | RFC 6113 section 5.4.2: KRB_AP_ERR_MODIFIED (41) |
 | `STS-KRB-0169` | A user-to-user TGS-REQ (ENC-TKT-IN-SKEY) was refused: no additional ticket, not a TGT of this realm, it did not open or had expired, it was issued to another server than the one named, or its session key is an enctype the mode withholds. | RFC 4120 section 3.3.3: KDC_ERR_BADOPTION (13), KRB_AP_ERR_BAD_INTEGRITY (31), KRB_AP_ERR_TKT_EXPIRED (32), KDC_ERR_SERVER_NOMATCH (26), KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0170` | An S4U2Self request's PA-S4U-X509-USER did not decode (#186). | [MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0171` | An S4U2Self request's PA-S4U-X509-USER checksum did not verify under the TGT session key at key usage 26 (#186). | [MS-SFU] 2.2.2: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0172` | An S4U2Self request's PA-S4U-X509-USER carried a nonce that is not the request body's (#186). | [MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0173` | An S4U2Self request's PA-S4U-X509-USER certificate names nobody in this realm: not issued to a person by its certificate authority, revoked, or without clientAuth (#186). | [MS-SFU] 2.2.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6) |
+| `STS-KRB-0174` | An S4U2Self request's PA-S4U-X509-USER named one user and its certificate another (#186). | [MS-SFU] 2.2.2: KDC_ERR_CLIENT_NAME_MISMATCH (75) |
+| `STS-KRB-0175` | An S4U2Self request's PA-S4U-X509-USER carried neither a cname nor a certificate (#186). | [MS-SFU] 2.2.2: KDC_ERR_BADOPTION (13) |
+| `STS-KRB-0176` | S4U2Proxy was refused because the evidence ticket's PAC is missing, or its ticket or KDC signature does not verify with the krbtgt key: the ticket was altered after issue (CVE-2020-17049) or forged by the requester (#186). | [MS-SFU] 3.2.5.2.2, [MS-PAC] 2.8.3: KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0177` | S4U2Proxy was refused by the issuance policy's delegation rules: a protected user, the front end's subject groups or semantics, or the user's authority for it (#186). Refused in both modes. | KDC_ERR_BADOPTION (13) for the relationship, KDC_ERR_POLICY (12) otherwise |
+| `STS-KRB-0178` | A PA-PK-AS-REQ did not decode: the PA-PK-AS-REQ, its CMS SignedData, an encapsulated content other than id-pkinit-authData, or the AuthPack (#179). | RFC 4556 section 3.2.1: KDC_ERR_PREAUTH_FAILED (24) |
+| `STS-KRB-0179` | A PKINIT request was signed for the anonymous principal or unsigned for a named one (#179). | RFC 8062 section 4.1.1, RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NOT_TRUSTED (62) |
+| `STS-KRB-0180` | A PKINIT PKAuthenticator carried no paChecksum, or one that is not the SHA-1 of the KDC-REQ-BODY (#179). | RFC 4556 sections 3.2.1 and 3.2.3: KDC_ERR_PA_CHECKSUM_MUST_BE_INCLUDED (79), KRB_AP_ERR_MODIFIED (41) |
+| `STS-KRB-0181` | A PKINIT request did not carry the signer's certificate, or it could not be read (#179). | RFC 4556 section 3.2.2: KDC_ERR_CANT_VERIFY_CERTIFICATE (70) with TD-TRUSTED-CERTIFIERS, KDC_ERR_INVALID_CERTIFICATE (71) |
+| `STS-KRB-0182` | A PKINIT client certificate was signed with SHA-1, MD5 or an unknown algorithm (#179). | RFC 4556 section 3.2.2, RFC 8636 section 5: KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED (78) with TD-CERT-DIGEST-ALGORITHMS |
+| `STS-KRB-0183` | A PKINIT client certificate did not validate to the service Root through this realm's hierarchy (#179). | RFC 4556 section 3.2.2: KDC_ERR_CANT_VERIFY_CERTIFICATE (70) with TD-TRUSTED-CERTIFIERS, KDC_ERR_INVALID_CERTIFICATE (71) with TD-INVALID-CERTIFICATES |
+| `STS-KRB-0184` | A PKINIT client certificate was not issued by one of this realm's identity Issuing CAs (TLS client, ACME, EST, SCEP) (#179). | RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NOT_TRUSTED (62) |
+| `STS-KRB-0185` | A PKINIT client certificate, or a certificate on its path, is revoked (#179). | RFC 4556 section 3.2.2: KDC_ERR_REVOKED_CERTIFICATE (72) |
+| `STS-KRB-0186` | A PKINIT client certificate's revocation status could not be established and pki.revocationCheck refused it (#179). | RFC 4556 section 3.2.2: KDC_ERR_REVOCATION_STATUS_UNKNOWN (73) |
+| `STS-KRB-0187` | A PKINIT client certificate carries neither id-pkinit-KPClientAuth nor smart-card logon in its extended key usage, or its keyUsage does not allow digitalSignature (#179). | RFC 4556 section 3.2.2: KDC_ERR_INCONSISTENT_KEY_PURPOSE (77) |
+| `STS-KRB-0188` | A PKINIT client certificate is not bound to the AS-REQ's client: not recorded on their entry and naming them in no id-pkinit-san, issued to somebody else, or naming somebody else (#179). | RFC 4556 section 3.2.2: KDC_ERR_CLIENT_NAME_MISMATCH (75) |
+| `STS-KRB-0189` | A PKINIT PKAuthenticator's time was outside the clock tolerance (#179). | RFC 4556 section 3.2.2: KRB_AP_ERR_SKEW (37) |
+| `STS-KRB-0190` | A PKINIT request carried no RFC 8070 freshness token where one is required, or one this realm did not issue or that expired (#179). | RFC 8070 section 2.4: KDC_ERR_PREAUTH_FAILED (24), KDC_ERR_PREAUTH_EXPIRED (90), each with a fresh PA-AS-FRESHNESS |
+| `STS-KRB-0191` | A PKINIT AuthPack was signed over SHA-1, MD5 or an unknown digest (#179). | RFC 4556 section 3.2.2, RFC 8636 section 4: KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED (80) with TD-CMS-DIGEST-ALGORITHMS |
+| `STS-KRB-0192` | A PKINIT AuthPack's signature did not verify with the signer's certificate, or its signed attributes were wrong (#179). | RFC 4556 section 3.2.2: KDC_ERR_INVALID_SIG (64) |
+| `STS-KRB-0193` | A signed PKINIT AuthPack was presented a second time, or could not be proved unused (#179). | RFC 4556 section 3.2.2: KRB_AP_ERR_REPEAT (34), KRB_ERR_GENERIC (60) |
+| `STS-KRB-0194` | A PKINIT request asked for the reply key by public-key encryption, which this KDC does not implement (#179). | RFC 4556 section 3.2.3: KDC_ERR_PUBLIC_KEY_ENCRYPTION_NOT_SUPPORTED (81) |
+| `STS-KRB-0195` | A PKINIT request's Diffie-Hellman group or public value was refused: MODP group 2, a group of the client's own, an unsupported curve, or a value out of range (#179). | RFC 4556 section 3.2.2, RFC 5349 section 4: KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED (65) with TD-DH-PARAMETERS |
+| `STS-KRB-0196` | A PKINIT request offered no RFC 8636 KDF this KDC uses, or none at all while krb5.pkinitLegacyKdf is off (#179). | RFC 8636 section 6: KDC_ERR_NO_ACCEPTABLE_KDF (100) |
+| `STS-KRB-0197` | The KDC held no PKINIT certificate for the realm, or could not sign its reply (#179). | none (logged); KDC_ERR_CLIENT_NOT_TRUSTED (62) to the client |
+| `STS-KRB-0198` | An anonymous PKINIT request was refused — anonymous PKINIT off, no anonymous KDC option, a service other than the realm's TGS or no AES enctype — or an anonymous ticket was presented to the TGS, which it may not buy from (#179). | RFC 8062 sections 4.1 and 4.2: KDC_ERR_C_PRINCIPAL_UNKNOWN (6), KDC_ERR_BADOPTION (13), KDC_ERR_POLICY (12), KDC_ERR_ETYPE_NOSUPP (14) |
+| `STS-KRB-0199` | Resource-based constrained delegation was refused because the evidence ticket is not forwardable (the S4U2Self service does not allow impersonation, or the user is protected) (#492). | [MS-SFU] 3.2.5.2.3: KDC_ERR_BADOPTION (13), STATUS_ACCOUNT_RESTRICTION |
+| `STS-KRB-0200` | A Kerberos PAC claim was left out of a ticket: its value — a placeholder expanded, or a directory attribute — is not its type (int64, uint64, boolean, or an empty or NUL-bearing string) (#493). The ticket is issued with the rest. | none (logged at warn; [MS-ADTS] 2.2.18.2 CLAIM_TYPE) |
+| `STS-KRB-0201` | A ticket's PAC client claims encoded to more than the 64 KiB a ticket may carry; the ticket was issued with no claims buffer (#493). | none (logged; [MS-PAC] 2.11) |
+| `STS-KRB-0202` | A ticket's PAC client claims could not be read or encoded; the ticket was issued with no claims buffer, or without the application's own claims (#493). | none (logged; [MS-PAC] 2.11) |
+| `STS-KRB-0203` | A PAC presented to the KDC carries a client claims buffer that does not decode (a compression format other than XPRESS Huffman, or malformed NDR); the ticket being built carries none of those claims (#493). | none (logged at warn; [MS-PAC] 2.11, [MS-ADTS] 2.2.18) |
+| `STS-KRB-0204` | A request worker failed a Kerberos message from TCP or UDP 88 before answering it (the worker went away, or the operation threw); it is not answered again in the front process, because the worker may already have written (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
+| `STS-KRB-0205` | A request worker answered a Kerberos message from TCP or UDP 88 with no reply bytes; the client is told the KDC is unavailable (2026-10-07). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9 |
+| `STS-KRB-0206` | The message router a service deployed as cells installs on TCP and UDP 88 failed on a message; it is answered by this cell's KDC as it was before the router (#588, 2026-10-12). | none — #98, RFC 4120 7.2 |
+| `STS-KRB-0207` | A Kerberos message on TCP or UDP 88 whose client is homed in another cell could not be answered there (the cell unreachable, or no reply); the client is told the KDC is unavailable, fail-closed (#588, 2026-10-12). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6 |
+| `STS-KRB-0208` | Another cell relayed a Kerberos message here with no message in it; the inter-cell operation kdc-message failed (#588, 2026-10-12). | none — #98 |
+| `STS-KRB-0209` *(retired)* | kerberos/spnego_pages.ts is present and did not load, so GET /spnego or /spnego/protected drew its page on the server, as a copy without that module does (#583). The negotiation itself is unaffected. Retired by #595: the demonstration that raised it moved to the development companion. | logged; the page is drawn server-side |
+| `STS-KRB-0210` | No random key could be made for the Kerberos acceptor's SPN, whose configured krb5.servicePassword product refused (empty or the published default), so the acceptor accepts no ticket. | — |
+| `STS-KRB-0211` | A node lost the race to make the Kerberos acceptor's random key and, re-reading the directory, did not find the winner's key yet; its acceptor refuses until it arrives. | — |
+| `STS-KRB-0212` | The Kerberos acceptor's random key was not made: this node could not ask the shared store whether another node was making it. | — |
 
 ## STS-LDAP
 
@@ -2510,7 +2901,7 @@ Raised from: ldap/.
 | `STS-LDAP-0103` | A person's attribute edit (#228) named an attribute the editor does not change: a credential, a binary value, the username or the address (which have doors of their own), or one outside the person schema. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0104` | A person's attribute edit (#228) named the attribute the entry's own DN is built from, which would leave the DN and the entry disagreeing. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0105` | A person's attribute edit (#228) was not set, add or remove, or was an add to an attribute that holds one value. | HTTP 400 (API) or a 303 with error= |
-| `STS-LDAP-0106` | A person's attribute edit (#228) carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
+| `STS-LDAP-0106` | A person's attribute edit (#228), or a create from the field grid, carried a value that is too long, holds a control character, does not have its attribute's shape (a country code, a date, a language range, an http(s) URL, a DN), or was empty for an add or a remove. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0107` | A person's attribute edit (#228) added a value the attribute already holds. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0108` | A person's attribute edit (#228) removed a value the attribute does not hold. | HTTP 400 (API) or a 303 with error= |
 | `STS-LDAP-0109` | A person's attribute edit (#228) would have left cn or sn, which RFC 4519 3.12 requires of every person, with no value. | HTTP 400 (API) or a 303 with error= |
@@ -2518,6 +2909,103 @@ Raised from: ldap/.
 | `STS-LDAP-0111` | An LDAP add or modify named a credential attribute (a security key, an authenticator app, recovery codes, an app password, a signing key pair, a HOBA key, a self-issued subject, the emailed factor, Kerberos keys, a CIBA user code, an enrolment credential or a device secret). Credentials are written only through the doors that check them and send CAEP credential-change (#237), in every mode and for every bind, administrator included; the refusal names the door. | RFC 4511 section 4.1.9 unwillingToPerform (53) |
 | `STS-LDAP-0112` | The node-ldapjs in use does not support the encodeErrorMessage server option, so every LDAP result is sent with an empty diagnosticMessage and a client never sees the text of a refusal (#261). | none — logged at startup |
 | `STS-LDAP-0120` | A person was deleted from the directory (#241) and handing the delete to account_state.ts failed, so what they held may not have been ended at once. authn.sessionOf() still ends a session whose person has no entry the next time it is presented. | none — logged; the delete stands |
+| `STS-LDAP-0130` | A request or surface worker holding the directory as a window (ldap.workerDirectory=postgres-lru, #349) asked the store for an entry it did not hold and no answer came within ldap.workerDirectoryTimeoutMs — the database is down, unreachable or too slow. The request is refused rather than answered out of a window that cannot say what it is missing. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
+| `STS-LDAP-0131` | A windowed worker's question to the store (#349) was refused by the database: the connection failed or the statement errored. The request is refused as for STS-LDAP-0130. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
+| `STS-LDAP-0132` | The directory bridge's worker thread (#349) failed. The question it was answering timed out (STS-LDAP-0130); the next question starts a new thread. | none — logged |
+| `STS-LDAP-0133` | ldap.workerDirectory=postgres-lru (#349) was set where it cannot work: the store is not PostgreSQL (a memory or ldif store has nothing for a window to read), or the service is deployed as several cells (a person's entry may be in another cell's database). The service does not start. | none — fatal at startup |
+| `STS-LDAP-0134` | A group owner add named nobody: no `owner` was sent (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0135` | A group owner add named no person and no group of this realm (#603). An owner answers for the group, so unlike a member it may not dangle. | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0136` | A group owner add named the group itself (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0137` | A group owner add was refused: the group already names the most owners a group may (MAX_GROUP_OWNERS, 25) (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0138` | A group owner remove named a value the group does not list as an owner (#603). | HTTP 400 (API) or a refusal on the group page |
+
+## STS-ATTR
+
+**Attribute sources.** The operators' SQL databases a realm reads people's attributes from, onto their entries (#94): a source's definition, its driver, its connection and password, the lookup, and the sign-in or scheduled refresh.
+
+Raised from: attribute-sources/attribute_sources.ts, attribute-sources/attribute_source_drivers.ts, common/secrets.js (readSourceSecret), ldap/ldap_server.js (applySourcedAttributes).
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-ATTR-0001` | An attribute source's driver (or Knex) is not installed: the dialect's package is an optional one, installed into the image with STS_CLOUD_SDKS (#94). | none (a console or API refusal, or a logged refresh failure) |
+| `STS-ATTR-0002` | An attribute source could not be read: the connection, TLS, the password, the CA file or the query failed (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0003` | An attribute source did not answer within its timeout (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0004` | An attribute source has more than one row for a person's key, so it names nobody (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0005` | An attribute source's definition was refused: its id, dialect, host, port, database, user, password provider, table, key or column names, refresh modes, interval, timeout or failure policy (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0006` | An attribute source's password could not be read from where it names (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0007` | An attribute source's password was read and is empty (#94). | none (logged; per the source, the sign-in proceeds or is refused) |
+| `STS-ATTR-0008` | An attribute source may not write an attribute: one this service keeps, the entry's identity, structure or authorization, or mail (#94). | HTTP 400 (console and API), or logged at the write |
+| `STS-ATTR-0009` | An attribute source named an attribute another source in the realm already writes; an attribute has one source (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0010` | An attribute source named a host attributeSources.hostPatterns does not allow in its realm (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0011` | An attribute source action named a source that is not there, or added one that already is, or named a person the realm does not have (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0012` | A sign-in was refused: an attribute source whose failure policy is refuse could not be read (#94). | the calling protocol's access_denied |
+| `STS-ATTR-0013` | An attribute source's refresh could not be queued on the scheduler (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0014` | The directory would not store or remove an attribute source (no directory, or it is full) (#94). | HTTP 400 (console and API) |
+| `STS-ATTR-0015` | An attribute source's CA chain was refused: it is not PEM certificates, a block did not parse, a certificate is expired or not yet valid, or it is longer than 64 KiB (#94). | HTTP 400 (console and API) |
+
+## STS-SECDEST
+
+**Secret push destinations.** Where a service account's rotated password is pushed (#221): the destinations, each an application entry with its write credential sealed on it, and the write path to AWS Secrets Manager, Google Cloud Secret Manager, Azure Key Vault, a Vault or OpenBao KV version 2 engine, and (development mode only) a file. No code here is a password or a credential.
+
+Raised from: common/secret_destinations.ts, common/secrets.js (pushSecret), mgmt-api/secret_destinations_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SECDEST-0001` | A secret destination's provider SDK is not installed: each is an optional package, installed into the image with STS_CLOUD_SDKS (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0002` | A secret destination is not usable: no or an unknown provider or payload, or a location or write credential its provider needs is missing (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0003` | The secret a push names does not exist at its destination. A push writes a new version of a secret that exists and never creates one (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0004` | A Vault or OpenBao KV version 2 write was refused by check-and-set: a newer version was written since the push read the secret's metadata, and nothing was overwritten (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0005` | A secrets manager refused a push or could not be reached: permission, network, TLS, or an answer it gave (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0006` | A file secret destination was named in product mode, where a file is not a destination (mode.acceptsFileSecretDestinations()) (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0007` | A file destination's secret name leaves its directory, or names something that is not a regular file (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0008` | A secret destination's address is not an https URL: a write credential and a password do not cross plain http (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0009` | A push or a test push named no secret destination of this realm (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0010` | A test push named a secret a service account's rotation writes: a canary is written to a test secret only (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0011` | A secret destination's definition was refused on add or change: no identifier, an unknown provider or payload, a missing location, or a credential that is not the shape its provider takes (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0012` | The secret destinations' act was asked for an action it does not have (#221). | HTTP 400 (console and API) |
+| `STS-SECDEST-0013` | A secret destinations action on /admin-api failed unexpectedly (#221). | HTTP 500 (API) |
+| `STS-SECDEST-0014` | A push named no usable secret: the name is empty, longer than 512 characters, holds a line break, or is not a path the store's request line takes; or there was no password to push (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+| `STS-SECDEST-0015` | A push failed in a way its provider's code did not name (#221). | none (a push answers ok: false; logged) |
+| `STS-SECDEST-0016` | A secret destination's write credential is not the shape its provider takes (a JSON object with the members it needs) (#221). | none (a push answers ok: false; HTTP 400 on the console and API) |
+
+## STS-SCIMC
+
+**Outbound SCIM client.** The outbound SCIM 2.0 client (#552): pushing this realm's people and groups to a remote service provider, its authentication (Basic, an OAuth 2.0 token, a TLS client certificate), each client's retry queue and dead letters, and reconciliation. No code here is a credential.
+
+Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clients_api.ts.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SCIMC-0001` | A queued change for an outbound SCIM client whose application entry is gone, is no longer declared for scim-client, or is disabled was dead-lettered (#552). | none — nothing is sent |
+| `STS-SCIMC-0002` | An outbound SCIM client's base URI or token endpoint is not usable: not an absolute URL, carries a user name, password, query or fragment (RFC 7644 sections 1.3, 7.1). | none — nothing is sent |
+| `STS-SCIMC-0003` | An outbound SCIM client's base URI or token endpoint is plain http, refused: product mode always, development with scimClient.allowHttp off (RFC 7644 section 7.2). | none — nothing is sent |
+| `STS-SCIMC-0004` | An outbound SCIM client's TLS material is unusable: its CA certificates, scimClient.caFile, or its client certificate and private key would not load. | none — nothing is sent |
+| `STS-SCIMC-0005` | A request to a SCIM service provider or its token endpoint timed out (scimClient.timeoutMs); retried. | none |
+| `STS-SCIMC-0006` | A request to a SCIM service provider or its token endpoint failed at the network: refused, reset, unresolved, or the TLS handshake or certificate check failed; retried. | none |
+| `STS-SCIMC-0007` | A SCIM service provider answered 400, 408, a 409 that is not uniqueness, or another refusal no second attempt changes (RFC 7644 section 3.12: invalidSyntax, invalidValue, mutability, invalidPath, noTarget, invalidFilter, sensitive); dead-lettered with its scimType. tooMany narrows the query first, uniqueness adopts, and invalidVers re-reads as a 412 does. | none |
+| `STS-SCIMC-0008` | A SCIM service provider answered an error status: 429, 500, 502, 503 or 504 are retried (and pause the client), anything else is dead-lettered. 408 is not retried (2026-10-13). | none |
+| `STS-SCIMC-0009` | A SCIM service provider answered 401 or 403 to an authenticated request: its credential, token or certificate is not accepted, or it is not authorized for the operation (RFC 7644 section 2). A 401 with an OAuth token is retried once with a fresh token first. | none |
+| `STS-SCIMC-0010` | An outbound SCIM client's OAuth 2.0 token request failed: the token endpoint refused the client_credentials grant, answered no access_token, or could not be reached. | none |
+| `STS-SCIMC-0011` | A SCIM delivery was not attempted because the claim store could not be asked; the next sweep tries again. | none |
+| `STS-SCIMC-0012` | A SCIM delivery still unsent scimClient.retentionS after it was queued was dead-lettered. | none |
+| `STS-SCIMC-0013` | The outbound SCIM client's periodic summary: deliveries were dead-lettered or deferred in a realm since the last summary. | none (a log line) |
+| `STS-SCIMC-0014` | The scim-client.deliver sweep failed in a realm. | none (a log line) |
+| `STS-SCIMC-0015` | An operator's retry or purge was refused: the delivery is not a dead letter, or it is unknown in this realm. | HTTP 400 (console and API) |
+| `STS-SCIMC-0016` | A SCIM client action named an unknown action, or a client this realm does not have. | HTTP 400 (console and API) |
+| `STS-SCIMC-0017` | A SCIM client definition was refused: an unknown choice, an unusable URL, a missing credential its method needs, an unreadable LDAP filter or certificate, or a write the application registry refused. | HTTP 400 (console and API) |
+| `STS-SCIMC-0018` | A SCIM client action failed unexpectedly. | HTTP 500 (console and API) |
+| `STS-SCIMC-0019` | A SCIM service provider's /ServiceProviderConfig or /ResourceTypes could not be read or was not a SCIM document (RFC 7644 section 4); the client assumes /Users and /Groups and no PATCH, filter or ETag support. | none |
+| `STS-SCIMC-0020` | A create answered 409 uniqueness (RFC 7644 section 3.3) and no resource could be found by externalId, userName or displayName to adopt; dead-lettered for an operator. | none |
+| `STS-SCIMC-0021` | A PUT, PATCH or DELETE answered 412 Precondition Failed (RFC 7644 section 3.14), or 400 invalidVers, more times than scimClient.etagRetries allows after re-reading the resource; dead-lettered. | none |
+| `STS-SCIMC-0022` | An outbound SCIM client's scope filter is not an LDAP filter this service can evaluate (RFC 4515); nobody is in its scope until it is fixed. | HTTP 400 (console and API) at the write |
+| `STS-SCIMC-0023` | An outbound SCIM client's reconciliation failed part way: listing the service provider's resources, or reading the realm. | none (a log line and the action's answer) |
+| `STS-SCIMC-0024` | An outbound SCIM client's TLS client certificate could not be issued from the realm's tls-client Issuing CA. | HTTP 400 (console and API) |
+| `STS-SCIMC-0025` | A SCIM service provider answered a create or a read with a body that is not a SCIM resource carrying an id (RFC 7643 section 3.1). | none |
+| `STS-SCIMC-0026` | A SCIM service provider holds more than one resource with this realm's externalId for one entry (RFC 7643 section 3.1: the client owns externalId); dead-lettered for an operator to resolve. | none |
+| `STS-SCIMC-0027` | scimClient.skipTlsVerification is on in a product-mode realm and is ignored: the service provider's certificate is verified (logged once per process). | none (a log line) |
+| `STS-SCIMC-0028` | A SCIM service provider answered 400 tooMany (RFC 7644 section 3.4.2) to a query this client had already narrowed as far as it can: an externalId lookup asked for a page of two, or a reconciliation listing asked for one resource a page and, where filtering is supported, for externalId pr; dead-lettered, or the reconciliation reports the listing failed. | none |
+| `STS-SCIMC-0029` | A SCIM service provider's /ResourceTypes marks a schema extension required that this client has no values for (anything but the enterprise User extension, which is sent empty if need be); the resource is not sent and the delivery is dead-lettered naming the extension (RFC 7643 sections 3.3, 6). | none — nothing is sent |
+| `STS-SCIMC-0030` | A resource this client would send lacks an attribute RFC 7643 requires — a User's userName or a Group's displayName — so no create or replace is sent (RFC 7644 section 3.5.1); dead-lettered. | none — nothing is sent |
 
 ## STS-SCIM
 
@@ -2735,7 +3223,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0120` | The Workload API was not served over TCP in a product realm, because spiffe.workloadTcpSourceAuthenticated does not declare that the network authenticates source addresses (SPIFFE Workload Endpoint section 3) — the port was not bound, or a realm switched to product with it bound refused the call (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
 | `STS-SPIFFE-0121` | The Workload API was not served over TCP in a product realm: spiffe.workloadTcpSourceAuthenticated is on but spiffe.grpcHost is a wildcard address, and the declaration covers one named network (#166). | nothing listening on the port; gRPC UNAVAILABLE on a port already bound |
 | `STS-SPIFFE-0122` | A SPIFFE registration entry was refused in a product realm because it selects nothing that identifies a workload — no selector, or only transport: and endpoint: ones — at the console, /admin-api or the SPIRE Server API (#166). | gRPC INVALID_ARGUMENT for the item in BatchCreateEntry and BatchUpdateEntry; a refused console or management API action |
-| `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; the caller may get an empty SVID list |
+| `STS-SPIFFE-0123` | A SPIFFE registration entry already in the registry that selects nothing identifying a workload answered no Workload API caller, because its realm is in product mode; said once per entry per process (#166). | the entry is left out of the answer; a caller left with no entry is refused PERMISSION_DENIED (STS-SPIFFE-0146) |
 | `STS-SPIFFE-0124` | The systemd workload attestor is named in spiffe.workloadAttestors and the optional D-Bus client (dbus-next) is not installed; every connection it would attest is refused, naming the package (#170). Logged once per process. | gRPC UNAVAILABLE on every call of the connection |
 | `STS-SPIFFE-0125` | The systemd workload attestor could not name a caller's unit: D-Bus GetUnitByPID or a unit property failed, or the process the pid named changed while systemd was asked (#170). | gRPC UNAVAILABLE on every call of the connection |
 | `STS-SPIFFE-0126` | A docker workload's image signature could not be verified because nothing to verify it with is configured: no cosign public key file, no verified TUF trust root and no pinned trusted_root.json, or a file that could not be read (#170). | gRPC UNAVAILABLE on every call of the connection |
@@ -2757,6 +3245,8 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0142` | A rootless Podman workload was not attested by the docker attestor because spiffe.dockerUseRootlessPodman is off, SPIRE's rule; logged once per process (#170). | no docker selectors for that workload |
 | `STS-SPIFFE-0143` | A gRPC handler threw after the call waited for the cluster read barrier, so the exception could not reach grpc-js; a unary call is answered INTERNAL. | INTERNAL for a unary call |
 | `STS-SPIFFE-0144` | A certificate presented to the SPIRE Server or Broker API was signed by an authority this trust domain trusts and is refused: the two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a critical extension nothing here implements, a name constraint, a malformed certificate) or it is not a leaf X509-SVID (cA set, or a keyUsage without digitalSignature or with keyCertSign or cRLSign; X509-SVID section 4.3). #201. | UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller |
+| `STS-SPIFFE-0145` | A request worker failed the SPIFFE Broker API's FetchJWTSVID for an attested reference before answering it (the worker went away, or the operation threw); it is not run again in the front process, because the worker may already have minted (2026-10-07). | gRPC UNAVAILABLE |
+| `STS-SPIFFE-0146` | A Workload API caller is entitled to nothing it asked for: no registration entry matches it (and none is invented), or FetchJWTSVID named a spiffe_id it is not entitled to. Refused at FetchX509SVID, FetchX509Bundles, FetchJWTSVID and FetchJWTBundles, and a stream whose caller lost every entry ends so (SPIFFE Workload API sections 5.2.1, 5.2.2, 6.2.1, 6.2.2; #274). | gRPC PERMISSION_DENIED |
 
 ## STS-TLS
 
@@ -2777,9 +3267,9 @@ Raised from: tls/.
 | `STS-TLS-0009` | The TLS listener certificate could not be re-issued under the certificate authority this service now holds. | — |
 | `STS-TLS-0010` | The client truststore could not be extended to a listener because it was given something that is not a TLS server. | — |
 | `STS-TLS-0011` | The client truststore could not be applied to a TLS listener, which keeps its previous context. | — |
-| `STS-TLS-0012` | A truststore add found no PEM certificate in what it was sent. | HTTP 400 (POST /tls/trust) |
+| `STS-TLS-0012` | A truststore add found no PEM certificate in what it was sent. | HTTP 400 (POST /admin-api/tls/trust/add) |
 | `STS-TLS-0013` | A strict truststore add was refused whole because a certificate in it could not be read by OpenSSL. | — |
-| `STS-TLS-0014` | A truststore add stopped because the truststore holds its maximum number of anchors. | HTTP 400 (POST /tls/trust) when nothing was added |
+| `STS-TLS-0014` | A truststore add stopped because the truststore holds its maximum number of anchors. | HTTP 400 (POST /admin-api/tls/trust/add) when nothing was added |
 | `STS-TLS-0015` | A truststore remove named something that is not a SHA-256 fingerprint. | — |
 | `STS-TLS-0016` | A truststore remove named an anchor the truststore does not hold. | — |
 | `STS-TLS-0017` | Starting a sign-on session for a verified client certificate threw; the connection was unaffected. | — |
@@ -2788,8 +3278,8 @@ Raised from: tls/.
 | `STS-TLS-0020` | The service did not start: tls.trustAnchorsFile holds no PEM certificate. | — |
 | `STS-TLS-0021` | A TLS handshake failed on a listener this module watches — a version or cipher mismatch, or a non-TLS client; a client refusing this service's certificate is STS-TLS-0034 since #225. It named the required-client-certificate listener until 2026-09-16, when that listener was deleted; it is now the main port, where a client certificate is asked for and never required | TLS handshake failure |
 | `STS-TLS-0022` *(retired)* | A TLS handshake failed on the optional-client-certificate listener. Retired 2026-09-16 with that listener; STS-TLS-0021 is the one code for a failed handshake now | TLS handshake failure |
-| `STS-TLS-0023` | A /tls or /tls/forwarded request carried a format parameter other than json or html. | HTTP 400 |
-| `STS-TLS-0024` | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. | HTTP 403 |
+| `STS-TLS-0023` *(retired)* | A /tls or /tls/forwarded request carried a format parameter other than json or html. Retired by #597: both pages are gone, and Monitoring → TLS connection takes no parameter. | — |
+| `STS-TLS-0024` *(retired)* | POST /tls/trust or /tls/trust/clear was refused because product mode does not open the truststore to anybody who can reach the port. Retired by #585: a product process has neither route, and answers as for a path nothing is registered on. | — |
 | `STS-TLS-0025` *(retired)* | A TLS listener could not bind its port. Retired 2026-09-16: this module owns no listener to bind | — |
 | `STS-TLS-0026` | The TLS listener certificate does not chain to this service's Root and re-issuing it produced the same certificate. | — |
 | `STS-TLS-0027` | The runtime trust anchor store was installed without one of its list, write and remove functions, and was refused whole; runtime anchors are not persisted. | — |
@@ -2803,6 +3293,20 @@ Raised from: tls/.
 | `STS-TLS-0035` | A connection was closed because its client certificate (or one in its chain) has an EC key on a curve outside the NIST set (P-256, P-384, P-521 and the other NIST-named curves); such certificates are refused before any certificate object is built (#212). | the connection is closed after the handshake |
 | `STS-TLS-0036` | The shared session-ticket key of an active-active cluster could not be applied to a TLS listener; that listener keeps its own keys, so a ticket it issues resumes only on this node. | resumption falls back to a full handshake |
 | `STS-TLS-0037` | The shared session-ticket key held in the store is not the 48 bytes node takes, so the listeners keep their own keys until the tls.ticket-key-rotate job replaces it. | resumption falls back to a full handshake |
+| `STS-TLS-0038` | A TLS session resumed on this node with a verified client certificate whose chain, replicated from the node that made the session, did not arrive within tls.resumedChainWaitMs; the request goes on with the leaf alone, and a revocation check that needs the chain answers as for a chain it cannot build. | the request is answered; under hard-fail a certificate whose issuer this node does not hold is refused |
+| `STS-TLS-0039` | A custom listener (#472; a realm's own, #99, among them) could not be bound on this node — the port in use, or not permitted — or failed after binding. Its applications are still answered on the other listeners they are on. | the listener is absent on this node and shown as failed on Server configuration -> Listeners and GET /admin-api/listeners |
+| `STS-TLS-0040` | A custom listener has no certificate to present: its certificateFile or privateKeyFile could not be read or do not match, it has no DNS name to issue one for, or its owning realm's certificate authority did not issue one. | the listener is not bound (or keeps the certificate it has, on a renewal) |
+| `STS-TLS-0041` | A request on a trust realm's own listener asked for a path outside that realm's prefix — another realm's, or the default realm's; a realm's listener serves that realm alone. | 404 |
+| `STS-TLS-0042` | The listeners' TLS settings this process started with leave a listener refusing every client, or are in the old shape: an empty tls.tls13CipherSuites, a TLS 1.3 suite in tls.ciphers (which is the TLS 1.2 list since #423), or tls.pqcOnly with no post-quantum suite or group to use. Set in the environment or an appconfig file, where no write could refuse it. | the service does not start |
+| `STS-TLS-0043` | A write to the listeners' TLS settings was refused because it would leave a listener refusing every client: no TLS 1.3 suite, a TLS 1.3 suite in tls.ciphers, or post-quantum only (tls.pqcOnly, or a realm listener's listener.pqcOnly) with no 256-bit suite or ML-KEM group to use. | 400; nothing is written |
+| `STS-TLS-0044` | The listeners' TLS policy changed and could not be applied to one listener registered as re-keyed by its own module (a SPIFFE gRPC listener, the channel between cells); it keeps the policy it had. | logged; Server configuration -> Listeners shows the policy in force |
+| `STS-TLS-0045` | A TLS listener's own trustAnchorsFile (listener<Id>.trustAnchorsFile, #429) could not be read or holds no certificate, so that listener's client truststore would be empty while configured to be filled. | the service does not start |
+| `STS-TLS-0046` | This node offers no TLSSocket.prototype._init, so the TLS session cache cannot see the server name a ClientHello offers and cannot hold a resumption to the name its session was made under (RFC 6066 section 3). | logged; no TLS 1.2 session is resumed by ID (every such client gets a full handshake); tickets are unaffected |
+| `STS-TLS-0047` | A request asked a listener for a path of a hosted application that is not mapped to it (listeners.applications, #472): the console on a listener it was moved off, the management API on one that answers only the sign-in service. The answer names where the application is. | 404 |
+| `STS-TLS-0048` | The listener key stored for this node and algorithm unit (tls.listenerKeys) cannot be used: another algorithm, an RSA modulus other than tls.selfSignedKeyBits, or a key that will not parse. The key made at this start replaces it. | logged; a new certificate is issued over the new key, and the restart is announced (tls-certificate-changed, restarted) |
+| `STS-TLS-0049` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear (one carrying an Origin) was not JSON: the /tls page sends its two acts as JSON (#583). A request with no Origin is a script's and is not asked. Retired by #597, with both routes. | — |
+| `STS-TLS-0050` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried an Origin this service does not answer on: it was not sent by the /tls page (#583). Retired by #597, with both routes. | — |
+| `STS-TLS-0051` *(retired)* | A browser's POST /tls/trust or /tls/trust/clear carried no X-CSRF-Token, or not the token of the /tls page's own cookie (sts_tls_page), which the page's shell carries (#583). Retired by #597, with both routes. | — |
 
 ## STS-VC
 
@@ -2835,17 +3339,17 @@ Raised from: oid4vc/.
 | `STS-VC-0021` | A Notification Request body is not JSON. | invalid_notification_request (HTTP 400) |
 | `STS-VC-0022` | A Notification Request named a notification_id this issuer never issued or that has expired. | invalid_notification_id (HTTP 400) |
 | `STS-VC-0023` | A Notification Request's event is not one of credential_accepted, credential_failure or credential_deleted. | invalid_notification_request (HTTP 400) |
-| `STS-VC-0024` | The non-spec notification inspection endpoint was asked for a notification_id that does not exist. | invalid_notification_id (HTTP 404) |
-| `STS-VC-0025` | The Credential Offer page's query parameters failed input validation. | HTTP 400 plain text |
-| `STS-VC-0026` | Where only registered addresses are accepted, the Credential Offer's wallet parameter named a URL that is neither oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls. | HTTP 400 plain text |
-| `STS-VC-0027` | A pre-authorized (cross-device or deferred) Credential Offer was requested from a session that continued without signing in, where test controls are closed. | HTTP 403 plain text |
-| `STS-VC-0028` | The QR code for a cross-device Credential Offer could not be rendered. | HTTP 500 plain text |
+| `STS-VC-0024` | GET /admin-api/oid4vci/notifications was asked for a notification_id this issuer did not issue, or one expired (#594; until then the non-spec notification inspection endpoint). | HTTP 404 JSON `errors` at /admin-api |
+| `STS-VC-0025` *(retired)* | The demonstration Credential Offer's query parameters (or, since #582, the body of POST /vc-demo-api/offer) failed input validation. Retired by #594: the demonstration issuer's pages left for the development companion. | — |
+| `STS-VC-0026` *(retired)* | Where only registered addresses are accepted, the Credential Offer's wallet parameter named a URL that is neither oid4vci.walletUrl nor listed in oid4vci.allowedWalletUrls. Retired by #594, with the demonstration's offer page and oid4vci.allowedWalletUrls. | — |
+| `STS-VC-0027` *(retired)* | A pre-authorized (cross-device or deferred) Credential Offer was requested from a session that continued without signing in, where test controls are closed. Retired by #589: where the test controls are closed /issuer/offer makes no pre-authorized offer and sends the browser to /portal/wallet. | — |
+| `STS-VC-0028` *(retired)* | The QR code for a cross-device Credential Offer could not be rendered. Retired by #582: the browser draws the code from the offer URI (common/web_qr.ts), and the server renders none. | — |
 | `STS-VC-0029` | A Credential Offer fetched by reference (credential_offer_uri) does not exist or has expired. | invalid_request (HTTP 404) |
 | `STS-VC-0030` | Product mode: a pre-authorized code was spent after reaching oid4vci.txCodeMaxAttempts wrong Transaction Codes. | — |
 | `STS-VC-0031` | A certificate in oid4vp.trustedIssuerCertificates could not be read and is ignored by the Verifier. | — |
-| `STS-VC-0032` | The OID4VP Verifier page's or presentation start endpoint's query parameters failed input validation. | HTTP 400 plain text |
-| `STS-VC-0033` | Where only registered addresses are accepted, the presentation start's wallet parameter named a URL that is neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls. | HTTP 400 plain text |
-| `STS-VC-0034` | The QR code for a cross-device OID4VP Authorization Request could not be rendered. | HTTP 500 plain text |
+| `STS-VC-0032` | The body of POST /admin-api/verifications/start (#587) — or, until #594, the demonstration Verifier's pages' query — failed input validation. | HTTP 400 JSON { ok: false, errors } at /admin-api |
+| `STS-VC-0033` | Where only registered addresses are accepted, POST /admin-api/verifications/start's `wallet` named a URL that is neither oid4vp.walletUrl nor listed in oid4vp.allowedWalletUrls. | HTTP 400 JSON { ok: false, errors } at /admin-api |
+| `STS-VC-0034` *(retired)* | The QR code for a cross-device OID4VP Authorization Request could not be rendered. Retired by #582: the browser draws the code from the request URI (common/web_qr.ts), and the server renders none. | — |
 | `STS-VC-0035` | An OID4VP Request Object fetched by request_uri does not exist. | invalid_request (HTTP 404) |
 | `STS-VC-0036` | An OID4VP Authorization Response was posted with a state for which no Authorization Request is outstanding. | invalid_request (HTTP 400) |
 | `STS-VC-0037` | The wallet answered an OID4VP Authorization Request with an error response (it declined or could not present). | HTTP 200 with redirect_uri; the verdict records the wallet's error |
@@ -2853,63 +3357,63 @@ Raised from: oid4vc/.
 | `STS-VC-0039` | A presented SD-JWT Disclosure is not base64url-encoded JSON. | invalid_request (HTTP 400), as part of a refused presentation |
 | `STS-VC-0040` | A presented SD-JWT Disclosure hashes to a digest the issuer never signed. | invalid_request (HTTP 400), as part of a refused presentation |
 | `STS-VC-0041` | A presentation failed one or more of the OID4VP Verifier's checks (issuer signature, disclosures, key binding, nonce, audience, validity or requested claims). | invalid_request (HTTP 400) |
-| `STS-VC-0042` | The non-spec presentation result endpoint was asked for a state it has no record of. | invalid_request (HTTP 404) |
+| `STS-VC-0042` | GET /admin-api/verifications?state= (#587) — or, until #594, the non-spec presentation result endpoint — was asked for a state it has no record of. | HTTP 404 JSON `errors` at /admin-api |
 | `STS-VC-0043` | The key credentials are signed with is not in this realm's key set, so the DID document cannot publish it. | — |
 | `STS-VC-0044` | The BBS public key could not be published in the DID document. | — |
 | `STS-VC-0045` | The path-form /did.json was requested for a DID that has no path; did:web resolves it at the well-known location. | not_found (HTTP 404) |
-| `STS-VC-0046` | The DID generator was asked for a method other than jwk or web. | invalid_request (HTTP 400) |
+| `STS-VC-0046` *(retired)* | The DID generator was asked for a method other than jwk or web. Retired by #594: /did/generate was deleted; test tooling makes its own keys. | — |
 | `STS-VC-0047` | The embedded directory threw while being read for a person's credential claims; the credential is built without directory values. | — |
 | `STS-VC-0048` | Populating the embedded directory for the current credential claim set threw. | — |
 | `STS-VC-0049` | A pre-authorized code this process still held was already redeemed by another process against the same store (the cluster claim, #46). | invalid_grant (HTTP 400) |
 | `STS-VC-0050` | A c_nonce every proof verified against was already spent by another process against the same store (the cluster claim, #46). | invalid_nonce (HTTP 400, #187) |
 | `STS-VC-0051` | The cluster claim store could not be asked about an OpenID4VCI single-use value — a pre-authorized code, a c_nonce or a Transaction Code attempt — so the request was refused rather than accepted unproven. | invalid_grant or invalid_proof (HTTP 400) |
-| `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 page |
-| `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 page |
-| `STS-VC-0054` *(retired)* | A wallet sign-in was refused for a request that demanded two factors (retired: it is now followed by a second factor). | HTTP 403 page |
-| `STS-VC-0055` | A wallet sign-in was asked about by a browser that did not start it (no binding cookie, or the wrong one), so it was not finished there. | HTTP 403 page |
-| `STS-VC-0056` | A wallet sign-in's transaction is unknown, has expired, or belongs to a different pending authentication. | HTTP 400 page |
+| `STS-VC-0052` | A wallet sign-in was refused because oid4vp.signIn is off. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0053` | A wallet sign-in named no pending authentication — never started, expired, or already used — so there was nothing to sign in to. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0054` *(retired)* | A wallet sign-in was refused for a request that demanded two factors (retired: it is now followed by a second factor). | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0055` | A wallet sign-in was asked about by a browser that did not start it (no binding cookie, or the wrong one), so it was not finished there. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0056` | A wallet sign-in's transaction is unknown, has expired, or belongs to a different pending authentication. | HTTP 400 refusal at /authn-api/wallet |
 | `STS-VC-0057` | A second OpenID4VP response arrived for a sign-in's transaction, which is answered once. | invalid_request (HTTP 400) |
-| `STS-VC-0058` | A presentation verified and signed nobody in: the credential was signed by a certificate in oid4vp.trustedIssuerCertificates, not by this realm's issuer. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0059` | A presentation verified and signed nobody in: this realm has no record of issuing the credential for a person on an access token it verified (another realm's, a foreign token's, or unknown). | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0060` | A presentation verified and signed nobody in: the directory entry the credential was issued for no longer exists. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0061` | A presentation made to sign in did not verify (or was not a presentation at all), so nobody was signed in. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0062` | A wallet sign-in was already finished — here or on another node — and was not finished again. | HTTP 400 page |
-| `STS-VC-0063` | The cluster claim store could not be asked whether a wallet sign-in was already finished, so it was refused rather than finished unproven. | HTTP 503 page |
-| `STS-VC-0064` | A presentation verified and mapped to a person, and the issuance policy refused them a session. | HTTP 403 page |
-| `STS-VC-0065` | A wallet sign-in was returned to with a response_code that is not the one given to the wallet. | HTTP 403 page |
-| `STS-VC-0066` | A presentation verified and signed nobody in: its subject or holder key disagrees with what this realm recorded when it issued the credential. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0067` | An unexpected failure inside the wallet sign-in door. | HTTP 500 page |
+| `STS-VC-0058` | A presentation verified and signed nobody in: the credential was signed by a certificate in oid4vp.trustedIssuerCertificates, not by this realm's issuer. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0059` | A presentation verified and signed nobody in: this realm has no record of issuing the credential for a person on an access token it verified (another realm's, a foreign token's, or unknown). | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0060` | A presentation verified and signed nobody in: the directory entry the credential was issued for no longer exists. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0061` | A presentation made to sign in did not verify (or was not a presentation at all), so nobody was signed in. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0062` | A wallet sign-in was already finished — here or on another node — and was not finished again. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0063` | The cluster claim store could not be asked whether a wallet sign-in was already finished, so it was refused rather than finished unproven. | HTTP 503 refusal at /authn-api/wallet |
+| `STS-VC-0064` | A presentation verified and mapped to a person, and the issuance policy refused them a session. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0065` | A wallet sign-in was returned to with a response_code that is not the one given to the wallet. | HTTP 403 refusal at /authn-api/wallet |
+| `STS-VC-0066` | A presentation verified and signed nobody in: its subject or holder key disagrees with what this realm recorded when it issued the credential. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0067` | An unexpected failure inside the wallet sign-in door. | HTTP 500 refusal at /authn-api/wallet |
 | `STS-VC-0068` | An issued credential could not be recorded as one that may sign its subject in; the credential was issued anyway. | — |
-| `STS-VC-0069` | A wallet sign-in request carried a malformed query parameter. | HTTP 400 page |
-| `STS-VC-0070` | A wallet sign-in was withdrawn by a sign-out after the wallet had presented and before the browser collected the session. | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0071` | A presentation verified and signed nobody in: the credential was disowned — by a global sign-out, an administrator's revocation, or its status-list entry. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0069` | A wallet sign-in request carried a malformed query parameter. | HTTP 400 refusal at /authn-api/wallet |
+| `STS-VC-0070` | A wallet sign-in was withdrawn by a sign-out after the wallet had presented and before the browser collected the session. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0071` | A presentation verified and signed nobody in: the credential was disowned — by a global sign-out, an administrator's revocation, or its status-list entry. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
 | `STS-VC-0072` | A presented credential's status list says it is revoked or suspended, or no statement about its status could be made (the list could not be fetched or verified, or the credential names none). | invalid_request (HTTP 400); HTTP 403 page at a sign-in |
-| `STS-VC-0073` | A Digital Credentials API answer was not a openid4vp-v1-signed DigitalCredential, was not in the response mode the request asked for, or its encrypted response could not be opened. | HTTP 400 page at /authn/wallet/dc-api |
-| `STS-VC-0074` | A Digital Credentials API answer was posted from a page on an origin other than the one the request named in expected_origins. | HTTP 403 page at /authn/wallet/dc-api |
+| `STS-VC-0073` | A Digital Credentials API answer was not a openid4vp-v1-signed DigitalCredential, was not in the response mode the request asked for, or its encrypted response could not be opened. | HTTP 400 refusal at /authn-api/wallet/{state}/dc-api |
+| `STS-VC-0074` | A Digital Credentials API answer was posted from a page on an origin other than the one the request named in expected_origins. | HTTP 403 refusal at /authn-api/wallet/{state}/dc-api |
 | `STS-VC-0075` | No status-list index could be allocated for a credential: the claim store could not be asked, or the list is full. | server_error (HTTP 500) at the credential endpoint |
 | `STS-VC-0076` | A status list (Token Status List or Bitstring Status List credential) could not be built or signed. | HTTP 500 |
 | `STS-VC-0077` | A historical status list was asked for (the time parameter), which this issuer does not keep. | HTTP 501 |
 | `STS-VC-0078` | A Bitstring Status List was asked for a purpose this issuer does not publish. | HTTP 404 |
 | `STS-VC-0079` | A credential could not be built (its status index, its signature, or its proof). | server_error (HTTP 500) |
 | `STS-VC-0080` | An ldp_vc credential was asked for a holder key no Data Integrity cryptosuite here can prove (RSA, secp256k1, Ed448, a composite). | invalid_proof (HTTP 400) |
-| `STS-VC-0081` | The Digital Credentials API form was submitted with no answer — the page's script did not run — and the same-device link was offered instead. | HTTP 400 page at /authn/wallet/dc-api |
+| `STS-VC-0081` | A Digital Credentials API answer was sent with nothing in it — nothing came back from the browser's API — and the same-device link was offered instead. | HTTP 400 refusal at /authn-api/wallet/{state}/dc-api |
 | `STS-VC-0082` | A status-list entry could not be changed from the console or the management API: no such index, an unknown status, or an INVALID entry asked to become valid again. | HTTP 400 / HTTP 404 |
-| `STS-VC-0083` | A Digital Credentials API answer arrived for a sign-in that was not offered through the Digital Credentials API. | HTTP 400 page at /authn/wallet/dc-api |
-| `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 page at /authn/wallet/wait |
+| `STS-VC-0083` | A Digital Credentials API answer arrived for a sign-in that was not offered through the Digital Credentials API. | HTTP 400 refusal at /authn-api/wallet/{state}/dc-api |
+| `STS-VC-0084` | A wallet could not be the second factor: the step had expired, its first factor was already a wallet, or the credential was issued to somebody other than the person whose password was entered. | HTTP 403 refusal at /authn-api/wallet/{state}/status |
 | `STS-VC-0085` | A certificate in oid4vci.keyAttestationTrustedCertificates could not be read and was ignored. | — |
 | `STS-VC-0086` | An access token this realm revoked was presented at an OpenID4VCI endpoint (credential, deferred credential or notification) in product mode. | invalid_token (HTTP 401, WWW-Authenticate challenge) |
 | `STS-VC-0087` | A BBS key was asked for at /bbs/keys/<kid> that is not a live generation of this realm's BBS key (current, next, or retired within its grace). | HTTP 404 not_found |
 | `STS-VC-0088` | A credential presented to the OpenID4VP Verifier names no status (no Token Status List claim, no BitstringStatusListEntry) and oid4vp.requireStatusReference requires one: a foreign credential under all whose issuer certificate is not in oid4vp.statusOptionalIssuers, or one this realm signed under all or own-only. | invalid_request (HTTP 400); HTTP 403 page at a sign-in |
 | `STS-VC-0089` | An ldp_vc presented at the OpenID4VP Verifier (not a sign-in, whose register holds the status) disclosed no credentialStatus entry, though the request asked for it and oid4vp.requireStatusReference requires one. | invalid_request (HTTP 400) |
 | `STS-VC-0090` | A self-issued ID Token (SIOPv2, #129) was refused: it did not verify (iss not sub, a subject key that did not resolve or match, a bad signature, the wrong aud or nonce, expired or too old), or with vp_token id_token its subject was not the presentation's holder. | invalid_request (HTTP 400), or a 303 for form_post |
-| `STS-VC-0091` | A self-issued ID Token verified and its subject is enrolled for nobody in the realm, so it signed nobody in — in both modes (#129). | HTTP 403 page at /authn/wallet/wait |
-| `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 |
-| `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 page |
-| `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 page |
+| `STS-VC-0091` | A self-issued ID Token verified and its subject is enrolled for nobody in the realm, so it signed nobody in — in both modes (#129). | HTTP 403 refusal at /authn-api/wallet/{state}/status |
+| `STS-VC-0092` | oid4vp.verifierAttestation cannot be used — unreadable, not typ verifier-attestation+jwt, no sub, expired, or its cnf is not this realm's request-signing key — so no signed request with the verifier_attestation prefix was built (#129). | HTTP 500 (JSON `errors` at POST /admin-api/verifications/start) |
+| `STS-VC-0093` | A SIOPv2 enrolment was started or collected by a browser holding no sign-on session, or for a person other than the one now signed in; or a self-issued ID was asked for as a second factor, which it is not offered as (#129). | HTTP 403 / 400 refusal at /authn-api/wallet |
+| `STS-VC-0094` | A key proved by a SIOPv2 enrolment was not enrolled: it is already enrolled for somebody, or the person holds the most they may (#129). | HTTP 400 refusal at /authn-api/wallet |
 | `STS-VC-0095` | A credential issuer's well-known document was asked for at an inserted path no issuer here has (OpenID4VCI 1.0 section 12.2.2, #187). | HTTP 404 {error: not_found} |
 | `STS-VC-0096` | A presentation to the Verifier's Response URI was not in the response mode its request asked for, or its direct_post.jwt response named no outstanding request's key or could not be opened (OpenID4VP 1.0 section 8.3.1, #187). | invalid_request (HTTP 400) |
-| `STS-VC-0100` | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). | HTTP 404 |
-| `STS-VC-0101` | A VC-API test endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
+| `STS-VC-0100` *(retired)* | A VC-API test endpoint (/vc-api/*, the Bitstring Status List publish hook) was called in a realm whose test controls are closed — a product realm — and answered as though it did not exist (#194). Retired by #585: a product realm's request is passed on past the route to Express's own 404, which records no code. Since #598 the VC API is a product surface, off by default (STS-VC-0120). | — |
+| `STS-VC-0101` | A W3C VC API endpoint was presented an access token it refused: not issued by this realm, not an access token, revoked, without the vc-api:issue / vc-api:verify scope it needs, or issued to a client that no longer declares that scope (#194). | HTTP 401 / 403 with WWW-Authenticate |
 | `STS-VC-0102` | The VC-API issuer refused a credential that does not conform to the VC Data Model (a MUST of VCDM 2.0 or 1.1 broken), or that names an issuer other than the key it is asked to sign with (#194). | HTTP 400 {errors} |
 | `STS-VC-0103` | The VC-API issuer refused a credential JSON-LD safe mode rejects — a context this service does not hold (it fetches none), an undefined term, a redefined protected term, a relative IRI — or one its cryptosuite could not sign (#194-#196). | HTTP 400 {errors} |
 | `STS-VC-0104` | A VC-API issue request named an issuer (a securing mechanism and key) this service does not offer (#194). | HTTP 404 {errors} |
@@ -2918,10 +3422,20 @@ Raised from: oid4vc/.
 | `STS-VC-0107` | A VC-API status change named a credential this realm issued no status for, a status type or purpose it does not publish, or tried to clear a revocation (#197). | HTTP 404 / 400 {errors} |
 | `STS-VC-0108` | A VC-API request body was not a JSON object, or carried a polluting key or more depth or members than any document this service accepts (validation.checkDocument, #194). | HTTP 400 {errors} |
 | `STS-VC-0109` | A DID the VC-API resolver was asked for could not be resolved, or a DID URL dereferenced: not a DID (invalidDid, invalidDidUrl), a method it does not support, a representation it does not produce, or a did:web other than this realm's own, which it does not fetch (notFound) (#199). | HTTP 400 / 404 / 501 with the resolution result's error |
-| `STS-VC-0110` | A Request Object with the x509_san_dns Client Identifier was asked for in product mode with no DNS name to certify: neither oid4vp.x509DnsName nor global.publicBaseUrl names one, and the Host a request arrived with is not certified there — whoever sent it would choose the host a signed, trusted request sends presentations to (#230). | HTTP 500 text/plain at /oid4vp/start; the sign-in door's 500 page; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0111` | The x509_san_dns name is not the host of the Response URI, or that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a wallet that does not otherwise trust the Client Identifier require the response_uri's FQDN to be it, so such a request would be refused by every such wallet (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
-| `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 text/plain at /oid4vp/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0110` | A Request Object with the x509_san_dns Client Identifier was asked for in product mode with no DNS name to certify: neither oid4vp.x509DnsName nor global.publicBaseUrl names one, and the Host a request arrived with is not certified there — whoever sent it would choose the host a signed, trusted request sends presentations to (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; the sign-in door's 500 page; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0111` | The x509_san_dns name is not the host of the Response URI, or that host is an IP address: OpenID4VP 1.0 section 5.9.3 has a wallet that does not otherwise trust the Client Identifier require the response_uri's FQDN to be it, so such a request would be refused by every such wallet (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0112` | The OpenID4VP Verifier's certificate could not be issued, or was not in place over the key the Request Object is signed with when it was built, so no x509_san_dns or x509_hash request was made (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0113` | oid4vp.x509SigningAlgorithm names an algorithm this realm holds no signing key for, so no x509_san_dns or x509_hash request can be signed (#230). | HTTP 500 JSON `errors` at POST /admin-api/verifications/start; 409 JSON at /oid4vp/verifier-certificate |
+| `STS-VC-0114` | An application DID document was asked for and none is advertised: no such application in this realm, one not declared for the did family, or one with no key in didPublicKeyJwk. | HTTP 404 JSON at /applications/{application}/did.json |
+| `STS-VC-0115` | An application Domain Linkage Credential could not be signed: the application has no DID document, the origin is not one of its LinkedDomains services, or none of its published keys has a private half this service kept. | none (a console or management API refusal, HTTP 400) |
+| `STS-VC-0116` *(retired)* | An act on the OpenID4VC demonstration's API (POST /vc-demo-api/offer or /vc-demo-api/start, #582) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0117` *(retired)* | An act on the OpenID4VC demonstration's API (#582) carried no Origin, or an origin this service does not answer on. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0118` *(retired)* | An act on the OpenID4VC demonstration's API (#582) carried no X-CSRF-Token, or one not bound to the browser's sts_session cookie (or the browser holds no session). Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0119` *(retired)* | An operation of the OpenID4VC demonstration's API (/vc-demo-api, #582) failed with an unexpected error. Retired by #594: /vc-demo-api left with the demonstration, for the development companion. | — |
+| `STS-VC-0120` | A W3C VC API endpoint (/vc-api/*) was called in a realm that does not serve it: vcApi.enabled is off, which is the default (#598). | HTTP 501 {errors} |
+| `STS-VC-0121` | A W3C VC API client, or an address, made more calls than vcApi.maxPerWindow allows in one security.rateLimitWindowS window (#598). | HTTP 429 {errors} with Retry-After |
+| `STS-VC-0122` | A W3C VC API request carried an option the endpoint does not understand, or an option value of the wrong shape — refused as VCALM requires (#598). | HTTP 400 {errors} |
+| `STS-VC-0123` | A verification start named a redirect_uri (#594) that is not an absolute http(s) URL without a fragment, or — where only registered addresses are accepted — not one of the calling client's registered redirect URIs. | HTTP 400 JSON { ok: false, errors } at /admin-api/verifications/start |
 
 ## STS-SSF
 
@@ -2952,10 +3466,10 @@ Raised from: ssf/.
 | `STS-SSF-0019` | A verification request came sooner than the stream's min_verification_interval while ssf.verificationRateLimit is on. | HTTP 429 {err: invalid_request} with Retry-After |
 | `STS-SSF-0020` | A verification request was refused because its stream is disabled. (Until #144 it also meant a push that failed; delivery is asynchronous now and a failed one is a dead letter.) | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0021` | A poll request named a stream that delivers by push, so there is nothing to collect. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0022` | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). | HTTP 501 {err: invalid_request} |
-| `STS-SSF-0023` | A push at /ssf/receive carried an empty body. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0024` | A Security Event Token pushed at /ssf/receive did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). | HTTP 400 {err: invalid_key} |
-| `STS-SSF-0025` | A Security Event Token pushed at /ssf/receive could not be read as a SET; it was recorded anyway. | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0022` *(retired)* | A Security Event Token was pushed at /ssf/receive while this service is not accepting pushed events (ssf.receiveEnabled). Retired 2026-10-12 (#593): POST /ssf/receive was deleted; the test peer is that push receiver | HTTP 501 {err: invalid_request} |
+| `STS-SSF-0023` *(retired)* | A push at /ssf/receive carried an empty body. Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_request} |
+| `STS-SSF-0024` *(retired)* | A Security Event Token pushed at /ssf/receive did not verify, in product mode or while ssf.receiveRequireSignature is on (#117). Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_key} |
+| `STS-SSF-0025` *(retired)* | A Security Event Token pushed at /ssf/receive could not be read as a SET; it was recorded anyway. Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_request} |
 | `STS-SSF-0026` | An event was not transmitted on a stream because the stream does not deliver that event type. | — |
 | `STS-SSF-0027` | An event was not transmitted because its payload fails the event type's member rules. | — |
 | `STS-SSF-0028` | An event whose type requires a subject was not transmitted because it carried none. | — |
@@ -3027,26 +3541,30 @@ Raised from: ssf/.
 | `STS-SSF-0102` | A transmitter-initiated verification event (the console's Verify, or POST /admin-api/ssf/verify) could not be sent on the stream. | HTTP 400 on /admin-api/ssf/verify |
 | `STS-SSF-0103` | The inserted-path form of the transmitter configuration document was asked for a path no transmitter's issuer has (SSF 1.0 section 7.2). | HTTP 404 {err: invalid_request} |
 | `STS-SSF-0104` | A Security Event Token delivered to one of this service's receivers is not explicitly typed secevent+jwt (SSF 1.0 section 4.1.1); it was recorded and refused. | HTTP 400 {err: invalid_request} |
-| `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's, or one ssf.receiveIssuers does not list (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
-| `STS-SSF-0106` | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. | HTTP 400 {err: invalid_audience} |
+| `STS-SSF-0105` | A Security Event Token delivered to one of this service's receivers carries an iss other than its stream's (SSF 1.0 section 4.1.6); it was recorded and refused. | HTTP 400 {err: invalid_issuer} |
+| `STS-SSF-0106` *(retired)* | A Security Event Token pushed at POST /ssf/receive is addressed to no audience ssf.receiveAudiences lists; it was recorded and refused. Retired 2026-10-12 (#593): POST /ssf/receive was deleted | HTTP 400 {err: invalid_audience} |
 | `STS-SSF-0107` | An access token (OAuth or GNAP) carried the Shared Signals scope an operation needs, and the client it was issued to no longer declares that scope in its oauthAllowedScope. | HTTP 403 {err: access_denied} |
 | `STS-SSF-0108` | A push delivery endpoint was refused because it is plain http and the realm is in product mode, where RFC 8935 push goes over TLS whatever ssf.pushAllowHttp says (#171). | at stream creation HTTP 400 {err: invalid_request}; at push time none — a dead letter |
 | `STS-SSF-0109` | Product mode ignored ssf.pushSkipTlsVerification: a push verifies the receiver's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
 | `STS-SSF-0110` | No reaction to a signal this service's own console or portal received could be decided: the signal-response policy is disabled, missing or does not load. The event is recorded and nothing is ended. | — |
 | `STS-SSF-0111` | A reaction the signal-response policy permitted to a received signal failed: the receiving surface's sessions for the person could not be ended. | — |
 | `STS-SSF-0112` | The kerberos-tickets-invalidated event (this service's own, #169) could not be transmitted after a krbtgt key was rotated with nothing kept; the rotation itself stands. | none — logged; nothing is sent to a receiver |
-| `STS-SSF-0113` | A foreign SSF transmitter act was refused: an unknown action, a bad or taken id, the realm's limit, no federation relationship, an unsupported delivery, no credential, or no stream yet (#153). | console / /admin-api refusal (HTTP 400) |
-| `STS-SSF-0114` | A foreign transmitter could not be registered: its /.well-known/ssf-configuration could not be read or does not name the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri could not be read (#153). | console / /admin-api refusal (HTTP 400) |
-| `STS-SSF-0115` | A foreign transmitter refused a stream act — create, read, update, delete, status, a subject or verification — or could not be reached (#153). | console / /admin-api refusal (HTTP 400) |
-| `STS-SSF-0116` | Polling a foreign transmitter (RFC 8936) failed (#153). | none (logged; the job tries again) |
-| `STS-SSF-0117` | A push to /ssf/transmitters/{id}/push named no push stream here, or its Authorization header is not the one this realm gave the transmitter (#153). | HTTP 404 or 401 {err} |
-| `STS-SSF-0118` | A Security Event Token from a foreign transmitter was malformed: not a compact JWS, typ not secevent+jwt, or no jti or events (#153). | HTTP 400 {err: invalid_request}, or a poll setErrs entry |
-| `STS-SSF-0119` | A foreign SET's iss is not the transmitter's issuer (#153). | HTTP 400 {err: invalid_issuer}, or a poll setErrs entry |
-| `STS-SSF-0120` | A foreign SET's aud does not name this realm's stream audience (#153). | HTTP 400 {err: invalid_audience}, or a poll setErrs entry |
-| `STS-SSF-0121` | A foreign SET's signature does not verify against the transmitter's keys, and it was refused (product mode, or ssf.receiveRequireSignature) (#153). | HTTP 400 {err: invalid_key}, or a poll setErrs entry |
-| `STS-SSF-0122` | Acting on a verified event from a foreign transmitter — ending a person's sessions, disabling or enabling their account — failed; the SET is recorded (#153). | none (logged) |
+| `STS-SSF-0113` | A Shared Signals act on a federation relationship was refused: an unknown signals-* action, no such service-provider-side relationship, no issuer or credential configured, an unsupported delivery, a stream already held, a bad status or subject, or no stream yet (#153, #373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0114` | A federation partner's Shared Signals configuration could not be discovered: the SSF issuer is not a URL, its /.well-known/ssf-configuration could not be read or does not name the issuer, a jwks_uri and a configuration_endpoint, or its jwks_uri could not be read (#153, #373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0115` | A federation partner refused a stream act — create, read, update, delete, status, a subject or verification — or could not be reached (#153, #373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0116` | Polling a federation partner's Shared Signals stream (RFC 8936) failed (#153, #373). | none (logged; the job tries again) |
+| `STS-SSF-0117` | A push to /federation/signals/{id} named no relationship receiving by push here (none, disabled, its signals off, or no push stream), or its Authorization header is not the one this realm gave the partner (#153, #373). | HTTP 404 or 401 {err} |
+| `STS-SSF-0118` | A Security Event Token from a federation partner was malformed: not a compact JWS, typ not secevent+jwt, or no jti or events (#153, #373). | HTTP 400 {err: invalid_request}, or a poll setErrs entry |
+| `STS-SSF-0119` | A federation partner's SET names an iss that is not the SSF issuer its configuration was discovered for (#153, #373). | HTTP 400 {err: invalid_issuer}, or a poll setErrs entry |
+| `STS-SSF-0120` | A federation partner's SET's aud does not name this realm's stream audience (#153, #373). | HTTP 400 {err: invalid_audience}, or a poll setErrs entry |
+| `STS-SSF-0121` | A federation partner's SET's signature does not verify against the keys its SSF configuration names, and it was refused (product mode, or ssf.receiveRequireSignature) (#153, #373). | HTTP 400 {err: invalid_key}, or a poll setErrs entry |
+| `STS-SSF-0122` | Acting on a verified event from a federation partner — ending sessions, blocking or unblocking its sign-ins of a person, disabling or enabling their account — failed; the SET is recorded (#153, #373). | none (logged) |
 | `STS-SSF-0123` | A key event of this service's own (federation-key-rotated, spiffe-authority-rotated or tls-certificate-changed, #245) could not be transmitted after the key moved; the change itself stands. | none — logged; nothing is sent to a receiver |
 | `STS-SSF-0130` | The RISC account register is over risc.maxAccountsTracked and every row left is an account holder's opt-out (#260), which is never dropped to make room: RISC 1.0 section 2.8 makes the choice theirs. The register stays over its cap until the cap is raised. | none — logged; the opt-outs are kept |
+| `STS-SSF-0131` | An Add Subject request on a stream a person owns named somebody other than that person, and ssf.personStreamsSelfOnly is on. A person's stream carries events only about them. | HTTP 403 access_denied |
+| `STS-SSF-0132` | A Shared Signals act on a federation relationship whose signals are off (fedSignalsEnabled), or an unblock of a person the relationship has not blocked (#373). | console / /admin-api refusal (HTTP 400) |
+| `STS-SSF-0140` | A Shared Signals event about a non-human principal (#221 P5) could not be decided or started: a token-claims-change about an application's own token or role, the RISC account-purged of a deleted application entry, or the credential-change of a removed SPIFFE registration entry. The act itself stands. | none — logged; nothing is sent to a receiver |
+| `STS-SSF-0141` | Whether an application entry's credentials (client secrets, registered keys, key pairs, certificates) moved on a write could not be decided or announced, so no CAEP credential-change was sent for it (#221 P5). The write itself stands. | none — logged; nothing is sent to a receiver |
 
 ## STS-RISK
 
@@ -3100,6 +3618,9 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0042` | Monitoring → Geolocation was asked for something it does not draw (#255): a window other than live, 24h, 7d or 30d, a continent that is not one of the seven slugs, a country that is not an ISO 3166-1 alpha-2 code on the map, or a country together with a continent it is not in. | HTTP 400 |
 | `STS-RISK-0043` | A FIDO MDS3 BLOB was LOADED although its signature or signing chain does not verify, because the administrator who uploaded it ticked the signature override. Its contents are unauthenticated and its chain's revocation was not checked; the version is recorded with verification "overridden" and the reason. Replace it with a BLOB that verifies as soon as FIDO publishes one. | loaded; recorded on the audit row and logged as a warning |
 | `STS-RISK-0044` | A security key found cloned (its signature counter went backwards) could not be recorded on the person's risk standing (#231). The assertion was refused and RISC credential-compromise was still sent; only the standing, and the risk-response policy's reaction to it, are missing. | WebAuthn Level 3 section 6.1.1 |
+| `STS-RISK-0045` | An upload or download meant as Google's Android attestation status list was not one: not JSON, or not an object whose `entries` are keyed by certificate serial (#256). Nothing was loaded. | HTTP 400 (management API); none for the download job |
+| `STS-RISK-0046` | The devices.android-status-refresh job could not download Google's Android attestation status list from devices.androidStatusUrl (#256); the active list, if any, is unchanged. | none — a warning in the log and a failed run |
+| `STS-RISK-0047` | A sign-in's risk assessment, amended with the registered device its WebAuthn ceremony proved (#259), could not be recorded: the history's device feature, the assessment row, the standing or the reactions to a change of level may be missing. The session was decided on the amended assessment. | none — a warning in the log |
 
 ## STS-MAIL
 
@@ -3134,7 +3655,7 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0023` | A message was not queued because an address (the recipient's mail attribute or mail.from) is not one plain mailbox. | — |
 | `STS-MAIL-0024` | An address verification link was refused: used, expired, or sent to an address the entry no longer has. | HTTP 400 page on /portal/verify-email |
 | `STS-MAIL-0025` | A console or management API mail action was unknown or malformed. | HTTP 400 |
-| `STS-MAIL-0026` | A console session that may read but not write posted a mail action. | HTTP 400 |
+| `STS-MAIL-0026` *(retired)* | A console session that may read but not write posted a mail action. | HTTP 400 |
 | `STS-MAIL-0027` | A test message was asked for by an administrator whose own entry has no usable mail address. | HTTP 400 |
 | `STS-MAIL-0028` | The periodic mail summary line counted dead letters or deferred attempts since the last one. | — |
 | `STS-MAIL-0029` | The mail outbox sweep failed in a realm. | — |
@@ -3148,6 +3669,28 @@ Raised from: common/mail.ts, common/mail_transports.ts, common/mail_uses.ts, com
 | `STS-MAIL-0037` | A self-service reset was asked for an account that holds no unused recovery code, while one is required (#64, D4). | the same sentence as a sent link |
 | `STS-MAIL-0038` | A followed verification link for a NEW address could not write it to the entry (#64, D5). | HTTP 400 page |
 | `STS-MAIL-0039` | A person asked to change their address to something that is not an address this service can send to (#64, D5). | HTTP 400 page |
+| `STS-MAIL-0180` | The notice telling a person that a GNAP grant waits for their approval on the portal could not be queued; the request still waits there (#432 phase 6). | log only |
+
+## STS-I18N
+
+**Languages and locales.** The catalogs a page is drawn from, the negotiation of a reader's languages against them, the locale policy (#539) and the language chooser. Refusals and errors are never translated (rcbj's decision on #539), so nothing here changes what a refusal says.
+
+Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, authn/authn.ts (the language chooser).
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-I18N-0001` | A catalog file under common/locales or a built-in mail translation under common/mail_locales could not be read or parsed (or catalogs.json itself, in which case every page is drawn in English); the messages it held fall back along their chain to English (#539). | none — an error in the log |
+| `STS-I18N-0002` | A page asked for a message no catalog has, or one whose text is malformed; the key itself, or the text as written, was drawn. tests/i18n_catalogs.js is what keeps this from shipping (#539). | none — a warning in the log |
+| `STS-I18N-0003` | A locale policy profile name was refused: it is neither `default` nor a name of lower-case letters, digits and hyphens of at most 64 (#539). | HTTP 400 (management API) |
+| `STS-I18N-0004` | A locale policy save was refused: a field was missing, the default language was not a BCP 47 tag, a yes-or-no field was neither, or a named profile named no application or too many (#539). | HTTP 400 (management API) |
+| `STS-I18N-0005` | A locale policy could not be saved: this process has no embedded directory, so there is no ou=localePolicies (#539). | HTTP 400 (management API) |
+| `STS-I18N-0006` | A locale policy could not be saved: the directory is at its maximum number of entries (#539). | HTTP 400 (management API) |
+| `STS-I18N-0007` | A named locale policy save was refused: an application it names is already on another named locale profile, and an application is on one at most (#539). | HTTP 400 (management API) |
+| `STS-I18N-0008` | The language chooser was posted a value that is not a BCP 47 tag a catalog answers, or a malformed form; nothing was set (#539). | HTTP 400 |
+| `STS-I18N-0009` | The language chooser set its cookie but could not write the signed-in person's preferredLanguage; the person editor refused or could not be asked. Their entry still names the old language, which outranks the cookie (#539). | none — a warning in the log |
+| `STS-I18N-0010` | POST /admin-api/console/language was called by a caller that is not a person — an application's token — which has no preferredLanguage of its own to set (#539 phase 5). | HTTP 400 (management API) |
+| `STS-I18N-0011` | A prose catalog under common/prose_locales — the translations of the sentences the server writes into a console view, such as a setting's description — could not be read or parsed; that prose falls back along its chain to English (#543). | none — an error in the log |
+| `STS-I18N-0012` | GET /web/locales/<namespace>/<catalog>.json named a namespace or a catalog this service does not have, or a file name that is not <catalog>.json; nothing is read from disk by a requested name (#570). | HTTP 404 |
 
 ## STS-GNAP
 
@@ -3216,6 +3759,7 @@ Raised from: gnap/.
 | `STS-GNAP-0070` | A GNAP user reference is not one this authorization server issued. | HTTP 403 GNAP unknown_user |
 | `STS-GNAP-0071` | None of the user assertions in a GNAP grant request is one this authorization server issued and can verify. | HTTP 403 GNAP unknown_user |
 | `STS-GNAP-0072` | The user identifiers and assertions in a GNAP grant request name more than one person. | HTTP 400 GNAP invalid_request |
+| `STS-GNAP-0073` | A user assertion in a GNAP grant request was issued to another client: the presenting client instance is not its audience (#497). | RFC 9635 sections 2.4 and 11.13 (HTTP 403 GNAP unknown_user) |
 | `STS-GNAP-0080` | A GNAP client instance or resource server presented an instance identifier this authorization server does not know. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0081` | A GNAP instance identifier resolves to an application entry with no key registered to verify its requests. | HTTP 401 GNAP invalid_client |
 | `STS-GNAP-0082` | In product mode, a GNAP client instance or resource server proved a key no application entry registers (development mode would have created one). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
@@ -3232,7 +3776,7 @@ Raised from: gnap/.
 | `STS-GNAP-0112` | A GNAP grant request or modification asks for an access right the client may not request (gnapAllowedAccess), or names an unregistered reference while gnap.unknownAccessReferences is refuse. | HTTP 403 GNAP request_denied |
 | `STS-GNAP-0113` | A GNAP grant needs the resource owner's approval and the client offered no way to interact; the grant was finalized. | HTTP 400 GNAP invalid_interaction |
 | `STS-GNAP-0120` | A resource owner did not approve a GNAP grant — recorded when they answer, and again when the client continues and is told. | HTTP 403 GNAP user_denied, at the next continuation |
-| `STS-GNAP-0121` | The person who approved a GNAP grant is not the user the request named, and gnap.allowCrossUser is off. | HTTP 403 GNAP unknown_user, at the next continuation |
+| `STS-GNAP-0121` | The person who approved a GNAP grant is not the user the request named, and approval by an absent owner (gnap.ownerApproval) is off. | HTTP 403 GNAP unknown_user, at the next continuation |
 | `STS-GNAP-0130` | A GNAP continuation URI and access token do not together identify an active grant request. | HTTP 401 GNAP invalid_continuation |
 | `STS-GNAP-0131` | A GNAP continuation named a grant request that is finalized. | HTTP 400 GNAP invalid_continuation |
 | `STS-GNAP-0132` | A pending GNAP grant request expired before it was approved; the continuation finalized it. | HTTP 400 GNAP invalid_continuation |
@@ -3259,53 +3803,53 @@ Raised from: gnap/.
 | `STS-GNAP-0167` | The GNAP token management endpoint refused a request whose refusal carried no more specific code. | HTTP 400 GNAP, with the refusal's own error code |
 | `STS-GNAP-0168` | The GNAP introspection endpoint refused a request whose refusal carried no more specific code. | HTTP 400 GNAP, with the refusal's own error code |
 | `STS-GNAP-0169` | The GNAP resource registration endpoint refused a request whose refusal carried no more specific code. | HTTP 400 GNAP, with the refusal's own error code |
-| `STS-GNAP-0200` | A Content-Digest algorithm this service was asked to compute or accept is not sha-256 or sha-512 (for example a key's content-digest-alg). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0201` | A GNAP request with content carries no Content-Digest field. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0202` | A Content-Digest field is not a Structured Field Dictionary. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0203` | A Content-Digest member is not a Byte Sequence. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0204` | A Content-Digest does not match the request content. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0205` | A Content-Digest field carries no digest in an accepted algorithm. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0206` | An HTTP message signature's covered component identifier is malformed, or the covered components are not an Inner List. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0207` | A covered component carries a parameter that is not understood or is of the wrong type. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0208` | A covered component carries ;req, which a request verifier has no related request to resolve. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0209` | An HTTP message signature covers a derived component this verifier does not understand. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0210` | An HTTP message signature covers @status (or another response-only component) on a request, or a response status is malformed. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0211` | A request has no method or no absolute target URI to derive a covered component from. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0212` | A covered @query-param has no name parameter, or names a parameter the target URI does not have. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0213` | A covered @query-param names a parameter that occurs more than once. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0214` | A covered component carries ;tr, and trailers are not part of the message this verifier is given. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0215` | A covered component combines ;bs with ;sf or ;key. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0216` | A covered HTTP field is not present in the message. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0217` | A covered component asks for ;sf or ;key on a field whose Structured Field type is unknown or is not a Dictionary. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0218` | A covered ;key names a Dictionary member the field does not have. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0219` | A covered field does not parse as its Structured Field type. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0220` | An HTTP message signature lists @signature-params among its covered components. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0221` | A covered component's value contains a newline or a character outside ASCII. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0222` | A signature parameter is of the wrong type or is a negative timestamp, or the signature parameters cannot be serialized. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0223` | An HTTP message signature covers the same component more than once. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0224` | The key for a signature algorithm is the wrong kind or too weak (a shared secret shorter than its hash, an asymmetric key of the wrong type, an RSA key under 2048 bits). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0225` | A signature label handed to the HTTP message signer is not a valid Dictionary key. | — |
-| `STS-GNAP-0226` | No signature algorithm could be determined: neither the key nor an alg parameter names one. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0227` | A signature algorithm, or a signature's alg parameter, is not one this verifier supports. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0228` | A JWS algorithm was signalled with the alg parameter, or an alg parameter disagrees with the key's algorithm. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0229` | Signing or verifying an HTTP message signature failed inside the cryptographic library. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0230` | An HTTP message signature could not be appended to a message: it is not a successful sign() result, or its label is already used. | — |
-| `STS-GNAP-0231` | A Signature or Signature-Input field is not a Structured Field Dictionary. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0232` | A Signature or Signature-Input field uses one label more than once. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0233` | A GNAP request proved by httpsig carries no HTTP message signature (no Signature-Input and no Signature field). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0234` | A signature label is present in only one of the Signature and Signature-Input fields. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0235` | A Signature-Input member is not an Inner List of string component identifiers, or a Signature member is not a Byte Sequence. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0236` | The message carries no HTTP message signature with the label the verifier asked for. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0237` | No HTTP message signature carries the required tag (tag="gnap"). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0238` | An HTTP message signature carries the alg parameter, which RFC 9635 section 7.3.1 forbids. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0239` | An HTTP message signature has no created parameter. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0240` | An HTTP message signature is older than the allowed age (gnap.signatureMaxAgeS). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0241` | An HTTP message signature claims a created time further in the future than the allowed clock skew. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0242` | An HTTP message signature has passed its expires parameter. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0243` | An HTTP message signature does not cover a required component (@method, @target-uri, content-digest, authorization). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0244` | No verification key is known for an HTTP message signature (its tag or keyid does not name the presented key). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0245` | An HTTP message signature uses an algorithm the verifier does not allow. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0246` | An HTTP message signature does not verify over the signature base rebuilt from the message. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0200` *(retired)* | A Content-Digest algorithm this service was asked to compute or accept is not sha-256 or sha-512 (for example a key's content-digest-alg). Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0107. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0201` *(retired)* | A GNAP request with content carries no Content-Digest field. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0108. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0202` *(retired)* | A Content-Digest field is not a Structured Field Dictionary. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0109. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0203` *(retired)* | A Content-Digest member is not a Byte Sequence. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0110. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0204` *(retired)* | A Content-Digest does not match the request content. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0111. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0205` *(retired)* | A Content-Digest field carries no digest in an accepted algorithm. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0112. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0206` *(retired)* | An HTTP message signature's covered component identifier is malformed, or the covered components are not an Inner List. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0113. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0207` *(retired)* | A covered component carries a parameter that is not understood or is of the wrong type. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0114. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0208` *(retired)* | A covered component carries ;req, which a request verifier has no related request to resolve. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0115. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0209` *(retired)* | An HTTP message signature covers a derived component this verifier does not understand. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0116. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0210` *(retired)* | An HTTP message signature covers @status (or another response-only component) on a request, or a response status is malformed. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0117. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0211` *(retired)* | A request has no method or no absolute target URI to derive a covered component from. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0118. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0212` *(retired)* | A covered @query-param has no name parameter, or names a parameter the target URI does not have. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0119. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0213` *(retired)* | A covered @query-param names a parameter that occurs more than once. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0120. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0214` *(retired)* | A covered component carries ;tr, and trailers are not part of the message this verifier is given. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0121. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0215` *(retired)* | A covered component combines ;bs with ;sf or ;key. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0122. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0216` *(retired)* | A covered HTTP field is not present in the message. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0123. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0217` *(retired)* | A covered component asks for ;sf or ;key on a field whose Structured Field type is unknown or is not a Dictionary. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0124. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0218` *(retired)* | A covered ;key names a Dictionary member the field does not have. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0125. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0219` *(retired)* | A covered field does not parse as its Structured Field type. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0126. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0220` *(retired)* | An HTTP message signature lists @signature-params among its covered components. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0127. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0221` *(retired)* | A covered component's value contains a newline or a character outside ASCII. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0128. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0222` *(retired)* | A signature parameter is of the wrong type or is a negative timestamp, or the signature parameters cannot be serialized. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0129. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0223` *(retired)* | An HTTP message signature covers the same component more than once. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0130. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0224` *(retired)* | The key for a signature algorithm is the wrong kind or too weak (a shared secret shorter than its hash, an asymmetric key of the wrong type, an RSA key under 2048 bits). Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0131. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0225` *(retired)* | A signature label handed to the HTTP message signer is not a valid Dictionary key. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0132. | — |
+| `STS-GNAP-0226` *(retired)* | No signature algorithm could be determined: neither the key nor an alg parameter names one. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0133. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0227` *(retired)* | A signature algorithm, or a signature's alg parameter, is not one this verifier supports. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0134. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0228` *(retired)* | A JWS algorithm was signalled with the alg parameter, or an alg parameter disagrees with the key's algorithm. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0135. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0229` *(retired)* | Signing or verifying an HTTP message signature failed inside the cryptographic library. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0136. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0230` *(retired)* | An HTTP message signature could not be appended to a message: it is not a successful sign() result, or its label is already used. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0137. | — |
+| `STS-GNAP-0231` *(retired)* | A Signature or Signature-Input field is not a Structured Field Dictionary. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0138. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0232` *(retired)* | A Signature or Signature-Input field uses one label more than once. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0139. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0233` *(retired)* | A GNAP request proved by httpsig carries no HTTP message signature (no Signature-Input and no Signature field). Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0140. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0234` *(retired)* | A signature label is present in only one of the Signature and Signature-Input fields. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0141. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0235` *(retired)* | A Signature-Input member is not an Inner List of string component identifiers, or a Signature member is not a Byte Sequence. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0142. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0236` *(retired)* | The message carries no HTTP message signature with the label the verifier asked for. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0143. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0237` *(retired)* | No HTTP message signature carries the required tag (tag="gnap"). Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0144. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0238` *(retired)* | An HTTP message signature carries the alg parameter, which RFC 9635 section 7.3.1 forbids. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0145. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0239` *(retired)* | An HTTP message signature has no created parameter. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0146. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0240` *(retired)* | An HTTP message signature is older than the allowed age (gnap.signatureMaxAgeS). Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0147. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0241` *(retired)* | An HTTP message signature claims a created time further in the future than the allowed clock skew. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0148. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0242` *(retired)* | An HTTP message signature has passed its expires parameter. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0149. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0243` *(retired)* | An HTTP message signature does not cover a required component (@method, @target-uri, content-digest, authorization). Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0150. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0244` *(retired)* | No verification key is known for an HTTP message signature (its tag or keyid does not name the presented key). Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0151. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0245` *(retired)* | An HTTP message signature uses an algorithm the verifier does not allow. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0152. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
+| `STS-GNAP-0246` *(retired)* | An HTTP message signature does not verify over the signature base rebuilt from the message. Retired 2026-10-05 (#178): the code moved to common/crypto.js, which raises STS-KEYS-0153. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0260` | A GNAP request's content is a JWS whose payload is not a JSON object. | HTTP 400 GNAP invalid_request |
 | `STS-GNAP-0261` | A GNAP request's content is not JSON. | HTTP 400 GNAP invalid_request |
 | `STS-GNAP-0262` | A GNAP JWS key proof is not a compact JWS, or its JOSE header is not JSON. | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
@@ -3339,59 +3883,62 @@ Raised from: gnap/.
 | `STS-GNAP-0290` | Under the PKI trust model, a GNAP client's TLS client certificate does not carry the RFC 8705 certificate subject its application entry registers (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0291` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to a different person or application (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0292` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to its entry that the entry's record no longer lists (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0300` | A GNAP token model's access is not a non-empty array of access rights. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0301` | A GNAP token model's access element is an empty reference, or neither a reference string nor a typed object. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0302` | A GNAP token model's access element has an array dimension or an identifier of the wrong type. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0303` | A GNAP token model is not valid under RFC 9767 section 2.1 (a missing or malformed member, or a bearer flag and cnf that disagree), when minted or read back. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0304` | A presented GNAP access token has expired. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0305` | A presented GNAP access token is not yet valid (nbf). | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0306` | A presented GNAP access token is not intended for the audience it was presented to. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0307` | A key-bound GNAP access token was presented without that key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0300` | A GNAP token model's access is not a non-empty array of access rights. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0301` | A GNAP token model's access element is an empty reference, or neither a reference string nor a typed object. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0302` | A GNAP token model's access element has an array dimension or an identifier of the wrong type. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0303` | A GNAP token model is not valid under RFC 9767 section 2.1 (a missing or malformed member, or a bearer flag and cnf that disagree), when minted or read back. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0304` | A presented GNAP access token has expired. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0305` | A presented GNAP access token is not yet valid (nbf). | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0306` | A presented GNAP access token is not intended for the audience it was presented to. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0307` | A key-bound GNAP access token was presented without that key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0308` | A presented GNAP access token does not grant the access the request needs, possibly because an attenuation narrowed it. | HTTP 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0310` | A GNAP macaroon could not be minted or checked: the model does not round-trip as caveats, the root key is too short, or the macaroon library refused. | — |
-| `STS-GNAP-0311` | A presented macaroon is not unpadded base64url, or not a libmacaroons v2 binary macaroon. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0312` | A presented macaroon's identifier is not this service's GNAP prefix and a jti, so this service did not mint it. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0313` | A presented macaroon carries a third-party caveat, which needs a discharge macaroon this format does not carry. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0314` | A presented macaroon's HMAC chain does not verify under the resource server's root key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0315` | A presented macaroon carries a caveat outside this service's caveat grammar. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0316` | A presented macaroon's authority section is malformed: a caveat out of place or repeated, a required one missing, or not a valid token model. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0311` | A presented macaroon is not unpadded base64url, or not a libmacaroons v2 binary macaroon. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0312` | A presented macaroon's identifier is not this service's GNAP prefix and a jti, so this service did not mint it. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0313` | A presented macaroon carries a third-party caveat, which needs a discharge macaroon this format does not carry. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0314` | A presented macaroon's HMAC chain does not verify under the resource server's root key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0315` | A presented macaroon carries a caveat outside this service's caveat grammar. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0316` | A presented macaroon's authority section is malformed: a caveat out of place or repeated, a required one missing, or not a valid token model. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0317` | A macaroon attenuation was refused: empty, outside the exp/nbf/aud/access grammar, or refused by the library. | — |
 | `STS-GNAP-0320` | A biscuit could not be minted or verified with the keys given (not Ed25519), or the biscuit library refused to mint or emitted a value that is not token68. | — |
 | `STS-GNAP-0321` | The biscuit WASM library could not be loaded. | HTTP 401 invalid_token at a resource server; at issuance the token is left out |
-| `STS-GNAP-0322` | A presented biscuit is not URL-safe base64, does not parse, or its signature chain does not verify under this authorization server's public key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0323` | A presented biscuit's authority block is not a GNAP token model (misnumbered or non-JSON access facts, a singular fact repeated, or not exactly one key binding). | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0324` | A biscuit authorization check failed, or the authorizer could not be built for the presentation. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0325` | Biscuit authorization exceeded its run limits (facts, iterations or time), which is a refusal and never a pass. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0322` | A presented biscuit is not URL-safe base64, does not parse, or its signature chain does not verify under this authorization server's public key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0323` | A presented biscuit's authority block is not a GNAP token model (misnumbered or non-JSON access facts, a singular fact repeated, or not exactly one key binding). | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0324` | A biscuit authorization check failed, or the authorizer could not be built for the presentation. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0325` | Biscuit authorization exceeded its run limits (facts, iterations or time), which is a refusal and never a pass. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0326` | A biscuit attenuation block was refused: empty, a parameter of an unsupported type, or rejected by the library. | — |
 | `STS-GNAP-0330` | ZCAP keys are unusable (no absolute controller URL, a keyId not under it, not a key of the kind gnap.zcapCryptosuite signs with, or a suite that is none of the four), or a capability's invocationTarget is not an absolute URI. | — |
 | `STS-GNAP-0331` | The ZCAP libraries could not be loaded. | HTTP 401 invalid_token at a resource server; at issuance the token is left out |
-| `STS-GNAP-0332` | A presented ZCAP is not base64url JSON with exactly the members and @context this format writes. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0333` | A presented ZCAP's delegation proof does not verify under this authorization server's key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0334` | A presented ZCAP's GNAP terms are inconsistent, or it names no invocationTarget. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0332` | A presented ZCAP is not base64url JSON with exactly the members and @context this format writes. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0333` | A presented ZCAP's delegation proof does not verify under this authorization server's key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0334` | A presented ZCAP's GNAP terms are inconsistent, or it names no invocationTarget. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0335` | The ZCAP libraries refused to sign a capability. | — |
-| `STS-GNAP-0336` | A presented ZCAP carries a proof of a suite other than the one this realm's gnap.zcapCryptosuite names, or not exactly one proof. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0340` | A presented jwt-encrypted GNAP access token is encrypted to a resource server's key, which this authorization server does not hold. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0341` | A presented jwt-encrypted GNAP access token does not decrypt. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0342` | A presented JWT GNAP access token's signature does not verify. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0343` | A presented JWT is not a GNAP access token (its typ is wrong). | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0344` | A GNAP token names an access token format that does not exist. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0336` | A presented ZCAP carries a proof of a suite other than the one this realm's gnap.zcapCryptosuite names, or not exactly one proof. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0340` | A presented jwt-encrypted GNAP access token is encrypted to a resource server's key, which this authorization server does not hold. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0341` | A presented jwt-encrypted GNAP access token does not decrypt. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0342` | A presented JWT GNAP access token's signature does not verify. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0343` | A presented JWT is not a GNAP access token: its header typ is not gnap-at+jwt, or its payload typ is not GNAP. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0344` | A GNAP token names an access token format that does not exist. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0400` | A GNAP interaction start link (redirect or app) names no request still waiting for approval. | HTTP 400 page |
 | `STS-GNAP-0401` | A GNAP interaction start link had already been used. | HTTP 400 page |
-| `STS-GNAP-0402` | The GNAP user code page was opened while GNAP is turned off (gnap.enabled). | HTTP 400 page |
-| `STS-GNAP-0403` | A GNAP user code form post was malformed. | HTTP 400 page |
-| `STS-GNAP-0404` | Too many GNAP user codes were tried from one address. | HTTP 429 page |
-| `STS-GNAP-0405` | A GNAP user code is not recognised, or has expired. | HTTP 400 page |
-| `STS-GNAP-0406` | A GNAP approval page or answer names no request waiting for the person, or one whose interaction was never started. | HTTP 400 page |
-| `STS-GNAP-0407` | A GNAP approval answer failed its anti-forgery check. | HTTP 400 page |
-| `STS-GNAP-0408` | A GNAP approval answer was malformed. | HTTP 400 page |
-| `STS-GNAP-0409` | A GNAP approval could not be completed because of an unexpected error. | HTTP 400 page |
+| `STS-GNAP-0402` | The GNAP user code page, or the GNAP interaction API (/gnap-api), was reached while GNAP is turned off (gnap.enabled). | HTTP 400 page, or { ok: false, errors } on /gnap-api |
+| `STS-GNAP-0403` | A GNAP user code sent to POST /gnap-api/code was malformed. | HTTP 400, { ok: false, errors } |
+| `STS-GNAP-0404` | Too many GNAP user codes were tried from one address. | HTTP 429, { ok: false, errors } |
+| `STS-GNAP-0405` | A GNAP user code is not recognised, or has expired. | HTTP 400, { ok: false, errors } |
+| `STS-GNAP-0406` | A GNAP approval page or answer names no request waiting for the person, or one whose interaction was never started. | HTTP 400 page, or { ok: false, errors, view } on /gnap-api |
+| `STS-GNAP-0407` *(retired)* | A GNAP approval answer failed its anti-forgery check. Retired by #578: the approval is an act on /gnap-api, refused STS-GNAP-0410, 0411 or 0412. | — |
+| `STS-GNAP-0408` | A GNAP approval answer sent to /gnap-api was malformed, or carried a limit control this page does not draw. | HTTP 400, { ok: false, errors } |
+| `STS-GNAP-0409` | A GNAP approval could not be completed because of an unexpected error. | HTTP 400 page, or { ok: false, errors, view } on /gnap-api |
+| `STS-GNAP-0410` | An act on the GNAP interaction API (/gnap-api, #578) did not carry a JSON body (Content-Type: application/json), which a cross-site form cannot send. | HTTP 415, { ok: false, errors } |
+| `STS-GNAP-0411` | An act on the GNAP interaction API (/gnap-api, #578) carried no Origin, or an origin this service does not answer on. | HTTP 403, { ok: false, errors } |
+| `STS-GNAP-0412` | An act on the GNAP interaction API (/gnap-api, #578) carried no X-CSRF-Token, or one not bound to the browser's sts_session cookie (or the browser holds no session). | HTTP 403, { ok: false, errors } |
 | `STS-GNAP-0500` | A GNAP RS-facing request's "resource_server" member is absent, or has neither a key nor an instance identifier. | HTTP 400 GNAP invalid_resource_server |
 | `STS-GNAP-0501` | A GNAP introspection request has no "access_token", or its "proof" is not a method name. | HTTP 400 GNAP invalid_request |
 | `STS-GNAP-0502` | A GNAP resource registration request is malformed (no access rights, token_formats_supported not strings, token_introspection_required not a boolean). | HTTP 400 GNAP invalid_request |
 | `STS-GNAP-0510` | A resource server asked for a derived token while token derivation is off (gnap.tokenDerivation). | HTTP 403 GNAP request_denied |
 | `STS-GNAP-0511` | A GNAP token derivation names an existing access token that is not active. | HTTP 400 GNAP invalid_request |
 | `STS-GNAP-0512` | A GNAP token derivation names an existing access token that was not issued for the requesting resource server. | HTTP 403 GNAP request_denied |
-| `STS-GNAP-0513` | A GNAP derived token asks for more access than the token it is derived from, beyond rights registered for a downstream resource server. | HTTP 403 GNAP request_denied |
+| `STS-GNAP-0513` | A GNAP derived token asks for more access than the token it is derived from: a derived token is a subset of the original (#432). | HTTP 403 GNAP request_denied |
 | `STS-GNAP-0520` | GNAP token introspection was asked for while it is off (gnap.introspection). | HTTP 404 GNAP invalid_request |
 | `STS-GNAP-0530` | GNAP resource registration was asked for while it is off (gnap.resourceRegistration). | HTTP 404 GNAP invalid_request |
 | `STS-GNAP-0531` | A GNAP resource registration names only token formats this authorization server does not issue. | HTTP 400 GNAP invalid_request |
@@ -3403,11 +3950,11 @@ Raised from: gnap/.
 | `STS-GNAP-0543` | A key-bound GNAP access token was presented under the Bearer scheme rather than GNAP with a key proof. | HTTP 401 invalid_request (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
 | `STS-GNAP-0544` | The key of a presented key-bound GNAP access token, or the request content, could not be read. | HTTP 401 invalid_request (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
 | `STS-GNAP-0545` | The key proof with a presented GNAP access token did not verify and the verifier named no more specific code. | HTTP 401 invalid_token (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
-| `STS-GNAP-0546` | A presented GNAP access token failed its format's verification and the format named no more specific code. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0550` | The GNAP demonstration resource server was reached while it is turned off (gnap.demoResourceServer). | HTTP 404 GNAP invalid_request |
-| `STS-GNAP-0551` | The GNAP demonstration resource server was called with no access token; it answered with the RS-first challenge of RFC 9635 section 9.1. | HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, access, referrer |
-| `STS-GNAP-0552` | The GNAP demonstration resource server refused a presented token whose refusal carried no more specific code. | HTTP 401 invalid_token (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0553` | A GNAP access token presented at the demonstration resource server does not grant the action (read or write) on its resource type. | HTTP 403 insufficient_scope (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0546` | A presented GNAP access token failed its format's verification and the format named no more specific code. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0550` *(retired)* | The GNAP demonstration resource server was reached while it is turned off (gnap.demoResourceServer). Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 404 GNAP invalid_request |
+| `STS-GNAP-0551` *(retired)* | The GNAP demonstration resource server was called with no access token; it answered with the RS-first challenge of RFC 9635 section 9.1. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, access, referrer |
+| `STS-GNAP-0552` *(retired)* | The GNAP demonstration resource server refused a presented token whose refusal carried no more specific code. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 401 invalid_token (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0553` *(retired)* | A GNAP access token presented at the demonstration resource server does not grant the action (read or write) on its resource type. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 403 insufficient_scope (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0600` | A GNAP push interaction finish was not sent because gnap.pushFinish is off; the client learns the outcome when it continues. | — |
 | `STS-GNAP-0601` | A GNAP push interaction finish URI is not one this service will dial; nothing was sent. | — |
 | `STS-GNAP-0602` | A client answered a GNAP push interaction finish with a redirect, which is not followed. | — |
@@ -3424,7 +3971,7 @@ Raised from: gnap/.
 | `STS-GNAP-0661` | A GNAP console or management API delete-resource-set names a resource set not registered in this realm. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0662` | A GNAP console or management API action is not one of revoke-grant and delete-resource-set. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0663` | The query string of a GNAP console page failed validation. | HTTP 400 text/plain |
-| `STS-GNAP-0664` | A GNAP console action form post failed validation. | Console error notice |
+| `STS-GNAP-0664` *(retired)* | A GNAP console action form post failed validation. | Console error notice |
 | `STS-GNAP-0665` | A GNAP management API action was refused and the refusal carried no more specific code. | HTTP 400 {ok: false, errors} |
 | `STS-GNAP-0700` | The approver of a GNAP grant could not be recorded for the Shared Signals subject scope; the approval went ahead. | — |
 | `STS-GNAP-0701` | A CAEP event about a GNAP grant or token could not be delivered. | — |
@@ -3439,6 +3986,75 @@ Raised from: gnap/.
 | `STS-GNAP-0718` | A signed GNAP request was refused because the realm's signature replay history held gnap.replayCacheSize LIVE entries: forgetting one would let that signature be replayed, so the request is refused instead until entries age out. | RFC 9635 section 7.3 (invalid_request) |
 | `STS-GNAP-0719` | A GNAP client asked for an access right naming one of this service's own protected scopes (ssf:read, ssf:write, as a reference string or an object of type ssf) that its application's oauthAllowedScope does not list. | RFC 9635 section 3.6 (request_denied) |
 | `STS-GNAP-0720` | Product mode ignored gnap.pushSkipTlsVerification: a push finish verifies the client's certificate whatever it says. Logged once per process (#171). | none — a warning in the log |
+| `STS-GNAP-0730` | A GNAP grant was refused at use — its continuation (other than the client revoking it), or introspected inactive — because its resource owner's account is disabled. Covers a node the disable has not reached yet; the disable itself ends the grant (#432). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
+| `STS-GNAP-0731` | A GNAP grant was refused at use — its continuation, or introspected inactive — because its client's application entry no longer exists, or no longer names the key the grant is bound to (gnapKey, gnapKeyIdentity or gnapKeyReference removed or replaced, #432). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
+| `STS-GNAP-0732` | A GNAP access token was not rotated because its resource owner's account is disabled, or its client's application entry is gone or no longer names the grant's key (#432). Revoking it is still allowed. | RFC 9635 section 6.1 (invalid_rotation) |
+| `STS-GNAP-0733` | A resource server asked to derive from a GNAP access token whose resource owner's account is disabled, or whose client's application entry is gone or no longer names the grant's key (#432). | RFC 9767 section 4 (invalid_request) |
+| `STS-GNAP-0734` | A GNAP access token was presented (at a Shared Signals endpoint) whose resource owner's account is disabled (#432). | RFC 9635 section 7.2 (invalid_token) |
+| `STS-GNAP-0735` | A GNAP access token was presented whose client's application entry no longer exists or no longer names the key the grant is bound to (#432). | RFC 9635 section 7.2 (invalid_token) |
+| `STS-GNAP-0736` | A GNAP grant could not be ended by an act from outside the protocol — a sign-out, a deleted client, a compromised device, a received signal (#432). The others it was asked to end were. | none — a warning in the log |
+| `STS-GNAP-0737` | An application entry was deleted, or its GNAP key removed or replaced, and its GNAP grants could not be ended with it (#432). Each is still refused at its next use (STS-GNAP-0731). | none — a warning in the log |
+| `STS-GNAP-0750` | The biscuit library gave no usable revocation identifiers for a token it had just minted, so the biscuit was not issued: one this authorization server could never publish as revoked would be accepted offline until it expired (#432). | none — the token is not issued; the grant answers without it |
+| `STS-GNAP-0751` | The revoked biscuits' identifiers could not be listed at GET /gnap/biscuit/revocations (#432). | HTTP 500 |
+| `STS-GNAP-0752` | The revoked-biscuit list reached oauth2.maxRevokedJtis with nothing expired in it, so its oldest unexpired revocations were forgotten: those biscuits are accepted again by a resource server that checks only the list, until they expire (#432). | none — a warning in the log |
+| `STS-GNAP-0770` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the relationship does not hold — the target is not the actor itself, not on the actor's appAllowedToDelegateTo, and does not accept it (appAllowedToActOnBehalfOf), or no usable target was named. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0771` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the subject is protected (stsNotDelegated, appNotDelegated, delegation.protectedGroups, the console roster) or outside the actor's appDelegationSubjectGroup. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0772` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the semantics are not allowed by the actor (appDelegationSemantics; empty is delegation only) or the subject (stsDelegationSemantics). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0773` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): the subject holds none of the roles the application the act stands on requires (appRequiredRole). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0774` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, every mode): the may_act the verified assertion carries names somebody other than the client. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0775` | A GNAP client trusted to skip interaction (gnapSkipInteraction) presented a verified user assertion and the delegation policy refused it tokens for that person (#432, product mode): a rule of the realm's own issuance policy, or an actor this realm does not know. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0776` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the relationship does not hold — the target is not the actor itself, not on the actor's appAllowedToDelegateTo, and does not accept it (appAllowedToActOnBehalfOf), or no usable target was named. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0777` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the subject is protected (stsNotDelegated, appNotDelegated, delegation.protectedGroups, the console roster) or outside the actor's appDelegationSubjectGroup. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0778` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the semantics are not allowed by the actor (appDelegationSemantics; empty is delegation only) or the subject (stsDelegationSemantics). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0779` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): the subject holds none of the roles the application the act stands on requires (appRequiredRole). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0780` | A GNAP derivation was refused because the original token's may_act names somebody other than the deriving resource server (#432; refused in every mode). GNAP tokens carry no may_act today, so this is reached only through a realm's own policy. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0781` | A GNAP resource server asked to derive a token (RFC 9767 section 4) and the delegation policy refused it (#432, product mode): a rule of the realm's own issuance policy, or an actor this realm does not know. | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0782` | A GNAP token derivation was refused because the derived token's actor chain (act) would name more resource servers than gnap.maxDerivationDepth allows (#432, every mode). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0790` | A GNAP continuation or modification arrived after the grant's own lifetime (gnap.grantLifetimeS) ended; the grant was finalized as expired (#432). | RFC 9635 section 5 (invalid_continuation) |
+| `STS-GNAP-0791` | A GNAP access token rotation was refused because the grant the token was issued under has reached the end of its lifetime (gnap.grantLifetimeS) (#432). | RFC 9635 section 6.1 (invalid_rotation) |
+| `STS-GNAP-0792` | An administrator's revoke-grant (console or /admin-api) named a person who is not the resource owner of the grant it named, so nothing was revoked (#432). | HTTP 400 (API) or a 303 with error= |
+| `STS-GNAP-0793` | A GNAP grant was to release subject information that neither an interaction nor a delegation decision authorized; none was released (#432). | none — the subject member is omitted (RFC 9635 section 3.4) |
+| `STS-GNAP-0810` | A GNAP access right was of a type the access-type catalogue does not declare (no resource application's oauthAuthorizationDetailsType names it), and the issuance policy's gnap-type-not-catalogued rule refuses one in product mode (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0811` | A GNAP bearer token was asked for carrying a right of a type the access-type catalogue declares bearer: false (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0812` | A GNAP access right did not meet its type's catalogue definition: an action, datatype or privilege it does not allow, a required member missing, its JSON Schema, or a location its owning resource server does not answer to (#432). | RFC 9635 section 3.6 (invalid_request, HTTP 400) |
+| `STS-GNAP-0813` | A GNAP access right carried limits, and its type declares no limits schema in the access-type catalogue (#432). | RFC 9635 section 3.6 (invalid_request, HTTP 400) |
+| `STS-GNAP-0814` | A GNAP access right's limits did not meet the limits schema its type declares (#432). | RFC 9635 section 3.6 (invalid_request, HTTP 400) |
+| `STS-GNAP-0815` | The issuance policy answered a GNAP access right with a verdict this service does not know; the right was refused (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0816` | No issuance policy, not even the built-in one, gave a verdict on a GNAP access right; it was refused (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0817` | The issuance policy narrowed a GNAP access right to nothing it could still grant: a reference string, an unrestricted dimension the catalogue lists no values for, every value taken off, or a narrowed right its type no longer accepts (#432). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0860` | A GNAP access right's limits are not ones this service can read: an amount, count, receiver, repeating interval or window that common/access_limits.ts gives no meaning (#432 phase 5). | RFC 9635 section 3.6 (invalid_request, HTTP 400) |
+| `STS-GNAP-0861` | A GNAP access right names an identifier whose owner (on a registered resource set, or by the resource server's lookup) is not the person the grant is for, nor a group they are a member of; the issuance policy refused it (#432 phase 5). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0862` | The person on the GNAP approval page does not own a resource a requested right names, and the issuance policy would not let them approve it; the page refused (#432 phase 5). | RFC 9635 section 1.4 (the page answers 400) |
+| `STS-GNAP-0863` | A GNAP access right names an identifier whose resource server declares an owner lookup that could not be answered; the issuance policy refused it (#432 phase 5). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0864` | A resource registration's resource_owners names an identifier no right in its access carries (#432 phase 5). | RFC 9767 section 3.4 (invalid_request, HTTP 400) |
+| `STS-GNAP-0865` | A resource registration's resource_owners names a DN that is not a person or a group in the realm's directory (#432 phase 5). | RFC 9767 section 3.4 (invalid_request, HTTP 400) |
+| `STS-GNAP-0866` | The GNAP approval page was sent limits that raise a right's limits rather than lower them, or that cannot be read (#432 phase 5). | RFC 9635 section 4 (the page answers 400) |
+| `STS-GNAP-0867` | Limits lowered on the GNAP approval page no longer meet the limits schema of the right's type (#432 phase 5). | RFC 9635 section 4 (the page answers 400) |
+| `STS-GNAP-0868` | A derived GNAP token would drop or raise a limit the original token's right carries (#432 phase 5). | RFC 9767 section 4 (request_denied, HTTP 403) |
+| `STS-GNAP-0869` | A resource server's owner lookup (gnapOwnerLookupUri) could not be answered: refused by the outbound policy, unreachable, or not {"owner": "<DN>"} (#432 phase 5). | — |
+| `STS-GNAP-0870` | A spend would pass the limits of the token's right for its grant and period (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0871` | A spend is outside the window or the repeating interval the token's limits allow (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0872` | A spend names a receiver the token's limits do not (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0873` | A spend states no amount, or one in another currency, where the token's limits count an amount (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0874` | A spend's body is not readable (#432 phase 5). | RFC 6750 section 3.1 (invalid_request, HTTP 400) |
+| `STS-GNAP-0875` | The running totals of a token's limits could not be read from the store every node shares; the spend was refused (#432 phase 5). | HTTP 503 |
+| `STS-GNAP-0876` *(retired)* | The demonstration operation failed after its spend was counted (asked to, with simulateFailure); the spend was refunded (#432 phase 5). Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 502 |
+| `STS-GNAP-0877` | A spend could not be refunded: a new period had begun, or the store could not be asked (#432 phase 5). | — |
+| `STS-GNAP-0890` | A GNAP access right whose type requires its resource owner on the approval page (interaction: always, or a consent action) was approved by skipping the page or by a remembered approval, and was left out of its token at issuance (#432 phase 6). | audit only; the token is issued without the right |
+| `STS-GNAP-0891` | A GNAP access right whose type requires an authentication level the approving session did not meet was left out of its token at issuance (#432 phase 6, RFC 9470). | audit only; the token is issued without the right |
+| `STS-GNAP-0892` | A client trusted to skip interaction (gnapSkipInteraction) asked for a right whose type requires its resource owner on the approval page, and offered no way to interact (#432 phase 6). | RFC 9635 section 2.5 (invalid_interaction, HTTP 400) |
+| `STS-GNAP-0893` | A GNAP request that could otherwise have been issued without interaction asked for a right needing an authentication level, which no session met, and offered no way to interact (#432 phase 6). | RFC 9635 section 2.5 (invalid_interaction, HTTP 400) |
+| `STS-GNAP-0894` | A GNAP grant waiting for its absent resource owner on the portal ran out (gnap.ownerApprovalLifetimeS) without an answer; it is finalized as rejected (#432 phase 6). | RFC 9635 section 5 (invalid_continuation, HTTP 400) |
+| `STS-GNAP-0895` | A derived GNAP token asked for a right beyond the original token of a type that requires its resource owner on the approval page (#432 phase 6). | RFC 9767 section 4 (request_denied, HTTP 403) |
+| `STS-GNAP-0896` | A derived GNAP token asked for a right needing an authentication level the session the original grant was approved on did not meet (#432 phase 6, RFC 9470). | RFC 9767 section 4 (request_denied, HTTP 403) |
+| `STS-GNAP-0897` | A GNAP grant could not wait for its resource owner: they already have gnap.ownerApprovalMaxPending requests waiting (#432 phase 6). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0898` | A GNAP grant could not wait for its resource owner: they are homed in another cell than the one holding the client instance, whose portal could never list it (#432 phase 6, #98). | RFC 9635 section 3.6 (request_denied, HTTP 403) |
+| `STS-GNAP-0899` | The person at a GNAP approval page was sent to sign in again for the authentication level the rights need, and came back still short of it; the request is denied (#432 phase 6, RFC 9470). | RFC 9635 section 3.6 (request_denied, HTTP 403), at the next continuation |
+| `STS-GNAP-0900` | The mail notice for a GNAP grant waiting for its resource owner could not be queued; the grant waits on the portal regardless (#432 phase 6). | log only |
+| `STS-GNAP-0901` | A GNAP grant could not wait for its resource owner: the user the request names is not a person the directory holds (#432 phase 6). | RFC 9635 section 2.4 (unknown_user, HTTP 400) |
+| `STS-GNAP-0902` | Product mode: a GNAP request was proved with a key, or named an instance identifier, belonging to an application nobody registered (no appRegisteredBy; an entry created on first sight in development is not a registration) (#496). | invalid_client or invalid_resource_server (HTTP 401, RFC 9635 section 2.3.3) |
+| `STS-GNAP-0903` | Product mode: a GNAP access right named a location that is no registered resource server — none of this service's own, no registered application by audience, permission base URI, client_id or identifier, and not at or under a registered GNAP resource server's gnapResourceServerUri — so the request was refused rather than the right dropped (#505). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
+| `STS-GNAP-0904` | A GNAP access token request's access named no resource server — no registered reference, no location at or under a registered resource server's gnapResourceServerUri, no type a registered resource server declares, and not this service's own Shared Signals transmitter — so the token would have been for nobody in particular and the request was refused, in every mode. The default audience (the demonstration resource server) went with it (#593). | invalid_request (HTTP 400, RFC 9635 sections 3.6 and 8) |
 
 ## STS-DEVICE
 
@@ -3461,7 +4077,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0011` | A compliance status, its source or a device status was outside its closed list (#164). | HTTP 400 (API) or a 303 with error= |
 | `STS-DEVICE-0012` | A device named an application that is not in the realm's directory (#164). | HTTP 400 (API) or a 303 with error= |
 | `STS-DEVICE-0013` | A POST to /admin/devices or /admin-api/devices named an action that does not exist (#218). | HTTP 400 (API) or a 303 with error= |
-| `STS-DEVICE-0014` | A console session with Admin Read only posted to /admin/devices (#218). | HTTP 303 with error= |
+| `STS-DEVICE-0014` *(retired)* | A console session with Admin Read only posted to /admin/devices (#218). | HTTP 303 with error= |
 | `STS-DEVICE-0015` | A WebAuthn key named for a device is not a security key its owner enrolled, or the device's owner is an application (#164). | HTTP 400 (API) or a 303 with error= |
 | `STS-DEVICE-0016` | A device enrolment challenge was refused: none was named, it is unknown or expired, it was issued to another session or person, or it was already answered (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
 | `STS-DEVICE-0017` | A device key proof (a JWS over an enrolment challenge) is malformed, is signed with an algorithm not accepted, does not verify under the key in its own header, or carries the wrong typ, nonce, aud or iat (#164 phase 2). | HTTP 400 (JSON) or the page with the sentence |
@@ -3482,7 +4098,7 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0032` | A certificate this service issued a compromised or removed device could not be revoked by its Issuing CA (#164 phase 4). | none — logged and audited; the device's change stands |
 | `STS-DEVICE-0033` | A device risk level outside LOW, MEDIUM and HIGH (CAEP section 3.8.1), or a source outside risk, compromise and admin, was refused (#164 phase 4). | none — the caller's refusal |
 | `STS-DEVICE-0034` | A device compliance feed request carried no report or more than devices.complianceFeedMaxReports, and was refused whole (#164 phase 3). | HTTP 400 |
-| `STS-DEVICE-0035` | The compliance test control, POST /devices/test/compliance, was refused because the realm is in product mode, where test controls are closed (#164 phase 3). | HTTP 403 |
+| `STS-DEVICE-0035` *(retired)* | The compliance test control, POST /devices/test/compliance, was refused because the realm is in product mode, where test controls are closed (#164 phase 3). Retired by #585: a product realm has no such route, and answers as for a path nothing is registered on. | — |
 | `STS-DEVICE-0036` | Risk scoring could not set the risk level of the registered device that proved a sign-in: the device register refused or did not store it (#164 phase 5). The sign-in stands and the device keeps the level it had. | none — logged as a warning |
 | `STS-DEVICE-0037` | An issuance was refused by the issuance policy's device-required rule: the realm requires a compliant registered device (devices.requireCompliantDevice) and this did not come from the subject's own (or an application's) compliant, uncompromised device — attested too where devices.compliantDeviceAttested says so (#164 phase 6). | the issuance site's own refusal — access_denied, a SOAP fault, a SAML status — whose description says a compliant registered device is required |
 | `STS-DEVICE-0038` | An issuance was refused by the issuance policy's device-compromised rule: it came from a registered device marked compromised, and the realm refuses one (devices.refuseCompromised, on by default) (#164 phase 6). | the issuance site's own refusal, saying only that authentication failed |
@@ -3493,6 +4109,49 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0043` | A remembered browser's token was not issued: once signed and encrypted it is larger than a cookie may be (about 4 KB) — devices.browserTokenCertificateHeader set to x5c or both is the usual cause (#265). | none — the browser is not remembered, and the page says so |
 | `STS-DEVICE-0044` | Remembering a browser was refused: devices.browserDevices is off in the realm, nobody is signed in, or the person holds their most devices (#265). | 400 on /portal/devices; the sign-in itself goes on |
 | `STS-DEVICE-0045` | A remembered browser's generation and binding could not be written onto its device entry, so the token it holds was not issued again (#265). | none — the browser keeps the token it has |
+| `STS-DEVICE-0046` | A device was marked compromised and what its keys were trusted with beyond a session — the GNAP grants whose client key is the device's, the OAuth tokens bound to its keys or certificates — could not all be ended (#432). The sessions, secret and certificates were. | none — an error in the log |
+| `STS-DEVICE-0047` | An Android Key Attestation chain names a certificate Google's attestation status list revokes or suspends (#256): at registration the key is recorded self-asserted (refused in product), and at a recheck an attested key is downgraded to self-asserted. | the registration's own refusal in product (STS-DEVICE-0024); none at a recheck |
+| `STS-DEVICE-0048` | An Android Key Attestation chain's revocation could not be checked — no current Android attestation status list, or a stale one — and devices.androidRevocationRequired treats that as unattested in product mode (#256). | the registration's own refusal in product (STS-DEVICE-0024) |
+| `STS-DEVICE-0049` | A newly activated Android attestation status list could not queue the recheck of the stored chains (#256); the daily devices.android-status-recheck run reaches them. | none — a warning in the log |
+| `STS-DEVICE-0050` | A TPM key attestation in a device certificate request was not proved FRESH — its TPMS_ATTEST extraData is not a live nonce this realm issued at EST /nonce to the same client and cookie, or the request came over SCEP, which has no nonce operation — and product mode requires freshness (common/mode.js requiresFreshKeyAttestation(); draft-ietf-lamps-csr-attestation section 6.2, draft-ietf-lamps-attestation-freshness) (#257). | EST 403 / SCEP failInfo badRequest |
+
+## STS-SVCACCT
+
+**Service accounts.** Service accounts (#221): person entries carrying stsServiceAccount, the service-account policy that governs them (the third kind on Directory → Policies), the doors that policy closes, and the rotation that pushes a new password to a secrets manager before committing it.
+
+Raised from: common/service_accounts.ts, common/service_account_policy.ts, common/service_account_rotation.ts, common/credentials.ts, authn/authn.ts, kerberos/krb5_person_keys.ts, ldap/ldap_server.js.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-SVCACCT-0001` | A service-account policy profile other than `default` was named; there is one profile per realm, and nothing assigns a second. | HTTP 400 (management API) |
+| `STS-SVCACCT-0002` | A service-account policy save was refused: a field was missing or out of range, the rotated password's length was below the password policy's minimum, or rotation was turned on in a realm with no push destination. | HTTP 400 (management API) |
+| `STS-SVCACCT-0003` | There is no embedded directory in this process, so a service-account policy could not be saved. | HTTP 400 (management API) |
+| `STS-SVCACCT-0004` | The directory would not store the service-account policy profile: it holds its maximum number of entries. | HTTP 400 (management API) |
+| `STS-SVCACCT-0010` | A service account was refused a browser sign-in — the sign-in screen, the portal, the console, or any first factor that starts a browser session — because the realm's service-account policy keeps allowBrowserSignIn off. | the protocol's own authentication failure (the sign-in screen redrawn; invalid_grant; a wrong password's answer) |
+| `STS-SVCACCT-0011` | A service account's password was refused at a password door (an LDAP bind, a UsernameToken, SCIM, SSF or EST Basic, the OAuth 2.0 password grant, or a door that declared nothing) that the realm's service-account policy does not open to it. Asked before the password is compared, in both modes. | the door's own wrong-password answer (invalidCredentials, a SOAP fault, HTTP 401, invalid_grant) |
+| `STS-SVCACCT-0012` | The KDC refused a service account because the realm's service-account policy does not open the Kerberos door to it. | KDC_ERR_CLIENT_REVOKED (18) |
+| `STS-SVCACCT-0013` | A password was set by hand — the console, the management API or an LDAP modify — for a service account whose password rotates through its push destination; only the rotation sets it. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0020` | There is no directory in this process, so a person could not be made a service account. | HTTP 400 (management API) |
+| `STS-SVCACCT-0021` | A person named to be made a service account has no entry in this realm's directory. | HTTP 400 (management API) |
+| `STS-SVCACCT-0022` | An entry named to be made a service account is not a person entry (an application is a non-human identity of its own kind). | HTTP 400 (management API) |
+| `STS-SVCACCT-0023` | A service account named no owner while the realm's service-account policy requires one (requireOwner, on by default). | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0024` | A service account's owner names neither a person nor a group in this realm. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0025` | A service account was named as its own owner. | HTTP 400 (management API) |
+| `STS-SVCACCT-0026` | A service account named a push destination without the secret's name there, or the reverse. | HTTP 400 (management API); constraintViolation (19) over LDAP |
+| `STS-SVCACCT-0027` | The directory would not write a service account's attributes onto its entry. | HTTP 400 (management API) |
+| `STS-SVCACCT-0028` | A service account's secret name was too long, or carried spaces or control characters. | HTTP 400 (management API) |
+| `STS-SVCACCT-0029` | A service account's push destination is not a registered destination in this realm, or the destination register is not loaded in this process. | HTTP 400 (management API) |
+| `STS-SVCACCT-0030` | An LDAP add or modify wrote an attribute the password rotation maintains (stsPasswordRotatedAt, stsPreviousPassword, stsRotation*); refused in product mode as pwdHistory is. | constraintViolation (19) |
+| `STS-SVCACCT-0031` | A service account was given more owners than it may name (MAX_OWNERS, #600); a group stands for many. | HTTP 400 (management API) |
+| `STS-SVCACCT-0032` | An owner was asked to be taken off a service account that does not list it (#602). | HTTP 400 (management API) |
+| `STS-SVCACCT-0033` | An owner or a push destination was changed on an entry that is not a service account in this realm (#602). | HTTP 400 (management API) |
+| `STS-SVCACCT-0040` | A rotation was asked of an entry that is not a service account in this realm. | HTTP 400 (management API) |
+| `STS-SVCACCT-0041` | A rotation was asked of a service account that names no push destination. | HTTP 400 (management API) |
+| `STS-SVCACCT-0042` | ALARM: a service account's password has failed to rotate as many times in a row as the service-account policy's rotationAlarmFailures allows. Nothing changed each time; the old password still works. | none — an error in the log and an audit row |
+| `STS-SVCACCT-0043` | A rotation of a service account was not started because another rotation of the same account holds its claim. | none — the run reports it |
+| `STS-SVCACCT-0044` | A service account's rotated password could not be pushed to its destination (or the destination register is not loaded); nothing changed and the next run tries again. | none — a warning in the log and an audit row |
+| `STS-SVCACCT-0045` | ALARM: a service account's rotated password was pushed to its destination and could not be committed here, so the destination holds a password this service does not accept until the next rotation. | none — an error in the log and an audit row |
+| `STS-SVCACCT-0046` | No generated password of the service-account policy's length satisfied the password policy, so the rotation stopped before pushing anything. | none — a warning in the log and an audit row |
 
 ## STS-XACML
 
@@ -3504,7 +4163,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 |---|---|---|
 | `STS-XACML-0001` | A request reached an XACML endpoint while the family is switched off (xacml.enabled). | HTTP 501 not_implemented |
 | `STS-XACML-0002` | A request reached a remote-PEP endpoint or POST /xacml/pip while remote enforcement points are switched off (xacml.remotePeps). | HTTP 501 not_implemented |
-| `STS-XACML-0003` | The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies, /xacml/protected) was refused to a caller that presented no client certificate. | HTTP 403 access_denied |
+| `STS-XACML-0003` | The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) was refused to a caller that presented no client certificate. | HTTP 403 access_denied |
 | `STS-XACML-0004` | The XACML surface was refused to a caller whose client certificate did not verify against this service's truststore. | HTTP 403 access_denied |
 | `STS-XACML-0005` | The XACML surface was refused to a verified certificate whose subject resolves to no directory entry holding XACML_USER (not in roles.xacmlUserGroup). | HTTP 403 access_denied |
 | `STS-XACML-0006` | The XACML surface was refused by the access policy to a verified caller that does hold XACML_USER — an operator-edited access-control document denied it. | HTTP 403 access_denied |
@@ -3513,10 +4172,10 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0009` | A remote-PEP endpoint was refused to a verified certificate whose subject resolves to no directory entry holding REMOTE_PEPS (not in roles.remotePepGroup). | HTTP 403 access_denied |
 | `STS-XACML-0010` | A remote-PEP endpoint was refused by the access policy to a verified caller that does hold REMOTE_PEPS — an operator-edited access-control document denied it. | HTTP 403 access_denied |
 | `STS-XACML-0011` | A decision request to POST /xacml/pdp was not a well-formed JSON Profile request. | HTTP 400 invalid_request |
-| `STS-XACML-0012` | A decision could not be made because the repository's root policy does not load; the PDP answered Indeterminate. | HTTP 200 with decision Indeterminate (XACML status syntax-error); GET /xacml/protected may then refuse with 403 |
-| `STS-XACML-0013` | The engine reached Indeterminate through a processing or syntax error while evaluating a policy (not a missing attribute). | HTTP 200 with decision Indeterminate (XACML status processing-error or syntax-error); GET /xacml/protected may then refuse with 403 |
-| `STS-XACML-0014` | The embedded demonstration PEP at GET /xacml/protected refused the subject because the decision was not one its bias allows. | HTTP 403 with the PEP's JSON enforcement answer |
-| `STS-XACML-0015` | The embedded demonstration PEP refused a Permit because the decision carried an obligation it cannot discharge (XACML 3.0 section 7.2). | HTTP 403 with the PEP's JSON enforcement answer |
+| `STS-XACML-0012` | A decision could not be made because the repository's root policy does not load; the PDP answered Indeterminate. | HTTP 200 with decision Indeterminate (XACML status syntax-error); a PEP asking it may then refuse with 403 |
+| `STS-XACML-0013` | The engine reached Indeterminate through a processing or syntax error while evaluating a policy (not a missing attribute). | HTTP 200 with decision Indeterminate (XACML status processing-error or syntax-error); a PEP asking it may then refuse with 403 |
+| `STS-XACML-0014` *(retired)* | The embedded demonstration PEP at GET /xacml/protected refused the subject because the decision was not one its bias allows. Retired 2026-10-12 (#596): the demonstration PEP was deleted; the remote PEP container's GET /protected is the demonstration | HTTP 403 with the PEP's JSON enforcement answer |
+| `STS-XACML-0015` *(retired)* | The embedded demonstration PEP refused a Permit because the decision carried an obligation it cannot discharge (XACML 3.0 section 7.2). Retired 2026-10-12 (#596): the demonstration PEP was deleted; the remote PEP container's GET /protected is the demonstration | HTTP 403 with the PEP's JSON enforcement answer |
 | `STS-XACML-0016` | GET /xacml was asked with a format or bias query parameter outside its allowed values. | HTTP 400 text/plain |
 | `STS-XACML-0017` | A remote PEP registration arrived on a plain HTTP listener, which cannot carry the client certificate xacml.pepRequireCertificate demands. | HTTP 401 invalid_client |
 | `STS-XACML-0018` | A remote PEP registration arrived over TLS with no client certificate while xacml.pepRequireCertificate is on. | HTTP 401 invalid_client |
@@ -3532,7 +4191,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0028` | A policy document was refused at write: it does not parse or fails XACML static type checking. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0029` | A policy write named an entry that is not 1 to 128 letters, digits, dot, dash or underscore. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0030` | A policy write asked to be the root while another policy already is. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
-| `STS-XACML-0031` | An XACML console action was refused because the console session holds Admin Read and not Admin Write. | 303 back to the page with error=…, or HTTP 400 { ok: false, why } for a JSON post |
+| `STS-XACML-0031` *(retired)* | An XACML console action was refused because the console session holds Admin Read and not Admin Write. | 303 back to the page with error=…, or HTTP 400 { ok: false, why } for a JSON post |
 | `STS-XACML-0032` | An XACML console or management API action named an action that does not exist. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0033` | An XACML repository or editor action named a policy that is not in the repository. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-XACML-0034` | The editor was asked to edit a stored policy that does not load. | console: 303 back to the page with error=…; /admin-api: HTTP 400 { ok: false, errors } |
@@ -3582,6 +4241,24 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0078` | Neither the issuance policy nor the built-in one it falls back to gave a verdict on a requested scope — a defect; a scope gated by role was dropped and an ungated one kept (#304). | none — a warning in the log |
 | `STS-XACML-0079` | The built-in issuance policy could not be evaluated for the per-scope question in a process with no issuance PEP — a defect; scopes gated by role were dropped and the rest kept (#304, #305). | none — an error in the log |
 | `STS-XACML-0080` | A write named an application's role that is not <role>@<application>, or used a native or built-in role's name for one (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0081` | A role write named a member type that is not user or application (#93). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0082` | A role write gave the role a member of a kind its member types exclude: a person or group on an applications-only role, or an application on a people-only one (#93). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0083` | A role write tried to restrict a console role (ADMIN_READ, ADMIN_WRITE) to one member type; it holds people and applications both (#93). | none (a console or management API refusal, HTTP 400) |
+| `STS-XACML-0084` | In product mode the issuance policy refused an issuance to an application through a protocol family it is not declared for (appAllowedProtocol): an ID Token to an application declared for OAuth 2.0 alone, a SAML assertion to one declared for OpenID Connect. | each protocol's own refusal (access_denied, a SAML Responder status, KDC_ERR_POLICY, a WS-Trust fault) |
+| `STS-XACML-0085` | No issuance policy, not even the built-in one, gave a verdict on who may act for whom (#186); the exchange was refused. | each protocol's own refusal |
+| `STS-XACML-0086` | The issuance gate's decider threw on an exchange question (#186); the built-in policy decided instead. | — |
+| `STS-XACML-0087` | No issuance policy, not even the built-in one, answered the may_act question for a subject who named a delegate (#186); the subject's own choice was put in the token. | — |
+| `STS-XACML-0088` | A role restricted to applications was to be conferred by a client (roleConferredBy, #454); a conferred role is held by the PEOPLE signing in through that client, so the write was refused. | — |
+| `STS-XACML-0089` | One of the two console roles was to be conferred by a client (roleConferredBy, #454); their people are the console roster's, so the write was refused. | — |
+| `STS-XACML-0168` | No issuance policy, not even the built-in one, could answer the per-right GNAP question (issue-gnap-right); the right was refused (#432). | — |
+| `STS-XACML-0169` | The application registry could not be read for the sign-in mechanisms an application allows (appAuthnMechanism, #457), so the issuance gate required none for that issuance. | — |
+| `STS-XACML-0170` | The issuance policy denied a browser issuance on the sign-in mechanism (#457): the application allows only some mechanisms (appAuthnMechanism) and the person's authentication used none of them. The door re-prompts for an allowed one. | — |
+| `STS-XACML-0171` | The issuance policy denied a browser issuance on the second factor (#475): the application allows only some second factors (appMfaMechanism) and the person's authentication gave another. The door re-prompts for an allowed one. | — |
+| `STS-XACML-0172` | The application registry could not be read for the second factors an application allows (appMfaMechanism, #475), so the issuance gate required none for that issuance. | — |
+| `STS-XACML-0173` | Adding an owner to a role was refused: no owner was named (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0174` | Adding an owner to a role was refused: the value names no person and no group in this realm (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0175` | Adding an owner to a role was refused: the role already names the most owners a role may (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0176` | Taking an owner off a role was refused: the value is not one of the role's owners (#604). | HTTP 400 (API) or a refusal on the role page |
 
 ## STS-XPEP
 
@@ -3591,20 +4268,20 @@ Raised from: xacml-pep/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-XPEP-0001` | The error-code registry could not be loaded from ./error_codes or ../common/error_codes; the container starts anyway and tags its lines with a local fallback. In the image, the Dockerfile stopped copying common/error_codes.js. | — |
-| `STS-XPEP-0002` | The version module could not be loaded from ./version or ../common/version, so the PEP registers and reports its version as 'unknown'. In the image, the Dockerfile stopped copying common/version.js and VERSION. | — |
+| `STS-XPEP-0001` *(retired)* | The error-code registry could not be loaded from ./error_codes or ../common/error_codes; the container starts anyway and tags its lines with a local fallback. In the image, the Dockerfile stopped copying common/error_codes.js. | — |
+| `STS-XPEP-0002` *(retired)* | The version module could not be loaded from ./version or ../common/version, so the PEP registers and reports its version as 'unknown'. In the image, the Dockerfile stopped copying common/version.js and VERSION. | — |
 | `STS-XPEP-0003` | PEP_TLS_CERT, PEP_TLS_KEY or PEP_TLS_CA names a file that could not be read; the PEP carries on without it, so it registers unauthenticated or is refused. | — |
 | `STS-XPEP-0004` | The policy permitted the request but the decision carries an obligation this PEP cannot discharge, so section 7.2 turned the Permit into a refusal. | HTTP 403 from GET /protected |
 | `STS-XPEP-0005` | A decision was asked for while the PEP holds no root policy (it has never pulled one, or what it pulled had no root); the decision is NotApplicable and the bias settles it. | HTTP 403 from GET /protected when deny-biased, 200 when permit-biased |
 | `STS-XPEP-0006` | The engine answered Indeterminate for a request against the policy this PEP holds (a processing or missing-attribute error); the bias settles it. | HTTP 403 from GET /protected when deny-biased, 200 when permit-biased |
-| `STS-XPEP-0007` | A request arrived whose URL would not parse, so it could name none of the PEP's endpoints. | HTTP 400 |
-| `STS-XPEP-0008` | Deciding a GET /protected request threw inside the PEP (the PIP, the engine or enforcement), so no decision was reached. A defect in the PEP, not a Deny. | HTTP 500 decision_failed |
+| `STS-XPEP-0007` *(retired)* | A request arrived whose URL would not parse, so it could name none of the PEP's endpoints. | HTTP 400 |
+| `STS-XPEP-0008` *(retired)* | Deciding a GET /protected request threw inside the PEP (the PIP, the engine or enforcement), so no decision was reached. A defect in the PEP, not a Deny. | HTTP 500 decision_failed |
 | `STS-XPEP-0009` | A request named a method and path the PEP does not answer (it answers GET /, GET /protected, POST /notify and GET /healthcheck). | HTTP 404 not_found |
 | `STS-XPEP-0010` | A policy pull threw unexpectedly, from the nudge or from the poll timer. The policy already held is kept and the next poll tries again. | — |
-| `STS-XPEP-0011` | Retrying the registration on the poll timer threw unexpectedly; the pull still runs and the registration is tried again next interval. | — |
-| `STS-XPEP-0012` | The heartbeat, or the pull it triggers when the PDP says this copy is behind, threw unexpectedly. Reporting only; enforcement is unaffected. | — |
+| `STS-XPEP-0011` *(retired)* | Retrying the registration on the poll timer threw unexpectedly; the pull still runs and the registration is tried again next interval. | — |
+| `STS-XPEP-0012` *(retired)* | The heartbeat, or the pull it triggers when the PDP says this copy is behind, threw unexpectedly. Reporting only; enforcement is unaffected. | — |
 | `STS-XPEP-0013` | The PEP could not start (registration, first pull, timers or listener setup threw) and the process exits. | — |
-| `STS-XPEP-0014` | The seven XACML engine modules were found neither beside engine.js nor one directory up, so the PEP cannot load and the process dies at require. | — |
+| `STS-XPEP-0014` *(retired)* | The seven XACML engine modules were found neither beside engine.js nor one directory up, so the PEP cannot load and the process dies at require. | — |
 | `STS-XPEP-0015` | The PEP could not reach the PDP to register (network, TLS, timeout or a PEP_PDP_URL that is not a URL). It still enforces and retries on every poll. | — |
 | `STS-XPEP-0016` | The PDP refused the PEP's registration (a missing or unrecognised client certificate, a full register, a taken name, or remote PEPs turned off). It still enforces with what it can pull and retries on every poll. | — |
 | `STS-XPEP-0017` | A policy pull could not reach the PDP. The last good policy set is kept and enforced, and the PEP reports itself stale. | — |
@@ -3623,6 +4300,8 @@ Raised from: xacml-pep/.
 | `STS-XPEP-0030` | The HTTPS certificate and key files could not be read, are not PEM, or do not belong together. A listener already serving keeps the pair it has; one not yet started waits for a usable pair. | — |
 | `STS-XPEP-0031` | The HTTPS listener could not bind its port (commonly the port is taken). Plain HTTP and enforcement are unaffected. | — |
 | `STS-XPEP-0032` | The certificate the HTTPS listener is serving is expired or not yet valid, so clients that check will refuse the handshake. | — |
+| `STS-XPEP-0033` | The remote XACML PEP met an uncaught exception after it had started, and contained it rather than exiting (#355): it carries on enforcing the policy it last pulled. The line carries the stack; a distinct fault is logged at occurrences 1, 2, 3 and each power of ten. | none — logged; the PEP carries on |
+| `STS-XPEP-0034` *(retired)* | The remote XACML PEP met a promise rejection nobody handled after it had started, and contained it rather than exiting (#355), throttled as STS-XPEP-0033 is. | none — logged; the PEP carries on |
 
 ## STS-ADMIN
 
@@ -3632,28 +4311,28 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-ADMIN-0001` | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
-| `STS-ADMIN-0002` | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
-| `STS-ADMIN-0003` | A console request that cannot be redirected to sign in (a JSON caller, or a form POST) carried no console session. | HTTP 401 login_required |
-| `STS-ADMIN-0004` | A console sign-out was refused because the form did not carry this session's CSRF token. | HTTP 403 csrf |
+| `STS-ADMIN-0001` *(retired)* | The admin console could not start a sign-in: its OIDC client entry (sts-admin-console) is missing, or declares a client secret method and has no secret. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0002` *(retired)* | The admin console could not start a sign-in in product mode because the address it was reached at is not a registered redirect URI of sts-admin-console. | HTTP 503 temporarily_unavailable (JSON) or a 503 page |
+| `STS-ADMIN-0003` *(retired)* | A console request that cannot be redirected to sign in (a JSON caller, or a form POST) carried no console session. | HTTP 401 login_required |
+| `STS-ADMIN-0004` *(retired)* | A console sign-out was refused because the form did not carry this session's CSRF token. | HTTP 403 csrf |
 | `STS-ADMIN-0005` | A console write (a non-GET request) was refused because it did not carry this session's CSRF token. | HTTP 403 csrf |
-| `STS-ADMIN-0006` | The access policy (the XACML access-control document) refused a console request for a person who holds the console role it needs. | HTTP 403 policy_denied |
-| `STS-ADMIN-0007` | A signed-in person without the Admin Read role tried to read a console page. | HTTP 403 insufficient_role |
-| `STS-ADMIN-0008` | A signed-in person without the Admin Write role tried to post a console form. | HTTP 403 insufficient_role |
-| `STS-ADMIN-0009` | A console request's query string failed validation (an over-long, repeated or malformed parameter). | HTTP 400 page |
-| `STS-ADMIN-0010` | The admin console's OIDC callback refused the authorization response (state, code redemption, ID Token verification or session establishment failed). | HTTP 400 page |
-| `STS-ADMIN-0011` | The admin console's OIDC callback threw rather than resolving; this is a defect in the relying-party code, not something a request can cause. | HTTP 500 page |
+| `STS-ADMIN-0006` *(retired)* | The access policy (the XACML access-control document) refused a console request for a person who holds the console role it needs. | HTTP 403 policy_denied |
+| `STS-ADMIN-0007` *(retired)* | A signed-in person without the Admin Read role tried to read a console page. | HTTP 403 insufficient_role |
+| `STS-ADMIN-0008` *(retired)* | A signed-in person without the Admin Write role tried to post a console form. | HTTP 403 insufficient_role |
+| `STS-ADMIN-0009` *(retired)* | A console request's query string failed validation (an over-long, repeated or malformed parameter). | HTTP 400 page |
+| `STS-ADMIN-0010` *(retired)* | The admin console's OIDC callback refused the authorization response (state, code redemption, ID Token verification or session establishment failed). | HTTP 400 page |
+| `STS-ADMIN-0011` *(retired)* | The admin console's OIDC callback threw rather than resolving; this is a defect in the relying-party code, not something a request can cause. | HTTP 500 page |
 | `STS-ADMIN-0012` | A console action was refused (its result was not ok) and the action named no more specific code. | HTTP 303 back to the page with error=, or HTTP 400 JSON |
-| `STS-ADMIN-0013` | An asynchronous console action (Shared Signals, CAEP, RISC or SPIFFE) rejected instead of resolving a refusal; it is answered as a refused action. | HTTP 303 back to the page with error=, or HTTP 400 JSON |
+| `STS-ADMIN-0013` *(retired)* | An asynchronous console action (Shared Signals, CAEP, RISC or SPIFFE) rejected instead of resolving a refusal; it is answered as a refused action. | HTTP 303 back to the page with error=, or HTTP 400 JSON |
 | `STS-ADMIN-0014` | A console inverted-hook slot was offered an incomplete filler at startup and refused it whole; the pages and operations behind it report the reader as not installed. | — |
 | `STS-ADMIN-0015` | The startup check of SETTING_HOMES found a settings group drawn on no page, drawn twice, unknown to config.js, or sent to a path that is not a console page. | — |
 | `STS-ADMIN-0016` | The new-user form's Fill with example data was refused because the service is running in product mode. | HTTP 200 form page with a warning, or HTTP 400 JSON |
 | `STS-ADMIN-0017` | The new-user form's Fill with example data was pressed with no username to seed the example person from. | HTTP 200 form page with a warning |
-| `STS-ADMIN-0018` | The new-user form was posted with an action other than create or fill. | HTTP 200 form page with a warning, or HTTP 400 JSON |
-| `STS-ADMIN-0019` | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
-| `STS-ADMIN-0020` | The realm switcher named a trust realm that is not defined; the browser was sent back to the current realm. | HTTP 303 to the current realm |
+| `STS-ADMIN-0018` *(retired)* | The new-user form was posted with an action other than create or fill. | HTTP 200 form page with a warning, or HTTP 400 JSON |
+| `STS-ADMIN-0019` *(retired)* | The admin console's Shared Signals receive endpoint refused a pushed Security Event Token and the receiver named no more specific code. | HTTP 4xx/5xx per RFC 8935, as the receiver decided |
+| `STS-ADMIN-0020` *(retired)* | The realm switcher named a trust realm that is not defined; the browser was sent back to the current realm. | HTTP 303 to the current realm |
 | `STS-ADMIN-0021` | A console drill-down named a record that does not exist: an application, an authorization server profile, a trust realm, a federation relationship or a cache. | HTTP 200 page saying there is no such record |
-| `STS-ADMIN-0022` | The realm switcher was given a return path that is not a single-slash-rooted path (a possible open redirect); /admin was used instead. | HTTP 303 to /admin in the chosen realm |
+| `STS-ADMIN-0022` *(retired)* | The realm switcher was given a return path that is not a single-slash-rooted path (a possible open redirect); /admin was used instead. | HTTP 303 to /admin in the chosen realm |
 | `STS-ADMIN-0500` | An admin console control or management API action named an operation its resource does not have. | HTTP 400 (API JSON errors) or a 303 back to the console page with error= |
 | `STS-ADMIN-0501` | An admin action needs a module that is not loaded in this process (the logout reader, the directory or group writer, the Shared Signals reporters, the XACML pages, or the client-certificate truststore), so there is nothing to act on. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0502` | A token revoke or restore named no jti and no token to read one from. | HTTP 400 (API) or a 303 with error= |
@@ -3742,18 +4421,18 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0585` | The directory refused the group write behind a console role grant or revoke. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0586` | A console role revoke was refused because the person holds the role through a memberOf value on their own entry, which this console does not write. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0587` | The console roles' directory slot was offered a filler missing required functions and was not installed; the roles read as having no directory. | — |
-| `STS-ADMIN-0588` | A key pair export was refused because the caller does not hold Admin Write. | HTTP 403 |
+| `STS-ADMIN-0588` *(retired)* | A key pair export was refused because the caller does not hold Admin Write. | HTTP 403 |
 | `STS-ADMIN-0589` | A key pair export named a key this realm does not hold. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0590` | A key pair export was refused because the key has not been generated yet, or has no exportable encoding. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0591` | A key pair export asked for a format that key does not offer. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0592` | A key pair export found no PEM key pair for the key in this realm. | HTTP 400 (JSON or API) or a 303 with error= |
 | `STS-ADMIN-0593` | The key exporter refused an export (for example a PKCS#12 with no password, or a key it cannot read). | HTTP 400 (JSON or API) or a 303 with error= |
-| `STS-ADMIN-0594` | A key pair export threw unexpectedly. | HTTP 400 (JSON) or a 303 with error= |
+| `STS-ADMIN-0594` *(retired)* | A key pair export threw unexpectedly. | HTTP 400 (JSON) or a 303 with error= |
 | `STS-ADMIN-0595` | The crypto report was handed a malformed protocol family list and ignored it; its drift check does not run. | — |
 | `STS-ADMIN-0596` | This build of the admin console offers no crypto reporter slot, so the management API cannot mirror the crypto and key pages. | — |
 | `STS-ADMIN-0597` | The API explorer could not mint an access token for the reader; the page draws and Try it will be refused. | — |
-| `STS-ADMIN-0598` | The /admin/database page threw while being drawn. | HTTP 200 page saying it could not be drawn |
-| `STS-ADMIN-0599` | The /admin/secrets page threw while being drawn. | HTTP 200 page saying it could not be drawn |
+| `STS-ADMIN-0598` *(retired)* | The /admin/database page threw while being drawn. | HTTP 200 page saying it could not be drawn |
+| `STS-ADMIN-0599` *(retired)* | The /admin/secrets page threw while being drawn. | HTTP 200 page saying it could not be drawn |
 | `STS-ADMIN-0600` | The delegation map picture could not be laid out; the page drew without it. | — |
 | `STS-ADMIN-0601` | The federation map picture could not be laid out; the page drew without it. | — |
 | `STS-ADMIN-0602` | A Kerberos principals action named an action the page does not have. | HTTP 400 { ok: false, errors } / 303 with error= |
@@ -3770,9 +4449,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0640` | A certificate details view was asked for with a value that is not a SHA-256 certificate fingerprint (64 hexadecimal digits). | the page with a dialog saying so / HTTP 400 { ok: false, errors } |
 | `STS-ADMIN-0641` | A certificate details view named a fingerprint this service does not hold in the trust realm the request was reached in. | the page with a dialog saying so / HTTP 404 { ok: false, errors } |
 | `STS-ADMIN-0642` | A certificate this service holds could not be described or its chain could not be built. | the page with a dialog saying so / HTTP 500 { ok: false, errors } |
-| `STS-ADMIN-0643` | The used-assertion history page could not be drawn, because the store holding the history could not be read. | the page with a warning saying so |
+| `STS-ADMIN-0643` *(retired)* | The used-assertion history page could not be drawn, because the store holding the history could not be read. | the page with a warning saying so |
 | `STS-ADMIN-0644` | An RFC 9728 protected resource metadata import was refused (load-resource-metadata), where the library named no code of its own. | HTTP 400 (API), or /admin/applications/new redrawn with the reason |
-| `STS-ADMIN-0645` | A create from an imported RFC 9728 document was refused on /admin/applications/new, where the create named no code of its own, and the page was redrawn with the reason. | /admin/applications/new redrawn with the reason |
+| `STS-ADMIN-0645` *(retired)* | A create from an imported RFC 9728 document was refused on /admin/applications/new, where the create named no code of its own, and the page was redrawn with the reason. | /admin/applications/new redrawn with the reason |
 | `STS-ADMIN-0646` | A software statement was asked to be issued for an application that is not in the registry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0647` | The client metadata given for a software statement to issue is not a JSON object, or the input validator refused it. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0648` | The client metadata given for a software statement to issue names a JWT claim or a member only registration assigns. | the caller's refusal (errors on a console or /admin-api reply) |
@@ -3783,20 +4462,20 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0702` | A withdrawal of a pushed authorization request carried no request_uri, or one longer than the store could ever hold. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
 | `STS-ADMIN-0703` | A withdrawal of a pushed authorization request named a value that is not in the urn:ietf:params:oauth:request_uri: namespace this service issues pushed request_uris from (RFC 9126 section 2.2). | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
 | `STS-ADMIN-0704` | A withdrawal named a request_uri this realm does not hold: it was never pushed here, it expired and was swept, or it was already withdrawn. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0705` | An OAuth 2.0 monitoring console action threw; nothing is known to have changed and the log line carries the stack. | a 303 back to /admin/oauth2/monitor with error= |
+| `STS-ADMIN-0705` *(retired)* | An OAuth 2.0 monitoring console action threw; nothing is known to have changed and the log line carries the stack. | a 303 back to /admin/oauth2/monitor with error= |
 | `STS-ADMIN-0706` | The bootstrap administrator could not be created in the default realm, or could not be given both console roles, at startup. | none — logged |
 | `STS-ADMIN-0720` | Issuing an application a TLS client certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0721` | An application TLS client certificate's file password was too short, too long, or not the same twice. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0722` | An application TLS client certificate action named an application the registry does not hold. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0723` | Revoking an application's TLS client certificate was refused with no more specific code. | the caller's refusal (errors on a console or /admin-api reply) |
-| `STS-ADMIN-0724` | An asynchronous applications action on the console threw; nothing is known to have changed and the log line carries the stack. | the console's refusal (a redirect with the error) |
+| `STS-ADMIN-0724` *(retired)* | An asynchronous applications action on the console threw; nothing is known to have changed and the log line carries the stack. | the console's refusal (a redirect with the error) |
 | `STS-ADMIN-0780` | Resetting somebody's password was refused by the password policy or the store. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0781` | Issuing somebody a password reset link was refused (nobody by that name, or no store). | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0782` | A password reset link was issued and the person's password could not be removed, so the link was withdrawn. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0783` | Disabling somebody's primary security keys was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0784` | Disabling somebody's second factors was refused. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0785` | Requiring, or no longer requiring, a second factor of somebody was refused. | HTTP 400 (API) or a 303 with error= |
-| `STS-ADMIN-0786` | A realm administrator reached the console in a realm other than the one they signed in through, where they hold no role. | HTTP 403 on /admin |
+| `STS-ADMIN-0786` *(retired)* | A realm administrator reached the console in a realm other than the one they signed in through, where they hold no role. | HTTP 403 on /admin |
 | `STS-ADMIN-0787` | A realm administrator was refused a service-wide console page or action (the store, the listeners, the service Root, the realm registry, another realm). | HTTP 403 on /admin |
 | `STS-ADMIN-0788` | A realm administrator posted a setting that names the whole service rather than their realm. | HTTP 403 on /admin |
 | `STS-ADMIN-0789` | A new trust realm's bootstrap administrator could not be given its generated password in product mode. | none — logged |
@@ -3830,7 +4509,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0817` | A set-aud-sub act named no person or no client, a client_id with spaces, or an aud_sub over 255 characters or with control characters (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0818` | A set-aud-sub act named a person with no entry in this realm, or the directory would not write it (#148). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0819` | set-attribute, add-attribute or remove-attribute was refused and ldap/person_editor.ts named no more specific reason (#228). | HTTP 400 (API) or a 303 with error= |
-| `STS-ADMIN-0820` | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
+| `STS-ADMIN-0820` *(retired)* | A console form POST held a value outside the closed set the mirroring /admin-api operation's enum declares (#86). | HTTP 400 page |
 | `STS-ADMIN-0821` | A permission gated by role — admin:read, admin:write, or an application permission its resource lists in oauthRoleGatedPermission — was asked for on behalf of a person or an application no held role authorizes it for (for a person's console roles: no Admin Read or Admin Write, not signed in, or the bootstrap administrator before its claim), and was left off the tokens (#302, #303). | none — the token is issued without that scope (RFC 6749 section 3.3) |
 | `STS-ADMIN-0822` | Every scope a request asked for was a permission gated by role that the subject's roles do not authorize, so nothing was left to issue (#302, #303). | invalid_scope (RFC 6749 sections 4.1.2.1 and 5.2) |
 | `STS-ADMIN-0823` | add-permission or remove-permission named a native role — ADMIN_READ, ADMIN_WRITE or DEVICE_COMPLIANCE — whose permission is fixed (#303, #309). | none (a console or management API refusal, HTTP 400) |
@@ -3842,6 +4521,32 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0829` | create-role named a realm-wide role with the application separator "@" in it; that is how an application's role is named (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0830` | create-role named an application that is not in the realm's registry (#310). | none (a console or management API refusal, HTTP 400) |
 | `STS-ADMIN-0831` | add-permission put another application's permission on an application's role, which may authorize only its own application's permissions (#310). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0832` | add-attribute-claim named no directory attribute for the claim to carry (#94). | HTTP 400 (console and API) |
+| `STS-ADMIN-0833` | common/applications.js names an attribute as a boolean or a document field of the console's field grid and the schema has no single-valued editable attribute of that name; the grid draws it as an ordinary field. | none (startup log) |
+| `STS-ADMIN-0834` | A create or update-fields from the field grid carried a box for a value of a multi-valued attribute with nothing in it; every box present for a list must hold a value, and an empty list is no boxes. | HTTP 400 (console and API) |
+| `STS-ADMIN-0835` | update-fields named no attribute to change: neither `fields` nor `protocols` was given. | HTTP 400 (console and API) |
+| `STS-ADMIN-0836` | update-fields changed some attributes of an application and was refused one or more others; the reply names each refusal. | HTTP 400 (console and API) |
+| `STS-ADMIN-0837` | generate-did-key was refused: no such application, one not declared for the did family, an algorithm other than ES256, ES384 or EdDSA, or the public key could not be written. | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0838` | A person's update-fields named no attribute to change: `fields` was absent or empty and the form named no field. | HTTP 400 (console and API) |
+| `STS-ADMIN-0839` | A person's update-fields was refused one or more attributes, possibly after saving others; the reply names what was saved and each refusal. | HTTP 400 (console and API) |
+| `STS-ADMIN-0840` | A settings save ticked none of an ordered choice's values (webauthn.algorithms on /admin/webauthn): an empty list is refused rather than saved, because the setting would fall back to a default nobody chose. | none (a console refusal, drawn on the page) |
+| `STS-ADMIN-0841` | set-delegation-semantics was refused: a value is neither delegation nor impersonation, nobody has that name, or the entry could not be written (#186). | none (a console or management API refusal, HTTP 400) |
+| `STS-ADMIN-0842` | reveal-secret found nothing to reveal: no such application, or it holds no client secret with that id, or no registration access token (#446). | none (a management API refusal, HTTP 400) |
+| `STS-ADMIN-0843` | A request other than GET reached /admin: the console is a static application since #446, and its acts are /admin-api operations. | none (HTTP 404) |
+| `STS-ADMIN-0844` | The static console's script, admin-ui/console.js, could not be read; the shell loads one that says so (#446). | none (logged) |
+| `STS-ADMIN-0845` | add-conferring-client or remove-conferring-client named no client, or add-conferring-client named one that is not registered in the realm (#454). | — |
+| `STS-ADMIN-0846` | add-conferring-client named a client that already confers the role (#454). | — |
+| `STS-ADMIN-0847` | remove-conferring-client named a client that does not confer the role (#454). | — |
+| `STS-ADMIN-0848` *(retired)* | A directory-attribute catalogue action (attributes, attributes-all, attributes-clear) was asked of the Kerberos PAC claim set, which had no catalogue half (#493). Retired by #498: the set has a ticked catalogue like the other five, and the three actions act on it. | — |
+| `STS-ADMIN-0849` | An operator's rename of a person's passkey named nobody (#470). | HTTP 400 (API) |
+| `STS-ADMIN-0850` | An operator's rename of a person's passkey was refused: the name was not one, or no such key is registered for them (#470). | HTTP 400 (API) |
+| `STS-ADMIN-0851` | Registering a SAML 1.1 relying party was refused because no assertion consumer service URL was supplied. | HTTP 400 (API) or a 303 with error= |
+| `STS-ADMIN-0852` | Adding an owner to a group, on the group page or through POST /admin-api/groups/add-owner, was refused with no code of the directory's own; where the directory gives one, that code is recorded instead (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-ADMIN-0853` | Taking an owner off a group, on the group page or through POST /admin-api/groups/remove-owner, was refused with no code of the directory's own; where the directory gives one, that code is recorded instead (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-ADMIN-0854` | Adding an owner to a role, on the role page or through POST /admin-api/roles/add-owner, was refused with no code of the register's own; where the register gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-ADMIN-0855` | Taking an owner off a role, on the role page or through POST /admin-api/roles/remove-owner, was refused with no code of the register's own; where the register gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-ADMIN-0856` | Adding an owner to an application, on the application page or through POST /admin-api/applications/add-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-ADMIN-0857` | Taking an owner off an application, on the application page or through POST /admin-api/applications/remove-owner, was refused with no code of the registry's own; where the registry gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the application page |
 
 ## STS-API
 
@@ -3856,9 +4561,9 @@ Raised from: mgmt-api/.
 | `STS-API-0003` | A management API access token had expired. | HTTP 401 invalid_token, WWW-Authenticate: Bearer error="invalid_token" |
 | `STS-API-0004` | A management API access token was audienced to a different resource server than /admin-api. | HTTP 403 forbidden |
 | `STS-API-0005` | The XACML access policy refused a management API request made with a valid token, usually because the token lacks the admin:read or admin:write scope the method needs. | HTTP 403 forbidden |
-| `STS-API-0006` | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. | HTTP 403 forbidden |
-| `STS-API-0007` | In product mode with the token gate off, a management API request arrived with nobody signed in. | HTTP 401 JSON (HTTP 403 page for a browser) |
-| `STS-API-0008` | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. | HTTP 403 forbidden (HTTP 403 page for a browser) |
+| `STS-API-0006` *(retired)* | In product mode with the token gate off, the XACML access policy refused a management API caller who does hold a console role. Retired by #446: product mode ignores adminApi.authRequired=false, so the token is always required there and nothing falls back to a console session. | — |
+| `STS-API-0007` *(retired)* | In product mode with the token gate off, a management API request arrived with nobody signed in. Retired by #446, as STS-API-0006 was. | — |
+| `STS-API-0008` *(retired)* | In product mode with the token gate off, a signed-in management API caller did not hold the console role the method needs. Retired by #446, as STS-API-0006 was. | — |
 | `STS-API-0009` | A management API request body did not match the operation's JSON Schema (an unknown member, a wrong type, or a value outside a closed set its enum declares — #86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0010` | A management API request schema would not compile at startup, so that operation runs unvalidated. | — |
 | `STS-API-0011` | The crypto reporter slot that admin-ui/crypto_metadata.ts fills was not installed, so the crypto report, the key list or a key export could not be answered. | HTTP 503 { ok: false, errors } |
@@ -3926,6 +4631,15 @@ Raised from: mgmt-api/.
 | `STS-API-0123` | A management API access token carried the admin scope an operation needs, and the client it was issued to does not declare that scope in its oauthAllowedScope (in the realm that issued it). | HTTP 403 forbidden |
 | `STS-API-0124` | A management API query parameter held a value outside the closed set its operation's enum declares (#86). | HTTP 400 { ok: false, errors } |
 | `STS-API-0125` | A management API access token carried the admin scope an operation needs, and its subject — a person, or the application on a client_credentials token — no longer holds a role authorizing it in the realm that issued it (#302, #303). | HTTP 403 forbidden |
+| `STS-API-0126` | A management API access token was issued on a sign-on session that has since ended, by a sign-out or by running out, so the token is no longer honoured (#446). | invalid_token (HTTP 401) |
+| `STS-API-0127` | One of the admin console's own operations, under /admin-api/console, was asked with an access token that does not carry admin:console, which only the console's client is issued (#454). | forbidden (HTTP 403) |
+| `STS-API-0128` | A form helper of the admin console was asked at its old management API address; it is under /admin-api/console since #454. | HTTP 404 |
+| `STS-API-0129` | A management API operation whose drawing is the admin console's was asked for format=svg; the drawing is its console twin's under /admin-api/console (#454). | HTTP 400 |
+| `STS-API-0130` | An unknown action was asked at a management API address whose form helpers moved to /admin-api/console (#454); the refusal names the actions the address still declares. | HTTP 400 |
+| `STS-API-0131` | A management API request to change the Kerberos PAC claim set was refused (#493); the refusal's own code names why when it has one. | HTTP 400 |
+| `STS-API-0132` | A management API request carrying only an owner's scopes (owner:read, owner:write) reached an operation that is not one an owner may ask: an owner token reaches only the operations on one object of the four kinds it may own (#607). | HTTP 403 |
+| `STS-API-0133` | The access-control policy's owner rule refused a management API request made with an owner's token (#607): the caller does not own the object, the object is closed to its owners, the action is not one an owner may take on its kind, or it would remove the last owner. | HTTP 403 |
+| `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
 
 ## STS-PORTAL
 
@@ -3944,14 +4658,14 @@ Raised from: portal/.
 | `STS-PORTAL-0007` | An activation chose no way to sign in: no password, and no security key used instead of one. | HTTP 400 page |
 | `STS-PORTAL-0008` | A new password set from the portal (at activation or on the password page) was refused by the password policy or could not be written. | HTTP 400 page |
 | `STS-PORTAL-0009` | An authenticator app was asked for during an activation and its enrolment could not be started; the activation finished without it. | — |
-| `STS-PORTAL-0010` | The access policy refused a signed-in person a portal page or action. | HTTP 403 page |
-| `STS-PORTAL-0011` | The portal could not start its OpenID Connect sign-in: the sts-user-portal client entry is missing or has no secret, or in product mode the portal was reached at an address not registered as a redirect URI. | HTTP 503 page |
-| `STS-PORTAL-0012` | The portal's OpenID Connect callback could not complete a sign-in (a state, code, token or ID Token step failed). | HTTP 400 page |
-| `STS-PORTAL-0013` | The portal's OpenID Connect callback threw unexpectedly. | HTTP 500 page |
+| `STS-PORTAL-0010` *(retired)* | The access policy refused a signed-in person a portal page or action. | HTTP 403 page |
+| `STS-PORTAL-0011` *(retired)* | The portal could not start its OpenID Connect sign-in: the sts-user-portal client entry is missing or has no secret, or in product mode the portal was reached at an address not registered as a redirect URI. | HTTP 503 page |
+| `STS-PORTAL-0012` *(retired)* | The portal's OpenID Connect callback could not complete a sign-in (a state, code, token or ID Token step failed). | HTTP 400 page |
+| `STS-PORTAL-0013` *(retired)* | The portal's OpenID Connect callback threw unexpectedly. | HTTP 500 page |
 | `STS-PORTAL-0014` | The portal's directory slot was offered a filler without personEntry() and was not installed; the Overview falls back to what the session carries. | — |
 | `STS-PORTAL-0015` | Reading the signed-in person's directory entry for the Overview threw; the page fell back to what the session carries. | — |
 | `STS-PORTAL-0016` | The QR code for an authenticator app enrolment could not be rendered; the secret is offered for typing only. | — |
-| `STS-PORTAL-0017` | A portal form post was refused because its CSRF token was missing or did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0017` *(retired)* | A portal form post was refused because its CSRF token was missing or did not match the session. | HTTP 403 page |
 | `STS-PORTAL-0018` | Confirming an authenticator app code was tried too often and the rate limiter refused the attempt. | HTTP 429 page |
 | `STS-PORTAL-0019` | A password change was tried too often and the rate limiter refused the attempt. | HTTP 429 page |
 | `STS-PORTAL-0020` | Self-service signing key generation was tried too often and the rate limiter refused it. | HTTP 429 page |
@@ -3987,7 +4701,7 @@ Raised from: portal/.
 | `STS-PORTAL-0072` | A new password from a reset link was refused before it was tried: missing, not typed twice alike, or the reserved password. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0073` | A new password from a reset link was refused by the password policy or the store. | the reset form again, HTTP 400 |
 | `STS-PORTAL-0074` | The realm chooser in front of /portal was asked for a realm that is not defined. | HTTP 400 on /portal |
-| `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off. | HTTP 409, the page redrawn saying so |
+| `STS-PORTAL-0075` | An account holder asked for a RISC opt-out move the section 2.8 state diagram does not allow from where their account is, or RISC is off — or for any move on a service account, to which the opt-out gate does not apply (#221). | HTTP 409, the page redrawn saying so |
 | `STS-PORTAL-0076` | An account holder's RISC opt-out move was not recorded: Shared Signals is not running in this process, so there was no register to move. | HTTP 503, the page redrawn saying so |
 | `STS-PORTAL-0077` | A person's own app password was not made on /portal/app-passwords; the credential store's code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0078` | A person asked /portal/app-passwords to revoke an app password they do not hold. | HTTP 404 page |
@@ -3995,7 +4709,7 @@ Raised from: portal/.
 | `STS-PORTAL-0080` | A keytab download on /portal/kerberos was refused because the password typed is not the person's current one. | HTTP 400 page |
 | `STS-PORTAL-0081` | A keytab download on /portal/kerberos was refused by the Kerberos register after the password verified; its own STS-KRB code is on the audit row. | HTTP 400 page |
 | `STS-PORTAL-0082` | A POST to /portal/kerberos named an action the page does not have. | HTTP 400 page |
-| `STS-PORTAL-0083` | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
+| `STS-PORTAL-0083` *(retired)* | A POST to /portal/sign-ins was refused: its CSRF token did not match the session. | HTTP 403 page |
 | `STS-PORTAL-0084` | A POST to /portal/sign-ins named a sign-in that is not the person's own, is too old, or has already been answered (#62 P6). | HTTP 400 page |
 | `STS-PORTAL-0085` | A POST to /portal/consents named no consent of the signed-in person's own to withdraw — none held for that application and scope, or no scope named (#172). | HTTP 400 page |
 | `STS-PORTAL-0086` | A POST to /portal/delegate could not set or clear the signed-in person's delegate (stsMayAct) (#108). | HTTP 400 page |
@@ -4009,7 +4723,52 @@ Raised from: portal/.
 | `STS-PORTAL-0094` | An unlink on /portal/claim-sources named a Claims Provider the person has no link to (#147). | none (a portal page, HTTP 400) |
 | `STS-PORTAL-0095` | A user code typed or approved on /portal/device matched no waiting device (#150). | none (a portal page, HTTP 404 or 400) |
 | `STS-PORTAL-0096` | A sign-on session typed too many user codes that matched nothing on /portal/device and is refused for ten minutes (RFC 8628 section 5.1, #150). | none (a portal page, HTTP 429) |
-| `STS-PORTAL-0097` | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
+| `STS-PORTAL-0097` *(retired)* | Answering a device sign-in on /portal/device failed unexpectedly (#150). | none (a portal page, HTTP 500) |
+| `STS-PORTAL-0098` *(retired)* | A live admin console session in the same browser was not adopted by /portal — it names nobody, the realm it was signed in through is no longer defined, its tokens ran out beyond renewal, or its person is homed in another cell — so the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0099` *(retired)* | Adopting a live admin console session on /portal threw; the portal signs in the ordinary way. | none (the portal runs its own sign-in) |
+| `STS-PORTAL-0100` | A security key was chosen during an activation beside a password and its enrolment could not be started; the activation went on without it. | — |
+| `STS-PORTAL-0101` | A security key was chosen during an activation instead of a password and its enrolment could not be started (the mechanism or role is off, or the authentication policy refuses it), so the activation was refused rather than finished with no way in. | HTTP 400 page |
+| `STS-PORTAL-0102` | An activation's security key step did not register a key — the enrolment had expired, the browser ran no ceremony, the RP ID did not fit, or the registration did not verify — and the step was drawn again. | HTTP 400 page |
+| `STS-PORTAL-0163` | A POST to /portal/gnap named a GNAP grant that is not one the signed-in person approved, or one with nothing live left to revoke (#432). | HTTP 400 page |
+| `STS-PORTAL-0243` | A POST to /portal/ciba answered a GNAP access request that is not waiting for the signed-in person: answered already, run out, or somebody else's (#432 phase 6). | HTTP 400 page |
+| `STS-PORTAL-0244` | A resource owner approved a GNAP access request on /portal/ciba with a session that does not meet the authentication level the rights need; the page offers to sign in again with it (#432 phase 6, RFC 9470). | HTTP 403 page |
+| `STS-PORTAL-0245` | A person's rename of one of their passkeys on /portal/keys was refused: the name was not one, or the id is not one of theirs (#470). | HTTP 400 page |
+| `STS-PORTAL-0246` | A method other than GET was sent to a /portal path: the portal is a static application since #568 and nothing is posted to it. | HTTP 404 |
+| `STS-PORTAL-0300` | A Claims Provider's callback arrived in a browser that does not hold the binding cookie the link was started with, so it was refused (#568: the account-linking CSRF the portal session closed). | HTTP 303 to /portal/claim-sources?problem= |
+| `STS-PORTAL-0301` | A claim-source link was not started: the account API token is placed on no sign-on session the registry still holds, so the callback could never be bound to it. | HTTP 400 |
+| `STS-PORTAL-0302` | The access policy refused a Claims Provider's callback (user-portal, manage-own). | HTTP 303 to /portal/claim-sources?problem= |
+| `STS-PORTAL-0303` | A Claims Provider's callback was refused because the sign-on session the link was started from has ended, or is no longer the person's. | HTTP 303 to /portal/claim-sources?problem= |
+| `STS-PORTAL-0310` | A device challenge or link could not be bound: the account API token's sign-on session is not known (the token registry dropped it), so the person is asked to sign in again. | HTTP 400 |
+| `STS-PORTAL-0589` | A Credential Offer asked for on /portal/wallet (POST /account-api/credentials/offers) named a credential configuration this realm's OpenID4VCI issuer does not offer (#589). | HTTP 400 JSON |
+| `STS-PORTAL-0590` | A Credential Offer asked for on /portal/wallet was refused because the sign-on session the portal's token was issued on is no longer known, or continued without signing in: a pre-authorized offer is made on that session's authority (#589, #240). | HTTP 403 JSON |
+
+## STS-ACCOUNT
+
+**Account API.** The user portal's API, /account-api: the access token it takes (this realm's, DPoP-bound, account:manage, a live sign-on session), the access policy, and the checks on every request before an operation runs.
+
+Raised from: account-api/.
+
+| Code | What failed | Client sees |
+|---|---|---|
+| `STS-ACCOUNT-0001` | A request to /account-api presented no access token. | RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP) |
+| `STS-ACCOUNT-0002` | An /account-api access token was not issued by this realm's authorization server, or its signature does not verify. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0003` | An /account-api access token had expired. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0004` | An /account-api access token's typ header was not at+jwt (an ID Token or a refresh token presented as one). | RFC 9068 section 4 |
+| `STS-ACCOUNT-0005` | An /account-api access token named an issuer this realm does not publish at the address it was presented at. | RFC 9068 section 4 |
+| `STS-ACCOUNT-0006` | An /account-api access token was audienced to another resource. | RFC 9068 section 4; RFC 8707 |
+| `STS-ACCOUNT-0007` | An /account-api access token has been revoked or disowned, or the account it was issued to is disabled. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0008` | An /account-api access token was issued on a sign-on session that has since ended. | RFC 6750 section 3.1 invalid_token |
+| `STS-ACCOUNT-0009` | A certificate-bound /account-api access token was presented on a connection without its certificate. | RFC 8705 section 3.1 |
+| `STS-ACCOUNT-0010` | A DPoP-bound /account-api access token was presented as a Bearer token. | RFC 9449 section 7.1 |
+| `STS-ACCOUNT-0011` | The DPoP proof sent with an /account-api request was refused, or a nonce was wanted. | RFC 9449 sections 4.3 and 8 |
+| `STS-ACCOUNT-0012` | An /account-api access token names no person (a client's own token). | HTTP 403 |
+| `STS-ACCOUNT-0013` | An /account-api access token does not carry account:manage. | RFC 6750 section 3.1 insufficient_scope |
+| `STS-ACCOUNT-0014` | The client an /account-api access token was issued to no longer declares account:manage. | HTTP 403 |
+| `STS-ACCOUNT-0015` | The access policy refused an /account-api request (user-portal, read or manage-own). | HTTP 403 |
+| `STS-ACCOUNT-0016` | An /account-api request's query did not validate against its operation's schema. | HTTP 400 |
+| `STS-ACCOUNT-0017` | An /account-api request body was not JSON. | HTTP 415 |
+| `STS-ACCOUNT-0018` | An /account-api request body did not validate against its operation's schema. | HTTP 400 |
+| `STS-ACCOUNT-0019` | An /account-api operation threw; answered 500. | HTTP 500 |
 
 ## STS-LOGOUT
 
@@ -4019,13 +4778,16 @@ Raised from: logout/.
 
 | Code | What failed | Client sees |
 |---|---|---|
-| `STS-LOGOUT-0001` | A sign-out named somebody other than the caller while naming another person is closed (logout.anyUser off, or product mode). | HTTP 403 {error: forbidden} or a 403 page |
-| `STS-LOGOUT-0002` | A sign-out request carried no session cookie and named nobody, so there is nobody to act on. (A browser GET is sent to sign in instead, which is not a failure.) | HTTP 401 {error: no_subject} or a 401 page |
-| `STS-LOGOUT-0003` | A sign-out form failed validation (an unrecognised scope value, or an over-long selection). | HTTP 400 page |
+| `STS-LOGOUT-0001` | A sign-out named somebody other than the caller while naming another person is closed (logout.anyUser off, or product mode). | HTTP 403 {error: forbidden}, or { ok: false, errors } from /authn-api/logout |
+| `STS-LOGOUT-0002` | A sign-out request carried no session cookie and named nobody, so there is nobody to act on. (A browser GET is sent to sign in instead, which is not a failure.) | HTTP 401 {error: no_subject}, or { ok: false, errors } from /authn-api/logout |
+| `STS-LOGOUT-0003` | A sign-out's body failed validation (an unrecognised scope value, an over-long selection, or a field the page's act does not take). | HTTP 400 {error: invalid_request}, or { ok: false, errors } from /authn-api/logout |
 | `STS-LOGOUT-0004` | One family's live items could not be read for a sign-out inventory; the page reports that family as unreadable. | — |
 | `STS-LOGOUT-0005` | One family's live items could not be read while a sign-out was ending them, so nothing in that family was ended. | — |
 | `STS-LOGOUT-0006` | Ending one live item during a sign-out failed with an exception; it is reported as not ended. | — |
 | `STS-LOGOUT-0007` | A sign-out ended nothing: nothing live was found for the identity, or nothing that was selected could be ended. | — |
+| `STS-LOGOUT-0008` | The signed-out document (POST /logout/signed-out, #577) was posted no sign-out result, or one this service did not MAC, made in another trust realm, or expired. | HTTP 400 page |
+| `STS-LOGOUT-0009` | The signed-out document (POST /logout/signed-out, #577) was posted with an origin this service does not answer on, or with none (or null) and no Sec-Fetch-Site: same-origin. | HTTP 403 page |
+| `STS-LOGOUT-0010` | A form was posted to /logout, which is no longer an act (#577): the page's act is POST /authn-api/logout. The browser is sent to the page, which ends nothing. | HTTP 303 to /logout |
 
 ## STS-REG
 
@@ -4117,7 +4879,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0111` | A console or /admin-api write put a value on oauthAuthorizationDetailsTypes that is not a type name. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0112` | A console or /admin-api write put an unusable authorization_details type definition on oauthAuthorizationDetailsType: not a name or a JSON object, a stray member, a location that is not an absolute URI, a schema that does not compile, or the built-in openid_credential. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0120` | An RFC 7591 registration or RFC 7592 update gave require_pushed_authorization_requests a value that is not a boolean. | invalid_client_metadata (HTTP 400) |
-| `STS-REG-0121` | A console or /admin-api write put a value other than TRUE or FALSE on oauthRequirePushedAuthorizationRequests. | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0121` | A console or /admin-api write put a value other than TRUE or FALSE on oauthRequirePushedAuthorizationRequests or (#178) oauthHttpSignedRequests. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0130` | A registration gave an RFC 8705 certificate subject parameter a value that is not what it names (a DN, host name, URI, IP address or mailbox). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0131` | A registration gave more than one of RFC 8705 section 2.1.2's five certificate subject parameters. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0132` | A registration gave tls_client_certificate_bound_access_tokens a value that is not a boolean. | invalid_client_metadata (HTTP 400) |
@@ -4134,7 +4896,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0163` | A confirm or discard of a SAML service provider's observed signing certificate found none on the entry. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-REG-0164` | An RFC 7591 registration or RFC 7592 update named an id_token_encrypted_response_alg or _enc this service cannot honour (a symmetric family, an unknown content encryption), or an enc with no alg. | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0165` | A registration named id_token_encrypted_response_alg with no inline jwks key of the right type to encrypt to (a jwks_uri is never fetched). | invalid_client_metadata (HTTP 400) |
-| `STS-REG-0166` | An application's client secret has expired, or expires within oauth2.clientSecretExpiryWarningDays — found by the daily scheduler job oauth2.client-secret-expiry. | none — an audit row and a warning; rotate the secret on /admin/applications |
+| `STS-REG-0166` | Every client secret an application holds has expired, or one expires within oauth2.clientSecretExpiryWarningDays — found by the daily scheduler job oauth2.client-secret-expiry. | none — an audit row and a warning; rotate the secret on /admin/applications |
 | `STS-REG-0167` | A client registration named a subject_type, sector_identifier_uri or token_endpoint_auth_signing_alg this service cannot honour (OIDC Core sections 8 and 9). | HTTP 400 {error: invalid_client_metadata} |
 | `STS-REG-0168` | A console or /admin-api write set oauthSubjectType, oauthSectorIdentifierUri or oauthTokenEndpointAuthSigningAlg to a value this service cannot honour. | HTTP 400 |
 | `STS-REG-0169` | A registered sector_identifier_uri could not be fetched, was not a JSON array of URIs, or did not list every redirect_uri (OIDC Core section 8.1). | HTTP 400 {error: invalid_client_metadata} |
@@ -4162,12 +4924,55 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0191` | A generic application edit tried to remove a value of oauthGlobalConsent. A global consent is withdrawn only through the consent register (revoke-global-consent), which also revokes what was issued under it and records when (#172). | HTTP 400 page / {ok: false} |
 | `STS-REG-0192` | A consent was withdrawn and its tokens revoked, but the withdrawal instant could not be written onto the person's or the application's entry, so a re-consent could revive a refresh token the revocation did not reach (#172). | none — logged |
 | `STS-REG-0193` | A write setting an application's override of a development-only setting — saml2SignAssertion, saml11SignAssertion or saml11SignResponse to FALSE, or saml2KeyTransportAlgorithm to rsa-1_5 — was refused because the realm is in product mode, where the value would be ignored (#181). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
-| `STS-REG-0194` | A write of a delegation policy attribute was refused (#108): appTrustedToImpersonate that is not TRUE or FALSE, or an appDelegationSubjectGroup value that is not a DN. | console: the page's error list; /admin-api: HTTP 400 |
+| `STS-REG-0194` | A write of a delegation policy attribute was refused (#108): appNotDelegated that is not TRUE or FALSE, delegation semantics that are neither delegation nor impersonation (#186), or an appDelegationSubjectGroup value that is not a DN. | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0195` | A write of gnapMtlsTrust on an application was refused: the value is neither pki nor pinned (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0196` | A write of gnapMtlsTrust=pinned on an application was refused because the realm holds GNAP mutual TLS to a PKI (gnap.mtlsTrust resolves to pki); an entry may be stricter than the realm, never weaker (#107). | console: the page's error list; /admin-api: HTTP 400 |
 | `STS-REG-0197` | A registration's CIBA metadata was refused: an unknown backchannel_token_delivery_mode, no https notification endpoint for ping or push, a signing algorithm that is not asymmetric, or a user code parameter that is not a boolean (#131). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0198` | FAPI-CIBA: a registration under a FAPI profile asked for the push delivery mode, which the profile does not allow (#142). | invalid_client_metadata (HTTP 400) |
 | `STS-REG-0199` | A command_endpoint (OpenID Provider Commands, #151) was not an https URL with no fragment, at registration or update (a console or API write is refused under STS-REG-0071). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0200` | A claim-set attribute claim named an attribute it may not carry: not an attribute name, a secret or binary value (userPassword, jpegPhoto, a certificate), or one this service keeps (sts*, hoba*, app*, pwd*) (#94). | HTTP 400 (console and API) |
+| `STS-REG-0201` | A JWT or UserInfo attribute claim named a type that is not string, number, boolean or json (#94). | HTTP 400 (console and API) |
+| `STS-REG-0202` | A per-receiver Shared Signals override on an application entry was given a value its setting does not take, or a reason language that is not a BCP 47 tag. | HTTP 400 (console and API) |
+| `STS-REG-0203` | An application attribute whose values are a closed set (the token endpoint authentication method, a CIBA delivery mode or signing algorithm, a GNAP key proof, algorithm, start mode or token format) was given a value outside it. | HTTP 400 (console and API) |
+| `STS-REG-0204` | A DID document value was refused: a didPublicKeyJwk that is not a public EC, OKP, RSA or AKP JWK (a private member is refused), a didService that is not <type>\|<http(s) URL>, or a didAlsoKnownAs that is not an absolute URI. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0205` | An application carries its own claim or SAML attribute rows (oauthClaims*, saml2CustomAttributes, saml11CustomAttributes) that are not a JSON array or that the claim-set rules refuse; they are ignored at issuance and the realm's set is issued. | none (logged at issuance; nothing is refused) |
+| `STS-REG-0206` | An application's own custom claim or SAML attribute was refused: an unknown claim set, a row the claim-set rules refuse (a reserved name, an attribute that may not be released, a type that is not one), a name to remove that it does not hold, or an application not declared for the set's protocol. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0207` | An application's token endpoint authentication methods (oauthTokenEndpointAuthMethod) were refused: "none" declares a public client and cannot be held beside any other method. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0208` | A client secret was not added or rotated in: the application already holds oauth2.clientSecretsMax secrets. Remove one first. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0209` | A client secret was not removed: no secret on the application has the id named. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0210` | The client secret pinned by adminApi.clientSecret on sts-management-api was not removed: every /admin-api token is minted with it. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0211` | A client secret was not added: its lifetime or description is not one this service accepts. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0212` | A sealed client secret will not open under this process's key-encryption key — it was written under a different one — so it authenticates nothing until it is replaced. | none (logged; the token endpoint answers invalid_client) |
+| `STS-REG-0213` | A client secret could not be sealed, so it was not written: storing it in the clear where keys persist would put a working client credential in every directory dump. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0214` | An application carries its own directory-attribute selection for a claim set or for its Verifiable Credentials (oauthClaimAttributes*, saml2ClaimAttributes, saml11ClaimAttributes, vcCredentialClaimAttributes) that is not a JSON array of catalogue attribute names; it is ignored at issuance and the realm's selection is issued (#495). | none (logged at issuance; nothing is refused) |
+| `STS-REG-0215` | An application's own directory-attribute selection was refused: an unknown claim set, an attribute the catalogue does not hold, a value that is not a JSON array of names, or an application not declared for the set's protocol (#495). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0294` | An access type was not declared on an application: no such application, or the definition built from the fields does not read (the access-type catalogue's grammar, #432). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0295` | An access type could not be taken off an application: it declares no type of that name (#432). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0334` | A gnapOwnerLookupUri is not an https URL template with a host, no user information, query or fragment, and {identifier} exactly once as a whole path segment (#432 phase 5). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0335` | A write of appAllowedToDelegateTo or appAllowedToActOnBehalfOf was refused: the value names the application it is written on — its identifier, an identifier it answers to, or an audience it registered (#459) — or a write of appMayAct names its own entry by DN (#461). Each names the OTHER party of a delegation. | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
+| `STS-REG-0336` | A Kerberos PAC claim row's name is neither letters, digits, ".", "_" and "-" (which become ad://ext/<name>:<hex>) nor a whole ad://ext/<name>:<hex> claim id (#493). | HTTP 400 (console and API) |
+| `STS-REG-0337` | A Kerberos PAC claim row named a type that is not string, int64, uint64 or boolean (#493). | HTTP 400 (console and API); [MS-ADTS] 2.2.18.2 |
+| `STS-REG-0338` | A Kerberos PAC claim row's fixed value is not its type: not an integer in range, not true or false, or an empty string (#493). | HTTP 400 (console and API) |
+| `STS-REG-0339` | A registration's UserInfo encryption members were malformed: userinfo_encrypted_response_alg not one of the asymmetric families this service encrypts a response with, an enc it does not have, or an enc without an alg (OpenID Connect Registration section 2, #290). | HTTP 400 {error: invalid_client_metadata} |
+| `STS-REG-0340` | A console or /admin-api write put a value a registration would refuse on one of the ID Token, UserInfo or JARM signing and encryption attributes (oauthIdToken*, oauthUserinfo*, oauthAuthorization*ResponseAlg / Enc) or on oauthDefaultAcrValues / oauthDefaultMaxAge, or an enc onto an entry with no alg (#290). | the caller's refusal (errors on a console or /admin-api reply) |
+| `STS-REG-0341` | An application entry holds an oauthDefaultAcrValues or oauthDefaultMaxAge value the registration grammar refuses (only an ldapmodify can leave one); it is ignored rather than required of every sign-in (#290). | none — logged; the request is answered without the default |
+| `STS-REG-0342` | A global consent answered for a person at sign-in, and the record of it (oauthConsentApplied, #537) could not be written on their entry, so /portal/consents will not list it. | none — logged; the sign-in goes on |
+| `STS-REG-0343` | A resource server carries an oauthPermissionClaims value that is not a JSON object (only an ldapmodify can leave one); its permissions map no claim onto the access tokens addressed to it. | none — logged; the token is issued without those claims |
+| `STS-REG-0344` | A claim mapping for a resource server's permission was refused: the permission is not one it exposes (oauthPermission), an attribute is not in the claim catalogue, the value is not a JSON object of lists, or the application is not declared for OAuth 2.0 or OpenID Connect. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0345` | An application export was refused: no application with that identifier is recorded in this realm. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0346` | An application export with credential material was refused: a sealed credential on the entry will not open under this process's key-encryption key, so it cannot be written in the clear. Nothing was exported. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0347` | An application import was refused: the file is not LDIF holding exactly one record. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0348` | An application import was refused: the record is not an application entry (its DN is not cn=…,ou=applications,…, or it carries no appIdentifier). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0349` | An application import was refused: an application with that identifier is already recorded in this realm. Nothing is overwritten. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0350` | An application import was refused: the record carries a DERIVED attribute (a counter, a sighting, an observed value), which records what happened to the application this service saw rather than what an administrator configures. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0351` | An application import was refused: the record carries an attribute that is not in the application schema, or a credential that no import can write (a Kerberos service key, an enrollment key or challenge, a GNAP macaroon key). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0352` | An application import created the entry but could not write its client secrets (they would not seal, or the directory refused the write). The application is there without them. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0353` | An owner could not be added to or taken off an application: there is no application by that identifier (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0354` | Adding an owner to an application was refused: no owner was named (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0355` | Adding an owner to an application was refused: the value names no person and no group in this realm (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0356` | Adding an owner to an application was refused: it already names the most owners an application may (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0357` | Taking an owner off an application was refused: the value is not one of its owners (#604). | HTTP 400 (API) or a refusal on the application page |
+| `STS-REG-0358` | An application's owners could not be written to the directory (#604). | HTTP 400 (API) or a refusal on the application page |
 
 ## STS-DBG
 

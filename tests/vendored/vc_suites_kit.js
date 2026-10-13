@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -9,10 +9,15 @@
 // WHAT THE SIX W3C VC AND DID SUITE JOBS SHARE (#194-#199, 2026-09-26). Not a
 // job.
 //
-//   * setUp()        a THROWAWAY DEVELOPMENT REALM — the VC-API adapter
-//                    (oid4vc/vc_api.ts) is a test control, closed in
-//                    product, and a realm's mode is its own, so this runs in
-//                    every local mode — with a client that may be issued
+//   * setUp()        a THROWAWAY DEVELOPMENT REALM with the W3C VC API
+//                    turned on (oid4vc/vc_api.ts; `vcApi.enabled` is off by
+//                    default since it became a product surface, #598, and
+//                    `vcApi.maxPerWindow` is raised past what a suite sends
+//                    in a window) — development because the client is made
+//                    by open registration, a development door; the VC API
+//                    asks for the same token in both modes, and
+//                    `sts_vc_api_product.js` holds it in a product realm —
+//                    with a client that may be issued
 //                    `vc-api:issue` and `vc-api:verify` (this service's own
 //                    protected scopes, declared by an administrator) and a
 //                    token carrying both. The suites authenticate the way
@@ -101,7 +106,8 @@ async function setUp(prefix) {
   const realmBase = root + "/realm/" + realm;
   await ok(root + "/admin-api/realms/create", { id: realm,
     domain: realm + ".example.net", name: "W3C suite " + realm,
-    overrides: { "global.mode": "development" } },
+    overrides: { "global.mode": "development", "vcApi.enabled": true,
+                 "vcApi.maxPerWindow": 100000 } },
     "created the development realm " + realm);
   await ok(realmBase + "/admin-api/config/set",
            { key: "oauth2.openRegistration", value: true },
@@ -194,7 +200,7 @@ function writeConfig(dir, implementation, settings) {
 // A MOCHA RUN. `files` are paths under the suite (default: tests/). Answers
 // `{ tests: [{ title, state, message }], stats }`.
 // ---------------------------------------------------------------------------
-function runMocha(dir, ctx, opts) {
+async function runMocha(dir, ctx, opts) {
   log.debug("Entering runMocha(). " + dir);
   const o = opts || {};
   const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "vc-suite-")),
@@ -211,9 +217,39 @@ function runMocha(dir, ctx, opts) {
     NODE_PATH: [path.join(__dirname, "..", "node_modules"),
                 process.env.NODE_PATH || ""].join(path.delimiter)
   }, o.env || {});
-  const done = childProcess.spawnSync(process.execPath, args, {
-    cwd: dir, env: env, encoding: "utf8", maxBuffer: 256 * 1024 * 1024,
-    timeout: o.wallMs || 20 * 60 * 1000 });
+  // ASYNCHRONOUS, NOT spawnSync (2026-09-28): a blocked event loop never
+  // processed the service closing this job's idle keep-alive connection
+  // while mocha ran, and the job's next fetch() went out on the dead socket
+  // (`fetch failed`, sts_vc_di_ecdsa_suite's section 2 in single-node).
+  // enroll_clients_kit.js's run() is the same fix for the same failure.
+  const done = await new Promise(function (resolve) {
+    const child = childProcess.spawn(process.execPath, args,
+                                     { cwd: dir, env: env });
+    let stdout = "";
+    let stderr = "";
+    let failed = null;
+    const wall = setTimeout(function () {
+      failed = new Error("mocha ran past " + (o.wallMs || 20 * 60 * 1000) +
+                         " ms");
+      child.kill("SIGKILL");
+    }, o.wallMs || 20 * 60 * 1000);
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", function (chunk) {
+      stdout += chunk;
+    });
+    child.stderr.on("data", function (chunk) {
+      stderr += chunk;
+    });
+    child.on("error", function (e) {
+      failed = e;
+    });
+    child.on("close", function (status) {
+      clearTimeout(wall);
+      resolve({ error: failed, status: status, stdout: stdout,
+                stderr: stderr });
+    });
+  });
   if (done.error) {
     throw new Error("mocha could not be run: " + done.error.message);
   }

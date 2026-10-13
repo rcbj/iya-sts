@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_xacml_editor.js
 //
@@ -46,10 +46,14 @@
 // THE ASSERTION THIS FILE IS REALLY FOR.
 //
 // **A RULE BUILT BY PRESSING BUTTONS CHANGES WHAT THE PDP DECIDES.** Sections 5
-// and 8 build one out of four form submissions, ask `/xacml/protected` about
-// somebody who was refused before, and get a 200 — then remove the rule on the
-// page and watch the refusal come back. Everything else here is about the
-// editor; that pair is about whether the editor edits the policy the service is
+// and 8 build one out of four form submissions, ask the PDP about somebody
+// who was refused before, and see them allowed — then remove the rule on the
+// page and watch the refusal come back. (They asked `/xacml/protected` until
+// #596 moved the demonstration PEP to the remote PEP container, which decides
+// for ONE realm, the launcher's; this job's realm is its own, so it asks the
+// PDP through the console's what-if, `GET /admin-api/xacml/decide`, whose
+// deny-biased outcome is what that PEP enforced.) Everything else here is
+// about the editor; that pair is about whether the editor edits the policy the service is
 // actually deciding with, which is the one claim the page makes that a person
 // cannot check by looking at it.
 //
@@ -194,8 +198,11 @@ function api(path) {
 function editorUrl(policy) {
   log.debug("Entering editorUrl().");
   log.debug("Leaving editorUrl().");
-  return realmUrl("/admin/xacml/editor" +
-                  (policy ? "?policy=" + encodeURIComponent(policy) : ""));
+  // THE EDITOR IS A TAB OF /admin/xacml SINCE 2026-10-11 (the protocol
+  // pages were consolidated into tabs); the fragment opens it.
+  return realmUrl("/admin/xacml" +
+                  (policy ? "?policy=" + encodeURIComponent(policy) : "") +
+                  "#xacml-tab-editor");
 }
 
 // ---------------------------------------------------------------------------
@@ -207,11 +214,11 @@ function editorUrl(policy) {
 // A CLIENT CERTIFICATE, FOR THE TWO DOORS THIS FILE OPENS THAT ARE NOT THE
 // CONSOLE (2026-09-06).
 //
-// `/xacml/protected` and `/xacml/policies` went behind the built-in
-// `XACML_USER` role, and this job reads both — the first is what makes an edit
-// on the page mean something, and the second is how it learns which policy
-// became the root. `fetch` cannot present a client certificate, so those two
-// go through `https.request` with a credential minted here.
+// `/xacml/policies` went behind the built-in `XACML_USER` role (and so did
+// `/xacml/protected`, which this job read until #596), and this job reads it
+// — it is how it learns which policy became the root. `fetch` cannot present
+// a client certificate, so it goes through `https.request` with a credential
+// minted here.
 //
 // **IT REQUIRES `tests/tools/pep-credential.js` RATHER THAN BUILDING A CHAIN
 // OF ITS OWN**, which is the rule `sts_xacml_endpoints.js` states: a second
@@ -234,9 +241,10 @@ var xacmlUser = null;
 async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
-    subject: "CN=xacml-user-1,OU=xacml-users,O=mock-sts tests" });
+    subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
-  assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
+  assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+    "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and every read below is a 403.");
   log.info("Minted an XACML_USER credential for " + xacmlUser.subject + ".");
@@ -382,16 +390,27 @@ function pathOfKind(tree, kind, parentPath) {
   return row.path;
 }
 
-// The embedded PEP, asked about somebody. This is the OTHER door — a protocol
-// endpoint rather than the console — and it is what makes an edit on the page
-// mean something.
+// The PDP, asked about somebody, and what a deny-biased PEP does with the
+// answer. This is the OTHER door — the decision rather than the editor — and
+// it is what makes an edit on the page mean something. It was the embedded
+// PEP at `/xacml/protected` until #596; the answer keeps that endpoint's
+// shape (200 or 403, the decision on the body) so the assertions read the
+// same, and the policy here is deny-unless-permit, so a deny-biased PEP's
+// outcome is the decision itself.
 async function enforcementFor(subject, action) {
   log.debug("Entering enforcementFor().");
-  const r = await certJson(realmUrl("/xacml/protected?subject=" +
-                                    encodeURIComponent(subject) + "&action=" +
-                                    encodeURIComponent(action)));
+  const r = await json(api("/xacml/decide?subject=" +
+                           encodeURIComponent(subject) + "&action=" +
+                           encodeURIComponent(action)));
+  assert.ok(r.status === 200 && r.body && r.body.enforcement,
+    "GET /admin-api/xacml/decide answered " + r.status + " " +
+    String(r.text).slice(0, 300));
   log.debug("Leaving enforcementFor().");
-  return r;
+  return { status: r.body.enforcement.allowed ? 200 : 403,
+           body: { decision: r.body.decision,
+                   allowed: r.body.enforcement.allowed,
+                   why: r.body.enforcement.why },
+           text: r.text };
 }
 
 // ---------------------------------------------------------------------------
@@ -405,12 +424,115 @@ function pause(ms) {
 
 async function open(driver, url) {
   log.debug("Entering open(). url=" + url);
+  // THE CONSOLE IS A STATIC APPLICATION SINCE #446: every /admin path answers
+  // one document, and the page is drawn by its script from the page's
+  // /admin-api operation, after a sign-in in the browser. A document loaded
+  // under `/realm/<id>/admin` signs in at THAT realm, where this run's
+  // account — a service administrator, signed in at the default realm — has
+  // no sign-on session; it reaches the realm's console the way the console
+  // offers it, through the realm switcher, which keeps its token.
+  const inRealm = base + "/realm/" + REALM + "/admin";
+  if (url === inRealm || url.indexOf(inRealm + "/") === 0 ||
+      url.indexOf(inRealm + "?") === 0) {
+    await throughTheSwitcher(driver, url.slice((base + "/realm/" +
+                                                 REALM).length));
+    log.debug("Leaving open(). Through the switcher.");
+    return;
+  }
   await driver.get(url);
-  await driver.wait(async function () {
-    return (await driver.executeScript("return document.readyState;")) ===
-           "complete";
-  }, 15000, "the page never finished loading: " + url);
+  await waitForDrawn(driver, url);
   log.debug("Leaving open().");
+}
+
+// THE PAGE IS DRAWN (#446): the console's frame is in place and the shell's
+// "Signing in…" placeholder is gone, on a path that is not the callback. A
+// browser somewhere off /admin — the sign-in screen — has arrived somewhere a
+// person acts, and that is answered too.
+async function waitForDrawn(driver, what) {
+  log.debug("Entering waitForDrawn().");
+  await driver.wait(async function () {
+    const now = await driver.executeScript(`
+      if (document.readyState !== 'complete') { return ''; }
+      const path = location.pathname;
+      if (!/\\/admin(\\/|$)/.test(path)) { return 'elsewhere'; }
+      if (document.contentType !== 'text/html') { return 'elsewhere'; }
+      if (/\\/admin\\/callback$/.test(path)) { return ''; }
+      const lede = document.querySelector('p.lede');
+      if (lede && /^Signing in/.test(lede.textContent)) { return ''; }
+      return document.querySelector('.pagehead') ? 'drawn' : '';
+    `).catch(function (e) {
+      // A document torn down under the probe: asked again.
+      log.debug("Caught in waitForDrawn(): " + ((e && e.message) || e));
+      return '';
+    });
+    return now || false;
+  }, 20000, "the console never drew " + (what || "the page"));
+  log.debug("Leaving waitForDrawn().");
+}
+
+// A page of this job's realm, reached from a signed-in page of the default
+// realm through the shell's realm switcher (see open()). `path` is the
+// console path with its query.
+async function throughTheSwitcher(driver, path) {
+  log.debug("Entering throughTheSwitcher(). path=" + path);
+  // THE SWITCHER IS DRAWN FROM THE SHELL ANSWER THE PAGE LOADED WITH (#446),
+  // so a realm made since is offered only once a page is loaded again.
+  // From any realm's page: the console claims the switcher everywhere.
+  const offered = await driver.executeScript(`
+    const wanted = arguments[0];
+    const pick = document.querySelector('form.realmpick select[name=realm]');
+    return !!pick && Array.from(pick.options).some(function (o) {
+      return o.value === wanted;
+    });
+  `, REALM).catch(function (e) {
+    log.debug("Caught looking for the switcher: " + ((e && e.message) || e));
+    return false;
+  });
+  if (!offered) {
+    await driver.get(root("/admin?realm=default"));
+    await waitForDrawn(driver, "the console's front page");
+  }
+  const leaving = await driver.findElement(By.css(".shell"));
+  const switched = await driver.executeScript(`
+    const f = document.querySelector('form.realmpick');
+    if (!f) { return 'no switcher on ' + location.href; }
+    const pick = f.querySelector('select[name=realm]');
+    pick.value = arguments[0];
+    if (pick.value !== arguments[0]) {
+      return 'the switcher does not offer ' + arguments[0];
+    }
+    f.querySelector('input[name=to]').value = arguments[1];
+    f.querySelector('button').click();
+    return '';
+  `, REALM, path);
+  assert.strictEqual(switched, "", "switching to " + REALM + ": " + switched);
+  await replaced(driver, leaving, "the switch to " + REALM);
+  await waitForDrawn(driver, path);
+  log.debug("Leaving throughTheSwitcher().");
+}
+
+// THE ELEMENT'S PAGE HAS BEEN REPLACED: a navigation, or the console drawing
+// in place (#446), which replaces everything inside <body>. Not
+// `until.stalenessOf()`: a probe that lands while Chrome tears a document
+// down answers "Node with given id does not belong to the document", which
+// means the same thing here.
+async function replaced(driver, element, what) {
+  log.debug("Entering replaced().");
+  await driver.wait(async function () {
+    try {
+      await element.isEnabled();
+      return false;
+    } catch (e) {
+      log.debug("Caught in replaced(): " + ((e && e.message) || e));
+      if ((e && e.name === "StaleElementReferenceError") ||
+          /does not belong to the document|No node with given id/
+            .test(String(e && e.message))) {
+        return true;
+      }
+      throw e;
+    }
+  }, 15000, what + " never replaced the page it was pressed on");
+  log.debug("Leaving replaced().");
 }
 
 // Everything this file asserts about a drawn page, taken in ONE script so that
@@ -421,6 +543,11 @@ async function open(driver, url) {
 // browser will actually POST to — which is the difference a missing realm
 // prefix would show up in.
 const SURVEY = `
+  // THE EDITOR'S OWN PANEL (2026-10-11): /admin/xacml draws its six tabs in
+  // one document, so a form, a notice or a table belongs to the editor only
+  // when it is inside its panel. A form keeps its index among ALL the
+  // document's forms, which is what submitForm() counts by.
+  const root = document.getElementById("xacml-tab-editor") || document.body;
   const forms = Array.from(document.forms).map(function (f, i) {
     const controls = Array.from(f.elements).map(function (e) {
       return {
@@ -448,7 +575,8 @@ const SURVEY = `
     // actually POST to, which is the difference a missing realm prefix shows
     // up in.
     const written = f.getAttribute("action") || "";
-    return { index: i, method: (f.getAttribute("method") || "get").toLowerCase(),
+    return { index: i, inEditor: root.contains(f),
+             method: (f.getAttribute("method") || "get").toLowerCase(),
              resolvedAction: new URL(written, location.href).href,
              nested: !!f.querySelector("form"),
              controls: controls, named: named };
@@ -460,8 +588,8 @@ const SURVEY = `
   return {
     url: location.href,
     title: (document.querySelector("h1") ? document.querySelector("h1").textContent : "").trim(),
-    forms: forms,
-    warnings: Array.from(document.querySelectorAll("details, div"))
+    forms: forms.filter(function (f) { return f.inEditor; }),
+    warnings: Array.from(root.querySelectorAll("details, div"))
       .map(function (e) { return (e.textContent || "").trim(); })
       .filter(function (t) { return t.indexOf("Editing is live") === 0 ||
                                     t.indexOf("This policy does not type-check") === 0 ||
@@ -470,17 +598,17 @@ const SURVEY = `
     // Protocols page now draws an Endpoints table as well
     // (admin-core/protocol_endpoints.ts), and "every tr on the page" counted
     // its rows as elements of a policy — so the empty repository drew "1 row".
-    rows: Array.from(document.querySelectorAll("table")).filter(function (t) {
+    rows: Array.from(root.querySelectorAll("table")).filter(function (t) {
         const th = t.querySelector("tr th");
         return !!th && (th.textContent || "").trim() === "Element";
       }).reduce(function (all, t) {
         return all.concat(Array.from(t.querySelectorAll("tr")).slice(1));
       }, [])
       .map(function (r) { return { element: cell(r, 0), kind: cell(r, 1) }; }),
-    pres: Array.from(document.querySelectorAll("pre")).map(function (p) {
+    pres: Array.from(root.querySelectorAll("pre")).map(function (p) {
       return p.textContent;
     }),
-    bodyText: document.body.textContent
+    bodyText: root.textContent
   };
 `;
 
@@ -618,15 +746,10 @@ async function submitForm(driver, index, values) {
     }
   }, 15000, "form " + index + " was submitted and the page it was on was " +
             "never replaced");
-  await driver.wait(async function () {
-    return (await driver.executeScript("return document.readyState;")) ===
-           "complete";
-  }, 15000, "the page never finished loading after form " + index +
-            " was submitted");
-  // The console redirects a POST to the page it came from; a short settle keeps
-  // the survey below from reading the document mid-navigation. It is not a
-  // sleep standing in for a wait — readyState is the wait.
-  await pause(40);
+  // AND DRAWN AGAIN (#446): the console sends the form to its /admin-api
+  // operation and draws the page it came from in place, with the answer's
+  // `?notice=` or `?error=` on its URL.
+  await waitForDrawn(driver, "the page after form " + index);
   log.debug("Leaving submitForm().");
 }
 
@@ -647,10 +770,19 @@ async function pressOn(driver, path, action, values, carrying) {
              .join("|"));
       })).slice(0, 1200));
   const wanted = Object.assign({}, values || {});
+  // BY ITS INDEX, NOT ITS POSITION (2026-10-12). `index` counts every form in
+  // the document — it is what submitForm() presses — and `before.forms` holds
+  // the editor panel's alone, so `before.forms[index]` was some other form:
+  // an edit form with a hidden `action`, which made an Add menu look like one
+  // and left it at its first option. The press then SUCCEEDED and added a
+  // Target clause where a Condition was asked for.
+  const pressed = before.forms.filter(function (f) {
+    return f.index === index;
+  })[0];
   // An Add menu carries the action as a `<select>`; an edit form carries it as
   // a hidden field and must not be "set".
-  if (before.forms[index].named.action === undefined ||
-      before.forms[index].controls.some(function (c) {
+  if (pressed.named.action === undefined ||
+      pressed.controls.some(function (c) {
         return c.name === "action" && c.options;
       })) {
     wanted.action = action;
@@ -690,15 +822,22 @@ async function signIn(driver, username) {
     log.debug("Leaving signIn(). No gate.");
     return false;
   }
+  // THE SCREEN IS DRAWN BY ITS SCRIPT SINCE #571 (a static page over
+  // /authn-api): its form exists once the page has drawn it.
+  await driver.wait(async function () {
+    return (await driver.findElements(By.css("input[name='username']")))
+      .length > 0;
+  }, 15000, "the sign-in screen never drew its form.");
   const field = await driver.findElement(By.css("input[name='username']"));
   await field.clear();
   await field.sendKeys(username);
   const secret = await driver.findElement(By.css("input[name='password']"));
   await secret.clear();
   await secret.sendKeys(CONSOLE_PASSWORD);
-  const button = await driver.findElement(
-      By.xpath("//button[@type='submit'] | //input[@type='submit'] | " +
-               "//button"));
+  // THE PASSWORD FORM'S OWN BUTTON, Sign In, not the page's first: since
+  // #539 the screen carries a language chooser, a form of its own with a
+  // submit button drawn above this one.
+  const button = await driver.findElement(By.id("kc-login"));
   await button.click();
   // An administrator is OFFERED a second factor since #246, on a page drawn
   // at the same URL; this suite ignores it, as rcbj asked ("just click
@@ -716,9 +855,13 @@ async function signIn(driver, username) {
     return (await driver.getCurrentUrl()).indexOf("/authn/login") < 0 &&
       (await driver.getCurrentUrl()).indexOf("/authn/mfa-setup") < 0;
   }, 15000, "signing in as " + username + " left the browser on the sign-in " +
-            "screen. The mock checks no password, so this is a name that was " +
-            "typed and a button that was pressed; if it did not open the " +
+            "screen. In development mode the mock checks no password, so " +
+            "this is a name that was typed and a button that was pressed; " +
+            "if it did not open the " +
             "console, the screen is broken rather than the credential.");
+  // Back through the authorization endpoint and the console's callback to a
+  // drawn page: the console signs in in the browser since #446.
+  await waitForDrawn(driver, "the console after signing in");
   log.debug("Leaving signIn(). Signed in.");
   return true;
 }
@@ -799,7 +942,9 @@ async function theTreeIsDrawn(driver) {
       ["policy", "rule", "target", "anyOf", "allOf", "match"],
       "the RBAC template is a policy holding rules, each with a target " +
       "holding clauses, alternatives and matches — and the editor draws one " +
-      "row per element. It drew " + JSON.stringify(kinds));
+      "row per element. It drew " + JSON.stringify(kinds) + " at " +
+      page.url + " (" + page.title + "): " +
+      String(page.bodyText).replace(/\s+/g, " ").slice(0, 400));
     assert.ok(kinds.filter(function (k) { return k === "rule"; }).length === 2,
       "the template makes two rules (admin-anything and staff-limited); the " +
       "page shows " + kinds.filter(function (k) {
@@ -825,7 +970,8 @@ async function theTreeIsDrawn(driver) {
     const wrong = page.forms.filter(function (f) {
       return f.method === "post" &&
              f.resolvedAction.indexOf("/admin/signout") < 0 &&
-             f.resolvedAction.indexOf("/realm/" + REALM + "/admin/xacml/") < 0;
+             !new RegExp("/realm/" + REALM + "/admin/xacml(?:[/?#]|$)")
+               .test(f.resolvedAction);
     });
     assert.deepStrictEqual(wrong.map(function (f) {
       return f.resolvedAction;
@@ -1068,14 +1214,20 @@ async function aConditionMayBeAddedOnce(driver) {
   const rule = pathOfKind(await treeOf(POLICY), "rule");
   await open(driver, editorUrl(POLICY));
   const after = await pressOn(driver, rule, "add-condition", {});
+  const stored = await treeOf(POLICY);
 
   check("the condition was added and the page says so", function () {
     assert.strictEqual(outcomeOf(after.url, "error"), "",
       "adding a condition was refused: " + outcomeOf(after.url, "error"));
-    assert.ok(after.rows.some(function (row) {
-      return row.element.indexOf("Condition") >= 0;
-    }), "no row on the redrawn page mentions a Condition; the rows are " +
-        JSON.stringify(after.rows.map(function (r) { return r.kind; })));
+    // THE STORED TREE, NOT THE PAGE'S WORDS (2026-10-12). Every rule row's
+    // help text mentions a Condition, so "a row mentions Condition" held
+    // while the edit that ran was a Target clause.
+    assert.ok(stored.some(function (row) {
+      return row.path === rule + ".condition";
+    }), "the stored policy has no condition at " + rule + ".condition; its " +
+        "paths are " + JSON.stringify(stored.map(function (r) {
+          return r.kind + "@" + r.path;
+        })));
   });
 
   check("and the rule's menu no longer offers a second one", function () {
@@ -1584,15 +1736,23 @@ async function theBrowserConsoleIsClean(driver) {
     // The browser asks for /favicon.ico on its own and this service serves
     // none; it is the browser's request rather than the page's.
     return message.indexOf("/favicon.ico") < 0;
+  }).filter(function (message) {
+    // A 4xx FROM /admin-api OR THE TOKEN ENDPOINT IS AN ANSWER THE CONSOLE
+    // READS (#446): the console sends every edit to /admin-api and draws a
+    // refusal — this file provokes one on purpose — and retries a proof the
+    // server asks a nonce for. A 5xx, a 4xx from anywhere else and every CSP
+    // violation still fail.
+    return !(/\/(admin-api|oauth2\/token)(\/|\?|\s|$)/.test(message) &&
+             /status of 4\d\d/.test(message));
   });
 
   check("the browser logged nothing severe while editing", function () {
     assert.deepStrictEqual(severe, [],
       "THE BROWSER LOGGED " + severe.length + " SEVERE MESSAGE(S) while this " +
       "file drove the editor: " + severe.join(" | ") + ". This page runs " +
-      "under script-src 'none' and every control on it is a form; a severe " +
-      "line means the page asked for something its own policy refuses, which " +
-      "no status code would show.");
+      "only the console's script, under a policy that names it; a severe " +
+      "line means the page asked for something its own policy refuses, or " +
+      "a call failed in a way the console does not answer.");
   });
   log.debug("Leaving theBrowserConsoleIsClean().");
 }
@@ -1606,7 +1766,12 @@ async function createTheRealm() {
     id: REALM, domain: REALM + ".example.net", name: "XACML editor test realm",
     description: "Created by tests/vendored/sts_xacml_editor.js; LEFT IN " +
                  "PLACE on purpose, so that a failed run can be read " +
-                 "afterwards. Remove it by hand when you are done with it."
+                 "afterwards. Remove it by hand when you are done with it.",
+    // A DEVELOPMENT REALM IN EVERY MODE (#585). What the editor builds was
+    // asked of /xacml/protected, a demonstration a product realm was not
+    // served; it is asked of the PDP now (#596), which product serves, but
+    // the realm stays as it was so the job's other assumptions do.
+    overrides: { "global.mode": "development" }
   });
   assert.ok(r.status === 200 && r.body && r.body.ok !== false,
     "creating the throwaway realm " + REALM + " answered " + r.status + " " +
@@ -1732,7 +1897,7 @@ async function admitTheCertificate() {
 
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the mock STS's XACML policy editor at " + base +
+  log.info("Driving IYA STS's XACML policy editor at " + base +
            "/admin/xacml/editor");
 
   const status = await json(base + "/admin-api/status");
@@ -1797,7 +1962,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_xacml_editor")
-  .description("Drive the mock STS's guided XACML policy editor in a real " +
+  .description("Drive IYA STS's guided XACML policy editor in a real " +
       "browser: the grammar its menus offer, an edit the validator refuses, " +
       "a rule built out of form submissions, and the decision the PDP then " +
       "makes because of it.")

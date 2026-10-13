@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -131,13 +131,20 @@ async function change(ctx, vc, purpose, status) {
   return r;
 }
 
-// The list an entry names, as the suite reads it: JSON-LD, then published.
+// The list an entry names, as the suite reads it: published, then JSON-LD.
+// THE PUBLISH IS AN OPERATOR'S ACT SINCE #598 — `POST /admin-api/vc-status/
+// publish`, Admin Write, with the run's admin token the preload presents —
+// where it was the VC API's own test hook beside the list; the purpose is
+// the list URL's last segment.
 async function listOf(ctx, entry) {
   log.debug("Entering listOf().");
-  const published = await kit.call("POST", entry.statusListCredential +
-                                   "/publish", { headers: bearer(ctx),
-                                                 json: {} });
-  assert.strictEqual(published.status, 204, "publish: " + published.status);
+  const purpose = String(entry.statusListCredential).split("/").pop();
+  const published = await kit.call("POST", ctx.realmBase +
+                                   "/admin-api/vc-status/publish",
+                                   { json: { purpose: purpose } });
+  assert.strictEqual(published.status, 200, "publish: " + published.status +
+                     " " + published.text.slice(0, 300));
+  assert.strictEqual(published.json.purpose, purpose);
   const r = await kit.call("GET", entry.statusListCredential, { headers: {
     Accept: "application/ld+json, application/json" } });
   assert.strictEqual(r.status, 200, "the list: " + r.text.slice(0, 300));
@@ -246,7 +253,7 @@ async function test() {
       ctx.realmBase + "/vc-api/presentations/verify", tags, "vc-api:verify")]
   }, { enableInteropTests: true });
   log.info("=== 1. the suite ===");
-  const run = kit.runMocha(dir, ctx);
+  const run = await kit.runMocha(dir, ctx);
   kit.judge(SUITE, run.tests, EXCEPTIONS, PENDING);
   log.info("=== 2. the status changes the suite does not make ===");
   await statusChanges(ctx);

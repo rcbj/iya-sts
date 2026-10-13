@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -321,10 +321,13 @@ async function theSettingsAreOnTheirPages() {
   });
 
   // THE PAGES THEMSELVES, in a browser's shape. The JSON above proves the
-  // model; this proves that a person can reach a form. Where the console needs
-  // a session the launchers do not have, a redirect is the honest answer and
-  // the section says so rather than asserting markup it never received.
-  const drawn = await page("/admin/totp");
+  // model; this proves that a person can reach a form. Since #446 a page is
+  // drawn in the browser from its operation's answer, so it is drawn here
+  // the same way, signed in as the console (`console_signin.js`).
+  const consoleClient = await require("./console_signin.js")
+    .signInToTheConsole(base, usernameFor("sfp-reader"), log,
+                        { grant: "read" });
+  const drawn = await consoleClient.get("/admin/totp");
   if (drawn.status === 200) {
     check("and /admin/totp draws a form carrying those rows", function () {
       assert.ok(/totp\.window/.test(drawn.text),
@@ -332,13 +335,13 @@ async function theSettingsAreOnTheirPages() {
       assert.ok(/<form/i.test(drawn.text),
         "the page draws no form at all.");
     });
-    const drawnWeb = await page("/admin/webauthn");
+    const drawnWeb = await consoleClient.get("/admin/webauthn");
     check("and /admin/webauthn does the same, including the CTAP rows that " +
           "are the reason it says CTAP anywhere", function () {
       assert.strictEqual(drawnWeb.status, 200,
         "/admin/webauthn answered " + drawnWeb.status);
-      assert.ok(/webauthn\.residentKey/.test(drawnWeb.text),
-        "the page has no webauthn.residentKey control on it.");
+      assert.ok(/webauthn\.credProps/.test(drawnWeb.text),
+        "the page has no webauthn.credProps control on it.");
       assert.ok(/webauthn\.authenticatorAttachment/.test(drawnWeb.text),
         "the page has no webauthn.authenticatorAttachment control on it.");
     });
@@ -398,9 +401,8 @@ async function theReportFollowsTheSettings() {
     // themselves, because what a console form posts IS a section's fields.
     await ok("/config/set-many",
       { "webauthn.userVerification": "required",
-        "webauthn.residentKey": "required",
         "webauthn.algorithms": "EdDSA" },
-      "set three webauthn settings");
+      "set two webauthn settings");
 
     const after = await get("/webauthn");
     check("USER VERIFICATION SET TO `required` FLIPS THE REPORT'S " +
@@ -421,9 +423,11 @@ async function theReportFollowsTheSettings() {
       assert.deepStrictEqual(offered, ["EdDSA"],
         "the report offers " + offered.join(", ") + " after being told EdDSA.");
     });
-    check("and the CTAP row moves with it", function () {
+    check("and the resident-key row reports the passkey policy's answer " +
+          "(#527): REQUIRED, the passkey policy's default",
+          function () {
       assert.strictEqual(after.body.status.residentKey, "required",
-        "the resident-key setting did not reach the report.");
+        "the report says " + after.body.status.residentKey + ".");
     });
 
     // THE FAILURE MODE THAT IS NOT AN ERROR: a name the verifier does not
@@ -467,8 +471,7 @@ async function theReportFollowsTheSettings() {
     // to reset, and what the report showed was a reset complaining about an
     // override that had never been made — which says nothing at all about the
     // request that was actually wrong.
-    await resetQuietly(["webauthn.userVerification", "webauthn.residentKey",
-                        "webauthn.algorithms"]);
+    await resetQuietly(["webauthn.userVerification", "webauthn.algorithms"]);
   }
 
   const totp = await get("/totp");

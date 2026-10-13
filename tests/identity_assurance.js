@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -37,6 +37,10 @@ const config = require('../common/config');
 const ldap = require('../ldap/ldap_server');
 const ida = require('../common/identity_assurance');
 const oauth2 = require('../oauth-oidc/oauth2');
+
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
 
 const log = require('bunyan').createLogger({ name: 'identity_assurance',
   level: process.env.LOG_LEVEL || 'info' });
@@ -336,10 +340,15 @@ function body(t) {
           'evidence types, the vocabularies', JSON.stringify(meta));
 
   t.log.info('=== 8. the console block ===');
-  const admin = require('../admin-ui/admin');
-  const consolePage = new admin.AdminConsole(admin.AdminConsole.defaultDeps());
-  const drawn = consolePage.mfaSection({ name: 'ida-alice' }, 'ida-alice',
-    { write: true }, '').html;
+  // The person page's sections are drawn from its answer since #446: the
+  // second factors from `page.mfa` of `GET /admin-api/users?user=`.
+  const UsersPage = require('../admin-ui/web_users');
+  const mfaData = JSON.parse(JSON.stringify(
+    require('../admin-core/admin_views')
+      .userDetailJson({ query: {}, headers: {} }, 'ida-alice').json.page.mfa));
+  const ctxOf = require('../admin-ui/web_kit').context;
+  const drawn = UsersPage.mfaSection(ctxOf({}, true).t,
+    { name: 'ida-alice' }, 'ida-alice', { write: true }, '', mfaData);
   t.check(/<h3>Identity verifications<\/h3>/.test(drawn) &&
           /name="action" value="record-verification"/.test(drawn) &&
           /name="action" value="remove-verification"/.test(drawn) &&
@@ -347,8 +356,8 @@ function body(t) {
           /<option value="eidas">/.test(drawn),
           '8a. a person\'s page lists their verifications with a Remove ' +
           'each, and a form that records one');
-  const readOnly = consolePage.mfaSection({ name: 'ida-alice' }, 'ida-alice',
-    { write: false }, '').html;
+  const readOnly = UsersPage.mfaSection(ctxOf({}, false).t,
+    { name: 'ida-alice' }, 'ida-alice', { write: false }, '', mfaData);
   t.check(!/value="record-verification"/.test(readOnly) &&
           /needs <strong>Admin Write<\/strong>/.test(readOnly),
           '8b. and without Admin Write, no form');

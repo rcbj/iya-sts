@@ -1,0 +1,89 @@
+{
+  "templates": {
+    "password-reset": {
+      "subject": "重設您的 {{service}} 密碼",
+      "text": "有人（{{requestedBy}}）要求重設帳戶 {{username}} 的密碼。\n\n如需設定新密碼，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n此連結只能使用一次。如果這不是您的要求，可以忽略此郵件：在連結被使用之前，什麼都不會改變。\n",
+      "html": "<p>有人（{{requestedBy}}）要求重設帳戶 <strong>{{username}}</strong> 的密碼。</p><p>請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">設定新密碼</a>。此連結只能使用一次。</p><p>如果這不是您的要求，可以忽略此郵件：在連結被使用之前，什麼都不會改變。</p>"
+    },
+    "account-activation": {
+      "subject": "啟用您的 {{service}} 帳戶",
+      "text": "已為您建立帳戶 {{username}}。\n\n如需設定其密碼，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n此連結只能使用一次。\n",
+      "html": "<p>已為您建立帳戶 <strong>{{username}}</strong>。</p><p>請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">設定其密碼</a>。此連結只能使用一次。</p>"
+    },
+    "address-verification": {
+      "subject": "確認您在 {{service}} 的地址",
+      "text": "帳戶 {{username}} 將 {{address}} 登記為其電子郵件地址。\n\n如需確認這是您的地址，請在 {{expiresMinutes}} 分鐘內開啟此連結：\n\n{{link}}\n\n如果這不是您的帳戶，請忽略此郵件。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 將 {{address}} 登記為其電子郵件地址。</p><p>請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">確認這是您的地址</a>。</p><p>如果這不是您的帳戶，請忽略此郵件。</p>"
+    },
+    "password-changed": {
+      "subject": "您的 {{service}} 密碼已變更",
+      "text": "帳戶 {{username}} 的密碼已於 {{when}} 變更（{{how}}）。\n\n如果這不是您本人的操作，請立即聯絡您的帳戶管理員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的密碼已於 {{when}} 變更（{{how}}）。</p><p>如果這不是您本人的操作，請立即聯絡您的帳戶管理員。</p>"
+    },
+    "account-disabled": {
+      "subject": "您的 {{service}} 帳戶已被停用",
+      "text": "帳戶 {{username}} 已於 {{when}} 被停用。{{why}}\n\n在重新啟用之前，任何人都無法登入此帳戶，且其所有工作階段均已結束。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 已於 {{when}} 被停用。{{why}}</p><p>在重新啟用之前，任何人都無法登入此帳戶，且其所有工作階段均已結束。</p>"
+    },
+    "sessions-ended": {
+      "subject": "您已從 {{service}} 登出",
+      "text": "帳戶 {{username}} 的 {{count}} 個工作階段已於 {{when}} 被 {{by}} 結束。\n\n請重新登入以繼續。如果您沒有預期到這種情況，請聯絡您的帳戶管理員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的 {{count}} 個工作階段已於 {{when}} 被 {{by}} 結束。</p><p>請重新登入以繼續。如果您沒有預期到這種情況，請聯絡您的帳戶管理員。</p>"
+    },
+    "credential-compromised": {
+      "subject": "您的一項 {{service}} 憑證已被標記為外洩",
+      "text": "帳戶 {{username}} 的「{{what}}」已於 {{when}} 被標記為外洩。{{why}}\n\n它已無法使用。請在下次登入時設定新的憑證，或聯絡您的帳戶管理員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的「{{what}}」已於 {{when}} 被標記為外洩。{{why}}</p><p>它已無法使用。請在下次登入時設定新的憑證，或聯絡您的帳戶管理員。</p>"
+    },
+    "recovery-started": {
+      "subject": "您的 {{service}} 帳戶已開始復原",
+      "text": "帳戶 {{username}} 的復原已於 {{when}} 由 {{by}} 發起。\n\n如果這不是您本人或您委託的人所為，請立即聯絡您的帳戶管理員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的復原已於 {{when}} 由 {{by}} 發起。</p><p>如果這不是您本人或您委託的人所為，請立即聯絡您的帳戶管理員。</p>"
+    },
+    "address-changed": {
+      "subject": "您的 {{service}} 帳戶的電子郵件地址已變更",
+      "text": "帳戶 {{username}} 的電子郵件地址已於 {{when}} 變更為 {{address}}。此郵件已寄送至變更前的地址。\n\n如果您沒有預期到這種情況，請立即聯絡您的帳戶管理員。\n",
+      "html": "<p>帳戶 <strong>{{username}}</strong> 的電子郵件地址已於 {{when}} 變更為 {{address}}。此郵件已寄送至變更前的地址。</p><p>如果您沒有預期到這種情況，請立即聯絡您的帳戶管理員。</p>"
+    },
+    "access-request": {
+      "subject": "{{service}}：有應用程式要求存取權",
+      "text": "應用程式 {{client}} 要求代表帳戶 {{username}} 取得存取權：{{rights}}。\n\n在您核准之前，不會允許任何存取。如需核准或拒絕，請在 {{expiresMinutes}} 分鐘內登入並開啟此頁面：\n\n{{link}}\n\n如果您不認得此要求，請在該頁面拒絕，或忽略此郵件：它會自行過期。\n",
+      "html": "<p>應用程式 <strong>{{client}}</strong> 要求代表帳戶 <strong>{{username}}</strong> 取得存取權：{{rights}}。</p><p>在您核准之前，不會允許任何存取。請在 {{expiresMinutes}} 分鐘內<a href=\"{{link}}\">核准或拒絕</a>。</p><p>如果您不認得此要求，請在該頁面拒絕，或忽略此郵件：它會自行過期。</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}}：{{username}} 的 {{act}}",
+      "text": "本服務（而非某個人）於 {{when}} 對帳戶 {{username}} 執行了操作：{{act}}。\n\n{{why}}\n\n您收到此郵件，是因為您在此領域中擁有 Admin Write 權限。\n",
+      "html": "<p>本服務（而非某個人）於 {{when}} 對帳戶 <strong>{{username}}</strong> 執行了操作：{{act}}。</p><p>{{why}}</p><p>您收到此郵件，是因為您在此領域中擁有 Admin Write 權限。</p>"
+    },
+    "sign-in-code": {
+      "subject": "您的 {{service}} 登入驗證碼：{{code}}",
+      "text": "您以 {{username}} 身分登入 {{service}} 的驗證碼是：\n\n    {{code}}\n\n此驗證碼只能使用一次，有效時間 {{minutes}} 分鐘。{{service}} 的任何人都不會向您索取它。\n\n如果您並未在登入，表示有知道您帳戶名稱的人正在嘗試登入：請忽略此驗證碼，並考慮變更您的密碼。\n",
+      "html": "<p>您以 <strong>{{username}}</strong> 身分登入 {{service}} 的驗證碼是：</p><p><strong>{{code}}</strong></p><p>此驗證碼只能使用一次，有效時間 {{minutes}} 分鐘。{{service}} 的任何人都不會向您索取它。</p><p>如果您並未在登入，表示有知道您帳戶名稱的人正在嘗試登入：請忽略此驗證碼，並考慮變更您的密碼。</p>"
+    },
+    "sign-in-link": {
+      "subject": "您的 {{service}} 登入連結",
+      "text": "如需以 {{username}} 身分完成登入 {{service}}，請在 {{minutes}} 分鐘內，在您開始登入的那個瀏覽器中開啟此連結：\n\n{{signin}}\n\n此連結只能使用一次，且只能在該瀏覽器中使用。\n\n如果您並未在登入，請忽略此郵件：此連結無法讓其他任何人登入。\n",
+      "html": "<p>如需以 <strong>{{username}}</strong> 身分完成登入 {{service}}，請在 {{minutes}} 分鐘內，在您開始登入的那個瀏覽器中<a href=\"{{signin}}\">開啟此連結</a>。</p><p>此連結只能使用一次，且只能在該瀏覽器中使用。</p><p>如果您並未在登入，請忽略此郵件：此連結無法讓其他任何人登入。</p>"
+    },
+    "reset-refused-attempt": {
+      "subject": "有人試圖重設您的 {{service}} 密碼",
+      "text": "{{when}}，有人要求重設帳戶 {{username}} 的密碼，填寫了此地址，並提供了一個不屬於您的復原碼。沒有任何變更，也沒有寄出重設連結。\n\n如果是您本人，請使用一個未用過的復原碼重試。如果不是，表示有人知道您的帳戶名稱和地址；請聯絡您的帳戶管理員。\n",
+      "html": "<p>{{when}}，有人要求重設帳戶 <strong>{{username}}</strong> 的密碼，填寫了此地址，並提供了一個不屬於您的復原碼。沒有任何變更，也沒有寄出重設連結。</p><p>如果是您本人，請使用一個未用過的復原碼重試。如果不是，表示有人知道您的帳戶名稱和地址；請聯絡您的帳戶管理員。</p>"
+    },
+    "test-message": {
+      "subject": "{{service}} 測試郵件",
+      "text": "這是一封測試郵件，應 {{username}} 的要求，於 {{when}} 透過 {{transport}} 傳輸方式寄出。\n",
+      "html": "<p>這是一封測試郵件，應 <strong>{{username}}</strong> 的要求，於 {{when}} 透過 {{transport}} 傳輸方式寄出。</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}}（{{realm}}）\n您收到此郵件，是因為它是{{reason}}。\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}}（{{realm}}）。您收到此郵件，是因為它是{{reason}}。</small></p>"
+  },
+  "categories": {
+    "security": { "reason": "一則關於您帳戶的安全通知，無法關閉" },
+    "account": { "reason": "您或管理員要求的內容" },
+    "notification": { "reason": "一則通知，您可以在入口網站中關閉" }
+  }
+}

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -26,6 +26,13 @@
 //   F. PERMISSIONS. An application's role authorizes its own application's
 //      permissions and not another's; editing it keeps its application; the
 //      register knows a requirement one of its roles meets.
+//   H. THE ROLES TAB'S REQUIREMENT SECTION (#458). The application page's
+//      Configuration grid no longer draws appRequiredRole (the new-
+//      application form still does); the page's roles state carries each
+//      required role with what it resolves to — this application's own,
+//      or nothing — and offers the realm's roles but EVERYBODY and never
+//      another application's; and the section's two forms, the `add` and
+//      `remove` application actions, write the list.
 //
 // IN A THROWAWAY REALM, removed at the end (see role_permissions.js).
 // ===========================================================================
@@ -46,6 +53,7 @@ const model = require('../xacml/xacml_model');
 const datatypes = require('../xacml/xacml_datatypes');
 const deciderBefore = gate.deciderInstalled();
 const rolePep = require('../xacml/xacml_role_pep');
+const errorCodes = require('../common/error_codes');
 
 const log = require('bunyan').createLogger({ name: 'app_roles',
   level: process.env.LOG_LEVEL || 'info' });
@@ -220,6 +228,163 @@ function permissions(t) {
   log.debug("Leaving permissions().");
 }
 
+// G. APPLICATION PERMISSIONS (#93): who may hold a role, its display name and
+// stable id, and the roles an application holds read from its own side.
+function applicationPermissions(t) {
+  log.debug("Entering applicationPermissions().");
+  t.log.info('=== G. application permissions (#93) ===');
+  const MACHINES = 'ar-machines-' + RUN;
+  const PEOPLE = 'ar-people-' + RUN;
+  const codeOf = function (result) {
+    return errorCodes.codeOf(result) || '';
+  };
+  const made = action({ action: 'create-role', role: MACHINES,
+                        displayName: 'Batch machines',
+                        memberTypes: ['application'] });
+  const madeRow = roles.read(MACHINES);
+  t.check(made.ok && madeRow && madeRow.displayName === 'Batch machines' &&
+          madeRow.memberTypes.join() === 'application' &&
+          /^[0-9a-f-]{36}$/.test(madeRow.id),
+          'G1. a role is made with a display name, applications only, and ' +
+          'an entryUUID id', JSON.stringify(madeRow));
+  const person = action({ action: 'add-member', role: MACHINES, kind: 'user',
+                          member: ALICE });
+  t.check(!person.ok && codeOf(person) === 'STS-XACML-0082',
+          'G2. a person is refused on an applications-only role',
+          JSON.stringify(person) + ' ' + codeOf(person));
+  const group = action({ action: 'add-member', role: MACHINES, kind: 'group',
+                         member: 'developers' });
+  t.check(!group.ok && codeOf(group) === 'STS-XACML-0082',
+          'G3. and so is a group', codeOf(group));
+  t.check(action({ action: 'add-member', role: MACHINES, kind: 'application',
+                   member: HR }).ok &&
+          action({ action: 'add-permission', role: MACHINES,
+                   permission: 'https://' + PAYROLL + '.example/read' }).ok,
+          'G4. an application is added, and a permission beside it');
+  const kept = roles.read(MACHINES);
+  t.check(kept.displayName === 'Batch machines' &&
+          kept.memberTypes.join() === 'application' && kept.id === madeRow.id,
+          'G5. add-member and add-permission keep the display name, the ' +
+          'member types and the id', JSON.stringify(kept));
+  const narrowing = action({ action: 'describe-role', role: MACHINES,
+                             description: 'batch', memberTypes: ['user'] });
+  t.check(!narrowing.ok && codeOf(narrowing) === 'STS-XACML-0082' &&
+          roles.read(MACHINES).memberTypes.join() === 'application',
+          'G6. restricting it to people while an application holds it is ' +
+          'refused, and nothing changes', codeOf(narrowing));
+  const described = action({ action: 'describe-role', role: MACHINES,
+                             description: 'batch jobs' });
+  const afterDescribe = roles.read(MACHINES);
+  t.check(described.ok && afterDescribe.description === 'batch jobs' &&
+          afterDescribe.displayName === 'Batch machines' &&
+          afterDescribe.memberTypes.join() === 'application',
+          'G7. describe-role with only a description keeps the display name ' +
+          'and member types', JSON.stringify(afterDescribe));
+  const unknown = action({ action: 'create-role', role: 'ar-odd-' + RUN,
+                          memberTypes: ['robot'] });
+  t.check(!unknown.ok && codeOf(unknown) === 'STS-XACML-0081',
+          'G8. an unknown member type is refused', codeOf(unknown));
+  const consoleRole = action({ action: 'describe-role', role: 'ADMIN_READ',
+                              memberTypes: ['application'] });
+  t.check(!consoleRole.ok && codeOf(consoleRole) === 'STS-XACML-0083',
+          'G9. a console role cannot be restricted', codeOf(consoleRole));
+  t.check(action({ action: 'create-role', role: PEOPLE,
+                   memberTypes: ['user'] }).ok,
+          'precondition: a people-only role');
+  const state = adminViews.applicationRolesState(HR);
+  const held = state.held.filter(function (one) {
+    return one.name === MACHINES;
+  })[0];
+  t.check(!!held && held.displayName === 'Batch machines' &&
+          held.id === madeRow.id && held.carriedAs === MACHINES &&
+          held.application === '',
+          'G10. the application\'s page lists the role it holds, realm-wide, ' +
+          'with its label and id', JSON.stringify(state.held));
+  t.check(state.offerable.indexOf(PEOPLE) < 0 &&
+          state.offerable.indexOf(MACHINES) < 0 &&
+          state.offerable.indexOf(STAFF) >= 0,
+          'G11. it is offered neither a people-only role nor one it holds, ' +
+          'and is offered an unrestricted one',
+          JSON.stringify(state.offerable));
+  const detail = adminViews.applicationDetailJson({ query: {} }, HR);
+  t.check(detail.json.applicationRoles &&
+          detail.json.applicationRoles.held.some(function (one) {
+            return one.name === MACHINES;
+          }),
+          'G12. and GET /admin-api/applications?application= carries the ' +
+          'same, as applicationRoles');
+  log.debug("Leaving applicationPermissions().");
+}
+
+function requirementSection(t) {
+  log.debug("Entering requirementSection().");
+  t.log.info('=== H. the Roles tab\'s requirement section (#458) ===');
+  const req = { query: {}, headers: { host: 'localhost:8081' },
+                protocol: 'https', get: function () { return ''; } };
+  const detail = adminViews.applicationDetailJson(req, PAYROLL);
+  const page = detail && detail.json && detail.json.page;
+  const gridHas = !!page && page.config.fields.some(function (one) {
+    return one.attribute === 'appRequiredRole';
+  });
+  t.check(!!page && !gridHas,
+          'H1. the application page\'s Configuration grid does not draw ' +
+          'appRequiredRole');
+  t.check((adminViews.newApplicationJson({}).fields || [])
+    .some(function (one) {
+      return one.attribute === 'appRequiredRole';
+    }), 'H2. the new-application form still offers it, having no Roles ' +
+        'tab');
+  const payroll = page.roles;
+  t.check(payroll.required.length === 1 &&
+          payroll.required[0].name === 'reader' &&
+          payroll.required[0].resolves === 'application' &&
+          payroll.required[0].role === 'reader@' + PAYROLL &&
+          JSON.stringify(detail.json.applicationRoles.required) ===
+            JSON.stringify(payroll.required),
+          'H3. the page and the API both carry payroll\'s requirement, ' +
+          'resolved to its own reader', JSON.stringify(payroll.required));
+  t.check(payroll.requirable.indexOf(STAFF) >= 0 &&
+          payroll.requirable.indexOf('ALL_AUTHENTICATED_USERS') >= 0 &&
+          payroll.requirable.indexOf('EVERYBODY') < 0 &&
+          payroll.requirable.indexOf('reader') < 0 &&
+          payroll.requirable.indexOf('reader@' + HR) < 0,
+          'H4. it is offered the realm-wide and built-in roles, but not ' +
+          'EVERYBODY, not what it already requires and never another ' +
+          'application\'s role', JSON.stringify(payroll.requirable));
+  const hr = adminViews.applicationRolesState(HR);
+  t.check(hr.required.length === 1 && hr.required[0].name === 'writer' &&
+          hr.required[0].resolves === 'none' &&
+          hr.requirable.indexOf('reader') >= 0,
+          'H5. hr\'s writer, which nothing defines, resolves to nothing; ' +
+          'its own reader is offered by its name inside it',
+          JSON.stringify(hr));
+  const added = adminActions.applicationsAction({
+    action: 'add', application: HR, attribute: 'appRequiredRole',
+    value: STAFF });
+  const removed = adminActions.applicationsAction({
+    action: 'remove', application: HR, attribute: 'appRequiredRole',
+    value: 'writer' });
+  t.check(added && added.ok && removed && removed.ok &&
+          applications.requiredRolesOf(HR).join() === STAFF,
+          'H6. the section\'s Require and Remove write appRequiredRole',
+          JSON.stringify(applications.requiredRolesOf(HR)));
+  const after = adminViews.applicationRolesState(HR);
+  t.check(after.required.length === 1 &&
+          after.required[0].resolves === 'realm' &&
+          after.requirable.indexOf(STAFF) < 0,
+          'H7. and the section then shows the realm-wide role, no longer ' +
+          'offered', JSON.stringify(after.required));
+  t.check(adminActions.applicationsAction({
+    action: 'remove', application: HR, attribute: 'appRequiredRole',
+    value: STAFF }).ok &&
+          adminViews.applicationRolesState(HR).required.length === 0 &&
+          applications.requiredRolesOf(HR).join() ===
+            roles.DEFAULT_REQUIRED_ROLE,
+          'H8. removing the last leaves it requiring nothing, which is ' +
+          'everybody');
+  log.debug("Leaving requirementSection().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   gate.setDecider(rolePep.decide);
@@ -234,6 +399,8 @@ async function run(t) {
       theRequirement(t);
       thePip(t);
       permissions(t);
+      applicationPermissions(t);
+      requirementSection(t);
     });
   } finally {
     // THE STATE THE REQUIRE LEFT, not an empty slot: requiring the issuance
@@ -249,6 +416,8 @@ module.exports = {
   name: 'app_roles',
   describe: 'roles that belong to one application: naming, resolution per ' +
             'application, the claim, the requirement, the PIP and ' +
-            'permissions (#310)',
+            'permissions (#310); member types, display name, id and the ' +
+            'application\'s own roles (#93); the Roles tab\'s ' +
+            'requirement section (#458)',
   run: run
 };

@@ -1,21 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
 // File: ssf_transmitters_api.ts
 //
 // ===========================================================================
-// `/admin-api/ssf/transmitters` (#153, 2026-09-26): /admin/ssf/transmitters
-// for a machine (rule 7) — the foreign transmitters, what arrived and the
-// locks, and the page's acts, each the console's own
-// (`ssf_transmitters.ts`'s `report()` and `act()`). Never a secret. Registers
-// no route: `mgmt-api/admin_api.ts` spreads ROUTES into its table.
+// `/admin-api/ssf/transmitters` (#153, 2026-09-26; read only since #373):
+// /admin/ssf/transmitters for a machine (rule 7) — every federation
+// relationship whose partner's Shared Signals this realm receives, what
+// arrived, and the blocks and locks partners put on people
+// (`ssf_transmitters.ts`'s `report()`). The acts are the relationship's,
+// `POST /admin-api/federation/signals-*`. Never a secret. Registers no route:
+// `mgmt-api/admin_api.ts` spreads ROUTES into its table.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-import errorCodes = require('../common/error_codes');
 
 type Req = any;
 type Res = any;
@@ -23,23 +24,17 @@ type Json = any;
 
 interface TransmittersApiDeps {
   log: typeof helpers.log;
-  parseBody: typeof helpers.parseBody;
-  baseUrlOf: typeof helpers.baseUrlOf;
-  errorCodes: typeof errorCodes;
   loadTransmitters(): Json;
+  loadViews(): Json;
 }
 
 const BASE = '/admin-api';
-const ID = { type: 'string', pattern: '^[a-z0-9][a-z0-9-]{0,39}$',
-             description: 'The transmitter\'s id in this realm.' };
-const ONE = { type: 'object', properties: { id: ID }, required: ['id'],
-              examples: [{ id: 'partner' }], additionalProperties: false };
 
 /**
- * The management API's operations for the foreign Shared Signals transmitters,
- * `/admin-api/ssf/transmitters`: the console page's report and acts, for a
- * machine. It registers no route; `mgmt-api/admin_api.ts` spreads `ROUTES` into
- * its table.
+ * The management API's report of the federation partners whose Shared Signals
+ * this realm receives, `/admin-api/ssf/transmitters`: the monitoring page's
+ * report, for a machine. It registers no route; `mgmt-api/admin_api.ts`
+ * spreads `ROUTES` into its table.
  */
 class SsfTransmittersApi {
   /**
@@ -63,10 +58,15 @@ class SsfTransmittersApi {
     helpers.log.debug("Entering SsfTransmittersApi.defaultDeps().");
     helpers.log.debug("Leaving SsfTransmittersApi.defaultDeps().");
     return {
-      log: helpers.log, parseBody: helpers.parseBody,
-      baseUrlOf: helpers.baseUrlOf, errorCodes: errorCodes,
+      log: helpers.log,
       loadTransmitters: function (): Json {
         return require('./ssf_transmitters');
+      },
+      // The console's paging (`pagedRows()`), reached when a request
+      // arrives: admin_views requires most of the service, and this module
+      // is built with the other API modules, before it is wanted.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -100,184 +100,123 @@ class SsfTransmittersApi {
     log.debug("Leaving SsfTransmittersApi.sendJson().");
   }
 
+  // -------------------------------------------------------------------------
+  // THE THREE LISTS THAT GROW, PAGED (#313's sweep, 2026-10-12).
+  //
+  // The blocks and the account locks are persisted, one row per (person,
+  // relationship), so they grow with the people partners name; what arrived
+  // was CUT at 200 rows newest first, so a row past the two hundredth could
+  // not be reached at all. Each is now a page of the whole list on a
+  // parameter of its own — `blocksPage`, `locksPage`, `receivedPage`, `per`
+  // shared — and `relationship` narrows what arrived BEFORE it is paged.
+  // The relationship cards are not paged: there is one per federation
+  // relationship whose signals are on, and `federation.max` caps those.
+  // `counts` carries each list's whole length, for a reader that wants the
+  // number without walking the pages.
+  // -------------------------------------------------------------------------
   /**
-   * Builds the route table: `GET /admin-api/ssf/transmitters` and `POST
-   * /admin-api/ssf/transmitters/:action` with each action's schema.
+   * Builds the report the page and the API answer with: the transmitters'
+   * report with its three growing lists paged.
+   *
+   * @param query - the request's query
+   * @returns the report
+   */
+  pagedReport(query: Json): Json {
+    const { log, loadTransmitters, loadViews } = this.deps;
+    log.debug("Entering SsfTransmittersApi.pagedReport().");
+    const q = query || {};
+    const relationship = Array.isArray(q.relationship) ? q.relationship[0]
+      : q.relationship;
+    // Every row that arrived: the inbox is bounded by ssf.foreignInboxMax,
+    // and the page is what bounds the answer.
+    const report = loadTransmitters().report({
+      relationship: relationship, limit: Infinity });
+    const views = loadViews();
+    const received = views.pagedRows(q, report.received || [],
+      { name: 'received', noun: 'signals' });
+    const blocks = views.pagedRows(q, report.blocks || [],
+      { name: 'blocks', noun: 'blocks' });
+    const locks = views.pagedRows(q, report.locks || [],
+      { name: 'locks', noun: 'locks' });
+    const out = Object.assign({}, report, {
+      received: received.shown,
+      blocks: blocks.shown,
+      locks: locks.shown,
+      counts: { received: received.paging.total,
+                blocks: blocks.paging.total,
+                locks: locks.paging.total },
+      paging: { received: views.pagingJson(received.paging),
+                blocks: views.pagingJson(blocks.paging),
+                locks: views.pagingJson(locks.paging) }
+    });
+    log.debug("Leaving SsfTransmittersApi.pagedReport(). " +
+              out.received.length + " of " + out.counts.received +
+              " arrival(s).");
+    return out;
+  }
+
+  /**
+   * Builds the route table: `GET /admin-api/ssf/transmitters`, the
+   * monitoring report.
    *
    * @returns the routes
    */
   buildRoutes(): Json[] {
-    const { log, parseBody, errorCodes, loadTransmitters,
-            baseUrlOf } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering SsfTransmittersApi.buildRoutes().");
-    const simple = function (action: string, operationId: string,
-                             summary: string, description: string): Json {
-      return { action: action, operationId: operationId, summary: summary,
-               description: description, requestBodyRequired: true,
-               requestBody: ONE,
-               responseDescription: 'The transmitter as it stands.' };
-    };
     const ROUTES = [
       { method: 'GET', path: BASE + '/ssf/transmitters',
-        tag: 'Shared Signals', operationId: 'getForeignTransmitters',
-        summary: 'The foreign SSF transmitters this realm receives from',
+        tag: 'Shared Signals', operationId: 'getPartnerSignals',
+        summary: 'The federation partners whose Shared Signals this realm ' +
+                 'receives',
         description: 'Everything /admin/ssf/transmitters draws: each ' +
-          'transmitter (its issuer, discovered configuration, federation ' +
-          'relationship, delivery, stream and counts), every Security ' +
-          'Event Token that arrived with whether it verified, the person ' +
-          'it named and what it led to, and the account locks a ' +
-          'transmitter\'s account-disabled put on people here. Never a ' +
-          'secret. `transmitter` narrows what arrived.',
+          'federation relationship whose signals are on (its kind — ' +
+          '`sign-in` or `signals-only` — SSF issuer, discovered ' +
+          'configuration, delivery, stream, counts and blocks), every ' +
+          'Security Event Token that arrived with whether it verified, the ' +
+          'person it named and what it led to, the sign-ins partners have ' +
+          'blocked and the account locks a signals-only partner put on ' +
+          'people here. Never a secret. `relationship` narrows what ' +
+          'arrived. What arrived, the blocks and the locks are each one ' +
+          'page, moved by `receivedPage`, `blocksPage` and `locksPage` ' +
+          'with `per` shared, and described by `paging`. A partner\'s ' +
+          'stream is configured on its relationship and acted on with ' +
+          '`POST /admin-api/federation/signals-*`.',
         mirrors: 'GET /admin/ssf/transmitters',
+        parameters: [
+          { name: 'relationship', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Only what arrived from this relationship. ' +
+                         'Applied before what arrived is paged.' },
+          { name: 'receivedPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of what arrived, newest first. ' +
+                         'Clamped, like every page parameter here.' },
+          { name: 'blocksPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the sign-ins partners blocked.' },
+          { name: 'locksPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the account locks partners put ' +
+                         'on people here.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, shared by the three lists.' }
+        ],
         responseDescription: 'The report.',
         responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`transmitters`, `received`, ' +
-                                       '`locks`, `observeOnly`.' },
+                          description: '`relationships`, `received`, ' +
+                                       '`blocks`, `locks` (each one page), ' +
+                                       '`counts` (each list\'s whole ' +
+                                       'length), `paging`, `observeOnly`.' },
         handler: function (req: Req, res: Res): void {
-          log.debug("Entering the management API transmitters endpoint.");
-          self.sendJson(res, 200, loadTransmitters().report({
-            transmitter: req.query.transmitter }));
-          log.debug("Leaving the management API transmitters endpoint.");
-        } },
-
-      { method: 'POST', route: BASE + '/ssf/transmitters/:action',
-        tag: 'Shared Signals', mirrors: 'POST /admin/ssf/transmitters',
-        handler: function (req: Req, res: Res): void {
-          log.debug("Entering the management API transmitters action.");
-          const body = Object.assign({}, parseBody(req),
-            { action: String(req.params.action || '') });
-          Promise.resolve().then(function (): Json {
-            return loadTransmitters().act(body, { via: 'api',
-              actor: 'admin-api', base: baseUrlOf(req) });
-          }).then(function (result: Json): void {
-            if (!result.ok) {
-              // error-code: none — the act's own code, read off the result
-              errorCodes.mark(res, errorCodes.codeOf(result) ||
-                                   'STS-SSF-0113');
-            }
-            self.sendJson(res, result.ok ? 200 : 400, result);
-            log.debug("Leaving the management API transmitters action.");
-          }, function (e: any): void {
-            log.error(errorCodes.tag('STS-SSF-0113') + 'ssf: an ' +
-                      '/admin-api transmitter action failed: ' +
-                      ((e && e.stack) || e));
-            errorCodes.mark(res, 'STS-SSF-0113');
-            self.sendJson(res, 500, { ok: false, errors:
-              ['The action could not be completed.'] });
-          });
-        },
-        actions: [
-          { action: 'add', operationId: 'addForeignTransmitter',
-            summary: 'Register a foreign SSF transmitter',
-            description: 'Discovers the issuer\'s ' +
-              '/.well-known/ssf-configuration (which must name that ' +
-              'issuer) and fetches its jwks_uri. `federationId` names the ' +
-              'federation relationship whose linked identities its ' +
-              'subjects are mapped through. Authenticates to it by client ' +
-              'credentials at `tokenEndpoint`, or by `bearer`; the secret ' +
-              'is sealed. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                id: ID,
-                issuer: { type: 'string', maxLength: 2048 },
-                discoveryUrl: { type: 'string', maxLength: 2048,
-                  description: 'Where the configuration document is, when ' +
-                               'not at the issuer\'s well-known address.' },
-                federationId: { type: 'string', maxLength: 128 },
-                delivery: { type: 'string', enum: ['poll', 'push'] },
-                eventsRequested: { type: 'array', items: { type: 'string',
-                                                           maxLength: 256 } },
-                tokenEndpoint: { type: 'string', maxLength: 2048 },
-                clientId: { type: 'string', maxLength: 512 },
-                clientSecret: { type: 'string', maxLength: 1024 },
-                scope: { type: 'string', maxLength: 512 },
-                bearer: { type: 'string', maxLength: 8192 }
-              },
-              required: ['id', 'issuer', 'federationId'],
-              examples: [{ id: 'partner', issuer: 'https://idp.example',
-                           federationId: 'partner-oidc', delivery: 'poll',
-                           tokenEndpoint: 'https://idp.example/token',
-                           clientId: 'receiver', clientSecret: 's3cret' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was registered.' },
-          simple('create-stream', 'createForeignStream',
-                 'Create this realm\'s stream at the transmitter',
-                 'SSF 1.0 section 8.1.1: a poll stream, or a push stream ' +
-                 'whose endpoint is /ssf/transmitters/{id}/push with an ' +
-                 'authorization header only this realm and the ' +
-                 'transmitter know. Audited.'),
-          simple('read-stream', 'readForeignStream',
-                 'Read the stream\'s configuration from the transmitter',
-                 'Refreshes what is held: audience, events, delivery.'),
-          { action: 'update-stream', operationId: 'updateForeignStream',
-            summary: 'Change the events the stream asks for',
-            description: 'A PATCH of events_requested at the transmitter. ' +
-                         'Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object', properties: { id: ID,
-              eventsRequested: { type: 'array', items: { type: 'string',
-                                                         maxLength: 256 } } },
-              required: ['id', 'eventsRequested'],
-              examples: [{ id: 'partner', eventsRequested: [
-                'https://schemas.openid.net/secevent/caep/event-type/' +
-                'session-revoked'] }],
-              additionalProperties: false },
-            responseDescription: 'The transmitter as it stands.' },
-          simple('delete-stream', 'deleteForeignStream',
-                 'Delete the stream at the transmitter', 'Audited.'),
-          { action: 'set-status', operationId: 'setForeignStreamStatus',
-            summary: 'Enable, pause or disable the stream',
-            description: 'SSF 1.0 section 8.1.2 at the transmitter. ' +
-                         'Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object', properties: { id: ID,
-              status: { type: 'string', enum: ['enabled', 'paused',
-                                               'disabled'] },
-              reason: { type: 'string', maxLength: 512 } },
-              required: ['id', 'status'],
-              examples: [{ id: 'partner', status: 'paused' }],
-              additionalProperties: false },
-            responseDescription: 'The transmitter as it stands.' },
-          { action: 'add-subject', operationId: 'addForeignStreamSubject',
-            summary: 'Add a subject to the stream',
-            description: 'SSF 1.0 section 8.1.3.2 at the transmitter. ' +
-                         'Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object', properties: { id: ID,
-              subject: { type: 'object', additionalProperties: true } },
-              required: ['id', 'subject'],
-              examples: [{ id: 'partner', subject: { format: 'iss_sub',
-                iss: 'https://idp.example', sub: '248289761001' } }],
-              additionalProperties: false },
-            responseDescription: 'The transmitter as it stands.' },
-          { action: 'remove-subject',
-            operationId: 'removeForeignStreamSubject',
-            summary: 'Remove a subject from the stream',
-            description: 'SSF 1.0 section 8.1.3.3 at the transmitter. ' +
-                         'Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object', properties: { id: ID,
-              subject: { type: 'object', additionalProperties: true } },
-              required: ['id', 'subject'],
-              examples: [{ id: 'partner', subject: { format: 'iss_sub',
-                iss: 'https://idp.example', sub: '248289761001' } }],
-              additionalProperties: false },
-            responseDescription: 'The transmitter as it stands.' },
-          simple('verify', 'verifyForeignStream',
-                 'Ask the transmitter for a verification event',
-                 'SSF 1.0 section 8.1.4.2: its state is checked when the ' +
-                 'event arrives.'),
-          simple('poll-now', 'pollForeignStream',
-                 'Poll the transmitter now',
-                 'RFC 8936, as the ssf.foreign-poll job does.'),
-          simple('remove', 'removeForeignTransmitter',
-                 'Remove the transmitter',
-                 'Its stream is deleted at the transmitter first. Audited.')
-        ] }
+          log.debug("Entering the management API partners' signals " +
+                    "endpoint.");
+          self.sendJson(res, 200, self.pagedReport(req.query));
+          log.debug("Leaving the management API partners' signals " +
+                    "endpoint.");
+        } }
     ];
     log.debug("Leaving SsfTransmittersApi.buildRoutes().");
     return ROUTES;
@@ -295,8 +234,8 @@ const slot = new InstanceSlot<SsfTransmittersApi>(
 slot.buildNowUnlessDeferred();
 
 /**
- * `/admin-api/ssf/transmitters`: the foreign Shared Signals transmitters, for a
- * machine.
+ * `/admin-api/ssf/transmitters`: the federation partners' Shared Signals, for
+ * a machine.
  *
  * @namespace
  */

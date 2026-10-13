@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -475,7 +475,7 @@ class AwsIidAttestor {
     const self = this;
     log.debug("Entering AwsIidAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     // THE CONFIGURATION AND THE SDK.
     let template = null;
     let org = null;

@@ -8,6 +8,9 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 | `scim.ts` | The seventeen routes, and the scimmy resources behind them. |
 | `scim_auth.ts` | Who is asking. The first authentication this service ENFORCED, and one of several now (the root `CLAUDE.md` lists them). |
 | `scim_map.ts` | Which LDAP attribute each SCIM member is, in both directions. |
+| `scim_client.ts` | **The other direction (#552)**: the OUTBOUND SCIM client — this realm's people and groups pushed to remote service providers. *The outbound SCIM client*, below. |
+| `scim_client_rules.ts` | Its closed vocabularies, its address rule, its retry list and its reading of an Error body: a leaf, so `common/applications.js` and the API can offer the sets without loading the client. |
+| `web_scim_clients.ts` | Protocols → SCIM → Clients and one client's page, drawn in the browser from `/admin-api/scim/clients` (a `web_` module). |
 
 6a. **`scim.ts` must stay after `ldap_server.js`, and the interesting thing
    about it is that it is a PLAIN REQUIRE where several things that file fills
@@ -138,8 +141,8 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    code would go unexercised — hence any username, one shared password
    (`scim.digestPassword`). HOBA's signature is genuinely verified for the same
    reason; what is permissive there is the REGISTRATION, which is
-   unauthenticated for the reason `POST /tls/trust` is — it is how a caller GETS
-   a credential. Between them they make five negatives reachable that no
+   unauthenticated for the reason the open `POST /tls/trust` was until #597 —
+   it is how a caller GETS a credential. Between them they make five negatives reachable that no
    permissive server can produce, including the one worth knowing: a replayed
    nonce count is refused WITHOUT `stale=true`, because `stale` means "your
    credential was fine, try again" and a replay is the opposite claim.
@@ -150,9 +153,15 @@ into the LDAP directory, entry for entry, with **no store of its own**.
    rule 6a above for the three and three.
 
    **THE DISCOVERY ENDPOINTS ARE OPEN BY DEFAULT** (`scim.authDiscovery`), which
-   is `POST /tls/trust`'s bootstrapping argument: the ServiceProviderConfig is
+   is the bootstrapping argument the open `POST /tls/trust` made until #597: the ServiceProviderConfig is
    where a client READS which schemes exist, so demanding a credential to fetch
    it means a client must already know the answer to the question it is asking.
+   **And it is what the specification asks**: RFC 7643 section 5 says a service
+   provider SHOULD make `authenticationSchemes` readable without prior
+   authentication, so off is the conforming default (rcbj, 2026-10-02) and
+   `tests/scim_auth_discovery.js` asserts the default itself — the row, the
+   value with no override, every shipped appconfig file. On departs from that
+   SHOULD, which the setting's description says.
 
    **A CREDENTIAL THAT WAS PRESENTED AND FAILED IS ALWAYS A REFUSAL**, and was
    one even while `scim.authRequired` could turn the requirement off. A client
@@ -409,7 +418,10 @@ runs here is in-process (`tests/scim_monitor.js`,
 `tests/ssf_spiffe_scim_hardening.js`, `tests/stable_subject.js` section E and
 the cluster jobs named below) plus the `local: true`
 `sts_directory_bulk_load_scim.js` and, since #206, `sts_scim_conformance.js`
-— two independent conformance harnesses (see the last section). The rest of this section is what such a test
+— two independent conformance harnesses (see the last section) — and, since
+#552, `sts_scim_client.js`, the outbound client provisioning into this
+service's own `/scim/v2` (*The outbound SCIM client*, below). The rest of
+this section is what such a test
 has to cover.
 It is plain JSON over HTTP with no browser, no signature and
 no XML, its whole surface is seventeen routes, and the interesting half is
@@ -507,6 +519,14 @@ Four things about it are this module's own and are easy to get wrong:
   reason `/admin/scim`'s table already gives: one `POST /scim/v2/Bulk` carrying
   five creates is one `bulk` AND five `create`s, because each of the five really
   is performed.
+
+**A BULK IS ONE BATCH OF PERSON DELETES (#351, 2026-09-29).** The handler runs
+scimmy's `apply()` inside `directory.inPersonBatch()`, so every operation is
+still applied in order and answered with its own status (RFC 7644 section
+3.7: `bulkId` references, `failOnErrors`), a delete's entry goes at once, and
+what each deleted person held is read and ended for the batch together
+(`ldap/CLAUDE.md`, *Deleting people in bulk*). The User degress handler awaits
+`directory.personBatchStep()`, which yields a macrotask every 500 deletes.
 
 **THE COUNTERS ARE PER TRUST REALM AND WERE NOT UNTIL THIS PAGE WAS WRITTEN.**
 `scimCounts` was a plain object beside a file in which everything else is
@@ -755,3 +775,229 @@ holds each fix in process. What they found, and where each fix lives:
 be removed (above, *`active` IS THE ACCOUNT'S DISABLED STATE*); there is no
 ETag, now refused rather than ignored; and the members the directory cannot
 hold are unpublished rather than stored.
+
+## THE OUTBOUND SCIM CLIENT (#552, 2026-10-10; the audit, 2026-10-13)
+
+Everything above is a SERVICE PROVIDER. `scim_client.ts` is a CLIENT of
+somebody else's: per realm, any number of clients, each pushing this realm's
+people and groups to one remote SCIM service provider over RFC 7644. rcbj's
+decisions are on #552 and the user's half is `docs/scim.md`, *The outbound
+SCIM client*; what follows is why it is built the way it is.
+
+**A CLIENT IS AN APPLICATION ENTRY, NOT A SETTING AND NOT A STORE OF ITS
+OWN.** A client is a party this service authenticates TO, with an address and
+credentials, and `ou=applications` is where every such party already lives —
+the secret destinations (#221) are the precedent, and this is the second
+family (`scim-client`) of an application this service CALLS rather than
+serves. So a client appears on Applications, is per realm by construction
+(the directory is), and the rule "every
+credential is on a user or application entry" holds without an exception.
+**Its three credentials are SEALED and WITHHELD on the entry**
+(`common/applications.js`'s `SEALED_FIELDS`, label `scim-client-credential`,
+counted on /admin/encryption): no page, `/admin-api` answer or directory
+read carries one, a page says only `passwordSet` / `oauthClientSecretSet` /
+`tlsPrivateKeySet`, and `applications.scimClientCredentialOf()` opens one for
+the request that uses it and nothing keeps it. **A credential is never logged
+either** (RFC 7644 section 7.5.2): the request path logs the method, the
+lookup logs the attribute and never the value it filters on, and
+`tests/scim_client.js` K1/K2 read every view, audit row and log line — debug
+included — for the secrets.
+
+**A CHANGE IS A ROW, AND THE ROW IS THE RESOURCE.** The directory's account
+observer (`ldap_server.js`'s `addAccountObserver()`) tells this module of
+every write to a person and every membership change; for each ENABLED client
+a row is queued under `<client>|User|<uuid>` or `<client>|Group|<uuid>` in
+`oauth-oidc/outbound_delivery.ts`'s queue — the claims, fences, retries and
+dead letters every outbound delivery kind here shares — and **the row carries
+no data**: the send reads the entry as it is THEN. That one decision buys
+delivery IN ORDER per resource (one row, one attempt in flight, so two
+changes to one person can never cross on the wire) and COALESCING (ten
+changes while a provider is down are one PUT when it is back), and different
+resources go in parallel up to `scimClient.concurrency`. A change landing
+while its row is in flight requeues it when the attempt ends (`changedAt`
+against `lastAttemptAt`, `finished()`); a change landing on a DEAD row marks
+it `pendingChange` and leaves it dead, because a dead letter is an operator's
+to retry and the retry sends the current state anyway. **Each client has its
+own retry and dead-letter queue** — its rows of the one store, by
+`clientId`: a store is per realm at its declaration and a client is a runtime
+entry, so a store per client cannot be declared.
+
+**TWO THINGS ABOUT THAT KEY WERE WRONG UNTIL 2026-10-13**, both because every
+other kind of the queue keys its rows by a RANDOM id and this one keys by a
+NAME that is written again:
+* the store was declared `tombstone: true`, like the others' — and a
+  tombstone ends a key for good (`common/realms.js`: never for anything keyed
+  by a name), so a purged dead letter, a row retention removed or a removed
+  client's rows would have refused that resource's next change at the
+  persisted store. It is not tombstoned now;
+* a row queued under a key whose earlier row was deleted started at
+  generation 1 again, and the queue CLAIMS each attempt by (key, generation,
+  attempt) — so it asked for the claim its predecessor already took and
+  waited out `scimClient.leaseMs` (five minutes) before anything was sent.
+  `enqueue()` now starts a new row at generation = the clock. The audit's
+  test of a change after `purge-dead` (`tests/scim_client.js` N4) found it.
+
+**EVERY SCHEDULE IS A CLUSTER SCHEDULER JOB, AND THE QUEUE'S OWN RETRY TIMER IS
+TURNED OFF** (the root file's directive, and rcbj's again on #552):
+`scim-client.deliver` (every `scimClient.sweepS`) sends what is due — new
+rows and retries alike — and keeps the queues to their retention;
+`scim-client.reconcile` (every `scimClient.reconcileCheckS`) runs each
+client's scheduled reconciliation when its `scimClientReconcileMinutes` has
+come round. The `later` dependency handed to `OutboundDelivery` does nothing,
+so no delivery waits on a timer of its own; an act (reconcile, retry,
+deliver-now) sends at once through `deliverSoon()`, which is one sweep, not a
+timer. A directory change therefore waits up to one sweep.
+
+**BACKOFF IS PER DELIVERY AND PER CLIENT, AND THE CLIENT'S IS A PAUSE WITH A
+PROBE** (rcbj: a struggling provider must not be swamped). A delivery's retry
+waits `backoffMs × 2^(n−1)` with full jitter, capped at
+`scimClient.maxBackoffMs`, and never less than a `Retry-After` (itself capped
+at a day). A failure that says the SERVER is struggling — the network, a
+timeout, 429, 5xx — also PAUSES THE CLIENT: the queue's `holdUntil` hook holds
+every row of that client until `pausedUntil`, the pause doubling with each
+consecutive such failure; when it ends exactly ONE row (the `probe`) goes, and
+the rest are held until a success. **A success ends the pause only when it is
+the probe's** (or the pause has already run out): a request already in flight
+when another failed says nothing about recovery. The pause is a persisted row
+(`scimClient.state`), so every node honours one node's verdict. A 4xx says
+nothing about the server and pauses nobody.
+
+**WHAT IS RETRIED IS #552's LIST AND NOTHING ELSE**: a network failure, a
+timeout, 429, 500, 502, 503, 504 (`scim_client_rules.ts`'s `retryable()`).
+**408 was retried until the audit** and is not now — the ticket names the
+five, a provider that timed a request out answers the same way again, and
+this client's own timeout is a network failure, retried as one. Everything
+else is a dead letter at once, with its scimType.
+
+**THE STORES ARE CELL-TIER** (`persistence/tiers.js`): a person is pushed
+from their home cell, so what was sent for them, the provider's id for them
+and the backoff live in that cell's store. That is the single-cell half;
+groups across cells, moves, data residency and a shared pause are #553's
+design and are NOT built.
+
+**DISCOVERY BEFORE USE** (RFC 7644 section 4): nothing is written until
+`/ServiceProviderConfig` (patch, filter and `maxResults`, etag) and
+`/ResourceTypes` (the endpoints and each type's REQUIRED extensions) have been
+read for that client; kept per process for ten minutes, forgotten on a change
+to the client, read again by test-connection and reconcile. A provider that
+does not ANSWER (network, 5xx, 429) fails the delivery like any other
+failure, so a down provider is not mistaken for one with no features; one
+that answers with something that is not SCIM is assumed to support
+`/Users`, `/Groups` and nothing optional (`STS-SCIMC-0019`).
+`authenticationSchemes` and `bulk` are displayed and USED FOR NOTHING — the
+client authenticates as configured and never sends a Bulk — and the user
+documentation says so.
+
+**THE AUDIT AGAINST #552's OWN CHECKLIST (2026-10-13)** found eight places
+the code fell short of what the ticket lists, and each is now held by a
+section of `tests/scim_client.js`:
+* `tooMany` NARROWS (section 3.4.2): an `externalId eq` lookup asks again for
+  a page of two (none, one, more is all it needs); a listing halves its page
+  to one, then asks `externalId pr` where filtering is supported — the only
+  resources a reconciliation reads — and only then fails (`STS-SCIMC-0028`);
+* paging went on only while `startIndex` was within `totalResults`, so a
+  provider that omits it was reconciled ONE PAGE DEEP. It now pages until an
+  empty page or one with no id not already seen, and counts a resource seen
+  twice once;
+* a 409 ADOPTS only on `scimType` `uniqueness`; any other 409 is a dead
+  letter — adopting a resource on a conflict the provider did not call
+  uniqueness would be overwriting somebody else's resource on a guess;
+* a REQUIRED extension from `/ResourceTypes` is honoured: the enterprise one is
+  added, empty if need be (RFC 7643 section 4.3 requires none of its
+  attributes), and any other is a dead letter naming it (`STS-SCIMC-0029`) —
+  this client has no values for an extension it does not know;
+* `userName` / `displayName` missing is refused before a write
+  (`STS-SCIMC-0030`), and a REPLACE CLEARS what the client sent before and
+  the entry lost: the link keeps `owned` (each attribute sent, single or
+  multi-valued, the enterprise ones as `<urn>:<name>`) and the next PUT sends
+  `null` or `[]` for each one gone (section 3.5.1 leaves an attribute merely
+  omitted to the provider's discretion);
+* the Error body's `status` is read as a string or a number and its
+  `scimType` kept only as a short token; `detail` is never kept (it quotes
+  refused values). The scimTypes that CHANGE behaviour are exactly
+  `tooMany`, `uniqueness` and `invalidVers`; **`mutability` is deliberately a
+  dead letter**, not a re-read: the provider holds that attribute immutable
+  and a re-read cannot change what this client would send;
+* `invalidVers` re-reads as a 412 does, and a DELETE goes through
+  `writeKnown()` too, so a 412 on a delete re-reads and tries again with
+  If-Match like a PUT or a PATCH;
+* 408, above.
+
+**A REACTIVATED PERSON RE-QUEUES THEIR GROUPS** (2026-10-13): a group leaves
+out a member whose link says inactive, and only a CREATE re-queued the
+person's groups, so a person deactivated by a scope change and brought back
+stayed out of their groups until something else touched them. `syncUser()`
+re-queues on a create OR on a link that was inactive and is not now.
+
+**A DISABLED CLIENT IS NOT RECONCILED BY HAND** (2026-10-13): every row it
+queued would have been dead-lettered at the send (`STS-SCIMC-0001`). The
+scheduled one already asked.
+
+**ONE SERVICE CAN BE ITS OWN SERVICE PROVIDER, AND THAT IS THE OVER-HTTP
+TEST** (`tests/vendored/sts_scim_client.js`, `local: true`): a client in one
+throwaway realm pushing into another realm's `/scim/v2`, with a
+client_credentials token from the target realm's token endpoint and the
+service's own anchor (the job's `NODE_EXTRA_CA_CERTS`) as the client's
+`caCertificates` — nothing in the client is relaxed for it, because the
+server identity check and the internal-address question are the same as for
+any private provider. **The client does not refuse internal addresses**: its
+address is an administrator's (Admin Write), not a caller's, like a secret
+destination's. What the job needs from the deployment is that the service
+can reach ITSELF at the address the job was given under a name its
+certificate carries — true of the compose stacks (`https://sts:8081`, the
+balancer in `cluster`); an AWS target behind an NLB that does not hairpin
+cannot, and the job's failure says so.
+
+**What has NO test yet**: the over-HTTP job has never run (written
+2026-10-13; the integrator's run is its first); a real third-party service
+provider (Entra ID, Okta, a SaaS) — the in-process provider is written to
+RFC 7644, and interop beyond it is unproven; the two-cell behaviour (#553);
+`web_scim_clients.ts`'s rendering (no in-process renderer test, unlike the
+console's older pages); the deliveries store across a restart and across two
+nodes (the generation and tombstone fixes above are asserted in one process
+only); `scimClient.skipTlsVerification` and `scimClient.caFile`; the 24-hour
+cap on a `Retry-After`; and the summary log line (`STS-SCIMC-0013`).
+
+## CELLS: WHICH CELL ANSWERS A SCIM REQUEST (#98, 2026-09-28)
+
+`scim_cells.ts` decides, asked by `handle()` **before the caller is
+authenticated** (a Digest nonce count and a HOBA signature are spent where they
+are checked, and the owning cell must spend them) and by the User ingress
+before a person is written. Single-cell mode does not ask; the gate starts in
+the same tick it always did. The file's header argues each operation; in short:
+
+| Request | Answered |
+|---|---|
+| `GET/PUT/PATCH/DELETE /Users/{id}` | the id's (the `entryUUID`'s) home cell, relayed whole; a DN id by its RDN value |
+| `POST /Users` | the new person's home: `homeCell` below, else the realm's `cells.homeCell`, else the cell reached. Relayed there; THAT cell claims the login name in the routing index before writing (409 `uniqueness`, `STS-CELL-0142`, when homed elsewhere) |
+| Group writes naming members | the members' home cell; members in more than one cell: refused whole, 400 `invalidValue` (`STS-CELL-0143`) — send one request per cell |
+| `POST /Bulk` | every operation placed as it would be alone; one other cell: relayed whole; spanning cells: refused whole before anything runs (`STS-CELL-0144`) |
+| lists, `.search` | the serving cell's residents (D11) |
+| `/Me` | a bearer token at the edge (its minting cell); HTTP Basic by its user name here |
+| `POST /.well-known/hoba/register` | the named person's home; a new name where a new person is homed |
+
+**A PUT to a Group replaces the serving cell's share of the membership**, and
+the global definition; the members other cells hold stand. A group's full
+membership is the union across cells.
+
+**NO CROSS-CELL LIST PARAMETER.** RFC 7644 section 3.4.2 fixes a list's query
+parameters, and a client would never send one of ours; the cross-cell door is
+the console's and `/admin-api`'s `?cell=` selector, placed at the edge.
+
+**THE EXTENSION MEMBER `homeCell`**, in this service's own User extension:
+`urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:homeCell`, a string
+naming a cell id. It is read on a create only, and is `writeOnly` / `returned:
+never` — a cell is a routing fact no document a client reads may name — and it
+is never stored on the entry: the entry existing in that cell IS the home. A
+cell the service does not have, or one outside the realm's
+`cells.jurisdictions`, is refused (`STS-CELL-0140`) rather than placed
+somewhere else. A later PUT or PATCH naming another cell is refused 400
+`mutability` (`STS-CELL-0145`): re-homing is an administrator's act. A
+single-cell service accepts and ignores it.
+
+**What has no test yet**: a two-cell run over HTTP. `tests/cell_handlers_c.js`
+drives the placement in process with the routing and the channel stubbed.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /scim` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `scim/web_scim_description.ts` from the `describeScim` catalogs, with `/scim/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds whether the realm verifies a credential (per mode, #543 round 2) and the SCIM base path. `/scim/v2/*` is SCIM's and unchanged. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

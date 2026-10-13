@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -106,6 +106,12 @@ interface AccessQuestion {
   owner?: any;
   subject?: any;
   requiredRoles?: unknown[];
+  requiredAllRoles?: unknown[];
+  // The object an owner would administer (#607): `common/access_gate.ts`.
+  ownedObject?: {
+    kind: string; id: string; action: string; requiredRole: string;
+    attributes?: string[]; person: string;
+  } | null;
 }
 
 // What a decision answers.
@@ -361,8 +367,27 @@ class XacmlAccessPep {
                model.TYPE.BOOLEAN)
       .target(asked.resource)
       .resource(ATTRIBUTE.REQUIRED_ROLE, required)
+      // EVERY ONE OF THESE (#454), where the caller names any: the
+      // template's conjunct asks that the subject hold them all.
+      .resource(ATTRIBUTE.REQUIRED_ALL_ROLE,
+                (Array.isArray(asked.requiredAllRoles)
+                  ? asked.requiredAllRoles : []).map(String))
       .resource(ATTRIBUTE.OWNER, [asked.owner || ''])
       .requestedAction(asked.action);
+    // THE OWNER RULE'S QUESTION (#607): what is reached, by whom, and the
+    // owner role it needs. Who owns it, whether it is closed to its owners
+    // and who the person is as an owner are the PIP's to answer.
+    const owned = asked.ownedObject;
+    if (owned && owned.kind && owned.id) {
+      req.resource(ATTRIBUTE.OWNER_REQUIRED_ROLE,
+                   [String(owned.requiredRole || '')])
+        .resource(ATTRIBUTE.OBJECT_KIND, [String(owned.kind)])
+        .resource(ATTRIBUTE.OBJECT_ID, [String(owned.id)])
+        .resource(ATTRIBUTE.OBJECT_ATTRIBUTE,
+                  (owned.attributes || []).map(String))
+        .action(ATTRIBUTE.ADMIN_ACTION, [String(owned.action || '')])
+        .subject(ATTRIBUTE.OWNER_SUBJECT, [String(owned.person || '')]);
+    }
     req.category(model.CATEGORY.ENVIRONMENT);
     log.debug("Leaving XacmlAccessPep.buildRequest().");
     return req.build();

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -100,8 +100,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
+// The one place this service draws random values (#453). A leaf over
+// `config`, so this require cannot close a cycle.
+import stsCrypto = require('../common/crypto');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('../cluster/cluster_capabilities');
@@ -218,6 +220,12 @@ const connectionsByNode = realms.sharedMap({
 // identity key -> { key, at, node, nonce }
 const signOuts = realms.sharedMap({
   persist: 'ldap.clusterSignOuts',
+  // #333: an instruction lives INSTRUCTION_TTL_MS from its `at`.
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: any): number | null {
+    const at = Number(row && row.at);
+    return at > 0 ? at + INSTRUCTION_TTL_MS : null;
+  },
   reconcile: {
     restore: function (key, incoming, held) {
       log.debug("Entering restore().");
@@ -312,7 +320,7 @@ class LdapClusterConnections {
     return {
       log: log,
       errorCodes: errorCodes,
-      randomBytes: nodeCrypto.randomBytes,
+      randomBytes: stsCrypto.randomBytes,
       loadCluster: LdapClusterConnections.clusterFromRequire,
       loadPersistence: LdapClusterConnections.persistenceFromRequire
     };

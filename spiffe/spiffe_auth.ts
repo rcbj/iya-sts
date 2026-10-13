@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -125,7 +125,7 @@
 // exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 const { log, nowSec } = helpers;
@@ -328,6 +328,86 @@ interface SpiffeAuthDeps {
   processUid(): number;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT THE PAGES SAY ABOUT WHAT IS ENFORCED (#543 phase 2b): `state()`'s
+// four sentences, in a table of their own so that the `spiffe` namespace's
+// `prose()` reads the same strings `state()` answers. Their reasoning is at
+// `state()`.
+// ---------------------------------------------------------------------------
+/**
+ * The prose `state()` answers: what the SPIRE Server API's authentication
+ * covers, how an agent bootstraps, and what an accepted credential becomes.
+ */
+const STATE_PROSE = Object.freeze({
+  what: 'The SPIRE Server API only. Its TCP port is mutual TLS: a caller ' +
+        'presents an X509-SVID from this trust domain, this service ' +
+        'verifies it against the trust bundle and against the ' +
+        'certificate\'s own validity window, takes the SPIFFE ID from ' +
+        'the URI subjectAltName (never from the subject), classifies it ' +
+        'as local, agent, admin or downstream, and authorizes the method ' +
+        'against SPIRE\'s own policy_data.json, row for row. Its Unix ' +
+        'socket is the `local` entity and needs no credential, which is ' +
+        'how the spire-server CLI reaches a real server. The Workload ' +
+        'API is deliberately untouched by all of it: its specification ' +
+        'says a client MUST NOT be required to authenticate.',
+  bootstrapping:
+    'The TCP port asks for a client certificate and does NOT ' +
+    'require one, because AttestAgent is open to a caller with no ' +
+    'SVID — an agent has none until that call gives it one. Fetch ' +
+    'the bundle from the bundle endpoint, verify this server against ' +
+    'it, and attest.',
+  identityNote: 'An accepted credential is an IDENTITY here like any ' +
+        'other: it reaches the same funnel every one of the sixteen ' +
+        'protocol families uses, so its holder appears on /admin/users ' +
+        'and gets a directory entry under ou=users — named by a digest, ' +
+        'with the identifier on it as `spiffeSubject`, and REUSED when ' +
+        'the same identity arrives again by another route. Three ' +
+        'acceptances do that: an X509-SVID over mutual TLS (once per ' +
+        'connection), an agent attesting, and a JWT-SVID verified at ' +
+        'ValidateJWTSVID. AN ISSUANCE IS A FOURTH WAY IN and is not one ' +
+        'of those three: every identity this trust domain mints an ' +
+        'X509-SVID for gets the same entry, carrying the certificate as ' +
+        'the same six `x509*` attributes a verified TLS client ' +
+        'certificate writes — ASSIGNED rather than appended, because an ' +
+        'SVID is minted afresh every half-lifetime, with ' +
+        '`x509svidsIssued` and two timestamps beside them. It ' +
+        'is not counted as an authentication, because being ' +
+        'issued a credential is not presenting one.',
+  credentialStatusNote: 'The entry also records whether the identity may ' +
+        'still be issued a credential HERE — `spiffeCredentialStatus`, ' +
+        'with a reason beside it. THAT IS NOT A CERTIFICATE STATUS AND ' +
+        'NOTHING READS IT BACK: SPIFFE has no revocation, and an SVID ' +
+        'already issued verifies against the bundle until it expires ' +
+        'whatever the directory says. What it records is the three ' +
+        'things that end an identity\'s ability to get a NEW one — its ' +
+        'last registration entry deleted, its agent banned, its agent ' +
+        'deleted — each of which is reversible and recorded the same way ' +
+        'when it is reversed. The entry is never removed.'
+});
+
+// ---------------------------------------------------------------------------
+// THE WORKLOAD API TCP PORT'S STATE, AS THE PAGES NAME IT (#166, #543): one
+// short label per answer `workloadTcpPosture()` gives. Each `why` beside it
+// stays where it is written, and stays English: it is also the reason a
+// call is refused (`spiffe_grpc.ts`) and a listener's `error`
+// (`spiffe_server.ts`), and refusal text is not translated.
+// ---------------------------------------------------------------------------
+/**
+ * The Workload API TCP port's state labels, one per posture.
+ */
+const POSTURE_STATES = Object.freeze({
+  off: 'off (spiffe.workloadPort is 0)',
+  development: 'served (development, not attested)',
+  notDeclared: 'not served (product, source not declared authenticated)',
+  wildcard: 'not served (product, wildcard bind address)',
+  declared: 'served (product, source declared authenticated)'
+});
+
+/**
+ * The `/admin-api` route whose answer carries this module's prose.
+ */
+const PROSE_ROUTES = ['/admin-api/spiffe'];
+
 /**
  * Who is calling the two gRPC surfaces, and whether the SPIRE Server API may
  * answer them.
@@ -348,6 +428,36 @@ class SpiffeAuth {
   constructor(private readonly deps: SpiffeAuthDeps) {
     deps.log.debug("Entering SpiffeAuth.constructor().");
     deps.log.debug("Leaving SpiffeAuth.constructor().");
+  }
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * each entity's label and explanation, `state()`'s four sentences and the
+   * Workload API TCP port's state labels.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering SpiffeAuth.prose().");
+    // LAZILY: `server_prose` requires `config.js` at its load, and this is
+    // asked only when the namespace is first built.
+    const harvest = require('../common/server_prose').harvest;
+    const out: Record<string, string> = Object.assign({},
+      harvest('spiffe.auth.entities', ENTITIES, ['label', 'what']));
+    Object.keys(STATE_PROSE).forEach(function (key) {
+      out['spiffe.auth.state.' + key] = STATE_PROSE[key];
+    });
+    Object.keys(POSTURE_STATES).forEach(function (key) {
+      out['spiffe.auth.tcpState.' + key] = POSTURE_STATES[key];
+    });
+    helpers.log.debug("Leaving SpiffeAuth.prose(). " +
+                      Object.keys(out).length);
+    return out;
   }
 
   // What the composition root passes, from the real modules.
@@ -586,13 +696,13 @@ class SpiffeAuth {
     if (!port) {
       log.debug('Leaving SpiffeAuth.workloadTcpPosture(). The port is 0.');
       return Object.assign(base, { served: false, errorCode: '',
-        state: 'off (spiffe.workloadPort is 0)',
+        state: POSTURE_STATES.off,
         why: 'the Workload API TCP port is turned off' });
     }
     if (mode.servesUnattestedWorkloadTcp()) {
       log.debug('Leaving SpiffeAuth.workloadTcpPosture(). Development.');
       return Object.assign(base, { served: true, errorCode: '',
-        state: 'served (development, not attested)',
+        state: POSTURE_STATES.development,
         why: 'development mode serves the Workload API over TCP; a caller ' +
              'there is identified by its transport, the endpoint it ' +
              'reached and its source address, and nothing attests it' });
@@ -601,7 +711,7 @@ class SpiffeAuth {
       log.debug('Leaving SpiffeAuth.workloadTcpPosture(). Not declared.');
       return Object.assign(base, { served: false,
         errorCode: 'STS-SPIFFE-0120',
-        state: 'not served (product, source not declared authenticated)',
+        state: POSTURE_STATES.notDeclared,
         why: 'this realm is in product mode, where the Workload API is not ' +
              'served over TCP unless spiffe.workloadTcpSourceAuthenticated ' +
              'declares that the network authenticates source addresses — ' +
@@ -613,7 +723,7 @@ class SpiffeAuth {
       log.debug('Leaving SpiffeAuth.workloadTcpPosture(). A wildcard.');
       return Object.assign(base, { served: false,
         errorCode: 'STS-SPIFFE-0121',
-        state: 'not served (product, wildcard bind address)',
+        state: POSTURE_STATES.wildcard,
         why: 'spiffe.workloadTcpSourceAuthenticated declares one network\'s ' +
              'source addresses authenticated, and spiffe.grpcHost is "' +
              host + '" — every interface on this host, including ones that ' +
@@ -622,7 +732,7 @@ class SpiffeAuth {
     }
     log.debug('Leaving SpiffeAuth.workloadTcpPosture(). Declared.');
     return Object.assign(base, { served: true, errorCode: '',
-      state: 'served (product, source declared authenticated)',
+      state: POSTURE_STATES.declared,
       why: 'spiffe.workloadTcpSourceAuthenticated declares that the network ' +
            'at ' + host + ' authenticates source addresses, so a TCP caller ' +
            'is identified by its peer: address, and a registration entry ' +
@@ -859,6 +969,20 @@ class SpiffeAuth {
   // absent rather than empty when none was sent — grpc-js only sets it when the
   // DER is there — which is what distinguishes "no certificate" from "a
   // certificate that did not verify", and those are two different refusals.
+  //
+  // **SINCE grpc-js 1.14.5 THE AUTH CONTEXT IS EMPTY FOR A CERTIFICATE OPENSSL
+  // DID NOT AUTHORIZE** (GHSA-m9gg-hp2v-232j: `getAuthContext()` returns `{}`
+  // when `socket.authorized` is false), so it can no longer tell this function
+  // what was presented — and every certificate OpenSSL cannot chain to this
+  // realm's anchors is unauthorized there: a FEDERATED broker's or agent's
+  // SVID, which `verifyPresentedCertificate()` exists to verify against the
+  // federated bundle, and one that is expired or signed by nothing here,
+  // which must be refused as THAT rather than as "none was presented". The
+  // advisory is about a caller that believed grpc-js's verdict; this one never
+  // did (see VERIFYING THE CERTIFICATE, below). So when the context carries
+  // no certificate, `tlsPeerCertificateOf()` reads it off the call's TLS
+  // socket. `sts_spiffe_broker`'s federated stranger was answered
+  // UNAUTHENTICATED instead of PERMISSION_DENIED on the day of the bump.
   /**
    * Returns the certificate the client presented.
    *
@@ -871,18 +995,55 @@ class SpiffeAuth {
     try {
       const context = call && typeof call.getAuthContext === 'function'
         ? call.getAuthContext() : null;
-      if (!context || !context.sslPeerCertificate) {
+      if (context && context.sslPeerCertificate &&
+          context.sslPeerCertificate.raw) {
         log.debug("Leaving SpiffeAuth.peerCertificateOf().");
-        return null;
+        return context.sslPeerCertificate;
       }
-      log.debug("Leaving SpiffeAuth.peerCertificateOf().");
-      return context.sslPeerCertificate.raw ? context.sslPeerCertificate : null;
+      log.debug("Leaving SpiffeAuth.peerCertificateOf(). From the socket.");
+      return this.tlsPeerCertificateOf(call);
     } catch (e) {
       log.debug('peerCertificateOf(): no readable auth context (' + e.message +
                 ').');
       log.debug("Leaving SpiffeAuth.peerCertificateOf().");
       return null;
     }
+  }
+
+  // The certificate on the call's TLS socket, whether or not OpenSSL
+  // authorized it — see peerCertificateOf() for why that is needed since
+  // grpc-js 1.14.5. **THIS IS A REACH INTO grpc-js's INTERNALS**, as
+  // `spiffe_grpc.ts`'s `_getConstructorOptions()` is, and for the same
+  // reason: there is no public door. A handler's call holds the intercepting
+  // call as `call`, each interceptor the next as `nextCall`, and the base
+  // call the HTTP/2 stream as `stream`, whose session's socket is the
+  // TLSSocket. The walk is bounded and stops at the first socket that can
+  // answer; anything else — a Unix socket, a stream already gone, a grpc-js
+  // that renamed a member — is "no certificate", which is refused, never
+  // accepted. `tests/spiffe_broker.js` holds the federated broker over a
+  // real handshake, so a rename fails there rather than here.
+  /**
+   * Reads the peer certificate off the TLS socket a gRPC call arrived on.
+   *
+   * @param call - the gRPC call
+   * @returns the certificate, or null when none was sent or none is reachable
+   */
+  tlsPeerCertificateOf(call) {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeAuth.tlsPeerCertificateOf().");
+    let at = call;
+    for (let depth = 0; at && depth < 16; depth++) {
+      const session = at.stream && at.stream.session;
+      const socket = session && session.socket;
+      if (socket && typeof socket.getPeerCertificate === 'function') {
+        const certificate = socket.getPeerCertificate();
+        log.debug("Leaving SpiffeAuth.tlsPeerCertificateOf().");
+        return certificate && certificate.raw ? certificate : null;
+      }
+      at = at.call || at.nextCall;
+    }
+    log.debug("Leaving SpiffeAuth.tlsPeerCertificateOf(). No TLS socket.");
+    return null;
   }
 
   // ---------------------------------------------------------------------------
@@ -1000,7 +1161,7 @@ class SpiffeAuth {
     (state.x509Authorities || []).forEach(function (authority) {
       try {
         out.push({ trustDomain: ca.trustDomain(),
-                   certificate: new crypto.X509Certificate(
+                   certificate: crypto.parseCertificate(
                        authority.certificatePem) });
       } catch (e) {
         // An authority this service minted itself that will not parse is a
@@ -1027,7 +1188,7 @@ class SpiffeAuth {
         (key.x5c || []).forEach(function (b64) {
           try {
             out.push({ trustDomain: foreign.trustDomain,
-                       certificate: new crypto.X509Certificate(
+                       certificate: crypto.parseCertificate(
                            Buffer.from(String(b64), 'base64')) });
           } catch (e) {
             // A malformed x5c in a bundle somebody pushed in. Skipped with the
@@ -1090,7 +1251,7 @@ class SpiffeAuth {
     log.debug('Entering SpiffeAuth.verifyPresentedCertificate(). id=' + id);
     let leaf;
     try {
-      leaf = new crypto.X509Certificate(certificate.raw);
+      leaf = crypto.parseCertificate(certificate.raw);
     } catch (e) {
       log.debug('Leaving SpiffeAuth.verifyPresentedCertificate(). It would ' +
                 'not parse.');
@@ -1826,50 +1987,11 @@ class SpiffeAuth {
       // discovery documents are built from one object: `GET /spiffe`,
       // `/admin/spiffe` and the management API all draw this, and three
       // explanations of one mechanism is two that will eventually be wrong.
-      what: 'The SPIRE Server API only. Its TCP port is mutual TLS: a caller ' +
-            'presents an X509-SVID from this trust domain, this service ' +
-            'verifies it against the trust bundle and against the ' +
-            'certificate\'s own validity window, takes the SPIFFE ID from ' +
-            'the URI subjectAltName (never from the subject), classifies it ' +
-            'as local, agent, admin or downstream, and authorizes the method ' +
-            'against SPIRE\'s own policy_data.json, row for row. Its Unix ' +
-            'socket is the `local` entity and needs no credential, which is ' +
-            'how the spire-server CLI reaches a real server. The Workload ' +
-            'API is deliberately untouched by all of it: its specification ' +
-            'says a client MUST NOT be required to authenticate.',
-      bootstrapping:
-        'The TCP port asks for a client certificate and does NOT ' +
-            'require one, because AttestAgent is open to a caller with no ' +
-            'SVID — an agent has none until that call gives it one. Fetch ' +
-            'the bundle from the bundle endpoint, verify this server against ' +
-            'it, and attest.',
-      identityNote: 'An accepted credential is an IDENTITY here like any ' +
-            'other: it reaches the same funnel every one of the sixteen ' +
-            'protocol families uses, so its holder appears on /admin/users ' +
-            'and gets a directory entry under ou=users — named by a digest, ' +
-            'with the identifier on it as `spiffeSubject`, and REUSED when ' +
-            'the same identity arrives again by another route. Three ' +
-            'acceptances do that: an X509-SVID over mutual TLS (once per ' +
-            'connection), an agent attesting, and a JWT-SVID verified at ' +
-            'ValidateJWTSVID. AN ISSUANCE IS A FOURTH WAY IN and is not one ' +
-            'of those three: every identity this trust domain mints an ' +
-            'X509-SVID for gets the same entry, carrying the certificate as ' +
-            'the same six `x509*` attributes a verified TLS client ' +
-            'certificate writes — ASSIGNED rather than appended, because an ' +
-            'SVID is minted afresh every half-lifetime, with ' +
-            '`x509svidsIssued` and two timestamps beside them. It ' +
-            'is not counted as an authentication, because being ' +
-            'issued a credential is not presenting one.',
-      credentialStatusNote: 'The entry also records whether the identity may ' +
-            'still be issued a credential HERE — `spiffeCredentialStatus`, ' +
-            'with a reason beside it. THAT IS NOT A CERTIFICATE STATUS AND ' +
-            'NOTHING READS IT BACK: SPIFFE has no revocation, and an SVID ' +
-            'already issued verifies against the bundle until it expires ' +
-            'whatever the directory says. What it records is the three ' +
-            'things that end an identity\'s ability to get a NEW one — its ' +
-            'last registration entry deleted, its agent banned, its agent ' +
-            'deleted — each of which is reversible and recorded the same way ' +
-            'when it is reversed. The entry is never removed.',
+      // In `STATE_PROSE` since #543, which `prose()` reads too.
+      what: STATE_PROSE.what,
+      bootstrapping: STATE_PROSE.bootstrapping,
+      identityNote: STATE_PROSE.identityNote,
+      credentialStatusNote: STATE_PROSE.credentialStatusNote,
       enforced: this.authRequired(),
       trustLocalSocket: this.trustLocalSocket(),
       adminIds: this.adminIds(),
@@ -1959,6 +2081,9 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   ENTITIES: ENTITIES,
   POLICY: POLICY,
+  // The `spiffe` namespace's route and English (#543).
+  PROSE_ROUTES: SpiffeAuth.PROSE_ROUTES,
+  prose: (): Record<string, string> => SpiffeAuth.prose(),
   ASSERTED_SELECTOR_KEY: ASSERTED_SELECTOR_KEY,
   authRequired: slot.forward('authRequired'),
   trustLocalSocket: slot.forward('trustLocalSocket'),

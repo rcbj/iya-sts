@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_admin_risk.js
 //
@@ -164,7 +164,7 @@ function denyVersionIn(view) {
           view.lookup.datasets[DATASET]) || "";
 }
 
-async function theView(cookie) {
+async function theView(consoleClient) {
   log.debug("Entering theView().");
   log.info("=== 1. the view ===");
   const r = await api("GET", "/admin-api/risk");
@@ -184,15 +184,12 @@ async function theView(cookie) {
                     JSON.stringify(r.body.store));
         });
   log.info("  (the risk store: " + JSON.stringify(r.body.store) + ")");
-  if (cookie) {
-    const page = await call("GET", base + "/admin/risk",
-                            { headers: { Cookie: cookie } });
-    check("Monitoring → Risk is drawn, with its lookup form", function () {
-      assert.strictEqual(page.status, 200, page.text.slice(0, 300));
-      assert.ok(page.text.indexOf('id="risk-lookup"') >= 0,
-                "no lookup form on the page");
-    });
-  }
+  const page = await consoleClient.get("/admin/risk");
+  check("Monitoring → Risk is drawn, with its lookup form", function () {
+    assert.strictEqual(page.status, 200, page.text.slice(0, 300));
+    assert.ok(page.text.indexOf('id="risk-lookup"') >= 0,
+              "no lookup form on the page");
+  });
   log.debug("Leaving theView().");
   return r.body;
 }
@@ -394,16 +391,9 @@ async function theFailureHistory() {
   log.debug("Leaving theFailureHistory().");
 }
 
-async function signInsAreAssessed(cookie) {
+async function signInsAreAssessed(consoleClient) {
   log.debug("Entering signInsAreAssessed().");
   log.info("=== 7. sign-ins are assessed and decided on (#62 P2, P3) ===");
-  if (!cookie) {
-    log.info("  (the console gate is off in this stack: nobody signed in " +
-             "through the sign-in screen, so there is nothing assessed to " +
-             "look for)");
-    log.debug("Leaving signInsAreAssessed(). Gate off.");
-    return;
-  }
   const found = await until("the console sign-in's assessment",
                             async function () {
     const r = await api("GET", "/admin-api/risk");
@@ -458,7 +448,7 @@ function sumOf(table) {
   }, 0);
 }
 
-async function theScoringMeasured(cookie) {
+async function theScoringMeasured(consoleClient) {
   log.debug("Entering theScoringMeasured().");
   log.info("=== 8. the scoring measured ===");
   const r = await api("GET", "/admin-api/risk/metrics?window=24h");
@@ -484,32 +474,23 @@ async function theScoringMeasured(cookie) {
             return s + b.total;
           }, 0), a.total, JSON.stringify(a.series));
         });
-  if (cookie) {
-    check("and it counts the console sign-in this job made", function () {
-      assert.ok(a.total >= 1 && a.subjects >= 1, JSON.stringify(a));
-    });
-    const page = await call("GET", base + "/admin/risk-scoring?window=24h",
-                            { headers: { Cookie: cookie } });
-    check("Monitoring → Risk Scoring is drawn, with its timeline and signals",
-          function () {
-            assert.strictEqual(page.status, 200, page.text.slice(0, 300));
-            assert.ok(page.text.indexOf('id="risk-timeline"') >= 0 &&
-                      page.text.indexOf('id="risk-signals"') >= 0,
-                      "no timeline or signals table on the page");
-          });
-  }
+  check("and it counts the console sign-in this job made", function () {
+    assert.ok(a.total >= 1 && a.subjects >= 1, JSON.stringify(a));
+  });
+  const page = await consoleClient.get("/admin/risk-scoring?window=24h");
+  check("Monitoring → Risk Scoring is drawn, with its timeline and signals",
+        function () {
+          assert.strictEqual(page.status, 200, page.text.slice(0, 300));
+          assert.ok(page.text.indexOf('id="risk-timeline"') >= 0 &&
+                    page.text.indexOf('id="risk-signals"') >= 0,
+                    "no timeline or signals table on the page");
+        });
   log.debug("Leaving theScoringMeasured().");
 }
 
-async function theBadge(cookie, admin) {
+async function theBadge(consoleClient, admin) {
   log.debug("Entering theBadge().");
   log.info("=== 9. the risk badge on a user page ===");
-  if (!cookie) {
-    log.info("  (the console gate is off in this stack: nobody signed in, " +
-             "so nobody was assessed)");
-    log.debug("Leaving theBadge(). Gate off.");
-    return;
-  }
   const r = await api("GET", "/admin-api/users?user=" +
                       encodeURIComponent(admin));
   check("/admin-api/users?user= carries the person's current standing",
@@ -518,9 +499,8 @@ async function theBadge(cookie, admin) {
           assert.ok(r.body.risk && r.body.risk.level,
                     JSON.stringify(r.body.risk));
         });
-  const page = await call("GET", base + "/admin/users?user=" +
-                          encodeURIComponent(admin),
-                          { headers: { Cookie: cookie } });
+  const page = await consoleClient.get("/admin/users?user=" +
+                                       encodeURIComponent(admin));
   check("and their Directory → Users page opens with it, in its level's " +
         "colour", function () {
           assert.strictEqual(page.status, 200, page.text.slice(0, 300));
@@ -532,21 +512,73 @@ async function theBadge(cookie, admin) {
   log.debug("Leaving theBadge().");
 }
 
+// WHAT THIS JOB FOUND IS WHAT IT LEAVES (#311). Every version this job
+// imports into the default realm becomes ACTIVE, and on a shared environment
+// that replaced the operator's own list for good — the next run's
+// sts_admin_risk was then refused by the shrink guard against a suite
+// version. So the active version of each dataset this job touches is read
+// before it starts and made active again when it ends, pass or fail.
+// deploy/aws/reset-environment.js is the backstop for a job that is killed.
+async function activeVersions(datasets) {
+  log.debug("Entering activeVersions().");
+  const r = await call("GET", base + "/admin-api/risk");
+  const found = {};
+  ((r.body && r.body.datasets) || []).forEach(function (d) {
+    if (datasets.indexOf(d.dataset) >= 0) {
+      found[d.dataset] = String(d.activeVersion || "");
+      found[d.dataset + "@realm"] = String(d.realm || "default");
+    }
+  });
+  log.debug("Leaving activeVersions().");
+  return found;
+}
+
+async function putBack(saved) {
+  log.debug("Entering putBack().");
+  const datasets = Object.keys(saved).filter(function (k) {
+    return k.indexOf("@realm") < 0;
+  });
+  const now = await activeVersions(datasets);
+  for (const dataset of datasets) {
+    const was = saved[dataset];
+    if (!was || now[dataset] === was) {
+      continue;
+    }
+    const r = await call("POST", base + "/admin-api/risk/activate",
+                         { headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({
+                             dataset: dataset, version: was,
+                             // Versions are held per realm; an activate naming
+                             // none looks in realm '' and finds nothing.
+                             realm: saved[dataset + "@realm"] || "default" }) });
+    log.info("put " + dataset + " back to " + was + " (it was " +
+             (now[dataset] || "none") + "): " + r.status);
+  }
+  log.debug("Leaving putBack().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "risk-admin-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, admin, log,
-                                                 { grant: "write" });
-  await theView(cookie || "");
-  await importAndLookUp();
-  await aVersionIsVerified();
-  await aSecondVersionThenRollback();
-  await ruleSeven();
-  await theTermsAreAccepted();
-  await theFailureHistory();
-  await signInsAreAssessed(cookie);
-  await theScoringMeasured(cookie);
-  await theBadge(cookie, admin);
+  // The static console's sign-in (#446): a client of the operations its
+  // pages are drawn from, which also leaves this job's sign-in assessed.
+  const consoleClient = await signin.signInToTheConsole(base, admin, log,
+                                                        { grant: "write" });
+  const saved = await activeVersions([DATASET, "iplist.reputation"]);
+  try {
+    await theView(consoleClient);
+    await importAndLookUp();
+    await aVersionIsVerified();
+    await aSecondVersionThenRollback();
+    await ruleSeven();
+    await theTermsAreAccepted();
+    await theFailureHistory();
+    await signInsAreAssessed(consoleClient);
+    await theScoringMeasured(consoleClient);
+    await theBadge(consoleClient, admin);
+  } finally {
+    await putBack(saved);
+  }
   log.info("sts_admin_risk: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

@@ -1,0 +1,274 @@
+{
+  "endpoints.route./gnap/code.name": {
+    "en": "8882b6b5d7dd547f",
+    "text": "用戶代碼輸入"
+  },
+  "endpoints.route./pki/crl/:scope/:ca.name": {
+    "en": "8d20c59eb134e55e",
+    "text": "單一授權單位的證書撤銷清單"
+  },
+  "endpoints.route./pki/ca/:scope/:ca.name": {
+    "en": "674689732e065344",
+    "text": "單一核證機關自己的證書"
+  },
+  "endpoints.route./pki/chain/:scope/:certificate.name": {
+    "en": "7f1f6b207986210f",
+    "text": "已簽署權杖的 x5u 所指名的證書鏈"
+  },
+  "endpoints.route./crypto/metadata.name": {
+    "en": "a5ecf797eaf091e5",
+    "text": "密碼學元數據文件，依 Accept 決定格式"
+  },
+  "endpoints.route./crypto/metadata.json.name": {
+    "en": "4890cf97903b2272",
+    "text": "密碼學元數據文件，JSON 格式"
+  },
+  "endpoints.route./crypto/metadata.xml.name": {
+    "en": "7e192a5658a57fa6",
+    "text": "密碼學元數據文件，XML 格式"
+  },
+  "endpoints.route./crypto/metadata.jwt.name": {
+    "en": "a39f662681268cc8",
+    "text": "密碼學元數據文件，簽署為 JWS"
+  },
+  "endpoints.route./crypto/metadata.signed.xml.name": {
+    "en": "c11085a7c69631a5",
+    "text": "密碼學元數據文件，已簽署的 XML"
+  },
+  "endpoints.route./crypto/metadata.xsd.name": {
+    "en": "9d94529b9b2f3464",
+    "text": "密碼學元數據文件的 XML Schema"
+  },
+  "endpoints.route./.well-known/ssf-configuration.name": {
+    "en": "357ed4e8aed9b636",
+    "text": "傳送端組態元數據"
+  },
+  "endpoints.route./.well-known/ssf-configuration/*.name": {
+    "en": "95c75b212ca6850f",
+    "text": "傳送端組態元數據，插入路徑形式"
+  },
+  "endpoints.route./scim/v2/Users.name": {
+    "en": "85d63fe6b3d4f8c4",
+    "text": "用戶：列出與建立"
+  },
+  "endpoints.route./scim/v2/Users/.search.name": {
+    "en": "2419ec93d320dc47",
+    "text": "用戶：以 POST 搜尋"
+  },
+  "endpoints.route./scim/v2/Users/:id.name": {
+    "en": "ac119777bcacd2ba",
+    "text": "單一用戶：讀取、取代、修改、刪除"
+  },
+  "endpoints.route./tls/sign-in.name": {
+    "en": "a670f321ddd2f009",
+    "text": "以客戶端證書登入"
+  },
+  "endpoints.route./tls/server-certificate.name": {
+    "en": "9458f47a8a347911",
+    "text": "伺服器證書（PEM）"
+  },
+  "endpoints.route./home.js.name": {
+    "en": "130dd402d6eade90",
+    "text": "首頁的腳本"
+  },
+  "endpoints.route./admin/api-explorer/explorer.js.name": {
+    "en": "a580f8533000172f",
+    "text": "API 探索器腳本"
+  },
+  "endpoints.route./admin/console.js.name": {
+    "en": "9932c00e39f5d470",
+    "text": "主控台的腳本"
+  },
+  "endpoints.route./portal/portal.js.name": {
+    "en": "acb6735807c66205",
+    "text": "入口網站的腳本"
+  },
+  "endpoints.route./admin-api/keys/history/certificate.name": {
+    "en": "c4293d2be95a4d6e",
+    "text": "單一簽署金鑰的證書鏈"
+  },
+  "endpoints.route./admin-api/console/pki/:action.name": {
+    "en": "91b14d0429eaa0bc",
+    "text": "證書表單的輔助功能"
+  },
+  "endpoints.route./admin-api/pki.name": {
+    "en": "bc458d477b4de7d9",
+    "text": "此領域持有的核證機關"
+  },
+  "endpoints.route./admin-api/pki/:action.name": {
+    "en": "c17f40560a0a857f",
+    "text": "建立階層、簽發金鑰組、撰寫證書"
+  },
+  "endpoints.route./admin-api/certificates.name": {
+    "en": "df89d301f57f6ace",
+    "text": "此領域持有的每張證書，或其中一張的完整內容"
+  },
+  "endpoints.route./admin-api/risk/upload.name": {
+    "en": "49a3e164fdbf7c12",
+    "text": "風險數據集上傳"
+  },
+  "endpoints.route./admin-api/encryption/:action.name": {
+    "en": "74f8245296e5a5ed",
+    "text": "數據加密金鑰的四種動作"
+  },
+  "endpoints.route./admin-api/users/:action.name": {
+    "en": "33634352212a8e51",
+    "text": "用戶動作"
+  },
+  "endpoints.route./admin-api/users/new.name": {
+    "en": "911ac7f1d87d5691",
+    "text": "新用戶表單"
+  },
+  "endpoints.route./admin-api/scim/clients.name": {
+    "en": "63c8ee9a6d93cb89",
+    "text": "對外 SCIM 客戶端"
+  },
+  "endpoints.route./admin-api/scim/clients/:action.name": {
+    "en": "af52f5017d9fd21b",
+    "text": "變更對外 SCIM 客戶端"
+  },
+  "endpoints.route./admin-api/tls/trust.name": {
+    "en": "7afb6aac81a9a73c",
+    "text": "客戶端證書信任存放區"
+  },
+  "endpoints.route./admin-api/tls/trust/:action.name": {
+    "en": "a1951930186f3dee",
+    "text": "新增或移除客戶端證書信任錨點"
+  },
+  "endpoints.route./sts/cert.name": {
+    "en": "a8e401846d25c111",
+    "text": "STS 證書"
+  },
+  "endpoints.route./wsfed/autopost.js.name": {
+    "en": "2a2ec46d4b275f3f",
+    "text": "登入回應自動提交腳本"
+  },
+  "endpoints.route./FederationMetadata/2007-06/FederationMetadata.xml.name": {
+    "en": "57daca724d75f812",
+    "text": "聯盟元數據"
+  },
+  "endpoints.route./wsfed/metadata/:rp.name": {
+    "en": "17543ed2ad8f5b73",
+    "text": "「單一」依賴方的聯盟元數據"
+  },
+  "endpoints.route./saml2/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "身分識別提供者元數據"
+  },
+  "endpoints.route./saml2/metadata/:sp.name": {
+    "en": "a9ae2cff7346229c",
+    "text": "「單一」服務提供者的身分識別提供者元數據"
+  },
+  "endpoints.route./saml2/autopost.js.name": {
+    "en": "3046cc7181c4dedb",
+    "text": "HTTP POST 繫結自動提交腳本"
+  },
+  "endpoints.route./saml11/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "身分識別提供者元數據"
+  },
+  "endpoints.route./saml11/metadata/:rp.name": {
+    "en": "e65a9fe2331190e7",
+    "text": "「單一」依賴方的身分識別提供者元數據"
+  },
+  "endpoints.route./saml11/autopost.js.name": {
+    "en": "1c2c5f913f3bd033",
+    "text": "Browser/POST 設定檔自動提交腳本"
+  },
+  "endpoints.route./federation/metadata/:id.name": {
+    "en": "1bd56e73b838da2d",
+    "text": "本服務「自己的」SAML 元數據，依夥伴"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server.name": {
+    "en": "6339737b371a7f8e",
+    "text": "授權伺服器元數據"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server/*.name": {
+    "en": "846fc2797e4d73f5",
+    "text": "授權伺服器元數據（簽發者帶有路徑）"
+  },
+  "endpoints.route./authn/email-code.name": {
+    "en": "f889f4695b9ab9f3",
+    "text": "電郵代碼步驟"
+  },
+  "endpoints.route./authn/email-link.name": {
+    "en": "28e6a6472025060a",
+    "text": "電郵登入連結：等待頁面"
+  },
+  "endpoints.route./authn/email-link/open.name": {
+    "en": "be8ae41916803885",
+    "text": "電郵登入連結：抵達之處"
+  },
+  "endpoints.route./authn/fingerprint.js.name": {
+    "en": "e79a24977ac0a595",
+    "text": "瀏覽器指紋腳本（選用）"
+  },
+  "endpoints.route./oauth2/check_session.js.name": {
+    "en": "d9f2d9b37bfe6db9",
+    "text": "OP iframe 腳本"
+  },
+  "endpoints.route./oauth2/autopost.js.name": {
+    "en": "509aa57b5e9572d6",
+    "text": "form-post 回應腳本"
+  },
+  "endpoints.route./:as/oauth2/register/:client_id.name": {
+    "en": "e9e266200b93ee8c",
+    "text": "已註冊客戶端管理（具名授權伺服器）"
+  },
+  "endpoints.route./oauth2/challenge.name": {
+    "en": "2058075cb9955db9",
+    "text": "客戶端證明挑戰端點"
+  },
+  "endpoints.route./oauth2/register.name": {
+    "en": "d53075a18dfd9972",
+    "text": "動態客戶端註冊"
+  },
+  "endpoints.route./oauth2/register/:client_id.name": {
+    "en": "36b03c4cf456a0ad",
+    "text": "已註冊客戶端管理"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer.name": {
+    "en": "1f08d181c3c4f31b",
+    "text": "認證簽發者元數據"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer/*.name": {
+    "en": "dcd93dd68bb234ec",
+    "text": "認證簽發者元數據（簽發者帶有路徑）"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer.name": {
+    "en": "f08112b1d485cfb0",
+    "text": "JWT VC 簽發者元數據"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer/*.name": {
+    "en": "1080905b09dbe51c",
+    "text": "JWT VC 簽發者元數據（簽發者帶有路徑）"
+  },
+  "endpoints.route./enroll/acme/cert/:id.name": {
+    "en": "684bd809e6bf3b64",
+    "text": "下載證書"
+  },
+  "endpoints.route./enroll/acme/revoke-cert.name": {
+    "en": "374ba7ba8a1ba9d4",
+    "text": "撤銷證書"
+  },
+  "endpoints.route./.well-known/est/cacerts.name": {
+    "en": "289fb2c13dc75710",
+    "text": "CA 證書"
+  },
+  "endpoints.route./.well-known/est/:label/cacerts.name": {
+    "en": "0808f99538729c98",
+    "text": "CA 證書（具標籤）"
+  },
+  "endpoints.route./admin-api/scep/:action.name": {
+    "en": "c335ded81d044226",
+    "text": "挑戰、RA 證書、撤銷與主機名稱"
+  },
+  "endpoints.socket.mainPort": {
+    "en": "6b11a59c1fd5cd82",
+    "text": "主連接埠上的客戶端證書"
+  },
+  "endpoints.socket.mainPortTransport": {
+    "en": "f09855213e0c9733",
+    "text": "TLS（會索取客戶端證書，但從不強制要求）"
+  }
+}

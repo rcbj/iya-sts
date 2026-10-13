@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -123,11 +123,23 @@ const PURGE_JOB = 'oauth2.grant-management-purge';
 // grant_id -> the grant (see `apply()` for its shape). PERSISTED: every node
 // must answer the same grant, and a refresh refused on one node must be
 // refused on all.
-const grants = realms.map({ persist: 'oauth2.grants' });
+// `expiresAt` (#333): the purge's own rule — the grant's `expiresAt` (epoch
+// SECONDS, the latest exp of its tokens; 0 is none) plus the clock skew.
+const grants = realms.map({
+  persist: 'oauth2.grants',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (grant: Json): number | null {
+    const at = Number(grant && grant.expiresAt);
+    const skew = Number(config.value('oauth2.clockSkewS'));
+    return at > 0 && isFinite(skew) && skew >= 0 ? (at + skew) * 1000 : null;
+  }
+});
 // jti -> { grant, gen, kind, forget } — one row per token minted under a
 // grant, so a DELETE can revoke each. TOMBSTONED, so a row the purge removed
 // is not written back by a node that had not heard.
-const issued = realms.map({ persist: 'oauth2.grantIssued', tombstone: true });
+const issued = realms.map({ persist: 'oauth2.grantIssued', tombstone: true,
+                            // #333: the purge's `forget`, in ms.
+                            expiresAt: realms.expiryField('forget', 1) });
 
 interface GrantManagementDeps {
   log: typeof helpers.log;
@@ -652,15 +664,16 @@ class GrantManagement {
                        via: string, how?: Json): number {
     const { log, stats } = this.deps;
     log.debug("Entering GrantManagement.revokeIssued().");
-    const jtis: string[] = [];
+    const jtis: Array<[string, number]> = [];
     issued.forEach(function (row: Json, jti: string): void {
       if (row && row.grant === grantId && which(row)) {
-        jtis.push(jti);
+        jtis.push([jti, Number(row.exp) || 0]);
       }
     });
     let count = 0;
-    jtis.forEach(function (jti: string): void {
-      if (stats.revoke(jti, via, how)) {
+    // Each with its token's `exp` (#345), which this row recorded at issue.
+    jtis.forEach(function (pair: [string, number]): void {
+      if (stats.revoke(pair[0], via, how, pair[1])) {
         count += 1;
       }
     });
@@ -681,10 +694,13 @@ class GrantManagement {
    * @param grantId - the grant id
    * @param actor - who revoked it
    * @param via - the door it was revoked through
+   * @param entity - CAEP's initiating entity, where the door states one (a
+   *   sign-out, a received signal — #432); by default `user` for the
+   *   client's DELETE and `admin` for every other door
    * @returns `{ ok: true, revoked }`, or `{ ok: false }` for a grant this realm
    *   does not hold
    */
-  revoke(grantId: string, actor: string, via: string): Json {
+  revoke(grantId: string, actor: string, via: string, entity?: string): Json {
     const { log } = this.deps;
     log.debug("Entering GrantManagement.revoke().");
     const held = grants.get(String(grantId));
@@ -699,7 +715,7 @@ class GrantManagement {
     const revoked = this.revokeIssued(held.id, function (): boolean {
       return true;
     }, 'grant revoked (' + via + ')',
-    { initiatingEntity: via === 'client' ? 'user' : 'admin' });
+    { initiatingEntity: entity || (via === 'client' ? 'user' : 'admin') });
     try {
       this.deps.audit().record({
         category: via === 'client' ? 'oauth' : 'admin',

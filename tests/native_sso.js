@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -36,6 +36,10 @@ const applications = require('../common/applications');
 const devices = require('../common/devices');
 const scopePolicy = require('../common/scope_policy');
 const oauth2 = require('../oauth-oidc/oauth2');
+
+// The console's renderers draw in English here because common/i18n.ts
+// installs node's default translator (#539); without it they draw keys.
+require('../common/i18n');
 
 const log = require('bunyan').createLogger({ name: 'native_sso',
   level: process.env.LOG_LEVEL || 'info' });
@@ -183,9 +187,15 @@ function body(t) {
           problem({ subject_token_type: ACCESS, actor_token_type: ACCESS }) ===
             'STS-OAUTH-0626',
           '4a. the presence rules of section 2.1');
+  // saml2 and saml1 are supported since #114 (assertions from declared
+  // issuers); a type nobody defined is still not.
   t.check(problem({ subject_token_type:
-                    'urn:ietf:params:oauth:token-type:saml2' }) ===
+                    'urn:ietf:params:oauth:token-type:unknown' }) ===
             'STS-OAUTH-0627' &&
+          problem({ subject_token_type:
+                    'urn:ietf:params:oauth:token-type:saml2' }) === '' &&
+          problem({ subject_token_type:
+                    'urn:ietf:params:oauth:token-type:saml1' }) === '' &&
           problem({ subject_token_type: DEVICE }) === 'STS-OAUTH-0627' &&
           problem({ subject_token_type: ACCESS, actor_token: 'x',
                     actor_token_type: DEVICE }) === 'STS-OAUTH-0627' &&
@@ -204,10 +214,15 @@ function body(t) {
           '4c. a token of this realm is told apart by what it carries');
 
   t.log.info('=== 5. the console block ===');
-  const admin = require('../admin-ui/admin');
-  const consolePage = new admin.AdminConsole(admin.AdminConsole.defaultDeps());
-  const drawn = consolePage.mfaSection({ name: 'nsso-alice' }, 'nsso-alice',
-    { write: true }, '').html;
+  // The person page's sections are drawn from its answer since #446: the
+  // second factors from `page.mfa` of `GET /admin-api/users?user=`.
+  const UsersPage = require('../admin-ui/web_users');
+  const mfaData = JSON.parse(JSON.stringify(
+    require('../admin-core/admin_views')
+      .userDetailJson({ query: {}, headers: {} }, 'nsso-alice').json.page.mfa));
+  const ctxOf = require('../admin-ui/web_kit').context;
+  const drawn = UsersPage.mfaSection(ctxOf({}, true).t,
+    { name: 'nsso-alice' }, 'nsso-alice', { write: true }, '', mfaData);
   t.check(/<h3>Devices<\/h3>/.test(drawn) &&
           /value="remove-device"/.test(drawn) &&
           drawn.indexOf(second.device.id) >= 0,

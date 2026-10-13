@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -114,7 +114,6 @@
 // `common/protocol_stack.ts` and requires nothing that registers any.
 // ===========================================================================
 
-import crypto = require('crypto');
 import zlib = require('zlib');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
@@ -135,6 +134,15 @@ import documentSettings = require('../saml/document_settings');
 // relationship's own key, as a sign-in's assertion is.
 import fedEncryption = require('./federation_encryption');
 import xmldom = require('@xmldom/xmldom');
+// A PARTNER'S SIGN-OUT REACHES EVERY CELL (#98): see endAtPeers(). A library
+// that registers no route; the channel is required lazily, as a dialler.
+import cells = require('../common/cells');
+import realms = require('../common/realms');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the pages a PERSON sees use it — the
+// sign-outs that happened and the confirmation; refusals, and the pages that
+// say nothing was signed out (each carries an error code), stay English.
+import PageLocale = require('../common/page_locale');
 
 type Helpers = typeof helpers;
 
@@ -192,6 +200,9 @@ const STATUS_PARTIAL_LOGOUT =
   'urn:oasis:names:tc:SAML:2.0:status:PartialLogout';
 const NAMEID_UNSPECIFIED =
   'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
+// The inter-cell operation that ends, in the cell it is sent to, the
+// sessions a partner's sign-out names (#98). See endAtPeers().
+const PEER_SIGNOUT_OP = 'federation-partner-signout';
 // Back-Channel Logout 1.0 section 2.4: the event a Logout Token carries.
 const BACKCHANNEL_EVENT = 'http://schemas.openid.net/event/backchannel-logout';
 // Section 2.4's explicit type, and the two forms of it RFC 8725 section 3.11
@@ -341,11 +352,15 @@ class FederationSlo {
   // SMALL THINGS EVERY PATH NEEDS.
   // =========================================================================
 
-  private page(title, body) {
+  // `t` is the page's translator (#539), for a page a person sees; without
+  // one the page is English, exactly as it always was.
+  private page(title, body, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FederationSlo.page().");
     log.debug("Leaving FederationSlo.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>' + xmlEscape(title) + '</title><style>' + STYLE +
       '</style></head><body>' + body + '</body></html>';
@@ -420,7 +435,9 @@ class FederationSlo {
     }
     const id = String(req.params.id || '');
     const record = federation.get(id);
-    if (!record || record.fedRole !== 'service-provider') {
+    // An ssf relationship (#374) signed nobody in, so it signs nobody out.
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record)) {
       if (json) {
         errorCodes.mark(res, 'STS-FED-0002');
         this.refuseJson(res, null, 400, 'there is no service-provider-side ' +
@@ -557,7 +574,9 @@ class FederationSlo {
     log.debug("Entering FederationSlo.endSessions(). " + sessions.length);
     const logout = this.deps.logout();
     const by = 'the federation partner "' + record.fedId + '" (' + how + ')';
-    const issuer = base ? this.deps.issuerOf(base) : '';
+    // The OpenID provider's issuer, where `oauth-oidc` is advertised (#472).
+    const issuer = base
+      ? this.deps.issuerOf(helpers.rebaseTo(base, 'oauth-oidc')) : '';
     const results = sessions.map(function (session) {
       return logout.endPartnerSession(session, {
         by: by, issuer: issuer, channel: browser ? 'http' : 'back-channel',
@@ -585,6 +604,10 @@ class FederationSlo {
     });
     log.info('federation: ' + record.fedId + '\'s partner signed out ' +
              sessions.length + ' session(s) (' + how + ').');
+    // Each session in the page's language (#539) — the ambient request's,
+    // as the page drawing the list works it out. Built on the back channel
+    // too, where nobody reads it, which costs a lookup and nothing else.
+    const t = PageLocale.forPage({});
     log.debug("Leaving FederationSlo.endSessions().");
     return {
       results: results,
@@ -595,10 +618,197 @@ class FederationSlo {
         });
       }),
       summary: sessions.map(function (one) {
-        return '<li>' + xmlEscape((one.user && one.user.username) || '?') +
-               ' — session <code>' + xmlEscape(one.id) + '</code></li>';
+        return '<li>' + t.html('handoff.federation.slo.sessionItem',
+          { username: (one.user && one.user.username) || '?',
+            session: one.id }) + '</li>';
       }).join('')
     };
+  }
+
+  // =========================================================================
+  // A PARTNER'S SIGN-OUT IN A SERVICE DEPLOYED AS CELLS (#98).
+  //
+  // The sessions a partner started through a relationship are held wherever
+  // the person signed in — their home, or a cell the transfer policy lets a
+  // session be held in (D4) — and one person may hold several, from several
+  // browsers, in several cells. A partner's sign-out arrives at ONE cell and
+  // names what to end, not where it is; a Back-Channel Logout Token naming
+  // only a `sub`, or a LogoutRequest with no SessionIndex, names every one of
+  // them (decision 2). So the cell it arrives at verifies it and spends it —
+  // once, in the global used-assertion history — ends what it holds, and asks
+  // EVERY PEER to end what it holds of the same match (`PEER_SIGNOUT_OP`).
+  // The match travels as data, and both sides build the one predicate from
+  // it (`matcherOf()`), so a peer cannot end more than this cell would have.
+  //
+  // What a peer ends it ends on the back channel: the Logout Tokens and the
+  // CAEP event go from its session's end, and a browser fan-out it cannot
+  // draw is counted as partial. A peer that cannot be reached is not waited
+  // out; the answer to the partner says the sign-out may be incomplete where
+  // its protocol has words for that (a 400 from the back channel unless the
+  // `sid` named session was ended; PartialLogout on a LogoutResponse), and
+  // `STS-CELL-0122` is logged. The sessions in that cell last until they end
+  // by themselves — the durable revocation push is the design's section 5,
+  // not built yet (`federation/CLAUDE.md`).
+  // =========================================================================
+  /**
+   * The predicate a partner's sign-out matches sessions with, built from the
+   * match as it travels between cells.
+   *
+   * @param match - `{ protocol: 'oidc', sid, sub }` or `{ protocol: 'saml',
+   *   nameId: { value, format, nameQualifier, spNameQualifier }, indexes }`
+   * @returns `(held) => boolean` over a session's `fedPartnerSession`
+   */
+  static matcherOf(match: any): (held: any) => boolean {
+    helpers.log.debug("Entering FederationSlo.matcherOf().");
+    const m = match || {};
+    if (m.protocol === 'oidc') {
+      const sid = String(m.sid || '');
+      const sub = String(m.sub || '');
+      helpers.log.debug("Leaving FederationSlo.matcherOf(). OpenID Connect.");
+      return function (held) {
+        return held.protocol === 'oidc' && (!!sid || !!sub) &&
+               (!sid || String(held.sid || '') === sid) &&
+               (!sub || String(held.sub || '') === sub);
+      };
+    }
+    if (m.protocol !== 'saml' || !m.nameId) {
+      helpers.log.debug("Leaving FederationSlo.matcherOf(). Matches nothing.");
+      return function () {
+        return false;
+      };
+    }
+    const named = {
+      value: String(m.nameId.value || ''),
+      format: String(m.nameId.format || ''),
+      nameQualifier: String(m.nameId.nameQualifier || ''),
+      spNameQualifier: String(m.nameId.spNameQualifier || '')
+    };
+    const indexes = (Array.isArray(m.indexes) ? m.indexes : [])
+      .map(function (one) {
+        return String(one);
+      });
+    const sameFormat = function (a, b) {
+      helpers.log.debug("Entering sameFormat().");
+      const left = a || NAMEID_UNSPECIFIED;
+      const right = b || NAMEID_UNSPECIFIED;
+      helpers.log.debug("Leaving sameFormat().");
+      return left === right;
+    };
+    const sameQualifier = function (a, b) {
+      helpers.log.debug("Entering sameQualifier().");
+      helpers.log.debug("Leaving sameQualifier().");
+      return !a || !b || a === b;
+    };
+    helpers.log.debug("Leaving FederationSlo.matcherOf(). SAML.");
+    return function (held) {
+      if (held.protocol !== 'saml2' && held.protocol !== 'wsfed') {
+        return false;
+      }
+      // saml-core-2.0-os section 3.7.3.2: the principal is the NameID WHOLE.
+      if (String(held.nameId || '') !== named.value ||
+          !sameFormat(held.nameIdFormat, named.format) ||
+          !sameQualifier(held.nameQualifier, named.nameQualifier) ||
+          !sameQualifier(held.spNameQualifier, named.spNameQualifier)) {
+        return false;
+      }
+      // With SessionIndex elements, ONLY those sessions; with none, every
+      // session of the principal from this partner (rcbj's decision 4 reads
+      // "the matched session" as exactly what the specification names).
+      return !indexes.length ||
+             indexes.indexOf(String(held.sessionIndex || '')) >= 0;
+    };
+  }
+
+  /**
+   * Asks every other cell to end the sessions a verified partner sign-out
+   * names. In single-cell mode it asks nobody.
+   *
+   * @param record - the relationship
+   * @param how - what the sign-out was, for the record
+   * @param match - the match, as `matcherOf()` reads it
+   * @param base - the public base URL the sign-out arrived on
+   * @returns a promise of `{ ended, partial, failed }`: sessions the peers
+   *   ended, whether any peer's end was partial, and how many peers could
+   *   not be reached. It never rejects.
+   */
+  private endAtPeers(record, how, match,
+                     base): Promise<{ ended: number; partial: boolean;
+                                      failed: number }> {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering FederationSlo.endAtPeers().");
+    if (!cells.isMulti()) {
+      log.debug("Leaving FederationSlo.endAtPeers(). Single-cell.");
+      return Promise.resolve({ ended: 0, partial: false, failed: 0 });
+    }
+    const channel = require('../common/cell_channel');
+    const body = { realm: realms.currentId(), relationship: record.fedId,
+                   how: how, match: match, base: base };
+    const asks = cells.peers().map(function (peer) {
+      return channel.call(peer.id, PEER_SIGNOUT_OP, body)
+        .then(function (answer: any) {
+          return { ended: Number(answer && answer.ended) || 0,
+                   partial: !!(answer && answer.partial), failed: 0 };
+        }, function (err: any) {
+          log.warn(errorCodes.tag('STS-CELL-0122') + 'federation: cell "' +
+                   peer.id + '" could not be asked to end the sessions ' +
+                   record.fedId + '\'s partner signed out (' + how + '): ' +
+                   ((err && err.message) || err) + '. What it holds lasts ' +
+                   'until it ends by itself.');
+          return { ended: 0, partial: false, failed: 1 };
+        });
+    });
+    log.debug("Leaving FederationSlo.endAtPeers(). Asking " + asks.length +
+              " peer(s).");
+    return Promise.all(asks).then(function (answers) {
+      return answers.reduce(function (sum, one) {
+        return { ended: sum.ended + one.ended,
+                 partial: sum.partial || one.partial,
+                 failed: sum.failed + one.failed };
+      }, { ended: 0, partial: false, failed: 0 });
+    });
+  }
+
+  /**
+   * Ends, in THIS cell, the sessions another cell's verified partner sign-out
+   * names (`PEER_SIGNOUT_OP`). The sign-out was authenticated and spent by
+   * the cell it arrived at; what this cell checks is that the relationship
+   * exists here and accepts a sign-out, which is global configuration and so
+   * the same answer the sending cell had.
+   *
+   * @param body - `{ realm, relationship, how, match, base }`
+   * @param peer - the calling cell
+   * @returns `{ ended, partial }`
+   * @throws an Error for an unknown realm
+   */
+  endForPeer(body: any, peer: string): { ended: number; partial: boolean } {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSlo.endForPeer(). from " + peer);
+    const realmId = String((body && body.realm) || '');
+    const realm = realmId ? realms.get(realmId)
+                          : realms.get(realms.DEFAULT_ID);
+    if (!realm) {
+      log.debug("Leaving FederationSlo.endForPeer(). No realm.");
+      throw new Error('no such realm');
+    }
+    const self = this;
+    let out = { ended: 0, partial: false };
+    realms.run(realm, function () {
+      const record = federation.get(String(body.relationship || ''));
+      if (!record || !self.accepts(record)) {
+        return;
+      }
+      const matcher = FederationSlo.matcherOf(body.match);
+      const sessions = self.sessionsMatching(record, matcher);
+      if (!sessions.length) {
+        return;
+      }
+      const ended = self.endSessions(sessions, record, String(body.how || '') +
+                                     ', reached through cell ' + peer,
+                                     String(body.base || ''), false);
+      out = { ended: sessions.length, partial: !!ended.partial };
+    });
+    log.debug("Leaving FederationSlo.endForPeer(). " + out.ended);
+    return out;
   }
 
   // A verified sign-out that matched nothing. Recorded, because a partner
@@ -976,59 +1186,48 @@ class FederationSlo {
       });
   }
 
-  // The LogoutRequest is authentic, fresh and unused: end what it names.
+  // The LogoutRequest is authentic, fresh and unused: end what it names —
+  // here, and in every other cell (#98, endAtPeers()).
   private endNamedSamlSessions(res, record, base, params, requestId, named,
                                indexes) {
     const { log } = this.deps;
     log.debug("Entering FederationSlo.endNamedSamlSessions().");
-    const sameFormat = function (a, b) {
-      log.debug("Entering sameFormat().");
-      const left = a || NAMEID_UNSPECIFIED;
-      const right = b || NAMEID_UNSPECIFIED;
-      log.debug("Leaving sameFormat().");
-      return left === right;
-    };
-    const sameQualifier = function (a, b) {
-      log.debug("Entering sameQualifier().");
-      log.debug("Leaving sameQualifier().");
-      return !a || !b || a === b;
-    };
-    const sessions = this.sessionsMatching(record, function (held) {
-      if (held.protocol !== 'saml2' && held.protocol !== 'wsfed') {
-        return false;
-      }
-      // saml-core-2.0-os section 3.7.3.2: the principal is the NameID WHOLE.
-      if (String(held.nameId || '') !== named.value ||
-          !sameFormat(held.nameIdFormat, named.format) ||
-          !sameQualifier(held.nameQualifier, named.nameQualifier) ||
-          !sameQualifier(held.spNameQualifier, named.spNameQualifier)) {
-        return false;
-      }
-      // With SessionIndex elements, ONLY those sessions; with none, every
-      // session of the principal from this partner (rcbj's decision 4 reads
-      // "the matched session" as exactly what the specification names).
-      return !indexes.length ||
-             indexes.indexOf(String(held.sessionIndex || '')) >= 0;
-    });
-    if (!sessions.length) {
-      this.recordNoMatch(record, 'SAML 2.0 LogoutRequest',
-                         named.value + (indexes.length ? ' SessionIndex ' +
-                                        indexes.join(', ') : ''));
-      log.debug("Leaving FederationSlo.endNamedSamlSessions(). No match.");
-      return this.answerLogoutRequest(res, record, base, params, requestId,
-        STATUS_REQUESTER, STATUS_UNKNOWN_PRINCIPAL,
-        'No session here carries that principal' +
-        (indexes.length ? ' and session index' : '') + '.', null);
-    }
-    const ended = this.endSessions(sessions, record, 'SAML 2.0 Single Logout',
-                                   base, true);
+    const match = { protocol: 'saml', nameId: named, indexes: indexes };
+    const sessions = this.sessionsMatching(record,
+                                           FederationSlo.matcherOf(match));
+    const ended = sessions.length
+      ? this.endSessions(sessions, record, 'SAML 2.0 Single Logout', base,
+                         true)
+      : null;
+    const self = this;
     log.debug("Leaving FederationSlo.endNamedSamlSessions(). " +
-              sessions.length + " ended.");
-    return this.answerLogoutRequest(res, record, base, params, requestId,
-      STATUS_SUCCESS, ended.partial ? STATUS_PARTIAL_LOGOUT : '',
-      ended.partial ? 'The session ended here; the SAML service providers ' +
-                      'it was signed into were offered a LogoutRequest ' +
-                      'this service cannot observe.' : '', ended);
+              sessions.length + " ended here; asking the other cells.");
+    return this.endAtPeers(record, 'SAML 2.0 Single Logout', match, base)
+      .then(function (peers) {
+        if (!sessions.length && !peers.ended && !peers.failed) {
+          self.recordNoMatch(record, 'SAML 2.0 LogoutRequest',
+                             named.value + (indexes.length ? ' SessionIndex ' +
+                                            indexes.join(', ') : ''));
+          return self.answerLogoutRequest(res, record, base, params,
+            requestId, STATUS_REQUESTER, STATUS_UNKNOWN_PRINCIPAL,
+            'No session here carries that principal' +
+            (indexes.length ? ' and session index' : '') + '.', null);
+        }
+        // PARTIAL where this service cannot say everything ended: a service
+        // provider offered a LogoutRequest it cannot observe, a session
+        // another cell ended on the back channel, or a cell not reached.
+        const partial = !!(ended && ended.partial) || peers.partial ||
+                        peers.failed > 0;
+        return self.answerLogoutRequest(res, record, base, params, requestId,
+          STATUS_SUCCESS, partial ? STATUS_PARTIAL_LOGOUT : '',
+          peers.failed > 0
+            ? 'The sign-out could not reach every part of this service; a ' +
+              'session held there lasts until it ends by itself.'
+            : partial ? 'The session ended here; the SAML service ' +
+                        'providers it was signed into were offered a ' +
+                        'LogoutRequest this service cannot observe.' : '',
+          ended);
+      });
   }
 
   // THE ANSWER TO A LogoutRequest: a signed <LogoutResponse> to the partner's
@@ -1041,24 +1240,30 @@ class FederationSlo {
     log.debug("Entering FederationSlo.answerLogoutRequest(). " + status);
     const destination = String(record.fedSloUrl || '').trim();
     const fan = ended ? ended.fanOut : { html: '', policy: {} };
+    // In the person's language (#539) — but "Nothing was signed out" is a
+    // refusal and stays English, and `message` is the LogoutResponse's own
+    // StatusMessage, protocol data. No language chooser: the page answers
+    // the partner's LogoutRequest, and drawing it again would answer it
+    // again.
+    const t = PageLocale.forPage({});
     const summary = ended
-      ? '<h1>Signed out</h1><p class="ok">The partner ' +
-        xmlEscape(record.fedName || record.fedId) + ' signed you out, and ' +
-        'this service ended the session it had started for you:</p><ul>' +
+      ? '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+        t.html('handoff.federation.slo.partnerSignedYouOut',
+               { partner: record.fedName || record.fedId }) + '</p><ul>' +
         ended.summary + '</ul>'
-      : '<h1>' + (status === STATUS_SUCCESS ? 'Signed out' :
-                  'Nothing was signed out') + '</h1><p>' +
+      : '<h1>' + (status === STATUS_SUCCESS
+                    ? t.html('handoff.common.signedOut')
+                    : 'Nothing was signed out') + '</h1><p>' +
         xmlEscape(message) + '</p>';
     if (!destination) {
       log.debug("Leaving FederationSlo.answerLogoutRequest(). Nowhere to " +
                 "send the LogoutResponse.");
       res.status(200).type('html').set('Cache-Control', 'no-store')
          .set('Content-Security-Policy', app.contentSecurityPolicy(fan.policy))
-         .send(this.page('Signed out', summary + fan.html +
-           '<p class="note">There is nowhere to send the partner its ' +
-           '<code>&lt;LogoutResponse&gt;</code>: this relationship has no ' +
-           '<code>fedSloUrl</code>. Set it to the partner\'s ' +
-           'SingleLogoutService.</p>'));
+         .send(this.page(t.text('handoff.federation.slo.title'),
+           summary + fan.html +
+           '<p class="note">' + t.html('handoff.federation.slo.nowhere',
+             { element: '<LogoutResponse>' }) + '</p>', t));
       return undefined;
     }
     const xml = this.logoutResponseXml(base, record, destination,
@@ -1076,13 +1281,14 @@ class FederationSlo {
     }
     res.status(200).type('html').set('Cache-Control', 'no-store')
        .set('Content-Security-Policy', app.contentSecurityPolicy(fan.policy))
-       .send(this.page('Signed out', summary + fan.html +
-         '<h2>Back to ' + xmlEscape(record.fedName || record.fedId) +
-         '</h2>' + this.continueControl(target, 'Continue to the partner') +
-         '<p class="note">There is no script on this page. A ' +
-         'LogoutResponse is the partner\'s to receive and this service ' +
-         'sends it by the binding the relationship names ' +
-         '(<code>fedSloBinding</code>).</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         summary + fan.html +
+         '<h2>' + t.html('handoff.federation.slo.backTo',
+                         { partner: record.fedName || record.fedId }) +
+         '</h2>' + this.continueControl(target,
+           t.text('handoff.federation.slo.continueToPartner')) +
+         '<p class="note">' + t.html('handoff.federation.slo.noScript') +
+         '</p>', t));
     log.debug("Leaving FederationSlo.answerLogoutRequest(). Drew the page.");
     return undefined;
   }
@@ -1109,7 +1315,7 @@ class FederationSlo {
                             subStatus, message) {
     const { fedSp, iso, xmlEscape, log, logArtifact } = this.deps;
     log.debug("Entering FederationSlo.logoutResponseXml().");
-    const id = '_' + crypto.randomBytes(16).toString('hex');
+    const id = '_' + stsCrypto.randomBytes(16).toString('hex');
     const xml = '<samlp:LogoutResponse xmlns:samlp="' + NS_SAMLP + '" ' +
       'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
       'IssueInstant="' + iso(0) + '" Destination="' + xmlEscape(destination) +
@@ -1242,11 +1448,14 @@ class FederationSlo {
       detail: { relationship: record.fedId, request: inResponseTo }
     });
     log.debug("Leaving FederationSlo.samlLogoutResponse(). Success.");
+    // In the person's language (#539), and the username the request was
+    // sent for. No language chooser: the partner's answer is spent.
+    const t = PageLocale.forPage({ username: context.username || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">You are signed out here, and ' +
-         xmlEscape(record.fedName || record.fedId) + ' confirmed that you ' +
-         'are signed out there too.</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.partnerConfirmed',
+                { partner: record.fedName || record.fedId }) + '</p>', t));
     return undefined;
   }
 
@@ -1291,21 +1500,31 @@ class FederationSlo {
                                       id: record.fedId,
                                       sessionId: session.id });
     log.debug("Leaving FederationSlo.wsfedConfirmation(). Asking.");
+    // In the person's language (#539), with a language chooser: this page
+    // waits for a click, and the GET that drew it — it is drawn by a GET
+    // only — draws it again with a fresh confirmation; the one it replaces
+    // is never used, and expires. The chooser is a separate form, before the
+    // confirmation's.
+    const t = PageLocale.forPage({
+      username: (session.user && session.user.username) || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Sign out?',
-         '<h1>Sign out of this service?</h1><p>' +
-         xmlEscape(record.fedName || record.fedId) + ' asked this service to ' +
-         'end the session it signed you in to (WS-Federation ' +
-         '<code>' + xmlEscape(String(params.wa)) + '</code>).</p>' +
+       .send(this.page(t.text('handoff.federation.slo.confirm.title'),
+         PageLocale.chooser(t, realms.currentPrefix(),
+           PageLocale.herePath(realms.currentPrefix() +
+             federation.PATHS.slo + '/' + encodeURIComponent(record.fedId) +
+             '?wa=' + encodeURIComponent(String(params.wa)))) +
+         '<h1>' + t.html('handoff.federation.slo.confirm.heading') +
+         '</h1><p>' + t.html('handoff.federation.slo.confirm.lead',
+           { partner: record.fedName || record.fedId,
+             wa: String(params.wa) }) + '</p>' +
          '<form method="post" action="' +
          xmlEscape(fedSp.sloUrl(this.deps.baseUrlOf(req), record)) + '">' +
          '<input type="hidden" name="wa" value="wsignoutcleanup1.0">' +
          '<input type="hidden" name="confirm" value="' + xmlEscape(handle) +
-         '"><button type="submit">Sign out</button></form>' +
-         '<p class="note">WS-Federation\'s sign-out is not signed by its ' +
-         'specification, so any page can send one. That is why this service ' +
-         'asks rather than acting on it: nothing ends until this button is ' +
-         'pressed, in this browser. There is no script on this page.</p>'));
+         '"><button type="submit">' +
+         t.html('handoff.federation.slo.confirm.button') + '</button></form>' +
+         '<p class="note">' + t.html('handoff.federation.slo.confirm.note') +
+         '</p>', t));
     return undefined;
   }
 
@@ -1342,13 +1561,18 @@ class FederationSlo {
                                    true);
     this.deps.authn.clearSessionCookie(res);
     log.debug("Leaving FederationSlo.wsfedConfirmed(). Ended.");
+    // In the person's language (#539). No language chooser: the POST that
+    // drew it ended the session and spent its confirmation.
+    const t = PageLocale.forPage({
+      username: (session.user && session.user.username) || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
        .set('Content-Security-Policy',
             app.contentSecurityPolicy(ended.fanOut.policy))
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">The session ' +
-         xmlEscape(record.fedName || record.fedId) + ' signed you in to has ' +
-         'ended.</p><ul>' + ended.summary + '</ul>' + ended.fanOut.html));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.sessionEnded',
+                { partner: record.fedName || record.fedId }) +
+         '</p><ul>' + ended.summary + '</ul>' + ended.fanOut.html, t));
     return undefined;
   }
 
@@ -1372,11 +1596,14 @@ class FederationSlo {
         'expired (federation.requestTtlMin).');
     }
     log.debug("Leaving FederationSlo.endSessionReturned().");
+    // In the person's language (#539). No language chooser: its `state` is
+    // spent, so a GET drawing it again is refused.
+    const t = PageLocale.forPage({ username: context.username || '' });
     res.status(200).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out',
-         '<h1>Signed out</h1><p class="ok">You are signed out here, and ' +
-         xmlEscape(record.fedName || record.fedId) + ' has sent you back ' +
-         'from its own sign-out.</p>'));
+       .send(this.page(t.text('handoff.federation.slo.title'),
+         '<h1>' + t.html('handoff.common.signedOut') + '</h1><p class="ok">' +
+         t.html('handoff.federation.slo.sentBack',
+                { partner: record.fedName || record.fedId }) + '</p>', t));
     return undefined;
   }
 
@@ -1572,23 +1799,39 @@ class FederationSlo {
       }
       const sid = claims.sid ? String(claims.sid) : '';
       const sub = claims.sub ? String(claims.sub) : '';
-      const sessions = self.sessionsMatching(record, function (held) {
-        return held.protocol === 'oidc' &&
-               (!sid || String(held.sid || '') === sid) &&
-               (!sub || String(held.sub || '') === sub);
-      });
-      if (!sessions.length) {
-        self.recordNoMatch(record, 'Back-Channel Logout',
-                           (sid ? 'sid ' + sid : '') + (sub ? ' sub ' + sub
-                                                            : ''));
-        errorCodes.mark(res, 'STS-FED-0122');
-      } else {
-        self.endSessions(sessions, record, 'Back-Channel Logout',
-                         baseUrlOf(req), false);
+      const match = { protocol: 'oidc', sid: sid, sub: sub };
+      const base = baseUrlOf(req);
+      const sessions = self.sessionsMatching(record,
+                                             FederationSlo.matcherOf(match));
+      if (sessions.length) {
+        self.endSessions(sessions, record, 'Back-Channel Logout', base,
+                         false);
       }
-      // Section 2.8: 200, and no-store.
-      res.status(200).set('Cache-Control', 'no-store').end();
-      return undefined;
+      // AND IN EVERY OTHER CELL (#98, endAtPeers()), before the answer: the
+      // partner is told the logout succeeded only once it has.
+      return self.endAtPeers(record, 'Back-Channel Logout', match, base)
+        .then(function (peers) {
+          const ended = sessions.length + peers.ended;
+          // Section 2.8: 400 when the logout failed. A cell not reached may
+          // hold a session this token names — unless it named one session
+          // by `sid` and that session has ended.
+          if (peers.failed > 0 && !(sid && ended > 0)) {
+            errorCodes.mark(res, 'STS-CELL-0122');
+            return self.refuseJson(res, record, 400, 'the logout could not ' +
+                                   'reach every part of this relying party; ' +
+                                   'a session held there lasts until it ' +
+                                   'ends by itself');
+          }
+          if (!ended) {
+            self.recordNoMatch(record, 'Back-Channel Logout',
+                               (sid ? 'sid ' + sid : '') +
+                               (sub ? ' sub ' + sub : ''));
+            errorCodes.mark(res, 'STS-FED-0122');
+          }
+          // Section 2.8: 200, and no-store.
+          res.status(200).set('Cache-Control', 'no-store').end();
+          return undefined;
+        });
     });
   }
 
@@ -1649,30 +1892,59 @@ class FederationSlo {
                                            'accept a sign-out',
         'fedAcceptSignout is off on "' + record.fedId + '".');
     }
-    const sessions = this.sessionsMatching(record, function (held) {
-      return held.protocol === 'oidc' && String(held.sid || '') === sid;
-    });
+    // `iss` AND `sid` name one partner session, whose session here may be
+    // held in any cell — the iframe carries no affinity cookie a browser
+    // blocking third-party cookies would send — so it is looked for here and
+    // then in every other cell (#98, endAtPeers()).
+    const match = { protocol: 'oidc', sid: sid };
+    const sessions = this.sessionsMatching(record,
+                                           FederationSlo.matcherOf(match));
     let body;
     let overrides = {};
-    if (!sessions.length) {
-      this.recordNoMatch(record, 'Front-Channel Logout', 'sid ' + sid);
-      errorCodes.mark(res, 'STS-FED-0122');
-      body = '<h1>Nothing to sign out</h1><p>No session here was started ' +
-             'by that partner session.</p>';
-    } else {
+    // In the person's language (#539) where something was signed out; the
+    // "Nothing to sign out" page carries an error code and stays English,
+    // so it is drawn without a translator. No language chooser: the page is
+    // in a frame the partner loaded, and nobody reads it.
+    const t = PageLocale.forPage({});
+    let translated = false;
+    if (sessions.length) {
       const ended = this.endSessions(sessions, record, 'Front-Channel Logout',
                                      baseUrlOf(req), true);
       overrides = ended.fanOut.policy;
-      body = '<h1>Signed out</h1><ul>' + ended.summary + '</ul>' +
-             ended.fanOut.html;
+      body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><ul>' +
+             ended.summary + '</ul>' + ended.fanOut.html;
+      translated = true;
     }
+    const self = this;
     log.debug("Leaving FederationSlo.frontchannelEndpoint().");
-    res.status(200).type('html')
-       .send(framed(this.page('Signed out', body + '<p class="note">' +
-         xmlEscape(record.fedName || record.fedId) + ' loaded this page in ' +
-         'a frame to end the session it signed you in to here.</p>'),
-         overrides));
-    return undefined;
+    return this.endAtPeers(record, 'Front-Channel Logout', match,
+                           baseUrlOf(req)).then(function (peers) {
+      if (!body && peers.ended) {
+        body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><p>' +
+               t.html('handoff.federation.slo.frontchannelEnded') + '</p>';
+        translated = true;
+      } else if (!body) {
+        self.recordNoMatch(record, 'Front-Channel Logout', 'sid ' + sid);
+        errorCodes.mark(res, peers.failed ? 'STS-CELL-0122'
+                                          : 'STS-FED-0122');
+        body = '<h1>Nothing to sign out</h1><p>No session here was ' +
+               'started by that partner session' +
+               (peers.failed ? ' that this service could reach' : '') +
+               '.</p>';
+      }
+      const partner = record.fedName || record.fedId;
+      res.status(200).type('html')
+         .send(framed(translated
+           ? self.page(t.text('handoff.federation.slo.title'), body +
+               '<p class="note">' +
+               t.html('handoff.federation.slo.frontchannelNote',
+                      { partner: partner }) + '</p>', t)
+           : self.page('Signed out', body + '<p class="note">' +
+               xmlEscape(partner) + ' loaded this page ' +
+               'in a frame to end the session it signed you in to here.</p>'),
+           overrides));
+      return undefined;
+    });
   }
 
   // The partner's origins, which alone may frame the front-channel page: its
@@ -1725,7 +1997,7 @@ class FederationSlo {
     log.debug("Entering FederationSlo.canTellPartner().");
     const record = held ? federation.get(held.relationship) : null;
     if (!record || record.fedRole !== 'service-provider' ||
-        !federation.isUsable(record)) {
+        !federation.signsIn(record) || !federation.isUsable(record)) {
       log.debug("Leaving FederationSlo.canTellPartner(). Not usable.");
       return { ok: false, record: record,
                why: 'the relationship it came through is gone, disabled or ' +
@@ -1770,7 +2042,7 @@ class FederationSlo {
     const label = record.fedName || record.fedId;
     const username = (session.user && session.user.username) || '';
     if (record.fedProtocol === 'saml2') {
-      const id = '_' + crypto.randomBytes(16).toString('hex');
+      const id = '_' + stsCrypto.randomBytes(16).toString('hex');
       const destination = String(record.fedSloUrl).trim();
       const until = new Date(Date.now() + Number(config.value(
         'federation.requestTtlMin')) * 60 * 1000).toISOString()
@@ -1848,20 +2120,25 @@ class FederationSlo {
       log.debug("Leaving FederationSlo.renderPartnerLogouts(). None.");
       return '';
     }
+    // In the language of the sign-out page it sits on (#539), worked out
+    // from the same ambient request. `target.what` is a technical note and
+    // stays as written.
+    const t = PageLocale.forPage({});
     log.debug("Leaving FederationSlo.renderPartnerLogouts().");
-    return '<h2>Federation partners</h2><table><thead><tr><th>Partner</th>' +
-      '<th>Sign out there too</th></tr></thead><tbody>' +
+    return '<h2>' + t.html('handoff.federation.partners.heading') +
+      '</h2><table><thead><tr><th>' +
+      t.html('handoff.federation.partners.partner') + '</th>' +
+      '<th>' + t.html('handoff.federation.partners.signOutThere') +
+      '</th></tr></thead><tbody>' +
       targets.map(function (target) {
         return '<tr><td><code>' + xmlEscape(target.label) + '</code><br>' +
           '<span class="sub">' + xmlEscape(target.protocol) + '</span></td>' +
-          '<td>' + self.continueControl(target, 'Sign out at ' +
-                                        target.label) +
+          '<td>' + self.continueControl(target,
+            t.text('handoff.federation.partners.signOutAt',
+                   { partner: target.label })) +
           '<span class="sub">' + xmlEscape(target.what) + '</span></td></tr>';
-      }).join('') + '</tbody></table><p class="sub">You signed in here ' +
-      'through these identity providers, and your session there is still ' +
-      'live. Each is a link or a form rather than an automatic redirect: ' +
-      'this page runs no script, and leaving for a partner is a deliberate ' +
-      'click.</p>';
+      }).join('') + '</tbody></table><p class="sub">' +
+      t.html('handoff.federation.partners.note') + '</p>';
   }
 }
 
@@ -1876,6 +2153,13 @@ const slot = new InstanceSlot<FederationSlo>(
   helpers.log);
 
 slot.buildNowUnlessDeferred();
+
+// THE PEERS' HALF OF A PARTNER'S SIGN-OUT (#98): see endAtPeers(). Registered
+// once at load; registering binds and dials nothing.
+require('../common/cell_channel').registerOp(PEER_SIGNOUT_OP,
+  function (body: any, ctx: any) {
+    return slot.get().endForPeer(body, String((ctx && ctx.peer) || ''));
+  });
 
 /**
  * A federation partner's sign-out in both directions: the endpoints a partner's

@@ -1,0 +1,150 @@
+{
+  "roles.schema.objectClasses.stsRole.what": {
+    "en": "e80eac42b07fd952",
+    "text": "Un RÔLE. L’entrée est nommée par le nom du rôle (`cn=staff`), et tout ce qu’elle porte relève de l’APPARTENANCE — qui détient le rôle. Ce pour quoi un rôle est EXIGÉ réside sur l’entrée d’application qui l’exige, dans `appRequiredRole`, car c’est un fait concernant l’application plutôt que le rôle."
+  },
+  "roles.schema.attributes.roleName.what": {
+    "en": "5b8fbb4273c31dfa",
+    "text": "Le nom du rôle, qui est aussi le `cn`. Porté également de façon explicite, afin qu’un lecteur qui ne dispose que des attributs ait le nom."
+  },
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "Un nom d’utilisateur qui détient ce rôle. Multivalué. La personne n’a pas besoin d’exister déjà — ce service crée une entrée d’annuaire pour tout nom dès sa première apparition, si bien qu’un rôle peut être accordé avant que son titulaire ne se soit jamais connecté."
+  },
+  "roles.schema.attributes.roleMemberGroup.what": {
+    "en": "ed79e4eb54a86c36",
+    "text": "Un groupe dont chaque membre détient ce rôle. Multivalué. Résolu AU MOMENT DE LA DÉCISION plutôt que développé à l’écriture, si bien qu’un `ldapmodify` qui ajoute quelqu’un au groupe modifie le tout prochain jeton."
+  },
+  "roles.schema.attributes.roleMemberApplication.what": {
+    "en": "cecc4552c88342d4",
+    "text": "Une application qui détient ce rôle EN TANT QUE TELLE — ce sur quoi est décidé un grant client_credentials, où il n’y a pas de personne. Multivalué. Ce N’EST PAS la même relation que `appRequiredRole` sur l’entrée d’application, qui est ce que cette application EXIGE des autres."
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "Une permission qui peut être ÉMISE pour un titulaire de ce rôle (#303). Multivalué. Nommée comme un client la demande : une permission d’application générique par sa valeur de scope complète — l’`oauthPermissionBaseUri` de l’application de ressources suivie du nom — et une permission native de ce service par son propre nom (`admin:read`, `admin:write`). Elle n’a d’effet que pour une permission que son application de ressources SOUMET À UN RÔLE (`oauthRoleGatedPermission`) ; une permission soumise à un rôle n’est émise que pour un sujet détenant un rôle qui la nomme, et une permission non soumise l’est comme toujours."
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "Un client qui CONFÈRE ce rôle (#454) : chaque personne qui se connecte par ce client détient le rôle sur le jeton d’accès émis pour ce client, et sur aucun autre jeton. Multivalué, des client_id d’applications de ce domaine. Un rôle détenu de cette façon est un fait concernant le JETON plutôt que la personne ; il est donc combiné à chaque appel avec les rôles que la personne détient elle-même, et retirer un client de la liste retire immédiatement le rôle des jetons de ce client. Jamais appliqué au propre jeton client_credentials d’un client, dont les rôles sont ceux de son appartenance. ADMIN_CONSOLE est amorcé comme conféré par `sts-admin-console`."
+  },
+  "roles.schema.attributes.roleApplication.what": {
+    "en": "364af2be7fcecb90",
+    "text": "L’UNIQUE application à laquelle appartient ce rôle (#310), par son identifiant dans ou=applications ; en son absence, le rôle s’applique à tout le domaine. Le rôle d’une application est nommé `<role>@<application>` dans le registre, si bien que deux applications peuvent chacune avoir un `reader` ; un jeton ou une assertion pour cette application le porte sous la forme `<role>`, et le jeton d’aucune autre application ne le porte. L’`appRequiredRole` de l’application peut le nommer par `<role>`."
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "QUI PEUT DÉTENIR ce rôle (#93) : `user` (des personnes, directement ou par un groupe) et `application` (une application en tant que telle). Multivalué ; en son absence, les deux le peuvent — c’est le cas de tous les rôles écrits avant lui. Un membre d’un type que le rôle n’autorise pas est refusé lors de l’écriture du rôle. Les deux rôles de la console ne peuvent pas être restreints : la liste accorde leurs personnes et l’amorçage leur application."
+  },
+  "roles.schema.attributes.displayName.what": {
+    "en": "96a85a48288e9845",
+    "text": "Un nom facultatif destiné à être lu par des personnes (#93). Le NOM du rôle reste ce que porte un jeton, ce que nomme une exigence et ce qui sert de clé au registre ; ceci n’est que son libellé dans la console et l’API. Son identifiant stable est l’`entryUUID` de l’entrée, conservé à travers toutes les modifications."
+  },
+  "roles.schema.attributes.description.what": {
+    "en": "d3cd66c299e05098",
+    "text": "À quoi sert le rôle, pour la personne suivante."
+  },
+  "roles.schema.attributes.owner.what": {
+    "en": "3acf4a1763f7388c",
+    "text": "Une personne ou un groupe de ce domaine qui répond du rôle (#604), par DN — l’attribut de la section 2.23 du RFC 4519, comme les propriétaires d’un groupe (#603). Multivalué, 25 au plus. Depuis #607, un propriétaire peut ADMINISTRER le rôle via /admin-api avec owner:read et owner:write (OWNER_READ, OWNER_WRITE), dans les limites de ce que permet la règle des propriétaires de la politique access-control ; un propriétaire ne détient le rôle lui-même qu’en étant membre. Le portail utilisateur liste ce dont une personne est propriétaire."
+  },
+  "roles.schema.attributes.stsOwnerProtected.what": {
+    "en": "dcc4499eac844938",
+    "text": "TRUE : les propriétaires du rôle ne peuvent pas l’administrer via /admin-api (#607), quoi qu’ils possèdent — une marque de l’administrateur, que la règle des propriétaires de la politique access-control lit comme urn:sts:xacml:object-protected. Absent vaut FALSE."
+  },
+  "roles.builtIn.EVERYBODY.what": {
+    "en": "40f390becf1977a2",
+    "text": "N’importe qui, authentifié ou non, personne ou application. C’EST L’EXIGENCE PAR DÉFAUT : une application qui ne nomme aucun rôle requis exige celui-ci, tout le monde le détient et rien n’est refusé — exactement comme ce service se comportait avant l’existence des rôles."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_USERS.what": {
+    "en": "2defec4a92314419",
+    "text": "Une personne disposant d’une session authentifiée active dans le contexte de sécurité dans lequel cette décision est prise."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_USERS.what": {
+    "en": "dcc2d43ade379f11",
+    "text": "Une personne qui ne s’est PAS authentifiée. Ce n’est pas la négation du rôle ci-dessus du point de vue d’une politique — c’est un nom auquel une cible peut correspondre, et les cibles XACML ne peuvent pas exprimer « non »."
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "N’importe quel client, quelle que soit la façon dont il s’est présenté."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "Un client qui a PROUVÉ son identité — un secret, une assertion private_key_jwt ou un certificat client vérifié. Un client public qui a simplement envoyé un client_id n’en fait pas partie."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "Un client public qui n’a rien prouvé."
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "a542d84d6db4c5b5",
+    "text": "Un Policy Enforcement Point XACML distant : quiconque est membre du groupe nommé par `roles.remotePepGroup` (par défaut « remote-peps »). C’est ce qu’exigent `/xacml/pep/register`, `/xacml/pep/policies` et `/xacml/pep/heartbeat`, et la partie qui le détient est normalement un DN de certificat client plutôt qu’une personne — le certificat dit QUI, et ce groupe dit s’il en a le droit."
+  },
+  "roles.builtIn.XACML_USER.what": {
+    "en": "1b417a98ec7e824b",
+    "text": "Un appelant de la surface XACML proprement dite : quiconque est membre du groupe nommé par `roles.xacmlUserGroup` (par défaut « xacml-users »). C’est ce qu’exigent `GET /xacml`, `POST /xacml/pdp` et `GET /xacml/policies`, et la partie qui le détient est normalement un DN de certificat client — le certificat dit QUI, et ce groupe dit s’il en a le droit. Ce n’est délibérément PAS REMOTE_PEPS : ce rôle donne accès aux trois points de terminaison /xacml/pep, qui délivrent les documents au moyen desquels ce service contrôle ses propres accès, et un groupe accordant les deux ferait qu’admettre un appelant sur la surface XACML proprement dite l’admettrait silencieusement sur ceux-ci."
+  },
+  "roles.builtIn.OWNER_READ.what": {
+    "en": "ff8296bdbd88d5ad",
+    "text": "Un PROPRIÉTAIRE (#607) : quiconque un rôle, un groupe, un compte de service ou une application de ce domaine nomme comme propriétaire, directement ou par un groupe dont il est membre. Autorise la permission owner:read : lire, via /admin-api, les objets dont il est propriétaire et rien d’autre. Calculé au moment de la décision."
+  },
+  "roles.builtIn.OWNER_WRITE.what": {
+    "en": "689161841fbe1a7d",
+    "text": "Un PROPRIÉTAIRE (#607), comme OWNER_READ. Autorise la permission owner:write : modifier, via /admin-api, les objets dont il est propriétaire, dans les actions que la règle des propriétaires de la politique access-control permet pour chaque type — sans jamais en créer, en supprimer ni en renommer un, ni toucher un objet protégé de ses propriétaires."
+  },
+  "roles.native.ADMIN_READ.what": {
+    "en": "7d6481dffa0d517c",
+    "text": "Admin Read : chaque LECTURE sur /admin-api. Détenu par les groupes Admin Read et Admin Write de la console (Admin Write implique Admin Read) et par les applications listées ici. Autorise la permission admin:read."
+  },
+  "roles.native.ADMIN_WRITE.what": {
+    "en": "ecff5f0bc1a5a16a",
+    "text": "Admin Write : chaque opération de /admin-api qui MODIFIE quelque chose. Détenu par le groupe Admin Write de la console et par les applications listées ici. Autorise la permission admin:write. Il n’implique pas Admin Read sur un jeton : un jeton peut porter l’un ou l’autre scope, et la politique demande celui dont l’opération a besoin."
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "La console d’administration : les opérations sous /admin-api/console qui n’existent que pour dessiner la console — son cadre, ses schémas et ses aides de formulaire. Autorise la permission admin:console. Conféré par le client propre de la console, sts-admin-console, à chaque personne qui se connecte à la console, et détenu par personne en tant que membre. Il n’accorde rien d’autre : une page qui affiche des données du domaine demande aussi ADMIN_READ."
+  },
+  "roles.native.DEVICE_COMPLIANCE.what": {
+    "en": "54220e44643bd84c",
+    "text": "Le flux de conformité des appareils : un flux MDM ou de posture qui signale la conformité d’un appareil via POST /admin-api/device-compliance, et rien d’autre sur /admin-api. Autorise la permission device:compliance. Amorcé sans membre : ajoutez l’application du flux."
+  },
+  "roles.memberKinds.user.label": {
+    "en": "df381eb4bb572daf",
+    "text": "une personne"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "Un nom d’utilisateur. La personne n’a pas besoin d’exister déjà : ce service crée une entrée d’annuaire pour tout nom dès sa première apparition, si bien qu’un rôle peut être accordé avant que son titulaire ne se soit jamais connecté."
+  },
+  "roles.memberKinds.group.label": {
+    "en": "7058b14ed9a6b2fc",
+    "text": "un groupe"
+  },
+  "roles.memberKinds.group.what": {
+    "en": "807d0833e4b29343",
+    "text": "Un groupe dans ou=groups. Chacun de ses membres détient le rôle, résolu AU MOMENT DE LA DÉCISION plutôt que développé à l’écriture — si bien qu’un ldapmodify qui ajoute quelqu’un au groupe modifie le tout prochain jeton."
+  },
+  "roles.memberKinds.application.label": {
+    "en": "7b0b893d972a8266",
+    "text": "une application"
+  },
+  "roles.memberKinds.application.what": {
+    "en": "67e543bef5013764",
+    "text": "Une application qui détient le rôle EN TANT QUE TELLE. C’est sur cela qu’est décidé un grant client_credentials, où il n’y a aucune personne, et c’est la raison pour laquelle une application est ici un membre à part entière d’un rôle."
+  },
+  "roles.console.read.label": {
+    "en": "528d2a45607ec613",
+    "text": "Admin Read"
+  },
+  "roles.console.read.what": {
+    "en": "d824947bfa7bb0cd",
+    "text": "Consulter chaque page de cette console, et chaque vue ?format=json de celle-ci. Ce rôle ne modifie rien : un lecteur peut voir quels jetons sont révoqués et ne peut en révoquer aucun."
+  },
+  "roles.console.write.label": {
+    "en": "41407227fe92a8f6",
+    "text": "Admin Write"
+  },
+  "roles.console.write.what": {
+    "en": "476b1b61c16b02e4",
+    "text": "Soumettre chaque formulaire de cette console — révoquer un jeton, ajouter un claim personnalisé, modifier un paramètre, créer une personne, accorder un rôle. IL INCLUT LA LECTURE, si bien qu’un membre de ce seul rôle peut utiliser toute la console."
+  }
+}

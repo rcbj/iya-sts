@@ -194,10 +194,30 @@ into a mail cannon (`STS-MAIL-0010`). A notice about one act is sent once in
 
 ## Messages
 
-Each message has a built-in English wording. A realm may reword any of them,
-in any language, on `/admin/mail`. A person's `preferredLanguage`, an
-Accept-Language value such as `de-CH, de;q=0.8`, chooses the language, then
-`mail.defaultLanguage`, then English. **A realm's wording is checked when it is
+Each message has a built-in wording in every language this service has a
+catalog for (#539): English, French (and Canadian French), Spanish (and
+Spanish as written in Spain), Simplified and Traditional Chinese (and Hong
+Kong), Filipino and Swedish. Everything but English was machine-written and
+has not been reviewed by a native speaker yet.
+
+- **Which language:** the recipient's `preferredLanguage` (an Accept-Language
+  value such as `de-CH, de;q=0.8`), then the realm's
+  [locale policy](languages.md#the-locale-policy) default, then English. A
+  regional tag reads its region's wording where it differs and its
+  language's otherwise. `zh-TW` and `zh-HK` are sent Traditional Chinese and
+  never Simplified, and a language with no catalog (`de`) passes to the
+  next one in the list.
+- **A realm's own wording wins.** A realm may reword any message, in any
+  language, on `/admin/mail`, and its wording in a language always wins
+  over the built-in wording in it.
+- **What fills a message is translated too.** Who did something, what kind
+  of credential it was and when it happened are in the recipient's
+  language. Times are in UTC and say so. A reason somebody wrote, or one a
+  Shared Signals event carries, is sent as it was written.
+- `mail.defaultLanguage` was the default until #539. A start that still
+  names it is refused and told so.
+
+**A realm's wording is checked when it is
 saved** (`STS-MAIL-0016`):
 
 - **A link is a placeholder** such as `{{link}}`. Its value is this service's
@@ -296,6 +316,6 @@ who has an address is told as well (`mail.notifyAdministrators`).
 |---|---|
 | Server configuration → Mail (`/admin/mail`) | The transport, whether it could be built, where links point, a test message, a verification link, each message's wording, and the settings |
 | Monitoring → Mail outbox (`/admin/mail/outbox`) | Every message, its state and attempts, the dead letters and their Retry. In development, the captured bodies. |
-| `/portal/email` | A person's own address, its verification, what they decline, and what was sent to them |
+| `/portal/email` | A person's own address, its verification, what they decline, and what was sent to them, twenty a page (`sentPage`) |
 | `GET /admin-api/mail`, `/admin-api/mail/outbox` | The same, over JSON ([Management API](management-api.md)) |
 | [Error codes](error-codes.md) | `STS-MAIL-0001` to `STS-MAIL-0034` |

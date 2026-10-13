@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // KEYCLOAK AS A SAML 2.0 BROKERING SERVICE PROVIDER (#192).
@@ -158,9 +158,7 @@ async function makeWorld(realmMode) {
   const rb = kit.realmBase(realm);
   const w = { mode: realmMode, realm: realm, rb: rb, kcRealm: realm,
               person: names.usernameFor("kc" + tag) };
-  await kit.ensureRealm(realm, realmMode, {
-    "saml2.entityId": rb + "/saml2/idp"
-  });
+  await kit.ensureRealm(realm, realmMode, {});
   await kit.createPerson(realm, w.person, PASSWORD);
 
   const made = await kc("POST", "/realms", { realm: w.kcRealm,
@@ -447,9 +445,10 @@ async function nameIdFormats(w) {
 async function serviceHasSession(w, b) {
   log.debug("Entering serviceHasSession().");
   const walked = await signIn(w, b, "");
-  const onScreen = kit.formsIn(walked.last.body).some(function (f) {
-    return "authn_id" in f.fields;
-  });
+  // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571: a static page whose script
+  // is /authn/signin.js, and where the walk stops when it has no name.
+  const onScreen = /\/authn\/signin\.js/.test(String(walked.last &&
+                                                      walked.last.body || ""));
   log.debug("Leaving serviceHasSession(). " + !onScreen);
   return !onScreen;
 }

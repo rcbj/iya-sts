@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -97,6 +97,48 @@ const errorCodes = require('./error_codes');
 // to the parent project's Kerberos COPY closure, which reaches this file.
 const clientAddress = require('./client_address');
 const { AsyncLocalStorage } = require('async_hooks');
+
+// ---------------------------------------------------------------------------
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
+// this file is in the parent project's in-process Kerberos COPY closure
+// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// `seq_allocator` hands out a number unique across every process of the
+// service; the origin is this process's stable name in the store, or '' with
+// no shared store. Neither throws: a failure is the caller's own counter and
+// an empty origin.
+// ---------------------------------------------------------------------------
+const seqAllocator = {
+  next: function next(name, local) {
+    log.debug("Entering next().");
+    let allocator = null;
+    try {
+      allocator = require('./seq_allocator');
+    } catch (e) {
+      log.debug("Caught in next(): " + ((e && e.message) || e));
+      allocator = null;
+    }
+    log.debug("Leaving next().");
+    return allocator ? allocator.next(name, local) : local();
+  }
+};
+
+/**
+ * This process's stable origin in the store, or '' without a shared store.
+ *
+ * @returns the origin
+ */
+function processOrigin() {
+  log.debug("Entering processOrigin().");
+  let origin = '';
+  try {
+    origin = String(require('../persistence/persistence').originId() || '');
+  } catch (e) {
+    log.debug("Caught in processOrigin(): " + ((e && e.message) || e));
+    origin = '';
+  }
+  log.debug("Leaving processOrigin().");
+  return origin;
+}
 
 // ---------------------------------------------------------------------------
 // The cap, read WHERE IT IS USED rather than captured at require time.
@@ -307,6 +349,8 @@ const ACTIONS = [
     label: 'Somebody enrolled a security key on their own account' },
   { action: 'portal.key.removed', category: 'authentication',
     label: 'Somebody removed a security key from their own account' },
+  { action: 'portal.key.renamed', category: 'authentication',
+    label: 'Somebody renamed one of their own passkeys' },
   // A PERSON'S OWN TLS CLIENT CERTIFICATE (2026-09-13), on
   // /portal/signing-key. `issued` is the moment a private key left this
   // service, which is the row somebody investigating a certificate sign-in
@@ -341,6 +385,8 @@ const ACTIONS = [
     label: 'A second factor was set up at a sign-in of elevated risk' },
   { action: 'authn.mfa.enrolled', category: 'authentication',
     label: 'Somebody set up a required second factor at sign-in' },
+  { action: 'authn.sign-in.started-over', category: 'authentication',
+    label: 'Somebody left a sign-in step and started the sign-in over' },
 
   // ---------------------------------------------------------------------
   // THE AUTHENTICATOR APP (RFC 6238), 2026-09-10. Five rows for what is one
@@ -377,6 +423,16 @@ const ACTIONS = [
            'was being spent' },
   { action: 'portal.activate.mfa.refused', category: 'authentication',
     label: 'An authenticator app was not confirmed during activation' },
+  // And a security key's ceremony inside an activation (2026-10-01), for the
+  // same reason: the link authorised it, not a session.
+  { action: 'portal.activate.key.started', category: 'authentication',
+    label: 'A security key ceremony was started while an activation link ' +
+           'was being spent' },
+  { action: 'portal.activate.key.enrolled', category: 'authentication',
+    label: 'A security key was registered while an activation link was ' +
+           'being spent' },
+  { action: 'portal.activate.key.refused', category: 'authentication',
+    label: 'A security key was not registered during activation' },
 
   { action: 'session.start', category: 'session',
     label: 'A sign-on session was created' },
@@ -461,6 +517,18 @@ const ACTIONS = [
     label: 'An application\'s client secret has expired' },
   { action: 'keys.retire', category: 'service',
     label: 'Retired signing keys past their grace were dropped' },
+  // DATA ENCRYPTION KEYS (#391 P2): `common/data_key_rotation.ts`.
+  { action: 'keys.data-key-rotate', category: 'service',
+    label: 'Data encryption keys were rotated' },
+  { action: 'keys.data-key-reencrypt', category: 'service',
+    label: 'Values under superseded data encryption keys were re-sealed' },
+  { action: 'keys.data-key-destroy', category: 'service',
+    label: 'Superseded data encryption keys nothing is sealed under were ' +
+           'destroyed' },
+  // THE KEY-ENCRYPTION KEY ROTATED IN ITS KMS, BY HAND (#391 P5).
+  { action: 'keys.kek-rotate', category: 'admin',
+    label: 'The key-encryption key was rotated in its key management ' +
+           'service and the data keys re-wrapped' },
   // A PINNED SIGNING KEY (#263): an operator's key pinned as a realm's signer
   // for one algorithm, and unpinned. `common/signing_rotation.ts`.
   { action: 'keys.pin', category: 'admin',
@@ -527,6 +595,13 @@ const ACTIONS = [
     label: 'A device was removed' },
   { action: 'device.evict', category: 'directory',
     label: 'A device was removed to make room at its person\'s bound' },
+  // #256: Google's Android attestation status list revoked a chain.
+  { action: 'device.attestation-revoked', category: 'directory',
+    label: 'A device key is no longer attested: Google\'s Android ' +
+           'attestation status list revokes its chain' },
+  { action: 'webauthn.attestation-revoked', category: 'authentication',
+    label: 'A security key\'s attestation is no longer trusted: Google\'s ' +
+           'Android attestation status list revokes its chain' },
   { action: 'device.key-add', category: 'directory',
     label: 'A key was added to a device' },
   { action: 'device.key-remove', category: 'directory',
@@ -539,6 +614,10 @@ const ACTIONS = [
   { action: 'user.delete', category: 'directory', label: 'A user was deleted' },
   { action: 'user.update', category: 'directory', label: 'A user was updated' },
   { action: 'user.rename', category: 'directory', label: 'A user was renamed' },
+  // A PERSON'S HOME MOVED TO ANOTHER CELL (#98): an administrator's act, one
+  // row at the cell that held them, naming the cell they went to.
+  { action: 'cells.rehome', category: 'directory',
+    label: 'A person was moved to another cell' },
   { action: 'user.query', category: 'directory',
     label: 'A search returned at least one user' },
   { action: 'group.create', category: 'directory',
@@ -569,6 +648,18 @@ const ACTIONS = [
   // every token request would otherwise produce a row saying nothing happened.
   { action: 'application.create', category: 'application',
     label: 'An application was seen for the first time' },
+  { action: 'application.secret-revealed', category: 'application',
+    label: 'A credential of an application was revealed to an administrator' },
+  // #546: the LDIF file an administrator took away or brought in. The row
+  // says whether credential material went with it, and never a value.
+  { action: 'application.export', category: 'application',
+    label: 'An application was exported to an LDIF file' },
+  { action: 'application.import', category: 'application',
+    label: 'An application was imported from an LDIF file' },
+  { action: 'application.add-owner', category: 'application',
+    label: 'An owner was added to an application' },
+  { action: 'application.remove-owner', category: 'application',
+    label: 'An owner was taken off an application' },
   { action: 'application.update', category: 'application',
     label: 'An application recorded something new' },
   // Only ever from the console or the management API: no protocol path deletes
@@ -665,6 +756,8 @@ const ACTIONS = [
     label: 'An operator cleared somebody\'s authenticator app' },
   { action: 'admin.mfa.key.cleared', category: 'admin',
     label: 'An operator removed somebody\'s security key' },
+  { action: 'admin.mfa.key.renamed', category: 'admin',
+    label: 'An operator renamed somebody\'s passkey' },
   // THE PASSWORD AND SECOND-FACTOR CONTROLS ON A PERSON'S PAGE (2026-09-13),
   // each one ACT with who performed it. The sessions a reset's sign-out ends
   // write their own `session.end` rows, so these do not count them again.
@@ -687,6 +780,9 @@ const ACTIONS = [
            'cleared it' },
   { action: 'admin.delegation.may-act', category: 'admin',
     label: 'An operator named or cleared the party who may act for somebody' },
+  { action: 'admin.delegation.semantics', category: 'admin',
+    label: 'An operator set the delegation semantics a person allows, or ' +
+           'their default (#186)' },
   { action: 'portal.delegation.may-act', category: 'authentication',
     label: 'A person named or cleared the party who may act for them' },
 
@@ -703,6 +799,12 @@ const ACTIONS = [
   // above's reason: which ways in a realm accepts, before and after.
   { action: 'admin.authn-policy.change', category: 'admin',
     label: 'An authentication policy profile was changed' },
+
+  // A LOCALE POLICY PROFILE WAS SAVED OR PUT BACK (#539): a realm's default
+  // language, whether a new person is given it, and a named profile's
+  // applications.
+  { action: 'admin.locale-policy.change', category: 'admin',
+    label: 'A locale policy profile was changed' },
 
   // A PERSON'S EMAILED SECOND FACTOR WAS TURNED ON OR OFF (#64): by them on
   // /portal/mfa, by an administrator, or by this service at the failure
@@ -723,8 +825,8 @@ const ACTIONS = [
   // `claims.change`'s reason: the `admin.change` / `api.change` row says a form
   // or an operation was used, and this says whose certificates this service
   // believes from then on — the subject and the fingerprint, which are public.
-  // `POST /tls/trust` writes no row, deliberately: it is a development test
-  // control that answers anybody, and product mode refuses it.
+  // (The open `POST /tls/trust`, which wrote no row, was deleted by #597:
+  // every truststore change is one of these.)
   { action: 'admin.truststore.change', category: 'admin',
     label: 'A client-certificate trust anchor was added or removed' },
 
@@ -891,6 +993,16 @@ const ACTIONS = [
     label: 'A GNAP grant was approved and its tokens released' },
   { action: 'gnap.grant.revoke', category: 'protocol',
     label: 'A GNAP grant was revoked' },
+  { action: 'gnap.grant.owner-queued', category: 'protocol',
+    label: 'A GNAP grant waits for its absent resource owner\'s approval ' +
+           'on the portal (#432 phase 6)' },
+  { action: 'gnap.grant.forward', category: 'protocol',
+    label: 'The person at a GNAP approval page was not the user the ' +
+           'request named, and the grant was sent to that user\'s portal ' +
+           '(#432 phase 6)' },
+  { action: 'gnap.grant.finalize', category: 'protocol',
+    label: 'A GNAP grant was finalized, with the reason: issued, revoked, ' +
+           'rejected or expired' },
   { action: 'gnap.token.issue', category: 'protocol',
     label: 'A GNAP access token was issued' },
   { action: 'gnap.token.rotate', category: 'protocol',
@@ -975,6 +1087,77 @@ const ACTIONS = [
     label: 'An administrator reset a password and handed over the person\'s keytab' },
   { action: 'admin.user.attribute', category: 'admin',
     label: 'An administrator set, added or removed a person\'s attribute' },
+  // #221's three, written by admin-core/admin_actions.ts' service account
+  // action through `audited()` (2026-10-06): `set` reached the audit through
+  // a literal too and was caught; `cleared` and `rotate` are built only in
+  // that call and were as unqueryable.
+  { action: 'admin.service-account.set', category: 'admin',
+    label: 'An administrator made a person a service account, or changed ' +
+           'its owner or destination' },
+  { action: 'admin.service-account.cleared', category: 'admin',
+    label: 'An administrator made a service account an ordinary person ' +
+           'again' },
+  // #602: one owner added or taken off, at once.
+  { action: 'admin.service-account.owner-added', category: 'admin',
+    label: 'An administrator added an owner to a service account' },
+  { action: 'admin.service-account.owner-removed', category: 'admin',
+    label: 'An administrator took an owner off a service account' },
+  { action: 'admin.service-account.destination-set', category: 'admin',
+    label: 'An administrator set or cleared a service account\'s push ' +
+           'destination' },
+  { action: 'admin.service-account.rotate', category: 'admin',
+    label: 'An administrator asked for a service account\'s password to be ' +
+           'rotated' },
+  // And eight more `audited()` wrote with no row, found the same day by
+  // widening tests/audit_vocabulary.js to read that helper's calls.
+  { action: 'admin.app-password.created', category: 'admin',
+    label: 'An administrator made an app password for a person' },
+  { action: 'admin.app-password.revoked', category: 'admin',
+    label: 'An administrator revoked a person\'s app password' },
+  { action: 'admin.ciba.answered', category: 'admin',
+    label: 'An administrator approved or denied a CIBA request (test ' +
+           'control)' },
+  { action: 'admin.device.removed', category: 'admin',
+    label: 'An administrator removed a person\'s device' },
+  { action: 'admin.ida.recorded', category: 'admin',
+    label: 'An administrator recorded an identity verification for a ' +
+           'person' },
+  { action: 'admin.ida.removed', category: 'admin',
+    label: 'An administrator removed a person\'s identity verification' },
+  { action: 'admin.siop.enrolled', category: 'admin',
+    label: 'An administrator enrolled a self-issued (SIOPv2) subject for a ' +
+           'person' },
+  { action: 'admin.siop.removed', category: 'admin',
+    label: 'An administrator removed a person\'s self-issued (SIOPv2) ' +
+           'subject' },
+  // A federation partner's Shared Signals (#153, #373): ssf_transmitters.ts
+  // records these through its own `audited()`, three by name and six as
+  // 'ssf.signals.' + the stream act — none had a row until the widened
+  // tests/audit_vocabulary.js read that helper (2026-10-06).
+  { action: 'ssf.signals.discover', category: 'signals',
+    label: 'A federation partner\'s Shared Signals configuration was ' +
+           'discovered' },
+  { action: 'ssf.signals.stream', category: 'signals',
+    label: 'A stream was created at a federation partner\'s Shared ' +
+           'Signals transmitter' },
+  { action: 'ssf.signals.unblock', category: 'signals',
+    label: 'Sign-ins a federation partner\'s signal had blocked were ' +
+           'allowed again' },
+  { action: 'ssf.signals.read-stream', category: 'signals',
+    label: 'A federation partner\'s stream was read' },
+  { action: 'ssf.signals.update-stream', category: 'signals',
+    label: 'A federation partner\'s stream was updated' },
+  { action: 'ssf.signals.delete-stream', category: 'signals',
+    label: 'A federation partner\'s stream was deleted' },
+  { action: 'ssf.signals.set-status', category: 'signals',
+    label: 'A federation partner\'s stream status was set' },
+  { action: 'ssf.signals.add-subject', category: 'signals',
+    label: 'A subject was added to a federation partner\'s stream' },
+  { action: 'ssf.signals.remove-subject', category: 'signals',
+    label: 'A subject was removed from a federation partner\'s stream' },
+  { action: 'ssf.signals.verify', category: 'signals',
+    label: 'A federation partner\'s stream was asked for a verification ' +
+           'event' },
   { action: 'application.key-issued', category: 'application',
     label: 'A hosted surface\'s client key pair was issued by the CA' },
   { action: 'enrollment.acme.account.create', category: 'protocol',
@@ -997,6 +1180,12 @@ const ACTIONS = [
     label: 'A certificate enrollment was refused' },
   { action: 'enrollment.revoke', category: 'protocol',
     label: 'An enrolled certificate was revoked' },
+  { action: 'federation.signal-block', category: 'session',
+    label: 'A federation partner\'s Shared Signals blocked its sign-ins of ' +
+           'a person (#373)' },
+  { action: 'federation.signal-unblock', category: 'session',
+    label: 'A federation partner\'s Shared Signals lifted its block on a ' +
+           'person (#373)' },
   { action: 'federation.signout', category: 'session',
     label: 'A federation partner\'s sign-out ended a session' },
   { action: 'federation.signout-answered', category: 'session',
@@ -1005,6 +1194,12 @@ const ACTIONS = [
     label: 'A federation link was removed from a person' },
   { action: 'group.add-member', category: 'directory',
     label: 'A member was added to a group' },
+  { action: 'group.add-owner', category: 'directory',
+    label: 'An owner was added to a group' },
+  { action: 'group.remove-owner', category: 'directory',
+    label: 'An owner was taken off a group' },
+  { action: 'group.owner-protected', category: 'directory',
+    label: 'A group was closed to its owners, or opened to them again' },
   { action: 'krb5.keytab.person', category: 'authentication',
     label: 'A person\'s keytab was made from a password in hand' },
   { action: 'logout.backchannel.retry', category: 'session',
@@ -1015,6 +1210,9 @@ const ACTIONS = [
     label: 'A CIBA ping or push notification was delivered or failed' },
   { action: 'oauth2.claim-source-linked', category: 'authentication',
     label: 'A person linked a Claims Provider' },
+  { action: 'oauth2.claim-source-link-refused', category: 'authentication',
+    label: 'A Claims Provider\'s callback was refused: the link was ' +
+           'unknown, or arrived in another sign-on session (#568)' },
   { action: 'oauth2.claims-providers.add-provider', category: 'admin',
     label: 'A Claims Provider was registered' },
   { action: 'oauth2.claims-providers.update-provider', category: 'admin',
@@ -1033,6 +1231,15 @@ const ACTIONS = [
     label: 'A pushed authorization request was withdrawn' },
   { action: 'password.set', category: 'authentication',
     label: 'An administrator set a person\'s password' },
+  // A SERVICE ACCOUNT'S ROTATION (#221 P4), written by
+  // `common/service_account_rotation.ts` through `audit.record()` rather
+  // than `audited()`, which is why the widened vocabulary check did not
+  // find them.
+  { action: 'service-account.rotated', category: 'authentication',
+    label: 'A service account\'s password was rotated and pushed to its ' +
+           'destination' },
+  { action: 'service-account.rotation-failed', category: 'authentication',
+    label: 'A service account\'s password did not rotate; nothing changed' },
   { action: 'portal.app-password.created', category: 'authentication',
     label: 'A person made an app password' },
   { action: 'portal.app-password.revoked', category: 'authentication',
@@ -1076,16 +1283,50 @@ const ACTIONS = [
     label: 'A signing key form was refused for its CSRF token' },
   { action: 'portal.siop.remove', category: 'authentication',
     label: 'A person removed a self-issued subject' },
+  { action: 'portal.vc.offer', category: 'protocol',
+    label: 'A person made a Credential Offer for their own wallet' },
   { action: 'risk.feedback', category: 'authentication',
     label: 'Feedback on a risk assessment was recorded' },
   { action: 'risk.response', category: 'authentication',
     label: 'A risk response was carried out' },
   { action: 'risk.terms.accept', category: 'admin',
     label: 'A risk dataset provider\'s terms were accepted' },
+  { action: 'attribute-sources.add', category: 'admin',
+    label: 'An attribute source was added' },
+  { action: 'attribute-sources.update', category: 'admin',
+    label: 'An attribute source was changed' },
+  { action: 'attribute-sources.remove', category: 'admin',
+    label: 'An attribute source was removed' },
+  { action: 'attribute-sources.refresh', category: 'admin',
+    label: 'People were read from an attribute source by hand' },
+  // THE OUTBOUND SCIM CLIENT (#552): its configuration, an operator's acts on
+  // its queues and a reconciliation, and each delivery that finished (one row
+  // per finished delivery, never per attempt).
+  { action: 'scim-client.change', category: 'admin',
+    label: 'An outbound SCIM client was added, changed or removed' },
+  { action: 'scim-client.delivery', category: 'admin',
+    label: 'A change was delivered to a SCIM service provider, or ' +
+           'dead-lettered' },
+  { action: 'scim-client.reconcile', category: 'admin',
+    label: 'An outbound SCIM client reconciled its service provider' },
+  { action: 'scim-client.queue', category: 'admin',
+    label: 'A dead letter of an outbound SCIM client was retried or purged' },
+  { action: 'secret-destination.push', category: 'admin',
+    label: 'A service account\'s password was pushed to a secret ' +
+           'destination' },
+  { action: 'secret-destination.test-push', category: 'admin',
+    label: 'A canary version was pushed to a secret destination\'s test ' +
+           'secret' },
+  { action: 'roles.add-owner', category: 'admin',
+    label: 'An owner was added to a role' },
+  { action: 'roles.remove-owner', category: 'admin',
+    label: 'An owner was taken off a role' },
   { action: 'roles.create', category: 'admin',
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',
     label: 'A role was deleted' },
+  { action: 'roles.describe', category: 'admin',
+    label: 'A role\'s description, display name or member types were set' },
   { action: 'saml2.authnrequest', category: 'protocol',
     label: 'A SAML 2.0 AuthnRequest was refused' },
   { action: 'saml2.artifact.resolve', category: 'protocol',
@@ -1143,10 +1384,12 @@ const OUTCOMES = ['success', 'refused', 'error'];
 // cap — measurably nothing here, and the alternative (a real circular buffer
 // with a head index) is more code to get the ordering wrong in.
 //
-// `seq` is monotonic and NEVER reused, including across a trim. That is what
-// makes the number on a row a stable name for that event: a caller can say "I
-// have read up to 4,102" and mean it, where a row index would silently mean a
-// different event as soon as anything was dropped.
+// `seq` is NEVER reused — not across a trim, a restart, or the processes of
+// one service (#465, `common/seq_allocator.ts`) — and it rises within each
+// process. That is what makes the number on a row a stable name for that
+// event, where a row index would silently mean a different event as soon as
+// anything was dropped. It is NOT one order across processes: a reader
+// resumes by time (`at`), with `seq` as the tie-break.
 // ---------------------------------------------------------------------------
 // PER TRUST REALM. `realms.arr()` is a array that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
@@ -1169,11 +1412,11 @@ const events = realms.arr({ persist: 'audit.events', merge: 'own',
 // `realms.obj(factory)` is a plain object per realm, so `nums.seq++` works
 // exactly as the bindings it replaced did.
 // ---------------------------------------------------------------------
-// PERSISTED WITH THE RING, and it has to be the two together. `seq` is
-// promised to be monotonic and never reused, which is what makes the number on
-// a row a stable name — "I have read up to 4,102" has to keep meaning the same
-// event across a restart. A restored ring beside a `seq` that went back to 0
-// would renumber every event written afterwards on top of ones already read.
+// PERSISTED WITH THE RING, and it has to be the two together. `nums.seq` is
+// the counter a SINGLE-WRITER store numbers with (`seq_allocator.ts` hands
+// out leased numbers wherever the store is shared, #465), and a restored ring
+// beside one that went back to 0 would renumber every event written
+// afterwards on top of ones already read.
 const nums = realms.obj(function () {
   return { seq: 0, recorded: 0 };
 }, { persist: 'audit.nums', merge: 'own' });
@@ -1436,10 +1679,18 @@ function record(event) {
   }
   const outcome = OUTCOMES.indexOf(info.outcome) >= 0
     ? info.outcome : (errorCode ? 'refused' : 'success');
-  nums.seq++;
   nums.recorded++;
   const row = {
-    seq: nums.seq,
+    // UNIQUE ACROSS EVERY PROCESS OF THE SERVICE (#465): a number from this
+    // process's block leased from the store, or this realm's own counter
+    // where there is one writer. See common/seq_allocator.ts.
+    seq: seqAllocator.next('audit', function () {
+      nums.seq++;
+      return nums.seq;
+    }),
+    // WHICH PROCESS RECORDED IT (#465) — its stable origin in the store, or
+    // '' with no shared store — the tie-break merged() sorts on.
+    origin: processOrigin(),
     at: now,
     category: category,
     action: action,
@@ -1478,9 +1729,18 @@ function record(event) {
     // something nobody sent.
     address: trimmed(info.address ? addressText(info.address)
       : ambientAddress(), 64),
+    // A DETAIL GIVEN AS A SENTENCE IS THE SUMMARY (2026-10-12). Several
+    // callers pass `detail: '<what happened>'`, and detailOf() reads its
+    // argument's keys — so a string became {"0":"a","1":"d",…} and the row's
+    // summary was empty. Without a summary of its own the sentence IS the
+    // summary; beside one it is kept as `note`.
     summary: trimmed((errorCode ? errorCodes.tag(errorCode) : '') +
-                     (info.summary || ''), MAX_SUMMARY_LENGTH),
-    detail: detailOf(info.detail)
+                     (info.summary ||
+                      (typeof info.detail === 'string' ? info.detail : '')),
+                     MAX_SUMMARY_LENGTH),
+    detail: typeof info.detail === 'string'
+      ? (info.summary ? detailOf({ note: info.detail }) : {})
+      : detailOf(info.detail)
   };
   events.push(row);
   trimToCap();
@@ -1729,7 +1989,7 @@ function recordHttp(req, res, detail) {
   // The URL WITHOUT its query string. The query is on the row as a detail where
   // it is interesting, and a path that carried it would make every distinct
   // ?page= a different-looking row for the same page view.
-  const path = String(req.originalUrl || '/').split('?')[0];
+  const path = redactedPath(String(req.originalUrl || '/').split('?')[0]);
   if (isQuietProbe(req, res, path)) {
     log.debug("Leaving recordHttp(). A successful liveness probe; not " +
               "recorded.");
@@ -1753,7 +2013,13 @@ function recordHttp(req, res, detail) {
               "recorded.");
     return null;
   }
-  const actor = actorOfRequest(req);
+  // THE MANAGEMENT API'S CALLER IS THE SUBJECT OF ITS TOKEN (#446,
+  // 2026-10-05): `mgmt-api/admin_api.ts`'s gate leaves the subject it
+  // verified on `res.locals.apiCaller`, and that is who made this call —
+  // not whoever's sign-on cookie the request happened to carry, which is
+  // what the resolver reads. Nothing but that gate writes the member.
+  const caller = res.locals && res.locals.apiCaller;
+  const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
   const posted = (action === 'admin.change' || action === 'api.change')
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);
@@ -1774,7 +2040,10 @@ function recordHttp(req, res, detail) {
     // /admin/metrics can be lined up without guessing.
     protocol: '',
     summary: req.method + ' ' + path + ' → ' + res.statusCode +
-             (posted ? ' (' + posted + ')' : ''),
+             (posted ? ' (' + posted + ')' : '') +
+             // AS AN OWNER (#607): the management API's gate let the call
+             // through on the owner rule, so a delegated change reads as one.
+             (caller && caller.owner ? ' as an owner' : ''),
     detail: {
       method: req.method,
       status: res.statusCode,
@@ -1782,7 +2051,8 @@ function recordHttp(req, res, detail) {
       matched: !!info.matched,
       durationMs: info.durationMs || 0,
       query: queryText(req.query),
-      postedAction: posted
+      postedAction: posted,
+      via: caller && caller.owner ? 'owner' : ''
     }
   });
   log.debug("Leaving recordHttp(). Recorded as " + action + ".");
@@ -1794,9 +2064,63 @@ function recordHttp(req, res, detail) {
 // than secrets — with the one exception below, which is not a rule that can be
 // relaxed: an OAuth 2.0 authorization CODE and an id_token_hint travel in a
 // query string, and both are credentials.
+// AND A CAPABILITY IN A PATH (#571): `/authn-api` is keyed by the pending
+// sign-in's id and a forced password change's step id, each a bearer
+// capability over that sign-in, and the operation's path carries it. The row
+// keeps the operation and drops the id. A second-factor or emailed-factor
+// step's id since #572 and #573 (`/authn-api/mfa/{id}`) is another, the same
+// capability `?mfa=` always was.
+// THE WALLET SIGN-IN'S TRANSACTION (#574) is another: `/authn-api/wallet/
+// {state}`. And the same capabilities travel in the QUERY of the pages they
+// open — `/authn/login?authn=`, `/authn/wallet/wait?authn=&state=&mfa=`, a
+// wallet's same-device return with its `response_code` — so a full URL a
+// line records has those values replaced too (`REDACTED_CAPABILITIES`).
+// THE PENDING CONSENT'S ID (#576) is one more: `/authn-api/consent/{id}`,
+// the capability `/oauth2/consent?consent=` always carried.
+const REDACTED_PATHS =
+  /(\/authn-api\/(?:pending|password-change|wallet|mfa|consent)\/)[^/?#]+/g;
+// And a mailed sign-in link's token (#573, `/authn/email-link/open?t=`),
+// which is a credential rather than a capability over a step.
+const REDACTED_CAPABILITIES = ['authn', 'mfa', 'state', 'response_code',
+                               'change', 't', 'consent'];
+const REDACTED_QUERY_VALUES = new RegExp('([?&](?:' +
+  REDACTED_CAPABILITIES.join('|') + ')=)[^&#]*', 'g');
+
+/**
+ * A request path with any capability it carries replaced by `(redacted)`.
+ *
+ * @param path - the path, without its query
+ * @returns the path a row or a log line may carry
+ */
+function redactedPath(path) {
+  log.debug("Entering redactedPath().");
+  log.debug("Leaving redactedPath().");
+  return String(path || '').replace(REDACTED_PATHS, '$1(redacted)')
+    .replace(REDACTED_QUERY_VALUES, '$1(redacted)');
+}
+
+/**
+ * A parsed query with every capability's value replaced by `(redacted)`, for
+ * the call log (#574).
+ *
+ * @param query - the query, name → value
+ * @returns a copy a log line may carry
+ */
+function redactedQuery(query) {
+  log.debug("Entering redactedQuery().");
+  const out = {};
+  Object.keys(query || {}).forEach(function (key) {
+    out[key] = REDACTED_CAPABILITIES.indexOf(String(key).toLowerCase()) >= 0
+      ? '(redacted)' : query[key];
+  });
+  log.debug("Leaving redactedQuery().");
+  return out;
+}
+
 const REDACTED_QUERY_KEYS = ['code', 'id_token_hint', 'access_token', 'token',
                              'assertion', 'client_secret', 'password',
-                             'credential', 'vp_token', 'response'];
+                             'credential', 'vp_token', 'response']
+  .concat(REDACTED_CAPABILITIES);
 
 function queryText(query) {
   log.debug("Entering queryText().");
@@ -1933,11 +2257,13 @@ function list() {
 // ever sees more than this process's own events. Two consequences worth
 // knowing:
 //
-//   * **`seq` IS ONLY MONOTONIC WITHIN ONE PROCESS.** It always was — it is a
-//     per-realm counter — and with several processes it is per process as
-//     well. The rows carry `origin` so that "I have read up to 4,102" can
-//     still mean something, and the sort below is by TIME rather than by
-//     sequence, because time is the only ordering two processes share.
+//   * **`seq` IS UNIQUE ACROSS PROCESSES, AND RISES WITHIN EACH ONE (#465).**
+//     Each process numbers from blocks it leased from the store
+//     (`common/seq_allocator.ts`), so no two rows share a number — but two
+//     processes hold different blocks, so the numbers are not one order
+//     across them. The rows carry `origin`, and the sort below is by TIME,
+//     because time is the only ordering two processes share; a reader
+//     resumes by `at`, with `seq` as the row's name and the tie-break.
 //   * **THE CAP IS PER PROCESS**, so a two-process deployment holds up to
 //     twice `audit.maxEvents` between them. That is the honest behaviour
 //     rather than a bug: each process bounds its own memory, and trimming
@@ -2052,6 +2378,49 @@ log.info('The audit log is running: every authentication, session, directory ' +
          'GET /admin-api/audit, holds at most ' + maxEvents() + ' events in ' +
          'memory, and carries no credential of any kind.');
 
+// ---------------------------------------------------------------------------
+// THE AUDIT NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b): the vocabulary's
+// labels and sentences, which `GET /admin-api/audit` carries as `categories`
+// and `actions`. The EVENTS are not harvested: a row's summary and detail
+// are records, written when something happened, and an id (`category`,
+// `action`, `outcome`) is a value the filters send back. A row is keyed by
+// its own id here rather than by `harvest()`'s choice of one, because an
+// action carries a `category` too, and that is the id `harvest()` would
+// reach first.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/audit'];
+
+/**
+ * Extracts the audit namespace (#543 phase 2b): each category's label and
+ * sentence and each action's label.
+ *
+ * `server_prose` is required here, LAZILY, which is safe however early this
+ * file is loaded: `server_prose` requires `helpers.js`, which this file
+ * requires too, and only this function needs it.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const categories = {};
+  CATEGORIES.forEach(function (one) {
+    categories[one.category] = { label: one.label, what: one.what };
+  });
+  const actions = {};
+  ACTIONS.forEach(function (one) {
+    actions[one.action] = { label: one.label };
+  });
+  const out = Object.assign(
+    harvest('audit.categories', categories, ['label', 'what']),
+    harvest('audit.actions', actions, ['label']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The audit log: what happened here, in the order it happened, as discrete
  * events.
@@ -2063,6 +2432,8 @@ log.info('The audit log is running: every authentication, session, directory ' +
  */
 module.exports = {
   CATEGORIES: CATEGORIES,
+  redactedPath: redactedPath,
+  redactedQuery: redactedQuery,
   ACTIONS: ACTIONS,
   OUTCOMES: OUTCOMES,
   audit: audit,
@@ -2077,5 +2448,7 @@ module.exports = {
   currentAddress: ambientAddress,
   currentRequest: ambientRequest,
   list: list,
-  summary: summary
+  summary: summary,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

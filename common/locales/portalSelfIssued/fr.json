@@ -1,0 +1,14 @@
+{
+  "heading": "Vos identifiants auto-émis",
+  "sub": "Un portefeuille peut vous connecter avec un jeton d’identité (ID Token) qu’il signe avec sa propre clé (Self-Issued OpenID Provider v2). Personne ne se porte garant de cette clé : elle ne connecte donc que la personne qui l’a enregistrée ici.",
+  "subject": "Sujet",
+  "label": "Libellé",
+  "enrolled": "Enregistré",
+  "remove": "Supprimer",
+  "none": "Vous n’en avez enregistré aucun.",
+  "enrol": "Enregistrer un portefeuille",
+  "enrolNote": "Votre portefeuille est invité à fournir un jeton d’identité auto-émis, et la clé qui l’a signé est enregistrée pour vous — vous prouvez que vous la détenez ; rien n’est saisi.",
+  "off": "La connexion avec un identifiant auto-émis est désactivée ici : aucun portefeuille ne peut donc être enregistré depuis cette page. Les clés ci-dessus restent enregistrées.",
+  "doneEnrolled": "La clé de votre portefeuille est enregistrée. Elle vous connecte désormais.",
+  "doneRemoved": "Cette clé ne vous connecte plus."
+}

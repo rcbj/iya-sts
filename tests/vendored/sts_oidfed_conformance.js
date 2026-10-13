@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -38,6 +38,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
+const conformanceBrowser = require("./conformance_browser.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -189,25 +190,13 @@ async function prepare(plan) {
   };
   configuration.federation_trust_anchor = {
     trust_anchor_jwks: anchorKeys.privateJwks };
-  configuration.browser = [{
-    match: realm.base + "/oauth2/authorize*",
-    tasks: [
-      { task: "Sign in", optional: true, match: realm.base + "/authn/login*",
-        commands: [["text", "id", "username", person, "optional"],
-                   ["text", "id", "password", PASSWORD, "optional"],
-                   ["click", "id", "kc-login"]] },
-      { task: "Consent", optional: true,
-        match: realm.base + "/oauth2/consent*",
-        commands: [["click", "id", "consent-allow"]] },
-      { task: "Error page", optional: true,
-        match: realm.base + "/oauth2/authorize*",
-        commands: [["wait", "xpath", "//body", 10, ".*",
-                    "update-image-placeholder-optional"]] },
-      { task: "Verify complete", optional: true,
-        match: oidf.SUITE + "test/*/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  }];
+  // Not the suite's: taken off before the plan is created. The person who
+  // signs in when the suite's Relying Party sends them to this OP — in
+  // headless Chrome (#571), because the suite's HtmlUnit browser cannot run
+  // the scripted sign-in screen, so the plan carries no `browser` commands.
+  configuration.person = conformanceBrowser.person({
+    suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: realm.base,
+    username: person, password: PASSWORD, actions: {} });
   log.debug("Leaving prepare(). Joined.");
   return configuration;
 }
@@ -225,8 +214,11 @@ async function test() {
              " (" + plan.key + ") ===");
     let ran = null;
     try {
-      ran = await oidf.runPlan(plan.name, plan.variant, await prepare(plan),
-                               plan.key);
+      const configuration = await prepare(plan);
+      const someone = configuration.person;
+      delete configuration.person;
+      ran = await oidf.runPlan(plan.name, plan.variant, configuration,
+                               plan.key, someone ? someone.visit : undefined);
     } catch (e) {
       log.error("Caught in test(): " + plan.key + ": " +
                 ((e && e.message) || e));
@@ -242,6 +234,7 @@ async function test() {
       unexpected.push(line);
     });
   }
+  await conformanceBrowser.quit();
   if (unexpected.length) {
     log.error("Unexplained:\n  " + unexpected.join("\n  "));
   }
@@ -257,8 +250,8 @@ async function test() {
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID " +
     "Federation plans (#187), against this service.")
-  .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
-                                           "needs no browser)"))
+  .addOption(new Option("-u, --url <url>", "base url (unused: the " +
+                                           "service's is the realm's)"))
   .parse(process.argv);
 
 test().catch(function (e) {

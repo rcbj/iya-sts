@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -14,8 +14,9 @@
 //      /oid4vp/verifier-certificate. In PRODUCT mode, where the Verifier
 //      never certifies a Host header, x509_san_dns is refused there until
 //      `oid4vp.x509DnsName` names the host — which this job then sets.
-//   1. For each prefix, a request started at /oid4vp/start with
-//      `client_id_prefix`, fetched at its request_uri as a wallet does, and
+//   1. For each prefix, a request started with `client_id_prefix` at POST
+//      /admin-api/verifications/start (#587) — the administrator's twin of
+//      the demonstration's /oid4vp/start, the same function — fetched at its request_uri as a wallet does, and
 //      checked with node's own crypto and nothing of the service's: the
 //      `client_id` parameter is the Request Object's; the Request Object is
 //      typed and signed by the key of the `x5c` leaf; the chain verifies link
@@ -201,16 +202,21 @@ async function walletCheck(jwt, clientId) {
            hash: hash, anchor: anchor, certs: certs };
 }
 
-// /oid4vp/start, followed as far as the wallet's address: the query the
-// wallet is handed, and the Request Object at its request_uri.
+// A verification started at POST /admin-api/verifications/start (#587),
+// followed as far as the wallet's address: the query the wallet is handed
+// (the answer's `walletUrl`, the address /oid4vp/start redirects to), and
+// the Request Object at its request_uri. The demonstration page becomes
+// development-only (#585) and this realm is in the process's mode; the
+// operation builds the request with the page's function and refuses as it
+// does, 500 for a request that cannot be built.
 async function start(query) {
   log.debug("Entering start().");
-  const r = await hop("GET", base + "/oid4vp/start?" +
-                      new URLSearchParams(query).toString());
+  const r = await hop("POST", api + "/verifications/start", query);
   const out = { status: r.status, text: r.text, clientId: "", jwt: "",
                 type: "" };
-  if (r.status === 302 && r.location) {
-    const handed = new URL(r.location, base).searchParams;
+  const walletUrl = (r.json && r.json.walletUrl) || "";
+  if (r.status === 200 && walletUrl) {
+    const handed = new URL(walletUrl, base).searchParams;
     out.clientId = handed.get("client_id") || "";
     const ro = await hop("GET", handed.get("request_uri"));
     out.jwt = ro.status === 200 ? ro.text : "";
@@ -269,14 +275,39 @@ async function test() {
     assert.strictEqual(doc.json.response_uri, base + "/oid4vp/response");
   });
 
+  // ONE CERTIFICATE BEFORE THE TWO REQUESTS (2026-10-01). With request
+  // workers the first fetches can land on two workers that each certify the
+  // Verifier's key before either has adopted the other's certificate; the
+  // store keeps one, and the workers converge on it. Section 1 asks the two
+  // prefixes in two requests and compares them, so wait until five reads in
+  // a row name the same x509_hash (single-node, 2026-09-30: two hashes).
+  const settleDeadline = Date.now() + 30000;
+  let lastHash = "";
+  let sameReads = 0;
+  while (sameReads < 5 && Date.now() < settleDeadline) {
+    const again = await hop("GET", base + "/oid4vp/verifier-certificate");
+    const hash = again.json && again.json.x509_hash ?
+      again.json.x509_hash.client_id : "";
+    sameReads = hash && hash === lastHash ? sameReads + 1 : 1;
+    lastHash = hash;
+    if (sameReads < 5) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 300);
+      });
+    }
+  }
+  log.info("  the verifier certificate settled after " + sameReads +
+           " matching read(s): " + lastHash);
+
   const seen = {};
   for (const prefix of ["x509_san_dns", "x509_hash"]) {
     log.info("=== 1. " + prefix + ", as a wallet checks it ===");
     const s = await start({ client_id_prefix: prefix,
                             format: "dc+sd-jwt" });
-    check(prefix + ": /oid4vp/start hands the wallet a client_id and a " +
-          "request_uri, and the Request Object is served typed", function () {
-      assert.strictEqual(s.status, 302, s.text.slice(0, 400));
+    check(prefix + ": a started verification hands the wallet a client_id " +
+          "and a request_uri, and the Request Object is served typed",
+          function () {
+      assert.strictEqual(s.status, 200, s.text.slice(0, 400));
       assert.ok(s.clientId.indexOf(prefix + ":") === 0, s.clientId);
       assert.ok(s.jwt, "no Request Object");
       assert.ok(/application\/oauth-authz-req\+jwt/.test(s.type), s.type);
@@ -333,7 +364,7 @@ async function test() {
   const byRealm = await start({ by: "reference", format: "dc+sd-jwt" });
   check("with oid4vp.clientIdPrefix x509_hash, a signed request names no " +
         "prefix and carries the x509_hash Client Identifier", function () {
-    assert.strictEqual(byRealm.status, 302, byRealm.text.slice(0, 400));
+    assert.strictEqual(byRealm.status, 200, byRealm.text.slice(0, 400));
     assert.strictEqual(byRealm.clientId, hashed.clientId);
   });
 
@@ -348,7 +379,7 @@ async function test() {
     assert.ok(/not the host of the Response URI/.test(refused.text),
               refused.text.slice(0, 300));
     assert.strictEqual(refusedDoc.json.x509_san_dns, null);
-    assert.strictEqual(stillHash.status, 302, stillHash.text.slice(0, 300));
+    assert.strictEqual(stillHash.status, 200, stillHash.text.slice(0, 300));
   });
   await set("oid4vp.x509DnsName", product && !pinned ? HOST : "");
   await set("oid4vp.clientIdPrefix", "pre-registered");

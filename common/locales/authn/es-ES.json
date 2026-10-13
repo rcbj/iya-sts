@@ -1,0 +1,18 @@
+{
+  "login.linkAccount": "<strong>Vincule su cuenta.</strong> Un socio de federación ha iniciado su sesión como <code>{name}</code>, y esa cuenta todavía no está vinculada a él. Inicie sesión aquí como {name} para vincularlas; Cancelar no vincula nada.",
+  "login.rememberNote": "— lo reconocerá la próxima vez mediante una cookie. No lo marque en un ordenador compartido.",
+  "login.forgot": "¿Ha olvidado su contraseña?",
+  "login.metaPasswordlessChecked": "Sin contraseña: el campo de contraseña no se lee, y una llave de acceso que haya registrado para iniciar sesión es el único factor. Una llave de acceso se añade en /portal/keys después de iniciar sesión, nunca aquí.",
+  "options.walletWithheld": "El inicio de sesión con una cartera no se ofrece para esta solicitud: exige una llave de seguridad.",
+  "options.wallet": "O inicie sesión con una cartera que contenga una credencial que este servicio le emitió. No se escribe nada: su cartera demuestra que posee la clave a la que está vinculada la credencial.",
+  "options.walletMfaNote": "Esta solicitud necesita dos factores, así que después se le pedirá un segundo, salvo que la clave de su cartera esté certificada como protegida por su PIN o su biometría.",
+  "options.walletButton": "Iniciar sesión con una cartera",
+  "options.siopNote": "una clave de cartera que ha registrado",
+  "passwordChange.meta": "Todavía no se ha iniciado ninguna sesión. El inicio de sesión que ha empezado continúa en cuanto se guarde la contraseña nueva.",
+  "mfaSetup.passkeyText": "Una llave de acceso en este dispositivo, en su móvil o en una llave de seguridad, que se usa después de su contraseña.",
+  "webauthn.noPrompt": "Mi navegador no me ha preguntado nada: dígame por qué",
+  "backupCode.label": "Uno de los códigos de recuperación que ha recibido",
+  "passwordFactor.sub": "Segundo factor para <code>{name}</code>, después de su cartera.",
+  "passwordFactor.meta": "Su cartera ya presentó una credencial que este servicio le emitió. Si todo va bien, la sesión registra amr {amr} y acr \"mfa\".",
+  "secondFactor.walletInstead": "Usar en su lugar su cartera"
+}

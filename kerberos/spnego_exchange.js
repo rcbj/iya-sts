@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -21,6 +21,15 @@
 // the first one is the documentation of it. A second copy of this negotiation
 // would be a page that describes a check the sign-in does not make, or the
 // reverse, and neither would show up as a failure anywhere.
+//
+// **ONE DOOR AGAIN SINCE #595.** `/spnego/protected` left the runtime for the
+// development companion (`companion/demo_kerberos.js`), where a Kerberos
+// service with its own keytab and MIT Kerberos's acceptor plays it; the
+// sign-in is the one caller here. The options that page alone passed
+// (`supported`, `wantMic`, `mutualOff`) stay, as the library's, for the
+// in-process tests that drive the negotiation's every outcome through them;
+// what this header and the comments below say of `/spnego/protected` is its
+// history.
 //
 // So the split is the same one `krb5_service.js` already made one layer down
 // and for the same reason, which that module's header stated as a promise when
@@ -66,7 +75,10 @@
 // ---------------------------------------------------------------------------
 
 const { log } = require('../common/helpers');
-const nodeCrypto = require('crypto');
+// `common/crypto.js`, for a pending exchange's id. `helpers.js` above already
+// requires it at load, so this adds no file to the parent project's copy set
+// (#453).
+const stsCrypto = require('../common/crypto');
 // For the two limits below. `helpers.js` above already requires it, so this
 // adds no file to the parent project's copy set.
 const config = require('../common/config');
@@ -213,7 +225,12 @@ const OUTCOMES = {
 function volunteerTheSpn(res) {
   log.debug('Entering volunteerTheSpn().');
   res.set('X-Krb5-Service-Principal', spn() + '@' + principals.REALM);
-  res.set('X-Krb5-Accepts-Spn-Hosts', principals.SERVICE_DOMAINS.join(','));
+  // Only the hosts the KDC will issue an SPN for: none in product mode,
+  // where the one SPN above is all there is (2026-10-12).
+  const hosts = principals.ADVERTISED_SERVICE_HOSTS;
+  if (hosts.length) {
+    res.set('X-Krb5-Accepts-Spn-Hosts', hosts.join(','));
+  }
   log.debug('Leaving volunteerTheSpn().');
 }
 
@@ -340,7 +357,17 @@ function maxPending() {
 // so a negotiation begun under one realm's prefix could be continued under
 // another's — one shared row under one key, whichever realm asked. A realm's
 // pending negotiations are now its own.
-const pending = realms.map({ persist: 'spnego.pending', retain: 'age' });
+// `expiresAt` (#333): a negotiation lives pendingTtlMs() from its `at`.
+const pending = realms.map({
+  persist: 'spnego.pending',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row) {
+    const at = Number(row && row.at);
+    const ttl = Number(pendingTtlMs());
+    return at > 0 && ttl > 0 ? at + ttl : null;
+  }
+});
 const PENDING_COOKIE = 'sts_spnego_negotiation';
 
 function whoIs(req) {
@@ -402,7 +429,8 @@ function prunePending(nowMs) {
 }
 
 // ---------------------------------------------------------------------------
-// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view.
+// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view until #595 moved
+// that page to the development companion; no route reads it now.
 //
 // It lives here rather than in `spnego.js` now that there are two doors, and
 // it carries the DOOR — so a person reading that page can tell an exchange
@@ -722,7 +750,7 @@ async function negotiate(req, opts) {
     // skipped. Real acceptors do this — Windows sets request-mic whenever it
     // wants the list protected regardless of preference order.
     prunePending(Date.now());
-    const pendingId = nodeCrypto.randomBytes(18).toString('base64url');
+    const pendingId = stsCrypto.randomBytes(18).toString('base64url');
     pending.set(pendingKey(door, pendingId), {
       at: Date.now(),
       id: pendingId,

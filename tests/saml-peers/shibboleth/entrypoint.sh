@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ===========================================================================
 # THE SHIBBOLETH PEER'S START (#189).
@@ -50,7 +50,7 @@ mkdir -p /etc/shibboleth/peer
 # container.
 mkdir -p /run/shibboleth
 chown shibd:shibd /run/shibboleth
-for doc in idp-saml2.xml idp-saml11.xml;
+for doc in idp.xml;
 do
   if [ ! -s "/etc/shibboleth/peer/${doc}" ];
   then

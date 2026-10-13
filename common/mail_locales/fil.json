@@ -1,0 +1,89 @@
+{
+  "templates": {
+    "password-reset": {
+      "subject": "I-reset ang iyong password sa {{service}}",
+      "text": "May humiling — {{requestedBy}} — na i-reset ang password ng account na {{username}}.\n\nPara pumili ng bagong password, buksan ang link na ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nIsang beses lang ito gagana. Kung hindi ikaw ang humiling nito, puwede mong balewalain ang mensaheng ito: walang magbabago hangga't hindi ginagamit ang link.\n",
+      "html": "<p>May humiling &mdash; {{requestedBy}} &mdash; na i-reset ang password ng account na <strong>{{username}}</strong>.</p><p><a href=\"{{link}}\">Pumili ng bagong password</a> sa loob ng {{expiresMinutes}} minuto. Isang beses lang gagana ang link.</p><p>Kung hindi ikaw ang humiling nito, puwede mong balewalain ang mensaheng ito: walang magbabago hangga't hindi ginagamit ang link.</p>"
+    },
+    "account-activation": {
+      "subject": "I-activate ang iyong account sa {{service}}",
+      "text": "Ginawan ka ng account, {{username}}.\n\nPara pumili ng password nito, buksan ang link na ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nIsang beses lang ito gagana.\n",
+      "html": "<p>Ginawan ka ng account, <strong>{{username}}</strong>.</p><p><a href=\"{{link}}\">Pumili ng password nito</a> sa loob ng {{expiresMinutes}} minuto. Isang beses lang gagana ang link.</p>"
+    },
+    "address-verification": {
+      "subject": "Kumpirmahin ang iyong address para sa {{service}}",
+      "text": "Ang account na {{username}} ay nakalagay ang {{address}} bilang email address nito.\n\nPara kumpirmahing iyo ang address na ito, buksan ang link na ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nKung hindi mo ito account, balewalain ang mensaheng ito.\n",
+      "html": "<p>Ang account na <strong>{{username}}</strong> ay nakalagay ang {{address}} bilang email address nito.</p><p><a href=\"{{link}}\">Kumpirmahing iyo ang address na ito</a> sa loob ng {{expiresMinutes}} minuto.</p><p>Kung hindi mo ito account, balewalain ang mensaheng ito.</p>"
+    },
+    "password-changed": {
+      "subject": "Napalitan ang iyong password sa {{service}}",
+      "text": "Napalitan ang password ng account na {{username}} noong {{when}} ({{how}}).\n\nKung hindi ikaw ito, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
+      "html": "<p>Napalitan ang password ng account na <strong>{{username}}</strong> noong {{when}} ({{how}}).</p><p>Kung hindi ikaw ito, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
+    },
+    "account-disabled": {
+      "subject": "Na-disable ang iyong account sa {{service}}",
+      "text": "Na-disable ang account na {{username}} noong {{when}}. {{why}}\n\nWalang makakapag-sign in dito hangga't hindi ito muling ine-enable, at tinapos na ang bawat session nito.\n",
+      "html": "<p>Na-disable ang account na <strong>{{username}}</strong> noong {{when}}. {{why}}</p><p>Walang makakapag-sign in dito hangga't hindi ito muling ine-enable, at tinapos na ang bawat session nito.</p>"
+    },
+    "sessions-ended": {
+      "subject": "Na-sign out ka sa {{service}}",
+      "text": "{{count}} session ng account na {{username}} ang tinapos noong {{when}} ng {{by}}.\n\nMag-sign in muli para magpatuloy. Kung hindi mo ito inaasahan, makipag-ugnayan sa namamahala ng iyong account.\n",
+      "html": "<p>{{count}} session ng account na <strong>{{username}}</strong> ang tinapos noong {{when}} ng {{by}}.</p><p>Mag-sign in muli para magpatuloy. Kung hindi mo ito inaasahan, makipag-ugnayan sa namamahala ng iyong account.</p>"
+    },
+    "credential-compromised": {
+      "subject": "Minarkahang compromised ang isa mong credential sa {{service}}",
+      "text": "Minarkahang compromised ang {{what}} ng account na {{username}} noong {{when}}. {{why}}\n\nHindi na ito gumagana. Pumili ng bago sa susunod mong pag-sign in, o humingi ng tulong sa namamahala ng iyong account.\n",
+      "html": "<p>Minarkahang compromised ang {{what}} ng account na <strong>{{username}}</strong> noong {{when}}. {{why}}</p><p>Hindi na ito gumagana. Pumili ng bago sa susunod mong pag-sign in, o humingi ng tulong sa namamahala ng iyong account.</p>"
+    },
+    "recovery-started": {
+      "subject": "Sinimulan ang recovery ng iyong account sa {{service}}",
+      "text": "Sinimulan ng {{by}} ang recovery ng account na {{username}} noong {{when}}.\n\nKung hindi ikaw ito o isang taong hiningan mo ng tulong, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
+      "html": "<p>Sinimulan ng {{by}} ang recovery ng account na <strong>{{username}}</strong> noong {{when}}.</p><p>Kung hindi ikaw ito o isang taong hiningan mo ng tulong, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
+    },
+    "address-changed": {
+      "subject": "Napalitan ang email address ng iyong account sa {{service}}",
+      "text": "Napalitan ang email address ng account na {{username}} noong {{when}}, at {{address}} na ito ngayon. Ipinadala ang mensaheng ito sa dating address nito.\n\nKung hindi mo ito inaasahan, makipag-ugnayan ngayon sa namamahala ng iyong account.\n",
+      "html": "<p>Napalitan ang email address ng account na <strong>{{username}}</strong> noong {{when}}, at {{address}} na ito ngayon. Ipinadala ang mensaheng ito sa dating address nito.</p><p>Kung hindi mo ito inaasahan, makipag-ugnayan ngayon sa namamahala ng iyong account.</p>"
+    },
+    "access-request": {
+      "subject": "{{service}}: may application na humihingi ng access",
+      "text": "Humihingi ang application na {{client}} ng access para sa account na {{username}}: {{rights}}.\n\nWalang papayagan hangga't hindi mo ito inaaprubahan. Para aprubahan o tanggihan ito, mag-sign in at buksan ang pahinang ito sa loob ng {{expiresMinutes}} minuto:\n\n{{link}}\n\nKung hindi mo kilala ang kahilingan, tanggihan ito roon o balewalain ang mensaheng ito: kusa itong mag-e-expire.\n",
+      "html": "<p>Humihingi ang application na <strong>{{client}}</strong> ng access para sa account na <strong>{{username}}</strong>: {{rights}}.</p><p>Walang papayagan hangga't hindi mo ito inaaprubahan. <a href=\"{{link}}\">Aprubahan o tanggihan ito</a> sa loob ng {{expiresMinutes}} minuto.</p><p>Kung hindi mo kilala ang kahilingan, tanggihan ito roon o balewalain ang mensaheng ito: kusa itong mag-e-expire.</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}}: {{act}} para kay {{username}}",
+      "text": "Ang serbisyong ito, hindi isang tao, ang gumawa ng aksyon sa account na {{username}} noong {{when}}: {{act}}.\n\n{{why}}\n\nNatanggap mo ito dahil may Admin Write ka sa realm na ito.\n",
+      "html": "<p>Ang serbisyong ito, hindi isang tao, ang gumawa ng aksyon sa account na <strong>{{username}}</strong> noong {{when}}: {{act}}.</p><p>{{why}}</p><p>Natanggap mo ito dahil may Admin Write ka sa realm na ito.</p>"
+    },
+    "sign-in-code": {
+      "subject": "Ang iyong sign-in code sa {{service}}: {{code}}",
+      "text": "Ang code mo para mag-sign in sa {{service}} bilang {{username}} ay:\n\n    {{code}}\n\nIsang beses lang ito gagana, sa loob ng {{minutes}} minuto. Hindi ito kailanman hihingin sa iyo ng sinuman mula sa {{service}}.\n\nKung hindi ka nagsa-sign in, may taong nakakaalam ng pangalan ng iyong account na sumusubok nito: balewalain ang code na ito, at isiping palitan ang iyong password.\n",
+      "html": "<p>Ang code mo para mag-sign in sa {{service}} bilang <strong>{{username}}</strong> ay:</p><p><strong>{{code}}</strong></p><p>Isang beses lang ito gagana, sa loob ng {{minutes}} minuto. Hindi ito kailanman hihingin sa iyo ng sinuman mula sa {{service}}.</p><p>Kung hindi ka nagsa-sign in, may taong nakakaalam ng pangalan ng iyong account na sumusubok nito: balewalain ang code na ito, at isiping palitan ang iyong password.</p>"
+    },
+    "sign-in-link": {
+      "subject": "Ang iyong sign-in link sa {{service}}",
+      "text": "Para tapusin ang pag-sign in sa {{service}} bilang {{username}}, buksan ang link na ito SA BROWSER KUNG SAAN KA NAGSIMULANG MAG-SIGN IN, sa loob ng {{minutes}} minuto:\n\n{{signin}}\n\nIsang beses lang ito gagana, at sa browser na iyon lang.\n\nKung hindi ka nagsa-sign in, balewalain ang mensaheng ito: hindi makakapag-sign in ng iba ang link.\n",
+      "html": "<p>Para tapusin ang pag-sign in sa {{service}} bilang <strong>{{username}}</strong>, <a href=\"{{signin}}\">buksan ang link na ito</a> sa browser kung saan ka nagsimulang mag-sign in, sa loob ng {{minutes}} minuto.</p><p>Isang beses lang ito gagana, at sa browser na iyon lang.</p><p>Kung hindi ka nagsa-sign in, balewalain ang mensaheng ito: hindi makakapag-sign in ng iba ang link.</p>"
+    },
+    "reset-refused-attempt": {
+      "subject": "May sumubok na i-reset ang iyong password sa {{service}}",
+      "text": "Noong {{when}}, may humiling na i-reset ang password ng account na {{username}}, inilagay ang address na ito, at nagbigay ng recovery code na hindi sa iyo. Walang binago at walang ipinadalang reset link.\n\nKung ikaw ito, subukang muli gamit ang recovery code na hindi pa nagagamit. Kung hindi, may nakakaalam ng pangalan ng iyong account at ng iyong address; makipag-ugnayan sa namamahala ng iyong account.\n",
+      "html": "<p>Noong {{when}}, may humiling na i-reset ang password ng account na <strong>{{username}}</strong>, inilagay ang address na ito, at nagbigay ng recovery code na hindi sa iyo. Walang binago at walang ipinadalang reset link.</p><p>Kung ikaw ito, subukang muli gamit ang recovery code na hindi pa nagagamit. Kung hindi, may nakakaalam ng pangalan ng iyong account at ng iyong address; makipag-ugnayan sa namamahala ng iyong account.</p>"
+    },
+    "test-message": {
+      "subject": "Test message ng {{service}}",
+      "text": "Isa itong test message, ipinadala noong {{when}} sa pamamagitan ng {{transport}} transport sa kahilingan ni {{username}}.\n",
+      "html": "<p>Isa itong test message, ipinadala noong {{when}} sa pamamagitan ng {{transport}} transport sa kahilingan ni <strong>{{username}}</strong>.</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}} ({{realm}})\nNatanggap mo ito dahil ito ay {{reason}}.\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Natanggap mo ito dahil ito ay {{reason}}.</small></p>"
+  },
+  "categories": {
+    "security": { "reason": "isang security notice tungkol sa iyong account, na hindi puwedeng i-off" },
+    "account": { "reason": "isang bagay na hiniling mo o ng isang administrator" },
+    "notification": { "reason": "isang notification, na puwede mong i-off sa iyong portal" }
+  }
+}

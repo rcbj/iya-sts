@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -215,30 +215,37 @@ function childMain() {
     note(success2.test(r.text) && /_csu-held-message/.test(r.text),
          '1a. a SAML 2.0 artifact resolves', r.text.slice(0, 300));
     r = await resolve2('CSU-A2');
-    note(!success2.test(r.text), '1b. and a second resolution on the same ' +
+    note(!/_csu-held-message/.test(r.text), '1b. and a second resolution ' +
+         'on the same ' +
          'node is refused by the map, as always', r.text.slice(0, 200));
     artifacts2.restore(DEFAULT, 'CSU-A2', held2());
     r = await resolve2('CSU-A2');
-    note(/status:Requester/.test(r.text) && !/_csu-held-message/.test(r.text),
+    // A refusal is the EMPTY response saml-core-2.0-os 3.5.3 requires (#160):
+    // Success, nothing embedded, no StatusMessage.
+    note(success2.test(r.text) && !/_csu-held-message/.test(r.text) &&
+         !/StatusMessage/.test(r.text),
          '1c. A NODE STILL HOLDING THE ARTIFACT IS REFUSED, because another ' +
-         'node already resolved it (the claim)', r.text.slice(0, 300));
+         'node already resolved it (the claim) — the empty response',
+         r.text.slice(0, 300));
     store = sharedStore();
     artifacts2.restore(DEFAULT, 'CSU-A2', held2());
     r = await resolve2('CSU-A2');
-    note(success2.test(r.text), '1d. the control: the same restore against ' +
+    note(/_csu-held-message/.test(r.text), '1d. the control: the same ' +
+         'restore against ' +
          'an empty claim store resolves — the refusal was the claim\'s',
          r.text.slice(0, 200));
     store = brokenStore();
     artifacts2.restore(DEFAULT, 'CSU-B2', held2());
     r = await resolve2('CSU-B2');
-    note(/status:Responder/.test(r.text) && !/_csu-held-message/.test(r.text),
-         '1e. a claim store that cannot be asked REFUSES (fail closed)',
+    note(success2.test(r.text) && !/_csu-held-message/.test(r.text),
+         '1e. a claim store that cannot be asked REFUSES (fail closed) — ' +
+         'the empty response',
          r.text.slice(0, 300));
     store = sharedStore();
     artifacts2.restore(DEFAULT, 'CSU-C2', held2());
     const both = await Promise.all([resolve2('CSU-C2'), resolve2('CSU-C2')]);
     note(both.filter(function (one) {
-      return success2.test(one.text);
+      return /_csu-held-message/.test(one.text);
     }).length === 1, '1f. two concurrent resolutions of one artifact: ' +
          'exactly one succeeds');
 
@@ -266,18 +273,21 @@ function childMain() {
          '1g. a SAML 1.1 artifact resolves', r.text.slice(0, 400));
     artifacts11.restore(DEFAULT, 'CSU-A11', held11());
     r = await resolve11('CSU-A11');
-    note(/samlp:Requester/.test(r.text) && !/_csu-held-assertion/.test(r.text),
-         '1h. A NODE STILL HOLDING THE 1.1 ARTIFACT IS REFUSED (the claim)',
+    note(success11.test(r.text) && !/_csu-held-assertion/.test(r.text) &&
+         !/StatusMessage/.test(r.text),
+         '1h. A NODE STILL HOLDING THE 1.1 ARTIFACT IS REFUSED (the claim) ' +
+         '— no assertions, Success (saml-bindings-1.1 4.1.1.6, #160)',
          r.text.slice(0, 300));
     store = sharedStore();
     artifacts11.restore(DEFAULT, 'CSU-A11', held11());
     r = await resolve11('CSU-A11');
-    note(success11.test(r.text), '1i. the control: against an empty claim ' +
+    note(/_csu-held-assertion/.test(r.text), '1i. the control: against an ' +
+         'empty claim ' +
          'store it resolves', r.text.slice(0, 200));
     store = brokenStore();
     artifacts11.restore(DEFAULT, 'CSU-B11', held11());
     r = await resolve11('CSU-B11');
-    note(/samlp:Responder/.test(r.text) && !/_csu-held-assertion/.test(r.text),
+    note(success11.test(r.text) && !/_csu-held-assertion/.test(r.text),
          '1j. and a claim store that cannot be asked refuses', r.text.slice(0,
                                                                         300));
     store = sharedStore();
@@ -421,7 +431,15 @@ function childMain() {
     config.setOverride('gnap.continueWaitS', 0);
     const GRANT = base + '/gnap';
     const gnapClient = new gnap.Client({ key: gnap.newKey('ES256') });
-    const grantBody = { access_token: { access: ['csu-read'] },
+    // A GRANT MUST NAME A REGISTERED RESOURCE SERVER SINCE #593 (rcbj's
+    // decision on #591; STS-GNAP-0904): the right names one by location.
+    const CSU_RS = 'https://rs.csu.test/api';
+    applications.createApplication({ identifier: 'csu-rs',
+      kind: 'gnap-resource-server', protocols: ['gnap'],
+      fields: { gnapResourceServerUri: CSU_RS } });
+    const grantBody = { access_token: { access: [{ type: 'csu-read',
+                                                   actions: ['read'],
+                                                   locations: [CSU_RS] }] },
       client: { key: gnapClient.keyObject(),
                 display: { name: 'csu', uri: 'https://client.csu.test/' } },
       interact: { start: ['app'] } };

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -31,6 +31,8 @@
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -139,11 +141,40 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // One browser, with a cookie jar.
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -182,31 +213,19 @@ function browser(name) {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 async function signIn(b, location, who) {
   log.debug("Entering signIn(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200, "the sign-in screen: " + page.status +
-                     " " + page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+  // answer read as the form's POST was.
+  const answer = await authnSignin.submit(base + R, location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: jarHeader(b), headers: { "User-Agent": AGENT } });
+  assert.ok(answer.view, "the sign-in screen: " + answer.status + " " +
+            JSON.stringify(answer.errors));
+  keepCookies(b, answer);
+  const posted = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   log.debug("Leaving signIn().");
   return posted;
 }
@@ -330,7 +349,7 @@ async function test() {
     domain: REALM + ".example.net", name: "CAEP 238 " + STAMP },
     "created the realm");
   await ok(realmApi + "/applications/create", { identifier: RECEIVER,
-    kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "ssf"],
+    kind: "oauth2-client", name: RECEIVER, protocols: ["oauth2", "oidc", "ssf"],
     fields: { oauthClientId: [RECEIVER], oauthClientSecret: SECRET,
               oauthTokenEndpointAuthMethod: "client_secret_post",
               oauthAllowedScope: ["openid", "profile", "ssf:read",
@@ -517,8 +536,53 @@ async function test() {
       assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
     });
 
+  log.info("=== e-ii. an attribute claim (#94) ===");
+  // A claim carrying ANY directory attribute, under a name the administrator
+  // chose: a write that moves the attribute moves the claim, and a token
+  // issued after it carries the value.
+  const secret = await postJson(realmApi + "/claims/add-attribute-claim",
+    { set: "access_token", name: "c94_secret", attribute: "userPassword" });
+  check("an attribute claim may not carry a secret", function () {
+    assert.strictEqual(secret.status, 400, String(secret.raw).slice(0, 300));
+  });
+  await ok(realmApi + "/claims/add-attribute-claim", { set: "access_token",
+    name: "c94_dept", attribute: "departmentNumber" },
+    "added an attribute claim");
+  await ok(realmApi + "/users/set-attribute", { user: ALICE,
+    attribute: "departmentNumber", value: "D-94" },
+    "wrote the attribute onto the person");
+  found = await waitFor(token, streamId, "attribute claim", function (set) {
+    const claims = claimsAbout(set);
+    return !!claims && claims.c94_dept === "D-94";
+  });
+  check("token-claims-change carries the attribute claim's new value",
+    function () {
+      assert.ok(found.hit, JSON.stringify(found.seen).slice(0, 1200));
+    });
+  // ITS OWN nonce AND PKCE PAIR (2026-09-28): RFC 9700 mode refuses a
+  // state, code_challenge or nonce used for a code already redeemed
+  // (STS-OAUTH-0125), and the single-node and cluster modes run in it.
+  r = await authorize(b, Object.assign({}, params, { state: "st94",
+    nonce: "n94-" + STAMP,
+    code_challenge: nodeCrypto.createHash("sha256").update("w".repeat(43))
+      .digest("base64url") }), ALICE);
+  const code94 = r.location ? new URL(absolute(r.location)).searchParams
+    .get("code") : "";
+  const again = await send(realmBase + "/oauth2/token", { method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form({ grant_type: "authorization_code", code: code94,
+                 redirect_uri: REDIRECT, client_id: RECEIVER,
+                 client_secret: SECRET, code_verifier: "w".repeat(43) }) });
+  check("an access token issued after it carries the attribute claim",
+    function () {
+      assert.strictEqual(again.status, 200, again.raw.slice(0, 300));
+      const claims = decode(again.body.access_token);
+      assert.strictEqual(claims.c94_dept, "D-94", JSON.stringify(claims));
+    });
+
   log.info("=== f. GET /ssf states the tightened-policy limitation ===");
-  const page = await send(realmBase + "/ssf", {});
+  // The description document, which the page has drawn from since #584.
+  const page = await send(realmBase + "/ssf?format=json", {});
   check("GET /ssf says a tightened authentication policy sends nothing",
     function () {
       assert.strictEqual(page.status, 200, page.raw.slice(0, 300));

@@ -1,0 +1,89 @@
+{
+  "templates": {
+    "password-reset": {
+      "subject": "Restablezca su contraseña de {{service}}",
+      "text": "Alguien — {{requestedBy}} — pidió restablecer la contraseña de la cuenta {{username}}.\n\nPara elegir una contraseña nueva, abra este enlace en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSolo funciona una vez. Si no lo pidió usted, puede ignorar este mensaje: nada cambia hasta que se use el enlace.\n",
+      "html": "<p>Alguien &mdash; {{requestedBy}} &mdash; pidió restablecer la contraseña de la cuenta <strong>{{username}}</strong>.</p><p><a href=\"{{link}}\">Elija una contraseña nueva</a> en los próximos {{expiresMinutes}} minutos. El enlace solo funciona una vez.</p><p>Si no lo pidió usted, puede ignorar este mensaje: nada cambia hasta que se use el enlace.</p>"
+    },
+    "account-activation": {
+      "subject": "Active su cuenta de {{service}}",
+      "text": "Se creó una cuenta para usted: {{username}}.\n\nPara elegir su contraseña, abra este enlace en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSolo funciona una vez.\n",
+      "html": "<p>Se creó una cuenta para usted: <strong>{{username}}</strong>.</p><p><a href=\"{{link}}\">Elija su contraseña</a> en los próximos {{expiresMinutes}} minutos. El enlace solo funciona una vez.</p>"
+    },
+    "address-verification": {
+      "subject": "Confirme su dirección para {{service}}",
+      "text": "La cuenta {{username}} indica {{address}} como su dirección de correo electrónico.\n\nPara confirmar que esta es su dirección, abra este enlace en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi esta no es su cuenta, ignore este mensaje.\n",
+      "html": "<p>La cuenta <strong>{{username}}</strong> indica {{address}} como su dirección de correo electrónico.</p><p><a href=\"{{link}}\">Confirme que esta es su dirección</a> en los próximos {{expiresMinutes}} minutos.</p><p>Si esta no es su cuenta, ignore este mensaje.</p>"
+    },
+    "password-changed": {
+      "subject": "Se cambió su contraseña de {{service}}",
+      "text": "La contraseña de la cuenta {{username}} se cambió el {{when}} ({{how}}).\n\nSi no fue usted, comuníquese ahora con quien administra su cuenta.\n",
+      "html": "<p>La contraseña de la cuenta <strong>{{username}}</strong> se cambió el {{when}} ({{how}}).</p><p>Si no fue usted, comuníquese ahora con quien administra su cuenta.</p>"
+    },
+    "account-disabled": {
+      "subject": "Se deshabilitó su cuenta de {{service}}",
+      "text": "La cuenta {{username}} se deshabilitó el {{when}}. {{why}}\n\nNadie puede iniciar sesión en ella hasta que se vuelva a habilitar, y se cerraron todas sus sesiones.\n",
+      "html": "<p>La cuenta <strong>{{username}}</strong> se deshabilitó el {{when}}. {{why}}</p><p>Nadie puede iniciar sesión en ella hasta que se vuelva a habilitar, y se cerraron todas sus sesiones.</p>"
+    },
+    "sessions-ended": {
+      "subject": "Se cerró su sesión en {{service}}",
+      "text": "{{by}} cerró {{count}} sesión(es) de la cuenta {{username}} el {{when}}.\n\nInicie sesión de nuevo para continuar. Si no lo esperaba, comuníquese con quien administra su cuenta.\n",
+      "html": "<p>{{by}} cerró {{count}} sesión(es) de la cuenta <strong>{{username}}</strong> el {{when}}.</p><p>Inicie sesión de nuevo para continuar. Si no lo esperaba, comuníquese con quien administra su cuenta.</p>"
+    },
+    "credential-compromised": {
+      "subject": "Una de sus credenciales de {{service}} se marcó como comprometida",
+      "text": "El elemento «{{what}}» de la cuenta {{username}} se marcó como comprometido el {{when}}. {{why}}\n\nYa no funciona. Elija uno nuevo la próxima vez que inicie sesión, o pídaselo a quien administra su cuenta.\n",
+      "html": "<p>El elemento «{{what}}» de la cuenta <strong>{{username}}</strong> se marcó como comprometido el {{when}}. {{why}}</p><p>Ya no funciona. Elija uno nuevo la próxima vez que inicie sesión, o pídaselo a quien administra su cuenta.</p>"
+    },
+    "recovery-started": {
+      "subject": "Se inició la recuperación de su cuenta de {{service}}",
+      "text": "{{by}} inició la recuperación de la cuenta {{username}} el {{when}}.\n\nSi no fue usted ni alguien a quien usted se lo pidió, comuníquese ahora con quien administra su cuenta.\n",
+      "html": "<p>{{by}} inició la recuperación de la cuenta <strong>{{username}}</strong> el {{when}}.</p><p>Si no fue usted ni alguien a quien usted se lo pidió, comuníquese ahora con quien administra su cuenta.</p>"
+    },
+    "address-changed": {
+      "subject": "Se cambió la dirección de correo electrónico de su cuenta de {{service}}",
+      "text": "La dirección de correo electrónico de la cuenta {{username}} se cambió el {{when}} a {{address}}. Este mensaje se envió a la dirección que tenía antes.\n\nSi no lo esperaba, comuníquese ahora con quien administra su cuenta.\n",
+      "html": "<p>La dirección de correo electrónico de la cuenta <strong>{{username}}</strong> se cambió el {{when}} a {{address}}. Este mensaje se envió a la dirección que tenía antes.</p><p>Si no lo esperaba, comuníquese ahora con quien administra su cuenta.</p>"
+    },
+    "access-request": {
+      "subject": "{{service}}: una aplicación pide acceso",
+      "text": "La aplicación {{client}} pide acceso en nombre de la cuenta {{username}}: {{rights}}.\n\nNo se permite nada hasta que usted lo apruebe. Para aprobarlo o rechazarlo, inicie sesión y abra esta página en los próximos {{expiresMinutes}} minutos:\n\n{{link}}\n\nSi no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.\n",
+      "html": "<p>La aplicación <strong>{{client}}</strong> pide acceso en nombre de la cuenta <strong>{{username}}</strong>: {{rights}}.</p><p>No se permite nada hasta que usted lo apruebe. <a href=\"{{link}}\">Apruébelo o recháselo</a> en los próximos {{expiresMinutes}} minutos.</p><p>Si no reconoce la solicitud, recházela allí o ignore este mensaje: caduca por sí sola.</p>"
+    },
+    "administrator-alert": {
+      "subject": "{{service}}: {{act}} para {{username}}",
+      "text": "Este servicio, no una persona, realizó una acción sobre la cuenta {{username}} el {{when}}: {{act}}.\n\n{{why}}\n\nRecibe este mensaje porque tiene Admin Write en este dominio.\n",
+      "html": "<p>Este servicio, no una persona, realizó una acción sobre la cuenta <strong>{{username}}</strong> el {{when}}: {{act}}.</p><p>{{why}}</p><p>Recibe este mensaje porque tiene Admin Write en este dominio.</p>"
+    },
+    "sign-in-code": {
+      "subject": "Su código para iniciar sesión en {{service}}: {{code}}",
+      "text": "Su código para iniciar sesión en {{service}} como {{username}} es:\n\n    {{code}}\n\nSolo funciona una vez, durante {{minutes}} minutos. Nadie de {{service}} se lo pedirá nunca.\n\nSi no está iniciando sesión, alguien que conoce el nombre de su cuenta lo está intentando: ignore este código y considere cambiar su contraseña.\n",
+      "html": "<p>Su código para iniciar sesión en {{service}} como <strong>{{username}}</strong> es:</p><p><strong>{{code}}</strong></p><p>Solo funciona una vez, durante {{minutes}} minutos. Nadie de {{service}} se lo pedirá nunca.</p><p>Si no está iniciando sesión, alguien que conoce el nombre de su cuenta lo está intentando: ignore este código y considere cambiar su contraseña.</p>"
+    },
+    "sign-in-link": {
+      "subject": "Su enlace para iniciar sesión en {{service}}",
+      "text": "Para terminar de iniciar sesión en {{service}} como {{username}}, abra este enlace EN EL NAVEGADOR DONDE EMPEZÓ A INICIAR SESIÓN, en los próximos {{minutes}} minutos:\n\n{{signin}}\n\nSolo funciona una vez, y solo en ese navegador.\n\nSi no está iniciando sesión, ignore este mensaje: el enlace no puede iniciar la sesión de nadie más.\n",
+      "html": "<p>Para terminar de iniciar sesión en {{service}} como <strong>{{username}}</strong>, <a href=\"{{signin}}\">abra este enlace</a> en el navegador donde empezó a iniciar sesión, en los próximos {{minutes}} minutos.</p><p>Solo funciona una vez, y solo en ese navegador.</p><p>Si no está iniciando sesión, ignore este mensaje: el enlace no puede iniciar la sesión de nadie más.</p>"
+    },
+    "reset-refused-attempt": {
+      "subject": "Alguien intentó restablecer su contraseña de {{service}}",
+      "text": "El {{when}} alguien pidió restablecer la contraseña de la cuenta {{username}}, indicó esta dirección y dio un código de recuperación que no es uno de los suyos. No se cambió nada y no se envió ningún enlace de restablecimiento.\n\nSi fue usted, vuelva a intentarlo con un código de recuperación sin usar. Si no, alguien conoce el nombre de su cuenta y su dirección; comuníquese con quien administra su cuenta.\n",
+      "html": "<p>El {{when}} alguien pidió restablecer la contraseña de la cuenta <strong>{{username}}</strong>, indicó esta dirección y dio un código de recuperación que no es uno de los suyos. No se cambió nada y no se envió ningún enlace de restablecimiento.</p><p>Si fue usted, vuelva a intentarlo con un código de recuperación sin usar. Si no, alguien conoce el nombre de su cuenta y su dirección; comuníquese con quien administra su cuenta.</p>"
+    },
+    "test-message": {
+      "subject": "Mensaje de prueba de {{service}}",
+      "text": "Este es un mensaje de prueba, enviado el {{when}} a través del transporte {{transport}} a petición de {{username}}.\n",
+      "html": "<p>Este es un mensaje de prueba, enviado el {{when}} a través del transporte {{transport}} a petición de <strong>{{username}}</strong>.</p>"
+    }
+  },
+  "layout": {
+    "subject": "{{subject}}",
+    "text": "{{content}}\n-- \n{{service}} ({{realm}})\nRecibe este mensaje porque es {{reason}}.\n",
+    "html": "<div>{{content}}</div><hr><p><small>{{service}} ({{realm}}). Recibe este mensaje porque es {{reason}}.</small></p>"
+  },
+  "categories": {
+    "security": { "reason": "un aviso de seguridad sobre su cuenta, que no se puede desactivar" },
+    "account": { "reason": "algo que usted o un administrador pidieron" },
+    "notification": { "reason": "una notificación, que puede desactivar en su portal" }
+  }
+}

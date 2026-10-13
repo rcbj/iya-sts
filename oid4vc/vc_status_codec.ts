@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -58,7 +58,6 @@
 // the issuer, the Verifier and the status module can all require it.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import zlib = require('zlib');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
@@ -814,15 +813,15 @@ class VcStatusCodec {
   }
 
   private nodeParams(spec: any, key: any, isPrivate: boolean): any {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.nodeParams().");
     const keyObject = (key && (key.type === 'private' ||
                                key.type === 'public'))
       ? key
       : (isPrivate
-          ? nodeCrypto.createPrivateKey(
+          ? stsCrypto.privateKeyFrom(
               (key && key.kty) ? { key: key, format: 'jwk' } : key)
-          : nodeCrypto.createPublicKey(
+          : stsCrypto.publicKeyOf(
               (key && key.kty) ? { key: key, format: 'jwk' } : key));
     const params: any = { key: keyObject };
     if (spec.padding !== undefined) {
@@ -880,23 +879,24 @@ class VcStatusCodec {
    * @returns the COSE_Sign1 bytes
    */
   coseSign1Sign(input: CoseSignInput): Buffer {
-    const { log, pqJose } = this.deps;
+    const { log, pqJose, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1Sign(). alg=" + input.alg);
     const setup = this.coseSetup(input);
     const spec = setup.alg.spec;
     const signature = spec.family === 'pq'
       ? Buffer.from(pqJose.sign(setup.alg.name, this.pqPrivate(input.key),
                                 setup.toBeSigned))
-      : nodeCrypto.sign(spec.hash, setup.toBeSigned,
-                        this.nodeParams(spec, input.key, true));
+      : stsCrypto.signBytes(spec.hash, setup.toBeSigned,
+                            this.nodeParams(spec, input.key, true));
     const out = this.coseAssemble(input, setup.protectedBytes, signature);
     log.debug("Leaving VcStatusCodec.coseSign1Sign().");
     return out;
   }
 
-  // The same, with a post-quantum signature made in the worker pool.
+  // The same, with a post-quantum signature made on libuv's thread pool.
   /**
-   * Signs a COSE_Sign1, with a post-quantum signature made in the worker pool.
+   * Signs a COSE_Sign1, with a post-quantum signature made on libuv's thread
+   * pool.
    *
    * @param input - `{ protectedHeader, unprotectedHeader, payload, key, alg }`
    * @returns the COSE_Sign1 bytes
@@ -911,8 +911,8 @@ class VcStatusCodec {
       return this.coseSign1Sign(input);
     }
     const signature = await pqJose.signAsync(setup.alg.name,
-      this.pqPrivate(input.key), setup.toBeSigned, {});
-    log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). Pooled.");
+      this.pqPrivate(input.key), setup.toBeSigned);
+    log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). On libuv.");
     return this.coseAssemble(input, setup.protectedBytes,
                              Buffer.from(signature));
   }
@@ -999,23 +999,24 @@ class VcStatusCodec {
    */
   coseSign1Verify(buf: Buffer, key: any,
                   opts: { algorithms: string[] }): any {
-    const { log, pqJose } = this.deps;
+    const { log, pqJose, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1Verify().");
     const parsed = this.coseParse(buf, opts);
     const spec = parsed.alg.spec;
     const ok = spec.family === 'pq'
       ? !!pqJose.verify(parsed.alg.name, this.pqPublic(key),
                         parsed.toBeSigned, parsed.signature)
-      : nodeCrypto.verify(spec.hash, parsed.toBeSigned,
-                          this.nodeParams(spec, key, false),
-                          parsed.signature);
+      : stsCrypto.signatureValid(spec.hash, parsed.toBeSigned,
+                                 this.nodeParams(spec, key, false),
+                                 parsed.signature);
     const out = this.coseFinish(parsed, ok);
     log.debug("Leaving VcStatusCodec.coseSign1Verify().");
     return out;
   }
 
   /**
-   * Verifies a COSE_Sign1, with a post-quantum check made in the worker pool.
+   * Verifies a COSE_Sign1, with a post-quantum check made on libuv's thread
+   * pool.
    *
    * @param buf - the COSE_Sign1 bytes
    * @param key - the public key
@@ -1032,8 +1033,8 @@ class VcStatusCodec {
       return this.coseSign1Verify(buf, key, opts);
     }
     const ok = await pqJose.verifyAsync(parsed.alg.name, this.pqPublic(key),
-      parsed.toBeSigned, parsed.signature, {});
-    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). Pooled.");
+      parsed.toBeSigned, parsed.signature);
+    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). On libuv.");
     return this.coseFinish(parsed, !!ok);
   }
 
@@ -1092,7 +1093,7 @@ class VcStatusCodec {
 
   /**
    * Builds and signs a Status List Token in CWT form, a post-quantum signature
-   * made in the worker pool.
+   * made on libuv's thread pool.
    *
    * @param input - as `statusListCwt()` takes it
    * @returns the CWT bytes
@@ -1173,7 +1174,7 @@ class VcStatusCodec {
 
   /**
    * Verifies and reads a Status List Token in CWT form, a post-quantum check
-   * made in the worker pool.
+   * made on libuv's thread pool.
    *
    * @param buf - the CWT bytes
    * @param key - the public key

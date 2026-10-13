@@ -121,9 +121,24 @@ socket gets THAT realm's trust domain back from `FetchX509Bundles`.
 ---
 
 `protos/` holds the SPIFFE project's own `workloadapi.proto` and
-`brokerapi.proto` (#170) and the `spire-api-sdk`'s, VERBATIM. `spiffe_grpc.ts` reads them at module scope through
+`brokerapi.proto` (#170) and the `spire-api-sdk`'s, VERBATIM. `spiffe_grpc.ts` reads them through
 `path.join(__dirname, 'protos')`, so they moved into this directory with it; a
 missing one is not a degraded SPIFFE feature, it is a service that does not start.
+
+**THEY AND THE gRPC RUNTIME ARE LOADED AT FIRST USE SINCE #348 (2026-09-29)**,
+not at require: every request worker loads this module and none binds a
+SPIFFE socket, so `@grpc/grpc-js`, `@grpc/proto-loader` and the protos were
+about 5 MB of heap and 13 MB of resident memory in each for nothing
+(`common/lazy_module.ts`, `common/CLAUDE.md`). `spiffe_server.ts`'s `listen()`
+calls `rpc.services()` synchronously before anything binds, so the FRONT
+process still loads them at start and a missing proto still stops it there.
+What a worker does need is the status NUMBERS a dispatched method refuses
+with, and `rpc.status` is grpc-js's own table (`build/src/constants.js`,
+which requires nothing — the same object as `grpc.status`); **use
+`rpc.status`, never `rpc.grpc.status`, in anything a worker can run**, or
+the first refusal loads the runtime into that worker. A worker that renders
+`/spiffe` or `/admin/sts-metadata` loads the protos then (`methodsOf()`), and
+not the runtime.
 The wire matching what a real client expects is the entire reason
 `@grpc/grpc-js` is a dependency here, so a local edit to one of these would give
 that up silently.
@@ -273,9 +288,13 @@ that up silently.
 
    **`spiffe.autoCreateEntries` OFF IS THE INTERESTING SETTING**, and it is the
    one thing here that must not be quietly removed: with it off, a caller
-   matching no entry gets an EMPTY SVID LIST, which is what a real agent does
-   for an unregistered workload and the only way to run a client's "I have no
-   identity" path.
+   matching no entry is refused PERMISSION_DENIED (`STS-SPIFFE-0146`) at all
+   four fetch methods, which is what the Workload API sections 5.2.1, 5.2.2,
+   6.2.1 and 6.2.2 say and what SPIRE's agent answers ("no identity issued"),
+   and the only way to run a client's "I have no identity" path. A stream
+   whose caller loses every entry ENDS so, as the Broker API's does. It was
+   an EMPTY SVID LIST until #274 (2026-10-07), recorded here as what a real
+   agent does, which it is not.
 
    **THE STREAMS STAY OPEN.** Four Workload API methods are server streams and a
    real client holds `FetchX509SVID` for the life of the process. `serverStream()`
@@ -581,10 +600,13 @@ copied, and each is the place to look first:
   works against SPIRE must work here.
 * **THE PATH BUILDER (`pki.js`) FAILS CLOSED WHERE GO WOULD EVALUATE.** An unhandled
   critical extension is refused (Go refuses them too; tpm_devid allows a
-  critical subjectAltName on the EK certificate, as SPIRE strips it), and a
-  CA with nameConstraints is refused outright, because the constraints are
-  not evaluated here. A path accepted unchecked would be wrong; one refused
-  says why. Signatures are checked by the vendored `x509.verifyChain()`,
+  critical subjectAltName on the EK certificate, as SPIRE strips it). A CA
+  with nameConstraints is EVALUATED, not refused (#201): `pki.js`'s
+  `pathRuleProblem()` holds every name below it to RFC 5280 section
+  4.2.1.10's permitted and excluded subtrees, and refuses only a name in a
+  form it does not evaluate, as that section requires; x509-limbo and NIST
+  PKITS hold it. A path accepted unchecked would be wrong; one refused says
+  why. Signatures are checked by the vendored `x509.verifyChain()`,
   which reads ML-DSA, SLH-DSA and composite signatures — so a post-quantum
   CA above an x509pop or DevID leaf verifies.
 * **x509pop CHALLENGES A POST-QUANTUM KEY, BEYOND SPIRE.** SPIRE's challenge
@@ -683,6 +705,14 @@ library, wired by `spiffe_server.ts`:
   on loopback or its secure port (`requestConfigured()`), with the token, the
   client certificate and the CA read from FILES — no credential is a setting,
   because settings are drawn, returned by `/admin-api` and persisted.
+  **THE SERVICE IS NOT ROOT SINCE #254 (uid 10001)**, and one selector feels
+  it: `unix`'s `path` and `sha256` (`spiffe.unixDiscoverWorkloadPath`, off by
+  default) read `/proc/<pid>/exe`, which the kernel lets a non-root process
+  read only for a process of its OWN uid. A workload of another user is
+  refused attestation with that selector on, rather than attested without
+  it; uid, gid and the docker attestor's `/proc/<pid>/cgroup` are unaffected.
+  A deployment that needs the path for other users' workloads gives the
+  container `CAP_SYS_PTRACE` and says why.
   `spiffe.k8sSkipKubeletVerification` (SPIRE's `skip_kubelet_verification`)
   is honoured in DEVELOPMENT MODE ONLY since #171 (2026-09-23): the attestor
   asks `common/outbound_tls.ts`'s `skipsVerification()`, which in product
@@ -982,8 +1012,9 @@ have been handed a non-Buffer for a `bytes` field and the failure would have
 landed inside protobuf serialization, naming a field, one process from the
 cause.
 
-It forks `serialization: 'advanced'` now — `common/worker_pool.js`'s argument
-about a 32,000-byte signature, reaching the second pool — and it is a strict
+It forks `serialization: 'advanced'` now — the argument the post-quantum pool
+(`common/worker_pool.js`, removed by #363) made about a 32,000-byte
+signature — and it is a strict
 superset for everything that channel already carried.
 
 **`structuredClone()` IS NOT THAT CHANNEL, and assuming it was cost a test.**
@@ -1028,6 +1059,72 @@ leaving the front process.
 **The end-to-end claim is still this directory's standing obligation** and is
 unchanged by any of it: what a handler ANSWERS is not asserted here, only that
 the answer is the same through the codec.
+
+### THE BROKER API'S FetchJWTSVID, CUT AFTER THE ATTESTATION (2026-10-07)
+
+rcbj's decision, for the main event loop and for a race. A registration entry
+made through `/admin-api` is written by the request worker that answered it,
+and the Broker API answered in the front process from the front's copy:
+`sts_spiffe_broker`'s pod entry in single-node was refused
+WORKLOAD_NOT_ENTITLED (STS-SPIFFE-0138) twice on 2026-10-07. The first fix
+(2de5967a) made `referenced()` wait for the workers' writes in the front
+process; that wait is gone from the unary call.
+
+**THE CUT** (`spiffe_broker.ts`, the block above `fetchJwtRequest()`): steps 1
+to 3 — the broker's authentication, the allow list, the reference decoded and
+ATTESTED (pidfds, the kubelet, docker, systemd) — stay in the front process,
+and so do the facts held open until the call ends and their release. The
+entitlement and the minting are the request pool's operation
+`spiffe.broker.FetchJWTSVID` (the `spiffe.<surface>.<method>` shape, so
+`spiffe` in `workers.dispatch` names it), run by `issueForReference()` in a
+worker over what `fetchJwtRequest()` sends: the attested caller (`{ brokered,
+brokerId, selectors }`, plain already), the audiences, the SPIFFE ID asked
+for, the realm whose Broker endpoint the call arrived on, and the broker's
+address for the audit row. `runOperation()`'s barrier is what orders the read
+of the entry after the worker's write of it.
+
+* **WORKLOAD_NOT_ENTITLED is built in the front process** (`notEntitled()`):
+  its `google.rpc.ErrorInfo` rides on gRPC metadata a worker cannot send, so
+  the worker answers `{ ok: false, notEntitled: true }`. Any other failure
+  crosses as `performMethod()`'s does — the numeric status and the message —
+  and `errorFromResult()` rebuilds it.
+* **Not dispatched** (no pool, `spiffe` not named, no worker ready) is answered
+  in place, as before.
+* **A worker that fails is not retried in place** (LDAP's rule — it may have
+  minted and recorded an SVID): UNAVAILABLE, STS-SPIFFE-0145.
+* **The worker table is filled only in a worker**, at the foot of the module
+  (`SpiffeBroker.registerWorkerOperation()`), the rule above.
+
+**THE STREAMS STAY IN THE FRONT PROCESS** (*The five server streams are not
+dispatched*, above, applies to the Broker API's three as well), and
+`catchUpWithWorkers()` is kept for ONE of them: **SubscribeToX509SVID**, whose
+first message is the entitlement — refused from the old copy, the stream ends
+PERMISSION_DENIED and a broker does not reopen it. The two bundle streams do
+not wait: their first message depends on no entry, and a changed bundle is
+re-sent at the next rotation. That wait is bounded at 3 s and asynchronous —
+the call waits, the event loop does not — but it does pull the change log in
+the front process. **It is rcbj's call whether to keep it.**
+
+**WHAT STILL RACES (front reads of a worker's write, single-node with
+workers):** everything `prepareBrokerCall()` and `prepareCall()` read before a
+call is dispatched — `spiffe.brokers` (a broker removed through `/admin-api`
+is honoured until the front process applies the change; `sts_spiffe_broker`'s
+"a broker removed is PERMISSION_DENIED on its next call" is exposed to it), a
+federated bundle (covered only for STS-SPIFFE-0024, by
+`prepareAfterCatchUp()`), and the SPIRE Server API's admin entitlement — and
+whatever the three Broker streams and the Workload API's five streams read on
+their re-sends (eventually consistent: the next rotation reads the applied
+copy). The other direction is covered: what the front process writes as a
+change row moves the pool's generation (`noteLocalWrites()`), and the next
+dispatched read waits for it.
+
+Tests: `tests/kdc_broker_operations.js` section 6 (the operation through a
+pool to a worker-side instance with a stub workload and CA — run outside the
+front's realm and audit source, which a first version of the fixture did not
+do and so let a worker that dropped the realm pass — the SVIDs, the attested
+caller, realm, address and audiences, the SPIFFE ID narrowing, the refusals,
+the failed worker, not dispatched, the table, and `referenced()` not
+waiting); six mutants, all caught.
 
 ## ONE AUTHORITY PER REALM FOR THE CLUSTER (2026-09-14, #46)
 
@@ -1337,9 +1434,11 @@ spellings are copied from SPIRE's source, as #40's were.
   (`entitledEntries()`). Section 4.8's refusals carry a hand-encoded
   `google.rpc.ErrorInfo`. The streams are the Workload API's rotation timer,
   and before each re-send the reference is asked again: a stopped workload
-  ends its stream `NOT_FOUND` (0137). **Not dispatched to a request worker**
-  (`DISPATCHED_SURFACES`): the pidfds and the attestors' state are the front
-  process's. Not done: references to objects other than pods, SPIRE's cluster
+  ends its stream `NOT_FOUND` (0137). **The surface is not in
+  `DISPATCHED_SURFACES`** — the pidfds and the attestors' state are the front
+  process's — **but FetchJWTSVID's second half is dispatched since
+  2026-10-07**, once the reference is attested here: *THE BROKER API'S
+  FetchJWTSVID, CUT AFTER THE ATTESTATION*, under the forty-two. Not done: references to objects other than pods, SPIRE's cluster
   scope and SubjectAccessReview, a Unix socket endpoint, server reflection.
   The broker list is `/admin/spiffe/brokers` and
   `/admin-api/spiffe/brokers[/:action]` (rule 7).
@@ -1363,3 +1462,7 @@ up for a day would issue SVIDs under an expired authority. The rotation is
 `rotateX509Authority()` / `rotateJwtAuthority()`, the console's, which keeps
 `spiffe.retainedAuthorities` published — or, under the hierarchy, re-issues
 the SPIFFE Issuing CA under the Root, which leaves the bundle unchanged.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /spiffe` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `spiffe/web_spiffe_description.ts` from the `describeSpiffe` catalogs, with `/spiffe/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds the issuing authority's readiness and whether the main port is HTTPS, which `page()` read beside it (`page()`, `listenerRows()`, `methodRows()` and `esc()` went with #584). What is attested is still READ from the view, never asserted. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

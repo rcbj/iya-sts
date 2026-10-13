@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -21,10 +21,16 @@
 //
 // An issuer-initiated module waits for the OFFER, and a pre-authorized one
 // then for the TRANSACTION CODE the person would type. This job is that
-// operator (`onWaiting`): it asks this realm's own offer page for an offer
-// — the realm's `oid4vci.walletUrl` is the suite's offer endpoint, so the
-// page's link IS the delivery — and reads the transaction code off the same
-// page, as the person would.
+// operator (`onWaiting`): it asks this realm for an offer — the realm's
+// `oid4vci.walletUrl` is the suite's offer endpoint, so the offer's wallet
+// link IS the delivery — and, for a pre-authorized one, reads the
+// transaction code the person would read. A same-device offer is made HERE,
+// as the issuer's web site would make it (#594: the demo issuer's page that
+// made it left the service) — the authorization code grant, no
+// issuer_state, which OpenID4VCI 1.0 section 4.1.1 allows; a
+// pre-authorized one is the person's own,
+// made on the user portal (`POST /account-api/credentials/offers`, #589),
+// signed in as the static portal signs in.
 //
 // OWNED HERE (local: true): this repository's credential issuer.
 // ---------------------------------------------------------------------------
@@ -35,6 +41,8 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
+const conformanceBrowser = require("./conformance_browser.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -176,6 +184,9 @@ async function prepare(plan) {
     ["oid4vci.walletUrl", offerEndpoint],
     ["oid4vci.walletIssuancePath", ""],
     ["federation.outboundCaFile", oidf.suiteCaFile()]];
+  // THE SAME-DEVICE OFFER IS THIS JOB'S OWN since #594 (the operator), so
+  // that plan's realm runs in whatever mode the stack does; it was a
+  // development realm while the offer came from the demo issuer's page.
   // HAIP: every wallet authenticates with OAuth 2.0 Attestation-Based
   // Client Authentication (#229). The CLIENT attester is a leaf a CA made
   // here issued — HAIP 4.4.1 refuses a self-signed one — and the realm
@@ -267,82 +278,54 @@ async function prepare(plan) {
     client2: clients[1],
     credential: rootPem ? { trust_anchor_pem: rootPem,
                             status_list_trust_anchor_pem: rootPem }
-                        : undefined,
-    override: plan.haip ? overridesFor(realm.base, person) : undefined,
-    browser: [{
-      match: realm.base + "/oauth2/authorize*",
-      tasks: [
-        { task: "Sign in", optional: true,
-          match: realm.base + "/authn/login*",
-          commands: [["text", "id", "username", person, "optional"],
-                     ["text", "id", "password", PASSWORD, "optional"],
-                     ["click", "id", "kc-login"]] },
-        { task: "Consent", optional: true,
-          match: realm.base + "/oauth2/consent*",
-          commands: [["click", "id", "consent-allow"]] },
-        { task: "Error page", optional: true,
-          match: realm.base + "/oauth2/authorize*",
-          commands: [["wait", "xpath", "//body", 10, ".*",
-                      "update-image-placeholder-optional"]] },
-        { task: "Verify complete", optional: true,
-          match: oidf.SUITE + "test/*/callback*",
-          commands: [["wait", "id", "submission_complete", 10]] }
-      ]
-    }]
+                        : undefined
   };
   log.debug("Leaving prepare().");
-  return { realm: realm, person: person, configuration: configuration };
+  return { realm: realm, person: person, configuration: configuration,
+           offerEndpoint: offerEndpoint };
 }
 
-// HAIP's plan runs FAPI 2.0 Security Profile modules beside the issuer's,
-// and two of them need a path of their own — the FAPI job's two overrides:
-// Cancel on the sign-in page, and a first visit that only loads it.
-function overridesFor(base, person) {
-  log.debug("Entering overridesFor().");
+// THE PERSON (#571): the plan carries no `browser` commands, because the
+// suite's HtmlUnit browser cannot run this service's scripted sign-in
+// screen; every address a module wants a person to visit is visited in
+// headless Chrome by `conformance_browser.js`. HAIP's plan runs FAPI 2.0
+// Security Profile modules beside the issuer's, and two of them want
+// something else of the person — the FAPI job's two: Cancel on the sign-in
+// screen, and a first visit that only loads it.
+function personFor(base, person) {
+  log.debug("Entering personFor().");
   const prefix = "fapi2-security-profile-final-";
-  const out = {};
-  out[prefix + "user-rejects-authentication"] = { browser: [{
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      { task: "Cancel", match: base + "/authn/login*",
-        commands: [["click", "id", "kc-cancel"]] },
-      { task: "Verify complete", match: oidf.SUITE + "test/*/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  }] };
-  out[prefix + "par-ensure-reused-request-uri-prior-to-auth-completion-" +
-      "succeeds"] = { browser: [{
-    match: base + "/oauth2/authorize*",
-    "match-limit": 1,
-    tasks: [
-      { task: "Load the sign-in page", match: base + "/authn/login*",
-        commands: [["wait", "id", "username", 10]] }
-    ]
-  }, {
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      { task: "Sign in", optional: true, match: base + "/authn/login*",
-        commands: [["text", "id", "username", person, "optional"],
-                   ["text", "id", "password", PASSWORD, "optional"],
-                   ["click", "id", "kc-login"]] },
-      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
-        commands: [["click", "id", "consent-allow"]] },
-      { task: "Verify complete", optional: true,
-        match: oidf.SUITE + "test/*/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  }] };
-  log.debug("Leaving overridesFor().");
-  return out;
+  const actions = {};
+  actions[prefix + "user-rejects-authentication"] = "cancel";
+  actions[prefix + "par-ensure-reused-request-uri-prior-to-auth-" +
+          "completion-succeeds"] = "load-only";
+  log.debug("Leaving personFor().");
+  return conformanceBrowser.person({
+    suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: base,
+    username: person, password: PASSWORD, actions: actions
+  });
 }
 
 // ---------------------------------------------------------------------------
 // THE ISSUER'S OPERATOR (see the header). The offer page answers a
-// same-device offer with a redirect to the wallet — the suite — and a
-// cross-device one with a page carrying the wallet link and the
-// transaction code; either way this job follows the link, and hands the
-// suite the code when it asks for one.
+// same-device offer with a redirect to the wallet — the suite; the portal
+// answers a pre-authorized one with the offer, its wallet link and the
+// transaction code (#589). Either way this job follows the link, and hands
+// the suite the code when it asks for one.
 // ---------------------------------------------------------------------------
+
+// The person signed in to the realm's user portal, once per plan: the
+// pre-authorized offer is theirs, made for their own wallet.
+async function portalFor(prepared) {
+  log.debug("Entering portalFor().");
+  if (!prepared.portal) {
+    prepared.portal = await portal.signInToThePortal(prepared.realm.base,
+      prepared.person, null, { password: PASSWORD });
+  }
+  log.debug("Leaving portalFor().");
+  return prepared.portal;
+}
+
 function operatorFor(plan, prepared) {
   log.debug("Entering operatorFor(). " + plan.key);
   // What has been served, per module: how many offers and codes. The suite
@@ -378,21 +361,36 @@ function operatorFor(plan, prepared) {
       return;
     }
     mine.offers += 1;
-    const page = await oidf.send(prepared.realm.base + "/issuer/offer?" +
-      new URLSearchParams({ mode: plan.offer, by: "reference",
-                            credential_configuration_ids:
-                              CONFIGURATION_ID }).toString());
-    let link = page.headers.get("location") || "";
-    if (!link) {
-      // The page's own two ids: the wallet link, and the code the person
-      // would read off it (`oid4vc/vc_offers.ts`, renderOfferQrPage()).
-      const decoded = page.raw.replace(/&amp;/g, "&");
-      link = (decoded.match(/id="open_in_wallet" href="([^"]+)"/) ||
-              [])[1] || "";
-      mine.txCode = (decoded.match(/id="tx_code">([^<]*)</) || [])[1] || "";
+    let link = "";
+    let said = "";
+    if (plan.offer === "same-device") {
+      // THE ISSUER'S WEB SITE'S OFFER (#594): the issuer named as its
+      // metadata names itself, one configuration, the authorization code
+      // grant and no issuer_state — delivered by value to the wallet, which
+      // is the realm's oid4vci.walletUrl, the suite's offer endpoint.
+      const meta = await fetch(prepared.realm.base +
+                               "/.well-known/openid-credential-issuer");
+      const issuer = String(((await meta.json()) || {}).credential_issuer ||
+                            prepared.realm.base);
+      const offerObject = { credential_issuer: issuer,
+                            credential_configuration_ids: [CONFIGURATION_ID],
+                            grants: { authorization_code: {} } };
+      link = prepared.offerEndpoint + "?credential_offer=" +
+             encodeURIComponent(JSON.stringify(offerObject));
+      said = meta.status + " " + JSON.stringify(offerObject).slice(0, 300);
+    } else {
+      // The person's own offer (#589): by reference, as the page asked for
+      // it, and the transaction code they would read off the portal.
+      const client = await portalFor(prepared);
+      const made = await client.act("/portal/wallet",
+        { configuration: CONFIGURATION_ID, mode: plan.offer });
+      const offer = (made.json && made.json.offer) || {};
+      link = (offer.byReference && offer.byReference.walletUrl) || "";
+      mine.txCode = String(offer.txCode || "");
+      said = made.status + " " + made.text.slice(0, 300);
     }
-    assert.ok(link.indexOf(oidf.SUITE) === 0, "the offer page named no link " +
-              "to the suite: " + page.status + " " + page.raw.slice(0, 300));
+    assert.ok(link.indexOf(oidf.SUITE) === 0, "the offer named no link " +
+              "to the suite: " + said);
     const r = await oidf.suite("GET", link.slice(oidf.SUITE.length));
     log.info("  delivered a " + plan.offer + " credential offer: " + r.status +
              (mine.txCode ? " (a transaction code is held)" : ""));
@@ -419,9 +417,16 @@ async function test() {
     let ran = null;
     try {
       const prepared = await prepare(plan);
+      const operator = operatorFor(plan, prepared);
+      const someone = personFor(prepared.realm.base, prepared.person);
       ran = await oidf.runPlan(plan.name, plan.variant,
                                prepared.configuration, plan.key,
-                               operatorFor(plan, prepared));
+                               async function (id, info) {
+                                 log.debug("Entering the plan's people.");
+                                 await operator(id, info);
+                                 await someone.visit(id, info);
+                                 log.debug("Leaving the plan's people.");
+                               });
     } catch (e) {
       log.error("Caught in test(): " + plan.key + ": " +
                 ((e && e.message) || e));
@@ -437,6 +442,7 @@ async function test() {
       unexpected.push(line);
     });
   }
+  await conformanceBrowser.quit();
   if (unexpected.length) {
     log.error("Unexplained:\n  " + unexpected.join("\n  "));
   }
@@ -452,8 +458,8 @@ async function test() {
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID4VCI " +
     "issuer plans (#187), against this service.")
-  .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
-                                           "needs no browser)"))
+  .addOption(new Option("-u, --url <url>", "base url (unused: the " +
+                                           "service's is the realm's)"))
   .parse(process.argv);
 
 test().catch(function (e) {

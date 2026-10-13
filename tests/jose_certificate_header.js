@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -73,7 +73,14 @@ const ROOT = path.join(__dirname, '..');
 // whose files are not this one's (2026-09-16).
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
                    '.claude', 'vendored', 'coverage'];
-const SKIP_FILES = ['common/crypto.js'];
+// The two console bundles (#446) are esbuild's output of the `web_` modules
+// this scan already reads, with their comments — the exemptions among them
+// — taken out.
+const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
+                    'admin-ui/console.js', 'portal/portal.bundle.js',
+                    'portal/portal-spa.js', 'home/home.bundle.js',
+                    'home/home-spa.js', 'authn/authn.bundle.js',
+                    'authn/authn-spa.js'];
 
 const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
 

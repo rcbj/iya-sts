@@ -1,0 +1,11 @@
+{
+  "secretGenerated": "Se ha generado un secreto de cliente y está en el cuadro oauthClientSecret de abajo. No se ha guardado nada: se convierte en la credencial de esta aplicación cuando la cree. Su método de autenticación en el endpoint de token se establece en client_secret_basic si no se eligió ninguno, y el endpoint de token acepta el secreto en un encabezado Authorization: Basic (client_secret_basic) o como parámetro de formulario client_secret (client_secret_post).",
+  "appPassword.caep": "Se ha enviado un <code>credential-change</code> de CAEP (<code>password</code>, <code>create</code>) a cada stream que lo pidió y que abarca a esta persona.",
+  "reset.revoked": "Su contraseña anterior se ha ELIMINADO, así que hasta que se use el enlace no puede iniciar sesión con contraseña.",
+  "reset.elseHeading": "Qué más ha ocurrido",
+  "reset.signals": "<strong>Shared Signals</strong>: se ha enviado un credential-change de CAEP y un account-credential-change-required de RISC a cada stream que pidió esos tipos y que abarca a esta persona, y cada sesión terminada por el cierre de sesión ha enviado su propio session-revoked de CAEP.",
+  "created.mailedHeading": "Se ha enviado el enlace de activación por correo",
+  "created.mailed": "Se ha enviado a <strong>{to}</strong>, es válido hasta {until} y no se muestra aquí. Supervisión &rarr; ",
+  "created.writtenHeading": "Qué se ha guardado",
+  "keytab.changed": "<strong>Se cambió la contraseña de {username}</strong> por {how, select, generated {una generada que no se mostró a nadie, así que este keytab es lo único con lo que puede iniciar sesión hasta que se vuelva a establecer una contraseña} other {la que ha escrito}}, y se cerraron todas sus sesiones."
+}

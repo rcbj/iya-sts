@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -26,9 +26,13 @@
 //                            the signed federation metadata, at the path AD FS
 //                            publishes it at, because that is where every client
 //                            looks first
-//   GET|POST /wsfed/rp       a mock RELYING PARTY: non-spec, the default `wreply`,
-//                            and where the sign-in response can be verified check
-//                            by check without a second service
+//   GET  /wsfed/metadata/{rp} ONE registered relying party's own metadata
+//                            (#494), naming the entityID its assertions are
+//                            issued under; the shared document above stays
+//
+// There is NO mock relying party (#592): `/wsfed/rp` was deleted with the
+// two SAML mocks, and the test peer (`tests/peer/`) plays the relying party a
+// test needs.
 //
 // **The response is a form POST, not a redirect** (13.2.2), and that single
 // fact is what makes this profile different from everything else in this
@@ -104,11 +108,8 @@
 // `common/protocol_stack.ts` calls it exactly where rule 1 had the routes
 // registered before. Since R2 that root also builds the instance and
 // installs it, and the exported functions are FACADES that forward to it.
-// `WsFederation.wire()` makes the startup check (`warnAtStartup()`) that used
-// to run as a top-level expression after the routes — when the root installs
-// the instance, so still BEFORE the routes are registered, which changes
-// nothing it reports; a process without the root builds a default instance
-// and makes the check at load. The per-realm store and the vocabulary stay
+// `WsFederation.wire()` made a startup check of two issuer names until #523,
+// when they became one; it is kept, empty, as the root's hook. The per-realm store and the vocabulary stay
 // module-level constants, declared as they were.
 // ---------------------------------------------------------------------------
 
@@ -119,12 +120,10 @@ import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-// TWO settings here, and they are not the same one. wsfed.entityId names
-// THIS identity provider in the federation metadata; saml.issuer is who
-// signed an assertion, which is what the relying party below checks a
-// presented one against. They shared a value until config.js split them and
-// still default to the same string.
 import config = require('../common/config');
+// #523: the one name this service issues under — the metadata's entityID
+// and every assertion's Issuer, the realm's OAuth issuer (a library).
+import IssuerNames = require('../common/issuer_names');
 // THE ROLE GATE. A LEAF (rule 3) requiring only `helpers`, `config` and
 // `error_codes`, so a require from 10 moves no route and closes no cycle. See
 // `common/issuance_gate.js`; an unfilled decider answers "allowed".
@@ -167,6 +166,10 @@ import errorCodes = require('../common/error_codes');
 // the way back is refused rather than sent round again. A library that
 // registers no route.
 import stepUp = require('../oauth-oidc/step_up');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the pages a PERSON passes through use it
+// — the sign-in response and the sign-out page; refusals stay English.
+import PageLocale = require('../common/page_locale');
 
 // --- the vocabulary --------------------------------------------------------
 const WSFED_NS = 'http://docs.oasis-open.org/wsfed/federation/200706';
@@ -267,8 +270,16 @@ const WAUTH_HARDWARE = [
 ];
 
 const PASSIVE_PATH = '/wsfed';
+// THE ONE-TRIP MARKER OF A SIGN-IN MECHANISM RE-PROMPT (#457), on the return
+// address the way `step_up.HONOURED` is. A browser that sets it itself only
+// turns the re-prompt into the refusal: it can skip the trip, never the rule.
+const MECHANISM_MARKER = 'sts_mechanism_retry';
 
-const RP_PATH = '/wsfed/rp';
+// ONE RELYING PARTY'S OWN METADATA (#494), as `/saml2/metadata/{sp}` is one
+// service provider's: `/wsfed/metadata/{rp}`, the segment the application's
+// identifier (its wtrealm) or its slug (`saml2_sso.slugOf()`, the one handle
+// for an application every per-application path here shares).
+const METADATA_PATH = '/wsfed/metadata';
 
 // THIS PROFILE NO LONGER HOLDS AN INTERRUPTED SIGN-IN, and the store that did
 // is worth a line rather than a silent deletion. `pendingSignIns` was a
@@ -279,18 +290,6 @@ const RP_PATH = '/wsfed/rp';
 // on the query string of the return address instead, which is byte for byte
 // what that handler redirected to once it had a session. One less store, and
 // one less thing to make per realm.
-
-// The `wctx` values the mock relying party has minted, so it can check the
-// round trip. Its own state and nobody else's — which is the whole point of
-// wctx.
-//
-// Per realm for a quieter reason than the deleted store above had, and it is
-// worth stating rather than inheriting: `/wsfed/rp` is reachable under every
-// realm prefix, so there is one mock relying party PER REALM, and a wctx
-// minted by the one in `acme` being recognised by the one in the default realm
-// would make the check this map exists for — did my own value come back? —
-// answer yes across a boundary the rest of the profile does not cross.
-const rpContexts = realms.map({ persist: 'wsfed.rpContexts', retain: 'age' });
 
 // Written with no regular expressions and nothing to escape, for the reason
 // oauth2.js's ceremony script records: a backslash in a script that passes
@@ -403,33 +402,16 @@ class WsFederation {
     };
   }
 
-  // The work loading this module did with its own instance before R2,
-  // run once for whichever instance is installed.
+  // The root's hook for this module's load-time work. Since #523 there is
+  // none: the startup check of the two issuer names went with the second.
   /**
-   * Logs, once, whether the metadata's entityID and the assertions' Issuer
-   * disagree: the work loading this module did before R2.
+   * Nothing to do since #523.
    *
    * @param instance - the instance installed
    */
   static wire(instance: WsFederation): void {
-    helpers.log.debug("Entering WsFederation.wire().");
-    instance.warnAtStartup();
+    helpers.log.debug("Entering WsFederation.wire(). " + typeof instance);
     helpers.log.debug("Leaving WsFederation.wire().");
-  }
-
-  // How long the MOCK RELYING PARTY below keeps a wctx it minted. It is the
-  // only state that relying party holds, and it is nothing to do with the
-  // identity provider's own stores above — which is why it survived the
-  // deletion of SIGNIN_TTL_MS and pendingSignIns and has to be declared here
-  // rather than folded into them.
-  //
-  // `wsfed.mockRpContextTtlMin` since 2026-09-12; it was a thirty-minute
-  // constant.
-  private rpContextTtlMs() {
-    const { config, log } = this.deps;
-    log.debug("Entering WsFederation.rpContextTtlMs().");
-    log.debug("Leaving WsFederation.rpContextTtlMs().");
-    return Number(config.value('wsfed.mockRpContextTtlMin')) * 60 * 1000;
   }
 
   // --- reading the request ---------------------------------------------------
@@ -474,11 +456,16 @@ class WsFederation {
   // One shell for all of them. The CSS is inline because app.js sets
   // `default-src 'none'` with `style-src 'unsafe-inline'`, so a stylesheet as a
   // separate resource would need its own exception to buy nothing.
-  private page(title, inner) {
+  //
+  // `t` is the page's translator (#539), for a page a person passes through;
+  // without one the page is English, exactly as it always was.
+  private page(title, inner, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.page().");
     log.debug("Leaving WsFederation.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width, initial-scale=1">' +
       '<title>' + xmlEscape(title) +
       '</title><style>body{font-family:system-ui,-apple-system,"Segoe ' +
@@ -753,13 +740,17 @@ class WsFederation {
   // block the sign-in response from ever reaching the relying party, and the
   // symptom is a sign-in that appears to succeed while the RP simply never
   // hears anything.
-  private signInResponsePage(wreply, wresult, wctx, realm, tokenType) {
+  //
+  // IN THE PERSON'S LANGUAGE (#539), the words only: `t` is the page's
+  // translator. No language chooser: the page is drawn mid-flow, and no GET
+  // redraws it without issuing a token again — it is on screen for an
+  // instant.
+  private signInResponsePage(wreply, wresult, wctx, realm, tokenType, t) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.signInResponsePage(). wreply=" + wreply);
-    const inner = '<h1>Signing in to the relying party</h1><p ' +
-      'class="sub">WS-Federation 1.2 section 13.2.2 — the token travels in a ' +
-      'form POST, not in a redirect, so it is not length-limited and never ' +
-      'appears in a URL, a log or a Referer header.</p><form method="post" ' +
+    const inner = '<h1>' + t.html('handoff.wsfed.signingIn.heading') +
+      '</h1><p class="sub">' + t.html('handoff.wsfed.signingIn.sub') +
+      '</p><form method="post" ' +
       'action="' + xmlEscape(wreply) + '" id="wsfed-form">' +
         '<input type="hidden" name="wa" value="wsignin1.0">' +
         '<input type="hidden" name="wresult" value="' + xmlEscape(wresult) +
@@ -768,27 +759,25 @@ class WsFederation {
           ? '<input type="hidden" name="wctx" value="' + xmlEscape(wctx) +
               '">' :
          '') +
-        '<div class="row"><button type="submit">Continue to the relying ' +
-      'party</button></div></form><div class="meta"><div>wa: ' +
-      '<code>wsignin1.0</code></div><div>posting to (wreply): ' +
-      '<code>' + xmlEscape(wreply) + '</code></div>' +
-      '<div>realm (wtrealm): <code>' + xmlEscape(realm) + '</code></div>' +
-      '<div>token type: <code>' + xmlEscape(tokenType) + '</code></div>' +
-      '<div>wctx: ' + (wctx ? '<code>' + xmlEscape(wctx) + '</code>, echoed ' +
-          'byte for byte'
-                            : 'the request carried none, so none is returned') +
-      '</div><div>The form submits itself from <code>' +
-      '/wsfed/autopost.js</code>. It is a separate resource because this ' +
-      'service sets <code>script-src \'none\'</code> on every response and ' +
-      'this page relaxes it to <code>\'self\'</code> — an inline script ' +
-      'would not run, and the button would be the only thing that worked. ' +
-      'With scripting off, the button IS the mechanism.</div></div><script ' +
+        '<div class="row"><button type="submit">' +
+      t.html('handoff.common.continueToRp') +
+      '</button></div></form><div class="meta"><div>wa: ' +
+      '<code>wsignin1.0</code></div><div>' +
+      t.html('handoff.wsfed.postingTo', { destination: wreply }) +
+      '</div><div>' + t.html('handoff.wsfed.realm', { realm: realm }) +
+      '</div><div>' + t.html('handoff.wsfed.tokenType',
+                             { tokenType: tokenType }) + '</div>' +
+      '<div>' + (wctx ? t.html('handoff.wsfed.wctxEchoed', { wctx: wctx })
+                      : t.html('handoff.wsfed.wctxNone')) +
+      '</div><div>' +
+      t.html('handoff.common.autopost', { script: '/wsfed/autopost.js' }) +
+      '</div></div><script ' +
       'src="/wsfed/autopost.js"></script>';
     log.debug("Leaving WsFederation.signInResponsePage().");
     return inner;
   }
 
-  private sendSignInResponse(res, inner) {
+  private sendSignInResponse(res, inner, t) {
     const { app, log } = this.deps;
     log.debug("Entering WsFederation.sendSignInResponse().");
     // The same shape of exception the WebAuthn page takes, and no wider: a
@@ -796,7 +785,7 @@ class WsFederation {
     res.set('Content-Security-Policy',
             app.contentSecurityPolicy({ 'script-src': "'self'" }));
     res.status(200).type('text/html').set('Cache-Control', 'no-store')
-       .send(this.page('Signing in — WS-Federation', inner));
+       .send(this.page(t.text('handoff.wsfed.signingIn.title'), inner, t));
     log.debug("Leaving WsFederation.sendSignInResponse().");
   }
 
@@ -879,15 +868,38 @@ class WsFederation {
         'A wsignin1.0 request must name the relying party it is for (section ' +
         '13.2.1). The realm becomes the assertion\'s audience restriction, ' +
         'and an assertion with no audience is one any relying party would be ' +
-        'entitled to accept.',
-        '<p>There is a mock relying party here that sends a complete ' +
-        'request: <a href="' + RP_PATH + '">' + RP_PATH + '</a>.</p>');
+        'entitled to accept.');
     }
 
-    // wreply is optional (13.2.1). With none, the response goes to this
-    // service's own mock relying party rather than nowhere: a real IdP would
-    // post to the endpoint registered for wtrealm, and there is no registration
-    // here to consult.
+    // A RELYING PARTY NOBODY REGISTERED GETS NOTHING IN PRODUCT (#496).
+    // rcbj, 2026-10-06: an unregistered application gets a 404 or its
+    // protocol's own "unknown application" error, and this profile has no
+    // error response of its own (section 13), so the answer is a 404 page —
+    // asked HERE, before the wreply is resolved, before the person is sent
+    // to the sign-in screen, and before issueSignInResponse()'s `seen()`.
+    // "Registered" is #494's: `appRegisteredBy` on the wtrealm's own entry
+    // (`IssuerNames.registeredApplication()`), so an entry a development
+    // sighting filed is refused like no entry. Development issues under the
+    // shared entityID and files the realm, as it always did.
+    if (!mode.issuesToUnregisteredApplications() &&
+        !IssuerNames.registeredApplication(realm)) {
+      log.info('wsfed: refused a wsignin1.0 in product mode — the wtrealm "' +
+               realm + '" is not a registered relying party.');
+      errorCodes.mark(res, 'STS-WSFED-0021');
+      log.debug("Leaving WsFederation.signIn(). The wtrealm is not " +
+                "registered.");
+      return this.wsfedError(res, 404, 'That relying party is not registered',
+        'wtrealm is "' + realm + '", and no relying party is registered ' +
+        'under that name in this realm. In product mode this identity ' +
+        'provider issues a token only to a relying party registered ahead ' +
+        'of time (the console, /admin-api, RFC 7591 or an LDAP add under ' +
+        'ou=applications); one that was only seen is not registered.');
+    }
+
+    // wreply is optional (13.2.1). With none, the response goes to the
+    // wsfedReplyUrl registered for wtrealm, and with none registered the
+    // request is refused: until #592 it went to this service's own mock
+    // relying party, and there is nowhere real to post it now.
     //
     // It is NOT validated against anything IN DEVELOPMENT MODE, exactly as
     // post_logout_redirect_uri is not at /oauth2/logout, and for the same
@@ -896,11 +908,10 @@ class WsFederation {
     // **IN PRODUCT MODE IT IS (2026-09-12).**
     // `mode.acceptsUnregisteredAddresses()` false means the wreply must be one
     // of the `wsfedReplyUrl` values on the wtrealm's own application entry,
-    // compared exactly; a request naming none gets the registered one; and
-    // there is no fallback to /wsfed/rp — a real IdP posts to the endpoint
-    // registered for the realm, and in that mode there is a registration to
-    // consult. `saml/return_address.ts` is the rule, shared with both SAML
-    // profiles.
+    // compared exactly; a request naming none gets the registered one. An
+    // identity provider posts to the endpoint registered for the realm, and
+    // in that mode there is a registration to consult.
+    // `saml/return_address.ts` is the rule, shared with both SAML profiles.
     //
     // Either way it must be an absolute http(s) URL, because a form action that
     // is not one posts back to this origin and the failure reads as the relying
@@ -914,13 +925,11 @@ class WsFederation {
                                                       'wsfedReplyUrl');
     const replyTo = returnAddress.resolve({
       requested: params.wreply ? String(params.wreply) : '',
-      // THE DEVELOPMENT PRECEDENCE IS KEPT BYTE FOR BYTE: a request with no
-      // wreply went to /wsfed/rp even when the entry recorded one, so
-      // development passes no registration here. Product passes the entry's.
-      registered: mode.acceptsUnregisteredAddresses() ? [] :
-                  replyKnown.registered,
+      // A request with no wreply goes to the entry's registered one in both
+      // modes since #592 — development had passed no registration here and
+      // sent it to /wsfed/rp instead, which is deleted.
+      registered: replyKnown.registered,
       unconfirmed: replyKnown.unconfirmed,
-      fallback: base + RP_PATH,
       attribute: 'wsfedReplyUrl',
       parameter: 'wreply',
       application: realm
@@ -1226,12 +1235,8 @@ class WsFederation {
             ? 'where the sign-in response is POSTed' +
               (mode.acceptsUnregisteredAddresses() ? '.' : ', registered on ' +
                   'the realm\'s entry.')
-            : (mode.acceptsUnregisteredAddresses()
-                ? 'none was sent, so the response goes to this service\'s ' +
-                  'own ' +
-                  'mock relying party.'
-                : 'none was sent, so the response goes to the address ' +
-                  'registered on the realm\'s entry.') },
+            : 'none was sent, so the response goes to the address ' +
+              'registered on the realm\'s entry.' },
         { label: 'wctx', value: String(params.wctx || '(none)'),
           note: 'echoed back byte for byte and never interpreted.' }
       ].concat(wauth
@@ -1295,6 +1300,38 @@ class WsFederation {
       // reads (#62 P3).
       session: session
     });
+    // A SESSION ON A SIGN-IN MECHANISM THE RELYING PARTY DOES NOT ALLOW
+    // (#457) is sent to sign in again, ONCE — the screen offers only the
+    // allowed mechanisms and refuses a sign-in with any other — and a request
+    // back from that trip still unmet is the refusal page below.
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        String(params[MECHANISM_MARKER] || '') !== '1' &&
+        session.authenticated !== false) {
+      const back = this.requeryString(params, ['wfresh', MECHANISM_MARKER]);
+      // A second factor the relying party does not allow (#475) is its
+      // own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-WSFED-0022' : 'STS-WSFED-0017');
+      log.info('wsfed: "' + realm + '" allows signing in with ' +
+               roleAnswer.mechanism.allowed.join(', ') + ', and the session ' +
+               'of "' + String((session.user || {}).username) + '" used ' +
+               'none of them; sent to sign in again.');
+      const where = this.deps.beginAuthentication({
+        returnTo: PASSIVE_PATH + '?' + back + (back ? '&' : '') +
+                  encodeURIComponent(MECHANISM_MARKER) + '=1',
+        hint: String((session.user || {}).username || ''),
+        protocol: 'WS-Federation',
+        application: realm,
+        details: [
+          { label: 'wtrealm', value: realm,
+            note: 'it allows signing in with ' +
+                  roleAnswer.mechanism.allowed.join(', ') + ' only.' }
+        ]
+      });
+      log.debug("Leaving WsFederation.issueSignInResponse(). A re-prompt " +
+                "for an allowed sign-in mechanism.");
+      return res.set('Cache-Control', 'no-store').redirect(303, where);
+    }
     if (!roleAnswer.allowed) {
       log.info('wsfed: the issuance policy refused a token for "' +
                String((session.user || {}).username) + '" to "' + realm +
@@ -1303,8 +1340,13 @@ class WsFederation {
       log.debug("Leaving WsFederation.issueSignInResponse(). The issuance " +
                 "policy refused it.");
       // A realm being removed (#262) is its own code.
+      // A sign-in mechanism still not allowed after the one trip (#457) is
+      // its own.
       errorCodes.mark(res, roleAnswer.retiring ? 'STS-CORE-0121'
-                                               : 'STS-WSFED-0011');
+        : (roleAnswer.mechanism
+          ? (roleAnswer.mechanism.secondFactor ? 'STS-WSFED-0023'
+                                               : 'STS-WSFED-0018')
+          : 'STS-WSFED-0011'));
       log.debug("Leaving WsFederation.issueSignInResponse().");
       return this.wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
         '<p>The person is signed in. The XACML issuance policy would not let ' +
@@ -1361,6 +1403,10 @@ class WsFederation {
     const user = session.user;
     const methods = this.authnMethodsFor(session);
     const authnInstant = new Date((session.authTime || 0) * 1000).toISOString();
+    // THE ISSUER (#523): the realm's one name, its OAuth issuer, for every
+    // relying party — the name its metadata publishes, and the one SAML SSO,
+    // WS-Trust and every JWT carry (`common/issuer_names.ts`).
+    const issuer = IssuerNames.issuer();
     // THE ASSERTION LIFETIME, which was this literal `60` until 2026-08-27 and
     // is now a setting with a per-relying-party override. `realm` is the
     // wtrealm — the string this registry files a WS-Federation application
@@ -1378,6 +1424,7 @@ class WsFederation {
     if (tokenType === SAML2_TOKEN_TYPE) {
       assertion = buildSamlAssertion(user.username, realm, lifetimeMin, {
         authnContextClassRef: methods.saml2,
+        issuer: issuer,
         // The full claim URI in one Name, which is SAML 2.0's shape, with the
         // NameFormat that says so. SAML 1.1 splits the same URI in two.
         attributes: this.claimsFor(user, methods.saml2, authnInstant).map(
@@ -1393,7 +1440,8 @@ class WsFederation {
         lifetimeMin: lifetimeMin,
         authnMethod: methods.saml11,
         authnInstant: authnInstant,
-        attributes: this.claimsFor(user, methods.saml11, authnInstant)
+        attributes: this.claimsFor(user, methods.saml11, authnInstant),
+        issuer: issuer
       });
     }
     const trustVersion = String(params.trust ||
@@ -1412,10 +1460,14 @@ class WsFederation {
     // node: `authn.noteSessionChanged()` carries the argument.
     noteSessionChanged(session);
 
+    // THE PAGE'S LANGUAGE (#539): the relying party's — its wtrealm is the
+    // application a locale policy names — and the person's.
+    const t = PageLocale.forPage({ application: realm,
+                                   username: user.username });
     this.sendSignInResponse(res,
                             this.signInResponsePage(wreply, wresult,
                                                     params.wctx, realm,
-                                                    tokenType));
+                                                    tokenType, t), t);
     log.debug("Leaving WsFederation.issueSignInResponse(). " + user.username +
               " signed in to " + realm + ".");
   }
@@ -1480,9 +1532,16 @@ class WsFederation {
     log.debug("Entering WsFederation.signOut(). cleanupOnly=" + !!cleanupOnly);
     const session = endSession(req, res);
     const targets = this.cleanupTargetsFor(session);
-    const names = targets.map((t) => { return t.realm; });
+    const names = targets.map((one) => { return one.realm; });
     const realms = {};
-    targets.forEach((t) => { realms[t.realm] = t.wreply; });
+    targets.forEach((one) => { realms[one.realm] = one.wreply; });
+    // In the person's language (#539): the relying party's, where the
+    // request names one, and the person's. No language chooser: the GET that
+    // drew it ENDED the session, and drawing it again would say there was
+    // none and send no cleanups — a different page.
+    const t = PageLocale.forPage({
+      application: params.wtrealm ? String(params.wtrealm) : '',
+      username: (session && session.user && session.user.username) || '' });
     const wreply = params.wreply ? String(params.wreply) : '';
     const cleanupUrl = (url) => {
       log.debug("Entering cleanupUrl().");
@@ -1490,15 +1549,15 @@ class WsFederation {
       return url + (url.indexOf('?') >= 0 ? '&' : '?') +
           'wa=wsignoutcleanup1.0';
     };
-    let inner = '<h1>' + (cleanupOnly ? 'Signed out (cleanup)' : 'Signed out') +
+    let inner = '<h1>' + (cleanupOnly
+      ? t.html('handoff.wsfed.signedOutCleanup')
+      : t.html('handoff.common.signedOut')) +
       '</h1><p ' +
-      'class="sub">WS-Federation 1.2 section 13.2.4</p><div ' +
+      'class="sub">' + t.html('handoff.wsfed.signOut.sub') + '</p><div ' +
       'class="ok">' + (session
-        ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-          'ended. ' +
-          'It was the session the OAuth 2.0 / OIDC side shares, so that side ' +
-          'is signed out too.'
-        : 'There was no session to end. The cookie has been cleared anyway.') +
+        ? t.html('handoff.wsfed.sessionEnded',
+                 { username: session.user.username })
+        : t.html('handoff.common.noSession')) +
       '</div>';
     if (cleanupOnly) {
       // A cleanup request arriving HERE (rather than at a relying party) ends
@@ -1506,15 +1565,10 @@ class WsFederation {
       // cleanups: a federation of two identity providers each cleaning the
       // other up on receipt is a loop, and this service is not a federation
       // gateway.
-      inner += '<p>This was a <code>wsignoutcleanup1.0</code> request, so ' +
-        'the ' +
-        'session was dropped and no further cleanup requests were sent — an ' +
-        'identity provider that fanned out on receipt of a cleanup would ' +
-        'loop with whatever sent it.</p>';
+      inner += '<p>' + t.html('handoff.wsfed.cleanupOnly') + '</p>';
     } else if (names.length) {
-      inner += '<h2>Cleanup requests sent to ' + names.length + ' relying ' +
-          'part' +
-        (names.length === 1 ? 'y' : 'ies') + '</h2><ul>' +
+      inner += '<h2>' + t.html('handoff.wsfed.cleanupSent',
+                               { n: names.length }) + '</h2><ul>' +
         names.map((r) => {
           return '<li><code>' + xmlEscape(r) + '</code><br>' +
             '<a href="' + xmlEscape(cleanupUrl(realms[r])) + '" ' +
@@ -1525,32 +1579,27 @@ class WsFederation {
           return '<img src="' + xmlEscape(cleanupUrl(realms[r])) + '" alt="" ' +
               'width="1" height="1">';
         }).join('') +
-        '<p class="sub">Each was fetched as a one-pixel image as this page ' +
-        'loaded — front-channel logout, and the links above are the same ' +
-        'URLs so a failed ping can be seen rather than guessed at.</p>';
+        '<p class="sub">' + t.html('handoff.wsfed.pingNote') + '</p>';
     } else {
-      inner += '<p>This session had signed into no relying party through ' +
-        'this ' +
-        'profile, so there was nothing to clean up.</p>';
+      inner += '<p>' + t.html('handoff.wsfed.nothingToClean') + '</p>';
     }
     if (wreply) {
       // Not an automatic redirect: the cleanup pings have to load first, and a
       // 302 would abandon them. WS-Federation says the IdP MAY return the
       // browser to wreply, and a link is the version that does not defeat the
       // cleanup.
-      inner += '<h2>Return to the relying party</h2><p><a href="' +
+      inner += '<h2>' + t.html('handoff.wsfed.returnHeading') +
+        '</h2><p><a href="' +
         xmlEscape(wreply) + '">' +
-        xmlEscape(wreply) + '</a></p><p class="sub">A link and not a ' +
-                            'redirect: ' +
-        'the cleanup requests above load with this page, and a 302 would ' +
-        'abandon them before they were sent.</p>';
+        xmlEscape(wreply) + '</a></p><p class="sub">' +
+        t.html('handoff.wsfed.returnNote') + '</p>';
     }
     // One of the two responses in this service that widen img-src (the other is
     // /logout's, for the same pings), and only that clause.
     res.set('Content-Security-Policy',
             app.contentSecurityPolicy({ 'img-src': '*' }));
     res.status(200).type('text/html').set('Cache-Control', 'no-store')
-       .send(this.page('Signed out — WS-Federation', inner));
+       .send(this.page(t.text('handoff.wsfed.signedOut.title'), inner, t));
     log.debug("Leaving WsFederation.signOut(). " + names.length + " cleanup " +
                                                      "request(s) on the page.");
   }
@@ -1624,8 +1673,8 @@ class WsFederation {
           : 'wpseudo1.0 is the pseudonym service (section 3.3/13.4), which ' +
             'issues a per-relying-party pseudonym for a subject. It is not ' +
             'implemented here. There would be nothing behind it: this ' +
-            'service authenticates nobody and holds no per-relying-party ' +
-            'state to map a pseudonym to.');
+            'service holds no per-relying-party state to map a pseudonym ' +
+            'to.');
     }
     log.debug("Leaving the passive requestor endpoint. An unknown wa: " + wa);
     errorCodes.mark(res, 'STS-WSFED-0013');
@@ -1641,51 +1690,6 @@ class WsFederation {
       'with 501 and an explanation</li></ul>');
   }
 
-  // ---------------------------------------------------------------------------
-  // THE TWO NAMES THIS PROFILE GOES BY, AND WHETHER THEY AGREE (2026-09-12).
-  //
-  // The federation metadata's entityID is `wsfed.entityId`; the Issuer of every
-  // assertion a sign-in response carries is `saml.issuer`, because both
-  // builders read it. They were split deliberately (config.js argues it: one
-  // names the identity provider, the other whoever signed an assertion) and
-  // they default to the same string. A relying party configured from the
-  // metadata, though — WIF's and OWIN's issuer name registry is exactly this —
-  // trusts the ENTITYID and then reads the assertion's Issuer, so a deployment
-  // that changed one and not the other has a relying party refusing every token
-  // with a message about an unknown issuer, and nothing here said the two had
-  // drifted.
-  //
-  // So it is SAID, rather than reconciled: in the log once at startup (for the
-  // process-wide values), and on this profile's own description page for the
-  // realm the request is in. Reconciling silently — making one follow the other
-  // — would take away the split the settings exist for. Returns '' when they
-  // agree.
-  // ---------------------------------------------------------------------------
-  /**
-   * Tells whether `wsfed.entityId` (the metadata's entityID) and `saml.issuer`
-   * (every assertion's Issuer) disagree in the ambient realm.
-   *
-   * @returns '' when they agree, otherwise a sentence saying how
-   */
-  issuerDisagreement() {
-    const { config, log } = this.deps;
-    log.debug("Entering WsFederation.issuerDisagreement().");
-    const entityId = String(config.value('wsfed.entityId') || '');
-    const issuer = String(config.value('saml.issuer') || '');
-    if (entityId === issuer) {
-      log.debug("Leaving WsFederation.issuerDisagreement().");
-      return '';
-    }
-    log.debug("Leaving WsFederation.issuerDisagreement().");
-    return 'wsfed.entityId ("' + entityId + '") and saml.issuer ("' + issuer +
-           '") differ. The federation metadata names this identity provider ' +
-           'by the first and every assertion in a sign-in response names its ' +
-           'issuer by the second, so a relying party configured from the ' +
-           'metadata will refuse the tokens as coming from an unknown ' +
-           'issuer. Set them to the same value unless that split is what is ' +
-           'being tested.';
-  }
-
   // What GET /wsfed says when it is followed bare, which is what a reader
   // clicking it from /admin/sts-metadata does. GET /sts answers the same way
   // for the same reason: an endpoint that 400s at a person who wanted to know
@@ -1694,26 +1698,32 @@ class WsFederation {
   private descriptionPage(base) {
     const { config, log, mode, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.descriptionPage().");
-    const disagreement = this.issuerDisagreement();
     const inner = '<h1>WS-Federation 1.2 — passive requestor endpoint</h1>' +
-      '<p class="sub">Issuer <code>' + xmlEscape(config.value('saml.issuer')) +
+      '<p class="sub">Issuer <code>' + xmlEscape(IssuerNames.issuer()) +
         '</code> at <code>' + xmlEscape(base) +
       PASSIVE_PATH + '</code></p>' +
-      (disagreement ? '<div class="err">' + xmlEscape(disagreement) + '</div>' :
-       '') +
       '<p>This endpoint takes a <code>wa</code> parameter, by GET or by form ' +
       'POST, and signs a browser in to a relying party by POSTing it a token ' +
-      '(section 13.2.2). It authenticates nobody: the username typed at the ' +
-      'screen becomes the subject of the assertion.</p><h2>Try ' +
-      'it</h2><ul><li><a ' +
-      'href="' + RP_PATH + '">' + RP_PATH + '</a> — a mock relying party ' +
-      'here ' +
-      'that sends a complete sign-in request and then verifies the response ' +
-      'check by check.</li><li><a ' +
+      // Per mode (#543 round 2): "It authenticates nobody" read as a claim
+      // about the service in product too, where the screen verifies.
+      '(section 13.2.2). It authenticates nobody itself: ' +
+      (mode.verifiesCredentials()
+        ? 'the person signs in at the sign-in screen, and the identity ' +
+          'verified there becomes the subject of the assertion.'
+        : 'the username typed at the sign-in screen becomes the subject of ' +
+          'the assertion, and in development mode no password is checked.') +
+      '</p><h2>Try ' +
+      'it</h2><ul>' +
+      '<li><a ' +
       'href="/FederationMetadata/2007-06/FederationMetadata.xml">' +
       '/FederationMetadata/2007-06/FederationMetadata.xml</a> — the signed ' +
       'federation metadata, which is what a relying party should be ' +
-      'configured from.</li></ul><h2>Sign-in request parameters (section ' +
+      'configured from.</li><li><code>' + METADATA_PATH + '/{rp}</code> — ' +
+      'one registered relying party\'s own metadata (#494), naming the ' +
+      'entityID its assertions are issued under: <code>&lt;entityID&gt;:' +
+      '&lt;application&gt;</code>, the name SAML 2.0 and WS-Trust give the ' +
+      'same application. A wtrealm nobody registered gets the shared one.' +
+      '</li></ul><h2>Sign-in request parameters (section ' +
       '13.2.1)</h2><table><thead><tr><th>Parameter</th><th>What this service ' +
       'does with it</th></tr></thead><tbody>' +
       [['wa', 'Required. <code>wsignin1.0</code>, <code>wsignout1.0</code> ' +
@@ -1722,14 +1732,15 @@ class WsFederation {
                    'and the assertion\'s audience restriction.'],
        ['wreply', mode.acceptsUnregisteredAddresses()
          ? 'Where the response is POSTed. Optional — with none it goes to ' +
-           '<code>' + RP_PATH +
-           '</code>. In development mode, which this realm is in, it is not ' +
+           'the <code>wsfedReplyUrl</code> registered on the wtrealm\'s ' +
+           'application entry, and with none registered the request is ' +
+           'refused. In development mode, which this realm is in, it is not ' +
            'validated against any registration, like every other return URL ' +
            'here.'
          : 'Where the response is POSTed. This realm is in PRODUCT mode, so ' +
            'it must be one of the <code>wsfedReplyUrl</code> values on the ' +
            'wtrealm\'s application entry, compared exactly; with none, the ' +
-           'registered one is used; there is no mock fallback.'],
+           'registered one is used.'],
        ['wctx', 'Echoed back byte for byte and never interpreted. It is the ' +
                 'relying party\'s state.'],
        ['wct', 'The request timestamp. Recorded with its skew from this ' +
@@ -1777,36 +1788,103 @@ class WsFederation {
     return inner;
   }
 
+  // THE REGISTERED RELYING PARTY A METADATA PATH SEGMENT NAMES (#494), or ''.
+  // Its identifier, or its slug — `saml2_sso.slugOf()`, reached LAZILY
+  // because that module is built after this one, and only at request time,
+  // when the composition root has installed it. A segment naming an entry
+  // that merely turned up, or nothing, is '': such a wtrealm is issued
+  // under the SHARED entityID, which the shared document already publishes,
+  // so there is no per-application name for a document to carry.
+  private relyingPartyOfSegment(segment): string {
+    const { applications, log } = this.deps;
+    log.debug("Entering WsFederation.relyingPartyOfSegment().");
+    const text = String(segment == null ? '' : segment).trim();
+    if (!text) {
+      log.debug("Leaving WsFederation.relyingPartyOfSegment(). Empty.");
+      return '';
+    }
+    let identifier = applications.get(text) ? text : '';
+    if (!identifier) {
+      const slugOf = require('../saml/saml2_sso').slugOf;
+      const match = applications.list().filter(function (row) {
+        return slugOf(row.identifier) === text;
+      })[0];
+      identifier = match ? String(match.identifier) : '';
+    }
+    const out = IssuerNames.registeredApplication(identifier);
+    log.debug("Leaving WsFederation.relyingPartyOfSegment(). " +
+              (out || 'None registered.'));
+    return out;
+  }
+
+  // THE METADATA ROUTES' ONE ANSWER (#494): the document — the shared one
+  // for no application.
+  private sendMetadata(req, res, application?) {
+    const { baseUrlOf, errorCodes, log } = this.deps;
+    log.debug("Entering WsFederation.sendMetadata().");
+    // no-store like every other document here that carries the signing key:
+    // in development mode the key is regenerated on every start, so a cached
+    // copy describes a key that is gone and the failure looks like a broken
+    // signature rather than a stale document.
+    res.status(200).type('application/xml').set('Cache-Control', 'no-store')
+       .send(this.federationMetadata(baseUrlOf(req), application));
+    log.debug("Leaving WsFederation.sendMetadata().");
+  }
+
   // --- federation metadata (section 3.1) -------------------------------------
   // At AD FS's path, because that is where every relying party in this
   // ecosystem looks and the specification names no path at all.
   //
-  // It is SIGNED, and the signature goes FIRST inside EntityDescriptor — the
-  // SAML metadata schema puts ds:Signature at the head of the sequence, where
-  // an assertion puts it after the Issuer and a SAML 1.1 assertion puts it
-  // last. Three documents in this service, three positions, all
-  // schema-mandated.
-  //
-  // What is deliberately NOT in it: an IDPSSODescriptor. This document
-  // describes the WS-Federation security token service. When it was written
-  // this service had no SAML 2.0 Web SSO profile, and a role descriptor
-  // advertising one would have been a relying party's first 404; the profile
-  // now exists (`saml/saml2_sso.ts`) and publishes its own metadata, with its
-  // own SingleSignOnService endpoints, at its own path.
+  // ONE ENTITY, TWO VIEWS (#524, after #523). The entityID is the realm's
+  // one issuer — the name SAML 2.0 and SAML 1.1 publish too — and
+  // saml-metadata-2.0-os gives one entity one <EntityDescriptor>, so this
+  // profile no longer publishes a document of its own: it contributes its
+  // role, `roleDescriptor()` below, to the one `saml2_sso.ts`'s
+  // `metadataFor()` builds and signs (signature FIRST inside the
+  // EntityDescriptor, as the metadata schema requires), and serves THE
+  // WS-FEDERATION VIEW of it: that role beside the IDPSSODescriptor and
+  // AttributeAuthorityDescriptor. The SAML paths serve the same document
+  // without this role, because its `xsi:type` resolves only with the
+  // WS-Federation schema and a SAML-only consumer that validates strictly
+  // refuses it (SimpleSAMLphp's validator does) — rcbj's "two views, one
+  // entity".
   /**
-   * Builds the federation metadata (section 3.1), signed with the signature
-   * first in the EntityDescriptor.
-   *
-   * Served unsigned, and logged (STS-WSFED-0015), when it cannot be signed.
+   * The WS-Federation view of the realm's one metadata document (#524):
+   * the WS-Federation role, and the SAML roles with their endpoints
+   * unscoped, since a `wtrealm` need not be a SAML provider.
    *
    * @param base - the base URL the request reached
+   * @param application - a registered relying party's identifier, for
+   * `/wsfed/metadata/{rp}`; the document is the same either way
    * @returns the XML document
    */
-  federationMetadata(base) {
-    const { STS, config, documentSettings, errorCodes, genId, log, logArtifact,
-            mode, stsCrypto, xmlEscape } = this.deps;
-    log.debug("Entering WsFederation.federationMetadata().");
-    const id = genId();
+  federationMetadata(base, application?) {
+    const { log } = this.deps;
+    log.debug("Entering WsFederation.federationMetadata(). " +
+              (application ? 'rp=' + application : '(shared)'));
+    // Lazily: `saml2_sso` is built after this module (10, 10a).
+    const out = require('../saml/saml2_sso').metadataFor(base, '', true);
+    log.debug("Leaving WsFederation.federationMetadata().");
+    return out;
+  }
+
+  // THE WS-FEDERATION ROLE (section 3.1): the security token service, its
+  // token-signing keys, the token types and claim types it offers, and its
+  // two endpoints — the passive requestor endpoint here and the WS-Trust STS
+  // at `/sts`. `md:`-prefixed, because the EntityDescriptor around it
+  // declares the metadata namespace under that prefix; its own namespaces
+  // are declared on the RoleDescriptor itself, so it is whole wherever it
+  // is put.
+  /**
+   * The `fed:SecurityTokenServiceType` RoleDescriptor of the realm's one
+   * metadata document (#524).
+   *
+   * @param base - the base URL the request reached
+   * @returns the RoleDescriptor element
+   */
+  roleDescriptor(base) {
+    const { log, mode, stsCrypto, xmlEscape } = this.deps;
+    log.debug("Entering WsFederation.roleDescriptor().");
     const claim = (name, namespace, display, description) => {
       log.debug("Entering claim().");
       log.debug("Leaving claim().");
@@ -1822,10 +1900,10 @@ class WsFederation {
       // One per live generation of the XML key (#42): the token-signing
       // certificate a relying party trusts is published ahead of its use.
       return helpers.ownXmlSigningCertificates().map(function (one: any) {
-        return '<KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
+        return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
           'xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:X509Data>' +
           '<ds:X509Certificate>' + stsCrypto.stripPem(one.certPem) +
-          '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></KeyDescriptor>';
+          '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>';
       }).join('');
     };
 
@@ -1836,11 +1914,8 @@ class WsFederation {
         xmlEscape(address) +
         '</wsa:Address></wsa:EndpointReference></fed:' + element + '>';
     };
-    const xml =
-      '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<EntityDescriptor xmlns="' + SAML_METADATA_NS + '" ID="' + id + '"' +
-        ' entityID="' + xmlEscape(config.value('wsfed.entityId')) + '">' +
-        '<RoleDescriptor ' +
+    const out =
+        '<md:RoleDescriptor ' +
         'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
           ' xmlns:fed="' + WSFED_NS + '"' +
           ' xmlns:auth="' + WSFED_AUTH_NS + '"' +
@@ -1895,63 +1970,18 @@ class WsFederation {
                 'instant',
                   'When that session authenticated.') +
           '</fed:ClaimTypesOffered>' +
-          endpoint('SecurityTokenServiceEndpoint', base + '/sts') +
+          endpoint('SecurityTokenServiceEndpoint',
+                   helpers.rebaseTo(base, 'ws-trust') + '/sts') +
           endpoint('PassiveRequestorEndpoint', base + PASSIVE_PATH) +
-        '</RoleDescriptor>' +
-      '</EntityDescriptor>';
-    logArtifact('WS-Federation metadata', 'before signing', xml);
-    try {
-      // FIRST, which is where a metadata EntityDescriptor's signature goes — a
-      // protocol message puts it after <Issuer> and metadata puts it before
-      // everything. Both are schema-mandated, and getting either wrong produces
-      // a document that verifies and that a strict parser rejects.
-      //
-      // The configured algorithms since 2026-09-12, which are the SAML group's
-      // because the assertions this document describes are SAML's — one answer
-      // for every signature a WS-Federation relying party verifies here.
-      const how = documentSettings.signatureOptions();
-      const signed = stsCrypto.signXml(xml, {
-        // The XML signing key (#42, D2): `STS.xml`, not the JOSE key — and
-        // `STS.xmlSigner`, the one for the configured algorithm (#68).
-        privateKeyPem: STS.xmlSigner.privateKeyPem,
-        privateKey: STS.xmlSigner.privateKey,
-        certPem: STS.xmlSigner.certPem,
-        sigAlg: how.sigAlg,
-        c14nAlg: how.c14nAlg,
-        placement: stsCrypto.PLACEMENT.FIRST,
-        refUri: '#' + id,
-        what: 'WS-Federation metadata'
-      });
-      logArtifact('WS-Federation metadata', 'after signing', signed);
-      log.debug("Leaving WsFederation.federationMetadata(). Signed.");
-      return signed;
-    } catch (e) {
-      log.debug("Caught in WsFederation.federationMetadata(): " +
-                ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-WSFED-0015') +
-                'the federation metadata could not be signed, serving it ' +
-                'unsigned: ' + e.message);
-      log.debug("Leaving WsFederation.federationMetadata(). Unsigned.");
-      return xml;
-    }
+        '</md:RoleDescriptor>';
+    log.debug("Leaving WsFederation.roleDescriptor().");
+    return out;
   }
 
   // ===========================================================================
-  // The mock relying party. NON-SPEC — a relying party is not part of an
-  // identity provider, and this one is here for two reasons that earn it:
-  //
-  //   * it is the default `wreply`, so a sign-in request that names no return
-  //     address has somewhere real to go instead of nowhere;
-  //   * it makes the profile testable from one service. Everything else here is
-  //     verified by the client under test; a sign-in response POSTed into the
-  //     void could not be checked at all without standing up a second service,
-  //     and the checks below are the ones that catch the mistakes this profile
-  //     makes (an unresolvable signature reference, a mangled wctx, an audience
-  //     naming the wrong realm).
-  //
-  // It is also the only thing in this service that VERIFIES a WS-Federation
-  // response, which makes it the counterpart of what /oid4vp/response is for
-  // presentations.
+  // VERIFYING THIS SERVICE'S OWN SIGNATURE. The mock relying party that used
+  // to verify a whole sign-in response here was deleted (#592); what is left
+  // is the signature check a test asks of an assertion this service signed.
   // ===========================================================================
 
   // Whether the assertion's signature is this service's, resolved against the
@@ -2004,175 +2034,18 @@ class WsFederation {
              canonicalization: result.canonicalization };
   }
 
-  // Every check, in the order a relying party would apply them, each with its
-  // own verdict. One boolean for the whole response would say "it failed" and
-  // nothing a person could act on, which is the same argument the OID4VP
-  // verifier makes.
-  /**
-   * Checks a sign-in response as the mock relying party: each check a relying
-   * party would apply, in order, with its own verdict.
-   *
-   * @param params - the posted `wa`, `wresult` and `wctx`
-   * @param realm - the relying party's realm, the expected audience
-   * @returns `{ checks, subject, claims, tokenType, assertionVersion, ok }`
-   */
-  verifySignInResponse(params, realm) {
-    const { config, firstByLocal, log, textByLocal } = this.deps;
-    log.debug("Entering WsFederation.verifySignInResponse().");
-    const checks = [];
-    const add = (name, ok, detail) => {
-      log.debug("Entering add().");
-      checks.push({ name: name, ok: !!ok, detail: detail });
-      log.debug("Leaving add().");
-    };
-    const result = { checks: checks, subject: '', claims: [], tokenType: '',
-                     assertionVersion: '', ok: undefined as boolean };
-
-    add('wa is wsignin1.0', String(params.wa || '') === 'wsignin1.0',
-        'wa=' + (params.wa || '(none)'));
-    const wresult = params.wresult ? String(params.wresult) : '';
-    add('wresult is present', !!wresult,
-        wresult ? wresult.length + ' characters' : 'nothing to verify');
-    if (!wresult) {
-      log.debug("Leaving WsFederation.verifySignInResponse(). There was no " +
-                "wresult.");
-      return result;
-    }
-
-    let doc = null;
-    try {
-      doc = new DOMParser().parseFromString(wresult, 'text/xml');
-    } catch (e) {
-      log.debug("Caught in WsFederation.verifySignInResponse(): " +
-                ((e && e.message) || e));
-      // Kept as a failed check rather than thrown: the page's job is to report
-      // every check, and "it is not XML" is a verdict like any other.
-      add('wresult parses as XML', false, e.message);
-      log.debug("Leaving WsFederation.verifySignInResponse(). wresult is not " +
-                "XML.");
-      return result;
-    }
-    const rstr = firstByLocal(doc, 'RequestSecurityTokenResponse') ||
-      (doc.documentElement &&
-       doc.documentElement.localName === 'RequestSecurityTokenResponse'
-        ? doc.documentElement : null);
-    add('wresult carries an RSTR', !!rstr,
-        rstr ? 'in the ' + (rstr.namespaceURI || '(no)') +
-        ' namespace' : 'no ' +
-            'RequestSecurityTokenResponse');
-    const tokenType = textByLocal(doc, 'TokenType');
-    result.tokenType = tokenType;
-    add('the RSTR names a token type', !!tokenType,
-        tokenType || 'no t:TokenType');
-
-    const assertion = firstByLocal(doc, 'Assertion');
-    add('it contains an assertion', !!assertion,
-        assertion ? 'in ' + assertion.namespaceURI : 'no saml:Assertion');
-    if (!assertion) {
-      log.debug("Leaving WsFederation.verifySignInResponse(). There is no " +
-                "assertion.");
-      return result;
-    }
-    // SAML 1.1 and 2.0 are told apart by namespace, not by the TokenType the
-    // sender claimed: the assertion is the thing that was signed, so it is the
-    // thing whose own statement about itself counts.
-    const isSaml11 =
-        assertion.namespaceURI === 'urn:oasis:names:tc:SAML:1.0:assertion';
-    result.assertionVersion = isSaml11 ? 'SAML 1.1' : 'SAML 2.0';
-
-    // The ELEMENT is named, not the id attribute. Both versions spell the
-    // element <Assertion>, so this no longer branches on the version at all —
-    // which is the second thing the shared verifier removed here. The reference
-    // is resolved through `AssertionID` for 1.1 and `ID` for 2.0 by the
-    // verifier itself, from the document rather than from an argument a caller
-    // had to get right in opposite directions for the two versions.
-    const verdict = this.verifyAssertionSignature(wresult, 'Assertion');
-    add('the assertion signature verifies against /sts/cert', verdict.ok,
-        verdict.ok ? (verdict.signatureMethod || 'signed') + ' over ' +
-                     (verdict.canonicalization || 'a canonicalization') + ', ' +
-                         'resolved through ' +
-                     (isSaml11 ? 'AssertionID' : 'ID')
-                   : verdict.why);
-
-    const issuer = isSaml11 ? (assertion.getAttribute('Issuer') || '') :
-                   textByLocal(assertion, 'Issuer');
-    add('the issuer is this service', issuer === config.value('saml.issuer'),
-        issuer || '(none)');
-
-    const conditions = firstByLocal(assertion, 'Conditions');
-    const audience = conditions ? textByLocal(conditions, 'Audience') : '';
-    add('the audience is this relying party', audience === realm,
-        'audience ' + (audience || '(none)') + ', expected ' + realm);
-
-    const notBefore = conditions ? conditions.getAttribute('NotBefore') : '';
-    const notOnOrAfter = conditions ? conditions.getAttribute('NotOnOrAfter') :
-                         '';
-    const now = Date.now();
-    const inWindow = !!notBefore && !!notOnOrAfter &&
-      Date.parse(notBefore) <= now && now < Date.parse(notOnOrAfter);
-    add('it is inside its validity window', inWindow,
-        (notBefore || '(no NotBefore)') + ' to ' + (notOnOrAfter || '(no ' +
-            'NotOnOrAfter)'));
-
-    // The wctx round trip. Its own state, so this relying party is the only
-    // thing that can check it — and an IdP that decoded and re-encoded it, or
-    // dropped it for being long, produces exactly the same symptom as a lost
-    // session.
-    const wctx = params.wctx ? String(params.wctx) : '';
-    const known = rpContexts.get(wctx);
-    add('wctx came back unaltered', !!known,
-        known ? 'the same value this relying party minted, byte for byte'
-              : (wctx ? 'this relying party did not mint "' + wctx + '" — it ' +
-                        'was altered, or this response was not started ' +
-                        'from ' + RP_PATH
-                      : 'no wctx came back'));
-    if (known) rpContexts.delete(wctx);
-
-    const nameEl = firstByLocal(assertion, 'NameIdentifier') ||
-                   firstByLocal(assertion, 'NameID');
-    result.subject = nameEl ? (nameEl.textContent || '').trim() : '';
-    add('the assertion names a subject', !!result.subject,
-        result.subject || '(none)');
-
-    const attributes = assertion.getElementsByTagNameNS('*', 'Attribute');
-    for (let i = 0; i < attributes.length; i++) {
-      const a = attributes[i];
-      // Two shapes, one list: SAML 1.1 splits the claim URI into a namespace
-      // and a name, SAML 2.0 has it whole in Name.
-      const uri = isSaml11
-        ? (a.getAttribute('AttributeNamespace') || '') + '/' + (a.getAttribute(
-            'AttributeName') || '')
-        : (a.getAttribute('Name') || '');
-      const valueEl = firstByLocal(a, 'AttributeValue');
-      result.claims.push({ uri: uri,
-                           value: valueEl ? (valueEl.textContent || '').trim() :
-                                  '' });
-    }
-    add('the claims arrived', result.claims.length > 0,
-        result.claims.length + ' ' +
-        'claim(s)');
-
-    result.ok = checks.every((c) => { return c.ok; });
-    log.debug("Leaving WsFederation.verifySignInResponse(). ok=" + result.ok +
-              ", " +
-        checks.length + " " +
-        "check(s).");
-    return result;
-  }
-
   // THE ROUTES, in the order this module registered them at load
   // (rule 1). Called once, by `common/protocol_stack.ts` through the
   // module's `registerRoutes(app)` (#50, R1).
   /**
-   * Registers `/wsfed`, `/wsfed/autopost.js`, the federation metadata and the
-   * mock relying party; called by the composition root at this module's place
-   * in the route order.
+   * Registers `/wsfed`, `/wsfed/autopost.js`, the federation metadata (the
+   * shared document and one per registered relying party); called by the
+   * composition root at this module's place in the route order.
    *
    * @param app - the express app
    */
   registerRoutes(app: RouteApp): void {
-    const { baseUrlOf, errorCodes, iso, log, logArtifact, parseBody, randomId,
-            xmlEscape } = this.deps;
+    const { baseUrlOf, errorCodes, log, logArtifact, parseBody } = this.deps;
     log.debug("Entering WsFederation.registerRoutes().");
 
     app.get('/wsfed/autopost.js', (req, res) => {
@@ -2200,181 +2073,38 @@ class WsFederation {
     app.get('/FederationMetadata/2007-06/FederationMetadata.xml',
             (req, res) => {
       log.debug("Entering the WS-Federation metadata endpoint.");
-      const base = baseUrlOf(req);
-      // no-store like every other document here that carries the signing key:
-      // in development mode the key is regenerated on every start, so a cached
-      // copy describes a key that is gone and the failure looks like a broken
-      // signature rather than a stale document.
-      res.status(200).type('application/xml').set('Cache-Control', 'no-store')
-         .send(this.federationMetadata(base));
+      this.sendMetadata(req, res);
       log.debug("Leaving the WS-Federation metadata endpoint.");
     });
 
-    app.get(RP_PATH, (req, res) => {
-      log.debug("Entering the mock relying party (GET).");
-      const base = baseUrlOf(req);
-      const realm = base + RP_PATH;
-
-      // A cleanup request arriving at the relying party, which is the direction
-      // wsignoutcleanup1.0 is actually defined for. A real RP drops its own
-      // session here; this one has none and says so rather than pretending.
-      if (String(req.query.wa || '') === 'wsignoutcleanup1.0') {
-        log.debug("Leaving the mock relying party. A cleanup request was " +
-                  "received.");
-        return this.sendPage(res, 200, 'Cleanup received — mock relying party',
-          '<h1>Cleanup received</h1><div class="ok">This relying party was ' +
-          'sent ' +
-          '<code>wa=wsignoutcleanup1.0</code> and would drop its own session ' +
-          'here.</div><p>It holds none: it verifies a sign-in response and ' +
-          'shows ' +
-          'it, and keeps nothing afterwards. The identity provider fetched ' +
-          'this ' +
-          'URL as a one-pixel image from its sign-out page, which is ' +
-          'front-channel logout.</p><p><a ' +
-          'href="' + RP_PATH + '">Start another ' +
-              'sign-in</a></p>');
+    // ONE REGISTERED RELYING PARTY'S OWN DOCUMENT (#494). The same
+    // document as the shared one — since #523 the entityID is the realm's one
+    // issuer for every relying party too. A segment naming no REGISTERED
+    // application is a 404 in BOTH modes, where SAML's `/saml2/metadata/{sp}`
+    // answers for anything in development. The 404 is sent here, text/plain and no-store, not Express's
+    // own body — the path IS routed (the root CLAUDE.md).
+    app.get(METADATA_PATH + '/:rp', (req, res) => {
+      log.debug("Entering the per-relying-party WS-Federation metadata " +
+                "endpoint.");
+      const rp = this.relyingPartyOfSegment(req.params.rp);
+      if (!rp) {
+        errorCodes.mark(res, 'STS-WSFED-0019');
+        res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+           .send('There is no WS-Federation relying party registered here ' +
+                 'as "' + String(req.params.rp) + '", so it has no ' +
+                 'metadata of its own: a wtrealm nobody registered is ' +
+                 'issued under the shared entityID, published at ' +
+                 '/FederationMetadata/2007-06/FederationMetadata.xml.\n');
+        log.debug("Leaving the per-relying-party WS-Federation metadata " +
+                  "endpoint. 404.");
+        return;
       }
-
-      // A fresh wctx per attempt, held for `wsfed.mockRpContextTtlMin` (thirty
-      // minutes by default) so the round-trip check can be made on the way
-      // back. This is the only state this relying party keeps.
-      // 128 bits (#65), section 13's floor for a value that looks up state.
-      const wctx = 'rp-' + randomId(16);
-      rpContexts.set(wctx,
-                     { realm: realm, expires: Date.now() +
-                      this.rpContextTtlMs() });
-      rpContexts.forEach((v, k) => {
-        if (v.expires < Date.now()) rpContexts.delete(k);
-      });
-
-      const request = (extra) => {
-        log.debug("Entering request().");
-        const usp = new URLSearchParams();
-        usp.set('wa', 'wsignin1.0');
-        usp.set('wtrealm', realm);
-        usp.set('wreply', base + RP_PATH);
-        usp.set('wctx', wctx);
-        usp.set('wct', iso(0));
-        Object.keys(extra || {}).forEach((k) => { usp.set(k, extra[k]); });
-        log.debug("Leaving request().");
-        return PASSIVE_PATH + '?' + usp.toString();
-      };
-      const inner = '<h1>Mock relying party</h1><p class="sub">NON-SPEC. A ' +
-        'relying party is not part of an identity provider — this one exists ' +
-        'so ' +
-        'the passive requestor profile can be exercised, and verified, ' +
-        'without a ' +
-        'second service.</p><p>Its realm is ' +
-        '<code>' + xmlEscape(realm) + '</code>, and it is also ' +
-        'the default <code>wreply</code>: a sign-in request that names no ' +
-        'return address is POSTed here.</p><h2>Start a sign-in</h2><ul><li>' +
-        '<a href="' + xmlEscape(request({})) + '">SAML 1.1 assertion in a ' +
-        '2005/02 RSTR</a> — the default, and what AD FS issues.</li><li><a ' +
-        'href="' + xmlEscape(request({ tokenType: 'saml2' })) + '">SAML ' +
-        '2.0 assertion</a></li><li><a ' +
-        'href="' + xmlEscape(request({ trust: '1.3' })) + '">SAML 1.1 in ' +
-        'a ws-sx 200512 RSTR Collection</a> — the other wrapper a relying ' +
-        'party ' +
-        'may be given.</li><li><a ' +
-        'href="' + xmlEscape(request({ wfresh: '0' })) + '">wfresh=0</a> ' +
-        '— forces the sign-in screen even when a session already exists.</li>' +
-        '<li><a href="' + xmlEscape(request({ wauth: AM_MULTIFACTOR })) +
-        '">wauth=multipleauthn</a> ' +
-        '— a session with one factor (a passwordless key included) is sent ' +
-        'to sign in again with a second factor required, and the assertion ' +
-        'says multipleauthn only once there really were two.</li><li><a ' +
-        'href="' + xmlEscape(request({ wauth: AM_HARDWARE_SAML11 })) +
-        '">wauth=HardwareToken</a> ' +
-        '— a session that used no security key is sent to sign in again, ' +
-        'and refused if it still used none.</li></ul><h2>Then</h2><ul><li><a ' +
-        'href="' + PASSIVE_PATH + '?wa=wsignout1.0&amp;wreply=' +
-        encodeURIComponent(base + RP_PATH) +
-        '">Sign out</a> — ends the session and sends a cleanup request to ' +
-        'every ' +
-        'relying party it signed into.</li><li><a ' +
-        'href="/FederationMetadata/2007-06/FederationMetadata.xml">The ' +
-        'federation metadata</a> this relying party would be configured ' +
-        'from.</li></ul><div class="meta"><div>wctx for this attempt: ' +
-        '<code>' + xmlEscape(wctx) + '</code>. ' +
-        'It is checked on the way back, because an identity provider that ' +
-        'decoded and re-encoded it produces the same symptom as a lost ' +
-        'session.</div></div>';
-      this.sendPage(res, 200, 'Mock relying party — WS-Federation', inner);
-      log.debug("Leaving the mock relying party (GET).");
+      this.sendMetadata(req, res, rp);
+      log.debug("Leaving the per-relying-party WS-Federation metadata " +
+                "endpoint.");
     });
 
-    app.post(RP_PATH, (req, res) => {
-      log.debug("Entering the mock relying party (POST).");
-      const base = baseUrlOf(req);
-      const realm = base + RP_PATH;
-      const params = parseBody(req);
-      logArtifact('WS-Federation sign-in response', 'as received by the mock ' +
-                                                    'relying party', params);
-      const verdict = this.verifySignInResponse(params, realm);
-
-      const rows = verdict.checks.map((c) => {
-        return '<tr><td>' + xmlEscape(c.name) + '</td><td class="' +
-          (c.ok ? 'pass">PASS' : 'fail">FAIL') +
-          '</td><td>' + xmlEscape(c.detail) + '</td></tr>';
-      }).join('');
-      const claimRows = verdict.claims.map((c) => {
-        return '<tr><td><code>' + xmlEscape(c.uri) + '</code></td><td>' +
-               xmlEscape(c.value) + '</td></tr>';
-      }).join('');
-      const inner = '<h1>Sign-in response received</h1>' +
-        '<p class="sub">Mock relying party at <code>' + xmlEscape(realm) +
-        '</code> — POSTed to, not redirected to, which is the whole shape of ' +
-        'this profile.</p>' +
-        (verdict.ok
-          ? '<div class="ok">Every check passed. ' +
-            xmlEscape(verdict.assertionVersion) +
-            ' assertion for <code>' + xmlEscape(verdict.subject) +
-            '</code>.</div>'
-          : '<div class="err">Not every check passed. Each one below says ' +
-            'which, and why — a single verdict for the whole response would ' +
-            'say "it failed" and nothing anybody could act on.</div>') +
-        '<h2>Checks</h2><table><thead><tr><th>Check</th><th>Verdict</th><th>' +
-        'Detail</th></tr></thead><tbody>' + rows + '</tbody></table>' +
-        (claimRows
-          ? '<h2>Claims</h2><table><thead><tr><th>Claim ' +
-            'URI</th><th>Value</th></tr></thead><tbody>' +
-            claimRows + '</tbody></table>'
-          : '') +
-        '<h2>wresult, as it arrived</h2><pre>' +
-        xmlEscape(params.wresult || '(none)') + '</pre><p><a ' +
-        'href="' + RP_PATH + '">Start another sign-in</a> &middot; ' +
-        '<a href="' + PASSIVE_PATH + '?wa=wsignout1.0&amp;wreply=' +
-        encodeURIComponent(base + RP_PATH) +
-        '">Sign out</a></p><div class="meta"><div>This relying party keeps ' +
-        'no session. It verifies what it was sent and shows it, which is all ' +
-        'a mock relying party can honestly claim to do.</div></div>';
-      // 200 whatever the verdict: the POST was answered, and the verdict is the
-      // document. A 400 here would be this relying party reporting on the
-      // identity provider's behaviour with a status code the browser attributes
-      // to itself.
-      if (!verdict.ok) {
-        errorCodes.mark(res, 'STS-WSFED-0016');
-      }
-      this.sendPage(res, 200, 'Sign-in response — mock relying party', inner);
-      log.debug("Leaving the mock relying party (POST). ok=" + verdict.ok);
-    });
     log.debug("Leaving WsFederation.registerRoutes().");
-  }
-
-  // THE STARTUP HALF OF issuerDisagreement(): once, at require time, for the
-  // process-wide values. A realm's own overrides are reported on its
-  // description page, because at require time no realm is ambient.
-  /**
-   * Logs `issuerDisagreement()` once, for the process-wide values.
-   */
-  warnAtStartup(): void {
-    const { log } = this.deps;
-    log.debug("Entering WsFederation.warnAtStartup().");
-    const disagreement = this.issuerDisagreement();
-    if (disagreement) {
-      log.warn('wsfed: ' + disagreement);
-    }
-    log.debug("Leaving WsFederation.warnAtStartup().");
   }
 }
 
@@ -2415,10 +2145,9 @@ export = {
   installInstance: (instance: WsFederation): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SAML11_TOKEN_TYPE: SAML11_TOKEN_TYPE,
-  issuerDisagreement: slot.forward('issuerDisagreement'),
   SAML2_TOKEN_TYPE: SAML2_TOKEN_TYPE,
   federationMetadata: slot.forward('federationMetadata'),
-  verifySignInResponse: slot.forward('verifySignInResponse'),
+  roleDescriptor: slot.forward('roleDescriptor'),
   verifyAssertionSignature: slot.forward('verifyAssertionSignature'),
   // The cleanup requests one session is owed. Read by ../logout/logout.ts so
   // that a global sign-out sends exactly what wsignout1.0 sends — see the block

@@ -1,6 +1,6 @@
 <?php
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // THE SIMPLESAMLPHP PEER'S CONFIGURATION (#191): the release's own
 // config.php.dist, with what an interoperability run needs laid over it.

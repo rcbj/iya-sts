@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -120,7 +120,6 @@
 // service can detect several of them and fix none.
 // ===========================================================================
 
-const crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
@@ -303,7 +302,8 @@ const REQUIREMENTS = [
           'anything else is refused before there is an error to report ' +
           '(redirect-exact-match). What the BCP suggests beyond that — URI ' +
           'analytics, reputation of the content behind the URI — is not ' +
-          'something a mock can do or should pretend to: a service that ' +
+          'something this service can do or should pretend to: a service ' +
+          'that ' +
           'claimed to have judged the credibility of a destination would be ' +
           'teaching a client author that somebody had.' },
 
@@ -388,7 +388,7 @@ const REQUIREMENTS = [
       log.debug("Leaving tls-everywhere.note().");
       return 'NOT ENFORCED: global.https is off, so this service answers ' +
              'OAuth over plain HTTP. That is the default because it is a ' +
-             'mock reached from a browser on a laptop and a self-signed ' +
+             'service reached from a browser on a laptop and a self-signed ' +
              'certificate regenerated every start is a real cost to pay ' +
              'before anything works. Turn global.https on — which RFC 9700 ' +
              'mode does by default — and every endpoint moves to TLS ' +
@@ -409,8 +409,8 @@ const REQUIREMENTS = [
           'disagreed about whether a forwarded header was believable — and ' +
           'the htu one had teeth, because a client that chooses the expected ' +
           'htu can replay a proof captured at another endpoint by naming it. ' +
-          'GET /tls/forwarded shows what a request carried and what was ' +
-          'believed of it.' },
+          'Monitoring → TLS connection (GET /admin-api/tls-connection) shows ' +
+          'what a request carried and what was believed of it.' },
 
   { id: 'no-certificate-header', section: '2.6', level: 'MUST NOT',
     appliesTo: 'authorization server', enforced: 'always',
@@ -424,7 +424,8 @@ const REQUIREMENTS = [
           'read the certificate off the TLS handshake itself. The cost is ' +
           'real and is stated rather than hidden — a proxy terminating mTLS ' +
           'in front of this service cannot pass the certificate through — ' +
-          'and /tls/forwarded lists the ones a request carried so that ' +
+          'and Monitoring → TLS connection lists the ones a request carried ' +
+          'so that ' +
           'ignoring them is visible rather than silent.' },
 
   { id: 'proxy-sanitizes-headers', section: '2.6', level: 'MUST',
@@ -438,7 +439,8 @@ const REQUIREMENTS = [
           'lets any client reach past it. What this service can do about it ' +
           'is not believe those headers unless told to ' +
           '(proxy-headers-not-trusted) and show what arrived ' +
-          '(/tls/forwarded); it cannot make the hop in front of it behave. ' +
+          '(Monitoring → TLS connection); it cannot make the hop in front of ' +
+          'it behave. ' +
           'The same is true of protecting the proxy-to-application ' +
           'connection against eavesdropping, injection and replay — that is ' +
           'a deployment decision about a link this process has no view of.' },
@@ -455,7 +457,8 @@ const REQUIREMENTS = [
           'redirectUriProblem()): it is not named for a domain, and it is ' +
           'what localhost:3000/cb typed without http:// parses as. Until ' +
           'that date this note said a private-use scheme was refused whether ' +
-          'the mode was on or off, which was a limitation of the mock rather ' +
+          'the mode was on or off, which was a limitation of this service ' +
+          'rather ' +
           'than a position on the specification.' },
 
   // --- section 2.1.1 — the authorization code grant -----------------------
@@ -475,7 +478,8 @@ const REQUIREMENTS = [
     note: 'A SHOULD is not refused: a registered confidential client that ' +
           'omits code_challenge is answered, and the omission is logged and ' +
           'counted. Refusing it would make this server stricter than the ' +
-          'specification, which is its own kind of wrong for a mock a client ' +
+          'specification, which is its own kind of wrong for a service a ' +
+          'client ' +
           'is calibrated against.' },
 
   { id: 'pkce-s256', section: '2.1.1', level: 'SHOULD',
@@ -530,8 +534,8 @@ const REQUIREMENTS = [
     appliesTo: 'client (detected by this server)', enforced: 'detected',
     title: 'code_challenge and nonce must be transaction-specific',
     note: 'A real authorization server cannot generally tell a reused ' +
-          'challenge from a fresh one. This one can, because it is a mock ' +
-          'and remembers: a code_challenge or nonce presented again AFTER ' +
+          'challenge from a fresh one. This one can, because it remembers: a ' +
+          'code_challenge or nonce presented again AFTER ' +
           'the code issued for its earlier presentation was redeemed is a ' +
           'second transaction reusing a first transaction\'s value, and is ' +
           'refused. Presenting it again BEFORE that — a reloaded browser ' +
@@ -669,8 +673,8 @@ const REQUIREMENTS = [
           'window a proof is accepted in, and a repeat is refused — so a ' +
           'proof captured off the wire cannot be used a second time even ' +
           'within its own freshness window. Turning on the server-supplied ' +
-          'nonce (/dpop/nonce-mode) narrows that window to one this server ' +
-          'chose. A certificate binding needs no replay defence of its own: ' +
+          'nonce (the per-realm setting oauth2.dpopNonceRequired) narrows ' +
+          'that window to one this server chose. A certificate binding needs no replay defence of its own: ' +
           'the proof is the TLS handshake, which cannot be replayed without ' +
           'the private key.' },
 
@@ -869,12 +873,16 @@ const REQUIREMENTS = [
           '`aud` of a token signed by somebody else is a string this service ' +
           'cannot check and was never the audience of anyway, the same ' +
           'judgement made about a foreign cnf. And what counts as "this ' +
-          'resource server" is the PATH rather than the whole URL: every ' +
-          'token minted here carries <base>/resource where the base is ' +
-          'whatever URL the minting request arrived on, so a whole-URL ' +
-          'comparison would refuse a token minted at localhost and presented ' +
-          'at 127.0.0.1 — while what the check is FOR, a token narrowed to ' +
-          'somebody else by `resource`, always has a different path.' },
+          'resource server" is the WHOLE URL (RFC 9068 section 4 step 4): ' +
+          'an `aud` is accepted only when it is, entire, the default ' +
+          'resource indicator <base>/resource of an authorization server ' +
+          'this process publishes at the address the request arrived on — ' +
+          'the default one or a named one under /{id}. So a token minted at ' +
+          'localhost and presented at 127.0.0.1 is refused: an address is ' +
+          'part of an identifier, and global.publicBaseUrl is how a ' +
+          'deployment reached under several names gives this service one. ' +
+          'It compared the PATH until RFC 9068 was applied in every mode, ' +
+          'which accepted a token narrowed to somebody else\'s /resource.' },
 
   { id: 'least-privilege-scope', section: '2.3', level: 'SHOULD',
     appliesTo: 'authorization server and client', enforced: 'detected',
@@ -1045,7 +1053,8 @@ const REQUIREMENTS = [
           'ignores the metadata is caught. So every surface computes the ' +
           'DRIFT: which overridden members disagree with the document this ' +
           'service would build, and which removals hide something real. A ' +
-          'mock that let somebody publish a misleading document is useful; ' +
+          'service that let somebody publish a misleading document is ' +
+          'useful; ' +
           'one that did it quietly is a trap.' },
 
   { id: 'no-client-id-confusion', section: '2.6, 4.13', level: 'SHOULD NOT',
@@ -1218,15 +1227,14 @@ const REQUIREMENTS = [
 
   { id: 'framing-device-pages', section: '4.14', level: 'MUST',
     appliesTo: 'authorization server', enforced: 'always',
-    title: 'And the device authorization pages, if there were any',
-    note: 'There are none: this service implements no device authorization ' +
-          'grant, so there is no user_code page to frame. It is a row rather ' +
-          'than an omission because the section names those pages and a ' +
-          'reader checking this table against it should find the answer ' +
-          'rather than a gap. If that grant is ever added, its pages are ' +
-          'covered by the two rows above without anybody doing anything — ' +
+    title: 'And the device authorization pages',
+    note: 'RFC 8628\'s user_code page is /portal/device (#150, off by ' +
+          'default behind oauth2.deviceAuthorization). It relaxes nothing, ' +
+          'so it carries the framing clauses of the two rows above like ' +
+          'every other page, without anybody having done anything for it — ' +
           'which is the point of the policy being a service-wide default ' +
-          'that a relaxation cannot weaken.' },
+          'that a relaxation cannot weaken. Until #276 this row said there ' +
+          'was no such page; the grant had been built in #150.' },
 
   // --- section 4.3 — token leakage through the browser --------------------
   { id: 'no-token-in-query', section: '2.6, 4.3.2', level: 'MUST NOT',
@@ -1311,7 +1319,7 @@ const REQUIREMENTS = [
           'token it issues, in memory and in full, and prints them on ' +
           '/admin/tokens: that is what makes the console able to show a ' +
           'person the JWT they just received, and it is the same decision ' +
-          '/krb5/principals makes about the Kerberos passwords. A real ' +
+          'the Kerberos password settings make. A real ' +
           'resource server must do the opposite. What IS true: nothing here ' +
           'writes a token to disk, the audit log redacts access_token and ' +
           'eight other query keys so a token never reaches a row, and the ' +
@@ -1935,7 +1943,9 @@ function maxTransactions() {
 // this behaves as the plain Map it replaced. See common/realms.js.
 // 'pkce:x' / 'nonce:x' -> record
 const transactions = realms.map({ persist: 'oauth2_bcp.transactions',
-                                  retain: 'age' });
+                                  retain: 'age',
+                                  // #333: the sweep's `forget`, ms.
+                                  expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleTransactions() {
   log.debug("Entering forgetStaleTransactions().");
@@ -2468,20 +2478,38 @@ function checkClientRegistration(metadata) {
 // OAuth 2.1's PKCE exemption all ask it — and they were two inline copies of
 // one expression until 2026-09-13, which is the shape that disagrees the first
 // time a method is added.
+//
+// SEVERAL DECLARED METHODS (2026-10-01): asked about ONE method — the one a
+// request presented, `clientAuth.methodFor()` — where there is a request,
+// and otherwise about any of them, which is what "can this client
+// authenticate at all" means to the PKCE exemption.
 /**
  * Tells whether a confidential client has anything on file to check its
  * declared method against.
  *
  * @param registered - the client's configuration
+ * @param asked - one declared method to ask about; every declared method
+ *   when omitted
  * @returns true when it has
  */
-function credentialOnFile(registered) {
+function credentialOnFile(registered, asked) {
   log.debug("Entering credentialOnFile().");
   if (!registered || !isConfidential(registered)) {
     log.debug("Leaving credentialOnFile(). Not a confidential client.");
     return false;
   }
-  const method = String(registered.token_endpoint_auth_method).trim();
+  if (asked === undefined) {
+    const every = [].concat(registered.token_endpoint_auth_methods &&
+                            registered.token_endpoint_auth_methods.length
+      ? registered.token_endpoint_auth_methods
+      : [registered.token_endpoint_auth_method]);
+    const any = every.some(function (one) {
+      return credentialOnFile(registered, String(one || '').trim());
+    });
+    log.debug("Leaving credentialOnFile(). Any of " + every.length + ".");
+    return any;
+  }
+  const method = String(asked || '').trim();
   const have =
     (clientAuth.SYMMETRIC_METHODS.indexOf(method) >= 0 &&
      registered.client_secret) ||
@@ -2519,7 +2547,7 @@ function credentialOnFile(registered) {
 // `private_key_jwt` assertion may be signed with one of the eleven
 // post-quantum algorithms this service advertises for client authentication —
 // seconds of computation on the thread that owns every listener here. See
-// common/worker.js. What this function DECIDES is unchanged: the policy is
+// common/pq_native.js. What this function DECIDES is unchanged: the policy is
 // still this module's and the mechanics are still client_auth.js's.
 // ---------------------------------------------------------------------------
 // WHAT THIS REQUEST DEMONSTRATED ABOUT THE CLIENT — AN OBSERVATION, NEVER A
@@ -2609,8 +2637,12 @@ async function observeClientAuthentication(opts) {
                   'token_endpoint_auth_method="none", so it has no ' +
                   'credential to present and presenting none is correct.' };
   }
-  const method = String(registered.token_endpoint_auth_method).trim();
-  const haveCredential = credentialOnFile(registered);
+  // WHICH DECLARED METHOD THIS REQUEST PRESENTED (2026-10-01): an entry may
+  // declare several, and the one verified is the one on the wire.
+  const method = clientAuth.methodFor(registered, {
+    request: opts.request, clientSecret: opts.clientSecret,
+    assertion: opts.assertion, assertionType: opts.assertionType });
+  const haveCredential = credentialOnFile(registered, method);
   if (!haveCredential) {
     log.debug("Leaving observeClientAuthentication(). Confidential with " +
               "nothing on file.");
@@ -2631,6 +2663,9 @@ async function observeClientAuthentication(opts) {
     // audience (#229).
     issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
+    // Every method the entry declares, for a refusal that has to say what
+    // to send (2026-10-02).
+    declaredMethods: clientAuth.declaredMethodsOf(registered),
     assertion: opts.assertion,
     assertionType: opts.assertionType,
     clientSecret: registered.client_secret,
@@ -2669,6 +2704,25 @@ async function observeClientAuthentication(opts) {
            why: 'it authenticated with ' + method + '.' };
 }
 
+// WHAT THE ENTRY DECLARES, as a refusal says it (2026-10-02): every method
+// where it declares several, so the sentence does not name the first alone.
+/**
+ * Names the token endpoint authentication method(s) a client declares.
+ *
+ * @param registered - the client's configuration
+ * @param method - the method being verified, used where none is declared
+ * @returns `token_endpoint_auth_method=x`, or
+ *   `token_endpoint_auth_methods x, y`
+ */
+function declaredText(registered, method) {
+  log.debug("Entering declaredText().");
+  const declared = clientAuth.declaredMethodsOf(registered);
+  log.debug("Leaving declaredText().");
+  return declared.length > 1
+    ? 'token_endpoint_auth_methods ' + declared.join(', ')
+    : 'token_endpoint_auth_method=' + (declared[0] || method);
+}
+
 /**
  * Refuses, in RFC 9700 mode, a confidential client that did not authenticate
  * with the method it declared; a client with nothing on file is let through.
@@ -2690,7 +2744,11 @@ async function checkClientAuthentication(opts) {
     log.debug("Leaving checkClientAuthentication(). The client is public.");
     return { ok: true };
   }
-  const method = String(registered.token_endpoint_auth_method).trim();
+  // WHICH DECLARED METHOD THIS REQUEST PRESENTED (2026-10-01): an entry may
+  // declare several, and the one verified is the one on the wire.
+  const method = clientAuth.methodFor(registered, {
+    request: opts.request, clientSecret: opts.clientSecret,
+    assertion: opts.assertion, assertionType: opts.assertionType });
 
   // A confidential client with NOTHING ON FILE to check against is not refused:
   // there is nothing to compare, and inventing a refusal for one would be
@@ -2698,7 +2756,7 @@ async function checkClientAuthentication(opts) {
   // seen alone. It happens for an application created by hand and given a
   // method but no credential, which is a half-configured client rather than a
   // wrong one, and the log line says which.
-  const haveCredential = credentialOnFile(registered);
+  const haveCredential = credentialOnFile(registered, method);
   if (!haveCredential) {
     log.warn('RFC 9700 section 2.5: client "' + (opts.clientId || '(unnamed)') +
              '" ' +
@@ -2729,6 +2787,9 @@ async function checkClientAuthentication(opts) {
     // audience (#229).
     issuer: opts.issuer || '',
     presentedSecret: opts.clientSecret,
+    // Every method the entry declares, for a refusal that has to say what
+    // to send (2026-10-02).
+    declaredMethods: clientAuth.declaredMethodsOf(registered),
     assertion: opts.assertion,
     assertionType: opts.assertionType,
     clientSecret: registered.client_secret,
@@ -2763,7 +2824,7 @@ async function checkClientAuthentication(opts) {
              requirement: 'client-authentication',
              description: 'RFC 9700 section 2.5: this client\'s entry in the ' +
                           'application registry declares ' +
-                          'token_endpoint_auth_method=' + method + ', ' +
+                          declaredText(registered, method) + ', ' +
                           'so it must authenticate — ' +
                           'and ' + checked.description };
   }
@@ -2916,6 +2977,8 @@ function maxRefreshTokens() {
 // record back as unrotated, which would make the replay it marks undetectable.
 const refreshTokens = realms.map({
   persist: 'oauth2_bcp.refreshTokens', tombstone: true,
+  // #333: the sweep's `forget`, ms.
+  expiresAt: realms.expiryField('forget', 1),
   mergeRow: function (mine, theirs) {
     log.debug("Entering mergeRow().");
     log.debug("Leaving mergeRow().");
@@ -2933,7 +2996,12 @@ const refreshTokens = realms.map({
 // this behaves as the plain Map it replaced. See common/realms.js.
 // family -> { clientId, forget, lastUsedAt } — no `members` array since #46
 // (see `membersOf()`); a row restored from an older build may still carry one.
-const refreshFamilies = realms.map({ persist: 'oauth2_bcp.refreshFamilies' });
+// `expiresAt` (#333): the family's absolute `forget`, ms, moved forward at
+// every issuance — the idle rule refuses earlier but deletes nothing.
+const refreshFamilies = realms.map({
+  persist: 'oauth2_bcp.refreshFamilies',
+  expiresAt: realms.expiryField('forget', 1)
+});
 
 function forgetStaleRefreshTokens() {
   log.debug("Entering forgetStaleRefreshTokens().");
@@ -3142,7 +3210,9 @@ function noteRefreshIssued(jti, parentJti, clientId, parentFamily) {
 // ---------------------------------------------------------------------------
 // refresh jti -> { family, access, clientId, forget }
 const grantTokens = realms.map({ persist: 'oauth2_bcp.grantTokens',
-                                 tombstone: true });
+                                 tombstone: true,
+                                 // #333: the sweep's `forget`, ms.
+                                 expiresAt: realms.expiryField('forget', 1) });
 
 function forgetStaleGrantTokens() {
   log.debug("Entering forgetStaleGrantTokens().");
@@ -3796,6 +3866,33 @@ function noteTokenBinding(opts) {
  * @returns `{ ok: true }`, or `{ ok: false, errorCode, error, requirement,
  *   description }` with `revoke`
  */
+// ---------------------------------------------------------------------------
+// WHETHER AN AUTHORIZATION CODE MAY OUTLIVE A FAILED PRESENTATION (#424).
+//
+// rcbj, 2026-10-02: "The caller can only submit a request with that
+// authorization code once. Then, they have to start the flow / grant over
+// again." So by default a code is SPENT at its first presentation, whatever
+// that request's outcome. `oauth2.codeReplayIdempotent` (off by default)
+// brings back the old leniency — a refused request leaves the code redeemable
+// and an identical repeat is answered with the same tokens — and, like the
+// relaxation below, never in this mode (and so never in OAuth 2.1, FAPI or
+// product mode, which imply it).
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether authorization code redemption is relaxed: a refused Token
+ * Request leaves the code redeemable, and an identical repeat is answered
+ * with the same tokens.
+ *
+ * @returns true only outside this mode with oauth2.codeReplayIdempotent on
+ */
+function codeRedemptionRelaxed() {
+  log.debug("Entering codeRedemptionRelaxed().");
+  const relaxed = !enabled() &&
+    config.value('oauth2.codeReplayIdempotent') === true;
+  log.debug("Leaving codeRedemptionRelaxed(). " + relaxed);
+  return relaxed;
+}
+
 function checkCodeReplay(opts) {
   log.debug("Entering checkCodeReplay().");
   // RFC 6749 section 4.1.2's MUST, in every mode since #187: the relaxation
@@ -4169,7 +4266,8 @@ function state() {
         (mainPortIsTls() ? 'https.' : 'http, because global.https has been ' +
                                       'turned off.')
       : 'Nothing below is being enforced. This service behaves as the ' +
-        'permissive mock it is, which is the default. Set oauth2.rfc9700 to ' +
+        'permissive service it is, which is the default. Set oauth2.rfc9700 ' +
+        'to ' +
         'turn the mode on.',
     // WHICH FLAG turned it on. `oauth2.oauth21` implies this mode, and without
     // this member a realm carrying only that one would read here as enforcing
@@ -4303,6 +4401,7 @@ module.exports = {
   rememberTransactionValues: rememberTransactionValues,
   checkTokenRequest: checkTokenRequest,
   checkCodeReplay: checkCodeReplay,
+  codeRedemptionRelaxed: codeRedemptionRelaxed,
   noteRedeemed: noteRedeemed,
   applyToMetadata: applyToMetadata,
   state: state

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -57,7 +57,8 @@
 // says the binding is to the certificate itself and explicitly permits a
 // self-signed one — the proof is that the same key completed the handshake, not
 // that a CA vouched for it. Refusing an unverified certificate here would break
-// exactly the case the truststore at `/tls/trust` exists to make reachable.
+// exactly the case the truststore (`/admin/tls/trust`) exists to make
+// reachable.
 //
 // ---------------------------------------------------------------------------
 // THE THUMBPRINT IS OF THE DER, AND THAT IS THE WHOLE OF THE INTEROPERABILITY.
@@ -79,7 +80,6 @@
 // another caller nobody updated.
 // ===========================================================================
 
-const crypto = require('crypto');
 // One thumbprint computation for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const { log, b64u } = require('../common/helpers');
@@ -137,7 +137,8 @@ function peerCertificate(req) {
 // reading a constant.
 //
 // THAT IS NO LONGER TRUE. The main listener joined the client truststore that
-// `POST /tls/trust` fills, so a certificate that chains to an anchor is now
+// `POST /admin-api/tls/trust/add` fills, so a certificate that chains to an
+// anchor is now
 // distinguishable from one that chains to nothing. RFC 8705 binding does not
 // care about the difference — it binds to the certificate and section 3
 // explicitly permits a self-signed one — but anything that RESOLVES a
@@ -243,8 +244,8 @@ function peerVerified(req) {
     verified: false, presented: true, error: error,
     why: 'A client certificate was presented and it did NOT verify' +
          (error ? ' (' + error + ')' : '') + '. The commonest cause is that ' +
-         'nothing in the truststore issued it — POST the issuing CA to ' +
-         '/tls/trust — and the next commonest is a chain sent without its ' +
+         'nothing in the truststore issued it — add the issuing CA through ' +
+         '/admin/tls/trust or POST /admin-api/tls/trust/add — and the next commonest is a chain sent without its ' +
          'intermediates, which looks identical from the client side. The ' +
          'certificate is still thumbprinted and still binds a token: RFC ' +
          '8705 section 3 binds to the certificate rather than to anybody\'s ' +
@@ -323,6 +324,42 @@ function presentedThumbprint(req) {
   log.debug("Entering presentedThumbprint().");
   log.debug("Leaving presentedThumbprint().");
   return thumbprintOf(peerCertificate(req));
+}
+
+// THE KEY UNDER THE CERTIFICATE (#432 follow-up): SHA-256 over the
+// presented certificate's SubjectPublicKeyInfo DER, base64url — what
+// `crypto.certificateSpkiThumbprint()` gives a device's x509 key. `x5t#S256`
+// names the CERTIFICATE, which changes when the same key is re-certified or
+// certified by another CA; this names the KEY, so a compromised device's
+// key finds a token bound to any certificate over it. The token register
+// records it beside `x5t`; nothing puts it in a token.
+/**
+ * Returns the SubjectPublicKeyInfo SHA-256 of the certificate this request
+ * arrived with.
+ *
+ * @param req - the request
+ * @returns the thumbprint, or '' for none (or a certificate that will not
+ *   parse)
+ */
+function presentedKeyThumbprint(req) {
+  log.debug("Entering presentedKeyThumbprint().");
+  const cert = peerCertificate(req);
+  if (!cert) {
+    log.debug("Leaving presentedKeyThumbprint(). No certificate.");
+    return '';
+  }
+  let out = '';
+  try {
+    out = stsCrypto.certificateSpkiThumbprint(cert.raw.toString('base64'));
+  } catch (e) {
+    // A certificate whose key cannot be read is matched by its x5t#S256
+    // alone.
+    log.debug("Caught in presentedKeyThumbprint(): " +
+              ((e && e.message) || e));
+    out = '';
+  }
+  log.debug("Leaving presentedKeyThumbprint().");
+  return out;
 }
 
 // RFC 8705 section 3: the confirmation claim to put on an issued token, or
@@ -511,8 +548,13 @@ function declaredRefusal(opts) {
     log.debug("Leaving declaredRefusal(). No entry to have declared anything.");
     return null;
   }
-  const method = String(registered.token_endpoint_auth_method || '').trim();
   const observation = o.observation || {};
+  // THE METHOD THIS REQUEST USED, where an entry declares several
+  // (2026-10-01): the observation's, which `client_auth.methodFor()` chose
+  // from what was presented. A client that may present a certificate OR a
+  // secret and sent the secret is held to the secret, not refused here.
+  const method = String(observation.method ||
+                        registered.token_endpoint_auth_method || '').trim();
   if (CERTIFICATE_METHODS.indexOf(method) >= 0 && !observation.authenticated) {
     log.debug("Leaving declaredRefusal(). The declared method did not " +
               "authenticate.");
@@ -614,6 +656,7 @@ module.exports = {
   issuedIdentityOf: issuedIdentityOf,
   thumbprintOf: thumbprintOf,
   presentedThumbprint: presentedThumbprint,
+  presentedKeyThumbprint: presentedKeyThumbprint,
   confirmationFor: confirmationFor,
   boundThumbprintOf: boundThumbprintOf,
   checkBinding: checkBinding,

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -199,11 +199,11 @@ function checkRegister(t) {
 // ---------------------------------------------------------------------------
 // 2. ONE NAME, TWO REALMS, TWO PEOPLE.
 //
-// The register is keyed on the local name and this service checks no password,
-// so `alice` in two realms is two entries in two directory subtrees. The
-// counts have to be separate as well as the rows: a shared record found by key
-// would pass the row assertions above and still show one realm the other's
-// authentication count.
+// The register is keyed on the local name and this service, in development
+// mode, checks no password, so `alice` in two realms is two entries in two
+// directory subtrees. The counts have to be separate as well as the rows: a
+// shared record found by key would pass the row assertions above and still
+// show one realm the other's authentication count.
 // ---------------------------------------------------------------------------
 function checkSameName(t) {
   log.debug("Entering checkSameName().");

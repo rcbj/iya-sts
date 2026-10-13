@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -171,7 +171,6 @@
 // ---------------------------------------------------------------------------
 
 import http = require('http');
-import nodeCrypto = require('crypto');
 import https = require('https');
 import stsCrypto = require('../common/crypto');
 import pki = require('../common/pki');
@@ -205,7 +204,6 @@ interface PushedRequests {
 
 interface RequestObjectDeps {
   http: typeof http;
-  nodeCrypto: typeof nodeCrypto;
   https: typeof https;
   stsCrypto: typeof stsCrypto;
   pki: typeof pki;
@@ -256,6 +254,16 @@ const MAX_CACHED_REQUEST_URIS = 256;
 // Described to `/admin/caches` (#74, rule 3ap). Only lookups made while the
 // cache is on are counted: with `oauth2.requestUriCacheS` at 0 a fetch is not
 // a miss, because nothing was asked of the cache.
+// The lifetime sentences below, as templates and a sentence (#543):
+// `lifetime()` picks and fills one and `cache_registry.js`'s `prose()` reads
+// them from the descriptor, so an answer to `GET /admin-api/caches` can be
+// refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: 'oauth2.requestUriCacheS ({{seconds}} s) after the fetch, per ' +
+    'realm; the oldest goes first when full.',
+  lifetimeOff: 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.'
+});
+
 const requestUriCount = cacheRegistry.register({
   name: 'oauth2.request-uri',
   title: 'Fetched request objects',
@@ -270,12 +278,14 @@ const requestUriCount = cacheRegistry.register({
   },
   bound: 'Enforced: ' + MAX_CACHED_REQUEST_URIS + ' fetched request objects ' +
     'per realm, the oldest dropped and fetched again when next used.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
     const seconds = Number(config.value('oauth2.requestUriCacheS')) || 0;
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
     return seconds > 0
-      ? 'oauth2.requestUriCacheS (' + seconds + ' s) after the fetch, per ' +
-        'realm; the oldest goes first when full.'
-      : 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.';
+      ? serverProse.fill(CACHE_SENTENCES.lifetime, { seconds: seconds })
+      : CACHE_SENTENCES.lifetimeOff;
   },
   // A fetched Request Object past `until`, which `contentOf()` would fetch
   // again (#49 P5).
@@ -369,7 +379,6 @@ class RequestObject {
     helpers.log.debug("Leaving RequestObject.defaultDeps().");
     return {
       http: http,
-      nodeCrypto: nodeCrypto,
       https: https,
       stsCrypto: stsCrypto,
       pki: pki,
@@ -422,15 +431,30 @@ class RequestObject {
    * @param profile - what the selected authorization server publishes
    * @returns true when one is required
    */
-  signedRequired(client: Json, profile: Json): Json {
+  signedRequired(client: Json, profile: Json, clientId?: string): Json {
     const { config, log } = this.deps;
     log.debug("Entering RequestObject.signedRequired().");
     // FAPI 1.0 Advanced requires one of every client (Part 2 section 5.2.2
     // item 1, #139).
-    const required = !!config.value('oauth2.requireSignedRequestObject') ||
-                     !!(client && client.require_signed_request_object) ||
-                     !!(profile && profile.requireSigned === true) ||
-                     this.deps.fapi.requiresSignedRequestObject();
+    const explicit = !!config.value('oauth2.requireSignedRequestObject') ||
+                     !!(client && client.require_signed_request_object);
+    const byProfile = !!(profile && profile.requireSigned === true) ||
+                      this.deps.fapi.requiresSignedRequestObject();
+    // THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT FROM WHAT A PROFILE DEMANDS
+    // (#568): the static console and the static portal sign in from a
+    // browser, as public clients, and hold no registered key a request object
+    // could be signed with — so FAPI 1.0 Advanced or FAPI 2.0 Message
+    // Signing, which demand one of every client, would leave such a realm
+    // with no console and no portal. It is the confidential-only rule's
+    // exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT, #446) read for this
+    // requirement too, and on the same terms: those two clients do not
+    // conform to the profile in that realm, and say so. An operator's own
+    // `oauth2.requireSignedRequestObject`, or the entry's own flag, still
+    // binds them.
+    // The client view carries no `client_id`, so a caller names it.
+    const exempt = !!client && this.deps.fapi.publicClientExempt(
+      clientId || client.client_id, client.token_endpoint_auth_method);
+    const required = explicit || (byProfile && !exempt);
     log.debug("Leaving RequestObject.signedRequired(). " + required);
     return required;
   }
@@ -641,7 +665,7 @@ class RequestObject {
   // `symmetricKeyFor()`'s; see SYMMETRIC_KEY_BYTES above.
   // -------------------------------------------------------------------------
   private symmetricKeyFor(alg: Json, enc: Json, secret: Json): Json {
-    const { nodeCrypto, log } = this.deps;
+    const { stsCrypto, log } = this.deps;
     log.debug("Entering RequestObject.symmetricKeyFor(). " +
               "alg=" + alg + ", enc=" + enc);
     if (/^PBES2-/.test(alg)) {
@@ -658,9 +682,8 @@ class RequestObject {
     }
     const hash = bytes <= 32 ? 'sha256' : bytes <= 48 ? 'sha384' : 'sha512';
     log.debug("Leaving RequestObject.symmetricKeyFor().");
-    return nodeCrypto.createHash(hash)
-      .update(Buffer.from(String(secret), 'utf8'))
-      .digest().subarray(0, bytes);
+    return stsCrypto.digest(hash, Buffer.from(String(secret), 'utf8'))
+      .subarray(0, bytes);
   }
 
   private decrypt(compact: Json, client: Json, profile: Json,
@@ -682,8 +705,13 @@ class RequestObject {
     }
     const alg = String(header.alg || '');
     const enc = String(header.enc || '');
+    // HPKE INTEGRATED ENCRYPTION CARRIES NO `enc` (#82, jose-hpke-encrypt-22
+    // section 5), so for one of those algs the `enc` comparisons below have
+    // nothing to compare and `decryptJweCompact()` refuses an `enc` that is
+    // there.
+    const integrated = stsCrypto.isIntegratedJweAlg(alg);
     const registeredAlg = String(client.request_object_encryption_alg || '');
-    const registeredEnc = registeredAlg
+    const registeredEnc = registeredAlg && !integrated
       ? String(client.request_object_encryption_enc || '') ||
         applications.REQUEST_OBJECT_DEFAULT_ENC
       : '';
@@ -696,11 +724,14 @@ class RequestObject {
         'client registered request_object_encryption_alg "' + registeredAlg +
         '" with enc "' + registeredEnc + '".');
     }
-    const offeredAlgs = (profile && profile.encryptionAlgs) ||
-                        applications.REQUEST_OBJECT_ENCRYPTION_ALGS;
+    // The ML-KEM and HPKE algs only where the realm holds a key (#82).
+    const offeredAlgs = helpers.decryptableJweAlgs(
+      (profile && profile.encryptionAlgs) ||
+      applications.REQUEST_OBJECT_ENCRYPTION_ALGS);
     const offeredEncs = (profile && profile.encryptionEncs) ||
                         applications.REQUEST_OBJECT_ENCRYPTION_ENCS;
-    if (offeredAlgs.indexOf(alg) < 0 || offeredEncs.indexOf(enc) < 0) {
+    if (offeredAlgs.indexOf(alg) < 0 ||
+        (!integrated && offeredEncs.indexOf(enc) < 0)) {
       log.debug("Leaving RequestObject.decrypt(). Not offered.");
       return self.refusal('STS-OAUTH-0351', 'invalid_request_object',
         'the request object is encrypted "' + alg + '"/"' + enc + '", and ' +
@@ -711,7 +742,22 @@ class RequestObject {
         'request_object_encryption_enc_values_supported).');
     }
     const options: Json = { allowedAlg: [alg], allowedEnc: [enc] };
-    if (stsCrypto.JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
+    const kemKey = stsCrypto.describeJweKemAlg(alg)
+      ? helpers.kemDecryptionKeyFor(alg, keySet) : null;
+    if (kemKey) {
+      // THE REALM'S KEY FOR THIS ONE ALG (#82). Named by its kid as the
+      // RSA and EC keys are below, for their reason.
+      if (header.kid && String(header.kid) !== String(kemKey.publicJwk.kid)) {
+        log.debug("Leaving RequestObject.decrypt(). Encrypted to another " +
+                  "KEM key.");
+        return self.refusal('STS-OAUTH-0352', 'invalid_request_object',
+          'the request object is encrypted to the key "' + header.kid +
+          '", and this authorization server\'s request object encryption ' +
+          'key for ' + alg + ' is "' + kemKey.publicJwk.kid + '" — the key ' +
+          'marked use "enc" with that alg at /oauth2/jwks.');
+      }
+      options.privateJwk = kemKey.privateJwk;
+    } else if (stsCrypto.JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
       if (!client.client_secret) {
         log.debug("Leaving RequestObject.decrypt(). No secret to decrypt " +
                   "with.");
@@ -888,8 +934,16 @@ class RequestObject {
     let why = '';
     if (/^HS/.test(alg)) {
       if (client.client_secret) {
-        candidates.push({ kid: '', key: client.client_secret,
-                          source: 'secret' });
+        // EVERY SECRET (2026-10-01): a client may sign with any it holds,
+        // newest first; the one `client_secret` where the record lists none.
+        const secrets: Json[] = Array.isArray(client.client_secrets) &&
+          client.client_secrets.length
+          ? client.client_secrets
+          : [{ secret: client.client_secret }];
+        secrets.forEach(function (one: Json) {
+          candidates.push({ kid: '', key: String(one.secret),
+                            source: 'secret' });
+        });
       } else {
         why = 'it is signed with the HMAC algorithm "' + alg + '", which is ' +
               'keyed by the client secret, and this client has none';
@@ -1066,7 +1120,7 @@ class RequestObject {
    * @returns a sentence naming the problem, or ''
    */
   fragmentProblem(uri: Json, content: Json): Json {
-    const { nodeCrypto, log, config } = this.deps;
+    const { stsCrypto, log, config } = this.deps;
     log.debug("Entering RequestObject.fragmentProblem().");
     // `oauth2.requestUriFragmentCheck` (#187): the section names the
     // fragment a cache signal and asks no OP to verify it; this one does
@@ -1083,8 +1137,7 @@ class RequestObject {
                 "fragment.");
       return '';
     }
-    const digest = nodeCrypto.createHash('sha256')
-      .update(String(content), 'utf8').digest('base64url');
+    const digest = stsCrypto.digest('sha256', String(content), 'base64url');
     log.debug("Leaving RequestObject.fragmentProblem().");
     return digest === fragment ? '' :
       'the request_uri\'s fragment is "' + fragment + '", which is the ' +
@@ -1179,7 +1232,7 @@ class RequestObject {
     const profile = options.profile || {};
     const clientId = String(options.clientId || '');
     const query = options.query || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile, clientId);
     const compact = String(options.jwt || '').trim();
 
     let jws = compact;
@@ -1581,7 +1634,8 @@ class RequestObject {
     const query = options.query || {};
     const client = options.client || {};
     const profile = options.profile || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile,
+                                         String(query.client_id || ''));
     const byValue = query.request !== undefined && query.request !== '';
     const byReference = query.request_uri !== undefined &&
                         query.request_uri !== '';

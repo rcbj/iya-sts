@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -28,9 +28,9 @@
 //
 // So the split is deliberate:
 //
-//   * THE PRIMITIVE is @noble/post-quantum. There is no second implementation
-//     of ML-DSA or SLH-DSA to be had — node has none — so this is shared, and
-//     the cross-check cannot say anything about the lattice itself.
+//   * THE PRIMITIVE is node's OpenSSL, through `common/pq_native.js` (#363;
+//     it was @noble/post-quantum until then, which is also what the debugger
+//     uses — so since #363 the lattice itself is cross-checked too).
 //   * EVERYTHING AROUND IT is written here from the specifications: the AKP
 //     JWK, the composite message, the key and signature layouts, and the
 //     traditional half of every composite — which runs on **node's OpenSSL**
@@ -48,10 +48,8 @@
 // ---------------------------------------------------------------------------
 
 const nodeCrypto = require('crypto');
-const { ml_dsa44, ml_dsa65, ml_dsa87 } =
-  require('@noble/post-quantum/ml-dsa.js');
-const { slh_dsa_sha2_128s, slh_dsa_shake_128s } =
-  require('@noble/post-quantum/slh-dsa.js');
+const { ml_dsa44, ml_dsa65, ml_dsa87, slh_dsa_sha2_128s,
+        slh_dsa_shake_128s } = require('./pq_native');
 const bunyan = require('bunyan');
 const config = require('./config');
 
@@ -372,49 +370,29 @@ function generate(alg) {
 }
 
 // ---------------------------------------------------------------------------
-// HEDGED, NOT DETERMINISTIC (#203, 2026-09-24).
+// HEDGED, ALWAYS (#203, 2026-09-24; #363, 2026-09-30).
 //
-// FIPS 204 section 3.4 and FIPS 205 section 9.2 define two signing variants
-// and RECOMMEND the hedged one: ML-DSA's `rnd` is 32 fresh random octets
-// rather than all zeros, SLH-DSA's `opt_rand` n fresh random octets rather
-// than PK.seed. noble signs deterministically when it is handed no
-// randomness, and until NIST's ACVP vectors showed this service's signatures
-// matching the deterministic ones byte for byte, this function never handed
-// it any. Deterministic signing turns a fault or side channel in one
-// signature into a key-recovery oracle over repeated messages; hedged
-// signing costs 32 octets from the generator.
-//
-// `opts.deterministic` is the ONE way back, and it is an INTERNAL parameter,
-// not a setting: `tests/acvp_pqc.js` passes it (through
-// `crypto.jwsSignatureOver()`) to compare with NIST's deterministic
-// vectors, and nothing in the service does. The composite halves' ML-DSA
-// signature is hedged the same way.
+// FIPS 204 section 3.4 and FIPS 205 section 9.2 define a deterministic and a
+// hedged signing variant and RECOMMEND the hedged one: deterministic signing
+// turns a fault or side channel in one signature into a key-recovery oracle
+// over repeated messages. #203 made this file hedge and kept a
+// `deterministic` option for `tests/acvp_pqc.js`'s comparison with NIST's
+// deterministic vectors. Since #363 the primitive is node's OpenSSL, which
+// signs hedged and offers no switch, so the option is gone and that test
+// verifies NIST's signatures instead of reproducing them.
 // ---------------------------------------------------------------------------
-function signingRandomness(alg, opts, bytes) {
-  log.debug('Entering signingRandomness(). alg=' + alg);
-  if (opts && opts.deterministic === true) {
-    log.debug('Leaving signingRandomness(). Deterministic, as asked.');
-    return undefined;
-  }
-  log.debug('Leaving signingRandomness(). Hedged.');
-  return new Uint8Array(nodeCrypto.randomBytes(bytes));
-}
-
 /**
- * Signs a message, hedged (FIPS 204 section 3.4, FIPS 205 section 9.2) unless
- * `opts.deterministic` is true.
+ * Signs a message, hedged (FIPS 204 section 3.4, FIPS 205 section 9.2).
  *
  * A composite's ML-DSA half signs M' with the label as its context string,
  * and the two signatures are concatenated.
  * @param alg - one of `PQ_ALGS`
  * @param priv - the private key as `generate()` returns it
  * @param message - the bytes to sign
- * @param opts - optional; `deterministic: true` is for comparing with NIST's
- *   deterministic test vectors only
  * @returns the signature as a Buffer
  * @throws Error for an unknown algorithm or a private key of the wrong length
  */
-function sign(alg, priv, message, opts) {
+function sign(alg, priv, message) {
   log.debug('Entering sign(). alg=' + alg);
   const msg = Buffer.from(message);
   if (ML[alg]) {
@@ -423,18 +401,12 @@ function sign(alg, priv, message, opts) {
       throw new Error('an ML-DSA "priv" is the 32-byte seed of RFC 9964 ' +
         'section 3.2; this one is ' + priv.length + ' bytes.');
     }
-    const kp = ML[alg].keygen(Buffer.from(priv));
     log.debug('Leaving sign(). ML-DSA.');
-    return Buffer.from(ML[alg].sign(kp.secretKey, msg, new Uint8Array(0),
-                                    signingRandomness(alg, opts, 32)));
+    return Buffer.from(ML[alg].sign(Buffer.from(priv), msg));
   }
   if (SLH[alg]) {
-    // n is half the public key (PK.seed || PK.root), 16 octets for 128s.
-    const n = Buffer.from(priv).length / 4;
     log.debug('Leaving sign(). SLH-DSA.');
-    return Buffer.from(SLH[alg].sign(Buffer.from(priv), msg,
-                                     new Uint8Array(0),
-                                     signingRandomness(alg, opts, n)));
+    return Buffer.from(SLH[alg].sign(Buffer.from(priv), msg));
   }
   const cfg = COMPOSITES[alg];
   if (!cfg) {
@@ -450,13 +422,11 @@ function sign(alg, priv, message, opts) {
   const seed = Buffer.from(priv.subarray(0, 32));
   const tradPriv = Buffer.from(priv.subarray(32));
   const mPrime = compositeMessage(cfg, msg);
-  const mlKp = ML[cfg.ml].keygen(seed);
   // The ML-DSA half signs M' WITH THE LABEL AS ITS CONTEXT STRING. Omitting
   // the context produces a signature that verifies against an implementation
   // that also omits it and against nothing else.
-  const mlSig = ML[cfg.ml].sign(mlKp.secretKey, mPrime,
-                                Buffer.from(cfg.label, 'utf8'),
-                                signingRandomness(alg, opts, 32));
+  const mlSig = ML[cfg.ml].sign(seed, mPrime,
+                                Buffer.from(cfg.label, 'utf8'));
   log.debug('Leaving sign(). Composite ' + alg + '.');
   return Buffer.concat([Buffer.from(mlSig), tradSign(spec, tradPriv, mPrime)]);
 }
@@ -510,145 +480,102 @@ function verify(alg, pub, message, signature) {
 // ---------------------------------------------------------------------------
 // THE SAME THREE OPERATIONS, OFF THIS PROCESS'S THREAD.
 //
-// Everything above is synchronous and stays that way — it is a specification
-// written out, and where it RUNS is not a property of the specification. What
-// is below is the other question: this service is one node process owning six
-// listener families on one thread, and an SLH-DSA signature takes SECONDS
-// during which it answers nobody at all, the KDC on port 88 included. See
-// common/worker.js, which is where the measurements are.
+// Everything above is synchronous and stays that way. What is below is where
+// the work RUNS: this service is one node process owning every listener on
+// one thread, and an SLH-DSA signature takes hundreds of milliseconds even in
+// C (234 ms for SHA2-128s and 637 ms for SHAKE-128s, measured), during which
+// a synchronous call would answer nobody, the KDC on port 88 included.
 //
-// So a pool of child processes computes them, and these three are how a caller
-// asks for that. They resolve with exactly what their synchronous namesakes
-// return, because the pool runs THE SAME FUNCTIONS — `common/worker.js`'s job
-// table calls sign(), verify() and generate() above, in a child, and hands the
-// bytes back. There is no second implementation to disagree with this one.
-//
+// Until #363 these three handed the work to `common/worker_pool.js`, a pool
+// of forked node processes of ~90 MB each. Since #363 they run on LIBUV'S
+// THREAD POOL through node's own asynchronous crypto (`pq_native.js`'s
+// `*Async` forms): native threads, no second V8 heap, no process hop and no
+// serialisation of keys and signatures across a channel. A composite's
+// ML-DSA half and its traditional half each take about a millisecond, so a
+// composite is computed in place and handed back settled — the same answer,
+// and why every caller can still be written one way.
 // ---------------------------------------------------------------------------
-// THE POOL IS HANDED TO THIS FILE RATHER THAN REQUIRED BY IT, AND THAT IS NOT
-// STYLE.
-//
-// `worker_pool.js` requires `worker.js`, which requires THIS FILE — so a
-// require in the obvious direction closes a cycle, and a cycle in node does not
-// fail loudly: it hands back a half-initialised module whose exports are
-// undefined, and the symptom arrives later as something that is not a function.
-// That is rule 2 in the root CLAUDE.md, and rule 3e's test for when an inverted
-// slot is the right answer is exactly this case.
-//
-// It buys a second thing that matters more than the cycle. **A WORKER PROCESS
-// NEVER FILLS THIS SLOT** — a child requires this file and nothing else of the
-// service — so `signAsync()` inside a worker computes in the worker, which is
-// what a worker is for. A lazy require would have let a child fork a pool of
-// its own, recursively, and the first symptom would have been a machine out of
-// processes.
-//
-// `common/worker_pool.js` fills it, from the last line of that file, so that
-// requiring the pool is what arms this module. `common/crypto.js` filled it
-// for one afternoon and that was a mistake — the foot of `worker_pool.js`
-// records why.
-// ---------------------------------------------------------------------------
-let workerPool = null;
-
-/**
- * Fills the worker-pool slot the three `*Async` functions hand work to.
- *
- * `common/worker_pool.js` fills it; a worker process never does, so the
- * asynchronous forms compute in place there.
- * @param pool - the pool, or null to compute in this process
- */
-function setWorkerPool(pool) {
-  log.debug('Entering setWorkerPool(). pool=' + (pool ? 'given' : 'null'));
-  workerPool = pool;
-  log.debug('Leaving setWorkerPool().');
-}
-
-// With no pool — a worker process, a test that required this file on its own,
-// or `workers.count` at 0 — the work is done HERE and the promise is already
-// resolved when it is returned. That is the same answer, arrived at by
-// blocking, and it is why every caller can be written one way.
-function withoutPool(compute) {
-  log.debug('Entering withoutPool().');
+function settled(compute) {
+  log.debug('Entering settled().');
   try {
     const value = compute();
-    log.debug('Leaving withoutPool(). Computed in this process.');
+    log.debug('Leaving settled(). Computed in place.');
     return Promise.resolve(value);
   } catch (e) {
-    log.debug('Leaving withoutPool(). It threw.');
+    log.debug('Leaving settled(). It threw: ' + ((e && e.message) || e));
     return Promise.reject(e);
   }
 }
 
-// `opts.session` names an authenticated session, so that one session's
-// signatures go to one worker. It is a routing preference and never a
-// correctness requirement — a worker remembers nothing — so a caller with no
-// session to name simply omits it.
 /**
- * Signs as `sign()` does, on the worker pool when one is set and in this
- * process (an already-settled promise) otherwise.
+ * Signs as `sign()` does; ML-DSA and SLH-DSA on libuv's thread pool, a
+ * composite in place.
  *
  * @param alg - one of `PQ_ALGS`
  * @param priv - the private key
  * @param message - the bytes to sign
- * @param opts - optional pool options; `session` names a session so that its
- *   signatures go to one worker (a routing preference only)
- * @returns a promise of the signature
+ * @returns a promise of the signature as a Buffer
  */
-function signAsync(alg, priv, message, opts) {
+function signAsync(alg, priv, message) {
   log.debug('Entering signAsync(). alg=' + alg);
-  if (!workerPool) {
-    log.debug('Leaving signAsync(). No pool.');
-    return withoutPool(function () { return sign(alg, priv, message); });
+  const prim = ML[alg] || SLH[alg];
+  if (!prim) {
+    log.debug('Leaving signAsync(). Composite or unknown, in place.');
+    return settled(function () { return sign(alg, priv, message); });
   }
-  log.debug('Leaving signAsync(). Handed to the pool.');
-  return workerPool.run('pq.sign',
-    { alg: alg, priv: Buffer.from(priv), message: Buffer.from(message) },
-    opts).then(function (result) {
-      return result.signature;
+  if (ML[alg] && priv.length !== 32) {
+    log.debug('Leaving signAsync(). Wrong seed length.');
+    return settled(function () { return sign(alg, priv, message); });
+  }
+  log.debug('Leaving signAsync(). On libuv.');
+  return prim.signAsync(Buffer.from(priv), Buffer.from(message))
+    .then(function (signature) {
+      return Buffer.from(signature);
     });
 }
 
 /**
- * Verifies as `verify()` does, on the worker pool when one is set.
+ * Verifies as `verify()` does; ML-DSA and SLH-DSA on libuv's thread pool, a
+ * composite in place.
  *
  * @param alg - one of `PQ_ALGS`
  * @param pub - the public key
  * @param message - the signed bytes
  * @param signature - the signature to check
- * @param opts - optional pool options, as for `signAsync()`
  * @returns a promise of true or false
  */
-function verifyAsync(alg, pub, message, signature, opts) {
+function verifyAsync(alg, pub, message, signature) {
   log.debug('Entering verifyAsync(). alg=' + alg);
-  if (!workerPool) {
-    log.debug('Leaving verifyAsync(). No pool.');
-    return withoutPool(function () {
+  const prim = ML[alg] || SLH[alg];
+  if (!prim) {
+    log.debug('Leaving verifyAsync(). Composite or unknown, in place.');
+    return settled(function () {
       return verify(alg, pub, message, signature);
     });
   }
-  log.debug('Leaving verifyAsync(). Handed to the pool.');
-  return workerPool.run('pq.verify',
-    { alg: alg, pub: Buffer.from(pub), message: Buffer.from(message),
-      signature: Buffer.from(signature) },
-    opts).then(function (result) {
-      return result.ok;
-    });
+  log.debug('Leaving verifyAsync(). On libuv.');
+  return prim.verifyAsync(Buffer.from(pub), Buffer.from(message),
+                          Buffer.from(signature));
 }
 
 /**
- * Generates a key pair as `generate()` does, on the worker pool when one is
- * set.
+ * Generates a key pair as `generate()` does; SLH-DSA, whose key generation
+ * costs as much as a signature, on libuv's thread pool.
  *
  * @param alg - one of `PQ_ALGS`
- * @param opts - optional pool options, as for `signAsync()`
  * @returns a promise of `{ pub, priv }`
  */
-function generateAsync(alg, opts) {
+function generateAsync(alg) {
   log.debug('Entering generateAsync(). alg=' + alg);
-  if (!workerPool) {
-    log.debug('Leaving generateAsync(). No pool.');
-    return withoutPool(function () { return generate(alg); });
+  if (!SLH[alg]) {
+    log.debug('Leaving generateAsync(). In place.');
+    return settled(function () { return generate(alg); });
   }
-  log.debug('Leaving generateAsync(). Handed to the pool.');
-  return workerPool.run('pq.generate', { alg: alg }, opts);
+  log.debug('Leaving generateAsync(). On libuv.');
+  return SLH[alg].keygenAsync().then(function (kp) {
+    return { pub: Buffer.from(kp.publicKey),
+             priv: Buffer.from(kp.secretKey) };
+  });
 }
 
 // RFC 9964 section 3: the key type is AKP, the parameters are `pub` and
@@ -694,7 +621,6 @@ module.exports = {
   verify: verify,
   akpPublicJwk: akpPublicJwk,
   compositeMessage: compositeMessage,
-  setWorkerPool: setWorkerPool,
   signAsync: signAsync,
   verifyAsync: verifyAsync,
   generateAsync: generateAsync

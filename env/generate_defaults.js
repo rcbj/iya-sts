@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: env/generate_defaults.js
 //
@@ -61,7 +61,7 @@ const c = require(path.join(ROOT, 'common', 'config.js'));
 process.exit = realExit;
 
 const header = `// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: env/defaults.js
 //

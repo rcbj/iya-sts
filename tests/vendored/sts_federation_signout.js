@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // A FEDERATION PARTNER'S SIGN-OUT, OVER THE NETWORK (#167).
@@ -48,6 +48,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const zlib = require("zlib");
@@ -255,6 +257,61 @@ function postForm(cookies, url, fields) {
     headers: { "content-type": "application/x-www-form-urlencoded" } });
 }
 
+// THE SIGN-OUT PAGE at `base`, as the page signs out since #577
+// (`authn_signin.js`'s `signOut()`): the view, the act over
+// /authn-api/logout, and the signed-out document it answers where the
+// browser has a partner to tell — answered in `hop()`'s shape, the body
+// that document's HTML (or the act's JSON), with this jar's cookies kept.
+async function signOutAt(cookies, base, fields) {
+  log.debug("Entering signOutAt().");
+  const out = await authnSignin.signOut(base, fields,
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: out.headers });
+  }
+  log.debug("Leaving signOutAt(). " + out.status);
+  return { status: out.status, headers: out.headers, body: out.text || "",
+           url: base + "/logout", location: "" };
+}
+
+// The service's sign-in screen at `url`, answered with a password over
+// `/authn-api` (#571, `authn_signin.js`) with this jar's cookies, and
+// answered in `hop()`'s shape: a 303 to where the act says the walk goes
+// next, as the form's POST was answered.
+async function signInAt(cookies, url, username) {
+  log.debug("Entering signInAt(). " + username);
+  const at = new URL(url);
+  const answer = await authnSignin.submit(at.origin +
+    at.pathname.replace(/\/authn\/login$/, ""), url,
+    { action: "login", username: username, password: PASSWORD },
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: answer.headers });
+  }
+  log.debug("Leaving signInAt(). " + answer.next);
+  return { status: authnSignin.responseLike(answer).status,
+           headers: answer.headers,
+           body: answer.text || JSON.stringify(answer.json), url: url,
+           location: answer.location };
+}
+
+// THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576: answered
+// over `/authn-api/consent` through the one helper (`authn_signin.js`)
+// with this jar's cookies, and in `hop()`'s shape — a 303 back to the
+// authorization request, as the form's POST was answered.
+async function consentAt(cookies, url) {
+  log.debug("Entering consentAt().");
+  const answer = await authnSignin.consentFor(url, cookies && cookies.has() ? cookies.header() : "");
+  if (cookies) {
+    cookies.take({ headers: answer.headers });
+  }
+  log.debug("Leaving consentAt(). " + answer.next);
+  return { status: authnSignin.responseLike(answer).status,
+           headers: answer.headers,
+           body: answer.text || JSON.stringify(answer.json), url: url,
+           location: answer.location };
+}
+
 function formsIn(html) {
   log.debug("Entering formsIn().");
   const out = [];
@@ -300,6 +357,16 @@ async function toTheDoor(cookies, startUrl) {
         log.debug("Leaving toTheDoor(). A redirect to the ACS.");
         return { method: "GET", url: next, fields: null };
       }
+      // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // answered through the one helper where the walk is sent to it.
+      if (/\/authn\/login\?authn=/.test(next)) {
+        r = await signInAt(cookies, next, PERSON);
+        continue;
+      }
+      if (authnSignin.isConsent(next)) {
+        r = await consentAt(cookies, next);
+        continue;
+      }
       r = await hop(cookies, next);
       continue;
     }
@@ -307,9 +374,6 @@ async function toTheDoor(cookies, startUrl) {
       break;
     }
     const forms = formsIn(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
@@ -318,12 +382,6 @@ async function toTheDoor(cookies, startUrl) {
              ("SAMLResponse" in f.fields || "SAMLRequest" in f.fields ||
               "id_token" in f.fields || "code" in f.fields);
     });
-    if (signIn) {
-      r = await postForm(cookies, new URL(signIn.action || r.url, r.url)
-        .toString(), Object.assign({}, signIn.fields, {
-          username: PERSON, password: PASSWORD, action: "login" }));
-      continue;
-    }
     if (consent) {
       r = await postForm(cookies, new URL(consent.action || r.url, r.url)
         .toString(), Object.assign({}, consent.fields, {
@@ -734,7 +792,7 @@ async function samlRealmToRealm(world) {
 
   // The service-provider-initiated round trip.
   signedIn = await realmSignIn(REL.saml);
-  const bye = await postForm(signedIn.browser, realmBase(SP) + "/logout",
+  const bye = await signOutAt(signedIn.browser, realmBase(SP),
                              { scope: "global" });
   const toPartner = htmlDecode((new RegExp("href=\"(" + world.idpSlo
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\?[^\"]+)\"")
@@ -1054,7 +1112,7 @@ async function oidcPartnerWrittenHere(world) {
   // RP-Initiated Logout to the partner, from /logout here.
   await setRel(REL.oidcT, "fedEndSessionUrl", PARTNER_OIDC + "/logout");
   signedIn = await oidcSignIn(world, "sid-c-" + STAMP);
-  const bye = await postForm(signedIn.browser, realmBase(SP) + "/logout",
+  const bye = await signOutAt(signedIn.browser, realmBase(SP),
                              { scope: "global" });
   const toPartner = htmlDecode((/href="(https:\/\/oidc-partner\.invalid\/logout\?[^"]+)"/
     .exec(bye.body) || [])[1] || "");
@@ -1096,7 +1154,7 @@ async function oidcFrontChannelRealmToRealm(world) {
               async function () {
     assert.ok(await liveIn(signedIn.browser), squash(signedIn.r.body));
   });
-  const page = await postForm(signedIn.partner, realmBase(IDP) + "/logout",
+  const page = await signOutAt(signedIn.partner, realmBase(IDP),
                               { scope: "global" });
   const frame = htmlDecode((new RegExp("<iframe[^>]*src=\"(" +
     world.oidcFront.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") +

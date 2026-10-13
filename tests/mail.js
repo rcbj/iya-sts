@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -67,6 +67,12 @@
 //  16. THE ADDRESS CHANGE (#64, D5): the new address is mailed a link and is
 //      not `mail` until it is followed; then it is, verified, and the former
 //      address is told; a link outlives no change of address.
+//  17. VALUES IN THE RECIPIENT'S LANGUAGE (#539): a value handed over as a
+//      `mailValues` message or an instant is put into words in the language
+//      each recipient's message went out in — French for one person,
+//      English for another, from the same send — escaped like any value,
+//      and a security notice from `mail_uses.ts` carries no English
+//      fragment into a French message.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -1232,8 +1238,14 @@ async function consolePages(t) {
       configFormsFor: function () {
         return '<form id="settings"></form>';
       },
+      // The settings block the page is drawn from (#446: the page's
+      // renderer draws it from the view, so the view carries one group).
       configSettingsJson: function () {
-        return [];
+        return { groups: [{ group: 'Mail settings', settings: [] }],
+                 context: {} };
+      },
+      renderContext: function (req) {
+        return { query: (req && req.query) || {}, write: true };
       },
       pageNavPair: function () {
         return { head: '', foot: '' };
@@ -1267,23 +1279,28 @@ async function consolePages(t) {
     const page = new mailAdminModule.MailAdmin(Object.assign(
       mailAdminModule.MailAdmin.defaultDeps(), { admin: shell,
                                                  adminViews: views }));
-    const routes = {};
-    page.registerRoutes({
-      get: function (path, fn) {
-        routes['GET ' + path] = fn;
-      },
-      post: function (path, fn) {
-        routes['POST ' + path] = fn;
-      }
-    });
+    // THE PAGES AS THE STATIC CONSOLE DRAWS THEM (#446): each page's view —
+    // what its operation answers — drawn by its renderer; there are no
+    // console routes to call since the cutover. `up` says whether a
+    // drill-down's way back would be drawn (the item its parameter names).
+    const WebPages = require('../admin-ui/web_pages');
+    const WebKit = require('../admin-ui/web_kit');
     const get = function (path, query) {
-      routes['GET ' + path]({ query: query || {}, headers: {} }, {});
-      return drawn[drawn.length - 1];
+      const q = query || {};
+      const req = { query: q, headers: {} };
+      const view = path === '/admin/mail' ? page.settingsView(req, q)
+                                          : page.outboxView(req, q);
+      return {
+        json: view,
+        html: WebPages.render(path, JSON.parse(JSON.stringify(view)),
+                              WebKit.context(q, true)),
+        up: q.template || q.message || null
+      };
     };
     const settings = get('/admin/mail');
     t.check(settings && /capture/.test(settings.html) &&
             /Send a test message/.test(settings.html) &&
-            /id="settings"/.test(settings.html) &&
+            /<h3>Mail settings<\/h3>/.test(settings.html) &&
             settings.html.indexOf('password-reset') >= 0,
             '13a. /admin/mail draws the transport, the test form, the ' +
             'messages and the settings', settings && settings.html.slice(0, 300));
@@ -1605,6 +1622,74 @@ async function addressChange(t) {
   log.debug('Leaving addressChange().');
 }
 
+// ---------------------------------------------------------------------------
+// 17. VALUES IN THE RECIPIENT'S LANGUAGE (#539)
+// ---------------------------------------------------------------------------
+async function valuesInLanguage(t) {
+  log.debug('Entering valuesInLanguage().');
+  const realms = require('../common/realms');
+  const mailModule = require('../common/mail');
+  const i18n = require('../common/i18n');
+  mailModule.setDirectory(stubDirectory({
+    zoe: { mail: ['zoe@example.com'], preferredlanguage: ['fr-CA'] },
+    yan: { mail: ['yan@example.com'] }
+  }));
+  await withRealm(t, realms, realmId('mail-values'),
+                  { 'mail.transport': 'smtp' }, async function () {
+    const transports = stubTransports();
+    const m = makeMail({ transports: transports });
+    const at = Date.UTC(2026, 9, 9, 12, 34, 0);
+    const values = { count: '2', when: { date: at },
+                     by: { i18n: 'mailValues.requestedBy.administratorNamed',
+                           params: { actor: '<b>boss</b>' } } };
+    const fr = m.send({ username: 'zoe', template: 'sessions-ended',
+                        values: values });
+    const en = m.send({ username: 'yan', template: 'sessions-ended',
+                        values: values });
+    await fr.delivered;
+    await en.delivered;
+    const toZoe = transports.sent.filter(function (x) {
+      return x.to === 'zoe@example.com';
+    })[0];
+    const toYan = transports.sent.filter(function (x) {
+      return x.to === 'yan@example.com';
+    })[0];
+    const frDate = i18n.translator(['fr-CA']).date(at);
+    const enDate = i18n.translator(['en']).date(at);
+    t.check(toZoe && toZoe.text.indexOf('un administrateur (<b>boss</b>)') >=
+              0 && toZoe.text.indexOf(frDate) >= 0 &&
+            toZoe.text.indexOf('an administrator') < 0,
+            '17a. a message and an instant are written in the recipient\'s ' +
+            'language (fr-CA)', toZoe && toZoe.text);
+    t.check(toYan && toYan.text.indexOf('an administrator (<b>boss</b>)') >=
+              0 && toYan.text.indexOf(enDate) >= 0,
+            '17b. and in English for a recipient with no preference, from ' +
+            'the same values', toYan && toYan.text);
+    t.check(toZoe && toZoe.html.indexOf('(&lt;b&gt;boss&lt;/b&gt;)') >= 0 &&
+            toZoe.html.indexOf('<b>boss') < 0,
+            '17c. a resolved value is escaped in the HTML part like any ' +
+            'other', toZoe && toZoe.html);
+    const queued = JSON.stringify(fr.queued.concat(en.queued));
+    t.check(fr.queued.length === 1 && en.queued.length === 1 &&
+            !/\[object Object\]|"i18n"/.test(queued),
+            '17d. what was queued holds no unresolved value', queued);
+    // A NOTICE FROM THE USES, end to end.
+    const MailUses = require('../common/mail_uses').MailUses;
+    const u = new MailUses(Object.assign(MailUses.defaultDeps(),
+                                         { mail: m }));
+    const before = transports.sent.length;
+    const notice = u.fromAccountSignal('recoveryActivated',
+      { username: 'zoe', initiatingEntity: 'admin' });
+    await notice.delivered;
+    const told = transports.sent.slice(before)[0];
+    t.check(told && told.text.indexOf('par un administrateur') >= 0 &&
+            told.text.indexOf('an administrator') < 0,
+            '17e. a notice from mail_uses.ts carries no English fragment ' +
+            'into a French message', told && told.text);
+  });
+  log.debug('Leaving valuesInLanguage().');
+}
+
 module.exports = {
   name: 'mail',
   describe: 'The mail channel (#63): templates, directory-only recipients, ' +
@@ -1645,6 +1730,7 @@ async function sections(t) {
     await layout(t);
     await recoveryCodeReset(t);
     await addressChange(t);
+    await valuesInLanguage(t);
   }
   log.debug('Leaving sections().');
 }

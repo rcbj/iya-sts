@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -88,10 +88,16 @@ class K8sWorkloadAttestor {
   readonly type = 'k8s';
   /**
    * One sentence for `GET /spiffe` and the console: what this attestor
-   * verifies.
+   * verifies. STATIC as well (#543), so that `spiffe_server.ts`'s
+   * `prose()` reads it without building an attestor.
    */
-  readonly verifies = 'The Kubernetes pod and container the caller\'s ' +
+  static readonly VERIFIES =
+    'The Kubernetes pod and container the caller\'s ' +
     'process runs in, as the node\'s kubelet reports them.';
+  /**
+   * The same sentence, on the instance the attestation table holds.
+   */
+  readonly verifies = K8sWorkloadAttestor.VERIFIES;
 
   /**
    * Builds the attestor over its dependencies.

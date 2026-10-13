@@ -1,10 +1,13 @@
 # logout/
 
-The protocol-independent sign-out. One file:
+The protocol-independent sign-out:
 
 | File | What it is |
 |---|---|
-| `logout.ts` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
+| `logout.ts` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, the shell, the JSON door, the page's two operations' logic, and the signed-out document (`/logout/signed-out`). |
+| `web_signout_pages.ts` | The static sign-out's page table and renderers (#577): the inventory, a result with nothing to fan out, the two refusals. The bundle `logout/signout.bundle.js` (`StsSignout`). |
+| `web_signout.ts` | The static sign-out's runtime (#577), served at `/logout/signout.js` (`signout-spa.js` on disk). |
+| `web_logout.ts`, `web_sessions.ts` | The CONSOLE's `/admin/logout` and `/admin/sessions` (#446), drawn from `/admin-api`; `admin-ui/CLAUDE.md` carries them. |
 
 It is a directory of its own rather than a file in `authn/` or in `common/`, and
 each of those was considered:
@@ -59,12 +62,14 @@ termination is a call into that same module:
 | WS-Federation realms | `wsfed.cleanupTargetsFor()` | forgotten, cleanup image |
 | SAML 2.0 service providers | `saml2_sso.logoutTargetsFor()` | forgotten, LogoutRequest link |
 | Federation partners (#167) | the session's `fedPartnerSession` | the partner's own sign-out, a link or form from `federation_slo.partnerLogoutFor()` — from `/logout` in the person's browser only |
+| OAuth grants (#432) | `grant_management.ts`'s register | `grantManagement.revoke()` — the client's DELETE, performed for the person |
 | Tokens | `admin_stats.js` | `stats.revoke()` — the ONE revocation set |
 | Authorization codes | `oauth2.outstandingCodesFor()` | `oauth2.dropCode()` |
 | Pre-authorized codes | `vc_offers.preAuthorizedCodes` | deleted there |
 | Directory connections | `ldap_server.boundConnections()` | `ldap_server.dropConnectionsFor()` — the only pair here that may be answering about another PROCESS's sockets; see the LDAP bullet below |
 | Kerberos tickets | `krb5_principals.signedOutAt()` | `krb5_principals.signOut()` |
 | Wallet credentials | `oid4vc/vc_issued.js`'s register | `vcIssued.disown()` — the one row here whose end this service ENFORCES, at `/authn/wallet` |
+| GNAP grants (#432) | `gnap/gnap_revocation.ts` (`grantsHeldBy()`) | `gnapRevocation.endGrant()` — the client's section 5.4 revocation, performed for the person |
 | Everything already issued | `admin_stats.js`'s artifacts | **nothing can** |
 
 **A cache here would be a second answer to "is this still live", and the wrong
@@ -154,7 +159,7 @@ something that has since been reissued under the same id.
 
 | Surface | Who | Gate | Difference |
 |---|---|---|---|
-| `GET|POST /logout` | a person, about themselves | none | defaults to the session cookie; **renders the notifications**, because they are iframes in that person's browser |
+| `GET|POST /logout` | a person, about themselves | none; the page's act is bound to the `sts_session` cookie (#577) | defaults to the session cookie; **renders the notifications**, because they are iframes in that person's browser — in the server-drawn signed-out document since #577 |
 | `GET|POST /admin/logout` | an operator, about somebody | Admin Read / Admin Write | always names a `user`; filters, pages, and has the two **NON-SPEC undos** |
 | `GET|POST /admin-api/logout[/{action}]` | a test or a machine | an access token carrying `admin:read` / `admin:write` (`mgmt-api/CLAUDE.md`) | the same two functions; four actions |
 
@@ -186,6 +191,95 @@ second way to present it here would be a second answer to who may end somebody
 else's sessions. `tests/session_clocks.js` section 5 pins it.
 
 ---
+
+## THE PAGE IS A STATIC SURFACE, AND THE RESULT THAT FANS OUT IS NOT (#577, 2026-10-12)
+
+#569 converts every page this service defines for itself into a static
+surface (`common/CLAUDE.md` 3cl); **the specifications' sign-outs —
+`/oauth2/logout`, the front-channel iframes, back-channel, SAML and
+WS-Federation single logout, `/federation/slo`, `check_session` — are not
+touched** (#569's rule), and nothing they answer changed.
+
+* **A browser's `GET /logout` answers the SHELL** (`shell()`,
+  `ShellDocument`, `/logout/signout.js` and `/logout/signout.css`), after
+  the same two decisions it always made first: no session and no name is a
+  302 to sign in; a name that may not be used is the shell too, and the
+  page draws the API's refusal. **Script is required**: the `<noscript>`
+  says so and nothing else is drawn.
+* **The page's view and act are `GET` and `POST /authn-api/logout`**
+  (`authn/CLAUDE.md`), whose logic is `signOutView()` and `signOutAct()`
+  here: the inventory as `inventoryFor()` lists it, and the act through
+  `endFor()` — the one place a sign-out from either door calls
+  `terminate()` and clears the cookie. Bound as every act on that API is:
+  JSON, an Origin of this service, the `X-CSRF-Token` of the cookie's
+  session. Under `/authn-api` rather than an API of its own because it is
+  the same session, the same cookie and the same binding, and `/logout` is
+  the authentication service's application.
+* **THE INVENTORY IS TWO TABS (rcbj, 2026-10-12)**, through the console's
+  `WebKit.tabbedPanels()` and tab rules in `LOGOUT_CSS`, with no script of
+  their own. **Sign out** opens by default: the global sign-out, then every
+  live SESSION in ONE list — the families in `SESSION_FAMILIES`: sign-on,
+  relying-party and partner sessions, directory connections, Kerberos
+  tickets (`sessionList()`: a checkbox where it can be
+  ended, a dash with the reason as its tooltip where it cannot, what it is,
+  its protocol family, since and until) and the ticked-items button.
+  **Details** holds everything else: the TOKENS AND CREDENTIALS (tokens,
+  grants, codes, wallet items, GNAP grants, what was issued), each family
+  with its checkboxes and a ticked-items button of their own (rcbj, later
+  the same day: the first tab lists sessions only), then the live count, each family's label,
+  protocol and specification, what a sign-out does to it, its rows' details
+  and refusal reasons (`familyDetails()`, read-only), the rows not listed,
+  and who may be named here. The JSON is unchanged; the browser jobs press
+  Global logout, which is on the first tab.
+* **THE RESULT IS TWO KINDS OF PAGE, by rcbj's plan on #577.** Where the
+  act leaves the browser something to do — `fanOutOf()`'s iframes, cleanup
+  images, LogoutRequest links and back-channel table, or a partner's
+  sign-out — the result is the SERVER-DRAWN document it always was
+  (`resultPage()`, unchanged, its policy the fan-out's), at `POST
+  /logout/signed-out`: the act answers a `form` the runtime POSTS AS A
+  NAVIGATION, carrying the result. Where there is nothing to fan out the
+  act answers the result's `view` and the page draws it in place.
+* **BOTH KINDS OF RESULT ARE TWO TABS (rcbj, 2026-10-12)**, with the
+  inventory's ids and rules. **Sign out** says only that the person is
+  signed out (or that nothing was ended), then a button to the user portal
+  (`/portal`, root-relative so the realm prefix is added); the signed-out
+  document also keeps the partner sign-outs (#167) there, because each is a
+  step the person has to take. **Details** holds the rest: the model's
+  message, what was ended and what was not, the fan-out (its iframes and
+  cleanup images load from a hidden panel all the same), and what is still
+  live.
+* **THE RESULT TRAVELS WITH THE BROWSER, MACed, and nothing here stores
+  it** — rule 3m is that this module holds no state, and the document may
+  be drawn by another node or request worker than the one that ended the
+  sessions. `sealResult()` deflates it and MACs it under the `logout-result`
+  cluster secret (`cluster/cluster_secrets.ts`) with the realm and a
+  five-minute expiry; `openResult()` refuses anything else
+  (`STS-LOGOUT-0008`), and the document refuses a post from another
+  origin (`STS-LOGOUT-0009`) — taking `Origin: null` only with
+  `Sec-Fetch-Site: same-origin`, because every page here is sent
+  `Referrer-Policy: no-referrer`, under which the runtime's own navigation
+  carries a null Origin (found over CDP). Not encrypted: it is what the document
+  shows the person. Drawn again within its life it only fans out again to
+  sessions that have already ended. The document mints no arrival cookie
+  (`NOT_ARRIVAL_PATHS`).
+* **The JSON door is unchanged**: `GET /logout` asking for JSON and `POST
+  /logout` with a JSON body or `Accept: application/json` answer as they
+  did, and a body refused is now JSON (`STS-LOGOUT-0003`) where it was a
+  page. **A FORM POSTED TO `/logout` IS NO LONGER AN ACT**: it is sent to
+  the page with a 303 (`STS-LOGOUT-0010`) and ends nothing. The portal's
+  Sign out of everything opens the page (a GET form) since.
+* **Nothing ticked ends nothing**, as the page says under the button: the
+  runtime sends no act for the ticked-items button with no box ticked. An
+  act with an empty selection is still a GLOBAL sign-out — the JSON door's
+  documented default, above — so the page keeps its own promise itself.
+* **The page's rules are `LOGOUT_CSS`**, inline in the signed-out document
+  and served as `/logout/signout.css`, so the two cannot drift
+  (`tests/logout_api.js` 6d holds them byte-equal).
+
+**Tests**: `tests/logout_api.js`; the round trip's sign-out cases in
+`tests/tools/web_surfaces.js`; `tests/tools/authn_screen.js`'s `signOut()` in
+process and `tests/vendored/authn_signin.js`'s `signOut()` over HTTP, which
+every job that signed out through the form now signs out through.
 
 ## What a logout reaches, protocol by protocol — and what it does not
 
@@ -342,6 +436,48 @@ LogoutRequest links and the two CSP relaxations they need — split out of
 `resultPage()` so the page a partner's sign-out answers with fans out exactly
 as this one does; `resultPage()` calls it too.
 
+## GNAP AND OAUTH GRANTS ARE FAMILIES, AND ONE OF THEM ENDS WITH ITS SESSION (#432, 2026-10-03)
+
+**This module never named GNAP**, so a global sign-out — and everything that
+goes through `terminate()`: an account disable, an administrator's sign-out,
+risk's lockout, a cell's `revoke-subject` — left every GNAP grant and token a
+person had approved live. Two families now, each read and ended by the module
+that owns it (rule 3m):
+
+* **`gnap`** (`endOrder` 27): the live grants the person approved, each ended
+  by `gnap_revocation.ts`'s `endGrant()` — tokens revoked, the grant
+  finalized, CAEP `session-revoked` about the grant with the door's
+  initiating entity. `gnap/CLAUDE.md` argues the rest.
+* **`oauth-grant`** (`endOrder` 19, just ahead of the tokens): the Grant
+  Management register (#142). A grant outlives the tokens in it — a client
+  can name its `grant_id` in the next authorization request — so a sign-out
+  that revoked the tokens and left the grant left what a client renews from.
+  Filed by the grant's `sub` under `holderKeyOf()`, like every other row.
+
+**`endsWithSession` IS A FAMILY FLAG, AND `gnap` IS THE ONE THAT SETS IT.** A
+row of such a family whose `sessionId` is a session this act ends is ended
+with it, ticked or not — so a Revoke of one session on `/admin/sessions`, or a
+partner's sign-out (#167, `endPartnerSession()`), takes the grants approved on
+that session. That is #432's "a grant tied to an ended session ends with it",
+held to THIS module's doors: an ordinary sign-out (`authn.dropSession()`) and
+an expiry never reach here, so a person signing out of one application keeps
+the grants they gave others — the `wallet-credential` family's rule, for its
+reason. A family added later sets the flag only when its rows hang off a
+session in that sense.
+
+**`revokeGrantsOf(key, opts)` IS A PERSON'S GRANTS AND TOKENS AND NOTHING
+ELSE** — what a federation partner's `signal-revoke-grants` calls
+(`ssf/CLAUDE.md`): a SELECTIVE `terminate()` of `oauth-grant`, `token`,
+`code` and `gnap`, narrowed by `sessionIds` to what was issued on those
+sessions. **AN EMPTY SELECTION IS A GLOBAL SIGN-OUT TO `terminate()`**, so it
+answers without calling it when the person holds none of them; a signal about
+somebody holding nothing must not sign them out of everything.
+
+**`liveSessions()` HAS A FOURTH KIND OF ROW**, a `GNAP grant` (family `gnap`):
+a grant is a delegated session (`gnap/gnap_signals.ts`), CAEP already reports
+its end as `session-revoked`, and its Revoke is `terminate()` with a selection
+of one. Its rule is `SESSION_EXPIRY_RULES.gnap`: no expiry of its own.
+
 ## `liveSessions()` — the same question asked across everybody (2026-09-04)
 
 `inventoryFor()` answers *what is alice still signed into*. `liveSessions()`
@@ -358,7 +494,8 @@ acts on something other than the row it sits beside. The button therefore calls
 `terminate(key, [id])`, the same function a global logout goes through, with a
 selection of one — same audit row, same settings honoured, same refusals.
 
-**THREE OF THE TWELVE FAMILIES HAVE A SESSION AND THE OTHER NINE DO NOT**, and the
+**THREE OF THE TWELVE FAMILIES HAVE A SESSION AND THE OTHER NINE DO NOT** (four
+since #432 — a GNAP grant, above — of fourteen), and the
 distinction is the page's whole subject rather than a simplification. A session
 is state THIS SERVICE holds that makes somebody currently authenticated; a
 token, an assertion, a code and an SVID are things it has HANDED OUT, they
@@ -494,3 +631,28 @@ and a GLOBAL logout with `logout.ldapDisconnect` on sends the instruction even
 when nothing was listed and adds **`acrossCluster`** to the result and a
 sentence to `message`. `pending` and `acrossCluster` are additive; nothing that
 read the old shape loses a member.
+
+## WHAT A PERSON HOLDS IS WHAT A SIGN-OUT CAN END, AND A SET OF PEOPLE IS READ ONCE (#351, 2026-09-29)
+
+**`heldIds()` lists only terminable rows.** It listed every row, and the
+`krb5` family always has one — "no such principal in this KDC" or "this trust
+realm has no KDC", `terminable: false` — because the PAGE must say Kerberos
+was looked at. So every person held one thing; every deleted person was
+scheduled a selective sign-out that ended "0 of 1 live item(s)" and was
+audited refused (`STS-LOGOUT-0007`). A row nothing can end is not something a
+later `terminate(key, ids)` could end either, so it is not held. The page
+(`inventoryFor()`) is unchanged: it still draws the row with its reason.
+
+**`heldIdsFor(keys)` and `terminateEach(list)` are the batch forms**, and the
+single forms are a batch of one. Three families read a store that grows with
+the service rather than with the person — the sessions (`sessionsForKey()`),
+the token and artifact register (`token`, `issued`, through
+`admin_stats.holdingsOf()`, which replaced two `userDetail()` folds of the
+whole register per read) and the wallet credentials — and `withIndex()` reads
+each ONCE for every key, grouped by the same `holderKeyOf()` the per-key read
+compared with. The index lives only for the synchronous call that built it; a
+key it was not built for falls through to the unindexed read. Each
+`terminate()` in a `terminateEach()` is exactly the single one — its own audit
+row, back-channel deliveries and CAEP — and `quiet` moves its info line to
+debug for a caller that logs one line for the set (`account_state.ts`).
+

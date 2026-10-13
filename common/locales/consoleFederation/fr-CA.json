@@ -1,0 +1,3 @@
+{
+  "signalsOnly": "Ce partenaire ne connecte personne : il n’envoie que des événements CAEP et RISC. Par défaut, ils sont enregistrés et rien de plus, sauf la conformité d’un appareil, qui est appliquée. Ses personnes sont celles qui lui sont liées ci-dessous (<code>&lt;iss&gt; &lt;sub&gt;</code>, ou <code>opaque &lt;id&gt;</code>), ou retrouvées par adresse courriel lorsque <code>fedSignalEmailMatch</code> est activé."
+}

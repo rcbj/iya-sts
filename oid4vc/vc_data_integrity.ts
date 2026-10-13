@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -138,10 +138,9 @@
 // leaves (`helpers` for the logger, `crypto` for the clock allowance,
 // `pq_jose` for ML-DSA), so any module in this directory can require it
 // without a cycle. ML-DSA goes through `pq_jose`'s asynchronous pair, so a
-// verification happens in the worker pool where one is running.
+// verification happens on libuv's thread pool.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
 import pqJose = require('../common/pq_jose');
@@ -183,6 +182,8 @@ interface VcDataIntegrityDeps {
   stsCrypto: typeof stsCrypto;
   // The ambient realm's key set, for `realmKeyFor()` (#194).
   stsKeysFor: () => any;
+  // The ambient realm's VC-API key of a curve, for `vcApiKeyFor()` (#598).
+  vcApiKeyFor: (curve: string) => any;
   sd: typeof vcEcdsaSd;
 }
 
@@ -325,6 +326,11 @@ class VcDataIntegrity {
         helpers.log.debug("Entering stsKeysFor().");
         helpers.log.debug("Leaving stsKeysFor().");
         return helpers.stsKeysFor();
+      },
+      vcApiKeyFor: function vcApiKeyFor(curve: string): any {
+        helpers.log.debug("Entering vcApiKeyFor().");
+        helpers.log.debug("Leaving vcApiKeyFor().");
+        return helpers.vcApiKeyFor(curve);
       },
       sd: vcEcdsaSd
     };
@@ -694,7 +700,7 @@ class VcDataIntegrity {
         throw new Error('a ' + found.kind + ' Multikey is a ' +
                         (size + 1) + '-byte compressed point.');
       }
-      const key = crypto.createPublicKey({
+      const key = this.deps.stsCrypto.publicKeyOf({
         key: this.ecSpki(found.kind, raw), format: 'der', type: 'spki' });
       const exported: any = key.export({ format: 'jwk' });
       jwk = { kty: 'EC', crv: found.kind, x: exported.x, y: exported.y };
@@ -761,11 +767,12 @@ class VcDataIntegrity {
   // THE REALM'S OWN KEY OF A CURVE, AS A did:key (#194-#197): the Ed25519,
   // P-256 or P-384 member of the ambient realm's key set — made at run time,
   // sealed in product, agreed across every process of the realm — named by
-  // the did:key of its public half. What this service signs a Data Integrity
-  // proof with when it is the ISSUER (the VC-API adapter, `vc_api.ts`) and
-  // what the JSON-LD form of its Bitstring Status List credentials is signed
-  // with. A did:key rather than the realm's did:web because it resolves from
-  // the identifier itself: nobody has to fetch anything to check it, which
+  // the did:key of its public half. What the JSON-LD form of its Bitstring
+  // Status List credentials is signed with. NOT what the VC API signs with
+  // since #598: that is `vcApiKeyFor()` below, keys of its own, because the
+  // VC API signs a document its caller wrote and these keys sign tokens.
+  // A did:key rather than the realm's did:web because it resolves from the
+  // identifier itself: nobody has to fetch anything to check it, which
   // is the property this file's own verifier holds every holder to.
   // Answers `{ privateKey, publicJwk, did, verificationMethod }`; throws
   // when the realm holds no such key, which is a defect in the key set.
@@ -797,6 +804,34 @@ class VcDataIntegrity {
     const multikey = this.multikeyOf(publicJwk);
     const did = 'did:key:' + multikey;
     log.debug("Leaving VcDataIntegrity.realmKeyFor().");
+    return { privateKey: found.privateKey, publicJwk: publicJwk, did: did,
+             verificationMethod: did + '#' + multikey,
+             kid: found.publicJwk.kid };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REALM'S VC-API KEY OF A CURVE, AS A did:key (#598): `realmKeyFor()`'s
+  // answer over the key set's dedicated VC-API member (`helpers.js`,
+  // makeVcApiKeys()) rather than over the keys that sign this realm's tokens.
+  // What `vc_api.ts` signs with as the VC API's issuer and holder, and
+  // nothing else does.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the realm's VC-API key of a curve, named by the `did:key` of its
+   * public half.
+   *
+   * @param curve - `Ed25519`, `P-256` or `P-384`
+   * @returns `{ privateKey, publicJwk, did, verificationMethod, kid }`
+   * @throws Error for any other curve
+   */
+  vcApiKeyFor(curve: string): any {
+    const { log, vcApiKeyFor } = this.deps;
+    log.debug("Entering VcDataIntegrity.vcApiKeyFor(). " + curve);
+    const found = vcApiKeyFor(curve);
+    const publicJwk = this.publicJwkOf(found.publicJwk);
+    const multikey = this.multikeyOf(publicJwk);
+    const did = 'did:key:' + multikey;
+    log.debug("Leaving VcDataIntegrity.vcApiKeyFor().");
     return { privateKey: found.privateKey, publicJwk: publicJwk, did: did,
              verificationMethod: did + '#' + multikey,
              kid: found.publicJwk.kid };
@@ -929,10 +964,8 @@ class VcDataIntegrity {
     }
     const canonicalConfig = await canonize(config);
     const canonicalDocument = await canonize(unsecured);
-    const configHash = crypto.createHash(hash)
-      .update(canonicalConfig, 'utf8').digest();
-    const documentHash = crypto.createHash(hash)
-      .update(canonicalDocument, 'utf8').digest();
+    const configHash = this.deps.stsCrypto.digest(hash, canonicalConfig);
+    const documentHash = this.deps.stsCrypto.digest(hash, canonicalDocument);
     log.debug("Leaving VcDataIntegrity.hashDataAsync(). RDFC.");
     return Buffer.concat([configHash, documentHash]);
   }
@@ -953,10 +986,10 @@ class VcDataIntegrity {
     const { log } = this.deps;
     log.debug("Entering VcDataIntegrity.hashData(). suite=" + suite.id);
     const hash = this.hashName(suite, jwk);
-    const configHash = crypto.createHash(hash)
-      .update(this.jcs(proofConfig), 'utf8').digest();
-    const documentHash = crypto.createHash(hash)
-      .update(this.jcs(unsecured), 'utf8').digest();
+    const configHash = this.deps.stsCrypto.digest(hash,
+                                                  this.jcs(proofConfig));
+    const documentHash = this.deps.stsCrypto.digest(hash,
+                                                    this.jcs(unsecured));
     log.debug("Leaving VcDataIntegrity.hashData().");
     return Buffer.concat([configHash, documentHash]);
   }
@@ -1007,7 +1040,7 @@ class VcDataIntegrity {
       return !!ok;
     }
     const { stsCrypto } = this.deps;
-    const key = crypto.createPublicKey({ key: jwk, format: 'jwk' });
+    const key = stsCrypto.publicKeyFromJwk(jwk);
     if (suite.kind === 'ed25519') {
       const ok = await stsCrypto.verifyRawSignature({ family: 'eddsa' }, key,
                                                     data, signature);
@@ -1619,6 +1652,7 @@ export = {
   jwkOfMultikey: slot.forward('jwkOfMultikey'),
   verifyAllProofs: slot.forward('verifyAllProofs'),
   realmKeyFor: slot.forward('realmKeyFor'),
+  vcApiKeyFor: slot.forward('vcApiKeyFor'),
   deriveProof: slot.forward('deriveProof'),
   signPresentation: slot.forward('signPresentation'),
   signDocument: slot.forward('signDocument'),

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -107,6 +107,7 @@ function childMain() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const base = 'https://127.0.0.1:' + port;
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const SP = 'fsp' + (MODE === 'product' ? 'p' : 'd');
     const REL = 'fsp-oidc';
     const PASSWORD = 'Fed-Link-Passw0rd!2026';
@@ -165,6 +166,20 @@ function childMain() {
         req.end(body);
       });
     }
+    // THE LINKING STEP'S PAGES ARE THE FEDERATION PAGES' SHELL SINCE #580:
+    // a refusal or the signed-in page at /federation/link/{handle} carries
+    // its view in `data-sts-state` and the browser draws it. The view, or
+    // null for a page the server drew (the assertion consumer service's).
+    function viewOf(r) {
+      const m = /<html[^>]* data-sts-state="([^"]*)"/.exec(String(
+        (r && r.text) || ''));
+      if (!m) {
+        return null;
+      }
+      return JSON.parse(m[1].replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')).view;
+    }
     function inSp(fn) {
       return realms.run(realms.get(SP), fn);
     }
@@ -173,10 +188,6 @@ function childMain() {
     }
     function attr(entry, name) {
       return entry ? (entry.attributes[name.toLowerCase()] || []) : [];
-    }
-    function hidden(text, name) {
-      const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(text);
-      return m ? m[1] : '';
     }
     function codesSince(mark) {
       return inSp(function () { return audit.list(); })
@@ -213,46 +224,87 @@ function childMain() {
       if (!opts.keepJar) {
         jar = {};
       }
-      const trail = { linkScreens: 0, linkScreen: '', totp: 0, setup: 0 };
+      const trail = { linkScreens: 0, linkScreen: '', linkView: null,
+                      linkId: '', totp: 0, setup: 0 };
       let r = await request('GET', '/realm/' + SP + '/federation/login/' +
                                    REL);
+      // THE SIGN-IN SCREENS ARE A STATIC SURFACE OVER `/authn-api` SINCE
+      // #571: a redirect to one is answered as its page does — the view,
+      // then the act — and the act's answer followed. A REFUSAL is the
+      // screen drawn again, so it counts as the next screen.
+      let linkAt = '';
+      let opened = null;
       for (let hop = 0; hop < 30; hop += 1) {
-        if (r.status >= 300 && r.status < 400 && r.headers.location) {
-          r = await request('GET', r.headers.location);
-          continue;
+        const at = String(r.headers.location || '');
+        const screenAt = r.status >= 300 && r.status < 400 &&
+          /\/authn\/login\?authn=/.test(at)
+          ? new URL(at, base) : null;
+        // A SECOND-FACTOR STEP IS A PAGE OF THE SAME SURFACE SINCE #572:
+        // opened as the browser opens it (its shell, then its view), and
+        // answered through its act below.
+        if (r.status >= 300 && r.status < 400 &&
+            /\/authn\/(totp|webauthn|mfa-setup|backup-code|password-factor|email-code|email-link)\?/
+              .test(at)) {
+          r = await authnScreen.openStep({ port: port, ca: caPem, jar: jar,
+            at: new URL(at, base).pathname + new URL(at, base).search });
+          r.isStep = true;
         }
-        const authnId = hidden(r.text, 'authn_id');
-        if (r.status === 200 && authnId &&
-            r.path.indexOf('/realm/' + SP + '/') === 0) {
+        if (screenAt &&
+            screenAt.pathname.indexOf('/realm/' + SP + '/') === 0) {
+          linkAt = screenAt.pathname + screenAt.search;
+          opened = await authnScreen.open({ port: port, ca: caPem, jar: jar,
+                                           at: linkAt });
           trail.linkScreens += 1;
-          trail.linkScreen = r.text;
-          if (opts.link === 'stop' ||
-              trail.linkScreens > (opts.linkAttempts || 1)) {
+          trail.linkScreen = linkAt;
+          trail.linkView = opened.view;
+          trail.linkId = opened.id;
+          if (opts.link === 'stop') {
+            return { r: opened, trail: trail };
+          }
+        } else if (screenAt) {
+          r = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
+            at: screenAt.pathname + screenAt.search,
+            fields: { action: 'login', username: idpUser,
+                      password: IDP_PASSWORD } });
+          if (r.next !== 'redirect') {
             return { r: r, trail: trail };
           }
-          r = await request('POST', '/realm/' + SP + '/authn/login', {
-            form: { authn_id: authnId, username: 'somebody-else-typed',
-                    password: opts.password || PASSWORD,
-                    action: opts.link === 'cancel' ? 'cancel' : 'login' } });
+          r = await request('GET', r.location);
+          continue;
+        } else if (r.status >= 300 && r.status < 400 && at) {
+          r = await request('GET', at);
           continue;
         }
-        if (r.status === 200 && authnId) {
-          r = await request('POST', '/authn/login', { form: {
-            authn_id: authnId, username: idpUser, password: IDP_PASSWORD,
-            action: 'login' } });
+        if (screenAt || (r.next === 'refused' && opened)) {
+          if (!screenAt) {
+            trail.linkScreens += 1;
+          }
+          if (trail.linkScreens > (opts.linkAttempts || 1)) {
+            return { r: r, trail: trail };
+          }
+          r = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
+            at: linkAt, opened: opened,
+            fields: { action: opts.link === 'cancel' ? 'cancel' : 'login',
+                      username: 'somebody-else-typed',
+                      password: opts.password || PASSWORD } });
+          // A next step on a page of its own (#572) is a 303-shaped answer
+          // the loop opens; a redirect or the forced change is followed.
+          if (r.next === 'redirect' || r.next === 'password-change') {
+            r = await request('GET', r.location);
+          }
           continue;
         }
-        const mfaId = hidden(r.text, 'mfa_id');
-        if (r.status === 200 && mfaId && /\/authn\/totp/.test(r.text)) {
+        if (r.isStep && r.view && r.view.page === 'totp') {
           trail.totp += 1;
           if (!opts.totpSecret || trail.totp > 1) {
             return { r: r, trail: trail };
           }
-          r = await request('POST', '/realm/' + SP + '/authn/totp', {
-            form: { mfa_id: mfaId, code: totp.codeAt(opts.totpSecret) } });
+          r = await authnScreen.stepAct({ port: port, ca: caPem, jar: jar,
+            opened: r, op: 'totp',
+            body: { code: totp.codeAt(opts.totpSecret) } });
           continue;
         }
-        if (r.status === 200 && mfaId) {
+        if (r.isStep && r.view) {
           trail.setup += 1;
           return { r: r, trail: trail };
         }
@@ -385,14 +437,17 @@ function childMain() {
     let mark = auditCount();
     let got = await signIn(ALICE, { link: 'stop' });
     let alice = entryOf(ALICE);
-    note(got.trail.linkScreens === 1 && /readonly/.test(got.trail.linkScreen) &&
-         got.trail.linkScreen.indexOf('value="' + ALICE + '"') >= 0 &&
-         !/webauthn_only/.test(got.trail.linkScreen) &&
-         !/kc-anonymous/.test(got.trail.linkScreen),
+    // The screen's view (#571): the name locked — drawn readonly — and no
+    // passwordless key (never offered on a locked screen), no usernameless
+    // passkey and no anonymous session.
+    const linkView = got.trail.linkView || {};
+    note(got.trail.linkScreens === 1 && linkView.locked === ALICE &&
+         linkView.hint === ALICE && !linkView.passkey &&
+         !linkView.anonymous,
          '1a. an unlinked subject naming an existing person is sent to the ' +
          'SP realm\'s sign-in screen, the name fixed, no passwordless key ' +
          'and no anonymous session offered',
-         got.r.status + ' ' + got.r.path);
+         got.r.status + ' ' + JSON.stringify(linkView).slice(0, 200));
     note(attr(alice, 'federationLink').length === 0 &&
          JSON.stringify(attr(alice, 'mail')) ===
            '["local-alice@sp.example"]' &&
@@ -426,8 +481,9 @@ function childMain() {
     alice = entryOf(ALICE);
     const aliceSub = partnerSubjectOf(ALICE);
     const aliceLink = REL + ' ' + ISSUER + ' ' + aliceSub;
-    note(got.r.status === 200 && /Signed in through/.test(got.r.text) &&
-         got.trail.linkScreens === 1,
+    note(got.r.status === 200 && viewOf(got.r) &&
+         viewOf(got.r).kind === 'signedIn' &&
+         viewOf(got.r).username === ALICE && got.trail.linkScreens === 1,
          '1d. the right password at the linking screen signs the person in',
          got.r.status + ' ' + got.r.text.replace(/\s+/g, ' ').slice(0, 200));
     note(JSON.stringify(attr(alice, 'federationLink')) ===
@@ -454,18 +510,22 @@ function childMain() {
     const VICTIM = 'fsp-victim-' + MODE;
     makePerson(VICTIM, 'local-victim@sp.example');
     got = await signIn(VICTIM, { link: 'stop' });
-    const handedOver = hidden(got.trail.linkScreen, 'authn_id');
+    const handedOver = got.trail.linkId;
     jar = {};
     mark = auditCount();
-    let other = await request('POST', '/realm/' + SP + '/authn/login', {
-      form: { authn_id: handedOver, username: VICTIM, password: PASSWORD,
-              action: 'login' } });
+    let other = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
+      at: got.trail.linkScreen,
+      fields: { action: 'login', username: VICTIM, password: PASSWORD } });
+    if (other.next === 'redirect') {
+      other = await request('GET', other.location);
+    }
     for (let hop = 0; hop < 5 && other.status >= 300 && other.status < 400;
          hop += 1) {
       other = await request('GET', other.headers.location);
     }
-    note(handedOver && other.status === 403 &&
-         /different browser/.test(other.text) &&
+    note(handedOver && other.status === 403 && viewOf(other) &&
+         viewOf(other).kind === 'refused' &&
+         /different browser/.test(viewOf(other).why) &&
          codesSince(mark).indexOf('STS-FED-0111') >= 0 &&
          attr(entryOf(VICTIM), 'federationLink').length === 0,
          '1i-0. the linking screen completed in ANOTHER browser is refused ' +
@@ -478,7 +538,8 @@ function childMain() {
     mark = auditCount();
     got = await signIn(CAROL, { link: 'cancel' });
     const carol = entryOf(CAROL);
-    note(got.r.status === 403 && /was not linked/.test(got.r.text) &&
+    note(got.r.status === 403 && viewOf(got.r) &&
+         viewOf(got.r).what === 'The account was not linked' &&
          codesSince(mark).indexOf('STS-FED-0099') >= 0 &&
          attr(carol, 'federationLink').length === 0 &&
          JSON.stringify(attr(carol, 'mail')) === '["local-carol@sp.example"]',
@@ -539,18 +600,13 @@ function childMain() {
     const NEWBIE = 'fsp-new-' + MODE;
     got = await signIn(NEWBIE, {});
     const namespaced = entryOf(REL + '~' + NEWBIE);
-    if (MODE === 'product') {
-      note(got.r.status === 403 && /not been provisioned/.test(got.r.text) &&
-           !namespaced && !entryOf(NEWBIE),
-           '1m. a subject naming nobody: product creates nobody (403)',
-           got.r.status);
-    } else {
-      note(got.r.status === 200 && namespaced && !entryOf(NEWBIE) &&
-           attr(namespaced, 'federationLink').length === 1,
-           '1m. a subject naming nobody gets a NAMESPACED entry, ' +
-           REL + '~' + NEWBIE + ', linked at creation',
-           got.r.status + ' ' + !!namespaced);
-    }
+    // IN BOTH MODES since #325 (2026-09-29): product honours the
+    // relationship's fedAutocreateUsers (on here) as development does.
+    note(got.r.status === 200 && namespaced && !entryOf(NEWBIE) &&
+         attr(namespaced, 'federationLink').length === 1,
+         '1m. a subject naming nobody gets a NAMESPACED entry, ' +
+         REL + '~' + NEWBIE + ', linked at creation',
+         got.r.status + ' ' + !!namespaced);
 
     // =======================================================================
     // 2. ADMINISTRATORS
@@ -619,20 +675,13 @@ function childMain() {
     makePerson(GINA, 'local-gina@sp.example');
     got = await signIn(GINA, {});
     const ginaSpace = entryOf(REL + '~' + GINA);
-    if (MODE === 'product') {
-      note(got.r.status === 403 && !ginaSpace &&
-           JSON.stringify(attr(entryOf(GINA), 'mail')) ===
-             '["local-gina@sp.example"]',
-           '4a. jit-namespaced never reaches the existing person; product ' +
-           'creates no entry, so the sign-in is refused', got.r.status);
-    } else {
-      note(got.r.status === 200 && ginaSpace &&
-           JSON.stringify(attr(entryOf(GINA), 'mail')) ===
-             '["local-gina@sp.example"]' &&
-           attr(entryOf(GINA), 'federationLink').length === 0,
-           '4a. jit-namespaced gives the subject a NEW entry and never the ' +
-           'existing person of that name', got.r.status);
-    }
+    // IN BOTH MODES since #325, as 1m.
+    note(got.r.status === 200 && ginaSpace &&
+         JSON.stringify(attr(entryOf(GINA), 'mail')) ===
+           '["local-gina@sp.example"]' &&
+         attr(entryOf(GINA), 'federationLink').length === 0,
+         '4a. jit-namespaced gives the subject a NEW entry and never the ' +
+         'existing person of that name', got.r.status);
 
     // =======================================================================
     // 5. ANY-EXISTING (development only)

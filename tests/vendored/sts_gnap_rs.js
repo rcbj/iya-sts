@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -9,7 +9,8 @@
 // GNAP RESOURCE SERVER CONNECTIONS (RFC 9767) AGAINST A RUNNING SERVICE: THE
 // FIVE TOKEN FORMATS, CHECKED BY CODE THAT IS NOT THE SERVICE'S; INTROSPECTION,
 // ACTIVE AND EVERY WAY OF BEING INACTIVE; RESOURCE SET REGISTRATION; TOKEN
-// DERIVATION; AND A KEY PROVED BY MUTUAL TLS.
+// DERIVATION AND THE ACTOR CHAIN A DERIVED TOKEN CARRIES IN EVERY FORMAT; AND
+// A KEY PROVED BY MUTUAL TLS.
 //
 // `sts_gnap_core.js` drives the client instance's half of RFC 9635. This is the
 // other party: a resource server with a key of its own, registered on an
@@ -41,6 +42,24 @@
 //                  carry, so its signature was the service's word; with a
 //                  JCS suite none of the five formats is.
 //
+// **SEEING A REVOCATION WITHOUT INTROSPECTION (#432, section 8)** is checked
+// the same way: the access-token Status List Token is fetched from the URI
+// the JWT names, its JWS verified against /oauth2/jwks here, its ZLIB list
+// inflated here and the token's bit read here (index 0 in the least
+// significant bit, draft-ietf-oauth-status-list section 4.1); and a biscuit's
+// revocation identifier is computed here — the authority block's signature,
+// hex — before it is looked for on /gnap/biscuit/revocations.
+//
+// **THE RESOURCE SERVER A TOKEN IS PRESENTED AT IS THE TEST PEER'S (#586)**,
+// in every mode — the demonstration one was deleted by #593. It
+// is registered in the realm as an ordinary GNAP resource server
+// (`gnap_flow.js`, `peer: true`), judges every token by RFC 9767
+// introspection and checks the key proof itself; section 6's mutual-TLS
+// calls go to its TLS listener. What it made of each presentation is read
+// back from it where it matters (the jwt-encrypted token it was handed).
+// A run with no peer — an AWS target — reports this job SKIPPED
+// (`testPeer` in MANIFEST.js).
+//
 // Everything runs in a THROWAWAY TRUST REALM that is left behind.
 //
 // OWNED HERE (local: true): GNAP exists in this repository and nowhere else.
@@ -52,6 +71,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
+const testPeer = require("./test_peer.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -77,7 +97,9 @@ const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnaprs").replace(/[^a-z0-9-]/g, "").slice(0, 30),
   password: "gnap-rs-Passw0rd!-" + String(Date.now()).slice(-6),
-  log: log
+  log: log,
+  // The resource server tokens are presented at is the test peer's (#586).
+  peer: true
 });
 const check = h.check;
 const OWNER = usernameFor("gnap-rs-owner");
@@ -320,6 +342,9 @@ function verifyBiscuit(value, rootRaw) {
   log.debug("Leaving verifyBiscuit().");
   return { signatureVerifies: good, proofMatches: proofMatches,
            algorithm: algorithm, block: block,
+           // The authority block's revocation identifier (#432): a biscuit
+           // names each block by the signature that sealed it.
+           revocationId: Buffer.from(signature).toString("hex"),
            blocks: top.filter(function (f) { return f[0] === 3; }).length };
 }
 
@@ -401,6 +426,59 @@ function introspect(rs, token, extra) {
                         extra || {}) });
 }
 
+// ---------------------------------------------------------------------------
+// THE ACCESS-TOKEN STATUS LIST, READ BY THIS FILE (#432). `ref` is a JWT's
+// `status.status_list`. Answers the token's bit, after checking the list as
+// section 8.3 asks: its own JWS against the JWKS, `typ`, `sub` equal to the
+// reference's `uri`, not expired.
+// ---------------------------------------------------------------------------
+async function statusBit(ref, jwks) {
+  log.debug("Entering statusBit().");
+  const r = await gnap.rawRequest("GET", ref.uri, {});
+  assert.strictEqual(r.status, 200, "the status list answers: " + r.text);
+  const v = verifyJws(r.text, jwks);
+  assert.strictEqual(v.header.typ, "statuslist+jwt", "section 5.1's typ");
+  assert.strictEqual(v.claims.sub, ref.uri, "the list's sub is the uri the " +
+                                            "token names");
+  assert.ok(v.claims.exp > Date.now() / 1000, "the list has not expired");
+  const bits = v.claims.status_list.bits;
+  const bytes = require("zlib").inflateSync(
+      Buffer.from(v.claims.status_list.lst, "base64url"));
+  const perByte = 8 / bits;
+  const byte = bytes[Math.floor(ref.idx / perByte)];
+  assert.ok(byte !== undefined, "the index is inside the list");
+  const shift = (ref.idx % perByte) * bits;
+  log.debug("Leaving statusBit().");
+  return (byte >> shift) & ((1 << bits) - 1);
+}
+
+// The bit, asked again until it is `want` or a bound passes: revocation
+// reaches another worker or node by replication, as `sts_gnap_signals.js`
+// argues for delivery.
+async function statusBitBecomes(ref, jwks, want) {
+  log.debug("Entering statusBitBecomes().");
+  const deadline = Date.now() + 15000;
+  let bit = await statusBit(ref, jwks);
+  while (bit !== want && Date.now() < deadline) {
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    bit = await statusBit(ref, jwks);
+  }
+  log.debug("Leaving statusBitBecomes().");
+  return bit;
+}
+
+// THE MACAROON ROOT KEY, read the one way there is since #446: GET
+// /admin-api/applications masks every credential, so the key a registration
+// wrote onto a resource server's entry is read with reveal-secret.
+async function macaroonRootOf(h, identifier) {
+  log.debug("Entering macaroonRootOf(). " + identifier);
+  const r = await h.apiPost(h.realmApi + "/applications/reveal-secret",
+                            { application: identifier,
+                              secret: "gnapMacaroonKey" });
+  log.debug("Leaving macaroonRootOf(). status=" + r.status);
+  return r;
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving RFC 9767 at " + h.realmBase);
@@ -411,6 +489,8 @@ async function test() {
   log.info("=== 0. the realm and a registered resource server ===");
   await h.createRealm("GNAP resource servers");
   await h.setting("gnap.continueWaitS", 0);
+  // The resource server sections 2, 2b and 6 present tokens at (#586).
+  await h.usePeer();
   await h.ensurePerson(OWNER);
   const rsKey = new gnap.Client({ key: gnap.newKey("ES256") });
   const rsJwe = nodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -422,8 +502,14 @@ async function test() {
     identifier: RS_ID, kind: "gnap-resource-server", protocols: ["gnap"],
     fields: { gnapKey: JSON.stringify(rsKey.keyObject()),
               gnapJweKey: JSON.stringify(rsJweJwk),
-              gnapResourceServerUri: RS_URI } }, "registered the resource " +
-                                                 "server");
+              gnapResourceServerUri: RS_URI,
+              // The photos type is CATALOGUED (#432 phase 4): product mode
+              // refuses a type nobody declares. Owned here, answering at the
+              // downstream resource server's address too (section 4b).
+              oauthAuthorizationDetailsType: [JSON.stringify({
+                type: "https://rs.gnap.test/photos",
+                locations: ["https://rs2.gnap.test/api"] })] } },
+             "registered the resource server");
   const client = new gnap.Client({ key: gnap.newKey("ES256") });
 
   // =========================================================================
@@ -490,16 +576,13 @@ async function test() {
     h.refused(r, "invalid_request", "a string where a boolean belongs");
   });
 
-  const entry = await h.apiGet(h.realmApi + "/applications?application=" +
-                               encodeURIComponent(RS_ID));
+  const entry = await macaroonRootOf(h, RS_ID);
   let macaroonRoot;
   check("registration wrote the macaroon root key onto the resource server's " +
         "own entry", function () {
-    const values = entry.body.attributes.gnapMacaroonKey ||
-                   entry.body.attributes.gnapmacaroonkey;
-    assert.ok(values && values[0],
-              JSON.stringify(Object.keys(entry.body.attributes)));
-    macaroonRoot = Buffer.from(values[0], "base64url");
+    assert.strictEqual(entry.status, 200, entry.raw.slice(0, 300));
+    assert.ok(entry.body && entry.body.value, entry.raw.slice(0, 300));
+    macaroonRoot = Buffer.from(String(entry.body.value), "base64url");
     assert.strictEqual(macaroonRoot.length, 32);
   });
 
@@ -547,6 +630,9 @@ async function test() {
             "cnf.jkt is the client's RFC 7638 thumbprint computed " +
             "here", function () {
               const v = verifyJws(token.value, jwks);
+              // #157: the header is the type (RFC 8725 section 3.11); the
+              // payload's typ is this service's private marker.
+              assert.strictEqual(v.header.typ, "gnap-at+jwt");
               assert.strictEqual(v.claims.typ, "GNAP");
               assert.strictEqual(v.claims.aud, RS_ID);
               assert.deepStrictEqual(v.claims.cnf, { jkt: clientJkt });
@@ -558,6 +644,7 @@ async function test() {
         const opened = openJwe(token.value, rsJwe.privateKey);
         assert.strictEqual(opened.header.cty, "JWT");
         const v = verifyJws(opened.plaintext, jwks);
+        assert.strictEqual(v.header.typ, "gnap-at+jwt");
         assert.strictEqual(v.claims.aud, RS_ID);
         assert.deepStrictEqual(v.claims.cnf, { jkt: clientJkt });
       });
@@ -673,7 +760,7 @@ async function test() {
     }
     r = await client.send("GET", h.RS, { token: token.value });
     check(format + ": a token issued for one resource server is refused at " +
-                   "another (the demonstration RS)",
+                   "another (the test peer's)",
           function () {
             assert.strictEqual(r.status, 401, r.text);
           });
@@ -684,12 +771,14 @@ async function test() {
   //
   // Section 2 proves each format is minted correctly; it presents four of the
   // five only where they are REFUSED. So each format is also ACCEPTED here, by
-  // the demonstration resource server — whose format-specific check (audience,
-  // key binding, access) runs only on this path — then narrowed, rotated,
-  // revoked and allowed to expire, because rotation and modification RE-MINT in
-  // the token's own format. A token asked for with no resource server named is
-  // audienced to the demonstration RS, and `jwt-encrypted` is then encrypted to
-  // this authorization server (dir), which is its other mode.
+  // a resource server that is not this service — the test peer's (#586),
+  // which judges each by introspection and checks the key proof itself —
+  // then narrowed, rotated, revoked and allowed to expire, because rotation
+  // and modification RE-MINT in the token's own format. The rights asked for
+  // are of the type the peer declares, so the token is audienced to it; the
+  // peer registered no gnapJweKey, so `jwt-encrypted` is encrypted to this
+  // authorization server (dir), which is its other mode — and the peer,
+  // which cannot open it, is asked what it was handed.
   // =========================================================================
   log.info("=== 2b. each format accepted, narrowed, rotated, revoked and " +
            "expired ===");
@@ -698,8 +787,9 @@ async function test() {
     await h.setting("gnap.accessTokenFormat", format);
     const life = await h.redirectGrant(client, OWNER);
     const first = life.released.access_token;
+    const seenFrom = await testPeer.mark(h.peer.tenant);
     r = await client.send("GET", h.RS, { token: first.value });
-    check(format + ": the demonstration RS ACCEPTS it for read, and says " +
+    check(format + ": the resource server ACCEPTS it for read, and says " +
                    "which format it judged", function () {
       assert.strictEqual(r.status, 200, r.text);
       assert.strictEqual(r.json.format, format);
@@ -715,6 +805,19 @@ async function test() {
                                               .toString("utf8"));
               assert.strictEqual(header.alg, "dir", JSON.stringify(header));
             });
+      const seen = await testPeer.received(h.peer.tenant, "gnap", seenFrom);
+      check("jwt-encrypted: what the peer was handed is that token, which it " +
+            "cannot open, and introspection told it the format and that it " +
+            "is active for it", function () {
+        const accepted = seen.events.filter(function (one) {
+          return one.ok === true && one.action === "read";
+        });
+        assert.strictEqual(accepted.length, 1, JSON.stringify(seen.events));
+        assert.strictEqual(accepted[0].format, "jwt-encrypted",
+                           JSON.stringify(accepted[0]));
+        assert.strictEqual(accepted[0].method, "httpsig",
+                           JSON.stringify(accepted[0]));
+      });
     }
     r = await client.send("POST", h.RS,
                           { token: first.value, json: { write: format } });
@@ -938,6 +1041,153 @@ async function test() {
   await h.setting("gnap.tokenDerivation", true);
 
   // =========================================================================
+  // 4b. THE ACTOR CHAIN ON A DERIVED TOKEN, IN EVERY FORMAT, CHECKED HERE
+  // (#432 phase 1).
+  //
+  // A derived token names the resource server that derived it — RFC 8693
+  // section 4.1's `act` — and each format carries it in its own vocabulary:
+  // the claim in both JWT formats, a `gnap:act=` caveat in the macaroon's
+  // AUTHORITY section (before the `gnap:access=` boundary, where only the
+  // root key's holder writes), `actor(i, sub)` facts in the biscuit's
+  // authority block, and a `gnapActor` member of the zcap capability. Each is
+  // read by THIS file's decoders, under the signature or MAC this file
+  // verifies, so a chain the format does not protect would fail here.
+  //
+  // The derivation is to a SECOND resource server, so this resource server
+  // is given the relationship #186's policy asks for (appAllowedToDelegateTo)
+  // and the job passes in either mode; the refusal without it is
+  // `sts_gnap_delegation.js`'s.
+  // =========================================================================
+  log.info("=== 4b. the actor chain on a derived token ===");
+  const rs2Key = new gnap.Client({ key: gnap.newKey("ES256") });
+  const rs2Jwe = nodeCrypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const RS2_ID = "gnap-rs2-" + h.realm;
+  const RS2_URI = "https://rs2.gnap.test/api";
+  await h.ok(h.realmApi + "/applications/create", {
+    identifier: RS2_ID, kind: "gnap-resource-server", protocols: ["gnap"],
+    fields: { gnapKey: JSON.stringify(rs2Key.keyObject()),
+              gnapJweKey: JSON.stringify(Object.assign(
+                rs2Jwe.publicKey.export({ format: "jwk" }),
+                { alg: "RSA-OAEP-256", use: "enc" })),
+              gnapResourceServerUri: RS2_URI } },
+             "registered the downstream resource server");
+  await h.ok(h.realmApi + "/applications/add", {
+    application: RS_ID, attribute: "appAllowedToDelegateTo", value: RS2_ID },
+             "the resource server may delegate to the downstream one");
+  r = await rs2Key.send("POST", h.realmBase + "/gnap/resource", { json: {
+    access: [{ type: "https://rs.gnap.test/photos", actions: ["read"],
+               locations: [RS2_URI] }],
+    resource_server: { key: rs2Key.keyObject() } } });
+  check("the downstream resource server registers a set (which writes its " +
+        "macaroon root key)", function () {
+    assert.strictEqual(r.status, 200, r.text);
+  });
+  const rs2Entry = await macaroonRootOf(h, RS2_ID);
+  const rs2MacaroonRoot = Buffer.from(String(rs2Entry.body.value),
+                                      "base64url");
+  const both = { type: "https://rs.gnap.test/photos", actions: ["read"],
+                 locations: [RS_URI, RS2_URI] };
+  const toRs2 = { type: "https://rs.gnap.test/photos", actions: ["read"],
+                  locations: [RS2_URI] };
+  const chained = await h.redirectGrant(client, OWNER,
+                                        { access_token: { access: [both] } });
+  const chainedValue = chained.released.access_token.value;
+  const rsJkt = jwkThumbprint(rsKey.key.publicJwk);
+  // THE CHAIN EVERY FORMAT MUST CARRY (#526): the deriving resource server
+  // over the original client — the instance the chained token was issued
+  // to, read from its introspection — each `urn:sts:client:<id>` with the
+  // GNAP issuer, the grant endpoint.
+  const before = await introspect(rsKey, chainedValue);
+  const originalInstance = before.json && before.json.instance_id;
+  check("the chained token names the client instance it was issued to",
+        function () {
+    assert.ok(originalInstance, before.text);
+  });
+  const expectedAct = { sub: "urn:sts:client:" + RS_ID, iss: h.GRANT,
+                        act: { sub: "urn:sts:client:" + originalInstance,
+                               iss: h.GRANT } };
+  for (const format of FORMATS) {
+    await h.setting("gnap.accessTokenFormat", format);
+    r = await rsKey.send("POST", h.GRANT, { json: {
+      client: { key: rsKey.keyObject() }, existing_access_token: chainedValue,
+      access_token: { access: [toRs2] } } });
+    const value = r.json && r.json.access_token ? r.json.access_token.value
+                                                : "";
+    check(format + ": the resource server derives a token for the " +
+          "downstream one", function () {
+      assert.strictEqual(r.status, 200, r.text);
+      assert.ok(value, r.text);
+    });
+    if (format === "jwt-signed" || format === "jwt-encrypted") {
+      check(format + ": the JWS verifies here and its act names the " +
+            "deriving resource server (RFC 8693 section 4.1)", function () {
+        const jws = format === "jwt-signed" ? value
+          : openJwe(value, rs2Jwe.privateKey).plaintext;
+        const v = verifyJws(jws, jwks);
+        assert.deepStrictEqual(v.claims.act, expectedAct);
+        assert.strictEqual(v.claims.aud, RS2_ID);
+        assert.deepStrictEqual(v.claims.cnf, { jkt: rsJkt });
+      });
+    } else if (format === "macaroon") {
+      check("macaroon: a gnap:act= caveat in the AUTHORITY section names " +
+            "the deriving resource server, under an HMAC chain recomputed " +
+            "here from the downstream entry's root key", function () {
+        const decoded = decodeMacaroonV2(Buffer.from(value, "base64url"));
+        const caveats = decoded.caveats.map(function (c) {
+          return c.identifier.toString("utf8");
+        });
+        const at = caveats.findIndex(function (c) {
+          return c.indexOf("gnap:act=") === 0;
+        });
+        const boundary = caveats.findIndex(function (c) {
+          return c.indexOf("gnap:access=") === 0;
+        });
+        assert.ok(at >= 0 && at < boundary, caveats.join(" | "));
+        assert.deepStrictEqual(JSON.parse(Buffer.from(
+          caveats[at].slice("gnap:act=".length), "base64url")
+                                                .toString("utf8")),
+                               expectedAct);
+        assert.ok(macaroonSignature(rs2MacaroonRoot, decoded).equals(
+          decoded.signature), "the recomputed MAC matches");
+      });
+    } else if (format === "biscuit") {
+      check("biscuit: the authority block, whose signature verifies here, " +
+            "carries the actor fact naming the deriving resource server",
+            function () {
+        const v = verifyBiscuit(value, rootRaw);
+        assert.ok(v.signatureVerifies, "the authority signature");
+        const text = v.block.toString("latin1");
+        assert.ok(text.indexOf("actor") >= 0, "an actor fact");
+        assert.ok(text.indexOf("urn:sts:client:" + RS_ID) >= 0,
+                  "naming urn:sts:client:" + RS_ID);
+        assert.ok(text.indexOf("actor_iss") >= 0 &&
+                  text.indexOf(h.GRANT) >= 0,
+                  "and its issuer, in an actor_iss fact (#526)");
+      });
+    } else if (format === "zcap") {
+      check("zcap: gnapActor names the deriving resource server, under the " +
+            "eddsa-jcs-2022 proof verified here — and a changed actor does " +
+            "not verify", function () {
+        const cap = JSON.parse(Buffer.from(value, "base64url")
+                                     .toString("utf8"));
+        assert.deepStrictEqual(cap.gnapActor, expectedAct);
+        const raw = Buffer.from(material.biscuit.jwk.x, "base64url");
+        assert.ok(verifyEddsaJcs(cap, raw), "the proof verifies");
+        const touched = JSON.parse(JSON.stringify(cap));
+        touched.gnapActor = { sub: "somebody-else" };
+        assert.ok(!verifyEddsaJcs(touched, raw), "a forged chain does not");
+      });
+    }
+    r = await introspect(rs2Key, value);
+    check(format + ": introspection by the downstream resource server " +
+          "returns the chain", function () {
+      assert.strictEqual(r.json.active, true, r.text);
+      assert.deepStrictEqual(r.json.act, expectedAct);
+    });
+  }
+  await h.setting("gnap.accessTokenFormat", "jwt-signed");
+
+  // =========================================================================
   // 5. REVOCATION REACHES INTROSPECTION.
   // =========================================================================
   log.info("=== 5. revoked tokens ===");
@@ -986,16 +1236,19 @@ async function test() {
     tls: { cert: certPem, key: keyPem, certDer: certDer,
            rejectUnauthorized: false } });
   const mtlsFlow = await h.redirectGrant(mtlsClient, OWNER);
-  r = await mtlsClient.send("GET", h.RS,
+  // AT THE PEER'S TLS LISTENER (#586): the proof is the client certificate
+  // on the connection, so the resource is its https address, verified
+  // against the peer's CA where this job makes the connection itself.
+  r = await mtlsClient.send("GET", h.RS_TLS,
                             { token: mtlsFlow.released.access_token.value });
   check("a certificate key proved by mutual TLS obtains a token and presents " +
         "it at the RS", function () {
     assert.strictEqual(r.status, 200, r.text);
     assert.strictEqual(r.json.method, "mtls");
   });
-  r = await gnap.rawRequest("GET", h.RS,
-                            { Authorization: "GNAP " +
-                                             mtlsFlow.released.access_token.value });
+  r = await gnap.rawRequest("GET", h.RS_TLS,
+    { Authorization: "GNAP " + mtlsFlow.released.access_token.value },
+    null, { ca: h.peerCaPem });
   check("the same token on a connection with no client certificate is refused",
         function () {
     assert.strictEqual(r.status, 401, r.text);
@@ -1009,11 +1262,11 @@ async function test() {
   otherCert.setSubject([{ name: "commonName", value: "gnap-mtls-thief" }]);
   otherCert.setIssuer([{ name: "commonName", value: "gnap-mtls-thief" }]);
   otherCert.sign(otherPair.privateKey, forge.md.sha256.create());
-  r = await gnap.rawRequest("GET", h.RS,
+  r = await gnap.rawRequest("GET", h.RS_TLS,
     { Authorization: "GNAP " + mtlsFlow.released.access_token.value },
     null, { cert: forge.pki.certificateToPem(otherCert),
             key: forge.pki.privateKeyToPem(otherPair.privateKey),
-            rejectUnauthorized: false });
+            ca: h.peerCaPem });
   check("…and on a connection presenting a DIFFERENT certificate", function () {
     assert.strictEqual(r.status, 401, r.text);
   });
@@ -1026,6 +1279,90 @@ async function test() {
     h.refused(r, "invalid_client", "an mtls key with no client certificate");
   });
   await h.setting("gnap.mtlsTrust", "auto");
+
+  // =========================================================================
+  // 8. A REVOCATION SEEN WITHOUT INTROSPECTION (#432; RFC 9767 section 6.3).
+  // =========================================================================
+  log.info("=== 8. the access-token status list and revoked biscuits ===");
+  r = await gnap.rawRequest("GET", h.realmBase + "/.well-known/gnap-as-rs", {});
+  const rsDoc = r.json;
+  check("the RS-facing discovery names the access-token status list's " +
+        "aggregation and the revoked-biscuit list", function () {
+    assert.strictEqual(rsDoc.status_list_aggregation_endpoint,
+                       h.realmBase + "/status-lists", JSON.stringify(rsDoc));
+    assert.strictEqual(rsDoc.biscuit_revocation_endpoint,
+                       h.realmBase + "/gnap/biscuit/revocations");
+  });
+  r = await gnap.rawRequest("GET", rsDoc.status_list_aggregation_endpoint, {});
+  const listUri = h.realmBase + "/status-lists/access-tokens";
+  check("the aggregation lists the realm's one access-token list",
+        function () {
+    assert.strictEqual(r.status, 200, r.text);
+    assert.deepStrictEqual(r.json.status_lists, [listUri]);
+  });
+  for (const format of ["jwt-signed", "jwt-encrypted"]) {
+    const done = await h.redirectGrant(client, OWNER,
+                                       { access_token: {
+                                         access: [references[format]] } });
+    const token = done.released.access_token;
+    const claims = format === "jwt-signed"
+      ? verifyJws(token.value, jwks).claims
+      : verifyJws(openJwe(token.value, rsJwe.privateKey).plaintext,
+                  jwks).claims;
+    const ref = (claims.status || {}).status_list || {};
+    check(format + ": the token carries status.status_list naming the " +
+          "realm's list (draft-ietf-oauth-status-list section 6.1)",
+          function () {
+      assert.strictEqual(ref.uri, listUri, JSON.stringify(claims.status));
+      assert.ok(Number.isInteger(ref.idx) && ref.idx >= 0,
+                JSON.stringify(claims.status));
+    });
+    const before = await statusBit(ref, jwks);
+    check(format + ": its bit in the list, read and verified here, is 0",
+          function () {
+      assert.strictEqual(before, 0);
+    });
+    r = await client.send("DELETE", token.manage.uri,
+                          { token: token.manage.access_token.value });
+    assert.strictEqual(r.status, 204, r.text);
+    const after = await statusBitBecomes(ref, jwks, 1);
+    check(format + ": revoked at its manage URI, its bit is 1 — a resource " +
+          "server checking on its own now refuses it", function () {
+      assert.strictEqual(after, 1);
+    });
+  }
+  const biscuitDone = await h.redirectGrant(client, OWNER,
+                                            { access_token: {
+                                              access: [references.biscuit] } });
+  const biscuitToken = biscuitDone.released.access_token;
+  const revocationId = verifyBiscuit(biscuitToken.value, rootRaw).revocationId;
+  const revocationsUri = h.realmBase + "/gnap/biscuit/revocations";
+  r = await gnap.rawRequest("GET", revocationsUri, {});
+  check("a live biscuit's authority revocation identifier, computed here, is " +
+        "not on the revoked list", function () {
+    assert.strictEqual(r.status, 200, r.text);
+    assert.ok(Array.isArray(r.json.revocation_ids), r.text);
+    assert.ok(r.json.revocation_ids.indexOf(revocationId) < 0, r.text);
+  });
+  r = await client.send("DELETE", biscuitToken.manage.uri,
+                        { token: biscuitToken.manage.access_token.value });
+  assert.strictEqual(r.status, 204, r.text);
+  let listed = [];
+  const biscuitDeadline = Date.now() + 15000;
+  for (;;) {
+    r = await gnap.rawRequest("GET", revocationsUri, {});
+    listed = (r.json && r.json.revocation_ids) || [];
+    if (listed.indexOf(revocationId) >= 0 || Date.now() > biscuitDeadline) {
+      break;
+    }
+    await new Promise(function (resolve) { setTimeout(resolve, 250); });
+  }
+  check("revoked at its manage URI, the biscuit's identifier is on " +
+        "/gnap/biscuit/revocations", function () {
+    assert.ok(listed.indexOf(revocationId) >= 0, JSON.stringify(listed));
+    assert.ok(/^max-age=\d+$/.test(String(r.headers["cache-control"])),
+              String(r.headers["cache-control"]));
+  });
 
   // =========================================================================
   // 7. THE RESOURCE SERVER DISCOVERY DOCUMENT FOLLOWS THE SETTINGS.

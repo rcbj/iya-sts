@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -33,9 +33,9 @@
 // generates the list.
 //
 // ---------------------------------------------------------------------------
-// TWO ROUTES, AND THE SECOND ONE IS A PNG.
+// THE IMAGE: `/logo.png`, A ROUTE OF ITS OWN.
 //
-// `/logo.png` serves `assets/debugger-logo.png` from this directory. It is a
+// `/logo.png` serves `assets/logo.png` from this directory. It is a
 // route rather than `express.static()` because one file does not need a static
 // middleware, and a middleware mounted at the root would sit in front of every
 // protocol module's routes for the rest of the process's life — see rule 1 in
@@ -57,39 +57,49 @@
 // an endpoint answering for itself is the distinction it is looking for.
 //
 // ---------------------------------------------------------------------------
-// THE IMAGE IS ON A BLACK BAND AND THAT IS NOT A STYLE CHOICE.
-//
-// The logo is the parent project's transparent one: white lettering with a dark
-// outline, a green wordmark and a pale-blue mark, drawn to sit on a dark
-// ground. On this file's own card background the "IYA CYBER SECURITY" half all
-// but disappears. The band behind it is black for the same reason the parent
-// project ships a black-backed copy of the same artwork on its error pages —
-// it is what the artwork was drawn for.
-//
-// The asset is a DERIVATIVE rather than a byte-identical copy, which is why it
-// is here and not in `common/vendored/` (that directory's rule is that its
-// files match the parent's byte for byte, and two of the parent's tests hold
-// them to it). It was produced from
-// `client/public/images/oauth2oidcdebugger+iyasec-logo-transparent.png` — 2172
-// x724 and 745 kB — with:
-//
-//     convert <source> -resize 720x -strip PNG32:debugger-logo.png
-//     convert debugger-logo.png -colors 256 PNG8:debugger-logo.png
-//     optipng -o5 debugger-logo.png
-//
-// 720px is twice the width it is drawn at, so it stays sharp on a 2x display,
-// and 256 colours takes it to 31 kB. Re-run those three lines if the parent's
-// artwork changes.
+// THE LOGO IS THIS PROJECT'S OWN (2026-10-01, rcbj): the one README.md
+// shows, `docs/logo.png`, copied byte for byte (906 x 269, opaque, 22 kB;
+// drawn at half that, so it is sharp on a 2x display). It replaced the
+// parent project's debugger artwork, which was white lettering drawn for a
+// black band. This one is dark lettering on an off-white ground, so the
+// band takes the image's own background colour (#fbfaf8) and the logo sits
+// on it with no edge. Copy `docs/logo.png` over it again if the README's
+// logo changes.
 //
 // ---------------------------------------------------------------------------
-// NO SCRIPT, NO EXTERNAL RESOURCE.
+// A STATIC SURFACE SINCE #579 (2026-10-12): THE FIRST OF #569'S PUBLIC PAGES.
 //
-// `app.js` sets `script-src 'none'` service-wide and this page needs no
-// exception: it has no behaviour. Its one `<style>` block is covered by the
-// `style-src 'unsafe-inline'` several other pages here already rely on, and the
-// image is same-origin, which is what `img-src 'self' data:` already allows.
-// A page that reached out to a CDN for a font would need the policy widened
-// for a decoration, so it does not.
+// Until #579 this module drew the card itself, as HTML with no script — and
+// that page needed no exception to `app.js`'s `script-src 'none'`. #569
+// converts every human-facing page into a static application on the
+// console's pattern, and the front door is the smallest, so it went first
+// and proved #570's foundation (`common/CLAUDE.md` 3cl, the recipe):
+//
+//   * `GET /` answers the SHELL (`ShellDocument`), the same document for
+//     every request but for its `data-sts-*` attributes: the language the
+//     chooser picked, the locale policy's default, the build, the realm's
+//     prefix, and the sign-in service's base where it is on another
+//     listener (#472) — the chooser posts there.
+//   * `GET /home.js` is the bundle `build-typescript.sh` built from
+//     `web_home.ts` (on disk `home-spa.js`, never `home.js`, which is this
+//     module compiled); `GET /home.css` the card's own rules over
+//     `/web/card.css`.
+//   * `GET /home-api` is the API's index and `GET /home-api/front` the one
+//     page's VIEW, language-free: the name, the version and its build, the
+//     two facts of the mode a sign-in sentence depends on, the image, and
+//     the five links as ids and addresses — the console's and the portal's
+//     on the listener that answers them (#472), relative where it is this
+//     one. The browser draws it in its language from the `home` catalogs
+//     (`web_home_front.ts`), the same messages the server-drawn page used.
+//
+// SCRIPT IS REQUIRED (rcbj on #569): with script blocked the shell's
+// `<noscript>` says what the page is, and links the documentation, since a
+// front door that answers nothing at all is the state 2026-08-24 ended. The
+// policy is the shell's: `script-src 'self'`, `style-src 'self'` (no inline
+// style any more), `connect-src 'self'` plus the sign-in service's origin
+// where it is elsewhere, `img-src 'self'` for the logo, and
+// `frame-ancestors` re-added by `app.contentSecurityPolicy()` whatever is
+// asked.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -146,6 +156,23 @@ import version = require('../common/version');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 
+// THE LANGUAGE (#539). A LIBRARY (rule 3): it requires `i18n`,
+// `locale_policy`, `helpers` and `config`, and no route module, so requiring
+// it from here moves no route. Since #579 only for the shell's language
+// attributes: the browser translates.
+import PageLocale = require('../common/page_locale');
+
+// THE SHELL AND THE BUNDLE (#570). A LIBRARY (rule 3): `helpers` and node's
+// modules; it takes the express app as an argument and registers nothing.
+import ShellDocument = require('../common/shell_document');
+
+// WHICH LISTENER ANSWERS WHICH APPLICATION (#472). A LIBRARY that `helpers`
+// already loads; the console's and the portal's links, and the chooser's
+// sign-in service, are addressed where they are answered.
+import listenerMap = require('../common/listener_map');
+
+type Json = any;
+
 const APP_VERSION = version.load();
 
 const VERSION = APP_VERSION.version;
@@ -176,7 +203,9 @@ const DOCS_URL = 'https://rcbj.github.io/iya-sts/';
 // Relative on purpose. This service is reached as localhost, as `sts` on a
 // compose network and through a published port, and `baseUrlOf()` exists
 // because documents that carry absolute URLs have to follow the request. A
-// same-origin link does not have to know any of that.
+// same-origin link does not have to know any of that. SINCE #472 the console
+// may be on a listener of its own, and then — only then — the view carries
+// its advertised base instead (`linkTo()`).
 const CONSOLE_PATH = '/admin';
 
 // THE FIFTH LINK, AND IT IS THE SECOND SAME-ORIGIN ONE (2026-09-10). Relative
@@ -195,9 +224,66 @@ const CONSOLE_PATH = '/admin';
 // be a second copy that goes stale the first time a page is added there.
 const PORTAL_PATH = '/portal';
 
-const LOGO_PATH = path.join(__dirname, 'assets', 'debugger-logo.png');
+const LOGO_PATH = path.join(__dirname, 'assets', 'logo.png');
 
 const LOGO_ROUTE = '/logo.png';
+
+// The logo's own size: drawn at half of it, so it is sharp on a 2x display.
+const LOGO_WIDTH = 906;
+
+const LOGO_HEIGHT = 269;
+
+// ---------------------------------------------------------------------------
+// THE STATIC SURFACE'S PATHS (#579). Each is EXACT or under `/home-api`, all
+// of them the front door's application in `common/hosted_applications.js`
+// and `local` in `common/cell_placement.ts`: the same answer in every cell.
+//
+// `/home.js` and `/home.css` are at the root rather than under a directory
+// of their own because the front door owns no prefix — it is `/` — and a
+// prefix made up for two files would be one more name for a reader to look
+// up. The bundle's FILE is `home-spa.js`: `home.js` beside this module is
+// this module compiled (`build-typescript.sh`, `bundle_surface`).
+// ---------------------------------------------------------------------------
+const API_BASE = '/home-api';
+
+const FRONT_OPERATION = API_BASE + '/front';
+
+const SCRIPT_ROUTE = '/home.js';
+
+const STYLE_ROUTE = '/home.css';
+
+const BUNDLE_FILE = 'home-spa.js';
+
+// THE CARD'S OWN RULES, over `/web/card.css` (the sign-in card every public
+// surface links): the server-drawn page's inline `<style>` until #579, which
+// the shell's `style-src 'self'` no longer admits inline. What it overrides
+// is the sign-in card's centring and width — the front door is a wider card
+// at the top of the page — and the rest is the band, the version line, the
+// warning and the link rows as they were drawn. The last two rules give a
+// problem page (the runtime's own card) and the `<noscript>` notice their
+// margins inside this card's zero padding.
+const HOME_CSS =
+  'body{display:block;min-height:0;padding:2rem 1rem;line-height:1.45}' +
+  '.card{width:auto;padding:0 0 26px;max-width:44rem;margin:0 auto;' +
+  'overflow:hidden}' +
+  // The band is the logo's own background colour. See the header.
+  '.hero{background:#fbfaf8;padding:22px 24px;text-align:center;' +
+  'border-bottom:1px solid #ecebe7}' +
+  '.hero img{width:100%;max-width:453px;height:auto;display:inline-block}' +
+  '.body{padding:22px 28px 0}' +
+  'h1{font-size:1.5em;margin:0 0 2px;color:#12107c;letter-spacing:.01em}' +
+  'p.sub{color:#666;font-size:.88em;margin:0 0 4px}' +
+  'p.ver{color:#8a8a99;font-size:.76em;margin:0 0 16px}' +
+  '.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px 12px;' +
+  'border-radius:5px;font-size:.82em;margin:0 0 18px}' +
+  'ul{list-style:none;margin:0;padding:0}' +
+  'li{border-top:1px solid #eee;padding:11px 2px}' +
+  'li:first-child{border-top:0}' +
+  'a{color:#12107c;font-weight:600;text-decoration:none}' +
+  'a:hover{text-decoration:underline}' +
+  '.note{display:block;color:#666;font-size:.8em;font-weight:400;' +
+  'margin-top:2px}' +
+  '.card>h1{margin:22px 28px 8px}.card>.err{margin:0 28px}';
 
 // Read once, at require time. See the header for why a failure here is recorded
 // rather than thrown.
@@ -232,12 +318,16 @@ interface HomeDeps {
 }
 
 /**
- * The front door: `GET /`, the realm directory at `GET /realms`, and the logo
- * the front page draws.
+ * The front door: `GET /` (a static surface's shell since #579), its script,
+ * stylesheet and `/home-api`, the realm directory at `GET /realms`, and the
+ * logo the front page draws.
  *
  * It lists no endpoints; `/admin/sts-metadata` does that from the router.
  */
 class Home {
+  // The bundle, once read (`bundle()`).
+  private script: Json = null;
+
   /**
    * Builds the front door from the modules it reads.
    *
@@ -272,11 +362,11 @@ class Home {
     };
   }
 
-  // The front page, the realm directory and the logo, in the order they were
-  // always registered.
+  // The front page (and since #579 its script, stylesheet and API), the
+  // realm directory and the logo, in the order they were always registered.
   /**
-   * Registers `GET /`, `GET /realms` and the logo route, in the order they were
-   * always registered.
+   * Registers `GET /` and its surface's files and API, `GET /realms` and the
+   * logo route, in the order they were always registered.
    *
    * Called by `common/protocol_stack.ts`; requiring this module registers
    * nothing.
@@ -288,10 +378,55 @@ class Home {
     const { baseUrlOf, log } = this.deps.helpers;
     const self = this;
     log.debug("Entering Home.registerRoutes().");
+    // THE FRONT DOOR AS A STATIC SURFACE (#579): the shell, its script and
+    // its stylesheet, and the API its one page is drawn from.
     app.get('/', function (req, res) {
       log.debug('Entering the front page endpoint.');
-      res.type('html').send(self.homePage());
+      const authnAt = self.authnElsewhere(req);
+      // The policy through `app.contentSecurityPolicy()` (frame-ancestors
+      // and base-uri re-added whatever is asked), `no-store`, and the
+      // document uncompressed so `app.js`'s `send()` puts the realm's prefix
+      // on its links as on every page.
+      ShellDocument.serve(app, req, res, self.shellDocument(req, authnAt), {
+        connect: ShellDocument.originsOf([authnAt]),
+        csp: { 'style-src': "'self'" }
+      });
       log.debug('Leaving the front page endpoint.');
+    });
+
+    app.get(SCRIPT_ROUTE, function (req, res) {
+      log.debug("Entering the front door's script.");
+      // Brotli, gzip or neither, by the request's Accept-Encoding, from the
+      // build's precompressed files (`ShellDocument.sendFile()`, #570).
+      ShellDocument.sendFile(req, res, self.bundle(),
+                             'application/javascript');
+      log.debug("Leaving the front door's script.");
+    });
+
+    app.get(STYLE_ROUTE, function (req, res) {
+      log.debug("Entering the front door's stylesheet.");
+      res.set('Cache-Control', 'no-cache').type('text/css').send(HOME_CSS);
+      log.debug("Leaving the front door's stylesheet.");
+    });
+
+    // THE API: its index — `/account-api`'s convention, which the surface's
+    // runtime reads to find the operation a form mirrors; the front door
+    // has no form, so nothing it lists is a POST — and the page's view.
+    app.get(API_BASE, function (req, res) {
+      log.debug('Entering the front door API index.');
+      res.set('Cache-Control', 'no-store').type('application/json')
+         .send(JSON.stringify(self.apiIndex(), null, 2));
+      log.debug('Leaving the front door API index.');
+    });
+
+    app.get(FRONT_OPERATION, function (req, res) {
+      log.debug('Entering the front page view.');
+      // `no-store`: the mode and the listeners can change while the process
+      // runs, and the page is drawn from what is true now.
+      res.set('Cache-Control', 'no-store').type('application/json')
+         .send(JSON.stringify({ ok: true, view: self.frontView(req) },
+                              null, 2));
+      log.debug('Leaving the front page view.');
     });
 
     // -------------------------------------------------------------------------
@@ -398,131 +533,192 @@ class Home {
   }
 
   // ---------------------------------------------------------------------------
-  // Rendering. One card, in the same material as `/tls` and the console, so
-  // that a reader who follows a link from here does not arrive somewhere that
-  // looks like a different service.
+  // THE VIEW (#579). Everything the server-drawn card showed, as facts and no
+  // words: the browser draws them in its language (`web_home_front.ts`).
+  //
+  // ONE COPY OF WHAT SIGNING IN HERE MEANS is still the rule, and it moved
+  // with the words: both same-origin links send a reader to a sign-in screen,
+  // and what that screen CHECKS is a property of the mode rather than of
+  // either surface — so the view carries the two facts of the mode it
+  // depends on, once, and the renderer chooses the sentence once for both
+  // rows. **It used to be a clause on the console's row reading "it asks you
+  // to sign in, and nothing else here does"**, false from the day the portal
+  // arrived, and "no password checked" stated unconditionally, which is a
+  // development-mode fact (`home/CLAUDE.md`). Read per request, because a
+  // front door is drawn from what is true now.
   // ---------------------------------------------------------------------------
 
-  // ---------------------------------------------------------------------------
-  // ONE COPY OF WHAT SIGNING IN HERE MEANS.
-  //
-  // Both same-origin links below send a reader to a sign-in screen, and what
-  // that screen actually CHECKS is a property of the mode rather than of either
-  // surface — so it is written once here rather than twice down there, where
-  // the two copies would disagree the first time somebody corrected one of
-  // them.
-  //
-  // **IT USED TO BE A CLAUSE ON THE CONSOLE'S ROW READING "it asks you to sign
-  // in, and nothing else here does".** That was true when it was written and
-  // had stopped being true on 2026-09-06, when the user portal arrived; putting
-  // a link to the portal on the same page is what made it wrong in a place a
-  // reader could see. It also said "no password checked" unconditionally, which
-  // is a DEVELOPMENT-mode fact — `mode.verifiesCredentials()` is what decides
-  // it — so the sentence was two small lies on one line in a product
-  // deployment.
-  //
-  // Read per request rather than captured at require time, for the reason this
-  // page reads every other conditional fact about the running service that way:
-  // it is a front door, and it is drawn from what is true now.
-  // ---------------------------------------------------------------------------
-  private signInMeans() {
+  /**
+   * Where one of this instance's own surfaces is, for a link from the front
+   * door: its path where the listener this request arrived on answers it
+   * (or there are no custom listeners), and its advertised base otherwise
+   * (#472).
+   *
+   * @param req - the request for the view
+   * @param application - the surface's application id
+   * @param where - its path
+   * @returns a root-relative path, or an absolute URL on its listener
+   */
+  linkTo(req: Json, application: string, where: string): string {
+    const { log, baseUrlOf } = this.deps.helpers;
+    log.debug("Entering Home.linkTo(). " + application);
+    if (listenerMap.isTrivial() ||
+        listenerMap.admits(listenerMap.listenerOf(req), application)) {
+      log.debug("Leaving Home.linkTo(). Here.");
+      return where;
+    }
+    const out = baseUrlOf(req, application) + where;
+    log.debug("Leaving Home.linkTo(). " + out);
+    return out;
+  }
+
+  /**
+   * The front page's view: language-free, everything the page draws.
+   *
+   * @param req - the request for it
+   * @returns `{ name, version, build, mode, logo, links }`
+   */
+  frontView(req: Json): Json {
     const { mode } = this.deps;
     const { log } = this.deps.helpers;
-    log.debug("Entering Home.signInMeans().");
-    log.debug("Leaving Home.signInMeans().");
-    return mode.verifiesCredentials()
-      ? 'It asks you to sign in, and this instance is in product mode, so ' +
-        'the password is checked against the account.'
-      : 'It asks you to sign in — any username, and no password is checked.';
+    log.debug("Entering Home.frontView().");
+    const out = {
+      name: 'IYA STS',
+      // The number is what a bug report quotes; `build` is its provenance
+      // (the instant, the commit, stamped or computed), the tooltip.
+      version: String(VERSION),
+      build: BUILD_INFO,
+      mode: {
+        verifiesCredentials: !!mode.verifiesCredentials(),
+        // True in both modes since 2026-09-06; carried rather than assumed,
+        // so the row cannot claim a gate the service does not keep.
+        gatesConsole: !!mode.gatesConsole()
+      },
+      // With no image read at startup there is none to draw (the header).
+      logo: logoBytes
+        ? { src: LOGO_ROUTE, width: LOGO_WIDTH, height: LOGO_HEIGHT }
+        : null,
+      // THE FIVE LINKS, by id; the renderer has the words for each.
+      links: [
+        { id: 'repo', href: REPO_URL, external: true },
+        { id: 'issues', href: ISSUES_URL, external: true },
+        { id: 'docs', href: DOCS_URL, external: true },
+        { id: 'console', external: false,
+          href: this.linkTo(req, 'admin-console', CONSOLE_PATH) },
+        { id: 'portal', external: false,
+          href: this.linkTo(req, 'portal', PORTAL_PATH) }
+      ]
+    };
+    log.debug("Leaving Home.frontView().");
+    return out;
   }
 
-  private linkRow(href, label, external, note) {
-    const { log, xmlEscape } = this.deps.helpers;
-    log.debug("Entering Home.linkRow().");
-    log.debug("Leaving Home.linkRow().");
-    return '<li><a href="' + xmlEscape(href) + '"' +
-      (external ? ' target="_blank" rel="noopener noreferrer"' : '') + '>' +
-      xmlEscape(label) + '</a><span class="note">' + xmlEscape(note) +
-      '</span></li>';
+  /**
+   * The API's index: each operation, and the page it is the door of.
+   *
+   * @returns `{ api, operations }`
+   */
+  apiIndex(): Json {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Home.apiIndex().");
+    const out = {
+      api: 'IYA STS front door',
+      operations: [
+        { method: 'GET', path: API_BASE, operationId: 'getIndex',
+          access: 'public', mirrors: null,
+          summary: 'Lists every operation of this API' },
+        { method: 'GET', path: FRONT_OPERATION, operationId: 'getFront',
+          access: 'public', mirrors: 'GET /',
+          summary: 'The front page\'s view: the name, the version, the ' +
+                   'mode\'s two facts, the image and the five links' }
+      ]
+    };
+    log.debug("Leaving Home.apiIndex().");
+    return out;
   }
 
-  private homePage() {
-    const { mode } = this.deps;
+  /**
+   * The sign-in service's base where this listener does not answer it, for
+   * the language chooser, which posts to `/authn/language` (#472).
+   *
+   * @param req - the request for the shell
+   * @returns the base with the realm's prefix, or ''
+   */
+  authnElsewhere(req: Json): string {
+    const { log, baseUrlOf } = this.deps.helpers;
+    log.debug("Entering Home.authnElsewhere().");
+    const out = listenerMap.isTrivial() ||
+      listenerMap.admits(listenerMap.listenerOf(req), 'authn')
+      ? '' : baseUrlOf(req, 'authn');
+    log.debug("Leaving Home.authnElsewhere(). " + (out || 'here'));
+    return out;
+  }
+
+  /**
+   * The shell document `GET /` answers.
+   *
+   * @param req - the request for it
+   * @param authnAt - `authnElsewhere()`'s answer
+   * @returns the document
+   */
+  shellDocument(req: Json, authnAt: string): string {
+    const { realms } = this.deps;
     const { log, xmlEscape } = this.deps.helpers;
-    log.debug('Entering Home.homePage().');
-    const logo = logoBytes
-      ? '<div class="hero"><img src="' + LOGO_ROUTE + '" width="720" ' +
-        'height="240" alt="OAuth2 / OIDC / SAML2 Debugger — Iya Cyber ' +
-        'Security"></div>'
-      : '';
-    const html = '<!DOCTYPE html>\n<html lang="en"><head><meta ' +
-      'charset="utf-8"><meta name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>mock-sts</title><style>' +
-      'body{font-family:system-ui,-apple-system,"Segoe ' +
-      'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
-      '1rem;color:#222;line-height:1.45}.card{background:#fff;border:1px ' +
-      'solid #d5d5dd;border-radius:10px;padding:0 0 ' +
-      '26px;max-width:44rem;margin:0 auto;overflow:hidden;box-shadow:0 6px ' +
-      '24px rgba(0,0,0,.08)}' +
-      // The band the artwork was drawn for. See the header.
-      '.hero{background:#000;padding:22px 24px;text-align:center}' +
-      '.hero img{width:100%;max-width:360px;height:auto;display:inline-block}' +
-      '.body{padding:22px 28px 0}' +
-      'h1{font-size:1.5em;margin:0 0 2px;color:#12107c;letter-spacing:.01em}' +
-      'p.sub{color:#666;font-size:.88em;margin:0 0 4px}' +
-      'p.ver{color:#8a8a99;font-size:.76em;margin:0 0 16px}' +
-      '.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px 12px;' +
-      'border-radius:5px;font-size:.82em;margin:0 0 18px}' +
-      'ul{list-style:none;margin:0;padding:0}' +
-      'li{border-top:1px solid #eee;padding:11px 2px}' +
-      'li:first-child{border-top:0}' +
-      'a{color:#12107c;font-weight:600;text-decoration:none}' +
-      'a:hover{text-decoration:underline}' +
-      '.note{display:block;color:#666;font-size:.8em;font-weight:400;' +
-      'margin-top:2px}' +
-      '</style></head><body><div class="card">' + logo + '<div class="body">' +
-      '<h1>mock-sts</h1>' +
-      '<p class="sub">A permissive mock identity service that speaks sixteen ' +
-      'protocol families. It exists to exercise CLIENTS.</p>' +
-      // THE VERSION, WITH ITS PROVENANCE IN THE TOOLTIP. The number is what a
-      // person quotes in a bug report; the build instant, the commit and
-      // whether this is a stamped artifact or a checkout are what somebody
-      // needs when two instances of the same M.N do different things. A title
-      // attribute rather than a second line because this is the front door and
-      // the version is not what anybody came for.
-      '<p class="ver" title="' + xmlEscape(BUILD_INFO) + '">version ' +
-      xmlEscape(VERSION) + '</p>' +
-      '<div class="warn">It checks no password, validates no access token ' +
-      'and attests no workload. Do not put this port on a public ' +
-      'address.</div><ul>' +
-      this.linkRow(REPO_URL, 'The project on GitHub', true,
-                   'The source, the README, and the sixteen families in ' +
-                   'full.') +
-      this.linkRow(ISSUES_URL, 'Issues', true,
-                   'What is known to be wrong, and where to say what is not.') +
-      this.linkRow(DOCS_URL, 'Documentation', true,
-                   'The GitHub Pages site: getting started, configuration, ' +
-                   'and what is deliberately not checked.') +
-      this.linkRow(CONSOLE_PATH, 'The admin console on this instance', false,
-                   'Everything this process has done, and the settings that ' +
-                   'change what its protocol endpoints do. ' +
-                   (mode.gatesConsole()
-                     ? this.signInMeans() +
-                       ' It also asks for one of two roles.'
-                     : 'It is open on this instance.') +
-                   ' Every endpoint this service registered is listed inside ' +
-                   'it, at /admin/sts-metadata.') +
-      this.linkRow(PORTAL_PATH, 'The user portal on this instance', false,
-                   'The account pages of whoever is looking at them: how ' +
-                   'they sign in to this service, what it holds about them, ' +
-                   'and where it will sign them in. ' + this.signInMeans() +
-                   ' It asks for no role, which is the whole difference from ' +
-                   'the console above: every page of it is about the person ' +
-                   'looking at it, so saying who you are is the entire ' +
-                   'question.') +
-      '</ul></div></div></body></html>\n';
-    log.debug('Leaving Home.homePage().');
+    log.debug("Entering Home.shellDocument().");
+    const html = ShellDocument.document({
+      title: 'IYA STS',
+      attributes: [['data-sts-prefix', realms.currentPrefix()],
+                   ['data-sts-authn', authnAt] as [string, string]]
+        .concat(PageLocale.shellAttributes(req, '')) as
+        Array<[string, string]>,
+      stylesheets: ['/web/card.css', STYLE_ROUTE],
+      script: SCRIPT_ROUTE,
+      open: '<div class="card"><div class="body"><h1>IYA STS</h1>',
+      close: '</div></div>',
+      // SCRIPT IS REQUIRED (#569), so a browser without it is told what
+      // this is and where the documentation is — which is the one link
+      // that works without this service drawing anything.
+      noscript: '<div class="warn">This front page is a script that runs ' +
+        'in your browser and draws itself from <code>' + API_BASE +
+        '</code>; with scripts blocked there is nothing it can show. The ' +
+        'documentation is at <a href="' + xmlEscape(DOCS_URL) + '">' +
+        xmlEscape(DOCS_URL) + '</a>.</div>',
+      loading: '<p class="sub">Loading&hellip;</p>'
+    });
+    log.debug("Leaving Home.shellDocument().");
     return html;
+  }
+
+  /**
+   * The bundle and its precompressed forms, read once. A tree that was never
+   * built has none, and the shell then loads a script that says so.
+   *
+   * @returns `ShellDocument.readFile()`'s `{ raw, br, gzip, built }`
+   */
+  bundle(): Json {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Home.bundle().");
+    if (!this.script) {
+      this.script = ShellDocument.readFile(__dirname, BUNDLE_FILE,
+        'document.body.textContent = "This service has no front page ' +
+        'script (home/' + BUNDLE_FILE + '): it was not built by ' +
+        'build-typescript.sh.";');
+    }
+    log.debug("Leaving Home.bundle().");
+    return this.script;
+  }
+
+  /**
+   * The paths this module registers, for `sts_metadata.ts` and the tests.
+   *
+   * @returns the paths
+   */
+  paths(): string[] {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Home.paths().");
+    log.debug("Leaving Home.paths().");
+    return ['/', SCRIPT_ROUTE, STYLE_ROUTE, API_BASE, FRONT_OPERATION,
+            '/realms', LOGO_ROUTE];
   }
 }
 

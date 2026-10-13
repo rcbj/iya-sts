@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -579,7 +579,7 @@ function create(options) {
           const list = [];
           rows.forEach(function (entry) { list.push(entry); });
           writeAtomic(realmFile(realmId), toLdif(list, [
-            'The "' + realmId + '" realm\'s directory, written by mock-sts.',
+            'The "' + realmId + '" realm\'s directory, written by iya-sts.',
             'RFC 2849 LDIF. It is read back at startup when ' +
               'persistence.mode=ldif, and it is ordinary LDIF otherwise: ' +
               'ldapadd -f will load it into any directory.',
@@ -603,7 +603,7 @@ function create(options) {
       return Promise.resolve().then(function () {
         writeAtomic(path.join(dir, 'realms.json'), JSON.stringify({
           version: 1,
-          note: 'The trust realms mock-sts had defined when this was ' +
+          note: 'The trust realms iya-sts had defined when this was ' +
                 'written. The DEFAULT realm is not here and never will be: ' +
                 'it is a constant in common/realms.js, not a row.',
           realms: rows
@@ -884,9 +884,11 @@ function create(options) {
  */
 module.exports = {
   create: create,
-  // Exported for tests/ and for nothing else in this service: the codec is the
-  // half of this file that can be wrong in a way that is invisible until a
-  // restart, so it is the half that has to be assertable without a filesystem.
+  // Exported for tests/ — the codec is the half of this file that can be
+  // wrong in a way that is invisible until a restart, so it is the half that
+  // has to be assertable without a filesystem — and, since #546, for
+  // `common/applications.js`'s application export and import, so that this
+  // service reads and writes LDIF one way.
   toLdif: toLdif,
   fromLdif: fromLdif,
   needsBase64: needsBase64,

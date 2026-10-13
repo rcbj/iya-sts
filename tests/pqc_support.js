@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -45,6 +45,9 @@ const log = require('bunyan').createLogger({ name: 'pqc_support',
 
 async function inProcess(t) {
   log.debug("Entering inProcess().");
+  // A renderer given no translator draws node's default, which
+  // common/i18n.ts installs (#539) — English.
+  require('../common/i18n');
   const support = require('../common/pqc_support');
   const pqJose = require('../common/pq_jose');
   const pqcX509 = require('../common/vendored/pqc_x509');

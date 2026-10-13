@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -72,6 +72,7 @@ const assert = require("assert");
 const fs = require("fs");
 const nodeCrypto = require("crypto");
 const path = require("path");
+const tls = require("tls");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const K = require("./enroll_clients_kit.js");
@@ -238,9 +239,16 @@ async function scenarios(ctx, bundle, other) {
   }
   ctx.cacerts = cacerts;
   ctx.anchors = path.join(work, ctx.tag + "-cacerts.pem");
+  // THE EXPLICIT TRUST ANCHORS, AND THE IMPLICIT ONES BESIDE THEM (#311).
+  // RFC 7030 section 3.6.1 lets a client authenticate the SERVER against an
+  // Implicit TA database too. A local stack's TLS certificate is under the
+  // service Root, which /cacerts carries, so the explicit database alone was
+  // enough; a deployment with a public name presents a publicly issued one
+  // (testidp's ACM leaf), which only the implicit database — the bundle's
+  // system roots — verifies.
   fs.writeFileSync(ctx.anchors, cacerts.map(function (x) {
     return x.toString();
-  }).join("\n"));
+  }).join("\n") + "\n" + fs.readFileSync(bundle.file, "utf8"));
 
   // -------------------------------------------------------------------------
   log.info("=== 2. tls-server: /csrattrs and a host certificate" + where +
@@ -539,11 +547,58 @@ async function labelForm(realm) {
   log.debug("Leaving labelForm().");
 }
 
+// Until a TLS 1.2 handshake succeeds six times in a row on the main port (a
+// balancer alternates nodes, and each re-applies when the setting reaches
+// it), or thirty seconds — `sts_tlsfuzzer.js`'s twelveIsOn().
+async function twelveIsOn() {
+  log.debug("Entering twelveIsOn().");
+  const once = function () {
+    return new Promise(function (resolve) {
+      const socket = tls.connect({ host: host, port: Number(port),
+        servername: host, rejectUnauthorized: false,
+        maxVersion: "TLSv1.2" }, function () {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on("error", function (e) {
+        log.debug("Caught in twelveIsOn(): " + ((e && e.message) || e));
+        resolve(false);
+      });
+    });
+  };
+  const deadline = Date.now() + 30000;
+  let streak = 0;
+  while (streak < 6) {
+    streak = (await once()) ? streak + 1 : 0;
+    assert.ok(Date.now() < deadline, "TLS 1.2 was turned on and port " +
+              port + " still refuses it after thirty seconds");
+  }
+  log.debug("Leaving twelveIsOn().");
+}
+
 async function test() {
   log.debug("Entering test().");
   const url = new URL(K.base);
   host = url.hostname;
   port = url.port || "443";
+  // TLS 1.2 ON FOR THE RUN (#429): every listener is TLS 1.3 only by
+  // default, and estclient is built on OpenSSL 1.1 and negotiates TLS 1.2.
+  // Turned on service-wide through /admin-api (a runtime setting), waited
+  // for, and reset in the `finally`; the job is `exclusive` in MANIFEST.js,
+  // so no other job runs while it is on.
+  await K.setting(null, "tls.disableTls12", false);
+  try {
+    await twelveIsOn();
+    await enrolments();
+  } finally {
+    await K.post(K.realmApi(null) + "/config/reset",
+                 { key: "tls.disableTls12" });
+  }
+  log.debug("Leaving test().");
+}
+
+async function enrolments() {
+  log.debug("Entering enrolments().");
   log.info("Driving " + K.base + " with libest's estclient in the default " +
            "realm and in the realm \"" + REALM + "\" named in the label " +
            "position.");
@@ -570,7 +625,7 @@ async function test() {
     "only " + C.count + " checks ran; a section has stopped being called.");
   log.info(C.count + " check(s) passed.");
   log.info("Test completed successfully.");
-  log.debug("Leaving test().");
+  log.debug("Leaving enrolments().");
 }
 
 const program = new Command();

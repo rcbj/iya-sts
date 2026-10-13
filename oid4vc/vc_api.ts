@@ -1,76 +1,104 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
 // File: vc_api.ts
 //
 // ---------------------------------------------------------------------------
-// THE W3C VC-API TEST ENDPOINTS, OVER THIS SERVICE'S OWN ISSUER AND VERIFIER
-// (#194-#199, 2026-09-26). A TEST CONTROL.
+// THE W3C VERIFIABLE CREDENTIALS API (VCALM, the W3C CCG's VC API), OVER
+// THIS SERVICE'S OWN ISSUER AND VERIFIER MACHINERY (#194-#199, 2026-09-26;
+// A PRODUCT SURFACE SINCE #598, 2026-10-12).
 //
-// The W3C Verifiable Credentials Working Group's interoperability suites —
-// the VC Data Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status
-// List and VC-JOSE-COSE suites — drive an implementation through the
-// endpoints the W3C CCG's VC-API defines: an issuer that secures a
-// credential it is HANDED (`/credentials/issue`), a verifier that checks
-// one (`/credentials/verify`, `/presentations/verify`), and a status change
-// (`/credentials/status`). This service issues through OpenID4VCI and
-// verifies through OpenID4VP, and neither protocol secures a document a
-// caller wrote: the issuer builds a credential from a directory entry and
-// the Verifier judges a presentation against the query it asked. So this
-// file is an ADAPTER, and what it adapts to is this service's own machinery,
-// not a second copy of it:
+// The VC API defines an issuer that secures a credential it is HANDED
+// (`/credentials/issue`), a verifier that checks one (`/credentials/verify`,
+// `/presentations/verify`), a holder that proves a presentation and derives
+// a selective disclosure (`/presentations/prove`, `/credentials/derive`) and
+// a status service (`/credentials/status`). This service issues through
+// OpenID4VCI and verifies through OpenID4VP, and neither protocol secures a
+// document a caller wrote: the issuer builds a credential from a directory
+// entry and the Verifier judges a presentation against the query it asked.
+// So this file is an ADAPTER, and what it adapts to is this service's own
+// machinery, not a second copy of it:
 //
-//   * the signing is `vc_data_integrity.ts`'s (every cryptosuite the suites
-//     ask for, held to the specifications' own vectors in `tests/`), with the
-//     realm's own keys (`realmKeyFor()` — the key set's Ed25519, P-256 and
-//     P-384 members, made at run time, sealed in product, agreed across
-//     processes) named by their did:key;
+//   * the signing is `vc_data_integrity.ts`'s (every cryptosuite the W3C
+//     suites ask for, held to the specifications' own vectors in `tests/`)
+//     and `vc_jose_cose.ts`'s;
 //   * a credential's status is an index `vc_status.ts` allocates in the
 //     realm's own Bitstring Status Lists, and a status change is
 //     `setStatus()` — the act `/admin/vc-status` performs, one of the three
 //     ways a credential is DISOWNED (`CLAUDE.md` 3ar);
 //   * the data model's MUSTs are `vc_data_model.ts`, and the JSON-LD safe
 //     mode that refuses an undefined term or a redefined protected one is
-//     `vc_jsonld.ts`'s closed loader, which fetches nothing.
+//     `vc_jsonld.ts`'s closed loader, which FETCHES NOTHING — so no caller
+//     can make this service dial a URL by naming a context.
 //
-// **A TEST CONTROL, SO NEVER IN PRODUCT** (`mode.opensTestControls()`): an
-// endpoint that signs, with a realm's key, any document its caller writes is
-// what a test suite needs and what no deployment should expose. In a realm
-// whose mode is product every route here answers 404 (`STS-VC-0100`), as
-// though it did not exist.
+// IT WAS A TEST CONTROL (#194-#199, development-only since #585) and became
+// a product surface on rcbj's decision 2 on #591. What that changed, each
+// argued where it is done:
 //
-// **AUTHENTICATED ALL THE SAME**, the way the suites allow
-// (`vc-test-suite-implementations`: none, a zcap, or an OAuth 2.0 client
-// credentials token): an access token THIS realm issued, verified, not
-// revoked, carrying `vc-api:issue` (issue, status) or `vc-api:verify`
-// (verify) — this service's own protected scopes (`common/scope_policy.ts`),
-// issued only to a client whose `oauthAllowedScope` declares them and
-// re-checked on every call (`STS-VC-0101`). A development realm is still no
-// reason for a signing oracle anybody on the network can reach.
+//   * **OFF UNTIL A REALM TURNS IT ON** (`vcApi.enabled`, `served()`). Off,
+//     every route answers 501 with its own refusal (`STS-VC-0120`) — not
+//     Express's 404 — exactly as `scim.enabled`, `ssf.enabled` and
+//     `xacml.enabled` do: the feature is off, the URL is not wrong, and a
+//     client trying to learn whether this service speaks the VC API is told
+//     which. It also keeps `/admin/sts-metadata`'s list true in every realm:
+//     a listed endpoint answers, on or off.
+//   * **ITS OWN KEYS.** It signs with the realm key set's dedicated VC-API
+//     member (`helpers.js` makeVcApiKeys(), `vcApiKeyFor()`), never with the
+//     keys that sign this realm's tokens: a VC-JOSE-COSE issuer is a compact
+//     JWS over a document the CALLER wrote, and with the token keys it was a
+//     way to have an `iss`/`sub`/`aud` of the caller's choosing signed by a
+//     key `verifyOwnJws()` believes (RFC 8725 section 3.12).
+//   * **AUTHENTICATED IN EVERY MODE, AS IT ALWAYS WAS**: an access token THIS
+//     realm issued, verified, not revoked, carrying `vc-api:issue` (issue,
+//     prove, derive, status, the issuer list) or `vc-api:verify` (verify,
+//     DID resolution) — this service's own protected scopes
+//     (`common/scope_policy.ts`), issued only to a client whose
+//     `oauthAllowedScope` declares them and re-checked on every call
+//     (`STS-VC-0101`). No mode predicate is read anywhere in this file.
+//   * **RATE LIMITED** per client and per address, per realm
+//     (`vcApi.maxPerWindow`, `STS-VC-0121`): each call canonicalizes JSON-LD
+//     and signs or verifies, and an admitted client could otherwise spend
+//     this service's CPU in a loop.
+//   * **AN OPTION IT DOES NOT UNDERSTAND IS REFUSED** (`STS-VC-0122`), as
+//     VCALM requires ("Implementations MUST throw an error on options or
+//     values they do not understand"), each option's shape checked. It
+//     closed a hole the test control had: `securedByEnvelope`, this file's
+//     own flag for "an envelope already verified this", was read from the
+//     CALLER's options, and a verify request carrying it was answered
+//     `verified: true` with no proof checked. It is an argument now, never an
+//     option.
+//   * **THE STATUS-LIST "PUBLISH" LEFT** for `/admin-api` (`POST
+//     /admin-api/vc-status/publish`, Admin Write, beside the Credential
+//     status tab's control): it was the W3C suites' hook, a list here is
+//     computed on every read, and an operation that does nothing but say so
+//     is an operator's question, not a protocol's.
 //
 // THE ROUTES, under a realm's prefix:
 //
+//   GET  /vc-api/issuers                     this adapter's issuers (not a
+//        VCALM endpoint: an implementation manifest's list of instances)
 //   POST /vc-api/issuers/{issuer}/credentials/issue
 //        {issuer} names the securing mechanism and the key (`ISSUERS`); the
 //        credential's `issuer` must be that key's did:key. 201
 //        `{ verifiableCredential }`.
-//   POST /vc-api/credentials/verify         200/400 `{ verified, … }`
-//   POST /vc-api/presentations/verify       200/400 `{ verified, … }`
-//   POST /vc-api/credentials/status         a status change, 200
-//   POST /oid4vci/status-lists/bitstring/{purpose}/publish
-//        the suites' "publish the list now"; a list here is computed on every
-//        read, so 204 and nothing else.
+//   POST /vc-api/holders/{holder}/presentations/prove   201
+//   POST /vc-api/credentials/derive          201
+//   POST /vc-api/credentials/verify          200/400 `{ verified, … }`
+//   POST /vc-api/presentations/verify        200/400 `{ verified, … }`
+//   POST /vc-api/credentials/status          a status change, 200
+//   GET  /vc-api/resolve, /vc-api/dereference   DID resolution (#199)
 //
 // A ROUTE MODULE: `common/protocol_stack.ts` registers it after the
 // verifier, whose libraries it reads. It requires only libraries.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+import crypto = require('../common/crypto');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
-import mode = require('../common/mode');
+import config = require('../common/config');
+import websecurity = require('../common/websecurity');
 import errorCodes = require('../common/error_codes');
 import stats = require('../common/admin_stats');
 import realms = require('../common/realms');
@@ -91,7 +119,6 @@ type RouteApp = typeof app;
 interface VcApiDeps {
   log: typeof helpers.log;
   baseUrlOf: typeof helpers.baseUrlOf;
-  opensTestControls: () => boolean;
   errorCodes: typeof errorCodes;
   isRevoked: (jti: unknown) => boolean;
   declares: (clientId: unknown, scope: string) => boolean;
@@ -106,6 +133,12 @@ interface VcApiDeps {
   issued: any;
   now: () => number;
   checkDocument: (value: any, where: string, opts?: any) => any;
+  // Whether the ambient realm serves the VC API (`vcApi.enabled`, #598).
+  enabled: () => boolean;
+  // The rate limiter's shared count, and the ceiling (#598).
+  attemptShared: typeof websecurity.attemptShared;
+  maxPerWindow: () => number;
+  realmId: () => string;
 }
 
 // The two scopes, protected in both modes (`common/scope_policy.ts`).
@@ -121,7 +154,124 @@ const SCOPE_ISSUE = 'vc-api:issue';
 const SCOPE_VERIFY = 'vc-api:verify';
 
 const BASE = '/vc-api';
-const PUBLISH_PATH = '/oid4vci/status-lists/bitstring/:purpose/publish';
+
+// THE SHAPE OF EACH OPTION AN ENDPOINT READS (#598), for `optionsOf()`.
+// `verificationMethod` is this adapter's extension for an envelope whose
+// `kid` resolves to nothing (VC-JOSE-COSE leaves key discovery to the
+// verifier): a did:key or did:jwk URL, or a PUBLIC JWK under
+// `publicKeyJwk` — a member that would be a private key is refused rather
+// than ignored, so nobody learns by accident that one was sent here.
+// `disclosurePaths` is its other one, the VC-JOSE-COSE suite's selectively
+// disclosable claims for an SD-JWT.
+const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'k',
+  'secretKeyJwk', 'privateKeyJwk', 'privateKeyMultibase', 'secretKeyMultibase'];
+
+function isStringList(value: any): boolean {
+  helpers.log.debug("Entering isStringList().");
+  helpers.log.debug("Leaving isStringList().");
+  return Array.isArray(value) && value.length <= 256 &&
+    value.every(function (one: any) {
+      return typeof one === 'string' && one.length <= 1024;
+    });
+}
+
+function isShortString(value: any): boolean {
+  helpers.log.debug("Entering isShortString().");
+  helpers.log.debug("Leaving isShortString().");
+  return typeof value === 'string' && value.length > 0 && value.length <= 2048;
+}
+
+function isDateTime(value: any): boolean {
+  helpers.log.debug("Entering isDateTime().");
+  helpers.log.debug("Leaving isDateTime().");
+  return typeof value === 'string' &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
+      .test(value) && !isNaN(Date.parse(value));
+}
+
+function isStatusOption(value: any): boolean {
+  helpers.log.debug("Entering isStatusOption().");
+  helpers.log.debug("Leaving isStatusOption().");
+  return !!value && typeof value === 'object' && !Array.isArray(value) &&
+    value.type === 'BitstringStatusListEntry' &&
+    Object.keys(value).every(function (name: string) {
+      return name === 'type' || name === 'statusPurpose';
+    }) &&
+    (value.statusPurpose === undefined ||
+     value.statusPurpose === 'revocation' ||
+     value.statusPurpose === 'suspension');
+}
+
+function isPublicMethod(value: any): boolean {
+  helpers.log.debug("Entering isPublicMethod().");
+  if (typeof value === 'string') {
+    helpers.log.debug("Leaving isPublicMethod(). A URL.");
+    return /^did:(key|jwk):/.test(value) && value.length <= 4096;
+  }
+  const ok = !!value && typeof value === 'object' && !Array.isArray(value) &&
+    PRIVATE_MEMBERS.every(function (name: string) {
+      return value[name] === undefined;
+    }) &&
+    (value.publicKeyJwk === undefined ||
+     (!!value.publicKeyJwk && typeof value.publicKeyJwk === 'object' &&
+      PRIVATE_MEMBERS.every(function (name: string) {
+        return value.publicKeyJwk[name] === undefined;
+      })));
+  helpers.log.debug("Leaving isPublicMethod(). " + ok);
+  return ok;
+}
+
+const OPTION_SHAPES: Record<string, (value: any) => boolean> = {
+  credentialStatus: isStatusOption,
+  mandatoryPointers: isStringList,
+  selectivePointers: isStringList,
+  disclosurePaths: isStringList,
+  checks: isStringList,
+  created: isDateTime,
+  challenge: isShortString,
+  domain: isShortString,
+  verificationMethod: isPublicMethod
+};
+
+const OPTION_WORDS: Record<string, string> = {
+  credentialStatus: '{ "type": "BitstringStatusListEntry", ' +
+    '"statusPurpose"?: "revocation" | "suspension" }',
+  mandatoryPointers: 'an array of JSON pointers',
+  selectivePointers: 'an array of JSON pointers',
+  disclosurePaths: 'an array of claim paths',
+  checks: 'an array of check names',
+  created: 'an XML Schema dateTime with a time zone',
+  challenge: 'a non-empty string',
+  domain: 'a non-empty string',
+  verificationMethod: 'a did:key or did:jwk URL, or an object carrying a ' +
+    'public publicKeyJwk and no private member'
+};
+
+// THE TWO DID QUERIES (#598): a single bounded string each, no control
+// character, `function` one of DID Core 7.1's two — what
+// `validation.check()` holds a query to. A string that is not a DID is the
+// RESOLVER's to refuse (invalidDid, DID Core 7.1.2), with the result shape
+// the DID suite reads, so it is not refused here.
+const vz = validation.z;
+const vt = validation.types;
+const RESOLVE_QUERY = vz.object({
+  did: vt.opt(vt.text),
+  function: vt.opt(vt.oneOf(['resolve', 'resolveRepresentation'])),
+  accept: vt.opt(vt.text)
+});
+const DEREFERENCE_QUERY = vz.object({
+  didUrl: vt.opt(vt.text),
+  accept: vt.opt(vt.text)
+});
+
+// The options each endpoint reads.
+const ISSUE_OPTIONS = ['credentialStatus', 'mandatoryPointers', 'created',
+                       'disclosurePaths'];
+const PROVE_OPTIONS = ['challenge', 'domain', 'disclosurePaths'];
+const DERIVE_OPTIONS = ['selectivePointers'];
+const VERIFY_CREDENTIAL_OPTIONS = ['checks', 'verificationMethod'];
+const VERIFY_PRESENTATION_OPTIONS = ['checks', 'challenge', 'domain',
+                                     'verificationMethod'];
 
 // THE ISSUERS: a securing mechanism and the realm key it signs with.
 // `kind` 'di' is an embedded Data Integrity proof; 'jose' an ENVELOPE of
@@ -175,12 +325,14 @@ const MAX_ISSUED = 4096;
 
 // credential id -> { idx, expiresAt }. PER REALM, persisted, so a status
 // change reaches the index whichever process issued the credential.
-const issued = realms.map({ persist: 'vc_api.issued' });
+// `expiresAt` (#333): the credential's own `expiresAt`, ms.
+const issued = realms.map({ persist: 'vc_api.issued',
+                            expiresAt: realms.expiryField('expiresAt', 1) });
 
 const issuedCount = cacheRegistry.register({
   name: 'vc-api.issued',
   title: 'VC-API credentials with a status',
-  description: 'Each credential the VC-API test adapter issued with a ' +
+  description: 'Each credential the W3C VC API issued with a ' +
     'status entry, and the status-list index it took, so that a status ' +
     'change can find it.',
   owner: 'oid4vc/vc_api.ts',
@@ -212,9 +364,9 @@ const issuedCount = cacheRegistry.register({
 });
 
 /**
- * The W3C VC-API test endpoints over this service's own issuer and verifier
- * (#194 to #199), a test control: issue, verify, prove, derive, status changes
- * and DID resolution, for the W3C interoperability suites.
+ * The W3C VC API over this service's own issuer and verifier machinery (#194
+ * to #199, a product surface since #598): issue, verify, prove, derive, status
+ * changes and DID resolution.
  *
  * An adapter to this service's own machinery, not a second copy of it.
  */
@@ -253,7 +405,6 @@ class VcApi {
     return {
       log: helpers.log,
       baseUrlOf: helpers.baseUrlOf,
-      opensTestControls: mode.opensTestControls,
       errorCodes: errorCodes,
       isRevoked: stats.isRevoked,
       declares: scopePolicy.declares,
@@ -266,6 +417,22 @@ class VcApi {
       resolver: vcDidResolver,
       issued: issued,
       checkDocument: validation.checkDocument,
+      enabled: function enabled(): boolean {
+        helpers.log.debug("Entering enabled().");
+        helpers.log.debug("Leaving enabled().");
+        return config.value('vcApi.enabled') === true;
+      },
+      attemptShared: websecurity.attemptShared,
+      maxPerWindow: function maxPerWindow(): number {
+        helpers.log.debug("Entering maxPerWindow().");
+        helpers.log.debug("Leaving maxPerWindow().");
+        return Number(config.value('vcApi.maxPerWindow'));
+      },
+      realmId: function realmId(): string {
+        helpers.log.debug("Entering realmId().");
+        helpers.log.debug("Leaving realmId().");
+        return String(realms.currentId());
+      },
       now: function now(): number {
         helpers.log.debug("Entering now().");
         helpers.log.debug("Leaving now().");
@@ -346,29 +513,61 @@ class VcApi {
   }
 
   // ---------------------------------------------------------------------------
-  // THE GATE: a test control (404 outside one), then the access token.
-  // Answers true when the request may go on; otherwise it has answered.
+  // THE OFF SWITCH (#598): `vcApi.enabled`, per realm, off by default. Off,
+  // the request is answered 501 BEFORE anything else is looked at — no token
+  // is read, nothing is counted — with the VC API's error shape and
+  // `STS-VC-0120`: `scim.enabled`'s answer, for its reason (the header).
+  // Answers true when the realm serves the VC API; otherwise it has answered.
   // ---------------------------------------------------------------------------
   /**
-   * The gate: a test control (404 outside one), then an access token with the
-   * scope.
+   * The off switch: whether the ambient realm serves the VC API
+   * (`vcApi.enabled`), answering 501 when it does not.
+   *
+   * @param res - the response
+   * @returns true when the request may go on; otherwise it has been answered
+   */
+  served(res: any): boolean {
+    const { log, enabled } = this.deps;
+    log.debug("Entering VcApi.served().");
+    if (enabled()) {
+      log.debug("Leaving VcApi.served(). On.");
+      return true;
+    }
+    this.refuse(res, 501, 'STS-VC-0120', 'The W3C VC API is turned off in ' +
+                'this realm (vcApi.enabled).');
+    log.debug("Leaving VcApi.served(). Off.");
+    return false;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE GATE: the access token, in every mode, and then the rate limit.
+  // Answers true when the request may go on; otherwise it has answered.
+  //
+  // THE LIMIT IS COUNTED AFTER THE TOKEN, keyed by the client the token was
+  // issued to, and that order is the point: an identity bucket keyed by
+  // anything a caller could choose before it was authenticated would let it
+  // mint a fresh bucket per request (`xacml.ts`'s PIP argues the same). The
+  // address bucket beside it bounds the unauthenticated ones too, since
+  // `presentedAccessToken()` is cheap and a refusal costs nothing more. Both
+  // are counted PER REALM — the realm is in the bucket's name — because the
+  // ceiling is the realm's own setting.
+  // ---------------------------------------------------------------------------
+  /**
+   * The gate: an access token this realm issued, carrying the scope, and then
+   * the rate limit, per client and per address.
    *
    * @param req - the request
    * @param res - the response
    * @param scope - the scope required
-   * @returns true when the request may go on; otherwise it has been answered
+   * @returns a promise of true when the request may go on; otherwise it has
+   *   been answered
    */
-  admitted(req: any, res: any, scope: string): boolean {
-    const { log, opensTestControls, presentedAccessToken, isRevoked,
-            declares } = this.deps;
+  async admitted(req: any, res: any, scope: string): Promise<boolean> {
+    const { log, presentedAccessToken, isRevoked, declares, attemptShared,
+            maxPerWindow, realmId } = this.deps;
     log.debug("Entering VcApi.admitted(). " + scope);
-    if (!opensTestControls()) {
-      this.refuse(res, 404, 'STS-VC-0100', 'Not found.');
-      log.debug("Leaving VcApi.admitted(). Test controls are closed.");
-      return false;
-    }
-    const presented = presentedAccessToken(req, res, 'the VC-API ' +
-      'test endpoints', { requireVerified: true });
+    const presented = presentedAccessToken(req, res, 'the W3C VC API',
+                                           { requireVerified: true });
     if (!presented) {
       log.debug("Leaving VcApi.admitted(). The token check answered.");
       return false;
@@ -397,8 +596,64 @@ class VcApi {
       log.debug("Leaving VcApi.admitted(). " + why);
       return false;
     }
+    const within = await attemptShared('vc-api:' + realmId(), req,
+                                       String(claims.client_id || ''),
+                                       maxPerWindow());
+    if (!within.ok) {
+      res.set('Retry-After', String(within.retryAfterS));
+      this.refuse(res, 429, 'STS-VC-0121', 'Too many VC API calls. ' +
+                  within.detail + ' The limit is ' + within.limit + ' per ' +
+                  'rate-limit window on the ' + within.kind + ' bucket ' +
+                  '(vcApi.maxPerWindow).');
+      log.debug("Leaving VcApi.admitted(). Rate limited.");
+      return false;
+    }
     log.debug("Leaving VcApi.admitted(). Admitted.");
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE OPTIONS A REQUEST MAY CARRY (#598). VCALM: "Implementations MUST
+  // throw an error on options or values they do not understand." Each
+  // endpoint names the options it reads and a check of each one's shape; an
+  // option it does not name, or a value of the wrong shape, is refused 400
+  // (`STS-VC-0122`) naming it. Absent `options` is `{}`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reads a request's `options`, refusing one this endpoint does not
+   * understand or whose value has the wrong shape.
+   *
+   * @param res - the response
+   * @param body - the request body
+   * @param allowed - the option names this endpoint reads
+   * @returns the options, or null when the request has been answered
+   */
+  optionsOf(res: any, body: any, allowed: string[]): any {
+    const { log } = this.deps;
+    log.debug("Entering VcApi.optionsOf(). " + allowed.join(','));
+    const options = body.options === undefined ? {} : body.options;
+    let why = '';
+    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+      why = 'options must be a JSON object';
+    } else {
+      Object.keys(options).some(function (name: string): boolean {
+        if (allowed.indexOf(name) < 0) {
+          why = 'this endpoint does not understand the option ' +
+                JSON.stringify(name) + '; it reads ' +
+                (allowed.length ? allowed.join(', ') : 'none');
+        } else if (!OPTION_SHAPES[name](options[name])) {
+          why = 'options.' + name + ' must be ' + OPTION_WORDS[name];
+        }
+        return !!why;
+      });
+    }
+    if (why) {
+      this.refuse(res, 400, 'STS-VC-0122', 'Refused: ' + why + '.');
+      log.debug("Leaving VcApi.optionsOf(). " + why);
+      return null;
+    }
+    log.debug("Leaving VcApi.optionsOf().");
+    return options;
   }
 
   // The issuer a name selects, with its key, or null.
@@ -417,7 +672,9 @@ class VcApi {
       log.debug("Leaving VcApi.issuerFor(). Unknown.");
       return null;
     }
-    const key = di.realmKeyFor(row.curve);
+    // THE VC API'S OWN KEY (#598), never the realm's token keys — see the
+    // header.
+    const key = di.vcApiKeyFor(row.curve);
     log.debug("Leaving VcApi.issuerFor().");
     return Object.assign({ name: name, key: key, id: key.did }, row);
   }
@@ -501,8 +758,11 @@ class VcApi {
       return;
     }
     const credential = body.credential;
-    const options = (body && body.options && typeof body.options ===
-                     'object') ? body.options : {};
+    const options = this.optionsOf(res, body, ISSUE_OPTIONS);
+    if (!options) {
+      log.debug("Leaving VcApi.issue(). An option was refused.");
+      return;
+    }
     if (!credential || typeof credential !== 'object' ||
         Array.isArray(credential)) {
       this.refuse(res, 400, 'STS-VC-0102', 'The request names no ' +
@@ -540,7 +800,7 @@ class VcApi {
       options.credentialStatus.type === 'BitstringStatusListEntry';
     if (wantsStatus && document.credentialStatus === undefined) {
       if (document.id === undefined) {
-        document.id = 'urn:uuid:' + crypto.randomUUID();
+        document.id = 'urn:uuid:' + crypto.randomUuid();
       }
       const until = Date.parse(document.validUntil || '') || 0;
       const allocated = await status.allocate({ base: baseUrlOf(req),
@@ -698,8 +958,11 @@ class VcApi {
       return;
     }
     const presentation = body.presentation;
-    const options = (body.options && typeof body.options === 'object')
-      ? body.options : {};
+    const options = this.optionsOf(res, body, PROVE_OPTIONS);
+    if (!options) {
+      log.debug("Leaving VcApi.prove(). An option was refused.");
+      return;
+    }
     const checked = model.checkPresentation(presentation, {});
     if (!checked.ok) {
       this.refuse(res, 400, 'STS-VC-0102', 'This presentation does not ' +
@@ -778,9 +1041,13 @@ class VcApi {
    *
    * @param vc - the credential
    * @param options - the verification options
+   * @param enveloped - true when an envelope this function opened already
+   *   verified it; an ARGUMENT and never an option, since a caller who could
+   *   set it would skip the proof check (#598)
    * @returns `{ verified, checks, warnings, errors }`
    */
-  async verifyCredentialDocument(vc: any, options: any): Promise<any> {
+  async verifyCredentialDocument(vc: any, options: any,
+                                 enveloped?: boolean): Promise<any> {
     const { log, model, di, status, now, jose } = this.deps;
     log.debug("Entering VcApi.verifyCredentialDocument().");
     const errors: any[] = [];
@@ -793,7 +1060,7 @@ class VcApi {
     const types = vc && typeof vc === 'object' && vc.type !== undefined
       ? [].concat(vc.type) : [];
     if (types.indexOf('EnvelopedVerifiableCredential') >= 0 &&
-        !o.securedByEnvelope) {
+        !enveloped) {
       const shape = model.checkCredential(vc, { enveloped: true });
       if (!shape.ok) {
         shape.problems.forEach(function (p: any) {
@@ -819,8 +1086,8 @@ class VcApi {
         return { verified: false, checks: checks, warnings: warnings,
                  errors: errors };
       }
-      const inner = await this.verifyCredentialDocument(opened.document,
-        Object.assign({}, o, { securedByEnvelope: true }));
+      const inner = await this.verifyCredentialDocument(opened.document, o,
+                                                        true);
       log.debug("Leaving VcApi.verifyCredentialDocument(). Enveloped: " +
                 inner.verified);
       return { verified: inner.verified, checks: checks.concat(inner.checks),
@@ -847,15 +1114,15 @@ class VcApi {
       return { verified: false, checks: checks, warnings: warnings,
                errors: errors };
     }
-    const proofs = o.securedByEnvelope ? { ok: true, results: [] }
+    const proofs = enveloped ? { ok: true, results: [] }
       : await di.verifyAllProofs(vc, {
         allowedCryptosuites: VERIFIABLE_SUITES,
         expectedPurpose: 'assertionMethod', expectedChallenge: null,
         expectedDomain: null, createdRequired: false });
-    if (!o.securedByEnvelope) {
+    if (!enveloped) {
       checks.push('proof');
     }
-    if (o.securedByEnvelope) {
+    if (enveloped) {
       if (vc.proof !== undefined) {
         warnings.push({ message: 'an enveloped credential carries an ' +
                         'embedded proof as well; the envelope is what was ' +
@@ -938,9 +1205,12 @@ class VcApi {
    * @param vp - the presentation
    * @param options - the verification options, `challenge` and `domain` among
    *   them
+   * @param enveloped - true when an envelope this function opened already
+   *   verified it (an argument, never an option, #598)
    * @returns `{ verified, checks, warnings, errors }`
    */
-  async verifyPresentationDocument(vp: any, options: any): Promise<any> {
+  async verifyPresentationDocument(vp: any, options: any,
+                                   enveloped?: boolean): Promise<any> {
     const { log, model, di, now, jose } = this.deps;
     log.debug("Entering VcApi.verifyPresentationDocument().");
     const o = options || {};
@@ -950,7 +1220,7 @@ class VcApi {
     const types = vp && typeof vp === 'object' && vp.type !== undefined
       ? [].concat(vp.type) : [];
     if (types.indexOf('EnvelopedVerifiablePresentation') >= 0 &&
-        !o.securedByEnvelope) {
+        !enveloped) {
       const shape = model.checkPresentation(vp, {});
       const opened = shape.ok ? await jose.verifyEnvelope(vp, 'vp',
         { verificationMethod: o.verificationMethod })
@@ -985,7 +1255,7 @@ class VcApi {
                  errors: errors };
       }
       const inner = await this.verifyPresentationDocument(opened.document,
-        Object.assign({}, o, { securedByEnvelope: true }));
+                                                          o, true);
       log.debug("Leaving VcApi.verifyPresentationDocument(). Enveloped: " +
                 inner.verified);
       return { verified: inner.verified, checks: checks.concat(inner.checks),
@@ -1011,7 +1281,7 @@ class VcApi {
     }
     const challenge = typeof o.challenge === 'string' ? o.challenge : null;
     const domain = typeof o.domain === 'string' ? o.domain : null;
-    if (o.securedByEnvelope) {
+    if (enveloped) {
       // Answered by the envelope, above.
     } else if (vp.proof === undefined) {
       if (challenge !== null || domain !== null) {
@@ -1139,11 +1409,13 @@ class VcApi {
       return;
     }
     const vc = body.verifiableCredential;
-    const pointers = body.options && body.options.selectivePointers;
-    if (!vc || typeof vc !== 'object' || (pointers !== undefined &&
-        (!Array.isArray(pointers) || pointers.some(function (p: any) {
-          return typeof p !== 'string';
-        })))) {
+    const options = this.optionsOf(res, body, DERIVE_OPTIONS);
+    if (!options) {
+      log.debug("Leaving VcApi.derive(). An option was refused.");
+      return;
+    }
+    const pointers = options.selectivePointers;
+    if (!vc || typeof vc !== 'object' || Array.isArray(vc)) {
       this.refuse(res, 400, 'STS-VC-0103', 'A derive request is { ' +
                   '"verifiableCredential": {…}, "options": { ' +
                   '"selectivePointers": [ JSON pointers ] } }.');
@@ -1183,6 +1455,12 @@ class VcApi {
   async resolveDid(req: any, res: any): Promise<void> {
     const { log, resolver, errorCodes } = this.deps;
     log.debug("Entering VcApi.resolveDid().");
+    const query = validation.check(req, 'query', RESOLVE_QUERY);
+    if (!query.ok) {
+      this.refuse(res, 400, 'STS-VC-0108', 'Refused: ' + query.detail);
+      log.debug("Leaving VcApi.resolveDid(). The query was refused.");
+      return;
+    }
     const did = this.queryString(req, 'did') || '';
     const fn = this.queryString(req, 'function') || 'resolve';
     const accept = this.queryString(req, 'accept');
@@ -1210,6 +1488,12 @@ class VcApi {
   async dereferenceDidUrl(req: any, res: any): Promise<void> {
     const { log, resolver, errorCodes } = this.deps;
     log.debug("Entering VcApi.dereferenceDidUrl().");
+    const query = validation.check(req, 'query', DEREFERENCE_QUERY);
+    if (!query.ok) {
+      this.refuse(res, 400, 'STS-VC-0108', 'Refused: ' + query.detail);
+      log.debug("Leaving VcApi.dereferenceDidUrl(). The query was refused.");
+      return;
+    }
     const accept = this.queryString(req, 'accept');
     const out = await resolver.dereference(
       this.queryString(req, 'didUrl') || '',
@@ -1254,9 +1538,65 @@ class VcApi {
     log.debug("Leaving VcApi.run().");
   }
 
+  // ---------------------------------------------------------------------------
+  // ONE ROUTE'S HANDLER: the off switch, then the gate, then the work — each
+  // answering the request itself when it stops it, and a failure in any of
+  // them answered by `run()` rather than left hanging.
+  // ---------------------------------------------------------------------------
   /**
-   * Registers the VC-API routes under `/vc-api` and the status list publish
-   * route.
+   * Builds a route's handler: the off switch (`served()`), the gate
+   * (`admitted()`) for the scope, then the work.
+   *
+   * @param name - the route, for the log
+   * @param scope - the scope the route requires
+   * @param work - what the route does once admitted
+   * @returns the express handler
+   */
+  handler(name: string, scope: string,
+          work: (req: any, res: any) => Promise<void> | void):
+    (req: any, res: any) => void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering VcApi.handler(). " + name);
+    log.debug("Leaving VcApi.handler().");
+    return function vcApiRoute(req: any, res: any): void {
+      log.debug("Entering " + name + ".");
+      if (self.served(res)) {
+        self.run(res, self.admitted(req, res, scope)
+          .then(function (admitted: boolean): Promise<void> | void {
+            return admitted ? work(req, res) : undefined;
+          }));
+      }
+      log.debug("Leaving " + name + ".");
+    };
+  }
+
+  // A verification route's work: the body, its options, the verification.
+  private verifyWork(member: string, allowed: string[],
+                     verify: (doc: any, options: any) => Promise<any>):
+    (req: any, res: any) => Promise<void> | void {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering VcApi.verifyWork(). " + member);
+    log.debug("Leaving VcApi.verifyWork().");
+    return function verifyRoute(req: any, res: any): Promise<void> | void {
+      log.debug("Entering verifyRoute(). " + member);
+      const body = self.readBody(req, res);
+      const options = body && self.optionsOf(res, body, allowed);
+      if (!options) {
+        log.debug("Leaving verifyRoute(). Answered.");
+        return undefined;
+      }
+      log.debug("Leaving verifyRoute().");
+      return verify(body[member], options).then(function (result: any) {
+        self.answerVerification(res, result, 'STS-VC-0106');
+      });
+    };
+  }
+
+  /**
+   * Registers the VC API's routes under `/vc-api`. Each is registered in
+   * every realm and answers 501 where `vcApi.enabled` is off (#598).
    *
    * Called by `common/protocol_stack.ts`.
    *
@@ -1266,95 +1606,57 @@ class VcApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering VcApi.registerRoutes().");
-    app.post(BASE + '/issuers/:issuer/credentials/issue', function (req, res) {
-      log.debug("Entering POST " + BASE + "/issuers/:issuer/credentials/" +
-                "issue.");
-      if (self.admitted(req, res, SCOPE_ISSUE)) {
-        self.run(res, self.issue(req, res));
-      }
-      log.debug("Leaving POST " + BASE + "/issuers/:issuer/credentials/" +
-                "issue.");
-    });
-    app.get(BASE + '/issuers', function (req, res) {
-      log.debug("Entering GET " + BASE + "/issuers.");
-      if (self.admitted(req, res, SCOPE_ISSUE)) {
+    app.post(BASE + '/issuers/:issuer/credentials/issue',
+      this.handler('POST ' + BASE + '/issuers/:issuer/credentials/issue',
+                   SCOPE_ISSUE, function (req, res) {
+        return self.issue(req, res);
+      }));
+    app.get(BASE + '/issuers',
+      this.handler('GET ' + BASE + '/issuers', SCOPE_ISSUE,
+                   function (req, res) {
         self.send(res, 200, { issuers: self.issuers(req) });
-      }
-      log.debug("Leaving GET " + BASE + "/issuers.");
-    });
-    app.post(BASE + '/credentials/verify', function (req, res) {
-      log.debug("Entering POST " + BASE + "/credentials/verify.");
-      const body = self.admitted(req, res, SCOPE_VERIFY) &&
-        self.readBody(req, res);
-      if (body) {
-        self.run(res, self.verifyCredentialDocument(body.verifiableCredential,
-          body.options).then(function (result: any) {
-          self.answerVerification(res, result, 'STS-VC-0106');
-        }));
-      }
-      log.debug("Leaving POST " + BASE + "/credentials/verify.");
-    });
-    app.post(BASE + '/presentations/verify', function (req, res) {
-      log.debug("Entering POST " + BASE + "/presentations/verify.");
-      const body = self.admitted(req, res, SCOPE_VERIFY) &&
-        self.readBody(req, res);
-      if (body) {
-        self.run(res, self.verifyPresentationDocument(
-          body.verifiablePresentation, body.options)
-          .then(function (result: any) {
-            self.answerVerification(res, result, 'STS-VC-0106');
-          }));
-      }
-      log.debug("Leaving POST " + BASE + "/presentations/verify.");
-    });
+      }));
+    app.post(BASE + '/credentials/verify',
+      this.handler('POST ' + BASE + '/credentials/verify', SCOPE_VERIFY,
+        this.verifyWork('verifiableCredential', VERIFY_CREDENTIAL_OPTIONS,
+          function (doc: any, options: any): Promise<any> {
+            return self.verifyCredentialDocument(doc, options);
+          })));
+    app.post(BASE + '/presentations/verify',
+      this.handler('POST ' + BASE + '/presentations/verify', SCOPE_VERIFY,
+        this.verifyWork('verifiablePresentation', VERIFY_PRESENTATION_OPTIONS,
+          function (doc: any, options: any): Promise<any> {
+            return self.verifyPresentationDocument(doc, options);
+          })));
     app.post(BASE + '/holders/:holder/presentations/prove',
-             function (req, res) {
-      log.debug("Entering POST " + BASE + "/holders/:holder/presentations/" +
-                "prove.");
-      if (self.admitted(req, res, SCOPE_ISSUE)) {
-        self.run(res, self.prove(req, res));
-      }
-      log.debug("Leaving POST " + BASE + "/holders/:holder/presentations/" +
-                "prove.");
-    });
-    app.post(BASE + '/credentials/derive', function (req, res) {
-      log.debug("Entering POST " + BASE + "/credentials/derive.");
-      if (self.admitted(req, res, SCOPE_ISSUE)) {
-        self.run(res, self.derive(req, res));
-      }
-      log.debug("Leaving POST " + BASE + "/credentials/derive.");
-    });
-    app.post(BASE + '/credentials/status', function (req, res) {
-      log.debug("Entering POST " + BASE + "/credentials/status.");
-      if (self.admitted(req, res, SCOPE_ISSUE)) {
+      this.handler('POST ' + BASE + '/holders/:holder/presentations/prove',
+                   SCOPE_ISSUE, function (req, res) {
+        return self.prove(req, res);
+      }));
+    app.post(BASE + '/credentials/derive',
+      this.handler('POST ' + BASE + '/credentials/derive', SCOPE_ISSUE,
+                   function (req, res) {
+        return self.derive(req, res);
+      }));
+    app.post(BASE + '/credentials/status',
+      this.handler('POST ' + BASE + '/credentials/status', SCOPE_ISSUE,
+                   function (req, res) {
         self.changeStatus(req, res);
-      }
-      log.debug("Leaving POST " + BASE + "/credentials/status.");
-    });
+      }));
     // DID RESOLUTION AND DEREFERENCING (#199): DID Core section 7's two
     // functions over `vc_did_resolver.ts`, answering its result structures
     // as JSON. `function` is resolve (the default) or resolveRepresentation.
-    app.get(BASE + '/resolve', function (req, res) {
-      log.debug("Entering GET " + BASE + "/resolve.");
-      if (self.admitted(req, res, SCOPE_VERIFY)) {
-        self.run(res, self.resolveDid(req, res));
-      }
-      log.debug("Leaving GET " + BASE + "/resolve.");
-    });
-    app.get(BASE + '/dereference', function (req, res) {
-      log.debug("Entering GET " + BASE + "/dereference.");
-      if (self.admitted(req, res, SCOPE_VERIFY)) {
-        self.run(res, self.dereferenceDidUrl(req, res));
-      }
-      log.debug("Leaving GET " + BASE + "/dereference.");
-    });
-    app.post(PUBLISH_PATH, function (req, res) {
-      log.debug("Entering POST " + PUBLISH_PATH + ".");
-      if (self.admitted(req, res, SCOPE_ISSUE)) {
-        self.send(res, 204, null);
-      }
-      log.debug("Leaving POST " + PUBLISH_PATH + ".");
-    });
+    // Nothing is fetched: did:key, did:jwk and this realm's own did:web.
+    app.get(BASE + '/resolve',
+      this.handler('GET ' + BASE + '/resolve', SCOPE_VERIFY,
+                   function (req, res) {
+        return self.resolveDid(req, res);
+      }));
+    app.get(BASE + '/dereference',
+      this.handler('GET ' + BASE + '/dereference', SCOPE_VERIFY,
+                   function (req, res) {
+        return self.dereferenceDidUrl(req, res);
+      }));
     log.debug("Leaving VcApi.registerRoutes().");
   }
 }
@@ -1368,8 +1670,8 @@ const slot = new InstanceSlot<VcApi>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The W3C VC-API test endpoints over this service's own issuer and verifier, a
- * test control.
+ * The W3C VC API over this service's own issuer and verifier machinery, off
+ * until a realm turns it on (`vcApi.enabled`, #598).
  *
  * @namespace
  */

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -27,10 +27,12 @@
 // Registers that are the RECORD of something — sessions, tokens, the audit
 // log, consent, the directory — are neither, and are not registered.
 //
-// There was no shared cache class before this file and there still is not
-// one. Each cache stays the `Map`, `realms.map()` or `realms.keyed()` it was,
-// in the module that owns it, and DESCRIBES itself here once, beside its
-// declaration:
+// There was no shared cache class before this file, and the caches it was
+// written for are still not one. Each stays the `Map`, `realms.map()` or
+// `realms.keyed()` it was, in the module that owns it, and DESCRIBES itself
+// here once, beside its declaration. (`common/bounded_lru.ts`, #349, is the
+// one class since: for a cache whose victim is the entry least recently READ,
+// which `makeRoom()` below does not do. It registers through the same door.)
 //
 //   * `register(descriptor)` — a name, a title, a description, the owning
 //     file, a scope (`process` or `realm`), a `maxEntries()`, a `lifetime()`
@@ -88,10 +90,14 @@
 // on the node's membership row (2026-09-18).
 // ===========================================================================
 
-const nodeCrypto = require('crypto');
 const bunyan = require('bunyan');
 const config = require('./config');
+// The one place this service hashes (#453). A leaf over `config`, so this
+// require cannot close a cycle.
+const stsCrypto = require('./crypto');
 const errorCodes = require('./error_codes');
+// This thread's identity (#364); see common/worker_channel.ts.
+const WorkerChannel = require('./worker_channel');
 
 const log = bunyan.createLogger({ name: 'sts-cache-registry' });
 config.registerLogger(log);
@@ -105,6 +111,16 @@ const SCOPES = ['process', 'realm'];
  * one-time-value history).
  */
 const KINDS = ['cache', 'replay'];
+
+/**
+ * What a descriptor that leaves `hitMeaning` or `notCountedWhy` out is said
+ * to mean (#543: one copy, which `summaryOf()` reads and `prose()` hands to
+ * the translators).
+ */
+const DEFAULTS = Object.freeze({
+  hitMeaning: 'a lookup answered from the cache',
+  notCountedWhy: 'the lookup is in a file this repository does not edit'
+});
 
 /** @type {Map<string, any>} */
 const descriptors = new Map();
@@ -133,7 +149,9 @@ function countsFor(name) {
  *
  * @param descriptor - the store's `name`, `title`, `description`, `owner`,
  *   `scope`, `kind`, `maxEntries()`, `lifetime()`, `entries()`, and optionally
- *   `eject()`, `bound`, `settings`, `hitMeaning`, `persisted` and `counted`
+ *   `eject()`, `bound`, `settings`, `hitMeaning`, `persisted`, `counted`
+ *   and `sentences` (the templates a computed member is filled from, for
+ *   the translators — see `prose()`)
  * @returns the store's counter, as `counter()` answers
  * @throws an Error tagged STS-CORE-0094 when a required member is missing
  */
@@ -429,10 +447,8 @@ function summaryOf(d, held) {
     settings: Array.isArray(d.settings) ? d.settings.slice() : [],
     counted: d.counted !== false,
     notCountedWhy: d.counted === false
-      ? String(d.notCountedWhy || 'the lookup is in a file this ' +
-               'repository does not edit') : '',
-    hitMeaning: String(d.hitMeaning ||
-                       'a lookup answered from the cache'),
+      ? String(d.notCountedWhy || DEFAULTS.notCountedWhy) : '',
+    hitMeaning: String(d.hitMeaning || DEFAULTS.hitMeaning),
     hits: d.counted === false ? null : c.hits,
     misses: d.counted === false ? null : c.misses,
     hitRatio: d.counted === false || !lookups ? null : c.hits / lookups,
@@ -486,7 +502,7 @@ function snapshot(now) {
             c.hits, c.misses, c.evictions, c.refusals];
   });
   log.debug("Leaving snapshot().");
-  return { at: at, pid: process.pid, caches: out };
+  return { at: at, pid: WorkerChannel.processTag(), caches: out };
 }
 
 // The reverse of `snapshot()`'s rows, for the page.
@@ -637,8 +653,8 @@ function digestKey(text) {
   const colon = s.indexOf(':');
   const kind = colon > 0 && colon <= 16 ? s.slice(0, colon + 1) : '';
   log.debug("Leaving digestKey().");
-  return kind + 'sha256:' + nodeCrypto.createHash('sha256').update(s)
-    .digest('hex').slice(0, 12) + '…';
+  return kind + 'sha256:' + stsCrypto.digest('sha256', s, 'hex')
+    .slice(0, 12) + '…';
 }
 
 // The same for a `realms.map()` store, walked over every realm the owner's
@@ -791,6 +807,163 @@ function realmMapEjector(realmsModule, store, expired) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE PAGE'S PROSE, FOR THE TRANSLATORS (#543 phase 2c). `GET
+// /admin-api/caches` answers each store's descriptor members as they were
+// registered, so the `caches` namespace's English is READ FROM THIS
+// REGISTRY rather than kept in a table: the catalog extractor loads the
+// whole protocol stack first, by which time every store has registered.
+//
+// What is harvested, per store: `title`, `description`, `hitMeaning`,
+// `notCountedWhy`, a `bound` given as a string, and a `bound` or `lifetime`
+// FUNCTION only when it returns nothing but string literals — which
+// `literalOnly()` decides from the function's own source. A function that
+// puts a setting's value, a count or a constant into its sentence answers a
+// different string from one configuration to the next, so it is either
+// filled from a template its owner declares in the descriptor's optional
+// `sentences` member (harvested here as well), or left English.
+//
+// NOT harvested: a store's `name`, `owner` and `settings` (identifiers), a
+// member that is the same text as some store's name (a `BoundedLru` with no
+// title is titled by its name, and translating that string would translate
+// the `name` beside it too), and `problem` — the text a descriptor threw,
+// and the STS-CORE-0096 sentence appended to it, are failures, and errors
+// stay English (#539).
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry the caches namespace's prose
+ * (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/caches'];
+
+// The source text of a function as a stream of tokens, each string literal
+// replaced by `S` and each comment dropped, or null when it holds a template
+// literal with a substitution (which is computed by definition).
+function tokensOf(src) {
+  log.debug("Entering tokensOf().");
+  let out = '';
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '/') {
+      const end = src.indexOf('\n', i);
+      i = end < 0 ? src.length : end;
+    } else if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end < 0 ? src.length : end + 2;
+      out += ' ';
+    } else if (c === '\'' || c === '"' || c === '`') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) {
+        if (c === '`' && src[j] === '$' && src[j + 1] === '{') {
+          log.debug("Leaving tokensOf(). A substitution.");
+          return null;
+        }
+        j += src[j] === '\\' ? 2 : 1;
+      }
+      out += ' S ';
+      i = j + 1;
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  log.debug("Leaving tokensOf().");
+  return out.replace(/\s+/g, ' ').trim();
+}
+
+// Whether a descriptor's function returns nothing but string literals (its
+// sentence is the same in every configuration), judged from its source: a
+// body of `return 'a' + 'b';`, after the Entering/Leaving lines a named
+// function carries, or an arrow function answering such a sum.
+function literalOnly(f) {
+  log.debug("Entering literalOnly().");
+  if (typeof f !== 'function') {
+    log.debug("Leaving literalOnly(). Not a function.");
+    return false;
+  }
+  let src = '';
+  try {
+    src = Function.prototype.toString.call(f);
+  } catch (e) {
+    log.debug("Caught in literalOnly(): " + ((e && e.message) || e));
+    log.debug("Leaving literalOnly(). No source.");
+    return false;
+  }
+  const arrowAt = src.indexOf('=>');
+  const braceAt = src.indexOf('{');
+  let body;
+  if (arrowAt >= 0 && (braceAt < 0 || arrowAt < braceAt) &&
+      src.slice(arrowAt + 2).trim()[0] !== '{') {
+    body = 'return ' + src.slice(arrowAt + 2) + ';';
+  } else {
+    body = braceAt < 0 ? '' : src.slice(braceAt + 1, src.lastIndexOf('}'));
+  }
+  const tokens = tokensOf(body);
+  const rest = tokens === null ? null : tokens
+    .replace(/(?:[\w$]+\.)*debug ?\( ?S(?: ?\+ ?S)* ?\) ?;?/g, '')
+    .trim();
+  const yes = rest !== null && /^return S(?: ?\+ ?S)* ?;?$/.test(rest);
+  log.debug("Leaving literalOnly(). " + yes);
+  return yes;
+}
+
+/**
+ * Extracts the caches namespace (#543 phase 2c) from the registry itself:
+ * every registered store's prose members, the defaults, and the templates a
+ * store declares in `sentences` for a member it computes. See the comment
+ * above `PROSE_ROUTES` for what is left out and why.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // Lazily: this file is loaded by `helpers.js`, long before what
+  // `server_prose.ts` requires, and by the parent project's Kerberos copy,
+  // which has neither module and never calls this.
+  const serverProse = require('./server_prose');
+  const BoundedLru = require('./bounded_lru');
+  const harvest = serverProse.harvest;
+  const out = harvest('caches.registry.default', DEFAULTS,
+                      Object.keys(DEFAULTS));
+  // A store that kept a default says it in the default's words: held once,
+  // under the default's own key, not again under each store's.
+  const lru = BoundedLru.prose();
+  const held = new Set(Object.keys(out).map(function (k) {
+    return out[k];
+  }).concat(Object.keys(lru).map(function (k) {
+    return lru[k];
+  })));
+  const ids = new Set(names());
+  names().forEach(function (name) {
+    const d = descriptors.get(name);
+    const one = {
+      title: d.title,
+      description: d.description,
+      bound: typeof d.bound === 'function'
+        ? (literalOnly(d.bound) ? textOf(d.bound) : null)
+        : d.bound,
+      lifetime: literalOnly(d.lifetime) ? textOf(d.lifetime) : null,
+      hitMeaning: d.hitMeaning,
+      notCountedWhy: d.counted === false ? d.notCountedWhy : null
+    };
+    Object.keys(one).forEach(function (member) {
+      const v = one[member];
+      if (typeof v !== 'string' || held.has(v) || ids.has(v)) {
+        delete one[member];
+      }
+    });
+    Object.assign(out, harvest('caches.store.' + name, one,
+                               Object.keys(one)));
+    if (d.sentences && typeof d.sentences === 'object') {
+      Object.assign(out, harvest('caches.store.' + name + '.sentences',
+                                 d.sentences, Object.keys(d.sentences)));
+    }
+  });
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The cache registry: one place where every cache and replay store says what it
  * is, how big it is and how often it was useful (rule 3ap).
@@ -821,5 +994,8 @@ module.exports = {
   forget: forget,
   clipKey: clipKey,
   SCOPES: SCOPES,
-  KINDS: KINDS
+  KINDS: KINDS,
+  DEFAULTS: DEFAULTS,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

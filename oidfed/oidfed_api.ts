@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -32,6 +32,9 @@ interface OidfedApiDeps {
   parseBody: typeof parseBody;
   errorCodes: typeof errorCodes;
   loadOidfed(): Json;
+  // The page's module, for the one view the page and the GET both answer
+  // (#446), lazily as `loadOidfed` is.
+  loadPage(): Json;
 }
 
 const ENTITY = { type: 'string', maxLength: 2048,
@@ -78,6 +81,9 @@ class OidfedApi {
       log: log, parseBody: parseBody, errorCodes: errorCodes,
       loadOidfed: function (): Json {
         return require('./oidfed');
+      },
+      loadPage: function (): Json {
+        return require('./oidfed_admin');
       }
     };
   }
@@ -152,7 +158,7 @@ class OidfedApi {
    * @returns the rows
    */
   buildRoutes(): Json[] {
-    const { log, loadOidfed, errorCodes, parseBody } = this.deps;
+    const { log, loadOidfed, loadPage, errorCodes, parseBody } = this.deps;
     const self = this;
     log.debug("Entering OidfedApi.buildRoutes().");
     const ROUTES = [
@@ -175,10 +181,35 @@ class OidfedApi {
                      'whether it is suspended and its event history, the ' +
                      'subordinates it has revoked with theirs (#137), and ' +
                      'the Entity Collection crawl it keeps (#136). The ' +
+                     'keys, subordinates, revoked subordinates, Trust ' +
+                     'Anchors, issued and carried marks and mark policies ' +
+                     'are each one page, moved by a parameter of its own ' +
+                     'with `per` shared; `counts` holds each list\'s whole ' +
+                     'length and `paging` where each page is. A ' +
+                     'subordinate\'s `events` are its latest 25, with ' +
+                     '`eventsTotal`; the whole history is at ' +
+                     '/oidfed/subordinate-events. The ' +
                      'oidfed.* settings are written through ' +
                      'POST /admin-api/config/set-many.',
         mirrors: 'GET /admin/oidfed',
-        parameters: [],
+        parameters: [
+          ['keysPage', 'the Federation Entity Keys'],
+          ['subordinatesPage', 'the subordinates'],
+          ['formerPage', 'the revoked subordinates'],
+          ['anchorsPage', 'the Trust Anchors'],
+          ['issuedPage', 'the Trust Marks this realm issued'],
+          ['heldPage', 'the Trust Marks this realm carries'],
+          ['policiesPage', 'the Trust Mark policies']
+        ].map(function (one: string[]): Json {
+          return { name: one[0], in: 'query', required: false,
+                   schema: { type: 'integer', minimum: 1 },
+                   description: 'Which page of ' + one[1] + '. Clamped, ' +
+                                'like every page parameter here.' };
+        }).concat([
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, shared by the seven lists.' }
+        ]),
         responseDescription: 'The realm as a federation entity.',
         responseSchema: { type: 'object', additionalProperties: true,
                           description: 'This realm as /admin/oidfed draws ' +
@@ -186,7 +217,7 @@ class OidfedApi {
         handler: function (req: Json, res: Json): Promise<void> {
           log.debug("Entering the management API OpenID Federation " +
                     "endpoint.");
-          return loadOidfed().view(req).then(function (view: Json): void {
+          return loadPage().oidfedView(req).then(function (view: Json): void {
             self.send(res, 200, view);
             log.debug("Leaving the management API OpenID Federation " +
                       "endpoint.");

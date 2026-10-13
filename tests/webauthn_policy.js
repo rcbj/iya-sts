@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -61,6 +61,8 @@ const config = require('../common/config');
 const credentials = require('../common/credentials');
 const webauthn = require('../authn/webauthn');
 const policy = require('../authn/webauthn_policy');
+// #527: the passkey policy decides a security key's resident key now.
+const passkeyPolicy = require('../common/passkey_policy');
 const ldap = require('../ldap/ldap_server');
 const authn = require('../authn/authn');
 
@@ -83,6 +85,24 @@ function withSetting(key, value, fn) {
     return fn();
   } finally {
     config.clearOverride(key);
+  }
+}
+
+// THE PASSKEY POLICY FOR THE LENGTH OF ONE CHECK (#527): saved in this
+// realm, then reset so the next check sees the built-in defaults again.
+function withPasskeyPolicy(fields, fn) {
+  log.debug("Entering withPasskeyPolicy().");
+  const saved = passkeyPolicy.save('default',
+    Object.assign({}, passkeyPolicy.DEFAULTS, fields));
+  if (!saved.ok) {
+    throw new Error('the passkey policy was not saved: ' +
+                    (saved.errors || []).join(' '));
+  }
+  try {
+    log.debug("Leaving withPasskeyPolicy().");
+    return fn();
+  } finally {
+    passkeyPolicy.reset('default');
   }
 }
 
@@ -135,6 +155,91 @@ function run(t) {
     return verifiable.indexOf(name) >= 0;
   }), 'every algorithm offered by default is one the verifier can check',
   policy.algorithmsOffered().join(', '));
+  // AND EVERY ONE IS OFFERED, ML-DSA FIRST (2026-10-01, rcbj: "support and
+  // request every possible algorithm", the PQC three in particular).
+  const ids = policy.algorithmIds();
+  t.check(verifiable.filter(function (name) {
+    // The insecure ones (RS1) only behind webauthn.insecureAlgorithms.
+    return policy.INSECURE_ALGS.indexOf(name) < 0;
+  }).every(function (name) {
+    return policy.algorithmsOffered().indexOf(name) >= 0;
+  }) && ids.slice(0, 3).join(',') === '-48,-49,-50' &&
+          ids.indexOf(-65535) < 0,
+  'the default requests EVERY algorithm the verifier checks, ML-DSA-44, ' +
+  '-65 and -87 (-48, -49, -50) first, and never RS1', ids.join(', '));
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== the two algorithm flags (2026-10-01) ===');
+  // -------------------------------------------------------------------------
+  // webauthn.insecureAlgorithms: off, RS1 is dropped even where named; on
+  // (development), it is requested LAST; in product it is ignored and
+  // cannot be set.
+  withSetting('webauthn.algorithms', 'RS1,ES256', function () {
+    t.check(policy.algorithmsOffered().join(',') === 'ES256' &&
+            !policy.insecureAlgorithmsAllowed(),
+      'insecure off: RS1 is not requested even where webauthn.algorithms ' +
+      'names it', policy.algorithmsOffered().join(','));
+  });
+  withSetting('webauthn.insecureAlgorithms', true, function () {
+    const offered = policy.algorithmsOffered();
+    t.check(policy.insecureAlgorithmsAllowed() &&
+            offered[offered.length - 1] === 'RS1' &&
+            policy.algorithmIds().indexOf(-65535) === offered.length - 1,
+      'insecure on (development): RS1 (-65535) is requested, LAST',
+      offered.join(','));
+    withSetting('global.mode', 'product', function () {
+      t.check(!policy.insecureAlgorithmsAllowed() &&
+              policy.algorithmsOffered().indexOf('RS1') < 0,
+        'and in product mode the flag is ignored: product never uses a ' +
+        'broken algorithm', policy.algorithmsOffered().join(','));
+    });
+  });
+  withSetting('global.mode', 'product', function () {
+    t.check(config.setOverride('webauthn.insecureAlgorithms', true).ok ===
+            false,
+      'product mode refuses to switch webauthn.insecureAlgorithms on');
+    config.clearOverride('webauthn.insecureAlgorithms');
+  });
+  // A STORED KEY'S ALGORITHM (2026-10-01): the recorded one, the stored
+  // JWK's `alg`, and for a key older than both its key type's.
+  const legacy = credentials.keyAlgorithm({ publicKeyJwk:
+    { kty: 'EC', crv: 'P-256', x: 'x', y: 'y' } });
+  const recorded = credentials.keyAlgorithm({ algorithm: 'ML-DSA-65',
+    coseAlg: -49, publicKeyJwk: { kty: 'AKP', alg: 'ML-DSA-65' } });
+  const fromJwk = credentials.keyAlgorithm({ publicKeyJwk:
+    { kty: 'RSA', alg: 'RS1', n: 'n', e: 'AQAB' } });
+  t.check(legacy.text === 'ES256 (-7)' && !legacy.postQuantum &&
+          recorded.text === 'ML-DSA-65 (-49)' && recorded.postQuantum &&
+          fromJwk.name === 'RS1' && fromJwk.coseAlg === -65535 &&
+          fromJwk.insecure,
+    'a key\'s algorithm: recorded, from its JWK, or by key type for a key ' +
+    'older than both; ML-DSA marked post-quantum and RS1 insecure',
+    JSON.stringify([legacy, recorded, fromJwk]));
+
+  // webauthn.pqcOnly: ML-DSA only, all three where the list names none,
+  // and it beats the insecure flag.
+  withSetting('webauthn.pqcOnly', true, function () {
+    t.check(policy.algorithmIds().join(',') === '-48,-49,-50',
+      'PQC only: the default list narrows to ML-DSA-44, -65 and -87',
+      policy.algorithmIds().join(','));
+    withSetting('webauthn.algorithms', 'ES256,ML-DSA-87,RS256', function () {
+      t.check(policy.algorithmsOffered().join(',') === 'ML-DSA-87',
+        'PQC only keeps the ML-DSA the list names, in its order',
+        policy.algorithmsOffered().join(','));
+    });
+    withSetting('webauthn.algorithms', 'ES256,RS256', function () {
+      t.check(policy.algorithmsOffered().join(',') ===
+              'ML-DSA-44,ML-DSA-65,ML-DSA-87',
+        'PQC only with a list naming no ML-DSA requests all three, never a ' +
+        'classical one and never an empty list',
+        policy.algorithmsOffered().join(','));
+    });
+    withSetting('webauthn.insecureAlgorithms', true, function () {
+      t.check(policy.algorithmsOffered().indexOf('RS1') < 0,
+        'PQC only beats the insecure flag: RS1 is not post-quantum',
+        policy.algorithmsOffered().join(','));
+    });
+  });
 
   t.check(config.setOverride('webauthn.algorithms', 'ES256,NOSUCHALG').ok ===
           false,
@@ -198,56 +303,103 @@ function run(t) {
       'and a real preference IS sent');
   });
 
-  // THE PERSON'S CHOICE ON /portal/keys (2026-09-26): which kind of
-  // authenticator the enrolment asks for, narrowing the request only while
-  // the realm's setting leaves the choice open.
+  // THE PERSON'S CHOICE ON /portal/keys: which of the two calls to action
+  // they pressed (#470; a three-way radio from 2026-09-26). *Create a
+  // passkey* sends NO attachment — a hard `platform` refused outright on a
+  // browser with nothing built in — and hints the device then hybrid; *Use a
+  // security key* asks for cross-platform and hints a security key.
   withSetting('webauthn.authenticatorAttachment', 'any', function () {
-    withSetting('webauthn.residentKey', 'discouraged', function () {
-      const built = policy.creationOptions('localhost', 'platform')
-        .authenticatorSelection;
-      const carried = policy.creationOptions('localhost', 'roaming')
-        .authenticatorSelection;
-      const neither = policy.creationOptions('localhost', 'bogus')
-        .authenticatorSelection;
-      t.check(built.authenticatorAttachment === 'platform' &&
-              built.residentKey === 'preferred' &&
-              built.requireResidentKey === false,
-        'a key BUILT INTO THIS DEVICE asks for the platform authenticator ' +
-        'and a discoverable credential (preferred), because "discouraged" ' +
-        'is what sends Chrome and Edge to a USB key and never the device',
-        JSON.stringify(built));
-      t.check(carried.authenticatorAttachment === 'cross-platform' &&
-              carried.residentKey === 'discouraged',
-        'a key THEY CARRY asks for a roaming authenticator and keeps the ' +
-        'setting\'s resident-key answer — its slot argument is about them',
-        JSON.stringify(carried));
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'discouraged' }, function () {
+      const passkey = policy.creationOptions('localhost', 'passkey');
+      const key = policy.creationOptions('localhost', 'security-key');
+      const neither = policy.creationOptions('localhost', 'bogus');
       t.check(!Object.prototype.hasOwnProperty
-                .call(neither, 'authenticatorAttachment') &&
-              neither.residentKey === 'discouraged',
-        'an unknown kind is the request as it always was',
+                .call(passkey.authenticatorSelection,
+                      'authenticatorAttachment') &&
+              passkey.authenticatorSelection.residentKey === 'required' &&
+              passkey.authenticatorSelection.requireResidentKey === true &&
+              JSON.stringify(passkey.hints) === '["client-device","hybrid"]',
+        'CREATE A PASSKEY asks for no attachment, REQUIRES a discoverable ' +
+        'credential whatever securityKeyResidentKey says (#474: a passkey is ' +
+        'one the usernameless sign-in can find) and hints the device then ' +
+        'hybrid',
+        JSON.stringify(passkey));
+      t.check(key.authenticatorSelection.authenticatorAttachment ===
+                'cross-platform' &&
+              key.authenticatorSelection.residentKey === 'discouraged' &&
+              JSON.stringify(key.hints) === '["security-key"]',
+        'USE A SECURITY KEY asks for a roaming authenticator, hints a ' +
+        'security key and, with usernameless sign-in ON, keeps the passkey ' +
+        'policy\'s securityKeyResidentKey (#527) — its slot argument is ' +
+        'about them', JSON.stringify(key));
+      t.check(!Object.prototype.hasOwnProperty
+                .call(neither.authenticatorSelection,
+                      'authenticatorAttachment') &&
+              neither.authenticatorSelection.residentKey === 'discouraged' &&
+              JSON.stringify(neither.hints) === '[]',
+        'an unknown kind — and the sign-in screen, which sends none — is ' +
+        'the request as it always was, with no hint',
         JSON.stringify(neither));
       t.check(JSON.stringify(policy.authenticatorKinds()) ===
-              '["platform","roaming"]',
-        'both kinds are offered while the setting is any',
+              '["passkey","security-key"]',
+        'both calls to action are offered while the setting is any',
         JSON.stringify(policy.authenticatorKinds()));
     });
-    withSetting('webauthn.residentKey', 'required', function () {
-      t.check(policy.creationOptions('localhost', 'platform')
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'required' }, function () {
+      t.check(policy.creationOptions('localhost', 'passkey')
                 .authenticatorSelection.residentKey === 'required',
-        'a setting of REQUIRED is never loosened to preferred');
+        'a policy of REQUIRED is never loosened to preferred');
+    });
+    // #527, rcbj's answers 1 and 2: with usernameless sign-in OFF (the
+    // default) the security-key button asks REQUIRED whatever the row says,
+    // and the row's own default is REQUIRED, so one key gives one result
+    // through either button.
+    const both = function () {
+      return [policy.creationOptions('localhost', 'passkey'),
+              policy.creationOptions('localhost', 'security-key'),
+              policy.creationOptions('localhost')].map(function (opts) {
+        return opts.authenticatorSelection.residentKey + '/' +
+               opts.authenticatorSelection.requireResidentKey;
+      }).join(',');
+    };
+    t.check(both() === 'required/true,required/true,required/true',
+      '#527 built-in defaults: both buttons, and an enrolment naming no ' +
+      'kind, ask for a discoverable credential', both());
+    withPasskeyPolicy({ allowUsernameless: false,
+                        securityKeyResidentKey: 'discouraged' }, function () {
+      t.check(both() === 'required/true,required/true,required/true',
+        '#527 answer 1: usernameless OFF, the security-key button asks ' +
+        'REQUIRED whatever securityKeyResidentKey says', both());
+    });
+    withPasskeyPolicy({ allowUsernameless: true,
+                        securityKeyResidentKey: 'preferred' }, function () {
+      t.check(both() === 'required/true,preferred/false,preferred/false',
+        '#527: usernameless ON, the security-key button asks the policy\'s ' +
+        'row; Create a passkey stays REQUIRED', both());
     });
   });
   withSetting('webauthn.authenticatorAttachment', 'cross-platform',
               function () {
-    t.check(policy.creationOptions('localhost', 'platform')
+    t.check(policy.creationOptions('localhost', 'passkey')
               .authenticatorSelection.authenticatorAttachment ===
               'cross-platform' &&
-            JSON.stringify(policy.authenticatorKinds()) === '["roaming"]',
-      'a setting that names one wins over the person\'s choice, and the page ' +
-      'is offered only that one');
+            JSON.stringify(policy.authenticatorKinds()) ===
+              '["security-key"]',
+      'a setting that names one wins over the person\'s choice, and the ' +
+      'page is offered only that button');
+  });
+  withSetting('webauthn.authenticatorAttachment', 'platform', function () {
+    t.check(policy.creationOptions('localhost', 'passkey')
+              .authenticatorSelection.authenticatorAttachment === 'platform' &&
+            JSON.stringify(policy.authenticatorKinds()) === '["passkey"]',
+      'a platform setting offers only Create a passkey, and asks for the ' +
+      'platform authenticator');
   });
 
-  withSetting('webauthn.residentKey', 'required', function () {
+  withPasskeyPolicy({ allowUsernameless: true,
+                      securityKeyResidentKey: 'required' }, function () {
     const sel = policy.creationOptions('localhost').authenticatorSelection;
     t.check(sel.residentKey === 'required' && sel.requireResidentKey === true,
       'a REQUIRED resident key sets the Level 1 `requireResidentKey` too, ' +
@@ -255,7 +407,8 @@ function run(t) {
       'that still read it are the ones that would otherwise ignore the ' +
       'modern member entirely', JSON.stringify(sel));
   });
-  withSetting('webauthn.residentKey', 'preferred', function () {
+  withPasskeyPolicy({ allowUsernameless: true,
+                      securityKeyResidentKey: 'preferred' }, function () {
     t.check(policy.creationOptions('localhost')
               .authenticatorSelection.requireResidentKey === false,
       'and PREFERRED does not, because the Level 1 member has no third state');

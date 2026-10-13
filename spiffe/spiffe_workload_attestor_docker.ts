@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -82,10 +82,16 @@ class DockerWorkloadAttestor {
   readonly type = 'docker';
   /**
    * One sentence for `GET /spiffe` and the console: what this attestor
-   * verifies.
+   * verifies. STATIC as well (#543), so that `spiffe_server.ts`'s
+   * `prose()` reads it without building an attestor.
    */
-  readonly verifies = 'The Docker container the caller\'s process runs in, ' +
+  static readonly VERIFIES =
+    'The Docker container the caller\'s process runs in, ' +
     'as the Docker Engine reports its labels, environment and image.';
+  /**
+   * The same sentence, on the instance the attestation table holds.
+   */
+  readonly verifies = DockerWorkloadAttestor.VERIFIES;
 
   /**
    * Builds the attestor over its dependencies.

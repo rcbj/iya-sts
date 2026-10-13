@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -67,7 +67,7 @@
 // is loaded. Every call is AMBIENT-REALM: the caller has entered the realm.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import credentials = require('../common/credentials');
 
@@ -126,8 +126,7 @@ class OidfedStore {
    */
   static digest(value: string): string {
     log.debug("Entering OidfedStore.digest().");
-    const out = nodeCrypto.createHash('sha256').update(String(value), 'utf8')
-      .digest('hex').slice(0, 32);
+    const out = stsCrypto.digest('sha256', String(value), 'hex').slice(0, 32);
     log.debug("Leaving OidfedStore.digest().");
     return out;
   }

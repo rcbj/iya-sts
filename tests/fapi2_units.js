@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -121,6 +121,30 @@ function childMain() {
           return codeOf(fapi.clientAuthenticationRefusal(method));
         }), 'STS-OAUTH-0580', 'C. ' + method + ' is refused');
       });
+    // THE ONE PUBLIC CLIENT THE PROFILE ALLOWS (#446): the admin console,
+    // and only as a public client.
+    eq(two(function () {
+      return codeOf(fapi.clientAuthenticationRefusal('none',
+                                                     'sts-admin-console'));
+    }), null, 'C. the admin console as a public client is the one ' +
+              'exception (#446)');
+    eq(two(function () {
+      return codeOf(fapi.clientAuthenticationRefusal('none',
+                                                     'some-other-client'));
+    }), 'STS-OAUTH-0580', 'C. and no other public client is');
+    eq(two(function () {
+      return codeOf(fapi.clientAuthenticationRefusal('none',
+                                                     'sts-user-portal'));
+    }), null, 'C. the user portal as a public client is the other ' +
+              'exception (#568)');
+    eq(two(function () {
+      return codeOf(fapi.clientAuthenticationRefusal('client_secret_basic',
+                                                     'sts-admin-console'));
+    }), 'STS-OAUTH-0580', 'C. nor is the console with a method the ' +
+                          'profile refuses');
+    eq(fapi.PUBLIC_CLIENT_EXEMPT.join(','),
+       'sts-admin-console,sts-user-portal',
+       'C. the exemption list is the console and the portal, nothing else');
 
     // --- D ----------------------------------------------------------------
     const register = function (meta) {

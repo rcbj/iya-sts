@@ -40,6 +40,8 @@
              schemaLocation="saml-schema-protocol-2.0.xsd"/>
   <xs:import namespace="urn:oasis:names:tc:SAML:2.0:metadata"
              schemaLocation="saml-schema-metadata-2.0.xsd"/>
+  <xs:import namespace="urn:oasis:names:tc:SAML:2.0:conditions:delegation"
+             schemaLocation="sstc-saml-delegation.xsd"/>
   <xs:import namespace="urn:oasis:names:tc:SAML:1.0:assertion"
              schemaLocation="oasis-sstc-saml-schema-assertion-1.1.xsd"/>
   <xs:import namespace="urn:oasis:names:tc:SAML:1.0:protocol"

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -253,12 +253,17 @@ function childMain() {
     }), 'I. every requirement row has a unique id and a known enforcement');
 
     // --- J ----------------------------------------------------------------
-    ['sts-admin-console', 'sts-user-portal'].forEach(function (id) {
+    // The console and the portal are the two public clients a FAPI realm
+    // allows (#446, #568): they hold no credential at all, and their tokens
+    // are DPoP-bound.
+    [['sts-admin-console', 'none'],
+     ['sts-user-portal', 'none']].forEach(function (pair) {
+      const id = pair[0];
       const entry = applications.clientConfigOf(id);
       if (note(!!(entry && entry.registered),
                'J. ' + id + ' is seeded', JSON.stringify(entry))) {
-        eq(entry.token_endpoint_auth_method, 'private_key_jwt',
-           'J. ' + id + ' authenticates by private_key_jwt');
+        eq(entry.token_endpoint_auth_method, pair[1],
+           'J. ' + id + ' authenticates by ' + pair[1]);
         eq(entry.client_secret || '', '',
            'J. and holds no client secret');
       }

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ---------------------------------------------------------------------------
 // TYPES THE JAVASCRIPT CANNOT STATE FOR ITSELF (#50, 2026-09-16).

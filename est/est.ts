@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -29,6 +29,29 @@
 //   POST serverkeygen     a key pair this service generates (4.4)
 //   GET  csrattrs         what a request should carry (4.5)
 //   POST fullcmc          501: Full CMC (4.3) is not implemented
+//   GET  nonce            a freshness nonce for a key attestation in the next
+//   POST nonce            request (draft-ietf-lamps-attestation-freshness
+//                         section 5.1, #257)
+//
+// **THE NONCE (#257).** draft-ietf-lamps-csr-attestation section 6.2 defers
+// freshness to draft-ietf-lamps-attestation-freshness, whose section 5 says a
+// compliant EST server MUST provide `/nonce`: GET with no content, or POST
+// with `application/est-attestation-freshness+json` `{ len?, reqTypeInfo? }`,
+// answered 200 `{ nonce, expiry }` in the same media type; 400 for any error
+// and 503 when unable. Here it is AUTHENTICATED exactly as an enrollment is
+// (section 5.1: "MAY request HTTP-based client authentication"; section 8:
+// associate nonce state "with an authenticated or otherwise constrained
+// requester"), and the nonce is bound to the request that spends it by the
+// session-maintenance mechanism section 5.1 requires — an HTTP cookie
+// (`sts_est_nonce`, a random handle) — AND by the authenticated principal,
+// so a nonce another client fetched is not this one's whatever its cookie.
+// The row lives in `devices.challenges` (`common/device_enrolment.ts`), and
+// `simpleenroll` hands the cookie's handle to the core, which spends the
+// TPM statement's extraData as the nonce. A label naming a profile other
+// than `device` answers an EMPTY nonce, which the draft defines as "no
+// freshness proof needed": nothing else here reads an attestation.
+// No `reqTypeInfo` type is defined by this service, so a request naming one
+// is answered 503 (unable to supply its respInfo).
 //
 // **EVERYTHING THAT IS NOT A WIRE FORMAT IS THE CORE'S.** Who may be issued a
 // certificate for whom, which names it may carry, whether a request proves
@@ -101,6 +124,12 @@ import x509 = require('../common/vendored/x509');
 import mtls = require('../oauth-oidc/mtls');
 import codec = require('./est_codec');
 import InstanceSlot = require('../common/instance_slot');
+// WHICH CELL ANSWERS (#98 D10): the cell map, the placement helpers and the
+// routing index. Libraries; each is a no-op in a single-cell service.
+import cells = require('../common/cells');
+import cellPlacement = require('../common/cell_placement');
+import cellRouting = require('../common/cell_routing');
+import stsCrypto = require('../common/crypto');
 
 /**
  * The enrollment family's name in the core and the monitor, `est`.
@@ -123,8 +152,23 @@ const OPERATIONS = [
   { name: 'simplereenroll', method: 'POST' },
   { name: 'serverkeygen', method: 'POST' },
   { name: 'csrattrs', method: 'GET' },
-  { name: 'fullcmc', method: 'POST' }
+  { name: 'fullcmc', method: 'POST' },
+  // draft-ietf-lamps-attestation-freshness section 5.1 (#257): GET with no
+  // content, POST with a nonce request — the one operation with two.
+  { name: 'nonce', method: 'GET, POST' }
 ];
+
+/**
+ * The methods an `OPERATIONS` row answers.
+ *
+ * @param op - the row
+ * @returns its methods, `GET` and `POST` for `nonce`
+ */
+function methodsOf(op: { method: string }): string[] {
+  log.debug("Entering methodsOf().");
+  log.debug("Leaving methodsOf().");
+  return String(op.method).split(/,\s*/);
+}
 
 // Every path this module registers, for `sts_metadata.js` and the endpoints
 // table to be checked against.
@@ -148,8 +192,32 @@ const MEDIA = {
   pkcs10: 'application/pkcs10',
   certsOnly: 'application/pkcs7-mime; smime-type=certs-only',
   csrattrs: 'application/csrattrs',
-  pkcs8: 'application/pkcs8'
+  pkcs8: 'application/pkcs8',
+  // draft-ietf-lamps-attestation-freshness section 5.1, for a nonce request
+  // and its response alike (#257).
+  freshness: 'application/est-attestation-freshness+json'
 };
+
+// THE NONCE COOKIE (#257): the session-maintenance mechanism
+// draft-ietf-lamps-attestation-freshness section 5.1 requires to bind a
+// nonce to the CSR that carries it. Its value is a random handle and nothing
+// else — the nonce itself never leaves in it.
+const NONCE_COOKIE = 'sts_est_nonce';
+const NONCE_HANDLE_SHAPE = /^est\.[A-Za-z0-9_-]{43}$/;
+
+const vzEst = validation.z;
+// The nonce-request CDDL (section 3.2): two optional members and no others —
+// a CDDL map is closed unless it says otherwise — `len` an unsigned integer
+// in 8..64, and `reqTypeInfo` a `type` that is a dotted-decimal OID and an
+// optional `reqInfo` of any shape.
+const NONCE_REQUEST = vzEst.strictObject({
+  len: vzEst.number().int().min(8).max(64).optional(),
+  reqTypeInfo: vzEst.strictObject({
+    type: vzEst.string().max(200).regex(/^[0-2](\.(0|[1-9][0-9]*))+$/,
+                                       'must be a dotted-decimal OID'),
+    reqInfo: vzEst.any().optional()
+  }).optional()
+});
 
 // No EST operation takes a query string.
 const NO_QUERY = validation.z.strictObject({});
@@ -182,6 +250,13 @@ interface EstDeps {
   x509: typeof x509;
   mtls: typeof mtls;
   codec: typeof codec;
+  cells: typeof cells;
+  cellPlacement: typeof cellPlacement;
+  cellRouting: typeof cellRouting;
+  stsCrypto: typeof stsCrypto;
+  // `common/device_enrolment`, whose challenge store holds the nonces
+  // (#257). Lazily: it requires the WebAuthn verifier and credentials.
+  loadDeviceEnrolment(): typeof import('../common/device_enrolment');
   // Required when first called, as the JavaScript did, for the reason
   // given where each is called.
   loadPkijs(): typeof import('pkijs');
@@ -235,6 +310,13 @@ class Est {
       x509: x509,
       mtls: mtls,
       codec: codec,
+      cells: cells,
+      cellPlacement: cellPlacement,
+      cellRouting: cellRouting,
+      stsCrypto: stsCrypto,
+      loadDeviceEnrolment: function () {
+        return require('../common/device_enrolment');
+      },
       loadPkijs: function () {
         return require('pkijs');
       },
@@ -489,8 +571,13 @@ class Est {
     // client asking an unlabelled /cacerts is asking for the CA, not a profile.
     const enrolling = ['simpleenroll', 'simplereenroll', 'serverkeygen']
       .indexOf(ctx.op) >= 0;
+    // STRUCTURAL ONLY before the credential (rcbj, 2026-10-01): whether the
+    // label is a profile at all. Whether it is ALLOWED depends on whose
+    // request it is — an application's own list overrides the realm's — so
+    // `core.issue()` asks that once it knows the entry.
     if (ctx.labelled || (enrolling && ctx.op !== 'simplereenroll')) {
-      const profile = core.checkProfile(FAMILY, ctx.profile);
+      const profile = core.checkProfile(FAMILY, ctx.profile, null,
+                                        { structural: true });
       if (!profile.ok) {
         this.refuseWith(req, res, ctx, profile);
         log.debug("Leaving Est.refusedBeforeAuthentication(). Profile.");
@@ -621,6 +708,36 @@ class Est {
     return !!(view && view.identifier);
   }
 
+  // Is certificate authentication on for the certificate presented? The
+  // realm's switch, unless the certificate NAMES an application (read, not
+  // believed: it is verified next either way) whose own
+  // estCertificateAuthentication says otherwise (rcbj, 2026-10-01).
+  /**
+   * Answers whether EST accepts the presented client certificate's method:
+   * the named application's own switch where it set one, the realm's
+   * otherwise.
+   *
+   * @param req - the request
+   * @returns true when certificate authentication is on for it
+   */
+  certificateAuthenticationOn(req) {
+    const { log, core, mtls } = this.deps;
+    log.debug("Entering Est.certificateAuthenticationOn().");
+    const presented = mtls.peerCertificate(req);
+    let named = null;
+    try {
+      named = presented && presented.raw
+        ? core.entryNamedByCertificate(Buffer.from(presented.raw)) : null;
+    } catch (e) {
+      log.debug("Caught in Est.certificateAuthenticationOn(): " +
+                ((e && e.message) || e));
+      named = null;
+    }
+    const entry = named && named.kind === 'application' ? named : null;
+    log.debug("Leaving Est.certificateAuthenticationOn().");
+    return core.estSwitch('certificateAuthentication', entry);
+  }
+
   // { ok, principal } or a marked refusal the caller answers with.
   /**
    * Authenticates an enrollment: HTTP Basic, as a person first and then as an
@@ -641,7 +758,16 @@ class Est {
                            '(RFC 7030 section 3.2.3) and no other ' +
                            'Authorization scheme.');
       }
-      if (config.value('est.basicAuthentication') === false) {
+      // Off for the realm, unless the name is an application whose own
+      // estBasicAuthentication turns it on (rcbj, 2026-10-01: the
+      // application's setting overrides the realm's). Its secret is still
+      // checked below; the name only chooses which switch is asked.
+      const basicOn = config.value('est.basicAuthentication') !== false ||
+        (!core.resolveEntry('person', basic.username).ok &&
+         this.applicationNamed(basic.username) &&
+         core.estSwitch('basicAuthentication',
+                        { kind: 'application', id: basic.username }));
+      if (!basicOn) {
         log.debug("Leaving Est.authenticate(). Basic is off.");
         return core.refuse('STS-EST-0010', 401, 'HTTP Basic is turned off ' +
                            'for EST in this realm (est.basicAuthentication).');
@@ -672,7 +798,7 @@ class Est {
       return application;
     }
     if (mtls.peerCertificate(req)) {
-      if (config.value('est.certificateAuthentication') === false) {
+      if (!this.certificateAuthenticationOn(req)) {
         log.debug("Leaving Est.authenticate(). Certificates are off.");
         return core.refuse('STS-EST-0012', 401, 'TLS client certificate ' +
                            'authentication is turned off for EST in this ' +
@@ -726,6 +852,104 @@ class Est {
     return principal ? principal.kind + ':' + principal.id : '';
   }
 
+  // ---------------------------------------------------------------------------
+  // WHICH CELL ANSWERS AN ENROLLMENT (#98 D10), decided before the throttle,
+  // the credential and the body: the entry the request authenticates as is
+  // held — its password, its enrolled certificates, the certificates about
+  // to be written onto it — only by the cell it is homed in, so the request
+  // is relayed there WHOLE, its client certificate with it (the channel
+  // forwards it as the front process hands one to a request worker). What
+  // names the entry is READ, NOT BELIEVED, and chooses only where it is
+  // checked:
+  //
+  //   * **an HTTP Basic username** — a person's login name goes to their
+  //     home cell. An application's client_id is not a person the routing
+  //     index knows, so it is served here: an application's entry is the
+  //     global tier's and every cell holds it.
+  //   * **a TLS client certificate**, when there is no Authorization header
+  //     (the order `authenticate()` reads them in) — the person its
+  //     `urn:sts:person:` subjectAltName names goes home the same way.
+  //
+  // A name nobody knows, or a certificate naming no person, is served here
+  // and refused here for its own reasons. A single-cell service places
+  // nothing.
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays an enrollment to the home cell of the person its credential
+   * names, when that is another cell.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param basic - what `basicCredentialOf()` read
+   * @returns a promise of true when the request was relayed
+   */
+  async placeRequest(req, res, basic): Promise<boolean> {
+    const { log, mtls, core, cells, cellPlacement } = this.deps;
+    log.debug("Entering Est.placeRequest().");
+    if (!cells.isMulti() || req.stsCellRelay) {
+      log.debug("Leaving Est.placeRequest(). Here.");
+      return false;
+    }
+    const realmId = realms.currentId();
+    if (basic.present) {
+      const named = basic.basic && !basic.malformed && basic.username
+        ? String(basic.username) : '';
+      log.debug("Leaving Est.placeRequest(). By the Basic name.");
+      return named
+        ? cellPlacement.relayToHome(req, res, realmId, 'name', named,
+                                    'est:basic')
+        : false;
+    }
+    const presented = mtls.peerCertificate(req);
+    const entry = presented && presented.raw
+      ? core.entryNamedByCertificate(Buffer.from(presented.raw)) : null;
+    log.debug("Leaving Est.placeRequest(). By the client certificate.");
+    return entry && entry.kind === 'person'
+      ? cellPlacement.relayToHome(req, res, realmId, 'name', entry.id,
+                                  'est:certificate')
+      : false;
+  }
+
+  // A TARGET HOMED IN ANOTHER CELL (#98). The request was placed by its
+  // CREDENTIAL, which is right for everything but one case: an administrator
+  // enrolling on somebody else's behalf, whose own home and the target's can
+  // differ. The certificate is written onto the target's entry, which only
+  // its home cell holds, and the administrator's password is checked only
+  // at theirs — one relay cannot reach both. So it is refused with a
+  // sentence that says why, rather than as "there is no such person"
+  // (STS-ENROLL-0012), which would be false. `est/CLAUDE.md` records it.
+  /**
+   * Refuses an enrollment whose target person is homed in another cell.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @param target - the entry the certificate is for
+   * @returns a promise of true when the request was refused
+   */
+  async refusedAsElsewhere(req, res, ctx, target): Promise<boolean> {
+    const { log, core, cells, cellRouting } = this.deps;
+    log.debug("Entering Est.refusedAsElsewhere().");
+    if (!cells.isMulti() || !target || target.kind !== 'person' ||
+        core.resolveEntry('person', target.id).ok) {
+      log.debug("Leaving Est.refusedAsElsewhere(). Here.");
+      return false;
+    }
+    const home = await cellRouting.homeOf(realms.currentId(), 'name',
+                                          target.id);
+    if (!home || home === cells.id()) {
+      log.debug("Leaving Est.refusedAsElsewhere(). Not homed elsewhere.");
+      return false;
+    }
+    this.refuseWith(req, res, ctx, core.refuse('STS-CELL-0101', 403,
+      'The person "' + target.id + '" is homed in another region of this ' +
+      'service, and a certificate is written onto their entry only there. ' +
+      'Enroll as that person, or ask an administrator homed in their ' +
+      'region.'));
+    log.debug("Leaving Est.refusedAsElsewhere(). Refused.");
+    return true;
+  }
+
   // The common start of the three enrollments: the pre-body checks, the
   // credential, and the body decoded and parsed. Answers `null` when it has
   // already answered.
@@ -745,6 +969,12 @@ class Est {
     log.debug("Entering Est.enrollmentRequest().");
     ctx.basic = this.basicCredentialOf(req);
     ctx.identity = this.identityHintOf(req, ctx.basic);
+    // FIRST, before the throttle reads its window (#98 D10): see
+    // `placeRequest()`.
+    if (await this.placeRequest(req, res, ctx.basic)) {
+      log.debug("Leaving Est.enrollmentRequest(). Relayed to another cell.");
+      return null;
+    }
     if (await this.refusedBeforeBody(req, res, ctx)) {
       log.debug("Leaving Est.enrollmentRequest(). Refused before the body.");
       return null;
@@ -857,6 +1087,10 @@ class Est {
       log.debug("Leaving Est.simpleenroll(). No target.");
       return;
     }
+    if (await this.refusedAsElsewhere(req, res, ctx, target.target)) {
+      log.debug("Leaving Est.simpleenroll(). Homed in another cell.");
+      return;
+    }
     ctx.targetUri = core.entryUri(target.target);
     const issued = await core.issue({
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
@@ -865,6 +1099,12 @@ class Est {
       // The request's key attestation, read only by the device profile
       // (#164 phase 2, `core.issueForDevice()`).
       attestations: csr.attestations,
+      // The nonce cookie /nonce set (#257): the session a TPM statement's
+      // extraData is spent against as a freshness nonce.
+      attestationSession: { handle: this.nonceHandleOf(req) },
+      // The unlabelled path's profile is the realm default, which an
+      // application's own default replaces (2026-10-01).
+      profileDefaulted: !ctx.labelled,
       via: 'est:simpleenroll'
     });
     if (!issued.ok) {
@@ -1021,7 +1261,7 @@ class Est {
     const byCertificate = ctx.principal.certificateSerial
       ? { ok: true, principal: ctx.principal }
       : (mtls.peerCertificate(req) &&
-         config.value('est.certificateAuthentication') !== false
+         this.certificateAuthenticationOn(req)
           ? await core.authenticateCertificate(req, 'est-certificate')
           : null);
     if (byCertificate) {
@@ -1060,6 +1300,10 @@ class Est {
       if (!named.ok) {
         this.refuseWith(req, res, ctx, named);
         log.debug("Leaving Est.simplereenroll(). No target.");
+        return;
+      }
+      if (await this.refusedAsElsewhere(req, res, ctx, named.target)) {
+        log.debug("Leaving Est.simplereenroll(). Homed in another cell.");
         return;
       }
       target = named.target;
@@ -1156,7 +1400,16 @@ class Est {
   async serverkeygen(req, res, ctx) {
     const { log, config, errorCodes, codec, keyMaterial, core } = this.deps;
     log.debug("Entering Est.serverkeygen().");
-    if (config.value('est.serverKeyGeneration') === false) {
+    // Off for the realm refuses here, before the template is read — unless
+    // the caller is an application whose own estServerKeyGeneration turns
+    // it on, or an administrator, who may be asking for such an
+    // application; `core.issue()` then asks the switch of the TARGET
+    // (rcbj, 2026-10-01: the application's setting overrides the realm's).
+    const asker = ctx.principal || {};
+    const mayStillBeOn = asker.kind === 'person' && asker.admin === true ||
+      (asker.kind === 'application' &&
+       core.estSwitch('serverKeyGeneration', asker));
+    if (config.value('est.serverKeyGeneration') === false && !mayStillBeOn) {
       errorCodes.mark(res, 'STS-EST-0005');
       this.estError(req, res, ctx, 501,
                     'Server-side key generation is turned off ' +
@@ -1201,10 +1454,15 @@ class Est {
       log.debug("Leaving Est.serverkeygen(). No target.");
       return;
     }
+    if (await this.refusedAsElsewhere(req, res, ctx, target.target)) {
+      log.debug("Leaving Est.serverkeygen(). Homed in another cell.");
+      return;
+    }
     ctx.targetUri = core.entryUri(target.target);
     const issued = await core.issueWithServerKey({
       family: FAMILY, profile: ctx.profile, principal: ctx.principal,
       target: target.target, keyAlg: keyAlg, requested: csr.requested,
+      profileDefaulted: !ctx.labelled,
       via: 'est:serverkeygen'
     });
     if (!issued.ok) {
@@ -1291,6 +1549,220 @@ class Est {
     log.debug("Leaving Est.csrattrs().");
   }
 
+  // ---------------------------------------------------------------------------
+  // THE FRESHNESS NONCE (#257) — see the header.
+  // ---------------------------------------------------------------------------
+
+  // The nonce cookie's handle, when the request carries a well-formed one.
+  /**
+   * Returns the handle in the request's `sts_est_nonce` cookie.
+   *
+   * @param req - the request
+   * @returns the handle, or empty when there is none or it is malformed
+   */
+  nonceHandleOf(req): string {
+    const { log } = this.deps;
+    log.debug("Entering Est.nonceHandleOf().");
+    let handle = '';
+    String((req && req.headers && req.headers.cookie) || '').split(';')
+      .forEach(function (part) {
+        const bit = part.trim();
+        if (bit.indexOf(NONCE_COOKIE + '=') === 0 &&
+            NONCE_HANDLE_SHAPE.test(bit.slice(NONCE_COOKIE.length + 1))) {
+          handle = bit.slice(NONCE_COOKIE.length + 1);
+        }
+      });
+    log.debug("Leaving Est.nonceHandleOf(). " + (handle ? 'One.' : 'None.'));
+    return handle;
+  }
+
+  // The Set-Cookie value for a handle: scoped to this realm's EST paths as
+  // the client addressed them (a `/realm/<id>` prefix included), Secure on
+  // TLS, HttpOnly, SameSite=Strict, and no longer-lived than the nonce.
+  /**
+   * Returns the `Set-Cookie` value that carries a nonce handle.
+   *
+   * @param req - the request
+   * @param handle - the handle
+   * @param seconds - how long the nonce lives
+   * @returns the header value
+   */
+  nonceCookie(req, handle: string, seconds: number): string {
+    const { log } = this.deps;
+    log.debug("Entering Est.nonceCookie().");
+    const url = String(req.originalUrl || req.url || '').split('?')[0];
+    const at = url.indexOf(BASE);
+    const path = at >= 0 ? url.slice(0, at + BASE.length) : BASE;
+    log.debug("Leaving Est.nonceCookie().");
+    return NONCE_COOKIE + '=' + handle + '; Path=' + path + '; Max-Age=' +
+      Math.max(1, Math.floor(seconds)) + '; HttpOnly; SameSite=Strict' +
+      (req.secure ? '; Secure' : '');
+  }
+
+  // A POST's nonce request, read after authentication (the header's order):
+  // `{ ok, len }`, or `{ ok: false, status, code, why }` — 400 when
+  // malformed, 503 for a reqTypeInfo nobody defined here.
+  /**
+   * Reads a POSTed nonce request against the draft's CDDL.
+   *
+   * @param req - the request
+   * @returns `{ ok, len }`, or `{ ok: false, status, code, why }`
+   */
+  nonceRequestOf(req): any {
+    const { log } = this.deps;
+    log.debug("Entering Est.nonceRequestOf().");
+    const text = typeof req.body === 'string' ? req.body
+      : Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '';
+    let parsed: any = null;
+    try {
+      parsed = JSON.parse(text);
+    } catch (e) {
+      log.debug("Caught in Est.nonceRequestOf(): " + ((e && e.message) || e));
+      parsed = undefined;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      log.debug("Leaving Est.nonceRequestOf(). Not an object.");
+      return { ok: false, status: 400, code: 'STS-EST-0034',
+               why: 'A nonce request is one JSON object (draft-ietf-lamps-' +
+                    'attestation-freshness section 3.2); send GET for none.' };
+    }
+    const checked = NONCE_REQUEST.safeParse(parsed);
+    if (!checked.success) {
+      const issue = checked.error.issues[0] || { path: [], message: '' };
+      log.debug("Leaving Est.nonceRequestOf(). The CDDL refused.");
+      return { ok: false, status: 400, code: 'STS-EST-0034',
+               why: 'The nonce request does not match draft-ietf-lamps-' +
+                    'attestation-freshness section 3.2 at "' +
+                    (issue.path.join('.') || '(the object)') + '": ' +
+                    String(issue.message).slice(0, 200) + '.' };
+    }
+    if (checked.data.reqTypeInfo) {
+      log.debug("Leaving Est.nonceRequestOf(). A type.");
+      return { ok: false, status: 503, code: 'STS-EST-0036',
+               why: 'This EST server defines no reqInfo/respInfo for "' +
+                    checked.data.reqTypeInfo.type + '", so it cannot ' +
+                    'answer that nonce request; ask without reqTypeInfo.' };
+    }
+    log.debug("Leaving Est.nonceRequestOf().");
+    return { ok: true, len: checked.data.len };
+  }
+
+  // draft-ietf-lamps-attestation-freshness section 5.1.
+  /**
+   * Answers `nonce` (draft-ietf-lamps-attestation-freshness section 5.1): a
+   * freshness nonce bound to the caller and a cookie, for the TPM key
+   * attestation in its next `simpleenroll`. Authenticated as an enrollment
+   * is.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param ctx - the request's context
+   * @returns a promise that settles when it has answered
+   */
+  async nonce(req, res, ctx) {
+    const { log, core, config, errorCodes, stsCrypto } = this.deps;
+    log.debug("Entering Est.nonce(). " + req.method);
+    ctx.basic = this.basicCredentialOf(req);
+    ctx.identity = this.identityHintOf(req, ctx.basic);
+    // The nonce is held where the request that spends it is served: placed
+    // by the credential, as an enrollment is (#98 D10).
+    if (await this.placeRequest(req, res, ctx.basic)) {
+      log.debug("Leaving Est.nonce(). Relayed to another cell.");
+      return;
+    }
+    const throttled = await core.throttledShared(FAMILY, req,
+                                                 ctx.identity || '');
+    if (throttled) {
+      this.refuseWith(req, res, ctx, throttled);
+      log.debug("Leaving Est.nonce(). Throttled.");
+      return;
+    }
+    const posted = req.method === 'POST';
+    if (posted) {
+      const type = String(req.headers['content-type'] || '').split(';')[0]
+        .trim().toLowerCase();
+      if (type !== MEDIA.freshness) {
+        errorCodes.mark(res, 'STS-EST-0035');
+        this.estError(req, res, ctx, 400, 'A nonce request is ' +
+                      MEDIA.freshness + ' (draft-ietf-lamps-attestation-' +
+                      'freshness section 5.1), and this one was "' +
+                      type.slice(0, 80) + '".');
+        log.debug("Leaving Est.nonce(). Media type.");
+        return;
+      }
+      const max = Number(config.value('est.maxRequestBytes'));
+      const declared = Number(req.headers['content-length']);
+      if (Number.isFinite(declared) && declared > max) {
+        errorCodes.mark(res, 'STS-EST-0034');
+        this.estError(req, res, ctx, 400, 'The nonce request is larger ' +
+                      'than the ' + max + ' bytes est.maxRequestBytes ' +
+                      'allows.');
+        log.debug("Leaving Est.nonce(). Too large.");
+        return;
+      }
+    }
+    const authenticated = await this.authenticate(req, ctx);
+    if (!authenticated.ok) {
+      this.refuseWith(req, res, ctx, authenticated);
+      log.debug("Leaving Est.nonce(). Not authenticated.");
+      return;
+    }
+    ctx.principal = authenticated.principal;
+    ctx.identity = this.principalLabel(ctx.principal);
+    let len: number | undefined;
+    if (posted) {
+      const asked = this.nonceRequestOf(req);
+      if (!asked.ok) {
+        errorCodes.mark(res, asked.code === 'STS-EST-0036' ? 'STS-EST-0036'
+                                                           : 'STS-EST-0034');
+        this.estError(req, res, ctx, asked.status, asked.why);
+        log.debug("Leaving Est.nonce(). The request.");
+        return;
+      }
+      len = asked.len;
+    }
+    const send = (body: object): void => {
+      log.debug("Entering send().");
+      // A Buffer, so express adds no `; charset=utf-8`: the draft's media
+      // type defines no parameter, and JSON is UTF-8 (RFC 8259 section 8.1).
+      res.status(200)
+         .set('Content-Type', MEDIA.freshness)
+         .set('Cache-Control', 'no-store')
+         .send(Buffer.from(JSON.stringify(body), 'utf8'));
+      log.debug("Leaving send().");
+    };
+    // A label naming another profile: nothing it issues reads an
+    // attestation, so no freshness proof is needed — the draft's empty
+    // nonce, still 200.
+    if (ctx.labelled && ctx.profile !== core.DEVICE_PROFILE) {
+      this.counted(ctx, { outcome: 'answered', status: 200 });
+      send({ nonce: '' });
+      log.debug("Leaving Est.nonce(). Not needed for " + ctx.profile + ".");
+      return;
+    }
+    const handle = this.nonceHandleOf(req) ||
+      'est.' + stsCrypto.randomToken(256);
+    const issued = this.deps.loadDeviceEnrolment().issueChallenge({
+      purpose: 'csr-attestation', sessionId: handle,
+      username: ctx.identity, bytes: len });
+    if (!issued.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(issued) || 'STS-EST-0036');
+      this.estError(req, res, ctx, 503, 'No nonce could be issued: ' +
+                    String(issued.error || ''));
+      log.debug("Leaving Est.nonce(). Not issued.");
+      return;
+    }
+    const seconds = Math.max(1, Math.round(
+      (Date.parse(issued.expiresAt) - Date.now()) / 1000));
+    res.append('Set-Cookie', this.nonceCookie(req, handle, seconds));
+    this.counted(ctx, { outcome: 'answered', status: 200 });
+    send({ nonce: issued.challenge, expiry: seconds });
+    log.info('est: nonce issued to ' + ctx.identity + ' (' +
+             Buffer.from(issued.challenge, 'base64url').length +
+             ' octets, ' + seconds + ' s)');
+    log.debug("Leaving Est.nonce().");
+  }
+
   // 4.3 — Full CMC is optional and not implemented.
   /**
    * Answers `fullcmc` (section 4.3) with 501: Full CMC is not implemented.
@@ -1366,12 +1838,17 @@ class Est {
     log.debug("Leaving Est.wrongMethod().");
     return function (req, res) {
       log.debug("Entering the EST wrong-method answer.");
+      const allow = [];
+      methodsOf(op).forEach(function (method) {
+        allow.push(method);
+        if (method === 'GET') {
+          allow.push('HEAD');
+        }
+      });
       errorCodes.mark(res, 'STS-EST-0003');
       self.estError(req, res, { op: op.name }, 405,
                     'EST ' + op.name + ' answers ' +
-                    op.method + ' only.', { Allow: op.method === 'GET'
-                                                     ? 'GET, HEAD' :
-                                                       op.method });
+                    op.method + ' only.', { Allow: allow.join(', ') });
       log.debug("Leaving the EST wrong-method answer.");
     };
   }
@@ -1393,11 +1870,13 @@ class Est {
     [BASE, BASE + '/:label'].forEach(function (base) {
       OPERATIONS.forEach(function (op) {
         const path = base + '/' + op.name;
-        if (op.method === 'GET') {
-          app.get(path, self.operation(op));
-        } else {
-          app.post(path, self.operation(op));
-        }
+        methodsOf(op).forEach(function (method) {
+          if (method === 'GET') {
+            app.get(path, self.operation(op));
+          } else {
+            app.post(path, self.operation(op));
+          }
+        });
       });
     });
 
@@ -1440,7 +1919,8 @@ const HANDLERS = {
   simplereenroll: slot.forward('simplereenroll'),
   serverkeygen: slot.forward('serverkeygen'),
   csrattrs: slot.forward('csrattrs'),
-  fullcmc: slot.forward('fullcmc')
+  fullcmc: slot.forward('fullcmc'),
+  nonce: slot.forward('nonce')
 };
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
@@ -1492,6 +1972,7 @@ export = {
   PATHS: PATHS,
   OPERATIONS: OPERATIONS,
   MEDIA: MEDIA,
+  NONCE_COOKIE: NONCE_COOKIE,
   handlers: {
     // The route functions, for `tests/est_handlers.js` to drive with a fake
     // request — exactly what Express calls.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -177,6 +177,45 @@ class ServiceState {
    * coordination and the certificate authority report and carry on.
    * @returns a promise of `{ started, keys, minted, coordinating, pki }`
    */
+  // THE BUILT-IN APPLICATIONS AND NATIVE ROLES, SEEDED AGAIN ONCE THE STORE
+  // HAS RESTORED THE DIRECTORY (2026-10-10). `ldap_server.js` seeds them when
+  // it is required, which is before `persistence.start()`; the restore then
+  // REPLACES each realm's directory with what the store holds, so an entry
+  // the store never held — the embedded debugger's two applications, on a
+  // deployment whose store predates them — was seeded, thrown away and never
+  // written down, on every start. Both seeds create only what is missing, so
+  // running them again here changes nothing that exists; it comes after the
+  // keystore because a seeded registration's access token is sealed, and
+  // after coordination so the writes go through the change log like any
+  // other. Never fatal: a seed that fails says so and the service starts.
+  /**
+   * Seeds the built-in applications and native roles again in every realm,
+   * after the store has restored the directory.
+   */
+  reseedAfterRestore(): void {
+    const { log, realms } = this.deps;
+    log.debug("Entering ServiceState.reseedAfterRestore().");
+    try {
+      const applications = require('./applications');
+      const roles = require('./roles');
+      realms.list().forEach(function (realm: any) {
+        realms.run(realm, function () {
+          applications.seedInternalApplications({
+            scope: realm.id === realms.DEFAULT_ID ? 'default' : 'every' });
+          roles.seedNativeRoles();
+        });
+      });
+    } catch (e) {
+      log.debug("Caught in ServiceState.reseedAfterRestore(): " +
+                ((e && e.message) || e));
+      helpers.log.warn(require('./error_codes').tag('STS-REG-0002') +
+               'applications: the built-in ' +
+               'applications could not be seeded again after the store was ' +
+               'restored: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving ServiceState.reseedAfterRestore().");
+  }
+
   start(): Promise<any> {
     const { log, persistence, keystore, cluster, clusterSecrets, pki, realms,
             helpers } = this.deps;
@@ -184,6 +223,16 @@ class ServiceState {
     log.debug("Entering ServiceState.start().");
     log.debug("Leaving ServiceState.start().");
     return persistence.start().then(function (started) {
+      // THE SEQUENCE NUMBERS' FIRST BLOCKS (#465), leased the moment the
+      // store is open and before anything is recorded on it, so the audit
+      // log and the delegation register number their rows uniquely across
+      // every process from the first one. NEVER FATAL: without a shared
+      // store, or when the lease fails, each keeps its own counter and the
+      // allocator says so (common/seq_allocator.ts).
+      return require('./seq_allocator').start().then(function () {
+        return started;
+      });
+    }).then(function (started) {
     // THE SIGNING KEYS, AFTER THE STORE AND BEFORE ANYTHING SIGNS.
     //
     // It is a second asynchronous step in the same chain for the same reason
@@ -260,6 +309,7 @@ class ServiceState {
         // with it. It starts, says so loudly, and keeps trying on its timer.
         // ---------------------------------------------------------------------
         return persistence.coordinate().then(function (coordinating) {
+          self.reseedAfterRestore();
           return self.settleSigningKeys().then(function () {
             return coordinating;
           });
@@ -317,8 +367,34 @@ class ServiceState {
           }
         })
             .then(function (pkiResult) {
-          return { started: started, keys: keys, minted: mintedResult,
-                   coordinating: coordinating, pki: pkiResult };
+          // -------------------------------------------------------------------
+          // **AND THE LISTENER'S CERTIFICATE IS IN THE STORE BEFORE IT IS
+          // SERVED (#162, 2026-10-05).** `pki.start()` certifies this
+          // process's listener under the ONE process branch every node
+          // shares, and queues the row's write. The certificate names the
+          // SERVICE's OCSP address, so the moment this node serves it a
+          // relying party may ask ANY node about it — and the answering node
+          // can only find the serial in the store once this write has landed
+          // (`pki_revocation.js`'s `catchUpWithTheStore()` is the reader's
+          // half). Where the row is not merged there is nobody else to tell,
+          // and this resolves at once.
+          // -------------------------------------------------------------------
+          const merges = typeof keystore.mergesPkiRows === 'function' &&
+                         keystore.mergesPkiRows();
+          const landed = merges && typeof keystore.pkiSettled === 'function'
+            ? Promise.resolve(keystore.pkiSettled(pki.PROCESS_SCOPE))
+              .catch(function (e: any) {
+                // The write's own failure is the keystore's to report and
+                // retry; the start carries on, as it does for a PKI failure.
+                log.debug("Caught in ServiceState.start(): " +
+                          ((e && e.message) || e));
+                return null;
+              })
+            : Promise.resolve(null);
+          return landed.then(function () {
+            return { started: started, keys: keys, minted: mintedResult,
+                     coordinating: coordinating, pki: pkiResult };
+          });
         });
         });
       });
@@ -347,5 +423,7 @@ const serviceState = new ServiceState({
  */
 export = {
   ServiceState: ServiceState,
-  start: serviceState.start.bind(serviceState) as ServiceState['start']
+  start: serviceState.start.bind(serviceState) as ServiceState['start'],
+  reseedAfterRestore: serviceState.reseedAfterRestore.bind(serviceState) as
+    ServiceState['reseedAfterRestore']
 };

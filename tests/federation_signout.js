@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -119,6 +119,7 @@ function childMain() {
                                       app);
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const base = 'https://127.0.0.1:' + port;
     const SP = 'fso' + (MODE === 'product' ? 'p' : 'd');
     const REL = 'fso-oidc';
@@ -176,6 +177,14 @@ function childMain() {
         req.end(body);
       });
     }
+    // THE SIGN-OUT PAGE IN THE SP REALM, as its page signs out (#577):
+    // the view, the act over /authn-api/logout, and the signed-out
+    // document it answers where the browser has a partner to tell.
+    function signOutHere(fields) {
+      return authnScreen.signOut({ port: port, ca: caPem, jar: jar,
+        prefix: '/realm/' + SP, fields: fields,
+        origin: new URL(base).origin });
+    }
     function inSp(fn) {
       return realms.run(realms.get(SP), fn);
     }
@@ -184,10 +193,6 @@ function childMain() {
     }
     function wait(ms) {
       return new Promise(function (r) { setTimeout(r, ms); });
-    }
-    function hidden(text, name) {
-      const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(text);
-      return m ? m[1] : '';
     }
     function decodeHtml(text) {
       return String(text || '').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
@@ -392,6 +397,21 @@ function childMain() {
       let r = await request('GET', '/realm/' + SP + '/federation/login/' +
                                    REL);
       for (let hop = 0; hop < 20; hop += 1) {
+        // THE PARTNER'S SIGN-IN SCREEN, a static surface over `/authn-api`
+        // since #571: signed in as its page does, its answer followed.
+        if (r.status >= 300 && r.status < 400 &&
+            /\/authn\/login\?authn=/.test(String(r.headers.location))) {
+          const at = new URL(r.headers.location, base);
+          const sent = await authnScreen.submit({ port: port, ca: caPem,
+            jar: jar, at: at.pathname + at.search,
+            fields: { action: 'login', username: PERSON, password: 'x' } });
+          if (sent.next !== 'redirect') {
+            r = sent;
+            break;
+          }
+          r = await request('GET', sent.location);
+          continue;
+        }
         if (r.status >= 300 && r.status < 400 && r.headers.location) {
           const next = new URL(r.headers.location, base);
           if (next.pathname.indexOf('/realm/' + SP + '/federation/acs/') ===
@@ -399,13 +419,6 @@ function childMain() {
             partnerJar = Object.assign({}, jar);
           }
           r = await request('GET', r.headers.location);
-          continue;
-        }
-        const authnId = hidden(r.text, 'authn_id');
-        if (r.status === 200 && authnId) {
-          r = await request('POST', '/authn/login', { form: {
-            authn_id: authnId, username: PERSON, password: 'x',
-            action: 'login' } });
           continue;
         }
         break;
@@ -578,8 +591,7 @@ function childMain() {
       return !row.terminable && /own sign-out/.test(row.why);
     }), '4a. with no browser (/admin/logout, the API) the partner row is ' +
         'listed and cannot be ended', JSON.stringify(partnerRows));
-    const out = await request('POST', '/realm/' + SP + '/logout',
-                              { form: { scope: 'global' } });
+    const out = await signOutHere({ scope: 'global' });
     const link = decodeHtml((/href="([^"]*end_session[^"]*|[^"]*oauth2\/logout[^"]*)"/
       .exec(out.text) || [])[1] || '');
     const asked = link ? new URL(link) : null;
@@ -774,8 +786,7 @@ function childMain() {
     // signed LogoutRequest; its LogoutResponse is matched once.
     await samlSignIn('idx-two-' + MODE, '');
     held = fedSession(SAML);
-    const bye = await request('POST', '/realm/' + SP + '/logout',
-                              { form: { scope: 'global' } });
+    const bye = await signOutHere({ scope: 'global' });
     const outLink = decodeHtml((/href="(https:\/\/partner\.invalid\/slo[^"]*)"/
       .exec(bye.text) || [])[1] || '');
     let sent = null;

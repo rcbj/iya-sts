@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -114,7 +114,7 @@
 // member, `sub` AND `sid`, and NO `nonce`. `typ: logout+jwt`. Signed like the
 // client's ID Token — its `id_token_signed_response_alg`, the whole table
 // including the post-quantum and composite algorithms, through
-// `signJwtAsAsync()` and the worker pool — and never `none`; and ENCRYPTED
+// `signJwtAsAsync()` and libuv's thread pool — and never `none`; and ENCRYPTED
 // like its ID Token when it registered `id_token_encrypted_response_alg`
 // (`id_token_encryption.ts`). Signed once per generation and resent
 // unchanged, re-signed with the SAME `jti` only if it expired before a retry;
@@ -134,7 +134,7 @@
 // keeps its own API.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -150,6 +150,10 @@ import idTokenEncryption = require('./id_token_encryption');
 import outbound = require('./outbound_delivery');
 // A leaf: a client's fetched `jwks_uri` key set (#120).
 import clientJwks = require('./client_jwks');
+// The console's folds (`admin-ui/web_kit.ts`, a leaf that requires nothing),
+// so the explanation under this page fragment collapses as the console's
+// does and as the rest of `/logout`'s does (2026-10-08).
+import kit = require('../admin-ui/web_kit');
 
 // A session, a registration document, a delivery result.
 type Json = any;
@@ -516,10 +520,9 @@ class BackchannelLogout {
   deliveryIdFor(sessionId: string, clientId: string, first: unknown): string {
     const { log } = this.deps;
     log.debug("Entering BackchannelLogout.deliveryIdFor().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(String(sessionId) + '\n' + String(clientId) + '\n' +
-              String(first || 0))
-      .digest('base64url').slice(0, 22);
+    const digest = stsCrypto.digest('sha256',
+      String(sessionId) + '\n' + String(clientId) + '\n' +
+      String(first || 0), 'base64url').slice(0, 22);
     log.debug("Leaving BackchannelLogout.deliveryIdFor().");
     return digest;
   }
@@ -743,9 +746,12 @@ class BackchannelLogout {
     const { log, applications, signJwtAsAsync, errorCodes,
             idTokenEncryption } = this.deps;
     log.debug("Entering BackchannelLogout.signedToken(). " + row.clientId);
+    // The client's ATTRIBUTES (#290), which a registration, the console and
+    // the management API all write, so a client none of them registered is
+    // signed and encrypted to as it says.
     let registered: Json = {};
     try {
-      registered = applications.registrationOf(row.clientId) || {};
+      registered = applications.clientConfigOf(row.clientId);
     } catch (e) {
       log.debug("Caught in BackchannelLogout.signedToken(): " +
                 ((e && e.message) || e));
@@ -1103,14 +1109,15 @@ class BackchannelLogout {
     log.debug("Leaving BackchannelLogout.render(). " + list.length +
               " row(s).");
     return '<h2>' + xmlEscape(heading || 'Back-channel Logout Tokens') +
-      '</h2><p class="sub">OpenID Connect Back-Channel Logout 1.0. Each ' +
+      '</h2>' + kit.note('OpenID Connect Back-Channel Logout 1.0. Each ' +
       'relying party below registered a backchannel_logout_uri and is POSTed ' +
       'a signed Logout Token by this service, not by this browser. They go ' +
       'out AFTER this page was answered, so <code>pending</code> is the ' +
       'honest state here; a relying party that is down is tried again with ' +
       'backoff — by any node, across restarts — and one that never accepts ' +
       'becomes a dead letter an administrator can retry from ' +
-      '<code>/admin/logout</code>.</p><table><thead><tr><th>Client</th><th>' +
+      '<code>/admin/logout</code>.') +
+      '<table><thead><tr><th>Client</th><th>' +
       'backchannel_logout_uri</th><th>State</th></tr></thead><tbody>' +
       body + '</tbody></table>';
   }

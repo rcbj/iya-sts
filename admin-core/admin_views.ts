@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -111,6 +111,10 @@ import appPasswords = require('../common/app_passwords');
 import identityAssurance = require('../common/identity_assurance');
 import siop = require('../oid4vc/siop');
 import devices = require('../common/devices');
+// #221: service accounts, tagged on the people list and described on a
+// person's page, and the policy that governs them.
+import serviceAccounts = require('../common/service_accounts');
+import serviceAccountPolicy = require('../common/service_account_policy');
 // THE SIGN-ON SESSION MAP, which `signOnSessionRows()` walks. It is the same
 // destructured-require trap one module along: admin.js pulls fourteen names
 // out of two modules through multi-line destructures, and a name taken from
@@ -119,6 +123,11 @@ import devices = require('../common/devices');
 // wherever this file is legitimately loaded.
 import authn = require('../authn/authn');
 import config = require('../common/config');
+// A realm's own listeners and its advertised base (#472). A LEAF.
+import listenerMap = require('../common/listener_map');
+// The store's own status, for what a page says about whether its state
+// survives a restart (#446). A library, required in the ordinary direction.
+import persistence = require('../persistence/persistence');
 import mode = require('../common/mode');
 import realms = require('../common/realms');
 import stats = require('../common/admin_stats');
@@ -126,6 +135,11 @@ import oidcRp = require('../common/oidc_rp');
 import rbac = require('../admin-ui/admin_rbac');
 import vcClaims = require('../oid4vc/vc_claims');
 import vpConfig = require('../oid4vc/vc_verifier_config');
+// THE VERIFIER ITSELF (#587), for the verifications an administrator started
+// and their verdicts. A plain require in the ordinary direction: it is a
+// converted route module, so requiring it registers nothing (rule 1), it is
+// loaded at 11–14 long before this layer, and it requires nothing here.
+import vcVerifier = require('../oid4vc/vc_verifier');
 import claimAttributes = require('../common/claim_attributes');
 import scimMap = require('../scim/scim_map');
 import groupClaims = require('../common/group_claims');
@@ -141,7 +155,7 @@ import keystore = require('../common/keystore');
 // LIBRARY (rule 3) — it registers no route — so requiring it here moves
 // nothing.
 import pki = require('../common/pki');
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import appPermissions = require('../common/app_permissions');
 import consent = require('../common/consent');
 import roles = require('../common/roles');
@@ -151,6 +165,26 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON THAT PAGE (#64): the password policy, the
 // authentication policy, and whatever is defined next. A library.
 import policyKinds = require('./policy_kinds');
+// THE PROSE THE SERVER TRANSLATES (#543): `fill()` for the keys and notes
+// built as templates below. A library that requires nothing of this file.
+import serverProse = require('../common/server_prose');
+// THE DELEGATION PICTURE'S RENDERER (#446), for `delegationMapModel()`. A
+// LIBRARY (rule 3): it registers nothing and requires nothing of this
+// service but `helpers.js`, so it cannot move a route or join a cycle —
+// the terms `admin_rbac` above is required on.
+import WebKit = require('../admin-ui/web_kit');
+import delegationMap = require('../admin-ui/delegation_map');
+// THE UNION OF THE IDENTITY AND DELEGATION REGISTERS (#446), for the
+// delegation pages' person chooser. A library (rule 3p) that registers no
+// route.
+import userGraph = require('../common/user_graph');
+// ONE CREDENTIAL'S LINEAGE (#446), for `/admin/tokens/credential`. A
+// library in `common/` that registers no route.
+import credentialGraph = require('../common/credential_graph');
+// THE FEDERATION PICTURE (#446): the graph and its renderer, libraries that
+// register no route.
+import federationGraph = require('../federation/federation_graph');
+import federationDiagram = require('../admin-ui/federation_diagram');
 import authnPolicy = require('../common/authn_policy');
 // Four more with the second batch: the audit log the audit view pages, the
 // delegation register the delegation view reads, the Kerberos principal
@@ -176,6 +210,8 @@ import krb5PersonKeys = require('../kerberos/krb5_person_keys');
 // change, with what the entry holds. A library whose directory arrives
 // through its own slot, so this require loads no route module.
 import personEditor = require('../ldap/person_editor');
+// RFC 9728's well-known path, which the new-application form names (#446).
+import resourceMetadata = require('../oauth-oidc/protected_resource_metadata');
 import oauth2 = require('../oauth-oidc/oauth2');
 // The recent back-channel logout deliveries (2026-09-17, #36), which the
 // sign-out page lists so a delivery queued as `pending` can be seen to have
@@ -230,6 +266,7 @@ import spiffeAuth = require('../spiffe/spiffe_auth');
 // is a thing an action has no business consulting.
 // ---------------------------------------------------------------------------
 import adminActions = require('./admin_actions');
+import issuanceGate = require('../common/issuance_gate');
 // The signing-key history (#42's follow-up). A LIBRARY over `realms` and
 // `error_codes` that reaches `helpers` and `pki` lazily, so requiring it here
 // closes no cycle and moves no route.
@@ -287,9 +324,10 @@ let truststore = null;
 // (chooserPane()) and for the replies that page the same list, so a page and
 // its resource cannot come to show different twenties.
 /**
- * The most matches a chooser lists.
+ * The most matches a chooser lists: the kit's, which the chooser it draws
+ * reads (#446).
  */
-const CHOOSER_HITS = 20;
+const CHOOSER_HITS = WebKit.CHOOSER_HITS;
 
 // Rows per page when nobody said. Small enough that the table is the first
 // thing on screen rather than the last, and the paging controls above and below
@@ -298,6 +336,12 @@ const CHOOSER_HITS = 20;
  * Rows per page when the query names none.
  */
 const DEFAULT_PER_PAGE = 50;
+// HOW MANY OPEN VERIFICATIONS THE VERIFIER REQUEST TAB AND `GET
+// /admin-api/verifications` LIST (#587). A transaction lives for
+// oid4vp.presentationRequestTtlS and the store is bounded by
+// oid4vp.maxTransactions, so this is a page of the newest, not the store;
+// `total` says how many there are, and any one is `?state=` away.
+const VERIFICATIONS_SHOWN = 25;
 
 // Rows per page for EVERY list on /admin/delegation, which is the one page here
 // that carries seven of them at once.
@@ -354,6 +398,38 @@ const MAX_ROWS = 300;
  * What a create that names no credential gets, from `admin_actions.ts`.
  */
 const DEFAULT_CREDENTIAL = adminActions.DEFAULT_CREDENTIAL;
+
+// THE THREE ATTRIBUTES THAT SAY WHERE A SERVICE PROVIDER'S KEY COMES FROM.
+//
+// They were the console's until #446, when the new-application form's
+// answer began saying which fields its simplified view offers. They are not
+// setting overrides — nothing in config.js corresponds to them —
+// so they are not in `overridableSettings()` and would otherwise appear on no
+// form at all. The metadata fields are shared by the SAML 2.0 and SAML 1.1
+// families.
+//
+// `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
+// same shape rule the field grid follows: a document is not something
+// anybody types on one line, and offering a single-line box for one invites a
+// paste that loses its newlines.
+const SAML_KEY_SOURCE_FIELDS = [
+  { attribute: 'samlSpMetadataUrl', label: 'Metadata URL',
+    what: 'Where this service provider publishes its metadata. Nothing is ' +
+          'fetched until you press Refresh on the entry — an assertion never ' +
+          'waits on somebody else\'s web server.' },
+  { attribute: 'samlEncryptionCertificate', label: 'Encryption certificate',
+    what: 'The certificate an assertion is encrypted to, base64 or PEM. ' +
+          'Consuming the metadata writes this; set it by hand for a service ' +
+          'provider whose metadata cannot be reached. With none here a ' +
+          'registered signing certificate is used, then (development only) ' +
+          'the one a signed AuthnRequest carried.' },
+  { attribute: 'samlSpMetadata', label: 'Metadata document', multi: true,
+    what: 'The metadata itself. Pasted here, it is CONSUMED when the ' +
+          'application is created — endpoints, signing and encryption ' +
+          'certificates, NameIDFormats — exactly as a refresh would, which ' +
+          'is the way to configure an air-gapped service provider, or one ' +
+          'behind a proxy this service cannot dial.' }
+];
 
 /**
  * The credential choices the new-user form offers, each with what it means.
@@ -431,6 +507,358 @@ const NOT_A_VIEW = ['format', 'notice', 'error'];
  */
 const DEFAULT_BLOCKS_PER_PAGE = 5;
 
+// ---------------------------------------------------------------------------
+// THE TWO PICTURES' KEYS, AS PROSE (#543 phase 2b). `delegationMapKey()` and
+// `federationMapKey()` answer each key as ONE string of HTML, `mapKey`, which
+// the console draws RAW. The server translates a string of an answer only
+// where the whole of it is a message or a filled template, so the key is
+// built as a TEMPLATE whose parameters are its parts:
+//
+//   * each row's sentence is a parameter, and a message of its own (a
+//     `.param.` key, so it is translated only inside the key);
+//   * each swatch is a parameter too, and NOT a message: the SVG is carried
+//     over as it was;
+//   * the table, its headings and the row markup are the template's own text.
+//
+// So a translator translates sentences, the markup is never theirs to keep
+// but in the template, and the English is byte-identical to the
+// concatenation it replaced, because `ServerProse.fill()` is that
+// concatenation.
+//
+// THE PERSON'S KEY HAS THREE ROWS MORE, AND THEY RIDE IN THE LAST ROW'S
+// PARAMETER (`MAP_KEY_TAIL`) rather than in a second seventeen-row template.
+// A template is matched by a regular expression of lazy groups, and a
+// fourteen-row key tried against a seventeen-row template fails only after
+// trying every way of spreading its rows over the groups — about 80 ms on a key
+// of this size, measured. The fourteen-row template matches both
+// keys at once (its last group runs to the end), and the tail is matched
+// inside it as a filled template, so neither key is ever tried and failed.
+//
+// THE FEDERATION KEY'S NOTE IS `WebKit.note()`'s FOLD, whose summary is a
+// teaser cut from the note's own text. `FEDERATION_NOTE_FOLD` is that fold
+// as a template, and `mapKeyProse()` declares the teaser beside the note.
+// What stays English: the words drawn INSIDE a swatch — the box labels
+// ('This service', 'an application', 'a partner') and each line's `<title>`
+// — because a swatch is a parameter carried as it was.
+//
+// HERE, beside the code that draws them, and extracted through
+// `common/delegation.js`'s `prose()`, the delegation namespace's module: this
+// module's own `prose()` is the kerberos namespace's, and a module answers
+// one namespace.
+// ---------------------------------------------------------------------------
+/**
+ * The sentences of the delegation pictures' key (#543): one per row of
+ * `delegationMapKey()`, and the three only the person's picture adds.
+ */
+const MAP_KEY_PROSE = Object.freeze({
+  rows: Object.freeze([
+    // A person.
+    '<strong>A person.</strong> Something with an entry under ' +
+      '<code>ou=users</code> — anybody this service has authenticated, in ' +
+      'any of the sixteen families.',
+    // An application.
+    '<strong>An application.</strong> Something with an entry under ' +
+      '<code>ou=applications</code> — an OAuth client, a service provider, a ' +
+      'Kerberos service, a WS-Trust relying party.',
+    // Both: a person and an application.
+    '<strong>Both, which the middle tier usually is.</strong> ' +
+      '<code>HTTP/frontend.example.com</code> authenticates (so the funnel ' +
+      'files it with the people) AND has tickets issued FOR it (so the ' +
+      'registry has it). Two entries, one party.',
+    // This service, in one trust realm (the hexagon).
+    '<strong>This service, in one trust realm.</strong> Every line here ' +
+      'exists because it issued or refused a credential. The realm is on the ' +
+      'box because a realm is a whole logical copy of this service.',
+    // The two small lines under a name.
+    '<strong>The two small lines under a name are different ' +
+      'sentences.</strong> The first is what the box IS &mdash; which of the ' +
+      'two stores knows it, or the role its shape was guessed from. The ' +
+      'second is <strong>the identifier a protocol would have to present to ' +
+      'reach it, with that protocol\'s own word for it</strong>: a ' +
+      '<code>client_id</code> for OAuth 2.0 and OpenID Connect, an ' +
+      '<code>entityID</code> for either SAML profile, a <code>wtrealm</code> ' +
+      'for WS-Federation, an <code>AppliesTo</code> for WS-Trust, an ' +
+      '<code>SPN</code> for Kerberos. The NAME on the box is what somebody ' +
+      'CALLED this thing &mdash; a <code>cn</code>, an <code>appName</code> ' +
+      '&mdash; and is no use in a request you are about to build, which is ' +
+      'why the identifier is on the picture and not only in the tooltip. ' +
+      'Where the two are the same string only the word is drawn, because the ' +
+      'value is already the label; where ONE string is two families\' ' +
+      'identifier both words are drawn (<code>AppliesTo / entityID</code>); ' +
+      'and where the application answers to several DIFFERENT names, the one ' +
+      'drawn is the one this act actually carried &mdash; or, if the act ' +
+      'carried something no identifier attribute holds, the first declared ' +
+      'one, with the tooltip saying so. Every name it answers to is in that ' +
+      'tooltip either way.',
+    // A dashed outline.
+    '<strong>A dashed outline is something neither store knows.</strong> It ' +
+      'is drawn in the shape its ROLE implies and is not an error: an RFC ' +
+      '8693 <code>audience</code> nobody has otherwise mentioned is exactly ' +
+      'this.',
+    // Which way a line goes.
+    '<strong>Which way a line goes is at BOTH of its ends.</strong> It ' +
+      'leaves the box with the round end and arrives at the box with the ' +
+      'arrowhead &mdash; so the question a reader actually asks, standing at ' +
+      'one box: <em>is this line mine, or somebody\'s on me?</em>, is ' +
+      'answered where they are standing rather than at the far end of a ' +
+      'curve that crosses three others on the way. Every line here has both ' +
+      'marks, and no line here is two-way: two applications that reach each ' +
+      'other are drawn as two lines.',
+    // acts for: an impersonation (amber).
+    '<strong>acts for &mdash; an IMPERSONATION.</strong> What came out names ' +
+      'the initial identity and nothing else, so nothing at the far end can ' +
+      'tell an intermediary was involved. Amber because this picture is the ' +
+      'only place that fact will ever exist.',
+    // acts for: a delegation (green).
+    '<strong>acts for &mdash; a DELEGATION.</strong> What came out CARRIES ' +
+      'the chain: an <code>act</code> claim, a composite <code>ActAs</code>, ' +
+      '<code>S4U_DELEGATION_INFO</code> in the PAC.',
+    // reaches: the trust relationship.
+    '<strong>reaches &mdash; the TRUST relationship.</strong> What the ' +
+      'credential is FOR: the back-end service, the <code>AppliesTo</code>, ' +
+      'the audience or resource. The label says whose name it carries.',
+    // A broken line.
+    '<strong>A broken line jumps a party nobody named.</strong> A forwarded ' +
+      'ticket-granting ticket has no intermediary and cannot have one — the ' +
+      'client gives it to whichever service it chooses and this KDC is never ' +
+      'told which.',
+    // may delegate: a configured relationship.
+    '<strong>may delegate &mdash; a CONFIGURED relationship, DASHED until an ' +
+      'act has used it.</strong> One line per pair an entry allows: ' +
+      '<code>appAllowedToDelegateTo</code> on the source (constrained) or ' +
+      '<code>appAllowedToActOnBehalfOf</code> on the target (resource-based) ' +
+      '&mdash; the same controls for the OAuth 2.0 token exchange, WS-Trust ' +
+      'and Kerberos. Solid once an act has crossed it. Drawn unless the acts ' +
+      'are narrowed by outcome, type or text.',
+    // Red.
+    '<strong>Red is a chain nothing was ever issued on.</strong> The tooltip ' +
+      'carries the KDC\'s own words for why, which is the same sentence the ' +
+      'client was sent.',
+    // Grey and dashed, from the hexagon.
+    '<strong>Grey and dashed, from the hexagon: this service ISSUED to that ' +
+      'party.</strong> It goes to whoever ASKED — the intermediary where a ' +
+      'chain has one, the initial identity where it does not.'
+  ]),
+  issuance: Object.freeze([
+    // Dotted, into the hexagon.
+    '<strong>Dotted, into the hexagon: this person AUTHENTICATED ' +
+      'here.</strong> The label is the protocol family and the tooltip is ' +
+      'the method — the sign-in screen, an AS-REQ, a UsernameToken, a ' +
+      'federated assertion. It is why everything else on the picture was ' +
+      'allowed.',
+    // Solid indigo: an ordinary grant.
+    '<strong>Solid indigo: an ORDINARY GRANT, and the label is the exact ' +
+      'one</strong> — <code>authorization_code</code>, ' +
+      '<code>refresh_token</code>, <code>client_credentials</code>, with the ' +
+      'specification section in the tooltip. Out of the PERSON it means a ' +
+      'credential naming them went to that application; out of the HEXAGON ' +
+      'it means nobody else holds it — a <code>client_credentials</code> ' +
+      'token is about the client itself and an X509-SVID has no audience, so ' +
+      'the subject and the holder are one box and there is one line rather ' +
+      'than two. It takes no amber or green, because impersonation and ' +
+      'delegation are properties of a delegation mechanism and a grant ' +
+      'claims neither.',
+    // Solid indigo out of an application.
+    '<strong>Solid indigo out of an APPLICATION is that same relationship ' +
+      'one step further on: what the credential it holds is ADDRESSED ' +
+      'to.</strong> It is the <em>reaches</em> line above, said about an ' +
+      'ordinary grant instead of about a delegation — an access token issued ' +
+      'to a web front end and addressed to an API gateway is this service ' +
+      'saying the first may reach the second in this person\'s name, with ' +
+      'nothing exchanged to get there. The mechanism on the label is what ' +
+      'tells the two apart: a grant, or <code>Token exchange</code>. The ' +
+      'audience the token actually carries is in the tooltip, because the ' +
+      'box is named after whichever application registered that audience. ' +
+      '<strong>The line under it names the DELEGATED PERMISSIONS on that ' +
+      'token</strong> — the values on its <code>scope</code> claim that the ' +
+      'resource at the far end has DEFINED, which is what a client asks for ' +
+      'by sending the whole permission identifier (the resource\'s base URI ' +
+      'followed by the name) as a scope. <strong><code>default ' +
+      'permissions</code> means the token named the resource and asked for ' +
+      'none of them</strong>: that is what a scope naming the resource\'s ' +
+      'own <code>client_id</code> produces, since that value becomes the ' +
+      'audience and comes off the scope claim. It says what was ISSUED and ' +
+      'not what was GRANTED — <a href="/admin/delegation/allowed">the ' +
+      'configured register</a> is the other question, and in development ' +
+      '<code>oauth2.delegatedPermissionsEnforced</code> is off by default, ' +
+      'so a token can carry a permission its client was never granted ' +
+      '(product mode refuses one).'
+  ])
+});
+
+/**
+ * The sentences of the federation picture's key (#543): one per box and
+ * line `federationMapKey()` draws, and the note between the two tables.
+ */
+const FEDERATION_KEY_PROSE = Object.freeze({
+  boxes: Object.freeze([
+    // This service.
+    'The trust realm you are looking at. Every line on the picture starts or ' +
+      'ends here, because every relationship is between this realm and ' +
+      'somebody else.',
+    // An application.
+    'An application registered HERE whose people are authenticated somewhere ' +
+      'else. What points it at a partner is ' +
+      '<code>appFederationRelationship</code> on its entry under ' +
+      '<code>ou=applications</code>.',
+    // A partner service provider.
+    'A FOREIGN SERVICE PROVIDER. It asks this service to authenticate ' +
+      'somebody. Dashed, because it is not this service and nothing here can ' +
+      'see inside it.',
+    // A partner identity provider.
+    'A FOREIGN IDENTITY PROVIDER. It authenticates the person and this ' +
+      'service consumes what it issues. Dashed for the same reason — and a ' +
+      'hexagon rather than a rectangle because it is an identity service, ' +
+      'which is what this service is too.'
+  ]),
+  lines: Object.freeze([
+    // Ready.
+    '<strong>Ready</strong> — enabled and fully configured. It will work.',
+    // Disabled.
+    '<strong>Disabled</strong> — which is how every relationship starts. ' +
+      'This is the ordinary state of something somebody has not finished ' +
+      'setting up, not a fault.',
+    // Enabled and not configured.
+    '<strong>Enabled and NOT configured</strong> — the loud one, and it ' +
+      'earns being the only red on this page: it will REFUSE at the moment ' +
+      'somebody tries to use it, and it looks finished from every angle ' +
+      'except this one.',
+    // A broker that cannot broker.
+    '<strong>A broker that cannot broker</strong> — the relationship is fine ' +
+      'and the relationship it authenticates THROUGH is not, so the person ' +
+      'meets the sign-in screen instead of the partner. That screen checks ' +
+      'no password, which is why this is worth a colour of its own: it is ' +
+      'the only failure here that produces a working sign-in.'
+  ]),
+  note: '<strong>An arrow is a REQUEST and not an assertion</strong>, which ' +
+    'is the one thing about this picture that looks backwards until it is ' +
+    'said. Everything on the left arrives wanting somebody signed in; ' +
+    'everything on the right is asked to do the signing in. So an ' +
+    'identity-provider-side relationship — where this service ASSERTS to the ' +
+    'partner — points INWARD, because what the partner did was ask. Drawn ' +
+    'the other way an identity broker is two arrows leaving the same box ' +
+    'with nothing joining them; drawn this way it is one straight line ' +
+    'through the middle, which is what a bridge is.'
+});
+
+/**
+ * The delegation pictures' key as a template: the table and its headings,
+ * and per row of `MAP_KEY_PROSE.rows` a swatch `{{art<i>}}` and a sentence
+ * `{{what<i>}}`.
+ */
+const MAP_KEY_TEMPLATE = '<table class="key"><tr><th>Shape</th><th>What ' +
+  'it means</th></tr>' + MAP_KEY_PROSE.rows.map(function (what, i) {
+    return '<tr><td class="art">{{art' + i + '}}</td><td>{{what' + i +
+           '}}</td></tr>';
+  }).join('') + '</table>';
+
+/**
+ * The rows only the person's key draws, carried in the last row's sentence
+ * (`{{last}}`, that sentence itself): per row of `MAP_KEY_PROSE.issuance`
+ * a swatch `{{art<j>}}` and a sentence `{{what<j>}}`.
+ */
+const MAP_KEY_TAIL = '{{last}}' +
+  MAP_KEY_PROSE.issuance.map(function (what, j) {
+    return '</td></tr><tr><td class="art">{{art' + j + '}}</td><td>{{what' +
+           j + '}}';
+  }).join('');
+
+/**
+ * The federation picture's key as a template: per box a drawing
+ * `{{box<i>}}` and a sentence `{{boxWhat<i>}}`, the note `{{note}}`, and per
+ * line a swatch `{{line<i>}}` and a sentence `{{lineWhat<i>}}`.
+ */
+const FEDERATION_KEY_TEMPLATE = '<h3>The boxes</h3><table><tr><th>Drawn ' +
+  'as</th><th>What it is</th></tr>' +
+  FEDERATION_KEY_PROSE.boxes.map(function (what, i) {
+    return '<tr><td>{{box' + i + '}}</td><td>{{boxWhat' + i + '}}</td></tr>';
+  }).join('') + '</table><h3>The lines</h3>{{note}}<table><tr><th>Colour' +
+  '</th><th>What it means</th></tr>' +
+  FEDERATION_KEY_PROSE.lines.map(function (what, i) {
+    return '<tr><td>{{line' + i + '}}</td><td>{{lineWhat' + i +
+           '}}</td></tr>';
+  }).join('') + '</table>';
+
+/**
+ * `WebKit.note()`'s folded form, as a template: the teaser it cuts from a
+ * note longer than a line, and the note.
+ */
+const FEDERATION_NOTE_FOLD = '<details class="note fold"><summary>' +
+  '{{summary}}</summary><div class="foldbody">{{body}}</div></details>';
+
+// ---------------------------------------------------------------------------
+// WHAT `kerberosPrincipalsJson()` SAYS UNDER `notes` (#543 phase 2b): the
+// kerberos namespace, and this module's `prose()`. Three sentences are
+// templates: the realm's own Kerberos realm, why a realm has no KDC, and why
+// a realm whose KDC is on cannot use it — the last two
+// `krb5_principals.js`'s sentence when it gives one, carried over in English
+// where it is not a message here.
+//
+// **ON IS NOT THE SAME AS SERVING** (#543 follow-up): the note branched on
+// `kerberos.enabled` alone, so a realm with krb5.enabled on whose context is
+// inactive (no usable enctype), or whose product krbtgt key is not stored
+// yet, was told its KDC served it, and the reason — which
+// `kerberosRealmOf()` fills only for an inactive realm — was never shown.
+// `realmInactive` is that case.
+// ---------------------------------------------------------------------------
+/**
+ * The notes of `/admin-api/kerberos/principals` (#543), `{{name}}` a value.
+ */
+const KERBEROS_NOTES = Object.freeze({
+  keys: 'No key material is in this answer or on the page. A person\'s ' +
+    'keys are derived from their password when it is set or verified and ' +
+    'are never shown; a service principal\'s keytab is handed over ONCE, ' +
+    'by the create or rotate that made it, and a person\'s keytab ONCE, ' +
+    'derived from a password in hand — the one an administrator sets on ' +
+    'the person\'s page, or their own on /portal/kerberos.',
+  modeProduct: 'This KDC is a PRODUCT one: a person authenticates with ' +
+    'their own password through the keys stored on their directory entry, ' +
+    'and a person with none is refused with "sign in once".',
+  modeDevelopment: 'This KDC is a DEVELOPMENT one: every user is keyed ' +
+    'from krb5.userPassword and people are never given stored keys. ' +
+    'Service principals created here are used in both modes.',
+  realmServed: 'A KDC PER TRUST REALM: these are the people and ' +
+    'applications of the trust realm this page is read in, as principals ' +
+    'of its own Kerberos realm {{kerberosRealm}}.',
+  realmNone: 'THIS TRUST REALM HAS NO KDC: {{reason}}. Set krb5.realm on ' +
+    'the realm and turn krb5.enabled on to give it one; port 88 routes a ' +
+    'request by the Kerberos realm name inside it.',
+  realmInactive: 'THIS TRUST REALM\'S KDC IS ON BUT CANNOT BE USED: ' +
+    '{{reason}}. Its Kerberos realm is {{kerberosRealm}}.',
+  window: 'Keys are derived AFTER a password is set or verified and take a ' +
+    'few tens of milliseconds to land; until they do, the KDC refuses the ' +
+    'person rather than accepting an older key.',
+  previous: 'A password change or a rotation keeps the version it ' +
+    'replaced — at most krb5.retainedKeyVersions of them, each for ' +
+    'krb5.retainedKeyTtlS — so a ticket issued under it is still accepted ' +
+    'until it could have expired. A previous version only ever OPENS such ' +
+    'a ticket: nothing is issued under it and an old password never signs ' +
+    'in. "Drop previous versions" ends the window at once, after a ' +
+    'compromise.'
+});
+
+/**
+ * The phrase `KERBEROS_NOTES.realmNone` says when no reason is given.
+ */
+const KERBEROS_NO_KDC_REASON = 'krb5.enabled is off for it';
+
+/**
+ * The routes whose answers carry this module's prose: the kerberos
+ * namespace's (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/kerberos/principals'];
+
+// The routes whose answers carry the two pictures' keys (#543): this
+// module's part of the DELEGATION namespace, offered under its own names
+// because `PROSE_ROUTES` and `prose()` are the kerberos namespace's.
+const MAP_KEY_PROSE_ROUTES = [
+  '/admin-api/delegation/user',
+  '/admin-api/delegation/application',
+  '/admin-api/console/delegation/map',
+  '/admin-api/console/delegation/chain',
+  '/admin-api/console/federation/map'
+];
+
 interface AdminViewsDeps {
   log: typeof helpers.log;
   baseUrlOf: typeof helpers.baseUrlOf;
@@ -445,6 +873,8 @@ interface AdminViewsDeps {
   identityAssurance: typeof identityAssurance;
   siop: typeof siop;
   devices: typeof devices;
+  serviceAccounts: typeof serviceAccounts;
+  serviceAccountPolicy: typeof serviceAccountPolicy;
   sessions: typeof authn.sessions;
   sessionStartedAt: typeof authn.sessionStartedAt;
   config: typeof config;
@@ -455,6 +885,7 @@ interface AdminViewsDeps {
   rbac: typeof rbac;
   vcClaims: typeof vcClaims;
   vpConfig: typeof vpConfig;
+  vcVerifier: typeof vcVerifier;
   claimAttributes: typeof claimAttributes;
   scimMap: typeof scimMap;
   groupClaims: typeof groupClaims;
@@ -462,7 +893,7 @@ interface AdminViewsDeps {
   personAssertions: typeof personAssertions;
   keystore: typeof keystore;
   pki: typeof pki;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   appPermissions: typeof appPermissions;
   consent: typeof consent;
   roles: typeof roles;
@@ -472,6 +903,11 @@ interface AdminViewsDeps {
   errorCodes: typeof errorCodes;
   usedAssertions: typeof usedAssertions;
   delegation: typeof delegation;
+  delegationMap: typeof delegationMap;
+  userGraph: typeof userGraph;
+  credentialGraph: typeof credentialGraph;
+  federationGraph: typeof federationGraph;
+  federationDiagram: typeof federationDiagram;
   delegationPolicy: typeof delegationPolicy;
   krb5Principals: typeof krb5Principals;
   krb5PersonKeys: typeof krb5PersonKeys;
@@ -492,6 +928,13 @@ interface AdminViewsDeps {
   authorizationServers: typeof authorizationServers;
   federation: typeof federation;
   fedEncryption: typeof fedEncryption;
+  // A federation partner's Shared Signals (#373), lazily: the receiver
+  // registers a scheduler job when built.
+  loadSignals: () => any;
+  // GNAP's view layer (#432 phase 7), lazily: GNAP is 23d in the require
+  // order and this file is loaded at 18, as `mgmt-api/admin_api.ts` reaches
+  // it. Optional, so a test building these views without it still draws.
+  loadGnapConsole?: () => any;
   fedLinks: typeof fedLinks;
   signals: typeof signals;
   spiffeRegistry: typeof spiffeRegistry;
@@ -522,6 +965,73 @@ class AdminViews {
     deps.log.debug("Leaving AdminViews.constructor().");
   }
 
+  /**
+   * The routes whose answers carry this module's prose: the kerberos
+   * namespace's (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+  /**
+   * The routes whose answers carry the map keys (the delegation namespace).
+   */
+  static readonly MAP_KEY_PROSE_ROUTES = MAP_KEY_PROSE_ROUTES;
+
+  /**
+   * Extracts the kerberos namespace (#543): `/admin-api/kerberos/principals`'
+   * notes, two of them templates, and the phrase one says when no reason is
+   * given.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering AdminViews.prose().");
+    const out: Record<string, string> = {};
+    Object.keys(KERBEROS_NOTES).forEach(function (name) {
+      out['kerberos.notes.' + name] = KERBEROS_NOTES[name];
+    });
+    out['kerberos.notes.param.noKdcReason'] = KERBEROS_NO_KDC_REASON;
+    helpers.log.debug("Leaving AdminViews.prose(). " + Object.keys(out).length);
+    return out;
+  }
+
+  /**
+   * Extracts the two pictures' keys for the delegation namespace (#543),
+   * which `common/delegation.js`'s `prose()` returns: the templates, every
+   * row's sentence, the federation note and the teaser `WebKit.note()` folds
+   * it under.
+   *
+   * @returns key → English
+   */
+  static mapKeyProse(): Record<string, string> {
+    helpers.log.debug("Entering AdminViews.mapKeyProse().");
+    const out: Record<string, string> = {
+      'delegation.mapKey.table': MAP_KEY_TEMPLATE,
+      'delegation.mapKey.tail': MAP_KEY_TAIL,
+      'delegation.federationKey.table': FEDERATION_KEY_TEMPLATE,
+      'delegation.federationKey.fold': FEDERATION_NOTE_FOLD
+    };
+    MAP_KEY_PROSE.rows.forEach(function (what, i) {
+      out['delegation.mapKey.param.row' + i] = what;
+    });
+    MAP_KEY_PROSE.issuance.forEach(function (what, j) {
+      out['delegation.mapKey.param.issuance' + j] = what;
+    });
+    FEDERATION_KEY_PROSE.boxes.forEach(function (what, i) {
+      out['delegation.federationKey.param.box' + i] = what;
+    });
+    FEDERATION_KEY_PROSE.lines.forEach(function (what, i) {
+      out['delegation.federationKey.param.line' + i] = what;
+    });
+    // The fold `federationMapKey()`'s `WebKit.note()` draws: the teaser it
+    // cuts from the note, and the note. A note short enough not to fold
+    // would match no template and be carried in English.
+    const fold = WebKit.foldOf(FEDERATION_KEY_PROSE.note, undefined);
+    out['delegation.federationKey.param.noteSummary'] = fold.summary;
+    out['delegation.federationKey.param.note'] = fold.body;
+    helpers.log.debug("Leaving AdminViews.mapKeyProse(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
   // What the composition root passes, from the real modules.
   /**
    * Returns the dependencies the composition root passes.
@@ -545,6 +1055,8 @@ class AdminViews {
       identityAssurance: identityAssurance,
       siop: siop,
       devices: devices,
+      serviceAccounts: serviceAccounts,
+      serviceAccountPolicy: serviceAccountPolicy,
       sessions: authn.sessions,
       sessionStartedAt: authn.sessionStartedAt,
       config: config,
@@ -555,6 +1067,7 @@ class AdminViews {
       rbac: rbac,
       vcClaims: vcClaims,
       vpConfig: vpConfig,
+      vcVerifier: vcVerifier,
       claimAttributes: claimAttributes,
       scimMap: scimMap,
       groupClaims: groupClaims,
@@ -562,7 +1075,7 @@ class AdminViews {
       personAssertions: personAssertions,
       keystore: keystore,
       pki: pki,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       appPermissions: appPermissions,
       consent: consent,
       roles: roles,
@@ -572,6 +1085,11 @@ class AdminViews {
       errorCodes: errorCodes,
       usedAssertions: usedAssertions,
       delegation: delegation,
+      delegationMap: delegationMap,
+      userGraph: userGraph,
+      credentialGraph: credentialGraph,
+      federationGraph: federationGraph,
+      federationDiagram: federationDiagram,
       delegationPolicy: delegationPolicy,
       krb5Principals: krb5Principals,
       krb5PersonKeys: krb5PersonKeys,
@@ -593,6 +1111,12 @@ class AdminViews {
       authorizationServers: authorizationServers,
       federation: federation,
       fedEncryption: fedEncryption,
+      loadGnapConsole: function () {
+        return require('../gnap/gnap_console');
+      },
+      loadSignals: function () {
+        return require('../ssf/ssf_transmitters');
+      },
       fedLinks: fedLinks,
       signals: signals,
       spiffeRegistry: spiffeRegistry,
@@ -801,6 +1325,26 @@ class AdminViews {
     log.debug("Leaving AdminViews.setConfigSettingsJson().");
   }
 
+  // A page's settings block (#446), for a view layer outside this module —
+  // the certificate enrollment pages' — whose page is drawn from its view
+  // alone and so must answer the block every page that owns settings
+  // answers, rather than a bare list of rows.
+  /**
+   * Returns the settings block of a console page, as every page that owns
+   * settings answers it.
+   *
+   * @param path - the page's path
+   * @param only - optional; the group names to include, for a tab of a page
+   *   that draws several families' groups (`/admin/cert-issuance`)
+   * @returns the block, or null before the console has filled the slot
+   */
+  settingsBlockOf(path, only?) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.settingsBlockOf(). path=" + path);
+    log.debug("Leaving AdminViews.settingsBlockOf().");
+    return configSettingsJson ? configSettingsJson(path, only) : null;
+  }
+
   /**
    * Fills the slot for the client-certificate truststore; the module that owns
    * it fills it (rule 3e).
@@ -858,6 +1402,52 @@ class AdminViews {
       : null;
   }
 
+  // ---------------------------------------------------------------------------
+  // THE GATE AS A TOKEN DECIDED IT (#446). `/admin-api`'s gate verifies the
+  // caller's token, decides the roles its subject holds in the realm that
+  // issued it, and leaves that caller on the request (`adminApiCaller`). A
+  // view drawn for such a request is drawn for THAT caller: the token's
+  // realm is the realm the person is of — a realm administrator's own
+  // realm, confined there — and its roles are the console's two. Without
+  // this every view asked about an API request found no console session
+  // and answered as for the service.
+  // ---------------------------------------------------------------------------
+  /**
+   * Describes the gate for a request the management API authenticated.
+   *
+   * @param caller - the API gate's caller: `kind`, `name`, `realm`, `roles`
+   * @returns the gate state, in `gateStateFor()`'s shape
+   */
+  apiGateStateOf(caller) {
+    const { log, config, realms, rbac } = this.deps;
+    log.debug("Entering AdminViews.apiGateStateOf().");
+    const identityRealm = String(caller.realm || realms.DEFAULT_ID);
+    const authority = identityRealm === realms.DEFAULT_ID ? 'service'
+                                                          : 'realm';
+    const outsideRealm = authority === 'realm' &&
+                         realms.currentId() !== identityRealm;
+    const roles = (caller.roles || []).map(function (role) {
+      return role === 'ADMIN_READ' ? 'read'
+        : (role === 'ADMIN_WRITE' ? 'write' : String(role).toLowerCase());
+    });
+    const read = !outsideRealm && roles.indexOf('read') >= 0;
+    const write = !outsideRealm && roles.indexOf('write') >= 0;
+    log.debug("Leaving AdminViews.apiGateStateOf(). " + authority + ".");
+    return {
+      enforced: true, available: rbac.available(), session: true,
+      username: String(caller.name || ''), authority: authority,
+      identityRealm: identityRealm, outsideRealm: outsideRealm,
+      readGroup: config.value('admin.readGroup'),
+      writeGroup: config.value('admin.writeGroup'),
+      sessionRealm: identityRealm, foreignSession: false,
+      read: read || write, write: write,
+      roles: outsideRealm ? [] : roles,
+      open: false, closed: false, windowOpens: true, empty: false,
+      bootstrapPasswordRequired: false, windowWithheld: false,
+      bootstrap: null, viaApi: true
+    };
+  }
+
   // Everything the banner and the guard both need, worked out ONCE per request.
   //
   // Both were written separately at first and disagreed within the hour: the
@@ -875,6 +1465,10 @@ class AdminViews {
   gateStateFor(req) {
     const { log, config, mode, realms, rbac } = this.deps;
     log.debug("Entering AdminViews.gateStateFor().");
+    if (req && req.adminApiCaller) {
+      log.debug("Leaving AdminViews.gateStateFor(). The API's caller.");
+      return this.apiGateStateOf(req.adminApiCaller);
+    }
     // THE MODE, since 2026-09-06, where this read `admin.authRequired`. That
     // setting is gone: "is authentication required here" had four answers
     // across this service and now has one. See common/mode.js.
@@ -1392,7 +1986,7 @@ class AdminViews {
    * @returns the page's JSON
    */
   consentPageView(query) {
-    const { log } = this.deps;
+    const { log, applications } = this.deps;
     log.debug("Entering AdminViews.consentPageView().");
     const asked = query || {};
     const register = this.consentView();
@@ -1420,7 +2014,15 @@ class AdminViews {
       matched: matched.length,
       globalsPaging: this.pagingJson(globalPage.paging),
       usersPaging: this.pagingJson(consentPage.paging),
-      query: { q: q }
+      query: { q: q },
+      // Where a withdrawal is recorded on a person's entry, which the page
+      // names (#446).
+      withdrawnAttribute: consent.WITHDRAWN_ATTRIBUTE,
+      // The applications the page's forms offer (#446), as the page read
+      // the register for them while it drew.
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
     });
     log.debug("Leaving AdminViews.consentPageView(). " +
               globalPage.shown.length + " of " + register.globals.length +
@@ -1452,10 +2054,16 @@ class AdminViews {
     // the default — and the difference matters, because every application in
     // this service requires EVERYBODY and listing all of them would bury the
     // handful that were narrowed.
-    const requiring = applications.list().filter(function (row) {
-      return applications.requiresNarrowedRoles(row.identifier);
+    //
+    // ONE `list()`, AND THE REQUIREMENT READ OFF THE ROW (#352): this asked
+    // `requiresNarrowedRoles()` and `requiredRolesOf()` by identifier, each
+    // of which read the entry out of the directory again — two reads per
+    // application for a register the list had already read whole.
+    const listed = applications.list();
+    const requiring = listed.filter(function (row) {
+      return applications.narrowedRoles(applications.requiredRolesFrom(row));
     }).map(function (row) {
-      const required = applications.requiredRolesOf(row.identifier);
+      const required = applications.requiredRolesFrom(row);
       return {
         application: row.identifier,
         name: row.name || row.identifier,
@@ -1479,7 +2087,9 @@ class AdminViews {
       };
     });
     const permissions = [];
-    applications.list().forEach(function (row) {
+    // `roleGatingFor()` is a Map lookup now (#352), not a `list()` per
+    // permission.
+    listed.forEach(function (row) {
       applications.permissionsOf(row).forEach(function (one) {
         if (one.id) {
           const gating = applications.roleGatingFor(one.id);
@@ -1529,19 +2139,136 @@ class AdminViews {
     return out;
   }
 
+  // ONE ROLE'S PAGE (#604): everything the register knows about a role.
   /**
-   * Returns the role register for `/admin/roles`.
+   * Returns one role in full: the register's row, its owners, the
+   * applications whose requirement names it, its directory entry, and
+   * whether the register can be written.
    *
-   * @returns the register
+   * @param name - the role name
+   * @param register - the register, as `rolesRegister()` answers it
+   * @returns `{ found, name, ... }`
    */
-  rolesView() {
-    const { log } = this.deps;
-    log.debug("Entering AdminViews.rolesView().");
-    const register = this.rolesRegister();
-    log.debug("Leaving AdminViews.rolesView(). " + register.counts.configured +
-              " role(s).");
-    return register;
+  roleDetail(name, register) {
+    const { log, roles } = this.deps;
+    log.debug("Entering AdminViews.roleDetail(). " + name);
+    const builtIn = (register.builtIn || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    if (builtIn) {
+      log.debug("Leaving AdminViews.roleDetail(). Built in.");
+      return { found: true, builtIn: true, name: name, what: builtIn.what,
+               owners: [], requiredBy: [], entry: null };
+    }
+    const row = (register.roles || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    if (!row) {
+      log.debug("Leaving AdminViews.roleDetail(). Not here.");
+      return { found: false, name: name };
+    }
+    // An application's requirement names a realm-wide role by its name, and
+    // its own role (#310) by the name inside it.
+    const requiredBy = (register.requiring || []).filter(function (one) {
+      return row.application
+        ? one.application === row.application &&
+          one.required.indexOf(row.localName) >= 0
+        : one.required.indexOf(row.name) >= 0;
+    }).map(function (one) {
+      return { application: one.application, name: one.name };
+    });
+    const entry = roles.entryOf(row.name);
+    const out = Object.assign({}, row, {
+      found: true,
+      owners: roles.ownersOf(row),
+      maxOwners: roles.MAX_OWNERS,
+      // Closed to its owners, and why (#607).
+      ownership: this.ownershipOf('role', row.name),
+      requiredBy: requiredBy,
+      holderCount: row.users.length + row.groups.length +
+                   row.applications.length,
+      canWrite: !!register.storable,
+      entry: entry ? { dn: entry.dn, createdAt: entry.createdAt || null,
+                       modifiedAt: entry.modifiedAt || null,
+                       operational: entry.operational || [],
+                       attributes: entry.attributes } : null
+    });
+    log.debug("Leaving AdminViews.roleDetail(). " + out.owners.length +
+              " owner(s).");
+    return out;
   }
+
+  // THE ROLES PAGE'S VIEW, AND `GET /admin-api/roles`' (#446). It was the
+  // register alone for the API and the register with the page's own members
+  // for the page, built in the route; one function now, so the page is drawn
+  // from the answer a caller of the API receives. The register's members are
+  // its first members, as they were. **The preview is not in it**: it is
+  // `GET /admin-api/roles/preview`, an operation of its own for the reason
+  // argued above that one, and the page composes it in as `preview` (the
+  // route here; the page table's `compose` in the browser).
+  /**
+   * Returns the roles page's view: the register, the roles a query matched
+   * and its page of them, the menus the forms offer, and the page's
+   * settings.
+   *
+   * @param query - the query: `q` and the roles' paging
+   * @returns the view
+   */
+  rolesView(query?) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.rolesView().");
+    const q0 = query || {};
+    const register = this.rolesRegister();
+    const q = String((Array.isArray(q0.q) ? q0.q[0] : q0.q) || '')
+      .trim().toLowerCase();
+    const matched = q
+      ? register.roles.filter(function (one) {
+          return [one.name, one.description].concat(one.users, one.groups,
+                                                    one.applications)
+            .some(function (text) {
+              return String(text).toLowerCase().indexOf(q) >= 0;
+            });
+        })
+      : register.roles;
+    const rolePage = this.pagedRows(q0, matched,
+      { name: 'roles', noun: 'roles', defaultPer: 25 });
+    // THE APPLICATIONS THAT NARROWED WHAT THEY REQUIRE, PAGED (#313) on
+    // `requiringPage`: a row per such application, which only
+    // `applications.max` bounds. `counts.requiring` and
+    // `counts.unsatisfiable` stay the register's whole counts.
+    const requiringPage = this.pagedRows(q0, register.requiring,
+      { name: 'requiring', noun: 'applications' });
+    const json = Object.assign({}, register, {
+      requiring: requiringPage.shown,
+      requiringPaging: this.pagingJson(requiringPage.paging),
+      matched: matched.length,
+      shown: rolePage.shown.length,
+      paging: this.pagingJson(rolePage.paging),
+      query: { q: q },
+      memberKinds: adminActions.ROLE_MEMBER_KINDS,
+      issuanceKinds: issuanceGate.KINDS,
+      actions: adminActions.ROLE_ACTIONS.slice(),
+      settings: configSettingsJson ? configSettingsJson('/admin/roles') : null,
+      // The page's own rows and its application menu.
+      shownRoles: rolePage.shown,
+      applicationChoices: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
+    });
+    // ONE ROLE IN FULL (#604): `?role=<name>` answers the role page — the
+    // row, its owners resolved, the applications requiring it, and its
+    // directory entry — beside the register, as `GET /admin-api/groups`
+    // answers a group. A name nothing holds is `found: false`.
+    const wantedRole = String((Array.isArray(q0.role) ? q0.role[0]
+                                                      : q0.role) || '').trim();
+    if (wantedRole) {
+      (json as any).role = this.roleDetail(wantedRole, register);
+    }
+    log.debug("Leaving AdminViews.rolesView(). " + register.roles.length +
+              " role(s).");
+    return json;
+  }
+
 
   // ---------------------------------------------------------------------------
   // WHAT /admin/policies AND GET /admin-api/policies ANSWER (2026-09-12).
@@ -1578,15 +2305,15 @@ class AdminViews {
     // package, with its version, until #65 put the draw in crypto.js's
     // section 13; there is no version of this service's own to print, so
     // the member is empty rather than gone, for a reader that expects it.
+    // The sentences are `admin-core/policy_kinds.ts`'s VIEW_PROSE (#543).
+    const prose = this.deps.policyKinds.VIEW_PROSE;
     return {
       module: 'common/crypto.js randomString()',
       version: '',
-      source: 'node\'s crypto.randomInt, rejection-sampled so that no ' +
-              'character of the pool is likelier than another',
-      pools: ['lowercase letters', 'uppercase letters', 'digits', 'symbols'],
+      source: prose.generatorSource,
+      pools: prose.generatorPools.slice(),
       excluded: ['"', '`'],
-      drawsUntil: 'the password satisfies the profile, so every generated ' +
-                  'password is uniform over the passwords the profile accepts'
+      drawsUntil: prose.generatorDrawsUntil
     };
   }
 
@@ -1616,6 +2343,36 @@ class AdminViews {
       }),
       schema: module.SCHEMA
     };
+    // A KIND WITH NAMED PROFILES (#535, the passkey policy): each named
+    // profile of this realm, with its rows and its selectors, in precedence
+    // order, for the console's forms and the API.
+    if (Array.isArray(module.SELECTORS)) {
+      // WHICH SELECTORS the kind's named profiles carry (#539): the passkey
+      // policy's three, or the locale policy's applications alone, so the
+      // console draws the controls the kind has and no others.
+      (out as any).selectors = module.SELECTORS.map(function (one) {
+        return one.key;
+      });
+      (out as any).named = module.list().filter(function (one) {
+        return one.name !== module.DEFAULT_PROFILE;
+      }).map(function (one) {
+        return {
+          name: one.name, dn: one.dn, description: one.description,
+          selectApplications: one.selectApplications || [],
+          selectGroups: one.selectGroups || [],
+          precedence: one.precedence,
+          rules: module.describe(one),
+          fields: module.FIELDS.map(function (field) {
+            return { key: field.key, attribute: field.attribute,
+                     label: field.label, type: field.type, min: field.min,
+                     max: field.max, values: field.values,
+                     unit: field.unit || '', default: field.dflt,
+                     value: one[field.key], source: one.sources[field.key],
+                     what: field.what };
+          })
+        };
+      });
+    }
     log.debug("Leaving AdminViews.policyKindMember().");
     return out;
   }
@@ -1630,23 +2387,11 @@ class AdminViews {
       // THE DOORS, named so that "enforced" is a claim a reader can check
       // rather than one they have to take. Every one ends in
       // `credentials.preparePassword()`.
-      doors: [
-        { door: '/admin/users/new and /admin/users (Set password)',
-          via: 'credentials.setPassword()' },
-        { door:
-            'POST /admin-api/users/create and /admin-api/users/set-password',
-          via: 'credentials.setPassword()' },
-        { door: '/portal/password', via: 'credentials.setPassword()' },
-        { door: '/portal/activate (the first password a person sets)',
-          via: 'credentials.setPassword()' },
-        { door: 'an LDAP add or modify of userPassword on 389 or 636',
-          via: 'credentials.preparePassword()' }
-      ],
-      notDoors: 'SCIM carries no password (this service advertises ' +
-                'changePassword: false), and a password is never set by ' +
-                'signing in. Passwords stored BEFORE a rule changed are ' +
-                'not re-checked: nothing here holds a password in a form ' +
-                'that could be, and the rule applies from the next change.'
+      // `admin-core/policy_kinds.ts`'s VIEW_PROSE holds them (#543).
+      doors: this.deps.policyKinds.VIEW_PROSE.doors.map(function (one) {
+        return { door: one.door, via: one.via };
+      }),
+      notDoors: this.deps.policyKinds.VIEW_PROSE.notDoors
     };
   }
 
@@ -1658,9 +2403,7 @@ class AdminViews {
     const authn = authnPolicy;
     const mailUsable = authn.mailUsable();
     const mailWhy = mailUsable ? ''
-      : 'This realm cannot send mail, so the two email mechanisms cannot be ' +
-        'turned on and are never offered. Configure a transport on Server ' +
-        'configuration > Mail.';
+      : this.deps.policyKinds.VIEW_PROSE.mailWhy;
     member.fields.forEach(function (field) {
       field.disabled = !!(field.email && !mailUsable);
       field.disabledWhy = field.disabled ? mailWhy : '';
@@ -1731,15 +2474,8 @@ class AdminViews {
     // that kind depends on.
     const enforced = mode.verifiesCredentials();
     out.enforced = enforced;
-    out.enforcement = enforced
-      ? 'ENFORCED. This realm is in product mode, so every password set ' +
-        'here — at every door below — must meet the profile, and a new ' +
-        'password may not repeat a remembered one.'
-      : 'NOT ENFORCED. This realm is in development mode, where no password ' +
-        'is checked at any door, so a rule about one would be a rule about ' +
-        'a credential nothing reads. The history is still RECORDED, so a ' +
-        'realm switched to product mode starts with one. A GENERATED ' +
-        'password meets the profile in both modes.';
+    out.enforcement = enforced ? policyKinds.VIEW_PROSE.enforced
+                               : policyKinds.VIEW_PROSE.notEnforced;
     const listed = this.pagedRows(q, rows);
     out.profiles = listed.shown;
     out.paging = this.pagingJson(listed.paging);
@@ -1819,6 +2555,152 @@ class AdminViews {
     return asked.slice(0, 64) || 'alice';
   }
 
+  // ---------------------------------------------------------------------------
+  // ATTRIBUTE CLAIMS' THREE HELPS (#94): the attributes worth offering, what
+  // each row would carry for the previewed person, and which federation
+  // partners' release lists would withhold a claim. One computation each,
+  // for the three claim pages and their three /admin-api replies.
+  // ---------------------------------------------------------------------------
+  /**
+   * The attributes an attribute claim can name that the catalogue cannot:
+   * what this realm's attribute sources and inbound federation mappings
+   * write, each with who writes it.
+   *
+   * @returns `[{ attribute, from: [..] }]`, sorted by attribute
+   */
+  attributeClaimChoices() {
+    const { log, federation } = this.deps;
+    log.debug("Entering AdminViews.attributeClaimChoices().");
+    const by: Record<string, { attribute: string; from: string[] }> = {};
+    const add = function (attribute: unknown, from: string) {
+      const name = String(attribute || '').trim();
+      if (!name) {
+        return;
+      }
+      const key = name.toLowerCase();
+      by[key] = by[key] || { attribute: name, from: [] };
+      if (by[key].from.indexOf(from) < 0) {
+        by[key].from.push(from);
+      }
+    };
+    let sources: any[] = [];
+    try {
+      sources = require('../attribute-sources/attribute_sources').list();
+    } catch (e) {
+      log.debug("Caught in AdminViews.attributeClaimChoices(): " +
+                ((e && e.message) || e));
+      // No attribute sources in this process: the list is federation's.
+      sources = [];
+    }
+    sources.forEach(function (source) {
+      Object.keys(source.columns || {}).forEach(function (column) {
+        add(source.columns[column], 'attribute source ' + source.id);
+      });
+    });
+    (federation.list() || []).forEach(function (record) {
+      [].concat(record.fedAttributeMap || []).forEach(function (value) {
+        const text = String(value);
+        const at = text.indexOf('=');
+        if (at > 0) {
+          add(text.slice(at + 1), 'federation ' + record.fedId);
+        }
+      });
+    });
+    const out = Object.keys(by).sort().map(function (key) {
+      return by[key];
+    });
+    log.debug("Leaving AdminViews.attributeClaimChoices(). " + out.length +
+              ".");
+    return out;
+  }
+
+  /**
+   * What each attribute claim of a set would carry for one person, built by
+   * the issuance path (`jwtClaims()` / `samlAttributes()`).
+   *
+   * @param id - the claim set
+   * @param user - the person
+   * @returns `[{ name, attribute, carried, value }]`; `value` is the JWT
+   *   value or the SAML values
+   */
+  attributeClaimPreview(id, user) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.attributeClaimPreview(). " + id);
+    const rows = stats.claimSet(id).filter(function (claim) {
+      return !!claim.attribute;
+    });
+    if (!rows.length) {
+      log.debug("Leaving AdminViews.attributeClaimPreview(). None.");
+      return [];
+    }
+    const saml = id === 'saml2' || id === 'saml11';
+    const issued = saml ? stats.samlAttributes(id, { subject: user })
+                        : stats.jwtClaims(id, { username: user });
+    log.debug("Leaving AdminViews.attributeClaimPreview().");
+    return rows.map(function (claim) {
+      if (saml) {
+        const found = (issued as any[]).filter(function (one) {
+          return one.name === claim.name;
+        })[0];
+        const values = found
+          ? (Array.isArray(found.values) ? found.values : [found.value]) : [];
+        return { name: claim.name, attribute: claim.attribute,
+                 carried: values.length > 0, value: values };
+      }
+      const carried = Object.prototype.hasOwnProperty.call(issued,
+                                                           claim.name);
+      return { name: claim.name, attribute: claim.attribute,
+               carried: carried,
+               value: carried ? (issued as any)[claim.name] : null };
+    });
+  }
+
+  /**
+   * The federation partners with a release list, each with the claim names
+   * it releases: a claim that is not on a partner's list is withheld from
+   * that partner.
+   *
+   * @returns `[{ id, names }]`
+   */
+  releaseWithholding() {
+    const { log, federation } = this.deps;
+    log.debug("Entering AdminViews.releaseWithholding().");
+    const out = (federation.list() || []).filter(function (record) {
+      return [].concat(record.fedRelease || []).length > 0;
+    }).map(function (record) {
+      return { id: String(record.fedId),
+               names: [].concat(record.fedRelease || []).map(String) };
+    });
+    log.debug("Leaving AdminViews.releaseWithholding(). " + out.length +
+              " partner(s) with a list.");
+    return out;
+  }
+
+  /**
+   * For each claim of a set, the partners whose release list withholds it.
+   *
+   * @param claims - the set's claims
+   * @param lists - `releaseWithholding()`
+   * @returns `{ <claim name>: [partner ids] }`, only names withheld somewhere
+   */
+  withheldFor(claims, lists) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.withheldFor().");
+    const out: Record<string, string[]> = {};
+    (claims || []).forEach(function (claim) {
+      const from = (lists || []).filter(function (one) {
+        return one.names.indexOf(claim.name) < 0;
+      }).map(function (one) {
+        return one.id;
+      });
+      if (from.length) {
+        out[claim.name] = from;
+      }
+    });
+    log.debug("Leaving AdminViews.withheldFor().");
+    return out;
+  }
+
   // One family of sets and the rules that govern them. The rules are in the
   // reply and not only on the page because the first thing a caller of POST
   // .../claims/add needs is the list of names it will refuse.
@@ -1841,9 +2723,11 @@ class AdminViews {
    */
   claimSetsJson(ids, previewUser) {
     const { log, stats, claimAttributes, groupClaims } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.claimSetsJson(). " + ids.length +
               " set(s).");
     const user = previewUser || 'alice';
+    const withheld = this.releaseWithholding();
     const json = {
       placeholders: stats.PLACEHOLDERS,
       // The catalogue every set chooses from, so a caller can discover the
@@ -1870,8 +2754,20 @@ class AdminViews {
                  // catalogue would be a preview that can disagree with the
                  // token.
                  attributeClaims: preview.claims,
-                 attributeReport: preview.report };
+                 attributeReport: preview.report,
+                 // THE SET'S OWN ROWS FOR THIS PERSON (#94): what each
+                 // attribute claim would carry, built by the issuance path.
+                 attributeClaimPreview: self.attributeClaimPreview(id, user),
+                 // WHO WOULD NOT GET EACH CLAIM (#94): the federation
+                 // partners whose release list does not name it.
+                 withheldFrom: self.withheldFor(stats.claimSet(id), withheld)
+               };
       }),
+      // THE ATTRIBUTES AN ATTRIBUTE CLAIM CAN NAME THAT THE CATALOGUE CANNOT
+      // (#94): what this realm's attribute sources and federation mappings
+      // write onto people, each with who writes it — the console's pick-list,
+      // and a caller's.
+      attributeChoices: this.attributeClaimChoices(),
       // Whether the directory holds this person at all, and what every
       // attribute in the catalogue would say about them — selected or not, so a
       // caller can see what ticking a box would do before ticking it. Read
@@ -1893,7 +2789,11 @@ class AdminViews {
       // other way to ask "what would this token carry", and a second walk of
       // the directory would be a preview that can disagree with the token.
       groups: Object.assign(groupClaims.state(),
-                            { preview: groupClaims.groupsOf(user) })
+                            { preview: groupClaims.groupsOf(user) }),
+      // The federation partners whose release list holds anything back
+      // (#94), which each set's section warns about; per claim, it is the
+      // set's `withheldFrom`.
+      withholding: withheld
     };
     log.debug("Leaving AdminViews.claimSetsJson(). " + json.sets.length +
               " set(s).");
@@ -1948,6 +2848,85 @@ class AdminViews {
     return json;
   }
 
+  // THE KERBEROS PAC CLAIM SET (#493), as `/admin/kerberos/claims` and
+  // `GET /admin-api/kerberos/claims` both answer it. Not built on
+  // claimSetsJson(): that reply carries the groups claim and the federation
+  // release lists, and a PAC set has neither — groups are already SIDs in the
+  // logon information and no federation partner reads a ticket — and its
+  // preview is a JWT's, persona and all. What it carries instead is what only
+  // a PAC claim has: each row's claim id, the four types, whether the realm
+  // writes the buffer at all, and the claims one person's next TGT would
+  // carry, built by the function the KDC calls.
+  //
+  // THE TICKED CATALOGUE (#498) is the same three members the other pages'
+  // replies carry — `attributeCatalogue` (claimAttributes.catalogueRows(),
+  // the one catalogue, each row with the PAC claim id it would become),
+  // `sets[].attributes` and `preview.byLdap` — so the renderer draws it with
+  // the other pages' table. Its values are the ENTRY's, every value, as the
+  // KDC reads them (stats.kerberosPacAttributeValues()); none is invented.
+  /**
+   * Builds `/admin/kerberos/claims`'s JSON: the PAC claim set, its claim ids,
+   * the setting that turns it on and one person's preview.
+   *
+   * @param previewUser - the person to preview
+   * @returns the JSON
+   */
+  kerberosClaimsJson(previewUser) {
+    const { log, stats, config, claimAttributes } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.kerberosClaimsJson(). previewUser=" +
+              previewUser);
+    const user = previewUser || 'alice';
+    let preview = [];
+    let catalogueValues = { entryFound: false, byLdap: {} };
+    try {
+      preview = stats.kerberosPacClaims({ username: user });
+      catalogueValues = stats.kerberosPacAttributeValues({ username: user },
+        claimAttributes.allNames());
+    } catch (e) {
+      log.debug("Caught in AdminViews.kerberosClaimsJson(): " +
+                ((e && e.message) || e));
+      // A directory that cannot be read costs the preview, never the page.
+      preview = [];
+    }
+    const json = {
+      enabled: config.value('krb5.pacClaims') === true,
+      setting: 'krb5.pacClaims',
+      types: stats.PAC_CLAIM_TYPES.slice(),
+      placeholders: stats.PLACEHOLDERS,
+      idFormat: 'ad://ext/<name>:<hex>, the hex the first 16 hexadecimal ' +
+                'digits (64 bits) of SHA-256 over the UTF-8 name; a name ' +
+                'that is already a whole ad://ext/<name>:<hex> id is used as ' +
+                'written.',
+      precedence: 'The person\'s realm-wide roles are a string claim under ' +
+                  'the rows (roles.claimName); a row of the same name ' +
+                  'wins. A ticked directory attribute is a string claim ' +
+                  'with every value on the person\'s entry, under both: ' +
+                  'a row or the roles claim with the same claim id wins. ' +
+                  'A service ticket carries what its TGT carried, ' +
+                  'with the application\'s own rows (krb5ClaimsPac on the ' +
+                  'application of the service principal name) added and ' +
+                  'winning by name.',
+      sets: stats.KERBEROS_CLAIM_SET_IDS.map(function (id) {
+        return { id: id, label: stats.CLAIM_SETS[id].label,
+                 claims: stats.claimSet(id).map(function (row) {
+                   return Object.assign({ claimId: stats.pacClaimId(row.name) },
+                                        row);
+                 }),
+                 attributes: claimAttributes.selectedNames(id) };
+      }),
+      attributeCatalogue: claimAttributes.catalogueRows().map(function (row) {
+        return Object.assign({ pacClaimId: stats.pacClaimId(row.ldap) }, row);
+      }),
+      attributeChoices: self.attributeClaimChoices(),
+      preview: Object.assign({ user: user, claims: preview },
+                             catalogueValues)
+    };
+    log.debug("Leaving AdminViews.kerberosClaimsJson(). " +
+              json.sets[0].claims.length + " row(s).");
+    return json;
+  }
+
   // The claims request being previewed, as the characters somebody typed.
   // Capped because it is echoed and because it is parsed — and the cap is
   // larger than the other echoed fields on this console for one reason: this
@@ -1999,7 +2978,17 @@ class AdminViews {
    */
   vcJson(previewUser) {
     const { log, vcClaims } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.vcJson(). previewUser=" + previewUser);
+    // WHAT EACH ATTRIBUTE WOULD SAY ABOUT THE PERSON PREVIEWED (#446), the
+    // page's last two columns: the value a credential would carry and where
+    // it comes from — the entry, the persona's generator, or nothing.
+    const persona = vcClaims.personaFor(previewUser);
+    const built = vcClaims.subjectClaimsFor(previewUser, {});
+    const byLdap: Record<string, any> = {};
+    built.report.forEach(function (item) {
+      byLdap[item.ldap.toLowerCase()] = item;
+    });
     const json = {
       selected: vcClaims.selectedNames(),
       defaults: vcClaims.DEFAULT_SELECTION,
@@ -2007,10 +2996,10 @@ class AdminViews {
       attributes: vcClaims.VC_ATTRIBUTES.map(function (row) {
         return { ldap: row.ldap, claim: row.claim.join('.'), label: row.label,
                  schema: row.schema, ldpTerm: row.ldpTerm || '',
-                 selected: vcClaims.isSelected(row.ldap) };
+                 selected: vcClaims.isSelected(row.ldap),
+                 example: self.vcExampleOf(row, persona, byLdap) };
       }),
-      preview: { user: previewUser,
-                 claims: vcClaims.subjectClaimsFor(previewUser, {}) }
+      preview: { user: previewUser, claims: built }
     };
     log.debug("Leaving AdminViews.vcJson().");
     return json;
@@ -2020,6 +3009,44 @@ class AdminViews {
   // is built by the function that builds the REAL one — see the note in
   // vc_verifier_config.js — so a caller reading this reply is reading the next
   // Authorization Request rather than a description of one.
+  // The one preview row as data: what an attribute would put in a credential
+  // for the person previewed, and where that value came from. It was the
+  // console's `vcExampleCell()`, which drew it; the page draws this (#446).
+  /**
+   * Says what one credential attribute would carry for the person previewed.
+   *
+   * @param row - the catalogue row
+   * @param persona - the invented person for the preview user
+   * @param byLdap - the built claims, keyed by lower-case attribute name
+   * @returns `{ value, source }`; `value` is null where there is none
+   */
+  vcExampleOf(row, persona, byLdap) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.vcExampleOf().");
+    const found = byLdap[row.ldap.toLowerCase()];
+    if (found) {
+      log.debug("Leaving AdminViews.vcExampleOf(). From the claims.");
+      return { value: String(found.value), source: found.source };
+    }
+    if (!row.from) {
+      // The only row with no generator: `description`, which this service
+      // already writes on every entry to record the protocols that person has
+      // used. Saying so is the point — it is the one attribute whose value is
+      // a real fact.
+      log.debug("Leaving AdminViews.vcExampleOf(). The entry's own.");
+      return { value: null, source: 'the entry\'s own' };
+    }
+    // Shown in the form the CLAIM would take rather than the form the
+    // attribute holds, because that is what the column above it is showing for
+    // the selected rows and a table with two conventions in one column is a
+    // table nobody can read. The two differ for exactly two attributes — a
+    // date and a postal address — and both differences are punctuation.
+    const raw = persona[row.from] == null ? '' : String(persona[row.from]);
+    log.debug("Leaving AdminViews.vcExampleOf(). Generated.");
+    return { value: row.toClaim ? row.toClaim(raw) : raw,
+             source: 'would be generated' };
+  }
+
   /**
    * Builds `/admin/vc-verifier-config`'s JSON: what the Verifier asks for and
    * the `dcql_query` that carries it.
@@ -2040,7 +3067,9 @@ class AdminViews {
                  identifier: item.identifier,
                  selectiveDisclosure: item.selectiveDisclosure,
                  holderBinding: item.holderBinding,
-                 configurations: item.configs };
+                 configurations: item.configs,
+                 // The page's wording of each (#446).
+                 identifierText: item.identifierText, what: item.what };
       }),
       ldpOmitted: vpConfig.ldpOmitted(),
       catalogue: vpConfig.REQUESTABLE.map(function (row) {
@@ -2053,12 +3082,68 @@ class AdminViews {
                  requested: vpConfig.isRequested(row.claim),
                  issued: vpConfig.carriedNow(row.claim) };
       }),
-      dcqlQuery: vpConfig.dcqlQuery(format)
+      dcqlQuery: vpConfig.dcqlQuery(format),
+      // What is asked for and not in the catalogue, with each one's DCQL
+      // path (#446): the page lists them under the table.
+      extras: vpConfig.requestedRows().filter(function (row) {
+        return !row.inCatalogue;
+      }).map(function (row) {
+        return { claim: row.claim,
+                 paths: vpConfig.dcqlPathsFor(format, row.claim) };
+      }),
+      // THE VERIFICATIONS STILL OPEN, AND WHAT EACH DECIDED (#587): the tab's
+      // outcome list under its Start a verification form, the answer of
+      // `GET /admin-api/verifications` with no `state` — one function, so the
+      // tab and the operation cannot list different things. It rides on this
+      // view because the tab is drawn from it alone.
+      recentVerifications: this.deps.vcVerifier.recentVerifications(
+        VERIFICATIONS_SHOWN),
+      // What the Start a verification form may name, read off the Verifier
+      // (#587) so the form's menus are the lists the start checks against.
+      startChoices: this.deps.vcVerifier.START_VOCABULARY
     };
     log.debug("Leaving AdminViews.vpConfigJson(). Asking for " +
               json.requested.length +
               " claim(s).");
     return json;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `GET /admin-api/verifications` (#587) — the OpenID4VP Verifier's, NOT a
+  // person's identity verifications (`verificationsJson()`, #127). With
+  // `state`, the verdict `verificationOutcome()` answers, `found: true`
+  // beside it — or `found: false` for a state this realm holds no record
+  // of, which the operation answers 404 with STS-VC-0042. Without it, the realm's open
+  // verifications, newest first: the list the Verifier request tab draws.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/verifications`'s answer: one verdict, or the open
+   * verifications.
+   *
+   * @param req - the request; only `req.query.state` is read
+   * @returns `{ found, ...outcome }` for a state, or `{ verifications,
+   *   total, limit }`
+   */
+  presentationVerificationsJson(req) {
+    const { log, vcVerifier } = this.deps;
+    log.debug("Entering AdminViews.presentationVerificationsJson().");
+    const query = (req && req.query) || {};
+    const state = String(query.state || '');
+    if (!state) {
+      const list = vcVerifier.recentVerifications(VERIFICATIONS_SHOWN);
+      log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+                list.total + " open.");
+      return list;
+    }
+    const outcome = vcVerifier.verificationOutcome(state);
+    if (!outcome) {
+      log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+                "Unknown state.");
+      return { found: false, state: state };
+    }
+    log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+              "received=" + outcome.received);
+    return Object.assign({ found: true }, outcome);
   }
 
   // The base URL of this service WITHOUT any realm prefix. Every URL this page
@@ -2117,10 +3202,26 @@ class AdminViews {
    * @returns the realm
    */
   realmJson(req, realm) {
-    const { log, stsKeysFor, realms } = this.deps;
+    const { log, stsKeysFor, realms, config } = this.deps;
     log.debug("Entering AdminViews.realmJson().");
     const prefix = realms.prefixOf(realm);
-    const base = this.realmRootUrl(req) + prefix;
+    // A REALM WITH LISTENERS OF ITS OWN (#99, #472) is reached on the base
+    // its applications are advertised on — `*`'s, for the realm as a whole —
+    // whichever listener this page was read on.
+    const advertised = realms.run(realm, function () {
+      return listenerMap.advertisedBase(null);
+    });
+    const base = (advertised || this.realmRootUrl(req)) + prefix;
+    const own = listenerMap.allListeners().filter(function (one: any) {
+      return one.owner === realm.id;
+    });
+    let bound: any[] = [];
+    try {
+      bound = require('../tls/listeners').status(realm.id);
+    } catch (e) {
+      log.debug("Caught in AdminViews.realmJson(): " +
+                ((e && e.message) || e));
+    }
     log.debug("Leaving AdminViews.realmJson().");
     return {
       id: realm.id,
@@ -2138,6 +3239,20 @@ class AdminViews {
       retiring: realms.retiringState(realm),
       pathPrefix: prefix,
       baseUrl: base,
+      // ITS OWN LISTENERS (#99, #472: `listeners.realm`): what the realm
+      // configured, and what THIS process holds — a listener is the front
+      // process's, so a page drawn by a request worker reports the
+      // configuration and no socket.
+      listeners: own.map(function (one: any): any {
+        return {
+          id: one.id, port: one.port, publicBaseUrl: one.publicBaseUrl,
+          hostnames: one.hostnames, clientAuth: one.clientAuth,
+          certificateSource: one.certificateFile ? 'file' : 'issued',
+          here: bound.filter(function (b: any): boolean {
+            return b.id === one.id;
+          })[0] || null
+        };
+      }),
       // The kid of the realm's signing key. It is the one fact on this page
       // that PROVES the realms are separate rather than asserting it — two
       // realms showing one kid would be two names for one authorization server.
@@ -2151,11 +3266,12 @@ class AdminViews {
       settings: this.realmSettingRows(realm),
       // The four a client asks for first, in this realm.
       endpoints: {
-        openidConfiguration: base + '/.well-known/openid-configuration',
+        openidConfiguration: helpers.rebaseTo(base, 'oauth-oidc') +
+                             '/.well-known/openid-configuration',
         authorizationServerMetadata: base +
                                      '/.well-known/oauth-authorization-server',
-        jwks: base + '/oauth2/jwks',
-        samlMetadata: base + '/saml2/metadata'
+        jwks: helpers.rebaseTo(base, 'oauth-oidc') + '/oauth2/jwks',
+        samlMetadata: helpers.rebaseTo(base, 'saml2') + '/saml2/metadata'
       }
     };
   }
@@ -2197,6 +3313,22 @@ class AdminViews {
                                                                   realm); }),
       support: realms.realmSupport()
     };
+    // WHAT THE PAGE DRAWS BESIDE THE LIST (#446): its settings, which the
+    // console used to add to this answer after building it, the domain the
+    // default realm's directory is rooted at, and the paging of the list.
+    out.settings = configSettingsJson('/admin/realms');
+    out.defaultDomain = realms.domainOf(realms.DEFAULT_ID);
+    out.count = realms.count();
+    out.currentName = realms.current().name;
+    // Whether a realm defined here comes back after a restart, which the
+    // caveat says — it was read once, when the console was wired.
+    const store = persistence.status();
+    out.persistence = { persistsRealms: !!store.persistsRealms,
+                        mode: store.mode };
+    out.paging = req
+      ? this.pagingJson(this.pagedRows(req.query, out.realms,
+                                       { path: '/admin/realms' }).paging)
+      : null;
     log.debug("Leaving AdminViews.realmsJson(). " + out.realms.length +
               " realm(s).");
     return out;
@@ -2212,7 +3344,7 @@ class AdminViews {
    * @returns the JSON
    */
   tokenLifetimesJson() {
-    const { log, config, stats, configSettingFor } = this.deps;
+    const { log, config, stats, configSettingFor, applications } = this.deps;
     log.debug("Entering AdminViews.tokenLifetimesJson().");
     const snapshot = stats.snapshot();
     const settings = TOKEN_LIFETIME_KEYS.map(function (key) {
@@ -2243,6 +3375,13 @@ class AdminViews {
     };
     log.debug("Leaving AdminViews.tokenLifetimesJson(). " + settings.length +
               " setting(s).");
+    // What the Source column names (#446): the two appconfig files, which
+    // a page drawn from this answer cannot ask the process for.
+    const block = this.settingsBlockOf('/admin/token-lifetimes');
+    (json as any).context = (block && block.context) || null;
+    // Which of these an application may override, and with which attribute
+    // (`applications.js`'s own table): the page's per-client column.
+    (json as any).overridable = applications.overridableSettings();
     return json;
   }
 
@@ -2329,6 +3468,21 @@ class AdminViews {
     };
     log.debug("Leaving AdminViews.samlAssertionsJson(). " + settings.length +
               " setting(s).");
+    // What the Source column names (#446): the two appconfig files, which
+    // a page drawn from this answer cannot ask the process for.
+    const block = this.settingsBlockOf('/admin/saml-assertions');
+    (json as any).context = (block && block.context) || null;
+    // The table the page lays its rows out by, and each lifetime in seconds
+    // (#446): what the page asked `admin_actions` and the settings while it
+    // drew.
+    const self = this;
+    (json as any).rows = SAML_ASSERTION_SETTINGS.map(function (row) {
+      return Object.assign({}, row);
+    });
+    (json as any).seconds = {};
+    SAML_ASSERTION_SETTINGS.forEach(function (row) {
+      (json as any).seconds[row.key] = self.samlAssertionSeconds(row.key);
+    });
     return json;
   }
 
@@ -2373,6 +3527,23 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
+  // The outbound SCIM clients' view (#552), or null where the module is not
+  // loaded.
+  scimClientsView(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.scimClientsView().");
+    let out = null;
+    try {
+      out = require('../scim/scim_client').view((req && req.query) || {});
+    } catch (e) {
+      log.debug("Caught in AdminViews.scimClientsView(): " +
+                ((e && e.message) || e));
+      out = null;
+    }
+    log.debug("Leaving AdminViews.scimClientsView().");
+    return out;
+  }
+
   scimJson(req) {
     const { log, stats, scimMap } = this.deps;
     log.debug("Entering AdminViews.scimJson().");
@@ -2407,7 +3578,11 @@ class AdminViews {
       // The twenty-one scim.* rows this page now edits, described. It answers
       // the question the rest of this reply cannot: not what the server does,
       // but where the value that decides it came from.
-      settings: configSettingsJson('/admin/scim')
+      settings: configSettingsJson('/admin/scim'),
+      // THE CLIENTS TAB (#552): the outbound SCIM clients, and with
+      // `?client=` one client's page. Read lazily — `scim/scim_client` is
+      // built at 22 — and null in a process that never loaded it.
+      scimClients: this.scimClientsView(req)
     };
     log.debug("Leaving AdminViews.scimJson(). " + counters.total +
               " request(s) counted.");
@@ -2606,8 +3781,8 @@ class AdminViews {
    *
    * @param query - the query
    * @param total - how many rows the list has
-   * @param options - the list's name, when a page has several, and its default
-   *   rows per page
+   * @param options - the list's name, when a page has several, its default
+   *   rows per page and, optionally, its most rows per page
    * @returns the paging
    */
   pagingOf(query, total, options?) {
@@ -2618,9 +3793,14 @@ class AdminViews {
     log.debug("Entering AdminViews.pagingOf(). total=" + total + ", param=" +
               param);
     const askedPer = parseInt(String(query.per || ''), 10);
+    // `options.maxPer` is a list's own ceiling under MAX_ROWS, for a page
+    // whose owner has said how long a section may be (Protocols → PKI's five,
+    // 2026-09-30): a hand-typed `?per=` can shorten such a list and never
+    // lengthen it.
+    const ceiling = Math.min(MAX_ROWS, opts.maxPer || MAX_ROWS);
     const perPage = (isFinite(askedPer) && askedPer > 0)
-      ? Math.min(askedPer, MAX_ROWS)
-      : (opts.defaultPer || DEFAULT_PER_PAGE);
+      ? Math.min(askedPer, ceiling)
+      : Math.min(opts.defaultPer || DEFAULT_PER_PAGE, ceiling);
     // At least one page even when nothing matched, so "page 1 of 1" is what an
     // empty list says rather than "page 1 of 0".
     const pages = Math.max(1, Math.ceil(total / perPage));
@@ -2669,8 +3849,48 @@ class AdminViews {
     log.debug("Leaving AdminViews.pagingJson().");
     return {
       page: pg.page, pages: pg.pages, perPage: pg.perPage,
-      firstRow: pg.firstRow, lastRow: pg.lastRow, total: pg.total
+      firstRow: pg.firstRow, lastRow: pg.lastRow, total: pg.total,
+      // WHAT THE PAGING CONTROL IS DRAWN FROM (#446): the query parameter
+      // that moves this list and the noun its rows are counted in. They
+      // were on the paging object the console's own renderer was handed and
+      // not on this answer, so a page drawn from the answer alone — which
+      // is every page of the static console — could not draw the control.
+      param: pg.param, noun: pg.noun
     };
+  }
+
+  // ONE RETIRED KEY'S CERTIFICATE, as the chain a reader saves (#446): what
+  // `/admin/keys/history/certificate` served while the console was drawn on
+  // the server, for `GET /admin-api/keys/history/certificate` now. A
+  // certificate is a public document — the half of a retired key worth
+  // keeping — so this is a read.
+  /**
+   * Returns one signing key's certificate chain, leaf first, as PEM.
+   *
+   * @param unit - the signing unit (`jose:RS256`)
+   * @param kid - the key's identifier
+   * @returns the chain, or null when this realm holds none for that key
+   */
+  signingHistoryCertificate(unit, kid) {
+    const { log, realms, signingHistory: history } = this.deps;
+    log.debug("Entering AdminViews.signingHistoryCertificate().");
+    const id = realms.currentId();
+    let row = null;
+    try {
+      history.observe(id, { reason: 'observed' });
+      row = history.rowsOf(id, String(unit || '')).filter(function (one) {
+        return String(one.kid) === String(kid || '');
+      })[0] || null;
+    } catch (e) {
+      log.debug("Caught in AdminViews.signingHistoryCertificate(): " +
+                ((e && e.message) || e));
+      row = null;
+    }
+    const one = row && row.certificate ? row.certificate : null;
+    log.debug("Leaving AdminViews.signingHistoryCertificate(). " +
+              (one && one.certificatePem ? "Held." : "None."));
+    return one && one.certificatePem
+      ? [one.certificatePem].concat(one.chainPem || []).join('\n') : null;
   }
 
   // The slice, with the paging that produced it. Written once because seven
@@ -2725,27 +3945,49 @@ class AdminViews {
     const paged = this.pagedRows(q, view.rows, { noun: 'generations' });
     view.rows = paged.shown;
     view.paging = this.pagingJson(paged.paging);
-    Object.defineProperty(view, 'pagingRaw',
-                          { value: paged.paging, enumerable: false });
     log.debug("Leaving AdminViews.signingHistoryView(). " + view.rows.length +
               " of " + view.total + ".");
     return view;
   }
 
+  // ---------------------------------------------------------------------------
+  // PAGE, THEN DECORATE (#352, 2026-09-29).
+  //
+  // Every list here was built WHOLE and then sliced, and where a row's cells
+  // cost something — a directory read, an unseal, a certificate parse — the
+  // whole population paid for one page of it: `/admin/users` asked the
+  // credential store about everybody in the realm to draw fifty rows.
+  // `options.decorate(row)` is the other order: the list is filtered and
+  // sorted on what is cheap, paged, and only the rows SHOWN are handed to the
+  // decorator, whose answer replaces the row in `shown`. A caller that
+  // passes none gets exactly the slice it always got.
+  //
+  // The rule it serves: a filter that needs the decoration (the users page's
+  // `?factor=`) cannot be applied after it, so such a filter is the caller's
+  // to answer from a one-pass census before paging — never by decorating
+  // everybody.
+  // ---------------------------------------------------------------------------
   /**
-   * Pages a list of rows.
+   * Pages a list of rows, decorating only the rows shown.
    *
    * @param query - the query
    * @param rows - the rows
-   * @param options - as `pagingOf()` takes them
+   * @param options - as `pagingOf()` takes them, and `decorate(row)`, applied
+   *   to each shown row and returning the row to show
    * @returns the paging and the rows shown
    */
   pagedRows(query, rows, options?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pagedRows().");
     const pg = this.pagingOf(query, rows.length, options);
+    const slice = rows.slice(pg.offset, pg.offset + pg.perPage);
+    const decorate = options && typeof options.decorate === 'function'
+      ? options.decorate : null;
+    const shown = decorate
+      ? slice.map(function (row) { return decorate(row); })
+      : slice;
     log.debug("Leaving AdminViews.pagedRows().");
-    return { paging: pg, shown: rows.slice(pg.offset, pg.offset + pg.perPage) };
+    return { paging: pg, shown: shown };
   }
 
   // The filtered, paged token list and the reply built from it. The WHOLE view
@@ -2919,7 +4161,9 @@ class AdminViews {
         // because one is built out of the other. What DID change under it is
         // the paging: a page is now a whole number of sets, so this array is
         // between `perPage` and three times it rather than exactly `perPage`.
-        issued: shownRecords
+        issued: shownRecords,
+        // The paging the page draws its pager from (#446).
+        paging: this.pagingJson(paging)
       }
     };
   }
@@ -2961,7 +4205,7 @@ class AdminViews {
    * @returns the view
    */
   sessionsView(req) {
-    const { log } = this.deps;
+    const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.sessionsView().");
     const query = req.query || {};
@@ -2993,13 +4237,20 @@ class AdminViews {
     });
     // THE UNAUTHENTICATED ONES, AS A LIST OF THEIR OWN (2026-09-05).
     //
-    // NOT FILTERED AND NOT PAGED, deliberately, where the table above it is
-    // both. The two lists answer different questions: the main one is *what is
-    // live*, which is long and needs narrowing, and this one is *is anybody in
-    // here without having signed in*, which is a question about the whole
-    // service and would be answered wrongly by a filter somebody had left set.
-    // A search box that could hide one of these rows would make the section
-    // worse than not having it.
+    // NOT FILTERED, deliberately, where the table above it is. The two lists
+    // answer different questions: the main one is *what is live*, which is
+    // long and needs narrowing, and this one is *is anybody in here without
+    // having signed in*, which is a question about the whole service and
+    // would be answered wrongly by a filter somebody had left set. A search
+    // box that could hide one of these rows would make the section worse
+    // than not having it.
+    //
+    // BUT PAGED (#313), on `anonymousPage` with the shared `per`. It was
+    // drawn whole, and while `authn.unauthenticatedSessions` is on it holds a
+    // row per anonymous visit until each expires — a list nothing bounds but
+    // time, which is what the console's paging rule is about. Paging hides no
+    // row from the count: `unauthenticatedHeld` is the whole list, and the
+    // tile reads it.
     //
     // It is a SECTION rather than a column on the table above because the
     // answer is almost always "none", and a column that is the same on every
@@ -3008,6 +4259,8 @@ class AdminViews {
     const unauthenticated = all.filter(function (row) {
       return row.authenticated === false;
     });
+    const anonymousPage = this.pagedRows(query, unauthenticated,
+      { name: 'anonymous', noun: 'sessions' });
     log.debug("Leaving AdminViews.sessionsView(). " + shown.length +
               " row(s) of " +
               filtered.length + " (" + all.length + " live).");
@@ -3025,12 +4278,17 @@ class AdminViews {
         // the two things a caller asks and deriving the first from the second
         // would make an empty list and an absent field look alike.
         unauthenticatedHeld: unauthenticated.length,
-        unauthenticatedSessions: unauthenticated.map(function (row) {
+        unauthenticatedSessions: anonymousPage.shown.map(function (row) {
           return { id: row.id, family: row.family, username: row.username,
                    sub: row.sub, protocol: row.protocol,
                    sessionId: row.sessionId,
                    startedAt: row.startedAt, expiresAt: row.expiresAt,
-                   carries: row.carries, key: row.key };
+                   carries: row.carries, key: row.key,
+                   // What the page's row draws too (#446).
+                   kind: row.kind, handle: row.handle, acr: row.acr,
+                   amr: row.amr, detail: row.detail,
+                   terminable: row.terminable, why: row.why,
+                   expiryRule: row.expiryRule };
         }),
         filter: { q: wantedText || null, protocol: wantedProtocol || null },
         // The clamped values, not what was asked for: `?page=999` on a two-page
@@ -3043,7 +4301,16 @@ class AdminViews {
         // arithmetics produced it, and every row already says which family it
         // is.
         expiryRules: logoutReader.SESSION_EXPIRY_RULES || {},
-        sessions: shown
+        sessions: shown,
+        // What the page draws from beside the rows (#446): the protocol
+        // filter's choices and the paging.
+        protocols: this.sessionProtocolsIn(all),
+        // Whether sessions that authenticated nobody are kept, which the
+        // page says beside them.
+        unauthenticatedKept: !!config.value('authn.unauthenticatedSessions'),
+        paging: this.pagingJson(paging),
+        // The unauthenticated section's page (#313), on `anonymousPage`.
+        unauthenticatedPaging: this.pagingJson(anonymousPage.paging)
       }
     };
   }
@@ -3107,11 +4374,23 @@ class AdminViews {
         live: page.live,
         matched: page.matched,
         shown: page.rows.length,
+        // A TEXT SEARCH READS THE NEWEST ROWS ONLY (#222): the columns it
+        // reads are sealed in a database, so it is done in memory over a
+        // bounded window, and says so when the window did not hold them all.
+        searchNote: page.searched !== undefined && !page.searchedAll
+          ? 'The text search read the newest ' + page.searched + ' rows ' +
+            'matching the other filters, not all of them: in a database ' +
+            'the searched columns are sealed and are searched here, in ' +
+            'memory. Narrow it with the format, use or state filter.'
+          : '',
         filter: page.filter,
         formats: usedAssertions.FORMATS,
         uses: usedAssertions.USES,
         states: usedAssertions.STATES,
-        rows: page.rows
+        rows: page.rows,
+        // The paging control's own object as well as its members spread
+        // below, as every other answer carries it (#446).
+        paging: self.pagingJson(read.paging)
       }, self.pagingJson(read.paging));
       return { json: json, rows: page.rows, paging: read.paging,
                filter: page.filter, summary: summary, live: page.live };
@@ -3234,7 +4513,10 @@ class AdminViews {
         neverSentToClients: true,
         subsystems: subsystems,
         unregisteredSeen: unregisteredSeen,
-        codes: shown
+        codes: shown,
+        // The paging a page draws its pager from (#446), as every paged
+        // answer carries it.
+        paging: this.pagingJson(paging)
       }
     };
   }
@@ -3306,6 +4588,13 @@ class AdminViews {
     log.debug("Leaving AdminViews.auditView(). " + shown.length +
               " row(s) of " +
               filtered.length + ".");
+    const known = this.knownUserKeys();
+    const knownActors: Record<string, boolean> = {};
+    shown.forEach(function (row) {
+      if (row.actor && known[row.actor]) {
+        knownActors[row.actor] = true;
+      }
+    });
     return {
       wantedCategory: wantedCategory, wantedAction: wantedAction,
       wantedOutcome: wantedOutcome, wantedActor: wantedActor,
@@ -3320,11 +4609,10 @@ class AdminViews {
         recorded: summary.recorded, dropped: summary.dropped,
         maxEvents: summary.maxEvents, protocolCalls: summary.protocolCalls,
         matched: filtered.length, shown: shown.length,
-        // The lowest and highest sequence numbers still held. A caller polling
-        // this endpoint uses them rather than a timestamp: `seq` is monotonic
-        // and never reused, so "everything after 4,102" is exact, and a gap
-        // between the last seq you saw and `oldestSeq` is precisely how many
-        // events you missed.
+        // The numbers of the oldest and newest events held. `seq` is unique
+        // across every process and never reused, and rises within each one
+        // (#465) — but it is not one order across processes, so a caller
+        // polling this resumes by `at`, with `seq` as the tie-break.
         oldestSeq: summary.oldestSeq, newestSeq: summary.newestSeq,
         byCategory: summary.byCategory, byOutcome: summary.byOutcome,
         byAction: summary.byAction,
@@ -3341,9 +4629,1538 @@ class AdminViews {
         // what the `category`, `action` and `outcome` filters take.
         categories: auditLog.CATEGORIES, actions: auditLog.ACTIONS,
         outcomes: auditLog.OUTCOMES,
-        events: shown
+        events: shown,
+        // What the page draws from beside the rows (#446): the paging, which
+        // actors on this page have a user page to link to, and the page's
+        // settings.
+        paging: this.pagingJson(paging),
+        knownActors: knownActors,
+        settings: configSettingsJson ? configSettingsJson('/admin/audit')
+          : null,
+        // WHAT THE PAGE'S CLOSING NOTE IS ABOUT (#543 round 2): whether a
+        // presented password is verified in this realm, and whether this log
+        // is persisted with what this service mints (product mode on a
+        // postgres store). The note said "in memory … checks no password
+        // anywhere" in every configuration until then.
+        verifiesCredentials: mode.verifiesCredentials(),
+        persisted: !!(persistence.mintedStatus() || {}).persisting
       }
     };
+  }
+
+  // One attribute off an entry the directory reader handed back, canonically
+  // spelled or not. `objectFor()` returns them canonically spelled and a caller
+  // asking for `cn` should not have to know that.
+  /**
+   * Returns an entry's first value of an attribute, matched case-insensitively.
+   *
+   * @param entry - a directory entry with an `attributes` object
+   * @param name - the attribute name
+   * @returns the first value as a string, or an empty string
+   */
+  firstAttributeValue(entry, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.firstAttributeValue().");
+    if (!entry || !entry.attributes) {
+      log.debug("Leaving AdminViews.firstAttributeValue().");
+      return '';
+    }
+    const wanted = String(name).toLowerCase();
+    const key = Object.keys(entry.attributes).filter(function (one) {
+      return String(one).toLowerCase() === wanted;
+    })[0];
+    const values = key ? entry.attributes[key] : null;
+    log.debug("Leaving AdminViews.firstAttributeValue().");
+    return (values && values.length) ? String(values[0]) : '';
+  }
+
+  // WHAT A BOX IS, WHICH IS THE ONE QUESTION `delegation_map.js` DELIBERATELY
+  // CANNOT ANSWER. It is handed this function and asks it once per node.
+  //
+  // The three states are `delegationPartyCell()`'s three states, and they are
+  // the same three on purpose: a name this console can resolve, a name it could
+  // file somebody under and never has, and a name for something the registry
+  // has never seen. What the picture does with them is what a picture can do
+  // and a table cannot — the first two get a SHAPE and the third gets a DASHED
+  // one — and the row under the diagram still draws the cell, so nothing that
+  // was linkable in the table stops being linkable here.
+  //
+  // **THE LABEL IS THE CN WHERE THERE IS ONE.** A directory entry's `cn` and an
+  // application entry's `appName` are what somebody CALLED this thing, and the
+  // identifier is what a protocol spelled it as; on a diagram the first is
+  // worth more than the second, and the second is one line below it and in the
+  // tooltip. Where there is no entry there is no cn, and the identifier is all
+  // there is.
+  /**
+   * Works out how the delegation picture draws one node.
+   *
+   * The shape comes from whether the directory and the registry know the
+   * party, and the label is its cn or application name where there is one.
+   *
+   * @param node - a node of the delegation graph
+   * @param known - the usernames this console has seen, as object keys
+   * @returns an object of shape, label, sublabel, identifier, title, href
+   *   and dashed; the service's own node has no identifier
+   */
+  delegationNodeLook(node, known) {
+    const { log, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationNodeLook().");
+    if (node.kind === 'sts') {
+      log.debug("Leaving AdminViews.delegationNodeLook().");
+      // The one box that is not a party. It carries the REALM because a realm
+      // is a whole logical copy of this service — two realms' pictures are two
+      // different services' pictures — and it says `default` rather than
+      // nothing in the realm that has no prefix, since a hexagon labelled only
+      // `IYA STS` would be silent about the one thing this box is here to say.
+      return {
+        shape: 'sts',
+        label: 'IYA STS',
+        sublabel: 'realm: ' + (node.realm ? node.realm.name : 'Default') +
+                  (node.realm && !node.realm.isDefault ?
+                   ' (' + node.realm.id + ')' : ''),
+        title: 'THIS SERVICE, in the trust realm ' +
+          (node.realm ? node.realm.name + ' (' + node.realm.id + ')' :
+           'default') +
+          '.\nIssuer: ' + (node.issuer || '(unset)') +
+          '\nEvery line in this picture exists because this service issued ' +
+          'or refused a credential: ' + node.issued + ' issued, ' +
+          node.refused +
+          ' refused.\nThe dashed lines leaving it go to whoever ASKED — the ' +
+          'intermediary where a chain has one, the initial identity where it ' +
+          'does not.',
+        href: '/admin/realms',
+        dashed: false
+      };
+    }
+
+    // The directory's own answer about a PERSON. `directoryReader` is a slot
+    // and is empty in a build with no `ldap_server.js`, which is a state this
+    // console reports everywhere else rather than guessing through — so with no
+    // directory every party falls back to the role's shape, dashed, and the
+    // page says why.
+    let entry = null;
+    if (directoryReader && node.key) {
+      const info = directoryReader(node.key);
+      entry = info && info.found ? info.entry : null;
+    }
+    // The registry's answer about an APPLICATION. Looked up by the identifier
+    // the ACT carried rather than by the node's id: the id is normalised (see
+    // `nodeIdOf()` in delegation.js) and `ou=applications` is keyed by what a
+    // caller actually presented.
+    const application = node.application ? applications.get(node.application) :
+                        null;
+
+    const isPerson = !!entry;
+    const isApplication = !!application;
+    const shape = isPerson && isApplication ? 'both'
+                : isApplication ? 'application'
+                : isPerson ? 'person'
+                // Nothing is known. The ROLE decides, which is the ROLES table
+                // read as a drawing: an initial identity is a person, a target
+                // is an application, and an intermediary is drawn as an
+                // application because that is what a front-end service is.
+                : node.chiefRole === 'initial' ? 'person' : 'application';
+
+    const cn = entry ? this.firstAttributeValue(entry, 'cn') : '';
+    const appName = application ? (application.name || application.dnLabel) :
+                    '';
+    const label = cn || appName || node.id;
+
+    // WHAT A PROTOCOL WOULD HAVE TO PRESENT TO REACH THIS BOX. Added
+    // 2026-08-27, and it exists because of the paragraph above it: the label is
+    // the CN where there is one, so a rectangle reading `Acme Web` said nothing
+    // anywhere on the diagram about the string a request would have to carry.
+    // That is the fact somebody opens a delegation picture to get — the
+    // `client_id` they are about to put in a token request, the `AppliesTo` in
+    // the RequestSecurityToken they are about to send — and it was in the
+    // tooltip, which is not a place a diagram pasted into a ticket keeps.
+    //
+    // The list comes from `applications.identifiersOf()` rather than from a
+    // walk of the entry here: which attribute is a family's identifier and what
+    // the specification calls it are that module's statements, and a picture
+    // holding a second opinion about either is drift nothing can see.
+    //
+    // **THE SPELLING IS OF THE NAME THE ACT ACTUALLY CARRIED**, not of the
+    // first identifier the entry happens to hold. An application answering to a
+    // client_id AND an entityID is one box, and which of the two is on the line
+    // is what the act says; naming the other one would put a string on the
+    // picture that nothing in this picture ever presented. The rest are in the
+    // tooltip, where "it also answers to" belongs.
+    const identifiers = application ? applications.identifiersOf(application) :
+                        [];
+    const presented = node.application ? String(node.application) : '';
+    // GROUPED BY VALUE AND NOT BY ATTRIBUTE, because one string is commonly two
+    // families' identifier and the box has room for one line: an application
+    // declared for WS-Trust and SAML 2.0 carries `https://esb.example.com` on
+    // `wstrustAppliesTo` AND on `samlEntityId`, and drawing the first of those
+    // would pick one of two true answers. `AppliesTo / entityID:
+    // https://esb.example.com` is the whole fact and is one line.
+    //
+    // Exact equality throughout, because `applications.js` does not case-fold
+    // an identifier anywhere else either — an audience that differs by a
+    // character is a different audience, and matching loosely here would be
+    // this page deciding a comparison rule on that module's behalf.
+    const byValue = [];
+    identifiers.forEach(function (row) {
+      row.values.forEach(function (value) {
+        const already =
+            byValue.filter(function (one) { return one.value === value; })[0];
+        if (already) {
+          if (already.names.indexOf(row.name) < 0) already.names.push(row.name);
+          return;
+        }
+        byValue.push({ value: value, names: [row.name] });
+      });
+    });
+    // WHICH ONE GOES ON THE BOX. The name the ACT carried wins, because that is
+    // the string on the line the reader is following; where the act's name is
+    // not an identifier attribute at all — the registry key of an entry made by
+    // hand, or an application reached through an audience it registered — the
+    // first declared identifier is drawn instead, since a box that named only
+    // the key would be silent about the one thing somebody opened the picture
+    // to get. Everything not drawn is in the tooltip.
+    const chosen =
+        byValue.filter(function (one) { return one.value === presented; })[0] ||
+                   byValue[0] || null;
+    // Nothing at all where the drawn name IS the identifier and no family
+    // claims it: the string is already on the box, and a second line repeating
+    // it is the same fact drawn twice. Where a family DOES claim it, the word
+    // alone is drawn — `client_id` under `acme-web` says what kind of name that
+    // is, which the box could not otherwise say.
+    const identifierLine = chosen
+      ? chosen.names.join(' / ') +
+        (chosen.value === label ? '' : ': ' + chosen.value)
+      : (presented && presented !== label ? presented : '');
+
+    const parts = [];
+    if (isPerson) parts.push('person');
+    if (isApplication) parts.push('application');
+    // WHICH STORE HAS NOT HEARD OF IT, and the two are different sentences. A
+    // target drawn as a rectangle is missing from `ou=applications` — the
+    // REGISTRY — and an initial identity drawn as a figure is missing from
+    // `ou=users` — the DIRECTORY. One word for both would send half the readers
+    // to the wrong page to look for it, which is the mistake
+    // `delegationPartyCell()` avoids by drawing up to two links rather than
+    // one.
+    const missing = shape === 'person' ? 'not in the directory' : 'not in ' +
+        'the registry';
+    const sublabel = parts.length ? parts.join(' + ')
+                   : (node.chiefRole ? node.chiefRole + ', ' + missing :
+                      missing);
+
+    // Where the box goes when it is clicked. ONE link, where the table draws up
+    // to two — an SVG shape can be inside one anchor and the party table under
+    // the picture carries both, which is where a reader who wants the other one
+    // looks. The person's page wins when this console has SEEN them
+    // authenticate, because that page answers the question a delegation raises
+    // (what else was issued in their name); the application page otherwise.
+    let href = '';
+    if (node.key && known[node.key]) {
+      href = '/admin/users' + self.queryWith({ user: node.key }, {});
+    } else if (isApplication) {
+      href = '/admin/applications' +
+             self.queryWith({ application: node.application }, {});
+    }
+
+    const title = [
+      label === node.id ? node.id : label + ' — ' + node.id,
+      node.presented && node.presented !== node.id
+        ? 'presented as ' + node.presented : '',
+      node.application && node.application !== node.id
+        ? 'named as an application: ' + node.application : '',
+      // The audiences and client_ids an act or a configured pair named it by
+      // (2026-10-06): drawn as this one box because they resolve to it.
+      (node.aliases || []).length
+        ? 'also named as ' + node.aliases.join(', ') + ', which this ' +
+          'application registered' : '',
+      entry ? 'In the directory at ' + entry.dn + '.'
+            : (node.key ? 'No entry under ou=users names this.' : ''),
+      application ? 'In the applications registry' +
+        (application.dn ? ' at ' + application.dn : '') + '.'
+        : (node.application ? 'NOT in the applications registry — the ' +
+           'registry holds what this service has been ASKED ABOUT, and a ' +
+           'delegation naming something nobody has otherwise mentioned is ' +
+           'ordinary for an RFC 8693 audience.' : ''),
+      // EVERY name it answers to, family by family, because the box has room
+      // for one. This is where an application that is a client_id in one
+      // protocol and an entityID in another says so.
+      identifiers.length
+        ? 'It answers to: ' + identifiers.map(function (row) {
+            return row.name + ' ' + row.values.join(', ') +
+                   ' (' + row.families.join(', ') + ')';
+          }).join('; ') + '.'
+        : '',
+      (presented && chosen && chosen.value !== presented)
+        ? 'THE NAME ON THE BOX IS NOT THE NAME THIS ACT PRESENTED. It ' +
+          'presented "' +
+          presented + '", which none of the identifier attributes above ' +
+          'carries — so which family spells it that way cannot be said, and ' +
+          'the first declared identifier is drawn instead. An entry created ' +
+          'by a protocol sighting carries that family\'s attribute; one made ' +
+          'by hand, or reached through an audience it registered, need not.'
+        : '',
+      'Roles: initial ' + node.roles.initial + ', intermediary ' +
+        node.roles.intermediary + ', target ' + node.roles.target + '.',
+      node.selfTarget
+        ? 'Some act named this party as BOTH the intermediary and the target ' +
+          '— a ticket to ITSELF, which is what S4U2Self is. There is no line ' +
+          'for it because an arrow leaving a box and coming back is a ' +
+          'drawing of nothing.'
+        : '',
+      node.protocols.length ? 'Seen over: ' + node.protocols.join(', ') + '.' :
+      '',
+      node.what || ''
+    ].filter(Boolean).join('\n');
+
+    log.debug("Leaving AdminViews.delegationNodeLook().");
+    return { shape: shape, label: label, sublabel: sublabel,
+             identifier: identifierLine, title: title,
+             href: href, dashed: !isPerson && !isApplication };
+  }
+
+  // What every box is called and how it is drawn, worked out once per page.
+  // `labelOf` is separate because a `reaches` line names a party that is
+  // NEITHER of its ends — see the map route's call — and the renderer has no
+  // `resolve()` answer for it.
+  /**
+   * Works out every box's look (label, shape, identifier) once for a
+   * picture page.
+   *
+   * @param graph - the graph from delegation.graph()
+   * @param known - the identities and applications the console knows
+   * @returns an object of looks (by node id), resolve (for the renderer)
+   *   and labelOf (an id's label)
+   */
+  delegationLooks(graph, known) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationLooks().");
+    const looks = {};
+    graph.nodes.forEach(function (node) {
+      looks[node.id] = self.delegationNodeLook(node, known);
+    });
+    log.debug("Leaving AdminViews.delegationLooks(). " + graph.nodes.length +
+              " box(es).");
+    return {
+      looks: looks,
+      resolve: function (node) {
+        log.debug("Entering resolve().");
+        log.debug("Leaving resolve().");
+        return looks[node.id];
+      },
+      labelOf: function (id) {
+        log.debug("Entering labelOf().");
+        log.debug("Leaving labelOf().");
+        return looks[id] ? looks[id].label : id;
+      }
+    };
+  }
+
+  // What a ROLE is called on this console, off `delegation.ROLES` rather than
+  // out of a list here — the same rule the mechanism filter follows. A role
+  // that existed in the store and was unnamed on a page would be a blank cell.
+  // Moved here from the console (#446): the key is markup drawn out of the
+  // layout module's glyphs, which only this process holds, so an answer
+  // carries it as it carries the drawing (`mapKey`).
+  // THE KEY. Drawn out of `delegation_map.js`'s own glyph functions and its own
+  // palette rather than out of a second set of shapes written for the legend,
+  // because a legend that is drawn separately is a legend that will eventually
+  // describe a picture this service no longer draws. `options.issuance` adds
+  // the two lines only the person's picture has. It is a parameter rather than
+  // two more rows for everybody, because a legend must describe the diagram
+  // beside it: a reader of /admin/delegation/map looking for a dotted `signed
+  // in` line would never find one, and a key that lists shapes a page does not
+  // draw teaches a reader to stop trusting it.
+  /**
+   * Draws the key to the delegation pictures, one row per shape or line,
+   * using delegation_map.js's own glyphs and palette.
+   *
+   * @param options - optional; `issuance` adds the lines only the person's
+   *   picture draws (signed in, ordinary grant, addressed to)
+   * @returns the key as an HTML table
+   */
+  delegationMapKey(options?) {
+    const { log, delegationMap } = this.deps;
+    log.debug("Entering AdminViews.delegationMapKey().");
+    const swatch = function (inner, width) {
+      log.debug("Entering swatch().");
+      log.debug("Leaving swatch().");
+      return '<svg width="' + width + '" height="40" viewBox="0 0 ' + width +
+        ' 40" aria-hidden="true">' + inner + '</svg>';
+    };
+    const C = delegationMap.COLOURS;
+    // Drawn by `delegation_map.js` rather than here, so that the round end and
+    // the pointed end in the key are the ones the picture actually puts on a
+    // line. The arrowhead used to be drawn on this side and the tail disc would
+    // have made that two shapes to keep in step instead of one.
+    const line = function (colour, dash) {
+      log.debug("Entering line().");
+      log.debug("Leaving line().");
+      return delegationMap.edgeSample(colour, dash);
+    };
+    const items = [
+      { art: swatch(delegationMap.personGlyph(9, 3, C.indigo, false, 1), 44),
+        what: MAP_KEY_PROSE.rows[0] },
+      { art: swatch('<rect x="3" y="9" width="56" height="22" rx="5" fill="' +
+                    C.panel +
+                    '" stroke="' + C.indigo + '" stroke-width="1.5"/>', 64),
+        what: MAP_KEY_PROSE.rows[1] },
+      { art: swatch('<rect x="3" y="4" width="56" height="32" rx="5" fill="' +
+                    C.panel +
+                    '" stroke="' + C.indigo + '" stroke-width="1.5"/>' +
+                    delegationMap.personGlyph(7, 3, C.indigo, false, 0.85), 64),
+        what: MAP_KEY_PROSE.rows[2] },
+      { art: swatch('<path d="' + delegationMap.hexPath(3, 6, 58, 28) +
+                    '" fill="' +
+                    C.wash + '" stroke="' + C.indigo + '" stroke-width="1.8"/>',
+                    64),
+        what: MAP_KEY_PROSE.rows[3] },
+      // Wider than every other swatch here, and it has to be: the whole point
+      // of the row is the THIRD line, and an identifier is the one thing on a
+      // box that is as long as a protocol allows. At 80 the sample ran out
+      // through its own rectangle, which is precisely the mistake this row is
+      // teaching a reader to look for.
+      { art: swatch('<rect x="3" y="2" width="104" height="36" rx="5" fill="' +
+                    C.panel +
+                    '" stroke="' + C.indigo + '" stroke-width="1.5"/>' +
+                    '<text x="55" y="15" text-anchor="middle" font-size="10" ' +
+                    'font-weight="600" fill="' + C.ink + '">Acme ' +
+                    'Web</text><text x="55" y="25" text-anchor="middle" ' +
+                    'font-size="8" fill="' +
+                    C.quiet + '">application</text><text x="55" y="34" ' +
+                    'text-anchor="middle" font-size="8" fill="' +
+                    C.quiet + '">client_id: acme-web</text>', 110),
+        what: MAP_KEY_PROSE.rows[4] },
+      { art: swatch(delegationMap.personGlyph(9, 3, C.grey, true, 1), 44),
+        what: MAP_KEY_PROSE.rows[5] },
+      { art: swatch(line(C.indigo, ''), 64),
+        what: MAP_KEY_PROSE.rows[6] },
+      { art: swatch(line(C.amber, ''), 64),
+        what: MAP_KEY_PROSE.rows[7] },
+      { art: swatch(line(C.green, ''), 64),
+        what: MAP_KEY_PROSE.rows[8] },
+      { art: swatch(line(C.indigo, ''), 64),
+        what: MAP_KEY_PROSE.rows[9] },
+      { art: swatch(line(C.indigo, '7 4'), 64),
+        what: MAP_KEY_PROSE.rows[10] },
+      // #186: the configured pairs, beside the acts.
+      { art: swatch(line(C.indigo, '6 4'), 64),
+        what: MAP_KEY_PROSE.rows[11] },
+      { art: swatch(line(C.red, '5 3'), 64),
+        what: MAP_KEY_PROSE.rows[12] },
+      { art: swatch(line(C.grey, '4 3'), 64),
+        what: MAP_KEY_PROSE.rows[13] }
+    ];
+    if (options && options.issuance) {
+      items.push(
+        { art: swatch(line(C.indigo, '2 3'), 64),
+          what: MAP_KEY_PROSE.issuance[0] },
+        { art: swatch(line(C.indigo, ''), 64),
+          what: MAP_KEY_PROSE.issuance[1] },
+        { art: swatch(line(C.indigo, ''), 64),
+          what: MAP_KEY_PROSE.issuance[2] });
+    }
+    // THE KEY AS A FILLED TEMPLATE (#543), so a reader in another language
+    // gets each row's sentence translated and every swatch as it was. The
+    // rows past `MAP_KEY_PROSE.rows` ride in the last row's sentence, as
+    // `MAP_KEY_TAIL` (the header above `MAP_KEY_PROSE` says why).
+    const fill = serverProse.fill;
+    const base = items.slice(0, MAP_KEY_PROSE.rows.length);
+    const params: Record<string, string> = {};
+    base.forEach(function (one, i) {
+      params['art' + i] = one.art;
+      params['what' + i] = one.what;
+    });
+    const extra = items.slice(base.length);
+    if (extra.length) {
+      const tail: Record<string, string> = {
+        last: params['what' + (base.length - 1)] };
+      extra.forEach(function (one, j) {
+        tail['art' + j] = one.art;
+        tail['what' + j] = one.what;
+      });
+      params['what' + (base.length - 1)] = fill(MAP_KEY_TAIL, tail);
+    }
+    log.debug("Leaving AdminViews.delegationMapKey().");
+    return fill(MAP_KEY_TEMPLATE, params);
+  }
+  // ---------------------------------------------------------------------------
+  // THE WHOLE PICTURE AS ONE ANSWER, FOR THE MANAGEMENT API (#446, 2026-10-05).
+  //
+  // `/admin/delegation/map` had no operation, by rule 7 read exactly: it has
+  // no form. A console that is a static client of `/admin-api` needs one all
+  // the same, because three things on that page are known only to this
+  // process: what each box IS (`delegationLooks()` asks the directory and the
+  // application registry), where each box GOES (dagre, laid out on the
+  // server), and the markup of the drawing. So the answer is the page's own
+  // JSON — the graph, the filter, the counts — with `looks` and `svg` added.
+  //
+  // IT IS THE SAME FOUR CALLS THE PAGE'S ROUTE MAKES, in its order, and
+  // deliberately not yet the route's own source of them: the route is left as
+  // it is until its page is converted (#446 step 3), when both will be this.
+  //
+  // IT IS HERE AND NOT ON THE CONSOLE (`admin-ui/admin.ts`), where it was
+  // written first: `tests/admin_actions_layer.js` holds the management API to
+  // asking this layer, and what a box IS (`delegationNodeLook()`, moved with
+  // it) is a view both surfaces answer.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the delegation picture as one answer: the graph, every box's look,
+   * the counts and the drawing.
+   *
+   * @param query - the page's query: the delegation filter
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the page's JSON with `summary`, `looks`, `label` and `svg`
+   */
+  delegationMapModel(query, options?) {
+    const { log, delegationMap } = this.deps;
+    log.debug("Entering AdminViews.delegationMapModel().");
+    const view = this.delegationView(query || {});
+    const graph = view.graph;
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = 'Delegation relationships in this service, as a diagram';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model: any = Object.assign({}, graph, {
+      filter: view.json.filter,
+      matched: view.filtered.length,
+      held: view.summary.held,
+      summary: view.summary,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks,
+      label: label,
+      svg: drawn.svg
+    });
+    if (!(options && options.links === false)) {
+      // WHAT THE PAGE DRAWS AROUND THE PICTURE (#446): how many acts are
+      // held at all, the filter's vocabulary, the two choosers' panes, the
+      // key, whether a directory resolves the boxes, and the facts its
+      // cells ask about the names in it.
+      const carry = WebKit.listViewOf('/admin/delegation', query || {});
+      model.all = view.all.length;
+      model.types = view.json.types;
+      model.modes = view.json.modes;
+      model.outcomes = view.json.outcomes;
+      model.applicationChooser = this.delegationChooser('application',
+        query, view.applications, carry);
+      model.userChooser = this.delegationChooser('user', query,
+        this.deps.userGraph.userList(), carry);
+      model.mapKey = this.delegationMapKey();
+      model.directoryLoaded = !!directoryReader;
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.delegationMapModel(). " + drawn.width +
+              "x" + drawn.height + ".");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE RELATIONSHIP, DRAWN ALONE, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/chain?chain=` had no operation — it has no form —
+  // and draws what only this process knows: what each box is, where it
+  // goes, the drawing. The answer is the page's own JSON (the chain, its
+  // acts, the graph) with the looks, the drawing, the key and the facts its
+  // cells ask, as `delegationMapModel()` answers the whole picture. A key no
+  // act is held under is `found: false`, which is not an error: the store is
+  // capped and an old link coming back empty is the ordinary outcome.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds one delegation relationship as one answer.
+   *
+   * @param query - the page's query: `chain`, the chain's key
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the chain, its acts and graph, and the drawing
+   */
+  delegationChainModel(query, options?) {
+    const { log, delegation, delegationMap } = this.deps;
+    log.debug("Entering AdminViews.delegationChainModel().");
+    const wanted = String((query || {}).chain || '');
+    const all = delegation.list();
+    const acts = delegation.actsOfChain(all, wanted);
+    // chainList() over the acts of ONE chain returns exactly one row, and it
+    // is that function's answer rather than a shape built here.
+    const chain = delegation.chainList(acts)[0] || null;
+    const graph = delegation.graph(acts);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = chain
+      ? 'One delegation relationship: ' + chain.typeLabel
+      : 'A delegation relationship that is no longer held';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const summary = delegation.summary();
+    const model: any = {
+      chain: chain, chainKey: wanted, found: !!chain,
+      acts: acts, graph: graph,
+      held: summary.held, maxRecords: summary.maxRecords,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.mapKey = this.delegationMapKey();
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.delegationChainModel(). " + acts.length +
+              " act(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE APPLICATION'S DELEGATIONS, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/application?application=`: every act an application
+  // took part in, in either role, drawn — the page's own JSON with the
+  // looks, the drawing, the key, the chooser's pane and the facts its cells
+  // ask. An application no act names is `application: null`, with the
+  // catalogue to choose from.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds one application's delegations as one answer.
+   *
+   * @param query - the page's query: `application`, as presented or
+   *   normalised
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the application, its acts and graph, and the drawing
+   */
+  delegationApplicationModel(query, options?) {
+    const { log, delegation, delegationMap, applications } = this.deps;
+    log.debug("Entering AdminViews.delegationApplicationModel().");
+    const asked = String((query || {}).application || '').trim();
+    // Normalised the same way the store normalises one, so a link carrying
+    // the RAW identifier finds the same application the chooser's does.
+    const key = delegation.applicationKeyOf(asked);
+    const all = delegation.list();
+    const catalogue = delegation.applicationList(all);
+    const entry = catalogue.filter(function (one) {
+      return one.key === key;
+    })[0] || null;
+    const acts = entry ? delegation.actsForApplication(all, key) : [];
+    const graph = delegation.graph(acts);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = entry
+      ? 'Everything delegated through or to ' + entry.identifier
+      : 'Applications with delegated access';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    // WHICH ROLES THIS APPLICATION PLAYED IN THE ACT EACH CREDENTIAL CAME
+    // OUT OF, keyed on `seq` — the act's own identifier, unique across every
+    // process and never reused (#465), so a role cannot attach to the wrong
+    // credential.
+    const rolesBySeq = {};
+    acts.forEach(function (row) {
+      rolesBySeq[row.seq] = delegation.applicationRolesIn(row, key);
+    });
+    // The registry's answer, tried against every spelling: `ou=applications`
+    // is keyed by what a caller presented, and this key is normalised.
+    let registered = null;
+    (entry ? entry.spellings : []).forEach(function (spelling) {
+      if (!registered) {
+        registered = applications.get(spelling) || null;
+      }
+    });
+    const summary = delegation.summary();
+    const model: any = {
+      application: entry, asked: asked || null, key: key,
+      registered: !!registered,
+      registeredName: registered
+        ? (registered.name || registered.dnLabel || '') : '',
+      acts: acts, graph: graph,
+      // The role played per act, keyed by the act's sequence number. It is
+      // the one thing here a caller could not work out from `acts` without
+      // reimplementing the normalisation.
+      rolesBySeq: rolesBySeq,
+      applications: catalogue,
+      held: summary.held, maxRecords: summary.maxRecords,
+      roles: delegation.ROLES,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.chooser = this.delegationChooser('application', query, catalogue,
+        WebKit.listViewOf('/admin/delegation', query || {}));
+      model.mapKey = this.delegationMapKey();
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.delegationApplicationModel(). " +
+              acts.length + " act(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERYTHING DONE IN ONE PERSON'S NAME, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/user?user=`: the identity register and the
+  // delegation register unioned for one person (`userGraph.activityFor()`)
+  // — every credential with the grant that produced it, the sign-ins, the
+  // acts naming them — drawn. The page's own JSON with the looks (the
+  // issuance half appended to each tooltip), the drawing, the key with the
+  // person picture's own three rows, the chooser's pane and the facts. A
+  // name neither register holds is `user: null`, with the catalogue.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds everything done in one person's name as one answer.
+   *
+   * @param query - the page's query: `user`, as presented or normalised
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the person, their credentials, flows, acts and graph, and the
+   *   drawing
+   */
+  delegationUserModel(query, options?) {
+    const { log, stats, delegation, delegationMap, userGraph } = this.deps;
+    log.debug("Entering AdminViews.delegationUserModel().");
+    const asked = String((query || {}).user || '').trim();
+    // Normalised the way the identity register normalises one, so a link
+    // carrying `alice@STS.MOCK` finds the same person the chooser's does.
+    const key = stats.identityKeyOf(asked);
+    const catalogue = userGraph.userList();
+    const activity = key ? userGraph.activityFor(key) : null;
+    // An empty graph rather than none when nobody is selected.
+    const graph = activity ? activity.graph : delegation.graph([]);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+
+    // WHAT THE ISSUANCE HALF ADDS TO A TOOLTIP. `delegationNodeLook()` is the
+    // one answer to "what is this box" and must stay that way — it is what
+    // keeps this page, the map and the two other drill-downs drawing one
+    // party one way — so the credentials are APPENDED to what it said rather
+    // than folded into it.
+    graph.nodes.forEach(function (node) {
+      const entry = look.looks[node.id];
+      if (!entry || node.kind === 'sts') {
+        return;
+      }
+      // A CLIENT IS DRAWN AS AN APPLICATION, and only where neither store has
+      // an opinion. `delegationNodeLook()`'s fallback is the shape the ROLE
+      // implies and the subject of this page is an initial identity, so a
+      // `client_credentials` client — which is a client BY ITS OWN SAYING, at
+      // the one funnel that can know — was coming out as a stick figure.
+      // Where the directory or the registry DOES know it, that answer stands:
+      // the fallback is what is being corrected, not the stores.
+      if (node.isClient && entry.dashed) {
+        entry.shape = 'application';
+        entry.sublabel = 'a client, not a person';
+      }
+      const extra = [];
+      if (node.isSubject) {
+        extra.push('THIS IS THE PERSON THIS PAGE IS ABOUT.');
+      }
+      if (node.isClient) {
+        extra.push('It is a CLIENT rather than a person: something ' +
+                   'authenticated under this name and said the client is ' +
+                   'the identity, which the client_credentials grant is ' +
+                   'the usual way of doing.');
+      }
+      if (node.credentials) {
+        extra.push(node.credentials + ' credential(s) issued' +
+                   (node.isSubject ? ' naming them' : ' to it') +
+                   (node.kinds.length ? ': ' + node.kinds.join(', ') : '') +
+                   '.');
+      }
+      if (node.flows.length) {
+        extra.push('By: ' + node.flows.join(', ') + '.');
+      }
+      if (node.authentications) {
+        extra.push(node.authentications + ' authentication(s) here.');
+      }
+      if (extra.length) {
+        entry.title = entry.title + '\n' + extra.join('\n');
+      }
+    });
+
+    const label = activity
+      ? 'Everything issued in the name of ' + activity.key
+      : 'People and the credentials issued in their name';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model: any = {
+      user: activity ? activity.entry : null,
+      asked: asked || null, key: key,
+      // The whole model, so a test can assert what the page draws without
+      // parsing an SVG.
+      credentials: activity ? activity.credentials : [],
+      flows: activity ? activity.flows : [],
+      onDelegationLines: activity ? activity.onDelegationLines : 0,
+      acts: activity ? activity.acts : [],
+      graph: graph,
+      counts: activity ? activity.counts : null,
+      users: catalogue,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.chooser = this.delegationChooser('user', query, catalogue,
+        WebKit.listViewOf('/admin/delegation', query || {}));
+      model.mapKey = this.delegationMapKey({ issuance: true });
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.delegationUserModel(). " +
+              model.credentials.length + " credential(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE CREDENTIAL AND EVERY GENERATION BEHIND IT, AS ONE ANSWER (#446).
+  //
+  // `/admin/tokens/credential?id=`: the lineage `credentialGraph.lineageOf()`
+  // walks, drawn — the page's own JSON with the looks (the box the
+  // credential ended up at marked in its tooltip), the drawing, and what the
+  // page asked the registers for while it drew: each generation's holder and
+  // the label of the grant or flow at its origin (`holder`, `originLabel`
+  // on each generation), the key the credential's person is filed under
+  // (`subjectKey`), the cap on the walk, and the facts.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds one credential's lineage as one answer.
+   *
+   * @param query - the page's query: `id`, the credential's identifier
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the lineage, the graph and the drawing
+   */
+  credentialLineageModel(query, options?) {
+    const { log, stats, delegation, delegationMap, userGraph,
+            credentialGraph } = this.deps;
+    log.debug("Entering AdminViews.credentialLineageModel().");
+    const asked = String((query || {}).id || '').trim();
+    const lineage = asked ? credentialGraph.lineageOf(asked) : null;
+    const graph = lineage ? lineage.graph : delegation.graph([]);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    // WHICH BOX IS THE ONE THIS CREDENTIAL IS AT NOW, appended to what
+    // `delegationNodeLook()` said, as the person's picture appends its own.
+    const holder = lineage && lineage.credential
+      ? stats.identityKeyOf(userGraph.holderOf(lineage.credential)) : '';
+    if (holder && look.looks[holder]) {
+      look.looks[holder].title = look.looks[holder].title +
+        '\nTHIS IS WHERE THE CREDENTIAL THIS PAGE IS ABOUT ENDED UP: ' +
+        (lineage.credential.kind || 'a credential') + ' ' + asked + '.';
+    }
+    const label = lineage
+      ? 'How ' +
+        (lineage.credential ? lineage.credential.kind : 'this credential') +
+        ' ' + asked + ' came to exist'
+      : 'One credential, and every generation behind it';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model: any = {
+      identifier: asked || null,
+      held: lineage ? lineage.held : null,
+      credential: lineage ? lineage.credential : null,
+      counts: lineage ? lineage.counts : null,
+      generations: lineage
+        ? lineage.generations.map(function (row) {
+          const one = row.credential;
+          return Object.assign({}, row, {
+            holder: one ? userGraph.holderOf(one) || '' : '',
+            originLabel: row.act ? '' : (one && one.family === 'token'
+              ? userGraph.flowRow(one.grant).label
+              : (one ? userGraph.artifactFlowRow(one.kind).label
+                     : 'nothing here produced it'))
+          });
+        })
+        : [],
+      origins: lineage ? lineage.origins : [],
+      issuances: lineage ? lineage.issuances : [],
+      walls: lineage ? lineage.walls : [],
+      truncated: lineage ? lineage.truncated : false,
+      acts: lineage ? lineage.acts : [],
+      graph: graph,
+      maxGenerations: credentialGraph.MAX_GENERATIONS,
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    const credential = model.credential;
+    model.subjectKey = credential && credential.family === 'token' &&
+      (credential.username || credential.sub)
+      ? stats.identityKeyOf(credential.username || credential.sub) : '';
+    if (!(options && options.links === false)) {
+      model.facts = this.delegationFacts(model);
+    }
+    log.debug("Leaving AdminViews.credentialLineageModel(). " +
+              model.generations.length + " generation(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHICH ROWS OF THE CONFIGURED PERMISSIONS REGISTER A PAGE SHOWS (#446).
+  //
+  // The console's `permissionsListState()`, here so that an answer carries
+  // it: the two searches (`permq`, `grantq`) and the two pagings, worked out
+  // in ONE function so the table and the reply cannot disagree. The pages
+  // are `{ shown, paging }` with the paging as every answer carries one.
+  // ---------------------------------------------------------------------------
+  /**
+   * Works out the searched and paged rows of the permissions register.
+   *
+   * @param query - the page's query
+   * @param register - the configured permissions register
+   * @returns `permWanted`, `grantWanted`, `permPage` and `grantPage`
+   */
+  permissionsListStateOf(query, register) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.permissionsListStateOf().");
+    const permWanted = this.queryOne(query, 'permq').trim();
+    const grantWanted = this.queryOne(query, 'grantq').trim();
+    const permissionsMatched = register.permissions.filter(function (one) {
+      return self.chooserMatches([one.resourceName, one.resource], permWanted);
+    });
+    // BOTH ENDS OF THE RELATIONSHIP: a dangling grant carries no resource,
+    // so it matches on its client alone.
+    const grantsMatched = register.grants.filter(function (one) {
+      return self.chooserMatches([one.clientName, one.client,
+                                  one.resourceName, one.resource],
+                                 grantWanted);
+    });
+    const permPage = this.pagedRows(query, permissionsMatched,
+      { name: 'permissions', noun: 'permissions',
+        defaultPer: DELEGATION_PER_PAGE });
+    const grantPage = this.pagedRows(query, grantsMatched,
+      { name: 'grants', noun: 'grants', defaultPer: DELEGATION_PER_PAGE });
+    log.debug("Leaving AdminViews.permissionsListStateOf().");
+    return {
+      permWanted: permWanted, grantWanted: grantWanted,
+      permPage: { shown: permPage.shown,
+                  paging: this.pagingJson(permPage.paging) },
+      grantPage: { shown: grantPage.shown,
+                   paging: this.pagingJson(grantPage.paging) }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // PROTOCOLS → DELEGATION, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation-settings`: the configured permissions register with
+  // its searches and pagings, every application for the two selects, and
+  // the page's settings block. `allowed` is what the page answered before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation-settings`'s answer.
+   *
+   * @param query - the page's query
+   * @returns the register, its list state, the applications and settings
+   */
+  delegationSettingsModel(query) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.delegationSettingsModel().");
+    const permissions = this.permissionsView();
+    const register = permissions.register;
+    const listState = this.permissionsListStateOf(query || {}, register);
+    log.debug("Leaving AdminViews.delegationSettingsModel().");
+    return {
+      allowed: {
+        resources: register.resources,
+        permissions: register.permissions,
+        grants: register.grants,
+        counts: register.counts,
+        filter: { permissions: listState.permWanted || null,
+                  grants: listState.grantWanted || null },
+        paging: { permissions: listState.permPage.paging,
+                  grants: listState.grantPage.paging }
+      },
+      settings: this.settingsBlockOf('/admin/delegation-settings'),
+      register: register,
+      listState: listState,
+      allApplications: applications.list().map(function (row) {
+        return { identifier: row.identifier, name: row.name || '' };
+      })
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ALLOWED MAPPINGS, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/allowed`: every configured delegated permission
+  // drawn, and the groups of applications the grants join, paged. The
+  // page's own JSON with the looks, the drawing, the register and the
+  // clusters its chooser searches, the groups on this page in full (the
+  // table spells their members out), and `apps`: each member the registry
+  // holds, with its name.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation/allowed`'s answer.
+   *
+   * @param query - the page's query
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the graph, the groups, the register and the drawing
+   */
+  delegationAllowedModel(query, options?) {
+    const { log, delegationMap } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationAllowedModel().");
+    const permissions = this.permissionsView();
+    const graph = permissions.graph;
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = 'Delegated permissions between applications, as a diagram';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const groups = permissions.clusters;
+    // THE GROUPS, PAGED, on a parameter of their own (`groupsPage`).
+    const groupPage = this.pagedRows(query || {}, groups.clusters,
+                                     { name: 'groups', noun: 'groups' });
+    const model: any = {
+      graph: graph, counts: permissions.register.counts,
+      grants: permissions.register.grants,
+      // The groups on this page through the SAME `clusterSummary()` that
+      // `GET /admin-api/permissions/groups` answers with: the counts, not
+      // the rows.
+      groups: groupPage.shown.map(function (group) {
+        return self.clusterSummary(group);
+      }),
+      groupCounts: groups.counts,
+      groupsPaging: this.pagingJson(groupPage.paging),
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      looks: look.looks, label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      // What the page draws beyond that: the register and the clusters the
+      // chooser searches, and the shown groups whole.
+      model.register = permissions.register;
+      model.clusters = groups;
+      model.shownGroups = groupPage.shown;
+      model.facts = this.delegationFacts(model);
+      model.apps = model.facts.apps;
+    }
+    log.debug("Leaving AdminViews.delegationAllowedModel().");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE GROUP OF APPLICATIONS JOINED BY PERMISSIONS, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation/cluster?application=`: the group an application is
+  // in (`appPermissions.clusterFor()`, exact equality on the identifier),
+  // drawn. `permissionGroupsView()` — what the page answered before and
+  // `GET /admin-api/permissions/groups` answers — with the group whole, its
+  // grants and permissions paged, the looks and the drawing, the register
+  // and clusters the chooser searches, the groups paged for the bare page,
+  // and `apps`: each member the registry holds, with its name.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation/cluster`'s answer.
+   *
+   * @param query - the page's query: `application`
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the group, its pages, the chooser's data and the drawing
+   */
+  delegationClusterModel(query, options?) {
+    const { log, delegationMap, appPermissions } = this.deps;
+    log.debug("Entering AdminViews.delegationClusterModel().");
+    const asked = String((query || {}).application || '').trim();
+    const permissions = this.permissionsView();
+    const groups = permissions.clusters;
+    const group = asked ? appPermissions.clusterFor(asked, groups) : null;
+    const graph = appPermissions.graph(group ? group.grants : []);
+    const look = this.delegationLooks(graph, this.knownUserKeys());
+    const label = group
+      ? 'Delegated permissions across the ' + group.counts.applications +
+        ' application(s) joined to ' + asked
+      : 'Applications joined by delegated permissions';
+    const drawn = delegationMap.render(graph, {
+      resolve: look.resolve, labelOf: look.labelOf,
+      links: !(options && options.links === false), id: 'delmap', label: label
+    });
+    const model: any = Object.assign({},
+      this.permissionGroupsView(query || {}, permissions), {
+        asked: asked, graph: graph,
+        drawing: { width: drawn.width, height: drawn.height,
+                   failed: drawn.failed || null },
+        looks: look.looks, label: label, svg: drawn.svg
+      });
+    if (!(options && options.links === false)) {
+      const page = function (rows, name, noun) {
+        const one = this.pagedRows(query || {}, rows,
+                                   { name: name, noun: noun });
+        return { shown: one.shown, paging: this.pagingJson(one.paging) };
+      }.bind(this);
+      model.cluster = group;
+      model.register = permissions.register;
+      model.clusters = groups;
+      if (group) {
+        model.grantPage = page(group.grants, 'groupGrants', 'grants');
+        model.permissionPage = page(group.permissions, 'groupPermissions',
+                                    'permissions');
+      } else {
+        model.groupPage = page(groups.clusters, 'groups', 'groups');
+      }
+      model.facts = this.delegationFacts(model);
+      model.apps = model.facts.apps;
+    }
+    log.debug("Leaving AdminViews.delegationClusterModel().");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // MONITORING → DELEGATION, AS ONE ANSWER (#446).
+  //
+  // `/admin/delegation`: the acts, filtered and paged (`delegationView()`,
+  // what `GET /admin-api/delegation` answered alone), the configured
+  // permissions register as `allowed` and the WS-Trust and token-exchange
+  // policy as `delegationPolicy` — the page's `?format=json` before — and
+  // what the page draws beyond them: its other six lists paged, the two
+  // choosers' panes, the two sections' views, and the facts.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/delegation`'s answer.
+   *
+   * @param query - the page's query: the delegation filter, the searches
+   *   and every list's page
+   * @returns the acts and everything the page draws beside them
+   */
+  delegationPageModel(query) {
+    const { log, delegation, userGraph, applications } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.delegationPageModel().");
+    const q = query || {};
+    const view = this.delegationView(q);
+    const permissions = this.permissionsView();
+    const listState = this.permissionsListStateOf(q, permissions.register);
+    const exchangePolicy = this.delegationPolicyView(q);
+    const policy = view.policy;
+    const page = function (rows, name, noun) {
+      const one = self.pagedRows(q, rows, { name: name, noun: noun,
+                                            defaultPer: DELEGATION_PER_PAGE });
+      return { shown: one.shown, paging: self.pagingJson(one.paging) };
+    };
+    const carry = WebKit.listViewOf('/admin/delegation', q);
+    const model: any = Object.assign({}, view.json, {
+      // UNDER A MEMBER OF ITS OWN AND NOT MERGED INTO THE ACTS: different
+      // registers, and `allowed` is the word the page uses.
+      allowed: {
+        resources: permissions.register.resources,
+        permissions: permissions.register.permissions,
+        grants: permissions.register.grants,
+        counts: permissions.register.counts,
+        graph: permissions.graph,
+        // What the browser was shown, beside the whole lists.
+        filter: { permissions: listState.permWanted || null,
+                  grants: listState.grantWanted || null },
+        paging: { permissions: listState.permPage.paging,
+                  grants: listState.grantPage.paging }
+      },
+      // WS-Trust and token exchange (#108), paged as GET
+      // /admin-api/delegation/policy pages it.
+      delegationPolicy: exchangePolicy.json,
+      all: view.all.length,
+      paging: this.pagingJson(view.paging),
+      // The size every list here starts at, which the page states.
+      delegationPerPage: DELEGATION_PER_PAGE,
+      // The page's other lists, each on a parameter of its own.
+      chainPage: page(view.chains, 'chains', 'chains'),
+      pairPage: page(policy.pairs, 'pairs', 'pairs'),
+      flagPage: page(policy.accounts, 'flags', 'accounts'),
+      mechanismPage: page(delegation.TYPES, 'mechanisms', 'mechanisms'),
+      applicationChooser: this.delegationChooser('application', q,
+                                                 view.applications, carry),
+      userChooser: this.delegationChooser('user', q, userGraph.userList(),
+                                          carry),
+      // What `permissionsSection()` and `delegationPolicySection()` draw.
+      permissionsView: {
+        register: permissions.register, listState: listState,
+        allApplications: applications.list().map(function (row) {
+          return { identifier: row.identifier, name: row.name || '' };
+        })
+      },
+      exchangePolicyView: {
+        register: exchangePolicy.register,
+        pairs: { shown: exchangePolicy.pairs.shown,
+                 paging: this.pagingJson(exchangePolicy.pairs.paging) },
+        intermediaries: {
+          shown: exchangePolicy.intermediaries.shown,
+          paging: this.pagingJson(exchangePolicy.intermediaries.paging) },
+        people: { shown: exchangePolicy.people.shown,
+                  paging: this.pagingJson(exchangePolicy.people.paging) }
+      }
+    });
+    model.facts = this.delegationFacts({ acts: model.acts,
+                                         chains: model.chainPage.shown });
+    log.debug("Leaving AdminViews.delegationPageModel().");
+    return model;
+  }
+
+  // Moved here from the console (#446), as `delegationMapKey()` was.
+  // THE KEY, drawn by the same render() the picture is, so that a legend cannot
+  // come to describe a diagram this service no longer draws. Every swatch is a
+  // one-node, one-edge graph put through the real code path — which is the
+  // delegation page's rule and is worth the few extra bytes: a legend
+  // hand-drawn out of the same colour constants would still go stale the day a
+  // shape changed.
+  /**
+   * Draws the federation picture's key, each swatch rendered by the same
+   * code as the picture so the legend cannot drift from it.
+   *
+   * @returns the key's boxes and lines tables as HTML
+   */
+  federationMapKey() {
+    const { log, federationDiagram } = this.deps;
+    log.debug("Entering AdminViews.federationMapKey().");
+    const shapes = [
+      { kind: 'sts', label: 'This service',
+        realm: 'default', realmName: 'this realm',
+        what: FEDERATION_KEY_PROSE.boxes[0] },
+      { kind: 'application', label: 'an application',
+        what: FEDERATION_KEY_PROSE.boxes[1] },
+      { kind: 'partner-sp', label: 'a partner',
+        what: FEDERATION_KEY_PROSE.boxes[2] },
+      { kind: 'partner-idp', label: 'a partner',
+        what: FEDERATION_KEY_PROSE.boxes[3] }
+    ];
+    // THE KEY IS A FILLED TEMPLATE (#543): each drawing and sentence a
+    // parameter of `FEDERATION_KEY_TEMPLATE`, so the sentences are
+    // translated and the drawings carried as they are.
+    const params: Record<string, string> = {};
+    shapes.forEach(function (one, i) {
+      const drawn = federationDiagram.render(
+        { nodes: [Object.assign({ id: 'k', relationships: [] }, one)],
+          edges: [] },
+        { links: false, id: 'key-' + one.kind, label: one.label });
+      params['box' + i] = drawn.svg;
+      params['boxWhat' + i] = one.what;
+    });
+
+    // THE LINES, AND THE FOUR STATES ARE THE LIST PAGE'S FOUR. Each is drawn by
+    // handing render() a relationship in that state, so the colour in the key
+    // is the colour edgeLook() will actually choose rather than a second
+    // opinion about it.
+    const states = [
+      { what: FEDERATION_KEY_PROSE.lines[0],
+        row: { id: 'ready', protocolLabel: 'SAML 2.0', enabled: true,
+               ready: true,
+               usable: true, missing: [], applicationCount: 0,
+               authentications: 0,
+               users: 0, releases: [], lastError: '', mechanismLabel: '' } },
+      { what: FEDERATION_KEY_PROSE.lines[1],
+        row: { id: 'disabled', protocolLabel: 'SAML 2.0', enabled: false,
+               ready: true,
+               usable: false, missing: [], applicationCount: 0, authentications:
+                                                                  0,
+               users: 0, releases: [], lastError: '', mechanismLabel: '' } },
+      { what: FEDERATION_KEY_PROSE.lines[2],
+        row: { id: 'half', protocolLabel: 'SAML 2.0', enabled: true,
+               ready: false,
+               usable: false, missing: ['fedSigningCertificate'],
+               applicationCount: 0, authentications: 0, users: 0, releases: [],
+               lastError: '', mechanismLabel: '' } },
+      { what: FEDERATION_KEY_PROSE.lines[3],
+        row: { id: 'broker', protocolLabel: 'OpenID Connect', enabled: true,
+               ready: true, usable: true, missing: [], applicationCount: 0,
+               authentications: 0, users: 0, releases: [], lastError: '',
+               mechanismLabel: 'Another federation relationship',
+               brokersTo: 'somewhere', brokerUsable: false,
+               brokerProblem: 'it is disabled' } }
+    ];
+    states.forEach(function (one, i) {
+      const drawn = federationDiagram.render({
+        nodes: [{ id: 'a', kind: 'application', label: 'from',
+                  relationships: [] },
+                { id: 'b', kind: 'sts', label: 'to', realm: '',
+                  realmName: '' }],
+        edges: [{ id: 'e', from: 'a', to: 'b',
+                  relation: one.row.brokersTo ? 'asks' : 'signs-in',
+                  relationship: one.row.id, row: one.row, use: null }]
+      }, { links: false, id: 'key-state-' + i, label: 'a line' });
+      // Only the line is wanted, not the two boxes it needs in order to exist,
+      // so the swatch is the label panel's own words. It is drawn rather than
+      // written because these four colours are the whole content of the key.
+      params['line' + i] = '<svg xmlns="http://www.w3.org/2000/svg" ' +
+        'width="120" height="26" viewBox="0 0 120 26" role="img"><title>' +
+        WebKit.esc(WebKit.plainTextOf(one.what)) + '</title>' +
+        drawn.svg.replace(/^[\s\S]*?<defs>/, '<defs>')
+                 .replace(/<rect[\s\S]*$/, '') +
+        '</svg>';
+      params['lineWhat' + i] = one.what;
+    });
+
+    // `WebKit.note()` folds it, and `FEDERATION_NOTE_FOLD` is that fold.
+    params.note = WebKit.note(FEDERATION_KEY_PROSE.note);
+    log.debug("Leaving AdminViews.federationMapKey().");
+    return serverProse.fill(FEDERATION_KEY_TEMPLATE, params);
+  }
+  // What every box is called, where it links, and nothing about its shape — the
+  // shape is `federation_diagram.js`'s and is decided from the node's kind,
+  // which is the one thing a caller must not be able to override. See lookOf()
+  // there.
+  /**
+   * Decides where each box of the federation picture links: an application
+   * to the applications register, a partner to its first relationship.
+   *
+   * @param graph - the federation graph
+   * @returns `looks`, keyed by node id, and `resolve`, a node's look
+   */
+  federationMapLooks(graph) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.federationMapLooks().");
+    const looks = {};
+    graph.nodes.forEach(function (node) {
+      if (node.kind === 'sts') {
+        looks[node.id] = {};
+        return;
+      }
+      if (node.kind === 'application') {
+        // An application box goes to the APPLICATIONS registry and not to the
+        // relationship, because the thing somebody clicks it to change is
+        // `appFederationRelationship`, which lives on that entry. The
+        // relationship is one click away on the line's own label.
+        looks[node.id] = {
+          href: '/admin/applications' +
+                WebKit.queryWith({}, { application: node.label })
+        };
+        return;
+      }
+      // BOTH PARTNER SHAPES GO TO THE RELATIONSHIP, and where a partner has
+      // more than one they go to the FIRST — which is a real limitation rather
+      // than a choice, and it is the delegation picture's own: an SVG anchor
+      // wraps one shape and can have one href. The table under the picture
+      // lists every relationship a partner has, which is where a reader with
+      // two goes.
+      looks[node.id] = {
+        href: '/admin/federation' +
+              WebKit.queryWith({},
+                { relationship: node.relationships[0] || '' })
+      };
+    });
+    log.debug("Leaving AdminViews.federationMapLooks(). " +
+              graph.nodes.length +
+              " box(es).");
+    return {
+      looks: looks,
+      resolve: function (node) {
+        log.debug("Entering resolve().");
+        log.debug("Leaving resolve().");
+        return looks[node.id];
+      }
+    };
+  }
+  // ---------------------------------------------------------------------------
+  // THE FEDERATION PICTURE, AS ONE ANSWER (#446).
+  //
+  // `/admin/federation/map`: one trust realm's federation relationships,
+  // filtered by role, protocol and text (`federationGraph.graph()`), drawn
+  // on the server. The page's own JSON, with the vocabulary its filter
+  // offers, the drawing, its size, and the key — markup drawn by the
+  // diagram's own renderer, as `delegationMapKey()` is.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `/admin/federation/map`'s answer.
+   *
+   * @param query - the page's query: `role`, `protocol`, `q`
+   * @param options - `links` (true by default): false draws the document
+   *   with no links in it, as `?format=svg` answers
+   * @returns the realm's relationships, the graph and the drawing
+   */
+  federationMapModel(query, options?) {
+    const { log, federation, federationGraph, federationDiagram } = this.deps;
+    log.debug("Entering AdminViews.federationMapModel().");
+    const q = query || {};
+    const wanted = {
+      role: String(q.role || '').trim(),
+      protocol: String(q.protocol || '').trim(),
+      q: String(q.q || '').trim()
+    };
+    const graph = federationGraph.graph(wanted);
+    const look = this.federationMapLooks(graph);
+    const label = 'Federation relationships in the trust realm "' +
+      graph.realm.id + '", as a diagram';
+    const drawn = federationDiagram.render(graph, {
+      resolve: look.resolve, links: !(options && options.links === false),
+      id: 'fedmap', label: label
+    });
+    const model: any = {
+      realm: graph.realm, counts: graph.counts, filter: wanted,
+      empty: graph.empty, filtered: graph.filtered,
+      relationships: graph.relationships,
+      nodes: graph.nodes.map(function (node) {
+        return { id: node.id, kind: node.kind, label: node.label,
+                 relationships: node.relationships || [] };
+      }),
+      edges: graph.edges.map(function (edge) {
+        return { id: edge.id, from: edge.from, to: edge.to,
+                 relation: edge.relation,
+                 relationship: edge.relationship,
+                 brokeredTo: edge.brokeredTo || '',
+                 use: edge.use || null };
+      }),
+      drawing: { width: drawn.width, height: drawn.height,
+                 failed: drawn.failed || null },
+      label: label, svg: drawn.svg
+    };
+    if (!(options && options.links === false)) {
+      model.roles = federation.ROLES;
+      model.protocols = federation.PROTOCOLS;
+      model.mapKey = this.federationMapKey();
+    }
+    log.debug("Leaving AdminViews.federationMapModel(). " +
+              graph.relationships.length + " relationship(s).");
+    return model;
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DELEGATION CHOOSER'S PANE, SEARCHED AND PAGED HERE (#446).
+  //
+  // The console drew both choosers from the whole catalogue — every
+  // application an act named, every identity either register knows — and
+  // `WebKit.chooserPane()` searched and paged it while it drew. An answer
+  // carries the page of results instead (`chooserPane()`'s `slice`), because
+  // the person catalogue is everybody this service has seen. The entries
+  // are the console's, link and all; `carry` is the delegation table's
+  // filter, kept in every result's link.
+  // ---------------------------------------------------------------------------
+  /**
+   * Searches and pages one of the two delegation choosers.
+   *
+   * @param kind - `application` (searched by `appq`, paged by `appfrom`) or
+   *   `user` (`userq`, `userfrom`)
+   * @param query - the page's query
+   * @param catalogue - the delegation register's applications, or
+   *   `userGraph.userList()`
+   * @param carry - the delegation table's filter
+   * @returns `total`, the pane's `entries` and its `slice`
+   */
+  delegationChooser(kind, query, catalogue, carry) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.delegationChooser(). kind=" + kind);
+    const isApplication = kind === 'application';
+    const entries = (catalogue || []).map(function (entry) {
+      if (isApplication) {
+        const roles = [];
+        if (entry.roles.intermediary) {
+          roles.push(entry.roles.intermediary + ' as the intermediary');
+        }
+        if (entry.roles.target) {
+          roles.push(entry.roles.target + ' as the target');
+        }
+        if (entry.roles.initial) {
+          roles.push(entry.roles.initial + ' as the initial identity');
+        }
+        return {
+          key: entry.key,
+          names: [entry.identifier].concat(entry.spellings || []),
+          label: entry.identifier,
+          detail: entry.acts + ' act(s): ' + roles.join(', '),
+          href: '/admin/delegation/application' +
+                WebKit.queryWith(carry || {},
+                                 { application: entry.identifier })
+        };
+      }
+      const facts = [];
+      if (entry.authentications) {
+        facts.push(entry.authentications + ' sign-in(s)');
+      }
+      if (entry.tokens.issued) {
+        facts.push(entry.tokens.issued + ' token(s)');
+      }
+      if (entry.artifacts) {
+        facts.push(entry.artifacts + ' artifact(s)');
+      }
+      if (entry.acts) {
+        facts.push(entry.acts + ' delegation act(s)');
+      }
+      return {
+        key: entry.key,
+        names: [entry.key, entry.presented].concat(entry.forms || []),
+        label: entry.key + (entry.isClient ? ' (a client)' : ''),
+        detail: facts.length ? facts.join(', ') : 'nothing yet',
+        href: '/admin/delegation/user' +
+              WebKit.queryWith(carry || {}, { user: entry.key })
+      };
+    });
+    const param = isApplication ? 'appq' : 'userq';
+    const fromParam = isApplication ? 'appfrom' : 'userfrom';
+    const wanted = WebKit.queryOne(query || {}, param).trim();
+    const matched = entries.filter(function (entry) {
+      return WebKit.chooserMatches(entry.names, wanted);
+    });
+    // The clamp `chooserPane()` applies, applied where the slice is cut.
+    let from = parseInt(WebKit.queryOne(query || {}, fromParam), 10);
+    if (!isFinite(from) || from < 0 || from >= matched.length) {
+      from = 0;
+    }
+    log.debug("Leaving AdminViews.delegationChooser(). " + matched.length +
+              " of " + entries.length + " matched.");
+    return {
+      total: entries.length,
+      entries: matched.slice(from, from + WebKit.CHOOSER_HITS),
+      slice: { matched: matched.length, from: from }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A DELEGATION PAGE'S CELLS ASK ABOUT ITS NAMES (#446).
+  //
+  // A party is drawn linked to the users page when this console has seen
+  // the person, and to the application page when the registry holds the
+  // application. The console asked `knownUserKeys()` and
+  // `applications.get()` while it drew; an answer carries the answers, for
+  // the names in it only — every string in the answer that is a known user
+  // key goes into `users`, every one the registry holds into `apps` with
+  // its name. Read off the answer itself, so nothing the page draws is
+  // missing and nothing it does not draw is sent.
+  // ---------------------------------------------------------------------------
+  /**
+   * Works out which names in a delegation page's answer are known people
+   * and registered applications.
+   *
+   * @param answer - the page's answer, before `facts` is added
+   * @returns `users` (key → true) and `apps` (identifier → `name`,
+   *   `dnLabel`)
+   */
+  delegationFacts(answer) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.delegationFacts().");
+    const known = this.knownUserKeys();
+    const users = {};
+    const apps = {};
+    const seen = {};
+    const visit = function (value) {
+      if (typeof value === 'string') {
+        if (seen[value] || value.length > 512) {
+          return;
+        }
+        seen[value] = true;
+        if (known[value]) {
+          users[value] = true;
+        }
+        const entry = applications.get(value);
+        if (entry) {
+          apps[value] = { name: entry.name || '',
+                          dnLabel: entry.dnLabel || '' };
+        }
+      } else if (Array.isArray(value)) {
+        value.forEach(visit);
+      } else if (value && typeof value === 'object') {
+        Object.keys(value).forEach(function (key) {
+          visit(value[key]);
+        });
+      }
+    };
+    visit(answer);
+    log.debug("Leaving AdminViews.delegationFacts(). " +
+              Object.keys(users).length + " person(s), " +
+              Object.keys(apps).length + " application(s).");
+    return { users: users, apps: apps };
   }
 
   // The whole view, filtered and paged, for the page AND for
@@ -3358,7 +6175,7 @@ class AdminViews {
    * @returns the view
    */
   delegationView(query) {
-    const { log, delegation, krb5Principals } = this.deps;
+    const { log, delegation, krb5Principals, delegationPolicy } = this.deps;
     log.debug("Entering AdminViews.delegationView().");
     const wantedType = String(query.type || '');
     const wantedMode = String(query.mode || '');
@@ -3413,7 +6230,30 @@ class AdminViews {
     // about which acts to pass it would be three answers that each looked right
     // alone. Of the matched acts rather than the paged ones — a diagram of one
     // page of a list is a diagram of the pagination.
-    const graph = delegation.graph(filtered);
+    // AND THE CONFIGURED RELATIONSHIPS (#186, rcbj's decision): every pair
+    // an entry allows, drawn DASHED until an act has used it — for all three
+    // protocols, whose controls are one set. Left out while the reader has
+    // narrowed the acts by outcome, type or text, which say nothing about a
+    // pair nobody has used; kept under a protocol filter, which they do not
+    // contradict.
+    let configured = [];
+    if (!wantedOutcome && !wantedType && !wantedText) {
+      try {
+        configured = (delegationPolicy.list().pairs || [])
+          .map(function (pair) {
+            return { from: pair.intermediary,
+                     to: pair.targetApplication || pair.target,
+                     attribute: pair.attribute, mechanism: pair.mechanism,
+                     setOn: pair.setOn };
+          });
+      } catch (e) {
+        log.debug("Caught in AdminViews.delegationView(): " +
+                  ((e && e.message) || e));
+        // The picture of the acts stands without them.
+        configured = [];
+      }
+    }
+    const graph = delegation.graph(filtered, { configured: configured });
     // EVERY APPLICATION AMONG THE MATCHED ACTS, in whatever role it played. It
     // follows the filter for the same reason `chains` does — a reader who has
     // narrowed to one person wants that person's applications — and there is
@@ -3449,10 +6289,9 @@ class AdminViews {
         recorded: summary.recorded, dropped: summary.dropped,
         maxRecords: summary.maxRecords,
         matched: filtered.length, shown: shown.length,
-        // The lowest and highest sequence numbers still held. A caller polling
-        // this endpoint uses them rather than a timestamp, for the reason
-        // /admin-api/audit gives: `seq` is monotonic and never reused, so
-        // "everything after 41" is exact.
+        // The numbers of the oldest and newest acts held, for the reason
+        // /admin-api/audit gives: `seq` is unique across every process and
+        // never reused, not one order across them (#465).
         oldestSeq: summary.oldestSeq, newestSeq: summary.newestSeq,
         byType: summary.byType, byMode: summary.byMode,
         byOutcome: summary.byOutcome, byProtocol: summary.byProtocol,
@@ -3510,7 +6349,8 @@ class AdminViews {
   // three), because the people list is a walk of the directory and has no
   // natural bound. `common/delegation_policy.ts` builds the register; the
   // attributes are EDITED where every application attribute is — the
-  // application's own page and POST /admin-api/applications/update — and
+  // application's own page and POST /admin-api/applications/set, /add,
+  // /remove or /update-fields — and
   // the two person flags on the person's page and POST
   // /admin-api/users/set-not-delegated and /set-may-act.
   // ---------------------------------------------------------------------------
@@ -3668,11 +6508,10 @@ class AdminViews {
   queryOne(query, key) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.queryOne().");
-    const raw = (query || {})[key];
-    const value = Array.isArray(raw) ? raw[0] : raw;
     log.debug("Leaving AdminViews.queryOne().");
-    return value === undefined || value === null ? '' : String(value);
+    return WebKit.queryOne(query, key);
   }
+
 
   // Does one catalogue entry match what was typed? Case-insensitive, and over
   // EVERY spelling the catalogue holds rather than the one it shows: an
@@ -3692,17 +6531,11 @@ class AdminViews {
   chooserMatches(names, wanted) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.chooserMatches().");
-    if (!wanted) {
-      log.debug("Leaving AdminViews.chooserMatches().");
-      return true;
-    }
-    const needle = wanted.toLowerCase();
     log.debug("Leaving AdminViews.chooserMatches().");
-    return (names || []).some(function (name) {
-      return String(name == null ? '' : name).toLowerCase().indexOf(needle) >=
-             0;
-    });
+    // The kit's since #446: a chooser drawn in a browser matches the same way.
+    return WebKit.chooserMatches(names, wanted);
   }
+
 
   // ---------------------------------------------------------------------------
   // WHAT A CLAIMS REQUEST WOULD RETURN, for the person being previewed.
@@ -3805,7 +6638,8 @@ class AdminViews {
         '`value` and `values` are CHECKED and not honoured. This service ' +
           'could echo back whatever a client asked it to assert and ' +
           'deliberately does not — everything it says about a person comes ' +
-          'from the directory or from the invented persona, and a mock that ' +
+          'from the directory or from the invented persona, and a service ' +
+          'that ' +
           'agreed with the request could not be used to test anything. A ' +
           'mismatch is reported in the log and in the response\'s artifact.',
         'A claims request IS filtered by the federation release policy, ' +
@@ -3853,12 +6687,17 @@ class AdminViews {
    * @returns the JSON
    */
   userinfoClaimsJson(previewUser, raw) {
-    const { log, stats } = this.deps;
+    const { log, stats, userFor } = this.deps;
     log.debug("Entering AdminViews.userinfoClaimsJson(). previewUser=" +
               previewUser);
     const json = Object.assign(
       { reservedJwtClaims: stats.RESERVED_JWT_CLAIMS,
-        claimsRequest: this.claimsRequestJson(previewUser, raw) },
+        claimsRequest: this.claimsRequestJson(previewUser, raw),
+        // The request as it was typed, which the preview form echoes, and
+        // the address the sign-in invents for this person, which a note
+        // contrasts with the directory's (#446).
+        request: raw || '',
+        inventedEmail: userFor(previewUser || 'alice').email },
       this.claimSetsJson(stats.USERINFO_CLAIM_SET_IDS, previewUser));
     log.debug("Leaving AdminViews.userinfoClaimsJson(). " + json.sets.length +
               " set(s).");
@@ -3963,17 +6802,14 @@ class AdminViews {
    * @returns the JSON
    */
   truststoreJson(req) {
-    const { log, mode, realms, adminActions } = this.deps;
+    const { log, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
-    const openToAnybody = realms.run(realms.get(realms.DEFAULT_ID),
-                                     function () {
-      return mode.opensTestControls();
-    });
+    // THE TWO GATED DOORS, AND THE ONLY ONES: the open test controls
+    // `POST /tls/trust` and `POST /tls/trust/clear` (`testControls`, a
+    // demonstration of the process's since #585) were deleted by #597.
     const doors = {
       console: '/admin/tls/trust',
-      api: '/admin-api/tls/trust',
-      testControls: { add: '/tls/trust', clear: '/tls/trust/clear',
-                      open: openToAnybody }
+      api: '/admin-api/tls/trust'
     };
     const notes = {
       persisted: 'A RUNTIME ANCHOR IS WRITTEN TO ou=trustAnchors in the ' +
@@ -4074,18 +6910,23 @@ class AdminViews {
    */
   kerberosPrincipalsJson(req) {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
-      adminActions } = this.deps;
+      adminActions, mode } = this.deps;
     log.debug("Entering AdminViews.kerberosPrincipalsJson().");
     const query = (req && req.query) || {};
-    const people = krb5PersonKeys.listPeople();
+    // PAGED, THEN DESCRIBED (#352): the population is the undescribed rows,
+    // sorted by username, and only the page is parsed, stamped and given
+    // its retained versions.
+    const people = krb5PersonKeys.listPeopleKeys();
     const services = krb5PersonKeys.listServices();
     // `name` and NOT `param`: pagingOf() builds the parameter as `<name>Page`
     // and reads no `param` option at all. This passed `param` until 2026-09-13,
     // so both lists read the bare `?page=` while the page's links wrote
     // `peoplePage` and `servicesPage` — every next and previous link on
     // /admin/kerberos/principals reloaded the same first page.
-    const peoplePage = this.pagedRows(query, people,
-                                      { name: 'people', noun: 'people' });
+    const peopleKeyPage = this.pagedRows(query, people,
+                                         { name: 'people', noun: 'people' });
+    const peoplePage = Object.assign({}, peopleKeyPage, {
+      shown: krb5PersonKeys.describePeople(peopleKeyPage.shown) });
     const servicesPage = this.pagedRows(query, services,
                                         { name: 'services', noun: 'service ' +
                                             'principals' });
@@ -4095,6 +6936,27 @@ class AdminViews {
         "person(s), " +
               services.length + " service principal(s).");
     const kerberos = krb5Principals.kerberosRealmOf();
+    // THE KDC'S WHOLE DATABASE (#595): every principal by its public fields,
+    // which `GET /krb5/principals` listed until that demonstration document
+    // was deleted — the fixtures and the names created on first sight among
+    // them, which the two lists above do not hold. Paged as they
+    // are; empty in a realm with no KDC.
+    const database = kerberos.enabled ? krb5Principals.describeAll()
+                                     : [];
+    const databasePage = this.pagedRows(query, database,
+                                        { name: 'database',
+                                          noun: 'principals' });
+    // Why an enabled realm's KDC cannot be used, '' when it can: an
+    // inactive context's own reason, else `krbtgtUnavailableReason()` (in
+    // product, no random krbtgt key stored yet). See `KERBEROS_NOTES`.
+    const unusable = !kerberos.enabled ? ''
+      : !kerberos.active
+        // An inactive context always carries its reason (no usable
+        // enctype, or a realm this process does not hold yet); the krbtgt
+        // reason is the same sentence for it, asked only if it were empty.
+        ? String(kerberos.reason ||
+                 krb5Principals.krbtgtUnavailableReason() || '')
+        : String(krb5Principals.krbtgtUnavailableReason() || '');
     return {
       installed: krb5PersonKeys.installed(),
       realm: krb5Principals.REALM,
@@ -4117,6 +6979,21 @@ class AdminViews {
                    ttlSetting: Number(config.value('krb5.retainedKeyTtlS')) },
       acceptor: { spn: account.spn, available: account.available,
                   storedKey: !!account.storedKey },
+      // WHICH NAMES THIS KDC WILL ANSWER FOR THAT IT DOES NOT HOLD (#587):
+      // the facts `/krb5/principals` published as `accountPolicy` until #595
+      // deleted it, so a job that asks "can this KDC produce an account under
+      // this name" (`random_username.js`'s requireKnownOrCreatable()) has an
+      // administrator's door to ask. THE TWO SHARED PASSWORDS ARE NOT HERE,
+      // in either mode: nothing in this answer is key material
+      // (`notes.keys`); the development ones are settings
+      // (`krb5.userPassword`, `krb5.autoServicePassword`), read through
+      // `/admin-api/settings` by whoever may read settings.
+      accountPolicy: {
+        anyUsernameAuthenticates: mode.autoCreates(),
+        neverCreated: krb5Principals.reservedUnknown(),
+        serviceHosts: mode.autoCreates()
+          ? krb5Principals.SERVICE_DOMAINS : []
+      },
       // THE REALM'S KRBTGT (#169): where its key comes from, the kvno, when
       // it was made and last rotated, the versions kept, and the schedule —
       // never a key. `null` in a realm with no KDC.
@@ -4128,44 +7005,33 @@ class AdminViews {
       services: servicesPage.shown,
       servicesTotal: services.length,
       servicesPaging: this.pagingJson(servicesPage.paging),
+      // Whether the development fixtures were seeded, and the Kerberos realm
+      // names this KDC answers for — the two facts of the deleted document's
+      // header a reader of `database` needs beside it.
+      fixtureAccounts: !!krb5Principals.seedsDemoPrincipals,
+      realmsServed: kerberos.enabled ? krb5Principals.realmsServed() : [],
+      database: databasePage.shown,
+      databaseTotal: database.length,
+      databasePaging: this.pagingJson(databasePage.paging),
+      // THE NOTES ARE `KERBEROS_NOTES` (#543), the realm's two filled.
       notes: {
-        keys: 'No key material is in this answer or on the page. A person\'s ' +
-          'keys are derived from their password when it is set or verified ' +
-          'and ' +
-          'are never shown; a service principal\'s keytab is handed over ' +
-          'ONCE, by the create or rotate that made it, and a person\'s ' +
-          'keytab ONCE, derived from a password in hand — the one an ' +
-          'administrator sets on the person\'s page, or their own on ' +
-          '/portal/kerberos.',
-        mode: krb5PersonKeys.productKdc()
-          ?
-          'This KDC is a PRODUCT one: a person authenticates with their own ' +
-            'password through the keys stored on their directory entry, and ' +
-            'a person with none is refused with "sign in once".'
-          : 'This KDC is a DEVELOPMENT one: every user is keyed from ' +
-            'krb5.userPassword and people are never given stored keys. ' +
-            'Service principals created here are used in both modes.',
-        realm: kerberos.enabled
-          ? 'A KDC PER TRUST REALM: these are the people and applications of ' +
-            'the trust realm this page is read in, as principals of its own ' +
-            'Kerberos realm ' + (kerberos.kerberosRealm || '') + '.'
-          : 'THIS TRUST REALM HAS NO KDC: ' + (kerberos.reason ||
-            'krb5.enabled is off for it') + '. Set krb5.realm on the realm ' +
-            'and turn ' +
-            'krb5.enabled on to give it one; port 88 routes a request by the ' +
-            'Kerberos realm name inside it.',
-        window: 'Keys are derived AFTER a password is set or verified and ' +
-                'take ' +
-          'a few tens of milliseconds to land; until they do, the KDC ' +
-          'refuses the person rather than accepting an older key.',
-        previous: 'A password change or a rotation keeps the version it ' +
-          'replaced — at most krb5.retainedKeyVersions of them, each for ' +
-          'krb5.retainedKeyTtlS — so a ticket issued under it is still ' +
-          'accepted until it could have expired. A previous version only ' +
-          'ever ' +
-          'OPENS such a ticket: nothing is issued under it and an old ' +
-          'password never signs in. "Drop previous versions" ends the window ' +
-          'at once, after a compromise.'
+        keys: KERBEROS_NOTES.keys,
+        mode: krb5PersonKeys.productKdc() ? KERBEROS_NOTES.modeProduct
+                                          : KERBEROS_NOTES.modeDevelopment,
+        realm: !kerberos.enabled
+          ? serverProse.fill(KERBEROS_NOTES.realmNone,
+                             { reason: kerberos.reason ||
+                                       KERBEROS_NO_KDC_REASON })
+          : unusable
+            ? serverProse.fill(KERBEROS_NOTES.realmInactive,
+                               { reason: unusable,
+                                 kerberosRealm:
+                                   kerberos.kerberosRealm || '' })
+            : serverProse.fill(KERBEROS_NOTES.realmServed,
+                               { kerberosRealm:
+                                   kerberos.kerberosRealm || '' }),
+        window: KERBEROS_NOTES.window,
+        previous: KERBEROS_NOTES.previous
       }
     };
   }
@@ -4185,15 +7051,65 @@ class AdminViews {
     if (!signalsReporter) {
       log.debug("Leaving AdminViews.ssfJson(). Not installed.");
       return { installed: false, enabled: false, streamDetail: [],
-               receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
+               streamTotals: { streams: 0, enabled: 0, delivered: 0,
+                               failed: 0, waiting: 0, dead: 0,
+                               deadLetters: 0 },
+               paging: { streams: this.pagingJson(this.pagingOf(
+                 req.query || {}, 0, { name: 'streams', noun: 'streams' })) },
+               settings: configSettingsJson('/admin/ssf'),
+               statuses: [], eventTypes: [],
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals Framework.' };
     }
     const report = signalsReporter.report(req);
     report.installed = true;
     report.settings = configSettingsJson('/admin/ssf');
+    // The two menus each stream's forms offer (#446): the statuses a stream
+    // may be set to and the event types this transmitter can send.
+    report.statuses = signalsReporter.statuses.slice();
+    report.eventTypes = signalsReporter.eventTypes();
+    // THE STREAM CARDS ARE PAGED (#313's sweep, 2026-10-12). One card per
+    // stream in the realm, and `ssf.maxStreams` bounds each receiver rather
+    // than how many receivers there are, so the cards are a page moved by
+    // `streamsPage`. `stream` narrows them to one, EXACT, which is what the
+    // dead letters' stream links carry so a card is found whatever page it
+    // would be on. The tiles above the cards count the WHOLE transmitter,
+    // so `streamTotals` is taken here, before the narrowing and the slice.
+    const all = report.streamDetail || [];
+    report.streamTotals = {
+      streams: all.length,
+      enabled: all.filter(function (row) {
+        return row.status === 'enabled';
+      }).length,
+      delivered: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.delivered) || 0);
+      }, 0),
+      failed: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.failed) || 0);
+      }, 0),
+      waiting: all.reduce(function (n, row) {
+        return n + (row.queue || []).length;
+      }, 0),
+      dead: all.filter(function (row) {
+        return row.dead;
+      }).length,
+      deadLetters: all.reduce(function (n, row) {
+        return n + (row.deadLetters || []).length;
+      }, 0)
+    };
+    const wanted = this.queryOne(req.query || {}, 'stream').trim();
+    const matched = wanted
+      ? all.filter(function (row) {
+          return String(row.stream_id) === wanted;
+        })
+      : all;
+    const page = this.pagedRows(req.query || {}, matched,
+      { name: 'streams', noun: 'streams' });
+    report.streamDetail = page.shown;
+    report.streamFilter = wanted || null;
+    report.paging = { streams: this.pagingJson(page.paging) };
     log.debug("Leaving AdminViews.ssfJson(). " + report.streamDetail.length +
-              " stream(s).");
+              " of " + all.length + " stream(s).");
     return report;
   }
 
@@ -4248,10 +7164,26 @@ class AdminViews {
     });
     const page = this.pagedRows(req.query, rows,
       { name: 'letters', noun: 'dead letters' });
+    // THE STREAMS TABLE, NARROWED BY THE SAME TWO EXACT FILTERS AND PAGED
+    // (#313): a row per stream holding a letter or not delivering, however
+    // many receivers there are. `dlstream` keeps its one row and `dlcause`
+    // the streams holding a letter of that cause; `dlq` is over the letters
+    // and leaves this table whole. Filter first, then page.
+    const streamRows = (report.streams || []).filter(function (row) {
+      if (stream && row.stream_id !== stream) {
+        return false;
+      }
+      if (cause && !(row.causes && row.causes[cause] > 0)) {
+        return false;
+      }
+      return true;
+    });
+    const streamPage = this.pagedRows(req.query, streamRows,
+      { name: 'streams', noun: 'streams' });
     log.debug("Leaving AdminViews.ssfDeadLettersState(). " + rows.length +
               " match(es).");
     return { wanted: wanted, stream: stream, cause: cause, rows: rows,
-             page: page };
+             page: page, streamPage: streamPage };
   }
 
   /**
@@ -4270,7 +7202,9 @@ class AdminViews {
                totals: { held: 0 }, matched: 0,
                filter: { q: null, stream: null, cause: null },
                paging: { letters: this.pagingJson(this.pagingOf(req.query, 0,
-                 { name: 'letters', noun: 'dead letters' })) },
+                 { name: 'letters', noun: 'dead letters' })),
+                 streams: this.pagingJson(this.pagingOf(req.query, 0,
+                 { name: 'streams', noun: 'streams' })) },
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals dead-letter ' +
                      'queues.' };
@@ -4286,7 +7220,9 @@ class AdminViews {
                 cause: state.cause || null },
       matched: state.rows.length,
       letters: state.page.shown,
-      paging: { letters: this.pagingJson(state.page.paging) }
+      streams: state.streamPage.shown,
+      paging: { letters: this.pagingJson(state.page.paging),
+                streams: this.pagingJson(state.streamPage.paging) }
     });
   }
 
@@ -4306,7 +7242,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.caepJson(). Not installed.");
       return { installed: false, enabled: false, sessions: [], eventTypes: [],
                streams: [], totals: {}, tracked: 0,
-               settings: configSettingsJson('/admin/caep'),
+               settings: configSettingsJson('/admin/ssf', ['CAEP']),
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Continuous Access Evaluation ' +
                      'Profile.' };
@@ -4314,7 +7250,7 @@ class AdminViews {
     const report = caepReporter.report(req);
     report.installed = true;
     report.catalogue = caepReporter.eventTypes();
-    report.settings = configSettingsJson('/admin/caep');
+    report.settings = configSettingsJson('/admin/ssf', ['CAEP']);
     log.debug("Leaving AdminViews.caepJson(). " + report.tracked +
               " session(s).");
     return report;
@@ -4400,6 +7336,42 @@ class AdminViews {
     return { wanted: wanted, matched: matched, page: page };
   }
 
+  // ---------------------------------------------------------------------------
+  // WHERE AN EVENT COULD GO, PAGED (#313).
+  //
+  // `/admin/caep-sessions` and `/admin/risc-accounts` each list every Shared
+  // Signals stream in the realm with the event types it takes, and
+  // `ssf.maxStreams` limits each receiver, not the number of receivers — so
+  // the list grows with the realm. It is the third list on each page and
+  // moves on `streamsPage`, so paging it keeps the other two where they are.
+  // The tile above the tables counts the streams that take any event of the
+  // page's family, which is a count over the WHOLE list: it is taken here,
+  // before the slice, and published as `streamCounts`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Pages the streams a CAEP or RISC report lists.
+   *
+   * @param req - the request
+   * @param report - the CAEP or RISC report
+   * @returns the counts over the whole list, and the page
+   */
+  signalStreamsState(req, report) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.signalStreamsState().");
+    const all = report.streams || [];
+    const counts = {
+      total: all.length,
+      taking: all.filter(function (row) {
+        return (row.takes || []).length > 0;
+      }).length
+    };
+    const page = this.pagedRows(req.query, all,
+      { name: 'streams', noun: 'streams' });
+    log.debug("Leaving AdminViews.signalStreamsState(). " +
+              page.shown.length + " of " + all.length + ".");
+    return { counts: counts, page: page };
+  }
+
   // The reply BOTH doors answer with. `/admin/caep-sessions?format=json` and
   // GET /admin-api/caep/sessions are the same document — rule 7 — and the
   // drill- down is `?session=`, which is one operation answering two shapes for
@@ -4430,12 +7402,26 @@ class AdminViews {
     }
     const state = this.caepSessionsState(req, json);
     const appState = this.caepApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.caepSessionsJson(). The list.");
     return Object.assign({}, json, {
       filter: { sessions: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { sessions: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) }
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
+      // The rows each table's page shows and how many each filter matched
+      // (#446): the page draws its three tables from this answer.
+      shown: { sessions: state.page.shown,
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
+      matched: { sessions: state.matched.length,
+                 applications: appState.matched.length,
+                 streams: streamState.page.paging.total },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -4455,7 +7441,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.riscJson(). Not installed.");
       return { installed: false, enabled: false, accounts: [], eventTypes: [],
                streams: [], totals: {}, tracked: 0,
-               settings: configSettingsJson('/admin/risc'),
+               settings: configSettingsJson('/admin/ssf', ['RISC']),
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Risk Incident Sharing and ' +
                      'Coordination profile.' };
@@ -4463,7 +7449,7 @@ class AdminViews {
     const report = riscReporter.report(req);
     report.installed = true;
     report.catalogue = riscReporter.eventTypes();
-    report.settings = configSettingsJson('/admin/risc');
+    report.settings = configSettingsJson('/admin/ssf', ['RISC']);
     log.debug("Leaving AdminViews.riscJson(). " + report.tracked +
               " account(s).");
     return report;
@@ -4574,12 +7560,23 @@ class AdminViews {
     }
     const state = this.riscAccountsState(req, json);
     const appState = this.riscApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.riscAccountsJson(). The list.");
     return Object.assign({}, json, {
       filter: { accounts: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { accounts: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) }
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
+      // The rows each table's page shows (#446): the page draws its three
+      // tables from this answer.
+      shown: { accounts: state.page.shown,
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -4686,6 +7683,32 @@ class AdminViews {
         return { key: key, value: config.text(key) };
       })
     };
+    // WHAT THE PAGE DRAWS BESIDE (#446): the authorities and the federated
+    // bundles as the CA holds them, whether the SPIRE Server API
+    // authenticates, and the page's settings block — `settings` above is
+    // this answer's own list of readings, and stays what it was.
+    const extra: Record<string, any> = json;
+    extra.authorityState = {
+      x509Authorities: state.x509Authorities.map(function (one) {
+        return { id: one.id, active: one.active, notAfter: one.notAfter,
+                 subject: one.subject, createdAt: one.createdAt,
+                 keyType: one.keyType };
+      }),
+      jwtAuthorities: state.jwtAuthorities.map(function (one) {
+        return { id: one.id, active: one.active, notAfter: one.notAfter,
+                 alg: one.alg, createdAt: one.createdAt };
+      }),
+      federated: state.federated.map(function (one) {
+        return { trustDomain: one.trustDomain,
+                 trustDomainId: one.trustDomainId, x509Keys: one.x509Keys,
+                 jwtKeys: one.jwtKeys, sequence: one.sequence,
+                 bundleEndpointProfile: one.bundleEndpointProfile,
+                 bundleEndpointUrl: one.bundleEndpointUrl };
+      })
+    };
+    extra.serverApiAuthenticated = spiffeAuth.authRequired();
+    extra.settingsForms = configSettingsJson('/admin/cert-issuance',
+                                             ['SPIFFE']);
     log.debug("Leaving AdminViews.spiffeJson(). ready=" + json.ready);
     return json;
   }
@@ -4725,11 +7748,22 @@ class AdminViews {
           return list.indexOf(value) === index;
         })
         .sort(),
-      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-                total: pg.total },
+      paging: this.pagingJson(pg),
       max: spiffeRegistry.maxEntries(),
       container: 'ou=entries,ou=spiffe',
+      // What the page states beside the rows (#446): whether the SPIRE
+      // Server API authenticates, and the trust domain a new entry's
+      // SPIFFE ID is written in.
+      serverApiAuthenticated: spiffeAuth.authRequired(),
+      trustDomain: spiffeCa.trustDomain(),
+      // Each entry with its selectors as text, the column the page draws.
       entries: rows.slice(pg.offset, pg.offset + pg.perPage)
+        .map(function (entry) {
+          return Object.assign({}, entry, {
+            selectorTexts: entry.selectors
+              .map(self.spiffeSelectorText.bind(self))
+          });
+        })
     };
     log.debug("Leaving AdminViews.spiffeEntriesJson(). " + rows.length +
               " matched.");
@@ -4765,8 +7799,8 @@ class AdminViews {
       total: all.length,
       matched: rows.length,
       filter: { q: q },
-      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-                total: pg.total },
+      paging: this.pagingJson(pg),
+      trustDomain: spiffeCa.trustDomain(),
       setting: 'spiffe.brokers',
       port: config.text('spiffe.brokerPort'),
       referenceTypes: ['pid', 'k8s', '*'],
@@ -4811,13 +7845,77 @@ class AdminViews {
       filter: { q: q },
       max: spiffeRegistry.maxAgents(),
       container: 'ou=agents,ou=spiffe',
-      paging: { page: pg.page, pages: pg.pages, perPage: pg.perPage,
-                total: pg.total },
+      paging: this.pagingJson(pg),
+      serverApiAuthenticated: spiffeAuth.authRequired(),
       agents: rows.slice(pg.offset, pg.offset + pg.perPage)
     };
     log.debug("Leaving AdminViews.spiffeAgentsJson(). " + rows.length +
               " matched.");
     return { json: json, paging: pg };
+  }
+
+  // ONE REGISTRATION ENTRY AND ONE AGENT (#446), for the two drill-downs and
+  // for the `entry` and `agent` parameters `GET /admin-api/spiffe/entries`
+  // and `/agents` have always documented and, until now, ignored — they
+  // answered the list. Each carries its selectors as text and what its page
+  // states beside it; one that is not there answers `found: false`.
+  /**
+   * Builds one registration entry's drill-down JSON.
+   *
+   * @param id - the entry's id
+   * @returns the JSON
+   */
+  spiffeEntryJson(id) {
+    const { log, spiffeRegistry } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.spiffeEntryJson(). id=" + id);
+    const entry = spiffeRegistry.entryById(id);
+    const serverApiAuthenticated = spiffeAuth.authRequired();
+    if (!entry) {
+      log.debug("Leaving AdminViews.spiffeEntryJson(). Not here.");
+      return { found: false, id: id,
+               error: 'No registration entry has the id ' + id,
+               serverApiAuthenticated: serverApiAuthenticated };
+    }
+    log.debug("Leaving AdminViews.spiffeEntryJson().");
+    return {
+      found: true,
+      entry: Object.assign({}, entry, {
+        selectorTexts: entry.selectors.map(self.spiffeSelectorText.bind(self))
+      }),
+      editable: spiffeRegistry.EDITABLE,
+      serverApiAuthenticated: serverApiAuthenticated,
+      defaults: { x509SvidTtl: config.text('spiffe.svidTtl'),
+                  jwtSvidTtl: config.text('spiffe.jwtSvidTtl') }
+    };
+  }
+
+  /**
+   * Builds one attested agent's drill-down JSON.
+   *
+   * @param id - the agent's SPIFFE ID
+   * @returns the JSON
+   */
+  spiffeAgentJson(id) {
+    const { log, spiffeRegistry } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.spiffeAgentJson(). id=" + id);
+    const agent = spiffeRegistry.agentById(id);
+    const serverApiAuthenticated = spiffeAuth.authRequired();
+    if (!agent) {
+      log.debug("Leaving AdminViews.spiffeAgentJson(). Not here.");
+      return { found: false, id: id,
+               error: 'No agent has attested here as ' + id,
+               serverApiAuthenticated: serverApiAuthenticated };
+    }
+    log.debug("Leaving AdminViews.spiffeAgentJson().");
+    return {
+      found: true,
+      agent: Object.assign({}, agent, {
+        selectorTexts: agent.selectors.map(self.spiffeSelectorText.bind(self))
+      }),
+      serverApiAuthenticated: serverApiAuthenticated
+    };
   }
 
   /**
@@ -4831,6 +7929,50 @@ class AdminViews {
     log.debug("Entering AdminViews.spiffeSelectorText().");
     log.debug("Leaving AdminViews.spiffeSelectorText().");
     return spiffeRegistry.selectorText(selector);
+  }
+
+  // A FIELD GRID ROW TYPED for the control it is drawn as (#446): a setting
+  // override takes its setting's type and choices from config.js's
+  // description, and a field with a closed set of its own is a choice. It
+  // was the console's `gridFieldTyped()`, which still delegates here.
+  /**
+   * Types one field grid row for the control it is drawn as.
+   *
+   * @param row - the field, as `applications.applicationFields()` lists it
+   * @returns the row, typed
+   */
+  typedField(row) {
+    const { log, configSettingFor } = this.deps;
+    log.debug("Entering AdminViews.typedField().");
+    if (!row.overrides) {
+      // A closed set of its own (applications.attributeChoices()): one value
+      // is chosen from them, a list is ticked from them.
+      if (row.choices && row.choices.length && row.type === 'string') {
+        log.debug("Leaving AdminViews.typedField(). A closed set.");
+        return Object.assign({}, row, { type: 'enum' });
+      }
+      log.debug("Leaving AdminViews.typedField(). Not an override.");
+      return row;
+    }
+    const setting = configSettingFor(row.overrides);
+    if (!setting) {
+      log.debug("Leaving AdminViews.typedField(). Unknown setting.");
+      return row;
+    }
+    const described = config.describe(setting);
+    const typed = Object.assign({}, row, { described: described });
+    if (described.type === 'bool') {
+      typed.type = 'boolean';
+    } else if (described.type === 'enum') {
+      typed.type = 'enum';
+      typed.choices = (described.enumValues || []).filter(function (one) {
+        return one !== '';
+      });
+    } else if (described.type === 'int') {
+      typed.type = 'int';
+    }
+    log.debug("Leaving AdminViews.typedField().");
+    return typed;
   }
 
   // ---------------------------------------------------------------------------
@@ -4854,7 +7996,8 @@ class AdminViews {
    * @returns the JSON
    */
   newApplicationJson(req) {
-    const { log, realms, applications } = this.deps;
+    const { log, realms, applications, mode } = this.deps;
+    const self = this;
     log.debug("Entering AdminViews.newApplicationJson().");
     const container = applications.containerDn ? applications.containerDn() :
                       null;
@@ -4900,6 +8043,33 @@ class AdminViews {
         // document cannot offer a field the form has never heard of, nor the
         // other way round.
         declarations: applications.declarationAttributes(),
+        // WHAT THE FORM DRAWS (#446): every field its grid can draw, typed
+        // as the grid types it and saying whether the simplified view offers
+        // it, the groups they are drawn under, the protocol families' choices,
+        // the attributes one box holds whole, and what the RFC 9728 import
+        // section says about this mode.
+        fields: applications.applicationFields().map(function (row) {
+          return Object.assign({}, self.typedField(row), {
+            // And every field a sub-tab's simple view shows (#500), so the
+            // create form and the application page agree on what is usual.
+            inSimple: !!row.declaration || !!row.overrides ||
+              !!row.simple ||
+              SAML_KEY_SOURCE_FIELDS.some(function (one) {
+                return one.attribute === row.attribute;
+              })
+          });
+        }),
+        fieldGroups: applications.FIELD_GROUPS,
+        familyChoices: applications.FAMILY_CHOICES,
+        longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+        persistence: { persistsDirectory:
+                         !!persistence.status().persistsDirectory,
+                       mode: persistence.status().mode },
+        resourceMetadataImport: {
+          wellKnown: resourceMetadata.WELL_KNOWN,
+          acceptsNonconforming: mode.acceptsNonconformingResourceMetadata(),
+          dialsInternalAddresses: mode.dialsInternalAddresses()
+        },
         editable: applications.editableAttributes().map(function (row) {
           // `families` where the attribute has one, and ABSENT where it does
           // not, so that a caller reading this document to learn what it may
@@ -4917,6 +8087,64 @@ class AdminViews {
     };
   }
 
+  // EVERY FIELD THE NEW-USER FORM CAN DRAW (#446), as the console's
+  // `newUserFieldRows()` built them while drawing: the person editor's
+  // attributes, then any credential-catalogue attribute it does not hold,
+  // each with the sentence its tooltip says and whether the simplified view
+  // offers it. The page filters by view; this is all of them.
+  /**
+   * Lists the fields the new-user form's grid can draw.
+   *
+   * @returns the rows, each with `simple`
+   */
+  newUserFieldRows() {
+    const { log, vcClaims } = this.deps;
+    log.debug("Entering AdminViews.newUserFieldRows().");
+    const catalogue = vcClaims.personFields();
+    const claimOf: Record<string, string> = {};
+    catalogue.forEach(function (row) {
+      claimOf[row.ldap.toLowerCase()] = row.claim.join('.');
+    });
+    const rows = personEditor.editableAttributes().map(function (row) {
+      return { name: row.name, label: row.label, schema: row.schema,
+               multi: row.multi, must: row.must, note: row.note,
+               group: row.group, example: row.example, simple: row.simple };
+    });
+    catalogue.forEach(function (row) {
+      const known = rows.some(function (one) {
+        return one.name.toLowerCase() === row.ldap.toLowerCase();
+      });
+      if (!known) {
+        rows.push({ name: row.ldap, label: row.label, schema: row.schema,
+                    multi: false, must: false, note: '',
+                    group: personEditor.groupOf(row.ldap) === 'other' &&
+                      row.ldap.toLowerCase() === 'mail'
+                      ? 'contact' : personEditor.groupOf(row.ldap),
+                    example: personEditor.FIELD_EXAMPLES[
+                      row.ldap.toLowerCase()] || '',
+                    simple: row.ldap.toLowerCase() === 'mail' });
+      }
+    });
+    const out = rows.map(function (row) {
+      const claim = claimOf[row.name.toLowerCase()];
+      return {
+        attribute: row.name,
+        type: row.multi ? 'array' : 'string',
+        what: row.label + ' — ' + row.schema + '.' +
+              (row.note ? ' It takes ' + row.note + '.' : '') +
+              (row.multi ? '' : ' It holds one value.') +
+              (claim ? ' It reaches a credential as ' + claim + '.' : ''),
+        example: row.example,
+        forText: row.label,
+        families: [], everyFamily: true, group: row.group,
+        simple: !!row.simple
+      };
+    });
+    log.debug("Leaving AdminViews.newUserFieldRows(). " + out.length +
+              " field(s).");
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // THE NEW-PERSON FORM'S ANSWER (2026-09-12). Split from newUserPage() the way
   // newApplicationJson() was split from its own page, and for the same reason:
@@ -4924,6 +8152,35 @@ class AdminViews {
   // `/admin-api` publishes were the same computation written twice in one
   // function, with a form between them.
   // ---------------------------------------------------------------------------
+  // THE INVENTED PERSON FOR A USERNAME, as Fill puts it into the new-user
+  // form (moved here from the console with #446, so the API answers it):
+  // `vcClaims.personaFor()` keyed by the attribute each field is stored in.
+  /**
+   * The attribute values this service would invent for a username.
+   *
+   * @param username - the username
+   * @returns the values, by LDAP attribute name
+   */
+  inventedFieldValues(username) {
+    const { log, vcClaims } = this.deps;
+    log.debug("Entering AdminViews.inventedFieldValues().");
+    const persona = vcClaims.personaFor(String(username || '').trim());
+    const out = {};
+    vcClaims.personFields().forEach(function (row) {
+      if (!row.from) {
+        return;
+      }
+      const value = persona[row.from];
+      if (value === undefined || value === null || value === '') {
+        return;
+      }
+      out[row.ldap] = String(value);
+    });
+    log.debug("Leaving AdminViews.inventedFieldValues(). " +
+              Object.keys(out).length + " value(s).");
+    return out;
+  }
+
   /**
    * Builds `/admin/users/new`'s JSON: the attribute catalogue and credential
    * choices.
@@ -4933,7 +8190,8 @@ class AdminViews {
    * @returns the JSON
    */
   newUserJson(req, prefill?) {
-    const { log, credentials, mode, realms, vcClaims } = this.deps;
+    const { log, credentials, mode, realms, vcClaims, applications } =
+      this.deps;
     log.debug("Entering AdminViews.newUserJson().");
     const given = prefill || {};
     const values = given.fields || {};
@@ -4979,9 +8237,33 @@ class AdminViews {
         return { attribute: row.ldap, label: row.label, schema: row.schema,
                  claim: row.claim.slice(0), invented: !!row.from };
       }),
-      credentials: CREDENTIAL_CHOICES.map(function (one) {
-        return { id: one.id, label: one.label };
+      // THE FIELD GRID THE FORM DRAWS (2026-10-01): every attribute a
+      // person's Attributes tab edits, which a create takes too and holds to
+      // the same rules, with the group it is drawn under, whether it is a
+      // list, an example of a valid value and whether the simplified view
+      // offers it. `fields` above is the credential catalogue, unchanged.
+      fieldGroups: personEditor.FIELD_GROUPS.map(function (group) {
+        return { id: group.id, label: group.label, what: group.what };
       }),
+      gridFields: personEditor.editableAttributes().map(function (row) {
+        return { attribute: row.name, label: row.label, group: row.group,
+                 multi: row.multi, example: row.example,
+                 simple: row.simple, takes: row.note || 'text' };
+      }),
+      credentials: CREDENTIAL_CHOICES.map(function (one) {
+        return { id: one.id, label: one.label, what: one.what };
+      }),
+      // WHAT THE FORM DRAWS BESIDE (#446): the username it was asked with,
+      // every field its grid can draw (each saying whether the simplified
+      // view offers it), the attributes one box holds whole, whether a link
+      // can be mailed, and whether a create survives a restart.
+      username: username,
+      fieldRows: this.newUserFieldRows(),
+      longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+      mailAvailable: require('../common/mail').available(),
+      persistence: { persistsDirectory:
+                       !!persistence.status().persistsDirectory,
+                     mode: persistence.status().mode },
       // WHAT A CREATE THAT NAMES NO CREDENTIAL GETS (2026-09-12), and the rules
       // a typed or generated password meets — published so that a caller learns
       // both from the document rather than from a refusal.
@@ -5033,7 +8315,6 @@ class AdminViews {
     const { log, realms, rbac } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.rbacListJson().");
-    log.debug("Entering rbacListPage().");
     // The roster of the realm being read (2026-09-14, #32): the service roster
     // in the default realm, that realm's own anywhere else.
     const info = rbac.describe(realms.currentId());
@@ -5146,6 +8427,29 @@ class AdminViews {
     filterParams.personq = personWanted;
     filterParams.personfrom = this.queryOne(req.query, 'personfrom');
     filterParams.person = personAsked;
+    // THE PANE'S OWN SLICE (#446), by the chooser's rule rather than the
+    // reply's paging: `personfrom` clamped as `chooserPane()` clamps it and
+    // CHOOSER_HITS at a time whatever `per` says, so a page drawn from this
+    // answer shows what the pane drawn from the whole catalogue showed.
+    let paneFrom = parseInt(this.queryOne(req.query, 'personfrom'), 10);
+    if (!isFinite(paneFrom) || paneFrom < 0 ||
+        paneFrom >= candidateMatched.length) {
+      paneFrom = 0;
+    }
+    const candidatePane = {
+      from: paneFrom, matched: candidateMatched.length,
+      shown: candidateMatched.slice(paneFrom, paneFrom + CHOOSER_HITS)
+    };
+    // Who of the grants on this page has authenticated here, for the
+    // member cell's link — the page's people only, as the group drill-down
+    // carries them.
+    const knownHere: Record<string, boolean> = {};
+    shown.forEach(function (row) {
+      if (row.userKey && knownKeys[row.userKey]) {
+        knownHere[row.userKey] = true;
+      }
+    });
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.rbacListJson(). " + candidateMatched.length +
               " of " +
               candidates.length + " candidate(s) match.");
@@ -5210,7 +8514,12 @@ class AdminViews {
           },
           picked: personAsked
             ? { asked: personAsked, candidate: picked }
-            : null
+            : null,
+          // What the page draws beside (#446): its paging, the pane's slice,
+          // the people on the page who have signed in here, and the two
+          // roles a grant can name.
+          paging: pagingJson, candidatePane: candidatePane, known: knownHere,
+          roleChoices: rbac.ROLES
       };
       }())
     };
@@ -5240,8 +8549,11 @@ class AdminViews {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.knownUserKeys().");
     const known: Record<string, any> = {};
-    stats.userRows().forEach(function (row) {
-      known[row.key] = true;
+    // THE KEYS AND NOT THE ROWS (#352): `stats.userKeys()` answers the key of
+    // every row `userRows()` would build, without building one — nine pages
+    // ask this and every one of them threw the rows away.
+    stats.userKeys().forEach(function (key) {
+      known[key] = true;
     });
     log.debug("Leaving AdminViews.knownUserKeys().");
     return known;
@@ -5264,7 +8576,6 @@ class AdminViews {
     const { log, baseUrlOf, saml2, spMetadata } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml2ListJson().");
-    log.debug("Entering saml2ListPage().");
     const base = baseUrlOf(req);
     const all = this.saml2ServiceProviders();
     const needle = String(req.query.q || '').trim().toLowerCase();
@@ -5332,7 +8643,10 @@ class AdminViews {
           artifactsAwaitingResolution: saml2.artifactCount(),
           requestsHeldForSignIn: saml2.pendingRequestCount(),
           mdqRefused: refused.shown,
-          mdqRefusedPaging: refused.paging
+          mdqRefusedPaging: refused.paging,
+          // The kind the applications page files these entries under, for
+          // the page's link to them (#446).
+          kind: SAML2_SP_KIND
       };
       }())
     };
@@ -5350,7 +8664,6 @@ class AdminViews {
     const self = this;
     log.debug("Entering AdminViews.saml2DetailJson(). identifier=" +
               identifier);
-    log.debug("Entering saml2DetailPage(). sp=" + identifier);
     const base = baseUrlOf(req);
     const facts = this.saml2Facts(base, identifier);
     const row = applications.get(identifier);
@@ -5538,7 +8851,7 @@ class AdminViews {
     return {
       identifier: identifier,
       slug: saml2.slugOf(identifier),
-      idpEntityId: saml2.idpEntityIdFor(identifier),
+      idpEntityId: saml2.idpEntityId(),
       metadataUrl: where.metadata,
       ssoUrl: where.sso,
       sloUrl: where.slo,
@@ -5580,7 +8893,6 @@ class AdminViews {
     const { log, baseUrlOf, saml11 } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.saml11ListJson().");
-    log.debug("Entering saml11ListPage().");
     const base = baseUrlOf(req);
     const all = this.saml11RelyingParties();
     const needle = String(req.query.q || '').trim().toLowerCase();
@@ -5631,7 +8943,10 @@ class AdminViews {
           // at its ceiling.
           artifactsAwaitingResolution: saml11.artifactCount(),
           assertionsHeldByReference: saml11.cachedAssertionCount(),
-          flowsHeldForSignIn: saml11.pendingFlowCount()
+          flowsHeldForSignIn: saml11.pendingFlowCount(),
+          // The kind the applications page files these entries under, for
+          // the page's link to them (#446).
+          kind: SAML11_RP_KIND
       };
       }())
     };
@@ -5649,7 +8964,6 @@ class AdminViews {
     const self = this;
     log.debug("Entering AdminViews.saml11DetailJson(). identifier=" +
               identifier);
-    log.debug("Entering saml11DetailPage(). rp=" + identifier);
     const base = baseUrlOf(req);
     const facts = this.saml11Facts(base, identifier);
     const row = applications.get(identifier);
@@ -5749,7 +9063,7 @@ class AdminViews {
     return {
       identifier: identifier,
       slug: saml11.slugOf(identifier),
-      idpProviderId: saml11.providerIdFor(identifier),
+      idpProviderId: saml11.providerId(),
       metadataUrl: where.metadata,
       ssoUrl: where.sso,
       responderUrl: where.responder
@@ -5767,11 +9081,18 @@ class AdminViews {
     const { log, authorizationServers } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.asListJson().");
-    log.debug("Entering asListPage().");
     const all = authorizationServers.list();
     const paged = this.pagedRows(req.query, all,
                                  { noun: 'authorization servers' });
     const paging = paged.paging;
+    const pagingJson = this.pagingJson(paging);
+    // The page's three tiles count every profile, not the page shown (#446).
+    const overrideTotal = all.reduce(function (n, r) {
+      return n + Object.keys(r.overrides).length;
+    }, 0);
+    const driftTotal = all.reduce(function (n, r) {
+      return n + self.asDriftRows(r.id).length;
+    }, 0);
     log.debug("Leaving AdminViews.asListJson().");
     return {
       all: all, paged: paged, paging: paging,
@@ -5781,6 +9102,8 @@ class AdminViews {
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           members: authorizationServers.MEMBERS,
+          paging: pagingJson, overrideTotal: overrideTotal,
+          driftTotal: driftTotal,
           authorizationServers: paged.shown.map(function (row) {
             return Object.assign({}, row, { drift: self.asDriftRows(row.id) });
           })
@@ -5817,7 +9140,13 @@ class AdminViews {
               " drifting member(s).");
     return {
       profile: profile, drift: drift, capabilities: capabilities,
-      json: Object.assign({ found: true }, profile, { drift: drift })
+      // What the page draws beside the profile (#446): the effective
+      // capabilities, and the member catalogue its two menus are built from.
+      json: Object.assign({ found: true }, profile, {
+        drift: drift, capabilities: capabilities,
+        members: authorizationServers.MEMBERS,
+        memberGroups: authorizationServers.GROUPS
+      })
     };
   }
 
@@ -5898,11 +9227,24 @@ class AdminViews {
   groupsListJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.groupsListJson().");
-    log.debug("Entering groupsListPage().");
     const info = groupReader('');
     const wantedText = String(req.query.q || '').trim();
     const needle = wantedText.toLowerCase();
+    // DNs LEFT OUT OF THE MATCH (#459), before the paging, for the
+    // application page's search for `appDelegationSubjectGroup`: the groups
+    // its list already holds. A DN is compared as LDAP compares one — case
+    // and the spaces after a comma do not matter.
+    const dnKey = function (dn) {
+      return String(dn).trim().toLowerCase().replace(/\s*,\s*/g, ',');
+    };
+    const excluded = [].concat(req.query.exclude === undefined
+                                 ? [] : req.query.exclude)
+      .map(dnKey)
+      .filter(function (one) { return one !== ''; });
     const filtered = info.groups.filter(function (group) {
+      if (excluded.indexOf(dnKey(group.dn)) >= 0) {
+        return false;
+      }
       if (!needle) {
         return true;
       }
@@ -5922,6 +9264,7 @@ class AdminViews {
     const totalDangling = info.groups.reduce(function (n, g) {
       return n + g.danglingCount;
     }, 0);
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.groupsListJson().");
     return {
       info: info, wantedText: wantedText, needle: needle, filtered: filtered,
@@ -5938,13 +9281,20 @@ class AdminViews {
           canWrite: !!groupWriter,
           membershipValues: totalMembers, dangling: totalDangling,
           settings: configSettingsJson('/admin/groups'),
-          filter: { q: wantedText || null },
+          filter: { q: wantedText || null,
+                    exclude: excluded.length ? excluded : null },
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           baseDn: info.baseDn, groupsDn: info.groupsDn, usersDn: info.usersDn,
           port: info.port, listening: info.listening, listenError:
                                                         info.listenError,
           ldapsPort: info.ldapsPort, ldapsListening: info.ldapsListening,
+          // WHAT THE PAGE DRAWS AND THIS ANSWER DID NOT CARRY (#446): the
+          // paging control's own object, the directory's size for the fourth
+          // tile, and the two console groups the caveat names.
+          paging: pagingJson, entryCount: info.entryCount,
+          adminGroups: { read: config.value('admin.readGroup'),
+                         write: config.value('admin.writeGroup') },
           groups: shown
       };
       }())
@@ -5966,7 +9316,11 @@ class AdminViews {
     const info = groupReader(wantedDn);
     if (!info.found) {
       log.debug("Leaving AdminViews.groupDetailJson(). Not a group.");
-      return { info: info, json: Object.assign({ found: false }, info) };
+      return { info: info, json: Object.assign({ found: false }, info, {
+        wanted: wantedDn,
+        adminGroups: { read: config.value('admin.readGroup'),
+                       write: config.value('admin.writeGroup') }
+      }) };
     }
     const group = info.group;
     const known = this.knownUserKeys();
@@ -5994,6 +9348,16 @@ class AdminViews {
     const pagedGroup = Object.assign({}, group, {
       members: memberPage.shown, claimed: claimedPage.shown
     });
+    // WHO OF THIS PAGE HAS AUTHENTICATED HERE (#446): the users-page links
+    // are drawn only for them, and the page is drawn from this answer. Only
+    // the names on this page, because the register is every person who ever
+    // signed in and the page needs a dozen of them.
+    const knownHere: Record<string, boolean> = {};
+    memberPage.shown.concat(claimedPage.shown).forEach(function (one) {
+      if (one.userKey && known[one.userKey]) {
+        knownHere[one.userKey] = true;
+      }
+    });
     log.debug("Leaving AdminViews.groupDetailJson().");
     return {
       info: info, group: group, known: known, params: params,
@@ -6001,8 +9365,13 @@ class AdminViews {
       json: Object.assign({ found: true }, info, {
         canWrite: !!groupWriter,
         group: pagedGroup,
+        // Closed to its owners, and why (#607).
+        ownership: this.ownershipOf('group', group.dn),
         membersPaging: this.pagingJson(memberPage.paging),
-        claimedPaging: this.pagingJson(claimedPage.paging)
+        claimedPaging: this.pagingJson(claimedPage.paging),
+        known: knownHere,
+        adminGroups: { read: config.value('admin.readGroup'),
+                       write: config.value('admin.writeGroup') }
       })
     };
   }
@@ -6042,22 +9411,47 @@ class AdminViews {
   pageParamsOf(query) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pageParamsOf().");
-    const out: Record<string, any> = {};
-    Object.keys(query || {}).forEach(function (key) {
-      if (NOT_A_VIEW.indexOf(key) >= 0) {
-        return;
-      }
-      // Express hands back an array when a parameter is repeated. The first is
-      // taken rather than String()'d, because String(['2','5']) is "2,5" — a
-      // page number nothing can parse, silently reached by a link somebody
-      // clicked twice.
-      const value = Array.isArray(query[key]) ? query[key][0] : query[key];
-      out[key] = value == null ? '' : String(value);
-    });
-    log.debug("Leaving AdminViews.pageParamsOf(). " + Object.keys(out).length +
-              " " +
-        "parameter(s).");
+    // The kit's since #446, with its reasoning: a renderer in a browser
+    // names the same view parameters this does.
+    const out = WebKit.pageParamsOf(query);
+    log.debug("Leaving AdminViews.pageParamsOf(). " +
+              Object.keys(out).length + " parameter(s).");
     return out;
+  }
+
+  // THE LIST'S EXPIRING-SECRET MARK (#49 P5): a client secret that has
+  // expired, or expires within oauth2.clientSecretExpiryWarningDays — the
+  // same two the daily job oauth2.client-secret-expiry warns about. Judged
+  // here since #446, against the clock and
+  // `oauth2.clientSecretExpiryWarningDays`, so the answer says it and a page
+  // drawn from the answer needs neither.
+  /**
+   * Judges an application's client secret against its expiry.
+   *
+   * @param row - the application, as the register lists it
+   * @returns `{ state, at }` — `expired`, `soon` or `''`, and the expiry as
+   *   an ISO 8601 instant ('' when the secret does not expire)
+   */
+  secretExpiryOf(row) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.secretExpiryOf().");
+    const record = applications.get(row.identifier);
+    const fields = (record && record.fields) || {};
+    const expiresAt = fields.oauthClientSecret
+      ? applications.secretExpiryOf(fields) : 0;
+    if (!expiresAt) {
+      log.debug("Leaving AdminViews.secretExpiryOf(). None.");
+      return { state: '', at: '' };
+    }
+    const nowS = Math.floor(Date.now() / 1000);
+    const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
+                  86400;
+    log.debug("Leaving AdminViews.secretExpiryOf().");
+    return {
+      state: expiresAt <= nowS ? 'expired'
+                               : (expiresAt - nowS <= warnS ? 'soon' : ''),
+      at: new Date(expiresAt * 1000).toISOString()
+    };
   }
 
   // WHAT /admin/applications ANSWERS. `registeredCount` comes with the
@@ -6072,12 +9466,22 @@ class AdminViews {
   applicationsListJson(req) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.applicationsListJson().");
-    log.debug("Entering applicationsListPage().");
     const all = applications.list();
     const wantedText = String(req.query.q || '').trim();
     const wantedKind = String(req.query.kind || '').trim();
     const needle = wantedText.toLowerCase();
+    // IDENTIFIERS LEFT OUT OF THE MATCH (#459), exactly as spelled, BEFORE
+    // the paging — so a page still holds `per` rows. The application page's
+    // search for the two delegation lists sends the application itself and
+    // what its list already holds, neither of which it could add.
+    const excluded = [].concat(req.query.exclude === undefined
+                                 ? [] : req.query.exclude)
+      .map(function (one) { return String(one).trim(); })
+      .filter(function (one) { return one !== ''; });
     const filtered = all.filter(function (row) {
+      if (excluded.indexOf(row.identifier) >= 0) {
+        return false;
+      }
       // Recorded OR declared, the union the Kind column shows — a filter
       // that dropped a row showing the kind asked for would be lying.
       if (wantedKind && row.kinds.indexOf(wantedKind) < 0 &&
@@ -6103,6 +9507,27 @@ class AdminViews {
         all.filter(function (row) {
           return row.registered || !!row.registeredBy;
         }).length;
+    // WHAT THE PAGE COUNTS AND MARKS (#446): the kind menu counts over every
+    // application, the tile sums every authentication, and a row's client
+    // secret is judged against the clock and the warning setting here,
+    // where both are, rather than in a page that has neither.
+    const self = this;
+    const kindCounts: Record<string, number> = {};
+    applications.KINDS.forEach(function (one) {
+      kindCounts[one.kind] = all.filter(function (row) {
+        return row.kinds.indexOf(one.kind) >= 0 ||
+               (row.declaredKinds || []).indexOf(one.kind) >= 0;
+      }).length;
+    });
+    const authenticationTotal = all.reduce(function (n, r) {
+      return n + r.authentications;
+    }, 0);
+    // Each row with its credentials masked (#446): no GET carries one.
+    const shownRows = paged.shown.map(function (row) {
+      return Object.assign(self.maskedApplicationRow(row),
+                           { secretExpiry: self.secretExpiryOf(row) });
+    });
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.applicationsListJson().");
     return {
       all: all, wantedText: wantedText, wantedKind: wantedKind, needle: needle,
@@ -6113,7 +9538,8 @@ class AdminViews {
           applicationCount: all.length, matched: filtered.length,
           shown: paged.shown.length,
           registered: registeredCount,
-          filter: { q: wantedText || null, kind: wantedKind || null },
+          filter: { q: wantedText || null, kind: wantedKind || null,
+                    exclude: excluded.length ? excluded : null },
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
           container: applications.containerDn ? applications.containerDn() :
@@ -6122,10 +9548,426 @@ class AdminViews {
                null,
           kinds: applications.KINDS,
           settings: configSettingsJson('/admin/applications'),
-          applications: paged.shown
+          paging: pagingJson, kindCounts: kindCounts,
+          authentications: authenticationTotal,
+          protocols: applications.PROTOCOLS || [],
+          applications: shownRows
       };
       }())
     };
+  }
+
+  // THE ATTRIBUTES THAT ARE CREDENTIALS (#446): the application schema's
+  // `sensitive` rows. Every one is masked in a GET answer.
+  /**
+   * Lists the application attributes that hold a credential.
+   *
+   * @returns the attribute names
+   */
+  sensitiveApplicationAttributes() {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.sensitiveApplicationAttributes().");
+    log.debug("Leaving AdminViews.sensitiveApplicationAttributes().");
+    return applications.SCHEMA.attributes.filter(function (one) {
+      return !!one.sensitive;
+    }).map(function (one) {
+      return one.name;
+    });
+  }
+
+  /**
+   * Masks a credential's values: each held value becomes the same sentence.
+   *
+   * @param value - the attribute's value or values
+   * @returns the masked value, the same shape
+   */
+  maskedCredential(value) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.maskedCredential().");
+    const mask = '(set — not returned)';
+    log.debug("Leaving AdminViews.maskedCredential().");
+    if (Array.isArray(value)) {
+      return value.map(function () {
+        return mask;
+      });
+    }
+    return value === undefined || value === null || value === '' ? value
+                                                                  : mask;
+  }
+
+  /**
+   * Copies an application's registry row with every credential masked in
+   * its `fields` and `attributes`.
+   *
+   * @param row - the registry row
+   * @returns the masked copy
+   */
+  maskedApplicationRow(row) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.maskedApplicationRow().");
+    const names = this.sensitiveApplicationAttributes();
+    const out = Object.assign({}, row);
+    ['fields', 'attributes'].forEach(function (member) {
+      if (!row[member]) {
+        return;
+      }
+      const copy = Object.assign({}, row[member]);
+      Object.keys(copy).forEach(function (name) {
+        if (names.indexOf(name) >= 0) {
+          copy[name] = self.maskedCredential(copy[name]);
+        }
+      });
+      out[member] = copy;
+    });
+    log.debug("Leaving AdminViews.maskedApplicationRow().");
+    return out;
+  }
+
+  /**
+   * Copies an application's attribute rows with every credential's values
+   * masked.
+   *
+   * @param rows - the rows, `{ name, values, ... }`
+   * @returns the masked copies
+   */
+  maskedAttributeRows(rows) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.maskedAttributeRows().");
+    const names = this.sensitiveApplicationAttributes();
+    log.debug("Leaving AdminViews.maskedAttributeRows().");
+    return rows.map(function (one) {
+      return names.indexOf(one.name) >= 0
+        ? Object.assign({}, one, { values: self.maskedCredential(one.values) })
+        : one;
+    });
+  }
+
+  // What one attribute of an application entry IS, as the drill-down's third
+  // column. Split out of that page because the entry carries FOUR kinds of
+  // attribute and the table only ever described one of them — so everything
+  // else came out as "not in the published schema", which is true of
+  // `objectClass` and `createTimestamp` in the narrowest sense and useless as
+  // an explanation.
+  //
+  // The order is the order of certainty: the registry's own table first, since
+  // it is the same table the entry was written from; then the operational ones,
+  // which the DIRECTORY sets and no schema of this module's would ever mention;
+  // then the object classes, published one heading further down
+  // `/admin/ldap/applications`; and only then the honest "somebody wrote this
+  // by hand", which is a real state — this directory is schemaless and an
+  // ldapmodify can put anything on an entry.
+  //
+  // No description is invented for an attribute nothing here knows. Saying
+  // something confident about a name written by hand is how a page starts
+  // lying.
+  /**
+   * Says what one attribute of an application entry is: from the published
+   * schema, an operational attribute, an object class, or written by hand.
+   *
+   * @param name - the attribute name
+   * @param operational - whether the directory marks it operational
+   * @returns an object with `text` and, for a schema attribute, `sensitive`
+   */
+  applicationAttributeNote(name, operational) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationAttributeNote().");
+    const lower = String(name).toLowerCase();
+    const spec = applications.SCHEMA.attributes.filter(function (one) {
+      return one.name.toLowerCase() === lower;
+    })[0];
+    if (spec) {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: spec.what, sensitive: !!spec.sensitive };
+    }
+    if (lower === 'entrydn') {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: 'WHERE THE ENTRY IS. RFC 5020, and the directory ' +
+                     'synthesises it rather than storing it: the DN is the ' +
+                     'key the entry is held under, so a stored copy would be ' +
+                     'a second definition of the same fact and the one that ' +
+                     'goes stale the moment the entry is renamed. It is the ' +
+                     'name an ldapsearch filter matches this by, which is ' +
+                     'why the dump calls it the same thing.' };
+    }
+    if (lower === 'createtimestamp' || lower === 'modifytimestamp') {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: 'The directory\'s own, not the registry\'s: when this ' +
+                     'ENTRY was ' +
+                     (lower === 'createtimestamp' ? 'created' :
+                      'last written') +
+                     '. Different from appFirstSeen and appLastSeen one row ' +
+                     'up, which are when the APPLICATION was seen — an ' +
+                     'ldapmodify moves this one and not those.' };
+    }
+    if (lower === 'objectclass') {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      return { text: 'The classes this entry claims, from the registry\'s ' +
+                     'vocabulary: ' +
+                     applications.SCHEMA.objectClasses.map(function (one) {
+                       return one.name;
+                     }).join(', ') + '. A VOCABULARY and not a constraint — ' +
+                     'node-ldapjs has no schema subsystem and this directory ' +
+                     'is schemaless on purpose, so nothing rejects an entry ' +
+                     'for disobeying it.' };
+    }
+    if (operational) {
+      log.debug("Leaving AdminViews.applicationAttributeNote().");
+      // An operational attribute this function has no sentence for, which means
+      // ldap_server.js's OPERATIONAL list grew and this one did not. Saying so
+      // is better than the "written by hand" answer below, which would be
+      // flatly wrong about an attribute the directory sets itself.
+      return { text: 'An operational attribute the directory sets. A search ' +
+                     'returns it only when it is asked for by name (RFC 4511 ' +
+                     'section 4.5.1.8); this dump is not a search, so it is ' +
+                     'here. This page has nothing more specific to say about ' +
+                     'it.' };
+    }
+    log.debug("Leaving AdminViews.applicationAttributeNote().");
+    return { text: 'Not in the published schema and not one the directory ' +
+                   'sets — written by hand into this entry, which nothing ' +
+                   'here prevents and which is what a schemaless directory ' +
+                   'means. The registry\'s own writes REPLACE the entry, so ' +
+                   'a value here survives only until the next time this ' +
+                   'application is seen.' };
+  }
+  // ---------------------------------------------------------------------------
+  // WHAT AN APPLICATION'S PAGE IS DRAWN FROM (#446). The page's tabs read the
+  // registry, the mode and the section states while they drew; a page drawn
+  // in a browser has none of those, so this collects what they read, once,
+  // from the same functions. It carries NO CREDENTIAL: a client secret's
+  // value, the registration access token and every private key stay behind
+  // `reveal-secret` (rcbj, 2026-10-05), and a section that showed one draws a
+  // control that asks for it instead.
+  // ---------------------------------------------------------------------------
+  /**
+   * Collects what an application's page draws its tabs from.
+   *
+   * @param req - the request
+   * @param row - the application's registry row
+   * @param states - the section states `applicationDetailJson()` built
+   * @returns the page data
+   */
+  // #488: an application's wstrustJwtScope warnings, or none when the policy
+  // cannot be asked (a view must still draw).
+  applicationScopeWarnings(identifier) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationScopeWarnings().");
+    let out = [];
+    try {
+      out = require('../common/scope_policy')
+        .configuredScopeWarnings(identifier) || [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationScopeWarnings(): " +
+                ((e && e.message) || e));
+      out = [];
+    }
+    log.debug("Leaving AdminViews.applicationScopeWarnings().");
+    return out;
+  }
+
+  // #609: the named passkey policies whose applications list names this
+  // application — by its identifier or a client_id, as a sign-in names it —
+  // in precedence order with the one that applies marked, for the Every
+  // protocol sub-tab's read-only card. Nothing is stored on the entry: the
+  // relation is the policies' `stsPasskeySelectApplication`. A view must
+  // still draw, so a policy that cannot be asked answers none.
+  /**
+   * The named passkey policies that name an application, and which applies.
+   *
+   * @param row - the application's registry row
+   * @returns `passkeyPolicy.forApplication()`'s answer, with `names` (what
+   *   the application was matched by) and `link` (the Policies page's tab)
+   */
+  applicationPasskeyPolicies(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationPasskeyPolicies().");
+    const fields = (row && row.fields) || {};
+    const names = [String((row && row.identifier) || '')]
+      .concat([].concat(fields.oauthClientId || []).map(String))
+      .filter(function (one, n, all) {
+        return one !== '' && all.indexOf(one) === n;
+      });
+    let out;
+    try {
+      out = require('../common/passkey_policy').forApplication(names);
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPasskeyPolicies(): " +
+                ((e && e.message) || e));
+      out = { policies: [], applies: 'default', appliesBy: {},
+              groupPolicies: 0 };
+    }
+    log.debug("Leaving AdminViews.applicationPasskeyPolicies(). " +
+              out.policies.length + " policy(ies).");
+    // Each policy's own place on Directory > Policies, the named profile's
+    // heading on the Passkey policy tab's Named policies sub-tab.
+    const policies = out.policies.map(function (one) {
+      return Object.assign({}, one, {
+        link: '/admin/policies#passkey-profile-' + one.name });
+    });
+    return Object.assign({ names: names,
+                           link: '/admin/policies#passkey' }, out,
+                         { policies: policies });
+  }
+
+  applicationPageData(req, row, states) {
+    const { log, applications, mode, baseUrlOf } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.applicationPageData().");
+    const fields = row.fields || {};
+    const listOf = function (name) {
+      return [].concat(fields[name] || []).map(String)
+        .filter(function (one) { return one !== ''; });
+    };
+    // The configuration tab's fields: every field but the credentials and
+    // those a tab of their own edits (#392: the CORS origins are the
+    // Browser origins tab's; #458: the required roles are the Roles tab's),
+    // typed as the grid types them, with the entry's values.
+    const ownTab = applications.PAGE_TAB_ATTRIBUTES || [];
+    const configFields = applications.applicationFields()
+      .filter(function (one) {
+        return !one.sensitive && ownTab.indexOf(one.attribute) < 0;
+      }).map(function (one) { return self.typedField(one); });
+    const configValues: Record<string, string[]> = {};
+    configFields.forEach(function (one) {
+      const value = fields[one.attribute];
+      configValues[one.attribute] = [].concat(value === undefined ||
+        value === null ? [] : value).map(String);
+    });
+    // The DID panel: the document advertised for it, and which keys this
+    // service keeps the private half of — by kid, never the key.
+    const vcDid = require('../oid4vc/vc_did');
+    const base = baseUrlOf(req);
+    const did = vcDid.applicationDid(base, row.identifier);
+    const document = vcDid.applicationDidDocument(base, row.identifier);
+    let keptKids = [];
+    try {
+      keptKids = JSON.parse(String(fields.didPrivateKeys || '[]'))
+        .map(function (one) { return String(one && one.kid || ''); });
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPageData(): " +
+                ((e && e.message) || e));
+      keptKids = [];
+    }
+    // The credentials state, less every value: the page asks reveal-secret.
+    const credentials = Object.assign({}, states.credentials);
+    delete credentials.json;
+    credentials.clientSecret = Object.assign({},
+                                             states.credentials.clientSecret);
+    delete credentials.clientSecret.values;
+    delete credentials.clientSecret.registrationAccessToken;
+    const declared = applications.declaredFamiliesOf(row);
+    const editable = function (kind, filtered) {
+      return applications.editableAttributes(kind).filter(function (one) {
+        return !filtered ||
+          !applications.familyRefusal(one.name, declared, row.identifier);
+      }).map(function (one) {
+        return { name: one.name, sensitive: !!one.sensitive };
+      });
+    };
+    const permissions = states.permissions;
+    const out = {
+      notes: {},
+      config: {
+        fields: configFields, values: configValues,
+        groups: applications.FIELD_GROUPS,
+        familyChoices: applications.FAMILY_CHOICES,
+        protocols: applications.PROTOCOLS,
+        longTextAttributes: applications.LONG_TEXT_ATTRIBUTES || [],
+        // The lists the grid offers a search on, and what each searches
+        // (#459): `applications` or `groups`.
+        fieldSearches: applications.FIELD_SEARCHES || {}
+      },
+      // #609: the named passkey policies naming this application, read-only
+      // on the Every protocol sub-tab.
+      passkeyPolicies: self.applicationPasskeyPolicies(row),
+      cors: listOf('appCorsOrigin').map(function (stored) {
+        return { stored: stored,
+                 canonical: applications.corsOriginsOf(
+                   { appCorsOrigin: [stored] })[0] || '' };
+      }),
+      accessTypes: listOf('oauthAuthorizationDetailsType').map(
+        function (stored) {
+          return Object.assign({ stored: stored },
+                               applications.authorizationDetailsTypeOf(stored));
+        }),
+      // THE SCOPE CLAIMS TAB (2026-10-09): each permission this resource
+      // server exposes and the catalogue attributes it maps.
+      permissionClaims: self.applicationPermissionClaimsState(row),
+      grantsUncataloguedAccess: mode.grantsUncataloguedAccess(),
+      acceptsUnregisteredAddresses: mode.acceptsUnregisteredAddresses(),
+      protocolRows: applications.PROTOCOL_IDS.map(function (id) {
+        const meta = applications.protocolRow(id) ||
+                     { label: id, kinds: [], kind: '' };
+        return { id: id, label: meta.label, kinds: meta.kinds || [],
+                 kind: meta.kind || '' };
+      }),
+      editable: { set: editable('set', true), multi: editable('multi', true),
+                  multiAll: editable('multi', false) },
+      did: {
+        did: did,
+        url: helpers.rebaseTo(base, 'oid4vc') +
+             '/applications/' + encodeURIComponent(row.identifier) +
+             '/did.json',
+        ok: !!document.ok, why: document.why || '',
+        methods: document.ok ? document.document.verificationMethod
+          .map(function (m) {
+            const jwk = m.publicKeyJwk || {};
+            const kid = m.id.slice(did.length + 1);
+            return { kid: kid, kty: String(jwk.kty || ''),
+                     crv: String(jwk.crv || ''), alg: String(jwk.alg || ''),
+                     kept: keptKids.indexOf(kid) >= 0 };
+          }) : [],
+        origins: document.ok ? (document.document.service || [])
+          .filter(function (one) { return one.type === 'LinkedDomains'; })
+          .map(function (one) { return String(one.serviceEndpoint); }) : []
+      },
+      credentials: credentials,
+      signals: states.signals,
+      softwareStatement: states.softwareStatement,
+      roles: states.roles,
+      permissions: {
+        held: permissions.held, exposes: permissions.exposes,
+        offerable: permissions.offerable, clients: permissions.clients,
+        heldPage: { paging: permissions.heldPage.paging,
+                    shown: permissions.heldPage.shown },
+        exposedPage: { paging: permissions.exposedPage.paging,
+                       shown: permissions.exposedPage.shown },
+        grantedOutPage: { paging: permissions.grantedOutPage.paging,
+                          shown: permissions.grantedOutPage.shown },
+        registerPermissions: permissions.register.permissions.length
+      },
+      lifetimes: { rows: states.lifetimes.rows, skew: states.lifetimes.skew },
+      claims: states.claims.sets,
+      // The directory-attribute selections beside those rows (#495).
+      claimSelections: states.claims.selections,
+      enrollment: {
+        credentials: this.applicationEnrollmentState(req, row, 'enrolled'),
+        config: this.applicationEnrollmentState(req, row, 'enrolledConfig')
+      },
+      observed: { shown: states.observed.shown,
+                  paging: states.observed.paging }
+    };
+    // The note beside every attribute row, by its name.
+    Object.keys(row.attributes || {}).forEach(function (name) {
+      out.notes[name] = self.applicationAttributeNote(name,
+        (row.operational || []).indexOf(name) >= 0);
+    });
+    // #488: what the scope policy will drop from a WS-Trust JWT, by
+    // attribute, for the cell that holds it — the list the write replies
+    // carry (`scopePolicy.configuredScopeWarnings()`).
+    const scopeWarnings = self.applicationScopeWarnings(row.identifier);
+    (out as any).warnings = scopeWarnings;
+    // ITS OWNERS (#604), resolved, for the Owners tab.
+    (out as any).owners = applications.ownersOf(row);
+    (out as any).maxOwners = applications.MAX_OWNERS;
+    // Closed to its owners, and why (#607).
+    (out as any).ownership = self.ownershipOf('application', row.identifier);
+    (out.config as any).fieldWarnings = scopeWarnings.length
+      ? { wstrustJwtScope: scopeWarnings } : {};
+    log.debug("Leaving AdminViews.applicationPageData().");
+    return out;
   }
 
   // The application drill-down: the entry, its attributes as a paged list, and
@@ -6196,16 +10038,46 @@ class AdminViews {
                                                              row.identifier);
     const credentialsState = this.applicationCredentialsState(row);
     const softwareStatementState = this.applicationSoftwareStatementState(row);
+    const rolesState = this.applicationRolesState(row.identifier, row);
+    const signalsState = this.applicationSignalsState(req, row);
+    const enrollmentState = this.applicationEnrollmentState(req, row);
+    const claimsState = this.applicationClaimsState(row,
+      req && req.query ? req.query.claimsUser : '');
+    const lifetimesState = this.applicationTokenLifetimesState(row);
     log.debug("Leaving AdminViews.applicationDetailJson().");
     return {
       row: row, attributeRows: attributeRows, paged: paged, paging: paging,
       observedPaged: observedPaged,
       permissionState: permissionState,
+      rolesState: rolesState,
       credentialsState: credentialsState,
       softwareStatementState: softwareStatementState,
+      signalsState: signalsState,
+      enrollmentState: enrollmentState,
+      claimsState: claimsState,
+      lifetimesState: lifetimesState,
       json: (function () {
-      return Object.assign({ found: true }, row, {
-          attributesShown: paged.shown,
+      // NO CREDENTIAL IN A GET (#446, rcbj 2026-10-05). The entry's sensitive
+      // attributes — client secrets, the registration access token, private
+      // keys, GNAP keys — are masked in every copy this answer carries of
+      // them: `fields`, `attributes` and the attribute rows. A value is read
+      // with `POST /admin-api/applications/reveal-secret`, which needs the
+      // write role and is audited. Until then this answer handed every one
+      // of them out, opened.
+      const masked = self.maskedApplicationRow(row);
+      return Object.assign({ found: true }, masked, {
+          // WHAT THE PAGE DRAWS ITS TABS FROM (#446), in one member because
+          // this answer is the entry spread out and a name of its own could
+          // never collide with an attribute: see applicationPageData().
+          page: self.applicationPageData(req, row, {
+            credentials: credentialsState, signals: signalsState,
+            softwareStatement: softwareStatementState, roles: rolesState,
+            permissions: permissionState, lifetimes: lifetimesState,
+            claims: claimsState, observed: observedPaged }),
+          // #488: what the scope policy will drop, as the write replies
+          // carry it.
+          warnings: self.applicationScopeWarnings(row.identifier),
+          attributesShown: self.maskedAttributeRows(paged.shown),
           attributesPaging: self.pagingJson(paging),
           // `returnAddressesObserved` itself is WHOLE, on the row, beside the
           // slice the page draws — the same arrangement `delegatedPermissions`
@@ -6218,6 +10090,26 @@ class AdminViews {
           // the party registered itself. No secret and no private key: see
           // applicationCredentialsState().
           credentials: credentialsState.json,
+          // THE SHARED SIGNALS SECTION, AS DATA (2026-10-01): the streams this
+          // application owns and every per-receiver setting in force for
+          // them. See applicationSignalsState().
+          sharedSignals: signalsState.json,
+          // THE CERTIFICATE ENROLLMENT SECTION, AS DATA (2026-10-01): the
+          // ACME, EST and SCEP rules in force for it, the certificates it
+          // was issued (paged), its EAB keys and SCEP challenges (no secret)
+          // and its host names. See applicationEnrollmentState().
+          certificateEnrollment: enrollmentState.json,
+          // AN APPLICATION'S OWN CUSTOM CLAIMS AND SAML ATTRIBUTES, AND THE
+          // TOKEN LIFETIMES IN FORCE FOR IT (2026-10-01): its configuration
+          // tabs' sections, as data. See applicationClaimsState() and
+          // applicationTokenLifetimesState().
+          customClaims: claimsState.json,
+          // ITS OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495): per set, the
+          // realm's, its own (null while it inherits) and the one in force,
+          // its credential claims likewise, and what each would carry for
+          // one person.
+          claimSelections: claimsState.selections,
+          tokenLifetimes: lifetimesState.json,
           // THE SOFTWARE STATEMENTS SECTION, AS DATA (2026-09-13): the issuers
           // this application vouches for as a publisher, the statement this
           // realm issued it, and how it registered if a statement let it in. A
@@ -6232,19 +10124,161 @@ class AdminViews {
           // the slicing is this page's layout and not a fact about the entry,
           // and `GET /admin-api/permissions` answers with the same register
           // under its own name.
+          // THE ROLES IT HOLDS AS ITSELF (#93), the page's Application
+          // permissions section as data: what a client_credentials token of
+          // its carries, and the roles it could be granted. Granting and
+          // removing are `POST /admin-api/roles/add-member` and
+          // `remove-member` with `kind: application`, the console's own act.
+          // AND THE ROLES IT REQUIRES (#458), the Roles tab's other section:
+          // `required` and `requirable`, written through
+          // `POST /admin-api/applications/add` and `remove` with
+          // `attribute: appRequiredRole`.
+          applicationRoles: rolesState,
           delegatedPermissions: {
             held: permissionState.held,
             exposes: permissionState.exposes,
             offerable: permissionState.offerable.map(function (one) {
               return one.id;
             }),
+            // The grants of its OWN permissions to other applications
+            // (2026-10-01), the Permissions tab's third table.
+            grantedOut: permissionState.grantedOut,
             paging: { held: self.pagingJson(permissionState.heldPage.paging),
                       exposes:
-                        self.pagingJson(permissionState.exposedPage.paging) }
+                        self.pagingJson(permissionState.exposedPage.paging),
+                      grantedOut: self.pagingJson(
+                        permissionState.grantedOutPage.paging) }
           }
       });
       }())
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ROLES AN APPLICATION HOLDS AS ITSELF (#93): application permissions.
+  //
+  // An application is granted a role — a realm-wide one, or another
+  // application's own (#310) — as a member (`roleMemberApplication`), and a
+  // client_credentials token of its carries it: a realm-wide role in every
+  // token, an application's role only in a token for that application, under
+  // its short name. ONE STORE: the role entry. This is that store read from
+  // the application's side, which is the question an administrator asks
+  // here — "what may this client do as itself?" — and granting from here is
+  // the same act as adding the member on /admin/roles, audited the same.
+  //
+  // `offerable` is every role it does not hold that admits applications: a
+  // role restricted to people is not offered, and would be refused.
+  //
+  // AND THE OTHER RELATION, ON THE SAME TAB (#458): `required` is the
+  // entry's `appRequiredRole` — the roles somebody must hold before anything
+  // is issued for this application — read as STORED, not through
+  // `requiredRolesFrom()`, because that reader answers EVERYBODY for an empty
+  // list and the page has to show (and offer to remove) exactly what is on
+  // the entry. Each value says what it resolves to, by the rule the issuance
+  // PEP holds a requirement to (#310): a built-in role, a realm-wide role of
+  // that name, or THIS application's own role of that name — never another
+  // application's. One that resolves to nothing is a requirement nobody can
+  // satisfy, which refuses everybody and looks exactly like a broken
+  // application, so it is marked rather than drawn like the others.
+  //
+  // `requirable` is what the add control offers: the built-in roles but
+  // EVERYBODY (an empty list already means everybody, and EVERYBODY beside a
+  // narrower role would quietly undo it), the realm-wide roles and this
+  // application's own roles by their name inside it, less those already
+  // required. Membership types do not narrow it — a role restricted to
+  // applications is still a role a client_credentials subject can meet.
+  // ---------------------------------------------------------------------------
+  /**
+   * The roles an application holds as itself, those it could be granted, the
+   * roles it requires of whoever uses it and those it could require.
+   *
+   * @param identifier - the application
+   * @param row - the application's registry view, when the caller has it;
+   *   read by identifier otherwise
+   * @returns `{ held, offerable, required, requirable }`: `held` rows carry
+   *   `name`, `id`, `displayName`, `application` (whose role it is, or empty
+   *   for a realm-wide one), `carriedAs` and `permissions`; `offerable` is
+   *   role names; `required` rows carry `name` (as stored), `resolves`
+   *   (`built-in`, `realm`, `application` or `none`), `displayName` and
+   *   `role` (the register's name for it, or empty); `requirable` is the
+   *   names a requirement may be given
+   */
+  applicationRolesState(identifier, row?) {
+    const { log, roles, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationRolesState(). identifier=" +
+              identifier);
+    const key = String(identifier || '').toLowerCase();
+    const all = roles.all();
+    const holds = function (role) {
+      return (role.applications || []).some(function (one) {
+        return String(one).toLowerCase() === key;
+      });
+    };
+    const held = all.filter(holds).map(function (role) {
+      return { name: role.name, id: role.id || '',
+               displayName: role.displayName || '',
+               application: role.application || '',
+               carriedAs: role.localName || role.name,
+               permissions: role.permissions || [] };
+    });
+    const offerable = all.filter(function (role) {
+      return !holds(role) &&
+             (!(role.memberTypes || []).length ||
+              role.memberTypes.indexOf('application') >= 0);
+    }).map(function (role) {
+      return role.name;
+    });
+    // The requirement's two lists (#458), against this application's own
+    // roles by their name inside it.
+    const view = row || applications.get(identifier);
+    const fields = (view && view.fields) || {};
+    const stored = [].concat(fields.appRequiredRole === undefined ||
+      fields.appRequiredRole === null ? [] : fields.appRequiredRole)
+      .map(function (one) { return String(one).trim(); })
+      .filter(function (one) { return one.length > 0; });
+    const ownOf = function (role) {
+      return !!role.application &&
+             String(role.application).toLowerCase() === key;
+    };
+    const required = stored.map(function (name) {
+      if (roles.isBuiltIn(name)) {
+        return { name: name, resolves: 'built-in', displayName: '',
+                 role: name };
+      }
+      const own = all.filter(function (role) {
+        return ownOf(role) && role.localName === name;
+      })[0];
+      if (own) {
+        return { name: name, resolves: 'application',
+                 displayName: own.displayName || '', role: own.name };
+      }
+      const wide = all.filter(function (role) {
+        return !role.application && role.name === name;
+      })[0];
+      if (wide) {
+        return { name: name, resolves: 'realm',
+                 displayName: wide.displayName || '', role: wide.name };
+      }
+      return { name: name, resolves: 'none', displayName: '', role: '' };
+    });
+    const candidates = roles.BUILT_IN_NAMES.filter(function (name) {
+      return name !== roles.DEFAULT_REQUIRED_ROLE;
+    }).concat(all.filter(function (role) {
+      return !role.application;
+    }).map(function (role) {
+      return role.name;
+    })).concat(all.filter(ownOf).map(function (role) {
+      return role.localName || role.name;
+    }));
+    const requirable = candidates.filter(function (name, at) {
+      return candidates.indexOf(name) === at && stored.indexOf(name) < 0;
+    });
+    log.debug("Leaving AdminViews.applicationRolesState(). " + held.length +
+              " held, " + offerable.length + " offerable, " +
+              required.length + " required, " + requirable.length +
+              " requirable.");
+    return { held: held, offerable: offerable, required: required,
+             requirable: requirable };
   }
 
   // ---------------------------------------------------------------------------
@@ -6267,10 +10301,10 @@ class AdminViews {
   // process as JSON.
   // ---------------------------------------------------------------------------
   private certificateSummary(pem) {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering AdminViews.certificateSummary().");
     try {
-      const cert = new nodeCrypto.X509Certificate(String(pem));
+      const cert = stsCrypto.parseCertificate(String(pem));
       const notAfter = new Date(cert.validTo);
       const summary = {
         subject: String(cert.subject || '').split('\n').filter(Boolean)
@@ -6283,8 +10317,7 @@ class AdminViews {
         expired: notAfter.getTime() < Date.now(),
         selfSigned: cert.subject === cert.issuer,
         keyType: cert.publicKey.asymmetricKeyType,
-        thumbprint: nodeCrypto.createHash('sha256').update(cert.raw)
-          .digest('base64url')
+        thumbprint: stsCrypto.digest('sha256', cert.raw, 'base64url')
       };
       log.debug("Leaving AdminViews.certificateSummary().");
       return summary;
@@ -6344,8 +10377,428 @@ class AdminViews {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // THE SHARED SIGNALS STREAMS AN APPLICATION OWNS (2026-10-01), and the
+  // per-receiver settings in force for them. A stream is this application's
+  // when the principal that created it resolves to this entry — its
+  // identifier, or one of its ssfReceiverId values — which is the same match
+  // `ssf_streams.ts` narrows events and applies settings by, so the page and
+  // the transmitter cannot disagree about whose a stream is. This service's
+  // own two streams are nobody's. The stream's members are shown as the
+  // receiver set them (SSF 1.0 section 8.1.1); only its status is an
+  // administrator's to change, through the existing `status` action.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the Shared Signals state of one application's page.
+   *
+   * @param req - the request
+   * @param row - the application's view
+   * @returns `{ installed, streams, settings, json }`
+   */
+  applicationSignalsState(req, row) {
+    const { log, applications } = this.deps;
+    log.debug("Entering AdminViews.applicationSignalsState(). identifier=" +
+              row.identifier);
+    const settings = applications.ssfOverrideRows().map(function (one) {
+      const answer = applications.ssfSettingFor(row.identifier, one.setting);
+      return { setting: one.setting, attribute: one.attribute,
+               value: answer.value, source: answer.source };
+    });
+    if (!signalsReporter) {
+      log.debug("Leaving AdminViews.applicationSignalsState(). Not loaded.");
+      return { installed: false, streams: [], settings: settings,
+               json: { installed: false, streams: [], settings: settings } };
+    }
+    let detail = [];
+    try {
+      detail = signalsReporter.report(req).streamDetail || [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationSignalsState(): " +
+                ((e && e.message) || e));
+      // A report that could not be built shows no streams rather than
+      // costing the application's page.
+      detail = [];
+    }
+    const owned = detail.filter(function (stream) {
+      if (stream.internal || !stream.createdBy) {
+        return false;
+      }
+      const owner = applications.ssfAllowedEventsFor(stream.createdBy);
+      return !!owner && owner.identifier === row.identifier;
+    }).map(function (stream) {
+      return { stream_id: stream.stream_id, status: stream.status,
+               statusReason: stream.statusReason, aud: stream.aud,
+               delivery: stream.delivery,
+               events_requested: stream.events_requested || [],
+               events_delivered: stream.events_delivered || [],
+               format: stream.format || '',
+               description: stream.description || '',
+               createdBy: stream.createdBy, createdAt: stream.createdAt,
+               updatedAt: stream.updatedAt,
+               lastPushAt: stream.lastPushAt || '',
+               lastPushError: stream.lastPushError || '' };
+    });
+    log.debug("Leaving AdminViews.applicationSignalsState(). " +
+              owned.length + " stream(s).");
+    return { installed: true, streams: owned, settings: settings,
+             json: { installed: true, streams: owned, settings: settings } };
+  }
+
+  // AN APPLICATION'S CERTIFICATE ENROLLMENT, AS ONE MODEL (rcbj,
+  // 2026-10-01): what its Credentials tab and its Certificate enrollment
+  // configuration tab draw, and what `GET /admin-api/applications?application=`
+  // answers as `certificateEnrollment`. Drawn for an application declared for
+  // ACME, EST or SCEP. Everything is read from `common/cert_enrollment.ts`, so
+  // the rules shown are the rules applied: the profile list, default,
+  // lifetime and cap IN FORCE for it (its own override, else the realm's),
+  // EST's three switches through `estSwitch()`, the certificates on its entry
+  // newest first (PAGED on `enrolledPage`: revoked and expired ones stay on
+  // the entry and the list grows), its EAB keys and SCEP challenges (bounded
+  // per entry, and with no key material — the core's own listings carry
+  // none), and its registered host names. Generating and revoking are the
+  // three protocols' own console actions, posted from the application's page.
+  /**
+   * Answers an application's certificate enrollment: the rules in force for
+   * it, its certificates, EAB keys, SCEP challenges and host names.
+   *
+   * @param req - the request, for the paging of its certificates
+   * @param row - the application's view
+   * @param listName - the paging name of its certificate list, `enrolled`
+   *   unless the caller draws the list a second time on one page
+   * @returns `{ families, rules, certificates, paged, eabKeys, challenges,
+   *   hostNames, keyAlgorithms, json }`
+   */
+  applicationEnrollmentState(req, row, listName?) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminViews.applicationEnrollmentState(). " +
+              "identifier=" + (row && row.identifier));
+    const core = require('../common/cert_enrollment');
+    const id = String((row && row.identifier) || '');
+    const entry = { kind: 'application', id: id };
+    const fields = (row && row.fields) || {};
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    const families = ['acme', 'est', 'scep'].filter(function (one) {
+      return declared.indexOf(one) >= 0;
+    });
+    const own = function (attribute) {
+      log.debug("Entering own().");
+      const value = Number(String(fields[attribute] || '').trim());
+      log.debug("Leaving own().");
+      return Number.isFinite(value) && value > 0 ? value : null;
+    };
+    const rules = families.map(function (family) {
+      const days = own(family + 'CertificateLifetimeDays');
+      const ownList = [].concat(fields[family + 'AllowedProfiles'] || [])
+        .map(String).filter(Boolean);
+      return {
+        family: family,
+        label: core.FAMILY_LABELS[family],
+        allowedProfiles: core.allowedProfiles(family, entry),
+        allowedProfilesSource: ownList.length ? 'application' : 'realm',
+        defaultProfile: core.defaultProfile(family, entry),
+        defaultProfileSource: String(fields[family + 'DefaultProfile'] || '')
+          .trim() ? 'application' : 'realm',
+        certificateLifetimeDays: days !== null ? days
+          : Number(config.value(family + '.certificateLifetimeDays')),
+        certificateLifetimeSource: days !== null ? 'application' : 'realm'
+      };
+    });
+    const capOwn = own('enrollMaxCertificates');
+    const cap = {
+      value: capOwn !== null ? capOwn
+        : Number(config.value('pki.enrollmentMaxCertificatesPerEntry')),
+      source: capOwn !== null ? 'application' : 'realm'
+    };
+    const switchOf = function (name, attribute) {
+      log.debug("Entering switchOf().");
+      const raw = String(fields[attribute] || '').trim().toUpperCase();
+      log.debug("Leaving switchOf().");
+      return { on: core.estSwitch(name, entry),
+               source: raw === 'TRUE' || raw === 'FALSE' ? 'application'
+                                                         : 'realm' };
+    };
+    const est = families.indexOf('est') >= 0 ? {
+      basicAuthentication: switchOf('basicAuthentication',
+                                    'estBasicAuthentication'),
+      certificateAuthentication: switchOf('certificateAuthentication',
+                                          'estCertificateAuthentication'),
+      serverKeyGeneration: switchOf('serverKeyGeneration',
+                                    'estServerKeyGeneration')
+    } : null;
+    let certificates = [];
+    let eabKeys = [];
+    let challenges = [];
+    let hostNames = [];
+    if (families.length && core.hasDirectory()) {
+      certificates = core.enrolledOf(entry).map(function (one) {
+        return Object.assign({}, one, { entry: undefined });
+      });
+      eabKeys = families.indexOf('acme') >= 0 ? core.eabsOf(entry) : [];
+      challenges = families.indexOf('scep') >= 0
+        ? core.scepChallengesOf(entry) : [];
+      hostNames = core.hostNamesOf(entry);
+    }
+    // The list's paging name is also its pager's id (`list-<name>Page`), so
+    // a page that draws the list twice names each copy apart — or both
+    // pagers' links land on whichever copy comes first in the document.
+    const paged = this.pagedRows((req && req.query) || {}, certificates,
+                                 { name: listName || 'enrolled',
+                                   noun: 'certificates' });
+    let keyAlgorithms = [];
+    try {
+      keyAlgorithms = require('../common/vendored/key_material').keyAlgIds();
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationEnrollmentState(): " +
+                ((e && e.message) || e));
+      keyAlgorithms = ['ec-p256'];
+    }
+    const json = {
+      families: families, rules: rules, certificateCap: cap,
+      est: est,
+      certificates: paged.shown, certificatesPaging: this.pagingJson(
+        paged.paging),
+      certificatesTotal: certificates.length,
+      eabKeys: eabKeys, scepChallenges: challenges, hostNames: hostNames
+    };
+    log.debug("Leaving AdminViews.applicationEnrollmentState(). " +
+              certificates.length + " certificate(s).");
+    return { families: families, rules: rules, cap: cap, est: est,
+             certificates: certificates, paged: paged, eabKeys: eabKeys,
+             challenges: challenges, hostNames: hostNames,
+             keyAlgorithms: keyAlgorithms, json: json };
+  }
+
+  // AN APPLICATION'S OWN CLAIM SETS, BESIDE THE REALM'S (rcbj, 2026-10-01):
+  // what its OAuth / OpenID Connect tab's Custom claims section and its SAML
+  // tab's Custom SAML attributes section draw. Per set, for the families the
+  // application is declared for: the realm's rows, its own rows, and the
+  // rows IN FORCE for it (`stats.effectiveClaimSet()`: the realm's, with its
+  // own added and winning by name), each marked with where it came from.
+  /**
+   * Answers an application's own claim sets beside the realm's.
+   *
+   * @param row - the application's view
+   * @param previewUser - optional; the person the selections are previewed
+   *   for (`?claimsUser=`), `alice` by default as on the realm's pages
+   * @returns `{ sets, json, selections }`, one member of `sets` per set it
+   *   is declared for
+   */
+  applicationClaimsState(row, previewUser?) {
+    const { log, stats } = this.deps;
+    log.debug("Entering AdminViews.applicationClaimsState(). identifier=" +
+              (row && row.identifier));
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    const families = {
+      access_token: ['oauth2', 'oidc', 'oid4vci'],
+      id_token: ['oidc', 'oauth2'],
+      userinfo: ['oidc', 'oauth2'],
+      saml2: ['saml2'],
+      saml11: ['saml11'],
+      // #493: a Kerberos service's own PAC claims.
+      'kerberos-pac': ['krb5']
+    };
+    const labels = {
+      access_token: 'Access token', id_token: 'ID Token',
+      userinfo: 'UserInfo response', saml2: 'SAML 2.0 attributes',
+      saml11: 'SAML 1.1 attributes', 'kerberos-pac': 'Kerberos PAC claims'
+    };
+    const sets = Object.keys(families).filter(function (id) {
+      return families[id].some(function (one) {
+        return declared.indexOf(one) >= 0;
+      });
+    }).map(function (id) {
+      const realmRows = stats.claimSet(id);
+      const own = stats.applicationClaimSet(id, row);
+      const ownNames = own.map(function (one) { return one.name; });
+      const effective = realmRows.filter(function (one) {
+        return ownNames.indexOf(one.name) < 0;
+      }).map(function (one) {
+        return Object.assign({ source: 'realm' }, one);
+      }).concat(own.map(function (one) {
+        const replaced = realmRows.some(function (r) {
+          return r.name === one.name;
+        });
+        return Object.assign({ source: 'application', replacesRealm: replaced },
+                             one);
+      }));
+      return { id: id, label: labels[id],
+               attribute: stats.APP_CLAIM_ATTRIBUTES[id],
+               realm: realmRows, own: own, effective: effective };
+    });
+    const selections = this.applicationClaimSelections(row,
+      sets.map(function (one) { return one.id; }), previewUser);
+    log.debug("Leaving AdminViews.applicationClaimsState(). " + sets.length +
+              " set(s).");
+    return { sets: sets, json: sets, selections: selections };
+  }
+
+  // AN APPLICATION'S OWN DIRECTORY-ATTRIBUTE SELECTIONS (#495): for each of
+  // its declared claim sets, the realm's selection, its own (null while it
+  // inherits the realm's) and the one in force — its own when held, which
+  // REPLACES the realm's — with what that would put in the artifact for one
+  // person, built by the issuance path's function; and, for an OpenID4VCI
+  // client, its credential claims the same way. The catalogue and every
+  // attribute's value for the person ride along once, as on the realm's
+  // pages, so a box can be judged before it is ticked.
+  /**
+   * Answers an application's own directory-attribute selections beside the
+   * realm's, with a preview for one person.
+   *
+   * @param row - the application's view
+   * @param setIds - the claim sets it is declared for
+   * @param previewUser - the person previewed, `alice` by default
+   * @returns `{ catalogue, preview, sets, credential }`
+   */
+  applicationClaimSelections(row, setIds, previewUser) {
+    const { log, stats, claimAttributes, vcClaims } = this.deps;
+    log.debug("Entering AdminViews.applicationClaimSelections().");
+    const user = String(previewUser || '').trim() || 'alice';
+    // Only the sets an application may hold a selection for: the Kerberos
+    // PAC set's ticked catalogue is the realm's alone (#498).
+    const sets = setIds.filter(function (id) {
+      return !!claimAttributes.APP_SELECTION_ATTRIBUTES[id];
+    }).map(function (id) {
+      const own = claimAttributes.applicationSelection(id, row);
+      const preview = claimAttributes.previewFor(id, user, row);
+      return {
+        id: id, label: stats.CLAIM_SETS[id].label,
+        attribute: claimAttributes.APP_SELECTION_ATTRIBUTES[id],
+        realm: claimAttributes.selectedNames(id),
+        own: own,
+        inherited: own === null,
+        effective: own === null ? claimAttributes.selectedNames(id) : own,
+        claims: preview.claims, report: preview.report
+      };
+    });
+    const declared = [].concat((row && row.allowedProtocols) || []);
+    let credential = null;
+    if (declared.indexOf('oid4vci') >= 0) {
+      const ownRows = vcClaims.applicationRows(row);
+      const built = vcClaims.subjectClaimsFor(user, {},
+        ownRows || vcClaims.selectedRows());
+      credential = {
+        attribute: vcClaims.APP_SELECTION_ATTRIBUTE,
+        realm: vcClaims.selectedNames(),
+        own: ownRows ? ownRows.map(function (one) { return one.ldap; })
+                     : null,
+        inherited: !ownRows,
+        effective: (ownRows || vcClaims.selectedRows())
+          .map(function (one) { return one.ldap; }),
+        claims: built.claims, report: built.report,
+        // What an ldp_vc credential cannot carry of the realm's selection;
+        // the page names it beside the client's own.
+        ldpOmitted: vcClaims.ldpOmitted()
+      };
+    }
+    const catalogue = vcClaims.VC_ATTRIBUTES.map(function (one) {
+      return { ldap: one.ldap, claim: one.claim.join('.'), label: one.label,
+               schema: one.schema, ldpTerm: one.ldpTerm || '',
+               generated: !!one.from };
+    });
+    const out = { catalogue: catalogue,
+                  preview: Object.assign({ user: user },
+                                         claimAttributes.catalogueValuesFor(
+                                           user)),
+                  sets: sets, credential: credential };
+    log.debug("Leaving AdminViews.applicationClaimSelections(). " +
+              sets.length + " set(s)" + (credential ? " and credentials."
+                                                    : "."));
+    return out;
+  }
+
+  // THE CLAIMS MAPPED TO A RESOURCE SERVER'S OWN SCOPES (2026-10-09): its
+  // Scope claims tab, as data. Each permission it exposes with the
+  // catalogue attributes mapped to it (none is `[]`), the mappings held for
+  // permissions it no longer exposes (which map nothing), and the catalogue
+  // the boxes are drawn from.
+  /**
+   * Answers a resource server's permission-to-claims mappings.
+   *
+   * @param row - the application's view
+   * @returns `{ permissions, stale, catalogue }`
+   */
+  applicationPermissionClaimsState(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationPermissionClaimsState().");
+    const permissions = applications.permissionsOf(row);
+    const exposed = permissions.map(function (one) { return one.name; });
+    const held = claimAttributes.permissionClaimsOf(row, exposed);
+    let stale = [];
+    try {
+      const raw = [].concat((row.fields || {})[
+        claimAttributes.PERMISSION_CLAIMS_ATTRIBUTE] || [])[0];
+      const parsed = raw ? JSON.parse(String(raw)) : {};
+      stale = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? Object.keys(parsed).filter(function (name) {
+          return exposed.indexOf(name) < 0;
+        }) : [];
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPermissionClaimsState(): " +
+                ((e && e.message) || e));
+      // Unreadable: permissionClaimsOf() has said so, and nothing is mapped.
+      stale = [];
+    }
+    const out = {
+      permissions: permissions.map(function (one) {
+        return { name: one.name, description: one.description, id: one.id,
+                 attributes: held[one.name] || [] };
+      }),
+      stale: stale,
+      catalogue: vcClaims.VC_ATTRIBUTES.map(function (one) {
+        return { ldap: one.ldap, claim: one.claim.join('.'),
+                 label: one.label };
+      })
+    };
+    log.debug("Leaving AdminViews.applicationPermissionClaimsState(). " +
+              out.permissions.length + " permission(s).");
+    return out;
+  }
+
+  // THE TOKEN LIFETIMES IN FORCE FOR AN APPLICATION (2026-10-01): its OAuth
+  // tab's Token lifetimes section. The four settings it may override, each
+  // with the value in force (`applications.settingFor()`, which is what the
+  // token endpoint reads), the realm's value, and where the value came from;
+  // and the realm's clock skew, which stays realm-wide.
+  /**
+   * Answers the token lifetimes in force for an application.
+   *
+   * @param row - the application's view
+   * @returns `{ rows, skew, json }`
+   */
+  applicationTokenLifetimesState(row) {
+    const { log, applications, config } = this.deps;
+    log.debug("Entering AdminViews.applicationTokenLifetimesState().");
+    const id = String((row && row.identifier) || '');
+    const fields = (row && row.fields) || {};
+    const keys = [
+      { key: 'oauth2.accessTokenTtlS', attribute: 'oauthAccessTokenTtlS',
+        label: 'Access token' },
+      { key: 'oauth2.idTokenTtlS', attribute: 'oauthIdTokenTtlS',
+        label: 'ID Token' },
+      { key: 'oauth2.refreshTokenTtlS', attribute: 'oauthRefreshTokenTtlS',
+        label: 'Refresh token' },
+      { key: 'oauth2.refreshIdleSeconds',
+        attribute: 'oauthRefreshIdleSeconds',
+        label: 'Refresh chain idle limit (RFC 9700 mode)' }
+    ];
+    const rows = keys.map(function (one) {
+      const own = String([].concat(fields[one.attribute] || [])[0] || '')
+        .trim();
+      return {
+        setting: one.key, attribute: one.attribute, label: one.label,
+        value: Number(applications.settingFor(id, one.key, config)),
+        realmValue: Number(config.value(one.key)),
+        source: own ? 'application' : 'realm'
+      };
+    });
+    const skew = Number(config.value('oauth2.clockSkewS'));
+    log.debug("Leaving AdminViews.applicationTokenLifetimesState().");
+    return { rows: rows, skew: skew,
+             json: { lifetimes: rows, clockSkewS: skew } };
+  }
+
   private applicationCredentialsState(row) {
-    const { log, applications, pki } = this.deps;
+    const { log, applications, pki, config } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.applicationCredentialsState(). identifier=" +
               (row && row.identifier));
@@ -6406,19 +10859,30 @@ class AdminViews {
     const declared = [].concat(row.allowedProtocols || []);
     const oauthDeclared = declared.indexOf('oauth2') >= 0 ||
                           declared.indexOf('oidc') >= 0;
-    const secret = one('oauthClientSecret');
+    // SEVERAL SECRETS (2026-10-01): each record with its expiry, newest
+    // first, the primary marked. The VALUES go to the page (it shows each
+    // behind a fold, as it showed the one) and never into the reply's JSON.
+    const summaries = applications.clientSecretSummariesOf(row.fields || {});
+    const secretValues: Record<string, string> = {};
+    applications.clientSecretRecordsOf(row.fields || {}).forEach(
+      function (rec) { secretValues[rec.id] = rec.secret; });
     const state: Record<string, any> = {
       oauthDeclared: oauthDeclared,
       clientSecret: {
-        held: !!secret,
-        value: secret,
-        authMethod: one('oauthTokenEndpointAuthMethod'),
+        held: summaries.length > 0,
+        secrets: summaries,
+        values: secretValues,
+        max: Number(config.value('oauth2.clientSecretsMax')) || 1,
+        defaultLifetimeDays:
+          Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
+        overlapS: Number(config.value('oauth2.clientSecretOverlapS')) || 0,
+        // Every declared method (2026-10-01), as one line.
+        authMethod: one('oauthTokenEndpointAuthMethod').split('\n')
+          .filter(function (m) { return m !== ''; }).join(', '),
         registered: !!row.registered,
         registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
         registrationAccessToken: one('appRegistrationAccessToken'),
-        // ROTATION AND EXPIRY (#49 P5): until when a rotated-out secret still
-        // works (ms), and when the current one expires (seconds, 0 never).
-        previousUntil: Number(one('oauthClientSecretPreviousUntil')) || 0,
+        // When the PRIMARY expires (seconds, 0 never).
         expiresAt: applications.secretExpiryOf(row.fields || {})
       },
       purposes: purposes,
@@ -6437,8 +10901,10 @@ class AdminViews {
                       registered: state.clientSecret.registered,
                       registrationAccessTokenHeld:
                         state.clientSecret.registrationAccessTokenHeld,
-                      previousUntil: state.clientSecret.previousUntil,
-                      expiresAt: state.clientSecret.expiresAt },
+                      expiresAt: state.clientSecret.expiresAt,
+                      // Every secret's id and expiry, never its value.
+                      secrets: state.clientSecret.secrets,
+                      max: state.clientSecret.max },
       keyPairs: purposes.map(function (p) {
         return { purpose: p.id, label: p.label, held: p.held, source: p.source,
                  privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,
@@ -6494,12 +10960,18 @@ class AdminViews {
       return { member: member, attribute: described.attribute,
                label: described.label, value: one(described.attribute) };
     });
-    const method = one('oauthTokenEndpointAuthMethod');
+    // Several since 2026-10-01: a certificate method among them is what the
+    // page reports.
+    const methods = String(one('oauthTokenEndpointAuthMethod') || '')
+      .split('\n').filter(function (m) { return m !== ''; });
+    const certificate = methods.filter(function (m) {
+      return mtls.CERTIFICATE_METHODS.indexOf(m) >= 0;
+    })[0] || '';
     log.debug("Leaving AdminViews.applicationMtlsState(). " + held.length +
               " held.");
     return {
-      authMethod: method,
-      certificateMethod: mtls.CERTIFICATE_METHODS.indexOf(method) >= 0,
+      authMethod: certificate || methods.join(', '),
+      certificateMethod: !!certificate,
       implicitName: tlsClientCertificates.APPLICATION_URN + identifier,
       certificates: held,
       active: held.filter(function (cert) {
@@ -6766,7 +11238,7 @@ class AdminViews {
    * @returns the state
    */
   applicationPermissionsState(query, identifier) {
-    const { log, appPermissions } = this.deps;
+    const { log, appPermissions, applications } = this.deps;
     log.debug("Entering AdminViews.applicationPermissionsState(). identifier=" +
               identifier);
     const register = appPermissions.register();
@@ -6778,11 +11250,24 @@ class AdminViews {
     const held = register.grants.filter(function (one) {
       return one.client === identifier;
     });
-    // AND WHAT IT EXPOSES, which is the other half of the same question and is
-    // read-only on that page: `Expose an API` and `Define a permission` stay on
-    // /admin/delegation, where the resource half of this feature is configured.
+    // AND WHAT IT EXPOSES, the other half of the same question — configured
+    // on that page since 2026-10-01 (rcbj): its base URI, its permissions,
+    // and which OTHER applications hold them, each for this application only.
     const exposes = register.permissions.filter(function (one) {
       return one.resource === identifier;
+    });
+    // THE GRANTS OF ITS OWN PERMISSIONS: the relationships in which it is the
+    // RESOURCE, one row per (client, permission) as on the register.
+    const grantedOut = register.grants.filter(function (one) {
+      return one.resource === identifier;
+    });
+    // WHO THEY MAY STILL GO TO: every other application in the registry. Not
+    // itself — app_permissions.js refuses that grant however it arrives, for
+    // the reason the `offerable` exclusions below give.
+    const clients = applications.list().filter(function (row) {
+      return row.identifier !== identifier;
+    }).map(function (row) {
+      return { identifier: row.identifier, name: row.name || row.identifier };
     });
     const heldIds = held.map(function (one) { return one.permissionId; });
     log.debug("Leaving AdminViews.applicationPermissionsState(). " +
@@ -6792,6 +11277,8 @@ class AdminViews {
       register: register,
       held: held,
       exposes: exposes,
+      grantedOut: grantedOut,
+      clients: clients,
       // WHAT MAY STILL BE GRANTED. See the section's header for why each of the
       // three exclusions is an exclusion rather than an option that refuses.
       offerable: register.permissions.filter(function (one) {
@@ -6816,6 +11303,9 @@ class AdminViews {
         { name: 'held', noun: 'permissions', defaultPer: DELEGATION_PER_PAGE }),
       exposedPage: this.pagedRows(query, exposes,
         { name: 'exposed', noun: 'permissions',
+          defaultPer: DELEGATION_PER_PAGE }),
+      grantedOutPage: this.pagedRows(query, grantedOut,
+        { name: 'grantedOut', noun: 'grants',
           defaultPer: DELEGATION_PER_PAGE })
     };
   }
@@ -6830,7 +11320,6 @@ class AdminViews {
   federationListJson(req) {
     const { log, federation } = this.deps;
     log.debug("Entering AdminViews.federationListJson().");
-    log.debug("Entering federationListPage().");
     const all = federation.list().map(this.federationRow.bind(this));
     const wantedText = String(req.query.q || '').trim().toLowerCase();
     const wantedRole = String(req.query.role || '').trim();
@@ -6842,6 +11331,19 @@ class AdminViews {
     });
     const paging = this.pagingOf(req.query, filtered.length, {});
     const paged = this.pagedRows(req.query, filtered, {});
+    const pagingJson = this.pagingJson(paging);
+    // WHAT THE TILES AND THE ROLE MENU COUNT, over every relationship and not
+    // the page shown (#446).
+    const roleCounts: Record<string, number> = {};
+    all.forEach(function (r) {
+      roleCounts[r.role] = (roleCounts[r.role] || 0) + 1;
+    });
+    const notConfigured = all.filter(function (r) {
+      return r.enabled && !r.ready;
+    }).length;
+    const authenticationTotal = all.reduce(function (n, r) {
+      return n + r.authentications;
+    }, 0);
     log.debug("Leaving AdminViews.federationListJson().");
     return {
       all: all, wantedText: wantedText, wantedRole: wantedRole,
@@ -6860,6 +11362,9 @@ class AdminViews {
           settings: configSettingsJson('/admin/federation'),
           roles: federation.ROLES, protocols: federation.PROTOCOLS,
           paths: federation.PATHS,
+          paging: pagingJson, roleCounts: roleCounts,
+          enabledNotConfigured: notConfigured,
+          authentications: authenticationTotal,
           relationships: paged.shown
       };
       }())
@@ -6886,7 +11391,8 @@ class AdminViews {
     if (!record) {
       log.debug("Leaving AdminViews.federationDetailJson(). No such " +
                 "relationship.");
-      return { record: null, row: null, json: { found: false, id: id } };
+      return { record: null, row: null,
+               json: { found: false, id: id, paths: federation.PATHS } };
     }
     const row = this.federationRow(record);
     // ---------------------------------------------------------------------
@@ -6949,8 +11455,16 @@ class AdminViews {
     const jwks = row.protocol === 'oidc' && row.role === 'service-provider'
       ? base + federation.PATHS.jwks + '/' + encodeURIComponent(row.id)
       : null;
-    const setFields = federation.fieldsForRole(row.role, 'set')
+    // THE PARTNER'S SHARED SIGNALS (#373, #374) are drawn in a section of
+    // their own, so their fields leave the general lists below; and an `ssf`
+    // relationship's fields are its signals alone (fieldsForRole() narrows
+    // by protocol).
+    const signalFields = federation.SIGNAL_FIELDS;
+    const setFields = federation.fieldsForRole(row.role, 'set', row.protocol)
                                 .filter(function (field) {
+      if (signalFields.indexOf(field.name) >= 0) {
+        return false;
+      }
       // The four booleans get their own two-button control below, because a
       // text box a person types TRUE into is a text box a person types "true",
       // "yes" and "1" into — and one of those is how a relationship stays
@@ -6968,20 +11482,73 @@ class AdminViews {
          ['fedEncryptionKeyType', 'fedKeyManagementAlgorithm',
           'fedContentEncryptionAlgorithm'].indexOf(field.name) === -1);
     });
-    const multiFields = federation.fieldsForRole(row.role, 'multi');
+    const multiFields = federation.fieldsForRole(row.role, 'multi',
+                                                 row.protocol)
+      .filter(function (field) {
+        return signalFields.indexOf(field.name) < 0;
+      });
+    // The signals section's own fields — settings, the two switches, and the
+    // event list — and what the receiver holds for this relationship.
+    const signalSetFields = row.role === 'service-provider'
+      ? federation.fieldsForRole(row.role, 'set', row.protocol)
+          .filter(function (field) {
+            return signalFields.indexOf(field.name) >= 0 &&
+                   ['fedSignalsEnabled', 'fedSignalEmailMatch']
+                     .indexOf(field.name) < 0;
+          })
+      : [];
+    let signals = null;
+    let arrivals = [];
+    let outbound = null;
+    try {
+      const receiver = this.deps.loadSignals();
+      if (row.role === 'service-provider') {
+        signals = receiver.view(record);
+        arrivals = receiver.arrivals(record.fedId, 10);
+      } else {
+        outbound = receiver.outboundFor(record);
+      }
+    } catch (e) {
+      log.debug("Caught in AdminViews.federationDetailJson(): " +
+                ((e && e.message) || e));
+      signals = null;
+    }
     // THE PEOPLE THIS PARTNER'S SUBJECTS ARE LINKED TO (#109), paged — a
     // relationship with ten thousand linked people is an ordinary one, and a
     // page drawing all of them is not. Service-provider side only: an
     // identity-provider-side relationship asserts, and nobody is linked to it.
-    const linkPage = this.pagedRows(req.query,
+    //
+    // PAGED BEFORE IT IS PARSED (#352): the links are paged as the directory
+    // hands them over, and only the page's are taken apart into issuer and
+    // subject.
+    const linkKeyPage = this.pagedRows(req.query,
       row.role === 'service-provider'
-        ? federation.linkedThrough(record.fedId).map(function (one) {
-            const parts = fedLinks.parse(one.value) || {};
-            return { username: one.username, dn: one.dn, link: one.value,
-                     issuer: parts.issuer, subject: parts.subject };
-          })
-        : [],
+        ? federation.linkedThrough(record.fedId) : [],
       { name: 'links', noun: 'links' });
+    const linkPage = Object.assign({}, linkKeyPage, {
+      shown: linkKeyPage.shown.map(function (one) {
+        const parts = fedLinks.parse(one.value) || {};
+        return { username: one.username, dn: one.dn, link: one.value,
+                 issuer: parts.issuer, subject: parts.subject };
+      })
+    });
+    // WHAT THE PARTNER SENT AND NOTHING WROTE (#94): names no mapping names,
+    // and names mapped onto an attribute no partner may write, newest
+    // first. Service-provider side only, where attributes arrive.
+    const unmapped = row.role === 'service-provider'
+      ? federation.unmappedOf(record.fedId) : [];
+    // The label of every value a select on the page offers: a sign-in
+    // mechanism's or a subject policy's.
+    const enumLabels: Record<string, string> = {};
+    setFields.forEach(function (field) {
+      (Array.isArray(field.enum) ? field.enum : []).forEach(function (one) {
+        const known = federation.mechanismRow(one) ||
+                      federation.subjectPolicyRow(one);
+        if (known) {
+          enumLabels[one] = known.label;
+        }
+      });
+    });
 
     log.debug("Leaving AdminViews.federationDetailJson().");
     return {
@@ -6990,6 +11557,8 @@ class AdminViews {
       encryption: encryption,
       signOut: row.role === 'service-provider' ? signOut : {},
       setFields: setFields, multiFields: multiFields, linkPage: linkPage,
+      unmapped: unmapped, signalSetFields: signalSetFields,
+      signals: signals, arrivals: arrivals, outbound: outbound,
       json: (function () {
       return Object.assign({ found: true }, row, {
           endpoints: Object.assign({
@@ -7017,12 +11586,34 @@ class AdminViews {
             });
             return out;
           })(),
-          editable: federation.fieldsForRole(row.role),
+          editable: federation.fieldsForRole(row.role, '', row.protocol),
+          unmappedAttributes: unmapped,
+          // A partner's Shared Signals (#373): the stream's state and the
+          // latest arrivals; for an identity-provider-side relationship,
+          // what this service sends that partner instead.
+          signals: signals,
+          signalArrivals: arrivals,
+          outboundSignals: outbound,
           encryption: encryption,
           // Who this partner's subjects are linked to (#109): the page, and
           // the paging a caller walks it with.
           links: linkPage.shown,
-          linksPaging: self.pagingJson(linkPage.paging)
+          linksPaging: self.pagingJson(linkPage.paging),
+          // WHAT THE PAGE IS DRAWN FROM BESIDES THE RECORD (#446): the
+          // field rows each list and form is built from, the schema the
+          // switches are described by, the labels of the values a select
+          // offers, the policy and encryption answers the register gives
+          // about this record, and the addresses the page prints or links.
+          setFields: setFields, multiFields: multiFields,
+          signalSetFields: signalSetFields,
+          schema: federation.SCHEMA.attributes,
+          enumLabels: enumLabels,
+          defaultSubjectPolicy: federation.DEFAULT_SUBJECT_POLICY,
+          subjectPolicy: federation.subjectPolicyOf(record),
+          encrypts: federation.encrypts(record),
+          paths: federation.PATHS, base: base, loginHref: login,
+          metadataUrl: metadata,
+          signOut: row.role === 'service-provider' ? signOut : {}
       });
       }())
     };
@@ -7079,6 +11670,10 @@ class AdminViews {
       ready: readiness.ready,
       missing: readiness.missing,
       usable: federation.isEnabled(record) && readiness.ready,
+      // Whether it signs anybody in, and whether its partner's Shared
+      // Signals are received (#373, #374).
+      signsIn: federation.signsIn(record),
+      signalsEnabled: federation.signalsEnabled(record),
       releases: (record.fedRelease || []).slice(0),
       mappings: (record.fedAttributeMap || []).slice(0),
       authentications: parseInt(record.fedAuthentications, 10) || 0,
@@ -7108,7 +11703,6 @@ class AdminViews {
   usersListJson(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersListJson().");
-    log.debug("Entering usersListPage().");
     const wantedText = String(req.query.q || '').trim();
     const wantedProtocol = String(req.query.protocol || '');
     // THE UNION, not `stats.userRows()` — see peopleRows(). The registry is
@@ -7118,12 +11712,25 @@ class AdminViews {
     // thousand people it happens to remember.
     const population = this.peopleRows();
     const all = population.rows;
+    const self = this;
     // The second-factor filter, which arrived with the roster on 2026-09-10. It
     // is `factor` rather than `mfa` because that is the name `/admin/mfa` used
     // and a link somebody bookmarked should keep working against the page that
     // absorbed it — the same courtesy `listViewFromBack()` extends to a filter
     // carried across a form.
     const wantedFactor = String(req.query.factor || '');
+    // A SERVICE ACCOUNT IS A PERSON (#221), so it is on this list — TAGGED,
+    // and filterable by `kind`: `service` for service accounts only, `person`
+    // for everybody else. One read of the flag's holders, not one per row.
+    const wantedKind = ['service', 'person'].indexOf(
+      String(req.query.kind || '')) >= 0 ? String(req.query.kind) : '';
+    const serviceNames = new Set(this.deps.serviceAccounts.names()
+      .map(function (name) {
+        return String(name).toLowerCase();
+      }));
+    all.forEach(function (row) {
+      row.serviceAccount = serviceNames.has(String(row.key).toLowerCase());
+    });
     // Every protocol any known user authenticated through, for the filter. Read
     // off the data rather than written down, so a protocol that starts
     // recording authentications appears in the dropdown by itself and one that
@@ -7134,6 +11741,22 @@ class AdminViews {
         protocolsSeen[family.protocol] = true;
       });
     });
+    // -----------------------------------------------------------------------
+    // WHAT EVERYBODY HOLDS, COUNTED ONCE (#352, 2026-09-29).
+    //
+    // The tiles below and the `?factor=` filter are the two things on this
+    // page that need every row's factors, and they used to get them by
+    // decorating every row — `mechanismsFor()` per person, which is what made
+    // this page ten seconds long on a realm of thirty thousand. They get them
+    // from `peopleCensus()` now: seven facts per person from ONE pass over
+    // the directory, each sealed TOTP secret opened at most once per process.
+    // The census gives the same facts `mechanismsFor()` would, folded across
+    // spellings by the same `mergeFactors()`, so the numbers do not move.
+    // -----------------------------------------------------------------------
+    const census = this.peopleCensus(population, all);
+    const factorsOf = function (row) {
+      return census.get(row.key) || null;
+    };
     const filtered = all.filter(function (row) {
       if (wantedText &&
           row.key.toLowerCase()
@@ -7148,7 +11771,7 @@ class AdminViews {
       // matches NO factor filter rather than matching `none`, because "this
       // service cannot tell" and "this person holds none" are different answers
       // and the second one is the dangerous one to guess.
-      const factors = row.factors;
+      const factors = factorsOf(row);
       if (wantedFactor === 'totp' && !(factors && factors.totp)) return false;
       if (wantedFactor === 'key' &&
           !(factors && factors.mfaKeys > 0)) return false;
@@ -7158,43 +11781,68 @@ class AdminViews {
           !(factors && !factors.mfaRequired)) return false;
       if (wantedFactor === 'unreadable' &&
           !(factors && factors.totp && !factors.totpUsable)) return false;
+      if (wantedKind === 'service' && !row.serviceAccount) {
+        return false;
+      }
+      if (wantedKind === 'person' && row.serviceAccount) {
+        return false;
+      }
       return true;
     });
-    const paging = this.pagingOf(req.query, filtered.length);
-    const shown = filtered.slice(paging.offset, paging.offset + paging.perPage);
+    // PAGE, THEN DECORATE: the full factor row — keys, the authenticator's
+    // detail, the recovery codes, what the columns draw — is built for the
+    // rows on this page and for nobody else (`pagedRows()`).
+    const page = this.pagedRows(req.query, filtered, {
+      decorate: function (row) {
+        return self.decoratePerson(population, row);
+      }
+    });
+    const paging = page.paging;
+    const shown = page.shown;
     const filterParams = { q: wantedText, protocol: wantedProtocol,
-                           factor: wantedFactor,
+                           factor: wantedFactor, kind: wantedKind,
                            per: req.query.per ? paging.perPage : '' };
     const authenticatedHere = all.filter(function (
         row) { return row.authenticated; }).length;
+    // Over everybody, from the census — never from `shown`, whose rows are
+    // the only ones decorated. A row the census has nothing for (no
+    // credential store answered) counts in no tile, as it always did.
+    const counted = function (test) {
+      return all.filter(function (r) {
+        const f = factorsOf(r);
+        return !!f && test(f, r);
+      }).length;
+    };
     const factorCounts = {
-      withSecond: all.filter(function (r) {
-        return r.factors && r.factors.mfaRequired;
-      }).length,
-      withTotp: all.filter(function (r) {
-        return r.factors && r.factors.totp;
-      }).length,
-      withKeys: all.filter(function (r) {
-        return r.factors && r.factors.mfaKeys > 0;
-      }).length,
-      primaryKeys: all.filter(function (r) {
-        return r.factors && r.factors.primaryKeys > 0;
-      }).length,
-      passwordOnly: all.filter(function (r) {
-        return r.factors && r.factors.password && !r.factors.mfaRequired;
-      }).length,
-      unreadable: all.filter(function (r) {
-        return r.factors && r.factors.totp && !r.factors.totpUsable;
-      }).length,
+      withSecond: counted(function (f) { return f.mfaRequired; }),
+      withTotp: counted(function (f) { return f.totp; }),
+      withKeys: counted(function (f) { return f.mfaKeys > 0; }),
+      primaryKeys: counted(function (f) { return f.primaryKeys > 0; }),
+      passwordOnly: counted(function (f) {
+        return f.password && !f.mfaRequired;
+      }),
+      unreadable: counted(function (f) { return f.totp && !f.totpUsable; }),
       // NOBODY CAN SIGN IN AS THEM. A person with an entry and no password and
       // no primary key — the ordinary state of somebody provisioned and not yet
       // activated, and the state an activation link exists to end. It is
       // counted beside the second-factor tiles because it is the OTHER question
       // an operator brings to a roster of people.
-      noCredential: all.filter(function (r) {
-        return r.factors && !r.factors.usable && !r.isClient;
-      }).length
+      noCredential: counted(function (f, r) {
+        return !f.usable && !r.isClient;
+      })
     };
+    // WHO HOLDS A LIVE SIGN-ON SESSION, counted for the page's tile (#446):
+    // one person with three browsers is one, by the same identity key the
+    // rows are filed under.
+    const liveByUser: Record<string, number> = {};
+    this.signOnSessionRows().forEach(function (session) {
+      if (session.expired) {
+        return;
+      }
+      const key = stats.identityKeyOf(session.username || session.sub);
+      liveByUser[key] = (liveByUser[key] || 0) + 1;
+    });
+    const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
       wantedText: wantedText, wantedProtocol: wantedProtocol,
@@ -7221,14 +11869,65 @@ class AdminViews {
           capped: population.capped, scanLimit: population.limit,
           registryCap: population.registryCap,
           filter: { q: wantedText || null, protocol: wantedProtocol || null,
-                    factor: wantedFactor || null },
+                    factor: wantedFactor || null, kind: wantedKind || null },
+          // #221: how many of the people are service accounts.
+          serviceAccounts: all.filter(function (row) {
+            return row.serviceAccount;
+          }).length,
           protocols: Object.keys(protocolsSeen).sort(),
           page: paging.page, pages: paging.pages, perPage: paging.perPage,
           firstRow: paging.firstRow, lastRow: paging.lastRow,
-          users: shown
+          // What the page draws beside the rows (#446): the paging control,
+          // the active-session tile, and three facts its notes state — how
+          // many person fields a new entry may carry, where it goes, and how
+          // many identities the registry keeps.
+          paging: pagingJson,
+          withActiveSession: Object.keys(liveByUser).length,
+          personFieldCount: vcClaims.personFields().length,
+          newUserContainer: self.newUserContainer(),
+          registryKeeps: stats.MAX_USERS,
+          // Each row with its live sign-on sessions, the column beside it,
+          // and its entry's DN (#461) — what an application's `appMayAct`
+          // names a person by, so the console's search there can store it.
+          // Looked up for the rows of this page only.
+          users: shown.map(function (row) {
+            return Object.assign({}, row,
+                                 { liveSessions: liveByUser[row.key] || 0,
+                                   dn: self.personDnOf(row) });
+          })
       };
       }())
     };
+  }
+
+  /**
+   * The DN of a listed person's directory entry (#461), or '' where they
+   * have none or no directory is loaded.
+   *
+   * @param row - a row of the people list
+   * @returns the DN, or ''
+   */
+  personDnOf(row) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.personDnOf().");
+    if (!row || !row.inDirectory) {
+      log.debug("Leaving AdminViews.personDnOf(). No entry.");
+      return '';
+    }
+    const name = String(row.name || row.key || '');
+    let dn = '';
+    try {
+      dn = String(credentials.deviceStore('personDnOf', [name]) || '');
+    } catch (e) {
+      // A directory that cannot answer leaves the row without a DN, which
+      // the search draws as a person who cannot be named; the list itself
+      // is still answered.
+      log.debug("Caught in AdminViews.personDnOf(): " +
+                ((e && e.message) || e));
+      dn = '';
+    }
+    log.debug("Leaving AdminViews.personDnOf().");
+    return dn;
   }
 
   // ===========================================================================
@@ -7274,11 +11973,34 @@ class AdminViews {
   // UNIONED rather than one of them winning: holding a key under one spelling
   // and an app under another is holding both.
   // ===========================================================================
+  //
+  // ---------------------------------------------------------------------------
+  // AND IT READS NOTHING PER PERSON (#352, 2026-09-29).
+  //
+  // This function used to unite the FACTORS as it folded — every spelling
+  // asked `mechanismsFor()` through `credentials.secondFactorHolders()` — so
+  // building the population cost a credential lookup per person, and every
+  // request to `/admin/users`, `/admin-api/users` and `/admin-api/mfa` paid it
+  // for the whole realm to show one page. The fold is the same and the rows
+  // are the same; what a row no longer carries is its factors (`factors` is
+  // null on every row this returns). What it carries instead, beside the
+  // rows, is `spellings` — which population names folded into which row, in
+  // the order the fold met them — so that:
+  //
+  //   * `decoratePerson()` unites the full factor rows of ONE row's spellings,
+  //     for the rows a page shows, in the order this used to; and
+  //   * `peopleCensus()` unites the census facts of every row's spellings, for
+  //     the tiles and the `?factor=` filter, in one pass.
+  //
+  // `isApplication` is the directory's one-listing answer to the third test
+  // of `isApplicationRow()` (see there).
+  // ---------------------------------------------------------------------------
   /**
-   * Lists the people, one row per person, folding their spellings and uniting
-   * their factors.
+   * Lists the people, one row per person, folding their spellings; the
+   * factors are united later, for the rows shown (`decoratePerson()`) and in
+   * one pass for the counts (`peopleCensus()`).
    *
-   * @returns the rows
+   * @returns the rows, the population's reporting, and `spellings`
    */
   peopleRows() {
     const { log, credentials, stats } = this.deps;
@@ -7297,9 +12019,14 @@ class AdminViews {
       byKey.set(row.key, row);
     });
 
-    const holders = credentials.secondFactorHolders(seen.map(function (row) {
-      return row.key;
-    }));
+    const holders = credentials.secondFactorPopulation(
+      seen.map(function (row) {
+        return row.key;
+      }));
+    // Row key -> the population rows (spellings) folded into it, in the order
+    // the fold meets them, which is the order `mergeFactors()` used to be
+    // applied in — so decorating later unites them exactly as this did.
+    const spellings = new Map();
 
     holders.rows.forEach(function (holder) {
       const key = stats.identityKeyOf(holder.username);
@@ -7328,11 +12055,15 @@ class AdminViews {
         byKey.set(key, row);
       }
       row.inDirectory = row.inDirectory || !!holder.inDirectory;
-      row.factors = self.mergeFactors(row.factors, holder);
+      if (!spellings.has(key)) {
+        spellings.set(key, []);
+      }
+      spellings.get(key).push(holder);
     });
 
+    const isApplication = holders.isApplication;
     const rows = Array.from(byKey.values()).filter(function (row) {
-      return !self.isApplicationRow(row);
+      return !self.isApplicationRow(row, isApplication);
     });
     rows.sort(function (a, b) {
       return String(a.name).toLowerCase() < String(b.name).toLowerCase() ? -1 :
@@ -7343,7 +12074,80 @@ class AdminViews {
               holders.scanned + " scanned in the directory.");
     return { rows: rows, store: holders.store, scanned: holders.scanned,
              capped: holders.capped, limit: holders.limit,
-             registryCap: stats.MAX_USERS };
+             registryCap: stats.MAX_USERS, spellings: spellings };
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE SHOWN ROW'S FACTORS (#352): what `peopleRows()` used to compute for
+  // everybody, for one row — each spelling's full roster row from
+  // `credentials.factorHolderRow()`, united by `mergeFactors()` in the fold's
+  // order. A row nothing folded into keeps `factors: null`, which is what it
+  // had when no credential store answered for it.
+  // ---------------------------------------------------------------------------
+  /**
+   * Fills in one people row's factors, for a row a page shows.
+   *
+   * @param population - what `peopleRows()` returned
+   * @param row - one of its rows
+   * @returns the row, with `factors`
+   */
+  decoratePerson(population, row) {
+    const { log, credentials } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.decoratePerson(). key=" + row.key);
+    let factors = null;
+    ((population.spellings && population.spellings.get(row.key)) || [])
+      .forEach(function (holder) {
+        factors = self.mergeFactors(factors,
+                                    credentials.factorHolderRow(holder));
+      });
+    row.factors = factors;
+    log.debug("Leaving AdminViews.decoratePerson().");
+    return row;
+  }
+
+  // ---------------------------------------------------------------------------
+  // EVERY ROW'S FACTORS, IN ONE PASS, FOR WHAT COUNTS OR FILTERS (#352).
+  //
+  // `credentials.factorCensus()` answers the seven facts the tiles and the
+  // `?factor=` filter read, for every spelling, from one call into the
+  // directory; this unites them per row with the same `mergeFactors()` the
+  // shown rows are united with, so a count and a row cannot disagree. Only
+  // the rows passed in are asked about — the population after the
+  // application filter, which is what the tiles have always counted.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers each people row's census facts, united across its spellings.
+   *
+   * @param population - what `peopleRows()` returned
+   * @param rows - the rows to answer for
+   * @returns a Map from row key to its facts, or to null where nothing folded
+   *   into it
+   */
+  peopleCensus(population, rows) {
+    const { log, credentials } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.peopleCensus(). " + rows.length +
+              " row(s).");
+    const spellings = population.spellings || new Map();
+    const names = [];
+    rows.forEach(function (row) {
+      (spellings.get(row.key) || []).forEach(function (holder) {
+        names.push(holder.username);
+      });
+    });
+    const facts = credentials.factorCensus(names);
+    const out = new Map();
+    rows.forEach(function (row) {
+      let merged = null;
+      (spellings.get(row.key) || []).forEach(function (holder) {
+        merged = self.mergeFactors(merged,
+          facts.get(String(holder.username).trim()) || {});
+      });
+      out.set(row.key, merged);
+    });
+    log.debug("Leaving AdminViews.peopleCensus().");
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -7372,14 +12176,25 @@ class AdminViews {
   // an application stays listed: the person entry is the stronger claim.
   // The rows are still on `stats.userRows()` for every page that is about
   // IDENTITIES rather than people — the delegation map, the token holders.
+  //
+  // **THE THIRD TEST WAS A REGISTRY READ PER ROW (#352)**: `applications.get()`
+  // for every register row with no person entry — a directory lookup and, on
+  // a miss, a walk of `ou=applications`, thousands of times on a cluster that
+  // has seen many clients and whose directory is past the scan cap.
+  // `isApplication` is the same question answered from ONE listing of that
+  // container (`ldap_server.js`'s `applicationMatcher()`, handed over with
+  // the population); where no directory offered one, the registry is asked
+  // per row as before.
   // ---------------------------------------------------------------------------
   /**
    * Asks whether a user-registry row is an application rather than a person.
    *
    * @param row - the row
+   * @param isApplication - the directory's one-listing matcher, when there
+   *   is one; `applications.get()` is asked otherwise
    * @returns whether it is
    */
-  isApplicationRow(row) {
+  isApplicationRow(row, isApplication?) {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.isApplicationRow().");
     if (row.isClient) {
@@ -7393,7 +12208,9 @@ class AdminViews {
       log.debug("Leaving AdminViews.isApplicationRow(). A client subject.");
       return true;
     }
-    if (!row.inDirectory && applications.get(row.key)) {
+    if (!row.inDirectory &&
+        (typeof isApplication === 'function' ? isApplication(row.key)
+                                             : applications.get(row.key))) {
       log.debug("Leaving AdminViews.isApplicationRow(). A registered " +
                 "application.");
       return true;
@@ -7509,6 +12326,29 @@ class AdminViews {
                           { name: 'federationLinks', noun: 'links' });
   }
 
+  // A person's GNAP grants (#432 phase 7), or an empty page where GNAP's view
+  // layer cannot be loaded in this process.
+  /**
+   * Returns the GNAP grants a person is the resource owner of, as
+   * `gnap/gnap_console.ts`'s `personGrantsView()` draws them.
+   *
+   * @param query - the request's query
+   * @param key - the person
+   * @returns `{ rows, paging, cells }`
+   */
+  gnapGrantsOf(query, key) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.gnapGrantsOf().");
+    const loader = this.deps.loadGnapConsole;
+    if (!loader) {
+      log.debug("Leaving AdminViews.gnapGrantsOf(). No GNAP here.");
+      return { rows: [], paging: null, cells: null };
+    }
+    const view = loader().personGrantsView(key, query || {});
+    log.debug("Leaving AdminViews.gnapGrantsOf(). " + view.total + ".");
+    return { rows: view.rows, paging: view.paging, cells: view.cells };
+  }
+
   // `risk` is the person's current standing (#62), read by `riskFor()`
   // before this synchronous view runs and handed in, because a view reads
   // nothing off the request but its query.
@@ -7520,6 +12360,154 @@ class AdminViews {
    * @param risk - the person's current risk standing, read by `riskFor()`
    * @returns the JSON
    */
+  /**
+   * Builds Monitoring → Service accounts (#221): every service account in the
+   * realm with its push destination and the state of its rotation — when it
+   * last rotated, when it is next due, and how many rotations in a row have
+   * failed — paged, with the realm's rotation settings and the totals.
+   *
+   * @param query - the request's query (`page`, `per`, `failing`)
+   * @returns the page's JSON
+   */
+  serviceAccountsMonitorJson(query) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminViews.serviceAccountsMonitorJson().");
+    const q = query || {};
+    const profile = serviceAccountPolicy.read();
+    const rotation = serviceAccountPolicy.rotation(profile);
+    const self = this;
+    const all = serviceAccounts.names().slice().sort().map(function (name) {
+      const one = self.serviceAccountJson(name);
+      return one ? Object.assign({ username: name }, one) : null;
+    }).filter(function (row) {
+      return !!row;
+    });
+    const failingOnly = String(q.failing || '') === 'true';
+    const rows = failingOnly ? all.filter(function (row) {
+      return row.rotation.failures > 0;
+    }) : all;
+    const listed = this.pagedRows(q, rows);
+    const out = {
+      policy: {
+        rotationEnabled: rotation.enabled,
+        intervalDays: profile.rotationIntervalDays,
+        overlapMinutes: profile.rotationOverlapMinutes,
+        alarmFailures: rotation.alarmFailures,
+        from: profile.from
+      },
+      totals: {
+        accounts: all.length,
+        withDestination: all.filter(function (row) {
+          return !!row.destination;
+        }).length,
+        rotating: all.filter(function (row) {
+          return row.rotation.rotates;
+        }).length,
+        failing: all.filter(function (row) {
+          return row.rotation.failures > 0;
+        }).length,
+        alarms: all.filter(function (row) {
+          return row.rotation.alarm;
+        }).length
+      },
+      filter: { failing: failingOnly },
+      accounts: listed.shown,
+      paging: this.pagingJson(listed.paging)
+    };
+    log.debug("Leaving AdminViews.serviceAccountsMonitorJson(). " +
+              all.length + " account(s).");
+    return out;
+  }
+
+  /**
+   * Describes a service account for its person page: its owners,
+   * destination and rotation state, and what the realm's policy lets it do.
+   *
+   * @param key - the person
+   * @returns the description, or null for an ordinary person
+   */
+  // ---------------------------------------------------------------------------
+  // CLOSED TO ITS OWNERS (#607): what the Owners tabs draw beside their
+  // checkbox — whether an administrator's mark is set, and every reason the
+  // object is closed, the mark among them. `common/ownership.ts`'s answer,
+  // the same facts the access-control policy's owner rule reads; reached
+  // lazily, a library.
+  // ---------------------------------------------------------------------------
+  /**
+   * An object's owner-protection facts, for its Owners tab.
+   *
+   * @param kind - `role`, `group`, `service-account` or `application`
+   * @param name - the object
+   * @returns `{ kind, name, marked, protected, reasons }`
+   */
+  ownershipOf(kind, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.ownershipOf().");
+    let facts: any = null;
+    try {
+      facts = require('../common/ownership').objectOf(kind, name);
+    } catch (e) {
+      // Unreadable: drawn as closed, as the owner rule reads it.
+      log.debug("Caught in AdminViews.ownershipOf(): " +
+                ((e && e.message) || e));
+      facts = null;
+    }
+    log.debug("Leaving AdminViews.ownershipOf().");
+    return { kind: String(kind), name: String(name),
+             marked: !!(facts && facts.marked),
+             protected: facts ? !!facts.protected : true,
+             reasons: facts ? facts.reasons.slice(0) : [] };
+  }
+
+  serviceAccountJson(key) {
+    const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
+    log.debug("Entering AdminViews.serviceAccountJson().");
+    const facts = serviceAccounts.of(key);
+    if (!facts) {
+      log.debug("Leaving AdminViews.serviceAccountJson(). A person.");
+      return null;
+    }
+    const profile = serviceAccountPolicy.read();
+    const rotation = serviceAccountPolicy.rotation(profile);
+    const rotatedMs = facts.rotatedAt
+      ? Date.parse(facts.rotatedAt.replace(
+          /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2}).*$/,
+          '$1-$2-$3T$4:$5:$6Z'))
+      : NaN;
+    log.debug("Leaving AdminViews.serviceAccountJson().");
+    return {
+      // EVERY OWNER (#600), each `{ dn, kind, name }`; `kind` '' for a value
+      // that no longer names a person or a group.
+      owners: facts.owners,
+      // Closed to its owners, and why (#607).
+      ownership: this.ownershipOf('service-account', facts.username),
+      destination: facts.destination || null,
+      secretName: facts.secretName || null,
+      rotatedAt: facts.rotatedAt || null,
+      // The overlap: until when the previous password is still accepted.
+      previousPasswordUntil: facts.previousPasswordExpires > Date.now()
+        ? new Date(facts.previousPasswordExpires).toISOString() : null,
+      rotation: {
+        enabled: rotation.enabled,
+        rotates: rotation.enabled && !!facts.destination,
+        nextDueAt: rotation.enabled && facts.destination && !isNaN(rotatedMs)
+          ? new Date(rotatedMs + rotation.intervalMs).toISOString() : null,
+        failures: facts.rotation.failures,
+        lastError: facts.rotation.lastError || null,
+        lastAttemptAt: facts.rotation.lastAttempt
+          ? new Date(facts.rotation.lastAttempt).toISOString() : null,
+        alarm: facts.rotation.failures >= rotation.alarmFailures
+      },
+      policy: {
+        exemptFromSecondFactor: profile.exemptFromSecondFactor === true,
+        allowBrowserSignIn: profile.allowBrowserSignIn === true,
+        doors: serviceAccountPolicy.allowedDoors(profile),
+        requiresOwner: profile.requireOwner === true,
+        from: profile.from
+      }
+    };
+  }
+
   userDetailJson(req, key, risk?: any) {
     const { log, subjectForName, stats } = this.deps;
     const self = this;
@@ -7651,8 +12639,14 @@ class AdminViews {
     // attribute with the values it holds, and the schema's attributes that are
     // withheld with the door to use instead. Null where there is no entry.
     const attributeEditor = this.deps.personEditor.editorFor(key);
+    // THEIR GNAP GRANTS (#432 phase 7): every grant they are the resource
+    // owner of, with its rights, tokens and why it ended — the view
+    // `gnap/gnap_console.ts` draws for this page, the API and their own
+    // `/portal/gnap`. Revoked with POST /admin-api/gnap/revoke-grant naming
+    // the grant and this person.
+    const gnapGrants = this.gnapGrantsOf(req.query, key);
     log.debug("Leaving AdminViews.userDetailJson().");
-    return {
+    const answer = {
       detail: detail, row: row, sessionRows: sessionRows, live: live,
       split: split,
       // `back` is handed over with the rest: the page's sign-out and revoke
@@ -7665,8 +12659,8 @@ class AdminViews {
       endedPage: endedPage, sessionlessPage: sessionlessPage, artifactPage:
                                                                 artifactPage,
       federationLinkPage: federationLinkPage, kerberos: kerberos,
-      attributeEditor: attributeEditor,
-      json: (function () {
+      attributeEditor: attributeEditor, gnapGrants: gnapGrants,
+      json: (function (): any {
       return {
           user: row,
           // THE PERSON'S SUBJECT (2026-09-14): `urn:uuid:<entryUUID>`, the
@@ -7676,6 +12670,10 @@ class AdminViews {
           // first thing somebody matching a relying party's records to this
           // page needs.
           subject: subjectForName(key),
+          // WHETHER THEY ARE A SERVICE ACCOUNT (#221): its owner, push
+          // destination and rotation state, and what this realm's
+          // service-account policy lets it do — null for an ordinary person.
+          serviceAccount: self.serviceAccountJson(key),
           // THE PERSON'S CURRENT RISK (#62) — null for a person never
           // assessed.
           risk: risk || null,
@@ -7725,10 +12723,126 @@ class AdminViews {
           // What POST /admin-api/users/set-attribute, /add-attribute and
           // /remove-attribute may change on their entry (#228), and what
           // they hold now; null where the directory holds no entry for them.
-          attributeEditor: attributeEditor
+          attributeEditor: attributeEditor,
+          // The GNAP grants they are the resource owner of (#432 phase 7),
+          // paged as `gnapGrantsPage`; `cells` says what a multi-cell
+          // service's list leaves out. Revoked with POST
+          // /admin-api/gnap/revoke-grant { grant, user }.
+          gnapGrants: gnapGrants.rows,
+          gnapGrantsPaging: gnapGrants.paging,
+          gnapGrantsCells: gnapGrants.cells
       };
       }())
     };
+    answer.json.page = this.userPageData(key, answer, risk);
+    return answer;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE PERSON'S PAGE READS BEYOND THE RECORD (#446).
+  //
+  // The page's thirteen sections read the credential store, three mechanisms'
+  // settings, the federation register, the mode and the registry's caps while
+  // they draw. A page drawn from the answer alone, which is what the static
+  // console draws, reads them here instead. The answer carries them as `page`,
+  // the member name the application drill-down uses for the same purpose.
+  // **None of it is a credential**: the keys are the public half, the app
+  // passwords are their views (no hash), and the key-pair state is the
+  // `personCredentialsState()` that already leaves the private keys out.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds what `/admin/users?user=` draws beyond the person's record.
+   *
+   * @param key - the person's name
+   * @param view - what `userDetailJson()` built
+   * @param risk - the person's standing as `riskFor()` read it; undefined
+   *   when it was not asked, which draws no badge
+   * @returns the page's data
+   */
+  userPageData(key, view, risk?: any) {
+    const { log, stats, credentials, totp, webauthnPolicy, backupCodes, mode,
+            federation } = this.deps;
+    log.debug("Entering AdminViews.userPageData(). key=" + key);
+    const storable = credentials.storable();
+    let mfa: any = { storable: storable };
+    if (storable) {
+      const mech = credentials.mechanismsFor(key);
+      mfa = {
+        storable: true,
+        mech: Object.assign({}, mech, {
+          keys: (mech.keys || []).map(function (one) {
+            // #470: the name, group and provider the passkey pages show.
+            return Object.assign({}, one,
+                                 { algorithm: credentials.keyAlgorithm(one),
+                                   name: credentials.keyName(one),
+                                   group: credentials.keyGroup(one),
+                                   provider: credentials.keyProvider(one) });
+          })
+        }),
+        totp: totp.settings(),
+        webauthn: webauthnPolicy.settings(),
+        recovery: backupCodes.settings(),
+        appPasswords: credentials.appPasswordsOf(key),
+        doors: this.passwordOnlyDoorsFor(key),
+        verifications: this.verificationsJson({ user: key, per: 100 }),
+        inventsClaimValues: mode.inventsClaimValues(),
+        devices: this.devicesJson({ user: key }),
+        selfIssued: this.selfIssuedSubjectsJson({ user: key }),
+        // The address and the emailed second factor (#64), and the account
+        // ids clients know them by (#148).
+        mail: {
+          status: require('../common/mail_factor').status(key),
+          usable: require('../common/authn_policy').mailUsable(),
+          audSubs: credentials.audSubsOf(key)
+        }
+      };
+    }
+    const keyPairs = Object.assign({}, view.credentialsState);
+    delete keyPairs.json;
+    const page = {
+      // The name the page was asked for, which every form on it posts back.
+      key: key,
+      // Whether the risk standing was read: `risk: null` then means never
+      // assessed, and the page says so; unread, it draws no badge.
+      riskAsked: risk !== undefined,
+      counts: {
+        live: view.live.length,
+        tokens: view.detail.tokens.length,
+        valid: view.valid,
+        expired: view.expired,
+        artifacts: view.detail.artifacts.length,
+        ended: view.split.ended.length,
+        sessionless: view.split.sessionless.length
+      },
+      back: view.back,
+      params: view.params,
+      blocksPerPage: DEFAULT_BLOCKS_PER_PAGE,
+      perPage: DEFAULT_PER_PAGE,
+      maxEventsPerUser: stats.MAX_EVENTS_PER_USER,
+      directoryLoaded: !!directoryReader,
+      mfa: mfa,
+      // The Attributes tab's sub-tabs, in order (`person_editor.ts`).
+      fieldGroups: this.deps.personEditor.FIELD_GROUPS,
+      // Who may act for them (#108): `stsNotDelegated` and `stsMayAct`.
+      delegation: credentials.delegationFactsFor(key) || {},
+      keyPairs: keyPairs,
+      // WHAT THE SERVICE ACCOUNT TAB'S OWNER LIST IS HELD TO (#600), whether
+      // or not they are one yet: the policy's `requireOwner`, the most owners
+      // an account may name, and their own DN, which a search may not offer
+      // (an account cannot own itself).
+      serviceAccountRules: {
+        requiresOwner: this.deps.serviceAccountPolicy.requiresOwner(),
+        maxOwners: this.deps.serviceAccounts.MAX_OWNERS,
+        dn: String((view.directory && view.directory.json &&
+                    view.directory.json.dn) || '')
+      },
+      serviceProviders: (federation.inRole('service-provider') || [])
+        .map(function (one) {
+          return { fedId: one.fedId, fedPeer: one.fedPeer || '' };
+        })
+    };
+    log.debug("Leaving AdminViews.userPageData().");
+    return page;
   }
 
   // One route, three answers, and the choice between them is here rather than
@@ -7790,7 +12904,7 @@ class AdminViews {
    * @returns the JSON
    */
   usersJson(req, risk?: any) {
-    const { log } = this.deps;
+    const { log, stats } = this.deps;
     log.debug("Entering AdminViews.usersJson().");
     const wanted = String((req.query || {}).user || '').trim();
     if (!wanted) {
@@ -7800,7 +12914,8 @@ class AdminViews {
     const detail = this.userDetailJson(req, wanted, risk);
     if (!detail) {
       log.debug("Leaving AdminViews.usersJson().");
-      return { user: wanted, known: false };
+      // `registryKeeps` is what the page says about forgetting (#446).
+      return { user: wanted, known: false, registryKeeps: stats.MAX_USERS };
     }
     log.debug("Leaving AdminViews.usersJson().");
     return Object.assign({ known: true }, detail.json);
@@ -7871,7 +12986,34 @@ class AdminViews {
                  // a door that verified nothing; the AAGUID is then only the
                  // authenticator's claim, which is why it is beside it.
                  aaguid: one.aaguid || null,
-                 attestation: one.attestation || null };
+                 // ITS SIGNATURE ALGORITHM (2026-10-01): name, COSE id,
+                 // and whether it is post-quantum or insecure.
+                 algorithm: credentials.keyAlgorithm(one),
+                 attestation: one.attestation || null,
+                 // WHAT THE PASSKEY PAGES SHOW (#470): the name a page draws
+                 // (the label, else the default), the group — `device` or
+                 // `security-key` — the provider, when it was last used, the
+                 // backup flags (WebAuthn Level 3 section 6.1), the
+                 // transports and whether it is discoverable; null where the
+                 // key was written before they were kept.
+                 name: credentials.keyName(one),
+                 group: credentials.keyGroup(one),
+                 provider: credentials.keyProvider(one) || null,
+                 lastUsedAt: one.lastUsedAt || 0,
+                 backupEligible: typeof one.backupEligible === 'boolean'
+                   ? one.backupEligible : null,
+                 backupState: typeof one.backupState === 'boolean'
+                   ? one.backupState : null,
+                 transports: Array.isArray(one.transports) ? one.transports
+                                                           : [],
+                 discoverable: typeof one.discoverable === 'boolean'
+                   ? one.discoverable : null,
+                 // THE DEVICE SERIAL A TRUSTED ENTERPRISE ATTESTATION NAMED
+                 // (#532), or null.
+                 deviceSerial: (one.attestation &&
+                                one.attestation.deviceSerial) || null,
+                 // WHETHER IT SIGNS IN WITH NO USERNAME (#474), and why not.
+                 withoutUsername: credentials.withoutUsername(one) };
       }),
       primaryKeys: mech.primaryKeys,
       mfaKeys: mech.mfaKeys,
@@ -8336,7 +13478,15 @@ class AdminViews {
       backchannelDeliveriesPaging: this.pagingJson(deliveriesPg.paging),
       backchannelCounts: backchannel.counts(),
       deliveryState: deliveryState,
-      deliveryq: deliveryQ
+      deliveryq: deliveryQ,
+      // WHAT THE PAGE STATES IN EVERY STATE OF IT (#446): its settings,
+      // whether this process can read what is live at all, the Kerberos
+      // realm an identity's principal is spelt in, and whether the
+      // development-only undo is offered.
+      settings: configSettingsJson('/admin/logout'),
+      hasReader: !!logoutReader,
+      kerberosRealm: krb5Principals.REALM,
+      opensTestControls: mode.opensTestControls()
     };
     if (!wantedUser) {
       log.debug("Leaving AdminViews.logoutJson(). Nobody was named.");
@@ -8395,7 +13545,8 @@ class AdminViews {
       json: Object.assign({ user: wantedUser, known: true, canWrite: canWrite },
                           inventory,
                           { rows: pg.shown,
-                            paging: this.pagingJson(pg.paging) },
+                            paging: this.pagingJson(pg.paging),
+                            family: wantedFamily, key: key },
                           backchannelBlock)
     };
   }
@@ -8485,6 +13636,8 @@ export = {
   devicesJson: slot.forward('devicesJson'),
   passwordOnlyDoorsFor: slot.forward('passwordOnlyDoorsFor'),
   userDetailJson: slot.forward('userDetailJson'),
+  serviceAccountJson: slot.forward('serviceAccountJson'),
+  serviceAccountsMonitorJson: slot.forward('serviceAccountsMonitorJson'),
   riskFor: slot.forward('riskFor'),
   personCredentialsState: slot.forward('personCredentialsState'),
   usersJson: slot.forward('usersJson'),
@@ -8496,9 +13649,24 @@ export = {
   federationJson: slot.forward('federationJson'),
   federationListJson: slot.forward('federationListJson'),
   applicationPermissionsState: slot.forward('applicationPermissionsState'),
+  applicationRolesState: slot.forward('applicationRolesState'),
+  applicationEnrollmentState: slot.forward('applicationEnrollmentState'),
+  applicationClaimsState: slot.forward('applicationClaimsState'),
+  applicationPermissionClaimsState:
+    slot.forward('applicationPermissionClaimsState'),
+  applicationTokenLifetimesState: slot.forward('applicationTokenLifetimesState'),
+  attributeClaimChoices: slot.forward('attributeClaimChoices'),
+  attributeClaimPreview: slot.forward('attributeClaimPreview'),
+  releaseWithholding: slot.forward('releaseWithholding'),
+  withheldFor: slot.forward('withheldFor'),
   applicationDetailJson: slot.forward('applicationDetailJson'),
+  // #488: an application's wstrustJwtScope warnings, as its view carries
+  // them.
+  applicationScopeWarnings: slot.forward('applicationScopeWarnings'),
+  applicationAttributeNote: slot.forward('applicationAttributeNote'),
   applicationsJson: slot.forward('applicationsJson'),
   applicationsListJson: slot.forward('applicationsListJson'),
+  secretExpiryOf: slot.forward('secretExpiryOf'),
   NOT_A_VIEW: NOT_A_VIEW,
   pageParamsOf: slot.forward('pageParamsOf'),
   groupDetailJson: slot.forward('groupDetailJson'),
@@ -8529,12 +13697,16 @@ export = {
   CREDENTIAL_CHOICES: CREDENTIAL_CHOICES,
   newUserContainer: slot.forward('newUserContainer'),
   newUserJson: slot.forward('newUserJson'),
+  inventedFieldValues: slot.forward('inventedFieldValues'),
+  typedField: slot.forward('typedField'),
   newApplicationJson: slot.forward('newApplicationJson'),
   spiffeSelectorText: slot.forward('spiffeSelectorText'),
   setSpiffeReader: slot.forward('setSpiffeReader'),
   spiffeListeners: slot.forward('spiffeListeners'),
   spiffeJson: slot.forward('spiffeJson'),
   spiffeEntriesJson: slot.forward('spiffeEntriesJson'),
+  spiffeEntryJson: slot.forward('spiffeEntryJson'),
+  spiffeAgentJson: slot.forward('spiffeAgentJson'),
   spiffeAgentsJson: slot.forward('spiffeAgentsJson'),
   spiffeBrokersJson: slot.forward('spiffeBrokersJson'),
   setSignalsReporter: slot.forward('setSignalsReporter'),
@@ -8549,6 +13721,7 @@ export = {
   caepSessionsState: slot.forward('caepSessionsState'),
   caepApplicationsState: slot.forward('caepApplicationsState'),
   caepSessionsJson: slot.forward('caepSessionsJson'),
+  signalStreamsState: slot.forward('signalStreamsState'),
   riscJson: slot.forward('riscJson'),
   riscAccountsState: slot.forward('riscAccountsState'),
   riscApplicationsState: slot.forward('riscApplicationsState'),
@@ -8567,6 +13740,32 @@ export = {
   errorCodesView: slot.forward('errorCodesView'),
   usedAssertionsView: slot.forward('usedAssertionsView'),
   delegationView: slot.forward('delegationView'),
+  delegationNodeLook: slot.forward('delegationNodeLook'),
+  delegationLooks: slot.forward('delegationLooks'),
+  delegationMapModel: slot.forward('delegationMapModel'),
+  delegationMapKey: slot.forward('delegationMapKey'),
+  // #543: the kerberos namespace's routes and English, and the two keys'
+  // English for the delegation namespace (`common/delegation.js`).
+  PROSE_ROUTES: AdminViews.PROSE_ROUTES,
+  MAP_KEY_PROSE_ROUTES: AdminViews.MAP_KEY_PROSE_ROUTES,
+  prose: AdminViews.prose,
+  mapKeyProse: AdminViews.mapKeyProse,
+  apiGateStateOf: slot.forward('apiGateStateOf'),
+  signingHistoryCertificate: slot.forward('signingHistoryCertificate'),
+  federationMapModel: slot.forward('federationMapModel'),
+  federationMapKey: slot.forward('federationMapKey'),
+  federationMapLooks: slot.forward('federationMapLooks'),
+  delegationPageModel: slot.forward('delegationPageModel'),
+  delegationClusterModel: slot.forward('delegationClusterModel'),
+  delegationAllowedModel: slot.forward('delegationAllowedModel'),
+  permissionsListStateOf: slot.forward('permissionsListStateOf'),
+  delegationSettingsModel: slot.forward('delegationSettingsModel'),
+  credentialLineageModel: slot.forward('credentialLineageModel'),
+  delegationUserModel: slot.forward('delegationUserModel'),
+  delegationApplicationModel: slot.forward('delegationApplicationModel'),
+  delegationChainModel: slot.forward('delegationChainModel'),
+  delegationChooser: slot.forward('delegationChooser'),
+  delegationFacts: slot.forward('delegationFacts'),
   delegationPolicyView: slot.forward('delegationPolicyView'),
   clusterSummary: slot.forward('clusterSummary'),
   permissionGroupsView: slot.forward('permissionGroupsView'),
@@ -8576,12 +13775,14 @@ export = {
   claimsRequestPreview: slot.forward('claimsRequestPreview'),
   claimsRequestJson: slot.forward('claimsRequestJson'),
   userinfoClaimsJson: slot.forward('userinfoClaimsJson'),
+  kerberosClaimsJson: slot.forward('kerberosClaimsJson'),
   setCryptoReporter: slot.forward('setCryptoReporter'),
   setXacmlPages: slot.forward('setXacmlPages'),
   setDirectoryPages: slot.forward('setDirectoryPages'),
   setScimReader: slot.forward('setScimReader'),
   setRolePreviewer: slot.forward('setRolePreviewer'),
   setConfigSettingsJson: slot.forward('setConfigSettingsJson'),
+  settingsBlockOf: slot.forward('settingsBlockOf'),
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
@@ -8618,6 +13819,8 @@ export = {
   vcPreviewUser: slot.forward('vcPreviewUser'),
   vcJson: slot.forward('vcJson'),
   vpConfigJson: slot.forward('vpConfigJson'),
+  presentationVerificationsJson: slot.forward(
+    'presentationVerificationsJson'),
   realmRootUrl: slot.forward('realmRootUrl'),
   realmSettingRows: slot.forward('realmSettingRows'),
   realmJson: slot.forward('realmJson'),

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -100,7 +100,7 @@
 //
 //   * **`Totp` TAKES ITS DEPENDENCIES THROUGH ITS CONSTRUCTOR** — the logger,
 //     the settings reader, `crypto.js`'s HOTP half, the realm registry, the
-//     error codes, node's `randomBytes` and a LAZY loader for `qrcode` (still
+//     error codes, `crypto.randomBytes` and a LAZY loader for `qrcode` (still
 //     required only when a QR code is drawn, for `qrSvgDataUri()`'s reason).
 //     Nothing inside the class reaches for a module on its own.
 //   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, because `credentials.ts`,
@@ -112,7 +112,6 @@
 //     `Totp` is exported beside them for that root.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
 import crypto = require('./crypto');
@@ -245,7 +244,7 @@ class Totp {
   /**
    * Returns the dependencies the composition root builds the instance with.
    *
-   * @returns the real modules, node's `randomBytes` and a lazy require of
+   * @returns the real modules, `crypto.randomBytes` and a lazy require of
    *   `qrcode`
    */
   static defaultDeps(): TotpDeps {
@@ -259,7 +258,7 @@ class Totp {
       authnPolicy: authnPolicy,
       errorCodes: errorCodes as unknown as TotpDeps['errorCodes'],
       randomBytes: function (size: number): Buffer {
-        return nodeCrypto.randomBytes(size);
+        return crypto.randomBytes(size);
       },
       loadQrcode: function () {
         return require('qrcode');
@@ -676,7 +675,7 @@ class Totp {
   //
   // **THE ISSUER DEFAULTS TO THIS REALM'S HOST** rather than to a constant.
   // Two realms of one process are two identity providers, and an
-  // authenticator showing two accounts both labelled `mock STS` is one a
+  // authenticator showing two accounts both labelled `IYA STS` is one a
   // person cannot use.
   // -------------------------------------------------------------------------
   /**
@@ -697,7 +696,7 @@ class Totp {
     let host = String(base || '').replace(/^https?:\/\//i, '')
                                  .replace(/\/.*$/, '');
     if (!host) {
-      host = 'mock STS';
+      host = 'IYA STS';
     }
     // The realm, where there is one, because the whole point of the default is
     // to tell two of them apart in a list of accounts on a phone.
@@ -720,7 +719,7 @@ class Totp {
     log.debug('Entering Totp.otpauthUri(). account=' +
               (spec && spec.account));
     const options = spec || {};
-    const issuer = String(options.issuer || 'mock STS');
+    const issuer = String(options.issuer || 'IYA STS');
     const account = String(options.account || 'user');
     const label = encodeURIComponent(issuer) + ':' +
       encodeURIComponent(account);

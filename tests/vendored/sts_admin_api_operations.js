@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_admin_api_operations.js
 //
 // ---------------------------------------------------------------------------
-// EVERY OPERATION OF THE MOCK STS'S MANAGEMENT API, DRIVEN FOR REAL.
+// EVERY OPERATION OF IYA STS'S MANAGEMENT API, DRIVEN FOR REAL.
 //
 // `admin_api.js` next door asserts that the API is SHAPED right: that the
 // OpenAPI document is well formed, that every console page and every console
@@ -422,7 +422,7 @@ async function theRealmRegistryWorks() {
     description: "Created by tests/sts_admin_api_operations.js; LEFT IN " +
                  "PLACE on purpose, so a failed run can be read afterwards.",
     domain: REALM_DOMAIN,
-    overrides: { "saml2.entityId": "urn:test:" + REALM + ":idp" }
+    overrides: { "saml.organizationName": "Org " + REALM }
   }, "created the throwaway realm", true);
   assert.strictEqual(created.realm, REALM,
     "the create should name the realm it made.");
@@ -435,7 +435,7 @@ async function theRealmRegistryWorks() {
 
   // THE REALM'S DOMAIN (2026-09-18): on the row, rooting the realm's own
   // directory tree, and the base of the names seeded from it — except where
-  // the create's own overrides named one, which is the saml2.entityId above.
+  // the create's own overrides named one, which is saml.organizationName above.
   assert.strictEqual(row.domain, REALM_DOMAIN,
     "the create's `domain` should be on the row; it says " + row.domain);
   assert.strictEqual(row.baseDn, "dc=" + REALM_DOMAIN.split(".").join(",dc="),
@@ -446,9 +446,10 @@ async function theRealmRegistryWorks() {
   assert.strictEqual(realmSetting(row, "krb5.realm"),
     REALM_DOMAIN.toUpperCase(),
     "and its Kerberos realm should be the domain in capitals.");
-  assert.strictEqual(realmSetting(row, "saml11.providerId"),
-    "urn:" + REALM_DOMAIN + ":idp:saml11",
-    "and an entity id the create did not name should be a URN built from it.");
+  // #523: no SAML, WS-Trust or WS-Federation name is seeded any more —
+  // each is the realm's OAuth issuer, which is not a setting.
+  assert.strictEqual(realmSetting(row, "saml11.providerId"), undefined,
+    "no providerID should be seeded onto a realm since #523.");
   await refused("/realms/update", { id: REALM, domain: "moved." +
                                     REALM_DOMAIN },
     /fixed when the realm is created/, "a change of the realm's domain");
@@ -459,8 +460,8 @@ async function theRealmRegistryWorks() {
     /is already the/, "a second realm with the same domain");
   await refused("/realms/create", { id: REALM + "-bad", domain: "localhost" },
     /at least two labels/, "a domain of one label");
-  assert.strictEqual(realmSetting(row, "saml2.entityId"),
-    "urn:test:" + REALM + ":idp",
+  assert.strictEqual(realmSetting(row, "saml.organizationName"),
+    "Org " + REALM,
     "THE `overrides` FIELD OF createRealm MUST REACH THE REALM. It is " +
     "documented, exampled and validated, and the shared realmsAction() " +
     "dropped it for months while answering 200 — mgmt-api/CLAUDE.md records " +
@@ -477,31 +478,31 @@ async function theRealmRegistryWorks() {
   assert.strictEqual(config.body.realm, REALM,
     "the configuration read under /realm/" + REALM + " should say it is that " +
     "realm's; it said " + config.body.realm);
-  assert.strictEqual(settingValue(config.body, "saml2.entityId"),
-    "urn:test:" + REALM + ":idp",
+  assert.strictEqual(settingValue(config.body, "saml.organizationName"),
+    "Org " + REALM,
     "and the override the realm was created with should be the effective " +
-    "value of saml2.entityId inside it.");
+    "value of saml.organizationName inside it.");
 
   await ok("/realms/update", { id: REALM, description: "Updated by the test." },
     "updated the realm", true);
   assert.strictEqual((await realmRow()).description, "Updated by the test.",
     "`update` should change the description on the row.");
 
-  await ok("/realms/set", { id: REALM, key: "saml.issuer",
-                            value: "urn:test:" + REALM + ":issuer" },
+  await ok("/realms/set", { id: REALM, key: "saml.organizationName",
+                            value: "Set " + REALM },
     "set a realm setting", true);
-  assert.strictEqual(realmSetting(await realmRow(), "saml.issuer"),
-    "urn:test:" + REALM + ":issuer",
+  assert.strictEqual(realmSetting(await realmRow(), "saml.organizationName"),
+    "Set " + REALM,
     "`set` should put the value on the realm's own settings.");
 
-  await ok("/realms/unset", { id: REALM, key: "saml.issuer" },
+  await ok("/realms/unset", { id: REALM, key: "saml.organizationName" },
     "unset a realm setting", true);
-  // `unset` puts the SEEDED value back rather than removing the row: six
-  // settings are seeded onto every realm at create time, because a realm whose
-  // issuer was the default realm's would mint assertions the two could not be
-  // told apart by. So what must change is the VALUE, not the row's presence.
-  assert.notStrictEqual(realmSetting(await realmRow(), "saml.issuer"),
-    "urn:test:" + REALM + ":issuer",
+  // `unset` may put a SEEDED value back rather than remove the row, for the
+  // settings seeded onto every realm at create time; so what must change is
+  // the VALUE, not the row's presence.
+  assert.notStrictEqual(realmSetting(await realmRow(),
+                                     "saml.organizationName"),
+    "Set " + REALM,
     "`unset` should take the value this test set back off the realm; it is " +
     "still there.");
 
@@ -614,6 +615,7 @@ async function theRefusalSentencesAreHonest(doc) {
     "claims": { set: claimSets["claims"] },
     "saml-attributes": { set: claimSets["saml-attributes"] },
     "userinfo-claims": { set: claimSets["userinfo-claims"] },
+    "kerberos/claims": { set: claimSets["kerberos/claims"] },
     "federation": { id: "no-such-relationship" },
     "saml2": { sp: "urn:no:such:sp" },
     "saml11": { rp: "urn:no:such:rp" },
@@ -694,7 +696,9 @@ async function theRefusalSentencesAreHonest(doc) {
 async function claimSetIdsPerDoor() {
   log.debug("Entering claimSetIdsPerDoor().");
   const out = {};
-  for (const resource of ["claims", "saml-attributes", "userinfo-claims"]) {
+  // `kerberos/claims` (#493): the sixth set's door, the same action function.
+  for (const resource of ["claims", "saml-attributes", "userinfo-claims",
+                          "kerberos/claims"]) {
     const probe = await post("/" + resource + "/__no_such_action__",
                              { set: "" });
     const errors = ((probe.body && probe.body.errors) || []).join(" ");
@@ -1033,6 +1037,60 @@ async function theRootIsReplacedLast(doc) {
 // path prefix is that every one of these operations already works per realm
 // without any of them having been edited.
 // ---------------------------------------------------------------------------
+// GET /keys/history/certificate, driven with a key the history says has a
+// certificate. A realm made a moment ago may have none recorded yet (its
+// unit's `withCertificate` is 0), so the default realm is asked next; where
+// neither holds one, the documented refusal is what is driven — a 404 that
+// says no certificate is recorded. A chain that comes back is held to PEM.
+async function aKeysCertificateChain() {
+  log.debug("Entering aKeysCertificateChain().");
+  let chosen = null;
+  for (const root of [false, true]) {
+    const index = await get("/keys/history", root);
+    assert.strictEqual(index.status, 200,
+      "GET /keys/history answered " + index.status + " " +
+      String(index.raw).slice(0, 200));
+    const unit = ((index.body && index.body.units) || []).filter(function (u) {
+      return u && u.unit && Number(u.withCertificate) > 0;
+    })[0];
+    if (!unit) {
+      continue;
+    }
+    const view = await get("/keys/history?unit=" +
+                           encodeURIComponent(unit.unit), root);
+    const row = ((view.body && view.body.rows) || []).filter(function (r) {
+      return r && r.kid && r.certificate;
+    })[0];
+    if (row) {
+      chosen = { unit: unit.unit, kid: String(row.kid), root: root };
+      break;
+    }
+  }
+  if (!chosen) {
+    const refused = await get("/keys/history/certificate?unit=" +
+                              "jose%3ARS256&kid=none");
+    assert.strictEqual(refused.status, 404,
+      "GET /keys/history/certificate for a key with no certificate should " +
+      "answer 404; it answered " + refused.status + " " +
+      String(refused.raw).slice(0, 200));
+    log.info("[reads] no realm here has a certified signing key yet, so " +
+             "GET /keys/history/certificate was driven by its 404.");
+    log.debug("Leaving aKeysCertificateChain(). Refusal driven.");
+    return;
+  }
+  const reply = await get("/keys/history/certificate?unit=" +
+                          encodeURIComponent(chosen.unit) + "&kid=" +
+                          encodeURIComponent(chosen.kid), chosen.root);
+  assert.strictEqual(reply.status, 200,
+    "GET /keys/history/certificate for " + chosen.unit + " " + chosen.kid +
+    " should answer 200; it answered " + reply.status + " " +
+    String(reply.raw).slice(0, 200));
+  assert.ok(/^-----BEGIN CERTIFICATE-----/.test(String(reply.raw)),
+    "GET /keys/history/certificate should answer a PEM chain; it answered " +
+    String(reply.raw).slice(0, 120));
+  log.debug("Leaving aKeysCertificateChain().");
+}
+
 async function everyReadAnswersAboutThisRealm(doc) {
   log.debug("Entering everyReadAnswersAboutThisRealm().");
   log.info("=== Every read operation, under the realm prefix ===");
@@ -1056,6 +1114,33 @@ async function everyReadAnswersAboutThisRealm(doc) {
     // operation here answers JSON, which is what this walk was always really
     // asserting, so it now has no exception at all. `admin_api.js` next door
     // still owns the CSP half, at the page's new address.
+    // ONE READ NAMES ITS SUBJECT AND ANSWERS PEM, NOT JSON (#446):
+    // GET /keys/history/certificate takes the `unit` and `kid` GET
+    // /keys/history lists and answers application/pem-certificate-chain, so
+    // with no query it is a 404 ("no certificate recorded"). It is driven
+    // here the way a client drives it — a key out of the history that HAS a
+    // certificate — and held to the chain rather than to a JSON object.
+    if (path === "/keys/history/certificate") {
+      await aKeysCertificateChain();
+      continue;
+    }
+    // AND SO DOES THE OPENID4VCI NOTIFICATION READ (#594): GET
+    // /oid4vci/notifications takes the `notification_id` a Credential
+    // Response carried, and this realm has issued none, so it is driven by
+    // its documented refusal — an id this issuer did not issue is a JSON 404
+    // (STS-VC-0024) — rather than held to a 200 it cannot have.
+    if (path === "/oid4vci/notifications") {
+      const unknown = await get(path + "?id=" +
+                                encodeURIComponent("no-such-notification"));
+      assert.strictEqual(unknown.status, 404,
+        "GET " + api + path + " for an id this issuer did not issue should " +
+        "answer 404; it answered " + unknown.status + " " +
+        String(unknown.raw).slice(0, 200));
+      assert.strictEqual(typeof unknown.body, "object",
+        "GET " + api + path + "'s 404 should be a JSON object; it was " +
+        String(unknown.raw).slice(0, 200));
+      continue;
+    }
     const reply = await get(path);
     assert.strictEqual(reply.status, 200,
       "GET " + api + path + " should answer 200; it answered " + reply.status +
@@ -1549,6 +1634,14 @@ async function theObservedReturnAddressesAreDecided() {
   }
 
   // --- the sightings, in DEVELOPMENT --------------------------------------
+  // The relying party is REGISTERED first, with no assertion consumer, so the
+  // two sightings are what put addresses on it. Since #496 product refuses a
+  // relying party development merely SAW with a 403 (STS-SAML-0105) before its
+  // addresses are read, so an entry the sighting filed would never reach the
+  // observed-address refusal the product half below asserts.
+  await ok("/applications/create", { identifier: rpId, name: rpId,
+    protocols: ["saml11"], fields: { samlEntityId: [rpId] } },
+    "registered the relying party with no assertion consumer");
   for (const shire of [ONE, TWO]) {
     const seen = await sight(shire);
     assert.ok(seen.status < 400,
@@ -1729,6 +1822,94 @@ async function theObservedReturnAddressesAreDecided() {
            "then delivered to in product, and the second discarded; both " +
            "operations read back through the drill-down.");
   log.debug("Leaving theObservedReturnAddressesAreDecided().");
+}
+
+// ---------------------------------------------------------------------------
+// WHAT AN ADMINISTRATOR DECLARES IS WHAT A CLIENT MAY USE (#289, 2026-10-07).
+//
+// Until #289 `oauthGrantType` and `oauthResponseType` restricted only a client
+// that registered itself at /oauth2/register; on an entry made here they were
+// a record, and a sighting added to them whatever the client used. Now both
+// are declarations the endpoints hold every client to, in every mode, and the
+// sightings go to `oauthGrantTypeObserved` / `oauthResponseTypeObserved`,
+// which no door may write. Each refusal is told apart from the one the
+// request would meet without the rule: a made-up refresh token is
+// invalid_grant to a client allowed the grant, and a `code` request with PKCE
+// and a registered redirect is answered with a sign-in, not an error.
+// ---------------------------------------------------------------------------
+async function theDeclaredFlowsAreEnforced() {
+  log.debug("Entering theDeclaredFlowsAreEnforced().");
+  log.info("=== Applications: declared grant and response types are " +
+           "enforced (#289) ===");
+  const client = "declared-flows-" + REALM;
+  await ok("/applications/create", {
+    identifier: client, name: client, protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [client], oauthClientSecret: MINT_CLIENT_SECRET,
+              oauthTokenEndpointAuthMethod: "client_secret_post",
+              oauthGrantType: ["client_credentials"],
+              oauthRedirectUri: [MINT_REDIRECT_URI],
+              oauthResponseType: ["code id_token"] }
+  }, "created a client declaring client_credentials and `code id_token`");
+  const token = function (params) {
+    return common.httpJson(base + "/realm/" + REALM + "/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(Object.assign({ client_id: client,
+        client_secret: MINT_CLIENT_SECRET }, params)).toString()
+    });
+  };
+
+  const allowed = await token({ grant_type: "client_credentials" });
+  assert.strictEqual(allowed.status, 200,
+    "the declared grant should be answered; client_credentials answered " +
+    allowed.status + " " + String(allowed.raw).slice(0, 200));
+  const undeclared = await token({ grant_type: "refresh_token",
+                                   refresh_token: "not-a-refresh-token" });
+  assert.strictEqual(undeclared.status, 400,
+    "a grant the client did not declare should be refused with 400; the " +
+    "refresh_token grant answered " + undeclared.status);
+  assert.strictEqual((undeclared.body || {}).error, "unauthorized_client",
+    "and refused as unauthorized_client (RFC 6749 section 5.2), before the " +
+    "refresh token is read — invalid_grant here means oauthGrantType " +
+    "restricted nothing. It said " + String(undeclared.raw).slice(0, 200));
+
+  const pair = registry.pkce();
+  const asked = await fetch(base + "/realm/" + REALM + "/oauth2/authorize?" +
+    new URLSearchParams({ response_type: "code", client_id: client,
+      redirect_uri: MINT_REDIRECT_URI, scope: "openid", state: "s-289",
+      code_challenge: pair.challenge,
+      code_challenge_method: pair.method }).toString(),
+    { redirect: "manual" });
+  const location = asked.headers.get("location") || "";
+  // TWO CORRECT ANSWERS, AND THE MODE DECIDES WHICH. With nobody signed in,
+  // RFC 9700 section 4.11.2 forbids redirecting an error, so in RFC 9700
+  // mode (which product mode implies) the authorization endpoint draws a 400
+  // page whose LINK carries the same redirect; outside it the error is a 302
+  // to the redirect URI. Either must name the client's own redirect URI and
+  // unauthorized_client (RFC 6749 section 4.1.2.1).
+  const page = location ? "" : await asked.text();
+  const link = (new RegExp('href="(' + MINT_REDIRECT_URI
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + '[^"]*)"').exec(page) ||
+                [])[1] || "";
+  const target = location ||
+    (asked.status === 400 ? link.replace(/&amp;/g, "&") : "");
+  assert.ok(target.indexOf(MINT_REDIRECT_URI) === 0 &&
+            /[?&#]error=unauthorized_client/.test(target),
+    "a response type the client did not declare should be sent back to its " +
+    "redirect URI as unauthorized_client (RFC 6749 section 4.1.2.1), by a " +
+    "redirect or, with nobody signed in in RFC 9700 mode, by a page linking " +
+    "to it; the authorization endpoint answered " + asked.status + " " +
+    (location || page.replace(/\s+/g, " ")).slice(0, 300));
+
+  // The sightings are records, not declarations: no door writes them.
+  await refused("/applications/add",
+    { application: client, attribute: "oauthGrantTypeObserved",
+      value: "password" },
+    /oauthGrantTypeObserved|not editable|DERIVED/i,
+    "writing an observed grant type by hand");
+  await ok("/applications/forget", { application: client },
+           "forgot the client");
+  log.debug("Leaving theDeclaredFlowsAreEnforced().");
 }
 
 async function application(identifier) {
@@ -2288,7 +2469,12 @@ async function theDelegatedPermissionsRoundTrip() {
   await ok("/applications/create",
     { identifier: client, name: "Portal", protocols: ["oauth2", "oidc"],
       fields: { oauthClientId: client, oauthClientSecret: MINT_CLIENT_SECRET,
-                oauthTokenEndpointAuthMethod: "client_secret_post" } },
+                oauthTokenEndpointAuthMethod: "client_secret_post",
+                // #551: a delegated permission is asked for on a person's
+                // behalf, so the token comes from the code flow.
+                oauthGrantType: ["authorization_code"],
+                oauthRedirectUri: [MINT_REDIRECT_URI],
+                oauthResponseType: ["code"] } },
     "created the client application, with the secret its token request " +
     "presents");
 
@@ -2496,16 +2682,27 @@ async function permissionRegister() {
   return reply.body;
 }
 
-// A token asked for by PERMISSION rather than by scope name.
-// `client_credentials` rather than the password grant `mintTokens()` uses,
-// because what is being asserted is a property of the SCOPE LIST and there is
-// no reason to involve a person in it.
+// A token asked for by PERMISSION rather than by scope name, by the
+// authorization code flow: a DELEGATED permission is exercised on a person's
+// behalf (#551), and on `client_credentials` — no person — a delegated grant
+// does not count; an application's own permission comes from a role.
 async function mintPermissionToken(client, wanted) {
   log.debug("Entering mintPermissionToken(). client=" + client);
-  const body = "grant_type=client_credentials&client_id=" +
-      encodeURIComponent(client) +
-      "&client_secret=" + encodeURIComponent(MINT_CLIENT_SECRET) +
-      "&scope=" + encodeURIComponent(wanted.join(" "));
+  const username = names.usernameFor("stsapi-permperson");
+  if (!mintedParties["realm:user:" + username]) {
+    await ok("/users/create", {
+      username: username, invent: false,
+      credential: "password", password: MINT_PASSWORD
+    }, "created " + username + " before a permission token is minted");
+    mintedParties["realm:user:" + username] = true;
+  }
+  const granted = await registry.authorizationCode(base + "/realm/" + REALM, {
+    clientId: client, redirectUri: MINT_REDIRECT_URI, username: username,
+    password: MINT_PASSWORD, scope: wanted.join(" ") });
+  const body = new URLSearchParams({ grant_type: "authorization_code",
+    code: granted.code, redirect_uri: MINT_REDIRECT_URI,
+    code_verifier: granted.verifier, client_id: client,
+    client_secret: MINT_CLIENT_SECRET }).toString();
   const reply = await common.httpJson(base + "/realm/" + REALM +
                                       "/oauth2/token", {
     method: "POST",
@@ -2613,8 +2810,8 @@ async function theSamlRegistriesRoundTrip() {
   const credentials = require("../tools/pep-credential.js");
   const minted = await credentials.mint({
     rootSubject: "CN=admin-api-operations saml2 " + REALM +
-                 ",O=mock-sts tests",
-    subject: "CN=admin-api-operations-saml2-sp,O=mock-sts tests" });
+                 ",O=iya-sts tests",
+    subject: "CN=admin-api-operations-saml2-sp,O=iya-sts tests" });
   const certificate = String(minted.anchorPem)
     .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   await refused("/saml2/set-signing-certificate",
@@ -2651,10 +2848,22 @@ async function theSamlRegistriesRoundTrip() {
     "discarding when no request carried a certificate");
 
   const rp = "urn:test:" + REALM + ":rp";
-  // `target` was here and `saml11Action()` never read it — the third ignored
-  // member this file was sending, found the same way as `acs` and `binding`.
-  await ok("/saml11/register", { rp: rp },
-    "registered a SAML 1.1 relying party");
+  const shire = "https://saml11-" + REALM + ".example.test/acs";
+  await refused("/saml11/register", { rp: rp },
+    /shire|assertion consumer service/i,
+    "refused a SAML 1.1 relying party without an assertion consumer service");
+  await refused("/saml11/register", { rp: rp, shire: "javascript:alert(1)" },
+    /cannot be samlAssertionConsumerService/i,
+    "refused a non-HTTP assertion consumer service");
+  await refused("/saml11/register", { rp: rp, shire: "com.example.app:/acs" },
+    /must be an http or https URL/i,
+    "refused a private-use scheme as a SAML assertion consumer service");
+  await ok("/saml11/register", { rp: rp, shire: shire },
+    "registered a SAML 1.1 relying party and its assertion consumer service");
+  const detail = (await get("/saml11?rp=" + encodeURIComponent(rp))).body;
+  assert.deepStrictEqual(detail.assertionConsumerServices, [shire],
+    "the registered shire should be read back from the relying party entry; " +
+    "the API returned " + JSON.stringify(detail.assertionConsumerServices));
   const parties = (await get("/saml11")).body.relyingParties || [];
   assert.ok(parties.some(function (row) {
     return row.identifier === rp || row.rp === rp || row.entityId === rp;
@@ -3213,10 +3422,27 @@ async function theIssuedListGroupsByIssuance() {
   assert.ok(mySet.members.length >= 2,
     "and hold every credential of that reply; it holds " +
     mySet.members.length + " (" + mySet.kinds.join(", ") + ").");
-  assert.ok(mySet.members.some(function (m) { return m.jti === minted.idJti; }),
+  const idMember = mySet.members.filter(function (m) {
+    return m.jti === minted.idJti;
+  })[0];
+  assert.ok(idMember,
     "INCLUDING THE ID TOKEN, which is the member that makes this a grouping " +
     "rather than a rename: it was issued by the same call and is the one a " +
     "reader most often wants beside the access token.");
+  // AND RECORDED AS ONE (#163). An ID Token has carried no `typ` claim since
+  // #118, so the register cannot read its kind off the payload: the issuer
+  // states it out of band. For half an hour on 2026-09-22 it did not, every
+  // ID Token was registered as `other (typ=none)`, and the only symptom was
+  // the `?kind=id_token` filter below coming back without this set — which
+  // read as a flaky filter for three runs. Asserting the member's kind HERE
+  // names the cause where it is, and the filter below can only fail for a
+  // reason of its own.
+  assert.strictEqual(idMember.kind, "id_token",
+    "THE ID TOKEN MUST BE REGISTERED AS AN ID TOKEN. Its jti " +
+    minted.idJti + " is in the set, recorded as kind " +
+    JSON.stringify(idMember.kind) + " — the issuer has stopped stating the " +
+    "kind to the register (oauth2.ts's idToken(), `{ kind: 'id_token' }`), " +
+    "and no `typ` claim is there to fall back on.");
   assert.ok(mySet.setId,
     "the entry should carry the issuer's own set id, which is what says the " +
     "grouping was STATED rather than guessed from these fields.");
@@ -3252,8 +3478,18 @@ async function theIssuedListGroupsByIssuance() {
   const found = byKind.body.sets.filter(function (set) {
     return set.setKey === mySet.setKey;
   })[0];
+  // The counts go in the message (#163): "something is missing" took three
+  // runs to characterise, and what came back is what says which half failed.
+  const withIdToken = byKind.body.sets.filter(function (set) {
+    return set.members.some(function (m) { return m.kind === "id_token"; });
+  }).length;
   assert.ok(found,
-    "?kind=id_token should find the set CONTAINING an ID Token.");
+    "?kind=id_token should find the set CONTAINING an ID Token, " +
+    mySet.setKey + "; it answered " + byKind.status + " with " +
+    byKind.body.sets.length + " set(s) on page " + byKind.body.page + " of " +
+    byKind.body.pages + " (" + byKind.body.matched + " matched), " +
+    withIdToken + " of them holding an ID Token, and filter " +
+    JSON.stringify(byKind.body.filter) + ".");
   assert.ok(found.members.some(function (m) {
     return m.kind === "access_token";
   }),
@@ -3483,12 +3719,23 @@ async function mintTokens(username, client) {
 }
 
 // A SAML ASSERTION IN THIS REALM, through WS-Trust, so that the set doors have
-// something unrevocable to be refused about. The RST carries no AppliesTo — an
-// audience restriction is optional there and this job needs the assertion, not
-// the audience — and the username is a UsernameToken, which development mode
-// does not check any more than it checks a password anywhere else.
+// something unrevocable to be refused about. The RST names a relying party
+// this job REGISTERS first: an AppliesTo is optional in an RST and this job
+// needs the assertion, not the audience, but product issues a token only for
+// a registered application and never with no audience (#496). The username
+// is a UsernameToken, which development mode does not check any more than it
+// checks a password anywhere else.
+let mintRelyingParty = "";
 async function mintAssertion(username) {
   log.debug("Entering mintAssertion(). username=" + username);
+  if (!mintRelyingParty) {
+    const identifier = "sets-rp-" + REALM;
+    await ok("/applications/create", {
+      identifier: identifier, protocols: ["wstrust"],
+      fields: { wstrustAppliesTo: ["https://" + identifier + ".example"] }
+    }, "registered the relying party the assertion is minted for");
+    mintRelyingParty = "https://" + identifier + ".example";
+  }
   const rst = '<?xml version="1.0" encoding="UTF-8"?>' +
     '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope">' +
     '<soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/' +
@@ -3500,6 +3747,10 @@ async function mintAssertion(username) {
     'xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
     '<wst:RequestType>' +
     'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+    'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/08/' +
+    'addressing"><wsa:Address>' + mintRelyingParty + '</wsa:Address>' +
+    '</wsa:EndpointReference></wsp:AppliesTo>' +
     '</wst:RequestSecurityToken></soap:Body></soap:Envelope>';
   const reply = await common.httpJson(base + "/realm/" + REALM + "/sts", {
     method: "POST",
@@ -3507,9 +3758,9 @@ async function mintAssertion(username) {
     body: rst
   });
   assert.strictEqual(reply.status, 200,
-    "the realm's WS-Trust endpoint should issue an assertion with no " +
-    "AppliesTo — that is optional in an RST and this service allows it. It " +
-    "answered " + reply.status + " " + String(reply.raw).slice(0, 200));
+    "the realm's WS-Trust endpoint should issue an assertion for the " +
+    "registered relying party " + mintRelyingParty + ". It answered " +
+    reply.status + " " + String(reply.raw).slice(0, 200));
   log.debug("Leaving mintAssertion().");
   return reply;
 }
@@ -3784,8 +4035,8 @@ async function theTruststoreRoundTrips() {
   const credentials = require("../tools/pep-credential.js");
   const minted = await credentials.mint({
     rootSubject: "CN=admin-api-operations truststore " + REALM +
-                 ",O=mock-sts tests",
-    subject: "CN=admin-api-operations-truststore-leaf,O=mock-sts tests" });
+                 ",O=iya-sts tests",
+    subject: "CN=admin-api-operations-truststore-leaf,O=iya-sts tests" });
   const mine = trustFingerprintOf(minted.anchorPem);
   const notMine = trustFingerprintOf(minted.issuing.pem);
 
@@ -3920,9 +4171,16 @@ async function theTruststoreRoundTrips() {
 // no more — `tests/kerberos_person_keys.js` reads the whole file with an
 // independent parser, in process.
 // ---------------------------------------------------------------------------
+// EVERY PAGE OF BOTH LISTS (#311). The resource pages `people` and
+// `services` (`per`, at most 300; `peoplePage`, `servicesPage`), and a
+// default realm a few suite runs old holds hundreds of people with keys — the
+// bulk loads leave theirs on purpose — so a person made a moment ago was on a
+// later page and the read-back found nothing ("READ BACK AFTER THE KEYTAB …:
+// null", the in-AWS runs 5 and 6). The first reply is returned with both
+// lists replaced by all of their pages.
 async function kerberosPrincipalsHeld(scopeRoot) {
   log.debug("Entering kerberosPrincipalsHeld().");
-  const reply = await get("/kerberos/principals?per=100", scopeRoot);
+  const reply = await get("/kerberos/principals?per=300", scopeRoot);
   assert.strictEqual(reply.status, 200,
     "GET /admin-api/kerberos/principals should answer 200; it answered " +
     reply.status + " " + String(reply.raw).slice(0, 300));
@@ -3930,6 +4188,19 @@ async function kerberosPrincipalsHeld(scopeRoot) {
             Array.isArray(reply.body.people),
     "the resource should list `services` and `people`: " +
     String(reply.raw).slice(0, 300));
+  const lists = [["people", "peoplePage", "peoplePaging"],
+                 ["services", "servicesPage", "servicesPaging"]];
+  for (const list of lists) {
+    const pages = Number((reply.body[list[2]] || {}).pages) || 1;
+    for (let page = 2; page <= pages; page++) {
+      const more = await get("/kerberos/principals?per=300&" + list[1] +
+                             "=" + page, scopeRoot);
+      assert.strictEqual(more.status, 200,
+        "page " + page + " of " + list[0] + " answered " + more.status);
+      reply.body[list[0]] = reply.body[list[0]].concat(
+        more.body[list[0]] || []);
+    }
+  }
   log.debug("Leaving kerberosPrincipalsHeld().");
   return reply;
 }
@@ -4757,7 +5028,7 @@ async function theConfigurationChangeReachesTheStore(candidate) {
     log.info("[persistence] The store is OFF (persistence.mode=memory), " +
              "which is the default and what the containerized stack runs. " +
              "The value round trip above is asserted; the ON-DISK half is " +
-             "not reachable from here and is asserted in mock-sts's own " +
+             "not reachable from here and is asserted in iya-sts's own " +
              "tests/appconfig_persistence.js, which drives the store in " +
              "process against a temporary directory.");
     log.debug("Leaving theConfigurationChangeReachesTheStore(). Store off.");
@@ -4830,7 +5101,7 @@ async function theConfigurationChangeReachesTheStore(candidate) {
 
   const beforeRealm = await settleThenStatus(afterProcess);
   await ok("/realms/set",
-    { id: REALM, key: "saml.issuer", value: "urn:test:" + REALM + ":stored" },
+    { id: REALM, key: "saml.organizationName", value: "Stored " + REALM },
     "set a REALM setting to be persisted", true);
   const afterRealm = await settleThenStatus(beforeRealm);
   const wasRealm = comparable(beforeRealm, afterRealm);
@@ -4846,8 +5117,8 @@ async function theConfigurationChangeReachesTheStore(candidate) {
   assert.ok(afterRealm.realmsTracked >= 1,
     "and the store should be tracking at least this realm; it tracks " +
     afterRealm.realmsTracked);
-  assert.strictEqual(realmSetting(await realmRow(), "saml.issuer"),
-    "urn:test:" + REALM + ":stored",
+  assert.strictEqual(realmSetting(await realmRow(), "saml.organizationName"),
+    "Stored " + REALM,
     "and the value that reached the store should be the one the registry " +
     "holds. The counters say a write happened; the registry row says it was " +
     "this write, which is the difference between a store that is working and " +
@@ -5052,7 +5323,22 @@ const NOT_DRIVEN_HERE = {
   // matters is checked there — the gzip expanded as it is read, the version
   // imported and activated, the size bound refused before the body arrives.
   "POST /risk/upload": "sts_admin_risk_upload.js drives it: a dataset file " +
-    "streamed as the request body, imported and read back"
+    "streamed as the request body, imported and read back",
+  // DATA ENCRYPTION KEY ROTATION (#391 P2). Driven by `sts_data_keys.js`,
+  // which follows each queued run to its end on the scheduler and reads what
+  // it did off GET /encryption — a walk asking for a 2xx cannot — and which
+  // asserts the 400 a service that derives its data keys gives.
+  "POST /encryption/rotate-data-keys": "sts_data_keys.js drives it and " +
+    "follows the run to the new keys",
+  "POST /encryption/reencrypt-data-keys": "sts_data_keys.js drives it and " +
+    "follows the run",
+  // #391 P5: a count queues a run whose result is read off GET /encryption,
+  // and a rotation of the key-encryption key is a 400 on every stack here
+  // (the key is read into the process) and would change the key where not.
+  "POST /encryption/count-data-keys": "sts_data_keys.js drives it and " +
+    "reads the counts it left",
+  "POST /encryption/rotate-kek": "sts_data_keys.js asserts the 400 every " +
+    "stack here gives, and follows the run where the key is in a KMS"
 };
 
 function everyDocumentedOperationWasDriven(doc) {
@@ -5376,6 +5662,7 @@ async function test() {
     await everyReadAnswersAboutThisRealm(doc);
     await theApplicationsRegistryRoundTrips();
     await theObservedReturnAddressesAreDecided();
+    await theDeclaredFlowsAreEnforced();
     await theDelegatedPermissionsRoundTrip();
     await theClaimSetDoorsRoundTrip();
     await theFederationRegisterRoundTrips();
@@ -5407,7 +5694,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_admin_api_operations")
-  .description("Drive every operation of the mock STS's management API at " +
+  .description("Drive every operation of IYA STS's management API at " +
       "/admin-api for real: replay each documented example, round-trip each " +
       "write through a read, and check that a configuration change reaches " +
       "the persistence store.")

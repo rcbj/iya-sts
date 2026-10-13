@@ -1,0 +1,616 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+"use strict";
+// File: portal_signin.js
+// ===========================================================================
+// SIGNING IN AS THE STATIC USER PORTAL, OVER HTTP, AND ASKING WHAT ITS PAGES
+// ASK (#568, 2026-10-12).
+//
+// **THIS IS A HELPER AND NOT A JOB**, and it is OURS (`MANIFEST.js`'s
+// LOCAL_HELPERS). It has no assertions of its own beyond the ones that say
+// the flow did not happen.
+//
+// Since #568 the portal is a static page: every `/portal/*` path answers the
+// same document, and the page signs in IN THE BROWSER as the public client
+// `sts-user-portal` — the code flow with PKCE S256, `resource` the realm's
+// `/account-api`, a token that is always DPoP-bound — and draws each page
+// from its `/account-api` operation's answer. So a job signs in the same way
+// and asks the same operations, as `console_signin.js` does for the console:
+//
+//   GET  /portal                                -> the shell (registers the
+//                                                  realm's /portal/callback)
+//   GET  /oauth2/authorize?…code_challenge…     -> 302 /authn/login?authn=…
+//   the sign-in screen, over /authn-api (#571)  -> back to authorize
+//   GET  /oauth2/authorize                      -> 302 /portal/callback?code=…
+//   POST /oauth2/token (DPoP)                   -> a DPoP-bound access token
+//
+// THE CLIENT IT ANSWERS:
+//   * `page(path, query)` — the GET operation that mirrors a portal page,
+//     asked with the page's query: the page's view.
+//   * `draw(path, query)` — that view drawn by the portal's own renderers
+//     (`portal/portal.bundle.js`), `{ status, json, html }`.
+//   * `act(path, fields)` — the POST operation that mirrors the form at
+//     `path`, sent its fields as JSON.
+//   * `api(method, path, body)` — any `/account-api` path, as the portal.
+//   * `refresh()` — the refresh grant with the same DPoP key.
+//   * `ownerApi(method, path, body)` — with `options.owner` (#607): the
+//     management API as the portal's owner pages call it, with the token the
+//     same grant is refreshed into for `/admin-api`; `ownerScope()` is that
+//     token's `scope`.
+//   * `cookie` — the sign-on session's cookie the walk set, for a job that
+//     also needs the person's browser session.
+//
+// `nobody(method, path, body)` (a module function) calls an operation that
+// takes no token — an activation or reset link's — as the portal does for a
+// page drawn for nobody.
+//
+// THE PERSON: `options.password` signs in an account that exists with that
+// password; otherwise the account is created first through `/admin-api`
+// (the run's preload attaches its credential), with a random password this
+// process holds — `console_signin.js`'s `ensureConsoleAccount()`.
+// ===========================================================================
+
+const assert = require("assert");
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
+const signin = require("./console_signin.js");
+
+const log = require("bunyan").createLogger({ name: "portal_signin",
+  level: process.env.STS_LOG_LEVEL || "info" });
+
+// A DESKTOP BROWSER'S USER-AGENT on every request, as the portal's own
+// requests carry one: product mode's risk scoring (#62) refuses a first
+// sign-in from an agent that reads as a bot, and the jobs that walked the
+// portal with a browser of their own sent this string before #568.
+const AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+function b64u(buffer) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(buffer).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// A P-256 key per sign-in and the RFC 9449 proof it signs — the console
+// helper's, written once more here so the two helpers do not share state.
+function dpopKey() {
+  log.debug("Entering dpopKey().");
+  const crypto = require("crypto");
+  const pair = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = pair.publicKey.export({ format: "jwk" });
+  const state = { nonce: "" };
+  log.debug("Leaving dpopKey().");
+  return {
+    publicJwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y },
+    keepNonce: function (response) {
+      const nonce = response.headers.get("dpop-nonce");
+      if (nonce) {
+        state.nonce = nonce;
+      }
+    },
+    proof: function (method, url, accessToken) {
+      const header = { typ: "dpop+jwt", alg: "ES256", jwk: this.publicJwk };
+      const claims = { jti: b64u(crypto.randomBytes(16)),
+                       htm: String(method).toUpperCase(),
+                       htu: String(url).replace(/[?#].*$/, ""),
+                       iat: Math.floor(Date.now() / 1000) };
+      if (accessToken) {
+        claims.ath = b64u(crypto.createHash("sha256").update(accessToken)
+          .digest());
+      }
+      if (state.nonce) {
+        claims.nonce = state.nonce;
+      }
+      const input = b64u(JSON.stringify(header)) + "." +
+                    b64u(JSON.stringify(claims));
+      const signature = crypto.sign("sha256", Buffer.from(input),
+        { key: pair.privateKey, dsaEncoding: "ieee-p1363" });
+      return input + "." + b64u(signature);
+    }
+  };
+}
+
+// THE PORTAL'S RENDERERS, as a browser loads them: `portal/portal.bundle.js`,
+// the image build's esbuild output of `web_portal_pages.ts`, run in a context
+// with no require, process or Buffer. Loaded once.
+let bundle = null;
+function portalBundle() {
+  log.debug("Entering portalBundle().");
+  if (!bundle) {
+    const fs = require("fs");
+    const path = require("path");
+    const vm = require("vm");
+    const file = path.join(__dirname, "..", "..", "portal",
+                           "portal.bundle.js");
+    const code = fs.readFileSync(file, "utf8");
+    bundle = vm.runInContext(code + "\n;StsPortal;",
+      vm.createContext({ URLSearchParams: URLSearchParams, Intl: Intl }),
+      { filename: "portal.bundle.js" });
+  }
+  log.debug("Leaving portalBundle().");
+  return bundle;
+}
+
+// The account API's index, once per base: which operation mirrors which
+// portal page or form.
+const indexes = {};
+async function operationsOf(base) {
+  log.debug("Entering operationsOf().");
+  if (!indexes[base]) {
+    const r = await fetch(base + "/account-api",
+                          { headers: { accept: "application/json" } });
+    const json = await r.json().catch(function () {
+      return null;
+    });
+    assert.ok(r.status === 200 && json && Array.isArray(json.operations),
+      "GET " + base + "/account-api should answer the index of " +
+      "operations; it answered " + r.status);
+    indexes[base] = json.operations;
+  }
+  log.debug("Leaving operationsOf().");
+  return indexes[base];
+}
+
+// The operation that mirrors `METHOD path`.
+async function mirroring(base, method, path) {
+  log.debug("Entering mirroring().");
+  const wanted = method + " " + path;
+  const row = (await operationsOf(base)).filter(function (op) {
+    return op.mirrors === wanted;
+  })[0];
+  assert.ok(row, "no /account-api operation mirrors " + wanted);
+  log.debug("Leaving mirroring().");
+  return row;
+}
+
+// AN OPERATION THAT TAKES NO TOKEN, as the portal calls one for a page drawn
+// for nobody: `{ status, json, text, headers }`.
+async function nobody(base, method, path, body) {
+  log.debug("Entering nobody().");
+  const url = /^https?:/.test(path) ? path : base + path;
+  const init = { method: method, headers: { accept: "application/json",
+                                            "User-Agent": AGENT } };
+  if (body !== undefined) {
+    init.headers["content-type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+  const r = await fetch(url, init);
+  const text = await r.text();
+  let json = null;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    log.debug("Caught in nobody(): " + ((e && e.message) || e));
+    // Not JSON: answered as its text.
+    json = null;
+  }
+  log.debug("Leaving nobody().");
+  return { status: r.status, json: json, text: text, headers: r.headers };
+}
+
+// `base` is the service's base URL (a realm's prefix included for a realm);
+// `user` the name to sign in as; `log2` optional; `options.password` the
+// password of an account that exists, `options.cookie` a sign-on session
+// already held (no password typed: single sign-on answers the flow), and
+// `options.acrValues` / `options.prompt` for a step-up,
+// `options.consent: false` to stop at a consent screen rather than allow, and
+// `options.scope` for a token that asks for something other than the
+// portal's own `openid account:manage` (a test of the gate's scope check).
+async function signInToThePortal(base, user, log2, options) {
+  log.debug("Entering signInToThePortal().");
+  const say = (log2 && log2.info) ? log2.info.bind(log2) : function () {};
+  const opts = options || {};
+  const cookies = signin.jar();
+  const crypto = require("crypto");
+  const key = dpopKey();
+  if (opts.cookie) {
+    String(opts.cookie).split(/;\s*/).forEach(function (pair) {
+      const name = pair.split("=")[0];
+      if (name) {
+        cookies.keep({ headers: { getSetCookie: function () {
+          return [pair];
+        } } });
+      }
+    });
+  }
+
+  function fromLocation(location) {
+    return new URL(String(location || ""), base).toString();
+  }
+
+  async function fetchKeeping(url, init) {
+    const sent = Object.assign({ redirect: "manual" }, init || {});
+    sent.headers = Object.assign({ cookie: cookies.header(),
+                                   "User-Agent": AGENT },
+                                 sent.headers || {});
+    const r = await fetch(url, sent);
+    cookies.keep(r);
+    return r;
+  }
+
+  const password = opts.cookie ? "" : (opts.password ||
+    await signin.ensureConsoleAccount(base, user, say));
+
+  // THE SHELL FIRST, as a browser opens the portal: serving it registers
+  // this realm's `/portal/callback` on the seeded portal client.
+  const shell = await fetchKeeping(base + "/portal?realm=default");
+  assert.ok(shell.status === 200,
+    "GET " + base + "/portal should answer the portal's shell; it answered " +
+    shell.status);
+
+  const verifier = b64u(crypto.randomBytes(32));
+  const state = b64u(crypto.randomBytes(16));
+  const redirectUri = base + "/portal/callback";
+  const resource = base + "/account-api";
+  // AN OWNER'S SIGN-IN (#607), as the runtime makes it: the management API
+  // as a second resource, and the owner scopes beside account:manage.
+  const ownerResource = base + "/admin-api";
+  const params = {
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: redirectUri, scope: opts.scope || (opts.owner
+      ? "openid account:manage owner:read owner:write"
+      : "openid account:manage"),
+    state: state, code_challenge: b64u(crypto.createHash("sha256")
+      .update(verifier).digest()),
+    code_challenge_method: "S256", resource: resource,
+    // OpenID Connect's nonce, derived from the verifier as the runtime
+    // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
+    nonce: crypto.createHash("sha256").update("nonce:" + verifier)
+      .digest("base64url") };
+  if (opts.owner) {
+    params.resource = [resource, ownerResource];
+  }
+  if (opts.prompt) {
+    params.prompt = opts.prompt;
+  }
+  if (opts.acrValues) {
+    params.acr_values = opts.acrValues;
+  }
+  // PUSHED FIRST WHERE THE REALM REQUIRES IT (RFC 9126; FAPI 2.0), as the
+  // portal's runtime does (`SpaClient.authorizationRequestUrl()`): the
+  // parameters POSTed to the PAR endpoint with a DPoP proof, the browser sent
+  // with the request_uri alone.
+  // A REPEATED PARAMETER (`resource`, #607) as the runtime sends it
+  // (`SpaClient.formOf()`): `URLSearchParams(object)` would join the array.
+  function formOf(fields) {
+    log.debug("Entering formOf().");
+    const form = new URLSearchParams();
+    Object.keys(fields).forEach(function (name) {
+      [].concat(fields[name]).forEach(function (one) {
+        form.append(name, String(one));
+      });
+    });
+    log.debug("Leaving formOf().");
+    return form.toString();
+  }
+  let authorizeUrl = base + "/oauth2/authorize?" + formOf(params);
+  const meta = await fetch(base + "/.well-known/oauth-authorization-server",
+    { headers: { "User-Agent": AGENT } })
+    .then(function (r) {
+      return r.status === 200 ? r.json() : {};
+    }, function () {
+      return {};
+    });
+  // JARM WHERE THE REALM OFFERS NOTHING ELSE (FAPI 2.0 Message Signing), as
+  // the runtime asks for it; the answer is read back below.
+  const modes = meta.response_modes_supported;
+  if (Array.isArray(modes) && modes.indexOf("query") < 0 &&
+      (modes.indexOf("jwt") >= 0 || modes.indexOf("query.jwt") >= 0)) {
+    params.response_mode = modes.indexOf("jwt") >= 0 ? "jwt" : "query.jwt";
+    authorizeUrl = base + "/oauth2/authorize?" + formOf(params);
+  }
+  if (meta.require_pushed_authorization_requests === true) {
+    const parUrl = String(meta.pushed_authorization_request_endpoint ||
+                          base + "/oauth2/par");
+    let pushed = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch(parUrl, { method: "POST", headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": AGENT, dpop: key.proof("POST", parUrl, "") },
+        body: formOf(params) });
+      key.keepNonce(r);
+      pushed = { status: r.status, json: await r.json().catch(function () {
+        return {};
+      }) };
+      if (!(r.status === 400 && pushed.json.error === "use_dpop_nonce")) {
+        break;
+      }
+    }
+    assert.ok(pushed.status === 201 && pushed.json.request_uri,
+      "the realm requires pushed authorization requests, and pushing the " +
+      "portal's answered " + pushed.status + " " +
+      JSON.stringify(pushed.json).slice(0, 300));
+    authorizeUrl = base + "/oauth2/authorize?" + new URLSearchParams({
+      client_id: "sts-user-portal",
+      request_uri: pushed.json.request_uri }).toString();
+  }
+  let at = await fetchKeeping(authorizeUrl);
+  let location = at.headers.get("location") || "";
+  const authn = (location.match(/[?&]authn=([^&]+)/) || [])[1];
+  if (authn) {
+    assert.ok(password, "the portal's authorization request asked for a " +
+      "sign-in, and this walk was given a session rather than a password");
+    // THE SIGN-IN SCREEN, OVER `/authn-api` (#571), through the one
+    // helper — and a second factor OFFERED (#246) ignored there, as the
+    // console helper does. The answer is read as the form's 303 was.
+    const signedIn = await authnSignin.signIn(base, fromLocation(location),
+      { action: "login", username: user, password: password },
+      { cookie: cookies.header() });
+    cookies.keep(signedIn);
+    at = authnSignin.responseLike(signedIn);
+    location = at.headers.get("location") || "";
+  }
+  // A CONSENT SCREEN is answered Allow, and counted: the portal's seeded
+  // global consent answers it in most realms, and a FAPI profile, which
+  // honours no global consent, asks the person (`consentScreens`).
+  let consentScreens = 0;
+  for (let i = 0; i < 8 && !/\/portal\/callback\?/.test(location); i++) {
+    // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+    // answered over `/authn-api/consent` through the one helper, and its
+    // answer read as the 303 the form was answered with.
+    if ((at.status === 302 || at.status === 303) &&
+        authnSignin.isConsent(location) && opts.consent !== false) {
+      consentScreens += 1;
+      const answered = await authnSignin.consentFor(fromLocation(location),
+                                                    cookies.header());
+      cookies.keep(answered);
+      at = authnSignin.responseLike(answered);
+    } else if (at.status === 200) {
+      break;
+    } else if (at.status === 302 || at.status === 303) {
+      at = await fetchKeeping(fromLocation(location));
+    } else {
+      break;
+    }
+    location = at.headers.get("location") || "";
+  }
+  // A REFUSAL is said in its own words, which the assertion below carries.
+  const refusedText = at.status >= 400
+    ? (await at.text().catch(function () {
+      return "";
+    })).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400) : "";
+  const back = new URL(fromLocation(location));
+  // A JARM `response`: its claims carry the code and the state. Read, not
+  // verified — the runtime verifies it (`SpaClient`), and the code is spent
+  // with this walk's own verifier and key either way.
+  if (back.searchParams.get("response")) {
+    const jwtParts = String(back.searchParams.get("response")).split(".");
+    const jarm = JSON.parse(Buffer.from(jwtParts[1] || "", "base64url")
+      .toString("utf8") || "{}");
+    ["code", "state", "error", "error_description"].forEach(function (name) {
+      if (jarm[name] !== undefined) {
+        back.searchParams.set(name, String(jarm[name]));
+      }
+    });
+  }
+  const code = back.searchParams.get("code");
+  assert.ok(/\/portal\/callback$/.test(back.pathname) && code &&
+            back.searchParams.get("state") === state,
+    "the authorization endpoint should answer the portal's callback with a " +
+    "code and the state it was sent; it answered " + at.status + " to \"" +
+    location + "\"" + (refusedText ? ": " + refusedText : ""));
+
+  const tokenUrl = base + "/oauth2/token";
+  async function tokenRequest(form) {
+    log.debug("Entering tokenRequest().");
+    let answer = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded",
+                   "User-Agent": AGENT,
+                   dpop: key.proof("POST", tokenUrl, "") },
+        body: new URLSearchParams(form).toString() });
+      key.keepNonce(r);
+      answer = { status: r.status, json: await r.json().catch(function () {
+        return {};
+      }) };
+      if (!(r.status === 400 && answer.json.error === "use_dpop_nonce")) {
+        break;
+      }
+    }
+    log.debug("Leaving tokenRequest().");
+    return answer;
+  }
+  const issued = await tokenRequest({
+    grant_type: "authorization_code", code: code, redirect_uri: redirectUri,
+    client_id: "sts-user-portal", code_verifier: verifier,
+    resource: resource });
+  assert.ok(issued.status === 200 && issued.json.access_token &&
+            /^dpop$/i.test(String(issued.json.token_type || "")),
+    "the portal's code should redeem for a DPoP-bound access token; the " +
+    "token endpoint answered " + issued.status + " " +
+    JSON.stringify(issued.json).slice(0, 300));
+  let token = issued.json.access_token;
+  let refreshToken = issued.json.refresh_token || "";
+
+  async function refresh() {
+    log.debug("Entering refresh().");
+    const answer = await tokenRequest({
+      grant_type: "refresh_token", refresh_token: refreshToken,
+      client_id: "sts-user-portal", resource: resource });
+    if (answer.status === 200 && answer.json.access_token) {
+      token = answer.json.access_token;
+      refreshToken = answer.json.refresh_token || refreshToken;
+    }
+    log.debug("Leaving refresh().");
+    return answer;
+  }
+
+  async function api(method, path, body) {
+    log.debug("Entering api().");
+    const url = /^https?:/.test(path) ? path : base + path;
+    let answer = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const headers = { authorization: "DPoP " + token,
+                        dpop: key.proof(method, url, token),
+                        accept: "application/json", "User-Agent": AGENT };
+      const init = { method: method, headers: headers };
+      if (body !== undefined) {
+        headers["content-type"] = "application/json";
+        init.body = JSON.stringify(body);
+      }
+      const r = await fetch(url, init);
+      key.keepNonce(r);
+      const text = await r.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        log.debug("Caught in api(): " + ((e && e.message) || e));
+        // Not JSON: answered as its text.
+        json = null;
+      }
+      answer = { status: r.status, json: json, text: text,
+                 headers: r.headers };
+      const challenge = String(r.headers.get("www-authenticate") || "");
+      if (r.status === 401 && /invalid_token/.test(challenge) &&
+          refreshToken && attempt === 0) {
+        const renewed = await refresh();
+        if (renewed.status === 200) {
+          continue;
+        }
+      }
+      if (!(r.status === 401 && /use_dpop_nonce/.test(challenge))) {
+        break;
+      }
+    }
+    log.debug("Leaving api().");
+    return answer;
+  }
+
+  // THE OWNER TOKEN (#607): the same grant refreshed for `/admin-api`, the
+  // refresh token it answers replacing the one in hand, as the runtime's
+  // `ownerAccess()` does.
+  let ownerToken = "";
+  let ownerScope = "";
+  async function ownerRefresh() {
+    log.debug("Entering ownerRefresh().");
+    const answer = await tokenRequest({
+      grant_type: "refresh_token", refresh_token: refreshToken,
+      client_id: "sts-user-portal", resource: ownerResource });
+    if (answer.status === 200 && answer.json.access_token) {
+      ownerToken = answer.json.access_token;
+      ownerScope = String(answer.json.scope || "");
+      refreshToken = answer.json.refresh_token || refreshToken;
+    } else {
+      ownerToken = "";
+      ownerScope = "";
+    }
+    log.debug("Leaving ownerRefresh().");
+    return answer;
+  }
+
+  async function ownerApi(method, path, body) {
+    log.debug("Entering ownerApi().");
+    if (!ownerToken) {
+      await ownerRefresh();
+    }
+    const url = /^https?:/.test(path) ? path : base + path;
+    let answer = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const headers = { authorization: "DPoP " + ownerToken,
+                        dpop: key.proof(method, url, ownerToken),
+                        accept: "application/json", "User-Agent": AGENT };
+      const init = { method: method, headers: headers };
+      if (body !== undefined) {
+        headers["content-type"] = "application/json";
+        init.body = JSON.stringify(body);
+      }
+      const r = await fetch(url, init);
+      key.keepNonce(r);
+      const text = await r.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        log.debug("Caught in ownerApi(): " + ((e && e.message) || e));
+        // Not JSON: answered as its text.
+        json = null;
+      }
+      answer = { status: r.status, json: json, text: text };
+      const challenge = String(r.headers.get("www-authenticate") || "");
+      if (!(r.status === 401 && /use_dpop_nonce/.test(challenge))) {
+        break;
+      }
+    }
+    log.debug("Leaving ownerApi().");
+    return answer;
+  }
+
+  say("[portal] signed in as " + user + " as the static portal: PKCE, a " +
+      "DPoP-bound token for " + resource +
+      (opts.owner ? " and, refreshed, for " + ownerResource : "") + ".");
+  log.debug("Leaving signInToThePortal().");
+  return {
+    user: user,
+    password: password,
+    base: base,
+    get token() {
+      return token;
+    },
+    get refreshToken() {
+      return refreshToken;
+    },
+    cookie: cookies.header(),
+    // How many consent screens the sign-in met and answered Allow.
+    consentScreens: consentScreens,
+    api: api,
+    refresh: refresh,
+    ownerApi: ownerApi,
+    ownerRefresh: ownerRefresh,
+    ownerScope: function ownerScopeOf() {
+      log.debug("Entering ownerScopeOf().");
+      log.debug("Leaving ownerScopeOf().");
+      return ownerScope;
+    },
+    key: key,
+    // The page's view: the GET operation that mirrors it, with its query.
+    page: async function (path, query) {
+      // The bundle's page table first, as the runtime routes; the index's
+      // `mirrors` where the bundle is not at hand.
+      let operation = "";
+      try {
+        const known = portalBundle().find(path);
+        operation = known ? known.operation : "";
+      } catch (e) {
+        log.debug("Caught in page(): " + ((e && e.message) || e));
+        operation = "";
+      }
+      if (!operation) {
+        operation = (await mirroring(base, "GET", path)).path;
+      }
+      const qs = new URLSearchParams(query || {}).toString();
+      return api("GET", operation + (qs ? "?" + qs : ""));
+    },
+    // The page drawn by the portal's own renderers, in the reader's
+    // language: `{ status, json, html }`.
+    draw: async function (path, query) {
+      const answer = await this.page(path, query);
+      if (this.me === undefined) {
+        const me = await api("GET", "/account-api/me");
+        this.me = me.json;
+      }
+      const table = portalBundle();
+      const t = table.messages
+        ? table.messages.WebTranslator.fromData(this.me && this.me.locale)
+        : null;
+      const view = answer.json && answer.json.view ? answer.json.view
+                                                  : answer.json;
+      const html = answer.status === 200 && view
+        ? table.render(path, view, { t: t, query: query || {}, prefix: "",
+                                     origin: base, me: this.me }) : "";
+      return { status: answer.status, json: answer.json, html: html };
+    },
+    // The form at `path`, sent to the operation that mirrors it.
+    act: async function (path, fields) {
+      const row = await mirroring(base, "POST", path);
+      return api("POST", row.path, Object.assign({}, fields || {}));
+    }
+  };
+}
+
+module.exports = { signInToThePortal: signInToThePortal, nobody: nobody,
+                   operationsOf: operationsOf, portalBundle: portalBundle };

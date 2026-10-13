@@ -38,7 +38,7 @@ default, because two authorities claiming one name make every SVID either one
 mints ambiguous.
 
 The trust domain is fixed when the realm's authorities are built. A later change
-is reported as drift on `GET /spiffe` and `/admin/spiffe`, not acted on. To
+is reported as drift on `GET /spiffe` and `/admin/cert-issuance#cert-spiffe-overview`, not acted on. To
 change it, turn the realm's SPIFFE off and on again, which discards the old
 authorities.
 
@@ -93,7 +93,7 @@ is not, so every realm's X.509 bundle is the same document.
 SPIFFE Issuing CA and leaves the anchor alone: the bundle does not change,
 nothing has to be re-fetched, and SVIDs minted under the old authority go on
 verifying, because their chain still reaches the same Root. On the
-**self-signed fallback** (which `/admin/spiffe` and `GET /spiffe` report, and
+**self-signed fallback** (which `/admin/cert-issuance#cert-spiffe-overview` and `GET /spiffe` report, and
 which `pki.autoBuild: false` reaches deliberately) a rotation **prepends and
 never replaces**: the new authority signs everything from then on, and the old
 one stays published, because an SVID minted a minute ago has to go on
@@ -104,7 +104,7 @@ whatever it signed, and the page says so.
 Both authorities rotate automatically, in both modes. A scheduler job runs every
 hour. It rotates the X.509 authority once it is past half its lifetime, and the
 JWT authority once it is older than half `spiffe.caTtl`. **Rotate now** on
-`/admin/spiffe` rotates either or both by hand. On a cluster, a realm's
+`/admin/cert-issuance#cert-spiffe-overview` rotates either or both by hand. On a cluster, a realm's
 authorities are made once and adopted by every node.
 
 X509-SVIDs use EC P-256 by default (`spiffe.x509KeyType`), which is what SPIRE
@@ -161,9 +161,13 @@ whose selectors are a **subset** of the caller's selectors, as SPIRE matches
 them (`spiffe.attestWorkloads`; turning it off, which hands every caller every
 entry, is development only). The entry's selectors must be a **subset** of the
 caller's — not equal to them, and not merely intersecting. A caller that matches
-no entry gets an **empty SVID list**, which is what a real agent answers an
-unregistered workload, and is the only way to exercise a client's "I have no
-identity" path — one most client libraries have and almost nobody runs. In
+no entry is refused **`PERMISSION_DENIED`** at `FetchX509SVID`,
+`FetchX509Bundles`, `FetchJWTSVID` and `FetchJWTBundles`, as the Workload API
+(sections 5.2.1, 5.2.2, 6.2.1 and 6.2.2) says and a real agent answers ("no
+identity issued"). So is a `FetchJWTSVID` naming a `spiffe_id` the caller is not
+entitled to, and a stream whose caller loses every entry ends with that status.
+It is the only way to exercise a client's "I have no identity" path — one most
+client libraries have and almost nobody runs. In
 development, `spiffe.autoCreateEntries` instead creates an entry for the caller
 and issues it an SVID. The invented entry carries the caller's *stable*
 selectors — transport and endpoint, never the peer, whose port is ephemeral — so
@@ -312,7 +316,7 @@ the network guarantees it is something this service cannot see. So, in
   caller carries, as in SPIRE. An entry written in development answers nobody
   once the realm is in product (`STS-SPIFFE-0123`).
 
-`GET /spiffe`, `/admin/spiffe` and `GET /admin-api/spiffe` report the realm's
+`GET /spiffe`, `/admin/cert-issuance#cert-spiffe-overview` and `GET /admin-api/spiffe` report the realm's
 state under `workloadAttestation.tcp`: `served (development, not attested)`,
 `not served (product, source not declared authenticated)`, `not served
 (product, wildcard bind address)` or `served (product, source declared
@@ -327,7 +331,8 @@ own:
 
 1. Set `spiffe.brokerPort` on the realm (and `spiffe.grpcHost` where the realm
    needs an address of its own), then turn the realm's SPIFFE on.
-2. Authorize the broker on **SPIFFE → Brokers** (`/admin/spiffe/brokers`) or
+2. Authorize the broker on **Cert issuance → SPIFFE → Brokers**
+   (`/admin/cert-issuance#cert-spiffe-brokers`) or
    `POST /admin-api/spiffe/brokers/set` with its SPIFFE ID and the references
    it may use: `pid`, `k8s` or `*`. A broker from another trust domain needs
    that domain's bundle federated first.
@@ -399,7 +404,7 @@ credential looking for a permission it will never get.
 
 **The `admin` and `downstream` flags on a registration entry are read on every
 call, and nothing caches them**, so an `ldapmodify` of `spiffeAdmin` under
-`ou=spiffe` — or the form on `/admin/spiffe/entries` — changes what that
+`ou=spiffe` — or the form on `/admin/cert-issuance#cert-spiffe-entries` — changes what that
 identity may do on the next call.
 
 `RenewAgent` renews the agent **on the connection**, never an agent named in the
@@ -453,7 +458,7 @@ redirect and reads at most 64 bytes.
 
 Registration entries live in the [LDAP directory](ldap.md) under
 `ou=entries,ou=spiffe` and attested agents under `ou=agents,ou=spiffe`.
-**Nothing caches them.** A form on `/admin/spiffe/entries`, an `ldapmodify` and
+**Nothing caches them.** A form on `/admin/cert-issuance#cert-spiffe-entries`, an `ldapmodify` and
 `BatchCreateEntry` / `BatchUpdateEntry` / `BatchDeleteEntry` are three doors to
 one store, all calling the same functions, and the next SVID reflects the
 change — an `ldapmodify` of `spiffeX509SvidTtl` changes the lifetime of the
@@ -560,7 +565,7 @@ with silence.
 ### Federation
 
 **A foreign bundle is pushed in and never fetched.** Set it with
-`POST /admin-api/spiffe/federation-set`, the form on `/admin/spiffe`, or
+`POST /admin-api/spiffe/federation-set`, the form on `/admin/cert-issuance#cert-spiffe-overview`, or
 `BatchSetFederatedBundle`. `RefreshBundle` refuses, naming the URL it will not
 follow. Federated bundles belong to a realm. None may be named after a trust
 domain that any realm of this service serves, and every JWK in one must carry a
@@ -600,7 +605,7 @@ useless to the only people who call some of these methods:
 * **`AttestAgent` for a banned agent**, and a **join token** this server did not
   mint, one that has expired, one presented twice, or one minted for a named
   agent and presented by another. A ban that did not refuse would make the
-  button on `/admin/spiffe/agents` a lie, and accepting a join token this server
+  button on `/admin/cert-issuance#cert-spiffe-agents` a lie, and accepting a join token this server
   never minted would be accepting a forgery of its own credential.
 * **Every method the caller's entity is not allowed**, `UNAUTHENTICATED` or
   `PERMISSION_DENIED` as above.
@@ -726,7 +731,7 @@ are reconciled, which happens whenever one of the realm's settings changes.
 | `spiffe.serverSocketEnabled` | `STS_SPIFFE_SERVER_SOCKET_ENABLED` | `false` | restart | Whether the SPIRE Server API is also served on a Unix socket. |
 | `spiffe.serverSocket` | `STS_SPIFFE_SERVER_SOCKET` | `/tmp/spire-server/private/api.sock` | restart | That socket's path, SPIRE's own default. |
 | `spiffe.brokerPort` | `STS_SPIFFE_BROKER_PORT` | `0` | restart | The SPIFFE Broker API over TCP (mutual TLS); 0, the default and a new realm's seed, binds nothing. |
-| `spiffe.brokers` | `STS_SPIFFE_BROKERS` | (empty) | yes | The brokers, `<SPIFFE ID>=<types>` separated by spaces, the types from `pid`, `k8s` and `*`; managed on `/admin/spiffe/brokers`. **Warning**: allow `pid` only to a broker on this host. |
+| `spiffe.brokers` | `STS_SPIFFE_BROKERS` | (empty) | yes | The brokers, `<SPIFFE ID>=<types>` separated by spaces, the types from `pid`, `k8s` and `*`; managed on `/admin/cert-issuance#cert-spiffe-brokers`. **Warning**: allow `pid` only to a broker on this host. |
 | `spiffe.grpcHost` | `STS_SPIFFE_GRPC_HOST` | `0.0.0.0` | restart | The address every TCP gRPC listener binds; each realm needs an address of its own. |
 
 ### The Workload API
@@ -735,7 +740,7 @@ are reconciled, which happens whenever one of the realm's settings changes.
 |---|---|---|---|---|
 | `spiffe.requireSecurityHeader` | `STS_SPIFFE_REQUIRE_SECURITY_HEADER` | `true` | yes | Refuse a call without `workload.spiffe.io: true`, as the specification requires. Off is development mode only: product always requires the header and refuses turning it off (#181). |
 | `spiffe.attestWorkloads` | `STS_SPIFFE_ATTEST_WORKLOADS` | `true` | yes | Answer a caller only with the entries its selectors match; off answers every caller with every entry, in development only. |
-| `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | In development, create an entry for a caller that matches none; off gives it an empty SVID list. |
+| `spiffe.autoCreateEntries` | `STS_SPIFFE_AUTOCREATE_ENTRIES` | `true` | yes | In development, create an entry for a caller that matches none; off refuses it `PERMISSION_DENIED`. |
 | `spiffe.acceptAssertedSelectors` | `STS_SPIFFE_ACCEPT_ASSERTED_SELECTORS` | `false` | yes | In development, believe selectors a caller sends in `x-sts-workload-selector`. Nothing verifies them. Refused in product. |
 | `spiffe.maxEntries` | `STS_SPIFFE_MAX_ENTRIES` | `500` | yes | How many registration entries may live under `ou=spiffe`; past it a new one is refused. |
 
@@ -869,8 +874,8 @@ are reconciled, which happens whenever one of the realm's settings changes.
 | `spiffe.azureImdsDiscoveryUrl` | `STS_SPIFFE_AZURE_IMDS_DISCOVERY_URL` | `https://login.microsoftonline.com` | yes | Where a tenant domain's ID is looked up. |
 
 These tables are a copy of the rows in the service's settings table. The live
-source is **Protocols → SPIFFE** (`/admin/spiffe`), where every setting is
-drawn, and `GET /admin-api/config`. `POST /admin-api/config/set` changes one.
+source is **Protocols → Cert issuance → SPIFFE → Trust domain**
+(`/admin/cert-issuance#cert-spiffe-overview`), where every setting is drawn, and `GET /admin-api/config`. `POST /admin-api/config/set` changes one.
 See [Configuration](configuration.md) for how a value is resolved.
 
 ## Design decisions
@@ -916,10 +921,10 @@ See [Configuration](configuration.md) for how a value is resolved.
   `spiffeCredentialStatus` records who can no longer be issued an SVID. Short
   lifetimes and rotation are the mechanism. The streams re-send at half the
   lifetime, so clients exercise rotation.
-* **An unregistered workload gets an empty SVID list** in product mode, and in
-  development with `spiffe.autoCreateEntries` off, because that is what a real
-  agent answers. It is the only way to test a client's "I have no identity"
-  path.
+* **An unregistered workload is refused `PERMISSION_DENIED`** in product mode,
+  and in development with `spiffe.autoCreateEntries` off, as the Workload API
+  says and a real agent answers. It is the only way to test a client's "I have
+  no identity" path.
 * **A join token is stored only as a digest**, and its selector is
   `token-sha256:`, so neither the store nor the directory holds a usable token.
 * **X.509 is EC P-256 by default**, which is what SPIRE issues and what the
@@ -944,18 +949,21 @@ See [Configuration](configuration.md) for how a value is resolved.
 
 ## In the running service
 
-* **Protocols → SPIFFE → SPIFFE** (`/admin/spiffe`): the trust domain, the X.509
+SPIFFE is the SPIFFE tab of **Protocols → Cert issuance**
+(`/admin/cert-issuance`), whose sub-tabs were four pages until 2026-10-12.
+
+* **Trust domain** (`#cert-spiffe-overview`): the trust domain, the X.509
   and JWT authorities and the trust anchors, whether each of the four sockets
   actually bound, how Workload API callers are identified and attested, the
   federated bundles, and every `spiffe.*` setting. It has
   **Rotate** (X.509, JWT or both) and a form to set or remove a federated
   bundle.
-* **Protocols → SPIFFE → Registration entries** (`/admin/spiffe/entries`): which
+* **Registration entries** (`#cert-spiffe-entries`): which
   workload gets which SPIFFE ID and what an SVID from each entry carries:
   parent, selectors, DNS names, federates-with, the two lifetimes, hint,
   expiry, and the `admin`, `downstream` and `storeSvid` flags. Create, edit and
   delete are here. A change takes effect on the next SVID.
-* **Protocols → SPIFFE → Agents** (`/admin/spiffe/agents`): every agent that has
+* **Agents** (`#cert-spiffe-agents`): every agent that has
   attested, what it was given and when. **Ban**, **unban** and **delete** are
   the only controls. Deleting an agent lets trust-on-first-use evidence attest
   again.
@@ -971,7 +979,7 @@ See [Configuration](configuration.md) for how a value is resolved.
   `/admin-api/spiffe/agents` with their actions.
 
 `GET /admin/sts-metadata` cannot list the gRPC sockets, because they register no
-HTTP route. `GET /spiffe` and `/admin/spiffe` report them. Every SPIFFE failure
+HTTP route. `GET /spiffe` and `/admin/cert-issuance#cert-spiffe-overview` report them. Every SPIFFE failure
 is recorded under an `STS-SPIFFE-NNNN` code on the audit row and the log line,
 and never sent to a client. See [error codes](error-codes.md).
 

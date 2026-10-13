@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -151,7 +151,7 @@ function childMain() {
     credentials.setPassword('pcp-alice', PASSWORD);
     credentials.setPassword('pcp-bare', PASSWORD);
     applications.createApplication({ identifier: 'pcp-public',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'oidc'],
       fields: { oauthClientId: 'pcp-public', oauthClientSecret: '',
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'none',
@@ -160,7 +160,7 @@ function childMain() {
     applications.updateApplication('pcp-public', {
       attribute: 'oauthClientSecret', mode: 'set', value: '' });
     applications.createApplication({ identifier: 'pcp-confidential',
-      protocols: ['oauth2'],
+      protocols: ['oauth2', 'oidc'],
       fields: { oauthClientId: 'pcp-confidential', oauthClientSecret: SECRET,
                 oauthRedirectUri: [REDIRECT],
                 oauthTokenEndpointAuthMethod: 'client_secret_post',
@@ -174,33 +174,23 @@ function childMain() {
       return request(port, 'GET', '/oauth2/authorize?' +
                      new URLSearchParams(query).toString(), { cookies: true });
     };
-    // The sign-in round trip: the screen, the form it drew, and back to the
+    // The sign-in round trip: the screen, its act, and back to the
     // authorization endpoint with a session.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const signIn = async function (first, username) {
       const location = String(first.headers.location || '');
       if (first.status !== 302 || !/\/authn\/login/.test(location)) {
         return first;
       }
-      const page = await request(port, 'GET', location, { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = username;
-      form.password = PASSWORD;
-      form.action = 'login';
-      const screen = location.split('?')[0].replace(/^https?:\/\/[^/]+/, '');
-      const posted = await request(port, 'POST', screen,
-                                   { form: form, cookies: true });
-      const back = String(posted.headers.location || '')
-        .replace(/^https?:\/\/[^/]+/, '');
+      // THE SCREEN OVER `/authn-api` (#571), in this flow's jar.
+      const sent = await authnScreen.submit({ port: port, jar: jar,
+        at: location,
+        fields: { action: 'login', username: username,
+                  password: PASSWORD } });
+      const back = sent.next === 'redirect'
+        ? String(sent.location || '').replace(/^https?:\/\/[^/]+/, '') : '';
       return back ? await request(port, 'GET', back, { cookies: true })
-                  : posted;
+                  : sent;
     };
     const codeOf = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
@@ -457,7 +447,7 @@ function childMain() {
         fields: { oauthClientId: 'pcp-by-hand',
                   oauthRedirectUri: [REDIRECT] } });
       applications.createApplication({ identifier: 'pcp-by-hand-secret',
-        protocols: ['oauth2'],
+        protocols: ['oauth2', 'oidc'],
         fields: { oauthClientId: 'pcp-by-hand-secret',
                   oauthClientSecret: SECRET,
                   oauthRedirectUri: [REDIRECT] } });

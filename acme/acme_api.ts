@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -179,7 +179,7 @@ class AcmeApi {
                      'development and product mode change; ' +
                      'and the `acme.*` settings, which are ' +
                      'written through POST /admin-api/config/set-many.',
-        mirrors: 'GET /admin/acme',
+        mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'per', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1, maximum: 1000 },

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -93,12 +93,26 @@ import scopeVerdicts = require('../xacml/xacml_scope_verdicts');
 const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
   'phone', 'offline_access', 'bound_key']);
 
-// `/admin-api`'s two, as `common/roles.js` maps them to ADMIN_READ and
-// ADMIN_WRITE. Not settings: the management API's vocabulary is fixed.
+// `/admin-api`'s three, as `common/roles.js` maps them to ADMIN_READ,
+// ADMIN_WRITE and ADMIN_CONSOLE — the last the console's own operations
+// under `/admin-api/console` (#454). Not settings: the management API's
+// vocabulary is fixed.
 /**
- * The management API's two scopes, `admin:read` and `admin:write`.
+ * The management API's scopes: `admin:read`, `admin:write` and the console's
+ * `admin:console`.
  */
-const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write']);
+const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
+                                    'admin:console']);
+
+// AN OWNER'S TWO (#607): `/admin-api` for the objects a person owns, read
+// and changed within the access-control policy's owner rule. Protected like
+// the admin scopes — a client must declare them, in both modes, and the API
+// asks again on every call — and `common/roles.js` maps them to the computed
+// OWNER_READ and OWNER_WRITE. `sts-user-portal` is seeded declaring both.
+/**
+ * The owner scopes on the management API (#607).
+ */
+const OWNER_SCOPES = Object.freeze(['owner:read', 'owner:write']);
 
 // Grant Management for OAuth 2.0's two (#142): the grant management API is
 // this service's own resource server, so its scopes are protected like the
@@ -114,6 +128,17 @@ const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
 // reason to let any client mint the key to it. Written out for the
 // debugger permission's reason below; `tests/scope_policy.js` compares.
 const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
+
+// THE ACCOUNT API'S (#568): `/account-api`, the user portal's only door, is
+// this service's own resource server, and its one scope is protected like
+// the rest — a client must declare it, in both modes, and the API asks again
+// on every call. Only the seeded `sts-user-portal` declares it. Written out
+// rather than required from `account-api/account_api.ts`, for the debugger
+// permission's reason below.
+/**
+ * The account API's one scope, protected like the rest.
+ */
+const ACCOUNT_SCOPE = 'account:manage';
 
 // THE MDM FEED'S (#164 phase 3): the one scope `/admin-api`'s device
 // compliance operation takes instead of `admin:write`, so a posture feed
@@ -279,8 +304,8 @@ class ScopePolicy {
      String(config.value('scim.scopeWrite') || 'scim:write'),
      String(config.value('ssf.authScopeRead') || 'ssf:read'),
      String(config.value('ssf.authScopeWrite') || 'ssf:write'),
-     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE]
-      .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES)
+     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE]
+      .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES, OWNER_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);
@@ -604,6 +629,98 @@ class ScopePolicy {
               " taken off.");
     return kept;
   }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A WS-TRUST JWT'S CONFIGURED SCOPES WILL LOSE, SAID AT CONFIGURATION
+  // TIME (#488). #485 accepts any value on `wstrustJwtScope` and drops at
+  // issuance what this policy would drop, through `narrow()`; that is the
+  // token endpoint's backstop and stays the decision (rcbj). What this adds
+  // is the WARNING where the value is set: the console's cell, the Save
+  // reply, the /admin-api write replies and the application's GET view all
+  // carry this one list (rule 7), so they cannot say different things.
+  //
+  // Each value is read as `judge()` reads it, with the application as the
+  // client, and for the reason a mode question would hide: development
+  // GRANTS an undeclared scope, so its warning says what PRODUCT would do.
+  //
+  //   * a protected scope the application does not declare: dropped in
+  //     every mode;
+  //   * any other value it does not declare (or, declaring nothing, outside
+  //     the default set): dropped in product;
+  //   * a declared value the issuance policy still drops (an operator's
+  //     rule): dropped, with the policy's code.
+  //
+  // The way out is the same for each: declare it on `oauthAllowedScope`, or
+  // remove it from `wstrustJwtScope`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the warnings an application's `wstrustJwtScope` values earn: each
+   * value the scope policy would drop at issuance, why, and how to resolve
+   * it (#488).
+   *
+   * @param identifier - the application's identifier
+   * @returns `[{ attribute, value, reason, dropped, text }]`, empty when none
+   */
+  configuredScopeWarnings(identifier: unknown): Json[] {
+    const { log, applications, mode } = this.deps;
+    const self = this;
+    log.debug("Entering ScopePolicy.configuredScopeWarnings().");
+    const app: any = applications.get(String(identifier || ''));
+    const values = app && app.fields
+      ? [].concat(app.fields.wstrustJwtScope || []).map(String)
+        .map(function (one: string) { return one.trim(); })
+        .filter(function (one: string) { return !!one; })
+      : [];
+    if (!values.length) {
+      log.debug("Leaving ScopePolicy.configuredScopeWarnings(). None set.");
+      return [];
+    }
+    const registered = [].concat((app.fields || {}).oauthClientId || [])[0];
+    const clientId = String(registered || app.identifier);
+    const declared = self.declaredScopes(clientId);
+    const defaults = declared ? [] : self.defaultScopes();
+    const product = mode.isProduct();
+    const judged = self.judge(values.join(' '), clientId, { stage: 'mint' });
+    const resolve = 'Declare it on this application\'s oauthAllowedScope ' +
+      '(Configuration → OAuth 2.0 / OpenID Connect), or remove it from ' +
+      'wstrustJwtScope.';
+    const out: Json[] = [];
+    values.forEach(function (value: string) {
+      const isDeclared = declared ? declared.indexOf(value) >= 0
+                                  : defaults.indexOf(value) >= 0;
+      let reason = '';
+      let why = '';
+      if (self.isProtected(value) && !(declared &&
+                                       declared.indexOf(value) >= 0)) {
+        reason = 'protected';
+        why = 'is one of this service\'s protected scopes, which a token ' +
+          'carries only for a client that declares it, so it is dropped ' +
+          'from the JWT in every mode';
+      } else if (!isDeclared) {
+        reason = 'undeclared';
+        why = product
+          ? 'is not declared on this application\'s oauthAllowedScope, ' +
+            'so it is dropped from the JWT at issuance'
+          : 'is not declared on this application\'s oauthAllowedScope: ' +
+            'development mode issues it, and PRODUCT mode would drop it ' +
+            'from the JWT at issuance';
+      } else if (judged.kept.indexOf(value) < 0) {
+        reason = 'policy';
+        why = 'is dropped from the JWT at issuance by the issuance ' +
+          'policy\'s per-scope question';
+      }
+      if (reason) {
+        out.push({ attribute: 'wstrustJwtScope', value: value,
+                   reason: reason,
+                   dropped: reason === 'undeclared' ? product : true,
+                   text: 'wstrustJwtScope "' + value + '" ' + why + '. ' +
+                         resolve });
+      }
+    });
+    log.debug("Leaving ScopePolicy.configuredScopeWarnings(). " +
+              out.length + ".");
+    return out;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -639,6 +756,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   OIDC_SCOPES: OIDC_SCOPES,
   ADMIN_SCOPES: ADMIN_SCOPES,
+  OWNER_SCOPES: OWNER_SCOPES,
   DEBUGGER_PERMISSION: DEBUGGER_PERMISSION,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,
@@ -652,5 +770,6 @@ export = {
   defaultScopes: slot.forward('defaultScopes'),
   judge: slot.forward('judge'),
   refusal: slot.forward('refusal'),
-  narrow: slot.forward('narrow')
+  narrow: slot.forward('narrow'),
+  configuredScopeWarnings: slot.forward('configuredScopeWarnings')
 };

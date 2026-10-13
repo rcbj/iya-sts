@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -448,34 +448,22 @@ function childMain() {
       return r.status === 302 &&
              /\/authn\/login/.test(String(r.headers.location || ''));
     };
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const signIn = async function (first, username) {
       if (!toSignIn(first)) {
         return { final: first, back: '' };
       }
-      const page = await request(port, 'GET', first.headers.location,
-                                 { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = username || 'par-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      // The screen's own path, which carries a realm's prefix in a realm.
-      const screen = String(first.headers.location).split('?')[0]
-        .replace(/^https?:\/\/[^/]+/, '');
-      const posted = await request(port, 'POST', screen,
-                                   { form: form, cookies: true });
-      const back = String(posted.headers.location || '')
-        .replace(/^https?:\/\/[^/]+/, '');
+      // THE SCREEN OVER `/authn-api` (#571), in this flow's jar. Its
+      // answer's `location` is where the form's 303 went: the round trip.
+      const sent = await authnScreen.submit({ port: port, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: username || 'par-alice',
+                  password: 'anything' } });
+      const back = sent.next === 'redirect'
+        ? String(sent.location || '').replace(/^https?:\/\/[^/]+/, '') : '';
       const final = back
         ? await request(port, 'GET', back, { cookies: true })
-        : posted;
+        : sent;
       return { final: final, back: back };
     };
     const codeOf = function (r, target) {
@@ -1060,13 +1048,22 @@ function childMain() {
     note(r.status === 400,
          '3j2. the code it bought is refused without a proof from that key',
          r.status + ' ' + r.text.slice(0, 160));
+    // A CODE IS PRESENTED ONCE, WHATEVER THE OUTCOME (#424): the refusal
+    // above spent it, so the redemption with the proof is asked of a second
+    // code bought the same way.
+    r = await push('par-a', {}, {
+      headers: { dpop: proof('POST', BASE + '/oauth2/par') } });
+    run = await flow('par-a', r.json.request_uri);
+    params = codeOf(run.final);
+    const boundCode2 = params && params.get('code');
     r = await request(port, 'POST', '/oauth2/token', {
       headers: { authorization: basicFor('par-a'),
                  dpop: proof('POST', BASE + '/oauth2/token') },
-      form: { grant_type: 'authorization_code', code: boundCode,
+      form: { grant_type: 'authorization_code', code: boundCode2,
               redirect_uri: REDIRECT, code_verifier: VERIFIER } });
     note(r.status === 200 && /dpop/i.test(r.json.token_type || ''),
-         '3j3. and redeemed with one', r.status + ' ' + r.text.slice(0, 160));
+         '3j3. and a code bought the same way is redeemed with one',
+         r.status + ' ' + r.text.slice(0, 160));
     r = await push('par-a', { dpop_jkt: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
                    { headers: { dpop: proof('POST', BASE + '/oauth2/par') } });
     note(refused(r, 400, 'invalid_dpop_proof', /same key/),

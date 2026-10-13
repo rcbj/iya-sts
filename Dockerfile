@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
-# iya-sts, the mock STS: every protocol family README.md lists, in one small Node
+# iya-sts, IYA STS: every protocol family README.md lists, in one small Node
 # service. See README.md.
 #
 # Pinned to Node 24.16.0 via nvm rather than an official node image, which is what
@@ -55,8 +55,19 @@ FROM ${DEBUGGER_IMAGE} AS debugger
 # runs: it only produces files, `tsc` is a native binary whose output does not
 # depend on the node beside it, and the version is still 24.16.0.
 #
+# **AND SHIPPED WITHOUT ITS COMMENTS (#365, 2026-09-30)**: `--strip` also
+# takes the comments out of every `.js` left in the tree, compiled or written
+# in JavaScript, keeping every name and every line break
+# (`tests/tools/strip-comments.js` argues it). V8 holds each script's source
+# for the life of the process, and this repository's comments were 79 MB of
+# every process's heap. Since #369 it also escapes the characters above
+# U+00FF left in string and regular-expression literals, so V8 stores each
+# script one-byte (another ~20 MB per isolate). The repository and the tests
+# image keep both as written.
+#
 # The installs are the final stage's (for the types of what the service
-# requires) and `tests/package.json`'s (the compiler). Both `node_modules` are
+# requires) and `tests/package.json`'s (the compiler, and the parser the
+# comment stripper uses). Both `node_modules` are
 # removed at the end, so the COPY below cannot replace the final stage's own.
 # ---------------------------------------------------------------------------
 FROM node:24.16.0-bookworm-slim AS typescript
@@ -249,6 +260,7 @@ ENV NODE_PATH=/opt/sts-sdk/node_modules
 # The paragraph above leaves the three cloud SDKs out, and for THIS stack that
 # is still right. `deploy/aws/` (issue #51) runs the same image on ECS against
 # AWS Secrets Manager and RDS, so it needs `@aws-sdk/client-secrets-manager`
+# (and, since #391, `@aws-sdk/client-kms` for a key-encryption key in KMS)
 # and the RDS certificate bundle — and "a deployment runs one `npm install` in
 # its own image" is exactly what these two build arguments are, spelt once
 # here rather than in a second Dockerfile that would drift from this one.
@@ -336,9 +348,15 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # ENOENT in the first ./run-tests.sh run that reached them.
 # `deploy/` (2026-09-15) is Terraform and the schema-init image's files, run
 # from a workstation or CI and never by the service.
+# `rust/` (#444, 2026-10-05) is the Rust conversion: its own images build it,
+# and this Node service runs none of it.
+# `companion/` (#594, 2026-10-12) is the development-only companion, a second
+# container built from its own directory: the click-through demonstrations
+# the service ships none of. It is in the context because that directory is
+# in the repository, and nothing of it may reach this image.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
-           ./build-typescript.sh
+           ./build-typescript.sh ./rust ./companion
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory
@@ -374,6 +392,23 @@ ARG BUILD_NUMBER=
 ARG GIT_COMMIT=
 RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
     node common/version.js --stamp . && cat version.json
+# OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
+# LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by
+# .github/workflows/build-container.yml) to this repository, so it lists under
+# the repository's Packages; `revision` is the commit the image was built
+# from, beside the build number version.json carries. The parent project's
+# api and client images carry the same five. A LABEL is metadata, not a layer.
+# The io.artifacthub.* labels are what artifacthub.io reads when it indexes
+# the published image; readme-url is the one it refuses the package without.
+LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \
+      org.opencontainers.image.title="iya-sts" \
+      org.opencontainers.image.description="IYA STS: an identity service speaking OAuth 2.0 / OpenID Connect, SAML, WS-Trust, WS-Federation, Kerberos, LDAP, SCIM, SPIFFE and more (port 8081)" \
+      org.opencontainers.image.licenses="BUSL-1.1" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      io.artifacthub.package.readme-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/README.md" \
+      io.artifacthub.package.logo-url="https://raw.githubusercontent.com/rcbj/iya-sts/main/docs/logo.png" \
+      io.artifacthub.package.license="BUSL-1.1" \
+      io.artifacthub.package.keywords="identity,sts,oauth2,oidc,saml,ws-trust,ws-federation,kerberos,ldap,scim,spiffe,xacml,gnap"
 # The service selects its configuration (log level) with CONFIG_FILE, the same
 # way api and client do. The compose files override this per stack.
 #
@@ -383,10 +418,20 @@ RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
 # true by accident; it is now true on purpose, and this string did not have to
 # change.
 ENV CONFIG_FILE=./env/local.js
+# NODE_ENV=production, IN EVERY MODE (#355, 2026-09-29), and it is NOT this
+# service's development/product switch — that is `global.mode`
+# (common/mode.js), and nothing here reads NODE_ENV. Of every package in the
+# image only express and its finalhandler do: outside production, an error
+# that reaches Express's final handler is answered with its STACK TRACE in the
+# page. With it set, the page says "Internal Server Error" and the stack stays
+# in the log. Its other effect, express's `view cache`, touches nothing: no
+# route calls res.render(). The embedded debugger's api child does not
+# inherit it — its environment is an allow-list (debugger_api_process.ts).
+ENV NODE_ENV=production
 
 # 8081 is the HTTP service. Most of the rest are the listeners that are NOT HTTP
-# and so are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected
-# test service, 389 the LDAP directory and 636 the same directory over TLS. The
+# and so are not on it: 88 is the KDC (TCP and UDP), 389 the LDAP directory and
+# 636 the same directory over TLS. The
 # two other HTTP listeners (8082, 8444) and the SPIFFE gRPC ones are explained
 # beside their own lines below.
 # EXPOSE documents them; each compose file decides which it publishes.
@@ -418,15 +463,10 @@ EXPOSE 88/tcp
 EXPOSE 88/udp
 EXPOSE 389
 EXPOSE 636
-# 8888 IS THE KERBEROS-PROTECTED TEST SERVICE (krb5.servicePort), and it was
-# missing from this list until 2026-09-07 — found by `tests/readme_ports.js`,
-# which holds the README's ports table to config.js and this file to the table.
-# It is a raw TCP listener like 88 and 389, it is bound on every start, and the
-# sentence above enumerating "the listeners that are NOT HTTP" did not mention
-# it either until then. Nothing failed, and nothing could: EXPOSE publishes nothing, so an
-# omission here costs exactly one thing — `docker run -P` leaves that port
-# unmapped, which is the one command that reads this.
-EXPOSE 8888
+# 8888 WAS THE KERBEROS-PROTECTED TEST SERVICE (krb5.servicePort) until #595
+# moved that demonstration to the development companion, which exposes it
+# itself (`companion/Dockerfile`). `tests/readme_ports.js` holds this list to
+# the README's ports table and the table to config.js, in both directions.
 # The two SPIFFE gRPC listeners over TCP: 8092 is the Workload API and 8181 the
 # SPIRE Server API. 8181 rather than SPIRE's own 8081 because that is this
 # service's HTTP port, so a client configured for a real spire-server has one
@@ -443,4 +483,43 @@ EXPOSE 8181
 # The embedded protocol debugger's listener (debugger.port), when it is
 # embedded and installed. See debugger/CLAUDE.md.
 EXPOSE 8444
+# The inter-cell channel (cells.port), bound only when the service is deployed
+# as cells (#98). A private address between cells; never publish it. See
+# docs/cells.md.
+EXPOSE 8446
+# ---------------------------------------------------------------------------
+# THE SERVICE RUNS AS `sts`, UID AND GID 10001, AND NOT AS ROOT (#254,
+# 2026-10-06).
+#
+# It ran as root until then, which made every file mode in a secret mount
+# decoration: the OpenBao client key was 0644 and the process reading it was
+# root, so a shell in the container read the identity that opens the
+# key-encryption key and the database password, whatever the mode said. A
+# fixed NUMBER rather than a name the base image might also use, so that a
+# volume, a host directory or a seeder can chown to it without asking the
+# image (`openbao/seed.js` writes the client key 0600 for 10001).
+#
+# **THE LOW PORTS ARE NOT WHY IT WAS ROOT, AND DO NOT NEED IT.** 88, 389 and
+# 636 are below 1024, but Docker sets `net.ipv4.ip_unprivileged_port_start=0`
+# in every container's network namespace (20.10 and later), so any user binds
+# them there; the compose files set it explicitly, and so does the ECS task
+# definition (`systemControls`), Fargate taking any namespaced `net.*` sysctl.
+# NOT `setcap cap_net_bind_service` on node, which was the first plan and is
+# wrong for this image: a file capability is a secure exec, and node then
+# ignores `NODE_PATH` (how the SDKs in /opt/sts-sdk are found) and
+# `NODE_EXTRA_CA_CERTS` (the database CA).
+#
+# `data/` is the one place under the tree the service writes (the ldif store
+# and risk uploads), so it is made here and owned by the user; a named volume
+# mounted over it starts with that ownership. The compose files start the
+# container as root only for the steps that need it — secondary addresses
+# for SPIFFE, the start-up secrets — and drop to this user before node starts
+# (`docker-compose.yml`, the `sts` service's `command`).
+# ---------------------------------------------------------------------------
+RUN groupadd --system --gid 10001 sts \
+    && useradd --system --uid 10001 --gid 10001 --no-create-home \
+               --home-dir /nonexistent --shell /usr/sbin/nologin sts \
+    && mkdir -p /usr/src/sts/data/risk-uploads \
+    && chown -R 10001:10001 /usr/src/sts/data
+USER 10001:10001
 CMD [ "node", "server.js" ]

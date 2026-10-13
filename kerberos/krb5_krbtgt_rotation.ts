@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -58,10 +58,11 @@
 // A LIBRARY THAT REGISTERS JOBS AND NO ROUTE, built by
 // `common/protocol_stack.ts` after `ldap/ldap_server` (21) — the register it
 // drives writes through the directory slot that module fills — and beside
-// `common/signing_rotation` (23b-iii). It requires nothing of the three locked
-// Kerberos files' closure: the register, the principal database, the
-// scheduler, the mode, the audit log and Shared Signals are all reached
-// LAZILY, so the parent project's COPY set is unchanged.
+// `common/signing_rotation` (23b-iii). It requires nothing of the closure of
+// the three Kerberos files the parent's tests image copies: the register,
+// the principal database, the scheduler, the mode, the audit log and Shared
+// Signals are all reached LAZILY, so the parent project's COPY set is
+// unchanged.
 // ===========================================================================
 
 import helpers = require('../common/helpers');

@@ -1,0 +1,14 @@
+{
+  "sentencePq": "後量子金鑰對：{label}",
+  "sentenceComposite": "複合後量子金鑰對：{label} — 兩半都必須驗證通過",
+  "sentenceKem": "後量子金鑰建立金鑰：{label} — 它不簽署任何內容",
+  "sentenceHybrid": "混合：一個傳統金鑰，其憑證還攜帶一個{label}",
+  "sentenceOther": "後量子：{label}",
+  "legendPq": " 表示使用後量子演算法的金鑰對",
+  "legendPqAfter": " — ML-DSA 或 SLH-DSA。",
+  "legendComposite": " 表示複合金鑰：一個金鑰包含後量子與傳統兩半，兩半都必須驗證通過。",
+  "legendKem": " 表示後量子金鑰建立金鑰，它不簽署任何內容。",
+  "legendHybridLabel": "替代 ML-DSA-65 金鑰",
+  "legendHybrid": " 表示傳統金鑰，其憑證還攜帶一個替代的後量子金鑰 — 金鑰本身並不是後量子的。將指標停留在圖示上可查看演算法。沒有圖示的金鑰是傳統金鑰（RSA、ECDSA 或 EdDSA）。決定標記的是金鑰本身的演算法，而不是其憑證上的簽章：由 RSA CA 認證的 ML-DSA 金鑰會被標記，而由 ML-DSA CA 認證的 RSA 金鑰則不會。",
+  "legendTitle": "後量子金鑰對"
+}

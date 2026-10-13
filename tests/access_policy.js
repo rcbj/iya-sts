@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -139,6 +139,43 @@ function run(t) {
                    subject: alice, owner: '' }).allowed, true,
           'an owner of "" is no owner at all, which is the property the four ' +
           'ownerless surfaces rest on');
+
+  // -----------------------------------------------------------------------
+  // EVERY ONE OF THESE (#454): `requiredAllRoles`, the third conjunct. The
+  // management API's console operations name ADMIN_CONSOLE as the any-one
+  // and ADMIN_READ as the every-one — a role the console's client confers
+  // mixed with one the person holds — so holding either alone is not enough.
+  // -----------------------------------------------------------------------
+  t.log.info('=== required-all: every role named must be held ===');
+  const conferredOnly = { name: 'alice', authenticated: true,
+                          sessionId: 's-alice', roles: ['ADMIN_CONSOLE'] };
+  const both = { name: 'alice', authenticated: true, sessionId: 's-alice',
+                 roles: ['ADMIN_CONSOLE', 'ADMIN_READ'] };
+  const readOnly = { name: 'alice', authenticated: true, sessionId: 's-alice',
+                     roles: ['ADMIN_READ'] };
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: conferredOnly,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: ['ADMIN_READ'] }).allowed, false,
+          'the conferred role alone does not reach a page that also asks ' +
+          'for ADMIN_READ');
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: readOnly,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: ['ADMIN_READ'] }).allowed, false,
+          'nor does ADMIN_READ alone, which is a management token reaching ' +
+          'for the console\'s operation');
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: both,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: ['ADMIN_READ'] }).allowed, true,
+          'both together do — the two kinds of role mixed in one decision');
+  t.equal(decide({ resource: gate.RESOURCE.MANAGEMENT_API,
+                   action: gate.ACTION.READ, subject: conferredOnly,
+                   requiredRoles: ['ADMIN_CONSOLE'],
+                   requiredAllRoles: [] }).allowed, true,
+          'and an empty required-all asks nothing, which is the console\'s ' +
+          'frame and every surface that names none');
 
   // -----------------------------------------------------------------------
   // AND THE GATE IS OFF BY DEFAULT, which is the contract every other mode in

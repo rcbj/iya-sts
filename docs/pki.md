@@ -303,7 +303,7 @@ Three things follow:
   SPIFFE's four shared sockets — those answer in the default realm, and what a
   realm's own Issuing CA adds is a line in the chain saying who issued the SVID.
 * **A realm with no certificate authority still works.** It falls back to the
-  self-signed authority this service always had, and `/admin/spiffe` and `GET
+  self-signed authority this service always had, and `/admin/cert-issuance#cert-spiffe-overview` and `GET
   /spiffe` both say which one is in use. `pki.autoBuild: false` reaches that
   state deliberately.
 
@@ -421,7 +421,7 @@ is ephemeral — it exists so the request-worker pool can share minted rows — 
 sealing an entry that survives a restart under a key that does not would leave
 the certificate readable and the private half permanent garbage. That is the
 same rule an authenticator's shared secret follows, and in that mode the
-decision `oauthClientSecret` and `GET /krb5/principals` make still applies:
+decision `oauthClientSecret` and the development Kerberos password settings make still applies:
 a debugger whose credentials are unusable without reading the source is worse
 than one that says what they are.
 
@@ -654,7 +654,7 @@ curl --cert alice-laptop-tls-client-chain.pem \
 | **The addresses inside a certificate** | `http://` for the CRL, the OCSP responder and the issuer's certificate, and `ldap://` for the CRL — **never `https://` or `ldaps://`**, which RFC 5280 section 8 says a CA SHOULD NOT write into an extension: a client that checks revocation before it trusts a connection cannot fetch the answer over that connection. The `http://` addresses name **`pki.httpPort` (8082)**, a plain listener that answers `/pki/` and nothing else; RFC 5019 section 5 requires an OCSP responder to answer plain HTTP. The main port answers the same paths. |
 | **Behind a port mapping** | The addresses are built from inside the process, so a container must be TOLD where it is reachable: `pki.distributionPort` / `PKI_DISTRIBUTION_PORT` and `pki.distributionLdapPort` / `PKI_DISTRIBUTION_LDAP_PORT` for the published ports, or `pki.distributionBaseUrl` and `pki.distributionLdapHost` for a different name. `docker-compose.yml` publishes 8082 on `STS_PKI_HOST_PORT` and passes it through. A change reaches certificates issued afterwards, never one that exists. |
 | **Per authority and NOT per realm** | A CRL is signed by an ISSUER and lists serials that issuer minted, so a list per realm would be a document with no valid issuer and nothing could sign it. |
-| **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. |
+| **A pane on `/admin/pki`** | Pick an authority, see what it has issued, revoke with any of the nine RFC 5280 reasons, release a `certificateHold`. Each authority's list of issued certificates, and its list of revoked serials with no certificate left, is **paged** — five rows a page at most — each on a parameter of its own (`ca-<scope>-<ca>-issuedPage`, `…-orphansPage`), and **each has a search box** (`…-issuedq`, `…-orphansq`) matching part of a serial, a subject, a name or a reason before the list is paged. A Revoke or Release brings you back to the page and search you were on. `GET /admin-api/pki` answers the same pages, with `issuedPaging`, `orphansPaging`, `issuedSearch`, `orphansSearch` and the totals on each authority. |
 | **Rotation revokes automatically** | Reissuing a use case's Issuing CA puts every leaf it had signed on its own list and the replaced CA on the Intermediate's, as `superseded`. |
 | **The holders are told** | Revoking an Issuing CA or an Intermediate, and building, rebuilding, reissuing, renewing, importing or removing an authority, sends a CAEP `credential-change` to every person who holds a live certificate beneath it. That is `update` when this service re-issued the certificate, and `revoke` when it now chains to nothing (#244). A compromise reason adds RISC `credential-compromise`, and a certificate enrolled over ACME, EST or SCEP is never re-issued. See [CAEP events](caep-events.md#credential-change). |
 
@@ -765,8 +765,8 @@ dialled only when allowed, and a relative distribution point needs
 `pki.revocationLdapDirectory` and single-valued RDNs — refused under hard-fail
 when nothing else answers; a certificate naming nothing is accepted in
 development; LDAPS 636 asks for no client certificate. The verdict for a
-certificate you present is in `GET /tls/sign-in`'s answer; the policy is on `GET /tls` and
-`/admin/crypto-metadata`.
+certificate you present is in `GET /tls/sign-in`'s answer and on Monitoring →
+TLS connection; the policy is on `/admin/crypto-metadata`.
 
 **AND THERE IS A THIRD ACT WITH THE SAME WORD IN IT.** The console has a
 control labelled *Take the key pair off*, and it is **not** revocation:
@@ -898,8 +898,7 @@ It does not apply to:
 * **an HMAC signature**, which carries no `kid` at all;
 * **the SPIFFE JWT-SVID**, whose authority is a separate key published in
   the SPIFFE bundle;
-* **the DIF Domain Linkage Credential and the credential `/did/generate`
-  returns**, whose `kid` names a DID verification method (`did:…#sts-…`), and
+* **the DIF Domain Linkage Credential**, whose `kid` names a DID verification method (`did:…#sts-…`), and
   the DID document's verification methods themselves.
 
 **While it is on, `/oauth2/jwks` lists every signing key twice**: once under its
@@ -1088,7 +1087,7 @@ rather than describing the mode they wish they were in.
 
 | Mode | What happens |
 |---|---|
-| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a mock is disposable and its credentials are meant to die with it. |
+| **development** (the default) | Held in memory only. The hierarchy lives exactly as long as the process — which is the rule the signing key already follows, and for its reason: a development service is disposable and its credentials are meant to die with it. |
 | **product** | Written to `sts_keys`, sealed AES-256-GCM under the same key-encryption key as the signing keys, in the same row family. |
 
 A store of the PKI module's own would have been a **second answer to "where does
@@ -1431,7 +1430,7 @@ never a certificate that exists.
 | `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off leaves every generated key uncertified. |
 | `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
 | `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). `sha1-rsa` and `sha1-ecdsa` are development mode only: product uses the key's default instead and refuses setting either, or a build naming one (#181). |
-| `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `ml-dsa-87` | yes | The post-quantum key every authority built holds beside its classical one, and signs everything it issues with a second time (ITU-T X.509 clause 9.8) — see [Every authority is hybrid](#every-authority-is-hybrid-a-second-post-quantum-key-and-signature). One of `ml-dsa-87`, `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. **Warning:** `none` builds classical-only authorities; SLH-DSA costs seconds per certificate issued. |
+| `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `none` | yes | The post-quantum key every authority built holds beside its classical one, and signs everything it issues with a second time (ITU-T X.509 clause 9.8) — see [Hybrid authorities](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default). One of `ml-dsa-87` (the recommended value when it is turned on), `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. `none`, the default, builds classical-only authorities, because many relying parties refuse a hybrid certificate's size. **Warning:** SLH-DSA costs seconds per certificate issued. |
 | `pki.organisation` | `STS_PKI_ORGANISATION` | `sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |
 | `pki.leafLifetimeDays` | `STS_PKI_LEAF_LIFETIME_DAYS` | `365` | yes | How long an issued signing certificate is good for, clamped to the Issuing CA's expiry. |
 | `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | A new Root CA's lifetime when the build names none; `0` is the profile's twenty years. |

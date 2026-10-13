@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -43,8 +43,12 @@
 //
 //   1. THE CHALLENGE IS SENT FROM TWO PLACES. A resource APPLICATION declares
 //      what it requires (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`), and the
-//      stand-in resource `/oauth2/step-up/resource/{application}` enforces it
-//      on the application's behalf; and this service's OWN resource server —
+//      resource server that application IS enforces it — somebody else's
+//      process, which the stand-in resource `/oauth2/step-up/resource/
+//      {application}` played here until #593 (2026-10-12) deleted it, and
+//      which `dpop.presentedAccessToken()`'s `stepUp` option still serves
+//      for a resource server built on this library; and this service's OWN
+//      resource server —
 //      UserInfo, the three credential endpoints, SCIM and SSF, all through
 //      `dpop.presentedAccessToken()` — enforces `oauth2.stepUpAcrValues` and
 //      `oauth2.stepUpMaxAgeS`. They are two sources because they are two
@@ -680,6 +684,30 @@ class StepUp {
     return this.screenDemand(keysOnly ? 'mfa+key' : 'mfa');
   }
 
+  /**
+   * Returns the sign-in screen's two flags for a request's `acr_values`
+   * together with levels that are each REQUIRED (#432 phase 6, an
+   * authorization detail type's acr): either demand forces its flag.
+   *
+   * @param acrValues - the requested values ("any of")
+   * @param required - values every one of which is required
+   * @returns `{ forceMfa, forceKey }`
+   */
+  screenDemandWith(acrValues: string[] | null | undefined,
+                   required: string[] | null | undefined): Json {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering StepUp.screenDemandWith().");
+    const out = Object.assign({}, this.screenDemandFor(acrValues));
+    (required || []).forEach(function (one: string): void {
+      const each = self.screenDemandFor([one]);
+      out.forceMfa = out.forceMfa || !!each.forceMfa;
+      out.forceKey = out.forceKey || !!each.forceKey;
+    });
+    log.debug("Leaving StepUp.screenDemandWith().");
+    return out;
+  }
+
   private nowSec(): number {
     const { log } = this.deps;
     log.debug("Entering StepUp.nowSec().");
@@ -693,7 +721,9 @@ class StepUp {
   //
   // `options.honoured` is the round-trip marker (see the header);
   // `options.windowS` how long a sign-in may take, which widens `max_age` on
-  // the return leg only. Answers:
+  // the return leg only; `options.required` (#432 phase 6) values EVERY one
+  // of which must be met as well — an authorization detail type's acr —
+  // whose shortfall is reason `required_acr` with `missing`. Answers:
   //
   //   { met: true, acr }                        issue, carrying `acr`
   //   { met: false, reason, retry: true }       sign in again
@@ -728,8 +758,35 @@ class StepUp {
       allowed = Math.max(allowed, Number(opts.windowS) || 0);
     }
     const ageMet = need.maxAge === null || elapsed <= allowed;
-    const acr = this.satisfiedAcr(need.acrValues, facts);
+    let acr = this.satisfiedAcr(need.acrValues, facts);
     const acrMet = !need.acrValues.length || acr !== null;
+    // EVERY VALUE `options.required` NAMES MUST BE MET TOO (#432 phase 6):
+    // the access-type catalogue's acr for each authorization detail type a
+    // request carries — required ALL, where `acr_values` is "any of".
+    const required: string[] = Array.isArray(opts.required) ? opts.required
+                                                            : [];
+    const self = this;
+    const requiredMissing = required.filter(function (one: string) {
+      return !self.meets(one, facts);
+    });
+    if (ageMet && acrMet && requiredMissing.length) {
+      log.debug("Leaving StepUp.assessSession(). A detail type's acr is " +
+                "not met: " + requiredMissing.join(' '));
+      return { met: false, reason: 'required_acr', retry: !opts.honoured,
+               acr: acr, elapsed: elapsed, missing: requiredMissing };
+    }
+    if (ageMet && acrMet && required.length) {
+      // WHAT THE TOKEN SAYS WAS MET: the most preferred requested value that
+      // ALSO expresses every required level, so a resource server reading
+      // the token's `acr` sees a level the details' types accept; where no
+      // requested value does, the session's own `acr`, which met them all.
+      const facing = need.acrValues.filter(function (value: string) {
+        return self.meets(value, facts) && required.every(function (one) {
+          return self.meets(one, Object.assign({}, facts, { acr: value }));
+        });
+      })[0];
+      acr = facing || (facts.acr || null);
+    }
     if (ageMet && acrMet) {
       log.debug("Leaving StepUp.assessSession(). Met, acr=" + acr);
       return { met: true, acr: acr, elapsed: elapsed };
@@ -771,6 +828,15 @@ class StepUp {
           ', so the person must sign in again, and prompt=none forbids ' +
           'showing the sign-in screen.'
       }, 'STS-OAUTH-0502');
+    } else if (said.reason === 'required_acr') {
+      out = errorCodes.mark({
+        error: 'unmet_authentication_requirements',
+        description: 'RFC 9470 section 5: the authorization_details carry ' +
+          'types whose resource servers require authentication level ' +
+          (said.missing || []).join(' ') + ' (every one, not any of them), ' +
+          'and the authentication performed does not meet it. The person ' +
+          'was asked to sign in again once.'
+      }, 'STS-OAUTH-0936');
     } else if (said.reason === 'max_age') {
       out = errorCodes.mark({
         error: 'unmet_authentication_requirements',
@@ -985,6 +1051,7 @@ export = {
   demandsSecondFactor: slot.forward('demandsSecondFactor'),
   screenDemand: slot.forward('screenDemand'),
   screenDemandFor: slot.forward('screenDemandFor'),
+  screenDemandWith: slot.forward('screenDemandWith'),
   assessSession: slot.forward('assessSession'),
   unmetRefusal: slot.forward('unmetRefusal'),
   tokenRefusal: slot.forward('tokenRefusal'),

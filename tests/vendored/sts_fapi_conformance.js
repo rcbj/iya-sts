@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -22,9 +22,10 @@
 //      key material in git. A plan that tests mutual TLS gets client
 //      certificates made here too.
 //   2. The plan is created through the suite's API with its configuration —
-//      the discovery URL, the clients, the resource, and the `browser`
-//      commands that sign the person in on `/authn/login` and allow the
-//      consent screen — and every module of it is run, one at a time.
+//      the discovery URL, the clients and the resource — and every module of
+//      it is run, one at a time, the person who signs in on `/authn/login`
+//      and allows the consent screen played in headless Chrome
+//      (`conformance_browser.js`, #571; THE PERSON below).
 //   3. A module ends PASSED, WARNING, REVIEW (a screenshot a person would
 //      check), SKIPPED or FAILED. **A FAILED module fails the job** unless it
 //      is listed in EXPECTED below WITH ITS REASON — a known and argued
@@ -54,6 +55,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
+const conformanceBrowser = require("./conformance_browser.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -247,90 +249,46 @@ async function clientCertificate(api, clientId) {
 }
 
 // ---------------------------------------------------------------------------
-// THE SCRIPTED BROWSER. The suite drives an HtmlUnit browser through a list
-// of TASKS, each run only while the page's address matches it, and a task
-// that is not `optional` failing to match fails the module. One list serves
-// every module, because every task in it is optional:
+// THE PERSON (#571). The plan carries no `browser` commands: this service's
+// sign-in screen is drawn by its script, which the suite's HtmlUnit browser
+// cannot run, so the suite lists each address a module wants a person to
+// visit and `conformance_browser.js` is that person, in headless Chrome:
 //
 //   * Sign in — only on the first authorization of a module; a second one in
 //     the same browser (merge, replace) finds the session and skips it.
 //   * Consent — only where this realm asks.
 //   * The error page — a refused authorization request stays on
-//     /oauth2/authorize and shows this service's error page, which the suite
-//     photographs into the module's placeholder. That is a REVIEW outcome,
-//     never a failure: the suite cannot read a page it did not write.
-//   * The callback.
+//     /oauth2/authorize and shows this service's error page, which is
+//     photographed into the module's placeholder through the suite's API.
+//     That is a REVIEW outcome, never a failure: the suite cannot read a
+//     page it did not write.
+//   * The callback, left until the suite's page has reported.
 //
-// Two modules need a path of their own, in `override` (the suite merges
-// `override[<module name>]` over the configuration for that module).
+// Two modules want something else of the person, keyed under every
+// family's prefix because a plan runs modules named for more than itself
+// (the message-signing plan's are mostly the security profile's): Cancel on
+// the sign-in screen, which answers access_denied to the client; and a first
+// visit that only LOADS the sign-in screen — the module then visits the same
+// request_uri again, and the person signs in on that one.
 // ---------------------------------------------------------------------------
 const CLIENT2_QUERY = "?dummy1=lorem&dummy2=ipsum";
 const MODULE_PREFIXES = ["fapi2-security-profile-final-",
                          "fapi2-message-signing-final-",
                          "fapi1-advanced-final-", "fapi-ciba-id1-"];
 
-function signInCommands(person) {
-  log.debug("Entering signInCommands().");
-  log.debug("Leaving signInCommands().");
-  return [["text", "id", "username", person],
-          ["text", "id", "password", PASSWORD],
-          ["click", "id", "kc-login"]];
-}
-
-function browserFor(base, alias, person) {
-  log.debug("Entering browserFor().");
-  log.debug("Leaving browserFor().");
-  return [{
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      { task: "Sign in", optional: true, match: base + "/authn/login*",
-        commands: signInCommands(person) },
-      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
-        commands: [["click", "id", "consent-allow"]] },
-      { task: "Error page", optional: true,
-        match: base + "/oauth2/authorize*",
-        commands: [["wait", "xpath", "//body", 10, ".*",
-                    "update-image-placeholder-optional"]] },
-      { task: "Verify complete", optional: true,
-        match: SUITE + "test/a/" + alias + "/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  }];
-}
-
-function overridesFor(plan, base, alias, person) {
-  log.debug("Entering overridesFor(). " + plan.key);
-  const out = {};
-  // A plan runs modules named for more than itself — the message-signing
-  // plan's are mostly the security profile's — so the two are keyed under
-  // every family's prefix; a key naming no module in the plan is ignored.
+function personFor(base, person) {
+  log.debug("Entering personFor().");
+  const actions = {};
   MODULE_PREFIXES.forEach(function (prefix) {
-    // The person presses Cancel on the sign-in page, which answers
-    // access_denied to the client.
-    out[prefix + "user-rejects-authentication"] = { browser: [{
-      match: base + "/oauth2/authorize*",
-      tasks: [
-        { task: "Cancel", match: base + "/authn/login*",
-          commands: [["click", "id", "kc-cancel"]] },
-        { task: "Verify complete",
-          match: SUITE + "test/a/" + alias + "/callback*",
-          commands: [["wait", "id", "submission_complete", 10]] }
-      ]
-    }] };
-    // The first visit only LOADS the sign-in page — the module then visits
-    // the same request_uri again, and signs in on that one.
-    out[prefix + "par-ensure-reused-request-uri-prior-to-auth-completion-" +
-        "succeeds"] = { browser: [{
-      match: base + "/oauth2/authorize*",
-      "match-limit": 1,
-      tasks: [
-        { task: "Load the sign-in page", match: base + "/authn/login*",
-          commands: [["wait", "id", "username", 10]] }
-      ]
-    }].concat(browserFor(base, alias, person)) };
+    actions[prefix + "user-rejects-authentication"] = "cancel";
+    actions[prefix + "par-ensure-reused-request-uri-prior-to-auth-" +
+            "completion-succeeds"] = "load-only";
   });
-  log.debug("Leaving overridesFor().");
-  return out;
+  log.debug("Leaving personFor().");
+  return conformanceBrowser.person({
+    suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: base,
+    username: person, password: PASSWORD, actions: actions
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -463,12 +421,12 @@ async function prepare(plan) {
                   "saml2-bearer_supported",
                 "assertion_signing_alg_values_supported",
                 "assertion_encryption_alg_values_supported",
-                "assertion_encryption_enc_values_supported"] },
+                "assertion_encryption_enc_values_supported",
+                // OpenID4VCI 1.0 section 12.3 (2026-10-12).
+                "pre-authorized_grant_anonymous_access_supported"] },
     client: clients[0],
     client2: clients[1],
-    resource: { resourceUrl: discovery.userinfo_endpoint },
-    browser: browserFor(base, alias, person),
-    override: overridesFor(plan, base, alias, person)
+    resource: { resourceUrl: discovery.userinfo_endpoint }
   };
   if (plan.mtls) {
     configuration.mtls = await clientCertificate(api, clients[0].client_id);
@@ -482,7 +440,8 @@ async function prepare(plan) {
       "&token={auth_req_id}&type={action}";
   }
   log.debug("Leaving prepare().");
-  return { realm: realm, configuration: configuration };
+  return { realm: realm, configuration: configuration,
+           person: personFor(base, person) };
 }
 
 // ---------------------------------------------------------------------------
@@ -587,8 +546,9 @@ async function waitForSuite() {
   throw new Error("the conformance suite at " + SUITE + " never answered");
 }
 
-// One module: created in the plan, then waited on until it finishes.
-async function runModule(planId, module) {
+// One module: created in the plan, then waited on until it finishes; the
+// person (#571) visits what it asks to have visited while it waits.
+async function runModule(planId, module, person) {
   log.debug("Entering runModule(). " + module.testModule);
   const q = "test=" + encodeURIComponent(module.testModule) + "&plan=" +
             encodeURIComponent(planId) +
@@ -608,6 +568,15 @@ async function runModule(planId, module) {
     info = (await suite("GET", "api/info/" + id)).body || {};
     if (info.status === "FINISHED" || info.status === "INTERRUPTED") {
       break;
+    }
+    if (info.status === "WAITING") {
+      try {
+        await person.visit(id, info);
+      } catch (e) {
+        // Reported, and the module is left to time out or fail on its own.
+        log.warn("The person's visit for " + module.testModule +
+                 " failed: " + ((e && e.message) || e));
+      }
     }
     if (Date.now() > deadline) {
       await suite("DELETE", "api/runner/" + id);
@@ -642,7 +611,8 @@ async function runPlan(plan) {
   const results = [];
   const modules = created.body.modules || [];
   for (let i = 0; i < modules.length; i++) {
-    const got = await runModule(created.body.id, modules[i]);
+    const got = await runModule(created.body.id, modules[i],
+                                prepared.person);
     log.info("  " + plan.key + " " + got.module + ": " +
              (got.result || got.status) +
              (got.failures.length ? " — " + got.failures[0] : ""));
@@ -700,6 +670,7 @@ async function test() {
     }
   } finally {
     approver.close();
+    await conformanceBrowser.quit();
   }
   if (unexpected.length) {
     log.error("Unexpected failures:\n  " + unexpected.join("\n  "));
@@ -713,8 +684,8 @@ new Command()
   .description("The OpenID Foundation conformance suite's FAPI plans " +
     "(#176): FAPI 2.0 Security Profile and Message Signing, FAPI 1.0 " +
     "Advanced and FAPI-CIBA, against this service.")
-  .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
-                                           "needs no browser)"))
+  .addOption(new Option("-u, --url <url>", "base url (unused: the " +
+                                           "service's is the realm's)"))
   .parse(process.argv);
 
 test().catch(function (e) {

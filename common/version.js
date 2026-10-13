@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -88,7 +88,7 @@
 // so after a parent sync its `package.json` says the parent's version and this
 // one's says `0.1.0`. The two numbers answer different questions — "which
 // release of the debugger is this submodule pinned into" against "which release
-// of the mock STS is this" — and this file has no business editing the parent
+// of IYA STS is this" — and this file has no business editing the parent
 // to settle it. `--check-manifests` here checks THIS tree only, and the sibling
 // checkout at `../id-proto-debugger/sts` is read-only forever.
 //
@@ -419,8 +419,9 @@ function load(dir) {
 // **THE TOKEN WAS `mock-sts` UNTIL 2026-09-12**, when the product name in
 // every identifier this service stores and emits became `sts`. That was the
 // rename this constant exists to make a one-line change, and it was. The
-// package is still called mock-sts (the repository became iya-sts on
-// 2026-09-15); this is the name on the wire, which is a different thing.
+// package is called iya-sts (the repository became iya-sts on 2026-09-15,
+// the package on 2026-10-01); this is the name on the wire, which is a
+// different thing.
 /**
  * The product token this service names itself by on the wire.
  */
@@ -448,32 +449,17 @@ function userAgent(component) {
 // would otherwise leave them silently stale, which is exactly the drift this
 // repository's endpoint and crypto reports exist to prevent one layer up.
 //
-// `xacml-pep/package.json` is here because that directory is a SECOND
-// CONTAINER built from this same tree: it ships with this service, its engine
-// is copied out of `xacml/` at image build time, and a version of its own would
-// be a second release number for one release.
-//
-// **AND THAT CONTAINER IS STAMPED TOO, WHICH IT WAS NOT WHEN THIS FEATURE
-// FIRST LANDED.** The argument against was that stamping it would mean putting
-// THIS FILE — which reads files and shells out to git — inside
-// `xacml-pep/common/`, the thirty-line shim whose entire value is that it makes
-// "the XACML engine is a library with no I/O" a CHECKED claim rather than a
-// comment. That argument was right about the shim and wrong about the
-// conclusion: the PEP ALREADY DREW A VERSION on the PDP's console, and it was
-// the hand-written label `'mock-sts xacml-pep, phase five'`. So "no stamp" was
-// never "no version" — it was "a version that could not be true".
-//
-// The PLACEMENT is what resolves it, and it costs the shim nothing.
-// `xacml-pep/Dockerfile` copies this file to the CONTAINER ROOT as
-// `version.js`, with `VERSION` beside it, and stamps there. `./common/` in that
-// image still holds exactly `helpers.js`, and `tests/xacml_pep.js` pins it:
-// exactly one COPY may write into that directory. The shim's emptiness is
-// still the evidence, and the PEP reports a real build.
+// `xacml-pep/package.json` WAS here until #444 (2026-10-05): that container
+// is a Rust binary now, built from the workspace in `rust/`, and it stamps its
+// own `version.json` with `sts-core::version` — a port of this file, reading
+// the same `VERSION` — so it still reports this service's release and no
+// second number. Its crates carry `0.1.0`-style versions in their
+// `Cargo.toml`, which nothing reads at runtime.
 /**
  * The package.json files, relative to the package root, whose version must
  * follow VERSION.
  */
-const MANIFESTS = ['package.json', 'xacml-pep/package.json'];
+const MANIFESTS = ['package.json'];
 
 /**
  * Returns the version every package.json should carry: M.N with a patch of 0.

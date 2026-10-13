@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -125,7 +125,7 @@
 //
 //   * **`BackupCodes` TAKES ITS DEPENDENCIES THROUGH ITS CONSTRUCTOR** — the
 //     logger, the settings reader, `crypto.js`'s comparison and secret-hashing
-//     half, the error codes and node's `randomInt`. Nothing inside the class
+//     half, the error codes and `crypto.randomInt`. Nothing inside the class
 //     reaches for a module on its own.
 //   * **THE MODULE STILL EXPORTS EVERY NAME IT DID**, because `credentials.ts`,
 //     the portal and the console require it by those names. Since #50's R2 the
@@ -136,7 +136,6 @@
 //     beside them for that root.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
 import crypto = require('./crypto');
@@ -207,7 +206,7 @@ class BackupCodes {
   /**
    * Returns the dependencies the default instance is built from.
    *
-   * @returns the service's own modules and node's `randomInt`
+   * @returns the service's own modules and `crypto.randomInt`
    */
   static defaultDeps(): BackupCodesDeps {
     helpers.log.debug("Entering BackupCodes.defaultDeps().");
@@ -219,7 +218,7 @@ class BackupCodes {
       errorCodes: errorCodes,
       authnPolicy: authnPolicy,
       randomInt: function (min: number, max: number): number {
-        return nodeCrypto.randomInt(min, max);
+        return crypto.randomInt(min, max);
       }
     };
   }
@@ -313,7 +312,7 @@ class BackupCodes {
   // Thirty-two divides 256 exactly, so a modulo would in fact be unbiased here
   // — and that is precisely the kind of accident that stops being true the
   // moment somebody drops the vowels to stop a code spelling something and
-  // leaves twenty-six characters behind. `nodeCrypto.randomInt()` is
+  // leaves twenty-six characters behind. `crypto.randomInt()` (node's) is
   // rejection-sampled inside node and is correct for every alphabet size, so
   // the property does not depend on a coincidence a later reader would have
   // to re-derive.
@@ -501,9 +500,9 @@ class BackupCodes {
   // this machine: one hash is 72ms, and a WRONG code has to be compared
   // against every code in the set — ten by default — which measured **906ms
   // of blocked event loop**. That is not a price a sign-in path can pay on
-  // one thread, so `common/credentials.ts` checks a presented code through
-  // the WORKER POOL and in parallel. The synchronous door is kept for `npm
-  // test` and for `workers.count = 0`, which is a supported configuration.
+  // one thread, so `common/credentials.ts` checks a presented code on
+  // libuv's thread pool and in parallel (#363; a pool of forked processes
+  // until then). The synchronous door is kept for `npm test`.
   //
   // A hash carries its own random salt, so two identical codes in two sets —
   // or in one — hash differently, and there is no shortcut that would let a
@@ -666,7 +665,7 @@ class BackupCodes {
               '2026-09-11 holds the codes themselves and is still accepted, ' +
               'code by code, until its owner generates a new one.',
       comparisonOfAHash: 'crypto.verifySecret() in constant time against ' +
-                         'each stored hash in turn, on the worker pool ' +
+                         'each stored hash in turn, on libuv\'s thread pool ' +
                          'where the door is asynchronous.'
     };
   }

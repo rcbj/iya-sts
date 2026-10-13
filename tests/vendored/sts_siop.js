@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -25,12 +25,14 @@
 //      403 wait page); a token for another nonce is refused invalid_request.
 //   5. A PERSON ENROLS THEIR OWN KEY by proving it: from the session section
 //      3 left in the browser, /authn/wallet?siop=1&enrol=1, answered by a
-//      NEW key, lands on /portal/self-issued — and a browser with no session
-//      is refused.
+//      NEW key, lands on /portal/self-issued — drawn since #568 by the static
+//      portal from `/account-api`, signed in by single sign-on out of the same
+//      browser's session — and a browser with no session is refused.
 //   6. A REMOVED KEY signs nobody in.
-//   7. THE VERIFIER AT /oid4vp/start: a by-value SIOPv2 request with
-//      response_mode form_post, answered through the "browser", verified on
-//      /oid4vp/result.
+//   7. THE VERIFIER, started at POST /admin-api/verifications/start
+//      (#587): a by-value SIOPv2 request with response_mode form_post,
+//      answered through the "browser", verified on GET
+//      /admin-api/verifications?state=.
 //
 // THE WALLET IS INDEPENDENT: its keys and signatures are node's own
 // `crypto`, as `sts_oid4vp_wallet.js`'s are.
@@ -45,6 +47,10 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const consentScreen = require("./consent_screen.js");
+const portalSignin = require("./portal_signin.js");
+// THE WALLET'S PAGES OVER `/authn-api/wallet` (#574): the start, the wait
+// page's view and the collection, bound as the pages bind them.
+const walletSignin = require("./wallet_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -227,12 +233,14 @@ async function ok(url, payload, what) {
   return r.json;
 }
 
-// The wait page's wallet link, its request_uri, and the request object.
+// The wait page's wallet link, its request_uri, and the request object —
+// from the wait page's view (#574), for the browser that started it.
 async function walletRequest(who, waitUrl) {
   log.debug("Entering walletRequest().");
-  const waiting = await hop(who, "GET", waitUrl);
-  const open = /id="wallet-open" href="([^"]+)"/.exec(waiting.text);
-  const walletUrl = open ? new URL(unescapeHtml(open[1])) : null;
+  const state = walletSignin.fromWaitUrl(waitUrl).state;
+  const waiting = await walletSignin.view(base, who, state);
+  const view = (waiting.json && waiting.json.view) || {};
+  const walletUrl = view.sameDevice ? new URL(view.sameDevice) : null;
   const requestUri = walletUrl ? walletUrl.searchParams.get("request_uri") :
                                  "";
   const ro = requestUri ? await hop(null, "GET", requestUri) : null;
@@ -241,8 +249,9 @@ async function walletRequest(who, waitUrl) {
            request: ro && ro.status === 200 ? payloadOf(ro.text) : null };
 }
 
-// An authorization request to the sign-in screen, and its self-issued link
-// followed to the wait page.
+// An authorization request to the sign-in screen — a static surface (#571),
+// whose view's `wallet.siop` is the self-issued link — and the start that
+// link's page makes (#574), to the wait page.
 async function startSignIn(who) {
   log.debug("Entering startSignIn().");
   const pair = pkce();
@@ -251,11 +260,19 @@ async function startSignIn(who) {
       redirect_uri: REDIRECT_URI, scope: "openid", state: "s-" + STAMP,
       nonce: "n-" + STAMP, code_challenge: pair.challenge,
       code_challenge_method: "S256" }).toString());
+  const authnId = new URL(authorized.location || base, base).searchParams
+    .get("authn") || "";
   const screen = await hop(who, "GET", authorized.location);
-  const link = /id="siop-signin" href="([^"]+)"/.exec(screen.text);
-  const door = link ? await hop(who, "GET", unescapeHtml(link[1])) : null;
-  const out = { pair: pair, screen: screen, link: link ? link[1] : "",
-                door: door };
+  const screenView = authnId ? await hop(who, "GET", base +
+    "/authn-api/pending/" + encodeURIComponent(authnId)) : null;
+  const wallet = screenView && screenView.json && screenView.json.view &&
+                 screenView.json.view.wallet;
+  const link = (wallet && wallet.siop) || "";
+  const started = link ? await walletSignin.start(base, who,
+    { authn: authnId, siop: "1" }) : null;
+  const door = started ? started.door : null;
+  const out = { pair: pair, screen: screen, screenView: screenView,
+                link: link, door: door, started: started };
   if (door && door.status === 303) {
     out.waitUrl = door.location;
     Object.assign(out, await walletRequest(who, door.location));
@@ -264,10 +281,14 @@ async function startSignIn(who) {
   return out;
 }
 
+// The wallet's answer, under the request's response mode: a sign-in asks
+// for `direct_post.jwt` by default since 2026-10-12, so the ID Token is
+// sent encrypted to the request's key (`wallet_signin.js`).
 async function answer(request, idToken) {
   log.debug("Entering answer().");
-  const r = await hop(null, "POST", request.response_uri, { form: {
-    state: request.state, id_token: idToken } });
+  const r = await hop(null, "POST", request.response_uri, {
+    form: walletSignin.answerForm(request, {
+      state: request.state, id_token: idToken }) });
   log.debug("Leaving answer(). " + r.status);
   return r;
 }
@@ -277,6 +298,11 @@ async function answer(request, idToken) {
 async function finish(who, location, pair) {
   log.debug("Entering finish().");
   let at = location;
+  // THE WALLET SENDS THE PERSON BACK TO THE WAIT PAGE, whose runtime
+  // collects the sign-in (#574): the collection names where to go on.
+  if (/\/authn\/wallet\/wait\?/.test(String(at || ""))) {
+    at = (await walletSignin.collect(base, who, at)).location;
+  }
   for (let n = 0; n < 6 && at && at.indexOf(root) === 0 &&
                   !consentScreen.isConsentScreen(at); n += 1) {
     const r = await hop(who, "GET", at);
@@ -305,7 +331,7 @@ async function test() {
            "turned self-issued sign-in on in the realm");
   await registry.provision(base, {
     identifier: CLIENT_ID, name: "SIOPv2 job",
-    protocols: ["oauth2"],
+    protocols: ["oauth2", "oidc"],
     fields: { oauthClientId: CLIENT_ID,
               oauthGrantType: ["authorization_code"],
               oauthTokenEndpointAuthMethod: "none",
@@ -359,13 +385,15 @@ async function test() {
   check("the sign-in screen offers a self-issued ID, and it starts a signed " +
         "SIOPv2 request: response_type id_token, scope openid, section 8 " +
         "client_metadata", function () {
-    assert.ok(s.link, "no siop-signin link: " +
-              s.screen.text.replace(/\s+/g, " ").slice(0, 400));
+    assert.ok(s.link, "no self-issued link in the screen's view: " +
+              (s.screenView ? s.screenView.text.slice(0, 400) : ""));
     assert.ok(s.request, "no request object: " + (s.door && s.door.status));
     assert.strictEqual(headerOf(s.jwt).typ, "oauth-authz-req+jwt");
     assert.strictEqual(s.request.response_type, "id_token");
     assert.strictEqual(s.request.scope, "openid");
-    assert.strictEqual(s.request.response_mode, "direct_post");
+    // `direct_post.jwt`, a sign-in's default since 2026-10-12
+    // (`oid4vp.signInResponseMode`): the ID Token goes back encrypted.
+    assert.strictEqual(s.request.response_mode, "direct_post.jwt");
     assert.strictEqual(s.request.dcql_query, undefined);
     assert.ok(s.request.client_metadata.subject_syntax_types_supported
       .indexOf("urn:ietf:params:oauth:jwk-thumbprint") >= 0);
@@ -395,8 +423,9 @@ async function test() {
   const unknownKey = walletKey();
   const unknown = await answer(t.request, selfIssued(unknownKey,
     t.request.client_id, t.request.nonce));
-  const unknownPage = await hop(stranger, "GET", unknown.json &&
-    unknown.json.redirect_uri ? unknown.json.redirect_uri : t.waitUrl);
+  const unknownPage = await walletSignin.collect(base, stranger,
+    unknown.json && unknown.json.redirect_uri ? unknown.json.redirect_uri
+                                              : t.waitUrl);
   check("a key nobody enrolled verifies and signs nobody in", function () {
     assert.strictEqual(unknown.status, 200, unknown.text.slice(0, 300));
     assert.strictEqual(unknownPage.status, 403,
@@ -414,13 +443,13 @@ async function test() {
   });
 
   log.info("=== 5. a person enrols their own key ===");
-  const nobody = await hop(jar(), "GET", base +
-                           "/authn/wallet?siop=1&enrol=1");
+  const nobody = (await walletSignin.start(base, jar(),
+                                          { siop: "1", enrol: "1" })).door;
   check("a browser with no session cannot start an enrolment", function () {
     assert.strictEqual(nobody.status, 403, nobody.text.slice(0, 300));
   });
-  const door = await hop(browser, "GET", base +
-                         "/authn/wallet?siop=1&enrol=1");
+  const door = (await walletSignin.start(base, browser,
+                                         { siop: "1", enrol: "1" })).door;
   const enrolReq = door.status === 303 ?
     await walletRequest(browser, door.location) : {};
   const second = walletKey();
@@ -428,7 +457,8 @@ async function test() {
     selfIssued(second, enrolReq.request.client_id,
                enrolReq.request.nonce)) : null;
   const collected = proved && proved.json ?
-    await hop(browser, "GET", proved.json.redirect_uri) : null;
+    await walletSignin.collect(base, browser, proved.json.redirect_uri) :
+    null;
   r = await hop(null, "GET", api + "/users/self-issued-subjects?user=" +
                 encodeURIComponent(HOLDER));
   check("the signed-in person proves a new key with their wallet, lands on " +
@@ -445,31 +475,35 @@ async function test() {
     }), r.text.slice(0, 400));
   });
 
-  // The portal page itself, in the same browser: its own code flow rides
-  // on the sign-on session, so it is followed hop by hop to a 200.
-  let page = await hop(browser, "GET", collected.location);
-  for (let n = 0; n < 12 && page.status !== 200 &&
-                  (page.status === 302 || page.status === 303); n += 1) {
-    page = await hop(browser, "GET", page.location);
-  }
+  // THE PORTAL PAGE ITSELF (#568): the static portal signs in as its public
+  // client with PKCE and a DPoP-bound token, and single sign-on answers its
+  // flow out of the same browser's sign-on session — so the page is its
+  // `/account-api` operation's answer, drawn by the portal's own renderers,
+  // and the Remove is that operation's POST.
+  const portal = await portalSignin.signInToThePortal(base, HOLDER, null,
+    { cookie: browser.header() });
+  const enrolled = collected && collected.location
+    ? new URL(collected.location, base).searchParams.get("enrolled") : null;
+  const page = await portal.draw("/portal/self-issued",
+                                 enrolled ? { enrolled: enrolled } : {});
   const secondUri = "urn:ietf:params:oauth:jwk-thumbprint:sha-256:" +
                     second.thumbprint;
   check("/portal/self-issued lists both keys, with a Remove each and the " +
         "Enrol a wallet link", function () {
-    assert.strictEqual(page.status, 200, page.text.slice(0, 300));
-    assert.ok(page.text.indexOf(secondUri) >= 0, "the proved key is listed");
-    assert.ok(page.text.indexOf(key.thumbprint) >= 0,
+    assert.strictEqual(page.status, 200, JSON.stringify(page.json)
+      .slice(0, 300));
+    assert.ok(page.html.indexOf(secondUri) >= 0, "the proved key is listed");
+    assert.ok(page.html.indexOf(key.thumbprint) >= 0,
               "the administrator's key is listed");
-    assert.ok(/id="siop-enrol"/.test(page.text), "no enrol link");
+    assert.ok(/id="siop-enrol"/.test(page.html), "no enrol link");
   });
-  const csrf = (/name="csrf_token" value="([^"]+)"/.exec(page.text) ||
-                [])[1] || "";
-  const gone = await hop(browser, "POST", base + "/portal/self-issued",
-    { form: { action: "remove", subject: secondUri, csrf_token: csrf } });
+  const gone = await portal.act("/portal/self-issued",
+                                { action: "remove", subject: secondUri });
   r = await hop(null, "GET", api + "/users/self-issued-subjects?user=" +
                 encodeURIComponent(HOLDER));
   check("the person removes their own key from the portal", function () {
-    assert.strictEqual(gone.status, 303, gone.text.slice(0, 300));
+    assert.strictEqual(gone.status, 200, gone.text.slice(0, 300));
+    assert.ok(gone.json && gone.json.ok, gone.text.slice(0, 300));
     assert.ok(!r.json.subjects.some(function (one) {
       return one.subject === secondUri;
     }), r.text.slice(0, 300));
@@ -482,8 +516,11 @@ async function test() {
   const w = await startSignIn(later);
   const removed = await answer(w.request, selfIssued(key,
     w.request.client_id, w.request.nonce));
-  const removedPage = await hop(later, "GET", removed.json &&
-                                removed.json.redirect_uri || w.waitUrl);
+  // THE WAIT PAGE'S ANSWER OVER `/authn-api/wallet` (#574), as section 4
+  // reads it: the page is a shell, and the refusal is its status act's.
+  const removedPage = await walletSignin.collect(base, later,
+    removed.json && removed.json.redirect_uri ? removed.json.redirect_uri
+                                              : w.waitUrl);
   check("a removed key signs nobody in", function () {
     assert.strictEqual(removed.status, 200, removed.text.slice(0, 300));
     assert.strictEqual(removedPage.status, 403,
@@ -491,23 +528,32 @@ async function test() {
     assert.ok(/not enrolled/.test(removedPage.text), "the page says why");
   });
 
-  log.info("=== 7. the Verifier at /oid4vp/start ===");
-  const start = await hop(null, "GET", base + "/oid4vp/start?" +
-    "response_type=id_token&response_mode=form_post");
-  const q = start.location ? new URL(start.location).searchParams : null;
+  // STARTED THROUGH `/admin-api` (#587; the only door since #594), in the
+  // process's mode, product in the single-node and cluster stacks. The
+  // start names no page of its own, so the browser's form_post is answered
+  // in place — 200 and plain text, sent nowhere (#594; it was a 303 to the
+  // demonstration's /oid4vp/done until then).
+  log.info("=== 7. the Verifier, started at /admin-api/verifications ===");
+  const start = await hop(null, "POST", api + "/verifications/start",
+    { json: { response_type: "id_token", response_mode: "form_post" } });
+  const walletUrl = (start.json || {}).walletUrl || "";
+  const q = walletUrl ? new URL(walletUrl).searchParams : null;
   const posted = q ? await hop(jar(), "POST", q.get("redirect_uri"),
     { form: { state: q.get("state"), id_token: selfIssued(walletKey(),
       q.get("client_id"), q.get("nonce")) } }) : null;
-  const verdict = q ? await hop(null, "GET", base + "/oid4vp/result/" +
+  const verdict = q ? await hop(null, "GET", api + "/verifications?state=" +
                                 encodeURIComponent(q.get("state"))) : null;
   check("a by-value request (redirect_uri: client, form_post) is answered " +
         "through the browser and verified; it signs nobody in", function () {
-    assert.strictEqual(start.status, 302, start.text.slice(0, 300));
+    assert.strictEqual(start.status, 200, start.text.slice(0, 300));
+    assert.ok(/^siopv2:\/\/\?/.test(start.json.requestUri),
+              "an ID Token alone is offered as siopv2://: " +
+              start.json.requestUri);
     assert.strictEqual(q.get("response_type"), "id_token");
     assert.ok(/^redirect_uri:/.test(q.get("client_id")));
     assert.strictEqual(q.get("response_mode"), "form_post");
-    assert.strictEqual(posted.status, 303, posted.text.slice(0, 300));
-    assert.ok(/\/oid4vp\/done\?state=/.test(posted.location));
+    assert.strictEqual(posted.status, 200, posted.text.slice(0, 300));
+    assert.ok(!posted.location, "sent nowhere: " + posted.location);
     assert.strictEqual(verdict.json.verdict.ok, true,
                        JSON.stringify(verdict.json.verdict).slice(0, 600));
   });

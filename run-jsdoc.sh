@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # run-jsdoc.sh — generate the API reference from the JSDoc in the source
 # (2026-09-27).

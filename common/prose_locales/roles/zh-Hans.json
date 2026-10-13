@@ -1,0 +1,150 @@
+{
+  "roles.schema.objectClasses.stsRole.what": {
+    "en": "e80eac42b07fd952",
+    "text": "一个角色。条目以角色名称命名（`cn=staff`），其上的一切都是成员资格——谁拥有该角色。角色被谁要求则保存在要求它的应用条目上的 `appRequiredRole` 中，因为那是关于应用而不是关于角色的事实。"
+  },
+  "roles.schema.attributes.roleName.what": {
+    "en": "5b8fbb4273c31dfa",
+    "text": "角色名称，同时也是 `cn`。另外显式携带，以便只有属性的读取方也能得到名称。"
+  },
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "拥有此角色的用户名。多值。此人不必已经存在——本服务会在首次见到任何名称时为其创建目录条目，因此可以在持有人从未登录之前就授予角色。"
+  },
+  "roles.schema.attributes.roleMemberGroup.what": {
+    "en": "ed79e4eb54a86c36",
+    "text": "其每个成员都拥有此角色的组。多值。在决策时解析，而不是在写入时展开，因此通过 `ldapmodify` 将某人加入该组会改变紧接着的下一个令牌。"
+  },
+  "roles.schema.attributes.roleMemberApplication.what": {
+    "en": "cecc4552c88342d4",
+    "text": "以自身身份拥有此角色的应用——在没有人员的 client_credentials 授权中，决策依据的就是它。多值。与应用条目上的 `appRequiredRole` 不是同一种关系，后者是该应用对他人的要求。"
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "可以签发给此角色持有人的权限（#303）。多值。按客户端请求它的方式命名：通用应用权限使用其完整的范围值——资源应用的 `oauthPermissionBaseUri` 后接名称——本服务的原生权限使用其自身名称（`admin:read`、`admin:write`）。它只对其资源应用设门禁的权限（`oauthRoleGatedPermission`）有意义；设门禁的权限只签发给拥有指明它的角色的主体，未设门禁的权限照旧签发。"
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "授予此角色的客户端（#454）：每个通过该客户端登录的人，都在签发给该客户端的访问令牌上拥有此角色，而在其他任何令牌上都没有。多值，为本领域中应用的 client_id。以这种方式持有的角色是关于令牌而不是关于人员的事实，因此在每次调用时与此人自己拥有的角色合并；从中移除某个客户端，会立即从该客户端的令牌上移除此角色。从不应用于客户端自己的 client_credentials 令牌，后者的角色就是其成员资格。ADMIN_CONSOLE 在植入时即由 `sts-admin-console` 授予。"
+  },
+  "roles.schema.attributes.roleApplication.what": {
+    "en": "364af2be7fcecb90",
+    "text": "此角色所属的唯一应用（#310），以其在 ou=applications 中的标识符表示；不设置时，角色适用于整个领域。应用的角色在登记簿中命名为 `<role>@<application>`，因此两个应用可以各有一个 `reader`；针对该应用的令牌或断言以 `<role>` 携带它，其他应用的令牌则根本不携带它。应用的 `appRequiredRole` 可以用 `<role>` 指明它。"
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "谁可以拥有此角色（#93）：`user`（人员，直接或通过组）和 `application`（以自身身份的应用）。多值；不设置时两者均可——在它之前写入的每个角色都是如此。写入角色时，角色不允许的类型的成员会被拒绝。两个控制台角色不能受此限制：名单授予其人员，植入授予其应用。"
+  },
+  "roles.schema.attributes.displayName.what": {
+    "en": "96a85a48288e9845",
+    "text": "供人阅读的可选名称（#93）。令牌携带的、要求所指明的以及登记簿作为键的，仍然是角色的名称；这只是它在控制台和 API 上的标签。其稳定 id 是条目的 `entryUUID`，在每次编辑中保持不变。"
+  },
+  "roles.schema.attributes.description.what": {
+    "en": "d3cd66c299e05098",
+    "text": "该角色的用途，留给下一个人看。"
+  },
+  "roles.schema.attributes.owner.what": {
+    "en": "3acf4a1763f7388c",
+    "text": "对该角色负责的本领域中的某个人或某个组（#604），以 DN 表示——即 RFC 4519 第 2.23 节的属性，与组的所有者相同（#603）。多值，最多 25 个。自 #607 起，所有者可以通过 /admin-api 使用 owner:read 和 owner:write（OWNER_READ、OWNER_WRITE）管理该角色，范围以 access-control 策略的所有者规则所允许的为限；所有者只有作为成员才持有该角色本身。用户门户会列出一个人拥有的内容。"
+  },
+  "roles.schema.attributes.stsOwnerProtected.what": {
+    "en": "dcc4499eac844938",
+    "text": "TRUE：该角色的所有者不能通过 /admin-api 管理它（#607），无论他们拥有什么——这是管理员的标记，access-control 策略的所有者规则将其读作 urn:sts:xacml:object-protected。缺省为 FALSE。"
+  },
+  "roles.builtIn.EVERYBODY.what": {
+    "en": "40f390becf1977a2",
+    "text": "任何人，无论是否经过身份验证，是人员还是应用。这是默认要求：未指明所需角色的应用要求的就是这个角色，人人都拥有它，不拒绝任何人——这正是角色出现之前本服务的行为方式。"
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_USERS.what": {
+    "en": "2defec4a92314419",
+    "text": "在作出此决策的安全上下文中拥有有效已验证会话的人员。"
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_USERS.what": {
+    "en": "dcc2d43ade379f11",
+    "text": "尚未进行身份验证的人员。就策略而言，它并不是上面那个角色的否定——它是目标可以匹配的一个名称，而 XACML 目标无法表达“非”。"
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "任何客户端，无论它是如何出现的。"
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "证明了自己身份的客户端——通过密钥、private_key_jwt 断言或经过验证的客户端证书。仅仅发送了 client_id 的公共客户端不属于此类。"
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "未证明任何内容的公共客户端。"
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "a542d84d6db4c5b5",
+    "text": "远程 XACML 策略执行点：由 `roles.remotePepGroup`（默认 \"remote-peps\"）指明的组的任何成员。`/xacml/pep/register`、`/xacml/pep/policies` 和 `/xacml/pep/heartbeat` 要求的就是它，持有它的一方通常是客户端证书 DN 而不是人员——证书说明是谁，该组说明他们是否可以。"
+  },
+  "roles.builtIn.XACML_USER.what": {
+    "en": "1b417a98ec7e824b",
+    "text": "XACML 界面本身的调用方：由 `roles.xacmlUserGroup`（默认 \"xacml-users\"）指明的组的任何成员。`GET /xacml`、`POST /xacml/pdp` 和 `GET /xacml/policies` 要求的就是它，持有它的一方通常是客户端证书 DN——证书说明是谁，该组说明他们是否可以。它被有意地设计为不是 REMOTE_PEPS：那个角色可以访问三个 /xacml/pep 端点，它们分发本服务用来执行自身访问控制的文档；如果一个组同时授予两者，那么允许调用方访问XACML 界面本身就会悄无声息地允许它访问那些端点。"
+  },
+  "roles.builtIn.OWNER_READ.what": {
+    "en": "ff8296bdbd88d5ad",
+    "text": "所有者（#607）：本领域中的角色、组、服务账号或应用将其列为所有者的任何人，无论是直接列出还是通过其所在的组。授权 owner:read 权限：通过 /admin-api 读取其拥有的对象，仅此而已。在作出决定时计算。"
+  },
+  "roles.builtIn.OWNER_WRITE.what": {
+    "en": "689161841fbe1a7d",
+    "text": "所有者（#607），同 OWNER_READ。授权 owner:write 权限：通过 /admin-api 更改其拥有的对象，范围以 access-control 策略的所有者规则对每种类型允许的操作为限——绝不创建、删除或重命名对象，也绝不涉及对所有者受保护的对象。"
+  },
+  "roles.native.ADMIN_READ.what": {
+    "en": "7d6481dffa0d517c",
+    "text": "Admin Read：/admin-api 上的每个读取操作。由控制台的 Admin Read 和 Admin Write 组（Admin Write 隐含 Admin Read）以及此处列出的应用持有。授权 admin:read 权限。"
+  },
+  "roles.native.ADMIN_WRITE.what": {
+    "en": "ecff5f0bc1a5a16a",
+    "text": "Admin Write：/admin-api 上每个更改任何内容的操作。由控制台的 Admin Write 组以及此处列出的应用持有。授权 admin:write 权限。在令牌上它并不隐含 Admin Read：令牌可以携带任一范围，策略会要求操作所需的那一个。"
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "管理控制台：/admin-api/console 下仅为绘制控制台而存在的操作——其框架、其图示及其表单辅助功能。授权 admin:console 权限。由控制台自己的客户端 sts-admin-console 授予每个登录控制台的人，没有任何人作为成员持有它。它不授予其他任何权限：显示领域数据的页面还会要求 ADMIN_READ。"
+  },
+  "roles.native.DEVICE_COMPLIANCE.what": {
+    "en": "54220e44643bd84c",
+    "text": "设备合规数据源：通过 POST /admin-api/device-compliance 报告设备合规状态的 MDM 或安全态势数据源，在 /admin-api 上别无其他权限。授权 device:compliance 权限。植入时没有成员：请添加该数据源的应用。"
+  },
+  "roles.memberKinds.user.label": {
+    "en": "df381eb4bb572daf",
+    "text": "人员"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "用户名。此人不必已经存在：本服务会在首次见到任何名称时为其创建目录条目，因此可以在持有人从未登录之前就授予角色。"
+  },
+  "roles.memberKinds.group.label": {
+    "en": "7058b14ed9a6b2fc",
+    "text": "组"
+  },
+  "roles.memberKinds.group.what": {
+    "en": "807d0833e4b29343",
+    "text": "ou=groups 中的组。其每个成员都拥有该角色，在决策时解析，而不是在写入时展开——因此通过 ldapmodify 将某人加入该组会改变紧接着的下一个令牌。"
+  },
+  "roles.memberKinds.application.label": {
+    "en": "7b0b893d972a8266",
+    "text": "应用"
+  },
+  "roles.memberKinds.application.what": {
+    "en": "67e543bef5013764",
+    "text": "以自身身份拥有该角色的应用。在完全没有人员参与的 client_credentials 授权中，决策依据的就是它，这也是应用在这里能成为角色一等成员的原因。"
+  },
+  "roles.console.read.label": {
+    "en": "528d2a45607ec613",
+    "text": "Admin Read"
+  },
+  "roles.console.read.what": {
+    "en": "d824947bfa7bb0cd",
+    "text": "查看此控制台的每个页面，以及每个页面的 ?format=json 视图。它不改变任何内容：读者可以看到哪些令牌已被吊销，但不能吊销令牌。"
+  },
+  "roles.console.write.label": {
+    "en": "41407227fe92a8f6",
+    "text": "Admin Write"
+  },
+  "roles.console.write.what": {
+    "en": "476b1b61c16b02e4",
+    "text": "提交此控制台上的每个表单——吊销令牌、添加自定义声明、更改设置、创建人员、授予角色。它包含读取权限，因此仅拥有此角色的成员即可使用整个控制台。"
+  }
+}

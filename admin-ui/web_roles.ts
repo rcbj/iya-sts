@@ -1,0 +1,884 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
+'use strict';
+//
+// File: web_roles.ts
+//
+// ---------------------------------------------------------------------------
+// DIRECTORY → ROLES, DRAWN FROM ITS VIEW ALONE (#446, 2026-10-05).
+//
+// Draws Roles from the answer of `GET /admin-api/roles`: who holds each role,
+// what requires one, the forms that change both, a preview of what would be
+// issued, and the settings.
+//
+// A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
+// only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
+// It was drawn inside the route of `/admin/roles` in `admin-ui/admin.ts`,
+// which still draws the page until the console's cutover by calling this with
+// its view passed through JSON.
+// ---------------------------------------------------------------------------
+
+import kit = require('./web_kit');
+import SettingsForms = require('./web_settings');
+import GroupsPage = require('./web_groups');
+
+type Json = any;
+
+// THE PAGE'S TRANSLATOR, ESCAPING AS THIS PAGE ALWAYS ESCAPED (#539). A
+// role's name, an application's identifier or a policy's reason fills many
+// of these messages, and an apostrophe in one was drawn by `kit.esc()` as
+// `&apos;` where the translator's escaping writes `&#39;`: the same
+// character in different bytes, and the console's browser jobs compare
+// bytes. So a message WITH parameters has its `&#39;` written as `&apos;`;
+// no message of this page's catalog carries a literal `&#39;` for this to
+// change. Every other member is the translator's own, through the
+// prototype.
+const kitEscaping = function (translator: Json): Json {
+  const wrapped = Object.create(translator);
+  wrapped.html = function (key: string, params?: Json): string {
+    const out = translator.html(key, params);
+    return params ? out.replace(/&#39;/g, '&apos;') : out;
+  };
+  return wrapped;
+};
+
+/**
+ * Draws Roles from the answer of `GET /admin-api/roles`: who holds each role,
+ * what requires one, the forms that change both, a preview of what would be
+ * issued, and the settings.
+ *
+ * A static utility class; it holds no state and takes no dependencies.
+ */
+class RolesPage {
+  // How many members of one kind a role's cell draws before it counts the
+  // rest (#313). The register's answer carries every one.
+  static readonly MEMBERS_SHOWN = 10;
+
+  /**
+   * Draws the page's body from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of the page's management API operation
+   * @returns the body as HTML
+   */
+  static body(ctx, json) {
+    // The page's words are its translator's (#539 phase 6). What the view
+    // carries — the built-in roles' descriptions, the member kinds, a
+    // preview's reason — is drawn as it comes.
+    const t = kitEscaping(ctx.t);
+    const register = json;
+    const listView = kit.listViewOf('/admin/roles', ctx.query);
+    const navParams = kit.pageParamsOf(ctx.query);
+    const q = json.query.q;
+    const rolesNav = kit.pageNavPair('/admin/roles', navParams,
+                                      json.paging, t);
+    const rolePage = { shown: json.shownRoles };
+    // The narrowed applications' pager (#313), on `requiringPage`.
+    const requiringNav = json.requiringPaging
+      ? kit.pageNavPair('/admin/roles', navParams, json.requiringPaging, t)
+      : { head: '', foot: '' };
+
+    const roleOptions = register.roles.map(function (one) {
+      return '<option value="' + kit.esc(one.name) + '">' +
+             kit.esc(one.name) +
+             '</option>';
+    }).join('');
+    const kindOptions = json.memberKinds.map(function (one) {
+      return '<option value="' + kit.esc(one.kind) + '">' +
+             kit.esc(one.label) +
+             '</option>';
+    }).join('');
+    const applicationOptions = json.applicationChoices.map(function (row) {
+      return '<option value="' + kit.esc(row.identifier) + '">' +
+             kit.esc(row.name && row.name !== row.identifier
+               ? row.name + ' — ' + row.identifier : row.identifier) +
+             '</option>';
+    }).join('');
+    const issuanceOptions = json.issuanceKinds.map(function (one) {
+      return '<option value="' + kit.esc(one) + '">' + kit.esc(one) +
+             '</option>';
+    }).join('');
+
+    // AN ANSWER THAT ASKED NOTHING IS NO ANSWER (2026-10-13). The preview is
+    // fetched whenever the query names one of the form's four fields, and
+    // the form's own Ask with its boxes empty names all four — so
+    // `/admin-api/roles/preview` answers `answered: false` with no `asked`,
+    // and reading `preview.asked.application` threw in the browser
+    // (sts_admin_console, which submits every GET form). Nothing asked draws
+    // the form and no decision, as the operation's own comment says.
+    const preview = json.preview && json.preview.answered !== false
+      ? json.preview : null;
+
+    const inner =
+      '<h2>' + t.html('consoleRoles.body.heading') + '</h2>' +
+      // The links carry hrefs, so the sentences around them are messages
+      // and the anchors are code.
+      kit.note(t.html('consoleRoles.body.introBefore') + '<a ' +
+      'href="/admin/xacml/policies">' + t.html('consoleRoles.body.policies') +
+      '</a>' + t.html('consoleRoles.body.introTest') + '<a ' +
+      'href="/admin/xacml/decide">' + t.html('consoleRoles.body.tryDecision') +
+      '</a>' + t.html('consoleRoles.body.introSee') + '<a ' +
+      'href="/admin/audit">' + t.html('consoleRoles.body.auditLog') + '</a>' +
+      t.html('consoleRoles.body.introEnd')) +
+
+      kit.note('<strong>' + t.html('consoleRoles.body.notRbacBefore') +
+      '<a href="/admin/rbac">' + t.html('consoleRoles.body.adminRoles') +
+      '</a>' + t.html('consoleRoles.body.notRbacAfter') + '</strong>' +
+      t.html('consoleRoles.body.thatOne',
+             { container: register.container || 'ou=roles' }) +
+      '<strong>' + t.html('consoleRoles.body.notGroupsBefore') + '<a ' +
+      'href="/admin/groups">' + t.html('consoleRoles.body.groups') + '</a>' +
+      t.html('consoleRoles.body.notGroupsAfter') + '</strong>' +
+      t.html('consoleRoles.body.twoMeet')) +
+
+      (register.storable ? ''
+        : kit.warn(t.html('consoleRoles.body.notStorable'))) +
+
+      (register.enforced ? ''
+        : kit.warn(t.html('consoleRoles.body.notEnforced'))) +
+
+      (register.gated ? '' : kit.warn(t.html('consoleRoles.body.notGated'))) +
+
+      '<h3 id="built-in">' +
+      t.html('consoleRoles.body.builtInHeading',
+             { count: register.builtIn.length }) + '</h3>' +
+      kit.note(t.html('consoleRoles.body.builtInNote',
+                      { defaultRequired: register.defaultRequired })) +
+      '<table><thead><tr><th>' + t.html('consoleRoles.body.thRole') +
+      '</th><th>' + t.html('consoleRoles.body.thWhoHolds') +
+      '</th></tr></thead><tbody>' +
+      register.builtIn.map(function (one) {
+        return '<tr><td class="who"><code>' + kit.esc(one.name) +
+               '</code></td><td>' + kit.esc(one.what) + '</td></tr>';
+      }).join('') +
+      '</tbody></table>' +
+
+      '<h3 id="roles" data-tab="roles">' +
+      t.html('consoleRoles.body.madeHeading') + '</h3>' +
+      kit.note(t.html('consoleRoles.body.madeNote',
+                      { container: register.container || 'ou=roles' })) +
+      '<form method="get" action="/admin/roles"><div class="formrow">' +
+        '<label for="q">' + t.html('consoleRoles.body.text') + '</label>' +
+        '<input type="text" id="q" name="q" size="40" value="' + kit.esc(q) +
+          '" placeholder="' + kit.esc(t.text('consoleRoles.body.textHint')) +
+          '">' +
+        '<button class="secondary">' + t.html('consoleRoles.body.filter') +
+        '</button>' +
+        (q ? ' <a href="/admin/roles#roles">' +
+             t.html('consoleRoles.body.clear') + '</a>' : '') +
+      '</div></form>' +
+      '<table><thead><tr><th>' + t.html('consoleRoles.body.thRole') +
+      '</th>' +
+      json.memberKinds.map(function (one) {
+        return '<th>' + t.html('consoleRoles.body.thHeldBy',
+                               { kind: one.label }) + '</th>';
+      }).join('') +
+      '<th>' + t.html('consoleRoles.body.thAuthorizes') +
+      '</th><th></th></tr></thead><tbody>' +
+      (rolePage.shown.length
+        ? rolePage.shown.map(function (one) { return RolesPage.roleRow(one,
+            listView, json.memberKinds, t); })
+                        .join('')
+        : '<tr><td colspan="6"><span class="state-none">' +
+          (q ? t.html('consoleRoles.body.noMatch', { q: q })
+             : t.html('consoleRoles.body.noneMade',
+                      { defaultRequired: register.defaultRequired })) +
+          '</span></td></tr>') +
+      // `rolesNav` is a { head, foot } pair drawn as a string, and has been
+      // since before #539; the words are what changed here, not that.
+      '</tbody></table>' + rolesNav +
+
+      '<h3 id="create" data-tab="create">' +
+      t.html('consoleRoles.body.makeHeading') + '</h3>' +
+      kit.note(t.html('consoleRoles.body.makeNote',
+                      { container: register.container || 'ou=roles' })) +
+      '<form method="post" action="/admin/roles">' +
+      RolesPage.rolesBack(listView) +
+      '<input type="hidden" name="action" value="create-role"><div ' +
+      'class="formrow"><label>' + t.html('consoleRoles.body.name') +
+      ' <input type="text" name="role" ' +
+      'required></label><label>' + t.html('consoleRoles.body.description') +
+      ' <input type="text" ' +
+      'name="description" size="50"></label>' +
+      // FOR ONE APPLICATION (#310), or for the realm when left empty. The
+      // tooltip's `<role>@<application>` is a parameter, so the translator
+      // escapes it as kit.esc() did the whole sentence.
+      '<label title="' + t.html('consoleRoles.body.forApplicationTitle',
+                                { pattern: '<role>@<application>' }) +
+      '">' + t.html('consoleRoles.body.forApplication') + ' ' +
+      '<input type="text" name="application" list="role-create-apps" ' +
+      'placeholder="' + kit.esc(t.text('consoleRoles.body.realmWide')) +
+      '"></label><datalist id="role-create-apps">' +
+      applicationOptions + '</datalist>' +
+      // ITS LABEL AND WHO MAY HOLD IT (#93).
+      '<label>' + t.html('consoleRoles.body.displayName') +
+      ' <input type="text" name="displayName" ' +
+      'placeholder="' + kit.esc(t.text('consoleRoles.body.optional')) +
+      '"></label><label>' + t.html('consoleRoles.body.mayBeHeldBy') +
+      ' <select ' +
+      'name="memberTypes"><option value="">' +
+      t.html('consoleRoles.body.peopleAndApps') +
+      '</option><option value="user">' +
+      t.html('consoleRoles.body.peopleOnly') + '</option><option ' +
+      'value="application">' + t.html('consoleRoles.body.appsOnly') +
+      '</option></select></label>' +
+      '<button type="submit">' + t.html('consoleRoles.body.create') +
+      '</button></div></form>' +
+
+      // "SOMEBODY" IS THREE KINDS AND THE HEADING USED TO HIDE TWO OF THEM.
+      //
+      // This read `Give somebody a role`, and the note under it was the three
+      // ROLE_MEMBER_KINDS joined — so `kit.note()` derived its summary from the
+      // first of them and the fold read `a person — A username.` The one
+      // sentence saying an application may hold a role AS ITSELF was inside a
+      // collapsed block whose opening words were about people, on a page
+      // whose heading was also about people. Somebody looking for how to put
+      // an application in a role could read this whole section and not find
+      // it, which is exactly what happened.
+      //
+      // The heading names all three now, and the note LEADS with a sentence
+      // naming all three so that the derived summary does too. The per-kind
+      // detail is unchanged and still folded — the fix is which sentence is
+      // visible with the fold shut, not how much prose there is.
+      '<h3 id="member" data-tab="member">' +
+      t.html('consoleRoles.body.memberHeading') +
+      '</h3>' +
+      kit.note(t.html('consoleRoles.body.memberLead') + '<br>' +
+      json.memberKinds.map(function (one) {
+        return '<strong>' + kit.esc(one.label) + '</strong> &mdash; ' +
+               kit.esc(one.what);
+      }).join('<br>')) +
+      (register.roles.length ? ''
+        : kit.warn(t.html('consoleRoles.body.noRoleBefore') +
+          '<a href="#create">' + t.html('consoleRoles.body.createARole') +
+          '</a>' + t.html('consoleRoles.body.noRoleAfter'))) +
+      '<form method="post" action="/admin/roles">' +
+      RolesPage.rolesBack(listView) +
+      '<input type="hidden" name="action" value="add-member">' +
+      '<div class="formrow">' +
+      '<label>' + t.html('consoleRoles.body.thRole') +
+      ' <select name="role" required>' + roleOptions +
+      '</select></label><label>' + t.html('consoleRoles.body.kind') + ' ' +
+      '<select name="kind">' + kindOptions + '</select></label>' +
+      // THE SUGGESTIONS ARE THE APPLICATIONS, AND ONLY THE APPLICATIONS.
+      //
+      // A datalist SUGGESTS and never constrains, which is what makes one
+      // field serving three kinds tolerable: a person or a group is still
+      // typed by hand and still need not exist yet, which is this service's
+      // rule everywhere and is stated in the fold above.
+      //
+      // Applications are the kind with a knowable set — this realm's registry
+      // has them all — and they are the kind somebody cannot guess, because
+      // an application's identifier is whatever it registered itself as. The
+      // other two are open by design: a person need not exist, and a group
+      // lives in the directory behind a hook this page has no reader for.
+      //
+      // ITS OWN datalist rather than the preview form's `role-preview-apps`
+      // below. Both render the same `applicationOptions` — one computation,
+      // two renderings, so they cannot disagree — but referencing an id
+      // defined by another section would make this field's suggestions vanish
+      // silently if that section were ever made conditional or moved.
+      '<label title="' +
+        kit.esc(t.text('consoleRoles.body.memberNameTitle')) +
+        '">' + t.html('consoleRoles.body.name') +
+        ' <input type="text" name="member" list="role-member-apps" ' +
+        'required></label>' +
+      '<datalist id="role-member-apps">' + applicationOptions +
+      '</datalist><button type="submit"' +
+        (register.roles.length ? '' : ' disabled') + '>' +
+        t.html('consoleRoles.body.add') + '</button>' +
+      '</div></form>' +
+
+      // WHAT A ROLE AUTHORIZES (#303, part B of #88).
+      '<h3 id="authorizes" data-tab="authorizes">' +
+      t.html('consoleRoles.body.authorizeHeading') +
+      '</h3>' +
+      kit.note(t.html('consoleRoles.body.authorizeBefore') +
+      '<a href="/admin/rbac">' + t.html('consoleRoles.body.adminRoles') +
+      '</a>' + t.html('consoleRoles.body.authorizeAfter')) +
+      '<form method="post" action="/admin/roles">' +
+      RolesPage.rolesBack(listView) +
+      '<input type="hidden" name="from" value="authorizes">' +
+      '<input type="hidden" name="action" value="add-permission">' +
+      '<div class="formrow">' +
+      '<label>' + t.html('consoleRoles.body.thRole') +
+      ' <select name="role" required>' +
+      register.roles.filter(function (one) {
+        return !one.native;
+      }).map(function (one) {
+        return '<option value="' + kit.esc(one.name) + '">' +
+               kit.esc(one.name) + '</option>';
+      }).join('') + '</select></label>' +
+      '<label>' + t.html('consoleRoles.body.permission') +
+      ' <input type="text" name="permission" size="50" ' +
+      'list="role-permission-ids" required></label>' +
+      '<datalist id="role-permission-ids">' + register.permissionIds
+        .map(function (id) {
+          return '<option value="' + kit.esc(id) + '">';
+        }).join('') + '</datalist>' +
+      '<button type="submit"' +
+        (register.roles.some(function (one) { return !one.native; })
+          ? '' : ' disabled') + '>' + t.html('consoleRoles.body.authorize') +
+      '</button>' +
+      '</div></form>' +
+
+      '<h3 id="requiring" data-tab="requiring">' +
+      t.html('consoleRoles.body.requiringHeading') +
+      '</h3>' +
+      kit.note(t.html('consoleRoles.body.requiringNote',
+                      { defaultRequired: register.defaultRequired })) +
+      requiringNav.head +
+      '<table><thead><tr><th>' + t.html('consoleRoles.body.thApplication') +
+      '</th><th>' + t.html('consoleRoles.body.thRequires') + '</th>' +
+      '<th>' + t.html('consoleRoles.body.thHoldable') +
+      '</th></tr></thead><tbody>' +
+      (register.requiring.length
+        ? register.requiring.map(function (one) {
+            return '<tr><td class="who"><a href="' +
+              kit.esc('/admin/applications' +
+                       kit.queryWith(listView,
+                                 { application: one.application })) +
+              '">' + kit.esc(one.name) + '</a>' +
+              (one.name === one.application ? ''
+                : '<br><code>' + kit.esc(one.application) + '</code>') +
+                  '</td>' +
+              '<td>' + one.required.map(function (role) {
+                return '<code>' + kit.esc(role) + '</code>';
+              }).join(' ' + t.html('consoleRoles.body.or') + ' ') + '</td>' +
+              // The unknown roles are markup (each in its <code>), so the
+              // sentence is two messages around them.
+              '<td>' + (one.unknown.length
+                ? '<span class="state-none">' +
+                  t.html('consoleRoles.body.unknownBefore') +
+                  one.unknown.map(function (role) {
+                    return '<code>' + kit.esc(role) + '</code>';
+                  }).join(', ') + t.html('consoleRoles.body.unknownAfter') +
+                  '</span>'
+                : t.html('consoleRoles.body.allDefined')) + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="3"><span class="state-none">' +
+          t.html('consoleRoles.body.nothingNarrowed',
+                 { defaultRequired: register.defaultRequired }) +
+          '</span></td></tr>') +
+      '</tbody></table>' + requiringNav.foot +
+
+      '<h3 id="preview" data-tab="preview">' +
+      t.html('consoleRoles.body.previewHeading') +
+      '</h3>' +
+      kit.note(t.html('consoleRoles.body.previewBefore') + '<a ' +
+      'href="/admin/xacml/decide">' + t.html('consoleRoles.body.tryDecision') +
+      '</a>' + t.html('consoleRoles.body.previewAfter')) +
+      // NEITHER FIELD IS `required`, and that is not laziness. A browser will
+      // not SUBMIT a form with an empty required field at all — constraint
+      // validation blocks it silently — so a reader who pressed Ask with one
+      // box empty would get no navigation, no message and no way to tell that
+      // from a control that does nothing. The handler answers the honest
+      // thing instead: with nothing asked it draws no decision, exactly as
+      // `GET /admin-api/roles/preview` answers 200 with `answered: false`. It
+      // was `required` for one run, and `tests/vendored/sts_admin_console.js`
+      // caught it — that job submits every GET form on this console and
+      // asserts the browser actually went somewhere.
+      '<form method="get" action="/admin/roles"><div ' +
+      'class="formrow"><label>' + t.html('consoleRoles.body.thApplication') +
+      ' <input type="text" ' +
+      'name="application" list="role-preview-apps" value="' +
+        kit.esc((preview && preview.asked.application) || '') +
+        '"></label>' +
+      '<datalist id="role-preview-apps">' + applicationOptions +
+      '</datalist><label>' + t.html('consoleRoles.body.subject') +
+      ' <input type="text" name="subject" value="' +
+        kit.esc((preview && preview.asked.subject) || '') + '"></label>' +
+      '<label>' + t.html('consoleRoles.body.as') +
+      ' <select name="subjectKind">' +
+        '<option value="user">' + t.html('consoleRoles.body.aPerson') +
+        '</option>' +
+        '<option value="application"' +
+        (preview && preview.asked.subjectKind === 'application' ?
+         ' selected' :
+         '') +
+        '>' + t.html('consoleRoles.body.anApplication') +
+        '</option></select></label>' +
+      '<label>' + t.html('consoleRoles.body.issuing') +
+      ' <select name="kind">' + issuanceOptions +
+      '</select></label><button ' +
+      'type="submit">' + t.html('consoleRoles.body.ask') +
+      '</button></div></form>' +
+      (preview
+        ? (preview.available === false
+            ? kit.warn(kit.esc(preview.why))
+            : '<div class="' + (preview.allowed ? 'ok' : 'err') + '">' +
+              '<strong>' + t.html('consoleRoles.body.verdict', {
+                decision: preview.decision,
+                allowed: preview.allowed ? 'yes' : 'no' }) +
+              '</strong><br>' + kit.esc(preview.why) + '<br>' +
+              '<span class="sub">' + t.html('consoleRoles.body.holds') +
+              (preview.roles.length ? kit.codeList(preview.roles) :
+               t.html('consoleRoles.body.noRole')) +
+              t.html('consoleRoles.body.requires') +
+              (preview.required.length ? kit.codeList(preview.required) :
+               t.html('consoleRoles.body.nothing')) +
+              t.html('consoleRoles.body.policy') + '<code>' +
+              kit.esc(String(preview.policy ||
+                             t.text('consoleRoles.body.none'))) +
+              '</code>.</span></div>'
+          )
+        : '') +
+
+      '<h3 id="policy">' + t.html('consoleRoles.body.policyHeading') +
+      '</h3>' +
+      (register.policy
+        ? (register.policy.ok
+            ? kit.note('<strong>' + (register.policy.builtIn
+                ? t.html('consoleRoles.body.builtInDeciding')
+                : t.html('consoleRoles.body.customDeciding',
+                         { name: register.policy.name })) +
+              '</strong>' + t.html('consoleRoles.body.theRule') +
+              '<br><br>' +
+              (register.policy.builtIn
+                ? t.html('consoleRoles.body.seededBefore',
+                         { name: register.policy.name }) +
+                  '<a href="/admin/xacml/policies">' +
+                  t.html('consoleRoles.body.policies') + '</a>' +
+                  t.html('consoleRoles.body.seededAfter')
+                : t.html('consoleRoles.body.overrideBefore') +
+                  '<a href="/admin/xacml/editor">' +
+                  t.html('consoleRoles.body.editor') + '</a>' +
+                  t.html('consoleRoles.body.overrideAfter')) +
+              '<br><br>' + t.html('consoleRoles.body.notRoot'))
+            : kit.warn(t.html('consoleRoles.body.notEvaluated',
+                              { why: register.policy.why }) +
+              '<br><br>' + t.html('consoleRoles.body.notEvaluatedRest',
+                { defaultRequired: register.defaultRequired })))
+        : '') +
+
+      '<h3 id="claim">' + t.html('consoleRoles.body.claimHeading') + '</h3>' +
+      kit.note('<strong>' + (register.claim
+        ? t.html('consoleRoles.body.claimOn', { name: register.claimName })
+        : t.html('consoleRoles.body.claimOff')) +
+      '</strong>' + t.html('consoleRoles.body.claimRest', {
+        defaultRequired: register.defaultRequired,
+        name: register.claimName })) +
+
+      SettingsForms.forms(json.settings, '/admin/roles', undefined, t);
+
+    return inner;
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE ROLE'S PAGE (#604, rcbj: "add information about everything we know
+  // about the role on this new page. Create a second tab on this page called
+  // owners"). Reached from the role's name in Roles you have made, drawn
+  // from `GET /admin-api/roles?role=` (`json.role`). Two tabs: Role —
+  // everything the register and the directory hold about it, read-only, its
+  // controls staying on the list — and Owners, the group owners' pattern
+  // (#603) on a role: a table with a Remove each and a people-or-groups
+  // search whose Add writes at once.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws one role's page from its view.
+   *
+   * @param ctx - the render context (`WebKit.context()`)
+   * @param json - the answer of `GET /admin-api/roles?role=`
+   * @returns the body as HTML
+   */
+  static detail(ctx, json) {
+    const t = kitEscaping(ctx.t);
+    const listView = kit.listViewOf('/admin/roles', ctx.query);
+    const back = kit.note('<a href="' + kit.esc('/admin/roles' +
+      kit.queryWith(listView, {}) + '#roles') + '">' +
+      t.html('consoleRoles.detail.back') + '</a>.');
+    const role = json.role || { found: false, name: '' };
+    if (!role.found) {
+      return kit.note(t.html('consoleRoles.detail.notFound',
+                             { name: role.name })) + back;
+    }
+    if (role.builtIn) {
+      return '<h2><code>' + kit.esc(role.name) + '</code></h2>' +
+        kit.note(t.html('consoleRoles.detail.builtIn')) +
+        '<p>' + kit.esc(role.what) + '</p>' + back;
+    }
+    const none = '<span class="state-none">' +
+      t.html('consoleRoles.roleRow.none') + '</span>';
+    const listOf = function (values, href) {
+      return (values || []).length ? values.map(function (one) {
+        return '<div>' + (href
+          ? '<a href="' + kit.esc(href(one)) + '"><code>' + kit.esc(one) +
+            '</code></a>'
+          : '<code>' + kit.esc(one) + '</code>') + '</div>';
+      }).join('') : none;
+    };
+    const row = function (label, value) {
+      return '<tr><th>' + label + '</th><td>' + value + '</td></tr>';
+    };
+    const kindWords = role.console ? t.html('consoleRoles.roleRow.consoleRole')
+      : role.native ? t.html('consoleRoles.roleRow.nativeRole')
+        : t.html('consoleRoles.detail.configured');
+    const facts = '<table class="key">' +
+      row(t.html('consoleRoles.detail.thName'),
+          '<code>' + kit.esc(role.name) + '</code>') +
+      row(t.html('consoleRoles.detail.thKind'), kindWords) +
+      row(t.html('consoleRoles.detail.thApplication'), role.application
+        ? '<a href="' + kit.esc('/admin/applications?application=' +
+            encodeURIComponent(role.application)) + '"><code>' +
+          kit.esc(role.application) + '</code></a> ' +
+          t.html('consoleRoles.detail.carriedAs', { local: role.localName })
+        : t.html('consoleRoles.detail.realmWide')) +
+      row(t.html('consoleRoles.body.displayName'),
+          role.displayName ? kit.esc(role.displayName) : none) +
+      row(t.html('consoleRoles.body.description'),
+          role.description ? kit.esc(role.description) : none) +
+      row(t.html('consoleRoles.detail.thHeldBy'),
+          (role.memberTypes || []).length
+            ? kit.esc(RolesPage.roleMemberTypesLabel(role.memberTypes, t))
+            : t.html('consoleRoles.body.peopleAndApps')) +
+      row(t.html('consoleRoles.detail.thId'),
+          role.id ? '<code>' + kit.esc(role.id) + '</code>' : none) +
+      row('DN', role.dn ? '<code>' + kit.esc(role.dn) + '</code>' : none) +
+      row(t.html('consoleRoles.detail.thCreated'),
+          role.entry && role.entry.createdAt
+            ? '<code>' + kit.esc(role.entry.createdAt) + '</code>' : none) +
+      row(t.html('consoleRoles.detail.thModified'),
+          role.entry && role.entry.modifiedAt
+            ? '<code>' + kit.esc(role.entry.modifiedAt) + '</code>' : none) +
+      row(t.html('consoleRoles.detail.thOwners'),
+          String((role.owners || []).length)) +
+      '</table>';
+    const members = '<h3 id="role-members">' +
+      t.html('consoleRoles.detail.membersHeading',
+             { n: role.holderCount }) + '</h3>' +
+      kit.note(t.html('consoleRoles.detail.membersNote')) +
+      '<table><tr>' + (json.memberKinds || []).map(function (one) {
+        return '<th>' + t.html('consoleRoles.body.thHeldBy',
+                               { kind: one.label }) + '</th>';
+      }).join('') + '</tr><tr>' + (json.memberKinds || []).map(function (k) {
+        const href = k.kind === 'user'
+          ? function (one) {
+            return '/admin/users?user=' + encodeURIComponent(one);
+          }
+          : k.kind === 'application'
+            ? function (one) {
+              return '/admin/applications?application=' +
+                encodeURIComponent(one);
+            }
+            : null;
+        return '<td>' + listOf(role[k.field], href) + '</td>';
+      }).join('') + '</tr></table>';
+    const authorizes = '<h3 id="role-authorizes">' +
+      t.html('consoleRoles.detail.authorizesHeading') + '</h3>' +
+      listOf(role.permissions, null) +
+      '<h3 id="role-conferred">' +
+      t.html('consoleRoles.detail.conferredHeading') + '</h3>' +
+      listOf(role.conferredBy, function (one) {
+        return '/admin/applications?application=' + encodeURIComponent(one);
+      }) +
+      '<h3 id="role-required">' +
+      t.html('consoleRoles.detail.requiredHeading') + '</h3>' +
+      ((role.requiredBy || []).length ? role.requiredBy.map(function (one) {
+        return '<div><a href="' + kit.esc('/admin/applications?application=' +
+          encodeURIComponent(one.application)) + '">' + kit.esc(one.name) +
+          '</a></div>';
+      }).join('') : '<p class="state-none">' +
+        t.html('consoleRoles.detail.requiredNone') + '</p>');
+    const entry = role.entry
+      ? '<h3 id="role-entry">' + t.html('consoleRoles.detail.entryHeading') +
+        '</h3>' + GroupsPage.attributeTable({
+          attributes: role.entry.attributes || {},
+          operational: role.entry.operational || [] }, ctx.t)
+      : '';
+    const rolePanel = '<h2><code>' + kit.esc(role.name) + '</code></h2>' +
+      facts + members + authorizes + entry +
+      kit.note(t.html('consoleRoles.detail.editOnList'));
+    return kit.tabbedPanels('roletabs', [
+      { id: 'rtab-role', label: t.text('consoleRoles.detail.tabRole'),
+        html: rolePanel },
+      { id: 'rtab-owners', label: t.text('consoleRoles.detail.tabOwners'),
+        html: GroupsPage.ownersSection(t, {
+          dn: role.dn, owners: role.owners, maxOwners: role.maxOwners },
+          !!role.canWrite && !!ctx.write, kit.queryWith(listView, {}),
+          json.state, {
+            route: '/admin/roles/owners', id: 'role-owners', field: 'role',
+            value: role.name, stateKey: 'roleOwners', self: '',
+            lead: t.html('consoleRoles.owners.lead'),
+            leadRead: t.html('consoleRoles.owners.leadRead') }) +
+          // Closed to its owners (#607).
+          GroupsPage.ownerProtectionSection(t, role.ownership, {
+            route: '/admin/roles/owners', id: 'role-owners', kind: 'role',
+            name: role.name, back: kit.queryWith(listView, {}),
+            write: !!role.canWrite && !!ctx.write, state: json.state }) }
+    ]) + back;
+  }
+
+  // One row of the configured table. The three membership lists are drawn as
+  // one column each rather than one list of "members", because the three are
+  // looked up in three different places and a reader tracking down why somebody
+  // holds a role needs to know which one to look in.
+  /**
+   * Draws one row of the configured roles table: a column per member kind,
+   * the permissions, and a Delete form.
+   *
+   * A console role's people and groups link to Admin roles instead of
+   * carrying Remove buttons, and a console role cannot be deleted.
+   *
+   * @param one - the configured role
+   * @param listView - the list view the forms carry
+   * @param memberKinds - the kinds of member a role has, as the view
+   *   carries them (`memberKinds`)
+   * @param t - optional; the page's translator. `admin.ts` calls this
+   *   without one, and its words are then the default translator's
+   * @returns the table row as HTML
+   */
+  static roleRow(one, listView, memberKinds, t?) {
+    t = kitEscaping(t || kit.context().t);
+    const members = memberKinds.map(function (kindRow) {
+      const all = one[kindRow.field];
+      if (!all.length) {
+        return '<td><span class="state-none">' +
+               t.html('consoleRoles.roleRow.none') + '</span></td>';
+      }
+      // A ROLE HELD BY THOUSANDS DOES NOT DRAW THOUSANDS (#313). A cell
+      // shows the first MEMBERS_SHOWN and counts the rest; the register's
+      // answer still carries every member, and a member past the cut is
+      // removed by name with the form under the count.
+      const list = all.slice(0, RolesPage.MEMBERS_SHOWN);
+      const more = all.length - list.length;
+      const moreLine = more > 0
+        ? '<div class="sub">' + t.html('consoleRoles.roleRow.more',
+                                       { n: more }) + '</div>'
+        : '';
+      // A CONSOLE ROLE'S PEOPLE AND GROUPS ARE THE ROSTER'S (#303): drawn,
+      // with the door that changes them, and no Remove button here.
+      if (one.console && kindRow.kind !== 'application') {
+        return '<td>' + list.map(function (member) {
+          return '<div><code>' + kit.esc(member) + '</code></div>';
+        }).join('') + moreLine + '<span class="sub">' +
+          t.html('consoleRoles.roleRow.setOn') + '<a href="/admin/rbac">' +
+          t.html('consoleRoles.body.adminRoles') + '</a></span></td>';
+      }
+      const removeOther = more > 0
+        ? '<form method="post" action="/admin/roles" class="inline">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" value="remove-member">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '"><input type="hidden" name="kind" value="' +
+          kit.esc(kindRow.kind) + '"><label>' +
+          t.html('consoleRoles.roleRow.removeOther') +
+          ' <input type="text" name="member" required></label> ' +
+          '<button type="submit" class="danger">' +
+          t.html('consoleRoles.roleRow.remove') + '</button></form>'
+        : '';
+      return '<td>' + list.map(function (member) {
+        return '<div><code>' + kit.esc(member) + '</code> ' +
+          '<form method="post" action="/admin/roles" class="inline">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" value="remove-member">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '">' +
+          '<input type="hidden" name="kind" value="' + kit.esc(kindRow.kind) +
+          '"><input type="hidden" name="member" value="' + kit.esc(member) +
+          '"><button type="submit" class="danger">' +
+          t.html('consoleRoles.roleRow.remove') + '</button></form></div>';
+      }).join('') + moreLine + removeOther + '</td>';
+    }).join('');
+    // WHAT THE ROLE AUTHORIZES (#303), each removable unless the role is a
+    // console role, whose permission is fixed.
+    const permissions = (one.permissions || []).length
+      ? '<td>' + one.permissions.map(function (permission) {
+          return '<div><code>' + kit.esc(permission) + '</code>' +
+            (one.native ? '' :
+              ' <form method="post" action="/admin/roles" class="inline">' +
+              RolesPage.rolesBack(listView) +
+              '<input type="hidden" name="action" value="remove-permission">' +
+              '<input type="hidden" name="role" value="' +
+              kit.esc(one.name) + '"><input type="hidden" ' +
+              'name="permission" value="' + kit.esc(permission) + '">' +
+              '<button type="submit" class="danger">' +
+              t.html('consoleRoles.roleRow.remove') + '</button>' +
+              '</form>') + '</div>';
+        }).join('') + '</td>'
+      : '<td><span class="state-none">' + t.html('consoleRoles.roleRow.none') +
+        '</span></td>';
+    // THE NAME OPENS THE ROLE'S PAGE (#604).
+    return '<tr><td class="who"><a href="' + kit.esc('/admin/roles' +
+      kit.queryWith(listView || {}, { role: one.name })) + '"><code>' +
+      kit.esc(one.name) + '</code></a>' +
+      (one.console
+        ? ' <span class="sub">' + t.html('consoleRoles.roleRow.consoleRole') +
+          '</span>'
+        : (one.native
+          ? ' <span class="sub">' + t.html('consoleRoles.roleRow.nativeRole') +
+            '</span>'
+          : '')) +
+      // AN APPLICATION'S ROLE (#310): whose it is, and the name its tokens
+      // carry.
+      (one.application ? '<br><span class="sub">' +
+        t.html('consoleRoles.roleRow.roleOf', { application: one.application,
+                                                 local: one.localName }) +
+        '</span>' : '') +
+      (one.description ? '<br><span class="sub">' + kit.esc(one.description) +
+                         '</span>' : '') +
+      // ITS LABEL, WHO MAY HOLD IT AND ITS STABLE ID (#93). The display name
+      // is in a <b>, which a message may not carry, so it stays in code.
+      (one.displayName ? '<br><span class="sub">' +
+        t.html('consoleRoles.roleRow.shownAs') + '<b>' +
+        kit.esc(one.displayName) + '</b></span>' : '') +
+      ((one.memberTypes || []).length ? '<br><span class="sub">' +
+        t.html('consoleRoles.roleRow.heldBy', {
+          types: RolesPage.roleMemberTypesLabel(one.memberTypes, t) }) +
+        '</span>'
+        : '') +
+      (one.id ? '<br><span class="sub">' +
+        t.html('consoleRoles.roleRow.id', { id: one.id }) +
+        '</span>' : '') +
+      RolesPage.conferredBy(t, one, listView) +
+      '</td>' + members + permissions +
+      '<td class="act">' + RolesPage.roleEditFold(t, one, listView) +
+      (one.native
+        ? '<span class="sub">' + t.html('consoleRoles.roleRow.kept') +
+          '</span>'
+        : '<form method="post" action="/admin/roles">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" value="delete-role">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '">' +
+          '<button type="submit" class="danger">' +
+          t.html('consoleRoles.roleRow.delete') + '</button>' +
+          '</form>') + '</td></tr>';
+  }
+
+  // WHICH CLIENTS CONFER IT (#454): every person signing in through one of
+  // them holds the role on that client's token. Each with its Remove; the
+  // add is in the Edit fold.
+  /**
+   * Draws the clients that confer a role, each with a Remove form.
+   *
+   * @param t - the page's translator
+   * @param one - the configured role
+   * @param listView - the list view the forms carry
+   * @returns the lines as HTML, or nothing when no client confers it
+   */
+  static conferredBy(t, one, listView) {
+    const all = one.conferredBy || [];
+    if (!all.length) {
+      return '';
+    }
+    // The first MEMBERS_SHOWN, the rest counted and removable by name
+    // (#313), roleRow()'s arrangement.
+    const clients = all.slice(0, RolesPage.MEMBERS_SHOWN);
+    const more = all.length - clients.length;
+    const rest = more > 0
+      ? '<div class="sub">' + t.html('consoleRoles.roleRow.more',
+                                     { n: more }) + '</div>' +
+        '<form method="post" action="/admin/roles" class="inline">' +
+        RolesPage.rolesBack(listView) +
+        '<input type="hidden" name="action" ' +
+        'value="remove-conferring-client">' +
+        '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+        '"><label>' + t.html('consoleRoles.roleRow.removeOther') +
+        ' <input type="text" name="client" required></label> ' +
+        '<button type="submit" class="danger">' +
+        t.html('consoleRoles.roleRow.remove') + '</button></form>'
+      : '';
+    return '<br><span class="sub">' +
+      t.html('consoleRoles.conferredBy.lead') + '</span>' +
+      clients.map(function (client) {
+        return '<div><code>' + kit.esc(client) + '</code> ' +
+          '<form method="post" action="/admin/roles" class="inline">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" ' +
+          'value="remove-conferring-client">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '"><input type="hidden" name="client" value="' +
+          kit.esc(client) + '"><button type="submit" class="danger">' +
+          t.html('consoleRoles.roleRow.remove') + '</button></form></div>';
+      }).join('') + rest;
+  }
+
+  /**
+   * Draws the hidden "back" field the roles page's forms carry.
+   *
+   * @param listView - the list view to return to, or nothing
+   * @returns a hidden input as HTML
+   */
+  static rolesBack(listView) {
+    return '<input type="hidden" name="back" value="' +
+           kit.esc(kit.queryWith(listView || {}, {})) + '">';
+  }
+
+  // THE EDIT FOLD (#93): describe-role's form — the description, the display
+  // name and, for any role but a console role, who may hold it. Every field
+  // is posted, filled with what the role has, so saving one change keeps the
+  // others. A `<details>`, which needs no script (the policy's rule).
+  /**
+   * Draws a role's Edit fold: its description, display name and member
+   * types, posted as describe-role.
+   *
+   * @param t - the page's translator
+   * @param one - the configured role
+   * @param listView - the list view the form carries
+   * @returns the fold as HTML
+   */
+  static roleEditFold(t, one, listView) {
+    const current = (one.memberTypes || []).length === 1
+      ? one.memberTypes[0] : '';
+    const typeField = one.console ? ''
+      : '<label>' + t.html('consoleRoles.body.mayBeHeldBy') +
+        ' <select name="memberTypes">' +
+        [['', t.text('consoleRoles.body.peopleAndApps')],
+         ['user', t.text('consoleRoles.body.peopleOnly')],
+         ['application', t.text('consoleRoles.body.appsOnly')]]
+          .map(function (option) {
+          return '<option value="' + option[0] + '"' +
+                 (option[0] === current ? ' selected' : '') + '>' +
+                 kit.esc(option[1]) + '</option>';
+        }).join('') + '</select></label>';
+    return '<details><summary>' + t.html('consoleRoles.roleEditFold.edit') +
+      '</summary>' +
+      '<form method="post" action="/admin/roles">' +
+      RolesPage.rolesBack(listView) +
+      '<input type="hidden" name="action" value="describe-role">' +
+      '<input type="hidden" name="role" value="' + kit.esc(one.name) + '">' +
+      '<label>' + t.html('consoleRoles.body.displayName') +
+      ' <input name="displayName" value="' +
+      kit.esc(one.displayName || '') + '"></label>' +
+      '<label>' + t.html('consoleRoles.body.description') +
+      ' <input name="description" value="' +
+      kit.esc(one.description || '') + '"></label>' + typeField +
+      '<button type="submit">' + t.html('consoleRoles.roleEditFold.save') +
+      '</button></form>' +
+      // CONFERRED BY A CLIENT (#454), for any role but a console role, whose
+      // people are the roster's, or one only applications may hold.
+      (one.console || ((one.memberTypes || []).length &&
+                       one.memberTypes.indexOf('user') < 0) ? ''
+        : '<form method="post" action="/admin/roles">' +
+          RolesPage.rolesBack(listView) +
+          '<input type="hidden" name="action" ' +
+          'value="add-conferring-client">' +
+          '<input type="hidden" name="role" value="' + kit.esc(one.name) +
+          '"><label title="' +
+          kit.esc(t.text('consoleRoles.roleEditFold.conferTitle')) + '">' +
+          t.html('consoleRoles.roleEditFold.conferredBy') + ' ' +
+          '<input name="client" required></label>' +
+          '<button type="submit">' + t.html('consoleRoles.body.add') +
+          '</button></form>') +
+      '</details>';
+  }
+
+  // Who a role's member types let hold it, in words (#93).
+  /**
+   * Names a role's member types for people: "people", "applications".
+   *
+   * @param types - the role's `memberTypes`
+   * @param t - optional; the page's translator
+   * @returns the words
+   */
+  static roleMemberTypesLabel(types, t?) {
+    t = t || kit.context().t;
+    return (types || []).map(function (one) {
+      return one === 'user' ? t.text('consoleRoles.roleMemberTypesLabel.people')
+        : t.text('consoleRoles.roleMemberTypesLabel.applications');
+    }).join(' ' + t.text('consoleRoles.roleMemberTypesLabel.and') + ' ');
+  }
+}
+
+export = RolesPage;

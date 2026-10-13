@@ -35,6 +35,9 @@ ws-addr.xsd                                eacfd086db8e98692f0326b2605c6ac595468
 saml-schema-assertion-2.0.xsd              006eb7553843cb7baa9b08da2a9d444346c0e982fb9d9293babe08ede680924b  https://docs.oasis-open.org/security/saml/v2.0/saml-schema-assertion-2.0.xsd
 saml-schema-protocol-2.0.xsd               554250583cd5eacc6ce5f094f6ff50fc2547972c436dc96e2e7eb41abf2c817e  https://docs.oasis-open.org/security/saml/v2.0/saml-schema-protocol-2.0.xsd
 saml-schema-metadata-2.0.xsd               204bc7991055dbb889307abbd2ff58022753897dd7064a4d1ca13eb737d2617a  https://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd
+# The SAML V2.0 Condition for Delegation Restriction (#186): WS-Trust's ActAs
+# names the requester in it.
+sstc-saml-delegation.xsd                   350a3b09c1988bc27e4702bb4fea3d8cd0da2694f5c4514338b2a980965fa3a7  https://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-delegation.xsd
 
 # --- OASIS SAML 1.1 (published by document number; the name in the URL is
 #     ignored by the server, which is why 3408 is the ASSERTION schema) -------

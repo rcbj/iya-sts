@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -171,8 +171,11 @@ async function library(t) {
   a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'my client ' + spaced);
   t.check(a.text === 'unchanged', '2f. a client_id with a space parses ' +
           '(the last space divides)', JSON.stringify(a));
-  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' +
-                         state.replace(/^./, 'Z'));
+  // A DIFFERENT first character, always: replacing it with a fixed 'Z'
+  // changed nothing whenever the random value already began with one (one
+  // run in 64, CI run 36553670107's cluster job).
+  const tampered = (state[0] === 'Z' ? 'Y' : 'Z') + state.slice(1);
+  a = await askTheIframe(sm.IFRAME_SCRIPT, cookie, RP, 'c1 ' + tampered);
   t.check(a.text === 'changed', '2g. a tampered value is changed',
           JSON.stringify(a));
   for (const bad of ['nospace', 'c1 nodot', 'c1 abc.', ' abc.def']) {
@@ -287,6 +290,7 @@ function childMain() {
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const screen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const stsCrypto = require(ROOT + '/common/crypto');
@@ -324,22 +328,12 @@ function childMain() {
       if (!/\/authn\/login/.test(to)) {
         return first;
       }
-      const page = await request(port, 'GET', to.replace(/^https?:\/\/[^/]+/,
-                                                         ''));
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = username;
-      form.password = 'anything';
-      form.action = 'login';
-      const posted = await request(port, 'POST', '/authn/login',
-                                   { form: form });
+      // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+      // act, this test's jar kept; read as the 303 the form answered.
+      const posted = await screen.submit({ port: port, jar: jar,
+        at: String(to.replace(/^https?:\/\/[^/]+/, '')),
+        fields: { action: 'login', username: username,
+                  password: 'anything' } });
       const back = String(posted.headers.location || '');
       return back ? request(port, 'GET', back.replace(/^https?:\/\/[^/]+/, ''))
                   : posted;

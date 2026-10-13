@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -78,10 +78,11 @@ const ROOT = path.join(__dirname, '..');
 //   openbao                        a separate container's seed scripts, not
 //                                  a service that fails at runtime
 //
-// `xacml-pep/` IS SCANNED although it is a separate container: its failures
-// are operator-facing like the mock's, and its codes are in the one table (the
-// XPEP subsystem). Its Dockerfile copies common/error_codes.js to the image
-// root, which tests/xacml_pep.js pins.
+// `rust/` IS SCANNED, its `.rs` files beside the JavaScript and TypeScript
+// (#444): the remote PEP is a Rust binary since 2026-10-05, its failures are
+// operator-facing like the service's, and its codes are in the one table (the
+// XPEP subsystem) — raised by `sts_core::log::tag()`. `rust/target` is
+// cargo's build output and is not.
 //   xacml/conformance              the vendored OASIS suite's manifest
 //   env                            the appconfig files and the generated
 //                                  defaults.js
@@ -95,12 +96,14 @@ const ROOT = path.join(__dirname, '..');
 //                                  repository whose files are not this one's
 //                                  (2026-09-16; .dockerignore says the same)
 // ---------------------------------------------------------------------------
+// `companion` (#594): a second container, not the service, whose refusals
+// are its own pages and owe no code in this table.
 const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
                    'openbao', 'env', '.git', 'coverage', 'protos',
-                   '.claude'];
+                   '.claude', 'companion'];
 
 const SKIP_PATHS = ['common/vendored', 'xacml/conformance',
-                    'debugger/embedded'];
+                    'debugger/embedded', 'rust/target'];
 
 // kerberos/CLAUDE.md: the eight codec modules are vendored from the parent
 // project and not editable here, despite not living under common/vendored.
@@ -109,6 +112,18 @@ const VENDORED_FILES = ['kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
                         'kerberos/krb5_ndr.js', 'kerberos/krb5_pac.js',
                         'kerberos/krb5_primitives.js',
                         'kerberos/krb5_spnego.js'];
+
+// The two console bundles (#446) are esbuild's output of the `web_` modules
+// this scan already reads; `console.js` is MINIFIED since 2026-10-05, so one
+// of its lines holds a code literal beside a call that writes the page, and
+// the response-line check read that as a code reaching a client.
+// tests/jose_certificate_header.js skips the same two for the same reason.
+// The portal's two (#568), the front door's (#579) and the sign-in
+// screen's (#571) are the same kind of file.
+const GENERATED_FILES = ['admin-ui/console.bundle.js', 'admin-ui/console.js',
+                         'portal/portal.bundle.js', 'portal/portal-spa.js',
+                         'home/home.bundle.js', 'home/home-spa.js',
+                         'authn/authn.bundle.js', 'authn/authn-spa.js'];
 
 function sourceFiles() {
   log.debug("Entering sourceFiles().");
@@ -126,9 +141,12 @@ function sourceFiles() {
         walk(full);
         return;
       }
-      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50).
-      if (!isSourceFile(entry.name, names)) return;
+      // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50),
+      // or the Rust conversion's `.rs` (#444).
+      const rust = rel.indexOf('rust/') === 0 && /\.rs$/.test(entry.name);
+      if (!rust && !isSourceFile(entry.name, names)) return;
       if (VENDORED_FILES.indexOf(rel) >= 0) return;
+      if (GENERATED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });
     log.debug("Leaving walk().");
@@ -195,6 +213,8 @@ const FAILURE_PATTERNS = [
           '(RFC 9635 section 3.6)' },
   { re: /\binteractionError\(\s*res\b/, before: 4, after: 2,
     what: 'a GNAP interaction page refusing a link, a code or an answer' },
+  { re: /\bapiRefusal\(\s*res\b/, before: 4, after: 2,
+    what: 'a refusal on the GNAP interaction API, /gnap-api (#578)' },
   // ----- ACME / EST / SCEP (2026-09-13) ------------------
   // ===== ACME patterns =====
   { re: /\bacmeProblem\(\s*ctx\b/, before: 4, after: 4,

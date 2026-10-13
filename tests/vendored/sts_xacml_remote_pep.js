@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -380,9 +380,10 @@ var xacmlUser = null;
 async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
-    subject: "CN=xacml-user-1,OU=xacml-users,O=mock-sts tests" });
+    subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
-  assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
+  assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+    "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and section 3 cannot ask the PDP " +
     "anything at all.");
@@ -395,8 +396,9 @@ async function mintTheCredential() {
   //
   // The launcher posted it once, before this container started, and **the
   // truststore is a Map in the service's process that ANY job can empty**:
-  // `POST /tls/trust/clear` needs no credential, and a job that exercises the
-  // truststore is entitled to use it.
+  // `POST /tls/trust/clear` needed no credential until #597 deleted it, and a
+  // job that exercises the truststore through /admin-api/tls/trust is still
+  // entitled to remove what it finds.
   //
   // **NOTHING NOTICED UNTIL THE DAY A CLIENT CERTIFICATE STOPPED BEING A
   // TURNSTILE.** This container's pull, its heartbeat and — since the PIP
@@ -426,7 +428,8 @@ async function mintTheCredential() {
   if (containerAnchor.indexOf("BEGIN CERTIFICATE") >= 0) {
     const back = await credentials.trustAnchor(base, containerAnchor);
     assert.ok(back.ok,
-      "POST /tls/trust should accept the PEP container's Root CA, which the " +
+      "POST /admin-api/tls/trust/add should accept the PEP container's " +
+      "Root CA, which the " +
       "launcher minted and exported as XACML_PEP_CA_PEM; it answered " +
       back.status + ". Every assertion below rests on that container's " +
       "certificate VERIFYING, and an earlier job in this run may have " +
@@ -474,6 +477,11 @@ function certPostJson(url, payload) {
       rejectUnauthorized: false,
       cert: xacmlUser ? xacmlUser.certPem : undefined,
       key: xacmlUser ? xacmlUser.keyPem : undefined,
+      // A full handshake every time (#406): the main port's sessions resume on
+      // either node, and a session first made before this job's anchor
+      // reached that node keeps its "not verified" verdict — a 403 for an
+      // unauthenticated caller in the 2026-10-07 cluster run.
+      agent: false,
       headers: { "Content-Type": "application/json",
                  "Content-Length": Buffer.byteLength(data) }
     }, function (response) {
@@ -851,7 +859,7 @@ async function attachToThePep() {
 function containerSubject() {
   log.debug("Entering containerSubject().");
   log.debug("Leaving containerSubject().");
-  return "CN=" + PEP_NAME + ",OU=remote-peps,O=mock-sts tests";
+  return "CN=" + PEP_NAME + ",OU=remote-peps,O=iya-sts tests";
 }
 
 // The entry and the membership, in THIS RUN'S REALM — the directory is per
@@ -891,7 +899,8 @@ async function mintTheContainersCredential() {
   const cred = await credentials.mint({ subject: containerSubject() });
   const posted = await credentials.trustAnchor(base, cred.anchorPem);
   assert.ok(posted.ok,
-    "POST /tls/trust should accept the Root CA for the PEP container this " +
+    "POST /admin-api/tls/trust/add should accept the Root CA for the PEP " +
+    "container this " +
     "job is about to start; it answered " + posted.status + ". Without the " +
     "anchor that container's certificate verifies against nothing, it " +
     "registers as an unauthenticated caller, and the PDP refuses it with a " +
@@ -902,7 +911,7 @@ async function mintTheContainersCredential() {
   // one machine must not share it, and this one is removed with the
   // container. `mkdtemp` rather than a name built from the stamp, so the
   // collision cannot be constructed at all.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "mock-sts-pep-cert-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "iya-sts-pep-cert-"));
   // The leaf FOLLOWED BY THE INTERMEDIATE, which is what `certPem` already
   // is — the service holds only the root, so a container sending the leaf
   // alone presents a chain that cannot be built.
@@ -1314,9 +1323,10 @@ async function itRegistersAndPulls() {
       "drives \"" + PEP_NAME + "\"");
     assert.strictEqual(seen.registration.authenticated, true,
       "OVER MUTUAL TLS, BETWEEN TWO CONTAINERS. The launcher minted a client " +
-      "certificate with tests/tools/pep-credential.js, POSTed its Root CA to " +
-      "/tls/trust and mounted the leaf and key into this container; the " +
-      "handshake at /xacml/pep/register carried it. It says " +
+      "certificate with tests/tools/pep-credential.js, added its Root CA " +
+      "through /admin-api/tls/trust/add and mounted the leaf and key into " +
+      "this container; the handshake at /xacml/pep/register carried it. " +
+      "It says " +
       JSON.stringify(seen.registration) + pepLog());
   });
 
@@ -2137,6 +2147,98 @@ async function aDeployedPolicyConverges() {
 }
 
 // ===========================================================================
+// 4b. AN OBLIGATION THE CONTAINER CANNOT DISCHARGE (#596).
+//
+// Section 7.2's part implementations skip: an obligation is the half of a
+// decision that says "yes, AND you must also do this", so a PEP that cannot
+// discharge one turns a Permit into a REFUSAL. This was asserted at the
+// service's embedded demonstration PEP, `/xacml/protected`, in
+// `sts_xacml_endpoints.js` section 5 until #596 deleted that PEP; it is
+// asserted HERE now, at the PEP that replaced it, which is the stronger
+// claim: the obligation is written at the PAP, PULLED, and refused in
+// another process.
+//
+// The pair is what makes it assertable: the editor's `add-policy-obligation`
+// mints `urn:sts:xacml:obligation:1`, which no PEP knows, and
+// `edit-obligation` renames it to the one both PEPs discharge. Same policy,
+// same request, same Permit — and the enforcement flips, which shows the
+// refusal was about the OBLIGATION and not about the decision.
+// ===========================================================================
+const DISCHARGEABLE = "urn:sts:xacml:obligation:log";
+
+async function anUndischargeableObligationRefuses() {
+  log.debug("Entering anUndischargeableObligationRefuses().");
+  log.info("=== An obligation the container cannot discharge ===");
+  const ask = { subject: ADMIN_PERSON, employeeType: "admin", action: "GET" };
+
+  await act("add-policy-obligation", { policy: POLICY_B, path: "",
+                                       on: "Permit" },
+            "added an obligation to the root policy");
+  const refused = await until(
+    "the PEP to refuse a Permit carrying an obligation it cannot discharge",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 403 && r.body.decision === "Permit",
+               r: r, note: "the PEP answered " + r.status + " (" +
+                           r.body.decision + ")" };
+    });
+  check("an undischargeable obligation turns the Permit into a refusal — " +
+        "in the container, on policy it pulled", function () {
+    const body = refused.r.body;
+    assert.strictEqual(body.allowed, false);
+    assert.ok(String(body.why).indexOf("obligation") > 0,
+      "the refusal should name the obligation as the cause; it says: " +
+      body.why);
+    assert.deepStrictEqual(body.obligations,
+      [{ id: "urn:sts:xacml:obligation:1", discharged: false }],
+      "the obligation should be reported UNDISCHARGED rather than omitted; " +
+      "it reports " + JSON.stringify(body.obligations));
+  });
+
+  const tree = await get(api("/xacml/editor?policy=" + POLICY_B));
+  const obligation = ((tree.body && tree.body.tree) || [])
+    .filter(function (row) {
+      return row.kind === "obligation";
+    })[0];
+  assert.ok(obligation, "no obligation row in the editor tree: " +
+    String(tree.text).slice(0, 300));
+  await act("edit-obligation", { policy: POLICY_B, path: obligation.path,
+                                 id: DISCHARGEABLE, on: "Permit" },
+            "renamed the obligation to the one a PEP knows");
+  const discharged = await until(
+    "the PEP to discharge the obligation it knows",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 200, r: r,
+               note: "the PEP answered " + r.status };
+    });
+  check("the one obligation the PEP knows IS discharged, and access returns",
+        function () {
+    assert.deepStrictEqual(discharged.r.body.obligations,
+      [{ id: DISCHARGEABLE, discharged: true }],
+      "and it should say so rather than silently allowing; it reports " +
+      JSON.stringify(discharged.r.body.obligations));
+  });
+
+  await act("remove", { policy: POLICY_B, path: obligation.path },
+            "removed the obligation again");
+  const clean = await until("the PEP to hold the policy without it",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 200 && r.body.obligations.length === 0,
+               r: r, note: "the PEP reports " +
+                           JSON.stringify(r.body.obligations) };
+    });
+  check("removing the obligation leaves an ordinary Permit", function () {
+    assert.strictEqual(clean.r.body.decision, "Permit");
+  });
+
+  log.info("[obligations] OK — one Permit enforced three ways in another " +
+           "process, and only the obligation changed.");
+  log.debug("Leaving anUndischargeableObligationRefuses().");
+}
+
+// ===========================================================================
 // 5. A DISABLED POLICY STOPS BEING ENFORCED — WHICH IS A DIFFERENT CLAIM FROM
 //    "IT IS LEFT OUT OF THE PULL".
 //
@@ -2409,18 +2511,55 @@ async function theNudgeIsDelivered(polledMs) {
   // the PEP now records what asked for the pull that changed its holding
   // (`sync.js`'s `lastChangeCause`), and that is asserted instead. The
   // latency is still logged.
-  check("and it was the NUDGE's pull that brought the change in, not a poll",
+  // AND SINCE 2026-09-30 A POLL MAY WIN THE RACE, BY A MOMENT, AND THAT IS
+  // NOT A FAILURE. The PEP polls every POLL_MS on its own clock, so a poll
+  // that fires between the save and the nudge's pull brings the change, and
+  // the nudge's pull finds nothing new: `lastChangeCause` says "poll" for a
+  // PEP that did exactly what it should. It failed a single-node run at 1.3s
+  // of latency — about one run in four at that speed. What the check exists
+  // to catch is a nudge ANSWERED AND NOT ACTED ON, so it now reads the PEP's
+  // record of its last nudge-caused pull (`lastNudgeAt`, `lastNudgeResult`,
+  // `sync.js`): either that pull brought the change, or it ran after the
+  // change was in and found it already there.
+  const nudged = await until(
+    "the PEP to record the pull this nudge caused",
+    async function () {
+      const seen = (await pepOverview()).holding;
+      return { ok: !!seen.lastNudgeAt &&
+                   Date.parse(seen.lastNudgeAt) >= started - 1000,
+               note: "its last nudged pull is " +
+                     (seen.lastNudgeAt || "none") + " (" +
+                     (seen.lastNudgeResult || "no result") + ")",
+               holding: seen };
+    });
+  const holding = nudged.holding || (await pepOverview()).holding;
+  check("and the NUDGE's pull acted on it, whether or not a poll beat it",
         function () {
-    assert.strictEqual(after.holding.lastChangeCause, "nudge",
+    const byNudge = holding.lastChangeCause === "nudge";
+    // THE NUDGE BROUGHT IT, AND A POLL ALREADY IN FLIGHT ANSWERED LATER
+    // (2026-10-07). A poll that set off with the old ETag before the nudged
+    // pull landed comes back "changed" too, a few milliseconds after, and is
+    // then the last change recorded — memory mode, 0de7bca4: the nudge's
+    // pull "changed" at :40.671 and the poll at :40.682. The nudge acted on
+    // it; what this check refuses is a nudged pull that found nothing.
+    const nudgeChanged = holding.lastNudgeResult === "changed" &&
+      Date.parse(holding.lastNudgeAt) >= started - 1000;
+    const pollFirst = holding.lastChangeCause === "poll" &&
+      holding.lastNudgeResult === "unchanged" &&
+      Date.parse(holding.lastNudgeAt) >= Date.parse(holding.lastChangeAt);
+    assert.ok(byNudge || nudgeChanged || pollFirst,
       "the PEP records what asked for the pull that last changed its " +
-      "holding, and it says \"" + after.holding.lastChangeCause + "\" (at " +
-      after.holding.lastChangeAt + "). A nudge recorded as delivered whose " +
-      "pull did not bring the change is a PEP that answers a nudge without " +
-      "acting on it, which looks identical from every other angle. This " +
+      "holding (\"" + holding.lastChangeCause + "\" at " +
+      holding.lastChangeAt + ") and what its last nudged pull found (\"" +
+      holding.lastNudgeResult + "\" at " + holding.lastNudgeAt + "). A " +
+      "nudge recorded as delivered whose pull neither brought the change nor " +
+      "found it already there is a PEP that answers a nudge without acting " +
+      "on it, which looks identical from every other angle. This " +
       "convergence took " + elapsed + "ms against " + polledMs +
       "ms by polling and a " + POLL_MS + "ms interval." + pepLog());
     log.info("Nudged convergence: " + elapsed + "ms, against " + polledMs +
-             "ms by polling and a " + POLL_MS + "ms interval.");
+             "ms by polling and a " + POLL_MS + "ms interval; the change " +
+             "came by " + holding.lastChangeCause + ".");
   });
 
   log.info("[nudge] OK — the PDP dialled the PEP across the " + pep.network +
@@ -2924,6 +3063,7 @@ async function test() {
       await itDecidesInItsOwnProcess();
       await thePipReachesTheDirectory();
       const polledMs = await aDeployedPolicyConverges();
+      await anUndischargeableObligationRefuses();
       await aDisabledPolicyStopsBeingEnforced();
       await theNudgeIsDelivered(polledMs);
       await thePdpSeesWhatItNeverSaw();
@@ -2940,8 +3080,8 @@ async function test() {
   // A FLOOR ON THE COUNT, for the reason sts_admin_console.js gives: a section
   // that stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure mode a suite cannot report about itself.
-  assert.ok(checks >= 26,
-    "only " + checks + " checks ran. This file makes more than twenty-six " +
+  assert.ok(checks >= 29,
+    "only " + checks + " checks ran. This file makes more than twenty-nine " +
     "against a healthy service, so a count this low means a SECTION STOPPED " +
     "BEING CALLED rather than that the surface got simpler.");
   log.info(checks + " checks passed.");

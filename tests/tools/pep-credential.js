@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -23,15 +23,16 @@
 // The mock has had a certificate authority of its own since 2026-09-11
 // (`common/pki.js`; its listener certificate is a leaf of the service Root),
 // but the PEP stands for a workload whose authority is SOMEBODY ELSE'S. What
-// admits a foreign authority is the TRUSTSTORE — `POST /tls/trust` — which
+// admits a foreign authority is the TRUSTSTORE — `POST
+// /admin-api/tls/trust/add` — which
 // holds no foreign anchor until one is added at runtime, precisely because
 // the CA in question does not exist anywhere until somebody builds it
 // (`tls/CLAUDE.md`).
 //
 // The parent project's `tests/pki_mutual_tls.js` has done exactly this since
 // long before the remote PEP existed: it builds a Root CA and an Issuing CA in
-// a browser, issues a client certificate from them, POSTs the CA to
-// `/tls/trust`, and then reads back which chain the mock built out of what was
+// a browser, issues a client certificate from them, POSTs the CA to the
+// truststore, and then reads back which chain the mock built out of what was
 // sent. This file is that flow with a command line instead of a browser.
 //
 // **SO NOTHING WAS ADDED TO THE MOCK OR TO THE PEP TO PROVIDE THIS
@@ -87,7 +88,7 @@
 // USAGE
 //
 //   node tests/tools/pep-credential.js --url=https://localhost:8081 \
-//        --out=/tmp/pep-certs --subject="CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+//        --out=/tmp/pep-certs --subject="CN=remote-pep-1,OU=remote-peps,O=iya-sts"
 //
 // **EVERY FLAG TAKES `=`.** `--url https://…` leaves `--url` empty and reports
 // the URL as an unknown option; this block showed that form until it was fixed,
@@ -132,7 +133,7 @@ const REPO = process.env.MOCK_STS_DIR ||
 const x509 = require(path.join(REPO, 'common', 'vendored', 'x509.js'));
 const keys = require(path.join(REPO, 'common', 'vendored', 'key_material.js'));
 
-const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=mock-sts';
+const DEFAULT_SUBJECT = 'CN=remote-pep-1,OU=remote-peps,O=iya-sts';
 
 // ---------------------------------------------------------------------------
 // The arguments. Hand-parsed for `tests/run.js`'s reason: this directory takes
@@ -195,40 +196,34 @@ function say(opts, line) {
 // fetching that anchor first over an unverified connection, which is the same
 // trust decision one step further away.
 // ---------------------------------------------------------------------------
-// **THE GATED DOOR FIRST (2026-09-18).** `POST /tls/trust` needs no credential,
-// so product mode refuses it — and a product-mode deployment is exactly where a
-// test's anchor has to go through `POST /admin-api/tls/trust/add` instead,
-// which is gated by the management API's access token and persisted in
-// ou=trustAnchors, so every node of a cluster applies it. That door is tried
-// first whenever a token can reach it (a job's preload attaches one to any
-// /admin-api request; a launcher passes STS_ADMIN_API_TOKEN), and **it VERIFIES
-// the connection**, because it carries a bearer token and the argument above
-// is about a request with no secret in it. `/tls/trust` — unverified, as
-// argued — is the fallback, for a development stack reached before anything
-// trusts its certificate.
+// **THE GATED DOOR, AND SINCE #597 THE ONLY ONE (2026-10-12).** The anchor
+// goes through `POST /admin-api/tls/trust/add`, which is gated by the
+// management API's access token (a job's preload attaches one to any
+// /admin-api request; a launcher passes STS_ADMIN_API_TOKEN) and persisted
+// in ou=trustAnchors, so every node of a cluster applies it — and **it
+// VERIFIES the connection**, because it carries a bearer token and the
+// argument above is about a request with no secret in it (the launchers
+// fetch the service's own certificate first, `tests/tools/trust.js`).
+// `POST /tls/trust`, the open test control this fell back to for a
+// development stack, was deleted by #597, so there is no fallback: a
+// caller with no token, or no anchor for the service, is told so.
 function postAnchor(url, pem) {
   log.debug("Entering postAnchor().");
   const base = String(url || '').replace(/\/+$/, '');
   const token = process.env.STS_ADMIN_API_TOKEN || '';
-  const gated = send(base + '/admin-api/tls/trust/add', 'application/json',
-    JSON.stringify({ certificates: pem }),
-    token ? { Authorization: 'Bearer ' + token } : {}, true);
   log.debug("Leaving postAnchor().");
-  return gated.then(function (answer) {
-    if (answer.ok) {
+  return send(base + '/admin-api/tls/trust/add', 'application/json',
+    JSON.stringify({ certificates: pem }),
+    token ? { Authorization: 'Bearer ' + token } : {}, true)
+    .then(function (answer) {
+      if (!answer.ok) {
+        answer.why = 'POST /admin-api/tls/trust/add answered ' +
+          (answer.status || answer.why) + ' ' +
+          String(answer.body || '').slice(0, 200) +
+          (token ? '' : ' (no STS_ADMIN_API_TOKEN was set)');
+      }
       return answer;
-    }
-    return send(base + '/tls/trust', 'text/plain', pem, {}, false)
-      .then(function (open) {
-        if (!open.ok) {
-          open.why = 'POST /admin-api/tls/trust/add answered ' +
-            (answer.status || answer.why) + ' and POST /tls/trust answered ' +
-            (open.status || open.why) + ' ' + String(open.body || '')
-              .slice(0, 200);
-        }
-        return open;
-      });
-  });
+    });
 }
 
 function send(where, type, body, extraHeaders, verify) {
@@ -364,12 +359,12 @@ async function mint(opts) {
   const issuingList = host ? await host.reserve('issuing')
     : (options.crlBase ? { url: options.crlBase + '/issuing.crl' } : null);
   const root = await issue({
-    subject: options.rootSubject || 'CN=mock-sts test Root CA,O=mock-sts tests',
+    subject: options.rootSubject || 'CN=iya-sts test Root CA,O=iya-sts tests',
     ca: true, pathLen: 1, years: 10
   });
   const issuing = await issue({
     subject: options.issuingSubject ||
-             'CN=mock-sts test Issuing CA,O=mock-sts tests',
+             'CN=iya-sts test Issuing CA,O=iya-sts tests',
     ca: true, pathLen: 0, years: 5,
     crl: rootList ? rootList.url : '',
     issuer: { certificatePem: root.pem, privateKeyPem: root.privateKeyPem,
@@ -473,7 +468,8 @@ async function main() {
      '    issues   ' + leaf.subject + '   (serial ' + leaf.serialHex + ')',
      '',
      'pep.crt is the LEAF followed by the ISSUING CA, which is what the PEP',
-     'presents. Only the ROOT was POSTed to ' + opts.url + '/tls/trust, so the',
+     'presents. Only the ROOT was added to the truststore at ' + opts.url,
+     '(POST /admin-api/tls/trust/add), so the',
      'mock has to build the path from what arrives to the anchor it holds.',
      'The leaf expires ' + leaf.notAfter + '.',
      ''].join('\n'));
@@ -490,9 +486,9 @@ async function main() {
   const posted = await postAnchor(opts.url, root.pem);
   if (!posted.ok) {
     process.stderr.write('Could not add the Root CA to ' + opts.url +
-      '/tls/trust: ' + (posted.why || ('HTTP ' + posted.status + ' ' +
-      String(posted.body).slice(0, 300))) + '\nThe certificate files were ' +
-      'written, but the mock will not verify them: this credential is ' +
+      '/admin-api/tls/trust/add: ' + (posted.why || ('HTTP ' +
+      posted.status + ' ' + String(posted.body).slice(0, 300))) +
+      '\nThe certificate files were written, but the mock will not verify them: this credential is ' +
       'useless until the anchor is trusted.\n');
     process.exit(1);
   }
@@ -512,7 +508,7 @@ async function main() {
 
 // Guarded so that a test can require this file for `mint()` and `trustAnchor()`
 // without it parsing arguments and writing files — the same guard
-// `xacml-pep/pep.js` and `common/worker.js` carry, for the same reason.
+// `xacml-pep/pep.js` and `common/request_worker.ts` carry, for the same reason.
 if (require.main === module) {
   main().catch(function (error) {
     process.stderr.write((error && error.stack ? error.stack : String(error)) +

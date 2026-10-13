@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -107,6 +107,10 @@ const SERVICE_PAGES = [
   '/admin/secrets',
   // Every realm's partition of every cache, and the process-wide ones (#74).
   '/admin/caches',
+  // The request, hosted-surface and post-quantum pools of the node (#327).
+  '/admin/worker-pools',
+  // The container's CPU and memory and every process of the node (#329).
+  '/admin/node-health',
   '/admin/debugger',
   '/admin/tls',
   // `/admin/kerberos` and `/admin/kerberos/principals` LEFT THIS LIST on
@@ -142,7 +146,10 @@ const SERVICE_PAGES = [
  */
 const SERVICE_SETTING_PREFIXES = [
   'admin.', 'adminApi.', 'realms.', 'workers.', 'persistence.', 'debugger.',
-  'tls.', 'keys.', 'security.passwordHash', 'risk.'
+  'tls.', 'keys.', 'security.passwordHash', 'risk.',
+  // Which hosts a realm's attribute sources may name (#94): the service's
+  // bound on its realm administrators, so not theirs to widen.
+  'attributeSources.hostPatterns'
 ];
 
 /**
@@ -164,11 +171,12 @@ const SERVICE_SETTING_KEYS = [
   'spiffe.workloadPort', 'spiffe.serverPort',
   // KERBEROS, PER KEY SINCE 2026-09-15 (it was the `krb5.` prefix). A realm
   // carries its own Kerberos realm, principal database and keys, so the rows
-  // those are built from are the realm administrator's. These six are not:
-  // the two SOCKETS are bound once for the process, and the development-mode
-  // trust is the DEFAULT realm's second Kerberos realm — no other realm has
-  // one, so setting them on a realm would say something untrue.
-  'krb5.kdcPort', 'krb5.servicePort', 'krb5.trustedRealm',
+  // those are built from are the realm administrator's. These five are not:
+  // the KDC's SOCKET is bound once for the process (the protected service's,
+  // `krb5.servicePort`, left with #595), and the development-mode trust is
+  // the DEFAULT realm's second Kerberos realm — no other realm has one, so
+  // setting them on a realm would say something untrue.
+  'krb5.kdcPort', 'krb5.trustedRealm',
   'krb5.trustPassword', 'krb5.trustedDomainSid', 'krb5.trustedKrbtgtPassword'
 ];
 

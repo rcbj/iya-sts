@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -18,31 +18,76 @@
 // Every refusal is read as its GNAP ERROR CODE (RFC 9635 section 3.6), never by
 // its status alone, and every response a refusal arrives in must be `no-store`.
 //
-// It is a LOCAL HELPER (tests/vendored/MANIFEST.js), owned here. Its only
-// requires are `assert`, node's crypto and `gnap_client.js`.
+// THE RESOURCE SERVER, WITH `peer: true` (#586). The service's
+// demonstration resource server (`/gnap/rs/resource`, `/gnap/rs/spend`) was
+// development only since #585 and was deleted by #593, so a job that
+// presents its tokens at a resource server asks for the TEST PEER's
+// (tests/peer/peer_gnap.js): `h.RS`, `h.SPEND` and `h.DEMO` then name the
+// peer's resource, spend operation and access type, and `h.usePeer()`, once
+// the realm exists, configures a peer tenant for it and REGISTERS the peer
+// there as an ordinary GNAP resource server — its key, its address, and the
+// type declared with the spend limits — so a right of that type naming no
+// location is audienced to the peer. `h.RS_TLS` is the same resource on the
+// peer's TLS listener — the one a mutual-TLS proof is made on — and
+// `h.peerCaPem`, once `usePeer()` has run, the anchor to verify that
+// listener with. Without the option, or with no peer, `h.RS`, `h.SPEND`
+// and `h.RS_TLS` are null: there is no resource server of the service's own
+// to fall back to (#593), and `h.DEMO` is the peer's type, which no
+// resource server in the realm declares until `usePeer()` — a grant for it
+// is refused `invalid_request` (STS-GNAP-0904).
+//
+// It is a LOCAL HELPER (tests/vendored/MANIFEST.js), owned here. Its
+// requires are `assert`, node's crypto, `gnap_client.js` and `test_peer.js`.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const gnap = require("./gnap_client.js");
+const testPeer = require("./test_peer.js");
 
-// `options`: { base, realm, password, log }. Answers the harness bound to them.
+// The access type the peer's resource server serves, declared in the realm
+// by the job (`usePeer()`); the peer's default, so a tenant configured
+// without one agrees.
+const PEER_TYPE = "urn:iya-sts:test-peer:resource";
+
+// `options`: { base, realm, password, log, peer }. Answers the harness bound
+// to them. An EMPTY realm is the DEFAULT realm (#497): the chain jobs leave
+// their entries there, as the other protocols' chain jobs do, for the
+// delegation picture. `realmBase` and `realmApi` are then the service's own.
+// `peer` puts the resource server on the test peer (above).
 function harness(options) {
   const base = options.base;
-  const REALM = options.realm;
+  const REALM = options.realm || "";
   const PASSWORD = options.password;
   const log = options.log;
   const api = base + "/admin-api";
-  const realmBase = base + "/realm/" + REALM;
+  const realmBase = REALM ? base + "/realm/" + REALM : base;
   const realmApi = realmBase + "/admin-api";
   const GRANT = realmBase + "/gnap";
   const FINISH = "https://client.gnap.test/callback";
-  const DEMO = "urn:mock-sts:gnap:demo";
   const self = { base: base, api: api, realm: REALM, realmBase: realmBase,
                  realmApi: realmApi,
-                 GRANT: GRANT, FINISH: FINISH, DEMO: DEMO, RS: realmBase +
-                     "/gnap/rs/resource",
+                 GRANT: GRANT, FINISH: FINISH, DEMO: PEER_TYPE, RS: null,
+                 SPEND: null,
+                 RS_TLS: null,
+                 peerCaPem: null,
+                 peer: null,
                  checks: 0 };
+  // The peer's names are fixed NOW, before any request, because the jobs
+  // copy `h.RS` and `h.DEMO` into constants at load. The URLs are built on
+  // STS_TEST_PEER_URL — the address this runner dials and so the one its
+  // signatures cover.
+  const peerTenant = options.peer && testPeer.available()
+    ? testPeer.tenantId("gnap-" + (REALM || "default")) : null;
+  if (peerTenant) {
+    const at = testPeer.url() + "/t/" + encodeURIComponent(peerTenant);
+    self.RS = at + "/gnap/resource";
+    self.SPEND = at + "/gnap/spend";
+    self.RS_TLS = self.RS.replace(/^http:/, "https:");
+  }
+  const accessType = self.DEMO;
 
   // Every finish URI a key is registered with (2026-09-21). Product mode uses
   // only a registered one (STS-GNAP-0101), so a job finishing anywhere but
@@ -236,17 +281,107 @@ function harness(options) {
         log.debug("Leaving go().");
         return { status: r.status, location: r.headers.get("location") || "",
                  text: await r.text() };
+      },
+      // A REQUEST TO `/gnap-api` (#578), as the interaction surface's page
+      // sends it: JSON, the cookies, and — for an act — this service's
+      // Origin and the view's CSRF token.
+      async json(method, url, body, csrf) {
+        log.debug("Entering json().");
+        const headers = { accept: "application/json" };
+        const cookie = Object.keys(b.jar)
+                             .map(function (k) { return k + "=" + b.jar[k]; })
+                             .join("; ");
+        if (cookie) {
+          headers.cookie = cookie;
+        }
+        if (method !== "GET") {
+          headers["content-type"] = "application/json";
+          headers.origin = new URL(self.absolute(url)).origin;
+          headers["x-csrf-token"] = csrf || "";
+        }
+        const r = await fetch(self.absolute(url),
+                              { method: method, redirect: "manual",
+                                headers: headers,
+                                body: method === "GET" ? undefined
+                                                       : JSON.stringify(body) });
+        (r.headers.getSetCookie ? r.headers.getSetCookie() : []).forEach(
+            function (one) {
+          const pair = String(one).split(";")[0];
+          const name = pair.split("=")[0];
+          b.jar[name] = pair.slice(name.length + 1);
+        });
+        const text = await r.text();
+        let json = null;
+        try {
+          json = JSON.parse(text);
+        } catch (e) {
+          log.debug("Caught in json(): " + ((e && e.message) || e));
+          // Not JSON: the caller reads the status and the text.
+          json = null;
+        }
+        log.debug("Leaving json().");
+        return { status: r.status, text: text, json: json };
       }
     };
     log.debug("Leaving browser().");
     return b;
   };
 
-  self.csrfOf = function (text) {
-    log.debug("Entering csrfOf().");
-    log.debug("Leaving csrfOf().");
-    return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-            [])[1] || "";
+  // ===========================================================================
+  // THE INTERACTION PAGES ARE A STATIC SURFACE (#578). `/gnap/approve/{id}`
+  // answers a shell whose page the browser draws from
+  // `GET /gnap-api/approve/{id}`, and the answer is `POST` there — JSON,
+  // this service's Origin, `X-CSRF-Token` the view's `csrf`. A page that
+  // only says something (a refusal, a decision made on the GET, a request
+  // sent to its owner) is the shell carrying its view in `data-sts-state`.
+  // The jobs read the VIEW where they read the page's markup, and an act's
+  // answer as the 303 it replaced: `location` — the client's finish URI with
+  // hash and interact_ref, or the page again — is `{ status: 303, location
+  // }`; a view drawn in place is `{ status, json }`.
+  // ===========================================================================
+  self.stateOf = function (text) {
+    log.debug("Entering stateOf().");
+    const m = /data-sts-state="([^"]*)"/.exec(String(text || ""));
+    if (!m) {
+      log.debug("Leaving stateOf(). None.");
+      return null;
+    }
+    const state = JSON.parse(m[1].replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&"));
+    log.debug("Leaving stateOf().");
+    return state && state.view ? state.view : null;
+  };
+
+  // The approval page's operation on `/gnap-api`, under the same realm.
+  self.apiOf = function (approve) {
+    log.debug("Entering apiOf().");
+    log.debug("Leaving apiOf().");
+    return String(approve).replace("/gnap/approve/", "/gnap-api/approve/");
+  };
+
+  // The user code page (#578): its shell (which mints the arrival cookie),
+  // its view (the CSRF token), and the code sent to `/gnap-api/code`. The
+  // answer read as the form's was: the approval page as a 303, or a refusal.
+  self.enterCode = async function (b, code) {
+    log.debug("Entering enterCode().");
+    await b.go("GET", realmBase + "/gnap/code");
+    const view = await b.json("GET", realmBase + "/gnap-api/code");
+    const r = await b.json("POST", realmBase + "/gnap-api/code",
+                           { code: code }, view.json && view.json.csrf);
+    log.debug("Leaving enterCode().");
+    return self.asPage(r);
+  };
+
+  // An act's answer, read as the 303 or the page it replaced.
+  self.asPage = function (r) {
+    log.debug("Entering asPage().");
+    const j = r.json || {};
+    log.debug("Leaving asPage().");
+    return j.location
+      ? { status: 303, location: String(j.location), text: r.text, json: j }
+      : { status: r.status, location: "", text: r.text, json: j,
+          view: j.view || null };
   };
 
   // From an interaction start URI, through sign-in, to the approval page.
@@ -260,56 +395,99 @@ function harness(options) {
     const approve = r.location;
     r = await b.go("GET", approve);
     if (r.status === 303 && /\/authn\/login\?authn=/.test(r.location)) {
-      r = await b.go("GET", r.location);
-      const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) ||
-                       [])[1];
-      assert.ok(authnId,
-                "the sign-in screen carries an authn_id: " +
-                r.text.slice(0, 300));
-      r = await b.go("POST", "/realm/" + REALM + "/authn/login",
-                     { authn_id: authnId, username: who, password: PASSWORD,
-                       action: "login",
-                       csrf_token: self.csrfOf(r.text) });
-      assert.ok(r.status === 303,
-                "the sign-in redirects back; got " + r.status + " " +
-                r.text.slice(0, 300));
-      r = await b.go("GET", r.location);
+      // THE SCREEN OVER `/authn-api` (#571), through the one helper, with
+      // this browser's cookies kept in its jar.
+      const signedIn = await authnSignin.submit(realmBase, r.location,
+        { action: "login", username: who, password: PASSWORD },
+        { cookie: Object.keys(b.jar).map(function (k) {
+          return k + "=" + b.jar[k];
+        }).join("; ") });
+      signedIn.setCookies.forEach(function (one) {
+        const pair = String(one).split(";")[0];
+        const name = pair.split("=")[0];
+        b.jar[name] = pair.slice(name.length + 1);
+      });
+      assert.ok(signedIn.next === "redirect",
+                "the sign-in answers where to go back to; got " +
+                signedIn.status + " " + JSON.stringify(signedIn.json));
+      r = await b.go("GET", signedIn.location);
     }
+    // THE PAGE'S VIEW (#578): where the GET answered the shell with
+    // nothing in it, the page is drawn from `/gnap-api`; where it carried a
+    // view, that is the page.
+    const state = r.status === 200 || r.status === 400
+      ? self.stateOf(r.text) : null;
+    let view = state;
+    let csrf = "";
+    if (r.status === 200 && !state) {
+      const asked = await b.json("GET", self.apiOf(approve));
+      view = (asked.json && asked.json.view) || null;
+      csrf = (asked.json && asked.json.csrf) || "";
+      r.api = asked;
+    }
+    r.view = view;
     log.debug("Leaving reachApproval().");
-    return { approve: approve, page: r };
+    return { approve: approve, page: r, view: view, csrf: csrf };
   };
 
-  // Tick every right and answer. An approval REMEMBERED from an earlier grant
-  // (the consent register) skips the page and goes straight to the finish.
-  self.answer = async function (b, approval, action, untick) {
+  // Tick every right and answer — over `/gnap-api` since #578, as the page
+  // sends it. An approval REMEMBERED from an earlier grant (the consent
+  // register) skips the page and goes straight to the finish. `extra` is
+  // more of the act's body: a lowered limit (`lim_t<k>r<r>_<member>`).
+  self.answer = async function (b, approval, action, untick, extra) {
     log.debug("Entering answer().");
     const page = approval.page;
+    const view = approval.view;
     if (action === "allow" &&
         ((page.status === 303 && /hash=/.test(page.location)) ||
-                               (page.status === 200 &&
-                                /You approved the request/.test(page.text)))) {
+         (page.status === 200 && view && view.kind === "done" &&
+          view.approved))) {
       log.debug("Leaving answer().");
       return page;
     }
-    assert.ok(page.status === 200 && /Allow access\?/.test(page.text),
+    assert.ok(page.status === 200 && view && view.kind === "approve",
       "the approval page is drawn; got " + page.status + " " +
-      page.text.slice(0, 300));
+      JSON.stringify(view || page.text.slice(0, 300)));
     const rights = [];
-    const re = /name="right" value="([^"]+)"/g;
-    let m;
-    while ((m = re.exec(page.text))) {
-      if (!untick || untick.indexOf(m[1]) < 0) {
-        rights.push("right=" + encodeURIComponent(m[1]));
-      }
-    }
-    let form = "action=" + action + "&csrf_token=" +
-               encodeURIComponent(self.csrfOf(page.text)) +
-      (rights.length ? "&" + rights.join("&") : "");
-    if (/name="subject" value="yes"/.test(page.text)) {
-      form += "&subject=yes";
-    }
+    (view.tokens || []).forEach(function (token) {
+      (token.rights || []).forEach(function (one) {
+        if (!untick || untick.indexOf(one.field) < 0) {
+          rights.push(one.field);
+        }
+      });
+    });
+    const body = Object.assign({ action: action, right: rights },
+                               view.subject ? { subject: "yes" } : {},
+                               extra || {});
+    const r = await b.json("POST", self.apiOf(approval.approve), body,
+                           approval.csrf);
     log.debug("Leaving answer().");
-    return b.go("POST", approval.approve, form);
+    return self.asPage(r);
+  };
+
+  // A right's text on the approval page, as its renderer draws it: the
+  // type or reference, then its dimensions (`web_gnap_interact_views.ts`).
+  self.rightsText = function (view) {
+    log.debug("Entering rightsText().");
+    const out = [];
+    ((view && view.tokens) || []).forEach(function (token) {
+      (token.rights || []).forEach(function (one) {
+        const r = one.right || {};
+        out.push(r.reference !== undefined ? String(r.reference)
+          : String(r.type) + " " + (r.dimensions || []).map(function (d) {
+            return d.name + ": " + d.values.join(", ");
+          }).join("; ") + (r.identifier ? "; identifier: " + r.identifier
+                                        : ""));
+      });
+    });
+    ((view && view.narrowed) || []).forEach(function (one) {
+      out.push(String(one.type) + ": " + (one.changes || []).map(
+        function (c) {
+          return c.dimension + " " + (c.values || []).join(", ");
+        }).join("; "));
+    });
+    log.debug("Leaving rightsText().");
+    return out.join("\n");
   };
 
   self.finishParams = function (location, response) {
@@ -327,7 +505,7 @@ function harness(options) {
   self.readAccess = function (action) {
     log.debug("Entering readAccess().");
     log.debug("Leaving readAccess().");
-    return [{ type: DEMO, actions: [action || "read", "write"] }];
+    return [{ type: accessType, actions: [action || "read", "write"] }];
   };
 
   // A grant request from `client` with the usual interaction.
@@ -372,6 +550,26 @@ function harness(options) {
                                                           json: {
                                                             interact_ref:
                                                               finished.ref } });
+    // SECTION 5's WAIT, honoured (#497): a realm that has not set
+    // `gnap.continueWaitS` to 0 — the default realm a chain job uses, whose
+    // settings are not a job's to change — answers too_fast to a client
+    // that continues early, with the `wait` it asked for. The client waits
+    // and continues once more, as section 5 says it should.
+    const early = r.json && r.json.error &&
+      (r.json.error.code || r.json.error) === "too_fast";
+    if (early) {
+      const wait = Number((r.json.continue || {}).wait ||
+                          pending.continue.wait || 5);
+      log.info("the continuation was too fast; waiting " + wait + " s " +
+               "(RFC 9635 section 5)");
+      await new Promise(function (resolve) {
+        setTimeout(resolve, wait * 1000 + 250);
+      });
+      const again = r.json.continue || pending.continue;
+      r = await client.send("POST", again.uri,
+                            { token: again.access_token.value,
+                              json: { interact_ref: finished.ref } });
+    }
     assert.strictEqual(r.status, 200,
                        "the continuation releases the grant: " +
                        r.text.slice(0, 400));
@@ -406,6 +604,51 @@ function harness(options) {
               String(r.raw).slice(0, 200));
     log.debug("Leaving subjectOf().");
     return subject;
+  };
+
+  // THE PEER, REGISTERED IN A REALM (#586): a tenant configured for
+  // `realmBaseOf`, and a GNAP resource-server application in that realm
+  // with the tenant's key and address, declaring the peer's type with the
+  // spend limits. Answers the tenant's view. `usePeer()` is
+  // this harness's realm, under the names fixed above; `peerFor(base, api)`
+  // is any other — the default realm, to show it is another authorization
+  // server.
+  const registerPeer = async function (tenantName, realmBaseOf, realmApiOf) {
+    log.debug("Entering registerPeer(). " + tenantName);
+    const view = await testPeer.tenant(tenantName, realmBaseOf, base,
+                                       { gnap: { type: PEER_TYPE } });
+    const identifier = "gnap-peer-rs-" + tenantName;
+    await self.ok(realmApiOf + "/applications/create", {
+      identifier: identifier, kind: "gnap-resource-server",
+      name: "Test peer resource server " + tenantName,
+      protocols: ["gnap", "oauth2"],
+      fields: testPeer.gnapResourceServerFields(view)
+    }, "registered the test peer's resource server " + identifier);
+    await self.ok(realmApiOf + "/applications/set-access-type", {
+      application: identifier, type: PEER_TYPE, actions: view.gnap.actions,
+      limits: testPeer.SPEND_LIMITS }, "declared " + PEER_TYPE + " on " +
+      identifier);
+    log.debug("Leaving registerPeer().");
+    return Object.assign({ identifier: identifier }, view);
+  };
+  self.usePeer = async function () {
+    log.debug("Entering usePeer().");
+    assert.ok(peerTenant, "this job's resource server is the test peer, " +
+      "and there is none: " + testPeer.skipReason("the GNAP resource " +
+      "server"));
+    self.peer = await registerPeer(peerTenant, realmBase, realmApi);
+    self.peerCaPem = self.peer.caPem;
+    log.debug("Leaving usePeer().");
+    return self.peer;
+  };
+  self.peerFor = async function (otherBase, otherApi) {
+    log.debug("Entering peerFor().");
+    const view = await registerPeer(testPeer.tenantId("gnap-other"),
+                                    otherBase, otherApi);
+    log.debug("Leaving peerFor().");
+    return Object.assign({ RS: testPeer.url() + "/t/" +
+                               encodeURIComponent(view.tenant) +
+                               "/gnap/resource" }, view);
   };
 
   self.createRealm = async function (name) {

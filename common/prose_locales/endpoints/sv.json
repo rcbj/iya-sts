@@ -1,0 +1,2054 @@
+{
+  "endpoints.route./xacml.name": {
+    "en": "1184e17250970dab",
+    "text": "Vad XACML-ytan är"
+  },
+  "endpoints.route./xacml/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Beskrivningssidans skript"
+  },
+  "endpoints.route./xacml/pdp.name": {
+    "en": "a372155e5808a3ef",
+    "text": "Ett beslut"
+  },
+  "endpoints.route./xacml/policies.name": {
+    "en": "beb8ca12489eec05",
+    "text": "Policyarkivet"
+  },
+  "endpoints.route./xacml/pep/register.name": {
+    "en": "042b865d703aee20",
+    "text": "En fjärr-PEP registrerar sig"
+  },
+  "endpoints.route./xacml/pep/policies.name": {
+    "en": "d7b1a01d26f2cc80",
+    "text": "Arkivet, för en fjärr-PEP att LADDA"
+  },
+  "endpoints.route./xacml/pep/heartbeat.name": {
+    "en": "9570c5ba15aef084",
+    "text": "Vad en fjärr-PEP har tillämpat"
+  },
+  "endpoints.route./xacml/pip.name": {
+    "en": "b0b1791a44311248",
+    "text": "Policy Information Point, över HTTP"
+  },
+  "endpoints.route./gnap.name": {
+    "en": "33b8b1fd38b28a51",
+    "text": "Grant-slutpunkten"
+  },
+  "endpoints.route./:as/gnap.name": {
+    "en": "4e8b789cccef4597",
+    "text": "Grant-slutpunkten för en namngiven auktoriseringsserver"
+  },
+  "endpoints.route./gnap/continue/:grant.name": {
+    "en": "db55ac21174c6f99",
+    "text": "Fortsättning av grant"
+  },
+  "endpoints.route./gnap/token/:handle.name": {
+    "en": "741af09dc62e9a62",
+    "text": "Tokenhantering"
+  },
+  "endpoints.route./gnap/interact/:id.name": {
+    "en": "94671ff4687a0e0b",
+    "text": "Start av omdirigeringsinteraktion"
+  },
+  "endpoints.route./gnap/app/:id.name": {
+    "en": "271e2b3bb99d4e34",
+    "text": "Start av appinteraktion"
+  },
+  "endpoints.route./gnap/code.name": {
+    "en": "8882b6b5d7dd547f",
+    "text": "Inmatning av användarkod"
+  },
+  "endpoints.route./gnap/approve/:id.name": {
+    "en": "7224d2fd77b49df7",
+    "text": "Resursägarens godkännande"
+  },
+  "endpoints.route./gnap/interaction.js.name": {
+    "en": "50effd29342dd164",
+    "text": "Interaktionssidornas skript"
+  },
+  "endpoints.route./gnap-api.name": {
+    "en": "7a180f1f38b7e340",
+    "text": "Interaktions-API:ts index"
+  },
+  "endpoints.route./gnap-api/code.name": {
+    "en": "438612a8b0200673",
+    "text": "Ange en GNAP-användarkod"
+  },
+  "endpoints.route./gnap-api/approve/:id.name": {
+    "en": "6bde2975aeb9128a",
+    "text": "Besvara ett GNAP-godkännande"
+  },
+  "endpoints.route./.well-known/gnap-as-rs.name": {
+    "en": "0fd056c79efdd3a0",
+    "text": "Upptäckt av resursserver"
+  },
+  "endpoints.route./.well-known/gnap-as-rs/:as.name": {
+    "en": "6df94c58d2c4986a",
+    "text": "Upptäckt av resursserver för en namngiven auktoriseringsserver"
+  },
+  "endpoints.route./gnap/introspect.name": {
+    "en": "7e194fb9c34129c7",
+    "text": "Tokenintrospektion"
+  },
+  "endpoints.route./gnap/resource.name": {
+    "en": "541dc030fa6fb91c",
+    "text": "Registrering av resursuppsättning"
+  },
+  "endpoints.route./gnap/keys.name": {
+    "en": "c0d78f3392b95c6b",
+    "text": "Verifieringsmaterial för tokenformaten"
+  },
+  "endpoints.route./gnap/biscuit/revocations.name": {
+    "en": "337581d2c9bece04",
+    "text": "Återkallade biscuits"
+  },
+  "endpoints.route./gnap/zcap/controller.name": {
+    "en": "6757bf6175282a42",
+    "text": "ZCAP-kontrollantdokumentet"
+  },
+  "endpoints.route./admin-api/gnap.name": {
+    "en": "c34c3f89f048c143",
+    "text": "GNAP-konsolsidan som JSON"
+  },
+  "endpoints.route./admin-api/gnap/monitor.name": {
+    "en": "369d3bf3a6c7b46f",
+    "text": "GNAP-grants som JSON"
+  },
+  "endpoints.route./admin-api/gnap/:action.name": {
+    "en": "812de4df596c12ef",
+    "text": "Återkalla en grant eller ta bort en resursuppsättning"
+  },
+  "endpoints.route./pki/crl/:scope/:ca.name": {
+    "en": "8d20c59eb134e55e",
+    "text": "Spärrlistan för en utfärdare"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca.name": {
+    "en": "26e09611c77104e2",
+    "text": "OCSP-respondern för en utfärdare (POST)"
+  },
+  "endpoints.route./pki/ocsp/:scope/:ca/*.name": {
+    "en": "78daac5586a16467",
+    "text": "OCSP-respondern för en utfärdare (GET)"
+  },
+  "endpoints.route./pki/ca/:scope/:ca.name": {
+    "en": "674689732e065344",
+    "text": "En certifikatutfärdares eget certifikat"
+  },
+  "endpoints.route./pki/chain/:scope/:certificate.name": {
+    "en": "7f1f6b207986210f",
+    "text": "Certifikatkedjan som en signerad tokens x5u namnger"
+  },
+  "endpoints.route./crypto/metadata.name": {
+    "en": "a5ecf797eaf091e5",
+    "text": "Kryptometadatadokumentet, enligt Accept"
+  },
+  "endpoints.route./crypto/metadata.json.name": {
+    "en": "4890cf97903b2272",
+    "text": "Kryptometadatadokumentet, som JSON"
+  },
+  "endpoints.route./crypto/metadata.xml.name": {
+    "en": "7e192a5658a57fa6",
+    "text": "Kryptometadatadokumentet, som XML"
+  },
+  "endpoints.route./crypto/metadata.jwt.name": {
+    "en": "a39f662681268cc8",
+    "text": "Kryptometadatadokumentet, signerat som JWS"
+  },
+  "endpoints.route./crypto/metadata.signed.xml.name": {
+    "en": "c11085a7c69631a5",
+    "text": "Kryptometadatadokumentet, som signerad XML"
+  },
+  "endpoints.route./crypto/metadata.xsd.name": {
+    "en": "9d94529b9b2f3464",
+    "text": "Kryptometadatadokumentets XML Schema"
+  },
+  "endpoints.route./pki/revocation.name": {
+    "en": "f399711ce1261bf4",
+    "text": "Varje CRL och OCSP-responder som den här tjänsten publicerar"
+  },
+  "endpoints.route./admin-api/xacml.name": {
+    "en": "d3b1d402a612012c",
+    "text": "XACML-konsolsidan som JSON"
+  },
+  "endpoints.route./admin-api/xacml/policies.name": {
+    "en": "8e1fec42df374e4c",
+    "text": "Policyarkivet som JSON"
+  },
+  "endpoints.route./admin-api/xacml/editor.name": {
+    "en": "97c8bc015f73b3f1",
+    "text": "En policy som ett redigerbart träd"
+  },
+  "endpoints.route./admin-api/xacml/decide.name": {
+    "en": "17f8129044f6440e",
+    "text": "Ställ en fråga till PDP:n som JSON"
+  },
+  "endpoints.route./admin-api/xacml/peps.name": {
+    "en": "7f8ea0c37cf4776c",
+    "text": "Fjärrtillämpningspunkterna som JSON"
+  },
+  "endpoints.route./admin-api/xacml/monitor.name": {
+    "en": "c31e79f61be7e43b",
+    "text": "Vad auktoriseringen gör, som JSON"
+  },
+  "endpoints.route./admin-api/xacml/:action.name": {
+    "en": "264e6d022675cd79",
+    "text": "Ändra en policy, arkivet eller en fjärr-PEP"
+  },
+  "endpoints.route./.well-known/ssf-configuration.name": {
+    "en": "357ed4e8aed9b636",
+    "text": "Konfigurationsmetadata för sändaren"
+  },
+  "endpoints.route./.well-known/ssf-configuration/*.name": {
+    "en": "95c75b212ca6850f",
+    "text": "Konfigurationsmetadata för sändaren, form med infogad sökväg"
+  },
+  "endpoints.route./ssf.name": {
+    "en": "29eb248f16235183",
+    "text": "Vad Shared Signals-ytan är"
+  },
+  "endpoints.route./ssf/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Beskrivningssidans skript"
+  },
+  "endpoints.route./ssf/stream.name": {
+    "en": "b0a8d86b9e533735",
+    "text": "API:t för strömhantering"
+  },
+  "endpoints.route./ssf/status.name": {
+    "en": "60416f189a3afec0",
+    "text": "En ströms status"
+  },
+  "endpoints.route./ssf/subjects/add.name": {
+    "en": "65df983c69cc22ac",
+    "text": "Lägg till ett subjekt i en ström"
+  },
+  "endpoints.route./ssf/subjects/remove.name": {
+    "en": "e963dffef9e3d06b",
+    "text": "Ta bort ett subjekt från en ström"
+  },
+  "endpoints.route./ssf/verify.name": {
+    "en": "9394a228c5271a2d",
+    "text": "Begär en verifieringshändelse"
+  },
+  "endpoints.route./federation/signals/:id.name": {
+    "en": "b041f89b9c1dbd10",
+    "text": "Push-slutpunkt för en federationspartners Shared Signals (RFC 8935)"
+  },
+  "endpoints.route./ssf/poll.name": {
+    "en": "ac4ccca804188b23",
+    "text": "Leverans via pollning (RFC 8936)"
+  },
+  "endpoints.route./scim.name": {
+    "en": "56accbf45038167b",
+    "text": "Vad SCIM-ytan är"
+  },
+  "endpoints.route./scim/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Beskrivningssidans skript"
+  },
+  "endpoints.route./scim/v2/ServiceProviderConfig.name": {
+    "en": "e7267904e2f73e0c",
+    "text": "Vad den här SCIM-servern stöder"
+  },
+  "endpoints.route./scim/v2/ResourceTypes.name": {
+    "en": "c4842dd1549d02ce",
+    "text": "Resurstyperna"
+  },
+  "endpoints.route./scim/v2/ResourceTypes/:id.name": {
+    "en": "f50850744e5d0035",
+    "text": "En resurstyp"
+  },
+  "endpoints.route./scim/v2/Schemas.name": {
+    "en": "b290eec1709feb6f",
+    "text": "Schemana"
+  },
+  "endpoints.route./scim/v2/Schemas/:id.name": {
+    "en": "5034a0e2cbb7b12b",
+    "text": "Ett schema"
+  },
+  "endpoints.route./scim/v2/Users.name": {
+    "en": "85d63fe6b3d4f8c4",
+    "text": "Användare: lista och skapa"
+  },
+  "endpoints.route./scim/v2/Users/.search.name": {
+    "en": "2419ec93d320dc47",
+    "text": "Användare: sök med POST"
+  },
+  "endpoints.route./scim/v2/Users/:id.name": {
+    "en": "ac119777bcacd2ba",
+    "text": "En användare: läs, ersätt, ändra, ta bort"
+  },
+  "endpoints.route./scim/v2/Groups.name": {
+    "en": "365b6120828199b6",
+    "text": "Grupper: lista och skapa"
+  },
+  "endpoints.route./scim/v2/Groups/.search.name": {
+    "en": "c0618941d836a76f",
+    "text": "Grupper: sök med POST"
+  },
+  "endpoints.route./scim/v2/Groups/:id.name": {
+    "en": "31e2cc7e078de787",
+    "text": "En grupp: läs, ersätt, ändra, ta bort"
+  },
+  "endpoints.route./scim/v2/.search.name": {
+    "en": "ad4bb06fc5614a1c",
+    "text": "Sök i båda resurstyperna"
+  },
+  "endpoints.route./scim/v2/*.name": {
+    "en": "09fc8d6021972a82",
+    "text": "Varje annan sökväg under basen"
+  },
+  "endpoints.route./scim/v2/Me.name": {
+    "en": "bfb6c6f542c0607b",
+    "text": "/Me, det autentiserade subjektet"
+  },
+  "endpoints.route./.well-known/hoba/register.name": {
+    "en": "b95adde7badbdef3",
+    "text": "Registrera en publik HOBA-nyckel"
+  },
+  "endpoints.route./tls/sign-in.name": {
+    "en": "a670f321ddd2f009",
+    "text": "Logga in med ett klientcertifikat"
+  },
+  "endpoints.route./tls/server-certificate.name": {
+    "en": "9458f47a8a347911",
+    "text": "Servercertifikatet (PEM)"
+  },
+  "endpoints.route./.name": {
+    "en": "a064be014d290217",
+    "text": "Startsidan"
+  },
+  "endpoints.route./home.js.name": {
+    "en": "130dd402d6eade90",
+    "text": "Startsidans skript"
+  },
+  "endpoints.route./home.css.name": {
+    "en": "84434cd1bd304a7d",
+    "text": "Startsidans formatmall"
+  },
+  "endpoints.route./home-api.name": {
+    "en": "8789cae956543b36",
+    "text": "Ytterdörrens API-index"
+  },
+  "endpoints.route./home-api/front.name": {
+    "en": "14949c8a6af6f6d4",
+    "text": "Startsidans vy"
+  },
+  "endpoints.route./logo.png.name": {
+    "en": "5d9164ce79341469",
+    "text": "Logotypen på startsidan"
+  },
+  "endpoints.route./realms.name": {
+    "en": "3bc74315dcf2fb5e",
+    "text": "Katalogen över förtroendesfärer"
+  },
+  "endpoints.route./web/card.css.name": {
+    "en": "96ed2387e40a779a",
+    "text": "De offentliga ytornas kortformatmall"
+  },
+  "endpoints.route./web/locales/catalogs.json.name": {
+    "en": "54bbd31e0a5afc5b",
+    "text": "Indexet över språkkataloger"
+  },
+  "endpoints.route./web/locales/:ns/:file.name": {
+    "en": "a51cf2baa37af68c",
+    "text": "Ett namnutrymmes meddelanden i en katalog"
+  },
+  "endpoints.route./healthcheck.name": {
+    "en": "14290e1d06812977",
+    "text": "Hälsokontroll"
+  },
+  "endpoints.route./docs.name": {
+    "en": "a7091d45b01e0e30",
+    "text": "Tjänstens dokumentation"
+  },
+  "endpoints.route./policy.name": {
+    "en": "c134e729e1cc3153",
+    "text": "Operatörens policy"
+  },
+  "endpoints.route./tos.name": {
+    "en": "e69e06144877d81c",
+    "text": "Användarvillkor"
+  },
+  "endpoints.route.*.name": {
+    "en": "4898865b52c1132a",
+    "text": "CORS-förhandsförfrågan"
+  },
+  "endpoints.route./spiffe.name": {
+    "en": "04302eb70b6b3d39",
+    "text": "Vad SPIFFE-ytorna är"
+  },
+  "endpoints.route./spiffe/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Beskrivningssidans skript"
+  },
+  "endpoints.route./spiffe/bundle.name": {
+    "en": "dfc63f78fe42ef9e",
+    "text": "Förtroendepaketet"
+  },
+  "endpoints.route./spiffe/federated/:trustDomain.name": {
+    "en": "9f481b0436f86e81",
+    "text": "En federerad förtroendedomäns paket, så som det lagras"
+  },
+  "endpoints.route./admin/api-explorer/explorer.js.name": {
+    "en": "a580f8533000172f",
+    "text": "API-utforskarens skript"
+  },
+  "endpoints.route./admin.name": {
+    "en": "ddf870cabeb295ab",
+    "text": "Administratörskonsol"
+  },
+  "endpoints.route./admin/*.name": {
+    "en": "e146f5e15e76dfe5",
+    "text": "Varje konsolsida"
+  },
+  "endpoints.route./admin/console.js.name": {
+    "en": "9932c00e39f5d470",
+    "text": "Konsolens skript"
+  },
+  "endpoints.route./admin/console.css.name": {
+    "en": "cd6aeb9c9e8ebf8a",
+    "text": "Konsolens formatmall"
+  },
+  "endpoints.route./portal.name": {
+    "en": "5212610fe0e7c89a",
+    "text": "En persons eget konto"
+  },
+  "endpoints.route./portal/*.name": {
+    "en": "5b81a7e12cca9cd3",
+    "text": "Varje portalsida"
+  },
+  "endpoints.route./portal/portal.js.name": {
+    "en": "acb6735807c66205",
+    "text": "Portalens skript"
+  },
+  "endpoints.route./portal/portal.css.name": {
+    "en": "3b05a0008cdc0eb1",
+    "text": "Portalens formatmall"
+  },
+  "endpoints.route./portal/signals/receive.name": {
+    "en": "657c84b412c86001",
+    "text": "Portalens mottagningsslutpunkt för Shared Signals"
+  },
+  "endpoints.route./portal/claim-sources/callback.name": {
+    "en": "152919279ecea855",
+    "text": "Anslutna anspråkskällor — leverantörens svar"
+  },
+  "endpoints.route./admin-api.name": {
+    "en": "eb75193bc8755faa",
+    "text": "Index för hanterings-API:t"
+  },
+  "endpoints.route./admin-api/logout.name": {
+    "en": "b068dc8553d2b4f2",
+    "text": "Aktiva sessioner, och att avsluta dem"
+  },
+  "endpoints.route./admin-api/logout/:action.name": {
+    "en": "6c2dc375eee8253d",
+    "text": "Aktiva sessioner: avsluta dem"
+  },
+  "endpoints.route./admin-api/openapi.json.name": {
+    "en": "ef18228535f6e74f",
+    "text": "OpenAPI-dokument"
+  },
+  "endpoints.route./admin-api/account-api.name": {
+    "en": "1ae155ffa9680b4a",
+    "text": "Konto-API:ts OpenAPI-dokument"
+  },
+  "endpoints.route./admin-api/console/language.name": {
+    "en": "40be2295e7d1766a",
+    "text": "Konsolens språk, för dig själv"
+  },
+  "endpoints.route./admin-api/console/api-explorer.name": {
+    "en": "dc472022273007e2",
+    "text": "Vad konsolens utforskare läser"
+  },
+  "endpoints.route./admin-api/console/delegation/map.name": {
+    "en": "58e1aa37ecc8aa2b",
+    "text": "Delegeringsbilden"
+  },
+  "endpoints.route./admin-api/console/delegation/chain.name": {
+    "en": "2f4c2883e0a7367a",
+    "text": "En delegeringsrelation, ritad"
+  },
+  "endpoints.route./admin-api/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "En applikations delegeringar, ritade"
+  },
+  "endpoints.route./admin-api/console/delegation/application.name": {
+    "en": "e5fa3089fb3ad7ac",
+    "text": "En applikations delegeringar, ritade"
+  },
+  "endpoints.route./admin-api/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "Allt som gjorts i en persons namn, ritat"
+  },
+  "endpoints.route./admin-api/console/delegation/user.name": {
+    "en": "96e37423f4f9bbf4",
+    "text": "Allt som gjorts i en persons namn, ritat"
+  },
+  "endpoints.route./admin-api/console/delegation/allowed.name": {
+    "en": "8ae675640fa7d934",
+    "text": "De konfigurerade delegerade behörigheterna, ritade"
+  },
+  "endpoints.route./admin-api/console/delegation/cluster.name": {
+    "en": "ad732f8760d744ba",
+    "text": "En grupp applikationer sammanbundna av behörigheter, ritad"
+  },
+  "endpoints.route./admin-api/console/delegation-settings.name": {
+    "en": "502fcd0e4edaea72",
+    "text": "Registret över konfigurerade behörigheter, så som dess sida visar det"
+  },
+  "endpoints.route./admin-api/tokens/credential.name": {
+    "en": "f45c68ae09f2d7fc",
+    "text": "En autentiseringsuppgift och varje generation bakom den"
+  },
+  "endpoints.route./admin-api/console/federation/map.name": {
+    "en": "99866b83425ba5c7",
+    "text": "Den här sfärens federationsrelationer, ritade"
+  },
+  "endpoints.route./admin-api/console.name": {
+    "en": "f166c0c9b6ef8c18",
+    "text": "Vad konsolen ritar runt varje sida"
+  },
+  "endpoints.route./admin-api/keys/history/certificate.name": {
+    "en": "c4293d2be95a4d6e",
+    "text": "En signeringsnyckels certifikatkedja"
+  },
+  "endpoints.route./admin-api/sts-metadata.name": {
+    "en": "88b4c8d5056bd368",
+    "text": "Varje protokoll, slutpunkt och specifikation som detta betjänar"
+  },
+  "endpoints.route./admin-api/me.name": {
+    "en": "548b8ddef38a8823",
+    "text": "Anroparen"
+  },
+  "endpoints.route./admin-api/status.name": {
+    "en": "cce5eda33f91d11c",
+    "text": "Tjänstens status"
+  },
+  "endpoints.route./admin-api/console/dashboard.name": {
+    "en": "9b5ccd90b2944d73",
+    "text": "Konsolens startsida"
+  },
+  "endpoints.route./admin-api/console/operations.name": {
+    "en": "09b6da5088de6afb",
+    "text": "Varje operation, för konsolens formulär"
+  },
+  "endpoints.route./admin-api/console/openapi.json.name": {
+    "en": "c5b582c6e41c78dd",
+    "text": "Konsoloperationernas OpenAPI-dokument"
+  },
+  "endpoints.route./admin-api/console/pki/:action.name": {
+    "en": "91b14d0429eaa0bc",
+    "text": "Certifikatformulärets hjälpare"
+  },
+  "endpoints.route./admin-api/console/applications/:action.name": {
+    "en": "18ea7bf0d0fcc0d4",
+    "text": "Hjälparen för formuläret för ny applikation"
+  },
+  "endpoints.route./admin-api/console/applications/new.name": {
+    "en": "226595ce0d487761",
+    "text": "Formulär för ny applikation, så som konsolen lägger ut det"
+  },
+  "endpoints.route./admin-api/keys.name": {
+    "en": "b50a1f343114c6fa",
+    "text": "Nyckelpar"
+  },
+  "endpoints.route./admin-api/keys/history.name": {
+    "en": "13b97697b4e1e2b0",
+    "text": "Signeringsnyckelns historik"
+  },
+  "endpoints.route./admin-api/keys/:action.name": {
+    "en": "02bd417f55c9790f",
+    "text": "Exportera ett nyckelpar, eller rotera signeringsnycklarna"
+  },
+  "endpoints.route./admin-api/pki.name": {
+    "en": "bc458d477b4de7d9",
+    "text": "Certifikatutfärdaren som den här sfären har"
+  },
+  "endpoints.route./admin-api/pki/:action.name": {
+    "en": "c17f40560a0a857f",
+    "text": "Bygg en hierarki, utfärda ett nyckelpar, skapa ett certifikat"
+  },
+  "endpoints.route./admin-api/certificates.name": {
+    "en": "df89d301f57f6ace",
+    "text": "Varje certifikat som den här sfären har, eller ett av dem i sin helhet"
+  },
+  "endpoints.route./admin-api/secrets.name": {
+    "en": "d13ef7e84b6dc8bb",
+    "text": "Hemlighetslagret, och om den här processen läste från det"
+  },
+  "endpoints.route./admin-api/debugger.name": {
+    "en": "542e5e1c1841299c",
+    "text": "Den inbäddade protokollfelsökarens lyssnare och api-process"
+  },
+  "endpoints.route./admin-api/database.name": {
+    "en": "30f6100d283f4d80",
+    "text": "PostgreSQL-mätvärden och schemastatistik"
+  },
+  "endpoints.route./admin-api/risk/metrics.name": {
+    "en": "740320b44f69683c",
+    "text": "Mätvärden för riskbedömning"
+  },
+  "endpoints.route./admin-api/risk/upload.name": {
+    "en": "49a3e164fdbf7c12",
+    "text": "Uppladdning av riskdatamängd"
+  },
+  "endpoints.route./admin-api/risk/:action.name": {
+    "en": "caad559e549e3108",
+    "text": "Riskåtgärder"
+  },
+  "endpoints.route./admin-api/vc-status.name": {
+    "en": "ced60a751fc82211",
+    "text": "Intygsstatus"
+  },
+  "endpoints.route./admin-api/vc-status/:action.name": {
+    "en": "be2f7ebc85c75b68",
+    "text": "Åtgärder för intygsstatus"
+  },
+  "endpoints.route./admin-api/scheduler/:action.name": {
+    "en": "3483d9e9aab04915",
+    "text": "Schemaläggaråtgärder"
+  },
+  "endpoints.route./admin-api/mail/:action.name": {
+    "en": "cff7055c2db49c6a",
+    "text": "E-poståtgärder"
+  },
+  "endpoints.route./admin-api/mail/outbox.name": {
+    "en": "d40abea9379f4e22",
+    "text": "Utkorg för e-post"
+  },
+  "endpoints.route./admin-api/mail/outbox/:action.name": {
+    "en": "0311fbdb2c996481",
+    "text": "Åtgärder för utkorgen"
+  },
+  "endpoints.route./admin-api/worker-pools.name": {
+    "en": "8bf5d84f5ee5dd08",
+    "text": "Arbetarpooler"
+  },
+  "endpoints.route./admin-api/node-health.name": {
+    "en": "6a14636c8aef5de3",
+    "text": "Nodhälsa"
+  },
+  "endpoints.route./admin-api/encryption.name": {
+    "en": "eb626f73d72649aa",
+    "text": "Kryptering i vila"
+  },
+  "endpoints.route./admin-api/encryption/:action.name": {
+    "en": "74f8245296e5a5ed",
+    "text": "Datakrypteringsnycklarnas fyra handlingar"
+  },
+  "endpoints.route./admin-api/users/:action.name": {
+    "en": "33634352212a8e51",
+    "text": "Användaråtgärder"
+  },
+  "endpoints.route./admin-api/groups.name": {
+    "en": "c1524c47a0c5db15",
+    "text": "Katalogens grupper"
+  },
+  "endpoints.route./admin-api/groups/:action.name": {
+    "en": "aa987cf14daa872f",
+    "text": "Gruppåtgärder"
+  },
+  "endpoints.route./admin-api/backup-codes.name": {
+    "en": "58306d7221d1bf72",
+    "text": "Inställningar för återställningskoder"
+  },
+  "endpoints.route./admin-api/totp.name": {
+    "en": "947a66c0238e7e56",
+    "text": "Inställningar för TOTP-MFA"
+  },
+  "endpoints.route./admin-api/webauthn.name": {
+    "en": "dcc6aecb3740fef3",
+    "text": "WebAuthn-inställningar"
+  },
+  "endpoints.route./admin-api/mfa.name": {
+    "en": "63fc7f058d95883b",
+    "text": "Vem som har en andra faktor"
+  },
+  "endpoints.route./admin-api/mfa/:action.name": {
+    "en": "725b36f8b92fded4",
+    "text": "Rensa en andra faktor"
+  },
+  "endpoints.route./admin-api/rbac.name": {
+    "en": "85d2e32f951ee980",
+    "text": "Administratörskonsolens roller"
+  },
+  "endpoints.route./admin-api/rbac/:action.name": {
+    "en": "de7f185fcea232a6",
+    "text": "Åtgärder för administratörsroller"
+  },
+  "endpoints.route./admin-api/sessions.name": {
+    "en": "366487a11e4c5380",
+    "text": "Aktiva sessioner"
+  },
+  "endpoints.route./admin-api/sessions/:action.name": {
+    "en": "f1fa288cb9378ffc",
+    "text": "Aktiva sessioner: avsluta en"
+  },
+  "endpoints.route./admin-api/tokens.name": {
+    "en": "7d8ad8a77751253f",
+    "text": "Utfärdade tokener, intyg och biljetter, grupperade efter utfärdande"
+  },
+  "endpoints.route./admin-api/tokens/set.name": {
+    "en": "8db1ad0da0eb0cd8",
+    "text": "Ett utfärdande, och varje autentiseringsuppgift det bar"
+  },
+  "endpoints.route./admin-api/tokens/:action.name": {
+    "en": "70ffb2afdb826704",
+    "text": "Tokenåtgärder"
+  },
+  "endpoints.route./admin-api/applications/:action.name": {
+    "en": "f78d20689fac7101",
+    "text": "Applikationsåtgärder"
+  },
+  "endpoints.route./admin-api/users/app-passwords.name": {
+    "en": "dbce87b518a55c12",
+    "text": "En persons applösenord"
+  },
+  "endpoints.route./admin-api/users/devices.name": {
+    "en": "cbd7e46575f64db6",
+    "text": "En persons enheter"
+  },
+  "endpoints.route./admin-api/devices.name": {
+    "en": "2785787c7598b5f2",
+    "text": "Enhetsregistret"
+  },
+  "endpoints.route./admin-api/devices/:action.name": {
+    "en": "82d6c528e12bbe02",
+    "text": "Åtgärder för enhetsregistret"
+  },
+  "endpoints.route./admin-api/device-compliance.name": {
+    "en": "1b28ca2ff0e0999f",
+    "text": "Flödet för enhetsefterlevnad (MDM / säkerhetsstatus)"
+  },
+  "endpoints.route./admin-api/device-registration.name": {
+    "en": "f8fcb8ceb53f6ebf",
+    "text": "Enhetsregistrering"
+  },
+  "endpoints.route./admin-api/service-accounts.name": {
+    "en": "330b2e1630d653b8",
+    "text": "Tjänstekonton och deras rotation"
+  },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Vem som äger ett objekt, och om dess ägare får administrera det"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Stäng ett objekt för sina ägare, eller öppna det igen"
+  },
+  "endpoints.route./admin-api/devices/monitor.name": {
+    "en": "8a3269dd4401ce60",
+    "text": "Enhetsregistret, räknat"
+  },
+  "endpoints.route./admin-api/users/self-issued-subjects.name": {
+    "en": "ec5770a23a0c10c0",
+    "text": "En persons självutfärdade (SIOPv2) subjekt"
+  },
+  "endpoints.route./admin-api/users/verifications.name": {
+    "en": "aa12d03c659af2a0",
+    "text": "En persons identitetsverifieringar"
+  },
+  "endpoints.route./admin-api/users/new.name": {
+    "en": "911ac7f1d87d5691",
+    "text": "Formulär för ny användare"
+  },
+  "endpoints.route./admin-api/applications/new.name": {
+    "en": "46a0fea8394de3a4",
+    "text": "Formulär för ny applikation"
+  },
+  "endpoints.route./admin-api/authorization-servers.name": {
+    "en": "7c36031d3ab3bdc8",
+    "text": "Auktoriseringsservrar"
+  },
+  "endpoints.route./admin-api/authorization-servers/:action.name": {
+    "en": "2bab6ab3f36adca7",
+    "text": "Åtgärder för auktoriseringsservrar"
+  },
+  "endpoints.route./admin-api/risc/accounts.name": {
+    "en": "ac79739f3e78bebc",
+    "text": "RISC-konton"
+  },
+  "endpoints.route./admin-api/risc/:action.name": {
+    "en": "31d09cc1241351d4",
+    "text": "Skicka en RISC-händelse, eller återställ ett kontos RISC-tillstånd"
+  },
+  "endpoints.route./admin-api/scim/monitor.name": {
+    "en": "6d0d6f35a18900e9",
+    "text": "SCIM-trafik"
+  },
+  "endpoints.route./admin-api/ssf/transmitters.name": {
+    "en": "bc790602233f8949",
+    "text": "Signaler från partner"
+  },
+  "endpoints.route./admin-api/deliveries.name": {
+    "en": "2175d3f98d233447",
+    "text": "Utgående leveranser"
+  },
+  "endpoints.route./admin-api/deliveries/:action.name": {
+    "en": "870b99f43bcd07a3",
+    "text": "Försök igen med en utgående leverans"
+  },
+  "endpoints.route./admin-api/ssf/dead-letters.name": {
+    "en": "3f2fb3008f53f3c8",
+    "text": "Döda brev"
+  },
+  "endpoints.route./admin-api/signals.name": {
+    "en": "5a70784a76f04344",
+    "text": "Mottagna signaler"
+  },
+  "endpoints.route./admin-api/signals/:action.name": {
+    "en": "abf5e7e60e98fa56",
+    "text": "Töm konsolens inkorg för Shared Signals"
+  },
+  "endpoints.route./admin-api/caep/sessions.name": {
+    "en": "646dc38ef308df94",
+    "text": "CAEP-sessioner"
+  },
+  "endpoints.route./admin-api/caep/:action.name": {
+    "en": "ba2a3add441f2808",
+    "text": "Skicka en CAEP-händelse, eller återställ en sessions CAEP-tillstånd"
+  },
+  "endpoints.route./admin-api/ssf/:action.name": {
+    "en": "d83510d002423a7b",
+    "text": "Ändra en ström, eller sänd en händelse"
+  },
+  "endpoints.route./admin-api/spiffe.name": {
+    "en": "dbcb7b6226a620be",
+    "text": "SPIFFE-förtroendedomänen"
+  },
+  "endpoints.route./admin-api/spiffe/:action.name": {
+    "en": "e59d04e51fdc2e77",
+    "text": "Rotera en utfärdare, eller ange ett federerat paket"
+  },
+  "endpoints.route./admin-api/spiffe/entries.name": {
+    "en": "3bf5e6f5489f682c",
+    "text": "Registreringsposterna"
+  },
+  "endpoints.route./admin-api/spiffe/entries/:action.name": {
+    "en": "74d79cc22326e3cd",
+    "text": "Skapa, ändra eller ta bort en registreringspost"
+  },
+  "endpoints.route./admin-api/spiffe/agents.name": {
+    "en": "d5576daf0ffe1c68",
+    "text": "De attesterade agenterna"
+  },
+  "endpoints.route./admin-api/spiffe/agents/:action.name": {
+    "en": "109f2fc8119d9c06",
+    "text": "Spärra, häv spärr för eller glöm en agent"
+  },
+  "endpoints.route./admin-api/spiffe/brokers.name": {
+    "en": "3afd6d3f274707ff",
+    "text": "SPIFFE Broker API:ts mäklare"
+  },
+  "endpoints.route./admin-api/spiffe/brokers/:action.name": {
+    "en": "6c08f9dc74c0d0b9",
+    "text": "Auktorisera eller ta bort en SPIFFE-mäklare"
+  },
+  "endpoints.route./admin-api/delegation/policy.name": {
+    "en": "f062ac9572a07d80",
+    "text": "Delegeringspolicy (WS-Trust och tokenutbyte)"
+  },
+  "endpoints.route./admin-api/permissions.name": {
+    "en": "cce5e2f6b790b802",
+    "text": "Delegerade behörigheter"
+  },
+  "endpoints.route./admin-api/permissions/groups.name": {
+    "en": "c20e5fba08d328a5",
+    "text": "Vilka applikationer som är sammanbundna med varandra"
+  },
+  "endpoints.route./admin-api/permissions/:action.name": {
+    "en": "d6d712ed91d38438",
+    "text": "Definiera och bevilja delegerade behörigheter"
+  },
+  "endpoints.route./admin-api/attribute-sources.name": {
+    "en": "c5a898cd54934862",
+    "text": "Attributkällor"
+  },
+  "endpoints.route./admin-api/attribute-sources/:action.name": {
+    "en": "df8c7ea77b91b6af",
+    "text": "Ändra attributkällorna"
+  },
+  "endpoints.route./admin-api/secret-destinations.name": {
+    "en": "4daa34966ee9102d",
+    "text": "Destinationer för push av hemligheter"
+  },
+  "endpoints.route./admin-api/secret-destinations/:action.name": {
+    "en": "f8f3c83e76dc9f4c",
+    "text": "Ändra destinationerna för push av hemligheter"
+  },
+  "endpoints.route./admin-api/scim/clients.name": {
+    "en": "63c8ee9a6d93cb89",
+    "text": "Utgående SCIM-klienter"
+  },
+  "endpoints.route./admin-api/scim/clients/:action.name": {
+    "en": "af52f5017d9fd21b",
+    "text": "Ändra de utgående SCIM-klienterna"
+  },
+  "endpoints.route./admin-api/roles/preview.name": {
+    "en": "c2e62734c4466542",
+    "text": "Skulle detta utfärdas?"
+  },
+  "endpoints.route./admin-api/roles/:action.name": {
+    "en": "1baadaaa0e1df852",
+    "text": "Skapa och ändra roller"
+  },
+  "endpoints.route./admin-api/policies/:action.name": {
+    "en": "a5461fc6541725a3",
+    "text": "Ändra en policy"
+  },
+  "endpoints.route./admin-api/consent/:action.name": {
+    "en": "a7acd63ff9b05a72",
+    "text": "Bevilja och återkalla samtycke"
+  },
+  "endpoints.route./admin-api/used-assertions.name": {
+    "en": "73611edaf06c6db9",
+    "text": "Använda intyg"
+  },
+  "endpoints.route./admin-api/error-codes.name": {
+    "en": "b485a2ff39ac01b5",
+    "text": "Felkoder"
+  },
+  "endpoints.route./admin-api/audit.name": {
+    "en": "e4d36f9a4e22d3a2",
+    "text": "Granskningslogg"
+  },
+  "endpoints.route./admin-api/realms.name": {
+    "en": "6dd313699a1bc23c",
+    "text": "Förtroendesfärer"
+  },
+  "endpoints.route./admin-api/realms/:action.name": {
+    "en": "2e89e91f0984a5ce",
+    "text": "Åtgärder för förtroendesfärer"
+  },
+  "endpoints.route./admin-api/cells/:action.name": {
+    "en": "e801f925c59521a5",
+    "text": "Flytta en persons hemvist"
+  },
+  "endpoints.route./admin-api/cells/people.name": {
+    "en": "3487e884b7bb0884",
+    "text": "Cellens invånare"
+  },
+  "endpoints.route./admin-api/listeners/:action.name": {
+    "en": "f35429cc1bbc09a8",
+    "text": "Definiera anpassade lyssnare, eller mappa applikationer till dem"
+  },
+  "endpoints.route./admin-api/config/:action.name": {
+    "en": "7e8873a02dca9738",
+    "text": "Konfigurationsåtgärder"
+  },
+  "endpoints.route./admin-api/oauth2.name": {
+    "en": "e39e74c6a9c77af0",
+    "text": "Inställningar för OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./admin-api/oid4vci-settings.name": {
+    "en": "82c9b9b35fc23789",
+    "text": "Inställningar för OpenID4VCI"
+  },
+  "endpoints.route./admin-api/oid4vp-settings.name": {
+    "en": "87b67f1b979a04d8",
+    "text": "Inställningar för OpenID4VP"
+  },
+  "endpoints.route./admin-api/kerberos.name": {
+    "en": "288b1e0163e753a9",
+    "text": "Kerberos-inställningar"
+  },
+  "endpoints.route./admin-api/ldap.name": {
+    "en": "b4b5794e4fe30cc2",
+    "text": "Inställningar för LDAP / LDAPS"
+  },
+  "endpoints.route./admin-api/ldap/directory.name": {
+    "en": "f02a3e57dc2e468e",
+    "text": "Varje post i katalogen"
+  },
+  "endpoints.route./admin-api/ldap/applications.name": {
+    "en": "47e8fc7f73cf7414",
+    "text": "Applikationsregistret så som katalogen lagrar det"
+  },
+  "endpoints.route./admin-api/ldap/federations.name": {
+    "en": "834988ab8b5b6754",
+    "text": "Federationsregistret så som katalogen lagrar det"
+  },
+  "endpoints.route./admin-api/ldap/spiffe.name": {
+    "en": "6d82cdc8d7fb4c53",
+    "text": "SPIFFE-behållarna så som katalogen lagrar dem"
+  },
+  "endpoints.route./admin-api/ldap/roles.name": {
+    "en": "b0619c49a1d25fe7",
+    "text": "Rollposterna så som katalogen lagrar dem"
+  },
+  "endpoints.route./admin-api/ldap/policies.name": {
+    "en": "05f1b17e20b06c12",
+    "text": "Policyarkivet så som katalogen lagrar det"
+  },
+  "endpoints.route./admin-api/ldap/devices.name": {
+    "en": "69b995f018f2f463",
+    "text": "Enhetsregistret så som katalogen lagrar det"
+  },
+  "endpoints.route./admin-api/ldap/peps.name": {
+    "en": "c36d4e8180e7ccbf",
+    "text": "De registrerade fjärr-PEP:erna så som katalogen lagrar dem"
+  },
+  "endpoints.route./admin-api/ldap/service.name": {
+    "en": "f6c749e9d414c44e",
+    "text": "Vad katalogen ÄR, just nu"
+  },
+  "endpoints.route./admin-api/wstrust.name": {
+    "en": "9f6a673422101370",
+    "text": "WS-Trust-inställningar"
+  },
+  "endpoints.route./admin-api/wsfed.name": {
+    "en": "87ba4432c64fb34a",
+    "text": "WS-Federation-inställningar"
+  },
+  "endpoints.route./admin-api/tls.name": {
+    "en": "96b20b887882a558",
+    "text": "Inställningar för TLS / ömsesidig TLS"
+  },
+  "endpoints.route./admin-api/tls/trust.name": {
+    "en": "7afb6aac81a9a73c",
+    "text": "Förtroendelager för klientcertifikat"
+  },
+  "endpoints.route./admin-api/tls/trust/:action.name": {
+    "en": "a1951930186f3dee",
+    "text": "Lägg till eller ta bort ett förtroendeankare för klientcertifikat"
+  },
+  "endpoints.route./admin-api/tls-connection.name": {
+    "en": "efa20d960e0f15ad",
+    "text": "Vad tjänsten såg av en begärans TLS-anslutning"
+  },
+  "endpoints.route./admin-api/kerberos/claims.name": {
+    "en": "5033ca8bef02346f",
+    "text": "Kerberos PAC-anspråk"
+  },
+  "endpoints.route./admin-api/kerberos/claims/:action.name": {
+    "en": "4c12463f13744211",
+    "text": "Lägg till, ta bort, rensa eller ersätt ett Kerberos PAC-anspråk"
+  },
+  "endpoints.route./admin-api/kerberos/principals.name": {
+    "en": "2832cf5b58397e32",
+    "text": "Kerberos-principaler"
+  },
+  "endpoints.route./admin-api/kerberos/principals/:action.name": {
+    "en": "e3b666e9c2cf04a5",
+    "text": "Skapa, rotera eller ta bort en tjänsteprincipal, rensa en persons nycklar, släpp tidigare nyckelversioner eller rotera krbtgt-nyckeln"
+  },
+  "endpoints.route./admin-api/token-lifetimes.name": {
+    "en": "ddad2319f680d9f9",
+    "text": "Tokenlivslängder"
+  },
+  "endpoints.route./admin-api/token-lifetimes/:action.name": {
+    "en": "b4ceed5378a53501",
+    "text": "Åtgärder för tokenlivslängder"
+  },
+  "endpoints.route./admin-api/saml-assertions.name": {
+    "en": "baa38758f2ab7660",
+    "text": "SAML-intyg"
+  },
+  "endpoints.route./admin-api/saml-assertions/:action.name": {
+    "en": "37942134597c5c23",
+    "text": "Åtgärder för SAML-intyg"
+  },
+  "endpoints.route./admin-api/claims.name": {
+    "en": "65b9df09c075b30c",
+    "text": "Anpassade anspråk"
+  },
+  "endpoints.route./admin-api/claims/:action.name": {
+    "en": "cff4a3fe8d0b0994",
+    "text": "Åtgärder för anpassade anspråk"
+  },
+  "endpoints.route./admin-api/userinfo-claims.name": {
+    "en": "ba426b442708b016",
+    "text": "UserInfo-anspråk"
+  },
+  "endpoints.route./admin-api/userinfo-claims/:action.name": {
+    "en": "a538bc346df5c3ee",
+    "text": "Åtgärder för UserInfo-anspråk"
+  },
+  "endpoints.route./admin-api/federation.name": {
+    "en": "ec49c08ccb8dd325",
+    "text": "Federationsrelationer"
+  },
+  "endpoints.route./admin-api/federation/:action.name": {
+    "en": "ae7246fdf8a72fad",
+    "text": "Konfigurera en federationsrelation"
+  },
+  "endpoints.route./admin-api/saml2.name": {
+    "en": "fad22d219a6fe6f3",
+    "text": "SAML 2.0-identitetsleverantör"
+  },
+  "endpoints.route./admin-api/saml2/:action.name": {
+    "en": "81efebabec383a15",
+    "text": "Åtgärder för SAML 2.0-tjänsteleverantörer"
+  },
+  "endpoints.route./admin-api/saml11.name": {
+    "en": "cb7331a7d83104ee",
+    "text": "SAML 1.1-identitetsleverantör"
+  },
+  "endpoints.route./admin-api/saml11/:action.name": {
+    "en": "f507cdd5e7327df3",
+    "text": "Åtgärder för SAML 1.1-förlitande parter"
+  },
+  "endpoints.route./admin-api/saml-attributes.name": {
+    "en": "e9808df4bc485128",
+    "text": "Anpassade SAML-attribut"
+  },
+  "endpoints.route./admin-api/saml-attributes/:action.name": {
+    "en": "98f2c7dbe4c6c89c",
+    "text": "Åtgärder för anpassade SAML-attribut"
+  },
+  "endpoints.route./admin-api/credential-claims.name": {
+    "en": "b3466196455ff65d",
+    "text": "Intygsanspråk"
+  },
+  "endpoints.route./admin-api/credential-claims/:action.name": {
+    "en": "c6f0e9281179a739",
+    "text": "Åtgärder för intygsanspråk"
+  },
+  "endpoints.route./admin-api/verifier-request.name": {
+    "en": "41b747157d916a8b",
+    "text": "Verifierarbegäran (bardörren)"
+  },
+  "endpoints.route./admin-api/verifier-request/:action.name": {
+    "en": "6b2d5671c824f225",
+    "text": "Åtgärder för verifierarbegäran"
+  },
+  "endpoints.route./admin-api/verifications/:action.name": {
+    "en": "2eacfd95342c2fd3",
+    "text": "Starta en verifiering"
+  },
+  "endpoints.route./admin-api/verifications.name": {
+    "en": "1a34e870e6381c91",
+    "text": "Utfallet av en verifiering"
+  },
+  "endpoints.route./admin-api/oid4vci/last-request.name": {
+    "en": "ccc72f51fb477e25",
+    "text": "Den senaste Credential Request"
+  },
+  "endpoints.route./admin-api/oid4vci/notifications.name": {
+    "en": "a7bb4ad24eb592cf",
+    "text": "Ett intygs notifiering"
+  },
+  "endpoints.route./sts.name": {
+    "en": "974efec49bd38548",
+    "text": "Security Token Service"
+  },
+  "endpoints.route./sts/cert.name": {
+    "en": "a8e401846d25c111",
+    "text": "STS-certifikat"
+  },
+  "endpoints.route./wsfed.name": {
+    "en": "174e4d79e29b5d71",
+    "text": "Slutpunkt för passiv begärare"
+  },
+  "endpoints.route./wsfed/autopost.js.name": {
+    "en": "2a2ec46d4b275f3f",
+    "text": "Skript för automatisk postning av inloggningssvaret"
+  },
+  "endpoints.route./FederationMetadata/2007-06/FederationMetadata.xml.name": {
+    "en": "57daca724d75f812",
+    "text": "Federationsmetadata"
+  },
+  "endpoints.route./wsfed/metadata/:rp.name": {
+    "en": "17543ed2ad8f5b73",
+    "text": "Federationsmetadata för EN förlitande part"
+  },
+  "endpoints.route./saml2.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "Vad profilen är"
+  },
+  "endpoints.route./saml2/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Beskrivningssidans skript"
+  },
+  "endpoints.route./saml2/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "Identitetsleverantörens metadata"
+  },
+  "endpoints.route./saml2/metadata/:sp.name": {
+    "en": "a9ae2cff7346229c",
+    "text": "Identitetsleverantörens metadata för EN tjänsteleverantör"
+  },
+  "endpoints.route./saml2/sso.name": {
+    "en": "e16a38fa8fbc04a0",
+    "text": "Single Sign-On-tjänst"
+  },
+  "endpoints.route./saml2/sso/:sp.name": {
+    "en": "004995b3099eff0b",
+    "text": "Single Sign-On-tjänst för EN tjänsteleverantör"
+  },
+  "endpoints.route./saml2/unsolicited.name": {
+    "en": "c2e1dbfea3f7b82f",
+    "text": "Inloggning initierad av identitetsleverantören"
+  },
+  "endpoints.route./saml2/unsolicited/:sp.name": {
+    "en": "2a237a561e4bdb89",
+    "text": "Inloggning initierad av identitetsleverantören för EN tjänsteleverantör"
+  },
+  "endpoints.route./saml2/aa.name": {
+    "en": "162f9d403c0bae47",
+    "text": "Attribututfärdare"
+  },
+  "endpoints.route./saml2/aa/:sp.name": {
+    "en": "fddab449328f6e63",
+    "text": "Attribututfärdare för EN tjänsteleverantör"
+  },
+  "endpoints.route./saml2/ars.name": {
+    "en": "46cbd4aa352d2c6d",
+    "text": "Artifact Resolution Service"
+  },
+  "endpoints.route./saml2/ars/:sp.name": {
+    "en": "4ef0f8d60c58078a",
+    "text": "Artifact Resolution Service för EN tjänsteleverantör"
+  },
+  "endpoints.route./saml2/slo.name": {
+    "en": "4edb185d6016b03e",
+    "text": "Single Logout-tjänst"
+  },
+  "endpoints.route./saml2/slo/:sp.name": {
+    "en": "98b9e34fbd53cb3f",
+    "text": "Single Logout-tjänst för EN tjänsteleverantör"
+  },
+  "endpoints.route./saml2/autopost.js.name": {
+    "en": "3046cc7181c4dedb",
+    "text": "Skript för automatisk postning i HTTP POST-bindningen"
+  },
+  "endpoints.route./saml11.name": {
+    "en": "35f88743c0a1f5d7",
+    "text": "Vad profilen är"
+  },
+  "endpoints.route./saml11/description.js.name": {
+    "en": "b8dd688d1fccdb8b",
+    "text": "Beskrivningssidans skript"
+  },
+  "endpoints.route./saml11/metadata.name": {
+    "en": "99a0d84a3683fb71",
+    "text": "Identitetsleverantörens metadata"
+  },
+  "endpoints.route./saml11/metadata/:rp.name": {
+    "en": "e65a9fe2331190e7",
+    "text": "Identitetsleverantörens metadata för EN förlitande part"
+  },
+  "endpoints.route./saml11/sso.name": {
+    "en": "bf8583daf48f7e2b",
+    "text": "Tjänst för överföring mellan webbplatser"
+  },
+  "endpoints.route./saml11/sso/:rp.name": {
+    "en": "9fe980e24e7a8dfd",
+    "text": "Tjänst för överföring mellan webbplatser för EN förlitande part"
+  },
+  "endpoints.route./saml11/responder.name": {
+    "en": "4c0c301abdc81459",
+    "text": "SAML-responder (SOAP)"
+  },
+  "endpoints.route./saml11/responder/:rp.name": {
+    "en": "fff6a87d7e14a3a4",
+    "text": "SAML-responder för EN förlitande part"
+  },
+  "endpoints.route./saml11/autopost.js.name": {
+    "en": "1c2c5f913f3bd033",
+    "text": "Skript för automatisk postning i Browser/POST-profilen"
+  },
+  "endpoints.route./federation.name": {
+    "en": "c025c7c05450031b",
+    "text": "Vad federation är här"
+  },
+  "endpoints.route./federation/pages.js.name": {
+    "en": "3ad84c6b852ab480",
+    "text": "Federationssidornas skript"
+  },
+  "endpoints.route./federation/login/:id.name": {
+    "en": "561e36f4539a01de",
+    "text": "Starta en federerad inloggning"
+  },
+  "endpoints.route./federation/acs/:id.name": {
+    "en": "fff6118cbd019f5e",
+    "text": "Assertion consumer service / wreply / redirect_uri"
+  },
+  "endpoints.route./federation/link/:handle.name": {
+    "en": "b1f3d17607ed42ee",
+    "text": "Koppla en partners subjekt vid första inloggningen"
+  },
+  "endpoints.route./federation/slo/:id.name": {
+    "en": "4974c5129575d272",
+    "text": "En partners utloggning, i en webbläsare (#167)"
+  },
+  "endpoints.route./federation/backchannel-logout/:id.name": {
+    "en": "27265e6379adee8c",
+    "text": "OpenID Connect Back-Channel Logout, som förlitande part (#167)"
+  },
+  "endpoints.route./federation/frontchannel-logout/:id.name": {
+    "en": "f0ccc33fe373786e",
+    "text": "OpenID Connect Front-Channel Logout, som förlitande part (#167)"
+  },
+  "endpoints.route./federation/metadata/:id.name": {
+    "en": "1bd56e73b838da2d",
+    "text": "Den här tjänstens EGNA SAML-metadata, per partner"
+  },
+  "endpoints.route./federation/jwks/:id.name": {
+    "en": "56f010e78f399989",
+    "text": "En OpenID Connect-relations krypteringsnyckel (#168)"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server.name": {
+    "en": "6339737b371a7f8e",
+    "text": "Authorization Server Metadata"
+  },
+  "endpoints.route./.well-known/oauth-authorization-server/*.name": {
+    "en": "846fc2797e4d73f5",
+    "text": "Authorization Server Metadata (utfärdare med en sökväg)"
+  },
+  "endpoints.route./.well-known/webfinger.name": {
+    "en": "4ee1f8cf469f5a7d",
+    "text": "Upptäckt av utfärdare via WebFinger"
+  },
+  "endpoints.route./.well-known/openid-configuration.name": {
+    "en": "4f19360f1fe5690d",
+    "text": "OpenID Provider Configuration"
+  },
+  "endpoints.route./.well-known/openid-configuration/*.name": {
+    "en": "34de55b655967e89",
+    "text": "OpenID Provider Configuration (RFC 8414-form med infogad sökväg)"
+  },
+  "endpoints.route./*/.well-known/openid-configuration.name": {
+    "en": "4cd225c57c9e9ff5",
+    "text": "OpenID Provider Configuration (utfärdare med en sökväg)"
+  },
+  "endpoints.route./oauth2/authorize.name": {
+    "en": "91ef8dd96110c183",
+    "text": "Auktoriseringsslutpunkt"
+  },
+  "endpoints.route./logout.name": {
+    "en": "1228edbd8a552e3b",
+    "text": "Logga ut från allt"
+  },
+  "endpoints.route./logout/signout.js.name": {
+    "en": "fb4839ee88511096",
+    "text": "Utloggningssidans skript"
+  },
+  "endpoints.route./logout/signout.css.name": {
+    "en": "648db34f1fb87aa3",
+    "text": "Utloggningssidans formatmall"
+  },
+  "endpoints.route./logout/signed-out.name": {
+    "en": "a40a09189d1b1d45",
+    "text": "Sidan för utloggad"
+  },
+  "endpoints.route./authn/login.name": {
+    "en": "cff20aed466d99d5",
+    "text": "Inloggningsskärm"
+  },
+  "endpoints.route./authn/select-idp.name": {
+    "en": "afae7eb3e60fb142",
+    "text": "Väljare av federationspartner"
+  },
+  "endpoints.route./authn/spnego.name": {
+    "en": "0a014fa4b2685cd7",
+    "text": "Logga in med en Kerberos-biljett"
+  },
+  "endpoints.route./authn/wallet.name": {
+    "en": "762000c7e5e841a9",
+    "text": "Logga in med en plånbok"
+  },
+  "endpoints.route./authn/wallet/wait.name": {
+    "en": "b5fe1c58e2d72833",
+    "text": "Plånboksinloggning: vänta och slutför"
+  },
+  "endpoints.route./authn/password-factor.name": {
+    "en": "153eb47c253809aa",
+    "text": "Lösenord som andra faktor"
+  },
+  "endpoints.route./authn/webauthn.name": {
+    "en": "5bebca79ee720f59",
+    "text": "Steg med WebAuthn-säkerhetsnyckel"
+  },
+  "endpoints.route./authn/backup-code.name": {
+    "en": "305d816e110db5e1",
+    "text": "Steg med återställningskod som andra faktor"
+  },
+  "endpoints.route./authn/email-code.name": {
+    "en": "f889f4695b9ab9f3",
+    "text": "Steg med e-postad kod"
+  },
+  "endpoints.route./authn/email-link.name": {
+    "en": "28e6a6472025060a",
+    "text": "E-postad inloggningslänk: väntsidan"
+  },
+  "endpoints.route./authn/email-link/open.name": {
+    "en": "be8ae41916803885",
+    "text": "E-postad inloggningslänk: där den landar"
+  },
+  "endpoints.route./authn/language.name": {
+    "en": "33466e5d338f55b0",
+    "text": "Språkväljare"
+  },
+  "endpoints.route./authn/password-change.name": {
+    "en": "7e99dc1a87faaf46",
+    "text": "Steg för tvingat lösenordsbyte"
+  },
+  "endpoints.route./authn/mfa-setup.name": {
+    "en": "48e0b4bbb949a879",
+    "text": "Steg för obligatorisk inställning av andra faktor"
+  },
+  "endpoints.route./authn/totp.name": {
+    "en": "a89de574ee2c21ab",
+    "text": "Steg med engångskod som andra faktor"
+  },
+  "endpoints.route./authn/signin.js.name": {
+    "en": "9eb3a8726ead14bf",
+    "text": "Inloggningsskärmens skript"
+  },
+  "endpoints.route./authn-api.name": {
+    "en": "37f607930889c3f0",
+    "text": "Inloggnings-API:ets index"
+  },
+  "endpoints.route./authn-api/openapi.json.name": {
+    "en": "95a08b95fbad641e",
+    "text": "Inloggnings-API:ets OpenAPI-dokument"
+  },
+  "endpoints.route./authn-api/pending/:id.name": {
+    "en": "25b5fd300153bbe4",
+    "text": "Vad inloggningsskärmen erbjuder"
+  },
+  "endpoints.route./authn-api/pending/:id/partners.name": {
+    "en": "cb0f4ae92fef3ded",
+    "text": "Federationspartnerna att välja mellan"
+  },
+  "endpoints.route./authn-api/pending/:id/password.name": {
+    "en": "673a50377a1ff20b",
+    "text": "Logga in med ett lösenord"
+  },
+  "endpoints.route./authn-api/pending/:id/cancel.name": {
+    "en": "117e271d03b64b31",
+    "text": "Avböj inloggningen"
+  },
+  "endpoints.route./authn-api/pending/:id/anonymous.name": {
+    "en": "5468076a514d8abf",
+    "text": "Fortsätt utan att logga in"
+  },
+  "endpoints.route./authn-api/pending/:id/email.name": {
+    "en": "108905ece8873211",
+    "text": "Logga in med en kod eller länk via e-post"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey/options.name": {
+    "en": "9f5f54d890bd7637",
+    "text": "Förbered en nyckelceremoni för inloggningsnyckel"
+  },
+  "endpoints.route./authn-api/pending/:id/passkey.name": {
+    "en": "d358470d455e8a4f",
+    "text": "Logga in med en inloggningsnyckel utan användarnamn"
+  },
+  "endpoints.route./authn-api/wallet.name": {
+    "en": "80406ee6193d32ad",
+    "text": "Starta en inloggning med plånbok"
+  },
+  "endpoints.route./authn-api/wallet/:state.name": {
+    "en": "48bf057dc942be93",
+    "text": "Vad väntesidan för plånboksinloggningen ritar"
+  },
+  "endpoints.route./authn-api/wallet/:state/status.name": {
+    "en": "8aa2eb39b24d76cc",
+    "text": "Hämta en plånboksinloggning"
+  },
+  "endpoints.route./authn-api/wallet/:state/dc-api.name": {
+    "en": "6f6ac9c72bde33a8",
+    "text": "Plånboksinloggning: svaret från Digital Credentials API"
+  },
+  "endpoints.route./authn-api/logout.name": {
+    "en": "196d3a7dc50ac8ef",
+    "text": "Vad en utloggning skulle avsluta, och utloggningen"
+  },
+  "endpoints.route./authn-api/consent/:id.name": {
+    "en": "1f22b542171d33ef",
+    "text": "Vad samtyckesskärmen frågar, och svaret"
+  },
+  "endpoints.route./authn-api/password-change/:id.name": {
+    "en": "f2d18b738357010b",
+    "text": "Ett påtvingat lösenordsbyte"
+  },
+  "endpoints.route./authn-api/password-change/:id/start-over.name": {
+    "en": "90049254d0d4a693",
+    "text": "Börja om en inloggning från lösenordsbytet"
+  },
+  "endpoints.route./authn-api/mfa/:id.name": {
+    "en": "b881ffb2600f827e",
+    "text": "Vad ett inloggningstegs sida visar"
+  },
+  "endpoints.route./authn-api/mfa/:id/totp.name": {
+    "en": "22a350cbbceaa429",
+    "text": "Kontrollera en engångskod"
+  },
+  "endpoints.route./authn-api/mfa/:id/backup-code.name": {
+    "en": "f3e3fe66753f9114",
+    "text": "Förbruka en återställningskod"
+  },
+  "endpoints.route./authn-api/mfa/:id/password.name": {
+    "en": "e59ea53b9b75ba40",
+    "text": "Kontrollera ett lösenord som andra faktor"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn/options.name": {
+    "en": "f11cdfd17fc8a238",
+    "text": "Förbered ett passkey-stegs ceremoni"
+  },
+  "endpoints.route./authn-api/mfa/:id/webauthn.name": {
+    "en": "243864657b195912",
+    "text": "Slutför ett passkey-steg"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/totp.name": {
+    "en": "09679d4354c9ec13",
+    "text": "Börja konfigurera en autentiseringsapp"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/confirm.name": {
+    "en": "34a1798b4970fcf5",
+    "text": "Bekräfta en autentiseringsapp"
+  },
+  "endpoints.route./authn-api/mfa/:id/setup/webauthn.name": {
+    "en": "731e67b177c594f5",
+    "text": "Välj en passkey i konfigurationssteget"
+  },
+  "endpoints.route./authn-api/mfa/:id/skip.name": {
+    "en": "d412e3d8a9215328",
+    "text": "Ignorera en erbjuden andra faktor"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/send.name": {
+    "en": "f974b23b7838f712",
+    "text": "Mejla en inloggningskod eller -länk"
+  },
+  "endpoints.route./authn-api/mfa/:id/email/code.name": {
+    "en": "73fb62565006f03f",
+    "text": "Kontrollera en mejlad kod"
+  },
+  "endpoints.route./authn-api/mfa/:id/email-link/open.name": {
+    "en": "7d4cd6f48237ebb7",
+    "text": "Förbruka en mejlad inloggningslänk"
+  },
+  "endpoints.route./authn-api/mfa/:id/start-over.name": {
+    "en": "34d6f89aeabf8c05",
+    "text": "Börja om en inloggning från ett steg"
+  },
+  "endpoints.route./authn/fingerprint.js.name": {
+    "en": "e79a24977ac0a595",
+    "text": "Skript för webbläsarfingeravtryck (valfritt)"
+  },
+  "endpoints.route./oauth2/check_session.name": {
+    "en": "267337fd3ad0ab7f",
+    "text": "OP-iframe (check_session_iframe)"
+  },
+  "endpoints.route./oauth2/check_session.js.name": {
+    "en": "d9f2d9b37bfe6db9",
+    "text": "Skript för OP-iframe"
+  },
+  "endpoints.route./oauth2/logout.name": {
+    "en": "9901e3b8fd763f16",
+    "text": "Sessionsavslut (end_session_endpoint)"
+  },
+  "endpoints.route./oauth2/token.name": {
+    "en": "f60f44154acbc444",
+    "text": "Tokenslutpunkt"
+  },
+  "endpoints.route./oauth2/consent.name": {
+    "en": "f38b4a6b64fec408",
+    "text": "Samtyckesskärm"
+  },
+  "endpoints.route./oauth2/consent.js.name": {
+    "en": "693bf762fd9680b4",
+    "text": "Samtyckesskärmens skript"
+  },
+  "endpoints.route./oauth2/autopost.js.name": {
+    "en": "509aa57b5e9572d6",
+    "text": "Skriptet för form-post-svaret"
+  },
+  "endpoints.route./:as/oauth2/authorize.name": {
+    "en": "35a6a7905bcfc924",
+    "text": "Auktoriseringsslutpunkt (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/token.name": {
+    "en": "eff543132d567c86",
+    "text": "Tokenslutpunkt (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/userinfo.name": {
+    "en": "448a4f61fc7b0310",
+    "text": "UserInfo-slutpunkt (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/introspect.name": {
+    "en": "d1e650a8a10a9e1f",
+    "text": "Introspektion (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/par.name": {
+    "en": "1540774db9722dee",
+    "text": "Pushade auktoriseringsbegäranden (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/revoke.name": {
+    "en": "5f15734899e15325",
+    "text": "Återkallelse (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/register.name": {
+    "en": "20e51292a909bb24",
+    "text": "Registrering (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/register/:client_id.name": {
+    "en": "e9e266200b93ee8c",
+    "text": "Hantering av registrerade klienter (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/logout.name": {
+    "en": "9f3e0399c82bb2d2",
+    "text": "Sessionsavslut (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./:as/oauth2/jwks.name": {
+    "en": "da3c9537b549c3a3",
+    "text": "JWKS (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./oauth2/rfc9700.name": {
+    "en": "d1dfc6ccb5d6f5ab",
+    "text": "Rapport om RFC 9700-läget (inte en specifikationsslutpunkt)"
+  },
+  "endpoints.route./oauth2/fapi.name": {
+    "en": "c0f8666df47dcdde",
+    "text": "Rapport om FAPI-profil (inte en specifikationsslutpunkt)"
+  },
+  "endpoints.route./:as/oauth2/fapi.name": {
+    "en": "2db6a31fbce294e3",
+    "text": "Rapport om FAPI-profil (en namngiven auktoriseringsserver)"
+  },
+  "endpoints.route./oauth2/oauth21.name": {
+    "en": "632451480bda3aec",
+    "text": "Rapport om OAuth 2.1-läget (inte en specifikationsslutpunkt)"
+  },
+  "endpoints.route./oauth2/userinfo.name": {
+    "en": "aebc2aa96e6b1b70",
+    "text": "UserInfo-slutpunkt"
+  },
+  "endpoints.route./oauth2/introspect.name": {
+    "en": "328dfd36fb81f446",
+    "text": "Introspektionsslutpunkt"
+  },
+  "endpoints.route./status-lists/access-tokens.name": {
+    "en": "f059bd82cb3acaac",
+    "text": "Statuslista för åtkomsttoken"
+  },
+  "endpoints.route./status-lists.name": {
+    "en": "187ac505c7e39fc8",
+    "text": "Status List Aggregation för åtkomsttoken"
+  },
+  "endpoints.route./oauth2/challenge.name": {
+    "en": "2058075cb9955db9",
+    "text": "Utmaningsslutpunkt för klientattestering"
+  },
+  "endpoints.route./oauth2/par.name": {
+    "en": "59993176c4a0e4a5",
+    "text": "Slutpunkt för pushade auktoriseringsbegäranden"
+  },
+  "endpoints.route./admin-api/oauth2/monitor.name": {
+    "en": "21eb6990b9a90996",
+    "text": "Aktivitet i OAuth 2.0 / OIDC som JSON"
+  },
+  "endpoints.route./admin-api/oauth2/monitor/:action.name": {
+    "en": "b9d72b1b82f53e0d",
+    "text": "Övervakningsåtgärden för OAuth 2.0 / OIDC"
+  },
+  "endpoints.route./oauth2/grants/:grantId.name": {
+    "en": "c949ed02f1ba90a5",
+    "text": "Grant Management API"
+  },
+  "endpoints.route./admin-api/grants.name": {
+    "en": "b0eb5b67d86e7f62",
+    "text": "Konsolsidan Grants som JSON"
+  },
+  "endpoints.route./admin-api/grants/:action.name": {
+    "en": "d78e7d6c27003500",
+    "text": "Återkalla en grant"
+  },
+  "endpoints.route./admin-api/commands.name": {
+    "en": "88006178bfa3632d",
+    "text": "Konsolsidan OpenID Provider Commands som JSON"
+  },
+  "endpoints.route./admin-api/commands/:action.name": {
+    "en": "b784156dac51ba48",
+    "text": "Skicka ett kommando, eller försök igen med ett"
+  },
+  "endpoints.route./oauth2/commands/callback.name": {
+    "en": "077e67ad034f4945",
+    "text": "Callback-slutpunkt för OpenID Provider Commands"
+  },
+  "endpoints.route./admin-api/claim-providers.name": {
+    "en": "263c769f55b58ee3",
+    "text": "Konsolsidan Claims Providers som JSON"
+  },
+  "endpoints.route./admin-api/claim-providers/:action.name": {
+    "en": "51791ee150e7550c",
+    "text": "Ändra registret över Claims Providers"
+  },
+  "endpoints.route./oauth2/device_authorization.name": {
+    "en": "17f9953de35f59f9",
+    "text": "Device Authorization Endpoint"
+  },
+  "endpoints.route./oauth2/bc-authorize.name": {
+    "en": "8abae32691ff0227",
+    "text": "Backchannel Authentication Endpoint (CIBA)"
+  },
+  "endpoints.route./oauth2/revoke.name": {
+    "en": "9033948292614d8a",
+    "text": "Återkallelseslutpunkt"
+  },
+  "endpoints.route./oauth2/register.name": {
+    "en": "d53075a18dfd9972",
+    "text": "Dynamisk klientregistrering"
+  },
+  "endpoints.route./oauth2/register/:client_id.name": {
+    "en": "36b03c4cf456a0ad",
+    "text": "Hantering av registrerade klienter"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer.name": {
+    "en": "1f08d181c3c4f31b",
+    "text": "Credential Issuer Metadata"
+  },
+  "endpoints.route./.well-known/openid-credential-issuer/*.name": {
+    "en": "dcd93dd68bb234ec",
+    "text": "Credential Issuer Metadata (utfärdare med en sökväg)"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer.name": {
+    "en": "f08112b1d485cfb0",
+    "text": "JWT VC Issuer Metadata"
+  },
+  "endpoints.route./.well-known/jwt-vc-issuer/*.name": {
+    "en": "1080905b09dbe51c",
+    "text": "JWT VC Issuer Metadata (utfärdare med en sökväg)"
+  },
+  "endpoints.route./oid4vci/nonce.name": {
+    "en": "64d7b165db23d809",
+    "text": "Nonce-slutpunkt"
+  },
+  "endpoints.route./oid4vci/credential.name": {
+    "en": "f1a74c0c1d1a9142",
+    "text": "Credential-slutpunkt"
+  },
+  "endpoints.route./oid4vci/status-lists/1.name": {
+    "en": "6bc2372d3bb214c3",
+    "text": "Token Status List"
+  },
+  "endpoints.route./oid4vci/status-lists.name": {
+    "en": "b7c39aa8efc43f99",
+    "text": "Status List Aggregation"
+  },
+  "endpoints.route./oid4vci/status-lists/bitstring/:purpose.name": {
+    "en": "69e5a2172fd0dff1",
+    "text": "Bitstring Status List-intyg"
+  },
+  "endpoints.route./oid4vci/deferred_credential.name": {
+    "en": "b64bd315376ba1ef",
+    "text": "Slutpunkt för uppskjutna intyg"
+  },
+  "endpoints.route./oid4vci/notification.name": {
+    "en": "e1a25561e414b22c",
+    "text": "Notifieringsslutpunkt"
+  },
+  "endpoints.route./oid4vci/credential-offer/:id.name": {
+    "en": "357ca7bdfcc31665",
+    "text": "Credential Offer via referens"
+  },
+  "endpoints.route./bbs/keys/:id.name": {
+    "en": "58347a1730d54e91",
+    "text": "Publik BBS-nyckel"
+  },
+  "endpoints.route./vc-api/issuers.name": {
+    "en": "73b838a87b15b09a",
+    "text": "VC API:ets utfärdare"
+  },
+  "endpoints.route./vc-api/issuers/:issuer/credentials/issue.name": {
+    "en": "36e4ff37d0083d67",
+    "text": "Utfärda ett intyg (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/verify.name": {
+    "en": "7f67271e211b78e1",
+    "text": "Verifiera ett intyg (VC API)"
+  },
+  "endpoints.route./vc-api/presentations/verify.name": {
+    "en": "f0ace30e55e137f1",
+    "text": "Verifiera en presentation (VC API)"
+  },
+  "endpoints.route./vc-api/holders/:holder/presentations/prove.name": {
+    "en": "96508bdaea6f7f69",
+    "text": "Bevisa en presentation (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/derive.name": {
+    "en": "4af3df1e4c1f2f99",
+    "text": "Härled ett selektivt röjande (VC API)"
+  },
+  "endpoints.route./vc-api/credentials/status.name": {
+    "en": "d231bdc923e68f8a",
+    "text": "Ändra ett intygs status (VC API)"
+  },
+  "endpoints.route./vc-api/resolve.name": {
+    "en": "39c91a22e95b0c2e",
+    "text": "Slå upp ett DID"
+  },
+  "endpoints.route./vc-api/dereference.name": {
+    "en": "a7044c968ef56722",
+    "text": "Följ en DID-URL"
+  },
+  "endpoints.route./.well-known/did.json.name": {
+    "en": "9400b0ba526646db",
+    "text": "DID-dokument (did:web)"
+  },
+  "endpoints.route./did.json.name": {
+    "en": "64a6ef9ae9a20c82",
+    "text": "DID-dokument på en did:web-sökväg (förtroendesfärer)"
+  },
+  "endpoints.route./applications/:application/did.json.name": {
+    "en": "7d0bcaaf2c946cba",
+    "text": "En applikations DID-dokument"
+  },
+  "endpoints.route./.well-known/did-configuration.json.name": {
+    "en": "ea3b5de3683521ad",
+    "text": "Domain Linkage Credential"
+  },
+  "endpoints.route./oid4vp/verifier-certificate.name": {
+    "en": "9e006ca613ebe851",
+    "text": "Verifierarens x509-identitet"
+  },
+  "endpoints.route./oid4vp/request/:id.name": {
+    "en": "72816b085ee822bd",
+    "text": "Request Object"
+  },
+  "endpoints.route./oid4vp/response.name": {
+    "en": "041dda1707b526b4",
+    "text": "Response URI"
+  },
+  "endpoints.route./enroll/acme/directory.name": {
+    "en": "104ffd34f6a0e8e7",
+    "text": "ACME-katalogen"
+  },
+  "endpoints.route./enroll/acme/new-nonce.name": {
+    "en": "58500cdad5cfc4d8",
+    "text": "En färsk Replay-Nonce"
+  },
+  "endpoints.route./enroll/acme/new-account.name": {
+    "en": "19f7ad85f8039402",
+    "text": "Skapa eller hitta ett konto"
+  },
+  "endpoints.route./enroll/acme/account/:id.name": {
+    "en": "d8e1731e5f342c53",
+    "text": "Ett konto"
+  },
+  "endpoints.route./enroll/acme/account/:id/orders.name": {
+    "en": "d2c2d051de5a7992",
+    "text": "Ett kontos beställningar"
+  },
+  "endpoints.route./enroll/acme/new-order.name": {
+    "en": "18adf271f8844b21",
+    "text": "Skapa en beställning"
+  },
+  "endpoints.route./enroll/acme/order/:id.name": {
+    "en": "8040f78fc2b0df03",
+    "text": "En beställning"
+  },
+  "endpoints.route./enroll/acme/order/:id/finalize.name": {
+    "en": "b6644906e260eb21",
+    "text": "Slutför en beställning"
+  },
+  "endpoints.route./enroll/acme/authz/:id.name": {
+    "en": "56c0850aaa4bcf14",
+    "text": "En auktorisering"
+  },
+  "endpoints.route./enroll/acme/challenge/:id.name": {
+    "en": "cecfa83a474620dc",
+    "text": "En utmaning"
+  },
+  "endpoints.route./enroll/acme/cert/:id.name": {
+    "en": "684bd809e6bf3b64",
+    "text": "Ladda ned ett certifikat"
+  },
+  "endpoints.route./enroll/acme/revoke-cert.name": {
+    "en": "374ba7ba8a1ba9d4",
+    "text": "Återkalla ett certifikat"
+  },
+  "endpoints.route./enroll/acme/key-change.name": {
+    "en": "e5e400a69df90c45",
+    "text": "Flytta ett konto till en ny nyckel"
+  },
+  "endpoints.route./enroll/acme/renewal-info/:id.name": {
+    "en": "3baccc984057446f",
+    "text": "Förnyelseinformation"
+  },
+  "endpoints.route./admin-api/acme.name": {
+    "en": "ccdc212d6fcfff07",
+    "text": "ACME-konsolsidan som JSON"
+  },
+  "endpoints.route./admin-api/acme/monitor.name": {
+    "en": "96d92e1bcdcc2d27",
+    "text": "ACME-registreringar som JSON"
+  },
+  "endpoints.route./admin-api/acme/:action.name": {
+    "en": "aa09fbaeffaec922",
+    "text": "ACME-konsolens åtgärder"
+  },
+  "endpoints.route./.well-known/est/cacerts.name": {
+    "en": "289fb2c13dc75710",
+    "text": "CA-certifikat"
+  },
+  "endpoints.route./.well-known/est/simpleenroll.name": {
+    "en": "1ffad68b1154847d",
+    "text": "Enkel registrering"
+  },
+  "endpoints.route./.well-known/est/simplereenroll.name": {
+    "en": "cd138debc7dcace9",
+    "text": "Enkel omregistrering"
+  },
+  "endpoints.route./.well-known/est/serverkeygen.name": {
+    "en": "beb605660186e4e5",
+    "text": "Nyckelgenerering på serversidan"
+  },
+  "endpoints.route./.well-known/est/csrattrs.name": {
+    "en": "fa0a2c47c0b1dfba",
+    "text": "CSR-attribut"
+  },
+  "endpoints.route./.well-known/est/fullcmc.name": {
+    "en": "d8a28887e3416c39",
+    "text": "Fullständig CMC"
+  },
+  "endpoints.route./.well-known/est/:label/cacerts.name": {
+    "en": "0808f99538729c98",
+    "text": "CA-certifikat (med etikett)"
+  },
+  "endpoints.route./.well-known/est/:label/simpleenroll.name": {
+    "en": "cd563ee6554e6733",
+    "text": "Enkel registrering (med etikett)"
+  },
+  "endpoints.route./.well-known/est/:label/simplereenroll.name": {
+    "en": "cf34b617dc30eb0d",
+    "text": "Enkel omregistrering (med etikett)"
+  },
+  "endpoints.route./.well-known/est/:label/serverkeygen.name": {
+    "en": "698e0b99518ef7a0",
+    "text": "Nyckelgenerering på serversidan (med etikett)"
+  },
+  "endpoints.route./.well-known/est/:label/csrattrs.name": {
+    "en": "a99bf6e38057e196",
+    "text": "CSR-attribut (med etikett)"
+  },
+  "endpoints.route./.well-known/est/:label/fullcmc.name": {
+    "en": "9342cd6960af927d",
+    "text": "Fullständig CMC (med etikett)"
+  },
+  "endpoints.route./.well-known/est/nonce.name": {
+    "en": "fac4d513cd37ea55",
+    "text": "Nonce för attesteringens färskhet"
+  },
+  "endpoints.route./.well-known/est/:label/nonce.name": {
+    "en": "228380fc44850d1a",
+    "text": "Nonce för attesteringens färskhet (med etikett)"
+  },
+  "endpoints.route./admin-api/est.name": {
+    "en": "d52ede6acd0f288e",
+    "text": "EST-konsolsidan som JSON"
+  },
+  "endpoints.route./admin-api/est/monitor.name": {
+    "en": "d92f192b9774f4df",
+    "text": "EST-registreringar som JSON"
+  },
+  "endpoints.route./admin-api/est/:action.name": {
+    "en": "560ee5483e3bac3e",
+    "text": "Utfärda med en servernyckel, återkalla eller ändra värdnamn"
+  },
+  "endpoints.route./.well-known/openid-federation.name": {
+    "en": "d1df780ba25b939c",
+    "text": "Entity Configuration"
+  },
+  "endpoints.route./oidfed/fetch.name": {
+    "en": "f5422a3881454156",
+    "text": "Hämta ett Subordinate Statement"
+  },
+  "endpoints.route./oidfed/list.name": {
+    "en": "ce37f0ea513eb35f",
+    "text": "Subordinate Listing"
+  },
+  "endpoints.route./oidfed/resolve.name": {
+    "en": "7adde00f12c465ff",
+    "text": "Slå upp en entitet"
+  },
+  "endpoints.route./oidfed/trust-mark.name": {
+    "en": "77987668f6339bf8",
+    "text": "Trust Mark-slutpunkten"
+  },
+  "endpoints.route./oidfed/extended-list.name": {
+    "en": "b14e63c94c9083ed",
+    "text": "Extended Subordinate Listing"
+  },
+  "endpoints.route./oidfed/collection.name": {
+    "en": "fdaa144094945599",
+    "text": "Entity Collection"
+  },
+  "endpoints.route./oidfed/subordinate-events.name": {
+    "en": "7a12871efa2aa1bc",
+    "text": "Subordinate Events"
+  },
+  "endpoints.route./oidfed/trust-mark-status.name": {
+    "en": "5721566a90e07bbb",
+    "text": "Trust Mark Status"
+  },
+  "endpoints.route./oidfed/trust-mark-list.name": {
+    "en": "b0d733b58ace3f80",
+    "text": "Trust Marked Entities Listing"
+  },
+  "endpoints.route./oidfed/historical-keys.name": {
+    "en": "186db2a5169ec661",
+    "text": "Federation Historical Keys"
+  },
+  "endpoints.route./oidfed/register.name": {
+    "en": "d04d3abbbcd68dca",
+    "text": "Explicit Registration"
+  },
+  "endpoints.route./admin-api/oidfed.name": {
+    "en": "1cf7cd853d6d692e",
+    "text": "OpenID Federation-konsolsidan som JSON"
+  },
+  "endpoints.route./admin-api/oidfed/:action.name": {
+    "en": "68da5fb8efee3487",
+    "text": "Underordnade, ankare, Trust Marks, uppslag och nycklar"
+  },
+  "endpoints.route./enroll/scep.name": {
+    "en": "7bfb8a0c73122b01",
+    "text": "SCEP-servern"
+  },
+  "endpoints.route./enroll/scep/pkiclient.exe.name": {
+    "en": "8bb99181dc5c31e3",
+    "text": "SCEP-servern (CGI-namn)"
+  },
+  "endpoints.route./enroll/scep/:profile/pkiclient.exe.name": {
+    "en": "b857590b45832439",
+    "text": "SCEP-servern för en profil (CGI-namn)"
+  },
+  "endpoints.route./enroll/scep/:profile.name": {
+    "en": "db710be736714314",
+    "text": "SCEP-servern för en profil"
+  },
+  "endpoints.route./admin-api/scep.name": {
+    "en": "27aaa89dfa182129",
+    "text": "SCEP-konsolsidan som JSON"
+  },
+  "endpoints.route./admin-api/scep/monitor.name": {
+    "en": "d1775471cb421bca",
+    "text": "SCEP-registreringar som JSON"
+  },
+  "endpoints.route./admin-api/scep/:action.name": {
+    "en": "c335ded81d044226",
+    "text": "Utmaningar, RA-certifikatet, återkallelse och värdnamn"
+  },
+  "endpoints.socket.kdc": {
+    "en": "a07cb128332c46ff",
+    "text": "Key Distribution Center"
+  },
+  "endpoints.socket.kdcRealm": {
+    "en": "bf03c3bc314da5cf",
+    "text": "Key Distribution Center (sfär {{realm}})"
+  },
+  "endpoints.socket.mainPort": {
+    "en": "6b11a59c1fd5cd82",
+    "text": "Klientcertifikat på huvudporten"
+  },
+  "endpoints.socket.mainPortTransport": {
+    "en": "f09855213e0c9733",
+    "text": "TLS (ett klientcertifikat begärs, krävs aldrig)"
+  }
+}

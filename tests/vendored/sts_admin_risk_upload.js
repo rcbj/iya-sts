@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_admin_risk_upload.js
 //
@@ -136,9 +136,16 @@ async function upload(prefix, query, file, type) {
 
 // A version's row once it is no longer loading, read the way an operator
 // reads it: GET /admin-api/risk.
+//
+// THREE MINUTES, NOT ONE (2026-09-30). The bound is how long to wait for a
+// verdict, not a claim about speed: under CI's coverage run the service is
+// instrumented, and the gzip bomb was refused 80 s after its upload (CI run
+// 36762417779, STS-RISK-0032 at 19:45:00, the job gave up at 19:44:39).
+const SETTLE_MS = 180000;
+
 async function settled(prefix, realm, version) {
   log.debug("Entering settled(). " + version);
-  const deadline = Date.now() + 60000;
+  const deadline = Date.now() + SETTLE_MS;
   for (;;) {
     const r = await call("GET", base + prefix + "/admin-api/risk");
     assert.strictEqual(r.status, 200, "GET /admin-api/risk answered " +
@@ -160,7 +167,8 @@ async function settled(prefix, realm, version) {
     if (Date.now() > deadline) {
       log.debug("Leaving settled(). Timed out.");
       assert.fail("version " + version + " of " + DATASET + " was still " +
-                  (v ? v.state : "not recorded") + " after a minute");
+                  (v ? v.state : "not recorded") + " after " +
+                  (SETTLE_MS / 60000) + " minutes");
     }
     await new Promise(function (resolve) { setTimeout(resolve, 500); });
   }
@@ -201,11 +209,28 @@ async function theApi() {
   log.debug("Leaving theApi().");
 }
 
-async function theConsole(cookie) {
+// THE CONSOLE'S UPLOAD SINCE THE STATIC CONSOLE (#446). The page is drawn in
+// the browser from GET /admin-api/risk, and its form has no route of its own
+// to post to: the console sends the file to the operation the form mirrors,
+// `POST /admin-api/risk/upload` — the file as the body, never parsed, and
+// the form's fields as its query parameters — with the console's own
+// DPoP-bound token. `console_signin.js`'s `raw()` is that send.
+async function consoleUpload(consoleClient, fields, file, type) {
+  log.debug("Entering consoleUpload().");
+  assert.ok(typeof consoleClient.raw === "function",
+            "console_signin.js has no raw(): the console's upload sends a " +
+            "file body to /admin-api/risk/upload, which a JSON api() cannot");
+  const reply = await consoleClient.raw("POST", "/admin-api/risk/upload?" +
+    new URLSearchParams(fields).toString(), file,
+    type || "application/octet-stream");
+  log.debug("Leaving consoleUpload().");
+  return reply;
+}
+
+async function theConsole(consoleClient) {
   log.debug("Entering theConsole().");
   log.info("=== 2. the console ===");
-  const page = await call("GET", base + "/admin/risk",
-                          { headers: { Cookie: cookie || "" } });
+  const page = await consoleClient.get("/admin/risk");
   const FORM = /<form[^>]*id="risk-upload-form"[\s\S]*?<\/form>/;
   const form = (page.text.match(FORM) || [])[0] || "";
   check("Monitoring → Risk draws a multipart upload form with the file last " +
@@ -217,33 +242,20 @@ async function theConsole(cookie) {
           assert.ok(/<button type="submit" id="risk-upload"/.test(form), form);
           assert.ok(!/<script/i.test(page.text), "a script on the page");
         });
-  if (!cookie) {
-    log.info("  (the console gate is off in this stack: no session, so no " +
-             "CSRF token to carry)");
-  }
-  const token = (form.match(/name="csrf_token" value="([^"]+)"/) || [])[1] ||
-                "";
   const zip = zipWriter.makeZip([
     { name: "__MACOSX/._deny.txt", data: "resource fork" },
     { name: "deny.txt", data: listOf(2500, 80, "console") + padding() }]);
-  const fd = new FormData();
-  if (token) {
-    fd.append("csrf_token", token);
-  }
-  fd.append("dataset", DATASET);
-  fd.append("format", "ip-list");
-  fd.append("realm", "default");
-  fd.append("file", new Blob([zip], { type: "application/zip" }),
-            "deny.zip");
-  const posted = await call("POST", base + "/admin/risk/upload",
-                            { headers: { Cookie: cookie || "" }, body: fd });
-  check("a " + zip.length + "-byte zip posted through it with the page's " +
-        "token is redirected back with a notice", function () {
-          assert.strictEqual(posted.status, 303, posted.text.slice(0, 300));
-          assert.ok(/notice=/.test(posted.location), posted.location);
+  const posted = await consoleUpload(consoleClient,
+    { dataset: DATASET, format: "ip-list", realm: "default" }, zip,
+    "application/zip");
+  const version = String((posted.json || {}).version ||
+                         ((posted.json || {}).import || {}).version || "");
+  check("a " + zip.length + "-byte zip sent as the console sends it is " +
+        "accepted with its version", function () {
+          assert.ok(posted.status === 200 || posted.status === 202,
+                    posted.text.slice(0, 300));
+          assert.ok(/^[0-9a-f]{16}$/.test(version), posted.text.slice(0, 300));
         });
-  const version = decodeURIComponent(posted.location)
-    .match(/version ([0-9a-f]{16})/)[1];
   const done = await settled("", "default", version);
   check("and the zip's one file becomes active", function () {
     assert.strictEqual(done.version.state, "active",
@@ -251,17 +263,6 @@ async function theConsole(cookie) {
     assert.strictEqual(done.version.rowCount, 2500,
                        JSON.stringify(done.version));
   });
-  if (cookie) {
-    const bare = new FormData();
-    bare.append("dataset", DATASET);
-    bare.append("format", "ip-list");
-    bare.append("file", new Blob([listOf(3, 90, "no token")]), "x.txt");
-    const refused = await call("POST", base + "/admin/risk/upload",
-                               { headers: { Cookie: cookie }, body: bare });
-    check("a console upload with no CSRF token is refused", function () {
-      assert.strictEqual(refused.status, 403, refused.text.slice(0, 300));
-    });
-  }
   log.debug("Leaving theConsole().");
 }
 
@@ -320,7 +321,7 @@ function declaredOnly(length) {
   });
 }
 
-async function theRefusals(readOnlyCookie) {
+async function theRefusals(readOnly) {
   log.debug("Entering theRefusals().");
   log.info("=== 4. the refusals ===");
   const over = await declaredOnly(1024 * 1024 * 1024 * 1024);
@@ -364,35 +365,76 @@ async function theRefusals(readOnlyCookie) {
   check("a body type the API does not take is refused 415", function () {
     assert.strictEqual(wrongType.status, 415, wrongType.text.slice(0, 300));
   });
-  if (readOnlyCookie) {
-    const fd = new FormData();
-    fd.append("dataset", DATASET);
-    fd.append("format", "ip-list");
-    fd.append("file", new Blob([listOf(3, 120, "read only")]), "x.txt");
-    const refused = await call("POST", base + "/admin/risk/upload",
-                               { headers: { Cookie: readOnlyCookie },
-                                 body: fd });
-    check("a session holding Admin Read only is refused at the gate",
-          function () {
-            assert.strictEqual(refused.status, 403,
-                               refused.text.slice(0, 300));
-          });
-  }
+  const refused = await consoleUpload(readOnly,
+    { dataset: DATASET, format: "ip-list" },
+    Buffer.from(listOf(3, 120, "read only")));
+  check("a console holding Admin Read only is refused at the gate",
+        function () {
+          assert.strictEqual(refused.status, 403, refused.text.slice(0, 300));
+        });
   log.debug("Leaving theRefusals().");
+}
+
+// WHAT THIS JOB FOUND IS WHAT IT LEAVES (#311). Every version this job
+// imports into the default realm becomes ACTIVE, and on a shared environment
+// that replaced the operator's own list for good — the next run's
+// sts_admin_risk was then refused by the shrink guard against a suite
+// version. So the active version of each dataset this job touches is read
+// before it starts and made active again when it ends, pass or fail.
+// deploy/aws/reset-environment.js is the backstop for a job that is killed.
+async function activeVersions(datasets) {
+  log.debug("Entering activeVersions().");
+  const r = await call("GET", base + "/admin-api/risk");
+  const found = {};
+  ((r.body && r.body.datasets) || []).forEach(function (d) {
+    if (datasets.indexOf(d.dataset) >= 0) {
+      found[d.dataset] = String(d.activeVersion || "");
+      found[d.dataset + "@realm"] = String(d.realm || "default");
+    }
+  });
+  log.debug("Leaving activeVersions().");
+  return found;
+}
+
+async function putBack(saved) {
+  log.debug("Entering putBack().");
+  const datasets = Object.keys(saved).filter(function (k) {
+    return k.indexOf("@realm") < 0;
+  });
+  const now = await activeVersions(datasets);
+  for (const dataset of datasets) {
+    const was = saved[dataset];
+    if (!was || now[dataset] === was) {
+      continue;
+    }
+    const r = await call("POST", base + "/admin-api/risk/activate",
+                         { headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({
+                             dataset: dataset, version: was,
+                             // Versions are held per realm; an activate naming
+                             // none looks in realm '' and finds nothing.
+                             realm: saved[dataset + "@realm"] || "default" }) });
+    log.info("put " + dataset + " back to " + was + " (it was " +
+             (now[dataset] || "none") + "): " + r.status);
+  }
+  log.debug("Leaving putBack().");
 }
 
 async function main() {
   log.debug("Entering main().");
-  const cookie = await signin.signInToTheConsole(base, "risk-up-" + STAMP,
-                                                 log, { grant: "write" });
-  const reader = cookie
-    ? await signin.signInToTheConsole(base, "risk-ro-" + STAMP, log,
-                                      { grant: "read" })
-    : null;
-  await theApi();
-  await theConsole(cookie || "");
-  await aRealm();
-  await theRefusals(reader);
+  const consoleClient = await signin.signInToTheConsole(base,
+    "risk-up-" + STAMP, log, { grant: "write" });
+  const reader = await signin.signInToTheConsole(base, "risk-ro-" + STAMP,
+                                                 log, { grant: "read" });
+  const saved = await activeVersions([DATASET]);
+  try {
+    await theApi();
+    await theConsole(consoleClient);
+    await aRealm();
+    await theRefusals(reader);
+  } finally {
+    await putBack(saved);
+  }
   log.info("sts_admin_risk_upload: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

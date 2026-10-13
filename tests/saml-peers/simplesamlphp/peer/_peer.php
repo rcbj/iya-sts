@@ -1,6 +1,6 @@
 <?php
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // What the four /peer pages share (#191): SimpleSAMLphp's bootstrap, and a
 // JSON answer.

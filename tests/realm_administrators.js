@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -271,10 +271,11 @@ function childMain() {
          'the TLS listener\'s private key is refused through both spellings ' +
          'of its export');
     const settings = refused(realmState, '/admin/config',
-      { action: 'set-many', 'workers.count': '2', 'admin.readGroup': 'x',
+      { action: 'set-many', 'scheduler.runHistoryCount': '2',
+        'admin.readGroup': 'x',
         'oauth2.accessTokenTtlS': '600' });
     note(settings && settings.code === 'STS-ADMIN-0788' &&
-         settings.settings.indexOf('workers.count') >= 0 &&
+         settings.settings.indexOf('scheduler.runHistoryCount') >= 0 &&
          settings.settings.indexOf('admin.readGroup') >= 0 &&
          settings.settings.indexOf('oauth2.accessTokenTtlS') < 0 &&
          !refused(realmState, '/admin/config',
@@ -303,7 +304,8 @@ function childMain() {
          JSON.stringify(settings && settings.settings));
     note(!refused(serviceState, '/admin/tls/trust') &&
          !refused(serviceState, '/admin/pki', { action: 'build-root' }) &&
-         !refused(serviceState, '/admin/config', { 'workers.count': '2' }) &&
+         !refused(serviceState, '/admin/config',
+                  { 'scheduler.runHistoryCount': '2' }) &&
          !refused(null, '/admin/persistence'),
          'a service authority, and a request with no authority, are refused ' +
          'nothing here');
@@ -368,6 +370,29 @@ function childMain() {
          /<button type="submit">/.test(drawn),
          'development lists every realm in a form with a real button, no ' +
          'script, and an escaped sentence');
+    // THE CHOOSER IS A PAGE OF ITS OWN (2026-10-08): a whole document with
+    // the form in it and nothing of either surface's frame — no sidebar, no
+    // navigation, no account menu — because none of those can be used
+    // before a realm is chosen.
+    const req = { headers: { host: 'localhost' }, protocol: 'https',
+                  get: function () { return 'localhost'; } };
+    ['admin', 'portal'].forEach(function (surface) {
+      const doc = inRealm(realms.DEFAULT_ID, function () {
+        return chooser.page(req, surface, '');
+      });
+      const formHtml = inRealm(realms.DEFAULT_ID, function () {
+        return chooser.form(req, surface, '');
+      });
+      note(/^<!DOCTYPE html>/.test(doc) &&
+           doc.indexOf(formHtml) >= 0 &&
+           /<h1>Choose your realm<\/h1>/.test(doc) &&
+           /Choose a realm to continue/.test(doc) &&
+           /<select id="realmchoice" name="realm" autofocus>/.test(doc) &&
+           !/<aside|<nav|class="side"|class="acct"|<script/.test(doc),
+           '6b. the ' + surface + ' chooser is a page of its own: the form ' +
+           'and a note, a large list with the focus, and no frame or script',
+           doc.slice(0, 300));
+    });
 
     // ---------------------------------------------------------------------
     // 7. ENROLLMENT ASKS THE AMBIENT REALM'S ROSTER OF A SESSION.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -49,7 +49,7 @@ const log = require('bunyan').createLogger({ name: 'no_periodic_timers',
 // What is not the service's own source.
 const SKIP = new RegExp('(^|/)(node_modules|tests|coverage|debugger/embedded|' +
                         'common/vendored|node-ldapjs|deploy|xacml-pep|docs|' +
-                        '\\.claude|types)(/|$)');
+                        '\\.claude|types|companion)(/|$)');
 
 // The scheduler itself is the one place a repeating timer belongs.
 const THE_SCHEDULER = 'cluster/scheduler.ts';
@@ -72,6 +72,10 @@ const ALLOWED = {
     'a reconnect retry within one attempt to reach the database' },
   'ldap/ldap_cluster_connections.ts|noteLocalChange|timeout': { permanent:
     'a debounce: one publish for a burst of connection changes' },
+  'attribute-sources/attribute_sources.ts|lookup|timeout': { permanent:
+    'not periodic: one lookup\'s timeout, cleared when it settles (#94), ' +
+    'caught by the recursion rule because lookup() calls the driver\'s ' +
+    'lookup()' },
   'common/request_worker.ts|start|timeout': { permanent:
     'not periodic: a one-shot start-up timeout, caught by the recursion rule ' +
     'because start() is also a method name it calls' },
@@ -83,9 +87,28 @@ const ALLOWED = {
     'not periodic: a session-end claim that rejected is asked again, at ' +
     'most three times inside one sign-out (#242) — a retry within one ' +
     'operation' },
+  'authn/web_authn.ts|put|timeout': { permanent:
+    'not the service: the sign-in surface\'s runtime, in a BROWSER — the ' +
+    'mailed link\'s waiting page asking again whether it was opened (#573), ' +
+    'which its <meta> refresh did; cleared whenever a page is drawn' },
+  'authn/web_authn.ts|poll|timeout': { permanent:
+    'not the service: the same browser poll, asking again while the step ' +
+    'still waits (#573)' },
   'debugger/debugger_api_process.ts|fork|timeout': { permanent:
     'not periodic: the api child\'s start-up timeout; its restart is a ' +
-    'retry with back-off within supervising one child' }
+    'retry with back-off within supervising one child' },
+  // THE WALLET'S QR PAGE POLLS IN THE BROWSER (#574): the `<meta>` refresh
+  // the server-drawn page polled with became one timer in the sign-in
+  // surface's runtime, re-armed by each answer and stopped when the page
+  // changes. It runs in a person's browser, not in this service, so there
+  // is no scheduler for it to be a job on. Its source, and the renderers'
+  // bundle the image build writes from it.
+  'oid4vc/web_vc_signin.ts|schedule|timeout': { permanent:
+    'not this service\'s work: the wallet QR page\'s poll, in the browser ' +
+    '(#574), where a <meta> refresh was' },
+  'authn/authn.bundle.js|schedule|timeout': { permanent:
+    'the same poll in the sign-in surface\'s bundle, which the image ' +
+    'build writes from oid4vc/web_vc_signin.ts' }
 };
 
 function walk(dir, out) {

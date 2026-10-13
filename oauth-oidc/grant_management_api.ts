@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -34,6 +34,7 @@ interface GrantManagementApiDeps {
   parseBody: typeof helpers.parseBody;
   errorCodes: typeof errorCodes;
   loadGrants(): Json;
+  loadViews(): Json;
 }
 
 const BASE = '/admin-api';
@@ -69,6 +70,11 @@ class GrantManagementApi {
       errorCodes: errorCodes,
       loadGrants: function (): Json {
         return require('./grant_management');
+      },
+      // The console's paging, required lazily for the grant register's
+      // reason: this file is required at 19 and `admin_views` long before.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -100,6 +106,45 @@ class GrantManagementApi {
     log.debug("Leaving GrantManagementApi.sendJson().");
   }
 
+  // ---------------------------------------------------------------------------
+  // THE GRANTS, SEARCHED AND PAGED (#313's sweep, 2026-10-12).
+  //
+  // One row per (person, client) authorization, kept until it expires or is
+  // revoked, so the register grows with the realm. `/admin/grants` is drawn
+  // from this answer, so the page and a caller read the same slice. `grantq`
+  // is a substring over the three identifiers a reader arrives holding;
+  // filter first, then page, on `grantsPage` — `pagingOf()`'s rule.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the grants answer: one page of the grants the query matched.
+   *
+   * @param query - the request's query
+   * @returns the grants, the counts, the filter and the paging
+   */
+  grantsView(query: Json): Json {
+    const { log, loadGrants, loadViews } = this.deps;
+    log.debug("Entering GrantManagementApi.grantsView().");
+    const views = loadViews();
+    const clientId = String(query.client_id || '').slice(0, 256);
+    const wanted = String(views.queryOne(query, 'grantq') || '')
+      .trim().slice(0, 256);
+    const needle = wanted.toLowerCase();
+    const all: Json[] = loadGrants().list(clientId || undefined);
+    const matched = all.filter(function (g: Json): boolean {
+      return !needle ||
+        [g.grantId, g.clientId, g.subject].some(function (v: Json): boolean {
+          return String(v || '').toLowerCase().indexOf(needle) >= 0;
+        });
+    });
+    const page = views.pagedRows(query, matched,
+                                 { name: 'grants', noun: 'grants' });
+    log.debug("Leaving GrantManagementApi.grantsView(). " +
+              page.shown.length + " of " + matched.length + ".");
+    return { grants: page.shown, total: all.length, matched: matched.length,
+             filter: { q: wanted || null, clientId: clientId || null },
+             paging: { grants: views.pagingJson(page.paging) } };
+  }
+
   /**
    * Builds the operations' route table, each row carrying its OpenAPI
    * description and its handler.
@@ -126,17 +171,28 @@ class GrantManagementApi {
         parameters: [
           { name: 'client_id', in: 'query', required: false,
             schema: { type: 'string', maxLength: 256 },
-            description: 'Only this client\'s grants.' }
+            description: 'Only this client\'s grants.' },
+          { name: 'grantq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'Narrows the grants to those whose grant_id, ' +
+                         'client or subject contains this.' },
+          { name: 'grantsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the matched grants. Clamped, like ' +
+                         'every page parameter here.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Grants per page, capped.' }
         ],
         responseDescription: 'The grants.',
         responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`grants`: one row per grant.' },
+                          description: '`grants`: one page of the matched ' +
+                            'grants, one row per grant; `total`, every ' +
+                            'grant listed; `matched`, those `grantq` ' +
+                            'matched; `filter`; `paging.grants`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API grants endpoint.");
-          const clientId = String((req.query || {}).client_id || '')
-            .slice(0, 256);
-          self.sendJson(res, 200,
-                        { grants: loadGrants().list(clientId || undefined) });
+          self.sendJson(res, 200, self.grantsView(req.query || {}));
           log.debug("Leaving the management API grants endpoint.");
         } },
 

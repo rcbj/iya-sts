@@ -356,7 +356,8 @@ module.exports = { SOURCE: SOURCE, TREES: TREES, DOCUMENTS: DOCUMENTS,
                    HERE: HERE, digestTree: digestTree, check: check };
 
 // Guarded, so that requiring this module from the test suite does not run the
-// CLI — the same guard `common/worker.js` carries and for the same reason.
+// CLI — the same guard `common/request_worker.ts` carries and for the same
+// reason.
 if (require.main === module) {
   process.exit(main());
 }

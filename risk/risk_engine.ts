@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -218,6 +218,14 @@ const TOTP_REPLAY_DOOR = riskFailures.TOTP_REPLAY_DOOR;
 // policy announces for every new device owner.
 const LOWERING_ONLY = ['compliant-attested-device', 'compliant-device'];
 
+// EVERY SIGNAL THE REGISTERED DEVICE DECIDES (#259) — what
+// `deviceSignals()` can answer, and so what `amend()` takes off an
+// assessment before it puts the device's own answer on.
+const DEVICE_SIGNALS = ['browser-token-replayed', 'compromised-device',
+                        'non-compliant-device', 'browser-token-foreign',
+                        'browser-context-changed', 'unregistered-device',
+                        'compliant-attested-device', 'compliant-device'];
+
 // How many refused passwords in the last hour make a signal of each kind:
 // `risk.accountFailureThreshold` (5) and `risk.networkFailureThreshold`
 // (20), read per assessment. They were constants until 2026-09-23, when the
@@ -279,6 +287,39 @@ const HOUR_MS = 3600 * 1000;
 // The population's subject in `sts_risk_feature_counts`.
 const POPULATION = '*';
 
+// ---------------------------------------------------------------------------
+// THE HISTORY'S OWN FEATURES, outside the model (#506, 2026-10-07). Beside
+// the model's levels (`risk_model.ts`'s FEATURES) the person's history
+// counts three things the evaluators ask about: the TLS stack (`ja4`), the
+// credential (`credential`), and WHICH DEVICE — the person's own registered
+// device as `registered:<id>`, or the browser fingerprint (#62 P6) — which
+// is `device-id`.
+//
+// Until #506 that last one was counted as `device`, which is ALSO the name
+// of the model's device-type level (the third level of the User-Agent
+// hierarchy, Freeman et al.'s "device type": desktop, mobile, tablet). A
+// feature key is a name in `sts_risk_feature_counts` and nothing else, so
+// the two shared one history per person: a fingerprint counted as a device
+// type, and a device type as a fingerprint already seen — `new-device`
+// asked "has this person signed in from `desktop`" whenever a fingerprint
+// happened to read so. The model keeps the paper's name; this one moved.
+//
+// NO MIGRATION (rcbj's rule): rows counted as `device` before #506 are a
+// mix of the two, and the model reads only the device-type values it asks
+// for by value. They stop moving, and `risk.historyRetentionDays` (180 days
+// since last use) ages out whatever no sign-in touches again. Until then a
+// person's first sign-in after the upgrade with a fingerprint is new to
+// `device-id` — at most one `new-device` (×2) per fingerprint, once.
+//
+// A name here must never be a level of the model's; `tests/risk_engine.js`
+// J holds that.
+// ---------------------------------------------------------------------------
+const DEVICE_ID_FEATURE = 'device-id';
+const TLS_STACK_FEATURE = 'ja4';
+const CREDENTIAL_FEATURE = 'credential';
+const HISTORY_FEATURES = [DEVICE_ID_FEATURE, TLS_STACK_FEATURE,
+                          CREDENTIAL_FEATURE];
+
 interface RiskEngineDeps {
   log: { debug(m: string): void; info(m: string): void; warn(m: string): void };
   config: { value(key: string): any };
@@ -302,7 +343,7 @@ const RANK: Record<string, number> = { UNSCORED: 0, LOW: 1, MEDIUM: 2,
 // ---------------------------------------------------------------------------
 // A PERSON'S STANDING, PER PROCESS (#62 P3). What an issuance with NO
 // SESSION to read its risk from stands on — a Kerberos service ticket (the
-// KDC is the parent project's locked code and asks the gate synchronously),
+// KDC asks the gate synchronously),
 // a WS-Trust token — so that a person made HIGH at the browser is not issued
 // a ticket at the next door. Filled by every assessment made in this
 // process and by `loadStanding()` where a door can wait for the store;
@@ -453,7 +494,7 @@ class RiskEngine {
         return require('../common/keystore');
       },
       randomId: function (): string {
-        return require('crypto').randomUUID();
+        return stsCrypto.randomUuid();
       },
       mode: function (): Json {
         return require('../common/mode');
@@ -658,6 +699,50 @@ class RiskEngine {
     }
     log.debug("Leaving RiskEngine.expectsDevice(). " + holds);
     return holds;
+  }
+
+  // -------------------------------------------------------------------------
+  // THE DEVICE'S SIGNALS (#164 phase 5; SIGNALS above), as `{ id, evidence }`
+  // in the order they are added: what a recognition (`fact`, or null) says
+  // about `username`'s sign-in. `enough` is whether the person has the
+  // history an absence waits for. One function for `assessNow()` and
+  // `amend()` (#259), so the two cannot disagree about a device.
+  // -------------------------------------------------------------------------
+  private deviceSignals(fact: Json, username: string,
+                        enough: boolean): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering RiskEngine.deviceSignals().");
+    const out: Json[] = [];
+    const own = RiskEngine.ownDevice(fact, username);
+    const compromised = !!fact && fact.status === 'compromised';
+    const token = fact && fact.via === 'browser-cookie'
+      ? (fact.browserToken || {}) : null;
+    if (token && token.replayed) {
+      // The copy is what compromised it: one signal, not two for one act.
+      out.push({ id: 'browser-token-replayed', evidence: String(fact.id) });
+    } else if (compromised) {
+      out.push({ id: 'compromised-device', evidence: String(fact.id) });
+    } else if (fact && fact.compliance === 'not-compliant') {
+      out.push({ id: 'non-compliant-device', evidence: String(fact.id) });
+    }
+    if (token && token.foreign) {
+      out.push({ id: 'browser-token-foreign', evidence: String(fact.id) });
+    }
+    if (token && token.contextChanged && !token.replayed) {
+      out.push({ id: 'browser-context-changed', evidence: String(fact.id) });
+    }
+    if (!own && enough && this.expectsDevice(username)) {
+      out.push({ id: 'unregistered-device', evidence: fact
+        ? 'another owner\'s device ' + String(fact.id)
+        : 'none recognised' });
+    }
+    if (own && !compromised && fact.compliance === 'compliant') {
+      out.push({ id: fact.attestation === 'attested'
+        ? 'compliant-attested-device' : 'compliant-device',
+                 evidence: String(fact.id) });
+    }
+    log.debug("Leaving RiskEngine.deviceSignals(). " + out.length);
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -947,6 +1032,178 @@ class RiskEngine {
     log.debug("Leaving RiskEngine.settle().");
   }
 
+  // -------------------------------------------------------------------------
+  // AN ASSESSMENT GIVEN THE DEVICE ITS SIGN-IN PROVED (#259, rcbj's option
+  // 3). The sign-in screen assesses BEFORE its own WebAuthn ceremony —
+  // the assessment decides whether to ask for one — so a platform credential
+  // linked to a registered device was on the session's event, the policy's
+  // device rules, the acr and the token claims, and NOT in the score: a
+  // person signing in from their own registered device could be
+  // `unregistered-device`, and the two lowering factors never applied.
+  //
+  // So a door whose assessment a ceremony may follow says so
+  // (`deviceAwaited`, see `assessNow()`), and the session's start — the one
+  // funnel every finisher reaches — calls this with the device it
+  // recognised. It is the SAME assessment, amended, and not a second one:
+  //
+  //   * ONLY THE DEVICE'S SIGNALS ARE ASKED AGAIN (`deviceSignals()`,
+  //     the function the assessment used), and `new-device` is taken off
+  //     where the device is the person's own, as `assessNow()` never adds it
+  //     then. Everything else — the model, the lists, the failures, the
+  //     authenticator — stands as it was scored. A `new-device` is never
+  //     ADDED here: the fingerprint was looked up when it was assessed.
+  //   * THE SCORE IS RE-MADE from the model's own score and the factors,
+  //     with the known-context cap and the UNSCORED rule exactly as
+  //     `assessNow()` applies them, so an unchanged device gives the same
+  //     answer.
+  //   * THE HISTORY MOVES ONCE. The assessment counted the attempt — its
+  //     total, address, browser, TLS stack, credential, and the failures it
+  //     read — and held back only the device feature; this counts that one
+  //     feature, as `registered:<id>` for the person's own device and as the
+  //     fingerprint otherwise. An assessment never amended (a sign-in that
+  //     never reached a session) counts no device at all.
+  //   * THE ROW, THE STANDING AND THE REACTIONS follow a CHANGE only: the
+  //     same row rewritten, the standing set to the amended level, and the
+  //     risk-response policy asked about the move from the assessed level
+  //     to the amended one, its reactions claimed under a key of their own.
+  //   * THE DEVICE'S OWN LEVEL is set here, from the amended level, for the
+  //     person's own device — the assessment left it for this.
+  //
+  // Synchronous, because the issuance policy is asked about the answer in
+  // the same tick; the writes are not awaited and never reject, as
+  // `settle()`'s are not. An assessment that awaits no device is answered
+  // unchanged.
+  // -------------------------------------------------------------------------
+  /**
+   * Amends a sign-in's assessment with the registered device the session's
+   * start recognised, for an assessment made before a WebAuthn ceremony.
+   *
+   * Only the device's signals are asked again; the writes are not awaited.
+   *
+   * @param assessment - the assessment, as `assess()` answered it
+   * @param fact - the device recognition, or null
+   * @param username - who is signing in
+   * @returns the amended assessment (the same id), or the one given when it
+   *   awaits no device
+   */
+  amend(assessment: Json, fact: Json, username: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering RiskEngine.amend().");
+    const held = assessment && assessment.deviceAwaited;
+    if (!held || typeof held !== 'object') {
+      log.debug("Leaving RiskEngine.amend(). Awaits no device.");
+      return assessment;
+    }
+    const name = String(username || '');
+    const own = RiskEngine.ownDevice(fact, name);
+    const was: Json[] = Array.isArray(assessment.signals)
+      ? assessment.signals : [];
+    const modelRow = was.filter(function (s: Json): boolean {
+      return !!s && s.signal === 'model';
+    })[0] || { signal: 'model', score: null };
+    const modelScore = modelRow.score === null ||
+      modelRow.score === undefined ? null : Number(modelRow.score);
+    const kept = was.filter(function (s: Json): boolean {
+      return !!s && s.signal !== 'model' &&
+        DEVICE_SIGNALS.indexOf(s.signal) < 0 &&
+        !(own && s.signal === 'new-device');
+    });
+    const factorOf = this.factors().factors;
+    const signals = kept.concat(this.deviceSignals(fact, name,
+                                                   held.enough === true)
+      .map(function (d: Json): Json {
+        return { signal: d.id, factor: factorOf[d.id],
+                 what: SIGNALS[d.id].what, evidence: d.evidence };
+      }));
+    let score = modelScore === null ? 1 : modelScore;
+    signals.forEach(function (s: Json): void {
+      score *= s.factor;
+    });
+    const capped = modelRow.knownContext ? this.capped(score, signals)
+                                         : null;
+    if (capped) {
+      score = capped.score;
+    }
+    const evidence = signals.filter(function (s: Json): boolean {
+      return LOWERING_ONLY.indexOf(s.signal) < 0;
+    });
+    const level = modelScore === null && !evidence.length ? 'UNSCORED'
+      : this.levelOf(score);
+    const model = Object.assign({}, modelRow, {
+      capped: capped ? capped.why : '',
+      device: RiskEngine.deviceOnAssessment(fact, own) });
+    const amended: Json = Object.assign({}, assessment, {
+      signals: [model].concat(signals), score: score, level: level });
+    delete amended.deviceAwaited;
+    const context = assessment.sessionContext;
+    if (context) {
+      Object.defineProperty(amended, 'sessionContext', {
+        value: Object.assign({}, context, { score: score, level: level }),
+        enumerable: false });
+    }
+    const changed = level !== String(assessment.level || '') ||
+      JSON.stringify(amended.signals) !== JSON.stringify(was);
+    this.recordAmendment(amended, String(assessment.level || ''), fact, own,
+                         String(held.fingerprint || ''), changed, name);
+    log.info('risk: ' + amended.subject + '\'s sign-in at ' + amended.door +
+             (changed ? ' was amended with its device: ' +
+                        String(assessment.level || '') + ' to ' + level
+                      : ' kept its score once its device was known') +
+             (fact ? ' (' + String(fact.id) + ')' : ' (none)') + '.');
+    log.debug("Leaving RiskEngine.amend(). " + level);
+    return amended;
+  }
+
+  // What `amend()` writes, not awaited: the device feature into the
+  // history, then — on a change — the row, the standing and the reactions;
+  // the person's own device takes the level. Never rejects: the sign-in is
+  // decided on the answer, and a lost write loses only its record.
+  private recordAmendment(amended: Json, previous: string, fact: Json,
+                          own: boolean, fingerprint: string, changed: boolean,
+                          username: string): void {
+    const { log, store, now } = this.deps;
+    log.debug("Entering RiskEngine.recordAmendment().");
+    const realm = String(amended.realm || '');
+    const subject = String(amended.subject || '');
+    const sealing = this.sealing();
+    const at = now();
+    const feature = own ? 'registered:' + String(fact.id) : fingerprint;
+    const self = this;
+    (async function (): Promise<void> {
+      if (feature) {
+        await store.incrementCounts(realm, [{ subject: subject,
+          feature: DEVICE_ID_FEATURE, value: feature }], at, sealing);
+      }
+      if (changed) {
+        await store.amendAssessment({ realm: realm, id: amended.id,
+          signals: amended.signals, score: amended.score,
+          level: amended.level }, sealing);
+        await store.upsertSubject({ realm: realm, subject: subject,
+          score: amended.score, level: amended.level,
+          reason: amended.signals.filter(function (s: Json): boolean {
+            return s.signal !== 'model';
+          }).map(function (s: Json): string {
+            return s.signal;
+          }).join(', ') || 'the model',
+          lastAssessment: amended.id, updatedAt: at }, sealing);
+        self.holdStanding(realm, username, RiskEngine.riskOf(amended));
+        self.noteChange(realm, subject, username, previous, amended,
+                        String(amended.id) + ':device');
+      }
+      if (own) {
+        self.setDeviceLevel(fact, amended);
+      }
+    })().catch(function (e: Json): void {
+      log.debug("Caught in RiskEngine.recordAmendment(): " +
+                ((e && e.message) || e));
+      log.warn(errorCodes.tag('STS-RISK-0047') + 'risk: the amendment of ' +
+               'assessment ' + amended.id + ' with its device was not ' +
+               'recorded: ' + ((e && e.message) || e) + '. The sign-in ' +
+               'stands on it.');
+    });
+    log.debug("Leaving RiskEngine.recordAmendment().");
+  }
+
   // ---------------------------------------------------------------------------
   // THE DEVICE, from a User-Agent, which is read here and not kept. `bowser`
   // throws on an empty string, which a request with no header is, so an
@@ -1032,8 +1289,12 @@ class RiskEngine {
     log.debug("Entering RiskEngine.historyOf(). " + subject);
     const pairs = [{ feature: '_total', value: '' }];
     riskModel.FEATURES.forEach(function (f: Json): void {
-      f.levels.forEach(function (level: Json): void {
-        pairs.push({ feature: level[0], value: String(attempt[level[0]]) });
+      f.levels.forEach(function (level: Json, i: number): void {
+        // A level whose lookup found nothing is unseen and never asked
+        // for (#502; `risk_model.ts`'s `missing()`).
+        if (i === 0 || !riskModel.missing(attempt[level[0]])) {
+          pairs.push({ feature: level[0], value: String(attempt[level[0]]) });
+        }
       });
     });
     const rows = await store.featureCounts(realm, subject, pairs, sealing);
@@ -1263,46 +1524,34 @@ class RiskEngine {
     const registered = input.registeredDevice || null;
     const username = String(input.username || '');
     const own = RiskEngine.ownDevice(registered, username);
-    const compromised = !!registered && registered.status === 'compromised';
-    const token = registered && registered.via === 'browser-cookie'
-      ? (registered.browserToken || {}) : null;
-    if (token && token.replayed) {
-      // The copy is what compromised it: one signal, not two for one act.
-      add('browser-token-replayed', String(registered.id));
-    } else if (compromised) {
-      add('compromised-device', String(registered.id));
-    } else if (registered && registered.compliance === 'not-compliant') {
-      add('non-compliant-device', String(registered.id));
-    }
-    if (token && token.foreign) {
-      add('browser-token-foreign', String(registered.id));
-    }
-    if (token && token.contextChanged && !token.replayed) {
-      add('browser-context-changed', String(registered.id));
-    }
-    if (!own && enough && this.expectsDevice(username)) {
-      add('unregistered-device', registered
-        ? 'another owner\'s device ' + String(registered.id)
-        : 'none recognised');
-    }
-    if (own && !compromised && registered.compliance === 'compliant') {
-      add(registered.attestation === 'attested' ? 'compliant-attested-device'
-                                                : 'compliant-device',
-          String(registered.id));
-    }
-    // THE DEVICE FEATURE: the person's own registered device where one
-    // proved the sign-in — its register id, which no browser update or
-    // cleared fingerprint changes — and the browser fingerprint (#62 P6)
-    // otherwise. A registered device of the person's own is NEVER a
-    // `new-device`: its key was proven to be theirs at enrolment, which is
-    // stronger than any history, so the first sign-in from a phone they
-    // just registered is not doubted for being the first. The history still
-    // records it under its id.
+    this.deviceSignals(registered, username, enough)
+      .forEach(function (d: Json): void {
+        add(d.id, d.evidence);
+      });
+    // A WEBAUTHN CEREMONY MAY FOLLOW (#259): the door assessed before the
+    // key that may name a device was presented, and `amend()` gives this
+    // assessment that device once the session's start recognises it. Until
+    // then the device feature is held back, so the history counts one
+    // device for this sign-in — the one amend() settles on — and never
+    // the fingerprint AND the device.
+    // Only a sign-in awaits one: a live session's re-assessment counts
+    // nothing.
+    const awaiting = input.deviceAwaited === true &&
+      input.phase !== 'session';
+    // THE DEVICE FEATURE (`device-id`, DEVICE_ID_FEATURE above — not the
+    // model's `device`, which is the device type; #506): the person's own
+    // registered device where one proved the sign-in — its register id,
+    // which no browser update or cleared fingerprint changes — and the
+    // browser fingerprint (#62 P6) otherwise. A registered device of the
+    // person's own is NEVER a `new-device`: its key was proven to be theirs
+    // at enrolment, which is stronger than any history, so the first
+    // sign-in from a phone they just registered is not doubted for being the
+    // first. The history still records it under its id.
     const deviceFeature = own ? 'registered:' + String(registered.id)
                               : String(context.device || '');
     if (!own && context.device && enough) {
       const seenDevice = await store.featureCounts(realm, subject,
-        [{ feature: 'device', value: deviceFeature }], sealing);
+        [{ feature: DEVICE_ID_FEATURE, value: deviceFeature }], sealing);
       if (!seenDevice.length) {
         add('new-device', deviceFeature.slice(0, 12));
       }
@@ -1312,7 +1561,7 @@ class RiskEngine {
     const tlsStack = String(context.tlsStack || context.ja4 || '');
     if (tlsStack && enough) {
       const seen = await store.featureCounts(realm, subject,
-        [{ feature: 'ja4', value: tlsStack }], sealing);
+        [{ feature: TLS_STACK_FEATURE, value: tlsStack }], sealing);
       if (!seen.length) {
         add('new-tls-stack', tlsStack);
       }
@@ -1328,13 +1577,30 @@ class RiskEngine {
     if (replays.total) {
       add('totp-replay', String(replays.total));
     }
-    if (found.prefix) {
+    // NOT FROM A NETWORK THE OPERATOR ALLOW-LISTED (#311, rcbj
+    // 2026-09-28). `network-failures` says the NETWORK is hostile: refused
+    // passwords from anybody behind it. An operator who put the address on
+    // this realm's allow list has declared that network trusted, so counting
+    // its refusals against every person signing in from it contradicts the
+    // declaration — and it is exactly what happened on testidp, where the
+    // suite (allow-listed) refuses passwords on purpose and every later
+    // first sign-in with one more signal of its own (a TOTP replay the job
+    // made) went MEDIUM and was refused a step-up it could not answer. The
+    // person's OWN failures (`account-failures`) and replays still count:
+    // the allow list vouches for the network, not for an account.
+    const allowListed = lists.some(function (l: Json): boolean {
+      return l.category === 'operator-allow';
+    });
+    if (found.prefix && !allowListed) {
       const theirs = await store.listFailures(realm, { since: since,
         prefix: found.prefix, limit: 1, excludeDoor: TOTP_REPLAY_DOOR },
                                               sealing);
       if (theirs.total >= networkFailureThreshold()) {
         add('network-failures', String(theirs.total));
       }
+    } else if (found.prefix) {
+      log.debug("RiskEngine: network-failures not counted — the address is " +
+                "on the realm's operator allow list.");
     }
 
     // THE SCORE AND ITS LEVEL, with the address evidence capped at MEDIUM
@@ -1396,10 +1662,20 @@ class RiskEngine {
                                 ? { 'fido.mds3': authenticator.version } : {},
                               { stale: found.stale,
                                 attributions: found.attributions }),
+      // THE MODEL'S FACTORS EXPLAIN ITS WHOLE SCORE (#499): `ip`, `ua`
+      // and `user` (the user term, p(u|A)/p(u|L)) multiply to `score`, and
+      // `terms` holds the counts the user term is made of.
       signals: [{ signal: 'model', score: modelled.score,
                   factors: modelled.factors || null,
+                  terms: modelled.terms || null,
                   why: modelled.why || '',
                   knownContext: knownContext,
+                  // THE LEVELS WHOSE LOOKUP FOUND NOTHING (#502): no
+                  // network, no country, no browser bowser could name —
+                  // counted as unseen on both sides, so a new address on
+                  // an unmapped network is new. Recorded whether or not
+                  // the sign-in was scored.
+                  unknown: riskModel.unknownLevels(attempt),
                   capped: capped ? capped.why : '',
                   // Lists the address is on that were set aside for a
                   // special-purpose address (#226), so the record says so.
@@ -1435,30 +1711,39 @@ class RiskEngine {
         moves.push({ subject: who, feature: feature, value: value });
       }
     };
+    // A level whose lookup found nothing is not a value (#502): it is not
+    // counted for the person or the population, and it is not a network or
+    // a country the address was seen in, so no distinct count ever holds it.
     [subject, POPULATION].forEach(function (who: string): void {
       move(who, '_total', '');
       riskModel.FEATURES.forEach(function (f: Json): void {
-        f.levels.forEach(function (level: Json): void {
-          move(who, level[0], String(attempt[level[0]]));
+        f.levels.forEach(function (level: Json, i: number): void {
+          if (i === 0 || !riskModel.missing(attempt[level[0]])) {
+            move(who, level[0], String(attempt[level[0]]));
+          }
         });
       });
     });
     riskModel.FEATURES.forEach(function (f: Json): void {
       const first = f.levels[0][0];
       f.levels.slice(1).forEach(function (level: Json): void {
-        move(POPULATION, first + '>' + level[0], String(attempt[first]) +
-             '|' + String(attempt[level[0]]));
+        if (!riskModel.missing(attempt[level[0]])) {
+          move(POPULATION, first + '>' + level[0], String(attempt[first]) +
+               '|' + String(attempt[level[0]]));
+        }
       });
     });
     move(POPULATION, 'user', subject);
     if (context.tlsStack || context.ja4) {
-      move(subject, 'ja4', String(context.tlsStack || context.ja4));
+      move(subject, TLS_STACK_FEATURE,
+           String(context.tlsStack || context.ja4));
     }
-    if (deviceFeature) {
-      move(subject, 'device', deviceFeature);
+    if (deviceFeature && !awaiting) {
+      move(subject, DEVICE_ID_FEATURE, deviceFeature);
     }
     if (credential.fingerprint || credential.kind) {
-      move(subject, 'credential', String(credential.kind || '') + ':' +
+      move(subject, CREDENTIAL_FEATURE,
+           String(credential.kind || '') + ':' +
            String(credential.fingerprint || ''));
     }
     if (counting) {
@@ -1492,8 +1777,17 @@ class RiskEngine {
                       RiskEngine.riskOf(assessment));
     this.noteChange(realm, subject, String(input.username || ''),
                     before ? String(before.level || '') : '', assessment);
-    if (own && counting) {
+    if (own && counting && !awaiting) {
       this.setDeviceLevel(registered, assessment);
+    }
+    // WHAT `amend()` NEEDS AND THE ROW DOES NOT HOLD (#259), on the answer
+    // only — set after the row was written, so no store keeps it. It is an
+    // ordinary field because the answer may cross a persisted, replicated
+    // step (`pendingMfa`) before the session starts on another node; the
+    // fingerprint is the keyed digest the history would have counted.
+    if (awaiting) {
+      assessment.deviceAwaited = { fingerprint: String(context.device || ''),
+                                   enough: enough };
     }
     log.info('risk: ' + subject + ' at ' + assessment.door + ' scored ' +
              (modelled.score === null ? 'nothing (' + modelled.why + ')'
@@ -1509,9 +1803,16 @@ class RiskEngine {
   // after the assessment is answered, and a failure in one is logged
   // (STS-RISK-0021) and never reaches the sign-in. UNSCORED is no level to
   // react to, and a first standing has no level before it.
+  //
+  // `claimKey` (#259) is what each reaction is claimed once for: the
+  // assessment's id, or — for the level an `amend()` moved it to — a key of
+  // the amendment's own, because the first level's reactions were claimed
+  // under the id and the second level's would otherwise all be refused as
+  // already taken.
   // -------------------------------------------------------------------------
   private noteChange(realm: string, subject: string, username: string,
-                     previous: string, assessment: Json): void {
+                     previous: string, assessment: Json,
+                     claimKey?: string): void {
     const { log } = this.deps;
     log.debug("Entering RiskEngine.noteChange().");
     const level = String(assessment.level || '');
@@ -1559,7 +1860,8 @@ class RiskEngine {
                    // about this very evidence (#294; see take()).
                    compromiseAnnounced: assessment.compromiseAnnounced ===
                                         true,
-                   assessmentId: String(assessment.id || '') })
+                   assessmentId: String(assessment.id || ''),
+                   claimKey: String(claimKey || assessment.id || '') })
       .catch(function (e: Json): void {
         log.debug("Caught in RiskEngine.noteChange(): " +
                   ((e && e.message) || e));
@@ -1613,7 +1915,9 @@ class RiskEngine {
       let claimed = false;
       try {
         claimed = await store.claimAction(change.realm, change.subject,
-                                          reaction, change.assessmentId,
+                                          reaction,
+                                          change.claimKey ||
+                                            change.assessmentId,
                                           sealing);
       } catch (e) {
         log.debug("Caught in RiskEngine.respond(): " +
@@ -2134,7 +2438,7 @@ class RiskEngine {
       const high = Number(config.value('risk.highScorePercent')) / 100;
       const score = Math.max(high, before ? Number(before.score) || 0 : 0);
       const id = 'authenticator:' + at.toString(36) + ':' +
-                 require('crypto').randomBytes(6).toString('hex');
+                 stsCrypto.randomBytes(6).toString('hex');
       await store.upsertSubject({ realm: realm, subject: subject,
         score: score, level: 'HIGH', reason: 'authenticator-compromised',
         lastAssessment: id, updatedAt: at }, sealing);
@@ -2572,6 +2876,11 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   SIGNALS: RiskEngine.SIGNALS,
+  /** The history's feature for which device: a registered id or a
+   *  browser fingerprint (#506). */
+  DEVICE_ID_FEATURE: DEVICE_ID_FEATURE,
+  /** The history's features outside the model's levels (#506). */
+  HISTORY_FEATURES: HISTORY_FEATURES,
   deviceOf: RiskEngine.deviceOf,
   satisfiedBy: RiskEngine.satisfiedBy,
   familyOf: RiskEngine.familyOf,
@@ -2582,6 +2891,7 @@ export = {
   standingOf: slot.forward('standingOf'),
   loadStanding: slot.forward('loadStanding'),
   settle: slot.forward('settle'),
+  amend: slot.forward('amend'),
   respond: slot.forward('respond'),
   feedback: slot.forward('feedback'),
   noteAuthenticatorCompromise: slot.forward('noteAuthenticatorCompromise'),

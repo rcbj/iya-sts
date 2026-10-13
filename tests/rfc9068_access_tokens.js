@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -348,6 +348,19 @@ function childMain() {
                      { form: Object.assign({}, form, client) });
     };
 
+    // THE CLIENT'S ROLES (#93): one realm-wide and one of r9-api-a's (#310),
+    // both held by r9-client as itself, and one held by a PERSON named
+    // r9-client — which the claim must never find for a client.
+    const roles = require(ROOT + '/common/roles');
+    const wrote = [
+      roles.write('r9-batch', { applications: ['r9-client'] }),
+      roles.write('reader@r9-api-a', { application: 'r9-api-a',
+                                       applications: ['r9-client'] }),
+      roles.write('r9-person-role', { users: ['r9-client'] })
+    ];
+    note(wrote.every(function (one) { return one && one.ok; }),
+         '3-roles. the three roles were written', JSON.stringify(wrote));
+
     // 3a. client_credentials: the header and the seven REQUIRED claims.
     let r = await token({ grant_type: 'client_credentials' });
     if (r.status === 200 && r.json.access_token) {
@@ -360,21 +373,33 @@ function childMain() {
              .every(function (k) { return claims[k] !== undefined; }),
            '3b. section 2.2: iss, exp, aud, sub, client_id, iat and jti are ' +
            'all present', JSON.stringify(claims));
-      note(claims.iss === BASE && claims.aud === BASE + '/resource',
-           '3c. iss is this authorization server and aud its default ' +
-           'resource indicator', claims.iss + ' ' + claims.aud);
+      // #550: a client_credentials token asking for nothing is addressed to
+      // the client itself — its oauthAudience, or (none here) its client_id.
+      note(claims.iss === BASE && claims.aud === 'r9-client',
+           '3c. iss is this authorization server and aud, for a ' +
+           'client_credentials token that asked for nothing, the client ' +
+           'itself (#550)', claims.iss + ' ' + claims.aud);
       note(!('scope' in claims),
            '3d. section 2.2.3: a token granted no scope carries no scope ' +
            'claim', JSON.stringify(claims.scope));
-      note(!('preferred_username' in claims) && !('auth_time' in claims),
+      note(!('preferred_username' in claims) && !('username' in claims) &&
+           !('auth_time' in claims),
            '3e. and a client_credentials token names no end user and no ' +
            'authentication event', JSON.stringify(claims));
+      note(claims.sub === 'r9-client' && claims.client_id === 'r9-client',
+           '3e-ii. its sub is the client application (#93)',
+           JSON.stringify(claims.sub));
+      note(Array.isArray(claims.roles) &&
+           claims.roles.join(',') === 'r9-batch',
+           '3e-iii. and its roles claim is the roles the APPLICATION holds ' +
+           '(roleMemberApplication), realm-wide only for the default ' +
+           'audience (#93)', JSON.stringify(claims.roles));
     } else {
       note(false, '3a. client_credentials issued a token', r.status + ' ' +
            r.text.slice(0, 200));
     }
 
-    // 3f. The password grant with openid: preferred_username, and UserInfo.
+    // 3f. The password grant with openid: the profile claims are UserInfo's.
     r = await token({ grant_type: 'password', username: 'r9-alice',
                       password: 'anything', scope: 'openid profile' });
     const access = r.json && r.json.access_token;
@@ -384,17 +409,26 @@ function childMain() {
          r.status + ' ' + r.text.slice(0, 200));
     if (access) {
       const claims = part(access, 1);
-      note(claims.preferred_username === 'r9-alice' &&
+      // #395: `profile` asks for access to the profile claims, which OIDC
+      // Core 5.4 answers at UserInfo; a token for this service's own
+      // resource server carries none of them, `preferred_username` included
+      // (a resource server that wants one declares it —
+      // `tests/scope_claims.js`). `username` is this service's own claim.
+      note(claims.preferred_username === undefined &&
+           claims.username === 'r9-alice' &&
            claims.scope === 'openid profile',
-           '3g. section 2.2.2: the person\'s name is preferred_username, ' +
-           'and the scope is kept', JSON.stringify(claims));
+           '3g. section 2.2.2: no profile claim on a token for this ' +
+           'service\'s own resource server, the scope kept',
+           JSON.stringify(claims));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access } });
       // The person's `urn:uuid:<entryUUID>` since 2026-09-14.
       note(r.status === 200 && r.json.sub ===
              require(ROOT + '/common/helpers').subjectForName('r9-alice') &&
-           /^urn:uuid:/.test(r.json.sub),
-           '3h. UserInfo accepts it', r.status + ' ' + r.text.slice(0, 160));
+           /^urn:uuid:/.test(r.json.sub) &&
+           r.json.preferred_username === 'r9-alice',
+           '3h. UserInfo accepts it, and answers the profile claims',
+           r.status + ' ' + r.text.slice(0, 160));
       r = await request(port, 'GET', '/oauth2/userinfo',
                         { headers: { authorization: 'Bearer ' + access,
                                      host: 'localhost:' + port } });
@@ -452,6 +486,22 @@ function childMain() {
            JSON.stringify(claims) + ' scope=' + r.json.scope);
     } else {
       note(false, '3n. openid profile r9-api-a issued a token',
+           r.status + ' ' + r.text.slice(0, 200));
+    }
+
+    // 3n-ii. client_credentials for r9-api-a: the application's role as
+    // `reader` beside the realm-wide one (#93, #310).
+    r = await token({ grant_type: 'client_credentials', scope: 'r9-api-a' });
+    if (r.status === 200) {
+      const claims = part(r.json.access_token, 1);
+      note(claims.aud === 'r9-api-a' && Array.isArray(claims.roles) &&
+           claims.roles.join(',') === 'r9-batch,reader' &&
+           !('username' in claims),
+           '3n-ii. client_credentials for r9-api-a carries the client\'s ' +
+           'realm-wide role and its r9-api-a role as "reader" (#93)',
+           JSON.stringify(claims));
+    } else {
+      note(false, '3n-ii. client_credentials for r9-api-a issued a token',
            r.status + ' ' + r.text.slice(0, 200));
     }
 

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -20,7 +20,8 @@
 //   * did:web  — this realm's own DID, its document from vc_did.ts;
 //   * did:key  — the realm's Ed25519, P-256 and P-384 keys, as the VC-API
 //                adapter names its issuers;
-//   * did:jwk  — one minted by this service's /did/generate;
+//   * did:jwk  — one this job makes from a P-256 key of its own (#594:
+//                the service's /did/generate is gone);
 //
 // each resolved through oid4vc/vc_did_resolver.ts (/vc-api/resolve,
 // /vc-api/dereference) in both representations it produces
@@ -258,6 +259,36 @@ function runJest(dir, suite, config) {
   return tests;
 }
 
+// THE REALM'S DID DOCUMENT MUST STOP CHANGING BEFORE THE FIXTURES ARE BUILT
+// (2026-09-30). A new realm's signing.rotate job mints its next keys about a
+// second after the realm is created, and in the cluster mode the other node
+// adopts them some tens of milliseconds later — so fixture fetches spread over
+// that moment disagree about the document's verification methods, and the
+// suite compares them. Wait until five fetches in a row return the same
+// document, bounded at 30 seconds, and use that one.
+async function settledDocument(ctx, first) {
+  log.debug("Entering settledDocument().");
+  const deadline = Date.now() + 30000;
+  let last = JSON.stringify(first.json);
+  let same = 0;
+  while (same < 5 && Date.now() < deadline) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 400);
+    });
+    const again = await kit.call("GET", ctx.realmBase + "/did.json");
+    const text = again.status === 200 ? JSON.stringify(again.json) : "";
+    if (text === last) {
+      same += 1;
+    } else {
+      same = 0;
+      last = text;
+    }
+  }
+  assert.ok(same >= 5, "the realm's DID document kept changing for 30 s");
+  log.debug("Leaving settledDocument().");
+  return JSON.parse(last);
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway development realm and a VC-API token ===");
@@ -274,13 +305,16 @@ async function test() {
                    "ecdsa-rdfc-2019-p384"].map(function (name) {
     return ctx.issuers[name].id;
   });
-  const generated = await kit.call("GET", ctx.realmBase +
-                                   "/did/generate?method=jwk");
-  assert.strictEqual(generated.status, 200, "/did/generate: " +
-                     generated.text.slice(0, 300));
-  const didJwk = generated.json.did;
+  // A did:jwk of the job's own (#594): the identifier IS the public key,
+  // so it resolves with no network call and no service minted it.
+  const holderJwk = require("crypto").generateKeyPairSync("ec",
+    { namedCurve: "P-256" }).publicKey.export({ format: "jwk" });
+  const didJwk = "did:jwk:" + Buffer.from(JSON.stringify(
+    { crv: holderJwk.crv, kty: holderJwk.kty, x: holderJwk.x,
+      y: holderJwk.y })).toString("base64url");
   log.info("  " + didWeb + ", " + didKeys.length + " did:key, " +
            didJwk.slice(0, 40) + "…");
+  own.json = await settledDocument(ctx, own);
 
   log.info("=== 2. the fixtures ===");
   const methods = [await methodFixture(ctx, "did:web", [didWeb]),

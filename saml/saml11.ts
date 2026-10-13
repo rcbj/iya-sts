@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -82,9 +82,9 @@
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-// saml.issuer — the same setting the 2.0 assertions carry, because it names
-// the same signer.
 import config = require('../common/config');
+// #523: the one name this service issues under, in one place (a library).
+import IssuerNames = require('../common/issuer_names');
 // The error-code registry, a leaf; the signing failure below is tagged with its
 // code.
 import errorCodes = require('../common/error_codes');
@@ -95,6 +95,8 @@ import stats = require('../common/admin_stats');
 // authenticated — both libraries beside this file, argued in their headers.
 import documentSettings = require('./document_settings');
 import authnContext = require('./authn_context');
+// THE AssertionID NAMES ITS CELL (#98 D10): see buildSaml11Assertion().
+import cellLocator = require('../common/cell_locator');
 /**
  * The SAML 1.1 assertion namespace.
  */
@@ -298,13 +300,13 @@ class Saml11Assertions {
   // signature over this document, and a single added attribute changes the
   // digest.
   //
-  //   issuer              the Issuer attribute, when it is not `saml.issuer`.
-  //                       The browser profiles MUST override it: they publish a
-  //                       providerID per relying party, and a relying party
-  //                       checks the assertion's Issuer against the one in the
-  //                       metadata it was configured from. An assertion issued
-  //                       under a name that is not in that document is refused,
-  //                       and the refusal reads as a trust-store problem.
+  //   issuer              the Issuer attribute. It defaults to the realm's one
+  //                       issuer, its OAuth issuer (#523); a caller that read
+  //                       it for its request passes it, so the metadata and
+  //                       the assertion name the same string. A relying party
+  //                       refuses an assertion issued under a name its
+  //                       metadata does not carry, and the refusal reads as a
+  //                       trust-store problem.
   //   nameIdFormat        the NameIdentifier's Format. The two older callers
   //                       want `unspecified` — nothing consumes it — and a
   //                       relying party configured for an email address is
@@ -361,7 +363,8 @@ class Saml11Assertions {
    * @param opts - `subject`, `audience`, `lifetimeMin` (60 by default),
    * `authnMethod`, `authnInstant`, `attributes`, `issuer`, `nameIdFormat`,
    * `nameIdValue`, `nameQualifier`, `confirmationMethod`, `subjectLocality`,
-   * `doNotCache`, `authenticationStatement` and `sign`
+   * `doNotCache`, `authenticationStatement`, `sign` and `application` (the
+   * entry whose claim settings govern, #487)
    * @returns the assertion's XML
    */
   buildSaml11Assertion(opts) {
@@ -370,7 +373,12 @@ class Saml11Assertions {
     const self = this;
     log.debug("Entering Saml11Assertions.buildSaml11Assertion(). subject=" +
               (opts.subject || '(none)'));
-    const id = genId();
+    // STAMPED WITH THE MINTING CELL (#98 D10): the SAML 1.1 responder answers
+    // an AssertionIDReference from the store of the cell that issued the
+    // assertion, and a relying party's server reaches whichever cell is
+    // nearest it. Twelve base64url characters keep the value an xsd:ID;
+    // single-cell mode adds nothing.
+    const id = cellLocator.stamp(genId());
     const now = iso(0);
     const lifetimeMin = opts.lifetimeMin > 0 ? opts.lifetimeMin : 60;
     // Widened at both ends by saml.clockSkewS, for the reason saml2.ts gives at
@@ -445,9 +453,15 @@ class Saml11Assertions {
     // would break the sign-in somewhere that looks nothing like this page. An
     // attribute configured with no namespace gets the identity claims
     // namespace, which is where a relying party is already looking.
+    // `application` (#487, #483's member): the entry whose settings govern,
+    // where the caller resolved it — WS-Trust's AppliesTo application.
     const custom = stats.samlAttributes('saml11',
-                                        { subject: opts.subject,
-                                          audience: opts.audience });
+                                        Object.assign({ subject: opts.subject,
+                                                        audience:
+                                                          opts.audience },
+                                          opts.application
+                                            ? { application: opts.application }
+                                            : {}));
     // FILTERED against the caller's own claims by name, for the reason saml2.ts
     // states beside the same line: an assertion is a list of elements, so a
     // duplicate name is not an overwrite but two <Attribute> elements with one
@@ -484,7 +498,7 @@ class Saml11Assertions {
       '<saml:Assertion xmlns:saml="' + SAML11_NS + '"' +
         ' MajorVersion="1" MinorVersion="1"' +
         ' AssertionID="' + id + '"' +
-        ' Issuer="' + xmlEscape(opts.issuer || config.value('saml.issuer')) +
+        ' Issuer="' + xmlEscape(opts.issuer || IssuerNames.issuer()) +
         '" ' +
         'IssueInstant="' + now + '">' +
         '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // EVERY XML DOCUMENT THIS SERVICE EMITS IN FOUR FAMILIES, AGAINST THE
@@ -52,7 +52,10 @@
 //               LogoutResponse to a service provider's LogoutRequest and the
 //               LogoutRequests of identity-provider-initiated logout. The
 //               service providers are THIS FILE — requests signed with a key
-//               made for the run.
+//               made for the run. The AuthnRequests THIS SERVICE emits as a
+//               service provider are the federation module's, below (#592:
+//               the mock service provider whose requests were validated
+//               here was deleted).
 //   SAML 1.1    the metadata; the Browser/POST Response; the SOAP responder's
 //               answer to an artifact, an AssertionIDReference, an
 //               AttributeQuery and an AuthenticationQuery (the
@@ -79,6 +82,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -467,6 +472,23 @@ function postForm(cookies, url, fields) {
     headers: { "content-type": "application/x-www-form-urlencoded" } });
 }
 
+// THE SIGN-OUT PAGE at `base`, as the page signs out since #577
+// (`authn_signin.js`'s `signOut()`): the view, the act over
+// /authn-api/logout, and the signed-out document it answers where the
+// browser has a partner to tell — answered in `hop()`'s shape, with this
+// jar's cookies kept.
+async function signOutAt(cookies, base, fields) {
+  log.debug("Entering signOutAt().");
+  const out = await authnSignin.signOut(base, fields,
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: out.headers });
+  }
+  log.debug("Leaving signOutAt(). " + out.status);
+  return { status: out.status, headers: out.headers, body: out.text || "",
+           url: base + "/logout", location: "" };
+}
+
 // Every form on a page, with its action and its hidden fields decoded.
 function formsIn(html) {
   log.debug("Entering formsIn().");
@@ -581,6 +603,38 @@ async function browse(cookies, startUrl, username, stopAt) {
         return { captured: captured, last: r, stop: { method: "GET",
                  url: next }, trail: trail };
       }
+      // THE SIGN-IN SCREEN, A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // answered through the one helper, its answer read as the form's 303.
+      if (username && /\/authn\/login\?authn=/.test(next)) {
+        const at = new URL(next);
+        const answer = await authnSignin.submit(at.origin +
+          at.pathname.replace(/\/authn\/login$/, ""), next,
+          { action: "login", username: username, password: PASSWORD },
+          { cookie: cookies && cookies.has() ? cookies.header() : "" });
+        if (cookies) {
+          cookies.take({ headers: answer.headers });
+        }
+        r = { status: answer.next === "redirect" ? 303 : answer.status,
+              headers: answer.headers,
+              body: answer.next === "redirect" ? ""
+                : JSON.stringify(answer.json),
+              url: next, location: answer.location };
+        continue;
+      }
+      // THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+      // answered over `/authn-api/consent` through the one helper.
+      if (authnSignin.isConsent(next)) {
+        const answer = await authnSignin.consentFor(next,
+          cookies && cookies.has() ? cookies.header() : "");
+        if (cookies) {
+          cookies.take({ headers: answer.headers });
+        }
+        r = { status: authnSignin.responseLike(answer).status,
+              headers: answer.headers,
+              body: answer.text || JSON.stringify(answer.json),
+              url: next, location: answer.location };
+        continue;
+      }
       r = await hop(cookies, next);
       continue;
     }
@@ -588,9 +642,6 @@ async function browse(cookies, startUrl, username, stopAt) {
       break;
     }
     const forms = formsIn(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
@@ -599,12 +650,6 @@ async function browse(cookies, startUrl, username, stopAt) {
              ("SAMLResponse" in f.fields || "SAMLRequest" in f.fields ||
               "wresult" in f.fields);
     });
-    if (signIn) {
-      const to = new URL(signIn.action || r.url, r.url).toString();
-      r = await postForm(cookies, to, Object.assign({}, signIn.fields, {
-        username: username, password: PASSWORD, action: "login" }));
-      continue;
-    }
     if (consent) {
       const to = new URL(consent.action || r.url, r.url).toString();
       r = await postForm(cookies, to, Object.assign({}, consent.fields, {
@@ -786,6 +831,7 @@ async function makeWorld(mode) {
     spEnc: "https://spenc-" + tag + "-" + STAMP + ".example.com/saml",
     rp11: "https://rp11-" + tag + "-" + STAMP + ".example.com/shibboleth",
     wsRp: "https://wsrp-" + tag + "-" + STAMP + ".example.com/",
+    wsSrc: "https://wssrc-" + tag + "-" + STAMP + ".example.com/",
     requester: "xsd-req-" + tag + "-" + STAMP
   };
   w.acs = w.sp.replace(/\/saml$/, "/acs");
@@ -812,11 +858,21 @@ async function makeWorld(mode) {
   await createApplication(realm, w.rp11, ["saml11"], {
     samlEntityId: [w.rp11], samlAssertionConsumerService: [w.acs11],
     samlSigningCertificate: signing });
+  // #186: the delegated assertion is issued for a second WS-Trust relying
+  // party, S, which delegates to the AppliesTo, R; R accepts the requester
+  // as an actor. S and R are two applications because since #459 no
+  // application may list itself, so a delegation with S equal to R cannot
+  // be configured.
   await createApplication(realm, w.wsRp, ["wsfed", "wstrust"], {
     wsfedRealm: [w.wsRp], wsfedReplyUrl: [w.wsReply],
-    wstrustAppliesTo: [w.wsRp] });
+    wstrustAppliesTo: [w.wsRp],
+    appAllowedToActOnBehalfOf: [w.requester] });
+  await createApplication(realm, w.wsSrc, ["wstrust"], {
+    wstrustAppliesTo: [w.wsSrc],
+    appAllowedToDelegateTo: [w.wsRp] });
   await createApplication(realm, w.requester, ["wstrust"], {
-    appTrustedToImpersonate: "TRUE", appAllowedToDelegateTo: [w.wsRp] });
+    appDelegationSemantics: ["delegation", "impersonation"],
+    appAllowedToDelegateTo: [w.wsRp] });
   log.debug("Leaving makeWorld().");
   return w;
 }
@@ -940,15 +996,19 @@ async function saml2(w) {
   // THE ARTIFACT, and the ArtifactResponse the service provider fetches.
   const art = await ssoRound(w, cookies, w.sp, w.acs, BINDING.artifact);
   for (const m of await capturedOne("the artifact", art, "SAMLart")) {
+    // The service provider's own resolver. Since #523 the artifact's
+    // SourceID names the realm's one issuer, which every resolver of the
+    // realm answers for (#160).
+    const ars = w.rb + "/saml2/ars/" + encodeURIComponent(w.sp);
     const resolveId = samlId();
     const resolve = signEnveloped(
       "<samlp:ArtifactResolve xmlns:samlp=\"" + NS.samlp + "\" " +
       "xmlns:saml=\"" + NS.saml + "\" ID=\"" + resolveId + "\" " +
       "Version=\"2.0\" IssueInstant=\"" + new Date().toISOString() + "\" " +
-      "Destination=\"" + w.rb + "/saml2/ars\"><saml:Issuer>" + w.sp +
+      "Destination=\"" + ars + "\"><saml:Issuer>" + w.sp +
       "</saml:Issuer><samlp:Artifact>" + m.artifact + "</samlp:Artifact>" +
       "</samlp:ArtifactResolve>", "ArtifactResolve", "ID", "Issuer");
-    const r = await hop(null, w.rb + "/saml2/ars", {
+    const r = await hop(null, ars, {
       method: "POST",
       body: "<soap:Envelope xmlns:soap=\"" + NS.soap11 + "\"><soap:Body>" +
             resolve + "</soap:Body></soap:Envelope>",
@@ -961,7 +1021,7 @@ async function saml2(w) {
       }
     });
     await validate(w.mode + " SAML 2.0 ArtifactResponse over SOAP (HTTP " +
-                   r.status + ")", r.body, "/saml2/ars");
+                   r.status + ")", r.body, "/saml2/ars/{sp}");
   }
 
   // IDENTITY-PROVIDER-INITIATED SSO (#189): the unsolicited Response.
@@ -1058,26 +1118,11 @@ async function saml2(w) {
                    "NameIDPolicy) on " + m.binding, m.xml, m.from);
   }
 
-  // THE MOCK SERVICE PROVIDER's AuthnRequests (/saml2/sp, non-spec, but a
-  // document this service emits): one per response binding it offers.
-  const mock = await hop(null, w.rb + "/saml2/sp");
-  const requests = [...mock.body.matchAll(/href="([^"]*SAMLRequest=[^"]*)"/g)]
-    .map(function (x) {
-      return htmlDecode(x[1]);
-    });
-  await check(w.mode + " the mock service provider offers its " +
-              "AuthnRequests", async function () {
-    if (requests.length < 3) {
-      throw new Error(requests.length + " — " + squash(mock.body));
-    }
-  });
-  for (const link of requests) {
-    const u = new URL(link, mock.url);
-    const xml = decodeRedirect(u.searchParams.get("SAMLRequest"));
-    await validate(w.mode + " SAML 2.0 AuthnRequest from the mock service " +
-                   "provider (" + ((/ProtocolBinding="[^"]*:([^:"]+)"/
-                     .exec(xml) || [])[1] || "?") + ")", xml, "/saml2/sp");
-  }
+  // THE AuthnRequests THIS SERVICE EMITS AS A SERVICE PROVIDER are the
+  // federation module's, validated in federation() on HTTP-Redirect and
+  // HTTP-POST. Until #592 the mock service provider's (/saml2/sp) were
+  // validated here as well; it was deleted, and it had emitted nothing a
+  // real relationship does not.
   log.debug("Leaving saml2().");
 }
 
@@ -1249,7 +1294,14 @@ async function wsTrust(w) {
       throw new Error("HTTP " + enc.status + " " + enc.body.slice(0, 400));
     }
   });
-  // 1.4's ActAs and 1.3's OnBehalfOf, from the application trusted to.
+  // 1.4's ActAs and 1.3's OnBehalfOf, from the application trusted to, of
+  // an assertion the person was issued for S (makeWorld()).
+  const forSource = await sts(w, "1.3 Issue for the delegating relying " +
+    "party", { trustNs: NS.wst13, soap: "1.2", op: "Issue",
+               username: w.person, password: PASSWORD,
+               appliesTo: w.wsSrc });
+  issued = (/<saml:Assertion[\s\S]*<\/saml:Assertion>/
+    .exec(forSource.body) || [])[0] || issued;
   await sts(w, "1.4 ActAs", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.requester,
     password: PASSWORD, appliesTo: w.wsRp,
@@ -1268,13 +1320,15 @@ async function wsTrust(w) {
       password: PASSWORD, appliesTo: w.wsRp,
       inner: "<wst:OnBehalfOf>" + issued + "</wst:OnBehalfOf>" });
   }
-  // The faults.
+  // The faults. Each names the registered relying party, because product
+  // refuses an Issue naming none before the password is read (#496), and
+  // the fault these are about is the authentication one.
   await sts(w, "fault: a wrong password over SOAP 1.1", {
     trustNs: NS.wst13, soap: "1.1", op: "Issue", username: w.person,
-    password: "invalid" });
+    password: "invalid", appliesTo: w.wsRp });
   await sts(w, "fault: a wrong password over SOAP 1.2", {
     trustNs: NS.wst13, soap: "1.2", op: "Issue", username: w.person,
-    password: "invalid" });
+    password: "invalid", appliesTo: w.wsRp });
   for (const soap of ["1.1", "1.2"]) {
     const r = await hop(null, w.rb + "/sts", {
       method: "POST", body: "<a><b></a>",
@@ -1431,8 +1485,8 @@ async function federation(idp) {
     });
     // THE OUTBOUND LogoutRequest: signing out at the service provider realm
     // offers the partner one, and the partner's LogoutResponse comes back.
-    const bye = await postForm(cookies, realmBase(sp) + "/logout",
-                               { scope: "global" });
+    const bye = await signOutAt(cookies, realmBase(sp),
+                                { scope: "global" });
     const toPartner = [...String(bye.body).matchAll(/href="([^"]+)"/g)]
       .map(function (x) {
         return htmlDecode(x[1]);

@@ -1,0 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+# A test may unwrap: a panic there is the failure being reported.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

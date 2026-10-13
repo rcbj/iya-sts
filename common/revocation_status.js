@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -272,11 +272,16 @@ const http = require('http');
 const https = require('https');
 const net = require('net');
 const tls = require('tls');
-const nodeCrypto = require('crypto');
 const { URL } = require('url');
 const asn1js = require('asn1js');
 const pkijs = require('pkijs');
 const config = require('./config');
+const realms = require('./realms');
+// This service's one cryptographic module (#453): the certificate parse, the
+// presented-chain key, the OCSP CertID hashes and the request nonce. A leaf
+// that requires nothing here, and already in the parent project's Kerberos
+// COPY closure through `helpers.js`.
+const stsCrypto = require('./crypto');
 // The one helper for a verified outbound connection (#201), required LAZILY
 // where a list is fetched: this module is in the parent project's Kerberos
 // COPY closure (kerberos/CLAUDE.md), and a load-time require would add
@@ -439,17 +444,17 @@ function x509Of(value) {
     log.debug("Leaving x509Of().");
     return null;
   }
-  if (value instanceof nodeCrypto.X509Certificate) {
+  if (stsCrypto.isParsedCertificate(value)) {
     log.debug("Leaving x509Of().");
     return value;
   }
   try {
     if (Buffer.isBuffer(value)) {
       log.debug("Leaving x509Of().");
-      return new nodeCrypto.X509Certificate(value);
+      return stsCrypto.parseCertificate(value);
     }
     log.debug("Leaving x509Of().");
-    return new nodeCrypto.X509Certificate(String(value));
+    return stsCrypto.parseCertificate(String(value));
   } catch (e) {
     // Not a certificate this OpenSSL can read — a composite post-quantum one,
     // or bytes that are not a certificate at all. Answered as absent: the
@@ -560,45 +565,230 @@ let presentedCount = NO_COUNT;
 // The fix is to REMEMBER, not to re-derive. Every full handshake that verified
 // shows this process the whole path OpenSSL built, anchor included; it is kept
 // here keyed by the leaf's SHA-256, and a resumed session of that leaf is
-// handed it back. That is sound because a session can only be resumed on the
-// process that issued it (the ticket keys are this process's), so the full
-// handshake it resumes was seen HERE, and because the walk re-checks every
-// signature in whatever it is handed — a remembered chain can make a
-// certificate look no better than its own signatures make it.
+// handed it back. The walk re-checks every signature in whatever it is handed,
+// so a remembered chain can make a certificate look no better than its own
+// signatures make it.
+//
+// AND IT IS THE CLUSTER'S, NOT THE PROCESS'S, SINCE #406 (2026-10-02). Until
+// then a session could only resume on the process that issued it, because the
+// main port kept a ticket key per node — so the full handshake it resumed was
+// always seen HERE. With the cluster's ticket key on the main port
+// (`tls.mainPortSharedTickets`), a browser's session resumes on whichever node
+// the balancer picks, which is what stops a browser asking its user about a
+// client certificate on every new connection; and the chain has to be where
+// the session resumes. So it is a replicated shared store, its rows base64 (a
+// Buffer does not survive the journal's JSON), written only when the chain is
+// new or half its life is gone, and dated so the store ages it out once no
+// session made from that handshake can still resume. `awaitResumedChain()`
+// below is the bounded wait for a row still on its way.
 // ---------------------------------------------------------------------------
-/** @type {Map<string, Buffer[]>} */
-const presentedChains = new Map();
+// A row: leaf SHA-256 (hex) -> { chain: base64 DER above it, until: ms }.
+const presentedChains = realms.sharedMap({
+  persist: 'tls.presentedChains',
+  retain: 'age',
+  scope: 'shared',
+  expiresAt: realms.expiryField('until', 1)
+});
 const PRESENTED_CHAIN_ENTRIES = 1024;
+// The floor of a row's life: an hour, or the main port's session lifetime and
+// a minute more when that is longer. A row outliving every session it serves
+// costs a few hundred bytes; one gone early costs a refusal under hard-fail.
+const PRESENTED_CHAIN_FLOOR_MS = 3600 * 1000;
 
 function leafKey(raw) {
   log.debug("Entering leafKey().");
   log.debug("Leaving leafKey().");
-  return nodeCrypto.createHash('sha256').update(raw).digest('hex');
+  return stsCrypto.digest('sha256', raw, 'hex');
+}
+
+function presentedChainLifetimeMs() {
+  log.debug("Entering presentedChainLifetimeMs().");
+  // The LONGEST session any listener may resume (#429: the lifetime is per
+  // listener now, `tls.sessionTimeoutS` and each `listener<Id>.
+  // sessionTimeoutS`; a realm listener's is under the hour's floor below).
+  const s = config.SETTINGS.filter(function (row) {
+    return row.key === 'tls.sessionTimeoutS' ||
+           /^listener[A-Z][A-Za-z]*\.sessionTimeoutS$/.test(row.key);
+  }).reduce(function (most, row) {
+    const n = Number(config.value(row.key));
+    return Number.isFinite(n) && n > most ? n : most;
+  }, 0);
+  const ms = Number.isFinite(s) && s > 0 ? (s + 60) * 1000 : 0;
+  log.debug("Leaving presentedChainLifetimeMs().");
+  return Math.max(ms, PRESENTED_CHAIN_FLOOR_MS);
 }
 
 // Remembered only for a VERIFIED chain, and the oldest dropped first when full:
 // a leaf that is gone costs its next resumed session one refusal-free full
-// handshake, which a client makes anyway when its ticket is refused.
+// handshake, which a client makes anyway when its ticket is refused. A chain
+// already held, with more than half its life left, is not written again: every
+// full handshake with a client certificate would otherwise be a replicated
+// write.
 function rememberChain(raw, chain) {
   log.debug("Entering rememberChain().");
   const key = leafKey(raw);
+  const encoded = chain.map(function (der) {
+    return Buffer.from(der).toString('base64');
+  });
+  const now = Date.now();
+  const life = presentedChainLifetimeMs();
+  const held = presentedChains.get(key);
+  if (held && Array.isArray(held.chain) &&
+      held.chain.join(',') === encoded.join(',') &&
+      Number(held.until) - now > life / 2) {
+    log.debug("Leaving rememberChain(). Already held.");
+    return;
+  }
   presentedChains.delete(key);
   cacheRegistry.makeRoom(presentedChains, PRESENTED_CHAIN_ENTRIES,
                          { counter: presentedCount });
-  presentedChains.set(key, chain.slice());
+  presentedChains.set(key, { chain: encoded, until: now + life });
   log.debug("Leaving rememberChain().");
+}
+
+// A HOT PATH: one lookup per resumed connection and per pull while waiting,
+// so no Entering/Leaving pair — one would drown the log.
+function heldChain(key) {
+  const found = presentedChains.get(key);
+  if (!found || !Array.isArray(found.chain) ||
+      !(Number(found.until) > Date.now())) {
+    return null;
+  }
+  return found.chain;
 }
 
 function rememberedChain(raw) {
   log.debug("Entering rememberedChain().");
-  const found = presentedChains.get(leafKey(raw));
+  const found = heldChain(leafKey(raw));
   if (found) {
     presentedCount.hit();
   } else {
     presentedCount.miss();
   }
   log.debug("Leaving rememberedChain(). " + (found ? found.length : 0));
-  return found ? found.slice() : [];
+  return found ? found.map(function (b64) {
+    return Buffer.from(String(b64), 'base64');
+  }) : [];
+}
+
+// ---------------------------------------------------------------------------
+// THE WAIT FOR A CHAIN STILL ON ITS WAY (#406, 2026-10-02).
+//
+// A session can resume here a few milliseconds after its full handshake on
+// another node, before that node's row has been pulled. Answering then would
+// walk the leaf alone, which product mode's hard-fail refuses — a certificate
+// that verified, refused because of where the balancer sent its next
+// connection. So before a request is answered or dispatched, a resumed,
+// verified connection whose chain is not held here pulls the store
+// (`persistence.syncNow()`) until the chain is there or
+// `tls.resumedChainWaitMs` has passed; after that it goes on, and the walk
+// answers as it would for any chain it cannot build. Nothing waits for a
+// connection that presented no certificate — every browser that declined —
+// or one whose chain this process already holds.
+// ---------------------------------------------------------------------------
+/**
+ * Waits, bounded by `tls.resumedChainWaitMs`, for the replicated chain of a
+ * resumed TLS session's client certificate.
+ *
+ * @param socket - the request's TLS socket
+ * @returns a promise of true when no wait was needed or the chain arrived,
+ *   false when the wait ran out
+ */
+async function awaitResumedChain(socket) {
+  log.debug("Entering awaitResumedChain().");
+  if (!socket || typeof socket.isSessionReused !== 'function' ||
+      socket.authorized !== true || !socket.isSessionReused()) {
+    log.debug("Leaving awaitResumedChain(). Nothing to wait for.");
+    return true;
+  }
+  let peer = null;
+  try {
+    peer = socket.getPeerCertificate(true);
+  } catch (e) {
+    log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+  }
+  if (!peer || !peer.raw || !peer.raw.length ||
+      (peer.issuerCertificate && peer.issuerCertificate.raw &&
+       !peer.issuerCertificate.raw.equals(peer.raw))) {
+    log.debug("Leaving awaitResumedChain(). No certificate, or a chain.");
+    return true;
+  }
+  const key = leafKey(peer.raw);
+  if (heldChain(key)) {
+    log.debug("Leaving awaitResumedChain(). Held.");
+    return true;
+  }
+  const budget = Number(config.value('tls.resumedChainWaitMs'));
+  const waitMs = Number.isFinite(budget) && budget > 0 ? budget : 0;
+  const started = Date.now();
+  const deadline = started + waitMs;
+  let persistence = null;
+  try {
+    persistence = require('../persistence/persistence');
+  } catch (e) {
+    log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+  }
+  while (Date.now() < deadline) {
+    const left = deadline - Date.now();
+    try {
+      await Promise.race([
+        persistence && typeof persistence.syncNow === 'function'
+          ? Promise.resolve(persistence.syncNow()) : Promise.resolve(),
+        new Promise(function (resolve) {
+          setTimeout(resolve, Math.min(left, 250));
+        })
+      ]);
+    } catch (e) {
+      log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+    }
+    if (heldChain(key)) {
+      log.info('revocation: a resumed TLS session\'s client-certificate ' +
+               'chain arrived from another node after ' +
+               (Date.now() - started) + 'ms.');
+      log.debug("Leaving awaitResumedChain(). Arrived.");
+      return true;
+    }
+    await new Promise(function (resolve) {
+      setTimeout(resolve, Math.min(Math.max(deadline - Date.now(), 0), 50));
+    });
+  }
+  if (waitMs > 0) {
+    log.warn(errorCodes.tag('STS-TLS-0038') +
+             'revocation: a TLS session resumed here with a verified client ' +
+             'certificate whose chain did not arrive from the node that saw ' +
+             'it within ' + waitMs + 'ms (tls.resumedChainWaitMs); the ' +
+             'request goes on with the leaf alone.');
+  }
+  log.debug("Leaving awaitResumedChain(). Ran out.");
+  return false;
+}
+
+/**
+ * The middleware form of `awaitResumedChain()`, mounted in front of the
+ * request pool so that a dispatched request carries the chain too.
+ *
+ * @returns an express middleware
+ */
+function resumedChainMiddleware() {
+  log.debug("Entering resumedChainMiddleware().");
+  log.debug("Leaving resumedChainMiddleware().");
+  // A HOT PATH: every request on the main port passes it, so no
+  // Entering/Leaving pair in the handler — one would drown the log.
+  return function awaitResumedChainFirst(req, res, next) {
+    const socket = req && req.socket;
+    if (!socket || typeof socket.isSessionReused !== 'function' ||
+        socket.authorized !== true || !socket.isSessionReused()) {
+      next();
+      return;
+    }
+    awaitResumedChain(socket).then(function () {
+      next();
+    }, function (e) {
+      log.debug("Caught in awaitResumedChainFirst(): " +
+                ((e && e.message) || e));
+      next();
+    });
+  };
 }
 let pemFilesCount = NO_COUNT;
 
@@ -721,11 +911,12 @@ const REASON_REMOVE_FROM_CRL = 8;
 const KEY_USAGE_CRL_SIGN = 6;
 // The CertID digests a response may be keyed by. This file ASKS with SHA-1 and
 // matches an answer keyed by any of these, because a responder may re-key.
+// The names are `crypto.js`'s `OCSP_CERT_ID_HASHES` (#453).
 const CERT_ID_HASHES = {
-  '1.3.14.3.2.26': 'sha1',
-  '2.16.840.1.101.3.4.2.1': 'sha256',
-  '2.16.840.1.101.3.4.2.2': 'sha384',
-  '2.16.840.1.101.3.4.2.3': 'sha512'
+  '1.3.14.3.2.26': 'SHA-1',
+  '2.16.840.1.101.3.4.2.1': 'SHA-256',
+  '2.16.840.1.101.3.4.2.2': 'SHA-384',
+  '2.16.840.1.101.3.4.2.3': 'SHA-512'
 };
 const OCSP_RESPONSE_STATUS = { 1: 'malformedRequest', 2: 'internalError',
                                3: 'tryLater', 5: 'sigRequired',
@@ -2515,10 +2706,12 @@ async function listFrom(url, context) {
 //     `pki.revocationClockSkewS`), or, with no nextUpdate, thisUpdate is within
 //     `pki.revocationOcspMaxAgeS`.
 // ---------------------------------------------------------------------------
+// An OCSP CertID hash (RFC 6960 section 4.1.1), or the responder's KeyHash
+// (section 4.2.2.3, the same SHA-1), through `crypto.js` (#453).
 function digestOf(algorithm, bytes) {
   log.debug("Entering digestOf().");
   log.debug("Leaving digestOf().");
-  return nodeCrypto.createHash(algorithm).update(Buffer.from(bytes)).digest();
+  return stsCrypto.ocspCertIdHash(algorithm, Buffer.from(bytes));
 }
 
 function keyBitsOf(parsedCert) {
@@ -2529,7 +2722,7 @@ function keyBitsOf(parsedCert) {
 
 function buildOcspRequest(target) {
   log.debug('Entering buildOcspRequest().');
-  const nonce = nodeCrypto.randomBytes(32);
+  const nonce = stsCrypto.randomBytes(32);
   const nonceValue = Buffer.from(new asn1js.OctetString({
     valueHex: arrayBufferOf(nonce) }).toBER(false));
   const certId = new pkijs.CertID({
@@ -2537,10 +2730,10 @@ function buildOcspRequest(target) {
                                                    algorithmParams:
                                                      new asn1js.Null() }),
     issuerNameHash: new asn1js.OctetString({
-      valueHex: arrayBufferOf(digestOf('sha1',
+      valueHex: arrayBufferOf(digestOf('SHA-1',
                                        nameDerOf(target.parsed.issuer))) }),
     issuerKeyHash: new asn1js.OctetString({
-      valueHex: arrayBufferOf(digestOf('sha1',
+      valueHex: arrayBufferOf(digestOf('SHA-1',
                                        keyBitsOf(target.issuerParsed))) }),
     serialNumber: target.parsed.serialNumber
   });
@@ -2657,7 +2850,7 @@ async function ocspSignerOf(basic, target) {
     const byKey = responderId && responderId.valueBlock
       ? Buffer.from(responderId.valueBlock.valueHexView) : null;
     log.debug("Leaving named().");
-    return !!byKey && byKey.equals(digestOf('sha1', keyBitsOf(parsedCert)));
+    return !!byKey && byKey.equals(digestOf('SHA-1', keyBitsOf(parsedCert)));
   };
   const tried = [];
   if (named(target.issuerParsed)) {
@@ -4443,7 +4636,7 @@ function registeredCertificateOf(value) {
     log.debug("Leaving registeredCertificateOf().");
     return null;
   }
-  if (Buffer.isBuffer(value) || value instanceof nodeCrypto.X509Certificate) {
+  if (Buffer.isBuffer(value) || stsCrypto.isParsedCertificate(value)) {
     log.debug("Leaving registeredCertificateOf().");
     return x509Of(value);
   }
@@ -4868,8 +5061,9 @@ function codeOf(verdict) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT EVERY SURFACE SAYS. One sentence, so /tls, /admin/pki, the crypto report
-// and the mode page cannot describe the policy four ways.
+// WHAT EVERY SURFACE SAYS. One sentence, so /admin/pki, the crypto report and
+// the mode page cannot describe the policy three ways (`/tls` said it too,
+// until #597).
 // ---------------------------------------------------------------------------
 // THE ADDRESSES THIS SERVICE WILL NOT DIAL UNDER THE SETTINGS IN FORCE, as
 // sentences naming the setting that would change each (#174).
@@ -5206,21 +5400,25 @@ function registerCaches() {
       'this the revocation walk refuses a certificate that verified.',
     owner: 'common/revocation_status.js',
     scope: 'process',
+    persisted: true,
     maxEntries: function () {
       return PRESENTED_CHAIN_ENTRIES;
     },
     bound: 'Enforced: ' + PRESENTED_CHAIN_ENTRIES + ' leaves; the oldest ' +
       'is forgotten first.',
     lifetime: function () {
-      return 'No expiry: keyed by the leaf, replaced on its next full ' +
-        'handshake, the oldest dropped when full.';
+      return 'Shared by every node and replicated (#406): an hour, or the ' +
+        'main port\'s session lifetime and a minute when longer, renewed ' +
+        'by the leaf\'s next full handshake; the oldest dropped when full.';
     },
     entries: function () {
       const out = [];
-      presentedChains.forEach(function (chain, key) {
+      presentedChains.forEach(function (row, key) {
+        const n = row && Array.isArray(row.chain) ? row.chain.length : 0;
+        const until = row && Number(row.until) > 0 ? Number(row.until) : null;
         out.push({ key: 'leaf sha256 ' + key.slice(0, 16) + '… (' +
-                        chain.length + ' above it)',
-                   validUntil: null, basis: 'content-keyed' });
+                        n + ' above it)',
+                   validUntil: until, basis: 'content-keyed' });
       });
       return out;
     }
@@ -5306,6 +5504,8 @@ module.exports = {
   CODE_REGISTERED: CODE_REGISTERED,
   decide: decide,
   fromSocket: fromSocket,
+  awaitResumedChain: awaitResumedChain,
+  resumedChainMiddleware: resumedChainMiddleware,
   // The walk itself, for `common/tls_client_certificates.js`, which asks the
   // same question about the same chain — which held authority signed each
   // link — for a different reason: not whether it is revoked, but whether a

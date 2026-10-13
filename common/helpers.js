@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -57,11 +57,17 @@ require('./config_file').resolveConfigFile();
 // It is BELOW this module in the dependency graph and requires nothing from
 // here, which is what keeps the graph a tree (rule 3).
 const config = require('./config');
-const crypto = require('crypto');
 const forge = require('node-forge');
 const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
-const bbs2023 = require('./vendored/bbs2023.js');
+// THE VENDORED BBS SUITE IS REQUIRED AT FIRST USE (#348), through
+// `bbs2023Suite()` below: it requires `jsonld` at its top, and the two are
+// resident memory in every request worker that never makes a BBS key. By
+// hand rather than through `common/lazy_module.ts`, because this file is in
+// the parent project's Kerberos COPY closure (kerberos/CLAUDE.md) and a new
+// require here would add that file to it.
+/** @type {typeof import('./vendored/bbs2023.js') | null} */
+let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, since
 // 2026-08-27. It is a LEAF — it requires npm packages, the vendored XML signer
@@ -87,6 +93,11 @@ const signerGroups = require('./signer_groups');
 // is how eight of them reach a signing key. realms.js requires config.js and
 // nothing else here, so this cannot be a cycle.
 const realms = require('./realms');
+// WHICH HOSTED APPLICATION A PATH IS, AND WHERE EACH IS ADVERTISED (#472):
+// every URL built here is built on the base of the application it is for.
+// Two LEAVES (they require the settings, the realms and each other).
+const hostedApplications = require('./hosted_applications');
+const listenerMap = require('./listener_map');
 // A LEAF over `config` alone (see its header), so this require can close no
 // cycle. `userFor()` asks it whether to invent persona values.
 const mode = require('./mode');
@@ -117,6 +128,31 @@ const clientAddress = require('./client_address');
  */
 const log = bunyan.createLogger({ name: 'sts',
                                 level: config.value('global.logLevel') });
+
+/**
+ * Returns the vendored BBS suite, requiring it the first time (#348).
+ *
+ * @returns {typeof import('./vendored/bbs2023.js')} the suite
+ */
+function bbs2023Suite() {
+  log.debug("Entering bbs2023Suite().");
+  if (!bbs2023Loaded) {
+    try {
+      bbs2023Loaded = require('./vendored/bbs2023.js');
+    } catch (e) {
+      // Thrown on to the caller, as the top-level require's failure was
+      // thrown at start; logged first, because it now happens mid-request.
+      log.error(errorCodes.tag('STS-CORE-0140') + 'helpers: ' +
+                'common/vendored/bbs2023.js, required at first use, did ' +
+                'not load: ' + ((e && e.message) || e));
+      log.debug("Leaving bbs2023Suite(). Threw.");
+      throw e;
+    }
+  }
+  log.debug("Leaving bbs2023Suite().");
+  return bbs2023Loaded;
+}
+
 // Registering it is what makes global.logLevel a setting rather than a claim:
 // bunyan takes a level when the logger is created, so without this
 // /admin/config could change the setting and every line after it would still be
@@ -385,12 +421,12 @@ const HOST = config.value('global.host');
 // provider, an Issuer names whoever signed an assertion — so a deployment
 // that needed one of them to be its own real name had to change all three.
 //
-// They are now `saml.issuer`, `wstrust.issuer` and `wsfed.entityId` in
-// config.js, all three still defaulting to `urn:wstrust:mock:sts` and all
-// three still fed by STS_ISSUER when it is set, so nothing that worked before
-// changed. Callers read them from config.js directly rather than through a
-// re-export here: they are runtime-settable, so a constant captured at
-// require time would be the one thing the console could not change.
+// They became `saml.issuer`, `wstrust.issuer` and `wsfed.entityId`, and
+// since #523 (2026-10-08) they are ONE name again, with no setting: the
+// realm's OAuth issuer, which follows the base URL
+// (`common/issuer_names.ts`). Callers read it through that library, per use,
+// rather than through a re-export here: it is the request's, so a constant
+// captured at require time would be wrong for every realm but one.
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -455,8 +491,8 @@ const VCI_REQUEST_ENC_ALG = 'RSA-OAEP-256';
  */
 function requestEncryptionJwkOf(privateKey) {
   log.debug("Entering requestEncryptionJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving requestEncryptionJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -473,7 +509,7 @@ function makeRequestEncryptionKey(made) {
   log.debug("Entering makeRequestEncryptionKey().");
   const bits = rsaBitsFor('oid4vci.requestEncryptionKeyBits');
   const pair = made ||
-               crypto.generateKeyPairSync('rsa', { modulusLength: bits });
+               stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
   const out = { privateKey: pair.privateKey,
                 publicJwk: requestEncryptionJwkOf(pair.privateKey) };
   log.debug("Leaving makeRequestEncryptionKey(). " + bits + " bits, kid=" +
@@ -524,8 +560,8 @@ const REFRESH_TOKEN_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
 
 function refreshTokenJwkOf(privateKey, kind) {
   log.debug("Entering refreshTokenJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving refreshTokenJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -550,9 +586,9 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
-              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
-  const secret = crypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
+              stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const secret = stsCrypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
     rsa: { privateKey: rsa.privateKey,
            publicJwk: refreshTokenJwkOf(rsa.privateKey, 'rsa') },
@@ -563,10 +599,7 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
     // names which realm's secret opened it. A hash of 64 random bytes reveals
     // nothing usable about them, and it is never published anyway.
     secretKid: 'sts-rt-secret-' +
-      crypto.createHash('sha256')
-            .update(secret)
-            .digest('base64url')
-            .slice(0, 16)
+      stsCrypto.digest('sha256', secret, 'base64url').slice(0, 16)
   };
   log.debug("Leaving makeRefreshTokenEncryptionKeys(). rsa " + bits +
             " bits, " +
@@ -600,8 +633,8 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
 // ---------------------------------------------------------------------------
 function requestObjectJwkOf(privateKey, kind) {
   log.debug("Entering requestObjectJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving requestObjectJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -618,8 +651,8 @@ function makeRequestObjectEncryptionKeys(madeRsa) {
   const curve = REFRESH_TOKEN_CURVES[curveName] ||
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
-              crypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = crypto.generateKeyPairSync('ec', { namedCurve: curve });
+              stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
+  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
   const out = {
     rsa: { privateKey: rsa.privateKey,
            publicJwk: requestObjectJwkOf(rsa.privateKey, 'rsa') },
@@ -646,8 +679,8 @@ function makeRequestObjectEncryptionKeys(madeRsa) {
 // ---------------------------------------------------------------------------
 function browserDeviceJwkOf(privateKey, use) {
   log.debug("Entering browserDeviceJwkOf().");
-  const publicJwk = crypto.createPublicKey(privateKey)
-                          .export({ format: 'jwk' });
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
   const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
   log.debug("Leaving browserDeviceJwkOf().");
   return Object.assign({}, publicJwk, {
@@ -659,8 +692,10 @@ function browserDeviceJwkOf(privateKey, use) {
 
 function makeBrowserDeviceKeys() {
   log.debug("Entering makeBrowserDeviceKeys().");
-  const sign = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-  const enc = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const sign = stsCrypto.generateKeyPairSync('ec',
+                                             { namedCurve: 'prime256v1' });
+  const enc = stsCrypto.generateKeyPairSync('ec',
+                                            { namedCurve: 'prime256v1' });
   const out = {
     sign: { privateKey: sign.privateKey,
             publicJwk: browserDeviceJwkOf(sign.privateKey, 'sig') },
@@ -669,6 +704,65 @@ function makeBrowserDeviceKeys() {
   };
   log.debug("Leaving makeBrowserDeviceKeys(). kids=" + out.sign.publicJwk.kid +
             ", " + out.enc.publicJwk.kid);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE VC-API KEYS (#598, 2026-10-12): an Ed25519, a P-256 and a P-384 key
+// pair used for ONE thing — what `oid4vc/vc_api.ts` signs as the W3C VC API's
+// issuer and holder, each named by the did:key of its public half.
+//
+// **DEDICATED, AND THAT IS THE WHOLE REASON THEY EXIST.** Until #598 the
+// adapter signed with the realm's own curve keys (`extraKeys`), the keys
+// `signJwt()` signs ES256, ES384 and EdDSA tokens with — and the VC API is an
+// issuer that secures a document ITS CALLER WROTE. Its VC-JOSE-COSE issuers
+// produce a compact JWS over that document, so a caller holding
+// `vc-api:issue` could have had any claims it liked (an `iss`, a `sub`, an
+// `aud`, an `exp`: the VCDM 2.0 context's `@vocab` defines them all) signed
+// by a key `verifyOwnJws()` accepts as this realm's — a kid that names no key
+// of ours is tried against every candidate of the alg. RFC 8725 section 3.12
+// asks for exactly this separation ("use different keys for different kinds
+// of JWTs"), and OpenID Federation's 3.1.1 asked it of `oidfed/`'s keys. A
+// test control could get away without it; a product surface cannot.
+//
+// NEVER PUBLISHED in a JWKS and never a candidate of `ownCandidatesFor()`: a
+// verifier finds them through their did:key, which is the key. Made with the
+// set and carried over a rotation unchanged, as the browser device keys are,
+// because a did:key IS its key — a rotated key would be a different issuer,
+// and every credential the old one signed would name an issuer nobody holds.
+// ---------------------------------------------------------------------------
+const VC_API_KEY_SPECS = [
+  { name: 'ed25519', curve: 'Ed25519', alg: 'EdDSA',
+    gen: ['ed25519', undefined] },
+  { name: 'p256', curve: 'P-256', alg: 'ES256',
+    gen: ['ec', { namedCurve: 'prime256v1' }] },
+  { name: 'p384', curve: 'P-384', alg: 'ES384',
+    gen: ['ec', { namedCurve: 'secp384r1' }] }
+];
+
+function vcApiJwkOf(privateKey, spec) {
+  log.debug("Entering vcApiJwkOf(). " + spec.name);
+  const publicJwk = stsCrypto.publicKeyOf(privateKey)
+                             .export({ format: 'jwk' });
+  const thumbprint = stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  log.debug("Leaving vcApiJwkOf().");
+  return Object.assign({}, publicJwk, {
+    kid: 'sts-vcapi-' + spec.name + '-' + thumbprint,
+    use: 'sig',
+    alg: spec.alg
+  });
+}
+
+function makeVcApiKeys() {
+  log.debug("Entering makeVcApiKeys().");
+  const out = {};
+  VC_API_KEY_SPECS.forEach(function (spec) {
+    const pair = stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
+    out[spec.name] = { privateKey: pair.privateKey,
+                       publicJwk: vcApiJwkOf(pair.privateKey, spec) };
+  });
+  log.debug("Leaving makeVcApiKeys(). kids=" + out.ed25519.publicJwk.kid +
+            ", " + out.p256.publicJwk.kid + ", " + out.p384.publicJwk.kid);
   return out;
 }
 
@@ -833,11 +927,7 @@ function makeStsKeys(made) {
   // reasoning about kid collisions above holds per key rather than per service.
   // -------------------------------------------------------------------------
   const extraKeys = CURVE_KEY_SPECS.map(function (spec) {
-    // `any`: the key type is a table value, and the overloads want literals.
-    const generate = /** @type {any} */ (crypto.generateKeyPairSync);
-    const pair = spec.gen[1]
-      ? generate(spec.gen[0], spec.gen[1])
-      : generate(spec.gen[0]);
+    const pair = stsCrypto.generateKeyPairSync(spec.gen[0], spec.gen[1]);
     return curveKeyFrom(spec, pair);
   });
 
@@ -866,6 +956,9 @@ function makeStsKeys(made) {
     // THE BROWSER DEVICE KEYS (#265), made with the set for the same reason —
     // see makeBrowserDeviceKeys().
     browserDeviceKeys: makeBrowserDeviceKeys(),
+    // THE VC-API KEYS (#598), made with the set for the same reason — see
+    // makeVcApiKeys().
+    vcApiKeys: makeVcApiKeys(),
     // THE XML SIGNING KEY (2026-09-22, #42, D2), a member made with the set for
     // the reason the others are: the set is what the key channel agrees and
     // the keystore seals. See makeRsaSigningKey(). Its view — the certificate
@@ -931,7 +1024,7 @@ function plainKeySet(realmId, stored) {
   certifiedView(set, realmId, stored);
   // The parsed RSA key, for makeStsKeys()'s measured reason: parsing the PEM
   // per signature was 21% of non-idle CPU.
-  set.privateKey = crypto.createPrivateKey(set.privateKeyPem);
+  set.privateKey = stsCrypto.privateKeyFrom(set.privateKeyPem);
   // The post-quantum half, where the sibling had already made it. Absent means
   // "not warmed yet"; this process will make and republish them.
   if (stored.pqKeys) {
@@ -961,6 +1054,18 @@ function plainKeySet(realmId, stored) {
   // forgotten by every other worker.
   if (stored.browserDeviceKeys) {
     set.browserDeviceKeys = stored.browserDeviceKeys;
+  }
+  // AND THE VC-API KEYS (#598): dropped here, this process would make keys of
+  // its own, and a credential a sibling issued would name a did:key this
+  // process does not sign as.
+  if (stored.vcApiKeys) {
+    set.vcApiKeys = stored.vcApiKeys;
+  }
+  // AND THE KEM DECRYPTION KEYS (#82): dropped here, this process would
+  // publish keys of its own for an opted-in alg and fail to open what a
+  // client encrypted to the JWKS a sibling served.
+  if (stored.kemEncKeys) {
+    set.kemEncKeys = stored.kemEncKeys;
   }
   // AND THE XML SIGNING KEY AND THE KEY GENERATIONS (2026-09-22, #42), for
   // the same reason: dropped here, this process would sign XML with a key of
@@ -1280,7 +1385,7 @@ function xmlKeyView(realmId, stored, privateOf) {
   } else {
     view.privateKeyPem = stored.privateKeyPem;
     view.privateKey = stored.privateKey ||
-                      crypto.createPrivateKey(stored.privateKeyPem);
+                      stsCrypto.privateKeyFrom(stored.privateKeyPem);
   }
   log.debug("Leaving xmlKeyView(). kid=" + kid);
   return view;
@@ -1318,7 +1423,7 @@ function generationsView(realmId, stored, privateOf) {
     });
     if (entry.kind === 'rsa' && !entry.publicJwk && entry.certPem) {
       entry.publicJwk = Object.assign(
-        crypto.createPublicKey(entry.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(entry.certPem).export({ format: 'jwk' }),
         { kid: entry.kid, use: 'sig', alg: 'RS256' });
     }
     const kid = entry.kid;
@@ -1722,6 +1827,56 @@ function lazyKeySet(realmId, stored) {
     }
   });
   // ---------------------------------------------------------------------
+  // **THE KEM DECRYPTION KEYS (#82)**, the request object keys' arrangement
+  // for a LIST: each public JWK resident, each private JWK a getter over the
+  // keystore's timed decryption, found by kid. `/oauth2/jwks` reads the
+  // public halves on every fetch, and publishing must not decrypt anything.
+  // ---------------------------------------------------------------------
+  const kemStored = Array.isArray(stored.kemEncKeys) ? stored.kemEncKeys
+    : null;
+  let kemGenerated = null;
+  Object.defineProperty(set, 'kemEncKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (kemGenerated) {
+        log.debug("Leaving get().");
+        return kemGenerated;
+      }
+      if (!kemStored || !kemStored.length) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const views = kemStored.map(function (one) {
+        const view = { alg: one.alg, publicJwk: one.publicJwk };
+        Object.defineProperty(view, 'privateJwk', {
+          enumerable: true, configurable: true,
+          get: function () {
+            log.debug("Entering get().");
+            const held = keystore.privateMaterialFor(realmId);
+            const jwk = held && held.kem &&
+                        held.kem.get(one.publicJwk && one.publicJwk.kid);
+            if (!jwk) {
+              throw new Error('the "' + realmId + '" realm\'s ' + one.alg +
+                ' decryption key is held encrypted and could not be ' +
+                'decrypted; see the keystore errors above.');
+            }
+            log.debug("Leaving get().");
+            return jwk;
+          }
+        });
+        return view;
+      });
+      log.debug("Leaving get().");
+      return views;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      kemGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // ---------------------------------------------------------------------
   // **THE BROWSER DEVICE KEYS (#265)**, the request object keys' arrangement:
   // the public halves resident, both private keys getters over the keystore.
   // ---------------------------------------------------------------------
@@ -1777,6 +1932,64 @@ function lazyKeySet(realmId, stored) {
     set: function (made) {
       log.debug("Entering set().");
       bdGenerated = made || null;
+      log.debug("Leaving set().");
+    }
+  });
+  // ---------------------------------------------------------------------
+  // **THE VC-API KEYS (#598)**, the browser device keys' arrangement: the
+  // public halves resident, the three private keys getters over the
+  // keystore. A name is read out into the closure, never the stored entry.
+  // ---------------------------------------------------------------------
+  const vcStored = stored.vcApiKeys || null;
+  const vcPublic = vcStored && VC_API_KEY_SPECS.every(function (spec) {
+    return vcStored[spec.name] && vcStored[spec.name].publicJwk;
+  }) ? VC_API_KEY_SPECS.reduce(function (out, spec) {
+      out[spec.name] = vcStored[spec.name].publicJwk;
+      return out;
+    }, {}) : null;
+  let vcGenerated = null;
+  const vcHeld = function (name) {
+    log.debug("Entering vcHeld().");
+    const held = keystore.privateMaterialFor(realmId);
+    if (!held || !held.vc || !held.vc[name]) {
+      throw new Error('the "' + realmId + '" realm\'s VC-API ' + name +
+        ' key is held encrypted and could not be decrypted; see the ' +
+        'keystore errors above.');
+    }
+    log.debug("Leaving vcHeld().");
+    return held.vc[name];
+  };
+  Object.defineProperty(set, 'vcApiKeys', {
+    enumerable: true, configurable: true,
+    get: function () {
+      log.debug("Entering get().");
+      if (vcGenerated) {
+        log.debug("Leaving get().");
+        return vcGenerated;
+      }
+      if (!vcPublic) {
+        log.debug("Leaving get().");
+        return undefined;
+      }
+      const view = {};
+      VC_API_KEY_SPECS.forEach(function (spec) {
+        const name = spec.name;
+        view[name] = { publicJwk: vcPublic[name] };
+        Object.defineProperty(view[name], 'privateKey', {
+          enumerable: true, configurable: true,
+          get: function () {
+            log.debug("Entering get().");
+            log.debug("Leaving get().");
+            return vcHeld(name).privateKey;
+          }
+        });
+      });
+      log.debug("Leaving get().");
+      return view;
+    },
+    set: function (made) {
+      log.debug("Entering set().");
+      vcGenerated = made || null;
       log.debug("Leaving set().");
     }
   });
@@ -2188,7 +2401,7 @@ const stsKeysFor = realms.keyed(function (realm) {
   // It is derived rather than stored: there is exactly one private key per
   // realm and this is the same one, so the two cannot drift apart.
   // ---------------------------------------------------------------------
-  keys.privateKey = crypto.createPrivateKey(keys.privateKeyPem);
+  keys.privateKey = stsCrypto.privateKeyFrom(keys.privateKeyPem);
   keys.realm = realm.id;
   // **AND THE CERTIFICATE VIEW, WHICH THIS PATH NEEDS MOST.** The two branches
   // above build their sets through `lazyKeySet()` and `plainKeySet()` and get
@@ -2284,12 +2497,10 @@ const stsKeysFor = realms.keyed(function (realm) {
 // thread — six curve keys, a certificate signature, four JWK exports — is tens
 // of milliseconds, and `prepareKeySets()` yields between realms.
 //
-// **NOT `common/worker_pool.js`**, and the reason is not the one
-// `pki_authoring.js` gives for its own generation (that one is about the
-// post-quantum encoders' byte layouts): an RSA or EC generation is node's own
-// OpenSSL either way, and node already has an asynchronous door to it that
-// costs no IPC round trip and no forked child. The pool is for computation
-// node has no asynchronous door to.
+// **NODE'S OWN ASYNCHRONOUS DOOR**: an RSA or EC generation is node's
+// OpenSSL, and `generateKeyPair()` runs it on libuv's thread pool with no IPC
+// round trip and no forked child — the same door the post-quantum keys have
+// used since #363 (`common/pq_native.js`).
 //
 // **THE FACTORY'S ORDER IS NOT CHANGED**: stored, then a sibling's, then
 // generated — and `prepared` is only ever the third. A set prepared here while
@@ -2343,6 +2554,7 @@ function keySetNeedsMaking(realmId) {
   return true;
 }
 
+// On libuv's thread pool, through `crypto.js`'s generateKeyPairAsync() (#453).
 function generateRsaPairAsync(bits, asPem) {
   log.debug("Entering generateRsaPairAsync(). bits=" + bits);
   const options = { modulusLength: bits };
@@ -2351,16 +2563,7 @@ function generateRsaPairAsync(bits, asPem) {
     options.publicKeyEncoding = { type: 'pkcs1', format: 'pem' };
   }
   log.debug("Leaving generateRsaPairAsync().");
-  return new Promise(function (resolve, reject) {
-    crypto.generateKeyPair('rsa', options, function (err, publicKey,
-                                                     privateKey) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve({ publicKey: publicKey, privateKey: privateKey });
-    });
-  });
+  return stsCrypto.generateKeyPairAsync('rsa', options);
 }
 
 // Resolves once the realm's key set is held by this process (or there was
@@ -2574,6 +2777,180 @@ function refreshTokenKeysFor(keySet) {
 }
 
 // ---------------------------------------------------------------------------
+// THE REALM'S KEM DECRYPTION KEYS (#82, 2026-09-27): one key pair for each
+// ML-KEM or HPKE JWE alg the ambient realm's `keys.encryptionKemAlgs` names,
+// in that order, as `[{ alg, publicJwk, privateJwk }]`. An EMPTY LIST BY
+// DEFAULT, and that is rcbj's decision rather than an unfinished feature: a
+// post-quantum or hybrid key in a realm's JWKS is a key type many clients'
+// JOSE libraries do not parse yet, so publishing one is an administrator's
+// choice, made per realm.
+//
+// Made the way `requestObjectKeysFor()` backfills: a key some process
+// already made (stored, then shared) is adopted before one is generated, and
+// a generated one is remembered and shared at once so every sibling
+// publishes and opens with the SAME key. A key for an alg the setting no
+// longer names is kept on the set but neither listed here nor published —
+// naming the alg again brings the same key back.
+// ---------------------------------------------------------------------------
+/**
+ * The ML-KEM and HPKE algs the ambient realm's `keys.encryptionKemAlgs`
+ * names (#82), valid and de-duplicated.
+ *
+ * @returns the algs, empty by default
+ */
+function kemAlgsConfigured() {
+  log.debug("Entering kemAlgsConfigured().");
+  const raw = config.value('keys.encryptionKemAlgs');
+  const listed = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one, i, all) {
+      return one && all.indexOf(one) === i &&
+             stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(one) >= 0 &&
+             !!stsCrypto.describeJweKemAlg(one);
+    });
+  log.debug("Leaving kemAlgsConfigured(). " + listed.join(','));
+  return listed;
+}
+
+/**
+ * The realm's KEM decryption keys, one per configured alg, adopting or
+ * making any that are missing (#82).
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `[{ alg, publicJwk, privateJwk }]`
+ */
+function kemEncryptionKeysFor(keySet) {
+  log.debug("Entering kemEncryptionKeysFor().");
+  const wanted = kemAlgsConfigured();
+  if (!wanted.length) {
+    log.debug("Leaving kemEncryptionKeysFor(). None configured.");
+    return [];
+  }
+  const keys = keySet || stsKeysFor();
+  const realmId = String(keys.realm || realms.currentId());
+  let have = keys.kemEncKeys || [];
+  const missing = function () {
+    log.debug("Entering missing().");
+    const algs = have.map(function (one) {
+      return one.alg;
+    });
+    log.debug("Leaving missing().");
+    return wanted.filter(function (alg) {
+      return algs.indexOf(alg) === -1;
+    });
+  };
+  if (missing().length) {
+    const held = keystore.kemEncKeysHeldFor(realmId) || [];
+    const heldAlgs = held.map(function (one) {
+      return one.alg;
+    });
+    const fromHeld = missing().filter(function (alg) {
+      return heldAlgs.indexOf(alg) >= 0;
+    });
+    const made = [];
+    missing().forEach(function (alg) {
+      const found = held.filter(function (one) {
+        return one.alg === alg;
+      })[0];
+      if (found) {
+        made.push(found);
+        return;
+      }
+      const pair = stsCrypto.generateJweKemKeyPair(alg);
+      const kid = 'sts-kem-' + alg.toLowerCase().replace(/[^a-z0-9]+/g, '') +
+                  '-' + stsCrypto.jwkThumbprint(
+                    stsCrypto.publicJweKemJwk(pair.publicJwk),
+                    { truncate: 16 });
+      pair.publicJwk.kid = kid;
+      pair.privateJwk.kid = kid;
+      made.push({ alg: alg, publicJwk: pair.publicJwk,
+                  privateJwk: pair.privateJwk });
+    });
+    have = have.concat(made);
+    keys.kemEncKeys = have;
+    if (made.length > fromHeld.length) {
+      log.info('KEM decryption keys were added to the "' + realmId + '" ' +
+               'realm\'s key set for ' + made.map(function (one) {
+                 return one.alg;
+               }).join(', ') + ' (keys.encryptionKemAlgs).');
+    }
+    keystore.remember(realmId, keys);
+    keystore.publishShared(realmId, keys);
+  }
+  const out = wanted.map(function (alg) {
+    return have.filter(function (one) {
+      return one.alg === alg;
+    })[0];
+  }).filter(Boolean);
+  log.debug("Leaving kemEncryptionKeysFor(). " + out.length + " key(s).");
+  return out;
+}
+
+// The realm's KEM decryption key for one alg, or null when the realm has not
+// opted in to it — what a decrypt site asks before it tries.
+/**
+ * The realm's KEM decryption key for one alg.
+ *
+ * @param alg - an ML-KEM or HPKE `alg`
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ alg, publicJwk, privateJwk }`, or null when not held
+ */
+function kemDecryptionKeyFor(alg, keySet) {
+  log.debug("Entering kemDecryptionKeyFor(). " + alg);
+  const found = kemEncryptionKeysFor(keySet).filter(function (one) {
+    return one.alg === alg;
+  })[0] || null;
+  log.debug("Leaving kemDecryptionKeyFor(). " + (found ? 'held' : 'none'));
+  return found;
+}
+
+// The JWE algs this realm can DECRYPT, for a discovery list that describes
+// decryption: every classical alg in `base`, and of section 4a's only those
+// the realm holds a key for. `base` defaults to `JWE_DECRYPT_ALGS`.
+/**
+ * The JWE algs this realm can decrypt: every classical one in `base`,
+ * and of the ML-KEM and HPKE ones only those it holds a key for (#82).
+ *
+ * @param base - the list to narrow; `JWE_DECRYPT_ALGS` by default
+ * @returns the narrowed list
+ */
+function decryptableJweAlgs(base) {
+  log.debug("Entering decryptableJweAlgs().");
+  const held = kemAlgsConfigured();
+  const out = (base || stsCrypto.JWE_DECRYPT_ALGS).filter(function (alg) {
+    return !stsCrypto.describeJweKemAlg(alg) || held.indexOf(alg) >= 0;
+  });
+  log.debug("Leaving decryptableJweAlgs(). " + out.length);
+  return out;
+}
+
+// The JWE algs this realm OFFERS where it encrypts TO a key a client or a
+// wallet holds (2026-09-28, rcbj): every classical alg in `base`, and the
+// ML-KEM and HPKE ones only while `keys.offerKemEncryption` is on in the
+// ambient realm. The twin of `decryptableJweAlgs()` above for the other
+// direction; used for every outbound discovery list and every registration
+// check, so what is advertised and what is accepted cannot disagree.
+/**
+ * The JWE algs this realm offers for encryption to a client's or a wallet's
+ * key: the classical ones in `base`, and the ML-KEM and HPKE ones only while
+ * `keys.offerKemEncryption` is on.
+ *
+ * @param base - the list to narrow; `JWE_ASYMMETRIC_ALGS` by default
+ * @returns the narrowed list
+ */
+function offeredJweAlgs(base) {
+  log.debug("Entering offeredJweAlgs().");
+  const offered = config.value('keys.offerKemEncryption') === true;
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+    return offered || !stsCrypto.describeJweKemAlg(alg);
+  });
+  log.debug("Leaving offeredJweAlgs(). " + out.length);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
 // WRITTEN BEFORE THEY EXISTED (2026-09-13). `refreshTokenKeysFor()` above, step
 // for step: ask whether some process already made them, make them in the set's
@@ -2613,6 +2990,71 @@ function requestObjectKeysFor(keySet) {
   keystore.publishShared(realmId, keys);
   log.debug("Leaving requestObjectKeysFor(). Backfilled.");
   return keys.requestObjectEncKeys || made;
+}
+
+// ---------------------------------------------------------------------------
+// THE VC-API KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS WRITTEN BEFORE
+// THEY EXISTED (#598) — `browserDeviceKeysFor()` step for step, and
+// `vcApiKeyFor()`, the one a curve names.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a key set's VC-API keys, reading or making them where the set was
+ * written before they existed.
+ *
+ * @param keySet - the key set; the ambient realm's when absent
+ * @returns `{ ed25519, p256, p384 }`, each `{ privateKey, publicJwk }`
+ */
+function vcApiKeysFor(keySet) {
+  log.debug("Entering vcApiKeysFor().");
+  const keys = keySet || stsKeysFor();
+  const present = keys.vcApiKeys;
+  if (present && present.ed25519 && present.ed25519.publicJwk) {
+    log.debug("Leaving vcApiKeysFor(). On the set.");
+    return present;
+  }
+  const realmId = String(keys.realm || realms.currentId());
+  const held = keystore.vcApiKeysHeldFor(realmId);
+  if (held) {
+    keys.vcApiKeys = held;
+    log.debug("Leaving vcApiKeysFor(). Already made by this service.");
+    return held;
+  }
+  const made = makeVcApiKeys();
+  keys.vcApiKeys = made;
+  log.info('VC-API keys were added to the "' + realmId + '" realm\'s key ' +
+           'set, which was written by a build from before they joined it: ' +
+           made.ed25519.publicJwk.kid + ', ' + made.p256.publicJwk.kid +
+           ', ' + made.p384.publicJwk.kid + '.');
+  keystore.remember(realmId, keys);
+  keystore.publishShared(realmId, keys);
+  log.debug("Leaving vcApiKeysFor(). Backfilled.");
+  return keys.vcApiKeys || made;
+}
+
+/**
+ * Returns the realm's VC-API key of a curve (#598): what `oid4vc/vc_api.ts`
+ * signs with, and nothing else does.
+ *
+ * @param curve - `Ed25519`, `P-256` or `P-384`
+ * @returns `{ alg, privateKey, publicJwk }`
+ * @throws Error for any other curve
+ */
+function vcApiKeyFor(curve) {
+  log.debug("Entering vcApiKeyFor(). " + curve);
+  const spec = VC_API_KEY_SPECS.filter(function (one) {
+    return one.curve === curve;
+  })[0];
+  if (!spec) {
+    log.debug("Leaving vcApiKeyFor(). No such curve.");
+    throw new Error('the VC-API has no ' + curve + ' key; it signs with ' +
+      VC_API_KEY_SPECS.map(function (one) {
+        return one.curve;
+      }).join(', ') + '.');
+  }
+  const held = vcApiKeysFor()[spec.name];
+  log.debug("Leaving vcApiKeyFor().");
+  return { alg: spec.alg, privateKey: held.privateKey,
+           publicJwk: held.publicJwk };
 }
 
 // ---------------------------------------------------------------------------
@@ -3727,7 +4169,7 @@ function ownSignerFor(alg) {
 function ownPublicKeyFor(alg) {
   log.debug("Entering ownPublicKeyFor(). alg=" + alg);
   const signer = ownSignerFor(alg);
-  const publicKeyPem = String(crypto.createPublicKey(signer.key)
+  const publicKeyPem = String(stsCrypto.publicKeyOf(signer.key)
     .export({ type: 'spki', format: 'pem' }));
   log.debug("Leaving ownPublicKeyFor().");
   return { kid: signer.kid, publicKeyPem: publicKeyPem };
@@ -3758,8 +4200,7 @@ function ownCandidatesFor(alg) {
   // ones, so a token a group key signed verifies here — found by its kid.
   const groupCandidates = groupVerifiersFor(alg).map(function (one) {
     return { kid: one.publicJwk.kid, role: 'current',
-             certPem: crypto.createPublicKey({ key: one.publicJwk,
-                                               format: 'jwk' })
+             certPem: stsCrypto.publicKeyFromJwk(one.publicJwk)
                .export({ type: 'spki', format: 'pem' }) };
   });
   if (spec.family === 'rsa') {
@@ -3770,8 +4211,7 @@ function ownCandidatesFor(alg) {
   const now = Date.now();
   const out = [];
   classicalKeysFor(alg).forEach(function (one) {
-    const pem = crypto.createPublicKey({ key: one.publicJwk,
-                                         format: 'jwk' })
+    const pem = stsCrypto.publicKeyFromJwk(one.publicJwk)
       .export({ type: 'spki', format: 'pem' });
     out.push({ kid: one.publicJwk.kid, certPem: pem, role: 'current' });
     standbyOf(keys, 'jose:' + certificateSlotOf(one)).filter(function (sb) {
@@ -4160,7 +4600,7 @@ function allVerificationKeys() {
 
 /**
  * The same list as `allVerificationKeys()`, with the post-quantum keys
- * generated in the worker pool.
+ * generated on libuv's thread pool.
  *
  * @returns a promise of the rows
  */
@@ -4266,8 +4706,8 @@ function groupJwkEntries(keys) {
 
 // ---------------------------------------------------------------------------
 // MINTING ONE UNIT'S NEXT KEY — off the event loop where there is an async
-// door (RSA and the curves in node's thread pool, the post-quantum keys on the
-// worker pool), with the builders the current keys were made by.
+// door (RSA, the curves and the post-quantum keys all on libuv's thread
+// pool), with the builders the current keys were made by.
 // ---------------------------------------------------------------------------
 function curveSpecFor(unitRow) {
   log.debug("Entering curveSpecFor().");
@@ -4286,22 +4726,9 @@ function curveSpecFor(unitRow) {
 function generateCurvePairAsync(spec) {
   log.debug("Entering generateCurvePairAsync(). alg=" + spec.alg);
   log.debug("Leaving generateCurvePairAsync().");
-  return new Promise(function (resolve, reject) {
-    const done = function (err, publicKey, privateKey) {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve({ publicKey: publicKey, privateKey: privateKey });
-    };
-    // `any`: the key type is a table value, and the overloads want literals.
-    const generate = /** @type {any} */ (crypto.generateKeyPair);
-    if (spec.gen[1]) {
-      generate(spec.gen[0], spec.gen[1], done);
-    } else {
-      generate(spec.gen[0], done);
-    }
-  });
+  // On libuv's thread pool, through `crypto.js` (#453). An absent options
+  // object is `{}` there, which is what node made of the two-argument call.
+  return stsCrypto.generateKeyPairAsync(spec.gen[0], spec.gen[1]);
 }
 
 async function mintStandbyKey(unitRow, role) {
@@ -4318,10 +4745,10 @@ async function mintStandbyKey(unitRow, role) {
     log.debug("Leaving mintStandbyKey(). RSA " + kid);
     return Object.assign(base, {
       kid: kid, privateKeyPem: made.privateKeyPem,
-      privateKey: crypto.createPrivateKey(made.privateKeyPem),
+      privateKey: stsCrypto.privateKeyFrom(made.privateKeyPem),
       certPem: made.certPem, certB64: made.certB64,
       publicJwk: Object.assign(
-        crypto.createPublicKey(made.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(made.certPem).export({ format: 'jwk' }),
         { kid: kid, use: 'sig', alg: 'RS256' })
     });
   }
@@ -4379,7 +4806,7 @@ async function mintStandbyKey(unitRow, role) {
     return entry;
   }
   if (unitRow.kind === 'bbs') {
-    const pair = await bbs2023.generateKeyPair();
+    const pair = await bbs2023Suite().generateKeyPair();
     const kid = bbsKidOf(pair.publicKey);
     log.debug("Leaving mintStandbyKey(). BBS " + kid);
     return Object.assign(base, {
@@ -4468,6 +4895,13 @@ function plainCopyOf(keys, overrides) {
     refreshTokenEncKeys: keys.refreshTokenEncKeys,
     requestObjectEncKeys: keys.requestObjectEncKeys,
     browserDeviceKeys: keys.browserDeviceKeys,
+    // The VC-API keys (#598) carry over a rotation unchanged: a did:key is
+    // its key, and a rotated one would be another issuer (makeVcApiKeys()).
+    vcApiKeys: keys.vcApiKeys,
+    // The KEM decryption keys (#82) carry over a rotation unchanged: they are
+    // not signing keys, and a client holding the published key must still
+    // be able to encrypt to it after the realm's signer moves on.
+    kemEncKeys: keys.kemEncKeys,
     xmlKey: keys.xmlKey ? {
       privateKeyPem: keys.xmlKey.privateKeyPem,
       selfSignedCertPem: keys.xmlKey.selfSignedCertPem,
@@ -4697,7 +5131,7 @@ async function promoteGenerations(realmId, options) {
     if (row.unit === 'jose:RS256') {
       Object.assign(retiredFrom, {
         privateKeyPem: copy.privateKeyPem,
-        privateKey: crypto.createPrivateKey(copy.privateKeyPem),
+        privateKey: stsCrypto.privateKeyFrom(copy.privateKeyPem),
         certPem: copy.selfSignedCertPem, certB64: copy.selfSignedCertB64,
         createdAt: copy.createdAt });
       copy.privateKeyPem = nextEntry.privateKeyPem;
@@ -4706,7 +5140,7 @@ async function promoteGenerations(realmId, options) {
     } else if (row.unit === 'xml:RS256') {
       Object.assign(retiredFrom, {
         privateKeyPem: copy.xmlKey.privateKeyPem,
-        privateKey: crypto.createPrivateKey(copy.xmlKey.privateKeyPem),
+        privateKey: stsCrypto.privateKeyFrom(copy.xmlKey.privateKeyPem),
         certPem: copy.xmlKey.selfSignedCertPem,
         certB64: copy.xmlKey.selfSignedCertB64 });
       copy.xmlKey = { privateKeyPem: nextEntry.privateKeyPem,
@@ -4765,7 +5199,7 @@ async function promoteGenerations(realmId, options) {
     }
     if (retiredFrom.kind === 'rsa' && retiredFrom.certPem) {
       retiredFrom.publicJwk = Object.assign(
-        crypto.createPublicKey(retiredFrom.certPem).export({ format: 'jwk' }),
+        stsCrypto.publicKeyOf(retiredFrom.certPem).export({ format: 'jwk' }),
         { kid: retiredFrom.kid, use: 'sig', alg: 'RS256' });
     }
     if (o.emergency) {
@@ -4815,6 +5249,55 @@ async function promoteGenerations(realmId, options) {
  * @param nowMs - the time now; `Date.now()` when absent
  * @returns `{ ok, dropped, generation }`
  */
+// A REALM'S KEY SET IF IT HAS ONE, NEVER A NEW ONE (2026-09-29). The
+// scheduled rotation jobs (`signing.rotate`, `signing.retire`) run in every
+// realm every minute, and asked `stsKeysFor.of()`, which GENERATES a set for a
+// realm that has none — four RSA pairs and a self-signed certificate on this
+// thread, hundreds of milliseconds each. A realm makes its keys on first use,
+// so every realm created since the last run had its keys made by the job:
+// measured with 400 realms, the event loop stalled 16 to 36 seconds every
+// minute, and in the suite's memory mode up to 20 seconds, which is what
+// failed `sts_attribute_sources`' 2-second connection and every "fetch failed"
+// whose socket the server's late keep-alive timer closed. There is nothing to
+// rotate or retire in a set that does not exist. A set that DOES exist — held
+// here, sealed in the store, or held by a sibling process — is restored as
+// `.of()` restores it; only generation is refused. `.existing()` is the
+// held-check that reads the cache, the certificate authority's realm
+// watcher's lesson (`common/CLAUDE.md`, *THE REALM WATCHER ASKS AND DOES NOT
+// TAKE*).
+/**
+ * Returns a realm's signing key set when one exists anywhere — held by this
+ * process, in the store, or shared by a sibling — and null otherwise; never
+ * generates one.
+ *
+ * @param {string} realmId - the realm, '' for the default realm
+ * @returns {any} the key set, or null when none is made or kept
+ */
+function keySetIfMade(realmId) {
+  log.debug("Entering keySetIfMade(). realm=" + realmId);
+  const id = String(realmId || '');
+  const canonical = id || realms.DEFAULT_ID;
+  const held = stsKeysFor.existing();
+  if (held.has(id) || held.has(canonical)) {
+    log.debug("Leaving keySetIfMade(). Held.");
+    return held.has(id) ? held.get(id) : held.get(canonical);
+  }
+  let elsewhere = false;
+  try {
+    elsewhere = !!(keystore.storedFor(canonical) ||
+                   keystore.sharedFor(canonical));
+  } catch (e) {
+    log.debug("Caught in keySetIfMade(): " + ((e && e.message) || e));
+    elsewhere = false;
+  }
+  if (!elsewhere) {
+    log.debug("Leaving keySetIfMade(). None made yet.");
+    return null;
+  }
+  log.debug("Leaving keySetIfMade(). Restored.");
+  return stsKeysFor.of(id);
+}
+
 function retireExpiredGenerations(realmId, nowMs) {
   log.debug("Entering retireExpiredGenerations(). realm=" + realmId);
   const id = String(realmId || '');
@@ -5061,7 +5544,7 @@ function nowSec() { return Math.floor(Date.now() / 1000); }
 function randomId(bytes) {
   log.debug("Entering randomId().");
   log.debug("Leaving randomId().");
-  return b64u(crypto.randomBytes(bytes || 24));
+  return b64u(stsCrypto.randomBytes(bytes || 24));
 }
 
 // ---------------------------------------------------------------------------
@@ -5096,8 +5579,8 @@ const BBS_UNIT = 'bbs:BBS';
 function bbsKidOf(publicKey) {
   log.debug("Entering bbsKidOf().");
   log.debug("Leaving bbsKidOf().");
-  return 'bbs-' + crypto.createHash('sha256')
-    .update(Buffer.from(publicKey)).digest('base64url').slice(0, 22);
+  return 'bbs-' + stsCrypto.digest('sha256', Buffer.from(publicKey),
+                                   'base64url').slice(0, 22);
 }
 
 function bbsKeyFor(keys) {
@@ -5141,7 +5624,7 @@ function bbsKeyFor(keys) {
     log.debug("Leaving bbsKeyFor(). One is already in flight.");
     return keys.bbsKeyPromise;
   }
-  keys.bbsKeyPromise = bbs2023.generateKeyPair().then(function (made) {
+  keys.bbsKeyPromise = bbs2023Suite().generateKeyPair().then(function (made) {
     if (!keys.bbsKey) {
       keys.bbsKey = { secretKey: Uint8Array.from(made.secretKey),
                       publicKey: Uint8Array.from(made.publicKey),
@@ -5547,7 +6030,7 @@ function pqKeysFor(keys) {
 // Nearly all of the ~1.9 seconds above is one SLH-DSA-SHAKE keygen, and it is
 // spent on the FIRST JWKS FETCH of a realm — a request that, until the worker
 // pool existed, stopped this whole service for two seconds while it was
-// answered. See common/worker.js.
+// answered. See common/pq_native.js.
 //
 // TWO THINGS HERE ARE NOT DECORATION.
 //
@@ -5754,12 +6237,12 @@ function pqKeysForAsync(keys) {
 // sign-in in the parent project's suite, reporting "the JWKS could not be
 // fetched", which is a sentence about a service that was working.
 //
-// So the keys are made when the realm is created, in the pool, where nothing
-// is waiting on them. That was not affordable before: eager generation used to
-// mean 5.8 seconds of a stopped service per realm, which is why they were lazy
-// in the first place. It is affordable now, and it is the whole point — the
-// pool does not merely move the cost off the request that pays it, it makes
-// paying it EARLY free.
+// So the keys are made when the realm is created, on libuv's thread pool, where
+// nothing is waiting on them. That was not affordable before: eager generation
+// used to mean 5.8 seconds of a stopped service per realm, which is why they
+// were lazy in the first place. It is affordable now, and it is the whole point
+// — the pool does not merely move the cost off the request that pays it, it
+// makes paying it EARLY free.
 //
 // `stsKeysFor.of(id)` rather than `stsKeysFor()`: this runs from a change
 // watcher, outside any request, so there is no ambient realm to read. See
@@ -5784,7 +6267,7 @@ function pqKeysForAsync(keys) {
 // **NO NEW RECIPE** (rcbj's rule of 2026-09-21): RSA through
 // generateRsaPairAsync(), the curves through generateCurvePairAsync() over
 // CURVE_KEY_SPECS' own rows, ML-DSA and SLH-DSA through
-// `pq_jose.generateAsync()` — the worker pool, which is what keeps an
+// `pq_jose.generateAsync()` — libuv's thread pool, which is what keeps an
 // SLH-DSA key generation from stopping this service answering.
 //
 // The `kid` is `sts-g-<group>-<slot>-<hash of the public key>`: from the key's
@@ -5908,8 +6391,8 @@ function certifySignerGroupsLater(realmId, members) {
 }
 
 /**
- * Returns a key set's signer-group keys, making them in the worker pool where
- * they do not exist yet; concurrent callers share one generation.
+ * Returns a key set's signer-group keys, making them on libuv's thread pool
+ * where they do not exist yet; concurrent callers share one generation.
  *
  * @param keys - the realm's key set
  * @returns a promise of the group members
@@ -5996,8 +6479,8 @@ function warmSignerGroups(realmId) {
 }
 
 /**
- * Generates a realm's post-quantum keys in the worker pool ahead of the first
- * JWKS fetch. Never rejects; a failure is logged (STS-CORE-0028).
+ * Generates a realm's post-quantum keys on libuv's thread pool ahead of the
+ * first JWKS fetch. Never rejects; a failure is logged (STS-CORE-0028).
  *
  * @param realmId - the realm
  * @returns a promise, resolving null where there is nothing to warm or it
@@ -6032,9 +6515,9 @@ function warmPqKeys(realmId) {
 // THERE IS NO WATCHER ANY MORE, AND THAT REVERSES HALF OF `5d9b51b` ON
 // EVIDENCE RATHER THAN ON TASTE (2026-08-30).
 //
-// It warmed every realm's eleven post-quantum keys as the realm was CREATED,
-// on `realms.onChange(… 'create')`. The argument was the paragraph above and
-// it is still correct as far as it goes: the pool makes paying early free, so
+// It warmed every realm's eleven post-quantum keys as the realm was CREATED, on
+// `realms.onChange(… 'create')`. The argument was the paragraph above and it is
+// still correct as far as it goes: the thread pool makes paying early free, so
 // pay early.
 //
 // What it did not account for is WHO CREATES REALMS HERE. In a deployment a
@@ -6049,15 +6532,15 @@ function warmPqKeys(realmId) {
 //
 // Over two minutes of both worker processes, under instrumentation, spent on
 // key material nothing would ever ask for — on the same two cores the job that
-// DOES sign is waiting for. Eager generation is free when the pool is idle and
-// is not free when something else needs it.
+// DOES sign is waiting for. Eager generation is free when the thread pool is
+// idle and is not free when something else needs it.
 //
-// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()`
-// in server.js once the port is open — the realm every process has, that every
+// So the eager path is now the DEFAULT REALM ALONE, warmed from `announce()` in
+// server.js once the port is open — the realm every process has, that every
 // protocol answers in, and the one whose first JWKS fetch a person actually
 // waits for. A realm created at runtime makes its keys on first use, the way
-// every realm did before that commit: about 1.7 seconds in the pool, off the
-// event loop, on a request nobody has made yet.
+// every realm did before that commit: about 1.7 seconds on the thread pool, off
+// the event loop, on a request nobody has made yet.
 //
 // **This is a latency optimisation and not a correctness one**, which is what
 // makes it safe to narrow: no behaviour depends on when the keys exist, only
@@ -6081,12 +6564,12 @@ function allSigningKeys() {
   return out;
 }
 
-// The same list, with the post-quantum half generated in the pool. It is what
-// the JWKS endpoint calls, because that endpoint is the one that brings those
-// eleven keys into being.
+// The same list, with the post-quantum half generated on libuv's thread pool.
+// It is what the JWKS endpoint calls, because that endpoint is the one that
+// brings those eleven keys into being.
 /**
  * The same list as `allSigningKeys()`, with the post-quantum keys generated in
- * the worker pool; what the JWKS endpoint calls.
+ * libuv's thread pool; what the JWKS endpoint calls.
  *
  * @returns a promise of the keys
  */
@@ -6244,8 +6727,8 @@ function certificateHeaderFor(useCaseId, alg, kid) {
       spkiPem: function () {
         log.debug("Entering spkiPem().");
         log.debug("Leaving spkiPem().");
-        return crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
-                     .export({ type: 'spki', format: 'pem' });
+        return stsCrypto.publicKeyOf(keys.selfSignedCertPem || keys.certPem)
+          .export({ type: 'spki', format: 'pem' });
       }
     };
   } else {
@@ -6274,8 +6757,8 @@ function certificateHeaderFor(useCaseId, alg, kid) {
             return require('./pki').pqSubjectPublicKeyPem(entryAlg, publicJwk);
           }
           log.debug("Leaving spkiPem().");
-          return crypto.createPublicKey({ key: publicJwk, format: 'jwk' })
-                       .export({ type: 'spki', format: 'pem' });
+          return stsCrypto.publicKeyFromJwk(publicJwk)
+                          .export({ type: 'spki', format: 'pem' });
         }
       };
     }
@@ -6320,8 +6803,8 @@ function publicJwkOfKid(kid) {
   log.debug("Entering publicJwkOfKid().");
   const keys = stsKeysFor();
   if (kid && kid === keys.kid) {
-    const jwk = crypto.createPublicKey(keys.selfSignedCertPem || keys.certPem)
-                      .export({ format: 'jwk' });
+    const jwk = stsCrypto.publicKeyOf(keys.selfSignedCertPem || keys.certPem)
+      .export({ format: 'jwk' });
     log.debug("Leaving publicJwkOfKid(). The RSA key.");
     return jwk;
   }
@@ -6330,8 +6813,8 @@ function publicJwkOfKid(kid) {
   const xml = keys.xmlKey;
   if (kid && xml && kid === xml.kid) {
     log.debug("Leaving publicJwkOfKid(). The XML key.");
-    return crypto.createPublicKey(xml.selfSignedCertPem || xml.certPem)
-                 .export({ format: 'jwk' });
+    return stsCrypto.publicKeyOf(xml.selfSignedCertPem || xml.certPem)
+                    .export({ format: 'jwk' });
   }
   const entry = (keys.extraKeys || []).concat(keys.pqKeys || [])
     .concat(standbyOf(keys)).concat(groupMembersOf(keys))
@@ -6446,12 +6929,12 @@ function signingKeyFor(alg, useCaseId) {
 // its post-quantum half is MADE on first use — eleven key generations, SLH-DSA
 // among them, SYNCHRONOUSLY, on this process's one thread. So the first ES256
 // signature in a new realm stopped the whole service while keys it could not
-// use were made: ten seconds on a CI runner, which a sign-in's connection
-// timed out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation).
-// A curve algorithm can only ever be answered by a curve key, so it is looked
-// up among those and the post-quantum keys are left for whoever asks for
-// one — the JWKS, in the worker pool (`pqKeysForAsync()`), or a post-quantum
-// signature. The answer is the same key it always was.
+// use were made: ten seconds on a CI runner, which a sign-in's connection timed
+// out against (sts_mail's reset link, sts_kerberos_krbtgt_rotation). A curve
+// algorithm can only ever be answered by a curve key, so it is looked up among
+// those and the post-quantum keys are left for whoever asks for one — the JWKS,
+// on libuv's thread pool (`pqKeysForAsync()`), or a post-quantum signature. The
+// answer is the same key it always was.
 // ---------------------------------------------------------------------------
 /**
  * Lists this realm's curve signing keys (EC and EdDSA), without making its
@@ -6477,10 +6960,11 @@ function keyListFor(alg) {
   return allSigningKeys();
 }
 
-// The same key, with the post-quantum half of the list generated in the pool.
+// The same key, with the post-quantum half of the list generated off the
+// thread.
 /**
  * The same key as `signingKeyFor()`, with any post-quantum key generated in the
- * worker pool.
+ * libuv's thread pool.
  *
  * @param alg - the JWS algorithm
  * @param useCaseId - the certificate-header use case
@@ -6583,22 +7067,22 @@ function signJwtAs(payload, alg, secret, opts) {
 // Token (`id_token_signed_response_alg`) and the signed UserInfo response
 // (`userinfo_signed_response_alg`). An SLH-DSA-SHAKE-128s token took 14.6 and
 // 15.4 seconds on 2026-08-29, and for those seconds this service answered
-// nobody — see common/worker.js.
+// nobody — see common/pq_native.js.
 //
 // Everything else it can be asked for resolves with the value signJwtAs()
 // computed, unchanged and not deferred: an HS256 or RS256 signature is
 // microseconds, and an IPC round trip to save that would be a cost with no
-// saving. `opts.session` is the pool's routing hint and may be omitted.
+// saving.
 // ---------------------------------------------------------------------------
 /**
- * The same signature as `signJwtAs()`, made in the worker pool where the
+ * The same signature as `signJwtAs()`, made on libuv's thread pool where the
  * algorithm is post-quantum; anything else resolves with the value computed
  * here.
  *
  * @param payload - the claims
  * @param alg - the JWS algorithm
  * @param secret - the client secret, for HS*
- * @param opts - as `signJwtAs()`, and `session`, the pool's routing hint
+ * @param opts - as `signJwtAs()`
  * @returns a promise of the compact JWS
  */
 function signJwtAsAsync(payload, alg, secret, opts) {
@@ -6623,7 +7107,6 @@ function signJwtAsAsync(payload, alg, secret, opts) {
     .then(function (signer) {
       return stsCrypto.signJwsAsync(payload, signer.key,
         { algorithm: alg, keyid: publishedKidFor(signer.kid),
-          session: options.session,
           header: withCertificateHeader(options.header,
                                         options.certificateHeader, alg,
                                         signer.kid) });
@@ -6832,43 +7315,171 @@ function forwardedFrom(req) {
 // property a deployed identity provider needs and a mock reached by three
 // container names does not. The realm prefix is still appended.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND SINCE #472 (2026-10-07) IT IS THE BASE OF ONE HOSTED APPLICATION.
+//
+// An administrator maps each hosted application — the console, the API, the
+// portal, the sign-in service, each protocol — to listeners, and advertises
+// it on one (`common/listener_map.js`). A URL is built on the advertised
+// listener of the application it is FOR: that listener's `publicBaseUrl`, or
+// for the main port `global.publicBaseUrl` or the request's own address, as
+// before. So:
+//
+//   * `pinnedBaseUrl(app)` — the pinned base of one application, or of `*`
+//     (every application not named) when no application is given, which is
+//     what #99's realm listener was: a realm with its own listener maps `*`
+//     to it. The 19 callers without a request ask it.
+//   * `baseUrlOf(req, app)` — `app` defaults to the application the REQUEST
+//     belongs to, so the hundreds of call sites that build a URL of their own
+//     application were not edited. One that builds a URL of ANOTHER
+//     application — the authorization endpoint's sign-in screen, the portal's
+//     authorization server — names it, or uses:
+//   * `urlOf(req, path)` — the whole URL of a path, on the base of the
+//     application that path belongs to.
+//
+// A service with no custom listener answers exactly what it did: every
+// application is on `main`, advertised there.
+// ---------------------------------------------------------------------------
 /**
- * Returns `global.publicBaseUrl` without its trailing slashes, the base URL
- * that overrides every request's own.
+ * Returns the base URL that overrides every request's own for one hosted
+ * application: its advertised listener's `publicBaseUrl` (#472), or
+ * `global.publicBaseUrl`, without trailing slashes or the realm prefix.
  *
+ * @param app - the application's id; omitted, every application not named
+ *   in `listeners.applications` (`*`)
  * @returns the pinned base, or '' when none is set
  */
-function pinnedBaseUrl() {
-  log.debug("Entering pinnedBaseUrl().");
-  const raw = String(config.value('global.publicBaseUrl') || '').trim();
+function pinnedBaseUrl(app) {
+  log.debug("Entering pinnedBaseUrl(). " + (app || '*'));
+  const own = listenerMap.advertisedBase(app || null);
+  const raw = own || String(config.value('global.publicBaseUrl') || '').trim();
   log.debug("Leaving pinnedBaseUrl().");
   return raw ? raw.replace(/\/+$/, '') : '';
+}
+
+/**
+ * Which hosted application a request is for: its path, without the realm
+ * prefix, classified by `common/hosted_applications.js`.
+ *
+ * @param req - the request
+ * @returns the application's id, or null for a path no application claims
+ */
+function applicationOf(req) {
+  log.debug("Entering applicationOf().");
+  const raw = String((req && (req.originalUrl || req.url)) || '/')
+    .split('?')[0];
+  const match = realms.matchPath(raw);
+  const found = hostedApplications.classify(match ? match.rest : raw);
+  log.debug("Leaving applicationOf(). " + found);
+  return found === hostedApplications.EVERYWHERE ? null : found;
 }
 
 /**
  * Returns the base URL a request should be answered under, the trust realm's
  * path prefix included.
  *
- * `global.publicBaseUrl` pins it; otherwise it is read off the request,
- * forwarded headers only where a proxy is trusted.
+ * The base is that of one hosted application (#472): the request's own,
+ * unless another is named. Its advertised listener's `publicBaseUrl` pins it,
+ * or `global.publicBaseUrl` where that is the main port; otherwise it is read
+ * off the request, forwarded headers only where a proxy is trusted — on the
+ * main port's port when the request arrived on another listener.
  *
  * @param req - the request
+ * @param app - optional; the application the URL is for
  * @returns the base URL, without a trailing slash
  */
-function baseUrlOf(req) {
+function baseUrlOf(req, app) {
   log.debug("Entering baseUrlOf().");
-  const pinned = pinnedBaseUrl();
+  const which = app === undefined ? applicationOf(req) : app;
+  const pinned = pinnedBaseUrl(which);
   if (pinned) {
     const base = pinned + realms.currentPrefix();
-    log.debug("Leaving baseUrlOf(). base=" + base + " (global.publicBaseUrl)");
+    log.debug("Leaving baseUrlOf(). base=" + base + " (pinned, " +
+              (which || '*') + ")");
     return base;
   }
   const from = forwardedFrom(req);
-  const base = from.proto + '://' + from.host + realms.currentPrefix();
+  let proto = from.proto;
+  let host = from.host;
+  // THE MAIN PORT IS ADVERTISED AND THE REQUEST CAME ON ANOTHER LISTENER:
+  // its own Host names that listener, so the main port is this host name on
+  // the main port's port and scheme. `global.publicBaseUrl` is the way to
+  // say it outright, and the Listeners page recommends it.
+  if (req && listenerMap.listenerOf(req) !== listenerMap.MAIN) {
+    const name = String(host).replace(/:\d+$/, '');
+    proto = config.value('global.https') === true ? 'https' : 'http';
+    host = name + ':' + PORT;
+  }
+  const base = proto + '://' + host + realms.currentPrefix();
   log.debug("Leaving baseUrlOf(). base=" + base +
             (from.forwarded ? " (from forwarded headers; global.trustProxy " +
                               "is on)" : ""));
   return base;
+}
+
+/**
+ * A base URL moved to where one hosted application is advertised (#472), for
+ * a caller that holds a base and no request — an issuer computed from the
+ * base of the request that happened to ask. Unchanged where the application
+ * is advertised on the main port.
+ *
+ * @param base - a base URL, the realm prefix included
+ * @param app - the application the URL is for
+ * @returns the base it is advertised on, the realm prefix included
+ */
+function rebaseTo(base, app) {
+  log.debug("Entering rebaseTo(). " + app);
+  if (listenerMap.isTrivial()) {
+    log.debug("Leaving rebaseTo(). No custom listener.");
+    return base;
+  }
+  const own = listenerMap.advertisedBase(app);
+  if (own) {
+    log.debug("Leaving rebaseTo(). On its listener.");
+    return own + realms.currentPrefix();
+  }
+  // ADVERTISED ON THE MAIN PORT, AND THE BASE IS A CUSTOM LISTENER'S: the
+  // main port's pinned base, or that host name on the main port.
+  let origin = '';
+  let host = '';
+  try {
+    const parsed = new URL(String(base || ''));
+    origin = parsed.origin;
+    host = parsed.hostname;
+  } catch (e) {
+    log.debug("Caught in rebaseTo(): " + ((e && e.message) || e));
+    log.debug("Leaving rebaseTo(). Not a URL.");
+    return base;
+  }
+  const custom = listenerMap.ownOrigins().indexOf(origin) >= 0;
+  if (!custom) {
+    log.debug("Leaving rebaseTo(). Already the main port's.");
+    return base;
+  }
+  const main = String(config.value('global.publicBaseUrl') || '').trim()
+    .replace(/\/+$/, '') ||
+    (config.value('global.https') === true ? 'https' : 'http') + '://' +
+    hostForUrl(host) + ':' + PORT;
+  log.debug("Leaving rebaseTo(). The main port.");
+  return main + String(base).slice(origin.length);
+}
+
+/**
+ * The absolute URL of a path, on the base of the hosted application the path
+ * belongs to (#472) — for a URL one application builds of another's.
+ *
+ * @param req - the request, or null outside one
+ * @param path - a root-relative path, without the realm prefix
+ * @returns the URL, the realm prefix included
+ */
+function urlOf(req, path) {
+  log.debug("Entering urlOf(). " + path);
+  const found = hostedApplications.classify(String(path || '/'));
+  const app = found === hostedApplications.EVERYWHERE ? null : found;
+  const base = req ? baseUrlOf(req, app)
+                   : pinnedBaseUrl(app) + realms.currentPrefix();
+  log.debug("Leaving urlOf().");
+  return base + String(path || '');
 }
 
 // ---------------------------------------------------------------------------
@@ -7298,6 +7909,7 @@ module.exports = {
   ensureNextGenerations: ensureNextGenerations,
   promoteGenerations: promoteGenerations,
   retireExpiredGenerations: retireExpiredGenerations,
+  keySetIfMade: keySetIfMade,
   signingKeyFor: signingKeyFor,
   signingKeyForAsync: signingKeyForAsync,
   allSigningKeys: allSigningKeys,
@@ -7338,6 +7950,12 @@ module.exports = {
   iso: iso,
   baseUrlOf: baseUrlOf,
   pinnedBaseUrl: pinnedBaseUrl,
+  applicationOf: applicationOf,
+  urlOf: urlOf,
+  rebaseTo: rebaseTo,
+  // The sign-on session's cookie Domain (#472, `authn.cookieDomain`), as a
+  // Set-Cookie attribute: `common/listener_map.js`'s.
+  cookieDomainAttribute: listenerMap.cookieDomainAttribute,
   listenHost: listenHost,
   loopbackHost: loopbackHost,
   hostForUrl: hostForUrl,
@@ -7390,7 +8008,14 @@ module.exports = {
   rotateRefreshTokenKeys: rotateRefreshTokenKeys,
   retiredRefreshTokenKeysFor: retiredRefreshTokenKeysFor,
   requestObjectKeysFor: requestObjectKeysFor,
+  kemEncryptionKeysFor: kemEncryptionKeysFor,
+  kemDecryptionKeyFor: kemDecryptionKeyFor,
+  kemAlgsConfigured: kemAlgsConfigured,
+  decryptableJweAlgs: decryptableJweAlgs,
+  offeredJweAlgs: offeredJweAlgs,
   browserDeviceKeysFor: browserDeviceKeysFor,
+  vcApiKeysFor: vcApiKeysFor,
+  vcApiKeyFor: vcApiKeyFor,
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,

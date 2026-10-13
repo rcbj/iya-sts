@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // ONE PERSON, EVERY PROTOCOL THAT SIGNS ONE IN, AND ONE GLOBAL SIGN-OUT.
@@ -98,6 +98,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const zlib = require("zlib");
 const { Command, Option } = require("commander");
@@ -304,28 +306,44 @@ function hiddenFields(html) {
 }
 
 // THE SIGN-IN SCREEN AND THE CONSENT SCREEN, answered wherever they appear.
-// Both are ordinary forms; the loop is bounded because a flow that kept
+// Both are pages of the sign-in surface since #571 and #576; the loop is bounded because a flow that kept
 // redrawing one would otherwise hang rather than fail.
 async function throughTheScreens(cookies, started, username) {
   log.debug("Entering throughTheScreens().");
   let r = started.r;
   let landed = started.landed;
   for (let step = 0; step < 4 && r.status === 200; step += 1) {
-    if (/name="authn_id"/.test(r.body)) {
-      const b = hiddenFields(r.body);
-      b.set("username", username);
-      b.set("password", PERSON_PASSWORD);
-      b.set("action", "login");
-      ({ r, landed } = await follow(cookies, base + "/authn/login", {
-        method: "POST", body: b.toString(),
-        headers: { "content-type": "application/x-www-form-urlencoded" } }));
-    } else if (/\/oauth2\/consent/.test(r.body)) {
-      const b = hiddenFields(r.body);
-      b.set("action", "allow");
-      b.set("decision", "allow");
-      ({ r, landed } = await follow(cookies, base + "/oauth2/consent", {
-        method: "POST", body: b.toString(),
-        headers: { "content-type": "application/x-www-form-urlencoded" } }));
+    // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571, a static page over
+    // `/authn-api`: answered through the one helper, and the flow followed
+    // from where its answer says, as from the form's 303.
+    if (/\/authn\/signin\.js/.test(r.body)) {
+      const answer = await authnSignin.submit(base, r.url,
+        { action: "login", username: username, password: PERSON_PASSWORD },
+        { cookie: cookies && cookies.has() ? cookies.header() : "" });
+      if (cookies) {
+        cookies.take({ headers: answer.headers });
+      }
+      if (answer.next !== "redirect") {
+        r = { status: answer.status, headers: answer.headers,
+              body: JSON.stringify(answer.json), url: r.url };
+        break;
+      }
+      ({ r, landed } = await follow(cookies, answer.location));
+    } else if (authnSignin.isConsent(r.url)) {
+      // THE CONSENT SCREEN IS ITS SHELL SINCE #576, a page of the same
+      // surface over `/authn-api/consent`: answered through the one helper,
+      // and the flow followed from where its answer says.
+      const answer = await authnSignin.consentFor(r.url,
+        cookies && cookies.has() ? cookies.header() : "");
+      if (cookies) {
+        cookies.take({ headers: answer.headers });
+      }
+      if (answer.next !== "redirect") {
+        r = { status: answer.status, headers: answer.headers,
+              body: answer.text || JSON.stringify(answer.json), url: r.url };
+        break;
+      }
+      ({ r, landed } = await follow(cookies, answer.location));
     } else {
       break;
     }
@@ -659,7 +677,7 @@ async function makeCertificate(username) {
   leaf.validity.notBefore = new Date(Date.now() - 60000);
   leaf.validity.notAfter = new Date(Date.now() + 3600 * 1000);
   leaf.setSubject([{ name: "commonName", value: username },
-                   { name: "organizationName", value: "mock-sts global " +
+                   { name: "organizationName", value: "iya-sts global " +
                                                       "logout test" }]);
   leaf.setIssuer(caName);
   // THE CA'S OWN LIST (#174). A product-mode service refuses, under
@@ -691,8 +709,8 @@ async function x509(username) {
   // The anchor goes in through `tests/tools/pep-credential.js`'s
   // `trustAnchor()` (2026-09-18): the GATED door, POST
   // /admin-api/tls/trust/add, first — the only one a product-mode service
-  // opens, persisted so every node of a cluster applies it — and the open
-  // `/tls/trust` only where that fails.
+  // opens, persisted so every node of a cluster applies it, and since #597
+  // the only one.
   const installed = await anchors.trustAnchor(base, pki.caPem);
   assert.ok(installed.ok,
     "the test CA should be accepted as a trust anchor; it answered " +
@@ -730,7 +748,11 @@ async function x509(username) {
         // The SERVER's certificate is not verified here: what is under test
         // is the CLIENT certificate. (This said the server's was self-signed;
         // it is certified under the service Root now, `tls/CLAUDE.md`.)
-        rejectUnauthorized: false
+        rejectUnauthorized: false,
+        // A full handshake every time: a session resumed from a try made
+        // before the anchor arrived keeps that handshake's "not verified"
+        // (`sts_console_bootstrap_product.js`, 2026-10-07).
+        agent: false
       }, function (res) {
         let body = "";
         res.on("data", function (d) { body += d; });
@@ -910,7 +932,7 @@ async function sessionStillSignsIn(cookies, application) {
   log.debug("Leaving sessionStillSignsIn().");
   // A login screen drawn in the body is the same answer as login_required and
   // arrives when the flow did not redirect at all.
-  return !/name="authn_id"/.test(started.r.body || "");
+  return !/\/authn\/signin\.js/.test(started.r.body || "");
 }
 
 async function issuedFor(username) {
@@ -1397,7 +1419,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_global_logout")
-  .description("Sign one person in through every protocol the mock STS " +
+  .description("Sign one person in through every protocol IYA STS " +
       "authenticates people with — OIDC and OAuth 2.0 authorization code, " +
       "SAML 2.0, SAML 1.1, WS-Federation, WS-Trust, Kerberos, an X.509 " +
       "client certificate and an LDAP bind, each in a cookie jar of its own " +

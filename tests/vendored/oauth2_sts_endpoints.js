@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+
 // File: oauth2_sts_endpoints.js
 //
 // The mock authorization server the STS service hosts: every endpoint its
@@ -32,6 +35,8 @@
 // The STS mock is located from WSTRUST_STS_URL, as the other STS-backed tests
 // are; OAUTH_METADATA_URL overrides the metadata URL outright.
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require('commander');
@@ -60,10 +65,10 @@ var metadataUrl = process.env.OAUTH_METADATA_URL || (stsBase +
 var REDIRECT_URI = "http://localhost:9999/callback";
 var CLIENT_ID = "sts-endpoint-test-client";
 // The identity the password grant presents. Generated per run rather than
-// fixed: this mock checks no password (only the reserved string "invalid" is
-// refused) and records every authentication against the name presented, so a
-// name shared with every other test makes its users page and audit log
-// unreadable. The prefix names this file.
+// fixed: in development mode this mock checks no password (only the reserved
+// string "invalid" is refused) and records every authentication against the
+// name presented, so a name shared with every other test makes its users page
+// and audit log unreadable. The prefix names this file.
 var RO_USER = process.env.STS_RO_USER || usernameFor("oauth2-sts-endpoints");
 
 // ---------------------------------------------------------------------------
@@ -190,17 +195,6 @@ async function person(username) {
   log.debug("Leaving person().");
 }
 
-// The two hidden fields the sign-in screen posts back.
-function screenFields(page) {
-  log.debug("Entering screenFields().");
-  log.debug("Leaving screenFields().");
-  return {
-    authn_id: (page.match(/name="authn_id" value="([^"]+)"/) || [])[1],
-    csrf_token: (page.match(/name="csrf_token" value="([^"]+)"/) || [])[1] ||
-        ""
-  };
-}
-
 function get(url, options) {
   log.debug("Entering get().");
   log.debug("Leaving get().");
@@ -293,8 +287,8 @@ function parseRedirect(location) {
 // a redirect rather than a form:
 //
 //   GET  /oauth2/authorize   -> 302 to /authn/login?authn=...
-//   GET  /authn/login        -> the form
-//   POST /authn/login        -> back to /oauth2/authorize, with a session cookie
+//   GET  /authn/login        -> the screen (a static page since #571)
+//   /authn-api               -> back to /oauth2/authorize, with a session
 //   GET  /oauth2/authorize   -> the authorization response
 //
 // options.username  who to sign in as (their name ends up in the tokens)
@@ -362,43 +356,29 @@ async function signInAndAuthorize(meta, params, options) {
     return out;
   }
 
-  // The screen, at its own URL. It is a GET, which is what makes it a service
-  // rather than a page rendered inside somebody else's endpoint.
-  r = await get(first.indexOf("http") === 0 ? first : meta.issuer + first,
-    options.cookie ? { headers: { cookie: options.cookie } } : {});
-  assert.strictEqual(r.status, 200,
+  // THE SCREEN, AT ITS OWN URL — a static page since #571, whose view and
+  // acts are `/authn-api`'s, through the one helper. The act's answer names
+  // where to go and the browser goes there with a GET, as it followed the
+  // form's 303. RFC 9700 section 4.12's point — a 307 would replay the
+  // credentials onto the next hop — cannot arise: the answer is JSON, and
+  // the browser's next request carries nothing it was sent.
+  const signedIn = await authnSignin.submit(meta.issuer,
+    first.indexOf("http") === 0 ? first : meta.issuer + first,
+    { action: options.action || "login", username: username,
+      password: options.password || "any-password" },
+    { cookie: options.cookie || "" });
+  assert.ok(signedIn.view,
     "the authentication service should show the sign-in screen, got HTTP " +
-        r.status + ".");
-  const page = await r.text();
-  const fields = screenFields(page);
-  const authnId = fields.authn_id;
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-
-  r = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: authnId, username: username,
-               password: options.password || "any-password",
-                 action: options.action || "login",
-                 csrf_token: fields.csrf_token })
-  });
-  // The sign-in form is a POST and the answer to it is a redirect. WHICH
-  // redirect is the interesting part, and it is asserted the way RFC 9700
-  // section 4.12 states it rather than as one exact code: 303 is what the mock
-  // sends now and what the BCP asks for, 302 is what it sent before and what
-  // most servers send, and **307 is the one that is forbidden** — it replays
-  // the method and the body, which on this request is the username and
-  // password, onto whatever the redirect names. Pinning 302 exactly made this
-  // fail the day the mock started doing the more correct thing, and it never
-  // checked the code the specification actually cares about.
-  assert.ok(r.status === 303 || r.status === 302,
-    "submitting the sign-in form should redirect, got HTTP " + r.status + ".");
-  assert.notStrictEqual(r.status, 307,
-    "RFC 9700 section 4.12: a credential-bearing POST must not be answered " +
-    "with 307, which replays the method and the body onto the next hop.");
-  const cookie = String(r.headers.get("set-cookie") || "").split(";")[0];
-  let next = r.headers.get("location");
-  if (next.indexOf("http") !== 0) next = meta.issuer + next;
+        signedIn.status + ".");
+  const page = signedIn.view;
+  assert.strictEqual(signedIn.next, "redirect",
+    "submitting the sign-in screen should answer where to go next, got " +
+    signedIn.status + " " + JSON.stringify(signedIn.json));
+  const cookie = signedIn.next === "redirect" &&
+    !/[?&]authn_error=/.test(signedIn.location)
+    ? (signedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) || [])[1] || ""
+    : "";
+  let next = signedIn.location;
 
   // Cancel comes back to the authorization endpoint as well, carrying
   // authn_error rather than being answered at the screen: the service does not
@@ -516,26 +496,32 @@ async function testLoginScreen(meta, verify) {
   assert.ok(!/code=/.test(toService),
     "nothing should be issued on the way to signing in.");
 
+  // THE SCREEN IS A STATIC PAGE SINCE #571: its own URL answers the
+  // shell, and what it offers is the view `/authn-api` answers.
   const screen = await get(toService.indexOf("http") === 0 ? toService
     : meta.issuer + toService);
   assert.strictEqual(screen.status, 200,
       "the sign-in screen should be served at its own URL.");
   assert.ok(/text\/html/.test(screen.headers.get("content-type") || ""),
             "the sign-in screen should be HTML.");
-  const page = await screen.text();
-  assert.ok(/<form[^>]+action="\/authn\/login"/.test(page),
-            "the sign-in screen should post to /authn/login.");
-  assert.ok(/id="username"/.test(page) && /id="password"/.test(page),
-    "the sign-in screen should ask for a username and a password.");
-  assert.ok(/name="authn_id" value="[^"]+"/.test(page),
-            "the form should carry the request it interrupted.");
-  assert.ok(page.indexOf('value="prefilled-user"') !== -1,
+  assert.ok(/\/authn\/signin\.js/.test(await screen.text()),
+            "the sign-in screen should be the static surface's shell.");
+  const opened = await authnSignin.screen(meta.issuer, toService);
+  const view = opened.view || {};
+  assert.ok(view.screen === true && view.password === true,
+    "the sign-in screen should ask for a username and a password: " +
+    JSON.stringify(view));
+  assert.ok(opened.id && view.id === opened.id,
+            "the view should be the request it interrupted.");
+  assert.strictEqual(view.hint, "prefilled-user",
     "login_hint should pre-fill the username field.");
-  assert.ok(page.indexOf(CLIENT_ID) !== -1 && page.indexOf(REDIRECT_URI) !== -1,
+  const rows = JSON.stringify(view.details || []);
+  assert.ok(rows.indexOf(CLIENT_ID) !== -1 &&
+            rows.indexOf(REDIRECT_URI) !== -1,
     "the sign-in screen should say which client and redirect_uri it is " +
     "signing in for — the service knows nothing about OAuth, so those rows " +
         "are what the authorization endpoint passed it.");
-  assert.ok(!/code=/.test(page),
+  assert.ok(!/code=/.test(JSON.stringify(opened.json)),
             "nothing should be issued before the user signs in.");
   log.info("[login] OK — an unauthenticated authorization request is sent to " +
            "the authentication service, which shows the form.");
@@ -648,22 +634,17 @@ async function testLoginScreen(meta, verify) {
         "Got: " + forced.headers.get("location"));
   // …and the return URL it stashed must have had `prompt` taken off it, or the
   // person comes back, is sent to sign in again, and never leaves.
-  const forcedScreen = await get(meta.issuer + forced.headers.get("location"));
-  const forcedFields = screenFields(await forcedScreen.text());
   await person("prompted.user");
-  const forcedDone = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: forcedFields.authn_id, username: "prompted.user",
-                 password: PERSON_PASSWORD, action: "login",
-                 csrf_token: forcedFields.csrf_token })
-  });
-  assert.ok(forcedDone.headers.get("location"),
-    "signing in at the forced prompt should redirect onwards, got HTTP " +
-        forcedDone.status + ".");
-  assert.ok(!/[?&]prompt=/.test(forcedDone.headers.get("location") || ""),
+  const forcedDone = await authnSignin.submit(meta.issuer,
+    meta.issuer + forced.headers.get("location"),
+    { action: "login", username: "prompted.user",
+      password: PERSON_PASSWORD });
+  assert.ok(forcedDone.next === "redirect" && forcedDone.location,
+    "signing in at the forced prompt should answer where to go onwards, " +
+    "got " + forcedDone.status + " " + JSON.stringify(forcedDone.json));
+  assert.ok(!/[?&]prompt=/.test(forcedDone.location),
     "the return URL must drop prompt, or signing in loops for ever. Got: " +
-        forcedDone.headers.get("location"));
+        forcedDone.location);
   const silent = await authorize(meta, fresh({ prompt: "none" }));
   assert.strictEqual(silent.params.get("error"), "login_required",
     "prompt=none with no session must fail rather than show UI. Got: " +
@@ -680,26 +661,19 @@ async function testLoginScreen(meta, verify) {
                      "even the cancel keeps state.");
 
   const started = await get(meta.authorization_endpoint + "?" + form(fresh()));
-  const noName = await get(meta.issuer + started.headers.get("location"));
-  const noNameFields = screenFields(await noName.text());
-  const authnId = noNameFields.authn_id;
-  const blank = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: authnId, username: "", password: "x",
-               action: "login", csrf_token: noNameFields.csrf_token })
-  });
-  assert.strictEqual(blank.status, 200,
-      "an empty username should re-show the form, not redirect.");
-  assert.ok(/Enter a username/.test(await blank.text()),
-            "the form should say what was wrong.");
-  const refused = await fetch(meta.issuer + "/authn/login", {
-    method: "POST", redirect: "manual",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form({ authn_id: authnId, username: "carol", password: "invalid",
-               action: "login", csrf_token: noNameFields.csrf_token })
-  });
-  assert.ok(/Authentication failed for carol/.test(await refused.text()),
+  const noName = await authnSignin.screen(meta.issuer,
+    started.headers.get("location"));
+  const blank = await authnSignin.submit(meta.issuer, noName.id,
+    { action: "login", username: "", password: "x" }, { screen: noName });
+  assert.strictEqual(blank.next, "refused",
+      "an empty username should be refused, not redirect: " +
+      blank.status + " " + JSON.stringify(blank.json));
+  assert.ok(/Enter a username/.test(blank.errors.join(" ")),
+            "the refusal should say what was wrong.");
+  const refused = await authnSignin.submit(meta.issuer, noName.id,
+    { action: "login", username: "carol", password: "invalid" },
+    { screen: noName });
+  assert.ok(/Authentication failed for carol/.test(refused.errors.join(" ")),
     'the reserved password "invalid" should be refused at the sign-in ' +
         'screen too.');
   log.info("[login] OK — cancel, a missing username and the reserved " +
@@ -829,19 +803,33 @@ async function testAuthorizationCode(meta, verify) {
                      "a bad code_verifier should be invalid_grant.");
   log.info("[code] OK — PKCE is verified, not just accepted.");
 
-  // ... and that refusal must NOT have consumed the code. A check that burns
-  // what it refuses answers the next attempt — the corrected one — with
-  // "already-used" instead of tokens, which is the wrong sentence at exactly
-  // the moment somebody is acting on the right one.
+  // ... and what that refusal did to the code. SINCE iya-sts #424 A CODE IS
+  // PRESENTED ONCE, WHATEVER THE OUTCOME (RFC 6749 section 4.1.2): product
+  // mode refuses the corrected attempt too, and the flow starts over. The
+  // development test stacks turn on `oauth2.codeReplayIdempotent`, the
+  // relaxation #424 kept for this job, under which a refused presentation
+  // leaves the code redeemable — a check that burned what it refused would
+  // answer the corrected attempt with "already-used" instead of tokens.
   const corrected = await postForm(meta.token_endpoint, {
     grant_type: "authorization_code", code: code, client_id: CLIENT_ID,
     redirect_uri: REDIRECT_URI, code_verifier: verifier
   });
-  assert.strictEqual(corrected.status, 200,
-    "a refused code_verifier must leave the code redeemable, so the same " +
-        "code with the RIGHT verifier should be exchanged. Got HTTP " +
-        corrected.status + ": " + corrected.raw);
-  log.info("[code] OK — a refused PKCE check does not consume the code.");
+  if (PRODUCT) {
+    assert.strictEqual(corrected.status, 400,
+      "a product-mode service presents a code once whatever the outcome " +
+          "(iya-sts #424), so the corrected attempt is refused too. Got " +
+          "HTTP " + corrected.status + ": " + corrected.raw);
+    assert.strictEqual(corrected.body.error, "invalid_grant", corrected.raw);
+    log.info("[code] OK — product mode: a code is presented once, the " +
+             "refused one included (#424).");
+  } else {
+    assert.strictEqual(corrected.status, 200,
+      "a refused code_verifier must leave the code redeemable under the " +
+          "development stack's oauth2.codeReplayIdempotent, so the same " +
+          "code with the RIGHT verifier should be exchanged. Got HTTP " +
+          corrected.status + ": " + corrected.raw);
+    log.info("[code] OK — a refused PKCE check does not consume the code.");
+  }
 
   // A fresh one for the token assertions below, so they read against a code
   // whose whole history is this exchange.
@@ -912,17 +900,26 @@ async function testAuthorizationCode(meta, verify) {
            "matching claims, and the refresh token is an encrypted, opaque " +
            "JWE that introspects as a refresh_token for the same subject.");
 
-  if (PRODUCT) {
-    // RFC 9700 section 4.5 and RFC 6749 section 10.5, which a product-mode
-    // service applies instead of the relaxation below: a code presented twice
-    // is refused, and what it bought is revoked, because two holders of one
-    // code cannot be told apart.
-    const replayed = await postForm(meta.token_endpoint, {
-      grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI, code_verifier: verifier2
-    });
+  // THE SAME CODE, PRESENTED A SECOND TIME — sent ONCE, and what the service
+  // did with it decides which branch below judges it. Until iya-sts #187 the
+  // mode decided: product refused a replay and development answered an
+  // identical one with the same token set. Since #187 it is refused in EVERY
+  // mode (the courtesy survives only as `oauth2.codeReplayIdempotent`, off by
+  // default), so a development service that refuses is judged exactly as a
+  // product one is, and only a 200 from a development service is read as the
+  // old courtesy.
+  const replayed = await postForm(meta.token_endpoint, {
+    grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI, code_verifier: verifier2
+  });
+  if (PRODUCT || replayed.status !== 200) {
+    // RFC 6749 section 4.1.2, RFC 9700 section 4.5 and RFC 6749 section
+    // 10.5: a code presented twice is refused, and what it bought is revoked,
+    // because two holders of one code cannot be told apart. Product mode has
+    // always done this; every mode does since iya-sts #187.
     assert.strictEqual(replayed.status, 400,
-      "a product-mode service must refuse a code presented twice. Got HTTP " +
+      "a service must refuse a code presented twice (every mode since " +
+          "iya-sts #187; product mode before it). Got HTTP " +
           replayed.status + ": " + replayed.raw);
     assert.strictEqual(replayed.body.error, "invalid_grant",
                        "that refusal should be invalid_grant.");
@@ -934,7 +931,7 @@ async function testAuthorizationCode(meta, verify) {
     assert.strictEqual(revoked.body.active, false,
       "the access token the replayed code bought must be revoked.");
     log.info("[code] OK — a replayed code is refused and what it bought is " +
-             "revoked (product mode).");
+             "revoked (" + (PRODUCT ? "product" : "development") + " mode).");
     // A fresh set for the sections after this one, since this one is dead.
     const third = await authorize(meta, {
       response_type: "code", client_id: CLIENT_ID, redirect_uri: REDIRECT_URI,
@@ -949,6 +946,11 @@ async function testAuthorizationCode(meta, verify) {
                        renewed.raw);
     set = renewed.body;
   } else {
+    // THE PRE-#187 DEVELOPMENT COURTESY, which the pinned sts/ gitlink still
+    // has. DELETE THIS BRANCH once the sts/ pin is past iya-sts #187: from
+    // then on a development service refuses a replay too, and the branch
+    // above judges it.
+    //
     // Single use, NON-SPEC-ally relaxed to idempotent for the rest of the code's
     // own lifetime: the identical Token Request gets the identical token set
     // back — the first answer, not a second one — because a debugging service
@@ -956,15 +958,11 @@ async function testAuthorizationCode(meta, verify) {
     // code" has told the user nothing about which of those two it was. The
     // relaxation is the mock's, is documented in docs/mock-sts.md, and RFC 6749
     // section 4.1.2 permits a real server to refuse this outright.
-    const replay = await postForm(meta.token_endpoint, {
-      grant_type: "authorization_code", code: code2, client_id: CLIENT_ID,
-      redirect_uri: REDIRECT_URI, code_verifier: verifier2
-    });
-    assert.strictEqual(replay.status, 200,
+    assert.strictEqual(replayed.status, 200,
       "the same Token Request for a code already redeemed should be answered " +
-          "with what it was answered the first time. Got HTTP " + replay.status +
-          ": " + replay.raw);
-    assert.deepStrictEqual(replay.body, set,
+          "with what it was answered the first time. Got HTTP " +
+          replayed.status + ": " + replayed.raw);
+    assert.deepStrictEqual(replayed.body, set,
       "a replay must return the SAME token set, not a newly minted one — " +
           "nothing is issued twice here.");
     log.info("[code] OK — an identical replay returns the identical tokens.");
@@ -1361,25 +1359,6 @@ async function testIntrospectionAndRevocation(meta, verify) {
   log.debug("Leaving testIntrospectionAndRevocation().");
 }
 
-// Whether this STS's application registry names `name` as an editable
-// attribute. Read from the same `editable` table sts_applications.js reads,
-// so an STS that predates the attribute is recognised rather than refused:
-// `oauthAllowedScope` arrived with iya-sts #110, the delegation policy's
-// `appTrustedToImpersonate` / `appAllowedToDelegateTo` with #108.
-async function registryEditable(base, name) {
-  log.debug("Entering registryEditable(). base=" + base + " name=" + name);
-  if (!base || !(await registry.registryAvailable(base))) {
-    log.debug("Leaving registryEditable(). No registry.");
-    return false;
-  }
-  const doc = await registry.adminGet(base, "/applications/new");
-  const found = (doc.editable || []).some(function (row) {
-    return row.name === name;
-  });
-  log.debug("Leaving registryEditable(). " + found);
-  return found;
-}
-
 async function testRegistration(meta) {
   log.debug("Entering testRegistration().");
   log.info("=== Dynamic client registration (RFC 7591 / 7592) ===");
@@ -1432,6 +1411,27 @@ async function testRegistration(meta) {
   assert.strictEqual(after.client_id, reg.client_id,
                      "an update must not change the client_id.");
 
+  // #284: the update runs registration's JARM checks too. Until then a PUT
+  // could store an authorization_encrypted_response_alg a POST refuses.
+  const jarm = await fetch(reg.registration_client_uri, {
+    method: "PUT",
+    headers: Object.assign({ "Content-Type": "application/json" }, authed),
+    body: JSON.stringify({ software_statement: STATEMENT,
+                           client_id: reg.client_id,
+                           redirect_uris: [REDIRECT_URI],
+                           authorization_encrypted_response_alg:
+                             "not-an-algorithm" })
+  });
+  assert.strictEqual(jarm.status, 400,
+    "an RFC 7592 update may not store an authorization_encrypted_response_" +
+    "alg registration would refuse. Got HTTP " + jarm.status);
+  assert.strictEqual((await jarm.json()).error, "invalid_client_metadata",
+    "the refusal is RFC 7591's invalid_client_metadata.");
+  const kept = await (await fetch(reg.registration_client_uri,
+                                  { headers: authed })).json();
+  assert.ok(!kept.authorization_encrypted_response_alg,
+    "the refused update must not have been stored.");
+
   const deleted = await fetch(reg.registration_client_uri, { method: "DELETE",
       headers: authed });
   assert.strictEqual(deleted.status, 204,
@@ -1444,7 +1444,7 @@ async function testRegistration(meta) {
             "the client should be gone after a delete (401; 404 before " +
             "iya-sts #120). Got " + gone.status);
   log.info("[register] OK — register, read, update and delete, with the " +
-           "management calls protected.");
+           "management calls protected and JARM metadata checked on update.");
   log.debug("Leaving testRegistration().");
 }
 
@@ -1645,14 +1645,19 @@ async function test() {
   // attribute and refuses one it does not know, so it is added only when the
   // registry's `editable` table names it — this file runs against both.
   // ---------------------------------------------------------------------
-  var declaresScopes = await registryEditable(registry.baseOf(stsBase),
-                                             "oauthAllowedScope");
-  // THE DELEGATION POLICY (iya-sts #108): in product an RFC 8693 exchange in
-  // which this client impersonates the subject is refused unless the policy
-  // says it may — trusted to impersonate, and allowed to delegate to the API
-  // the exchange aims at. Declared only where the STS knows the attributes.
-  var declaresDelegation = await registryEditable(registry.baseOf(stsBase),
-                                                  "appTrustedToImpersonate");
+  var declaresScopes = await registry.registryEditable(
+      registry.baseOf(stsBase), "oauthAllowedScope");
+  // THE DELEGATION POLICY (iya-sts #108, #186): in product an RFC 8693
+  // exchange is refused unless the policy says this client may act for the
+  // subject toward the API the exchange aims at — appAllowedToDelegateTo on
+  // the client. Before iya-sts #186 an exchange with no actor_token was an
+  // impersonation and needed appTrustedToImpersonate too; since #186 it is a
+  // delegation by default and that attribute is gone (merged into
+  // appDelegationSemantics). Each is declared only where the STS knows it.
+  var declaresDelegation = await registry.registryEditable(
+      registry.baseOf(stsBase), "appAllowedToDelegateTo");
+  var declaresImpersonation = await registry.registryEditable(
+      registry.baseOf(stsBase), "appTrustedToImpersonate");
   var clientFields = {
     oauthClientId: CLIENT_ID,
     oauthRedirectUri: [REDIRECT_URI],
@@ -1680,8 +1685,10 @@ async function test() {
     serviceFields.oauthAllowedScope = ["api"];
   }
   if (declaresDelegation) {
-    clientFields.appTrustedToImpersonate = "TRUE";
     clientFields.appAllowedToDelegateTo = [EXCHANGE_RESOURCE];
+  }
+  if (declaresImpersonation) {
+    clientFields.appTrustedToImpersonate = "TRUE";
   }
   await registry.provision(registry.baseOf(stsBase), {
     identifier: CLIENT_ID,

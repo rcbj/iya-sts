@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -127,6 +127,13 @@ interface Decision {
   errorCode?: string;
   anonymous?: boolean;
   note?: string;
+  // WHAT KIND OF PARTY THE PRINCIPAL IS (#336, 2026-09-28), for a stream's
+  // owner:
+  // `client` (a client's own token), `person` (a token issued to a client
+  // FOR a person, whose `sub` it carries), `basic` (a name and password) or
+  // `gnap` (a GNAP application). `ssf_streams.ts` narrows a person's stream
+  // to that person; see "A PERSON'S STREAM IS ABOUT THAT PERSON" there.
+  owner?: { kind: string; sub?: string; client?: string; name?: string };
 }
 
 // The request members this gate reads.
@@ -504,11 +511,19 @@ class SsfAuth {
                 "declares the scope.");
       return withdrawn;
     }
+    const principal = SsfAuth.principalOfClaims(claims);
+    const clientId = String(claims.client_id || '');
     log.debug("Leaving SsfAuth.attemptOAuth(). Accepted.");
     return { ok: true, status: 200, scheme: presented.scheme === 'dpop'
       ? 'dpop' : 'bearer',
-      principal: SsfAuth.principalOfClaims(claims),
-      scopes: scopes, err: '', description: '', headers: {} };
+      principal: principal,
+      scopes: scopes, err: '', description: '', headers: {},
+      // A token whose principal is not its own client was issued FOR a
+      // person: principalOfClaims() answers the client_id only for a
+      // client's own token.
+      owner: principal && principal !== clientId
+        ? { kind: 'person', sub: principal, client: clientId }
+        : { kind: 'client', client: clientId } };
   }
 
   // -------------------------------------------------------------------------
@@ -549,7 +564,7 @@ class SsfAuth {
   // GNAP token is judged against this authorization server's record of it —
   // issued here, live, presented under the scheme RFC 9635 section 7.2
   // requires, and accompanied by a proof by the key it is bound to. It is the
-  // synchronous half of what the demonstration resource server asks; the
+  // synchronous half of `gnap_rs.ts`'s `authenticate()`; the
   // format's own verification is left out because this process holds the
   // record the format would re-derive, and this gate is synchronous across
   // every SSF endpoint.
@@ -707,6 +722,7 @@ class SsfAuth {
     return { ok: true, status: 200, scheme: 'gnap',
       principal: String(record.instanceId || ''),
       scopes: granted.join(' '), err: '', description: '', headers: {},
+      owner: { kind: 'gnap' },
       note: 'GNAP access token (' + record.format + ', proofed by ' +
             presented.method + ')' };
   }
@@ -764,10 +780,16 @@ class SsfAuth {
     const password = cut < 0 ? '' : decoded.slice(cut + 1);
     if (!user) {
       log.debug("Leaving SsfAuth.attemptBasic(). No username.");
+      // Per mode (#543 round 2): "accepts any username with any password"
+      // was the answer in product too, where the password is verified.
       return this.refusal('STS-SSF-0007', 401,
         'The Basic credential did not decode to "user:password". It is ' +
-        'base64 of those two joined by a colon, and this service accepts ' +
-        'any username with any password except "' + REFUSED_PASSWORD + '".',
+        'base64 of those two joined by a colon, and ' +
+        (mode.verifiesCredentials()
+          ? 'the password is verified against the person\'s directory ' +
+            'entry.'
+          : 'this realm, in development mode, accepts any username with ' +
+            'any password except "' + REFUSED_PASSWORD + '".'),
         { 'WWW-Authenticate': this.challenges() });
     }
     // `door: 'ssf'` (#101): a password-only door — see credentials.ts.
@@ -796,6 +818,8 @@ class SsfAuth {
       scopes: this.scopeRead() + ' ' + this.scopeWrite(), err: '',
       description: '',
       headers: {},
+      // A person only if the directory holds `user`; ssf_streams.ts asks.
+      owner: { kind: 'basic', name: user },
       // An app password is said so (#101).
       note: checked.reason === 'app-password' && checked.appPassword
         ? 'HTTP Basic (an app password, "' + checked.appPassword.name +

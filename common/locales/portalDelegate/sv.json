@@ -1,0 +1,14 @@
+{
+  "heading": "Vem som får agera åt dig",
+  "sub": "Ett program eller en person som du anger här kan be den här tjänsten om en token i ditt namn genom att byta in en av dina (tokenutbyte enligt RFC 8693). Varje åtkomsttoken som utfärdas om dig anger det i sitt <code>may_act</code>-anspråk, och ett utbyte av en sådan av NÅGON ANNAN nekas. Du kan ange en part.",
+  "currentPerson": "Den part som får agera åt dig är <code>{dn}</code> (en person).",
+  "currentApplication": "Den part som får agera åt dig är <code>{dn}</code> (ett program).",
+  "currentStale": "Den part som får agera åt dig är <code>{dn}</code> – som inte längre pekar på något i den här katalogen, så dina token har inget <code>may_act</code>.",
+  "nobody": "Du har inte angett någon. Dina åtkomsttoken har inget <code>may_act</code>-anspråk.",
+  "notDelegated": "En administratör har markerat ditt konto som ett som inte kan delegeras, så ingen får agera åt dig vem du än anger här.",
+  "dnLabel": "Deras katalognamn (DN)",
+  "name": "Ange dem",
+  "clear": "Ange ingen",
+  "doneSet": "Din ombudsperson är angiven.",
+  "doneCleared": "Du har inte angett någon."
+}

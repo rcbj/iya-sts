@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -109,6 +109,7 @@ function childMain() {
     await new Promise(function (r) { server.listen(0, '127.0.0.1', r); });
     const port = server.address().port;
     const base = 'http://127.0.0.1:' + port;
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const SP = 'fpsp';
     const REL = 'fp-oidc';
 
@@ -171,22 +172,27 @@ function childMain() {
       jar = {};
       let r = await request('GET', '/realm/' + SP + '/federation/login/' + REL);
       for (let hop = 0; hop < 20; hop += 1) {
-        if (r.status >= 300 && r.status < 400 && r.headers.location) {
-          r = await request('GET', r.headers.location);
+        const at = String(r.headers.location || '');
+        // THE SCREEN'S OWN REALM (#109): the partner's, or — for a person
+        // who already exists here and is not linked yet — the service
+        // provider's own linking sign-in (link-at-first-sign-in, the
+        // default), where the name is fixed and development checks no
+        // password. A static surface over `/authn-api` since #571: signed
+        // in as its page does, and its answer followed with a GET.
+        if (r.status >= 300 && r.status < 400 &&
+            /\/authn\/login\?authn=/.test(at)) {
+          const sent = await authnScreen.submit({ port: port, jar: jar,
+            at: new URL(at, base).pathname + new URL(at, base).search,
+            fields: { action: 'login', username: username,
+                      password: 'x' } });
+          if (sent.next !== 'redirect') {
+            return sent;
+          }
+          r = await request('GET', sent.location);
           continue;
         }
-        const authnId = /name="authn_id" value="([^"]+)"/.exec(r.text);
-        if (r.status === 200 && authnId) {
-          // THE SCREEN'S OWN REALM (#109): the partner's, or — for a person
-          // who already exists here and is not linked yet — the service
-          // provider's own linking sign-in (link-at-first-sign-in, the
-          // default), where the name is fixed and development checks no
-          // password.
-          const realmPrefix = r.path.indexOf('/realm/' + SP + '/') === 0
-            ? '/realm/' + SP : '';
-          r = await request('POST', realmPrefix + '/authn/login', { form: {
-            authn_id: authnId[1], username: username, password: 'x',
-            action: 'login' } });
+        if (r.status >= 300 && r.status < 400 && at) {
+          r = await request('GET', at);
           continue;
         }
         return r;
@@ -437,9 +443,13 @@ function childMain() {
       return entryOf('fp-nocreate-nobody') ||
              entryOf(REL + '~fp-nocreate-nobody');
     });
-    note(r.status === 403 && !nobody,
-         '7c. while somebody nobody provisioned is still refused and ' +
-         'nothing is created', r.status + ' ' + !!nobody);
+    // THE RELATIONSHIP'S SWITCH WINS (rcbj, 2026-09-30): fedAutocreateUsers
+    // is on here, so the newcomer is created although the realm's
+    // ldap.autocreateUsers is off. Section 2 holds the switch off refusing.
+    note(r.status === 200 && !!nobody,
+         '7c. and somebody nobody provisioned is CREATED, because the ' +
+         'relationship\'s fedAutocreateUsers overrides the realm setting',
+         r.status + ' ' + !!nobody);
     await inSp(function () {
       config.clearOverride('ldap.autocreateUsers');
     });

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -250,7 +250,7 @@ async function inProcess(t) {
           }),
           'a classical private half as PKCS#8 PEM, a post-quantum one as ' +
           'base64 — the encodings extraKeys and pqKeys use');
-  const back = keystore.deserialiseSignerGroups(blob.signerGroups, nodeCrypto);
+  const back = keystore.deserialiseSignerGroups(blob.signerGroups);
   const rsaBack = back.filter(function (one) {
     return one.slot === 'tokens/RS256';
   })[0];

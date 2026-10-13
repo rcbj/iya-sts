@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_roles.js
 //
@@ -103,6 +103,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -379,6 +381,19 @@ function browser() {
   return self;
 }
 
+// THE SIGN-IN SCREEN OVER `/authn-api` (#571), through the one helper: the
+// screen's address, a name and PASSWORD, in the realm the screen is in. The
+// browser's cookie becomes the walk's whole jar, its session among it.
+async function screenSignIn(b, location, who) {
+  log.debug("Entering screenSignIn(). " + who);
+  const answer = await authnSignin.submit(base + "/realm/" + REALM, location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: b.cookie });
+  b.cookie = answer.cookie;
+  log.debug("Leaving screenSignIn(). " + answer.next);
+  return answer;
+}
+
 const REDIRECT_URI = "https://example.test/roles-callback";
 
 // What an OAuth application in this job is registered with, beside whatever
@@ -389,7 +404,7 @@ function oauthApplication(identifier, name) {
   log.debug("Entering oauthApplication().");
   log.debug("Leaving oauthApplication().");
   return { identifier: identifier, kind: "oauth2-client", name: name,
-           protocols: ["oauth2", "oidc"],
+           protocols: ["oauth2", "oidc", "wstrust"],
            fields: { oauthClientId: [identifier],
                      oauthRedirectUri: [REDIRECT_URI],
                      oauthClientSecret: CLIENT_SECRET,
@@ -498,29 +513,38 @@ async function anUnconfiguredRealmRefusesNobody() {
       "GET /admin-api/roles should answer 200; it answered " +
       register.status);
   });
-  check("a new realm holds exactly the three native roles", function () {
+  check("a new realm holds exactly the four native roles", function () {
     // #303: ADMIN_READ and ADMIN_WRITE are CONFIGURED roles seeded into every
     // realm, each held by the realm's own management API client and
     // authorizing its admin scope. #309: DEVICE_COMPLIANCE beside them,
-    // authorizing device:compliance and seeded with NO member. Nothing else
-    // is seeded.
+    // authorizing device:compliance and seeded with NO member. #454:
+    // ADMIN_CONSOLE, authorizing admin:console, with no member either — it
+    // is CONFERRED by the console's own client, sts-admin-console. Nothing
+    // else is seeded.
     const names = register.body.roles.map(function (r) { return r.name; });
     assert.strictEqual(JSON.stringify(names.slice().sort()),
-      JSON.stringify(["ADMIN_READ", "ADMIN_WRITE", "DEVICE_COMPLIANCE"]),
-      "a realm's ou=roles starts with the three native roles; this one " +
+      JSON.stringify(["ADMIN_CONSOLE", "ADMIN_READ", "ADMIN_WRITE",
+                      "DEVICE_COMPLIANCE"]),
+      "a realm's ou=roles starts with the four native roles; this one " +
       "holds " + JSON.stringify(names));
     const wanted = { ADMIN_READ: "admin:read", ADMIN_WRITE: "admin:write",
-                     DEVICE_COMPLIANCE: "device:compliance" };
+                     DEVICE_COMPLIANCE: "device:compliance",
+                     ADMIN_CONSOLE: "admin:console" };
     register.body.roles.forEach(function (row) {
-      const feed = row.name === "DEVICE_COMPLIANCE";
-      assert.ok(row.native === true && row.console === !feed &&
-                (feed ? row.applications.length === 0
-                      : row.applications.indexOf("sts-management-api") >= 0) &&
+      const unheld = row.name === "DEVICE_COMPLIANCE" ||
+                     row.name === "ADMIN_CONSOLE";
+      assert.ok(row.native === true && row.console === !unheld &&
+                (unheld ? row.applications.length === 0
+                        : row.applications.indexOf("sts-management-api") >=
+                          0) &&
+                (row.name !== "ADMIN_CONSOLE" ||
+                 (row.conferredBy || []).indexOf("sts-admin-console") >= 0) &&
                 row.permissions.length === 1 &&
                 row.permissions[0] === wanted[row.name],
                 "each authorizes its own native permission; the console " +
-                "roles are held by sts-management-api and DEVICE_COMPLIANCE " +
-                "by nobody: " + JSON.stringify(row));
+                "roles are held by sts-management-api, DEVICE_COMPLIANCE " +
+                "by nobody, and ADMIN_CONSOLE by nobody but conferred by " +
+                "sts-admin-console: " + JSON.stringify(row));
     });
   });
   check("and the built-in ones are there anyway", function () {
@@ -552,7 +576,11 @@ async function anUnconfiguredRealmRefusesNobody() {
     // EIGHT SINCE #309 (2026-09-28): DEVICE_COMPLIANCE followed them, the
     // last role read off a scope, and is asserted above among the native
     // ones.
-    assert.strictEqual(register.body.builtIn.length, 8,
+    //
+    // TEN SINCE #607 (2026-10-13): OWNER_READ and OWNER_WRITE, computed from
+    // the owner attributes, and the first built-ins that authorize a
+    // permission (owner:read, owner:write).
+    assert.strictEqual(register.body.builtIn.length, 10,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +
@@ -837,24 +865,18 @@ async function theAuthorizationEndpointRefuses() {
       assert.ok(/\/authn\/login\?authn=/.test(step.location),
         "it went to " + step.location);
     });
-  const screen = await refusedBrowser.go("GET", step.location);
-  const authnId = (screen.text.match(/name="authn_id" value="([^"]+)"/) ||
-                   [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-
-  const refusedSignIn = await refusedBrowser.go("POST",
-    "/realm/" + REALM + "/authn/login",
-    form({ authn_id: authnId, username: OUTSIDER, password: PASSWORD,
-           action: "login" }));
+  const refusedSignIn = await screenSignIn(refusedBrowser, step.location,
+                                           OUTSIDER);
   check("the sign-in screen itself refuses somebody who holds no required role",
     function () {
-      assert.ok(refusedSignIn.status === 200 &&
-                refusedSignIn.text.indexOf(ROLE) >= 0,
+      const said = refusedSignIn.errors.join(" ");
+      assert.ok(refusedSignIn.next === "refused" && said.indexOf(ROLE) >= 0,
         "the SESSION is gated too, and on the application the sign-in is " +
-        "for — so the screen is drawn again with the reason on it rather " +
+        "for — so the screen's act is refused with the reason on it rather " +
         "than a session being minted and refused one door later. It " +
-        "answered " + refusedSignIn.status + " and the page " +
-        (refusedSignIn.text.indexOf(ROLE) >= 0 ? "names" : "does NOT name") +
+        "answered " + refusedSignIn.status + " " + refusedSignIn.next +
+        " and the refusal " + (said.indexOf(ROLE) >= 0 ? "names"
+                                                        : "does NOT name") +
         " the role");
     });
   // A REFUSED SIGN-IN MUST LEAVE THE BROWSER SIGNED IN TO NOTHING, and HOW that
@@ -889,16 +911,10 @@ async function theAuthorizationEndpointRefuses() {
   // is about the role and not about the screen being broken.
   const holderBrowser = browser();
   step = await holderBrowser.go("GET", authorizeUrl(NARROWED));
-  const holderScreen = await holderBrowser.go("GET", step.location);
-  const holderAuthn = (holderScreen.text
-    .match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  const signedIn = await holderBrowser.go("POST",
-    "/realm/" + REALM + "/authn/login",
-    form({ authn_id: holderAuthn, username: HOLDER, password: PASSWORD,
-           action: "login" }));
+  const signedIn = await screenSignIn(holderBrowser, step.location, HOLDER);
   check("somebody who holds the role signs in", function () {
-    assert.ok((signedIn.status === 302 || signedIn.status === 303) &&
-              holderBrowser.cookie,
+    assert.ok(signedIn.next === "redirect" &&
+              /sts_session=/.test(holderBrowser.cookie),
       "it answered " + signedIn.status + " and the jar holds " +
       (holderBrowser.cookie ? "a session" : "nothing"));
   });
@@ -1103,6 +1119,27 @@ async function groupsAndApplicationsHoldRoles() {
       "this grant has a subject; it answered " + afterRole.status + " " +
       String(afterRole.text).slice(0, 300));
   });
+  // WHAT THE TOKEN SAYS (#93): it is about the application — `sub` names it
+  // and there is no `username`, which carried the client_id and sent the
+  // roles claim looking for a PERSON of that name — and its roles claim is
+  // the roles the application holds as itself.
+  const robotClaims = afterRole.status === 200
+    ? claimsOf(afterRole.body.access_token) : {};
+  check("the client's token has no username, and its sub names the client",
+    function () {
+      assert.ok(!("username" in robotClaims) &&
+                (robotClaims.sub === ROBOT ||
+                 robotClaims.sub === "urn:sts:client:" + ROBOT),
+        "a client_credentials token is about no person; it carried " +
+        JSON.stringify({ sub: robotClaims.sub,
+                         username: robotClaims.username }));
+    });
+  check("and its roles claim carries the role the CLIENT holds", function () {
+    assert.ok(Array.isArray(robotClaims.roles) &&
+              robotClaims.roles.indexOf("robots") >= 0,
+      "roleMemberApplication is what this token's roles claim is made of; " +
+      "it carried " + JSON.stringify(robotClaims.roles));
+  });
 
   // AND THE SAME NAME AS A PERSON HOLDS NOTHING. The three membership lists
   // are three relations, not one list with a label on it — a bug that merged
@@ -1127,13 +1164,73 @@ async function groupsAndApplicationsHoldRoles() {
 }
 
 // ---------------------------------------------------------------------------
-// 7. WS-TRUST, WHERE THE APPLICATION MAY BE ABSENT AND THAT IS NOT AN ERROR.
+// 6b. APPLICATION PERMISSIONS (#93): who may hold a role, its display name and
+// stable id, and the roles an application holds, read from its own side.
+// ---------------------------------------------------------------------------
+async function applicationPermissions() {
+  log.debug("Entering applicationPermissions().");
+  log.info("=== Application permissions: member types, label, id (#93) ===");
+  const MACHINES = "machines";
+  await act("roles", "create-role",
+            { role: MACHINES, displayName: "Batch machines",
+              memberTypes: ["application"] },
+            "made an applications-only role with a display name");
+  const person = await postJson(api("/roles/add-member"),
+    { role: MACHINES, kind: "user", member: HOLDER });
+  check("a person is refused on an applications-only role", function () {
+    assert.strictEqual(person.status, 400,
+      "the role says who may hold it; it answered " + person.status + " " +
+      String(person.text).slice(0, 300));
+  });
+  const badType = await postJson(api("/roles/create-role"),
+    { role: "oddities", memberTypes: ["robot"] });
+  check("and a member type that is not user or application is refused",
+    function () {
+      assert.strictEqual(badType.status, 400,
+        "memberTypes is a closed set; it answered " + badType.status);
+    });
+  await act("roles", "add-member",
+            { role: MACHINES, kind: "application", member: ROBOT },
+            "given the client the applications-only role");
+  const listed = await get(api("/roles"));
+  const row = ((listed.body && listed.body.roles) || [])
+    .filter(function (one) {
+      return one.name === MACHINES;
+    })[0] || null;
+  check("the register shows its display name, member types and an id",
+    function () {
+      assert.ok(row && row.displayName === "Batch machines" &&
+                (row.memberTypes || []).join() === "application" &&
+                /^[0-9a-f-]{36}$/.test(String(row.id || "")),
+        "GET /admin-api/roles answered " + JSON.stringify(row));
+    });
+  const app = await get(api("/applications?application=" + ROBOT));
+  const held = ((app.body && app.body.applicationRoles &&
+                 app.body.applicationRoles.held) || []).map(function (one) {
+    return one.name;
+  });
+  check("and the client's own page lists the roles it holds", function () {
+    assert.ok(held.indexOf(MACHINES) >= 0 && held.indexOf("robots") >= 0,
+      "GET /admin-api/applications?application= carried " +
+      JSON.stringify(app.body && app.body.applicationRoles));
+  });
+  log.debug("Leaving applicationPermissions().");
+}
+
+// ---------------------------------------------------------------------------
+// 7. WS-TRUST, WHERE THE APPLICATION MAY BE ABSENT AND THAT IS NOT AN ERROR —
+// IN DEVELOPMENT.
 //
 // The one issuance site here whose application is optional: AppliesTo is
-// optional in an RST, and a token with no audience restriction is a state this
-// service deliberately allows. So there is nothing to have a requirement, and
-// the gate ALLOWS — which is the honest answer and the one most likely to be
-// "fixed" into a refusal by somebody reading the table of nine kinds.
+// optional in an RST, and a token with no audience restriction is a state
+// development deliberately allows. So there is nothing to have a requirement,
+// and the gate ALLOWS — which is the honest answer and the one most likely to
+// be "fixed" into a refusal by somebody reading the table of nine kinds.
+//
+// PRODUCT REFUSES IT BEFORE THE GATE IS ASKED (#496, rcbj): an RST naming no
+// application is wst:InvalidRequest (STS-WSTRUST-0031), since a token with
+// no audience is one every relying party would be entitled to accept. That
+// is not the role gate refusing — the gate is never reached.
 // ---------------------------------------------------------------------------
 async function wsTrustWithNoAppliesTo() {
   log.debug("Entering wsTrustWithNoAppliesTo().");
@@ -1174,12 +1271,25 @@ async function wsTrustWithNoAppliesTo() {
   }
 
   const anonymous = await rstFor(null);
-  check("an RST with NO AppliesTo is answered", function () {
-    assert.strictEqual(anonymous.status, 200,
-      "nothing named an application, so there is no requirement to check and " +
-      "the honest answer is to issue. It answered " + anonymous.status + " " +
-      String(anonymous.text).slice(0, 300));
-  });
+  const product = await require("./sts_applications.js")
+    .isProduct(realmUrl(""));
+  if (product) {
+    check("PRODUCT: an RST with NO AppliesTo is refused before the role " +
+          "gate, wst:InvalidRequest (#496)", function () {
+      assert.ok(anonymous.status === 500 &&
+                /wst:InvalidRequest/.test(String(anonymous.text)),
+        "product issues a token only for a registered application, and " +
+        "never with no audience. It answered " + anonymous.status + " " +
+        String(anonymous.text).slice(0, 300));
+    });
+  } else {
+    check("an RST with NO AppliesTo is answered", function () {
+      assert.strictEqual(anonymous.status, 200,
+        "nothing named an application, so there is no requirement to check " +
+        "and the honest answer is to issue. It answered " + anonymous.status +
+        " " + String(anonymous.text).slice(0, 300));
+    });
+  }
 
   const narrowed = await rstFor(NARROWED);
   check("and one naming a narrowed application is refused with a SOAP fault",
@@ -1335,7 +1445,7 @@ async function theRegisterRefuses() {
 // ---------------------------------------------------------------------------
 async function test() {
   log.debug("Entering test().");
-  log.info("Driving the mock STS's role register and the nine issuance sites " +
+  log.info("Driving IYA STS's role register and the nine issuance sites " +
            "at " + base);
 
   // A SERVICE THAT IS NOT THERE IS A FAILURE AND NOT A SKIP, which is the rule
@@ -1354,6 +1464,7 @@ async function test() {
     await theTokenEndpointRefuses();
     await theAuthorizationEndpointRefuses();
     await groupsAndApplicationsHoldRoles();
+    await applicationPermissions();
     await wsTrustWithNoAppliesTo();
     await turningItOff();
     await theRegisterRefuses();
@@ -1377,7 +1488,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_roles")
-  .description("Drive the mock STS's role register and the issuance sites it " +
+  .description("Drive IYA STS's role register and the issuance sites it " +
       "gates, in a throwaway trust realm: the claim, a narrowed application " +
       "refusing at the token endpoint in OAuth's own words, a group and an " +
       "application holding roles, WS-Trust's optional AppliesTo, and the off " +

@@ -25,6 +25,10 @@ POST /scim/v2/Users {"userName": "dave"}
 That is the whole design: the interesting property of a SCIM endpoint is that
 what it writes is what everything else then reads.
 
+It is also a **SCIM 2.0 client** (#552): each realm can push its people and
+groups to any number of remote SCIM service providers. See
+[The outbound SCIM client](#the-outbound-scim-client) below.
+
 ## Features
 
 ### Resources and operations
@@ -117,6 +121,25 @@ is accepted** and logged, because this directory does no referential integrity.
 entry with `origin: scim` and no row on `/admin/users` until they sign in
 somewhere.
 
+### A service deployed in several regions
+
+When this service runs as several regional cells, each person is homed in one
+of them and their data stays there. SCIM follows the person:
+
+* a request about one person (`/Users/{id}`) is answered by the region they
+  are homed in, whichever region your client reached;
+* a new person is homed in the region named by
+  `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:homeCell` (a region
+  id; write-only and never returned), or in the realm's default region. A
+  region the realm may not home people in is refused. A later write cannot
+  move a person: that is an administrator's act;
+* a list or a search returns the people of the region that answered;
+* a Group write whose members are homed in more than one region, and a
+  BulkRequest whose operations are, are refused whole (400 `invalidValue`).
+  Send one request per region's people.
+
+A service deployed as one region ignores `homeCell`.
+
 ### Attribute mapping
 
 Each SCIM member is stored in one LDAP attribute. For example, `userName` is
@@ -208,8 +231,7 @@ is spent once across every node.
 
 HOBA's signature is RSA with SHA-256 over RFC 7486 section 5's length-prefixed
 blob. The key is registered at `POST /.well-known/hoba/register` — in
-development unauthenticated, for the reason `POST /tls/trust` is: it is how a
-caller **gets** a credential — and it lands on the person's own directory entry
+development unauthenticated: it is how a caller **gets** a credential — and it lands on the person's own directory entry
 as `hobaPublicKey`, so an `ldapsearch` and `/admin/users` show it. A HOBA
 credential names its key by id alone, which is why a key id already registered
 to another account is refused in every mode. In development the shared Digest
@@ -295,7 +317,7 @@ address on the strength of it.
 | `scim.maxResults` | `SCIM_MAX_RESULTS` | `200` | yes | The largest page a list or search returns, published as `filter.maxResults`; a larger `count` is clamped. |
 | `scim.bulkMaxOperations` | `SCIM_BULK_MAX_OPERATIONS` | `100` | yes | How many operations one Bulk request may carry, published as `bulk.maxOperations`. |
 | `scim.bulkMaxPayloadSize` | `SCIM_BULK_MAX_PAYLOAD_SIZE` | `1048576` | yes | The largest Bulk body in bytes, published as `bulk.maxPayloadSize` and checked against that number. |
-| `scim.authDiscovery` | `SCIM_AUTH_DISCOVERY` | `false` | yes | Whether the three discovery documents also need a credential. |
+| `scim.authDiscovery` | `SCIM_AUTH_DISCOVERY` | `false` | yes | Whether the three discovery documents also need a credential. Off is what RFC 7643 section 5 asks (authenticationSchemes SHOULD be readable without prior authentication); **on departs from it**. |
 | `scim.inventOnCreate` | `SCIM_INVENT_ON_CREATE` | `true` | yes | Development mode only: fill a provisioned person in with the invented persona and the /admin/vc attributes the client did not send. Off, a create writes exactly what was sent. |
 | `scim.authRealm` | `SCIM_AUTH_REALM` | `SCIM` | yes | The protection space in every challenge; Digest and HOBA credentials are computed over it. |
 | `scim.scopeRead` | `SCIM_SCOPE_READ` | `scim:read` | yes | The OAuth scope needed to read, published in `scopes_supported`. |
@@ -417,9 +439,319 @@ Two things it does *not* do look as though they are handled:
 recorded under an `STS-SCIM-NNNN` code on the audit row and never sent to a
 client. See [error codes](error-codes.md).
 
+## The outbound SCIM client
+
+The other direction: this service as a SCIM **client**, pushing a realm's
+people and groups to a remote SCIM 2.0 service provider — another identity
+provider, a SaaS application, or another realm of this service. A realm may
+have any number of clients, and each pushes to one service provider.
+
+```
+a person's entry changes in the realm's directory
+    -> one delivery queued per client, per resource
+    -> the scim-client.deliver job sends it:  POST / PUT / PATCH / DELETE
+    -> the service provider holds the person, keyed by externalId = entryUUID
+```
+
+### Creating a client
+
+On **Protocols → SCIM**, the **Clients** tab lists every client of the realm
+with its queue counts and its pause, and has a form to add one. Each client has
+a page of its own (`/admin/scim?client=<identifier>`) with its configuration,
+what its service provider's discovery said, its retry queue, its dead letters
+and the actions below.
+
+Every action is also an operation of the management API, under
+`POST /admin-api/scim/clients/{action}`, and the list and one client's page are
+`GET /admin-api/scim/clients` (with `?client=<identifier>`):
+
+```
+POST /admin-api/scim/clients/add-client
+{ "identifier": "partner-idp", "name": "Partner IdP",
+  "baseUrl": "https://idp.example.com/scim/v2",
+  "authMethod": "oauth2",
+  "tokenEndpoint": "https://idp.example.com/oauth2/token",
+  "oauthClientId": "iya-sts", "oauthClientSecret": "<a secret>",
+  "scopeMode": "groups", "scopeGroups": "staff",
+  "groupMode": "member-groups", "deprovision": "deactivate",
+  "reconcileMinutes": "1440", "enabled": "true" }
+```
+
+A client is an **application entry** declared for the
+`scim-client` protocol family, so it also appears on **Applications**. Its
+credentials — a Basic password, an OAuth client secret, a TLS private key —
+are **sealed on the entry** and never shown again: a page and an API answer
+say only `passwordSet`, `oauthClientSecretSet` and `tlsPrivateKeySet`. They are
+write-only; on a change, a credential left out keeps the one set. A new client
+is **off** until `enabled` is `true`.
+
+An add or a change is refused (`STS-SCIMC-0017`) when:
+
+* the base URI is not `https`, carries a user name or password, or carries a
+  query or fragment (RFC 7644 sections 7.2, 7.1 and 1.3). Plain `http` is
+  accepted only in development mode with `scimClient.allowHttp` on;
+* a value is outside its closed set, or the authentication method lacks what it
+  needs (a user name and password; a token endpoint, client_id and secret);
+* the client would not authenticate at all: `authMethod` `none` needs a TLS
+  client certificate;
+* the LDAP scope filter does not parse (RFC 4515), or a certificate, private
+  key or CA certificate does not.
+
+A client that is saved but cannot be used yet — waiting for its issued
+certificate, say — is listed with the reason, and nothing is sent for it.
+
+### Authenticating to the service provider
+
+| `authMethod` | What is sent |
+|---|---|
+| `basic` | HTTP Basic with `username` and `password` |
+| `oauth2` | A Bearer token from `tokenEndpoint` by the `client_credentials` grant, with `oauthScope` and `oauthResource` (RFC 8707) when set, the client authenticating with `client_secret_basic` (the default) or `client_secret_post` (`oauthClientAuth`). The token is cached until a minute before it expires; a `401` on a cached token gets **one** fresh token and one more try |
+| `none` | Nothing but the TLS client certificate |
+
+**A TLS client certificate** (`tlsSource`) is presented with any of the three,
+so it can stand alone or sit beside Basic or OAuth:
+
+* `issued` — **Issue certificate** on the client's page
+  (`issue-certificate`) issues one from the realm's own certificate authority
+  (the `tls-client` Issuing CA). The service provider must trust this
+  service's Root; the answer carries it (`rootPem`).
+* `uploaded` — paste `tlsCertificate` (PEM, a chain allowed) and
+  `tlsPrivateKey` (PEM).
+* `none` — no certificate.
+
+**The service provider's certificate is always verified, host name
+included** (RFC 7644 section 7.2), against the public roots plus the client's
+own `caCertificates` and the file named by `scimClient.caFile`. Give a private
+service provider's CA there. `scimClient.skipTlsVerification` turns the check
+off in development mode only, with a warning in the log; product mode ignores
+it.
+
+### Who is pushed, and which groups
+
+**Scope** (`scopeMode`) says which people:
+
+| | |
+|---|---|
+| `all` | every person in the realm |
+| `groups` | the members of the groups named in `scopeGroups` (by `cn` or DN) |
+| `filter` | the people an RFC 4515 LDAP filter (`scopeFilter`) matches, such as `(departmentNumber=42)`. Credential attributes cannot be matched on. A filter that cannot be evaluated puts nobody in scope (`STS-SCIMC-0022`) |
+
+**Groups** (`groupMode`) says which groups go:
+
+| | |
+|---|---|
+| `none` | no group (the default) |
+| `selected` | the groups named in `groups` |
+| `member-groups` | every group that has at least one person in scope |
+| `all` | every group of the realm |
+
+A pushed group's members are **only the people in scope** who are already at
+the service provider and active there. A member that is a group, not a person,
+is not sent. A member not there yet is pushed first, and the group again once
+they are (RFC 7643 section 4.2: a member's `value` is the service provider's
+id).
+
+**Deprovisioning** (`deprovision`) says what happens at the service provider to
+a person who leaves the scope or is deleted:
+
+* `deactivate` (the default) — `active: false`;
+* `delete` — a `DELETE`.
+
+**A disabled account is always `active: false`**, whatever `deprovision` says:
+a disabled person is still in scope, and is replaced with `active` false. A
+group that leaves the scope is deleted there.
+
+### What the client sends (RFC 7643 and RFC 7644)
+
+* **Discovery first.** Before it writes anything the client reads
+  `/ServiceProviderConfig` (PATCH, filtering and its `maxResults`, ETags) and
+  `/ResourceTypes` (the User and Group endpoints, and their **required** schema
+  extensions). What it learns is kept for ten minutes. **Test connection**
+  (`test-connection`) and a reconciliation read it again. A service provider
+  that cannot be reached holds the delivery as a failure. One that answers but
+  not with SCIM is assumed to support `/Users` and `/Groups` and nothing
+  optional (`STS-SCIMC-0019`). `authenticationSchemes` and `bulk` are shown on
+  the client's page and used for nothing: the client authenticates as it is
+  configured, and it never sends a Bulk request.
+* **`application/scim+json`** both ways.
+* **A User** is this service's own SCIM mapping of the entry — the same
+  resource `/scim/v2` would answer — without `id`, `meta`, `groups` or a
+  password, with no extension but the enterprise one, and with **`externalId`
+  set to the entry's `entryUUID`**. A `manager` is sent as the service
+  provider's id for that person, or not at all. When `/ResourceTypes` marks the
+  enterprise extension required, it is sent, empty if need be. Any other
+  required extension is one the client has no values for: the resource is
+  not sent and the delivery is a dead letter naming it (`STS-SCIMC-0029`). A
+  User without `userName`, or a Group without `displayName`, is not sent
+  (`STS-SCIMC-0030`).
+* **Create** is a `POST`. The returned `id` (and ETag) are kept as the
+  resource's link. A **`409` with `scimType` `uniqueness` adopts** the resource
+  already there: the client looks for it by `externalId`, then by `userName` or
+  `displayName`, and replaces it rather than trying again (RFC 7644 section
+  3.3). This needs the service provider to support filtering. A `409` with any
+  other `scimType`, or none, is a dead letter; nothing is adopted on a guess.
+* **Replace** is a `PUT` of everything this client owns to the linked id. An
+  attribute the client sent before and the entry no longer has is sent as
+  `null`, or `[]` for a multi-valued one, so the service provider clears it
+  (RFC 7644 section 3.5.1). A `404` there creates the resource again.
+* **Groups** are changed by `PATCH` where the service provider supports it:
+  `replace` of `displayName`, `add` of the new members, and one `remove` per
+  departed member by `members[value eq "<id>"]`. Otherwise they are replaced by
+  `PUT`. Deactivation is a `PATCH` of `active`, or a `GET` then a `PUT`.
+* **Delete** is a `DELETE`. A `404` means it is already done.
+* **ETags**, where the service provider supports them: `If-Match` on every
+  `PUT`, `PATCH` and `DELETE`. A `412`, or a `400` with `scimType`
+  `invalidVers`, re-reads the version and tries again, up to
+  `scimClient.etagRetries` times (`STS-SCIMC-0021`).
+* **Lookups and lists.** A filter is `attribute eq "value"` with the value
+  JSON-escaped, so a quote in a name cannot end it. A reconciliation lists the
+  service provider's resources page by page from `startIndex` 1. When a list
+  answer has no `totalResults`, it keeps paging until a page is empty or
+  brings nothing new. A resource seen twice counts once.
+* **`tooMany`** (a `400` with that `scimType`, RFC 7644 section 3.4.2)
+  narrows the query rather than failing. An `externalId` lookup is asked again
+  for a page of two. A listing halves its page until it is answered, down to
+  one, and then, where filtering is supported, asks only for resources with an
+  `externalId` (`externalId pr`). Past that it fails (`STS-SCIMC-0028`).
+* **Errors** are read as RFC 7644 section 3.12's Error body, whether its
+  `status` is a string or a number. Its `scimType` is recorded on the dead
+  letter; its `detail` is not, because it often quotes the refused value.
+  Three `scimType`s change what the client does: `tooMany`, `uniqueness` and
+  `invalidVers`, as above. `mutability` is a dead letter: the service provider
+  holds that attribute as immutable, and a re-read cannot change what the
+  client would send.
+* **No credential, token or filter value is ever logged** (RFC 7644 section
+  7.5.2), and none reaches a page, an API answer or an audit row.
+
+### Delivery, retries and dead letters
+
+Every change the directory makes to a person — created, changed, disabled or
+deleted — and every change to who is in a group queues **one delivery per
+enabled client and per resource**: the person, and the groups they are in.
+A group no person's change touches — an empty one created, say — goes at the
+next reconciliation. The row carries no data. The resource
+is read as it is when the row is sent, so several changes to one person become
+one request, and changes to one resource are sent in order, one at a time.
+Different resources go in parallel, up to `scimClient.concurrency`.
+
+The cluster scheduler job **`scim-client.deliver`** (every
+`scimClient.sweepS`, on one node) sends what is due, so a directory change is
+sent within one sweep. A reconciliation, a retry and `deliver-now` also send
+at once. There is no timer of the client's own.
+
+**Each client has its own retry queue and dead-letter queue**, shown on its
+page:
+
+* **queued** — never attempted yet;
+* **retrying** — failed with something worth repeating, due again later;
+* **dead** — a final failure, with its error code and reason, kept until an
+  operator acts.
+
+Only a **network failure, a timeout, `429`, `500`, `502`, `503` and `504`** are
+retried, up to `scimClient.attempts`, with an exponential backoff
+(`scimClient.backoffMs`, doubled each attempt, full jitter, capped at
+`scimClient.maxBackoffMs`) that waits at least as long as a `Retry-After`
+asks. Everything else — a `400`, `401`, `403`, a `409` that is not
+`uniqueness`, a `404` other than on a delete, a `501` — is a dead letter at
+once. **`408` is not retried.**
+
+**A struggling service provider pauses its client.** A network failure, a
+timeout, `429` or a `5xx` stops every delivery of that client until the pause
+ends. The pause doubles with each such failure in a row (the same backoff,
+capped). When it ends, **one** delivery goes first as a probe, and the rest
+follow only after a success. The pause is shared by every node.
+
+A dead letter **stays dead**. A later change to that resource marks it as
+waiting, and is sent when the dead letter is retried, because the retry sends
+the resource as it is then. A change still unsent after `scimClient.retentionS`
+becomes a dead letter (`STS-SCIMC-0012`).
+
+| Action | What it does |
+|---|---|
+| `retry-delivery` (`{"id": "<delivery id>"}`) | sends one dead letter again |
+| `retry-dead` | sends every dead letter of the client again |
+| `purge-dead` | deletes every dead letter of the client |
+| `deliver-now` | lifts the client's pause and sends everything pending now |
+
+### Reconciliation
+
+**Reconcile** (`reconcile`) queues every person and group in the client's
+scope. It then lists what the service provider holds and queues a
+deprovisioning for every resource whose `externalId` this client linked, or
+is an entry of this realm, that is no longer in scope. Resources with any
+other `externalId` belong to somebody else and are left alone. A person
+already deactivated there is left alone unless deprovisioning is `delete`.
+
+Only an enabled client that is usable is reconciled; a disabled one is
+refused (`STS-SCIMC-0017`).
+
+A client can also be reconciled **on a schedule**: `reconcileMinutes`
+(`0`, the default, is off) on the client. The cluster scheduler job
+**`scim-client.reconcile`** runs every `scimClient.reconcileCheckS` and
+reconciles each client whose interval has come round. Only an enabled, usable
+client is reconciled on a schedule. Its last result is on the client's page.
+
+### Removing a client
+
+`remove-client` deletes the application entry with its credentials, queues,
+links and pause. **Nothing at the service provider changes**: what was pushed
+stays there.
+
+### What it does not do
+
+* **Bulk** (RFC 7644 section 3.7). Every change is its own request.
+* **Choose a scheme from `authenticationSchemes`.** It authenticates as
+  configured.
+* **Send a password**, or this service's own User extension.
+* **Push a group nested in a group** as a member.
+* **Run across cells.** In a service deployed as [cells](cells.md), a person
+  is pushed from their home cell, and groups, moves between cells and data
+  residency are not handled yet (#553).
+* **Delete what it pushed when a client is removed.**
+
+### Settings
+
+`scimClient.attempts`, `timeoutMs`, `backoffMs`, `maxBackoffMs`, `leaseMs`,
+`sweepS`, `retentionS`, `maxRows`, `concurrency`, `summaryS`,
+`reconcileCheckS`, `pageSize`, `etagRetries`, `allowHttp`,
+`skipTlsVerification` and `caFile` apply to every client in a realm.
+[Configuration → SCIM client](configuration.md#scim-client) has the table. A
+client's own configuration is its application entry's `scimClient*`
+attributes.
+
+### Error codes
+
+Every failure of the client is recorded under an `STS-SCIMC-NNNN` code: on the
+dead letter, on the `scim-client.delivery`, `scim-client.reconcile`,
+`scim-client.change` and `scim-client.queue` audit rows, and at the front of
+a log line. The most common:
+
+| Code | Meaning |
+|---|---|
+| `STS-SCIMC-0001` | the client is gone or disabled; its queued change is dead |
+| `STS-SCIMC-0002`, `0003`, `0004` | an unusable URL, plain `http`, or unusable TLS material — nothing is sent |
+| `STS-SCIMC-0005`, `0006` | a timeout, a network or TLS failure — retried |
+| `STS-SCIMC-0007` | a refusal no second try changes (`400`, `408`, a `409` that is not `uniqueness`, …) |
+| `STS-SCIMC-0008` | another error status; `429` and `5xx` are retried and pause the client |
+| `STS-SCIMC-0009`, `0010` | the credential, token or certificate was refused; the token request failed |
+| `STS-SCIMC-0017` | a client definition was refused |
+| `STS-SCIMC-0019` | discovery could not be read |
+| `STS-SCIMC-0020` | a `409 uniqueness` with nothing to adopt |
+| `STS-SCIMC-0021` | stale too often (`412` / `invalidVers`) |
+| `STS-SCIMC-0026` | more than one resource there with this entry's `externalId` |
+| `STS-SCIMC-0028` | `tooMany`, even narrowed |
+| `STS-SCIMC-0029` | a required schema extension the client cannot send |
+| `STS-SCIMC-0030` | a required attribute missing |
+
+[Error codes](error-codes.md) lists all of them.
+
 ## Related
 
 * [LDAP](ldap.md): the directory SCIM writes into
+* [Applications](applications.md): an outbound SCIM client is an application
+  entry
+* [Configuration → Scheduler](configuration.md#scheduler): the cluster
+  scheduler `scim-client.deliver` and `scim-client.reconcile` run on
 * [OAuth 2.0 and OpenID Connect](oauth-oidc.md): where a `scim:*` token
   comes from
 * [OAuth security](oauth-security.md): DPoP and certificate-bound tokens

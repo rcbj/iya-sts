@@ -1,0 +1,14 @@
+{
+  "heading": "Qui peut agir en votre nom",
+  "sub": "Une application ou une personne que vous désignez ici peut demander à ce service un jeton en votre nom en échangeant l’un des vôtres (échange de jetons RFC 8693). Chaque jeton d’accès émis à votre sujet l’indique dans sa revendication <code>may_act</code>, et l’échange d’un tel jeton par QUICONQUE D’AUTRE est refusé. Vous pouvez désigner une seule partie.",
+  "currentPerson": "La partie qui peut agir en votre nom est <code>{dn}</code> (une personne).",
+  "currentApplication": "La partie qui peut agir en votre nom est <code>{dn}</code> (une application).",
+  "currentStale": "La partie qui peut agir en votre nom est <code>{dn}</code> — qui ne désigne plus rien dans cet annuaire, si bien que vos jetons ne portent aucun <code>may_act</code>.",
+  "nobody": "Vous n’avez désigné personne. Vos jetons d’accès ne portent aucune revendication <code>may_act</code>.",
+  "notDelegated": "Un administrateur a marqué votre compte comme ne pouvant pas être délégué : personne ne peut donc agir en votre nom, quoi que vous désigniez ici.",
+  "dnLabel": "Son nom dans l’annuaire (DN)",
+  "name": "Le désigner",
+  "clear": "Ne désigner personne",
+  "doneSet": "Votre délégué est enregistré.",
+  "doneCleared": "Vous n’avez désigné personne."
+}

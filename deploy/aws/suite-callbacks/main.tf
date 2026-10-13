@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
 # THE SUITE'S CALLBACK HALF, IN THE ENVIRONMENT'S VPC, FOR THE LENGTH OF ONE
@@ -34,8 +34,9 @@
 # ---------------------------------------------------------------------------
 
 locals {
-  prefix      = "${var.name}-${var.environment}"
-  role_prefix = "${var.name}-env-${var.environment}"
+  # A cell's names carry the cell (#98, ../environment/locals.tf).
+  prefix      = var.cell != "" ? "${var.name}-${var.environment}-${var.cell}" : "${var.name}-${var.environment}"
+  role_prefix = var.cell != "" ? "${var.name}-env-${var.environment}-${var.cell}" : "${var.name}-env-${var.environment}"
   env         = data.terraform_remote_state.environment.outputs
   ecr_url     = data.aws_ecr_repository.main.repository_url
 
@@ -44,9 +45,15 @@ locals {
 
   # Every port the load balancer publishes, admitted from the NAT address, so
   # the jobs reach the service exactly as any client does.
-  listener_ports = { for k, p in local.env.load_balancer_ports : k => p.listener }
+  # And the default realm's two SPIFFE ports (environment/spiffe_default.tf),
+  # which the suite's SPIFFE jobs dial (#311).
+  listener_ports = merge(
+    { for k, p in local.env.load_balancer_ports : k => p.listener },
+    { for k, p in try(local.env.spiffe_default_ports, {}) : "spiffe-${k}" => p },
+  )
+  ldap_host = try(local.env.public_hostname, "") != "" ? local.env.public_hostname : local.env.nlb_dns_name
 
-  pep_subject = "CN=remote-pep-1,OU=remote-peps,O=mock-sts"
+  pep_subject = "CN=remote-pep-1,OU=remote-peps,O=iya-sts"
   pep_name    = "remote-pep-1"
   pep_realm   = "pep-e2e"
 
@@ -57,7 +64,7 @@ locals {
     options = {
       awslogs-group         = local.env.container_log_group
       awslogs-region        = var.aws_region
-      awslogs-stream-prefix = "${var.environment}-callbacks"
+      awslogs-stream-prefix = var.cell != "" ? "${var.environment}-${var.cell}-callbacks" : "${var.environment}-callbacks"
     }
   }
 }
@@ -67,9 +74,11 @@ locals {
 data "terraform_remote_state" "environment" {
   backend = "s3"
   config = {
-    region = var.aws_region
+    # The BUCKET's region, and the cell's own state in a multi-cell
+    # environment (#98).
+    region = var.state_region
     bucket = "${var.name}-terraform-state-${data.aws_caller_identity.current.account_id}"
-    key    = "environment/${var.environment}.tfstate"
+    key    = var.cell != "" ? "environment/${var.environment}/${var.cell}.tfstate" : "environment/${var.environment}.tfstate"
   }
 }
 
@@ -155,7 +164,7 @@ resource "aws_route_table_association" "callbacks" {
 
 resource "aws_security_group" "callbacks" {
   name        = "${local.prefix}-callbacks"
-  description = "mock-sts ${var.environment}: the suite callback task, reachable from the nodes only"
+  description = "iya-sts ${var.environment}: the suite callback task, reachable from the nodes only"
   vpc_id      = data.aws_vpc.main.id
   tags        = { Name = "${local.prefix}-callbacks" }
 }
@@ -195,6 +204,29 @@ resource "aws_vpc_security_group_ingress_rule" "nlb_from_callbacks" {
   to_port           = each.value
 }
 
+# AND FROM THE TASK ITSELF, where the environment answers its public name
+# inside the VPC (#311, environment/dns.tf): the task then reaches the load
+# balancer's private addresses from its own, not through the NAT gateway.
+resource "aws_vpc_security_group_ingress_rule" "nlb_from_callbacks_inside" {
+  for_each                     = local.listener_ports
+  security_group_id            = data.aws_security_group.nlb.id
+  description                  = "Port ${each.value} from the suite callback task, inside the VPC"
+  referenced_security_group_id = aws_security_group.callbacks.id
+  ip_protocol                  = "tcp"
+  from_port                    = each.value
+  to_port                      = each.value
+}
+
+resource "aws_vpc_security_group_egress_rule" "callbacks_to_nlb" {
+  for_each                     = local.listener_ports
+  security_group_id            = aws_security_group.callbacks.id
+  description                  = "Port ${each.value} to the load balancer, inside the VPC"
+  referenced_security_group_id = data.aws_security_group.nlb.id
+  ip_protocol                  = "tcp"
+  from_port                    = each.value
+  to_port                      = each.value
+}
+
 # --- The task -----------------------------------------------------------------
 
 data "aws_iam_policy_document" "ecs_tasks_trust" {
@@ -214,7 +246,7 @@ data "aws_iam_policy_document" "ecs_tasks_trust" {
 
 resource "aws_iam_role" "callbacks" {
   name                 = "${local.role_prefix}-callbacks"
-  description          = "mock-sts ${var.environment}: the suite callback task uploads its report"
+  description          = "iya-sts ${var.environment}: the suite callback task uploads its report"
   assume_role_policy   = data.aws_iam_policy_document.ecs_tasks_trust.json
   permissions_boundary = data.aws_iam_policy.workload_boundary.arn
 }
@@ -324,8 +356,23 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "STS_REPORTS_BUCKET", value = local.env.reports_bucket },
         { name = "AWS_REGION", value = var.aws_region },
         { name = "STS_TEST_CLUSTER_NODES", value = tostring(length(local.env.ecs_services)) },
-        { name = "STS_LDAP_URL", value = "ldap://${local.env.nlb_dns_name}:${local.env.load_balancer_ports.ldap.listener}" },
+        # The public name where there is one: LDAPS is verified against the
+        # certificate, which names it and not the load balancer (#311).
+        { name = "STS_LDAP_URL", value = "ldap://${local.ldap_host}:${local.env.load_balancer_ports.ldap.listener}" },
         { name = "STS_LDAP_PORT", value = tostring(local.env.load_balancer_ports.ldap.listener) },
+        # THE BULK LOADS AS ./run-tests.sh RUNS THEM (#311): rcbj's sizes for
+        # every mode (1000 people, 10 groups of 100; tests/tools/modes.sh,
+        # 2026-09-27) and the bulk lane LAST, as the cluster mode runs it —
+        # beside the protocol jobs, 5000-person loads on a cluster starved
+        # them and were killed at the watchdog. The in-AWS run 4 had neither,
+        # and lost all three loads to the 30-minute watchdog.
+        { name = "BULK_USERS", value = "1000" },
+        { name = "BULK_GROUPS", value = "10" },
+        { name = "BULK_MEMBERS_PER_GROUP", value = "100" },
+        { name = "STS_TEST_BULK_LAST", value = "1" },
+        # One supplied certificate on every node where there is a public name
+        # (sts_ldaps reads it, #311).
+        { name = "STS_TEST_SHARED_LEAF", value = try(local.env.public_hostname, "") != "" ? "1" : "0" },
         { name = "XACML_PEP_URL", value = "http://localhost:9090" },
         { name = "XACML_PEP_HTTPS_URL", value = "https://localhost:9443" },
         { name = "XACML_PEP_SERVER_CERT_DIR", value = "/shared/pep/server" },

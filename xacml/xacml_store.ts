@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -81,7 +81,8 @@
 // before anything listens, and against the directory already installed.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
+// The one place this service hashes (#453).
+import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 // The error-code registry (a leaf). A refused write's code is marked on the
 // RESULT as a non-enumerable property, so the console and `/admin-api` can mark
@@ -272,8 +273,9 @@ const parsedCount = cacheRegistry.register({
 // answers something the moment it starts, and the policy repository follows
 // the same rule for the same reason: a PDP with an empty repository answers
 // NotApplicable to everything, which is indistinguishable from a PDP that is
-// broken. One policy, seeded, makes `GET /xacml/protected?subject=alice`
-// mean something before anybody has authored anything.
+// broken. One policy, seeded, makes `POST /xacml/pdp` about alice — and a
+// remote PEP's `GET /protected?subject=alice` — mean something before
+// anybody has authored anything.
 //
 // IT IS A REAL POLICY AND NOT A PLACEHOLDER. Role-based, in the shape the
 // OASIS RBAC profile takes: a permission is granted to a role, and the role
@@ -299,7 +301,7 @@ const SEED_DOCUMENT = [
   '        RuleCombiningAlgId="urn:oasis:names:tc:xacml:3.0:' +
     'rule-combining-algorithm:deny-unless-permit">',
   '  <Description>',
-  '    Seeded by the mock STS so that the PDP answers something before',
+  '    Seeded by IYA STS so that the PDP answers something before',
   '    anybody has authored a policy. Anyone whose directory entry carries',
   '    employeeType=staff may GET; anyone with employeeType=admin may do',
   '    anything. Everybody else is denied, because deny-unless-permit cannot',
@@ -373,6 +375,31 @@ class XacmlStore {
    * carries, published on `/admin/ldap/*`.
    */
   static readonly SCHEMA = SCHEMA;
+
+  /**
+   * The `/admin-api` route whose answer carries this module's prose (#543
+   * phase 2b): `/admin/ldap/policies`, which publishes SCHEMA. No other
+   * answer carries it.
+   */
+  static readonly PROSE_ROUTES: readonly string[] =
+    Object.freeze(['/admin-api/ldap/policies']);
+
+  /**
+   * Extracts this module's console prose (#543 phase 2b): the object
+   * class's and each attribute's `what` in SCHEMA.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering XacmlStore.prose().");
+    // Lazily, which is safe wherever this module sits in the require order;
+    // the extractor is the only caller.
+    const serverProse: typeof import('../common/server_prose') =
+      require('../common/server_prose');
+    const out = serverProse.harvest('xacmlPolicies.schema', SCHEMA, ['what']);
+    helpers.log.debug("Leaving XacmlStore.prose(). " + Object.keys(out).length);
+    return out;
+  }
   /**
    * The entry name of the seeded policy, `seeded-rbac`.
    */
@@ -407,7 +434,7 @@ class XacmlStore {
       errorCodes: errorCodes,
       xml: xml,
       sha256Hex: function (text: string): string {
-        return crypto.createHash('sha256').update(text).digest('hex');
+        return crypto.digest('sha256', text, 'hex');
       }
     };
     helpers.log.debug("Leaving XacmlStore.defaultDeps().");
@@ -951,6 +978,10 @@ export = {
   installInstance: (instance: XacmlStore): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
   SCHEMA: XacmlStore.SCHEMA,
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: XacmlStore.PROSE_ROUTES,
+  prose: XacmlStore.prose,
   SEED_NAME: XacmlStore.SEED_NAME,
   SEED_DOCUMENT: XacmlStore.SEED_DOCUMENT,
   seed: seedFacade,

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -222,7 +222,7 @@ async function test() {
                          supports: both })]
   }, { enableInteropTests: true });
   log.info("=== 1. the suite, but tests/60-sd-interop.js ===");
-  const run = kit.runMocha(dir, ctx, { files: suiteFiles(dir) });
+  const run = await kit.runMocha(dir, ctx, { files: suiteFiles(dir) });
   kit.judge(SUITE, run.tests, EXCEPTIONS, PENDING);
   log.info("=== 2. ecdsa-sd-2023 interop, the holder named ===");
   await sdInterop(ctx, dir);

@@ -1,0 +1,10 @@
+{
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "Un identifiant de session est le témoin et un artefact s’échange en le présentant ; un nom en clair constituait donc un identifiant utilisable dans un vidage. Depuis #222, la ligne est trouvée par le condensat à clé du nom et le nom est scellé, ouvert uniquement par une restauration ou par le lecteur d’une modification."
+  },
+  "encryption.notes.storage": {
+    "en": "18686e2b1d638124",
+    "text": "TOUT CE QUI NE FIGURE PAS DANS LA TABLE CI-DESSUS EST EN CLAIR DANS LE MAGASIN — les entrées d’annuaire, les groupes, les applications, les domaines et les paramètres, et en mode développement presque tout. Ce service scelle les identifiants et les clés privées et rien d’autre, délibérément : le chiffrement au niveau des colonnes laisse le texte en clair dans le journal d’écriture anticipée, dans les fichiers temporaires lorsqu’un tri déborde, dans un pg_dump, sur les réplicas et dans les journaux de requêtes ; la couche qui couvre un magasin entier se situe donc SOUS la base de données plutôt qu’à l’intérieur. Cette couche relève de l’opérateur — LUKS ou un jeu de données ZFS chiffré sous PGDATA, un disque infonuagique avec une clé gérée par le client, ou l’un des forks de PostgreSQL qui disposent de TDE, puisque la version communautaire n’en a pas. docs/encryption-at-rest.md est la description des options rédigée par ce dépôt."
+  }
+}

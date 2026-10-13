@@ -1,0 +1,226 @@
+{
+  "nodehealth.s.notLinux": {
+    "en": "ac134999be57211b",
+    "text": "Este nodo no se ejecuta en Linux ({{platform}}), así que no hay archivos de cgroup que leer."
+  },
+  "nodehealth.s.noCgroup": {
+    "en": "cfb5ff8634555626",
+    "text": "No hay ningún cgroup en {{root}}: ni cgroup v2 ({{why}}) ni controlador memory o cpuacct de cgroup v1."
+  },
+  "nodehealth.s.noCgroupShort": {
+    "en": "1d7d3ad5d4c2cff6",
+    "text": "Sin cgroup."
+  },
+  "nodehealth.s.cpuUnreadable": {
+    "en": "b432aeb2d043a073",
+    "text": "No se puede leer el tiempo de CPU del contenedor: {{source}} — {{why}}."
+  },
+  "nodehealth.s.cpuOnce": {
+    "en": "57b1b0ecc3ad0f76",
+    "text": "El tiempo de CPU del contenedor se pudo leer una vez y no una segunda: {{why}}."
+  },
+  "nodehealth.s.cpuQuota": {
+    "en": "8b09a34dcc8f0d59",
+    "text": "El contenedor puede usar {{vcpus}} vCPU ({{version}}, {{file}}), y el porcentaje es sobre eso."
+  },
+  "nodehealth.s.cpuNoFile": {
+    "en": "6b6c407a2b6d6ed9",
+    "text": "Este cgroup ({{version}}) no tiene {{file}}, así que no tiene cuota de CPU propia; el porcentaje es sobre las {{cpus}} CPU que node informa como disponibles (os.availableParallelism())."
+  },
+  "nodehealth.s.cpuUnlimited": {
+    "en": "8adcac77773bed89",
+    "text": "Sin cuota de CPU ({{version}}, {{file}} indica ninguna): el contenedor puede usar todas las CPU que le dé el host, y el porcentaje es sobre las {{cpus}} CPU que node informa como disponibles (os.availableParallelism())."
+  },
+  "nodehealth.s.noThrottling": {
+    "en": "bfb9a25b633fb541",
+    "text": "El cgroup no tiene contadores de limitación: sin cuota no hay nada contra lo que limitar."
+  },
+  "nodehealth.s.noV1Memory": {
+    "en": "5723c888e24a6c87",
+    "text": "Este host con cgroup v1 no tiene controlador de memoria para este proceso."
+  },
+  "nodehealth.s.memoryUnreadable": {
+    "en": "cccf53439f4218fb",
+    "text": "No se puede leer la memoria del contenedor: {{source}} — {{why}}."
+  },
+  "nodehealth.s.memoryLimit": {
+    "en": "43bd4f8d1fca16b6",
+    "text": "El contenedor puede usar {{mib}} MiB ({{version}}, {{file}})."
+  },
+  "nodehealth.s.memoryNoFile": {
+    "en": "0a4e77f5cdd09462",
+    "text": "Este cgroup ({{version}}) no tiene {{file}}, así que no tiene límite de memoria propio y no hay porcentaje que dar."
+  },
+  "nodehealth.s.memoryUnlimited": {
+    "en": "05d48cbc055b3dcc",
+    "text": "Sin límite de memoria ({{version}}, {{file}} indica ninguno), así que no hay porcentaje que dar."
+  },
+  "nodehealth.s.memoryStat": {
+    "en": "eca3a32e60df5435",
+    "text": "{{anon}} es la memoria propia de los procesos; {{file}} es caché de páginas que el kernel recupera bajo presión antes de matar nada."
+  },
+  "nodehealth.s.memoryNoStat": {
+    "en": "27d7d62f39225e1a",
+    "text": "No se puede leer memory.stat, así que no se sabe de qué está compuesta la memoria."
+  },
+  "nodehealth.s.ecsMemoryContainer": {
+    "en": "663d3b0c433cdcd5",
+    "text": "Del agente de ECS (/task/stats), porque aquí no se puede leer el cgroup. El límite es el del contenedor, tal como lo informa el agente."
+  },
+  "nodehealth.s.ecsMemoryTask": {
+    "en": "4709f1b3e88ece76",
+    "text": "Del agente de ECS (/task/stats), porque aquí no se puede leer el cgroup. El contenedor no tiene límite propio, así que el límite es el de la TAREA de ECS, {{mib}} MiB."
+  },
+  "nodehealth.s.ecsMemoryNone": {
+    "en": "623f85e6019c9f17",
+    "text": "Del agente de ECS (/task/stats), porque aquí no se puede leer el cgroup. No hay ningún límite contra el que medir."
+  },
+  "nodehealth.s.ecsTotalOnly": {
+    "en": "738818f8f9ed3688",
+    "text": "El agente de ECS solo informa del total."
+  },
+  "nodehealth.s.taskMemoryLimit": {
+    "en": "1d50381ef5f6beb7",
+    "text": "El contenedor no tiene límite de memoria propio (cgroup v{{version}}), así que el límite es el de la TAREA de ECS, {{mib}} MiB (/task Limits.Memory), y el porcentaje es sobre eso."
+  },
+  "nodehealth.s.ecsCpuTask": {
+    "en": "46a283473a98fadd",
+    "text": "Del agente de ECS (/task/stats), entre sus dos últimas muestras, porque aquí no se puede leer el cgroup; el porcentaje es sobre las {{vcpus}} vCPU de la TAREA de ECS."
+  },
+  "nodehealth.s.ecsCpuNone": {
+    "en": "963eed85938ef0ff",
+    "text": "Del agente de ECS (/task/stats), entre sus dos últimas muestras, porque aquí no se puede leer el cgroup; la tarea no indica ningún límite de CPU, así que no hay porcentaje."
+  },
+  "nodehealth.s.ecsNoThrottling": {
+    "en": "8438e4d4c2164180",
+    "text": "El agente de ECS no informa de la limitación."
+  },
+  "nodehealth.s.taskCpuLimit": {
+    "en": "09cf5b42b5195d57",
+    "text": "El contenedor no tiene cuota de CPU propia (cgroup v{{version}}), así que el porcentaje es sobre las {{vcpus}} vCPU de la TAREA de ECS (/task Limits.CPU)."
+  },
+  "nodehealth.s.procUnreadable": {
+    "en": "6f8585ebce3cec95",
+    "text": "no se pudo leer {{file}} ({{why}})"
+  },
+  "nodehealth.s.noVmRss": {
+    "en": "d79873fa923521bb",
+    "text": "su archivo de estado no tiene VmRSS"
+  },
+  "nodehealth.s.threadProcessWide": {
+    "en": "a8a03a58820add4f",
+    "text": "el tamaño residente y el tiempo de CPU de un hilo son los de todo el proceso, así que están en la fila del proceso frontal (pid {{pid}}) y no se repiten aquí"
+  },
+  "nodehealth.s.frontProcessWide": {
+    "en": "89d33b8a5b54333d",
+    "text": "su tamaño residente y su tiempo de CPU son los de todo el proceso, incluidos los de cada hilo worker; sus cifras de heap son las de su hilo principal"
+  },
+  "nodehealth.s.roleFront": {
+    "en": "75deb58e8b2da9ac",
+    "text": "proceso frontal"
+  },
+  "nodehealth.s.roleDebugger": {
+    "en": "d6ac144f9cca9cfd",
+    "text": "api del depurador de protocolos"
+  },
+  "nodehealth.s.roleSurface": {
+    "en": "23537a06c2f897b3",
+    "text": "hilo worker de superficies alojadas {{thread}}"
+  },
+  "nodehealth.s.roleProtocol": {
+    "en": "ebf155c21104d8aa",
+    "text": "hilo worker de protocolos {{thread}}"
+  },
+  "nodehealth.s.childNoMemory": {
+    "en": "fe0107a65425b792",
+    "text": "respondió sin su memoria, así que solo se muestra su tamaño residente, a partir de /proc"
+  },
+  "nodehealth.s.childNoAnswer": {
+    "en": "669c342b6c312314",
+    "text": "{{why}}, así que solo se muestra su tamaño residente, a partir de /proc"
+  },
+  "nodehealth.s.debuggerSilent": {
+    "en": "9d943bb21aef1785",
+    "text": "no respondió en {{ms}}ms (su precarga de memoria, debugger_api_status.js, responde cuando está instalada)"
+  },
+  "nodehealth.s.threadSilent": {
+    "en": "97f9516d214ff777",
+    "text": "no respondió en {{ms}}ms"
+  },
+  "nodehealth.s.threadUnanswered": {
+    "en": "48973579a304dbb9",
+    "text": "{{why}}; un hilo no tiene una entrada propia en /proc, así que su heap no puede leerse desde fuera de él"
+  },
+  "nodehealth.s.debuggerNoPid": {
+    "en": "51c89e184c1f8aff",
+    "text": "No se pudo preguntar su pid al proceso api del depurador de protocolos: {{error}}."
+  },
+  "nodehealth.s.totals": {
+    "en": "2dff2a67ff7a9cbb",
+    "text": "Los workers de solicitudes y de superficies alojadas son HILOS del proceso frontal (#364), así que su tamaño residente y su tiempo de CPU son las propias cifras del proceso frontal y se cuentan una sola vez, en su fila. El total residente es la suma sobre los {{rss}} proceso(s) cuyo tamaño pudo leerse — el proceso frontal y el hijo api del depurador — así que las páginas que ambos comparten (entre ellas el propio código de node) se cuentan una vez por cada uno y puede superar el memory.current del contenedor. Las cifras de heap son las de los {{heap}} isolate(s) de V8 que informaron ellos mismos process.memoryUsage(): el hilo principal del proceso frontal, cada hilo worker y el hijo; un proceso hijo que no respondió a tiempo se muestra con su tamaño residente de /proc y sin heap, y un hilo worker que no lo hizo se lista como sin respuesta, ya que un hilo no tiene una entrada propia en /proc. La firma poscuántica y scrypt no tienen procesos propios desde #363: se ejecutan en el pool de hilos de libuv, y su memoria se cuenta en el proceso que los pidió."
+  },
+  "nodehealth.s.ecsNotSet": {
+    "en": "25e73265a0ab3460",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 no está establecida: este nodo no es una tarea de Amazon ECS (no está en Fargate ni en una instancia de contenedor ECS), así que no hay ningún endpoint de metadatos de tarea con el que contrastar el cgroup."
+  },
+  "nodehealth.s.ecsSilent": {
+    "en": "ea361fddcfbd6473",
+    "text": "ECS_CONTAINER_METADATA_URI_V4 está establecida, pero el endpoint de metadatos de tarea no respondió en {{ms}}ms: {{why}}."
+  },
+  "nodehealth.s.ecsPartial": {
+    "en": "2e1374baf8ec261f",
+    "text": "Parte del endpoint no respondió: {{whys}}. "
+  },
+  "nodehealth.s.ecsPartialNoStats": {
+    "en": "8f9f3b438a9519f4",
+    "text": "Parte del endpoint no respondió: {{whys}}. No hay estadísticas de este contenedor en /task/stats."
+  },
+  "nodehealth.s.ecsPartialNoStatsId": {
+    "en": "766991a4c65c4d97",
+    "text": "Parte del endpoint no respondió: {{whys}}. No hay estadísticas de este contenedor en /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsNoStats": {
+    "en": "c4a76877bec7635b",
+    "text": "No hay estadísticas de este contenedor en /task/stats."
+  },
+  "nodehealth.s.ecsNoStatsId": {
+    "en": "311637e77e640edd",
+    "text": "No hay estadísticas de este contenedor en /task/stats ({{dockerId}})."
+  },
+  "nodehealth.s.ecsText": {
+    "en": "29afe6977819399d",
+    "text": "Las propias cifras del agente de ECS para este contenedor, como contraste del cgroup: el agente toma muestras según su propio calendario, así que no coincidirán al byte ni al porcentaje."
+  },
+  "nodehealth.s.scope": {
+    "en": "0015d209990c639c",
+    "text": "Estas son las cifras del nodo {{node}} — su contenedor — obtenidas por su proceso frontal, pid {{pid}}. Cada nodo de un clúster es un contenedor propio, con sus propias cifras."
+  },
+  "nodehealth.s.machine": {
+    "en": "8664a6decee4a16b",
+    "text": "La máquina en la que se ejecuta este contenedor — en Fargate, la micro-VM; en una estación de trabajo, la estación de trabajo entera. NO el contenedor: su memoria libre y su carga no dicen nada sobre el límite del contenedor."
+  },
+  "nodehealth.s.clusterTotals": {
+    "en": "b1792e3f40531627",
+    "text": "Sobre los {{count}} nodo(s) que no han desaparecido y tienen una instantánea, incluidos los obsoletos, que se marcan. Los límites se suman solo cuando todos los nodos tienen uno."
+  },
+  "nodehealth.param.notThere": {
+    "en": "b364d72dd5108365",
+    "text": "no está"
+  },
+  "nodehealth.param.notANumber": {
+    "en": "853f79c9985ef19d",
+    "text": "no es un número"
+  },
+  "nodehealth.param.noUsage": {
+    "en": "003e13e8685bb8db",
+    "text": "no tiene usage_usec"
+  },
+  "nodehealth.param.noCpuacct": {
+    "en": "d7c137a0c7c3c40c",
+    "text": "no hay ningún controlador cpuacct de cgroup v1"
+  },
+  "nodehealth.param.noMemory": {
+    "en": "d877352712c29a9a",
+    "text": "respondió sin su memoria"
+  }
+}

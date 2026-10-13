@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # THE THIRD-PARTY IMAGES THE TEST STACK USES, AND WHERE THEIR COPIES LIVE
 # (2026-09-27, the parent project's b71e078 arrangement).
@@ -40,7 +40,7 @@ ubuntu:latest                                                ubuntu:latest
 debian:bookworm-slim                                         debian:bookworm-slim
 node:24.16.0-bookworm-slim                                   node:24.16.0-bookworm-slim
 node:24.16.0-bookworm                                        node:24.16.0-bookworm
-node:22-alpine                                               node:22-alpine
+rust:1.97-bookworm                                           rust:1.97-bookworm
 golang:1.26.8-bookworm                                       golang:1.26.8-bookworm
 golang:1.26                                                  golang:1.26
 maven:3.9.16-eclipse-temurin-21-noble                        maven:3.9.16-eclipse-temurin-21-noble
@@ -49,6 +49,7 @@ php:8.3-apache                                               php:8.3-apache
 rockylinux/rockylinux:9                                      rockylinux/rockylinux:9
 quay.io/keycloak/keycloak:26.6.4                             keycloak/keycloak:26.6.4
 postgres:18                                                  postgres:18
+mariadb:11.8                                                 mariadb:11.8
 openbao/openbao:latest                                       openbao/openbao:latest
 axllent/mailpit:latest                                       axllent/mailpit:latest
 haproxy:3.2.23-alpine                                        haproxy:3.2.23-alpine

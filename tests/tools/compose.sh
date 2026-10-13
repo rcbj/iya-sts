@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # tests/tools/compose.sh — how this repository's launchers talk to docker.
 #
@@ -251,7 +251,14 @@ freeSubnet()
       var mask = bits === 0 ? 0 : (0xffffffff << (32 - bits)) >>> 0;
       return { net: (addr & mask) >>> 0, mask: mask };
     }
-    var taken = used.map(parse).filter(Boolean);
+    // A route broader than /8 is not an address range anything uses: it is a
+    // DEFAULT route in pieces, which a full-tunnel VPN installs as
+    // 0.0.0.0/1 and 128.0.0.0/1 (2026-10-09: with one up, every /24 here
+    // "overlapped" and the run would not start). A docker bridge is more
+    // specific than either and wins over them, so they are not counted.
+    var taken = used.map(parse).filter(function (one) {
+      return one && one.mask >= 0xff000000;
+    });
     // Two ranges overlap when either one contains the network address of the
     // other. No arithmetic about sizes is needed and none is done.
     function overlaps(a, b)

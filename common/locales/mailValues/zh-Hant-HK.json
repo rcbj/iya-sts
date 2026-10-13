@@ -1,0 +1,4 @@
+{
+  "requestedBy.recoveryCode": "您本人，或知道您的帳戶名稱、電郵地址及其中一個復原碼的人",
+  "how.by": "由{entity, select, user {用戶} admin {管理員} system {系統} policy {原則} someone {某人} other {{entity}}}執行"
+}

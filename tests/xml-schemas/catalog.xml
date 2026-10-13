@@ -70,6 +70,8 @@
   <uri name="http://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd" uri="saml-schema-metadata-2.0.xsd"/>
   <system systemId="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd" uri="saml-schema-metadata-2.0.xsd"/>
   <uri name="https://docs.oasis-open.org/security/saml/v2.0/saml-schema-metadata-2.0.xsd" uri="saml-schema-metadata-2.0.xsd"/>
+  <system systemId="https://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-delegation.xsd" uri="sstc-saml-delegation.xsd"/>
+  <uri name="https://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-delegation.xsd" uri="sstc-saml-delegation.xsd"/>
   <system systemId="http://schemas.xmlsoap.org/soap/envelope/" uri="soap-envelope-1.1.xsd"/>
   <uri name="http://schemas.xmlsoap.org/soap/envelope/" uri="soap-envelope-1.1.xsd"/>
   <system systemId="https://schemas.xmlsoap.org/soap/envelope/" uri="soap-envelope-1.1.xsd"/>

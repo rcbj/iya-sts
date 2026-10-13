@@ -40,7 +40,6 @@ since may not be on it. The live list of endpoints is
 | `/admin-api` | Verified against the default realm's key, or the ambient realm's under a realm prefix, audienced to the API, carrying `admin:read` or `admin:write`. A realm's token is confined to that realm | The same | The same |
 | The embedded debugger's listener | Verified, audienced to `urn:sts:debugger-api:`, carrying the debugger permission, which only a console administrator is issued | The same | The same |
 | The OpenID4VCI credential, deferred credential and notification endpoints | A token this realm issued is verified like any other | **A token this realm cannot verify is read without verifying**, because OpenID4VCI lets the authorization server be somebody else. A credential issued that way can never be used to sign in | Refused, and so is a revoked one (`invalid_token`) |
-| The GNAP resource server (`/gnap/rs/*`) | A token the GNAP authorization server holds a record of and has not revoked or expired, under the scheme its binding needs (`Bearer` for a bearer token, `GNAP` with a key proof otherwise). Nothing is decoded | The same | The same |
 
 Any of the OAuth rows above that is presented with the DPoP scheme also needs
 a proof that verifies against the token's `cnf.jkt`, and a certificate-bound
@@ -55,7 +54,7 @@ one of the two mandatory; see *Require DPoP or mutual TLS* in
 | `POST /oauth2/introspect` | `token` | A token that does not verify, or was revoked, is `{"active": false}`. The caller authenticates for an RFC 9701 JWT response | The same, and the caller authenticates for a JSON response too |
 | `POST /oauth2/revoke` | `token` | An access or refresh token is revoked if it verifies (a refresh token with its whole grant); otherwise nothing is revoked and the answer is still 200, as RFC 7009 says. Any other token this realm signed, an ID Token for one, is `unsupported_token_type`. A caller with no credential is not authenticated; one that presents a credential is, and may revoke only its own client's tokens (`invalid_grant` otherwise) | The client authenticates, or a public client names its registered `client_id`, and may revoke only its own tokens |
 | `POST /oauth2/token`, `grant_type=refresh_token` | `refresh_token` | Opened, verified, not revoked. Whether it was issued to the client presenting it, and whether the scope asked for is no wider than the one granted, is checked only in RFC 9700 or OAuth 2.1 mode | Product implies RFC 9700 mode, so both are checked, and a refresh token presented twice revokes its whole family |
-| `POST /oauth2/token`, token exchange (RFC 8693) | `subject_token`, `actor_token` | **Read without verifying** if they do not verify, so a client under test can exchange a token from anywhere | Verified and not revoked, or refused with `invalid_request`. **The token's `typ` is not compared with the declared `subject_token_type`** — [#116](https://github.com/rcbj/iya-sts/issues/116) |
+| `POST /oauth2/token`, token exchange (RFC 8693) | `subject_token`, `actor_token` | **Read without verifying** if they do not verify, so a client under test can exchange a token from anywhere. An `actor_token` must still have been issued to the exchanging client and be addressed to it or to this authorization server (#550) | Verified and not revoked, or refused with `invalid_request`; an `actor_token` is also held to #550's two rules. **The token's `typ` is not compared with the declared `subject_token_type`** — [#116](https://github.com/rcbj/iya-sts/issues/116) |
 | `POST /oauth2/token`, JWT or SAML bearer grant; JWT client authentication | `assertion`, `client_assertion` | Verified against a key registered for a declared issuer, accepted once ever. See [JWT assertions](jwt-assertions.md) and [SAML 2.0 assertions](saml-assertions.md) | The same |
 | `GET`/`PUT`/`DELETE /oauth2/register/{client_id}` (RFC 7592) | The registration access token | Compared with the one issued at registration, in constant time; an empty one never matches | The same |
 | `GET`/`POST /oauth2/logout` (RP-Initiated Logout) | `id_token_hint` | Verified as an ID Token this authorization server issued (an expired one still counts); its audience is the client, and a `client_id` it was not issued to is refused. A hint for the current session signs out at once; otherwise the person confirms (#124, #115) | The same |
@@ -65,12 +64,10 @@ one of the two mandatory; see *Require DPoP or mutual TLS* in
 | Door | Token | Development | Product |
 |---|---|---|---|
 | SPIFFE `ValidateJWTSVID` | A JWT-SVID | Verified against the bundle of the trust domain its `sub` names, with the audience the caller gives and no clock leeway. A trust domain with no bundle is refused | The same |
-| `POST /ssf/receive` | A Security Event Token | **Recorded whether or not it verifies**, and shown as unverified. Nothing acts on it | Refused (400 `invalid_key`) — [#117](https://github.com/rcbj/iya-sts/issues/117) |
 | The console's and portal's own SSF receivers | A Security Event Token | The stream's own authorization secret, and this receiver in `aud`. An unverified one is recorded unless `ssf.receiveRequireSignature` is on, and is never acted on. A verified one the `signal-response` policy permits is recorded as what it would have ended, unless `ssf.actOnSignalsInDevelopment` is on | An unverified one is refused (400 `invalid_key`, #117); a verified one the `signal-response` policy permits ends the surface's own sessions for the person named |
 
-## Where the two open issues are
+## Where the open issue is
 
 | Issue | What |
 |---|---|
 | [#116](https://github.com/rcbj/iya-sts/issues/116) | Token exchange in product mode accepts an ID Token as a `subject_token` declared to be an access token |
-| [#117](https://github.com/rcbj/iya-sts/issues/117) | `/ssf/receive` stores Security Event Tokens it cannot verify in product mode as well as development |

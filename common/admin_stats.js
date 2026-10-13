@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -82,6 +82,12 @@ const audit = require('./audit');
 // throw log it with one; a refused claim-set change carries its code on the
 // audit row and, NON-ENUMERABLY, on the result a caller serialises.
 const errorCodes = require('./error_codes');
+// THE ONE CRYPTO MODULE, for one digest: a Kerberos PAC claim's id (#493,
+// pacClaimId()). A LEAF that `helpers.js` above has already loaded, so this
+// line adds no file to anything's closure and cannot close a cycle.
+const stsCrypto = require('./crypto');
+// Which attributes a claim may carry out (#94). A leaf.
+const SourcedAttributes = require('./sourced_attributes');
 // THE FEDERATION RELEASE FILTER, and it is a plain require in the ordinary
 // direction rather than a hook. Rule 3e's test both ways round: that module
 // registers no route, and it requires only helpers.js, config.js, realms.js,
@@ -307,7 +313,21 @@ function recordCall(call) {
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // jti (or a synthetic key) -> the record below
-const tokens = realms.map({ persist: 'admin_stats.tokens' });
+// `expiresAt` (#333): the purge's own rule — a record is kept
+// `oauth2.expiredTokenRetentionS` past its `exp` (epoch seconds, plus the
+// clock skew) so /admin/tokens can show it expired, and then goes. A token
+// with no `exp` (0) never expires.
+const tokens = realms.map({
+  persist: 'admin_stats.tokens',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (record) {
+    const exp = Number(record && record.exp);
+    const skewS = Number(config.value('oauth2.clockSkewS'));
+    const keepS = Number(config.value('oauth2.expiredTokenRetentionS'));
+    return exp > 0 && isFinite(skewS) && isFinite(keepS)
+      ? (exp + Math.max(0, skewS) + Math.max(0, keepS)) * 1000 : null;
+  }
+});
 
 
 
@@ -405,7 +425,13 @@ function recordJwt(payload, signed, context) {
     // Token: the two carry the same person under different names because that
     // is what their respective specifications call the claim, and a console
     // column that read only one of them would show a dash for every ID Token.
-    username: payload.username || payload.preferred_username || '',
+    // A client_credentials access token carries no `username` since #93 (it
+    // is about no person), and is filed under its CLIENT, as it was when the
+    // claim carried the client_id: /admin/users lists the client flagged as
+    // one, and a disabled or deleted application's tokens are found by name.
+    username: payload.username || payload.preferred_username ||
+              (issuedUnder.grant === 'client_credentials'
+                ? String(payload.client_id || '') : ''),
     client_id: payload.client_id || payload.azp || payload.aud || '',
     // WHAT THIS TOKEN IS ADDRESSED TO, as its own fact. `client_id` above falls
     // back to the `aud` when nothing better names the client, which is right
@@ -423,6 +449,19 @@ function recordJwt(payload, signed, context) {
     // jkt rather than the whole cnf: the thumbprint is the binding, and it is
     // what makes a row on the page say "DPoP" honestly rather than by guessing.
     jkt: (payload.cnf && payload.cnf.jkt) || '',
+    // AND THE CERTIFICATE BINDING (#432 follow-up): RFC 8705's x5t#S256, for
+    // a token bound to a client certificate by mutual TLS. Recorded beside
+    // `jkt` for the same reason — it IS the binding — and so a device marked
+    // compromised can revoke the tokens bound to a certificate it holds
+    // (`common/devices.ts`, endGrantsBoundTo()).
+    x5t: (payload.cnf && payload.cnf['x5t#S256']) || '',
+    // AND THE KEY UNDER THAT CERTIFICATE: its SubjectPublicKeyInfo SHA-256,
+    // stated by the issuer out of band (no claim carries it), and kept only
+    // for a token that IS certificate-bound. `x5t` names the certificate,
+    // which changes when the key is re-certified or certified elsewhere; this
+    // names the key a device holds.
+    x5tSpki: payload.cnf && payload.cnf['x5t#S256']
+      ? String(issuedUnder.certSpki || '') : '',
     iat: payload.iat || 0,
     nbf: payload.nbf || 0,
     exp: payload.exp || 0,
@@ -508,9 +547,22 @@ function recordJwt(payload, signed, context) {
 //     `oauth2.expiredTokenRetentionS` — kept that long so /admin/tokens can
 //     still show a token as EXPIRED, which an operator asks about; and
 //   * a revoked jti whose token has expired: a revocation of a token that no
-//     verifier would accept anyway protects nothing. A revoked jti whose
-//     record is already gone is KEPT, because nothing here knows when that
-//     token expires.
+//     verifier would accept anyway protects nothing. **Since #345 the
+//     revocation carries its token's `exp` itself** (see `revokedJtis`), so
+//     one whose record the register's cap (MAX_TOKENS, 5,000) has already
+//     forgotten is dropped at its expiry too — until then it was kept for
+//     ever, and nothing removed it. A revocation whose `exp` nobody stated
+//     and whose record is gone is still kept; the size cap at insert
+//     (`oauth2.maxRevokedJtis`, `makeRoomForRevocation()`) is what bounds
+//     those.
+//
+// **A CLUSTER JOB, NOT A PER-PROCESS ONE, AND THE REVOKED JTIS STAY IN IT
+// (#345).** The ticket asked for a per-process job, and the root rule says
+// which: a per-process job is for state "reachable from no other process".
+// `revokedJtis` is `realms.map({persist})` — REPLICATED through the change
+// log — so a delete on the leader reaches every process's copy, and a
+// per-process job would journal the same delete once per process. This job
+// already walked the revocations for the half of them it could date.
 //
 // Registered at the first recording, lazily: the scheduler loads after this.
 // A record with no `exp` is a token that never expires and is never purged —
@@ -550,6 +602,15 @@ function purgeExpiredTokens(nowMs) {
         }
         if (deadAt + keepMs <= now) {
           gone.push(key);
+        }
+      });
+      // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
+      // register still holds their record.
+      revoked.forEach(function (value, jti) {
+        const exp = revokedExpOf(value);
+        if (exp && exp * 1000 + skewMs <= now &&
+            deadJtis.indexOf(jti) < 0) {
+          deadJtis.push(jti);
         }
       });
       deadJtis.forEach(function (jti) {
@@ -659,7 +720,122 @@ setJwtRecorder(recordJwt);
 // revoked through /admin-api introspected as ACTIVE on any other worker,
 // because that worker had never been told. `realms.map({persist})` is the
 // declaration that makes a store replicate, and a Set has no such declaration.
+//
+// **THE VALUE IS `{ exp }` SINCE #345** — the revoked token's own `exp`, in
+// epoch seconds, or 0 where nobody stated it — because a revocation is worth
+// keeping only until its token would have expired anyway: after that no
+// verifier accepts it on `exp` alone. The hourly purge above drops it then.
+// A row written before #345 holds `true`, which `revokedExpOf()` reads as
+// "not stated", the same as a token with no `exp`: kept until the cap.
+//
+// (feature/333 adds an `expiresAt` hook to the minted-store declaration, so
+// a start need not restore a row past its expiry. It is not on develop yet;
+// once it is, this declaration's hook is `revokedExpOf()` plus the clock
+// skew, in milliseconds.)
 const revokedJtis = realms.map({ persist: 'admin_stats.revokedJtis' });
+
+/**
+ * Reads the token expiry a revocation carries.
+ *
+ * @param value - a `revokedJtis` value: `{ exp }`, or `true` from before #345
+ * @returns the expiry in epoch seconds, or 0 when none was stated
+ */
+function revokedExpOf(value) {
+  // A HOT PATH: called for every revocation the purge and the cap walk, so
+  // no Entering/Leaving pair — one would drown the log.
+  const exp = Number(value && typeof value === 'object' ? value.exp : 0);
+  return isFinite(exp) && exp > 0 ? exp : 0;
+}
+
+// ---------------------------------------------------------------------------
+// THE SIZE CAP (#345), `oauth2.maxRevokedJtis`, checked AT INSERT because a
+// bound cannot wait for a timer (root CLAUDE.md, *Anything periodic*). At the
+// cap it first drops every revocation whose token has already expired — free,
+// since no verifier accepts that token — and only if that leaves no room
+// does it FORGET ONE THAT STILL MATTERS: the one whose token expires
+// SOONEST, which is the smallest window in which a revoked token is accepted
+// again. A
+// revocation with no stated `exp` sorts LAST, because forgetting it re-opens
+// a token for good; among those the oldest goes first (Map order).
+//
+// O(n) in the realm's revocations, and only when the register is full — the
+// ordinary insert costs nothing; a sort only when the cap was lowered below
+// the register's size. Logged under STS-OAUTH-0787 at most once a
+// minute per process, with the count since the last line, rather than once
+// per revocation (the no-per-event-log rule).
+// ---------------------------------------------------------------------------
+let revocationsForgotten = 0;
+let revocationsForgottenLoggedAt = 0;
+
+function makeRoomForRevocation() {
+  log.debug("Entering makeRoomForRevocation().");
+  const cap = Number(config.value('oauth2.maxRevokedJtis'));
+  if (!(cap > 0) || revokedJtis.size < cap) {
+    log.debug("Leaving makeRoomForRevocation(). Room.");
+    return 0;
+  }
+  const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
+  const now = Date.now();
+  const dead = [];
+  const live = [];
+  revokedJtis.forEach(function (value, jti) {
+    const exp = revokedExpOf(value);
+    if (exp && exp * 1000 + skewMs <= now) {
+      dead.push(jti);
+      return;
+    }
+    live.push([jti, exp || Infinity]);
+  });
+  dead.forEach(function (jti) {
+    revokedJtis.delete(jti);
+  });
+  // Room for ONE more; more than one over only when the cap was lowered, and
+  // then every revocation over it goes now rather than one per insert, which
+  // would never converge.
+  const over = revokedJtis.size - cap + 1;
+  if (over <= 0) {
+    log.debug("Leaving makeRoomForRevocation(). " + dead.length +
+              " expired dropped.");
+    return 0;
+  }
+  let forgotten = [];
+  if (over === 1) {
+    // The steady state at the cap: one linear pass, no sort. Strictly less,
+    // so a tie keeps the first — the oldest — in Map order.
+    let soonest = null;
+    live.forEach(function (pair) {
+      if (soonest === null || pair[1] < soonest[1]) {
+        soonest = pair;
+      }
+    });
+    forgotten = soonest ? [soonest[0]] : [];
+  } else {
+    // Array.prototype.sort is stable, so a tie keeps Map order here too.
+    live.sort(function (a, b) {
+      return a[1] === b[1] ? 0 : (a[1] < b[1] ? -1 : 1);
+    });
+    forgotten = live.slice(0, over).map(function (pair) {
+      return pair[0];
+    });
+  }
+  forgotten.forEach(function (jti) {
+    revokedJtis.delete(jti);
+  });
+  revocationsForgotten += forgotten.length;
+  if (now - revocationsForgottenLoggedAt >= 60000) {
+    log.warn(errorCodes.tag('STS-OAUTH-0787') + 'admin: the revoked-token ' +
+             'register reached oauth2.maxRevokedJtis (' + cap + ') with ' +
+             'nothing expired in it, so ' + revocationsForgotten + ' ' +
+             'revocation(s) of unexpired tokens were forgotten, the soonest ' +
+             'to expire first (the latest was ' +
+             forgotten[forgotten.length - 1] + '). Raise the setting.');
+    revocationsForgotten = 0;
+    revocationsForgottenLoggedAt = now;
+  }
+  log.debug("Leaving makeRoomForRevocation(). Forgot " + forgotten.length +
+            ".");
+  return forgotten.length;
+}
 
 // ---------------------------------------------------------------------------
 // WHO IS TOLD THAT A TOKEN WAS REVOKED (#239, 2026-09-26): an INVERTED HOOK,
@@ -731,18 +907,30 @@ function tellRevocationObserver(jti, record, via, how) {
  * @param jti - the token's jti
  * @param via - which door revoked it, for the record and the log
  * @param how - the door's statement of the act, passed to the observer
+ * @param expSec - the token's `exp`, in epoch seconds, where the door has
+ *   it; otherwise the register's record's, and 0 (kept until the cap) where
+ *   neither knows (#345)
  * @returns true when the jti was newly revoked, false when it was already
  *   revoked or empty
  */
-function revoke(jti, via, how) {
+function revoke(jti, via, how, expSec) {
   log.debug("Entering revoke(). jti=" + jti);
   if (!jti) {
     log.debug("Leaving revoke(). There was no jti to revoke.");
     return false;
   }
-  const first = !revokedJtis.has(jti);
-  revokedJtis.set(jti, true);
   const record = tokens.get(jti);
+  const first = !revokedJtis.has(jti);
+  if (first) {
+    makeRoomForRevocation();
+  }
+  // The latest of what anybody stated: one jti is one token with one `exp`,
+  // and a later door that knows it dates a revocation an earlier one could
+  // not.
+  const exp = Math.max(revokedExpOf({ exp: expSec }),
+                       revokedExpOf(record),
+                       revokedExpOf(revokedJtis.get(jti)));
+  revokedJtis.set(jti, { exp: exp });
   if (record) {
     record.revoked = true;
     record.revokedAt = record.revokedAt || Date.now();
@@ -1008,19 +1196,29 @@ function recordAssertion(version, detail) {
  * Records a Kerberos ticket.
  *
  * @param kind - `TGT` or `service ticket`
- * @param detail - `client`, `realm`, `service`, `etype` and `expiresAt`
+ * @param detail - `client`, `realm`, `service`, `etype` and `expiresAt`;
+ *   `claimSet`, `username` and `pacClaims` when its PAC carried claims
  * @returns the record
  */
 function recordTicket(kind, detail) {
   log.debug("Entering recordTicket(). kind=" + kind + ", client=" +
             (detail.client || '?'));
-  const record = recordArtifact('Kerberos ' + kind, {
+  const fields = {
     subject: detail.client || '',
     realm: detail.realm || '',
     service: detail.service || '',
     etype: detail.etype || '',
     expiresAt: detail.expiresAt || 0
-  });
+  };
+  // A ticket whose PAC carried claims from the PAC set (#493) names the set
+  // and the person, so a change to that set reaches its holder as CAEP
+  // token-claims-change (liveClaimBearers()); `pacClaims` counts them.
+  if (detail.claimSet) {
+    fields.claimSet = String(detail.claimSet);
+    fields.username = String(detail.username || '');
+    fields.pacClaims = Number(detail.pacClaims || 0);
+  }
+  const record = recordArtifact('Kerberos ' + kind, fields);
   log.debug("Leaving recordTicket(). " + artifacts.length +
             " artifact(s) held.");
   return record;
@@ -1117,8 +1315,8 @@ function recordSvid(kind, detail) {
 //   * The SPIRE Server API's OWN server SVID, minted in spiffe_grpc.js to bind
 //     the mutual-TLS port. It never reaches this function because that call
 //     site records no artifact either, and it must not: filing this service's
-//     own listener among the people is the mistake didPlan() already refuses
-//     for `/did/generate?method=web`.
+//     own listener among the people is the mistake didPlan() already refused
+//     for this service's own did:web.
 //   * A downstream CA from NewDownstreamX509CA. It is an intermediate belonging
 //     to whoever asked for it, not an identity in this trust domain, and
 //     spiffe_ca.js deliberately does not add it to this service's authorities
@@ -1403,6 +1601,18 @@ const SCIM_OPERATIONS = [
           'answered 404 in the SCIM Error schema (RFC 7644 section 3.12) ' +
           'rather than by express as an HTML page (#206).' }
 ];
+
+// What the monitor says of an operation SCIM_OPERATIONS does not list, so
+// that the prose catalog can carry it (#543 phase 2b).
+const SCIM_UNLISTED_OPERATION = 'Counted under a name admin_stats.js\'s ' +
+  'SCIM_OPERATIONS does not list. It is shown rather than dropped, because ' +
+  'a table that quietly discarded it would make the column stop adding up ' +
+  'with no way to find out why.';
+
+// The routes whose answers carry this module's prose (#543): the SCIM
+// operations' sentences, in the scim namespace. A route is listed only
+// where this module's sentences reach its answer.
+const PROSE_ROUTES = ['/admin-api/scim', '/admin-api/scim/monitor'];
 
 /**
  * The SCIM resource types the monitor counts.
@@ -1865,11 +2075,8 @@ function scimMonitorSnapshot() {
   });
   Object.keys(detail).sort().forEach(function (name) {
     if (!known[name]) {
-      operations.push(scimOperationRow(name, name, '', 'Counted under a name ' +
-        'admin_stats.js\'s SCIM_OPERATIONS does not list. It is shown rather ' +
-        'than dropped, because a table that quietly discarded it would make ' +
-        'the column stop adding up with no way to find out why.',
-        detail[name]));
+      operations.push(scimOperationRow(name, name, '',
+                                       SCIM_UNLISTED_OPERATION, detail[name]));
     }
   });
 
@@ -2084,8 +2291,7 @@ const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 //
 // It matters here because the Decentralized Identity endpoints present
 // identities of exactly this shape: an ldp_vc names its subject `did:jwk:…`,
-// the OID4VP Verifier reports whatever DID presented to it, and /did/generate
-// mints one. RFC 3986 says the method name is lowercase ALPHA and DIGIT; the
+// and the OID4VP Verifier reports whatever DID presented to it. RFC 3986 says the method name is lowercase ALPHA and DIGIT; the
 // `i` flag is here because this test is deciding how to file a person and not
 // validating a DID.
 const DID_SHAPED = /^did:[a-z0-9]+:/i;
@@ -2350,16 +2556,27 @@ function copyOfUserRecord(record) {
 // as a person with no directory entry — its `isClient` was on a row nobody
 // read. Keyed by identity key, in the ambient realm, as copies.
 // ---------------------------------------------------------------------------
-function everyUserRecord() {
+//
+// `onlyKey` (#352) keeps one identity's record and copies nobody else's —
+// `userRow()`'s question, which built every copy to keep one. The fold is the
+// same fold, so the record it keeps is the one the whole map would have held.
+function everyUserRecord(onlyKey) {
   log.debug("Entering everyUserRecord().");
   const merged = new Map();
+  const wanted = onlyKey === undefined ? null : String(onlyKey);
   users.forEach(function (record) {
+    if (wanted !== null && record.key !== wanted) {
+      return;
+    }
     merged.set(record.key, copyOfUserRecord(record));
   });
   replication.remoteKeys('admin_stats.users').forEach(function (key) {
     replication.remoteRows('admin_stats.users', undefined, key)
       .forEach(function (value) {
         if (!value || typeof value !== 'object') {
+          return;
+        }
+        if (wanted !== null && (value.key || key) !== wanted) {
           return;
         }
         const theirs = Object.assign({}, value, { key: value.key || key,
@@ -2639,7 +2856,11 @@ function recordAuthentication(detail) {
         // The attributes inside it are ALREADY MAPPED to this directory's own
         // names — federation_map.js owns that vocabulary — so nothing here or
         // in ldap_server.js has to know what a `urn:oid:` name is.
-        federation: info.federation || null
+        federation: info.federation || null,
+        // THE APPLICATION THE SIGN-IN WAS FOR (#539): an OAuth client_id or a
+        // relationship's application, where the door named one. A person
+        // this sign-in creates is given the locale policy's language for it.
+        application: String(info.application || '')
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-REG-0039') +
@@ -2811,7 +3032,11 @@ const RESERVED_JWT_CLAIMS = [
   // does — the UserInfo endpoint has to know what the client asked for, and a
   // signed token is the one thing that reaches it — so a settable `claims`
   // would let a web form decide what a request asked for. See oauth2.js.
-  'claims'
+  'claims',
+  // draft-ietf-oauth-status-list section 6.1's reference (#432): where a
+  // resource server checking an access token on its own reads whether it was
+  // revoked. A settable one would point every token at a list somebody chose.
+  'status'
 ];
 
 // PER TRUST REALM, AND IT WAS NOT UNTIL 2026-08-28.
@@ -2848,13 +3073,20 @@ function freshClaimSets() {
     userinfo: { label: 'OIDC UserInfo response', kind: 'userinfo', claims: [] },
     saml2: { label: 'SAML 2.0 Attribute', kind: 'saml2', claims: [] },
     saml11: { label: 'SAML 1.1 Attribute (WS-Federation)', kind: 'saml11',
-              claims: [] }
+              claims: [] },
+    // THE SIXTH SET (#493, 2026-10-06): the claims a Kerberos ticket's PAC
+    // carries in PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11). Its own `kind`, so it
+    // is on none of the three pages above — it is configured under Protocols
+    // → Kerberos (`/admin/kerberos/claims`) — and its rows carry a TYPE of
+    // the four a PAC claim can have. See KERBEROS PAC CLAIMS below.
+    'kerberos-pac': { label: 'Kerberos PAC claims', kind: 'kerberos',
+                      claims: [] }
   };
 }
 
 /**
- * The five custom claim sets, per realm: the access token, ID Token, UserInfo,
- * SAML 2.0 and SAML 1.1 sets.
+ * The six custom claim sets, per realm: the access token, ID Token, UserInfo,
+ * SAML 2.0, SAML 1.1 and Kerberos PAC sets.
  */
 const CLAIM_SETS = realms.obj(freshClaimSets,
                               { persist: 'admin_stats.claimSets' });
@@ -2881,7 +3113,7 @@ const CLAIM_SETS = realms.obj(freshClaimSets,
 //   thing is a JWT carrying `iss` and `aud` as well. Every name on that list is
 //   load-bearing in at least one of the two shapes, so the list applies whole.
 /**
- * The ids of the five claim sets.
+ * The ids of the six claim sets.
  */
 const CLAIM_SET_IDS = Object.keys(CLAIM_SETS);
 
@@ -2924,6 +3156,13 @@ const SAML_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
 const USERINFO_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
   return CLAIM_SETS[id].kind === 'userinfo';
 });
+/**
+ * The id of the Kerberos PAC claim set, configured on
+ * /admin/kerberos/claims (#493).
+ */
+const KERBEROS_CLAIM_SET_IDS = CLAIM_SET_IDS.filter(function (id) {
+  return CLAIM_SETS[id].kind === 'kerberos';
+});
 
 // The default namespace a SAML 1.1 attribute gets when the admin does not name
 // one. It is the claim namespace every WS-Federation relying party already
@@ -2962,8 +3201,9 @@ let attributeResolver = null;
  * Installs the directory-attribute resolver the claim sets read; filled by
  * `claim_attributes.ts`.
  *
- * @param hooks - `jwtClaims(setId, context)` and `samlAttributes(setId,
- *   context)`
+ * @param hooks - `jwtClaims(setId, context)`, `samlAttributes(setId,
+ *   context)`, `entryAttributes(context)` (#94) and `selectedAttributes(setId)`
+ *   (#498, the Kerberos PAC set's ticked catalogue)
  */
 function setAttributeResolver(hooks) {
   log.debug("Entering setAttributeResolver().");
@@ -2996,6 +3236,120 @@ function resolvedJwtClaims(id, context) {
               'is issued without its attribute claims: ' + e.message);
     return {};
   }
+}
+
+// ---------------------------------------------------------------------------
+// ATTRIBUTE CLAIMS (#94): a claim-set row whose value is a directory
+// attribute of the person the artifact is about. The entry is read through
+// the same resolver slot the catalogue's attributes are (`entryAttributes`,
+// filled by `claim_attributes.ts`), once per artifact and only when the set
+// has such a row, and wrapped for resolvedJwtClaims()'s reason: a directory
+// that throws costs the claims and never the issuance.
+//
+// **ONLY THE DIRECTORY.** No persona is invented for an attribute claim in
+// either mode: an attribute the entry lacks is a row that adds nothing, and
+// a lower layer (the catalogue's claim of the same name, the groups or roles
+// claim) still answers under that name if it has a value.
+// ---------------------------------------------------------------------------
+function resolvedEntryAttributes(context) {
+  log.debug("Entering resolvedEntryAttributes().");
+  if (!attributeResolver ||
+      typeof attributeResolver.entryAttributes !== 'function') {
+    log.debug("Leaving resolvedEntryAttributes(). No resolver.");
+    return null;
+  }
+  try {
+    log.debug("Leaving resolvedEntryAttributes().");
+    return attributeResolver.entryAttributes(context) || null;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw reading the entry and was ' +
+              'ignored; the artifact is issued without its attribute ' +
+              'claims: ' + e.message);
+    log.debug("Leaving resolvedEntryAttributes().");
+    return null;
+  }
+}
+
+// An attribute's values off an entry, as text, empty ones dropped. The entry
+// is keyed lower-cased (`vc_claims.entryAttributes()`).
+function attributeValuesOf(entry, attribute) {
+  log.debug("Entering attributeValuesOf(). " + attribute);
+  const held = entry ? entry[String(attribute).toLowerCase()] : null;
+  log.debug("Leaving attributeValuesOf().");
+  return (Array.isArray(held) ? held : (held == null ? [] : [held]))
+    .map(function (one) { return String(one); })
+    .filter(function (one) { return one !== ''; });
+}
+
+// One value as the row's JSON type; null for a value that is not one (it is
+// left out rather than sent as the wrong type). Called once per value while a
+// token is built, so no Entering/Leaving pair — the hot-path exception.
+function typedAttributeValue(value, type) {
+  if (type === 'number') {
+    const n = Number(value);
+    return value.trim() !== '' && isFinite(n) ? n : null;
+  }
+  if (type === 'boolean') {
+    const lower = value.trim().toLowerCase();
+    return lower === 'true' ? true : (lower === 'false' ? false : null);
+  }
+  if (type === 'json') {
+    try {
+      return JSON.parse(value);
+    } catch (e) {
+      log.debug("Caught in typedAttributeValue(): " +
+                ((e && e.message) || e));
+      // Not JSON: left out, as a number that is not one is.
+      return null;
+    }
+  }
+  return value;
+}
+
+// A JWT attribute claim's value: every value typed (`multi`), or the first,
+// or undefined when the entry has none.
+function jwtAttributeClaimValue(entry, claim) {
+  log.debug("Entering jwtAttributeClaimValue(). " + claim.name);
+  const typed = attributeValuesOf(entry, claim.attribute)
+    .map(function (one) {
+      return typedAttributeValue(one, claim.type || 'string');
+    }).filter(function (one) {
+      return one !== null;
+    });
+  if (!typed.length) {
+    log.debug("Leaving jwtAttributeClaimValue(). No value.");
+    return undefined;
+  }
+  log.debug("Leaving jwtAttributeClaimValue().");
+  return claim.multi ? typed : typed[0];
+}
+
+// Every attribute claim row in the ambient realm's claim sets (#94), for CAEP:
+// a directory write that moves one of these attributes moves the claim, as a
+// catalogue attribute's write does. One row per claim name and attribute.
+/**
+ * Lists the attribute claims of every claim set in the ambient realm.
+ *
+ * @returns `[{ name, attribute, multi, type }]`, one per claim name and
+ *   attribute
+ */
+function attributeClaimRows() {
+  log.debug("Entering attributeClaimRows().");
+  const out = [];
+  const seen = new Set();
+  CLAIM_SET_IDS.forEach(function (id) {
+    claimSet(id).forEach(function (claim) {
+      const key = claim.name + '\n' + String(claim.attribute || '');
+      if (claim.attribute && !seen.has(key)) {
+        seen.add(key);
+        out.push({ name: claim.name, attribute: claim.attribute,
+                   multi: !!claim.multi, type: claim.type || 'string' });
+      }
+    });
+  });
+  log.debug("Leaving attributeClaimRows(). " + out.length + " row(s).");
+  return out;
 }
 
 function resolvedSamlAttributes(id, context) {
@@ -3126,6 +3480,10 @@ function resolvedGroupClaims(id, context) {
 function claimApplicationsOf(ctx) {
   log.debug("Entering claimApplicationsOf().");
   const out = [];
+  // The application a caller resolved (#483), ahead of the audience values.
+  if (ctx.application) {
+    out.push(String(ctx.application));
+  }
   String(ctx.audience || '').split(/\s+/).filter(Boolean)
     .forEach(function (value) {
       let found = null;
@@ -3370,32 +3728,45 @@ function reservedNames(set) {
           [];
 }
 
+// The JSON types an attribute claim's values become in a JWT (#94). A SAML
+// attribute's values are text whatever this says.
+const ATTRIBUTE_CLAIM_TYPES = ['string', 'number', 'boolean', 'json'];
+
+// THE FOUR TYPES A PAC CLAIM CAN HAVE ([MS-ADTS] 2.2.18.2's CLAIM_TYPE), as a
+// Kerberos PAC row names them (#493). Every row of that set carries one — a
+// typed row as well as an attribute row, because a PAC claim's type is part
+// of what it IS on the wire rather than a reading of its text.
+/**
+ * The types a Kerberos PAC claim row may name.
+ */
+const PAC_CLAIM_TYPES = ['string', 'int64', 'uint64', 'boolean'];
+
+// A PAC claim row's NAME: the `<name>` of `ad://ext/<name>:<hex>`, or a whole
+// claim id of that form when the operator wants a claim type an Active
+// Directory forest already defines.
+const PAC_CLAIM_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const PAC_CLAIM_ID = /^ad:\/\/ext\/[A-Za-z0-9._-]{1,128}:[0-9a-fA-F]{1,32}$/;
+
 // Validate and install a whole set at once. Returns the errors rather than
 // throwing, because the caller is a form handler that has to redisplay them.
+// THE RULES A CLAIM ROW IS HELD TO, wherever it is configured (2026-10-01):
+// lifted out of setClaimSet() when an APPLICATION grew claim sets of its own,
+// so the realm's sets and an application's are refused for exactly the
+// same reasons — a reserved name, a duplicate, an attribute that may not be
+// released, a type that is not one. Returns the cleaned rows; changes
+// nothing.
 /**
- * Validates and replaces a whole claim set; audited, and announced to holders
- * of live artifacts built from it.
+ * Checks a list of claim rows against a claim set's rules.
  *
  * @param id - the claim set id
- * @param entries - the claims, each `name`, `value` and optionally a type
- * @returns `ok`, or `ok: false` with `errors` when the set is unknown or an
- *   entry is invalid
+ * @param entries - the rows: a typed claim is `name` and `value`, an
+ *   attribute claim `name` and `attribute`
+ * @returns `ok`, the cleaned `claims`, the `errors` and the first refusal's
+ *   `code`
  */
-function setClaimSet(id, entries) {
-  log.debug("Entering setClaimSet(). id=" + id + ", " + (entries || []).length +
-      " " +
-      "entry/entries.");
-  const set = CLAIM_SETS[id];
-  if (!set) {
-    log.debug("Leaving setClaimSet(). No such claim set.");
-    return errorCodes.mark({ ok: false, errors: ['There is no claim set ' +
-                                                 'called "' + id + '". ' +
-        'The ' +
-                                 CLAIM_SET_IDS.length + ' are: ' +
-                                                 CLAIM_SET_IDS.join(', ') +
-                                                 '.'] },
-                           'STS-REG-0034');
-  }
+function checkClaimEntries(id, entries) {
+  log.debug("Entering checkClaimEntries(). id=" + id);
+  const set = CLAIM_SETS[id] || freshClaimSets()[id];
   const errors = [];
   const cleaned = [];
   const seen = new Set();
@@ -3424,15 +3795,115 @@ function setClaimSet(id, entries) {
       return;
     }
     seen.add(name);
-    const claim = { name: name,
-                    value: String((entry && entry.value) != null ? entry.value :
-                                  '') };
+    // A KERBEROS PAC ROW (#493): its name has to make a claim id, and its type
+    // is one of the four a PAC claim has.
+    const isPac = set.kind === 'kerberos';
+    const pacType = String((entry && entry.type) || 'string');
+    if (isPac && !PAC_CLAIM_NAME.test(name) && !PAC_CLAIM_ID.test(name)) {
+      errors.push('"' + name.slice(0, 140) + '" is not a PAC claim name: ' +
+                  'letters, digits, ".", "_" and "-" (it becomes ' +
+                  'ad://ext/<name>:<hex>), or a whole ad://ext/<name>:<hex> ' +
+                  'claim id.');
+      code = code || 'STS-REG-0336';
+      return;
+    }
+    if (isPac && PAC_CLAIM_TYPES.indexOf(pacType) < 0) {
+      errors.push('"' + name + '" has type "' + pacType.slice(0, 40) +
+                  '", which is not one of ' + PAC_CLAIM_TYPES.join(', ') +
+                  ' — the four types a PAC claim can have.');
+      code = code || 'STS-REG-0337';
+      return;
+    }
+    // AN ATTRIBUTE CLAIM (#94): the value is a directory attribute of the
+    // person the artifact is about, rather than a template. `multi` carries
+    // every value; `type` (JWT and UserInfo sets) says what JSON type each
+    // becomes. Refused for a secret, a binary value or what this service
+    // keeps (`SourcedAttributes.releaseRefusal()`).
+    const attribute = String((entry && entry.attribute) || '').trim();
+    let claim;
+    if (attribute) {
+      const problem = !/^[A-Za-z][A-Za-z0-9-]*$/.test(attribute)
+        ? '"' + attribute + '" is not an attribute name'
+        : SourcedAttributes.releaseRefusal(attribute);
+      if (problem) {
+        errors.push('"' + name + '" cannot carry an attribute: ' + problem +
+                    '.');
+        code = code || 'STS-REG-0200';
+        return;
+      }
+      const type = String((entry && entry.type) || 'string');
+      if (!isPac && set.kind !== 'saml2' && set.kind !== 'saml11' &&
+          ATTRIBUTE_CLAIM_TYPES.indexOf(type) < 0) {
+        errors.push('"' + name + '" has type "' + type + '", which is not ' +
+                    'one of ' + ATTRIBUTE_CLAIM_TYPES.join(', ') + '.');
+        code = code || 'STS-REG-0201';
+        return;
+      }
+      claim = { name: name, attribute: attribute,
+                multi: entry.multi === true || entry.multi === 'true' };
+      if (set.kind !== 'saml2' && set.kind !== 'saml11') {
+        claim.type = type;
+      }
+    } else {
+      claim = { name: name,
+                value: String((entry && entry.value) != null ? entry.value :
+                              '') };
+      // A FIXED PAC value is held to its type now, where a form can say so;
+      // one with a ${placeholder} can only be checked when it is expanded,
+      // at issuance (`pacClaimValue()`).
+      if (isPac) {
+        claim.type = pacType;
+        if (claim.value.indexOf('${') < 0 &&
+            pacClaimValue(claim.value, pacType) === null) {
+          errors.push('"' + name + '" has the value "' +
+                      claim.value.slice(0, 60) + '", which is not ' +
+                      (pacType === 'boolean' ? 'true or false'
+                                             : 'a ' + pacType) + '.');
+          code = code || 'STS-REG-0338';
+          return;
+        }
+      }
+    }
     if (set.kind === 'saml2' &&
         entry.nameFormat) claim.nameFormat = String(entry.nameFormat);
     if (set.kind === 'saml11') claim.namespace = String(
         entry.namespace || DEFAULT_SAML11_NAMESPACE);
     cleaned.push(claim);
   });
+  log.debug("Leaving checkClaimEntries(). " + errors.length + " error(s).");
+  return { ok: errors.length === 0, errors: errors, claims: cleaned,
+           code: code };
+}
+
+/**
+ * Validates and replaces a whole claim set; audited, and announced to holders
+ * of live artifacts built from it.
+ *
+ * @param id - the claim set id
+ * @param entries - the claims: a typed claim is `name` and `value`, an
+ *   attribute claim (#94) is `name`, `attribute`, `multi` and `type`
+ * @returns `ok`, or `ok: false` with `errors` when the set is unknown or an
+ *   entry is invalid
+ */
+function setClaimSet(id, entries) {
+  log.debug("Entering setClaimSet(). id=" + id + ", " + (entries || []).length +
+      " " +
+      "entry/entries.");
+  const set = CLAIM_SETS[id];
+  if (!set) {
+    log.debug("Leaving setClaimSet(). No such claim set.");
+    return errorCodes.mark({ ok: false, errors: ['There is no claim set ' +
+                                                 'called "' + id + '". ' +
+        'The ' +
+                                 CLAIM_SET_IDS.length + ' are: ' +
+                                                 CLAIM_SET_IDS.join(', ') +
+                                                 '.'] },
+                           'STS-REG-0034');
+  }
+  const checked = checkClaimEntries(id, entries);
+  const errors = checked.errors;
+  const cleaned = checked.claims;
+  const code = checked.code;
   if (errors.length) {
     recordClaimSetChange(id, set, [], [], set.claims.length, false, errors,
                          code);
@@ -3485,6 +3956,210 @@ function setClaimSet(id, entries) {
   log.debug("Leaving setClaimSet(). Installed " + cleaned.length +
             " claim(s).");
   return { ok: true, errors: [], claims: cleaned };
+}
+
+// AN APPLICATION'S OWN CLAIM SETS (rcbj, 2026-10-01). Each of the five sets
+// may also be configured on an APPLICATION, on its OAuth / OpenID Connect
+// and SAML configuration tabs, as one JSON array of rows on its entry
+// (`APP_CLAIM_ATTRIBUTES`). At issuance they are ADDED to the realm's set and
+// WIN BY NAME — rcbj's choice: the realm's rows still go out, an
+// application's row replaces the realm's row of the same name, and an
+// application with none issues exactly what the realm does.
+//
+// WHICH APPLICATION: the one the per-application settings already answer
+// for (`applications.settingFor()`) — the OAuth `client_id` for the three
+// JSON sets, the audience (a service provider's entityID, a WS-Federation
+// realm) for the two SAML sets — read by identifier, then by client_id or
+// AppliesTo. The rows are held to `checkClaimEntries()` at the write; a row
+// stored by hand that fails it is dropped here with a warning rather than
+// costing the issuance.
+const APP_CLAIM_ATTRIBUTES = {
+  access_token: 'oauthClaimsAccessToken',
+  id_token: 'oauthClaimsIdToken',
+  userinfo: 'oauthClaimsUserinfo',
+  saml2: 'saml2CustomAttributes',
+  saml11: 'saml11CustomAttributes',
+  // #493: an application's own PAC claims, added to a SERVICE TICKET issued
+  // for one of its krb5ServicePrincipalName values.
+  'kerberos-pac': 'krb5ClaimsPac'
+};
+
+/**
+ * Finds the application an issuance is for: by identifier, then by OAuth
+ * client_id, then by WS-Trust AppliesTo.
+ *
+ * @param name - the client_id or the audience
+ * @returns the application's view, or null
+ */
+function applicationForClaims(name) {
+  log.debug("Entering applicationForClaims().");
+  const wanted = String(name || '').trim();
+  if (!wanted) {
+    log.debug("Leaving applicationForClaims(). Nothing named.");
+    return null;
+  }
+  let found = null;
+  try {
+    found = applications.get(wanted) ||
+      (typeof applications.forClientId === 'function'
+        ? applications.forClientId(wanted) : null) ||
+      (typeof applications.forAppliesTo === 'function'
+        ? applications.forAppliesTo(wanted) : null) ||
+      // A Kerberos service principal name (#493), for the PAC set.
+      (typeof applications.forServicePrincipal === 'function'
+        ? applications.forServicePrincipal(wanted) : null);
+  } catch (e) {
+    log.debug("Caught in applicationForClaims(): " + ((e && e.message) || e));
+    // A registry that cannot answer costs the application's rows, never the
+    // issuance: the realm's set still goes out.
+    found = null;
+  }
+  log.debug("Leaving applicationForClaims(). " + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
+/**
+ * Returns an application's own rows for a claim set, as stored and
+ * checked; none for an application with none.
+ *
+ * @param id - the claim set id
+ * @param application - the application's view, or its identifier
+ * @returns the rows
+ */
+function applicationClaimSet(id, application) {
+  log.debug("Entering applicationClaimSet(). id=" + id);
+  const attribute = APP_CLAIM_ATTRIBUTES[id];
+  const view = typeof application === 'string'
+    ? applicationForClaims(application) : application;
+  const raw = attribute && view && view.fields
+    ? [].concat(view.fields[attribute] || [])[0] : '';
+  if (!raw) {
+    log.debug("Leaving applicationClaimSet(). None.");
+    return [];
+  }
+  let rows = null;
+  try {
+    rows = JSON.parse(String(raw));
+  } catch (e) {
+    log.debug("Caught in applicationClaimSet(): " + ((e && e.message) || e));
+    rows = null;
+  }
+  if (!Array.isArray(rows)) {
+    log.warn(errorCodes.tag('STS-REG-0205') + 'admin: the application "' +
+             view.identifier + '" carries ' + attribute + ' that is not a ' +
+             'JSON array of claim rows; its own ' + id + ' claims are ' +
+             'ignored and the realm\'s are issued.');
+    log.debug("Leaving applicationClaimSet(). Not an array.");
+    return [];
+  }
+  const checked = checkClaimEntries(id, rows);
+  if (!checked.ok) {
+    log.warn(errorCodes.tag('STS-REG-0205') + 'admin: the application "' +
+             view.identifier + '" carries ' + attribute + ' rows that are ' +
+             'refused (' + checked.errors.join(' ') + '); its own ' + id +
+             ' claims are ignored and the realm\'s are issued.');
+    log.debug("Leaving applicationClaimSet(). Refused rows.");
+    return [];
+  }
+  log.debug("Leaving applicationClaimSet(). " + checked.claims.length + ".");
+  return checked.claims;
+}
+
+// WHICH APPLICATION AN ISSUANCE'S CLAIMS ARE FOR, by name: asked by the
+// typed rows below and by the directory-attribute selection
+// (`claim_attributes.ts`, #495), so the two halves of one claim set cannot
+// disagree about whose configuration is in force.
+//
+// `application` FIRST (#483): a caller that resolved the application an
+// issuance is for names it, and the strings below are only how a caller
+// that did not is looked up. WS-Trust needs it: its audience is an
+// AppliesTo URI, which an OBSERVED entry named by that very URI (the one
+// `applications.seen()` files) answers to before `forAppliesTo()` is
+// asked — so the registered application's rows were found for the first
+// token and never again.
+/**
+ * Names the application an issuance's claims are for: the resolved
+ * application, else the client_id for the JSON sets and the audience for
+ * the SAML ones.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the name, or '' when the context names none
+ */
+function claimApplicationNameOf(id, context) {
+  log.debug("Entering claimApplicationNameOf(). id=" + id);
+  const isSaml = id === 'saml2' || id === 'saml11';
+  const name = context
+    ? (context.application || (isSaml ? context.audience
+                                      : (context.client_id ||
+                                         context.clientId)))
+    : '';
+  log.debug("Leaving claimApplicationNameOf().");
+  return name ? String(name) : '';
+}
+
+/**
+ * Finds the application an issuance's claims are for.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context
+ * @returns the application's view, or null
+ */
+function claimApplicationOf(id, context) {
+  log.debug("Entering claimApplicationOf(). id=" + id);
+  const name = claimApplicationNameOf(id, context);
+  const found = name ? applicationForClaims(name) : null;
+  log.debug("Leaving claimApplicationOf(). " + (found ? 'Found.' : 'None.'));
+  return found;
+}
+
+/**
+ * Returns the claim rows in force for an issuance: the realm's set and the
+ * application's own rows, combined as the application's mode for the set
+ * says (#395) — unset, its rows are added and win by name.
+ *
+ * @param id - the claim set id
+ * @param context - the issuance's context: `client_id` for the JSON sets,
+ *   `audience` for the SAML ones
+ * @returns the rows
+ */
+function effectiveClaimSet(id, context) {
+  log.debug("Entering effectiveClaimSet(). id=" + id);
+  const realmRows = claimSet(id);
+  const name = claimApplicationNameOf(id, context);
+  const own = name ? applicationClaimSet(id, name) : [];
+  if (!own.length) {
+    log.debug("Leaving effectiveClaimSet(). The realm's.");
+    return realmRows;
+  }
+  // HOW THE TWO ARE COMBINED (#395): the application's own choice for this
+  // set, `scope_claims.ts`'s four modes over the names, the application's
+  // row winning wherever both hold one. Unset is `union`, which is what
+  // this function did before the choice existed.
+  // REQUIRED HERE, LAZILY: this module is in the parent project's Kerberos
+  // COPY closure (`kerberos/CLAUDE.md`) and the KDC never reaches this line,
+  // so a load-time require would owe a COPY line for nothing.
+  const scopeClaims = require('./scope_claims');
+  const mode = scopeClaims.realmModeOf(id, applicationForClaims(name)) ||
+    'union';
+  if (mode === 'realm') {
+    log.debug("Leaving effectiveClaimSet(). The realm's, as chosen.");
+    return realmRows;
+  }
+  const ownByName = {};
+  own.forEach(function (row) { ownByName[row.name] = row; });
+  const names = scopeClaims.combineNames(
+    realmRows.map(function (row) { return row.name; }),
+    own.map(function (row) { return row.name; }), mode);
+  const merged = realmRows.filter(function (row) {
+    return names.indexOf(row.name) >= 0 && !ownByName[row.name];
+  }).concat(own.filter(function (row) {
+    return names.indexOf(row.name) >= 0;
+  }));
+  log.debug("Leaving effectiveClaimSet(). " + mode + ": " + merged.length +
+            " row(s) from " + own.length + " of the application's and " +
+            realmRows.length + " of the realm's.");
+  return merged;
 }
 
 /**
@@ -3612,7 +4287,19 @@ function jwtClaims(id, context) {
   const out = resolvedRoleClaims(context);
   Object.assign(out, resolvedGroupClaims(id, context));
   Object.assign(out, resolvedJwtClaims(id, context));
-  claimSet(id).forEach(function (claim) {
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  configured.forEach(function (claim) {
+    if (claim.attribute) {
+      const value = jwtAttributeClaimValue(entry, claim);
+      if (value !== undefined) {
+        out[claim.name] = value;
+      }
+      return;
+    }
     out[claim.name] = typedValue(expandValue(claim.value, context));
   });
   // ---------------------------------------------------------------------
@@ -3661,14 +4348,34 @@ function jwtClaims(id, context) {
  */
 function samlAttributes(id, context) {
   log.debug("Entering samlAttributes(). id=" + id);
-  const typed = claimSet(id).map(function (claim) {
-    const attribute = { name: claim.name,
-                        value: expandValue(claim.value, context) };
+  // The realm's set with the application's own rows over it (2026-10-01).
+  const configured = effectiveClaimSet(id, context);
+  // Read once, and only when a row needs it (#94).
+  const entry = configured.some(function (claim) { return !!claim.attribute; })
+    ? resolvedEntryAttributes(context) : null;
+  const typed = configured.map(function (claim) {
+    let attribute;
+    if (claim.attribute) {
+      // AN ATTRIBUTE CLAIM (#94): one <Attribute> with an <AttributeValue>
+      // per value when `multi`, else the first; none when the entry has
+      // none, so a lower layer may still answer under the name.
+      const values = attributeValuesOf(entry, claim.attribute);
+      if (!values.length) {
+        return null;
+      }
+      attribute = { name: claim.name,
+                    values: claim.multi ? values : [values[0]] };
+    } else {
+      attribute = { name: claim.name,
+                    value: expandValue(claim.value, context) };
+    }
     if (id === 'saml2' &&
         claim.nameFormat) attribute.nameFormat = claim.nameFormat;
     if (id === 'saml11') attribute.namespace = claim.namespace ||
                                                DEFAULT_SAML11_NAMESPACE;
     return attribute;
+  }).filter(function (attribute) {
+    return attribute !== null;
   });
   // The same precedence jwtClaims() applies, but it has to be written as a
   // FILTER rather than as an assignment order: an assertion is a list of
@@ -3824,8 +4531,11 @@ function holdsLiveIssuance(username, sub) {
     if (live || CLAIM_BEARING_KINDS.indexOf(record.kind) < 0) {
       return;
     }
-    const theirs = (name && record.username === name) ||
-                   (subject && record.sub === subject);
+    // An application's own token (#221 P5) is filed under its client_id,
+    // and is not a person's of the same name.
+    const theirs = !applicationOfToken(record) &&
+                   ((name && record.username === name) ||
+                    (subject && record.sub === subject));
     const state = theirs ? tokenStateOf(record, nowMs) : '';
     if (state === 'valid' || state === 'no expiry stated') {
       live = true;
@@ -3849,6 +4559,317 @@ function holdsLiveIssuance(username, sub) {
 }
 
 // ---------------------------------------------------------------------------
+// KERBEROS PAC CLAIMS (#493, 2026-10-06): the sixth claim set, as the claims
+// of a ticket's PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11, [MS-ADTS] 2.2.18).
+//
+// rcbj's four decisions, and what each means here:
+//
+//  1. **The claims come from this set**, `kerberos-pac`, configured on its own
+//     page under Protocols → Kerberos and held to checkClaimEntries() like the
+//     other five. An APPLICATION may add rows of its own (`krb5ClaimsPac`, the
+//     2026-10-01 pattern), and those are applied when the KDC builds a
+//     SERVICE TICKET for one of its service principal names. A TGT carries the
+//     realm's set alone; a service ticket carries what its TGT carried with
+//     the application's rows added and winning by name — the KDC does that
+//     merge (`kerberos/krb5_kdc.js`, claimsForTicket()), with
+//     kerberosApplicationPacClaims() below as its input.
+//  2. **The claim id is `ad://ext/<name>:<hex>`**, Active Directory's form for
+//     a claim type it defines. AD picks the hex at random when a claim type is
+//     created; here it is DERIVED, so every node, every restart and every
+//     realm names a claim the same way: the first sixteen hex digits (64
+//     bits) of SHA-256 over the UTF-8 name. Realm-independent on purpose — a
+//     service reading a PAC re-signed across a trust sees the same id for the
+//     same name. A row whose name is ALREADY a whole `ad://ext/…:…` id is used
+//     as written, for a claim type a real forest already defines.
+//  3. **Roles go as claims only**: the roles claim (`roles.claimName`, the
+//     person's realm-wide roles) is a STRING claim under the rows, and nothing
+//     is added to the logon information's extraSids.
+//  4. **Never compressed** — the codec does not compress at all.
+//
+// A value that cannot be its row's type at issuance — a `${placeholder}` or a
+// directory value that is not an integer — leaves THAT claim out, said once
+// at warn with STS-KRB-0200; it never costs the ticket.
+//
+// **THE TICKED CATALOGUE (#498, 2026-10-06)** is the set's other half, as on
+// the other five: `claim_attributes.ts`'s `kerberos-pac` selection, nothing
+// ticked on a fresh start, read through this slot's `selectedAttributes`
+// member (the cycle rule 2 exists for forbids the require). rcbj's rules:
+//
+//  * each ticked attribute PRESENT ON THE PERSON'S ENTRY becomes a claim —
+//    the directory only, never the persona the JWT sets fall back to, as an
+//    attribute row reads it (#94) — named by its canonical catalogue spelling,
+//    so its id is `ad://ext/<attribute>:<hex>` derived exactly as a row's;
+//  * type STRING, EVERY value of a multi-valued attribute, source type AD;
+//  * a set's own ROW, and the roles claim the KDC writes itself, are never
+//    shadowed: a ticked attribute whose claim id one of them already holds
+//    adds nothing. So the precedence is roles (unless a row of its name
+//    replaces it, #493), rows, then the catalogue;
+//  * a TGT carries them (kerberosPacClaims()), a service ticket by the KDC's
+//    carry and override rules, and they count toward its 64 KiB cap. An
+//    application has no selection of its own for this set.
+// ---------------------------------------------------------------------------
+
+// One value as a PAC claim of `type`: a string for `string`, a decimal string
+// for the two integers (exact beyond 2^53), true/false for `boolean` — or null
+// when it is not one. Once per value while a ticket is built: the hot-path
+// exception, so no Entering/Leaving pair.
+/**
+ * Reads one value as a PAC claim value of a type, or null when it is not one.
+ *
+ * @param value - the value, as configured or read off the directory
+ * @param type - `string`, `int64`, `uint64` or `boolean`
+ * @returns the value in the codec's form, or null
+ */
+function pacClaimValue(value, type) {
+  const text = String(value == null ? '' : value).trim();
+  if (type === 'boolean') {
+    const lower = text.toLowerCase();
+    return lower === 'true' ? true : (lower === 'false' ? false : null);
+  }
+  if (type === 'int64' || type === 'uint64') {
+    if (!/^-?\d{1,20}$/.test(text)) {
+      return null;
+    }
+    const big = BigInt(text);
+    const min = type === 'int64' ? -(BigInt(1) << BigInt(63)) : BigInt(0);
+    const max = type === 'int64' ? (BigInt(1) << BigInt(63)) - BigInt(1)
+                                 : (BigInt(1) << BigInt(64)) - BigInt(1);
+    return big < min || big > max ? null : big.toString();
+  }
+  // A [string] LPWSTR cannot carry a NUL, and an empty value says nothing.
+  const raw = String(value == null ? '' : value);
+  return raw === '' || raw.indexOf('\u0000') >= 0 ? null : raw;
+}
+
+/**
+ * Returns the PAC claim id a row's name stands for: the name itself when it
+ * is already an `ad://ext/<name>:<hex>` id, and otherwise
+ * `ad://ext/<name>:<hex>` with the hex the first 64 bits of SHA-256 over the
+ * UTF-8 name.
+ *
+ * @param name - the row's name
+ * @returns the claim id
+ */
+function pacClaimId(name) {
+  log.debug("Entering pacClaimId().");
+  const text = String(name || '');
+  if (PAC_CLAIM_ID.test(text)) {
+    log.debug("Leaving pacClaimId(). Already an id.");
+    return text;
+  }
+  const hex = stsCrypto.sha256Hex(Buffer.from(text, 'utf8')).slice(0, 16);
+  log.debug("Leaving pacClaimId().");
+  return 'ad://ext/' + text + ':' + hex;
+}
+
+// The rows of the PAC set, turned into claims for one person: each row's
+// values typed, the ones that are not their type left out (and named), the
+// roles claim under them when `withRoles`. Later rows replace earlier ones of
+// the same NAME, which is how an application's rows win when the caller
+// passes the merged list.
+function pacClaimsFromRows(rows, context, withRoles, attributes) {
+  log.debug("Entering pacClaimsFromRows(). " + rows.length + " row(s).");
+  const ctx = context || {};
+  const ticked = attributes || [];
+  const byName = new Map();
+  const dropped = [];
+  if (withRoles) {
+    const roleClaim = resolvedRoleClaims(ctx);
+    Object.keys(roleClaim).forEach(function (name) {
+      const values = [].concat(roleClaim[name] || []).map(String)
+        .filter(function (one) { return one !== ''; });
+      if (values.length && (PAC_CLAIM_NAME.test(name) ||
+                            PAC_CLAIM_ID.test(name))) {
+        byName.set(name, { name: name, id: pacClaimId(name), type: 'string',
+                           values: values, from: 'roles' });
+      }
+    });
+  }
+  const entry = ticked.length || rows.some(function (row) {
+    return !!row.attribute;
+  }) ? resolvedEntryAttributes(ctx) : null;
+  rows.forEach(function (row) {
+    const type = row.type || 'string';
+    let raw;
+    if (row.attribute) {
+      raw = attributeValuesOf(entry, row.attribute);
+      if (!row.multi) {
+        raw = raw.slice(0, 1);
+      }
+      if (!raw.length) {
+        // The entry has none: the row adds nothing (#94's rule), and a lower
+        // layer of the same name still answers.
+        return;
+      }
+    } else {
+      raw = [expandValue(row.value, ctx)];
+    }
+    const values = raw.map(function (one) {
+      return pacClaimValue(one, type);
+    });
+    if (values.some(function (one) { return one === null; })) {
+      dropped.push(row.name);
+      return;
+    }
+    byName.set(row.name, { name: row.name, id: pacClaimId(row.name),
+                           type: type, values: values,
+                           from: row.attribute ? 'attribute' : 'value' });
+  });
+  // THE TICKED CATALOGUE (#498), UNDER everything above: a claim id a row or
+  // the roles claim already holds is theirs (see the header).
+  const taken = new Set(Array.from(byName.values()).map(function (claim) {
+    return claim.id;
+  }));
+  ticked.forEach(function (attribute) {
+    const claim = pacCatalogueClaim(entry, attribute);
+    if (!claim || taken.has(claim.id)) {
+      return;
+    }
+    if (claim.dropped) {
+      dropped.push(attribute);
+      return;
+    }
+    taken.add(claim.id);
+    byName.set(attribute, claim);
+  });
+  if (dropped.length) {
+    log.warn(errorCodes.tag('STS-KRB-0200') + 'krb5: the PAC claim(s) ' +
+             dropped.join(', ') + ' for "' + String(ctx.username || '') +
+             '" have a value that is not their type, and are left out of ' +
+             'the ticket. The ticket is issued with the rest.');
+  }
+  const out = Array.from(byName.values());
+  log.debug("Leaving pacClaimsFromRows(). " + out.length + " claim(s).");
+  return out;
+}
+
+// One ticked catalogue attribute as a PAC claim (#498): every value on the
+// entry, as STRING; null when the entry has none (it adds nothing), and
+// `dropped` when a value cannot be a PAC string (a NUL). Once per ticked
+// attribute while a ticket is built: the hot-path exception, so no
+// Entering/Leaving pair.
+function pacCatalogueClaim(entry, attribute) {
+  const name = String(attribute || '');
+  if (!PAC_CLAIM_NAME.test(name)) {
+    return null;
+  }
+  const raw = attributeValuesOf(entry, name);
+  if (!raw.length) {
+    return null;
+  }
+  const values = raw.map(function (one) {
+    return pacClaimValue(one, 'string');
+  });
+  const claim = { name: name, id: pacClaimId(name), type: 'string',
+                  values: values, from: 'catalogue' };
+  if (values.some(function (one) { return one === null; })) {
+    claim.dropped = true;
+  }
+  return claim;
+}
+
+// The realm's ticked catalogue attributes for a set, through the slot's
+// `selectedAttributes` member (#498), canonically spelled; none without a
+// resolver. Wrapped for resolvedJwtClaims()'s reason: a selection that cannot
+// be read costs those claims, never the ticket.
+function resolvedSelection(id) {
+  log.debug("Entering resolvedSelection(). " + id);
+  if (!attributeResolver ||
+      typeof attributeResolver.selectedAttributes !== 'function') {
+    log.debug("Leaving resolvedSelection(). No resolver.");
+    return [];
+  }
+  try {
+    const names = [].concat(attributeResolver.selectedAttributes(id) || [])
+      .map(String);
+    log.debug("Leaving resolvedSelection(). " + names.length + ".");
+    return names;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-REG-0042') +
+              'the claim-attribute resolver threw reading the ' + id +
+              ' selection and was ignored; the artifact is issued without ' +
+              'its ticked attributes: ' + e.message);
+    log.debug("Leaving resolvedSelection(). Threw.");
+    return [];
+  }
+}
+
+/**
+ * Returns what each named catalogue attribute would be as a PAC claim for one
+ * person (#498) — the console's and the API's table beside the checkboxes,
+ * built by the function a ticket is.
+ *
+ * @param context - `username`
+ * @param names - the catalogue attribute names, canonically spelled
+ * @returns `{ entryFound, byLdap: { <lower-cased name>: { claimId, values,
+ *   value, source } } }`, an attribute the entry lacks absent
+ */
+function kerberosPacAttributeValues(context, names) {
+  log.debug("Entering kerberosPacAttributeValues().");
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  const entry = resolvedEntryAttributes(ctx);
+  const byLdap = {};
+  (names || []).forEach(function (name) {
+    const claim = pacCatalogueClaim(entry, name);
+    if (claim && !claim.dropped) {
+      byLdap[String(name).toLowerCase()] = {
+        claimId: claim.id, values: claim.values,
+        value: claim.values.join(', '), source: 'directory' };
+    }
+  });
+  log.debug("Leaving kerberosPacAttributeValues(). " +
+            Object.keys(byLdap).length + ".");
+  return { entryFound: !!entry, byLdap: byLdap };
+}
+
+/**
+ * Returns the claims a person's TGT carries in its PAC: the realm's
+ * `kerberos-pac` set, with the person's realm-wide roles under it as a
+ * string claim (rcbj's decision 3 on #493), and the set's ticked catalogue
+ * attributes under both (#498).
+ *
+ * @param context - `username` (the person), and nothing else is needed
+ * @returns `[{ name, id, type, values, from }]`, empty for none
+ */
+function kerberosPacClaims(context) {
+  log.debug("Entering kerberosPacClaims().");
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  // No application: a TGT is for the KDC, and its roles are the realm-wide
+  // ones (the roles of one application are not this person's in general).
+  delete ctx.application;
+  const out = pacClaimsFromRows(claimSet('kerberos-pac'), ctx, true,
+                                resolvedSelection('kerberos-pac'));
+  log.debug("Leaving kerberosPacClaims(). " + out.length + " claim(s).");
+  return out;
+}
+
+/**
+ * Returns an application's OWN PAC claims for a person — the rows on its
+ * `krb5ClaimsPac`, typed — which the KDC adds to a service ticket for one of
+ * its service principal names, winning by name over what the TGT carried.
+ *
+ * @param application - the application's identifier or service principal
+ *   name, or its view
+ * @param context - `username`
+ * @returns `[{ name, id, type, values, from }]`, empty for none
+ */
+function kerberosApplicationPacClaims(application, context) {
+  log.debug("Entering kerberosApplicationPacClaims().");
+  const rows = applicationClaimSet('kerberos-pac', application);
+  if (!rows.length) {
+    log.debug("Leaving kerberosApplicationPacClaims(). None.");
+    return [];
+  }
+  const ctx = Object.assign({}, context || {});
+  ctx.subject = ctx.subject || ctx.username;
+  const out = pacClaimsFromRows(rows, ctx, false);
+  log.debug("Leaving kerberosApplicationPacClaims(). " + out.length + ".");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // WHO HOLDS SOMETHING LIVE THAT A CONFIGURATION CHANGE MOVES (#238).
 //
 // holdsLiveIssuance() above answers the question for ONE person, which is
@@ -3861,16 +4882,44 @@ function holdsLiveIssuance(username, sub) {
 //
 // Access and ID Tokens, and SAML assertions: the three kinds whose CLAIMS a
 // relying party holds. A refresh token carries none of them — the tokens it
-// mints next are built afresh — and a token with no person behind it (a
-// client_credentials grant) names an application, whose subject waits on
-// #221. One walk of each register, in the ambient realm.
+// mints next are built afresh. One walk of each register, in the ambient
+// realm.
+//
+// **AN APPLICATION'S OWN TOKEN IS A HOLDER OF ITS OWN (#221 P5).** A
+// client_credentials token has no person behind it, and is recorded under its
+// client (recordToken() above files `username` as the client_id). Until #221
+// it was listed here as though that client_id were a person, and the fan-out
+// sent an `iss_sub` "user" nobody had. It is listed under `application:` and
+// the client_id now, with `application` set on the row and on what `match`
+// sees, so `ssf.ts` names the application (`applicationClaimsEmit()`).
 // ---------------------------------------------------------------------------
 const SET_OF_KIND = { access_token: 'access_token', id_token: 'id_token',
                       'SAML 2.0': 'saml2', 'SAML 1.1': 'saml11' };
 
+// The application a token record is an application's OWN token for: the
+// client of a client_credentials grant, or '' for a token with a person
+// behind it (#221 P5).
+/**
+ * Returns the application a token is that application's own token for (a
+ * client_credentials grant's client), or '' for a person's token.
+ *
+ * @param record - a token record
+ * @returns the client_id, or ''
+ */
+function applicationOfToken(record) {
+  log.debug("Entering applicationOfToken().");
+  const one = record || {};
+  const out = one.grant === 'client_credentials'
+    ? String(one.client_id || one.username || '') : '';
+  log.debug("Leaving applicationOfToken(). " + (out || '(a person\'s)'));
+  return out;
+}
+
 /**
  * Lists every person holding a live access token, ID Token or SAML assertion,
- * each with the newest such artifact and its claim set.
+ * each with the newest such artifact and its claim set — and every
+ * application holding a live token of its own (client_credentials), as a row
+ * with `application` set and no `username`.
  *
  * @param match - a predicate over the artifacts to consider; all when omitted
  * @returns the bearers
@@ -3889,6 +4938,18 @@ function liveClaimBearers(match) {
                              claimSet: fromSet, at: at });
     }
   };
+  // Keyed apart from every person: a username cannot carry the prefix's
+  // NUL, so an application and a person of the same name are two holders.
+  const keepApplication = function (application, record, fromSet, at) {
+    log.debug("Entering keepApplication(). " + application);
+    const key = '\u0000application:' + application;
+    const held = newest.get(key);
+    if (!held || at > held.at) {
+      newest.set(key, { username: '', sub: '', application: application,
+                        record: record, claimSet: fromSet, at: at });
+    }
+    log.debug("Leaving keepApplication().");
+  };
   tokens.forEach(function (record) {
     const fromSet = SET_OF_KIND[record.kind];
     if (!fromSet || !record.username) {
@@ -3898,15 +4959,27 @@ function liveClaimBearers(match) {
     if (state !== 'valid' && state !== 'no expiry stated') {
       return;
     }
-    if (!accept(Object.assign({}, record, { claimSet: fromSet }))) {
+    const application = applicationOfToken(record);
+    if (!accept(Object.assign({}, record, { claimSet: fromSet,
+                                            application: application }))) {
+      return;
+    }
+    if (application) {
+      keepApplication(application, record, fromSet,
+                      Number(record.iat || 0) * 1000);
       return;
     }
     keep(String(record.username), String(record.sub || ''), record, fromSet,
          Number(record.iat || 0) * 1000);
   });
   allArtifacts().forEach(function (one) {
-    const fromSet = SET_OF_KIND[one.kind];
-    if (!fromSet || !one.subject) {
+    // A Kerberos ticket is a holder only when its PAC carried claims from the
+    // PAC set (#493): recordTicket() files `claimSet` and the person's
+    // `username` (its `subject` is a principal, name@REALM) on that row alone.
+    const fromSet = SET_OF_KIND[one.kind] ||
+      (one.claimSet === 'kerberos-pac' ? 'kerberos-pac' : '');
+    const holder = fromSet === 'kerberos-pac' ? one.username : one.subject;
+    if (!fromSet || !holder) {
       return;
     }
     const state = artifactStateOf(withRevocation(one), nowMs);
@@ -3914,13 +4987,13 @@ function liveClaimBearers(match) {
       return;
     }
     const shaped = { claimSet: fromSet, kind: one.kind,
-                     username: String(one.subject),
-                     audience: String(one.audience || ''),
+                     username: String(holder),
+                     audience: String(one.audience || one.service || ''),
                      client_id: String(one.audience || ''), scope: '' };
     if (!accept(shaped)) {
       return;
     }
-    keep(String(one.subject), '', shaped, fromSet,
+    keep(String(holder), '', shaped, fromSet,
          Number(one.issuedAt || 0));
   });
   const out = Array.from(newest.values());
@@ -3946,13 +5019,29 @@ function liveClaimBearers(match) {
 function claimValuesFor(setId, record, names) {
   log.debug("Entering claimValuesFor(). set=" + setId);
   const held = record || {};
-  const context = { username: String(held.username || ''),
-                    subject: String(held.username || ''),
+  // An application's own token (#221 P5) is built for no person: its
+  // claims are what an issuance with no username would carry — the
+  // application's roles among them (resolvedRoleClaims()).
+  const person = applicationOfToken(held) ? '' : String(held.username || '');
+  const context = { username: person,
+                    subject: person,
                     sub: String(held.sub || ''),
                     client_id: String(held.client_id || ''),
                     audience: String(held.audience || '') };
   const out = {};
-  if (setId === 'saml2' || setId === 'saml11') {
+  if (setId === 'kerberos-pac') {
+    // What the person's next TGT would carry (#493): a ticket already issued
+    // carries the old claims until it expires, which is what the event says.
+    const claims = kerberosPacClaims(context);
+    (names || []).forEach(function (name) {
+      const found = claims.filter(function (one) {
+        return one.name === name;
+      })[0];
+      out[name] = found ? (found.values.length === 1 ? found.values[0]
+                                                     : found.values.slice(0))
+                        : null;
+    });
+  } else if (setId === 'saml2' || setId === 'saml11') {
     const attributes = samlAttributes(setId, context);
     (names || []).forEach(function (name) {
       const found = attributes.filter(function (attribute) {
@@ -3993,7 +5082,9 @@ function claimNamesFor(setId, username) {
   log.debug("Entering claimNamesFor(). set=" + setId);
   const context = { username: String(username || ''),
                     subject: String(username || '') };
-  const out = (setId === 'saml2' || setId === 'saml11')
+  const out = setId === 'kerberos-pac'
+    ? kerberosPacClaims(context).map(function (claim) { return claim.name; })
+    : (setId === 'saml2' || setId === 'saml11')
     ? samlAttributes(setId, context).map(function (attribute) {
       return attribute.name;
     })
@@ -4486,6 +5577,58 @@ function issuedList() {
 }
 
 // ---------------------------------------------------------------------------
+// ONE KIND OF ARTIFACT, AS `issuedList()` WOULD LIST IT (#352, 2026-09-29).
+//
+// `/admin/sessions` (through `logout.liveSessions()`) wanted the Kerberos
+// ticket-granting tickets and built `issuedList()` to find them: every token
+// copied and given a state, every artifact of every kind given one, all of it
+// sorted — up to five thousand tokens on each request, to keep a handful of
+// tickets. This walks the artifacts once, keeps the kind asked for, and
+// builds each kept row by the artifact branch of `issuedList()` — the same
+// members, the same state against the same clock — in the same order that
+// list would have put them in: newest first, and among equal instants the one
+// recorded later first.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the issued artifacts of one kind, each as `issuedList()` would list
+ * it, newest first.
+ *
+ * @param kind - the artifact kind, such as `Kerberos TGT`
+ * @returns the rows
+ */
+function issuedArtifactsOfKind(kind) {
+  log.debug("Entering issuedArtifactsOfKind(). kind=" + kind);
+  const nowMs = Date.now();
+  const family = FAMILY_BY_ARTIFACT_KIND[kind];
+  const out = [];
+  if (!family) {
+    log.debug("Leaving issuedArtifactsOfKind(). Not a listed kind.");
+    return out;
+  }
+  allArtifacts().forEach(function (one, index) {
+    if (!one || one.kind !== kind) {
+      return;
+    }
+    const record = withRevocation(one);
+    out.push(Object.assign({}, record, {
+      family: family,
+      state: artifactStateOf(record, nowMs),
+      expiresAtMs: record.expiresAt || 0,
+      identifier: record.id || '',
+      setId: '',
+      revocable: true,
+      revocationReach: 'record-only',
+      order: index
+    }));
+  });
+  out.sort(function (a, b) {
+    return (b.issuedAt - a.issuedAt) || (b.order - a.order);
+  });
+  log.debug("Leaving issuedArtifactsOfKind(). " + out.length + " row(s).");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE SAME LIST, GROUPED INTO WHAT WAS ISSUED TOGETHER.
 //
 // **This is what /admin/tokens draws, and the reason it is a different list
@@ -4765,12 +5908,92 @@ function blankUserRow(identity) {
  */
 function userRows() {
   log.debug("Entering userRows().");
+  const out = buildUserRows(undefined);
+  log.debug("Leaving userRows().");
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// ONE IDENTITY'S ROW, WITHOUT EVERYBODY ELSE'S (#352, 2026-09-29).
+//
+// `userDetail()` found its row by building `userRows()` and filtering it —
+// every register record copied and folded, every token and artifact walked
+// into a row, every row's counted maps turned into sorted arrays, all sorted
+// by activity — to keep one. On testidp that is thirteen thousand rows built
+// for each click on a name. `buildUserRows()` takes the key and builds only
+// that row, through the same code, so the row it answers is the row the
+// whole list would have held: the register fold keeps the one record, and
+// a token or artifact is counted only if it files under that key.
+// ---------------------------------------------------------------------------
+/**
+ * Returns one identity's row, exactly as `userRows()` would list it.
+ *
+ * @param key - the identity's key
+ * @returns the row, or null when nothing here knows that key
+ */
+function userRow(key) {
+  log.debug("Entering userRow(). key=" + key);
+  const rows = buildUserRows(String(key == null ? '' : key));
+  log.debug("Leaving userRow(). " + (rows.length ? "Found." : "None."));
+  return rows[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// EVERY KEY `userRows()` WOULD LIST, AND NOTHING ELSE (#352, 2026-09-29).
+//
+// Nine console pages asked `userRows()` for a set of keys — "is this member
+// somebody the users page knows, so the name can be a link" — and threw the
+// rows away. The keys come from the same three sources by the same rules (the
+// register's records, `holderKeyOf()` of every token, `identityOf()` of every
+// artifact's subject); no row is built, copied or sorted.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the key of every identity `userRows()` would list.
+ *
+ * @returns a Set of keys
+ */
+function userKeys() {
+  log.debug("Entering userKeys().");
+  const keys = new Set();
+  users.forEach(function (record) {
+    keys.add(record.key);
+  });
+  replication.remoteKeys('admin_stats.users').forEach(function (key) {
+    replication.remoteRows('admin_stats.users', undefined, key)
+      .forEach(function (value) {
+        if (value && typeof value === 'object') {
+          keys.add(value.key || key);
+        }
+      });
+  });
+  // `rowFor()`'s rule: the key is `identityOf()` of what it is handed, and an
+  // empty one files nothing.
+  const add = function (value) {
+    const identity = identityOf(value);
+    if (identity.key) {
+      keys.add(identity.key);
+    }
+  };
+  tokens.forEach(function (record) {
+    add(holderKeyOf(record.username, record.sub));
+  });
+  allArtifacts().forEach(function (record) {
+    add(record.subject);
+  });
+  log.debug("Leaving userKeys(). " + keys.size + " key(s).");
+  return keys;
+}
+
+// `userRows()`, or with `onlyKey` the one row it would hold under that key.
+function buildUserRows(onlyKey) {
+  log.debug("Entering buildUserRows().");
+  const wanted = onlyKey === undefined ? null : String(onlyKey);
   const nowMs = Date.now();
   const rows = new Map();
   const rowFor = function (value) {
     log.debug("Entering rowFor().");
     const identity = identityOf(value);
-    if (!identity.key) {
+    if (!identity.key || (wanted !== null && identity.key !== wanted)) {
       log.debug("Leaving rowFor().");
       return null;
     }
@@ -4783,7 +6006,7 @@ function userRows() {
     return row;
   };
 
-  everyUserRecord().forEach(function (record) {
+  everyUserRecord(onlyKey).forEach(function (record) {
     const row = blankUserRow(record);
     // The registry's own counts win over anything reconstructed below: they
     // count authentications, and the forms map there was built one presentation
@@ -4868,7 +6091,7 @@ function userRows() {
   // Most recently active first, which on a mock is nearly always the person
   // being debugged right now.
   out.sort(function (a, b) { return b.lastActivityAt - a.lastActivityAt; });
-  log.debug("Leaving userRows(). " + out.length + " user(s), " +
+  log.debug("Leaving buildUserRows(). " + out.length + " user(s), " +
             out.filter(function (r) { return r.authenticated; }).length + " " +
                 "authenticated here.");
   return out;
@@ -4887,20 +6110,64 @@ function userRows() {
 function userDetail(key) {
   log.debug("Entering userDetail(). key=" + key);
   const wanted = String(key || '');
-  const row = userRows().filter(function (r) { return r.key === wanted; })[0] ||
-              null;
+  // `userRow()` and not `userRows()` filtered (#352): the same row, without
+  // building everybody else's to find it.
+  const row = wanted ? userRow(wanted) : null;
   if (!row) {
     log.debug("Leaving userDetail(). No such user.");
     return null;
   }
+  const held = holdingsOf([wanted]).get(wanted);
+  log.debug("Leaving userDetail(). " + held.tokens.length + " token(s), " +
+            held.artifacts.length + " artifact(s).");
+  return { user: row, tokens: held.tokens, artifacts: held.artifacts };
+}
+
+// ---------------------------------------------------------------------------
+// WHAT SEVERAL IDENTITIES HOLD, FROM ONE PASS OVER EACH REGISTER (#351,
+// 2026-09-29).
+//
+// userDetail() answers one identity and builds EVERY user row to find it,
+// then walks every token and every artifact. The sign-out's `token` and
+// `issued` families asked it once each per person — four whole folds of this
+// register per person deleted, since a delete reads what the person held and
+// then ends it — and a SCIM Bulk of a hundred deletes spent most of its time
+// here. This is the half of it a sign-out needs: the token and artifact
+// records, in userDetail()'s shapes and filtered by its rules, for every key
+// asked at once. userDetail() is this with the row beside it, so the two
+// cannot disagree about what a person holds.
+//
+// What it does NOT ask is whether the identity has a row on /admin/users.
+// userDetail() answered null without one, and a sign-out read that null as
+// "holds nothing"; but every token's holder and every artifact's subject makes
+// a row (userRows() is built from exactly these records), so the only thing
+// the row ever hid was an artifact filed under somebody by its `person` alone
+// — which is theirs to have ended, and is ended now.
+// ---------------------------------------------------------------------------
+/**
+ * Returns what each identity holds: their token records and their artifact
+ * records, in userDetail()'s shapes, from one pass over each register.
+ *
+ * @param keys - the identity keys
+ * @returns a Map from each key asked to `{ tokens, artifacts }`, newest first
+ */
+function holdingsOf(keys) {
+  log.debug("Entering holdingsOf(). " + (keys || []).length + " key(s).");
+  const out = new Map();
+  (keys || []).forEach(function (key) {
+    out.set(String(key || ''), { tokens: [], artifacts: [] });
+  });
+  if (!out.size) {
+    log.debug("Leaving holdingsOf(). Nobody asked.");
+    return out;
+  }
   const nowMs = Date.now();
-  const theirTokens = [];
   tokens.forEach(function (record) {
-    if (holderKeyOf(record.username, record.sub) !== wanted) return;
-    theirTokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
+    const held = out.get(holderKeyOf(record.username, record.sub));
+    if (!held) return;
+    held.tokens.push(Object.assign({ state: tokenStateOf(record, nowMs) },
                                    record));
   });
-  theirTokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   // ACROSS EVERY PROCESS'S ROWS — see allArtifacts(). This was the LAST reader
   // still walking the bare array, and it was the one that mattered most: this
   // is what `logout.js`'s `issued` family collects, so a credential another
@@ -4910,16 +6177,22 @@ function userDetail(key) {
   // ticket whose artifact stayed `valid` because nothing had offered it for
   // revocation. The SAML assertions beside it revoked correctly, which is what
   // made it look like a Kerberos problem for a day.
-  const theirArtifacts = allArtifacts().filter(function (record) {
-    return identityKeyOf(record.subject) === wanted ||
-           (!!record.person && identityKeyOf(record.person) === wanted);
-  }).map(function (one) {
+  allArtifacts().forEach(function (one) {
+    const bySubject = out.get(identityKeyOf(one.subject));
+    const byPerson = one.person ? out.get(identityKeyOf(one.person)) : null;
+    if (!bySubject && !byPerson) return;
     const record = withRevocation(one);
-    return Object.assign({ state: artifactStateOf(record, nowMs) }, record);
-  }).sort(function (a, b) { return b.issuedAt - a.issuedAt; });
-  log.debug("Leaving userDetail(). " + theirTokens.length + " token(s), " +
-            theirArtifacts.length + " artifact(s).");
-  return { user: row, tokens: theirTokens, artifacts: theirArtifacts };
+    const shaped = Object.assign({ state: artifactStateOf(record, nowMs) },
+                                 record);
+    if (bySubject) bySubject.artifacts.push(shaped);
+    if (byPerson && byPerson !== bySubject) byPerson.artifacts.push(shaped);
+  });
+  out.forEach(function (held) {
+    held.tokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+    held.artifacts.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
+  });
+  log.debug("Leaving holdingsOf().");
+  return out;
 }
 
 // The session a token was issued under, by jti. The refresh grant is what needs
@@ -5287,6 +6560,33 @@ function snapshot() {
 }
 
 /**
+ * Extracts this module's part of the scim namespace (#543 phase 2b): what
+ * each SCIM operation is, and what the monitor says of one it does not list.
+ * Its labels are not harvested: `Bulk` is also a resource type's NAME in the
+ * same answer, and a label translated there would rename the type.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // LAZILY: this module is required early (`app.js` installs its JWT
+  // recorder at #2 of the require order), and a require here at load would
+  // be the one thing that could make server_prose.ts load before what it
+  // requires has finished.
+  const serverProse = require('./server_prose');
+  // Keyed by `operation`: harvest() would name a row by its `method`, and
+  // the methods repeat.
+  const byOperation = {};
+  SCIM_OPERATIONS.forEach(function (row) {
+    byOperation[row.operation] = { what: row.what };
+  });
+  const out = serverProse.harvest('stats.operations', byOperation, ['what']);
+  out['stats.unlistedOperation'] = SCIM_UNLISTED_OPERATION;
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
+/**
  * What this service has done since it started, and the two things an operator
  * can change: which tokens are invalid, and what custom claims every new token
  * carries.
@@ -5325,7 +6625,12 @@ module.exports = {
   holderKeyOf: holderKeyOf,
   renameIdentity: renameIdentity,
   userRows: userRows,
+  // #352: one row, and the keys alone, without building every row.
+  userRow: userRow,
+  userKeys: userKeys,
+  issuedArtifactsOfKind: issuedArtifactsOfKind,
   userDetail: userDetail,
+  holdingsOf: holdingsOf,
   sessionIdOfJti: sessionIdOfJti,
   sessionAuthenticatedOfJti: sessionAuthenticatedOfJti,
   recordAssertion: recordAssertion,
@@ -5334,6 +6639,8 @@ module.exports = {
   recordSvid: recordSvid,
   recordCredentialStatus: recordCredentialStatus,
   SCIM_OPERATIONS: SCIM_OPERATIONS,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   SCIM_RESOURCE_TYPES: SCIM_RESOURCE_TYPES,
   recordScim: recordScim,
   scimSnapshot: scimSnapshot,
@@ -5360,7 +6667,22 @@ module.exports = {
   isRevoked: isRevoked,
   revokedCount: revokedCount,
   claimSet: claimSet,
+  attributeClaimRows: attributeClaimRows,
   setClaimSet: setClaimSet,
+  checkClaimEntries: checkClaimEntries,
+  KERBEROS_CLAIM_SET_IDS: KERBEROS_CLAIM_SET_IDS,
+  PAC_CLAIM_TYPES: PAC_CLAIM_TYPES,
+  pacClaimId: pacClaimId,
+  pacClaimValue: pacClaimValue,
+  kerberosPacClaims: kerberosPacClaims,
+  kerberosApplicationPacClaims: kerberosApplicationPacClaims,
+  kerberosPacAttributeValues: kerberosPacAttributeValues,
+  APP_CLAIM_ATTRIBUTES: APP_CLAIM_ATTRIBUTES,
+  applicationClaimSet: applicationClaimSet,
+  effectiveClaimSet: effectiveClaimSet,
+  // The application an issuance's claims are for (#495), asked by
+  // claim_attributes.ts for an application's own attribute selection.
+  claimApplicationOf: claimApplicationOf,
   // Filled by claim_attributes.js at its require time; see the note above it.
   // The inversion is what keeps the four issuance sites unchanged.
   setAttributeResolver: setAttributeResolver,
@@ -5378,6 +6700,7 @@ module.exports = {
   // The fan-out's two halves (#238): who holds a live artifact a
   // configuration change shaped, and what its claims would say now.
   liveClaimBearers: liveClaimBearers,
+  applicationOfToken: applicationOfToken,
   claimValuesFor: claimValuesFor,
   claimNamesFor: claimNamesFor,
   announceClaimsReshaped: announceClaimsReshaped,

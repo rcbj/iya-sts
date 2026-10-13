@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -142,8 +142,9 @@ function run(t) {
   const root = path.join(__dirname, '..');
   const authnSource = fs.readFileSync(path.join(root, 'authn', 'authn.ts'),
                                       'utf8');
-  const portalSource = fs.readFileSync(path.join(root, 'portal', 'portal.ts'),
-                                       'utf8');
+  // The passkey operations since #568.
+  const portalSource = fs.readFileSync(path.join(root, 'portal',
+                                                 'account_keys.ts'), 'utf8');
   // `this.` since the module became a class (#50).
   t.check(/const expectedOrigin = (?:this\.)?expectedOriginFor\(base, credential\);/
             .test(authnSource) &&

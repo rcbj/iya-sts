@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # Copyright and licensing of every file in this repository, in the format of
 # the REUSE specification 3.2 (https://reuse.software/spec-3.2/).
@@ -15,12 +15,33 @@
 
 version = 1
 
-# Everything this project wrote, including the byte-identical copies of the
-# parent project's files (common/vendored/, the eight Kerberos codec files,
-# the non-local tests/vendored/ jobs), which have the same owner and
-# licence and may not be edited here to carry a header.
+# Everything this project wrote: the Business Source License 1.1 since
+# 2026-09-30 (LICENSE.md; what was published before that stays MIT).
 [[annotations]]
 path = "**"
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "BUSL-1.1"
+
+# The byte-identical copies of the parent project's files, which have the
+# same owner, keep the parent project's MIT licence, and may not be edited
+# here to carry a header. "closest" lets a file's own header win, so this
+# service's own files under these paths (common/vendored/pqc.js,
+# pqc_x509.js and xmldsig.js since #363, and the local: true jobs in
+# tests/vendored/) stay under the licence their header names.
+[[annotations]]
+path = [
+  "common/vendored/**",
+  "kerberos/krb5_primitives.js",
+  "kerberos/krb5_asn1.js",
+  "kerberos/krb5_crypto.js",
+  "kerberos/krb5_messages.js",
+  "kerberos/krb5_ndr.js",
+  "kerberos/krb5_pac.js",
+  "kerberos/krb5_gss.js",
+  "kerberos/krb5_spnego.js",
+  "tests/vendored/**",
+]
 precedence = "closest"
 SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
 SPDX-License-Identifier = "MIT"

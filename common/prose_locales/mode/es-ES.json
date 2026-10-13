@@ -1,0 +1,18 @@
+{
+  "mode.requirements.credential-issuer-tokens.development": {
+    "en": "b5994bd9f06c2622",
+    "text": "Los endpoints de credencial, credencial diferida y notificación aceptan cualquier token de acceso y leen sus claims sin verificar — OpenID4VCI permite que el servidor de autorización sea otro —, de modo que se puede dirigir una cartera a este emisor con un token de cualquier procedencia."
+  },
+  "mode.requirements.deliberate-defects.development": {
+    "en": "0b1230d1659875d3",
+    "text": "oauth2.breakIdTokenNonce pone un nonce incorrecto en todo ID Token que deba llevar uno, ssf.breakSetSignature cambia un carácter de la firma de cada SET, ssf.legacySubClaim añade el claim `sub` que RFC 8417 desaconseja junto a `sub_id`, risc.googleSubjectType escribe el miembro `subject_type` que RISC 1.0 sección 3.1 dice que los servicios nuevos NO DEBEN usar, y krb5.clockOffset mueve el reloj del KDC — cada uno mientras esté definido, para que pueda ejercitarse la gestión que hace un cliente de una respuesta incorrecta."
+  },
+  "mode.requirements.console-bootstrap-window.product": {
+    "en": "80feb38828e08d3d",
+    "text": "Nadie tiene un rol por la ventana, diga lo que diga admin.openWhenEmpty: solo decide la lista. Hasta que el administrador de arranque haya reclamado la consola, sus roles solo se respetan a partir de un inicio de sesión con CONTRASEÑA a través de su propio dominio (amr pwd, verificado aquí, no un socio de federación, un certificado, una cartera o un ticket Kerberos), y solo ese inicio de sesión la reclama (STS-ADMIN-0796); el depurador y la autoridad de inscripción de certificados de una sesión esperan a la reclamación. Un dominio sin administrador de arranque y con la lista vacía queda cerrado y se registra en el log al arrancar (STS-ADMIN-0798); POST /admin-api/rbac/grant es la forma de entrar."
+  },
+  "mode.requirements.return-addresses.development": {
+    "en": "6c6eccc7e6bfce66",
+    "text": "Se usa cualquier URL absoluta que nombre un AuthnRequest de SAML, un shire de SAML 1.1, un wreply de WS-Federation o un enlace de cartera, registrada o no — y una dirección que una observación escribe en una entrada de aplicación (o un callback que la consola o el portal aprende de un encabezado Host) se MARCA como observada en appReturnAddressObserved."
+  }
+}

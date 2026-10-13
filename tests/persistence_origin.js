@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -29,9 +29,10 @@
 //      the second's release lets a third take it at once. Plus, as source,
 //      that `persistence.js` names the origin by node and slot and that
 //      `request_pool.js` hands each worker its slot.
-//   C. THE TWO ACCUMULATORS NO READER FANNED IN — the SCIM counters and what
-//      `POST /ssf/receive` received — and the SSF sweep history, read with
-//      another origin's contribution in place.
+//   C. THE ACCUMULATOR NO READER FANNED IN — the SCIM counters (what
+//      `POST /ssf/receive` received was the second, until #593 deleted that
+//      endpoint) — and the SSF sweep history, read with another origin's
+//      contribution in place.
 //   D. THE STORES THAT WERE NOT PERSISTED AT ALL — SCIM's Digest counts and
 //      HOBA history, the sweep history — are declared now.
 // ===========================================================================
@@ -361,7 +362,10 @@ async function claimB(t) {
           /driver\.releaseOrigin\(\)/.test(persistenceSrc),
           'persistence.js adopts the origin by node and slot when the store ' +
           'opens, and releases it at a clean stop');
-  t.check(/fork\(pool, i\)/.test(poolSrc) &&
+  // THE SLOT IS HANDED THROUGH THE START GATE SINCE #342: start() queues
+  // `{ pool, slot }` and the gate forks it with that slot.
+  t.check(/forks\.push\(\{ pool: pool, slot: i \}\)/.test(poolSrc) &&
+          /fork\(next\.pool, next\.slot\)/.test(poolSrc) &&
           /STS_REQUEST_WORKER_SLOT: typeof slot === 'number'/.test(poolSrc),
           'request_pool.js hands every worker its slot');
   log.debug("Leaving claimB().");
@@ -386,18 +390,6 @@ function claimC(t) {
           'the SCIM counts include another process\'s',
           JSON.stringify([before.total, after.total]));
   replication.contribute('admin_stats.scimCounts', realms.currentId(), '',
-                         'n:other-node:front', null);
-
-  const streams = require('../ssf/ssf_streams');
-  const mine = streams.listReceived().length;
-  replication.contribute('ssf_streams.received', realms.currentId(), '',
-                         'n:other-node:front',
-                         [{ at: '2000-01-01T00:00:00.000Z', token: 'x' }]);
-  const all = streams.listReceived();
-  t.check(all.length === mine + 1 &&
-          all[0].at === '2000-01-01T00:00:00.000Z',
-          'what another process received is listed, oldest first');
-  replication.contribute('ssf_streams.received', realms.currentId(), '',
                          'n:other-node:front', null);
 
   const report = require('../ssf/ssf_dead_letter_report');

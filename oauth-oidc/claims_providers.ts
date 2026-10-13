@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -82,7 +82,6 @@
 // never sent; the person links again.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -120,8 +119,16 @@ const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
 // Setup flows in progress: state -> { username, provider, verifier, at }.
 // PERSISTED: the provider may send the person back to another node.
-const flows = realms.map({ persist: 'oauth2.claimSourceFlows',
-                           retain: 'age' });
+// `expiresAt` (#333): a link request lives FLOW_TTL_MS from its `at`.
+const flows = realms.map({
+  persist: 'oauth2.claimSourceFlows',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (flow: Json): number | null {
+    const at = Number(flow && flow.at);
+    return at > 0 ? at + FLOW_TTL_MS : null;
+  }
+});
 
 interface Provider {
   id: string;
@@ -264,7 +271,7 @@ class ClaimsProviders {
   private open(stored: string, label: string): string {
     const { log, keystore } = this.deps;
     log.debug("Entering ClaimsProviders.open(). " + label);
-    if (!/^\$aesgcm\$/.test(String(stored || ''))) {
+    if (!stsCrypto.isEncryptedWithKek(String(stored || ''))) {
       log.debug("Leaving ClaimsProviders.open(). Not sealed.");
       return String(stored || '');
     }
@@ -692,10 +699,15 @@ class ClaimsProviders {
    * @param username - the person
    * @param id - the provider id
    * @param base - the request's base URL
+   * @param sessionId - the sign-on session the person started it from: the
+   *   callback is honoured only while that session is live (#568)
+   * @param binding - the SHA-256 of the secret the starting browser was
+   *   handed in a cookie: the callback is honoured only in that browser
    * @returns `{ ok: true, location }` to send the browser to, or `{ ok: false,
    *   code, why }`
    */
-  beginLink(username: string, id: string, base: string): Json {
+  beginLink(username: string, id: string, base: string,
+            sessionId?: string, binding?: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.beginLink(). " + id);
     const provider = this.get(id);
@@ -704,14 +716,24 @@ class ClaimsProviders {
       return { ok: false, code: 'STS-OAUTH-0678',
                why: 'this realm has no Claims Provider "' + id + '"' };
     }
-    const state = nodeCrypto.randomBytes(24).toString('base64url');
-    const verifier = nodeCrypto.randomBytes(32).toString('base64url');
-    const challenge = nodeCrypto.createHash('sha256').update(verifier)
-      .digest('base64url');
+    const state = stsCrypto.randomBytes(24).toString('base64url');
+    const verifier = stsCrypto.randomBytes(32).toString('base64url');
+    const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     const redirectUri = base + CALLBACK_PATH;
+    // THE BROWSER AND THE SIGN-ON SESSION IT WAS STARTED FROM (#568). The
+    // portal held a session cookie of its own until it became a static
+    // application, and the callback asked for it, so a browser that was not
+    // the person's could not finish their link — the account-linking CSRF,
+    // in which somebody starts a link on their own account and sends the
+    // provider's address to a victim, whose provider account then lands on
+    // the attacker's entry. The portal's API holds no cookie, so the start
+    // hands the browser a binding cookie of its own and the flow keeps its
+    // digest, with the sign-on session the token was issued on; the callback
+    // asks for both (`flowFor()`, `portal_claim_sources.ts`).
     flows.set(state, { username: String(username), provider: id,
                        verifier: verifier, redirectUri: redirectUri,
-                       at: now() });
+                       session: String(sessionId || ''),
+                       binding: String(binding || ''), at: now() });
     const target = new URL(provider.authorizationEndpoint);
     target.searchParams.set('response_type', 'code');
     target.searchParams.set('client_id', provider.clientId);
@@ -722,6 +744,32 @@ class ClaimsProviders {
     target.searchParams.set('code_challenge_method', 'S256');
     log.debug("Leaving ClaimsProviders.beginLink().");
     return { ok: true, location: target.toString() };
+  }
+
+  // WHOSE A LINK REQUEST IS, read without spending it (#568): the callback
+  // has no portal session to name the person, so it asks the flow, and then
+  // checks the browser holds the binding cookie the flow was started with
+  // and that the sign-on session it was started from is still live.
+  /**
+   * The person, sign-on session and browser binding a live link request
+   * belongs to.
+   *
+   * @param state - the callback's `state`
+   * @returns `{ username, session, binding }`, or null for a request that is
+   *   unknown or expired
+   */
+  flowFor(state: string): Json {
+    const { log, now } = this.deps;
+    log.debug("Entering ClaimsProviders.flowFor().");
+    const flow = state ? flows.get(String(state)) : null;
+    if (!flow || now() - Number(flow.at || 0) > FLOW_TTL_MS) {
+      log.debug("Leaving ClaimsProviders.flowFor(). None.");
+      return null;
+    }
+    log.debug("Leaving ClaimsProviders.flowFor().");
+    return { username: String(flow.username),
+             session: String(flow.session || ''),
+             binding: String(flow.binding || '') };
   }
 
   // The provider sent the person back. Resolves { ok, provider } or
@@ -902,7 +950,7 @@ class ClaimsProviders {
     let why = 'no key in the provider\'s set verified it';
     for (const jwk of keys) {
       try {
-        const key = nodeCrypto.createPublicKey({ key: jwk, format: 'jwk' });
+        const key = stsCrypto.publicKeyFromJwk(jwk);
         const claims = stsCrypto.verifyJws(String(jwt), key, {
           // THE FAMILY FROM THE KEY, never the token's word alone.
           algorithms: [alg], issuer: provider.issuer,
@@ -1208,6 +1256,35 @@ class ClaimsProviders {
   }
 
   /**
+   * Says whether a realm has nothing for the refresh job to do: no Claims
+   * Provider registered and no link request pending. Asked outside any
+   * realm, so it enters the one named.
+   *
+   * @param realmId - the realm
+   * @returns true when the job has nothing to do there
+   */
+  idleIn(realmId: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ClaimsProviders.idleIn(). " + realmId);
+    const self = this;
+    const realm = realms.get(String(realmId || realms.DEFAULT_ID));
+    if (!realm) {
+      log.debug("Leaving ClaimsProviders.idleIn(). No such realm.");
+      return true;
+    }
+    if (flows.realmMap(realm.id).size > 0) {
+      log.debug("Leaving ClaimsProviders.idleIn(). A request is pending.");
+      return false;
+    }
+    const none = realms.run(realm, function (): boolean {
+      return self.list().length === 0;
+    });
+    log.debug("Leaving ClaimsProviders.idleIn(). " + (none ? 'Idle.' :
+                                                         'Providers.'));
+    return none;
+  }
+
+  /**
    * Registers the refresh job on the scheduler, once.
    */
   scheduleJobs(): void {
@@ -1228,6 +1305,18 @@ class ClaimsProviders {
       owner: 'oauth-oidc/claims_providers.ts',
       kind: 'cluster', scope: 'realm', everyMs: function (): number {
         return 60000;
+      },
+      // OFF IN A REALM WITH NOTHING TO REFRESH (#338). It ran every minute
+      // in EVERY realm — each run a claim and a recorded row — and in a
+      // realm with no Claims Provider registered it can do nothing: a link
+      // needs a provider, and a link request with no provider left expires
+      // on its own (#333's hook on `flows`). On testidp that was 270 of the
+      // 300 most recent runs, in realms that had never registered one.
+      off: function (realmId: string): string {
+        return self.idleIn(realmId)
+          ? 'no Claims Provider is registered in this realm and no link ' +
+            'request is pending'
+          : '';
       },
       manual: true,
       run: function (): Promise<Json> {
@@ -1409,6 +1498,7 @@ export = {
   unlink: slot.forward('unlink'),
   beginLink: slot.forward('beginLink'),
   finishLink: slot.forward('finishLink'),
+  flowFor: slot.forward('flowFor'),
   verifyFrom: slot.forward('verifyFrom'),
   sourcesFor: slot.forward('sourcesFor'),
   resolve: slot.forward('resolve'),

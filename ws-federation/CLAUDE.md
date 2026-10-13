@@ -1,7 +1,7 @@
 # ws-federation/
 
-WS-Federation 1.2, the passive requestor profile, plus a mock relying party at
-`/wsfed/rp` that verifies a sign-in response check by check. One file.
+WS-Federation 1.2, the passive requestor profile. One file. The mock relying
+party at `/wsfed/rp` was deleted by #592 (see the last section).
 
 4. **`wsfed.ts` must stay after `authn/authn.ts` in the require order**, and
    that is a dependency rather than a preference: it signs users in to the
@@ -113,14 +113,6 @@ for byte what that handler redirected to once it had a session — so there is o
 less store to make per realm, and the realm-isolation hole that store had in
 2026-08-25 cannot recur in it.
 
-## `rpContexts` is per trust realm
-
-`/wsfed/rp` answers under every realm prefix, so there is one mock relying party
-per realm, and a `wctx` minted by one being recognised by another would make the
-check that Map exists for — did my own value come back? — answer yes across a
-boundary the rest of the profile does not cross. `realmSupport()` publishes this
-family as `full` and says single sign-on with OAuth "does not cross realms".
-
 ## The autopost page is one of the seven scripted pages
 
 Section 13.2.1's sign-in response is a self-submitting form, so
@@ -132,10 +124,12 @@ is the whole mechanism. See the root `CLAUDE.md`.
 
 * **`wreply` must be registered in product mode** (`mode.acceptsUnregisteredAddresses()`):
   one of the `wsfedReplyUrl` values on the `wtrealm`'s entry, exact match, with
-  none sent meaning the registered one and NO fallback to `/wsfed/rp`. The rule is
-  `../saml/return_address.ts`, shared with both SAML profiles. Development passes
-  no registration to it at all, so a request with no `wreply` still goes to the
-  mock relying party even when the entry recorded one — byte for byte what it did.
+  none sent meaning the registered one. The rule is
+  `../saml/return_address.ts`, shared with both SAML profiles. Development
+  passed no registration to it at all until #592, so a request with no `wreply`
+  went to the mock relying party even when the entry recorded one; with the
+  mock deleted it passes the entry's, so such a request goes to the registered
+  `wsfedReplyUrl`, and is refused (`STS-WSFED-0003`) when there is none.
   **Which `wsfedReplyUrl` values count is `applications.returnAddressesOf()`'s
   answer** (the same day): a `wreply` a development sighting wrote is marked
   OBSERVED on `appReturnAddressObserved`, and product refuses it with
@@ -149,11 +143,10 @@ is the whole mechanism. See the root `CLAUDE.md`.
   omitted (`../saml/person_attributes.ts`), and **the signed metadata describes
   what the realm's mode emits** — it said `Always "Mock"` and
   `username@sts.example` in a product deployment's signed document.
-* **`wsfed.entityId` and `saml.issuer` differing is reported** on `/wsfed` and
-  once at startup (`issuerDisagreement()`): the metadata names one and every
-  assertion the other, which a relying party's issuer registry refuses.
-* `wsfed.mockRpContextTtlMin` (30) replaced the constant; the metadata signer
-  reads `saml.signatureAlgorithm`.
+* ~~`wsfed.entityId` and `saml.issuer` differing is reported~~ — both retired
+  by #523, and `issuerDisagreement()` with them: there is one name.
+* The metadata signer reads `saml.signatureAlgorithm`. (`wsfed.mockRpContextTtlMin`
+  replaced a constant that day, and went with the mock relying party, #592.)
 
 `tests/saml_family_hardcoded.js` sections A, H and I pin these.
 
@@ -170,6 +163,74 @@ relationship's own key (`federation/CLAUDE.md`, #168). WS-Trust's `/sts/cert`
 serves the pinned certificate while it signs. `common/CLAUDE.md` has the
 model.
 
+## ONE ISSUER: THE REALM'S OAUTH ISSUER (#523, 2026-10-08)
+
+rcbj, on #523: one issuer per realm, the OAuth issuer URL, in every protocol,
+with no override. It replaced #494's per-application name
+(`<entityID>:<application>` for a registered `wtrealm`). So:
+
+* **Every assertion's Issuer and the metadata's `entityID` are
+  `IssuerNames.issuer()`** — the string SAML SSO, WS-Trust and every JWT
+  carry — for every `wtrealm`, registered or not. `wsfed.entityId` and
+  `saml.issuer` are retired, and so is `STS-WSFED-0020` (no name to issue
+  under): the OAuth issuer is never empty.
+* **The metadata reads it at the request's base** (`federationMetadata(base,
+  …)` passes `base`); the sign-in response reads it at the ambient request's,
+  which in a request is the same base.
+* **`/wsfed/metadata/{rp}` stays**, the same document for a relying party
+  configured per application: the segment is the identifier or
+  `saml2_sso.slugOf()`'s slug, and **a 404 in BOTH modes for anything
+  unregistered** (`STS-WSFED-0019`).
+* **ONE ENTITY, TWO VIEWS (#524, rcbj: "Address #1", then "Two views, one
+  entity").** With one entityID, a WS-Federation document of its own was a
+  second `<EntityDescriptor>` for an entity the SAML document already
+  described. So this module publishes no document: `roleDescriptor(base)` is
+  its `fed:SecurityTokenServiceType` role, `md:`-prefixed with its own
+  namespaces on itself, and `saml2_sso.metadataFor(base, '', true)` puts it
+  first among the roles of the one document and signs it.
+  `federationMetadata()` serves that view, with the SAML endpoints unscoped (a
+  `wtrealm` need not be a SAML provider), at both WS-Federation paths.
+  **The SAML paths serve the same document WITHOUT this role**: tried in one
+  document everywhere first, SimpleSAMLphp's metadata validator refused the
+  whole document — the role's `xsi:type` resolves only with the
+  WS-Federation schema, and an abstract RoleDescriptor whose type does not
+  resolve fails validation — while the Shibboleth SP accepted it. The
+  WS-Federation view is a superset of the SAML one, under one entityID and
+  one signer. `STS-WSFED-0015` (its own signing failure) is retired into
+  `STS-SAML-0014`.
+
+## A relying party nobody registered gets nothing, in product (#496, 2026-10-06)
+
+rcbj, on #496: in product an application that is not registered gets nothing
+but a 404 or its protocol's own "unknown application" error. Section 13 has
+no error response (the `wsfedError()` paragraph above), so a `wsignin1.0`
+whose `wtrealm` is not a registered relying party is **a 404 page,
+`STS-WSFED-0021`**, behind `mode.issuesToUnregisteredApplications()` (the
+`unregistered-applications` row on `/admin/mode`, shared with WS-Trust):
+
+* **"Registered" is #494's word**: `appRegisteredBy` on the entry
+  filed under the `wtrealm` itself, `IssuerNames.registeredApplication()`.
+  An entry a development sighting filed is refused like no entry.
+* **First thing after `wtrealm` is known to be present**, in `signIn()`:
+  before the `wreply` is resolved, before the person is sent to the sign-in
+  screen and before `issueSignInResponse()`'s `seen()`. Product's `wreply`
+  rule already refused most of these (an unregistered realm has no
+  confirmed `wsfedReplyUrl`), with a message about the wrong thing and only
+  after the realm had been looked at; this says what is wrong.
+* **Development is unchanged**: any `wtrealm`, the realm's one issuer, and
+  `seen()` files it.
+* **An entry an LDAP add made is not registered either**: the add writes no
+  `appRegisteredBy` (the registry writes it, for the console, `/admin-api`,
+  RFC 7591, an OpenID Federation and the seeds), so #494's definition reads
+  it as one that turned up. Whether an LDAP add should count is open on
+  #496; until it is decided, register through the console or `/admin-api`.
+
+`tests/unregistered_applications.js` (U7) holds it in both modes.
+
+`tests/issuer_names.js` (U4, U5) and `tests/vendored/wstrust_chain_kit.js`
+(`samlIssuerFor()`, which asks this route for every tier) hold it;
+`sts_metadata_anonymous.js` section 5 holds the 404.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and
@@ -185,8 +246,9 @@ second factor, a forged marker refused
 `STS-WSFED-0010`, and an unknown method still `STS-WSFED-0006`. Its mutant —
 the marker ignored, so every unmet demand is refused as before — turned eight
 of its assertions red. Nothing else here is
-tested. The mock relying party makes the rest look covered — but a person has
-to click it and read the page. What a test would add is the other negatives:
+tested but by `tests/vendored/sts_saml11.js`, which posts a sign-in response to
+the test peer's relying party (the mock relying party that made the rest look
+covered was deleted, #592). What a test would add is the other negatives:
 an altered `wctx`, `wfresh` read as seconds rather than minutes, a SAML 1.1
 signature whose reference does not resolve because `AssertionID` was not
 named, A passive requestor that issues a good token to a
@@ -199,3 +261,15 @@ SAML 2.0 tokens in the 2005/02 and 1.3 wrappers — are validated against the
 published WS-Federation 1.2, WS-Trust and SAML schemas by
 `tests/vendored/sts_xml_schema_validation.js`, in a development and a product
 realm. Both were valid on the first run.
+
+## The mock relying party — deleted (#592, 2026-10-12)
+
+`/wsfed/rp` was a development-only demonstration (#585) whose pages #581 had
+made a static surface. #592 deleted it — its routes, its start view, the
+verifier that existed only to show a verdict (`verifySignInResponse()`), the
+`wctx` store (`wsfed.rpContexts`) and its lifetime setting — because the
+runtime ships no demonstration code (#591). `verifyAssertionSignature()`
+stays: `tests/saml_signature_algorithms.js` and `tests/issuer_names.js` ask
+it whether an assertion this service signed verifies. The relying party a
+test needs is the test peer's (`tests/peer/peer_saml.js`, #586).
+`STS-WSFED-0016` is retired. `common/CLAUDE.md` 3cm has the whole record.

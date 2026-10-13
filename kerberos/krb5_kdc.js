@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -106,11 +106,12 @@
 // story of resource-based delegation, and the FORWARDED block in handleTgsReq()
 // for the one control that limits unconstrained delegation at all.
 //
-// It does NOT check request signatures, does not implement FAST in the TGS
-// exchange, does not implement kpasswd or PKINIT, and does not apply SID
-// filtering across a trust. The AS and TGS exchanges are both served; the AP
-// exchange belongs to a SERVICE rather than to a KDC and lives in
-// krb5_service.js.
+// It does NOT check request signatures, does not implement kpasswd, and does
+// not apply SID filtering across a trust. PKINIT (RFC 4556, with anonymous
+// PKINIT for FAST armor) is served since #179 — krb5_pkinit.ts, reached
+// through the key source like FAST, below. The AS and TGS exchanges are both
+// served; the AP exchange belongs to a SERVICE rather than to a KDC and lives
+// in krb5_service.js.
 //
 // **FAST IN THE AS EXCHANGE, OTP PRE-AUTHENTICATION AND AUTHENTICATION
 // INDICATORS ARE SERVED SINCE 2026-09-22 (#173)** — RFC 6113, RFC 6560 and RFC
@@ -121,11 +122,11 @@
 //
 // **THE TWO REALMS, THE FIXTURE ACCOUNTS AND THE PUBLISHED PASSWORDS ARE
 // DEVELOPMENT MODE (2026-09-12).** In product mode krb5_principals.js builds a
-// database without them, this KDC answers for one realm, and GET
-// /krb5/principals withholds both passwords. The ticket lifetimes, the TCP
-// request cap, the UDP reply threshold and the PAC's LogonServer are settings;
-// the PAC's invented passwordLastSet and logonCount are not invented there. See
-// kerberos/CLAUDE.md.
+// database without them and this KDC answers for one realm (GET
+// /krb5/principals, which printed both passwords, was deleted by #595). The
+// ticket lifetimes, the TCP request cap, the UDP reply threshold and the
+// PAC's LogonServer are settings; the PAC's invented passwordLastSet and
+// logonCount are not invented there. See kerberos/CLAUDE.md.
 // ---------------------------------------------------------------------------
 
 const net = require('net');
@@ -186,6 +187,23 @@ const KDC_PORT = config.value('krb5.kdcPort');
 // registers no route, already in the parent project's copy set through
 // `common/app.js` and `krb5_principals.js`.
 const realms = require('../common/realms');
+
+// WHO MAY ACT FOR WHOM (#186): `kerberos/krb5_delegation.ts`, the Kerberos
+// side of the one delegation policy — the parties of an S4U request named as
+// the directory's entries, the issuance policy asked, the evidence ticket's
+// PAC checked, PA-S4U-X509-USER read and answered. Required LAZILY: only a
+// request that delegates (or asks for a forwardable ticket) needs it, and the
+// parent project's in-process jobs load this file without a directory. See
+// `kerberos/CLAUDE.md` for what that closure is owed.
+let delegationFacts = null;
+function krb5Delegation() {
+  log.debug("Entering krb5Delegation().");
+  if (!delegationFacts) {
+    delegationFacts = require('./krb5_delegation');
+  }
+  log.debug("Leaving krb5Delegation().");
+  return delegationFacts;
+}
 
 // THE KERBEROS REALM THIS KDC IS ANSWERING AS, which since 2026-09-15 is a
 // function of the AMBIENT TRUST REALM rather than a constant read at require
@@ -357,6 +375,190 @@ function isTgtRequest(sname) {
 }
 
 // ---------------------------------------------------------------------------
+// PAC CLAIMS (#493, 2026-10-06): PAC_CLIENT_CLAIMS_INFO ([MS-PAC] 2.11,
+// buffer type 13), written while `krb5.pacClaims` is on in the realm.
+//
+// WHERE THE CLAIMS COME FROM is admin_stats.js's sixth claim set,
+// `kerberos-pac` (rcbj's decision 1 on #493) — reached through that module,
+// which this file already requires, so the parent project's in-process
+// Kerberos jobs gain no file in their COPY closure. Three shapes:
+//
+//  * A TGT, and a ticket the AS exchange issues straight to a service, carry
+//    the REALM's set for the client, with their realm-wide roles under it
+//    (`kerberosPacClaims()`; decision 3: roles as claims, never extraSids).
+//  * A SERVICE TICKET carries what the TGT it was bought with carried — read
+//    back out of that TGT's PAC, not re-evaluated, as the issue asks — with
+//    the rows of the application whose krb5ServicePrincipalName names the
+//    service ADDED and WINNING BY CLAIM ID (`kerberosApplicationPacClaims()`).
+//    That is the per-application override of 2026-10-01 applied where a
+//    Kerberos application can be told apart: at the ticket for its SPN.
+//  * Under S4U2Self the TGT is the SERVICE's, so the impersonated person's
+//    claims are the realm's set evaluated for them, then the override. Under
+//    S4U2Proxy and across a trust the PAC is RE-SIGNED rather than rebuilt,
+//    and its claims buffer travels byte for byte unless the target service's
+//    application has rows of its own, which are then merged in the same way.
+//
+// THE MERGE IS BY CLAIM ID, and an id is derived from a row's name
+// (`pacClaimId()`), so "winning by name" and "winning by id" are one rule. A
+// claim that cannot be encoded leaves only itself out (STS-KRB-0200, in
+// admin_stats.js); a whole set over PAC_CLAIMS_MAX_BYTES or that will not
+// encode leaves the BUFFER out (STS-KRB-0201, -0202) and the ticket is still
+// issued — a missing claim is a fact a service can be shown, a KDC that stops
+// issuing because of a configured claim is an outage. Off, no ticket this KDC
+// BUILDS carries the buffer; one it only re-signs keeps whatever it carried.
+// ---------------------------------------------------------------------------
+
+// The most an encoded claims buffer may be. A cap rather than a tunable: it is
+// the size of a buffer a client of this KDC has to carry in every ticket and
+// fit through UDP or a header, and nothing about a realm makes a larger one
+// sensible. [MS-ADTS]'s own range is 10 MiB.
+const PAC_CLAIMS_MAX_BYTES = 65536;
+
+function pacClaimsOn() {
+  log.debug('Entering pacClaimsOn().');
+  const on = config.value('krb5.pacClaims') === true;
+  log.debug('Leaving pacClaimsOn(). ' + on);
+  return on;
+}
+
+// admin_stats.js's claims, `{ id, type: 'string'|…, values }`, as the codec
+// takes them.
+function codecClaimsOf(list) {
+  log.debug('Entering codecClaimsOf().');
+  const out = (list || []).map(function (claim) {
+    return { sourceType: kpac.CLAIMS_SOURCE_TYPE.AD, id: claim.id,
+             type: kpac.CLAIM_TYPE[String(claim.type).toUpperCase()],
+             values: claim.values };
+  });
+  log.debug('Leaving codecClaimsOf(). ' + out.length + '.');
+  return out;
+}
+
+// The client claims a PAC already carries, flattened, each with its source
+// type. A buffer that will not decode — a format this codec does not read —
+// is reported and treated as none, which costs those claims and never the
+// ticket.
+function claimsCarriedBy(pacBytes) {
+  log.debug('Entering claimsCarriedBy().');
+  let buffer = null;
+  try {
+    buffer = kpac.bufferOfType(kpac.parsePac(pacBytes),
+                               kpac.TYPE.CLIENT_CLAIMS);
+  } catch (e) {
+    log.debug('Caught in claimsCarriedBy(): ' + ((e && e.message) || e));
+    buffer = null;
+  }
+  if (!buffer) {
+    log.debug('Leaving claimsCarriedBy(). None.');
+    return [];
+  }
+  if (!buffer.parsed) {
+    log.warn(errorCodes.tag('STS-KRB-0203') + 'krb5: the PAC presented ' +
+             'carries a client claims buffer that does not decode (' +
+             (buffer.error || 'no reason recorded') + '); the ticket being ' +
+             'built carries none of those claims.');
+    log.debug('Leaving claimsCarriedBy(). Undecodable.');
+    return [];
+  }
+  const out = kpac.claimsOf(buffer.parsed.claimsSet);
+  log.debug('Leaving claimsCarriedBy(). ' + out.length + '.');
+  return out;
+}
+
+// The codec's spec for a list of claims, grouped by source type in the order
+// first met — or null for none, too many bytes, or a value the codec refuses.
+function claimsSpecFor(claims, who) {
+  log.debug('Entering claimsSpecFor(). ' + claims.length + ' claim(s).');
+  if (!claims.length) {
+    log.debug('Leaving claimsSpecFor(). None.');
+    return null;
+  }
+  const arrays = [];
+  claims.forEach(function (claim) {
+    let array = arrays.filter(function (one) {
+      return one.sourceType === claim.sourceType;
+    })[0];
+    if (!array) {
+      array = { sourceType: claim.sourceType, claims: [] };
+      arrays.push(array);
+    }
+    array.claims.push({ id: claim.id, type: claim.type,
+                        values: claim.values });
+  });
+  const spec = { arrays: arrays };
+  let size = 0;
+  try {
+    size = kpac.encodeClaimsSetMetadata(spec).length;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-KRB-0202') + 'krb5: the PAC claims for ' +
+              who + ' could not be encoded (' + e.message + '); the ticket ' +
+              'is issued with no claims buffer.');
+    log.debug('Leaving claimsSpecFor(). Not encodable.');
+    return null;
+  }
+  if (size > PAC_CLAIMS_MAX_BYTES) {
+    log.error(errorCodes.tag('STS-KRB-0201') + 'krb5: the PAC claims for ' +
+              who + ' encode to ' + size + ' bytes, over the ' +
+              PAC_CLAIMS_MAX_BYTES + ' a ticket may carry; the ticket is ' +
+              'issued with no claims buffer.');
+    log.debug('Leaving claimsSpecFor(). Too large.');
+    return null;
+  }
+  log.debug('Leaving claimsSpecFor(). ' + size + ' bytes.');
+  return spec;
+}
+
+// THE CLAIMS ONE TICKET CARRIES — see the header above. `opts`:
+//   username  the person the ticket is for (the impersonated one under S4U)
+//   isTgt     a ticket for a krbtgt, which takes no application's rows
+//   spn       `service/host@REALM`, whose application's rows are added
+//   carried   the claims the PAC it derives from carries, when it derives
+//             from one; absent, the realm's set is evaluated for `username`
+// Returns `{ spec, count }`, or null when the ticket carries no buffer.
+function claimsForTicket(opts) {
+  log.debug('Entering claimsForTicket(). user=' + opts.username +
+            ', tgt=' + !!opts.isTgt);
+  if (!pacClaimsOn()) {
+    log.debug('Leaving claimsForTicket(). krb5.pacClaims is off.');
+    return null;
+  }
+  const context = { username: String(opts.username || '') };
+  let base;
+  if (opts.carried) {
+    base = opts.carried;
+  } else {
+    try {
+      base = codecClaimsOf(stats.kerberosPacClaims(context));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KRB-0202') + 'krb5: the PAC claims for ' +
+                context.username + ' could not be read (' + e.message +
+                '); the ticket is issued without them.');
+      base = [];
+    }
+  }
+  let own = [];
+  if (!opts.isTgt && opts.spn) {
+    try {
+      own = codecClaimsOf(stats.kerberosApplicationPacClaims(opts.spn,
+                                                             context));
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KRB-0202') + 'krb5: the PAC claims of ' +
+                'the application for ' + opts.spn + ' could not be read (' +
+                e.message + '); the ticket carries its TGT\'s alone.');
+      own = [];
+    }
+  }
+  const ownIds = own.map(function (claim) { return claim.id; });
+  const merged = base.filter(function (claim) {
+    return ownIds.indexOf(claim.id) < 0;
+  }).concat(own);
+  const spec = claimsSpecFor(merged, context.username);
+  log.debug('Leaving claimsForTicket(). ' + (spec ? merged.length : 0) +
+            ' claim(s), ' + own.length + ' of them the application\'s.');
+  return spec ? { spec: spec, count: merged.length, own: own.length } : null;
+}
+
+// ---------------------------------------------------------------------------
 // The PAC.
 //
 // A Kerberos ticket proves who the client is. A Windows service decides what
@@ -465,6 +667,9 @@ async function buildPacFor(client, opts) {
       samName: client.name[0],
       sid: principals.domainSidFor(clientRealm) + '-' + identity.rid
     },
+    // PAC_CLIENT_CLAIMS_INFO (#493): the caller's claimsForTicket() answer,
+    // and no buffer at all when it had none.
+    clientClaims: options.clientClaims ? options.clientClaims.spec : null,
     // PAC_WAS_REQUESTED when the client asked via PA-PAC-REQUEST, and
     // PAC_WAS_GIVEN_IMPLICITLY when it neither asked nor declined. Reproducing
     // that distinction is the only way the workflow can show what the flag
@@ -713,11 +918,21 @@ function ticketFlagsForReferral(presented) {
 //
 // Two more asymmetries that matter and are easy to miss:
 //
-//   * **Classic requires the evidence ticket to be FORWARDABLE; RBCD does
-//     not.** And a forwardable ticket out of S4U2Self is granted only to an
-//     account with TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. So classic
-//     delegation needs that flag and RBCD does not need it either — one of the
-//     reasons RBCD is the easier path.
+//   * **BOTH mechanisms require the evidence ticket to be FORWARDABLE**
+//     (#492, 2026-10-06). [MS-SFU] 3.2.5.2.1 refuses non-forwardable evidence
+//     for classic delegation (STATUS_NO_MATCH) and 3.2.5.2.3 for
+//     resource-based delegation (STATUS_ACCOUNT_RESTRICTION) — the second
+//     since the CVE-2020-16996 update (its footnote 27), which closed the
+//     path by which a protected user's non-forwardable ticket reached a back
+//     end through RBCD. Samba's KDC (`mssfu.c`) and MIT's
+//     (`check_tgs_s4u2proxy()`) refuse it for both, and Samba's
+//     `test_rbcd_non_forwardable` expects exactly that of Windows. Until #492
+//     this KDC let RBCD through with non-forwardable evidence, which is what
+//     the commonly repeated "RBCD needs no forwardable evidence" described
+//     before 2020. A forwardable ticket out of S4U2Self is granted where the
+//     issuance policy allows the service to impersonate and the user is not
+//     protected (#186, standing for TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION
+//     and NOT_DELEGATED).
 //   * **RBCD additionally requires PA-PAC-OPTIONS with the RBCD bit**, and
 //     [MS-SFU] says a KDC MUST answer KDC_ERR_BADOPTION without it. That error
 //     mentions nothing about padata, so it is refused here with an explanation.
@@ -739,10 +954,17 @@ async function resolveS4u(ctx) {
   const forUserPa = (ctx.request.padata || []).filter(function (pa) {
     return pa.type === msgs.PA_TYPE.FOR_USER;
   })[0];
+  // PA-S4U-X509-USER ([MS-SFU] 2.2.2, #186): S4U2Self naming the user by
+  // name and realm or by CERTIFICATE. Where both padata are sent the KDC uses
+  // this one, as [MS-SFU] 3.2.5.1.2 says.
+  const x509Pa = (ctx.request.padata || []).filter(function (pa) {
+    return pa.type === msgs.PA_TYPE.S4U_X509_USER;
+  })[0];
+  const wantsSelf = !!(forUserPa || x509Pa);
   const wantsProxy = (body.kdcOptions || []).indexOf(
       msgs.KDC_OPTION.CNAME_IN_ADDL_TKT) !== -1;
 
-  if (!forUserPa && !wantsProxy) {
+  if (!wantsSelf && !wantsProxy) {
     log.debug('Leaving resolveS4u(). an ordinary TGS request.');
     return plain;
   }
@@ -784,7 +1006,7 @@ async function resolveS4u(ctx) {
       '/') + '@' + ctx.answeringRealm;
   const intent = {
     protocol: 'Kerberos v5',
-    type: forUserPa ? 'krb5-s4u2self' : 'krb5-s4u2proxy-classic',
+    type: wantsSelf ? 'krb5-s4u2self' : 'krb5-s4u2proxy-classic',
     initial: {
       // Filled in when the request says who it is impersonating: out of
       // PA-FOR-USER for S4U2Self, out of the evidence ticket for S4U2Proxy.
@@ -799,7 +1021,7 @@ async function resolveS4u(ctx) {
     },
     target: {
       application: targetPrincipal,
-      what: forUserPa
+      what: wantsSelf
         ? 'itself — S4U2Self is a request for a ticket to yourself'
         : 'the service being reached on the user\'s behalf'
     },
@@ -810,7 +1032,7 @@ async function resolveS4u(ctx) {
   };
 
   // ----- S4U2Self -----
-  if (forUserPa) {
+  if (wantsSelf) {
     if (wantsProxy) {
       log.debug("Leaving resolveS4u().");
       return refuseS4u(intent, 13, {
@@ -825,58 +1047,152 @@ async function resolveS4u(ctx) {
       });
     }
     let forUser;
-    try {
-      forUser = msgs.readPaForUser(forUserPa.value);
-    } catch (e) {
-      log.debug("Leaving resolveS4u().");
-      return refuseS4u(intent, 13, {
-        errorCode: 'STS-KRB-0003',
-        crealm: ticketPart.crealm, cname: ticketPart.cname,
-        realm: ctx.answeringRealm,
-        sname: body.sname, eText: 'PA-FOR-USER does not decode: ' + e.message
+    // PA-S4U-X509-USER, when sent (#186): its checksum under the TGT session
+    // key, the request's nonce, and the user by name or by certificate.
+    let x509 = null;
+    const tgtSessionKey = { etype: ticketPart.key.etype, key: ctx.sessionKey };
+    if (x509Pa) {
+      const delegationLib = krb5Delegation();
+      try {
+        x509 = delegationLib.readS4uX509User(x509Pa.value);
+      } catch (e) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0170',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'PA-S4U-X509-USER does not decode: ' + e.message
+        });
+      }
+      intent.initial.presented = (x509.cname
+        ? x509.cname.name.join('/') : 'a certificate') + '@' + x509.crealm;
+      intent.consumed.push({
+        kind: 'PA-S4U-X509-USER',
+        note: 'names the user by ' + (x509.certificate
+          ? 'certificate' + (x509.cname ? ' and name' : '') : 'name') +
+          ', checksummed under the requester\'s TGT session key'
       });
-    }
+      if (!(await delegationLib.verifyS4uX509User(x509, tgtSessionKey))) {
+        log.info('krb5: the PA-S4U-X509-USER checksum does not verify for ' +
+                 requesterName);
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 41, {
+          errorCode: 'STS-KRB-0171',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'the PA-S4U-X509-USER checksum does not verify. It is the ' +
+                 'TGT session key\'s required checksum (HMAC-MD5 for RC4) at ' +
+                 'key usage 26, over the DER of the S4UUserID.'
+        });
+      }
+      if (x509.nonce !== body.nonce) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0172',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'the S4UUserID\'s nonce (' + x509.nonce + ') is not the ' +
+                 'request body\'s (' + body.nonce + ')'
+        });
+      }
+      let userComponents = x509.cname ? x509.cname.name : null;
+      if (x509.certificate) {
+        const mapped = delegationLib.userFromCertificate(x509.certificate);
+        if (!mapped.ok) {
+          log.debug("Leaving resolveS4u().");
+          return refuseS4u(intent, 6, {
+            errorCode: 'STS-KRB-0173',
+            crealm: ticketPart.crealm, cname: ticketPart.cname,
+            realm: ctx.answeringRealm, sname: body.sname,
+            eText: 'the PA-S4U-X509-USER certificate names nobody here: ' +
+                   mapped.why
+          });
+        }
+        if (userComponents && userComponents.join('/') !== mapped.username) {
+          log.debug("Leaving resolveS4u().");
+          return refuseS4u(intent, 75, {
+            errorCode: 'STS-KRB-0174',
+            crealm: ticketPart.crealm, cname: ticketPart.cname,
+            realm: ctx.answeringRealm, sname: body.sname,
+            eText: 'the PA-S4U-X509-USER name ' + userComponents.join('/') +
+                   ' is not the person its certificate names (' +
+                   mapped.username + ')'
+          });
+        }
+        userComponents = [mapped.username];
+      }
+      if (!userComponents) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0175',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm, sname: body.sname,
+          eText: 'PA-S4U-X509-USER names no user: it carries neither a ' +
+                 'cname nor a subject-certificate'
+        });
+      }
+      forUser = {
+        userName: { type: x509.cname ? x509.cname.type : 1,
+                    name: userComponents },
+        userRealm: x509.crealm
+      };
+      intent.initial.presented = userComponents.join('/') + '@' +
+                                 x509.crealm;
+    } else {
+      try {
+        forUser = msgs.readPaForUser(forUserPa.value);
+      } catch (e) {
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0003',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm,
+          sname: body.sname, eText: 'PA-FOR-USER does not decode: ' + e.message
+        });
+      }
 
-    // Who is being impersonated, as soon as the padata says so — before the
-    // checksum is verified, deliberately. A request that named somebody and
-    // then failed the integrity check is precisely the row worth having: it
-    // says who somebody TRIED to become.
-    intent.initial.presented =
-      forUser.userName.name.join('/') + '@' + forUser.userRealm;
-    intent.consumed.push({
-      kind: 'PA-FOR-USER',
-      note: 'names the user, checksummed under the requester\'s TGT session ' +
-            'key — integrity, not authorization'
-    });
-
-    // The checksum is what stops a service naming a user it did not
-    // authenticate... and note exactly what it proves: only that whoever built
-    // this padata holds the TGT's session key. It is integrity, not
-    // authorization. [MS-SFU] section 2.2.1 fixes the algorithm as HMAC-MD5 at
-    // key usage 17 whatever the session key's etype.
-    const arcfour = kcrypto.etypeById(23);
-    const expected = await arcfour.checksum(ctx.sessionKey,
-      kcrypto.KEY_USAGE.PA_FOR_USER_CKSUM,
-      s4uByteArray(forUser.userName, forUser.userRealm, forUser.authPackage));
-    if (!prim.equalConstantTime(expected, forUser.cksum.checksum)) {
-      log.info('krb5: the PA-FOR-USER checksum does not verify for ' +
-               requesterName);
-      log.debug("Leaving resolveS4u().");
-      return refuseS4u(intent, 13, {
-        errorCode: 'STS-KRB-0004',
-        crealm: ticketPart.crealm, cname: ticketPart.cname,
-        realm: ctx.answeringRealm,
-        sname: body.sname,
-        eText: 'the PA-FOR-USER checksum does not verify. It is HMAC-MD5 ' +
-               '(not the session key\'s own checksum type) at key usage 17, ' +
-               'over the name type as four little-endian bytes then the name ' +
-               'components, the realm and the auth-package concatenated.'
+      // Who is being impersonated, as soon as the padata says so — before
+      // the checksum is verified, deliberately. A request that named
+      // somebody and then failed the integrity check is precisely the row
+      // worth having: it says who somebody TRIED to become.
+      intent.initial.presented =
+        forUser.userName.name.join('/') + '@' + forUser.userRealm;
+      intent.consumed.push({
+        kind: 'PA-FOR-USER',
+        note: 'names the user, checksummed under the requester\'s TGT ' +
+              'session key — integrity, not authorization'
       });
-    }
-    if (forUser.cksum.type !== arcfour.checksumType) {
-      log.info('krb5: PA-FOR-USER carries cksumtype ' + forUser.cksum.type +
-          ' ' +
-          'rather than -138');
+
+      // The checksum is what stops a service naming a user it did not
+      // authenticate... and note exactly what it proves: only that whoever
+      // built this padata holds the TGT's session key. It is integrity, not
+      // authorization. [MS-SFU] section 2.2.1 fixes the algorithm as HMAC-MD5
+      // at key usage 17 whatever the session key's etype.
+      const arcfour = kcrypto.etypeById(23);
+      const expected = await arcfour.checksum(ctx.sessionKey,
+        kcrypto.KEY_USAGE.PA_FOR_USER_CKSUM,
+        s4uByteArray(forUser.userName, forUser.userRealm, forUser.authPackage));
+      if (!prim.equalConstantTime(expected, forUser.cksum.checksum)) {
+        log.info('krb5: the PA-FOR-USER checksum does not verify for ' +
+                 requesterName);
+        log.debug("Leaving resolveS4u().");
+        return refuseS4u(intent, 13, {
+          errorCode: 'STS-KRB-0004',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm,
+          sname: body.sname,
+          eText: 'the PA-FOR-USER checksum does not verify. It is ' +
+                 'HMAC-MD5 (not the session key\'s own checksum type) at ' +
+                 'key usage 17, over the name type as four little-endian ' +
+                 'bytes then the name components, the realm and the ' +
+                 'auth-package concatenated.'
+        });
+      }
+      if (forUser.cksum.type !== arcfour.checksumType) {
+        log.info('krb5: PA-FOR-USER carries cksumtype ' + forUser.cksum.type +
+            ' ' +
+            'rather than -138');
+      }
     }
 
     // Created on demand, exactly as at the AS exchange: a front-end may name
@@ -935,6 +1251,18 @@ async function resolveS4u(ctx) {
       'to itself on behalf ' +
       'of ' + forUser.userName.name.join('/') + '@' + forUser.userRealm + ' ' +
       '(no involvement from that account at all)');
+    // THE ISSUANCE POLICY (#186): S4U2Self is an IMPERSONATION by the service
+    // of itself. It is never refused for it — a ticket to yourself is not the
+    // privilege — but only an allowed one is FORWARDABLE, which is what
+    // S4U2Proxy's classic form then needs: the service's semantics must allow
+    // impersonation (Active Directory's TRUSTED_TO_AUTHENTICATE_FOR_
+    // DELEGATION), and the user must not be protected (NOT_DELEGATED,
+    // Protected Users).
+    const selfDecision = krb5Delegation().decide({
+      mechanism: 'self', requester: ticketPart.cname.name,
+      subject: forUser.userName.name, subjectRealm: forUser.userRealm,
+      target: ticketPart.cname.name, realm: ticketPart.crealm
+    });
     log.debug('Leaving resolveS4u(). mode=self');
     return {
       mode: 'self',
@@ -944,6 +1272,10 @@ async function resolveS4u(ctx) {
       requester: requester,
       evidencePart: null,
       transited: [],
+      // #186: whether the ticket is FORWARDABLE, the policy's answer; and a
+      // PA-S4U-X509-USER to answer in the reply.
+      forwardable: !!selfDecision.allowed,
+      x509: x509 ? { parsed: x509, sessionKey: tgtSessionKey } : null,
       // Carried out to handleTgsReq(), which records it once the ticket has
       // actually been built — an act recorded here would be one this KDC had
       // decided to allow and might still fail to encode.
@@ -954,18 +1286,18 @@ async function resolveS4u(ctx) {
       // check this KDC forgot to make.
       intent: Object.assign({}, intent, {
         outcome: 'issued',
-        authorizedBy: 'nothing — S4U2Self is a request for a ticket to ' +
-                      'YOURSELF, so any account with a service ticket can ' +
-                      'make it. The privilege is S4U2Proxy, which comes next.',
-        note: requester && requester.trustedToAuthenticateForDelegation
-          ? 'The requester is flagged ' +
-            'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION, so the ticket it gets ' +
-            'back is FORWARDABLE and classic S4U2Proxy can use it as evidence.'
-          : 'The requester is NOT flagged ' +
-            'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION, so the ticket it gets ' +
-            'back is NOT forwardable. This succeeds; a classic S4U2Proxy ' +
-            'with it as evidence will fail a step later, complaining about ' +
-            'the evidence rather than about this flag.'
+        authorizedBy: selfDecision.allowed
+          ? selfDecision.authorizedBy + ' The ticket is FORWARDABLE.'
+          : 'nothing — S4U2Self is a request for a ticket to YOURSELF, so ' +
+            'any account with a service ticket can make it; the issuance ' +
+            'policy did not allow it as an impersonation, so the ticket is ' +
+            'NOT forwardable: ' + selfDecision.why,
+        note: selfDecision.allowed
+          ? 'The issuance policy allowed this impersonation, so the ticket ' +
+            'is FORWARDABLE and classic S4U2Proxy can use it as evidence.'
+          : 'The ticket is NOT forwardable. This succeeds; a classic ' +
+            'S4U2Proxy with it as evidence will fail a step later, ' +
+            'complaining about the evidence rather than about why.'
       })
     };
   }
@@ -1056,7 +1388,24 @@ async function resolveS4u(ctx) {
             []).indexOf(msgs.TICKET_FLAG.FORWARDABLE) !== -1)
   });
 
-  const target = principals.find(body.sname.name, ctx.answeringRealm);
+  // THE EVIDENCE IS THIS KDC'S OWN (#186): its PAC's ticket and KDC
+  // signatures verify with the krbtgt key. The ticket is sealed in the
+  // REQUESTER's key, so the requester can rewrite it — set its forwardable
+  // flag (CVE-2020-17049, "Bronze Bit") or forge one for anybody — and only a
+  // signature it cannot make tells the two apart. Refused in every mode.
+  const evidenceCheck = await krb5Delegation().verifyEvidence(evidencePart,
+                                                              ctx.kdcKey);
+  if (!evidenceCheck.ok) {
+    log.info('krb5: REFUSING S4U2Proxy — ' + evidenceCheck.why);
+    log.debug("Leaving resolveS4u().");
+    return refuseS4u(intent, 41, {
+      errorCode: 'STS-KRB-0176',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ctx.answeringRealm, sname: body.sname,
+      eText: 'the evidence ticket was not accepted: ' + evidenceCheck.why
+    });
+  }
+
   const targetName = (body.sname.name || []).join('/');
   const resourceBased = (ctx.request.padata || []).some(function (pa) {
     if (pa.type !== msgs.PA_TYPE.PAC_OPTIONS) return false;
@@ -1073,10 +1422,16 @@ async function resolveS4u(ctx) {
     }
   });
 
-  const classicAllowed = !!requester &&
-    requester.allowedToDelegateTo.indexOf(targetName) !== -1;
-  const rbcdAllowed = !!target &&
-    target.allowedToActOnBehalfOf.indexOf(requesterName) !== -1;
+  // THE TWO MECHANISMS, read off the ENTRIES since #186: classic is the
+  // front end's appAllowedToDelegateTo naming the back end, resource-based
+  // the back end's appAllowedToActOnBehalfOf naming the front end — Active
+  // Directory's msDS-AllowedToDelegateTo and
+  // msDS-AllowedToActOnBehalfOfOtherIdentity, as one set of controls for
+  // every protocol.
+  const relation = krb5Delegation().relationship(ticketPart.cname.name,
+    body.sname.name, ctx.answeringRealm);
+  const classicAllowed = relation.classic;
+  const rbcdAllowed = relation.rbcd;
 
   // Narrow the provisional type now that the two attributes have been read.
   // Classic wins where both permit it, which is what the decision below does
@@ -1093,8 +1448,8 @@ async function resolveS4u(ctx) {
   if (!classicAllowed && !rbcdAllowed) {
     log.info('krb5: REFUSING S4U2Proxy — ' + requesterName + ' may not ' +
         'delegate to ' + targetName +
-      '. Neither its own msDS-AllowedToDelegateTo nor that target\'s ' +
-      'msDS-AllowedToActOnBehalfOfOtherIdentity permits it.');
+      '. Neither its own appAllowedToDelegateTo nor that target\'s ' +
+      'appAllowedToActOnBehalfOf permits it.');
     log.debug("Leaving resolveS4u().");
     return refuseS4u(intent, 13, {
       errorCode: 'STS-KRB-0010',
@@ -1103,16 +1458,14 @@ async function resolveS4u(ctx) {
       sname: body.sname,
       eText: requesterName + ' is not authorized to reach ' + targetName + ' ' +
              'on anybody\'s behalf. Two attributes could permit it and ' +
-             'neither does: msDS-AllowedToDelegateTo ' +
-             'on ' + requesterName + ' (classic ' +
+             'neither does: appAllowedToDelegateTo (Active Directory\'s ' +
+             'msDS-AllowedToDelegateTo) on ' + requesterName + ' (classic ' +
              'constrained delegation, currently ' +
-             '[' + (requester ? requester.allowedToDelegateTo.join(', ') : '') +
-             ']), ' +
-             'or msDS-AllowedToActOnBehalfOfOtherIdentity ' +
-             'on ' + targetName + ' ' +
-             '(resource-based, currently ' +
-             '[' + (target ? target.allowedToActOnBehalfOf.join(', ') : '') +
-             ']).'
+             '[' + relation.delegatesTo.join(', ') + ']), ' +
+             'or appAllowedToActOnBehalfOf ' +
+             '(msDS-AllowedToActOnBehalfOfOtherIdentity) on ' + targetName +
+             ' (resource-based, currently ' +
+             '[' + relation.accepts.join(', ') + ']).'
     });
   }
 
@@ -1135,11 +1488,31 @@ async function resolveS4u(ctx) {
     });
   }
 
-  // Classic needs FORWARDABLE evidence; RBCD does not, and that asymmetry is
-  // real.
+  // FORWARDABLE EVIDENCE, FOR BOTH MECHANISMS (#492): [MS-SFU] 3.2.5.2.1
+  // for classic and 3.2.5.2.3 for resource-based delegation (the
+  // CVE-2020-16996 update); Samba and MIT refuse it for both. Asked after
+  // the mechanism is known, so the refusal names the one that was asked.
   const evidenceForwardable =
     (evidencePart.flags || []).indexOf(msgs.TICKET_FLAG.FORWARDABLE) !== -1;
-  if (classicAllowed && !rbcdAllowed && !evidenceForwardable) {
+  if (!classicAllowed && rbcdAllowed && !evidenceForwardable) {
+    log.info('krb5: REFUSING S4U2Proxy — resource-based delegation with ' +
+             'evidence that is not forwardable');
+    log.debug("Leaving resolveS4u().");
+    return refuseS4u(intent, 13, {
+      errorCode: 'STS-KRB-0199',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ctx.answeringRealm,
+      sname: body.sname,
+      eText: 'the evidence ticket is not forwardable, and [MS-SFU] section ' +
+             '3.2.5.2.3 refuses resource-based constrained delegation with ' +
+             'it too (STATUS_ACCOUNT_RESTRICTION, the CVE-2020-16996 ' +
+             'update). A ticket from S4U2Self is forwardable only when ' +
+             'the requesting service allows impersonation ' +
+             '(appDelegationSemantics) and the user is not protected ' +
+             '(stsNotDelegated, a protected group).'
+    });
+  }
+  if (classicAllowed && !evidenceForwardable) {
     log.info('krb5: REFUSING S4U2Proxy — the evidence ticket is not ' +
              'forwardable');
     log.debug("Leaving resolveS4u().");
@@ -1150,11 +1523,36 @@ async function resolveS4u(ctx) {
       sname: body.sname,
       eText: 'the evidence ticket is not forwardable, which classic ' +
              'constrained delegation requires. A ticket from S4U2Self is ' +
-             'forwardable only when the requesting account has ' +
-             'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION set, so this usually ' +
-             'means that flag is missing ' +
-             'on ' + requesterName + ' — note that resource-based ' +
-             'delegation would not have needed either.'
+             'forwardable only when the requesting service allows ' +
+             'impersonation (appDelegationSemantics, Active Directory\'s ' +
+             'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION) and the user is not ' +
+             'protected, so this usually means one of those on ' +
+             requesterName + '. Resource-based delegation needs it too ' +
+             '([MS-SFU] 3.2.5.2.3).'
+    });
+  }
+
+  // THE ISSUANCE POLICY (#186): S4U2Proxy is a DELEGATION by the front end
+  // (S) to the back end (R). The relationship above is one of its rules; the
+  // rest — a protected user, the front end's subject groups, the semantics,
+  // authority — are its too. REFUSED IN EVERY MODE, as every Kerberos refusal
+  // here is (rcbj, #186): the development fixtures make each one reachable.
+  const proxyDecision = krb5Delegation().decide({
+    mechanism: 'proxy', requester: ticketPart.cname.name,
+    subject: evidencePart.cname.name, subjectRealm: evidencePart.crealm,
+    target: body.sname.name, realm: ctx.answeringRealm,
+    rbcd: !classicAllowed && rbcdAllowed
+  });
+  if (!proxyDecision.allowed) {
+    log.info('krb5: REFUSING S4U2Proxy — the issuance policy refused it: ' +
+             proxyDecision.why);
+    log.debug("Leaving resolveS4u().");
+    return refuseS4u(intent, proxyDecision.refusal === 'target' ? 13 : 12, {
+      errorCode: 'STS-KRB-0177',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ctx.answeringRealm, sname: body.sname,
+      eText: 'the delegation policy refused this delegation: ' +
+             proxyDecision.why
     });
   }
 
@@ -1163,9 +1561,9 @@ async function resolveS4u(ctx) {
       'as ' +
     evidencePart.cname.name.join('/') + '@' + evidencePart.crealm + ', ' +
         'authorized by ' +
-    (classicAllowed ? 'msDS-AllowedToDelegateTo on ' + requesterName + ' ' +
+    (classicAllowed ? 'appAllowedToDelegateTo on ' + requesterName + ' ' +
         '(classic)'
-                    : 'msDS-AllowedToActOnBehalfOfOtherIdentity on ' +
+                    : 'appAllowedToActOnBehalfOf on ' +
                         targetName + ' ' +
                         '(RBCD)'));
   log.debug('Leaving resolveS4u(). mode=proxy');
@@ -1178,21 +1576,30 @@ async function resolveS4u(ctx) {
     resourceBased: resourceBased,
     classic: classicAllowed,
     // The audit trail that goes into the PAC: this service is now one of the
-    // services the client has been delegated through.
-    transited: [requesterName],
+    // services the client has been delegated through — named WITH ITS REALM
+    // (#489), `SPN@REALM`, as Samba (`samba_kdc_update_delegation_info_blob()`,
+    // `krb5_unparse_name()`) and MIT (`update_delegation_info()`) write a
+    // transited service and as Samba's s4u_tests expect of Windows
+    // (`host/<service1>@<REALM>`), so a reader across realms can tell two
+    // services of one name apart. S4U2proxyTarget, below, stays the bare
+    // name: both write it with KRB5_PRINCIPAL_UNPARSE_NO_REALM and [MS-SFU]
+    // 3.2.5.2.4 calls it "the name of Service 2", whose realm the ticket's
+    // own srealm already says.
+    transited: [requesterName + '@' + ticketPart.crealm],
     // For /admin/delegation, recorded by handleTgsReq() once the ticket exists.
     // `authorizedBy` names the ATTRIBUTE AND THE ACCOUNT IT IS ON, in the same
     // words as the log line above — the two halves nobody can reconstruct from
     // the ticket afterwards, and the whole reason the page is worth having.
     intent: Object.assign({}, intent, {
       outcome: 'issued',
-      authorizedBy: classicAllowed
-        ? 'msDS-AllowedToDelegateTo on ' + requesterPrincipal +
+      authorizedBy: (classicAllowed
+        ? 'appAllowedToDelegateTo on ' + requesterPrincipal +
           ' (classic constrained delegation — the permission is on the FRONT ' +
-          'END and only a domain admin can set it)'
-        : 'msDS-AllowedToActOnBehalfOfOtherIdentity on ' + targetPrincipal +
+          'END)'
+        : 'appAllowedToActOnBehalfOf on ' + targetPrincipal +
           ' (resource-based — the permission is on the BACK END, and whoever ' +
-          'controls that object can set it themselves)',
+          'controls that entry can set it)') + '; ' +
+        proxyDecision.authorizedBy,
       note: classicAllowed && rbcdAllowed
         ? 'BOTH attributes permit this. Classic is what the KDC attributes ' +
           'it to, so removing the resource-based entry alone would change ' +
@@ -1259,6 +1666,11 @@ const REFUSAL = Symbol('krb5.kdc.refusal');
 // RFC 6560's PA-OTP-REQUEST, which the vendored codec's PA_TYPE table does not
 // name (it has RFC 6113's FAST types). #173.
 const PA_OTP_REQUEST = 142;
+// RFC 4556's PA-PK-AS-REQ, which the vendored codec's table does not name
+// either (#179), and RFC 4120's AD-IF-RELEVANT, which AD-INITIAL-VERIFIED-CAS
+// rides in.
+const PA_PK_AS_REQ = 16;
+const AD_IF_RELEVANT = 1;
 
 function errorReply(code, options) {
   log.debug('Entering errorReply().');
@@ -1481,10 +1893,14 @@ function saltHints(client, etypes) {
 async function preAuthRequiredReply(client, request, fast, offer) {
   log.debug('Entering preAuthRequiredReply().');
   const provider = principals.preauthProvider();
-  const methods = fast && provider
+  // PKINIT (#179): PA-PK-AS-REQ, PA-PKINIT-KX and a freshness token, inside
+  // FAST and out, after the password methods — krb5_pkinit.ts's offers().
+  const pkinit = principals.pkinitProvider();
+  const methods = (fast && provider
     ? await provider.offers(client, fast, offer || {})
     : [{ type: msgs.PA_TYPE.ENC_TIMESTAMP, value: new Uint8Array(0) }]
-        .concat(provider ? [provider.outerAdvertisement()] : []);
+        .concat(provider ? [provider.outerAdvertisement()] : []))
+    .concat(pkinit ? await pkinit.offers(request, request.reqBody.realm) : []);
   const hints = saltHints(client, request.reqBody.etypes);
   const entries = hints.entries;
   log.info('krb5: ' + client.name.join('/') + ' needs pre-authentication; ' +
@@ -1493,7 +1909,7 @@ async function preAuthRequiredReply(client, request, fast, offer) {
                                               ', salt ' +
     JSON.stringify(client.salt) + ', s2kparams ' +
     (principals.s2kparamsMode() === 'send'
-      ? 'SENT (explicit 4096, the pre-2026-08 behaviour of this mock)'
+      ? 'SENT (explicit 4096, the pre-2026-08 behaviour of this service)'
       : 'OMITTED (as Active Directory does; the client must apply the RFC ' +
         '3962 default). Set KRB5_S2KPARAMS=send to advertise it explicitly.'));
   log.debug('Leaving preAuthRequiredReply().');
@@ -1749,6 +2165,188 @@ async function handleAsReq(request) {
   return wrapped;
 }
 
+// ---------------------------------------------------------------------------
+// ANONYMOUS PKINIT (RFC 8062, #179): AN ARMOR TICKET FOR NOBODY.
+//
+// `kinit -n` asks for `WELLKNOWN/ANONYMOUS` with an UNSIGNED AuthPack and a
+// Diffie-Hellman value, and gets a TGT naming nobody — crealm
+// WELLKNOWN:ANONYMOUS, the anonymous flag, no PAC, no indicator, no
+// AD-INITIAL-VERIFIED-CAS — whose session key is KRB-FX-CF2 of the KDC's
+// contribution (PA-PKINIT-KX) and the reply key, so that neither side alone
+// chose it (section 7). The client authenticated the KDC by its signature on
+// the reply; the KDC authenticated nobody.
+//
+// **WHAT IT IS FOR, AND ALL IT IS FOR, HERE**: FAST armor for a client with
+// no host keytab — `kinit -n -c armor`, then `kinit -T armor alice`. So only
+// a TGT for this realm is issued (a request for anything else is
+// KDC_ERR_POLICY, STS-KRB-0198), it is neither forwardable nor proxiable,
+// and `answerTgsReq()` refuses a TGS-REQ that presents one: an anonymous
+// ticket buys nothing, and armors.
+// ---------------------------------------------------------------------------
+// The reply-key enctypes anonymous PKINIT derives, strongest first: the
+// AES enctypes `common/crypto.js` section 16 derives a key for.
+const ANONYMOUS_REPLY_ETYPES = [20, 19, 18, 17];
+const WELLKNOWN_ANONYMOUS_REALM = 'WELLKNOWN:ANONYMOUS';
+
+function isAnonymousName(cname) {
+  log.debug("Entering isAnonymousName().");
+  const name = (cname && cname.name) || [];
+  log.debug("Leaving isAnonymousName().");
+  return name.length === 2 && name[0] === 'WELLKNOWN' &&
+         name[1] === 'ANONYMOUS';
+}
+
+async function answerAnonymousAsReq(request, fast, pkinit) {
+  log.debug('Entering answerAnonymousAsReq().');
+  const body = request.reqBody;
+  const asRealm = body.realm;
+  const refuse = function (code, errorCode, eText, eData) {
+    log.debug('Entering refuse().');
+    log.debug('Leaving refuse().');
+    // error-code: none — each caller below names its own code
+    return errorReply(code, {
+      errorCode: errorCode, crealm: body.realm, cname: body.cname,
+      sname: body.sname, eText: eText, eData: eData || null
+    });
+  };
+  if (!pkinit.anonymousEnabled()) {
+    log.debug('Leaving answerAnonymousAsReq(). Off.');
+    return refuse(6, 'STS-KRB-0198', 'anonymous PKINIT is off in this ' +
+                  'realm (krb5.anonymousPkinit)');
+  }
+  // RFC 8062 section 4.1: "If the client in the AS request is anonymous, the
+  // anonymous KDC option MUST be set".
+  if ((body.kdcOptions || []).indexOf(msgs.KDC_OPTION.REQUEST_ANONYMOUS) ===
+      -1) {
+    log.debug('Leaving answerAnonymousAsReq(). No anonymous option.');
+    return refuse(13, 'STS-KRB-0198', 'the anonymous principal asks with ' +
+                  'the anonymous KDC option (RFC 8062 section 4.1)');
+  }
+  const sname = (body.sname && body.sname.name) || [];
+  if (sname.length !== 2 || sname[0] !== 'krbtgt' || sname[1] !== asRealm) {
+    log.debug('Leaving answerAnonymousAsReq(). Not a TGT.');
+    return refuse(12, 'STS-KRB-0198', 'an anonymous ticket here is FAST ' +
+                  'armor, so only krbtgt/' + asRealm + ' is issued to the ' +
+                  'anonymous principal');
+  }
+  const krbtgt = principals.find(['krbtgt', asRealm], asRealm);
+  if (!krbtgt) {
+    log.debug('Leaving answerAnonymousAsReq(). No krbtgt.');
+    return refuse(7, 'STS-KRB-0022', 'this KDC has no krbtgt principal');
+  }
+  const pa = (request.padata || []).filter(function (one) {
+    return one.type === PA_PK_AS_REQ;
+  })[0];
+  if (!pa) {
+    // RFC 8062 section 4.1.1: PA-PK-AS-REQ, and PA-PKINIT-KX to say
+    // anonymous PKINIT is supported, in the error that asks for it.
+    log.debug('Leaving answerAnonymousAsReq(). Pre-authentication needed.');
+    return refuse(25, 'STS-KRB-0013', 'NEEDED_PREAUTH',
+                  asn1.encSequenceOf((await pkinit.offers(request, asRealm))
+                                       .map(msgs.encPaData)));
+  }
+  const etype = (body.etypes || []).filter(function (one) {
+    return ANONYMOUS_REPLY_ETYPES.indexOf(one) !== -1 &&
+           principals.etypePermitted(one);
+  })[0];
+  if (etype === undefined) {
+    log.debug('Leaving answerAnonymousAsReq(). No enctype.');
+    return refuse(14, 'STS-KRB-0198', 'anonymous PKINIT derives an AES ' +
+                  'reply key, and the request offers none');
+  }
+  const result = await pkinit.checkRequest({
+    pa: pa, request: request, asReqBytes: request[REQUEST_BYTES],
+    realm: asRealm, etype: etype, anonymous: true
+  });
+  if (!result.ok) {
+    log.debug('Leaving answerAnonymousAsReq(). Refused.');
+    // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+    return refuse(result.code, result.errorCode, result.eText, result.eData);
+  }
+  const authtime = now();
+  const requestedTill = body.till && body.till > authtime ? body.till :
+                        kdcTime(ticketLifetimeSeconds());
+  const endtime = new Date(Math.min(requestedTill.getTime(),
+    kdcTime(ticketLifetimeSeconds()).getTime()));
+  const flags = [msgs.TICKET_FLAG.INITIAL, msgs.TICKET_FLAG.PRE_AUTHENT,
+                 msgs.TICKET_FLAG.ANONYMOUS];
+  if (request[REQUEST_BYTES]) flags.push(msgs.TICKET_FLAG.ENC_PA_REP);
+  const anonymousName = { type: 11, name: ['WELLKNOWN', 'ANONYMOUS'] };
+  const sessionEtype = principals.chooseEtype(krbtgt, body.etypes) || etype;
+  const kx = await result.sessionKeyFor(sessionEtype);
+  const ticketEtype = principals.supportedEtypes(krbtgt)[0] || etype;
+  const krbtgtKey = await principals.longTermKey(krbtgt, ticketEtype);
+  const encTicketPart = msgs.encEncTicketPart({
+    flags: flags,
+    key: { etype: sessionEtype, key: kx.sessionKey },
+    crealm: WELLKNOWN_ANONYMOUS_REALM,
+    cname: anonymousName,
+    authtime: authtime,
+    starttime: authtime,
+    endtime: endtime,
+    renewTill: null,
+    authorizationData: null
+  });
+  const ticket = {
+    realm: asRealm,
+    sname: body.sname,
+    encPart: {
+      etype: ticketEtype,
+      kvno: krbtgt.kvno,
+      cipher: await kcrypto.etypeById(ticketEtype).encrypt(krbtgtKey,
+        kcrypto.KEY_USAGE.KDC_REP_TICKET, encTicketPart)
+    }
+  };
+  let replyKey = result.replyKey;
+  let replyPadata = result.kdcPadata.concat([kx.padata]);
+  const provider = principals.preauthProvider();
+  if (fast && provider) {
+    const finished = await provider.finishAsReply({
+      fast: fast, ticket: ticket, crealm: WELLKNOWN_ANONYMOUS_REALM,
+      cname: anonymousName, replyKey: replyKey, padata: replyPadata
+    });
+    replyPadata = finished.padata;
+    replyKey = finished.replyKey;
+  }
+  const encRepPart = msgs.encEncKdcRepPart({
+    key: { etype: sessionEtype, key: kx.sessionKey },
+    lastReq: [{ type: 0, value: authtime }],
+    nonce: body.nonce,
+    flags: flags,
+    authtime: authtime,
+    starttime: authtime,
+    endtime: endtime,
+    renewTill: null,
+    srealm: asRealm,
+    sname: body.sname,
+    encryptedPaData: await encPaRepData(request, replyKey)
+  }, msgs.APPLICATION.ENC_AS_REP_PART);
+  stats.recordTicket('TGT', {
+    client: 'WELLKNOWN/ANONYMOUS@' + WELLKNOWN_ANONYMOUS_REALM,
+    realm: asRealm,
+    service: sname.join('/'),
+    etype: kcrypto.etypeById(sessionEtype).name,
+    expiresAt: endtime.getTime()
+  });
+  log.info('krb5: issued an ANONYMOUS TGT for ' + asRealm + ' by anonymous ' +
+           'PKINIT (' + result.method + '), expiring ' +
+           endtime.toISOString() + '; it is FAST armor and buys nothing');
+  log.debug('Leaving answerAnonymousAsReq().');
+  return msgs.encKdcRep({
+    msgType: msgs.MSG_TYPE.AS_REP,
+    padata: replyPadata,
+    crealm: WELLKNOWN_ANONYMOUS_REALM,
+    cname: anonymousName,
+    ticket: ticket,
+    encPart: {
+      etype: replyKey.etype,
+      kvno: null,
+      cipher: await kcrypto.etypeById(replyKey.etype).encrypt(replyKey.key,
+        kcrypto.KEY_USAGE.AS_REP_ENCPART, encRepPart)
+    }
+  });
+}
+
 // The AS exchange proper. `fast` is null for an ordinary AS-REQ and the
 // provider's state for an armored one, whose INNER request `request` then is.
 async function answerAsReq(request, fast) {
@@ -1785,6 +2383,15 @@ async function answerAsReq(request, fast) {
       realm: ourRealm(), sname: body.sname,
       eText: 'no client name in the request' });
   }
+  // RFC 8062's ANONYMOUS PRINCIPAL (#179) has no account to look up: it is
+  // answered by anonymous PKINIT or not at all, before anything below would
+  // read it as a name.
+  const pkinit = principals.pkinitProvider();
+  if (pkinit && pkinit.enabled() && isAnonymousName(body.cname)) {
+    const anonymous = await answerAnonymousAsReq(request, fast, pkinit);
+    log.debug("Leaving answerAsReq(). Anonymous.");
+    return anonymous;
+  }
 
   // Any username authenticates here, so a name that is not in the table gets an
   // account rather than KDC_ERR_C_PRINCIPAL_UNKNOWN — see findOrCreateUser() in
@@ -1813,7 +2420,27 @@ async function answerAsReq(request, fast) {
       eText: 'the account is disabled'
     });
   }
-  const lookup = principals.lookupUser(body.cname.name, asRealm);
+  let lookup = principals.lookupUser(body.cname.name, asRealm);
+  // A PERSON WITH NO KERBEROS KEYS YET (#179): with PKINIT on, a certificate
+  // is a way in that needs no key — krb5_principals.js's
+  // certificatePerson(). A request that brings a PASSWORD keeps the refusal
+  // that tells it to sign in once (STS-KRB-0104), which is the useful
+  // sentence for somebody typing one; a bare one is answered with the
+  // methods, PKINIT among them, so `kinit -X` can go on.
+  const passwordPadata = (request.padata || []).some(function (pa) {
+    return pa.type === msgs.PA_TYPE.ENC_TIMESTAMP ||
+           pa.type === msgs.PA_TYPE.ENCRYPTED_CHALLENGE ||
+           pa.type === PA_OTP_REQUEST;
+  });
+  if (!lookup.principal && lookup.refusal && !passwordPadata &&
+      lookup.refusal.errorCode === 'STS-KRB-0104' && pkinit &&
+      pkinit.enabled() &&
+      typeof principals.certificatePerson === 'function') {
+    const keyless = principals.certificatePerson(body.cname.name, asRealm);
+    if (keyless) {
+      lookup = { principal: keyless, refusal: null };
+    }
+  }
   const client = lookup.principal;
   if (!client && lookup.refusal) {
     log.debug("Leaving answerAsReq().");
@@ -1971,6 +2598,8 @@ async function answerAsReq(request, fast) {
   const encTimestamp = findPa(msgs.PA_TYPE.ENC_TIMESTAMP);
   const encChallenge = fast ? findPa(msgs.PA_TYPE.ENCRYPTED_CHALLENGE) : null;
   const otpRequest = fast ? findPa(PA_OTP_REQUEST) : null;
+  // PKINIT (#179): a certificate's signature, in FAST or out.
+  const pkAsReq = pkinit && pkinit.enabled() ? findPa(PA_PK_AS_REQ) : null;
   // A SECOND FACTOR HELD OR REQUIRED (#173). Asked here, once, and acted on in
   // two places below: it forces pre-authentication, and it refuses a password
   // alone — both only where `mode.issuesTicketsOnPasswordAlone()` says no.
@@ -1978,7 +2607,7 @@ async function answerAsReq(request, fast) {
   const passwordAloneRefused = !!secondFactor.needed &&
                                !mode.issuesTicketsOnPasswordAlone();
   if ((client.requiresPreAuth || passwordAloneRefused) &&
-      !encTimestamp && !encChallenge && !otpRequest) {
+      !encTimestamp && !encChallenge && !otpRequest && !pkAsReq) {
     log.debug("Leaving answerAsReq().");
     return preAuthRequiredReply(client, request, fast,
                                 { otp: !!(provider && secondFactor.totp) });
@@ -2002,7 +2631,30 @@ async function answerAsReq(request, fast) {
         : null
     });
   };
-  if (otpRequest) {
+  if (pkAsReq) {
+    // PKINIT (#179) — the strongest method present, so it is the one checked:
+    // the certificate's signature, its path to this realm's authorities, its
+    // revocation and its binding to this client, and the Diffie-Hellman reply
+    // key. krb5_pkinit.ts says which RFC 4556 error a refusal is.
+    const result = await pkinit.checkRequest({
+      pa: pkAsReq, request: request, asReqBytes: request[REQUEST_BYTES],
+      realm: asRealm, etype: etype, anonymous: false
+    });
+    if (!result.ok) {
+      log.debug("Leaving answerAsReq(). PKINIT refused.");
+      return errorReply(result.code, {
+        // error-code: none — the code is the refusal's own, STS-KRB-0178..0197, chosen in krb5_pkinit.ts
+        errorCode: result.errorCode,
+        crealm: body.realm, cname: body.cname, sname: body.sname,
+        eText: result.eText, eData: result.eData || null
+      });
+    }
+    preauth = { method: 'PA-PK-AS-REQ' + (fast ? ' inside FAST' : '') +
+                        ', ' + result.method,
+                indicators: result.indicators || [],
+                replyKey: result.replyKey, kdcPadata: result.kdcPadata,
+                pkinit: result };
+  } else if (otpRequest) {
     const result = await provider.checkOtpRequest(client, etype, otpRequest,
                                                   fast);
     if (!result.ok) {
@@ -2046,8 +2698,10 @@ async function answerAsReq(request, fast) {
   // sign-in screen tells them by asking for the code next: this door, unlike
   // #101's five, CAN ask for the second factor, and the e-text says how.
   // ---------------------------------------------------------------------
+  // PKINIT (#179) is not a password at all: its indicator passes as the OTP
+  // one does.
   if (preauth && preauth.indicators.indexOf('otp') === -1 &&
-      passwordAloneRefused) {
+      !preauth.pkinit && passwordAloneRefused) {
     const why = secondFactor.holds
       ? 'this account holds a second factor'
       : (secondFactor.byUser
@@ -2066,9 +2720,36 @@ async function answerAsReq(request, fast) {
                ? 'Use FAST armor with OTP pre-authentication and your ' +
                  'authenticator app code (kinit -T <armor ccache>).'
                : 'Kerberos can take an authenticator app code (FAST with ' +
-                 'OTP); enrol one on the portal. A security key over ' +
-                 'Kerberos (PKINIT) is not supported.')
+                 'OTP) or a smart-card certificate (PKINIT, kinit -X ' +
+                 'X509_user_identity=...); enrol either on the portal.')
     });
+  }
+
+  // THE SIGN-IN'S RISK, ASSESSED AT THE DOOR (#499), now that the
+  // pre-authentication verified and before a ticket exists: the principal
+  // database asks its key source (krb5_principals.js's decideSignIn()), so
+  // this file gains no require. The assessment is recorded there, which makes
+  // it the person's standing for the TGS-REQs that follow; a refusal on risk
+  // is KDC_ERR_POLICY (12), the code the TGS already answers a policy
+  // refusal with. A database without the function refuses nobody.
+  if (typeof principals.decideSignIn === 'function') {
+    const riskRefusal = await principals.decideSignIn(body.cname.name, asRealm,
+      { indicators: preauth ? preauth.indicators : [],
+        pkinit: !!(preauth && preauth.pkinit),
+        hardware: !!(preauth && preauth.pkinit && preauth.pkinit.hardware),
+        method: preauth ? preauth.method : '' });
+    if (riskRefusal) {
+      log.info('krb5: ' + body.cname.name.join('/') + '@' + asRealm +
+               ' authenticated, and the issuance policy refused the sign-in ' +
+               'on risk. KDC_ERR_POLICY.');
+      log.debug("Leaving answerAsReq(). Refused on risk.");
+      return errorReply(12, {
+        // error-code: none — the code is the policy's own (STS-RISK-0016 or 0017), chosen in krb5_person_keys.ts
+        errorCode: riskRefusal.errorCode,
+        crealm: body.realm, cname: body.cname, sname: body.sname,
+        eText: riskRefusal.eText
+      });
+    }
   }
 
   // Issue. The session key is fresh per ticket; both copies of it — the one in
@@ -2095,8 +2776,12 @@ async function answerAsReq(request, fast) {
   const authtime = now();
   const requestedTill = body.till && body.till > authtime ? body.till :
                         kdcTime(ticketLifetimeSeconds());
+  // RFC 4556 section 3.2.3: a PKINIT ticket "MUST NOT exceed" the lifetime
+  // of the client's key pair, which is its certificate's validity (#179).
   const endtime = new Date(Math.min(requestedTill.getTime(),
-    kdcTime(ticketLifetimeSeconds()).getTime()));
+    kdcTime(ticketLifetimeSeconds()).getTime(),
+    preauth && preauth.pkinit && preauth.pkinit.notAfter
+      ? preauth.pkinit.notAfter.getTime() : Infinity));
 
   const wantsForwardable = (body.kdcOptions || []).indexOf(
       msgs.KDC_OPTION.FORWARDABLE) !== -1;
@@ -2108,9 +2793,12 @@ async function answerAsReq(request, fast) {
   // the design: it works no matter which service the user visits, because a
   // ticket that was never forwardable cannot be forwarded by anybody. An error
   // here would break the user's logon instead of protecting it.
-  if (wantsForwardable && client.notDelegated) {
-    log.info('krb5: ' + client.name.join('/') + ' is flagged NOT_DELEGATED ' +
-      '(account is sensitive and cannot be delegated), so its TGT is NOT ' +
+  // #186: PROTECTED is read off the client's ENTRY — stsNotDelegated /
+  // appNotDelegated, or a protected group (delegation.protectedGroups, the
+  // console roster): Active Directory's NOT_DELEGATED and Protected Users.
+  if (wantsForwardable && krb5Delegation().isProtected(client.name, asRealm)) {
+    log.info('krb5: ' + client.name.join('/') + ' is protected from ' +
+      'delegation (NOT_DELEGATED or a protected group), so its TGT is NOT ' +
       'forwardable however it was asked for');
   } else if (wantsForwardable) {
     flags.push(msgs.TICKET_FLAG.FORWARDABLE);
@@ -2122,7 +2810,17 @@ async function answerAsReq(request, fast) {
   // an OTP added is the authentication indicator below, not a flag —
   // hw-authent claims hardware, and an authenticator app is not that.
   if (preauth) flags.push(msgs.TICKET_FLAG.PRE_AUTHENT);
-  if (service.okAsDelegate) flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
+  // hw-authent for a PKINIT certificate MARKED hardware-bound (#179,
+  // krb5_pkinit.ts): the smart-card logon profile over a key this service
+  // did not generate. Nothing else here can say a key was in hardware.
+  if (preauth && preauth.pkinit && preauth.pkinit.hardware) {
+    flags.push(msgs.TICKET_FLAG.HW_AUTHENT);
+  }
+  // #186: unconstrained delegation is `krb5TrustedForDelegation` on the
+  // service's entry, off by default.
+  if (krb5Delegation().trustedForDelegation(service.name, asRealm)) {
+    flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
+  }
   // RFC 6806 section 11, on every ticket issued (encPaRepData() above).
   if (request[REQUEST_BYTES]) flags.push(msgs.TICKET_FLAG.ENC_PA_REP);
   const renewTill = wantsRenewable ? kdcTime(renewLifetimeSeconds()) : null;
@@ -2181,19 +2879,36 @@ async function answerAsReq(request, fast) {
       serviceKey: { etype: ticketEtype, key: serviceKey }
     });
   }
+  // RFC 4556 section 3.2.3's AD-INITIAL-VERIFIED-CAS (#179), in
+  // AD-IF-RELEVANT because the path satisfied this realm's policy. Appended
+  // after the indicator's CAMMAC, whose kdc-verifier covers its own elements
+  // alone (RFC 7751 section 4).
+  if (preauth && preauth.pkinit && preauth.pkinit.verifiedCas) {
+    indicatorAd = indicatorAd.concat([{
+      type: AD_IF_RELEVANT,
+      data: msgs.encAuthorizationData([preauth.pkinit.verifiedCas]) }]);
+  }
   // A client that DECLINED a PAC gets none. That is not a curiosity: it is the
   // only way to see what a Windows service does when the groups it authorizes
   // on are not there, and the request page offers it as a checkbox — so
   // honouring it is what makes that checkbox mean something rather than being a
   // control that quietly does nothing.
   let encTicketPart;
+  // The PAC's client claims (#493), counted for the ticket's record.
+  let asClaims = null;
   if (pacDeclined) {
     log.info('krb5: the client asked for NO PAC (PA-PAC-REQUEST ' +
       'include=false), so this ticket carries none. A Windows service ' +
       'reading group memberships from it will find nothing.');
     encTicketPart = encodeTicketPart(null);
   } else {
+    asClaims = claimsForTicket({
+      username: body.cname.name.join('/'),
+      isTgt: isTgtRequest(body.sname),
+      spn: body.sname.name.join('/') + '@' + asRealm
+    });
     const pacBytes = await buildPacFor(client, {
+      clientClaims: asClaims,
       authtime: authtime,
       clientRealm: asRealm,
       serverKey: { etype: ticketEtype, key: serviceKey },
@@ -2243,7 +2958,12 @@ async function answerAsReq(request, fast) {
     realm: asRealm,
     service: body.sname.name.join('/'),
     etype: profile.name,
-    expiresAt: endtime.getTime()
+    expiresAt: endtime.getTime(),
+    // Its PAC's client claims (#493), so a change to the PAC claim set
+    // reaches the holder as CAEP token-claims-change.
+    claimSet: asClaims ? 'kerberos-pac' : '',
+    username: body.cname.name.join('/'),
+    pacClaims: asClaims ? asClaims.count : 0
   });
 
   // An AS-REP is the one authentication in this whole service that a wrong
@@ -2290,6 +3010,10 @@ async function answerAsReq(request, fast) {
       value: msgs.encEtypeInfo2(
         principals.etypeInfo2For(client, [replyKey.etype]))
     }];
+  }
+  // PKINIT outside FAST: the PA-PK-AS-REP is the reply's padata (#179).
+  if (!fast && preauth && preauth.pkinit) {
+    replyPadata = preauth.kdcPadata;
   }
   if (fast && provider) {
     const finished = await provider.finishAsReply({
@@ -2911,6 +3635,20 @@ async function answerTgsReq(request, state) {
              'this request is not armored with FAST'
     });
   }
+  // AN ANONYMOUS TICKET ARMORS AND BUYS NOTHING (#179, RFC 8062): this KDC
+  // issues one only to be FAST armor (answerAnonymousAsReq()), and RFC 8062
+  // section 4.2 leaves what a TGS does with one to policy. This policy is
+  // no.
+  if ((ticketPart.flags || []).indexOf(msgs.TICKET_FLAG.ANONYMOUS) !== -1) {
+    log.debug("Leaving answerTgsReq(). An anonymous ticket.");
+    return errorReply(12, {
+      errorCode: 'STS-KRB-0198',
+      crealm: ticketPart.crealm, cname: ticketPart.cname,
+      realm: ourRealm(), sname: body.sname,
+      eText: 'an anonymous ticket is FAST armor on this KDC and buys no ' +
+             'other ticket'
+    });
+  }
 
   // Which realm this request is being answered AS. It comes from the request
   // body, not from a constant, because this trust realm may serve two Kerberos
@@ -2968,12 +3706,13 @@ async function answerTgsReq(request, state) {
                'or registered on a different account' +
                (targetRealm ? ', or a trust with ' + targetRealm + ' that ' +
                    'does not exist' : '') +
-               '. This mock registers a service on first sight when its host ' +
+               '. In development mode this service registers a service on ' +
+               'first sight when its host ' +
                'matches ' +
                (principals.SERVICE_DOMAINS.join(', ') ||
                 '(nothing configured)') +
-               ', and this one does not — GET /krb5/principals lists what it ' +
-               'knows.' });
+               ', and this one does not — GET ' +
+               '/admin-api/kerberos/principals lists what it knows.' });
     }
     service = created;
   }
@@ -3164,12 +3903,17 @@ async function answerTgsReq(request, state) {
     }
     const forwardingClient = principals.find(ticketPart.cname.name,
                                              ticketPart.crealm);
-    if (forwardingClient && forwardingClient.notDelegated) {
+    // #186: protected is the client's ENTRY's word — stsNotDelegated or a
+    // protected group.
+    if (krb5Delegation().isProtected(ticketPart.cname.name,
+                                     ticketPart.crealm)) {
       log.info('krb5: REFUSING to forward — ' +
           ticketPart.cname.name.join('/') + ' ' +
           'is sensitive');
-      const eText = ticketPart.cname.name.join('/') + ' is flagged ' +
-             'NOT_DELEGATED, so its credentials may not be forwarded. ' +
+      const eText = ticketPart.cname.name.join('/') + ' is protected from ' +
+             'delegation (stsNotDelegated or a protected group, Active ' +
+             'Directory\'s NOT_DELEGATED and Protected Users), so its ' +
+             'credentials may not be forwarded. ' +
              'Re-checked here as well as at the AS exchange, because a ' +
              'forwardable ticket issued before the flag was set would ' +
              'otherwise still work.';
@@ -3279,7 +4023,10 @@ async function answerTgsReq(request, state) {
   // of delegation.
   const s4u = await resolveS4u({
     request: request, body: body, ticketPart: ticketPart, service: service,
-    answeringRealm: answeringRealm, sessionKey: sessionKey, apReq: apReq
+    answeringRealm: answeringRealm, sessionKey: sessionKey, apReq: apReq,
+    // #186: the krbtgt key an evidence ticket's PAC signatures verify with.
+    kdcKey: { etype: krbtgtEtype,
+              key: await principals.longTermKey(krbtgt, krbtgtEtype) }
   });
   // THE ONE PLACE AN S4U REFUSAL IS RECORDED. resolveS4u() can say no twelve
   // ways and every one of them comes back through here carrying its intent, so
@@ -3304,32 +4051,54 @@ async function answerTgsReq(request, state) {
     return f !== msgs.TICKET_FLAG.INITIAL;
   });
   let flags = inherited.slice();
-  if (service.okAsDelegate &&
+  // #186: unconstrained delegation is `krb5TrustedForDelegation` on the
+  // service's entry, off by default — its tickets carry ok-as-delegate.
+  if (krb5Delegation().trustedForDelegation(body.sname.name, answeringRealm) &&
       flags.indexOf(msgs.TICKET_FLAG.OK_AS_DELEGATE) === -1) {
     flags.push(msgs.TICKET_FLAG.OK_AS_DELEGATE);
   }
 
   if (s4u.mode === 'self') {
-    // The flags come from the SERVICE's own configuration, not from the TGT: a
-    // ticket out of S4U2Self is forwardable only if the requesting account has
-    // TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. Without it S4U2Self still
-    // succeeds and returns a ticket that cannot be used as evidence for classic
-    // S4U2Proxy — which then fails several steps later for a reason that looks
-    // nothing like this flag.
+    // The flags come from the POLICY, not from the TGT (#186): a ticket out
+    // of S4U2Self is forwardable only where the issuance policy allowed the
+    // impersonation — the service allows it (Active Directory's
+    // TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION) and the user is not protected.
+    // Otherwise S4U2Self still succeeds and returns a ticket that cannot be
+    // used as evidence for classic S4U2Proxy — which then fails several steps
+    // later for a reason that looks nothing like this.
     flags = flags.filter(function (f) {
       return f !== msgs.TICKET_FLAG.FORWARDABLE;
     });
-    if (s4u.requester && s4u.requester.trustedToAuthenticateForDelegation) {
+    if (s4u.forwardable) {
       flags.push(msgs.TICKET_FLAG.FORWARDABLE);
     } else {
-      log.info('krb5: ' + ticketPart.cname.name.join('/') + ' does not have ' +
-        'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION, so its S4U2Self ticket is ' +
-        'NOT forwardable and cannot be used as evidence for classic ' +
-        'constrained delegation');
+      log.info('krb5: the issuance policy did not allow ' +
+        ticketPart.cname.name.join('/') + ' to impersonate this user, so its ' +
+        'S4U2Self ticket is NOT forwardable and cannot be used as evidence ' +
+        'for classic constrained delegation');
     }
-  } else if (s4u.mode === 'proxy' &&
-             flags.indexOf(msgs.TICKET_FLAG.FORWARDABLE) === -1) {
-    flags.push(msgs.TICKET_FLAG.FORWARDABLE);
+  } else if (s4u.mode === 'proxy') {
+    // THE S4U2PROXY TICKET'S FORWARDABLE FLAG (#492). [MS-SFU] 3.2.5.2.4
+    // says nothing of it, so RFC 4120 section 3.3.3 decides, as it does in
+    // MIT (`get_ticket_flags()`) and Heimdal (`tgs_make_reply()`):
+    // forwardable when the request asked for it AND the requester's TGT is
+    // forwardable — the evidence already is, or the request was refused
+    // above — and NOT for a user nobody may delegate ([MS-SFU] 3.2.1's
+    // DelegationNotAllowed: "prevent ... FORWARDABLE ticket flags in tickets
+    // for the principal"). Until #492 the flag was added whatever the request
+    // or the TGT said. A forwardable last hop is not a licence to go on:
+    // whether sp1 may delegate is its own entry's question at the next
+    // S4U2Proxy, which needs this flag as evidence and nothing more.
+    const askedForwardable = (body.kdcOptions || []).indexOf(
+      msgs.KDC_OPTION.FORWARDABLE) !== -1;
+    const tgtForwardable = flags.indexOf(msgs.TICKET_FLAG.FORWARDABLE) !== -1;
+    flags = flags.filter(function (f) {
+      return f !== msgs.TICKET_FLAG.FORWARDABLE;
+    });
+    if (askedForwardable && tgtForwardable &&
+        !krb5Delegation().isProtected(clientName.name, clientRealm)) {
+      flags.push(msgs.TICKET_FLAG.FORWARDABLE);
+    }
   }
   if (wantsForwarded && flags.indexOf(msgs.TICKET_FLAG.FORWARDED) === -1) {
     // The flag is the RECORD that this happened: a service receiving a ticket
@@ -3437,6 +4206,22 @@ async function answerTgsReq(request, state) {
                carried.indicators.join(', ') + ' of the TGT are carried ' +
                'into the ticket for ' + (body.sname.name || []).join('/'));
     }
+    // RFC 4556 section 3.2.3: "any TGS MUST copy" AD-INITIAL-VERIFIED-CAS
+    // from the TGT into what it buys (#179). Copied as the AS wrote it, in
+    // its AD-IF-RELEVANT.
+    (ticketPart.authorizationData || []).forEach(function (entry) {
+      if (entry.type !== AD_IF_RELEVANT) {
+        return;
+      }
+      try {
+        const inner = msgs.readAuthorizationData(asn1.readTlv(entry.data, 0));
+        if (inner.some(function (one) { return one.type === 9; })) {
+          indicatorAd = indicatorAd.concat([entry]);
+        }
+      } catch (e) {
+        log.debug('Caught in answerTgsReq(): ' + ((e && e.message) || e));
+      }
+    });
   }
 
   // The delegation audit trail, if this hop is one. It names the target and
@@ -3473,6 +4258,31 @@ async function answerTgsReq(request, state) {
   const tgtHadPac = kpac.findPacs(ticketPart.authorizationData ||
                                   []).length > 0;
   let encTicketPart;
+  // THE PAC'S CLIENT CLAIMS (#493) — claimsForTicket() above says which
+  // shape each branch below takes — and what the ticket's record counts.
+  const ticketSpn = body.sname.name.join('/') + '@' + answeringRealm;
+  let tgsClaims = null;
+  // A PAC being RE-SIGNED keeps its claims buffer byte for byte unless the
+  // target service's application has rows of its own, when the carried
+  // claims and those rows are merged and the buffer replaced.
+  const resignedClaims = function (pacBytes, username) {
+    log.debug('Entering resignedClaims().');
+    if (!pacClaimsOn() || isTgtRequest(body.sname)) {
+      log.debug('Leaving resignedClaims(). Carried as it came.');
+      return {};
+    }
+    const merged = claimsForTicket({ username: username, isTgt: false,
+                                     spn: ticketSpn,
+                                     carried: claimsCarriedBy(pacBytes) });
+    if (!merged || !merged.own) {
+      log.debug('Leaving resignedClaims(). No rows of the service\'s own.');
+      return {};
+    }
+    tgsClaims = merged;
+    log.debug('Leaving resignedClaims(). ' + merged.own + ' of the ' +
+              'service\'s own merged in.');
+    return { clientClaims: merged.spec };
+  };
   if (s4u.mode === 'proxy') {
     // The user's PAC comes from the EVIDENCE ticket — the requester never had
     // the user's credentials, and this KDC must not invent authorization data
@@ -3487,15 +4297,16 @@ async function answerTgsReq(request, state) {
       const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
           new Uint8Array([0])));
       const resigned = await kpac.resignPac(
-        pacForTarget(carried[0].bytes, isTgtRequest(body.sname)), {
-        serverKey: { etype: ticketEtype, key: serviceKey },
-        kdcKey: { etype: krbtgtEtype,
-                  key: await principals.longTermKey(krbtgt, krbtgtEtype) },
-        includeTicketSignature: !isTgtRequest(body.sname),
-        includeExtendedKdcSignature: !isTgtRequest(body.sname),
-        ticketBytes: placeholder,
-        delegationInfo: delegationInfo
-      });
+        pacForTarget(carried[0].bytes, isTgtRequest(body.sname)),
+        Object.assign({
+          serverKey: { etype: ticketEtype, key: serviceKey },
+          kdcKey: { etype: krbtgtEtype,
+                    key: await principals.longTermKey(krbtgt, krbtgtEtype) },
+          includeTicketSignature: !isTgtRequest(body.sname),
+          includeExtendedKdcSignature: !isTgtRequest(body.sname),
+          ticketBytes: placeholder,
+          delegationInfo: delegationInfo
+        }, resignedClaims(carried[0].bytes, clientName.name.join('/'))));
       encTicketPart = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
           resigned));
     }
@@ -3513,14 +4324,18 @@ async function answerTgsReq(request, state) {
     const placeholder = encodeTicketPart(kpac.wrapPacAsAuthorizationData(
         new Uint8Array([0])));
     const resigned = await kpac.resignPac(
-      pacForTarget(carried[0].bytes, isTgtRequest(body.sname)), {
-      serverKey: { etype: ticketEtype, key: serviceKey },
-      kdcKey: { etype: krbtgtEtype,
-                key: await principals.longTermKey(krbtgt, krbtgtEtype) },
-      includeTicketSignature: !isTgtRequest(body.sname),
-      includeExtendedKdcSignature: !isTgtRequest(body.sname),
-      ticketBytes: placeholder
-    });
+      pacForTarget(carried[0].bytes, isTgtRequest(body.sname)),
+      Object.assign({
+        serverKey: { etype: ticketEtype, key: serviceKey },
+        kdcKey: { etype: krbtgtEtype,
+                  key: await principals.longTermKey(krbtgt, krbtgtEtype) },
+        includeTicketSignature: !isTgtRequest(body.sname),
+        includeExtendedKdcSignature: !isTgtRequest(body.sname),
+        ticketBytes: placeholder
+        // The person lives in the other realm: named whole, so an attribute
+        // row of the service's can never read a local entry of the same name.
+      }, resignedClaims(carried[0].bytes, ticketPart.cname.name.join('/') +
+                                        '@' + ticketPart.crealm)));
     log.info('krb5: ' + answeringRealm + ' re-signed the PAC that ' +
       ticketPart.crealm +
       ' issued for ' + ticketPart.cname.name.join('/') + ' — its contents ' +
@@ -3537,7 +4352,17 @@ async function answerTgsReq(request, state) {
       'PAC');
     encTicketPart = encodeTicketPart(null);
   } else {
+    // Under S4U2Self the presented TGT is the SERVICE's, so the impersonated
+    // person's claims are evaluated afresh; otherwise they are the TGT's own.
+    tgsClaims = claimsForTicket({
+      username: clientName.name.join('/'),
+      isTgt: isTgtRequest(body.sname),
+      spn: ticketSpn,
+      carried: s4u.mode === 'self' ? undefined : claimsCarriedBy(
+        kpac.findPacs(ticketPart.authorizationData || [])[0].bytes)
+    });
     const pacBytes = await buildPacFor(ticketClient, {
+      clientClaims: tgsClaims,
       authtime: authtime,
       clientRealm: clientRealm,
       serverKey: { etype: ticketEtype, key: serviceKey },
@@ -3579,11 +4404,20 @@ async function answerTgsReq(request, state) {
   // which section 5.4.3 makes a MUST in a TGS reply, so that nobody can strip
   // the FAST padata and make this KDC look as if it had none.
   let replyPadata = null;
+  // PA-S4U-X509-USER is answered in the reply ([MS-SFU] 2.2.2, #186): the
+  // request's S4UUserID with a checksum under the TGT session key.
+  const x509Reply = s4u.x509
+    ? await krb5Delegation().replyS4uX509User(s4u.x509.parsed,
+                                              s4u.x509.sessionKey)
+    : null;
+  if (x509Reply && !(state.fast && provider)) {
+    replyPadata = [x509Reply];
+  }
   if (state.fast && provider) {
     const finished = await provider.finishAsReply({
       fast: state.fast, ticket: ticket, crealm: clientRealm,
       cname: clientName, replyKey: { etype: replyEtype, key: replyKey },
-      padata: []
+      padata: x509Reply ? [x509Reply] : []
     });
     replyPadata = finished.padata;
     replyKey = finished.replyKey.key;
@@ -3631,7 +4465,11 @@ async function answerTgsReq(request, state) {
     realm: answeringRealm,
     service: body.sname.name.join('/'),
     etype: profile.name,
-    expiresAt: endtime.getTime()
+    expiresAt: endtime.getTime(),
+    // Its PAC's client claims when this KDC built or merged them (#493).
+    claimSet: tgsClaims && !crossRealm ? 'kerberos-pac' : '',
+    username: clientName.name.join('/'),
+    pacClaims: tgsClaims ? tgsClaims.count : 0
   });
 
   // THE DELEGATION ACT, recorded here and not in resolveS4u(), for the reason
@@ -3759,8 +4597,23 @@ async function answerTgsReq(request, state) {
 // for what the workers have answered to commit and pulls it — the same two
 // steps `request_pool.js` takes for an HTTP request it keeps. Lazy and
 // guarded for the parent's COPY set, as below.
+//
+// **AND NOT IN A REQUEST WORKER (2026-10-07).** Port 88's messages are
+// answered in a worker now (`answerSocketMessage()`, below), and so is
+// MS-KKDCP over HTTP; both reach a worker through the request pool's read
+// barrier — `runOperation()` for an operation, `dispatch()` for a request —
+// which already waited for every answered write to commit and brought this
+// worker up to the generation they made. Waiting again here was a second
+// pull of the change log per message, in a process that has no workers of
+// its own to wait for: `pool.size()` answers the CONFIGURED count, which a
+// worker reads too, so the check below did not tell the two apart.
 async function catchUpWithWorkers() {
   log.debug('Entering catchUpWithWorkers().');
+  if (process.env.STS_REQUEST_WORKER) {
+    log.debug('Leaving catchUpWithWorkers(). A worker; the pool\'s barrier ' +
+              'brought it here.');
+    return;
+  }
   let pool = null;
   let persistence = null;
   try {
@@ -3965,6 +4818,358 @@ async function handleMessage(bytes, options) {
 }
 
 // ---------------------------------------------------------------------------
+// PORT 88 IS ANSWERED IN A REQUEST WORKER (2026-10-07, rcbj's decision).
+//
+// The front process owns every listener this service has and node runs them
+// all on one thread, so every AS-REQ and TGS-REQ on TCP and UDP 88 — string-
+// to-key, the PAC's signatures, PKINIT's Diffie-Hellman, the risk assessment
+// — was work on the one event loop every socket shares. And it was answered
+// from the FRONT process's copy of the store, which learns of a worker's
+// write through the change log: `sts_kerberos_signout` in single-node had a
+// sign-in's principal row written here and a global logout answered 3 s later
+// by a worker that had not received it, so the logout stamped nothing
+// (STS-LOGOUT-0007, "ended 0 of 1") and the old TGT was honoured.
+//
+// So the socket and the framing stay here — the TCP length prefix, the
+// datagram, the reply written back — and each complete message is the
+// request pool's OPERATION `krb5.message`, LDAP's arrangement
+// (`ldap/ldap_server.js`, `throughTheRequestPool()`) and SPIFFE's
+// (`spiffe/spiffe_grpc.ts`, `dispatchUnary()`). A worker runs the SAME
+// `handleMessage()` MS-KKDCP has run in workers since the pool dispatched
+// HTTP, so nothing the KDC holds is new to a worker: the principal database,
+// the krbtgt keys, FAST's cookie and PKINIT's freshness token (both sealed
+// under the krbtgt key, so any process opens them), the OTP step (a cluster
+// counter), the PKINIT AuthPack and the acceptor's Authenticator (cluster
+// claims). **`runOperation()` puts it through the read barrier**, which is
+// what orders a KDC write after the HTTP write before it and before the HTTP
+// read after it; with both ends in workers, that is the whole fix, and the
+// front process no longer waits for anything (`catchUpWithWorkers()` runs
+// only where there is no worker to give the message to).
+//
+// WHAT CROSSES, AND WHY THAT IS ALL OF IT. `handleMessage()` reads exactly
+// one thing off the socket — nothing — and the AMBIENT AUDIT SOURCE, which
+// `startTcp()` and `startUdp()` enter around each message so that every row
+// it causes names the client (2026-09-18), and which #499's risk assessment
+// reads as the sign-in's address. A worker has no socket, so the address
+// crosses beside the bytes and the worker enters the same source. The
+// transport and the port are carried for the worker's log line. **No realm
+// crosses**: the sockets pass none, and the realm is chosen inside
+// `handleMessage()` from the Kerberos realm NAME in the request (`routeOf()`),
+// which is in the bytes.
+//
+// WHAT COMES BACK is the reply's bytes and its REFUSAL — the condition
+// `errorReply()` hangs under a Symbol, which does not survive a structured
+// clone. The front process puts it back on the reply, so `recordRawRefusal()`
+// writes the transport's audit row exactly as it did.
+//
+// NO AFFINITY. A Kerberos message carries its own credential (a password-
+// derived timestamp, a TGT, a certificate) and is answered on its own, which
+// is the property the HTTP side's fanout list has; a TCP connection is a
+// framing, not a session, and almost every client sends one message on it.
+//
+// NOT DISPATCHED is handled HERE, as it always was: no pool module (the
+// parent project's in-process copies), `krb5` not named in `workers.dispatch`,
+// or no worker ready — `runOperation()` answers `{ dispatched: false }` for
+// all three.
+//
+// A WORKER THAT FAILS MID-MESSAGE IS NOT RETRIED HERE, LDAP's rule: it may
+// already have written — a principal registered, an AuthPack spent, an OTP
+// step consumed, a risk assessment recorded — and answering the same request
+// again here would refuse the client's own retry as a replay or count it
+// twice. The client is told KDC_ERR_SVC_UNAVAILABLE (29) (STS-KRB-0204),
+// which MIT's and Heimdal's clients read as "this KDC did not answer" and
+// retry, against the next KDC in their list or this one again.
+//
+// The require of the pool is LAZY and guarded, for the parent project's COPY
+// set (kerberos/CLAUDE.md): a process without it answers here, as before.
+// ---------------------------------------------------------------------------
+const MESSAGE_OPERATION = 'krb5.message';
+
+function requestPool() {
+  log.debug('Entering requestPool().');
+  try {
+    log.debug('Leaving requestPool().');
+    return require('../common/request_pool');
+  } catch (e) {
+    log.debug('Caught in requestPool(): ' + ((e && e.message) || e));
+    log.debug('Leaving requestPool(). No request pool here.');
+    // A process with no pool module cannot dispatch, which is the ordinary
+    // state of the parent project's in-process loaders of this file.
+    return null;
+  }
+}
+
+// What a worker is sent for one message: a function of its own so that a test
+// drives the same shape the socket sends.
+function messageRequest(bytes, transport, address, port) {
+  log.debug('Entering messageRequest().');
+  log.debug('Leaving messageRequest().');
+  return {
+    // A Buffer, and it arrives as a Uint8Array that `worker_channel.ts`
+    // revives into one; `performMessage()` takes either.
+    bytes: Buffer.from(bytes),
+    transport: String(transport || ''),
+    // THE CLIENT, as the socket saw it — with global.proxyProtocol on,
+    // the address in the PROXY header (common/proxy_protocol.ts).
+    address: String(address || ''),
+    port: Number(port) || 0
+  };
+}
+
+// The worker's half: the message answered inside the client's audit source,
+// and the reply returned with the refusal its Symbol would not carry across.
+function performMessage(args) {
+  log.debug('Entering performMessage().');
+  const a = args || {};
+  const raw = a.bytes;
+  const bytes = (raw && typeof raw.length === 'number')
+    ? Buffer.from(raw) : Buffer.alloc(0);
+  log.debug('krb5: a ' + (a.transport || '?') + ' message of ' + bytes.length +
+            ' bytes from ' + (a.address || '?') + ':' + (a.port || '?') +
+            ', answered in a request worker.');
+  log.debug('Leaving performMessage().');
+  return audit.withSource({ address: String(a.address || '') }, function () {
+    return handleMessage(bytes);
+  }).then(function (reply) {
+    return { reply: Buffer.from(reply), refusal: refusalOf(reply) };
+  });
+}
+
+// The front process's half, turned back into what `handleMessage()` answers:
+// a reply carrying its refusal under the Symbol. Null for an answer with no
+// reply in it.
+function replyFromResult(result) {
+  log.debug('Entering replyFromResult().');
+  const raw = result && result.reply;
+  if (!raw || typeof raw.length !== 'number' || !raw.length) {
+    log.debug('Leaving replyFromResult(). No reply.');
+    return null;
+  }
+  const reply = Buffer.from(raw);
+  if (result.refusal && typeof result.refusal === 'object') {
+    Object.defineProperty(reply, REFUSAL, {
+      enumerable: false, configurable: true, value: result.refusal
+    });
+  }
+  log.debug('Leaving replyFromResult().');
+  return reply;
+}
+
+// What a socket's complete message comes to once no router has placed it
+// elsewhere (`answerFromSocket()`, below), and what `answerMessage()` runs
+// for a message another cell relayed here. Resolves the reply bytes, never
+// rejects: a failure is a KRB-ERROR the client can act on.
+async function answerSocketMessage(bytes, transport, address, port) {
+  log.debug('Entering answerSocketMessage(). transport=' + transport);
+  const pool = requestPool();
+  if (!pool || typeof pool.runOperation !== 'function') {
+    log.debug('Leaving answerSocketMessage(). Answered here: no pool.');
+    return handleMessage(bytes);
+  }
+  let answer = null;
+  try {
+    answer = await pool.runOperation(MESSAGE_OPERATION,
+      messageRequest(bytes, transport, address, port));
+  } catch (e) {
+    log.debug('Caught in answerSocketMessage(): ' + ((e && e.message) || e));
+    log.error(errorCodes.tag('STS-KRB-0204') + 'krb5: a request worker ' +
+              'failed a ' + transport + ' message from ' + (address || '?') +
+              ': ' + String((e && e.message) || e).replace(/\.$/, '') +
+              '. The client is told ' +
+              'KDC_ERR_SVC_UNAVAILABLE rather than having it answered here, ' +
+              'because a worker that failed part way through may already ' +
+              'have written.');
+    log.debug('Leaving answerSocketMessage(). The worker failed.');
+    return errorReply(29, { errorCode: 'STS-KRB-0204',
+      eText: 'the KDC could not complete this request; try again' });
+  }
+  if (!answer || !answer.dispatched) {
+    log.debug('Leaving answerSocketMessage(). Answered here: not ' +
+              'dispatched.');
+    return handleMessage(bytes);
+  }
+  const reply = replyFromResult(answer.result);
+  if (!reply) {
+    log.error(errorCodes.tag('STS-KRB-0205') + 'krb5: a request worker ' +
+              'answered a ' + transport + ' message from ' +
+              (address || '?') + ' with no reply bytes. The client is told ' +
+              'KDC_ERR_SVC_UNAVAILABLE.');
+    log.debug('Leaving answerSocketMessage(). No reply from the worker.');
+    return errorReply(29, { errorCode: 'STS-KRB-0205',
+      eText: 'the KDC could not complete this request; try again' });
+  }
+  log.debug('Leaving answerSocketMessage(). Answered by a worker.');
+  return reply;
+}
+
+// ---------------------------------------------------------------------------
+// THE MESSAGE ROUTER: A PORT-88 MESSAGE ANSWERED IN ITS CLIENT'S HOME CELL
+// (#98, #588, 2026-10-12).
+//
+// In a service deployed as cells a person's keys, disabled flag, second
+// factor, PAC facts and sign-out instant are all in their HOME cell
+// (`kerberos/CLAUDE.md`, *Cells*), and MS-KKDCP has relayed a request there
+// since 2026-09-28 (`krb5_home.ts`'s `POST /KdcProxy`, ahead of ours). The
+// raw sockets had no such seam: a traveller whose packets reached a visiting
+// cell's port 88 was answered THERE — an unknown principal in product, a
+// freshly made one in development. This is the seam.
+//
+// `setMessageRouter(fn)` installs one function that both sockets ask before
+// they answer a complete message themselves:
+//
+//   fn(bytes, { transport: 'tcp' | 'udp', peer: { address, port } })
+//
+// It may answer
+//   * a Buffer (or Uint8Array) — the reply, written and framed by the socket
+//     exactly as one this module made: the TCP length prefix, and on UDP
+//     RFC 4120 section 7.2.1's size limit, so an oversized RELAYED reply is
+//     KRB_ERR_RESPONSE_TOO_BIG and the client retries over TCP, as it would
+//     have for one made here (rcbj's decision on #588); a refusal it carries
+//     under this module's Symbol is recorded on the transport's audit row;
+//   * `{ reply, refusal }` — the same, with the refusal carried in the clear
+//     because it crossed a process boundary (a structured clone, or JSON
+//     from another cell) that drops a Symbol; `replyFromResult()` puts it
+//     back, the very function a worker's answer goes through;
+//   * null (or an empty reply) — go on, and the message is answered here as
+//     it always was.
+// A router that THROWS is logged (STS-KRB-0206) and the message is answered
+// here: a placement that failed must not leave a client waiting for a reply
+// that never comes, and the KDC's own answer is what it got before this seam.
+//
+// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file is in the parent
+// project's tests-image COPY closure (`kerberos/CLAUDE.md`), so it requires
+// nothing new: `krb5_home.ts` installs the router from outside
+// (`common/protocol_stack.ts`, right after requiring this file), and only in a
+// service deployed as cells. With no router — single-cell mode, and every
+// in-process loader of this file — `answerFromSocket()` calls
+// `answerSocketMessage()` and nothing else, byte for byte what the sockets
+// did before. No realm is passed, because the sockets have none: `routeOf()`
+// chooses it from the Kerberos realm NAME in the bytes, at home as here.
+//
+// `answerMessage(bytes, transport, client)` is the other half: what a socket
+// would answer for a message, with no socket — the home cell runs it for a
+// request another cell relayed. It is `answerSocketMessage()` (the request
+// pool, else `handleMessage()`) inside the client's audit source, so a
+// relayed message is answered by the SAME code, in a worker where there is
+// one, and every row it causes names the client the visiting cell saw. It
+// never asks the router: a relayed message is answered where it was sent, one
+// hop (`common/cell_channel.ts`).
+// ---------------------------------------------------------------------------
+let messageRouter = null;
+
+function setMessageRouter(fn) {
+  log.debug('Entering setMessageRouter().');
+  if (fn !== null && fn !== undefined && typeof fn !== 'function') {
+    log.debug('Leaving setMessageRouter(). Not a function.');
+    throw new TypeError('krb5: setMessageRouter() takes a function or null.');
+  }
+  messageRouter = fn || null;
+  log.debug('Leaving setMessageRouter(). ' +
+            (messageRouter ? 'Installed.' : 'Cleared.'));
+}
+
+// What a router answered, as a reply a socket writes; null to go on.
+function routedReply(answer) {
+  log.debug('Entering routedReply().');
+  if (answer === null || answer === undefined) {
+    log.debug('Leaving routedReply(). Not routed.');
+    return null;
+  }
+  if (answer instanceof Uint8Array) {
+    // Returned as it is, not copied: a copy would drop the refusal a reply
+    // made by errorReply() carries under its Symbol.
+    log.debug('Leaving routedReply(). Bytes.');
+    return answer.length ? answer : null;
+  }
+  log.debug('Leaving routedReply(). A result.');
+  return replyFromResult(answer);
+}
+
+// What a socket calls for one complete message: the router first, where one
+// is installed, and then `answerSocketMessage()`. Resolves the reply bytes,
+// never rejects.
+async function answerFromSocket(bytes, transport, address, port) {
+  log.debug('Entering answerFromSocket(). transport=' + transport);
+  const router = messageRouter;
+  if (!router) {
+    log.debug('Leaving answerFromSocket(). No router.');
+    return answerSocketMessage(bytes, transport, address, port);
+  }
+  let reply = null;
+  try {
+    reply = routedReply(await router(bytes, {
+      transport: transport,
+      peer: { address: String(address || ''), port: Number(port) || 0 }
+    }));
+  } catch (e) {
+    log.error(errorCodes.tag('STS-KRB-0206') + 'krb5: the message router ' +
+              'failed on a ' + transport + ' message from ' +
+              (address || '?') + ': ' +
+              String((e && e.message) || e).replace(/\.$/, '') +
+              '. The message is answered here.');
+    reply = null;
+  }
+  if (reply) {
+    log.debug('Leaving answerFromSocket(). Answered by the router.');
+    return reply;
+  }
+  log.debug('Leaving answerFromSocket(). Answered here.');
+  return answerSocketMessage(bytes, transport, address, port);
+}
+
+// A message with no socket — see the header above. `client` is
+// `{ address, port }` as the socket that received it saw them.
+function answerMessage(bytes, transport, client) {
+  log.debug('Entering answerMessage(). transport=' + transport);
+  const c = client || {};
+  const message = (bytes && typeof bytes.length === 'number')
+    ? Buffer.from(bytes) : Buffer.alloc(0);
+  log.debug('Leaving answerMessage().');
+  return audit.withSource({ address: String(c.address || '') }, function () {
+    return answerSocketMessage(message, String(transport || 'tcp'),
+                               c.address, c.port);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AND THE REGISTRATION ON THE WORKER SIDE, ONLY IN A WORKER.
+//
+// `spiffe_grpc.ts`'s `registerWorkerMethod()` carries the argument and the
+// test it cost: requiring `common/request_worker.ts` pulls
+// `common/service_state.ts` in at module scope, and in any other process that
+// is half the service's start-up machinery loaded for a table nothing reads —
+// here it would also be a new require reaching the parent project's
+// in-process copies of this file, which never set `STS_REQUEST_WORKER`. Run
+// at the foot of this file, at load, which in a worker is
+// `protocol_stack.ts`'s require of it; idempotent, because `register()`
+// throws on a second registration.
+// ---------------------------------------------------------------------------
+function registerWorkerOperation() {
+  log.debug('Entering registerWorkerOperation().');
+  if (!process.env.STS_REQUEST_WORKER) {
+    log.debug('Leaving registerWorkerOperation(). Not a request worker.');
+    return false;
+  }
+  let worker = null;
+  try {
+    worker = require('../common/request_worker');
+  } catch (e) {
+    log.debug('Caught in registerWorkerOperation(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving registerWorkerOperation(). No worker module.');
+    return false;
+  }
+  if (!worker || typeof worker.register !== 'function' ||
+      (worker.OPERATIONS && worker.OPERATIONS.has(MESSAGE_OPERATION))) {
+    log.debug('Leaving registerWorkerOperation(). Nothing to do.');
+    return false;
+  }
+  worker.register(MESSAGE_OPERATION, performMessage);
+  log.debug('Leaving registerWorkerOperation(). Registered.');
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // The listeners.
 // ---------------------------------------------------------------------------
 function startTcp(port) {
@@ -4024,7 +5229,12 @@ function startTcp(port) {
         if (buffer.length < 4 + declared) return;
         const message = buffer.subarray(4, 4 + declared);
         buffer = buffer.subarray(4 + declared);
-        handleMessage(message).then(function (reply) {
+        // Answered in the client's home cell where a router places it
+        // there, else in a request worker where there is one — see
+        // answerFromSocket() and answerSocketMessage() above; the framing
+        // stays here.
+        answerFromSocket(message, 'tcp', socket.remoteAddress,
+                         socket.remotePort).then(function (reply) {
           const framed = Buffer.alloc(4 + reply.length);
           framed.writeUInt32BE(reply.length, 0);
           Buffer.from(reply).copy(framed, 4);
@@ -4075,11 +5285,14 @@ function startUdp(port) {
   // The datagram's sender on every audit row it causes — see startTcp().
   socket.on('message', function (message, rinfo) {
     audit.withSource({ address: rinfo.address }, function () {
-      handleMessage(message).then(function (reply) {
+      answerFromSocket(message, 'udp', rinfo.address,
+                       rinfo.port).then(function (reply) {
         // A real KDC answers KRB_ERR_RESPONSE_TOO_BIG when its reply will not
         // fit in a datagram, and a client then retries over TCP. Reproducing
         // that is worth more than sending an oversized datagram, because the
-        // retry is the behaviour a client has to get right.
+        // retry is the behaviour a client has to get right. A reply another
+        // cell made is held to the same limit (#588, rcbj's decision): the
+        // client sees the same behaviour wherever its datagram landed.
         if (reply.length > udpMaxReplyBytes()) {
           log.info('krb5: the reply is ' + reply.length +
                    ' bytes, too big for UDP; answering ' +
@@ -4181,160 +5394,11 @@ app.post('/KdcProxy', function (req, res) {
   });
 });
 
-// A non-spec convenience so a test (and a curious human) can see what this KDC
-// knows without decrypting anything. It publishes NO keys and no CONFIGURED
-// account's password — only the principals, their supported etypes and their
-// salts, which is exactly what a client can already learn from PA-ETYPE-INFO2.
-//
-// The exceptions are in `accountPolicy` below, and only in development: the
-// password every USER account shares, and the one every service created on
-// demand shares. Neither is a secret to keep there — each is the same for
-// everybody, the README states it, and it is a fact about this KDC a client
-// cannot learn from the protocol. Product mode withholds both (see below).
-app.get('/krb5/principals', function (req, res) {
-  log.debug('Entering GET /krb5/principals.');
-  const list = principals.all().map(function (p) {
-    return {
-      principal: p.name.join('/') + '@' + p.realm,
-      nameType: p.type,
-      salt: p.salt,
-      etypes: principals.supportedEtypes(p).map(function (id) {
-        return { etype: id, name: kcrypto.etypeName(id) };
-      }),
-      requiresPreAuth: p.requiresPreAuth,
-      revoked: p.revoked,
-      passwordExpired: p.passwordExpired,
-      okAsDelegate: p.okAsDelegate,
-      kvno: p.kvno,
-      // An account that was not configured but turned up: somebody
-      // authenticated as a name nobody registered. Flagged so a reader is not
-      // left wondering why the table has entries the documentation does not
-      // describe.
-      autoCreated: p.autoCreated,
-      // A person keyed from their own password (product mode, 2026-09-12). The
-      // KEYS are never listed — they are not on the record at all — and this
-      // says only where they come from.
-      directoryKeys: !!p.directoryKeys,
-      description: p.description
-    };
-  });
-  // -------------------------------------------------------------------------
-  // THE TWO PASSWORDS ARE A TEST CONTROL, AND PRODUCT MODE WITHHOLDS THEM
-  // (2026-09-12).
-  //
-  // In development they are published on purpose — see the paragraph below —
-  // because they are a POLICY of the mock that every account shares. In
-  // product mode (`mode.opensTestControls()` false) that reasoning is gone:
-  // nothing is created on demand, and a password printed on an unauthenticated
-  // page is a long-term key printed on an unauthenticated page. So both are
-  // replaced by a sentence saying they are withheld and why, rather than
-  // omitted — a field that silently vanished would read as a bug.
-  // -------------------------------------------------------------------------
-  // BOTH answers must allow it: the realm's database was built in the mode
-  // captured when it was built (`seedsDemoPrincipals` — the PROCESS's mode for
-  // the default realm, see krb5_principals.js's SEEDS_DEMO), and the realm's
-  // mode may have been read differently since. Asking only one of them would
-  // let a development answer publish passwords a product database holds.
-  const published = principals.seedsDemoPrincipals && mode.opensTestControls();
-  const withheld = 'withheld: this service is in product mode, where a ' +
-    'password on an unauthenticated page is a long-term key anybody can use. ' +
-    'Development mode publishes it because every account there shares it.';
-  const service = principals.serviceAccount();
-  log.debug('Leaving GET /krb5/principals. ' + list.length + ' principals.');
-  res.status(200).json({
-    realm: ourRealm(),
-    kdcPort: KDC_PORT,
-    clockSkewSeconds: clockSkewSeconds(),
-    clockOffsetSeconds: clockOffsetSeconds(),
-    ticketLifetimeSeconds: ticketLifetimeSeconds(),
-    renewLifetimeSeconds: renewLifetimeSeconds(),
-    realmsServed: principals.realmsServed(),
-    // Whether the fixture accounts are here, and — where product mode refused
-    // one of the two accounts the service needs — why.
-    fixtureAccounts: principals.seedsDemoPrincipals,
-    serviceAccount: service,
-    krbtgtUnavailable: principals.krbtgtUnavailableReason() || null,
-    // The one thing about this KDC a client cannot discover from the protocol,
-    // and the one that stops somebody guessing at passwords: any username
-    // authenticates, and they all share one. Publishing it is not the leak it
-    // would be elsewhere on this page — a password every account holds and the
-    // README states is a POLICY of the mock, not a secret, and a debugger whose
-    // accounts are unusable without reading the source is worse than one that
-    // says so here.
-    accountPolicy: {
-      anyUsernameAuthenticates: mode.autoCreates(),
-      userPassword: published ? principals.USER_PASSWORD : withheld,
-      // The names that are refused instead, so KDC_ERR_C_PRINCIPAL_UNKNOWN
-      // stays reachable, plus the shape rule that keeps a missing SPN an error.
-      neverCreated: principals.reservedUnknown(),
-      // SERVICES are created on first sight too, but only for the hosts this
-      // mock is willing to be — a client derives `HTTP/<url host>` and cannot
-      // be expected to know this table. Their password is shared and published
-      // for the same reason the user one is: it is what lets a debugger open a
-      // service ticket's own EncTicketPart and read the PAC inside it, which is
-      // the one structure a client can otherwise never see. Configured service
-      // accounts keep their own separate passwords. Empty in product mode,
-      // where no service is created on demand for any host.
-      serviceHosts: mode.autoCreates() ? principals.SERVICE_DOMAINS : [],
-      serviceHostRule: 'an SPN\'s host matches when it IS one of ' +
-        'serviceHosts or ends with a dot and one of them; anything else ' +
-        'stays KDC_ERR_S_PRINCIPAL_UNKNOWN',
-      autoServicePassword: published ? principals.AUTO_SERVICE_PASSWORD :
-                           withheld,
-      note: mode.autoCreates()
-        ? 'A username not in this table is created on first sight as an ' +
-          'ordinary user, with the salt Active Directory would use (realm + ' +
-          'name) and this password. A multi-component name is a SERVICE, and ' +
-          'one is created on first sight too when its host matches ' +
-          'serviceHosts above — with autoServicePassword, so a reader can ' +
-          'open the ticket. An SPN outside those hosts is still ' +
-          'KDC_ERR_S_PRINCIPAL_UNKNOWN, which is how that error stays ' +
-          'reachable on purpose (try HTTP/app.elsewhere.invalid). The ' +
-          'CONFIGURED service, computer and krbtgt accounts keep their own ' +
-          'passwords, which are not published here.'
-        : 'Product mode: nothing is created on demand, so a name not in this ' +
-          'table is KDC_ERR_C_PRINCIPAL_UNKNOWN (a user) or ' +
-          'KDC_ERR_S_PRINCIPAL_UNKNOWN (a service), and serviceHosts is not ' +
-          'consulted. No password is published.'
-    },
-    // What this KDC serves, and what it does not. `notImplementedYet` said PAC,
-    // cross-realm referrals, S4U2Self and S4U2Proxy for as long as all four had
-    // been implemented — it was written before them and never revisited.
-    implemented: ['AS exchange', 'TGS exchange', 'PAC ([MS-PAC], all four ' +
-                                                 'signatures)',
-                  'cross-realm referrals (development mode)', 'S4U2Self',
-                  'S4U2Proxy (classic and resource-based)', 'forwarded TGTs',
-                  'renewal', 'MS-KKDCP (/KdcProxy)',
-                  // #173: where the directory is loaded (the provider rides
-                  // in its key source), so not in a process without it.
-                  'FAST in the AS exchange (RFC 6113; armor: a TGT)' +
-                    (principals.preauthProvider() ? '' : ' - not here: ' +
-                     'this process has no directory'),
-                  // #204: implicit armor, explicit armor accepted, and
-                  // hide-client-names in both exchanges.
-                  'FAST in the TGS exchange (RFC 6113 implicit armor), ' +
-                    'hide-client-names' +
-                    (principals.preauthProvider() ? '' : ' - not here: ' +
-                     'this process has no directory'),
-                  'user-to-user (ENC-TKT-IN-SKEY, RFC 4120 3.3.3)',
-                  'FAST negotiation (RFC 6806 section 11: enc-pa-rep, ' +
-                    'PA-REQ-ENC-PA-REP)',
-                  'OTP pre-authentication (RFC 6560) with an authenticator ' +
-                    'app, the password as the PIN',
-                  'authentication indicators (RFC 8129): otp',
-                  // #169: where the directory is loaded (the key rides in
-                  // its key source).
-                  'krbtgt key rotation, a previous kvno kept for the TGT ' +
-                    'lifetime (#169)' +
-                    (principals.keySourceInstalled() ? '' : ' - not here: ' +
-                     'this process has no directory')],
-    notImplementedYet: ['PKINIT (RFC 4556, #179)',
-                        'kpasswd (RFC 3244)',
-                        'SID filtering across a trust',
-                        'rotation of an inter-realm trust key'],
-    principals: list
-  });
-});
+// `GET /krb5/principals`, a demonstration document listing this KDC's
+// principals with the two shared development passwords, was DELETED by #595
+// (rcbj's decisions on #591): `GET /admin-api/kerberos/principals` lists the
+// same rows — `database`, from `principals.describeAll()` — and the account
+// policy, behind the API's token and with no password in either mode.
 
 // Start both listeners on ONE port.
 //
@@ -4373,9 +5437,30 @@ function listen(port) {
   return result;
 }
 
+// In a request worker, the table it answers `krb5.message` from — see
+// registerWorkerOperation().
+registerWorkerOperation();
+
 module.exports = {
   listen: listen,
   handleMessage: handleMessage,
+  // PORT 88'S OPERATION SEAM (2026-10-07), exported for
+  // tests/kerberos_worker_operation.js and for nothing else in the service:
+  // the sockets call answerSocketMessage() and a worker reaches
+  // performMessage() through the table registerWorkerOperation() filled.
+  MESSAGE_OPERATION: MESSAGE_OPERATION,
+  messageRequest: messageRequest,
+  performMessage: performMessage,
+  answerSocketMessage: answerSocketMessage,
+  registerWorkerOperation: registerWorkerOperation,
+  refusalOf: refusalOf,
+  // THE CELLS SEAM (#588): `kerberos/krb5_home.ts` installs the router and
+  // answers a relayed message with answerMessage(); errorReply() is how it
+  // refuses one it cannot place (a home unreachable, a hard geofence).
+  setMessageRouter: setMessageRouter,
+  answerMessage: answerMessage,
+  answerFromSocket: answerFromSocket,
+  errorReply: errorReply,
   KDC_PORT: KDC_PORT,
   // The Kerberos realm of the AMBIENT trust realm — a getter since 2026-09-15,
   // for `krb5_principals.js`'s reason.
@@ -4384,5 +5469,9 @@ module.exports = {
     log.debug("Leaving REALM().");
     return ourRealm();
   },
-  clockSkewSeconds: clockSkewSeconds
+  clockSkewSeconds: clockSkewSeconds,
+  // The offset the KDC's clock runs at, as the mode lets `krb5.clockOffset`
+  // be: what `/krb5/principals` published until #595 deleted it, for a
+  // reader in a realm that was not served that demonstration (#585).
+  clockOffsetSeconds: clockOffsetSeconds
 };

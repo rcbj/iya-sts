@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -338,9 +338,13 @@ class OutboundTls {
    * beside node's store.
    *
    * @param ca - extra CA certificates, as PEM text or a list
+   * @param options - `systemRoots: false` trusts `ca` ALONE, without node's
+   *   store (#94: a connection whose operator named its own chain); ignored
+   *   when no `ca` is given, which would trust nothing
    * @returns the TLS options
    */
-  static verifiedOptions(ca?: string | string[] | null):
+  static verifiedOptions(ca?: string | string[] | null,
+                         options?: { systemRoots?: boolean }):
       { rejectUnauthorized: true; ca?: string[];
         checkServerIdentity: (host: string, cert: any) => Error | undefined } {
     helpers.log.debug("Entering OutboundTls.verifiedOptions().");
@@ -349,7 +353,8 @@ class OutboundTls {
     const out: any = { rejectUnauthorized: true,
                        checkServerIdentity: OutboundTls.checkServerIdentity };
     if (extra.length) {
-      out.ca = tls.rootCertificates.concat(extra);
+      out.ca = options && options.systemRoots === false
+        ? extra.slice() : tls.rootCertificates.concat(extra);
     }
     helpers.log.debug("Leaving OutboundTls.verifiedOptions().");
     return out;

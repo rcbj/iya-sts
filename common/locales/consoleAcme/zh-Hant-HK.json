@@ -1,0 +1,10 @@
+{
+  "noDialOut": "<strong>沒有任何挑戰會向外連線。</strong>對於繫結項目所擁有的識別碼（已註冊的主機名稱、個人的電郵、項目本身），授權在建立時即為有效，帶有一個 <code>{challenge}</code> 挑戰；項目不擁有的識別碼會在 newOrder 時以 rejectedIdentifier 被拒絕。EAB MAC 在所有模式下都會驗證。",
+  "servedWith": "證書隨此簽發 CA 與領域中繼 CA 一起提供，從不包含根證書。",
+  "noCertificate": "此領域尚未透過 ACME 簽發任何證書。",
+  "hostNameLabel": "主機名稱或地址",
+  "intro": "<strong>ACME（RFC 8555），每個信任領域一個伺服器。</strong>客戶端使用為某個人或應用程式簽發的 External Account Binding 註冊帳戶，為該項目擁有的識別碼訂購證書，並以 CSR 完成訂單。目錄為",
+  "hCertificates": "透過 ACME 簽發的證書",
+  "tileIssued": "已簽發證書",
+  "tileCertificates": "持有的證書"
+}

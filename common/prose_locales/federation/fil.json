@@ -1,0 +1,446 @@
+{
+  "fed.roles.service-provider.label": {
+    "en": "1fd2d940fd75671b",
+    "text": "Ang serbisyong ito ang service provider"
+  },
+  "fed.roles.service-provider.short": {
+    "en": "6deb8eb0a31924f8",
+    "text": "Service provider"
+  },
+  "fed.roles.service-provider.what": {
+    "en": "9ca71fc74f7baaeb",
+    "text": "Isang DAYUHANG identity provider ang nag-a-authenticate sa tao at ginagamit ng serbisyong ito ang ini-issue nito. Ito ang direksyong gumagawa ng mga directory entry para sa mga taong hindi pa nakikita ng serbisyong ito, at ang direksyong hindi puwedeng maging permissive: tinatanggihan ang assertion maliban kung ma-verify ito laban sa key sa relationship na ito."
+  },
+  "fed.roles.identity-provider.label": {
+    "en": "f565ea32582c51fe",
+    "text": "Ang serbisyong ito ang identity provider"
+  },
+  "fed.roles.identity-provider.short": {
+    "en": "d8a43dbfd9a920e9",
+    "text": "Identity provider"
+  },
+  "fed.roles.identity-provider.what": {
+    "en": "6456326e0ffdbb1e",
+    "text": "Ina-authenticate ng serbisyong ito ang tao at isang DAYUHANG service provider ang gumagamit ng ini-issue nito. Ginagawa na iyon ng bawat protocol endpoint dito para sa kahit sinong caller — ang idinadagdag ng relationship ay ang pagmarka sa partner bilang federation partner sa halip na test client, at isang listahan ng mga attribute na inilalabas dito."
+  },
+  "fed.protocols.saml2.label": {
+    "en": "48634c26c8a29cf0",
+    "text": "SAML 2.0"
+  },
+  "fed.protocols.saml2.what": {
+    "en": "355d6177d0a6e06b",
+    "text": "Ang Web Browser SSO profile. Nagpapadala ang serbisyong ito ng <AuthnRequest> sa partner at ginagamit ang <Response> sa assertion consumer service nito, o nag-iissue ng isa sa partner mula sa /saml2."
+  },
+  "fed.protocols.saml11.label": {
+    "en": "7b5ac3b7f73c08c8",
+    "text": "SAML 1.1"
+  },
+  "fed.protocols.saml11.what": {
+    "en": "3c12221e7c47c8a0",
+    "text": "Ang Browser/POST profile. WALANG REQUEST MESSAGE — identity-provider-initiated ang SAML 1.1 flow, kaya ang pinagpapadalhan ng serbisyong ito sa browser ay isang inter-site transfer URL na may dalang TARGET, at ang bumabalik ay isang <Response> na walang InResponseTo na itutugma. Tingnan ang tala tungkol sa replay sa fedNonce sa ibaba."
+  },
+  "fed.protocols.wsfed.label": {
+    "en": "8dedbb37150543a1",
+    "text": "WS-Federation 1.2"
+  },
+  "fed.protocols.wsfed.what": {
+    "en": "7c638a5872ef9fcd",
+    "text": "Ang passive requestor profile. Nagpapadala ang serbisyong ito ng wa=wsignin1.0 kasama ang sarili nitong wtrealm at ginagamit ang wresult, na may dalang SAML 1.1 o SAML 2.0 assertion sa loob ng isang RSTR."
+  },
+  "fed.protocols.oidc.label": {
+    "en": "50a8a027ce52903c",
+    "text": "OpenID Connect"
+  },
+  "fed.protocols.oidc.what": {
+    "en": "37c9ef2268d1e1b9",
+    "text": "Ang authorization code flow bilang default, at response_type=id_token na may response_mode=form_post kung saan dapat walang back channel. Kinukuha ang mga attribute mula sa ID Token, at mula sa UserInfo kung may naka-configure."
+  },
+  "fed.protocols.oauth2.label": {
+    "en": "aebabad39063fe48",
+    "text": "OAuth 2.0"
+  },
+  "fed.protocols.oauth2.what": {
+    "en": "b8c06dd7e4c8e69d",
+    "text": "Ang authorization code flow nang WALANG ID Token — kinukuha ang mga attribute mula sa access token kung JWT ito, at mula sa naka-configure na endpoint na hugis-userinfo kung hindi. Hiwalay na protocol ito rito sa halip na OIDC na may flag dahil ibang artifact ang tumutukoy sa tao, at ang pagkakamali roon ang kabuuan ng nagkakamali kapag ginagamit ng mga tao ang OAuth 2.0 para sa authentication."
+  },
+  "fed.protocols.ssf.label": {
+    "en": "3c589f06261f6ba6",
+    "text": "Shared Signals lang"
+  },
+  "fed.protocols.ssf.what": {
+    "en": "01c3df2380a01fdd",
+    "text": "Isang transmitter na walang sina-sign in dito — isang device manager, isang endpoint agent, isang HR system — na nagpapadala ng mga CAEP at RISC event tungkol sa mga tao at device na kilala ng realm na ito. Ang kahihinatnan ng mga event nito ay desisyon ng signal-response policy, at bilang default ay itinatala lang iyon at wala nang iba, maliban sa compliance ng isang device."
+  },
+  "fed.mechanisms.password.label": {
+    "en": "e3db92128adfe5d4",
+    "text": "Username at password"
+  },
+  "fed.mechanisms.password.what": {
+    "en": "3c7b942fed61a172",
+    "text": "Ang sariling sign-in screen ng serbisyong ito: isang username at isang password, vine-verify ang password sa product mode at hindi sa development mode. Ang karaniwang kaso, at kung saan bumabagsak ang hindi naitakdang mechanism kapag wala nang ibang may opinyon."
+  },
+  "fed.mechanisms.password-mfa.label": {
+    "en": "4e8e68a717825941",
+    "text": "Username at password, na may MFA"
+  },
+  "fed.mechanisms.password-mfa.what": {
+    "en": "16512b9a181edfcd",
+    "text": "Parehong screen na naka-tick at naka-lock ang kahon ng second factor, kaya tumatakbo ang WebAuthn ceremony pagkatapos ng password step at itinatala ng session ang amr [\"pwd\",\"hwk\"] at acr \"mfa\". Ito ang parehong hinihingi na kayang gawin ng RequestedAuthnContext; ang protocol na humihingi nito at ang relationship na nagko-configure nito ay nagbubunga ng iisang screen, hindi dalawa."
+  },
+  "fed.mechanisms.webauthn.label": {
+    "en": "d1b42f0bce49d6e9",
+    "text": "WebAuthn, passwordless"
+  },
+  "fed.mechanisms.webauthn.what": {
+    "en": "0c8a75ea99e01b48",
+    "text": "Security key LAMANG — walang password na ipinapakita, kaya itinatala ng session ang amr [\"hwk\"] at ISANG factor. Iyan ang dahilan kung bakit hindi nito masisiyahan ang caller na humingi ng second factor: tingnan ang forceMfa sa authn.js, na nananaig dito at sinasabi iyon sa log."
+  },
+  "fed.mechanisms.federation.label": {
+    "en": "abfd4fd4bfb3a76c",
+    "text": "Ibang federation relationship"
+  },
+  "fed.mechanisms.federation.what": {
+    "en": "86f6c0e269a249de",
+    "text": "ANG KASO NG BROKER. Pinangangalanan ng `fedAuthnRelationship` ang isang relationship sa SERVICE-PROVIDER side sa parehong realm at ipinapadala roon ang tao, kaya ginagamit ng serbisyong ito ang assertion ng iba at saka nag-iissue ng sarili nito sa partner na humiling. Hindi kailangang magtugma ang dalawang protocol at kadalasan ay hindi — iyan ang kabuuan ng isang identity bridge."
+  },
+  "fed.mechanisms.spnego.label": {
+    "en": "e12bc145a6d518f3",
+    "text": "Kerberos ticket (SPNEGO)"
+  },
+  "fed.mechanisms.spnego.what": {
+    "en": "0f52a102d4c01229",
+    "text": "INTEGRATED AUTHENTICATION. Ipinapadala ang tao sa /authn/spnego, na sumasagot ng 401 na may WWW-Authenticate: Negotiate at sina-sign in siya batay sa service ticket na ibinabalik ng client niya (RFC 4559 sa ibabaw ng RFC 4178 sa ibabaw ng RFC 4121). Walang itinitipa at walang screen na iginuguhit. Gaya ng security key o wallet, nakasandig ito sa credential na vine-verify ng serbisyong ito sa bawat mode — sa product mode lang vine-verify ang password ng sign-in screen — at ang inaangkin ng session pagkatapos ay binabasa mula sa sariling mga flag ng TICKET: amr [\"pwd\"] para sa pre-authent, [\"hwk\"] para sa hw-authent, pareho para sa pareho, at WALANG ANUMAN para sa ticket na wala sa dalawa ang inaangkin. Ang client na hindi makakuha ng ticket ay nakakasalubong ng pahinang may link papunta sa sign-in screen, dahil dead end ang hubad na 401 Negotiate sa bawat browser na hindi naka-configure para sa host na ito."
+  },
+  "fed.mechanisms.wallet.label": {
+    "en": "a6a3e498bac9d4f6",
+    "text": "Wallet (OpenID4VP)"
+  },
+  "fed.mechanisms.wallet.what": {
+    "en": "d476b4b21a6959d0",
+    "text": "Ipinapadala ang tao sa /authn/wallet, na humihingi sa wallet niya — sa pamamagitan ng Digital Credentials API, o sa device na ito sa pamamagitan ng link — ng credential na na-issue sa kanya ng realm na ito, at sina-sign in siya bilang directory entry na pinag-issue-han nito kapag na-verify ang bagong holder proof. amr [\"pop\"] at acr \"1\" para sa isang factor; ang caller na humingi ng dalawa ay hinihingan ng second factor pagkatapos (o mayroon na, kung sinasabi iyon ng key attestation ng credential), kaya hindi natatalo ang mechanism na ito sa forceMfa gaya ng spnego."
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.label": {
+    "en": "3fb482b3b1d215c6",
+    "text": "I-link sa unang sign-in (default)"
+  },
+  "fed.subjectPolicies.link-at-first-sign-in.what": {
+    "en": "bf6249bea0d69f73",
+    "text": "Nagsa-sign in ang naka-link na subject. Ang hindi naka-link na nagpapangalan sa umiiral na tao ay nagsa-sign in muna DITO bilang taong iyon, at saka nili-link."
+  },
+  "fed.subjectPolicies.pre-linked.label": {
+    "en": "f892df83895cdf56",
+    "text": "Pre-linked lang"
+  },
+  "fed.subjectPolicies.pre-linked.what": {
+    "en": "9335561304f4cdab",
+    "text": "Ang link lang na ginawa nang maaga — sa console, sa pamamagitan ng /admin-api o SCIM — ang nagsa-sign in ng kahit sino."
+  },
+  "fed.subjectPolicies.jit-namespaced.label": {
+    "en": "02c2c9bfd4a4b3cf",
+    "text": "Just-in-time, namespaced"
+  },
+  "fed.subjectPolicies.jit-namespaced.what": {
+    "en": "b78784c7524b07bf",
+    "text": "Ang hindi naka-link na subject ay binibigyan ng bagong entry na pinangalanang <relationship>~<name>, naka-link sa paggawa, hindi kailanman isang umiiral na tao."
+  },
+  "fed.subjectPolicies.any-existing.label": {
+    "en": "3c34ce5af080ff96",
+    "text": "Kahit sinong umiiral na tao, ayon sa pangalan (development lang)"
+  },
+  "fed.subjectPolicies.any-existing.what": {
+    "en": "0738db6ce4ae6df5",
+    "text": "Itinutugma sa isang lokal na tao ang pangalang ipinapadala ng partner. Tinatanggihan sa product mode."
+  },
+  "fed.schema.objectClasses.top.what": {
+    "en": "814dcf82144bb33e",
+    "text": "Ang abstract class na dala ng bawat entry."
+  },
+  "fed.schema.objectClasses.applicationProcess.what": {
+    "en": "1c2b8d8382210aed",
+    "text": "Ang parehong nakarehistrong class na ginagamit ng ou=applications, at sa parehong dahilan: ito ang tanging bagay sa isang party sa isang protocol, at dala nito ang cn, description, seeAlso, ou at l."
+  },
+  "fed.schema.objectClasses.stsFederation.what": {
+    "en": "c0a952c96d821bd5",
+    "text": "INIMBENTO. Walang nakarehistrong LDAP schema na may federation partner, dahil bawat produktong nag-i-store nito (AD FS, Shibboleth, Keycloak, Ping) ay itinatago ito sa sarili nitong database. Ito ang sariling mga pangalan ng serbisyong ito gaya na ng sa stsApplication."
+  },
+  "fed.schema.attributes.fedId.what": {
+    "en": "259929e99a94f66f",
+    "text": "ANG KEY: isang maikling pangalang pinili ng operator, unique sa dalawang role. Ito rin ang RDN, hindi tulad ng sa application, dahil NAKA-CONFIGURE ang register na ito sa halip na inoobserbahan — walang kailangang tumanggap sa anumang ipinakita ng protocol, kaya puwedeng i-require na RDN-safe at maikli ang id."
+  },
+  "fed.schema.attributes.cn.what": {
+    "en": "a0eb71f29906fcfc",
+    "text": "Ang value ng RDN, katumbas ng fedId. Hindi tulad ng application entry, walang digest case dito: ang id na hindi kakasya ay tinatanggihan sa paggawa sa halip na i-hash."
+  },
+  "fed.schema.attributes.fedName.what": {
+    "en": "3680b45397f1fed4",
+    "text": "Ang itatawag sa partner sa isang pahina. Ang id ang pangalan kapag walang ibinigay, dahil ang pag-imbento ng friendly name ay pag-imbento ng katotohanan."
+  },
+  "fed.schema.attributes.fedRole.what": {
+    "en": "05d0154783f31965",
+    "text": "ALING DULO ANG SERBISYONG ITO: service-provider (gumagamit) o identity-provider (nag-a-assert). Ang isang relationship ay isang direksyon — tingnan ang header."
+  },
+  "fed.schema.attributes.fedProtocol.what": {
+    "en": "06ec8c6d5bce784c",
+    "text": "Isa sa saml2, saml11, wsfed, oidc, oauth2 — ang limang sign-in protocol — o ssf, isang partner na Shared Signals lang ang ipinapadala at walang sina-sign in."
+  },
+  "fed.schema.attributes.fedPeer.what": {
+    "en": "267dac8cafddfb60",
+    "text": "ANG SARILING IDENTIFIER NG PARTNER, ayon sa itinatawag dito ng protocol nito: isang SAML entityID, isang OpenID Connect issuer, isang WS-Federation wtrealm. Sa relationship sa service-provider side, SINUSURI ito — tinatanggihan ang assertion na ang Issuer ay hindi ang string na ito — kaya hindi lang ito dokumentasyon, at mula 2026-09-12 KINAKAILANGAN ito roon: ang relationship na wala nito ay hindi buong naka-configure."
+  },
+  "fed.schema.attributes.fedLocalEntityId.what": {
+    "en": "000e6680c6459ba5",
+    "text": "ANG ITINATAWAG SA SERBISYONG ITO NG PARTNER NA ITO, kapag hindi iyon ang pangalang dine-derive ng serbisyong ito. Kapag walang laman — ang default — dine-derive ito mula sa base URL kung saan naabot ng browser ang serbisyong ito (<base>/federation/acs/<id>, na pina-pin ng global.publicBaseUrl). Itakda ito sa entityID na ginamit sa pag-configure ng partner: ito ang nagiging Issuer ng outbound AuthnRequest, ang WS-Federation wtrealm, ang SAML 1.1 providerId, ang SP metadata entityID ng relationship na ito, at ang audience na dapat pangalanan ng inbound assertion — na isang PAGTANGGI mula 2026-09-12, kaya kailangang itakda ito para sa partner na kilala ang serbisyong ito sa ibang pangalan. Nananatiling derived ang assertion consumer URL, dahil address ito na dapat maabot ng browser."
+  },
+  "fed.schema.attributes.fedEnabled.what": {
+    "en": "b6615a9f3a870188",
+    "text": "TRUE/FALSE. Ginagawa ang relationship nang NAKA-DISABLE at walang anumang ginagawa ito hangga't hindi ito in-on: ang kalahating naka-configure na partner na tahimik na tumatanggap ng mga assertion ang mismong pagkabigong pinipigilan ng buong register na ito."
+  },
+  "fed.schema.attributes.description.what": {
+    "en": "a82b6893dc62502e",
+    "text": "Isang linya bawat bagay na nangyari sa relationship na ito."
+  },
+  "fed.schema.attributes.fedSsoUrl.what": {
+    "en": "46c3751779813588",
+    "text": "KUNG SAAN IPINAPADALA ANG BROWSER. Ang SAML Single Sign-On service ng partner, ang SAML 1.1 inter-site transfer service nito, ang WS-Federation passive endpoint nito, o ang OAuth 2.0 authorization endpoint nito. Kinakailangan sa bawat protocol, dahil hindi makakapagsimula ang relationship na walang mapagpapadalhan ng sinuman."
+  },
+  "fed.schema.attributes.fedTokenUrl.what": {
+    "en": "3bd95189243b5794",
+    "text": "Ang token endpoint ng partner, para sa authorization code flow. ISA ITO SA DALAWANG URL NA TALAGANG TATAWAGAN NG SERBISYONG ITO — tingnan ang federation_http.js, na siyang tanging outbound request sa repository na ito at nagpapaliwanag kung bakit ibang bagay ang naka-configure na URL sa nakarehistrong URL."
+  },
+  "fed.schema.attributes.fedUserinfoUrl.what": {
+    "en": "c20335797afc1b41",
+    "text": "Ang UserInfo endpoint ng partner, o anumang endpoint na sumasagot ng JSON tungkol sa bearer ng isang access token. OPSYONAL para sa OIDC, kung saan kadalasang sapat na ang dala ng ID Token, at ang TANGING pinagmumulan ng mga attribute para sa plain OAuth 2.0 partner na opaque ang access token. Ang ikalawang URL na tatawagan ng serbisyong ito."
+  },
+  "fed.schema.attributes.fedJwksUri.what": {
+    "en": "8abc51b744775c8b",
+    "text": "Ang JWKS ng partner. KINUKUHA — na eksaktong kabaligtaran ng ginagawa ng oauthJwksUri sa isang application entry, at ang pagkakaiba ang buong argumento sa federation_http.js: ang isa ay URL na IRINEHISTRO ng isang unauthenticated na caller, ito ay URL na IN-CONFIGURE ng isang administrator. Iwanan itong walang laman at i-paste ang mga key sa fedJwks sa halip kung hindi dapat tumawag ang serbisyong ito."
+  },
+  "fed.schema.attributes.fedJwks.what": {
+    "en": "e5d612d3437f7654",
+    "text": "Ang mga public key ng partner bilang isang JWKS document, verbatim. Binabasa BAGO ang fedJwksUri at hindi kailanman nire-refresh, kaya ang relationship na may dala nito ay walang ginagawang outbound request para sa mga key."
+  },
+  "fed.schema.attributes.fedTrustAnchor.what": {
+    "en": "c2b143ccd681914e",
+    "text": "OPENID CONNECT LANG. Ang Entity Identifier ng isa sa mga Trust Anchor ng realm na ito (/admin/oidfed). Kapag naitakda, nire-resolve ang OP na pinangalanan ng fedPeer sa pamamagitan ng Trust Chain nito papunta sa anchor na iyon, ang mga endpoint at key nito ay ang openid_provider metadata na ginagarantiyahan ng chain, at AWTOMATIKONG nagrerehistro ang serbisyong ito rito sa ilalim ng sarili nitong Entity Identifier, pinipirmahan ang mga request at token-endpoint authentication nito gamit ang ES256 key nito — kaya hindi binabasa ang fedSsoUrl, fedTokenUrl, fedJwks, fedJwksUri, fedClientId at fedClientSecret. Kapag walang laman, mano-manong kino-configure ang relationship gaya ng dati."
+  },
+  "fed.schema.attributes.fedSigningCertificate.what": {
+    "en": "964cd498196aff60",
+    "text": "ANG SIGNING CERTIFICATE NG PARTNER, base64 DER — parehong baybay na dala ng ds:X509Certificate at pareho sa ginagamit ng samlSigningCertificate sa isang application entry, kaya iisa ang baybay ng isang certificate sa buong serbisyong ito. Ito ang pinagve-verify-an ng bawat SAML at WS-Federation assertion, at ito ang nag-iisang attribute na nakatayo sa pagitan ng serbisyong ito at ng isang endpoint na mapag-a-assert-an ng kahit sino ng kahit ano."
+  },
+  "fed.schema.attributes.fedClientId.what": {
+    "en": "d1b0b114250b58b6",
+    "text": "ANG client_id NG SERBISYONG ITO SA PARTNER. Atin, na-issue nila — huwag ipagkamali sa oauthClientId sa isang application entry, na id ng isang client dito."
+  },
+  "fed.schema.attributes.fedClientSecret.what": {
+    "en": "627419de92206a62",
+    "text": "ANG SECRET NG SERBISYONG ITO SA PARTNER, nasa clear, sa isang directory kung saan nagtatagumpay ang bawat bind. TOTOONG credential ito sa isang TOTOONG dayuhang serbisyo, na mas malakas na pahayag kaysa sa anupaman sa directory na ito — tingnan ang header. Hindi kailanman isinusulat sa audit log at hindi kailanman ipini-print sa isang pahina."
+  },
+  "fed.schema.attributes.fedScope.what": {
+    "en": "7f9479e6e589a23f",
+    "text": "Ang scope na hinihingi sa partner. `openid profile email` ang default para sa OIDC relationship at walang default para sa OAuth 2.0, dahil ang ibibigay sa iyo ng isang OAuth 2.0 authorization server ay ganap na lokal dito."
+  },
+  "fed.schema.attributes.fedResponseType.what": {
+    "en": "b2682d37a527ee98",
+    "text": "code (ang default) o id_token. Ang `id_token` na may form_post ang hugis na HINDI nangangailangan ng back channel at samakatwid ng token endpoint, client secret o outbound request — na siyang tanging paraan para makipag-federate sa OIDC partner mula sa deployment na walang egress."
+  },
+  "fed.schema.attributes.fedBinding.what": {
+    "en": "a10d4406a67b3b1f",
+    "text": "Aling binding ang ginagamit ng outbound SAML AuthnRequest: HTTP-Redirect (ang default, at sinusuportahan ng bawat identity provider) o HTTP-POST. Walang sinasabi ito tungkol sa response, na dumarating sa anumang binding na ipinadala ng partner at tinatanggap sa lahat ng iyon."
+  },
+  "fed.schema.attributes.fedSignRequest.what": {
+    "en": "df6a6c1b53d5529c",
+    "text": "Pirmahan ang outbound AuthnRequest gamit ang key ng serbisyong ITO. NAKA-OFF bilang default: hindi ito kinakailangan ng karamihan ng identity provider, at tatanggihan ng partner na nangangailangan nito ang request sa paraang nagpapangalan sa problema. Kapag naka-on, ang certificate na iko-configure sa partner ay ang nasa sariling SAML metadata ng serbisyong ito."
+  },
+  "fed.schema.attributes.fedUsernameSource.what": {
+    "en": "61e8ef6f6cf4a99d",
+    "text": "ALING PAPASOK NA VALUE ANG NAGIGING LOKAL NA USERNAME — pangalan ng claim para sa OIDC/OAuth 2.0, SAML Attribute Name para sa iba. Ang walang laman ay nangangahulugang ang subject mismo: ang NameID, o `sub`. Ito ang nag-iisang desisyon sa mapping na hindi puwedeng magkamali nang tahimik, dahil ito ang nagpapasya kung aling directory entry ang kalalagyan ng isang tao."
+  },
+  "fed.schema.attributes.fedAttributeMap.what": {
+    "en": "4c966530efb4269f",
+    "text": "ISANG VALUE BAWAT MAPPING, isinusulat na `<incoming name>=<LDAP attribute>`. Dumarating pa rin ang HINDI nakalista rito — may default table ang federation_map.js na sumasaklaw sa mga ordinaryong OIDC claim, sa mga SAML urn:oid: na pangalan at sa mga WS-Federation claim URI — kaya ito ay para sa sariling mga imbento ng partner sa halip na para sa mga pangalang ginagamit ng lahat."
+  },
+  "fed.schema.attributes.fedAutocreateUsers.what": {
+    "en": "c047dc4310a6d6a9",
+    "text": "DYNAMIC PROVISIONING: gumawa ng directory entry sa unang beses na mag-sign in ng isang tao ang partner na ito. NAKA-ON bilang default. Ang OFF ay nangangahulugang dapat MAYROON NANG entry dito ang tao — na-provision nang maaga, ng SCIM o mano-mano — at tinatanggihan ang sign-in para sa taong wala nito, dahil kailangan ng session ng entry na magiging subject nito. (Hanggang 2026-09-14, nagbibigay ang OFF ng session at walang entry; ginawang imposible ng stable na subject ang estadong iyon.)"
+  },
+  "fed.schema.attributes.fedUpdateUserAttributes.what": {
+    "en": "4d516236bce43ce4",
+    "text": "I-update ang mga directory attribute ng tao sa BAWAT sign-in mula sa pinakabagong assertion o token. NAKA-ON bilang default, na siyang palaging ginagawa ng serbisyong ito. Isinusulat lang ng OFF ang mga attribute ng partner kapag GINAWA ng sign-in na ito ang entry, kaya pinananatili ng pre-provisioned na tao — o ng in-edit ng iba mula noon — ang sinasabi ng directory. Naitatala sa alinmang kaso kung aling relationship at issuer ang dinaanan ng isang tao."
+  },
+  "fed.schema.attributes.fedSubjectPolicy.what": {
+    "en": "2b9955272be86815",
+    "text": "PAANO NAGIGING LOKAL NA TAO ANG SUBJECT NG PARTNER. Ang subject ay ang sariling stable na identifier ng partner — iss + sub, isang persistent NameID at ang entity ID ng partner — at dala ito ng tao bilang federationLink. link-at-first-sign-in (ang default; ito ang ibig sabihin ng walang laman): nagsa-sign in ang naka-link na subject; ang hindi naka-link na nagpapangalan sa umiiral na tao ay dapat munang mag-sign in DITO bilang taong iyon — password, at second factor kung may hawak o kinakailangan — at saka lang naitatala ang link at isinusulat ang mga attribute ng partner; ang walang pinangangalanang sinuman ay binibigyan ng bagong entry na naka-namespace sa relationship na ito kung naka-on ang provisioning. pre-linked: link lang ang nagsa-sign in ng kahit sino. jit-namespaced: palaging binibigyan ng BAGONG entry ang hindi naka-link na subject, <relationship>~<name>, hindi kailanman isang umiiral na tao. any-existing: diretsong itinutugma sa isang lokal na tao ang pangalang ipinadala ng partner, gaya ng ginawa ng serbisyong ito bago ang #109 — DEVELOPMENT LANG, tinatanggihan sa product, at hinahayaan nitong mag-sign in ang partner na ito ng anumang account na kaya nitong pangalanan."
+  },
+  "fed.schema.attributes.fedSubjectGroup.what": {
+    "en": "a93a51b8d9b56949",
+    "text": "ISANG PATAKARAN SA IBABAW NG POLICY: dapat member ang tao ng isa sa mga group na ito, bawat isa ay cn o DN. Ang entry na GAGAWIN ng sign-in na ito ay walang group, kaya kapag naitakda ito ay walang magagawa. Walang laman: walang group rule."
+  },
+  "fed.schema.attributes.fedSubjectDomain.what": {
+    "en": "ea40949bc8260521",
+    "text": "ISANG PATAKARAN SA IBABAW NG POLICY: ang mail domain na IPINADALA ng partner (ang na-map na mail, o ang na-map na username kung address ito) ay dapat isa sa mga ito, at gayundin ang mail ng lokal na entry kung mayroon. Ikinukumpara nang case-insensitive at eksakto: hindi tinatanggap ng example.com ang sub.example.com. Walang laman: walang domain rule."
+  },
+  "fed.schema.attributes.fedHomeRealmDomain.what": {
+    "en": "e6d68b5bbe3dac9e",
+    "text": "HOME-REALM DISCOVERY (#148): ang authorization request na ang OpenID Connect Enterprise Extensions `domain_hint` ay isa sa mga ito ay diretsong pumupunta sa sign-in ng partner na ito, maliban kung nagpapangalan ang application ng sarili nitong partner. Ikinukumpara nang case-insensitive at eksakto. Routing hint lang — ang fedSubjectDomain ang nagpapasya kung sino ang TINATANGGAP."
+  },
+  "fed.schema.attributes.fedSubjectPattern.what": {
+    "en": "d9fa507e5053ce09",
+    "text": "ISANG PATAKARAN SA IBABAW NG POLICY: isang regular expression na dapat tumugma nang BUO sa DN ng lokal na entry (naka-anchor na ito para sa iyo), gaya ng uid=[^,]+,ou=users,.* — para sa entry na gagawin ng sign-in na ito, ang DN kung saan ito gagawin. Hanggang 256 na character, walang backreference at walang quantifier na inilapat sa group na mismong naka-quantify, at sinusubok ito laban sa hanggang 1024 na character, kaya hindi mapapag-backtrack nang ilang minuto ang isang pattern. Walang laman: walang pattern."
+  },
+  "fed.schema.attributes.fedMayAssertAdministrators.what": {
+    "en": "74c845779242205c",
+    "text": "HAYAANG MAG-SIGN IN ANG PARTNER NA ITO NG CONSOLE ADMINISTRATOR. NAKA-OFF bilang default, at ang off ay nangangahulugang tinatanggihan ang tao sa Admin Read o Admin Write roster — o may hawak na REMOTE_PEPS — anuman ang iba pang totoo, kasama ang valid na link (STS-FED-0093). Ang pag-on nito ay ginagawang susi sa console ang signing key ng partner na ito para sa bawat administrator na naka-link dito."
+  },
+  "fed.schema.attributes.fedSignalEmailMatch.what": {
+    "en": "9a124c8b72f692ec",
+    "text": "HAYAANG PANGALANAN NG SHARED SIGNALS NG PARTNER NA ITO ANG ISANG TAO AYON SA MAIL. NAKA-OFF bilang default: pinangangalanan ng Security Event Token mula sa transmitter na may issuer ng partner na ito ang isang tao ayon sa `iss_sub`, sa pamamagitan ng federationLink ng tao. Kapag naka-on, tinutugma rin ng isang `email` subject ang nag-iisang taong may ganoong mail address — hindi identifier ang address (OpenID Connect Core section 5.7), kaya para lang sa partner na pinagkakatiwalaan ng realm na ito ang mga address."
+  },
+  "fed.schema.attributes.fedSignalsEnabled.what": {
+    "en": "93b7dae2ca58a41e",
+    "text": "TANGGAPIN ANG SHARED SIGNALS NG PARTNER NA ITO. NAKA-OFF bilang default sa isang sign-in relationship, at ang buong punto ng isang `ssf` relationship, kung saan isinusulat itong ON sa paggawa. Kapag off, walang push na tinatanggap para sa relationship na ito at nilalaktawan ito ng poll job; dapat naka-on din ang fedEnabled."
+  },
+  "fed.schema.attributes.fedSignalsIssuer.what": {
+    "en": "6ba19adcf4dbf152",
+    "text": "ANG SSF ISSUER NG PARTNER, kapag hindi ito ang fedPeer. Kapag walang laman — ang default — ginagamit ang fedPeer, na tama para sa OpenID Connect partner na kapareho ng issuer ang transmitter. Ang entityID ng isang SAML 2.0 o WS-Federation partner ay kadalasang HINDI ang SSF issuer URL nito, kaya itakda ito roon. Kinukuha ang configuration document mula sa /.well-known/ssf-configuration sa ilalim nito (SSF 1.0 section 7) at dapat itong pangalanan nito, at dapat ito ang iss ng bawat SET."
+  },
+  "fed.schema.attributes.fedSignalsDelivery.what": {
+    "en": "2a805e4031228032",
+    "text": "PAANO DUMARATING ANG MGA EVENT NG PARTNER: poll (RFC 8936, ang ssf.foreign-poll job, ang default) o push (RFC 8935, sa /federation/signals/{id} na may authorization header na ang realm na ito at ang partner lang ang nakakaalam). Binabasa kapag ginawa ang stream; burahin at gawin itong muli para baguhin."
+  },
+  "fed.schema.attributes.fedSignalsEvents.what": {
+    "en": "d593cfe04f6b50a6",
+    "text": "ANG MGA EVENT TYPE URI NA HINIHINGI NG STREAM (events_requested). Kapag wala, hinihingi ang anumang sinusuportahan ng partner."
+  },
+  "fed.schema.attributes.fedSignalsTokenUrl.what": {
+    "en": "f22895fc3eb97e28",
+    "text": "KUNG SAAN KUMUKUHA ANG REALM NA ITO NG ACCESS TOKEN PARA SA STREAM MANAGEMENT NG PARTNER, sa pamamagitan ng client credentials. Kapag walang laman, ginagamit ang fedTokenUrl — ang parehong authorization server na tinatawagan na ng sign-in relationship."
+  },
+  "fed.schema.attributes.fedSignalsClientId.what": {
+    "en": "93661f7f666dca94",
+    "text": "ANG client_id NG SERBISYONG ITO PARA SA STREAM MANAGEMENT NG PARTNER. Kapag walang laman, ginagamit ang fedClientId."
+  },
+  "fed.schema.attributes.fedSignalsClientSecret.what": {
+    "en": "5c7f0300ca7c4869",
+    "text": "ANG SECRET PARA SA fedSignalsClientId, NAKA-SEAL sa ilalim ng key-encryption key saanman nagpe-persist ang mga key at hindi kailanman ipinapakita. Kapag walang laman, ginagamit ang fedClientSecret, na naka-seal sa parehong paraan."
+  },
+  "fed.schema.attributes.fedSignalsScope.what": {
+    "en": "a496c6a310b8c156",
+    "text": "Ang scope na hinihingi gamit ang client credentials. Kapag walang laman, hinihingi ang `ssf:read ssf:write`."
+  },
+  "fed.schema.attributes.fedSignalsBearer.what": {
+    "en": "75ae4009add7e2d2",
+    "text": "ISANG BEARER TOKEN NA NA-ISSUE NG PARTNER, sa halip na client credentials. Naka-seal gaya ng fedSignalsClientSecret, at ginagamit tuwing naitakda ito."
+  },
+  "fed.schema.attributes.fedSloUrl.what": {
+    "en": "1fbc6ebefdaa8b2d",
+    "text": "ANG SAML 2.0 SingleLogoutService NG PARTNER — kung saan nagpapadala ang serbisyong ito ng signed na <LogoutRequest> kapag nag-sign out ang isang tao DITO (/logout), at kung saan napupunta ang <LogoutResponse> sa sariling LogoutRequest ng partner. Mula sa metadata ng partner. Walang laman: hindi kailanman sinasabihan ang partner ng sign-out dito, at pinararangalan pa rin ang LogoutRequest mula rito pero walang isinasagot, dahil walang mapagpapadalhan ng sagot. SAML 2.0 lang: walang dine-define na logout ang SAML 1.1."
+  },
+  "fed.schema.attributes.fedSloBinding.what": {
+    "en": "f18757e5314706e9",
+    "text": "Aling binding ang ginagamit ng LogoutRequest o LogoutResponse na ipinapadala ng serbisyong ito sa partner: HTTP-Redirect (ang default; nasa query string ang signature) o HTTP-POST (isang enveloped signature, sa totoong form na may totoong button — walang script). Tinatanggap sa alinman ang mensaheng MULA sa partner."
+  },
+  "fed.schema.attributes.fedEndSessionUrl.what": {
+    "en": "1936bb8b51d16899",
+    "text": "ANG OpenID Connect end_session_endpoint NG PARTNER (RP-Initiated Logout 1.0), mula sa discovery document nito. Kapag nag-sign out ang isang tao DITO, nag-aalok ang sign-out page na ipadala siya roon kasama ang sariling ID Token ng partner bilang id_token_hint, ang client_id ng relationship na ito, at ang single logout endpoint ng relationship na ito bilang post_logout_redirect_uri — na dapat nairehistro ng partner. Itinatago ang ID Token sa session habang naitakda lang ito. Walang laman: hindi sinasabihan ang partner."
+  },
+  "fed.schema.attributes.fedAcceptSignout.what": {
+    "en": "a80798b41222ab19",
+    "text": "PARANGALAN ANG SIGN-OUT NG PARTNER: isang SAML LogoutRequest, isang OpenID Connect Back-Channel o Front-Channel logout, isang WS-Federation cleanup. NAKA-ON bilang default — ang partner ang awtoridad sa sign-on ng tao, at kapag tinapos nito ang session o in-disable ang account doon, ito lang ang signal na umaabot dito. Kapag off, tinatanggihan ang bawat isa sa kanila (STS-FED-0123) at nabubuhay ang session dito sa buong lifetime nito."
+  },
+  "fed.schema.attributes.fedRequireSignedLogout.what": {
+    "en": "7b5c415a7a173deb",
+    "text": "I-REQUIRE NA PIRMADO ANG SAML LogoutRequest AT LogoutResponse NG PARTNER, gaya ng sinasabi ng saml-profiles-2.0-os section 4.4.4.1 na DAPAT. NAKA-ON bilang default at PALAGING naka-on sa product mode, kung saan tinatanggihan ang pag-off nito (STS-FED-0132). Kapag off — development lang — tinatanggap ang HINDI PIRMADONG logout message, na hinahayaan ang sinumang makakapagpangalan ng partner session ng isang tao na tapusin ito: ang tanging dahilan ay isang partner na sinusubok na hindi pa makapirma. Vine-verify sa alinmang kaso ang signature na MAYROON."
+  },
+  "fed.schema.attributes.fedEncryptionKeyType.what": {
+    "en": "5499ff6ee41a989b",
+    "text": "ANG URI NG KEY NA PINAG-E-ENCRYPT-AN NG PARTNER: rsa-3072 (ang default para sa SAML 2.0 at WS-Federation) o ec-p256 (ang default para sa OpenID Connect) — o, para sa OpenID Connect lang, isang post-quantum (#82): x-wing (HPKE-10-KE, ML-KEM-768 + X25519) o ml-kem-768 (ML-KEM-768), isang AKP key na inilalathala sa JWKS ng relationship nang walang certificate, mula sa mga Internet-Draft na kaunti pa lang na partner ang nagpapatupad. Ang pagbabago nito ay agad na nag-iissue ng bagong key ng ganoong uri at itinatago ang luma nang federation.encryptionKeyGraceS, gaya ng sa rotation."
+  },
+  "fed.schema.attributes.fedKeyManagementAlgorithm.what": {
+    "en": "d806c41bb2e8697a",
+    "text": "PAANO WINAWRAP O PINAGKAKASUNDUAN NG PARTNER ANG CONTENT KEY, at ito lang ang tinatanggap. XML (SAML 2.0, WS-Federation): rsa-oaep — ang RSA-OAEP ng XML Encryption 1.1 na may SHA-256 at MGF1-SHA-256 — para sa RSA key, ecdh-es (ConcatKDF, kw-aes256) para sa EC. JOSE (isang OpenID Connect ID Token): RSA-OAEP-256 o RSA-OAEP para sa RSA key, ECDH-ES, ECDH-ES+A128KW o ECDH-ES+A256KW para sa EC. BABALA: ang RSA-OAEP ay OAEP sa ibabaw ng SHA-1, iniaalok para sa partner na walang mas bago; RSA-OAEP-256 ang dapat gamitin. Tinatanggihan ang rsa-1_5 at RSA1_5 sa bawat mode (Bleichenbacher). Ang walang laman ay nangangahulugang ang default para sa key type."
+  },
+  "fed.schema.attributes.fedContentEncryptionAlgorithm.what": {
+    "en": "30df7b680dcf4979",
+    "text": "ANG CIPHER SA IBABAW NG ASSERTION O NG ID TOKEN, at ito lang ang tinatanggap: aes256-gcm (ang default) o aes128-gcm para sa XML, A256GCM (ang default) o A128GCM para sa JOSE. Tinatanggihan ang AES-CBC — ang aes*-cbc ng XML Encryption at ang A*CBC-HS* ng JOSE — sa bawat mode: ang anyong XML ay ang padding oracle nina Jager at Somorovsky (2011), at ang partner na kayang mag-GCM sa isa ay kaya rin sa isa pa."
+  },
+  "fed.schema.attributes.fedAllowUnencrypted.what": {
+    "en": "c3d0a1b2ac50968b",
+    "text": "TANGGAPIN ANG PLAINTEXT NA ASSERTION SA PRODUCT MODE. NAKA-OFF bilang default, at ang off ay nangangahulugang tinatanggihan ang SAML 2.0 o WS-Federation assertion, o OpenID Connect id_token sa form_post, na HINDI naka-encrypt sa key ng relationship na ito (STS-FED-0140). BABALA: ang pag-on nito ay hinahayaan ang partner na ipadala ang NameID, mail, mga group at bawat iba pang attribute ng tao NANG NAKA-CLEAR sa browser niya — sa history nito, sa mga extension nito at sa bawat TLS-terminating proxy sa daan. I-on lang ito para sa partner na hindi makapag-encrypt, at mas mabuting hilingin itong mag-encrypt. Tumatanggap ng plaintext ang development mode anuman ang sinasabi nito."
+  },
+  "fed.schema.attributes.fedEncryptionKey.what": {
+    "en": "b4d2ac940c13b9f8",
+    "text": "ANG KEY TABLE: isang JSON row bawat key na ginagamit ng relationship na ito sa pag-decrypt — ang kid nito, ang key type nito, `current` o `previous`, ang certificate at chain nito sa ilalim ng Intermediate ng realm na ito, at ang private key, NAKA-SEAL sa ilalim ng key-encryption key saanman nagpe-persist ang mga key. Itinatago ang `previous` na row hanggang sa retiresAt nito at saka inaalis ng scheduler job na federation.encryption-key-retire. Isinusulat lang ng create, rotate at ng job na iyon; ITINATAGO sa bawat LDAP search sa product at sa bawat pahina at /admin-api reply, na naglalathala ng public na kalahati. Column ang key type para ang hybrid na post-quantum key ay maging row katabi ng classical kapag may nairehistro na."
+  },
+  "fed.schema.attributes.fedAllowUnsolicited.what": {
+    "en": "5b2a044dd3f46597",
+    "text": "Tanggapin ang response na hindi hiningi ng serbisyong ito — ang unsolicited Response ng SAML 2.0, at ang TANGING paraan ng operasyon ng SAML 1.1. NAKA-OFF bilang default para sa SAML 2.0 at pinipilit na ON para sa SAML 1.1, dahil walang request ang profile na iyon na sasagutin. Ang pag-on nito para sa SAML 2.0 ay nag-aalis ng InResponseTo check, na dapat malaman sa halip na itago."
+  },
+  "fed.schema.attributes.fedApplication.what": {
+    "en": "c8291b575c606bc3",
+    "text": "ANG POINTER, at ang kabuuan ng itinatago ng side na ito tungkol sa partner: ang identifier ng entry nito sa ou=applications. Ang entityID nito, ang assertion consumer service nito, ang mga redirect URI nito at ang certificate nito ay nakatira ROON, kung saan binabasa na sila ng bawat protocol module. Ang pagkopya ng alinman sa kanila dito ay ang pagkabigo ng dalawang store na iniiwasan ng pagkakaayos ng repository na ito."
+  },
+  "fed.schema.attributes.fedAuthnMechanism.what": {
+    "en": "10e91a734e1d74b3",
+    "text": "PAANO INA-AUTHENTICATE NG SERBISYONG ITO ANG TAO kapag hiniling ito ng partner na ito: password, password-mfa, webauthn, spnego — isang Kerberos ticket na hawak na ng browser, nang walang anumang screen — wallet — isang credential na na-issue ng realm na ito, ipinakita mula sa wallet ng tao — o federation, na nagpapasa sa kanila sa ibang relationship at siyang gumagawa sa serbisyong ito bilang identity BRIDGE sa pagitan ng dalawang protocol. ANG WALANG LAMAN AY NANGANGAHULUGANG WALANG SINASABI ANG RELATIONSHIP NA ITO, na hindi katulad ng password: bumabagsak ito sa appFederationRelationship sa application entry at saka sa sign-in screen, na eksaktong ginawa ng bawat relationship bago umiral ang attribute na ito."
+  },
+  "fed.schema.attributes.fedAuthnRelationship.what": {
+    "en": "e67f3ec502c8b6b8",
+    "text": "ALING RELATIONSHIP ANG PAGPAPADALHAN SA TAO, kapag `federation` ang mechanism. Pinangangalanan nito ang isang relationship sa SERVICE-PROVIDER side sa realm NA ITO — per realm ang register, kaya walang pinangangalanan dito ang id mula sa iba — at sinusuri ito kapag GINAGAMIT sa halip na kapag isinusulat, dahil ang relationship na pinangangalanan nito ay puwedeng i-disable o burahin pagkatapos ng isang taong hindi tumingin sa entry na ito. Hindi pinapansin ng bawat ibang mechanism, at kinakailangan ng isang ito: pinangangalanan ito ng readinessOf()."
+  },
+  "fed.schema.attributes.fedRelease.what": {
+    "en": "c9c33e739003f762",
+    "text": "ALING MGA ATTRIBUTE ANG INILALABAS SA PARTNER NA ITO, ayon sa pangalan ng claim o attribute. SINASALA nito ang ilalagay sana ng /admin/claims, /admin/saml-attributes at ng groups claim sa isang artifact para sa audience na ito, at wala itong ibang magagalaw — hindi ang sub, hindi ang iss, hindi ang exp, hindi ang NameID. ANG WALANG VALUE DITO AY NANGANGAHULUGANG WALANG POLICY, hindi walang ilalabas; tingnan ang header, kung saan ipinapaliwanag ang pagkakaiba."
+  },
+  "fed.schema.attributes.fedFirstSeen.what": {
+    "en": "4eb7da413f19633b",
+    "text": "GeneralizedTime: kung kailan unang GINAMIT ang relationship na ito, na hindi kung kailan ito ginawa."
+  },
+  "fed.schema.attributes.fedLastSeen.what": {
+    "en": "49fa18e0b49322c5",
+    "text": "GeneralizedTime, ang pinakahuling paggamit."
+  },
+  "fed.schema.attributes.fedAuthentications.what": {
+    "en": "2ee55bdb488ba64f",
+    "text": "Ilang credential na ang tumawid sa relationship na ito. ITINATAKDA sa bawat pagbabago — walang saysay ang counter na nag-iipon ng mga value — at buhay na numero ito sa isang directory entry, na hindi hahawakan ng totoong directory."
+  },
+  "fed.schema.attributes.fedUsers.what": {
+    "en": "437b5b9e1a80bc48",
+    "text": "Ilang natatanging identity na ang tumawid dito. Binibilang laban sa fedLastUser, kaya PAGBABAGO ng user ang binibilang nito sa halip na isang set: tama para sa karaniwang kaso at kulang ang bilang para sa taong nagpapalit-palit sa pagitan ng dalawang partner. Sinasabi rito dahil numero ito sa isang pahina."
+  },
+  "fed.schema.attributes.fedLastUser.what": {
+    "en": "28541b4bc6a62e68",
+    "text": "Ang pinakahuling identity. Nasa entry sa halip na sa memory dahil ang entry ang store."
+  },
+  "fed.schema.attributes.fedApplicationUse.what": {
+    "en": "3c112c1cef2a6f6d",
+    "text": "ANG PAREHONG DALAWANG BILANG, HINATI AYON SA APPLICATION NA PINAG-SIGN-IN-AN — isang value bawat application, naka-pack bilang `application|authentications|users|lastUser|lastSeen`. Umiiral ito dahil sinasagot ng fedAuthentications ang \"gaano karami na ang tumawid sa relationship na ito\" at kailangang sagutin ng mapa sa /admin/federation/map ang \"gaano karami na ang tumawid dito PARA SA BAWAT isa sa mga application na naka-configure na gumamit nito\", na ibang tanong sa sandaling may ikalawang application na nagpangalan sa parehong partner.\n\nSA SERVICE-PROVIDER SIDE LANG ITO, at hindi iyon pagkukulang. Ang relationship sa identity-provider side ay nagpapangalan ng eksaktong ISANG application (fedApplication), kaya ang bilang nito bawat application AY ang fedAuthentications at ang ikalawang attribute na may hawak ng parehong numero sa ibang pangalan ay ang kopyang darating sa hindi pagkakasundo.\n\nISINUSULAT LANG ANG VALUE PARA SA PARES NA NAKA-CONFIGURE ANG SERBISYONG ITO, sinusuri laban sa live na configuration sa sandali ng pagsulat sa halip na pagkatiwalaan mula sa request — tingnan ang applicationConfiguredFor(). Kung wala ang pagsusuring iyon, magiging walang hangganang listahan ng mga string na pinili ng sinumang makakaabot sa /federation/login/{id} ang attribute na ito, sa nag-iisang entry sa directory na ito na ang laman ang nagpapasya kung tatanggihan ang isang assertion.\n\nANG `|` SA ALINMANG FREE-TEXT FIELD AY PINAPALITAN NG `~` SA PAGPASOK, na siyang kapalit na ginagawa ng format na ito at sinasabi ito sa halip na matuklasan: naka-pack na counter ito na iginuguhit sa isang larawan, hindi identifier na pinagdudugtungan ng anuman. Ang application na pinaghahanayan ng isang row ay ikinukumpara sa parehong naka-pack na baybay sa kabuuan, kaya bumabalik sa sarili nito ang isang pares anuman ang pangalan nito."
+  },
+  "fed.schema.attributes.fedLastError.what": {
+    "en": "20801142f5a5592a",
+    "text": "KUNG BAKIT NABIGO ANG HULING PAGSUBOK, sa sariling salita ng serbisyong ito. Ito ang pinakakapaki-pakinabang na attribute dito at ito ang dahilan kung bakit itinatala ang mga pagtanggi sa halip na i-log lang: ang federation na hindi gumagana ay nabibigo sa serbisyo ng iba, at ang \"the signature did not verify against the configured certificate\" ang pangungusap na tumatapos sa pagtatalo kung kaninong dulo ang sira."
+  },
+  "fed.schema.attributes.fedLastErrorAt.what": {
+    "en": "5ff3120f0d87d356",
+    "text": "GeneralizedTime para sa linya sa itaas. Hiwalay, para ang lumang error katabi ng kamakailang tagumpay ay mabasa bilang kasaysayan sa halip na bilang kasalukuyang estado."
+  },
+  "fed.schema.where.thisService": {
+    "en": "8d0cc39f82ebc508",
+    "text": "ang serbisyong ito"
+  },
+  "fed.schema.from.thisRegister": {
+    "en": "eb9ec04b4f5dbb7c",
+    "text": "ang register na ito"
+  },
+  "fedgraph.sentences.thisService": {
+    "en": "2ee8e73fd08187ad",
+    "text": "Ang serbisyong ito"
+  },
+  "fedgraph.sentences.noMechanism": {
+    "en": "85a969d1a113b8c5",
+    "text": "Ang sign-in screen (username at password)"
+  },
+  "fedgraph.sentences.unknownMechanism": {
+    "en": "f76c6d8079660f9f",
+    "text": "{{mechanism}} — hindi mechanism na mayroon ang serbisyong ito"
+  }
+}

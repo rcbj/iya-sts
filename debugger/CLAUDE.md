@@ -11,6 +11,7 @@ behind an access token only a console administrator is issued.
 | `debugger_api_process.ts` | The api as a forked child on a unix socket: the environment it is given, the allow-list, start, restart with backoff, give up, stop. |
 | `debugger_access.ts` | Who may use it: `narrowScope()` at issuance and `isAdministrator()` at the gate. A library (rule 3). |
 | `debugger_admin.ts` | `/admin/debugger`, and the view `GET /admin-api/debugger` answers (rule 7). |
+| `web_debugger.ts` | The page's renderer since #446: a `web_` module a browser can load, drawing `/admin/debugger` from that view alone (`admin-ui/CLAUDE.md`, *The static console's renderers*). `debugger_admin.ts` calls it with the view passed through JSON until the console's cutover. |
 | `embedded/` | **Not source.** The debugger project's embedded build output, gitignored and dockerignored — see *Where the built tree comes from*. |
 
 ## The eight decisions, and they were rcbj's
@@ -73,6 +74,23 @@ the browser.
 **The environment is BUILT, not inherited.** PATH, HOME, LANG, TZ and the table
 above. This process's environment holds a deployment's secrets; a child whose
 job is making requests a caller describes holds none of them.
+
+**AND ONE PRELOAD, WHICH IS THIS SIDE'S AND NOT THE CONTRACT'S (#329,
+2026-09-28).** Monitoring → Node Health lists every process of the node with
+its `process.memoryUsage()`, which only the process itself can read, and the
+api listens for no message — the channel carries `debugger-api-listening` out
+and `disconnect` in, nothing else. So `debugger_api_process.ts` forks it with
+`--require debugger/debugger_api_status.js` (compiled beside it; left off
+where it is not there, so the fork is otherwise unchanged), which answers
+`{ type: 'sts-memory-status', id }` on that same channel with the child's
+`memoryUsage()`, `cpuUsage()` and uptime; `askMemory(ms)` asks, bounded, and
+Node Health falls back to the child's `/proc` row when it gets no answer.
+**Nothing is opened**: no socket, no route on the listener, no change to the
+gate or the access token; it requires nothing, so this service's
+configuration never loads into the api. The debugger project is not edited
+for it. It carries no logger — it runs in that project's process — which is
+the code style's exemption for code that is not this service's to run.
+`tests/debugger_api_process.js` section F holds it.
 
 ## The gate, and why each exemption passes the test
 

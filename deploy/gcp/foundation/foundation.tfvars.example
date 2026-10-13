@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# Copy to foundation.auto.tfvars (ignored by git) and fill in.
+project_id       = "iyasec-iya-sts"
+deployer_members = ["user:someone@example.com"]

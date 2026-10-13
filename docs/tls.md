@@ -56,7 +56,85 @@ port, LDAPS and the debugger's listener alike, and each binds `global.host`. A
 cipher list that matches nothing stops the service at startup, naming the
 setting.
 
-**The cipher list is BCP 195 by default.** TLS 1.3's three suites come
+### The listeners: TLS 1.2, the TLS 1.3 suites, post-quantum only, client certificates
+
+**Server configuration → Listeners** (`/admin/listeners`,
+`GET /admin-api/listeners`, #423) lists every socket this service answers on and
+what each one is held to. Its settings are **runtime**: a change reaches every
+listener at its next handshake, with no restart and no rebind.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `tls.disableTls12` | **on** (since #429) | Every TLS listener negotiates TLS 1.3 only, whatever `tls.minVersion` says. Off lets a client negotiate TLS 1.2 (see the warning below). |
+| `tls.tls13CipherSuites` | `TLS_AES_256_GCM_SHA384, TLS_AES_128_GCM_SHA256, TLS_CHACHA20_POLY1305_SHA256` | The TLS 1.3 suites, ticked and numbered on the page; the server's order wins. Any of RFC 8446's five, CCM included. At least one is required. |
+| `tls.pqcOnly` | off | TLS 1.3 only, the 256-bit suites only, and the ML-KEM groups only (see below). |
+| `tls.mainPortDisableOptionalClientCertificate` / `tls.mainPortRequireClientCertificate` | off / off | The main port: send no CertificateRequest / require a certificate that chains to the client truststore. |
+| `ldap.ldapsDisableOptionalClientCertificate` / `ldap.ldapsRequireClientCertificate` | **on** / off | LDAPS: the same pair. LDAPS asks for nothing by default, as it always did. |
+| `debugger.disableOptionalClientCertificate` / `debugger.requireClientCertificate` | off / off | The protocol debugger's listener. |
+
+"Require" wins over "do not ask". A required certificate is verified against the
+client truststore (Protocols → TLS / mutual TLS → the truststore, and the
+certificates this service issues), so a handshake without one is refused.
+
+> **Warning.** Requiring a client certificate on the main port refuses every
+> browser without one, discovery, the JWKS and every public document, and a
+> load balancer's or container's HTTPS health check. Turning off "ask" on the
+> main port stops RFC 8705 certificate-bound tokens and client authentication,
+> `GET /tls/sign-in`, EST with a certificate and the remote XACML PEP there.
+
+**What "post-quantum safe" means for a TLS 1.3 suite.** A suite names only the
+record protection, the AEAD and its hash. Grover's algorithm halves a symmetric
+key, so `TLS_AES_256_GCM_SHA384` and `TLS_CHACHA20_POLY1305_SHA256` (256-bit
+keys) keep 128 bits against a quantum adversary and are marked post-quantum safe;
+the AES-128 suites keep 64 and are not. CNSA 2.0 allows AES-256 alone. What stops
+a session recorded today being decrypted later is the key EXCHANGE, so
+`tls.pqcOnly` also keeps only the ML-KEM groups of `tls.groups` (X25519MLKEM768,
+SecP256r1MLKEM768, SecP384r1MLKEM1024, MLKEM512/768/1024) and turns TLS 1.2 off,
+which has no ML-KEM group. It does not restrict the signature algorithms: a
+handshake cannot be forged after the fact. A choice that leaves nothing
+post-quantum is refused (`STS-TLS-0043`), and one reaching the service from the
+environment stops it (`STS-TLS-0042`).
+
+> **Warning.** `TLS_AES_128_CCM_8_SHA256` has an 8-byte tag and RFC 8446 says it
+> is not for general use; choose it only for a client that offers nothing else.
+
+**The SPIFFE gRPC listeners and the channel between cells** take the TLS 1.2,
+suite and post-quantum settings too, and have no client-certificate toggles:
+their protocols decide. The SPIRE Server API must reach an agent with no SVID
+yet, and the Broker API and the cell channel always require a certificate. The
+cell channel is TLS 1.3 always.
+
+**EVERY SETTING IS PER LISTENER (#429).** Each TLS listener has its own row for
+every setting above and its TLS settings below, named `listener<Id>.<setting>`.
+For example, `listenerLdaps.disableTls12` or `listenerMain.tls13CipherSuites`.
+
+- **Listeners:** `Main`, `Ldaps`, `Debugger`, `SpiffeServer`, `SpiffeBroker`,
+  `Cell`.
+- **Inheritance:** each row inherits the service-wide value until it is set.
+  `inherit` in a list of choices, or an empty box, means inherit.
+- **Truststore:** a listener's own `trustAnchorsFile` replaces the service's
+  file anchors for that listener alone. The runtime anchors from
+  `/admin/tls/trust` are shared by every listener.
+- **Where they are edited:** Server configuration → Listeners has a tab per
+  listener. Each tab shows what is in force there first, then its own rows.
+  The *Service-wide defaults* tab holds what every listener inherits.
+- **What some listeners lack:** the cell channel is TLS 1.3 always, so it has
+  no TLS 1.2 rows. The SPIFFE listeners and the cell channel verify clients
+  against their protocol's trust bundle, so they have no truststore rows.
+
+> **Warning.** Turning TLS 1.2 on, service-wide or for one listener, lets a
+> client negotiate it. FAPI 2.0 and BCP 195 still allow TLS 1.2 with the AES-GCM
+> suites, but TLS 1.2 has no post-quantum key exchange.
+
+**A custom listener** (#472 — the service's, or a realm's own) carries the
+same settings in its definition's `tls` block, by their short names
+(`disableTls12`, `pqcOnly`, `tls13CipherSuites`, ...), and its client
+authentication as `clientAuth` (`none`, `optional`, `required`): see
+[Listeners and hosted applications](listeners.md). Each has a tab of its own on
+the Listeners page with the policy in force.
+
+**The TLS 1.2 cipher list is BCP 195 by default** (`tls.ciphers`, the TLS 1.2
+list alone since #423). TLS 1.3's suites come
 first, and TLS 1.2 is limited to the four ECDHE AES-GCM suites RFC 9325
 section 4.2 recommends. The server's order wins, so a client that speaks TLS
 1.3 gets it. This is what the FAPI 2.0 Security Profile requires of a server
@@ -130,16 +208,29 @@ offered signature schemes by policy.
   re-issued under this service's Root.
 * **A random 128-bit serial**, so a browser that trusted a previous start's
   certificate does not meet `SEC_ERROR_REUSED_ISSUER_AND_SERIAL`.
-* **A new key and certificate at every start, announced over Shared
-  Signals.** The listener's key is made at start, so every restart presents
-  a new leaf, even where the Root survives. A receiver subscribed to
-  `tls-certificate-changed` is told once the port is bound
-  (`reason: restarted`), and whenever the certificate is re-issued while the
+* **The key is kept across restarts, per node, where minted state is.** In
+  product mode on postgres, and in a cluster, each node makes its listener key
+  once and keeps it in the database, encrypted under the key-encryption key
+  like every other stored secret, under its node name (`cluster.nodeName`, or
+  the host name; `STS_CLUSTER_NODE_NAME`). A node never holds another node's
+  key. A restart presents the same key and, while it is still current, the
+  same certificate. The certificate is re-issued over the same key when the
+  Root or the TLS Issuing CA is rebuilt, when `tls.hostnames` or `tls.ips`
+  change, and when less than a third of its validity is left. A new key is
+  made when the database volume is wiped, when the node is renamed, when
+  `tls.selfSignedKeyBits` or `tls.certificateAlgorithms` changes the key, and
+  at every start in development, `memory` or `ldif` mode. **Give every node a
+  name of its own**: two nodes with one name would share a listener key.
+* **A changed certificate is announced over Shared Signals.** A receiver
+  subscribed to `tls-certificate-changed` is told once the port is bound
+  (`reason: restarted`) when a start presents a certificate other than the
+  one last announced, and whenever the certificate is re-issued while the
   service runs. The last certificate announced is kept in the store, so this
   works only where minted state survives a restart (product mode on
-  postgres, a cluster). In a cluster, each node's start is announced, because
-  each node has its own listener key. **Pin the Root, not the leaf.**
-  [Shared Signals](shared-signals.md) has the event.
+  postgres, a cluster). In a cluster a node's start is announced whenever
+  another node announced after it, because each node has its own listener
+  key. **Pin the Root, not the leaf.** [Shared Signals](shared-signals.md)
+  has the event.
 
 ### When a browser refuses the certificate
 
@@ -189,7 +280,8 @@ also a leaf of the TLS Issuing CA.
   gets.
 * LDAPS on 636 serves the first certificate only.
 * Nothing reports the post-quantum posture of a connection's key exchange any
-  more; `GET /tls` and `/admin/crypto-metadata` list the certificates.
+  more; `GET /tls/server-certificate` and `/admin/crypto-metadata` list the
+  certificates.
 
 ### Client certificates on the main port
 
@@ -206,9 +298,22 @@ arrives. What a certificate is worth is decided where it is used:
 | `/scim/v2` | RFC 7644 section 2's client-certificate scheme |
 
 Presenting a certificate anywhere else signs nobody in, and does nothing at all
-at a route that reads no certificate. `GET /tls` describes all of it — what this
-service presents, what it trusts, the protocol floor, the revocation policy —
-and takes `?format=json`.
+at a route that reads no certificate.
+
+**Monitoring → TLS connection** (`/admin/tls-connection`, Admin Read, in both
+modes) shows what this service saw of a request: the TLS version and cipher,
+the client certificate the connection presented — whether it verified against
+the truststore and OpenSSL's reason if not, what the identity gate makes of
+it, its revocation verdict — and every forwarding header with what was
+believed of it. Its data is `GET /admin-api/tls-connection`, which describes
+the request that called it. **The request the console page describes is its
+own call to that operation**, made after the page loaded, not the page load
+itself: the console is a static application, so the view is a second request
+on whatever connection the browser chose (usually the same one, and for these
+facts the same answer — a client certificate belongs to the connection, and a
+proxy writes the same headers on every request it relays). It starts no
+session and changes nothing. It replaced the development pages `GET /tls` and
+`GET /tls/forwarded` (#597).
 
 What happens to a certificate that is presented:
 
@@ -241,8 +346,7 @@ So when a handshake completes with a certificate that verified, its subject is
 filed through the same authentication record every other family uses, under
 protocol `TLS`, and the embedded directory seeds an entry for it. It is a
 **record** of what happened, not a credential: nothing consults the record or
-the entry to decide anything (`/tls/sign-in` is what signs somebody in), and
-`GET /tls` says so.
+the entry to decide anything (`/tls/sign-in` is what signs somebody in).
 
 * It is recorded **at the handshake**, not per request. The handshake is where
   the credential was accepted, so a connection carrying six requests is one
@@ -277,13 +381,12 @@ and fingerprint are **appended**, so the entry shows the history.
 ### The client truststore
 
 The anchors client certificates are verified against. It **starts empty** and
-is filled from four places:
+is filled from three places:
 
 | Source | When | Survives a restart? |
 |---|---|---|
 | `tls.trustAnchorsFile` | read at startup; the product-mode way to fill it | yes — the file brings it back |
 | `/admin/tls/trust`, `POST /admin-api/tls/trust/{add,remove}` | at runtime, in both modes, gated by the console / an admin token | yes — written to the directory (`ou=trustAnchors` in the default realm) and restored before any listener binds |
-| `POST /tls/trust` (a PEM body, or a `certificates` form field) and `POST /tls/trust/clear` | at runtime, **development mode only** | added anchors, yes |
 | this service's own Root CA | always, while `tls.trustIssuedClientCertificates` is on | — |
 
 The gated doors are strict: a bundle with one block that cannot be read is
@@ -297,14 +400,15 @@ answered by the front process, which is the one that holds the listener.
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and
 exists nowhere else, so no configuration file could hold it and no image could
-bake it in. `POST /tls/trust` takes one or more PEM certificates (raw, or as the
-`certificates` field of a form or JSON body) and applies them to the listener;
-existing connections keep the truststore they were made under, and the next
-handshake is judged against the new one. `POST /tls/trust/clear` empties it.
+bake it in. `POST /admin-api/tls/trust/add` takes one or more PEM certificates
+and applies them to the listener; existing connections keep the truststore
+they were made under, and the next handshake is judged against the new one.
+The open `POST /tls/trust` and `POST /tls/trust/clear` that did this without a
+credential in development were deleted (#597).
 "Empty" is meant literally: node's bundled public root store is **not** used,
 since a public root has no business verifying a client certificate from a
 private CA, so the starting state is "nothing verifies". With HTTPS on, the
-first POST of an anchor is made with verification off, as the first fetch of
+first call to `/admin-api` is made with verification off, as the first fetch of
 the server certificate is.
 
 **The service Root in the truststore** lets a person present the TLS client
@@ -363,8 +467,8 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 * **L7 (TLS-terminating) proxy**: `global.trustProxy` believes
   `X-Forwarded-Proto` and `X-Forwarded-Host`, and `global.trustedProxies`
-  narrows that to the proxy's own addresses. `GET /tls/forwarded` shows what a
-  request carried and what was believed. A client certificate cannot cross such
+  narrows that to the proxy's own addresses. Monitoring → TLS connection
+  shows what a request carried and what was believed. A client certificate cannot cross such
   a proxy.
 * **L4 load balancer with TLS passthrough** — the supported front for client
   certificates: `global.proxyProtocol=v2` reads a HAProxy PROXY protocol v2
@@ -401,7 +505,6 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 | | Development | Product |
 |---|---|---|
-| `POST /tls/trust`, `POST /tls/trust/clear` | answer anybody | **403**, naming `tls.trustAnchorsFile`; use the file or the gated doors |
 | Revocation (`pki.revocationCheck=auto`) | **soft-fail**: revoked is refused, an undeterminable status is accepted and reported | **hard-fail**: an undeterminable status is refused too |
 | Which realm's mode decides the truststore | the **default** realm's, because the anchors are one list for the whole process | the same |
 
@@ -420,7 +523,8 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.certificateFile` | `STS_TLS_CERT_FILE` | *(empty)* | no | Serve a certificate (or chain) somebody else issued; set with `tls.keyFile`. |
 | `tls.keyFile` | `STS_TLS_KEY_FILE` | *(empty)* | no | The unencrypted PKCS#8 or PKCS#1 key for `tls.certificateFile`. |
 | `tls.minVersion` | `STS_TLS_MIN_VERSION` | `TLSv1.2` | no | The lowest TLS version the main port and LDAPS negotiate. |
-| `tls.ciphers` | `STS_TLS_CIPHERS` | BCP 195: the TLS 1.3 suites, then `ECDHE-{ECDSA,RSA}-AES{128,256}-GCM-SHA{256,384}` | no | An OpenSSL cipher list for those sockets, in the server's order; empty means node's own list (see the warning above). One matching nothing stops startup. |
+| `tls.ciphers` | `STS_TLS_CIPHERS` | BCP 195: `ECDHE-{ECDSA,RSA}-AES{128,256}-GCM-SHA{256,384}` | no | The TLS 1.2 cipher list for those sockets, in the server's order; empty means node's own TLS 1.2 list (see the warning above). A TLS 1.3 name is refused (`tls.tls13CipherSuites`). One matching nothing stops startup. |
+| `tls.disableTls12`, `tls.tls13CipherSuites`, `tls.pqcOnly` and the client-certificate pairs | see *The listeners* above | | **yes** | Server configuration → Listeners. |
 | `tls.groups` | `STS_TLS_GROUPS` | `X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521` | no | The key-exchange groups, post-quantum hybrids first (see below); empty means node's `auto`. |
 | `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA and SHA-224, brainpool omitted by policy | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |
@@ -428,7 +532,15 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `sts` | no | The O= of its subject. |
-| `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener shares is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
+| `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener and main port share is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
+| `tls.mainPortSharedTickets` | `STS_TLS_MAIN_PORT_SHARED_TICKETS` | `true` | no | The main port seals its session tickets under the cluster's shared key, so a session resumes on any node. `false` keeps a key per node. |
+| `tls.sessionTimeoutS` | `STS_TLS_SESSION_TIMEOUT_S` | `300` | yes | How long a TLS session may be resumed, on every TLS listener that does not set its own (`listener<Id>.sessionTimeoutS`; `-1` inherits). It was `tls.mainSessionTimeoutS`, the main port's alone, until #429. |
+| `tls.sessionCacheSize` | `STS_TLS_SESSION_CACHE_SIZE` | `2048` | yes | How many TLS 1.2 session IDs a listener keeps for resumption; `0` keeps none and resumes by ticket only. Per listener as `listener<Id>.sessionCacheSize`. Not on the SPIFFE listeners: grpc-js offers no session-ID cache. |
+| `tls.resumedChainWaitMs` | `STS_TLS_RESUMED_CHAIN_WAIT_MS` | `2000` | yes | How long a request on a session resumed from another node waits for that session's client-certificate chain to replicate; `0` never waits. |
+| `http.keepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | yes | How long an HTTP listener keeps an idle HTTP/1.1 connection for the next request; pipelined requests are answered in order. It was `global.httpKeepAliveTimeoutS`, the main port's alone, until #429. |
+| `http.headersTimeoutS` | `STS_HTTP_HEADERS_TIMEOUT_S` | `0` | yes | How long a request's headers may take to arrive; `0` is the keep-alive timeout plus one second, and a value at or below the keep-alive is raised to that. |
+| `http.maxRequestsPerSocket` | `STS_HTTP_MAX_REQUESTS_PER_SOCKET` | `0` | yes | How many requests one connection may carry before it is closed; `0` is no limit. |
+| `http.maxConnections` | `STS_HTTP_MAX_CONNECTIONS` | `0` | yes | How many connections an HTTP listener holds at once; `0` is no limit. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
@@ -489,10 +601,25 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
   else each listener keeps OpenSSL's own keys, which never leave the process.
   Each node still presents its own listener key, so a client that checks a
   second node's handshake against the first node's key fails; resumption
-  does not care. The main port and the debugger's listener keep a key per
-  node, because they ask for a client certificate and a resumed session
-  carries only the leaf: the node that resumes it must be the one that saw
-  the whole chain, to check it for revocation.
+  does not care. **The main port shares the key too since #406
+  (2026-10-02)** (`tls.mainPortSharedTickets`). It asks for a client
+  certificate, and a resumed session carries only the leaf, so the chain the
+  full handshake verified is replicated to every node (`tls.presentedChains`)
+  and a request on a session resumed elsewhere waits up to
+  `tls.resumedChainWaitMs` for it before its revocation check. The debugger's
+  listener still keeps a key per node.
+* **The main port keeps connections and sessions for 60 seconds (#406).**
+  A browser holding a client certificate under one of the CAs the main port
+  names is asked by Firefox whether to send it on every FULL handshake; a
+  resumed session carries no CertificateRequest. With node's five-second
+  keep-alive and a ticket key per node, a person clicking through the
+  console or the portal behind a balancer was asked on nearly every click.
+  `http.keepAliveTimeoutS` keeps an idle HTTP/1.1 connection 60
+  seconds (pipelined requests are answered in order), `tls.sessionTimeoutS`
+  lets a session resume for 300 seconds, and the shared key lets it resume on
+  any node. Keep a load balancer's idle timeout above the keep-alive (an AWS
+  NLB's is 350 seconds). HTTP/2 is not offered: express cannot run on node's
+  own HTTP/2 server (#407).
 * **The serial is random.** A constant serial made Firefox refuse the port after
   a restart with an error no "accept the risk" could get past.
 
@@ -505,16 +632,16 @@ is changed: on `/admin/tls` (or `/admin/config` for `global.*`), through
 * **Protocols → Client-certificate truststore** (`/admin/tls/trust`): every
   anchor with subject, issuer, serial, validity, SHA-256 fingerprint and source
   (`file` or `runtime`), an add form, and a Remove per row, in either mode. The
-  service Root added by `tls.trustIssuedClientCertificates` is not listed there;
-  `GET /tls` reports it.
-* **Live descriptions**: `GET /tls` (what is presented, trusted and done with a
-  client certificate), `GET /tls/server-certificate`, `GET /tls/forwarded`,
-  `GET /tls/sign-in`.
+  service Root added by `tls.trustIssuedClientCertificates` is not listed there.
+* **Monitoring → TLS connection** (`/admin/tls-connection`): what this
+  service saw of the console's own request — its connection, its client
+  certificate and its forwarding headers.
+* **Live descriptions**: `GET /tls/server-certificate`, `GET /tls/sign-in`.
 * **Related pages**: `/admin/crypto-metadata` lists every certificate
   configured; `/admin/pki` issues and revokes; `/admin/users` shows TLS
   authentications.
-* **Management API**: `GET /admin-api/tls`, `GET /admin-api/tls/trust` and
-  `POST /admin-api/tls/trust/{add,remove}` — see `/admin-api/openapi.json`.
+* **Management API**: `GET /admin-api/tls`, `GET /admin-api/tls/trust`,
+  `POST /admin-api/tls/trust/{add,remove}` and `GET /admin-api/tls-connection` — see `/admin-api/openapi.json`.
 * Failures are recorded under `STS-TLS-NNNN`, `STS-PKI-NNNN` and
   `STS-PROXY-NNNN` codes — see [Error codes](error-codes.md).
 

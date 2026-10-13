@@ -1,0 +1,27 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# THE RISK-DATASET UPLOAD DISK (#214 on AWS): the instance's second disk,
+# formatted the first time and EMPTIED on every start. AWS's EBS volume is
+# made when the task starts and deleted when it stops, so it holds nothing
+# from a previous run; a persistent disk survives a reboot of the same VM,
+# and a file left by a node that died mid-import would outlive the import —
+# the opposite of what the `risk.stalled-imports` job assumes. Emptying it
+# here makes it temporary space again.
+set -euo pipefail
+dev=/dev/disk/by-id/google-${device}
+dir=${mount_dir}
+if ! blkid "$${dev}" > /dev/null 2>&1;
+then
+  mkfs.ext4 -m 0 -E lazy_itable_init=0,lazy_journal_init=0,discard "$${dev}"
+fi
+mkdir -p "$${dir}"
+mountpoint -q "$${dir}" || mount -o discard,defaults,nosuid,nodev "$${dev}" "$${dir}"
+find "$${dir}" -mindepth 1 -delete
+# THE NODE'S, NOT ROOT'S (#254, 2026-10-06): the image runs as uid 10001
+# since that change, and a freshly made file system's root is root's — the
+# first upload would fail on EACCES. Still 0700: nothing else on the VM, and
+# no other container, has a reason to read an upload in flight.
+chown ${owner} "$${dir}"
+chmod 0700 "$${dir}"

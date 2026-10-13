@@ -100,9 +100,13 @@ resolves anything.
   `revoked`.
 
 **The first key is minted on first use**, under a cluster claim
-(`oidfed.key-mint`). A node that loses the claim answers
-`temporarily_unavailable` (STS-OIDFED-0043) until the directory's change log
-brings it the winner's row.
+(`oidfed.key-mint`). A node or worker that loses the claim WAITS, up to 15 s,
+for the directory's change log to bring it the winner's row (2026-09-28;
+`awaitMinted()`), and answers `temporarily_unavailable` (STS-OIDFED-0043) only
+if it has not arrived by then. It answered that at once until CI run
+36415737694 caught it: `sts_siop` in single-node, a realm's Entity
+Configuration asked for 1.4 s after the realm was made.
+`tests/oidfed_key_mint_wait.js` holds it.
 
 **A rotation and a revocation are announced over Shared Signals (#245).**
 `rotate()` and `revoke()` send `federation-key-rotated` through

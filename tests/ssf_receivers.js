@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -546,7 +546,7 @@ function run(t) {
           'the transmitter\'s log as the only evidence it ever came');
 
   // -----------------------------------------------------------------------
-  t.log.info('H. the audience, which is the check /ssf/receive does not make');
+  t.log.info('H. the audience, which a receiver of ours always checks');
   // -----------------------------------------------------------------------
   const misaddressed = events.signSetSync(events.buildSet({
     issuer: consoleStream.iss, audience: 'somebody-else',

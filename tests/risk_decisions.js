@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -120,17 +120,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   // A browser's User-Agent: anything `isbot` reads as an automated client is
   // a signal of its own (x10), which would take every sign-in here to HIGH.
@@ -139,6 +128,8 @@ function childMain() {
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen and its steps over `/authn-api` (#571, #572).
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
@@ -182,27 +173,74 @@ function childMain() {
     const ruleIds = (built.policy && built.policy.rules || [])
       .map(function (r) { return r.id.split(':rule:')[1]; });
     note(built.ok && ruleIds.join(',') === 'device-compromised,' +
-         'device-required,risk-high,risk-medium-key,' +
+         'device-required,protocol-not-declared,authn-mechanism,' +
+         'mfa-mechanism,risk-high,risk-medium-key,' +
          'risk-medium-second-factor,risk-protected-key,' +
          'risk-protected-second-factor,' +
          'native-sso-not-enabled-refused,native-sso-not-enabled-dropped,' +
          'protected-undeclared-refused,protected-undeclared-dropped,' +
          'undeclared-refused,undeclared-dropped,permission-not-granted,' +
-         'scope-not-authorized,consent-outstanding,scope-kept,' +
+         'exchange-widens-scope,exchange-permission-not-delegated,' +
+         'scope-not-authorized,application-permission-not-authorized,' +
+         'consent-outstanding,scope-kept,' +
          'detail-type-not-registered,detail-type-not-published,detail-kept,' +
+         // The per-right GNAP rules (#432 phases 3, 5 and 6): today's
+         // checks, the catalogue's, ownership, interaction and acr.
+         'gnap-bearer-refused,gnap-protected-undeclared,' +
+         'gnap-right-not-listed,gnap-reference-unknown,' +
+         'gnap-type-not-catalogued,gnap-type-bearer-refused,' +
+         'gnap-owner-unresolved,gnap-owner-mismatch,' +
+         'gnap-type-interaction-never,gnap-type-interaction-always,' +
+         'gnap-type-consent-action,gnap-type-acr,gnap-type-lifetime,' +
+         'gnap-right-kept,' +
+         'transfer-hold-relayed,transfer-hold-kept,' +
+         'transfer-serve-geofenced,transfer-serve-kept,' +
+         'transfer-release-withheld,transfer-release-kept,' +
+         // The passkey rules (#536): registration, then sign-in, each
+         // stage's refusals in order and its allow.
+         'passkey-register-backup-eligible,passkey-register-pin-length,' +
+         'passkey-register-serial-missing,passkey-register-serial-not-held,' +
+         'passkey-register-allowed,' +
+         'passkey-use-backup-eligible,passkey-use-pin-length,' +
+         'passkey-use-attestation-unchecked,' +
+         'passkey-use-attestation-compromised,' +
+         'passkey-use-attestation-untrusted,passkey-use-attestation-aaguid,' +
+         'passkey-use-attestation-unlisted,passkey-use-attestation-level,' +
+         'passkey-use-attestation-fips,passkey-use-allowed,' +
+         // The exchange rules (#186): the semantics, the refusals in order,
+         // the allows, and the may_act question.
+         'exchange-semantics-requested,exchange-semantics-actor-default,' +
+         'exchange-semantics-subject-default,' +
+         'exchange-semantics-realm-default,exchange-may-act,' +
+         'exchange-several-targets,exchange-unregistered-target,' +
+         'exchange-no-target,exchange-protected-subject,' +
+         'exchange-unknown-actor,exchange-user-actor-role,' +
+         'exchange-semantics,exchange-subject-group,exchange-authority,' +
+         'exchange-delegation,exchange-impersonation,' +
+         'exchange-self-default-audience,exchange-self,exchange-allowed,' +
+         'may-act-subject-choice,' +
          'risk-protected-alarm,holds-a-required-role' &&
          /ordered-deny-overrides$/.test(built.policy.combiningAlgId),
          'A1. the built-in issuance policy carries the two device rules ' +
-         '(#164), the three risk rules, the console\'s two step-ups and ' +
+         '(#164), the protocol-declaration rule, the sign-in mechanism ' +
+         'rule (#457), the second-factor rule (#475), the three risk ' +
+         'rules, the console\'s two step-ups and ' +
          'its alarm ahead of the role rule, under ordered-deny-overrides',
          ruleIds.join(',') + ' ' + (built.policy || {}).combiningAlgId);
     const rolesOnly = templates.build('role-issuance',
-      { decideRisk: 'no', decideDevices: 'no', decideScopes: 'no' },
+      { decideRisk: 'no', decideDevices: 'no', decideProtocols: 'no',
+        decideAuthnMechanisms: 'no', decideMfaMechanisms: 'no',
+        decideScopes: 'no', decideTransfers: 'no', decideExchanges: 'no',
+        decideGnapRights: 'no', decidePasskeys: 'no' },
       { name: 'role-issuance' });
     note(rolesOnly.ok && rolesOnly.policy.rules.length === 1 &&
          /deny-unless-permit$/.test(rolesOnly.policy.combiningAlgId),
-         'A2. decideRisk: no (and decideDevices and decideScopes: no, #164 ' +
-         'and #304) builds the ' +
+         'A2. decideRisk: no (and decideDevices, decideProtocols, ' +
+         'decideAuthnMechanisms (#457), decideMfaMechanisms (#475), ' +
+         'decideScopes and ' +
+         'decideTransfers, decideExchanges, decideGnapRights and ' +
+         'decidePasskeys: no, #164, #304, #98, #186, #432 and #536) builds ' +
+         'the ' +
          'roles-only document it was');
     const request = rolePep.buildRequest({
       application: CLIENT, kind: 'start-session',
@@ -318,6 +356,126 @@ function childMain() {
          JSON.stringify(observed.risk));
     config.setOverride('risk.enforceInDevelopment', true);
 
+    // --- M. WS-Trust and the KDC decide at the door (#499) -----------------
+    // The sign-in being made is assessed before anything is issued and the
+    // decision is made on THAT assessment, recorded — not on the standing
+    // an earlier sign-in left. So a person held at MEDIUM is assessed again
+    // on every attempt, and is let through the moment they score lower.
+    // The MEDIUM line is moved to make the earlier sign-ins MEDIUM, and back
+    // to its default (3) for the one that recovers. Before any list names
+    // the loopback these requests come from (F below adds them).
+    config.setOverride('risk.minimumHistory', 1);
+    const assessedFor = async function (name, door) {
+      const v = await riskEngine.view('default',
+        { subject: helpers.subjectForName(name), days: 1 });
+      return v.assessments.rows.filter(function (a) {
+        return String(a.door).indexOf(door) === 0;
+      });
+    };
+    const WST = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
+    const soap = function (user) {
+      const body = '<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-' +
+        'envelope" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/' +
+        'oasis-200401-wss-wssecurity-secext-1.0.xsd"><s:Header>' +
+        '<wsse:Security><wsse:UsernameToken><wsse:Username>' + user +
+        '</wsse:Username><wsse:Password>any</wsse:Password>' +
+        '</wsse:UsernameToken></wsse:Security></s:Header><s:Body>' +
+        '<wst:RequestSecurityToken xmlns:wst="' + WST + '">' +
+        '<wst:RequestType>' + WST + '/Issue</wst:RequestType>' +
+        '</wst:RequestSecurityToken></s:Body></s:Envelope>';
+      return new Promise(function (resolve) {
+        const req = http.request({ host: '127.0.0.1', port: port,
+          path: '/sts', method: 'POST',
+          headers: { 'content-type': 'application/soap+xml; charset=utf-8',
+                     'content-length': Buffer.byteLength(body),
+                     'user-agent': CHROME } }, function (res) {
+          let text = '';
+          res.on('data', function (c) { text += c; });
+          res.on('end', function () {
+            resolve({ status: res.statusCode, text: text });
+          });
+        });
+        req.end(body);
+      });
+    };
+    ldap.createUser('rd-kim', { invent: false });
+    const kimFirst = await soap('rd-kim');
+    config.setOverride('risk.mediumScorePercent', 1);
+    const kimHeld = await soap('rd-kim');
+    const kimHeldAgain = await soap('rd-kim');
+    const kimHeldRows = await assessedFor('rd-kim', 'WS-Trust');
+    config.clearOverride('risk.mediumScorePercent');
+    const kimBack = await soap('rd-kim');
+    const kimRows = await assessedFor('rd-kim', 'WS-Trust');
+    note(kimFirst.status === 200 && kimHeld.status === 403 &&
+         kimHeldAgain.status === 403 && kimHeldRows.length === 3 &&
+         kimHeldRows[0].level === 'MEDIUM' &&
+         /step-up/.test(String(kimHeldRows[0].decision)),
+         'M1. WS-Trust assesses every Issue at the door and decides on it: ' +
+         'a MEDIUM sign-in is refused, and the next attempt is ASSESSED ' +
+         'AGAIN (three assessments, the last MEDIUM with its step-up ' +
+         'decision recorded) rather than refused on the standing',
+         JSON.stringify({ statuses: [kimFirst.status, kimHeld.status,
+                                     kimHeldAgain.status],
+                          rows: kimHeldRows.map(function (a) {
+                            return [a.level, a.decision];
+                          }) }));
+    note(kimBack.status === 200 && kimRows.length === 4 &&
+         kimRows[0].level === 'LOW' &&
+         riskEngine.standingOf('default', 'rd-kim').level === 'LOW',
+         'M2. a person held at MEDIUM recovers at the door the moment their ' +
+         'score allows: at the default line the next Issue scores LOW and is ' +
+         'issued, and their standing is LOW',
+         JSON.stringify({ status: kimBack.status, rows: kimRows.map(
+           function (a) {
+             return [a.level, a.score, a.decision];
+           }) }));
+
+    const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
+    const principals = require(ROOT + '/kerberos/krb5_principals.js');
+    const wire = require(ROOT + '/tests/vendored/krb5_wire.js');
+    const inproc = { label: 'in-process', send: function (bytes) {
+      return kdc.handleMessage(bytes);
+    } };
+    const KPW = String(config.value('krb5.userPassword'));
+    const kinit = async function (name) {
+      const r = await wire.asExchange(inproc, principals.REALM, name,
+                                      { password: KPW });
+      const e = (r.second && r.second.error) || (r.first && r.first.error);
+      return { tgt: !!r.tgt, code: e ? e.code : null,
+               eText: e ? String(e.eText || '') : '' };
+    };
+    ldap.createUser('rd-kurt', { invent: false });
+    const kurtFirst = await kinit('rd-kurt');
+    config.setOverride('risk.mediumScorePercent', 1);
+    // FROM AN ADDRESS KURT NEVER USED. Since #502 a KDC sign-in from his
+    // usual address is so familiar — no User-Agent and that address, both
+    // his and both rare in the realm — that it scores under the lowest line
+    // the setting can hold (0.01, measured at 0.007): the lookups an absent
+    // header and an unmapped address fail are no longer values everybody
+    // shares. A new address (×4, unmapped) is what puts it over.
+    const kurtHeld = await require(ROOT + '/common/audit').withSource(
+      { address: '198.51.100.77' }, function () {
+        return kinit('rd-kurt');
+      });
+    config.clearOverride('risk.mediumScorePercent');
+    const kurtBack = await kinit('rd-kurt');
+    const kurtRows = await assessedFor('rd-kurt', 'Kerberos');
+    note(kurtFirst.tgt && !kurtHeld.tgt && kurtHeld.code === 12 &&
+         /stronger authentication/.test(kurtHeld.eText) && kurtBack.tgt &&
+         kurtRows.length === 3 && kurtRows[1].level === 'MEDIUM' &&
+         kurtRows[0].level === 'LOW',
+         'M3. the KDC assesses an AS-REQ at the door once the pre-' +
+         'authentication verified: a MEDIUM sign-in gets no ticket ' +
+         '(KDC_ERR_POLICY, a stronger authentication), and the next, LOW, ' +
+         'gets one — each recorded',
+         JSON.stringify({ first: kurtFirst, held: kurtHeld, back: kurtBack,
+                          rows: kurtRows.map(function (a) {
+                            return [a.level, a.score, a.decision,
+                                    a.signals[0].factors];
+                          }) }));
+    config.clearOverride('risk.minimumHistory');
+
     // --- F. the sign-in screen ----------------------------------------------
     await riskTerms.accept({ provider: 'tor-project', acceptedBy: 'a test',
                              via: 'upload' });
@@ -329,13 +487,34 @@ function childMain() {
         client_id: CLIENT, response_type: 'code', redirect_uri: REDIRECT,
         scope: 'openid', state: 's', nonce: 'n-' + Date.now() }).toString());
     };
+    // THE SCREEN IS A STATIC PAGE OVER `/authn-api` (#571), and so are its
+    // steps (#572): the act at the screen, read as the form's answer was —
+    // a redirect as its 303, a refusal at its own status with the
+    // sentence in `text` — and a second factor's step OPENED (its view in
+    // `step`, `view` and `text`), as the browser opens it.
+    const signInAt = async function (b, screenAt, username) {
+      const answer = await authnScreen.submit({ port: port, jar: b.jar,
+        userAgent: CHROME, at: screenAt,
+        fields: { username: username, password: 'anything',
+                  action: 'login' } });
+      if (answer.next === 'mfa') {
+        const opened = await authnScreen.openStep({ port: port, jar: b.jar,
+          userAgent: CHROME, at: answer.location });
+        return { status: 200, headers: {}, step: opened,
+                 view: opened.view || {}, text: opened.text };
+      }
+      return { status: answer.status, headers: answer.headers,
+               text: (answer.errors || []).join(' ') || answer.text };
+    };
     const signIn = async function (b, username) {
       const start = await authorize(b);
-      const screenAt = String(start.headers.location || '');
-      const page = await b.go('GET', screenAt);
-      return b.go('POST', screenAt.split('?')[0], {
-        form: Object.assign(hiddenFields(page.text), {
-          username: username, password: 'anything', action: 'login' }) });
+      return signInAt(b, String(start.headers.location || ''), username);
+    };
+    // A step's code act (#572), read as the form's answer was.
+    const sendCode = function (b, asked, code) {
+      return authnScreen.stepAct({ port: port, jar: b.jar,
+        userAgent: CHROME, opened: asked.step, op: 'totp',
+        body: { code: code } });
     };
     const follow = async function (b, first) {
       let at = first;
@@ -357,7 +536,7 @@ function childMain() {
     const bob = browser(port, CHROME);
     const bobAnswer = await signIn(bob, 'rd-bob');
     const bobAssessed = await assessmentOf('rd-bob');
-    note(bobAnswer.status === 200 &&
+    note(bobAnswer.status === 400 &&
          /Authentication failed for rd-bob/.test(bobAnswer.text) &&
          !authn.sessionsOf('rd-bob').length,
          'F1. from a Tor exit a first sign-in is MEDIUM, and a person ' +
@@ -374,14 +553,12 @@ function childMain() {
     credentials.confirmTotpEnrolment('rd-carol', totp.codeAt(begun.secret));
     const carol = browser(port, CHROME);
     const asked = await signIn(carol, 'rd-carol');
-    const step = hiddenFields(asked.text);
-    note(asked.status === 200 && step.mfa_id &&
-         /name="code"/.test(asked.text),
+    note(asked.status === 200 && asked.view && asked.view.page === 'totp' &&
+         asked.step.id,
          'F3. a person holding an authenticator app is asked for a code',
-         asked.status + ' ' + asked.text.slice(0, 120));
-    const coded = await carol.go('POST', '/authn/totp', { form: {
-      mfa_id: step.mfa_id,
-      code: totp.codeAt(begun.secret, Date.now() + 30000) } });
+         asked.status + ' ' + String(asked.text).slice(0, 120));
+    const coded = await sendCode(carol, asked,
+      totp.codeAt(begun.secret, Date.now() + 30000));
     const landed = await follow(carol, coded);
     const carolSessions = authn.sessionsOf('rd-carol');
     const carolSession = carolSessions.length
@@ -430,7 +607,7 @@ function childMain() {
     const daveAnswer = await signIn(dave, 'rd-dave');
     const daveAssessed = await assessmentOf('rd-dave');
     note(daveAssessed && daveAssessed.level === 'HIGH' &&
-         daveAssessed.decision === 'refuse' && daveAnswer.status === 200 &&
+         daveAssessed.decision === 'refuse' && daveAnswer.status === 400 &&
          /Authentication failed for rd-dave/.test(daveAnswer.text) &&
          !authn.sessionsOf('rd-dave').length,
          'H1. an address on the operator\'s deny list makes a sign-in ' +
@@ -454,6 +631,15 @@ function childMain() {
     config.setOverride('risk.enforceInDevelopment', true);
     const audit = require(ROOT + '/common/audit');
     const CONSOLE = 'sts-admin-console';
+    // THE CONSOLE'S SIGN-IN STARTS IN THE BROWSER since the cutover (#446):
+    // the shell is asked for first (it registers the callback), then the
+    // authorize endpoint as the public client with PKCE.
+    const consoleAuthorize = '/oauth2/authorize?' + new URLSearchParams({
+      client_id: CONSOLE, response_type: 'code',
+      redirect_uri: 'http://127.0.0.1:' + port + '/admin/callback',
+      scope: 'openid admin:read admin:write', state: 's',
+      code_challenge: 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
+      code_challenge_method: 'S256' }).toString();
     const onConsole = function (name, satisfied) {
       return gate.check({
         application: CONSOLE, kind: gate.ISSUANCE.SESSION,
@@ -504,8 +690,14 @@ function childMain() {
     const plain = pdp.evaluate(unprotectedPolicy.policy, consoleRequest, {});
     note(unprotectedPolicy.ok && plain.decision === 'Deny' &&
          // The three risk rules, the role rule, #164's two device rules,
-         // and the thirteen scope and detail rules of #304 and #305.
-         unprotectedPolicy.policy.rules.length === 19,
+         // the sixteen scope and detail rules of #304, #305, #186, #549
+         // and #551, the
+         // six transfer rules of #98, the protocol-declaration rule, the
+         // twenty exchange rules of #186, the fourteen per-right GNAP
+         // rules of #432, the sign-in mechanism rule of #457, the
+         // second-factor rule of #475, and the fifteen passkey rules of
+         // #536.
+         unprotectedPolicy.policy.rules.length === 80,
          'I5. neverLockOut none puts the console under the three rules, ' +
          'and HIGH refuses it', plain.decision);
 
@@ -525,21 +717,19 @@ function childMain() {
       const u = new URL(String(location || ''), 'http://127.0.0.1');
       return u.pathname + u.search;
     };
-    let ivyAt = await ivy.go('GET', '/admin');
+    await ivy.go('GET', '/admin');
+    let ivyAt = await ivy.go('GET', consoleAuthorize);
     for (let i = 0; i < 4 && ivyAt.status >= 300 && ivyAt.status < 400 &&
          !/\/authn\/login\?/.test(String(ivyAt.headers.location || ''));
          i++) {
       ivyAt = await ivy.go('GET', pathOf(ivyAt.headers.location));
     }
     const ivyScreen = pathOf(ivyAt.headers.location);
-    const ivyPage = await ivy.go('GET', ivyScreen);
-    const ivyAsked = await ivy.go('POST', ivyScreen.split('?')[0], {
-      form: Object.assign(hiddenFields(ivyPage.text), {
-        username: 'rd-ivy', password: 'anything', action: 'login' }) });
-    const ivyStep = hiddenFields(ivyAsked.text);
-    let ivyDone = ivyStep.mfa_id ? await ivy.go('POST', '/authn/totp', {
-      form: { mfa_id: ivyStep.mfa_id,
-              code: totp.codeAt(ivyTotp.secret, Date.now() + 30000) } })
+    const ivyAsked = await signInAt(ivy, ivyScreen, 'rd-ivy');
+    const ivyStep = { mfa_id: ivyAsked.step ? ivyAsked.step.id : '' };
+    let ivyDone = ivyStep.mfa_id
+      ? await sendCode(ivy, ivyAsked,
+                       totp.codeAt(ivyTotp.secret, Date.now() + 30000))
       : ivyAsked;
     for (let i = 0; i < 4 && ivyDone.status >= 300 && ivyDone.status < 400 &&
          !/\/admin\/callback\?/.test(String(ivyDone.headers.location || ''));
@@ -575,17 +765,15 @@ function childMain() {
       return row.action === 'xacml.issuance.alarm' && row.actor === 'rd-jay';
     }).length;
     const jay = browser(port, CHROME);
-    let jayAt = await jay.go('GET', '/admin');
+    await jay.go('GET', '/admin');
+    let jayAt = await jay.go('GET', consoleAuthorize);
     for (let i = 0; i < 4 && jayAt.status >= 300 && jayAt.status < 400 &&
          !/\/authn\/login\?/.test(String(jayAt.headers.location || ''));
          i++) {
       jayAt = await jay.go('GET', pathOf(jayAt.headers.location));
     }
     const jayScreen = pathOf(jayAt.headers.location);
-    const jayPage = await jay.go('GET', jayScreen);
-    let jayDone = await jay.go('POST', jayScreen.split('?')[0], {
-      form: Object.assign(hiddenFields(jayPage.text), {
-        username: 'rd-jay', password: 'anything', action: 'login' }) });
+    let jayDone = await signInAt(jay, jayScreen, 'rd-jay');
     for (let i = 0; i < 4 && jayDone.status >= 300 && jayDone.status < 400 &&
          !/\/admin\/callback\?/.test(String(jayDone.headers.location || ''));
          i++) {
@@ -678,6 +866,37 @@ function childMain() {
     note(riskEngine.riskOf(known).knownContext === true,
          'K2. the session carries the known context, so the rescore job ' +
          'caps what a list gained later can raise it to');
+
+    // --- L. an allow-listed network is not counted as hostile (#311) -------
+    // `network-failures` is refused passwords from anybody behind the
+    // address; an operator who allow-listed it declared it trusted.
+    const riskStore = require(ROOT + '/risk/risk_store');
+    config.setOverride('risk.networkFailureThreshold', 1);
+    await riskStore.recordFailure({ realm: 'default', at: Date.now(),
+      door: 'a test', subject: '', nameHmac: 'rd-l', addressSealed: '',
+      addressPrefix: riskStore.prefixOf('127.0.0.1'),
+      asn: 0, errorCode: 'STS-AUTHN-0054' }, false);
+    ldap.createUser('rd-ian', { invent: false });
+    const before = await riskEngine.assess(contextOf('rd-ian'));
+    const allowed = await riskDatasets.importVersion({
+      dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+      content: '127.0.0.1\n', version: 'rd-allow-1', source: 'upload' });
+    ldap.createUser('rd-jon', { invent: false });
+    const after = await riskEngine.assess(contextOf('rd-jon'));
+    const named = function (a, id) {
+      return !!a && (a.signals || []).some(function (one) {
+        return one.signal === id;
+      });
+    };
+    note(named(before, 'network-failures') && allowed && allowed.ok &&
+         named(after, 'operator-allow') &&
+         !named(after, 'network-failures'),
+         'L1. refused passwords from the network count against a newcomer ' +
+         'until the operator allow-lists it, and not after',
+         JSON.stringify({ before: before && before.signals.map(function (x) {
+           return x.signal; }), after: after && after.signals.map(function (x) {
+           return x.signal; }), allowed: allowed && allowed.errors }));
+    config.clearOverride('risk.networkFailureThreshold');
     config.setOverride('risk.minimumHistory', 5);
 
     server.close();

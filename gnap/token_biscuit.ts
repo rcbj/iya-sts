@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -10,9 +10,20 @@
 // `@biscuit-auth/biscuit-wasm` (2026-09-12).
 //
 // A route-free library: it registers nothing and requires `common/helpers.js`,
-// `common/error_codes.js` and `gnap/gnap_access.ts`. The WASM library is
-// loaded LAZILY, once, by the first mint or verify, and never at require time —
-// requiring this file costs nothing a process that never sees a biscuit pays.
+// `common/error_codes.js`, `common/crypto.js` and `gnap/gnap_access.ts`. The
+// WASM library is loaded LAZILY, once, by the first mint or verify, and never
+// at require time — requiring this file costs nothing a process that never
+// sees a biscuit pays.
+//
+// **IT NEVER HOLDS THE WASM LIBRARY (#453, rcbj's decision of 2026-10-05).**
+// `common/crypto.js` loads it (the loader below is described there), turns
+// the realm's Ed25519 KeyObject into the library's key object, and runs it:
+// `biscuitMint()`, `biscuitAuthorize()` and `biscuitAttenuate()`. What stays
+// here is the Datalog — the authority block's facts and checks, the
+// authorizer's facts, the queries the model is read back with — handed over
+// as source, parameters and rule text, and the reading of what comes back.
+// The Ed25519 block signatures are still made inside the WebAssembly engine,
+// which has no hook for an external signer.
 //
 // ---------------------------------------------------------------------------
 // WHAT A BISCUIT IS, AND WHY IT IS THE MACAROON'S OPPOSITE IN ONE RESPECT.
@@ -27,22 +38,10 @@
 // Datalog engine for.
 //
 // ---------------------------------------------------------------------------
-// THE LOADER, AND WHY IT IS NOT `require()`.
-//
-// The package is built with wasm-pack's `bundler` target: its entry point is
-// `import * as wasm from "./biscuit_bg.wasm"`, which only a bundler resolves,
-// and its exports map has an `import` condition and nothing else. So
-// `require()` and `import()` of the package both fail in node. `loadBiscuit()`
-// does what a bundler would: compile `module/biscuit_bg.wasm`, build the import
-// object by importing every module `WebAssembly.Module.imports()` names
-// (relative to `module/`), instantiate, hand the instance to the glue with
-// `__wbg_set_wasm()` and call `__wbindgen_start()`. The package directory is
-// found by `gnap_access.packageDir()`, because the exports map hides
-// `package.json` from `require.resolve` as well.
-//
-// `__wbindgen_start()` prints "biscuit-wasm loading" through `console.log`.
-// It is synchronous, so `console.log` is replaced for exactly that call and put
-// back in a `finally`; the line goes to the debug log instead of stdout.
+// THE LOADER, AND WHY IT IS NOT `require()`, is `common/crypto.js`'s since
+// #453 (its group A, "BISCUITS"): the package is built for a bundler, so it
+// is compiled and instantiated by hand, and found by walking `module.paths`
+// because its exports map hides `package.json`.
 //
 // ---------------------------------------------------------------------------
 // THREE THINGS ABOUT THIS LIBRARY VERSION THAT COST TIME AND ARE WORTH KNOWING.
@@ -50,7 +49,10 @@
 //   * `authorize()` WITH DEFAULT LIMITS ANSWERS `RunLimit: Timeout`. Its
 //     default time budget reads the clock in a way this build cannot, so every
 //     call is `authorizeWithLimits()` / `queryWithLimits()` with `LIMITS`
-//     below. A timeout is a REFUSAL (STS-GNAP-0325), never a pass.
+//     below. A timeout is a REFUSAL (STS-GNAP-0325), never a pass. **AND THE
+//     FIRST RULE-APPLYING EVALUATION AFTER LOAD CAN BE REFUSED ON ITS RUN
+//     LIMITS WHATEVER THE BUDGET** (#432), so the load primes it with a
+//     throwaway evaluation (`crypto.js`'s `biscuitPrime()`).
 //   * A PARAMETER THAT IS NOT A DATALOG TERM PANICS THE WASM MODULE. A JS
 //     `Date` handed to `addCodeWithParameters()` aborts inside Rust with
 //     `unreachable`; the term must be `{ date: <ISO string> }`, which is what
@@ -72,12 +74,44 @@
 //   gnap_token(jti)                 issuer(iss)
 //   issued_at(date)                 expires(date)          not_before(date)?
 //   subject(sub)?                   audience(id)*          client_instance(id)
+//   audience_at(i, id)*             the audience's order, i = 0..
 //   access(i, json)                 one per right, i = 0.., json = the right
 //   access_ref(string)              for a reference-string right
 //   access_type(i, type)  access_action(i, a)  access_location(i, l)
 //   access_datatype(i, d) access_privilege(i, p) access_identifier(i, id)
 //   flag(f)*                        label(l)?
 //   cnf_jkt(tp) | cnf_x5t(tp) | cnf_kid(ref) | bearer(true)
+//   actor(i, sub)*                  the actor chain, i = 0 the most recent
+//   actor_iss(i, iss)*              that actor's issuer, where named (#526)
+//   grant(id)?                      the grant limits are counted against
+//   access_limit_amount(i, v, cur)  a right's limits (#432 phase 5), each
+//   access_limit_count(i, n)        member with a meaning decomposed:
+//   access_limit_receiver(i, r)*    the amount as a decimal STRING (Datalog
+//   access_limit_interval(i, text)  has no decimal and a float is not an
+//   access_limit_not_before(i, d)   amount), the count an integer, the
+//   access_limit_not_after(i, d)    window's ends dates
+//
+// The limits facts exist for a resource server's OWN attenuation block —
+// `check if access_limit_count($i, $n), $n <= 10` — and are authority facts
+// for `actor`'s reason below; the model's limits are read back from the
+// right's JSON in `access(i, json)`, as every other member is. `grant(id)`
+// is the grant a resource server keeps the running totals against (rcbj's
+// decision 2 on #432).
+//
+// `actor(i, sub)` (#432) is RFC 8693 section 4.1's `act` as Datalog: the
+// resource server that DERIVED this token (RFC 9767 section 4) at 0, each
+// earlier deriver after it — so a resource server's own attenuation block
+// can reason about who acted (`check if actor(0, "rs-a")`). It is an
+// AUTHORITY fact for the reason every fact the model is read from is: a
+// block anybody holding the token may append is a block anybody may write
+// an actor into, and an authorizer query sees only the authority block and
+// its own facts (see readModel()).
+//
+// `actor_iss(i, iss)` (#526) is the same entry's `iss` — the authorization
+// server that wrote it, as RFC 8693 section 4.1 entries carry since #471 —
+// a fact of its own rather than a third term of `actor`, so a resource
+// server's check written against `actor(i, sub)` keeps working. At most one
+// per index; an index with none is an entry with no `iss`.
 //
 // and its checks — so that the token carries its own rules and ANY biscuit
 // verifier enforces them, not only this one:
@@ -129,23 +163,21 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `TokenBiscuit` takes the logger, the clock, the error-code table, the
-// access model (`gnap_access`), `fs`, `path` and `url` through its
-// constructor. The lazy load is the instance's: the WASM library is still
-// loaded once, by the first mint or verify, and its glue modules still by a
-// real dynamic `import()` (module `nodenext` keeps it one in the compiled
-// CommonJS). The module still exports its old names as FACADES forwarding to
+// access model (`gnap_access`) and `common/crypto.js` (which loads and holds
+// the WASM library, #453) through its constructor. The module still exports
+// its old names as FACADES forwarding to
 // the instance the composition root builds (#50, R2), for the unconverted
 // modules and the tests that require it. A process that loads this module
 // without the root builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
-import fs = require('fs');
-import path = require('path');
-import url = require('url');
 import helpers = require('../common/helpers');
+import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import gnapAccess = require('./gnap_access');
+// The limits vocabulary (#432 phase 5), for a right's limit facts.
+import AccessLimits = require('../common/access_limits');
 
 interface TokenBiscuitDeps {
   log: {
@@ -157,9 +189,14 @@ interface TokenBiscuitDeps {
   errorCodes: { tag(code: string): string };
   // `gnap_access`: the model, its refusals and its presentation checks.
   access: any;
-  fs: { readFileSync(p: string): Buffer };
-  path: { join(...parts: string[]): string };
-  url: { pathToFileURL(p: string): URL };
+  // `common/crypto.js`: the only holder of the biscuit library (#453).
+  stsCrypto: {
+    biscuitReady(): Promise<void>;
+    biscuitMint(privateKey: any, prepare: () => any): Promise<any>;
+    biscuitAuthorize(value: string, publicKey: any, run: any): Promise<any>;
+    biscuitAttenuate(value: string, publicKey: any,
+                     prepare: () => any): Promise<any>;
+  };
 }
 
 // A Datalog source and its parameters, built together.
@@ -170,6 +207,7 @@ interface Program {
 }
 
 const FORMAT = 'biscuit';
+// The package's name, for `describe()`; `common/crypto.js` loads it.
 const PACKAGE = '@biscuit-auth/biscuit-wasm';
 
 // Generous against this service's own tokens (a model of fifty rights with
@@ -179,6 +217,33 @@ const LIMITS = { max_facts: 10000, max_iterations: 100,
                  max_time_micro: 250000 };
 
 const VALUE_RE = /^[A-Za-z0-9_-]+={0,2}$/;
+
+// The queries the model is read back with, IN THE ORDER `readModel()` reads
+// them: `common/crypto.js` runs them in this order and stops at the first
+// that throws, and `query()` rethrows that error where `readModel()` reaches
+// the query that threw — so the answer is the one a query-by-query read
+// gave before #453.
+const MODEL_QUERIES = [
+  'data($v) <- gnap_token($v)',
+  'data($v) <- issuer($v)',
+  'data($v) <- issued_at($v)',
+  'data($v) <- expires($v)',
+  'data($v) <- not_before($v)',
+  'data($v) <- subject($v)',
+  'data($v) <- client_instance($v)',
+  'data($v) <- label($v)',
+  'data($v) <- grant($v)',
+  'data($v) <- audience($v)',
+  'data($i, $v) <- audience_at($i, $v)',
+  'data($v) <- flag($v)',
+  'data($i, $j) <- access($i, $j)',
+  'data($i, $s) <- actor($i, $s)',
+  'data($i, $s) <- actor_iss($i, $s)',
+  'data($v) <- cnf_jkt($v)',
+  'data($v) <- cnf_x5t($v)',
+  'data($v) <- cnf_kid($v)',
+  'data($v) <- bearer($v)'
+];
 
 /**
  * The `biscuit` GNAP token format (RFC 9767 section 5.3.2): Biscuit v3 on
@@ -198,9 +263,6 @@ class TokenBiscuit {
    */
   static readonly LIMITS = LIMITS;
 
-  // The one load of the WASM library, shared by every call.
-  private loading: Promise<any> | null = null;
-
   /**
    * Builds the format from the modules it reads.
    *
@@ -219,95 +281,33 @@ class TokenBiscuit {
   }
 
   // -------------------------------------------------------------------------
-  // The one lazy load. A failure is remembered as a rejected promise would
-  // be, but a NEW attempt is allowed next time: a transient failure (a file
-  // briefly unreadable during a deploy) should not disable the format for the
-  // life of the process.
+  // The library, loaded by `common/crypto.js` (once, lazily; a failure is
+  // retried by the next call). A load failure is this format's refusal.
   // -------------------------------------------------------------------------
-  /**
-   * Loads the WASM library, once, the way a bundler would.
-   *
-   * A failure is remembered, but a new attempt is allowed on the next call.
-   *
-   * @returns the loaded library, or a refusal
-   */
-  loadBiscuit(): Promise<any> {
-    const { log } = this.deps;
-    log.debug("Entering TokenBiscuit.loadBiscuit().");
-    if (!this.loading) {
-      this.loading = this.instantiate().catch((e) => {
-        log.debug("Caught in TokenBiscuit.loadBiscuit(): " +
-                  ((e && e.message) || e));
-        this.loading = null;
-        throw e;
-      });
-    }
-    log.debug("Leaving TokenBiscuit.loadBiscuit().");
-    return this.loading;
-  }
-
-  private async instantiate(): Promise<any> {
-    const { log, access, fs, path, url } = this.deps;
-    log.debug("Entering TokenBiscuit.instantiate().");
-    const dir = access.packageDir(PACKAGE);
-    if (!dir) {
-      log.debug("Leaving TokenBiscuit.instantiate(). Package not installed.");
-      throw new Error(PACKAGE + ' is not installed');
-    }
-    const moduleDir = path.join(dir, 'module');
-    const wasmBytes: any = fs.readFileSync(
-        path.join(moduleDir, 'biscuit_bg.wasm'));
-    const compiled = await WebAssembly.compile(wasmBytes);
-    const imports = {};
-    const wanted = WebAssembly.Module.imports(compiled);
-    for (let i = 0; i < wanted.length; i++) {
-      const name = wanted[i].module;
-      if (!imports[name]) {
-        imports[name] = await import(url.pathToFileURL(
-            path.join(moduleDir, name)).href);
-      }
-    }
-    const bg = imports['./biscuit_bg.js'];
-    if (!bg || typeof bg.__wbg_set_wasm !== 'function') {
-      log.debug("Leaving TokenBiscuit.instantiate(). Glue module not found.");
-      throw new Error('the biscuit glue module ./biscuit_bg.js was not ' +
-                      'among the WASM imports');
-    }
-    const instance = await WebAssembly.instantiate(compiled, imports);
-    const exported: any = instance.exports;
-    bg.__wbg_set_wasm(exported);
-    if (typeof exported.__wbindgen_start === 'function') {
-      const original = console.log;
-      console.log = function () {
-        log.debug('biscuit-wasm: ' +
-                  Array.prototype.join.call(arguments, ' '));
-      };
-      try {
-        exported.__wbindgen_start();
-      } finally {
-        console.log = original;
-      }
-    }
-    log.debug("Leaving TokenBiscuit.instantiate(). Loaded.");
-    return bg;
+  private loadRefusal(e: any): any {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering TokenBiscuit.loadRefusal().");
+    log.error(errorCodes.tag('STS-GNAP-0321') + 'the biscuit WASM ' +
+              'library could not be loaded: ' +
+              e.message);
+    log.debug("Leaving TokenBiscuit.loadRefusal().");
+    return this.refusal('STS-GNAP-0321',
+                        'the biscuit library could not be loaded: ' +
+                        e.message);
   }
 
   private async library(): Promise<any> {
-    const { log, errorCodes } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering TokenBiscuit.library().");
     try {
+      await stsCrypto.biscuitReady();
       log.debug("Leaving TokenBiscuit.library().");
-      return { ok: true, bg: await this.loadBiscuit() };
+      return { ok: true };
     } catch (e) {
       log.debug("Caught in TokenBiscuit.library(): " +
                 ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-GNAP-0321') + 'the biscuit WASM ' +
-                'library could not be loaded: ' +
-                e.message);
       log.debug("Leaving TokenBiscuit.library().");
-      return this.refusal('STS-GNAP-0321',
-                          'the biscuit library could not be loaded: ' +
-                          e.message);
+      return this.loadRefusal(e);
     }
   }
 
@@ -338,19 +338,6 @@ class TokenBiscuit {
     log.debug("Entering TokenBiscuit.dateTerm().");
     log.debug("Leaving TokenBiscuit.dateTerm().");
     return { date: new Date(seconds * 1000).toISOString() };
-  }
-
-  private rawKey(keyObject: any, member: string): Buffer | null {
-    const { log } = this.deps;
-    log.debug("Entering TokenBiscuit.rawKey().");
-    if (!keyObject || typeof keyObject.export !== 'function' ||
-        keyObject.asymmetricKeyType !== 'ed25519') {
-      log.debug("Leaving TokenBiscuit.rawKey().");
-      return null;
-    }
-    const jwk = keyObject.export({ format: 'jwk' });
-    log.debug("Leaving TokenBiscuit.rawKey().");
-    return jwk[member] ? Buffer.from(jwk[member], 'base64url') : null;
   }
 
   // Datalog source plus parameters, built together so a parameter name can
@@ -384,8 +371,44 @@ class TokenBiscuit {
   }
 
   // The facts and checks of the authority block (see the header).
-  private authorityProgram(model: any): Program {
+  // A right's limits as authority facts (#432 phase 5; the header). Only
+  // the members `common/access_limits.ts` gives a meaning, read as it reads
+  // them; another member is in the right's JSON and nowhere else.
+  private addLimitFacts(p: Program, i: number, limits: any): void {
     const { log } = this.deps;
+    log.debug("Entering TokenBiscuit.addLimitFacts().");
+    if (!limits || typeof limits !== 'object') {
+      log.debug("Leaving TokenBiscuit.addLimitFacts(). None.");
+      return;
+    }
+    if (limits.amount !== undefined) {
+      p.add('access_limit_amount(?, ?, ?);',
+            [i, String(limits.amount), String(limits.currency || '')]);
+    }
+    if (Number.isSafeInteger(limits.count)) {
+      p.add('access_limit_count(?, ?);', [i, limits.count]);
+    }
+    (AccessLimits.receiversOf(limits) || []).forEach(function (r: string) {
+      p.add('access_limit_receiver(?, ?);', [i, r]);
+    });
+    if (typeof limits.interval === 'string') {
+      p.add('access_limit_interval(?, ?);', [i, limits.interval]);
+    }
+    const window = limits.window || {};
+    const nb = AccessLimits.timeOf(window.notBefore);
+    const na = AccessLimits.timeOf(window.notAfter);
+    if (nb !== null) {
+      p.add('access_limit_not_before(?, ?);', [i, this.dateTerm(nb)]);
+    }
+    if (na !== null) {
+      p.add('access_limit_not_after(?, ?);', [i, this.dateTerm(na)]);
+    }
+    log.debug("Leaving TokenBiscuit.addLimitFacts().");
+  }
+
+  private authorityProgram(model: any): Program {
+    const { log, access } = this.deps;
+    const self = this;
     log.debug("Entering TokenBiscuit.authorityProgram().");
     const p = this.program();
     p.add('gnap_token(?);', [model.jti]);
@@ -398,8 +421,14 @@ class TokenBiscuit {
     if (model.sub !== null) {
       p.add('subject(?);', [model.sub]);
     }
-    model.aud.forEach(function (a) {
+    model.aud.forEach(function (a, i) {
       p.add('audience(?);', [a]);
+      // The ORDER, which a set of facts does not keep (#432: adding the
+      // actor facts reshuffled what the queries answered, and the round
+      // trip of a two-audience model failed). `audience(id)` stays what the
+      // checks and an attenuation block test; this is only how the model
+      // is read back in the order it was written.
+      p.add('audience_at(?, ?);', [i, a]);
     });
     p.add('client_instance(?);', [model.instanceId]);
     model.access.forEach(function (right, i) {
@@ -420,12 +449,22 @@ class TokenBiscuit {
       if (right.identifier !== undefined) {
         p.add('access_identifier(?, ?);', [i, right.identifier]);
       }
+      self.addLimitFacts(p, i, right.limits);
     });
     model.flags.forEach(function (f) {
       p.add('flag(?);', [f]);
     });
     if (model.label !== null) {
       p.add('label(?);', [model.label]);
+    }
+    (access.actorChain(model.act) || []).forEach(function (entry, i) {
+      p.add('actor(?, ?);', [i, entry.sub]);
+      if (entry.iss !== undefined) {
+        p.add('actor_iss(?, ?);', [i, entry.iss]);
+      }
+    });
+    if (model.grant) {
+      p.add('grant(?);', [model.grant]);
     }
     if (!model.cnf) {
       p.add('bearer(true);');
@@ -462,37 +501,36 @@ class TokenBiscuit {
    * @returns `{ value, format, jti }`, or a refusal
    */
   async mint(model: any, keys: any): Promise<any> {
-    const { log, errorCodes, access } = this.deps;
+    const { log, errorCodes, access, stsCrypto } = this.deps;
     log.debug("Entering TokenBiscuit.mint().");
     const valid = access.validateModel(model);
     if (!valid.ok) {
       log.debug("Leaving TokenBiscuit.mint(). Model invalid.");
       return valid;
     }
-    const d = this.rawKey(keys && keys.privateKey, 'd');
-    if (!d) {
+    // THE REVOCATION IDENTIFIERS (#432): one per block, hex, each the
+    // signature that block was sealed with — the authority block's first.
+    // Read at mint (by `crypto.biscuitMint()`) because this is the only
+    // moment the AS holds the token's value (the store keeps its digest),
+    // and published by `/gnap/biscuit/revocations` once the token is
+    // revoked. A derivative a resource server attenuates offline keeps the
+    // authority block, so the authority id revokes it too.
+    const minted = await stsCrypto.biscuitMint(
+        keys && keys.privateKey, () => {
+          const p = this.authorityProgram(valid.model);
+          return { source: p.source(), params: p.params };
+        });
+    if (!minted.ok && minted.stage === 'key') {
       log.debug("Leaving TokenBiscuit.mint(). Private key unusable.");
       return this.refusal('STS-GNAP-0320', 'a biscuit is minted with an ' +
                           'Ed25519 private KeyObject.');
     }
-    const lib = await this.library();
-    if (!lib.ok) {
+    if (!minted.ok && minted.stage === 'load') {
       log.debug("Leaving TokenBiscuit.mint(). Library unavailable.");
-      return lib;
+      return this.loadRefusal(minted.error);
     }
-    const bg = lib.bg;
-    let value;
-    try {
-      const root = bg.PrivateKey.fromBytes(new Uint8Array(d),
-                                           bg.SignatureAlgorithm.Ed25519);
-      const p = this.authorityProgram(valid.model);
-      const builder = bg.Biscuit.builder();
-      builder.addCodeWithParameters(p.source(), p.params, {});
-      const token = builder.build(root);
-      value = token.toBase64();
-      token.free();
-    } catch (e) {
-      log.debug("Caught in TokenBiscuit.mint(): " + this.errorText(e));
+    if (!minted.ok) {
+      const e = minted.error;
       log.warn(errorCodes.tag('STS-GNAP-0320') + 'biscuit minting failed ' +
                'in the library: ' + this.errorText(e));
       log.debug("Leaving TokenBiscuit.mint(). Library failure.");
@@ -500,6 +538,8 @@ class TokenBiscuit {
                           'the biscuit library refused to mint: ' +
                           this.errorText(e));
     }
+    const value = minted.value;
+    const revocationIds: string[] = minted.revocationIds;
     if (!VALUE_RE.test(value)) {
       // token68 (RFC 9110 section 11.2) allows `=` only at the end. The
       // library emits URL-safe base64; this is the check that it still does.
@@ -509,38 +549,61 @@ class TokenBiscuit {
       return this.refusal('STS-GNAP-0320', 'the biscuit library emitted a ' +
                           'value that is not token68.');
     }
+    if (!revocationIds.length ||
+        !revocationIds.every(function (one) {
+          return /^[0-9a-f]+$/.test(one);
+        })) {
+      // A biscuit this AS could never publish as revoked would be one a
+      // resource server checking it offline must accept until it expires;
+      // it is not minted.
+      log.warn(errorCodes.tag('STS-GNAP-0750') + 'the biscuit library gave ' +
+               'no usable revocation identifiers for a minted token.');
+      log.debug("Leaving TokenBiscuit.mint(). No revocation identifiers.");
+      return this.refusal('STS-GNAP-0750', 'the biscuit\'s revocation ' +
+                          'identifiers could not be read.');
+    }
     log.debug("Leaving TokenBiscuit.mint(). jti=" + valid.model.jti);
-    return { value: value, format: FORMAT, jti: valid.model.jti };
+    return { value: value, format: FORMAT, jti: valid.model.jti,
+             revocationIds: revocationIds };
   }
 
-  private parseToken(bg: any, value: unknown, keys: any): any {
+  // The value's own shape, checked before `crypto.js` is handed it.
+  private valueRefusal(value: unknown): any {
     const { log } = this.deps;
-    log.debug("Entering TokenBiscuit.parseToken().");
+    log.debug("Entering TokenBiscuit.valueRefusal().");
     if (typeof value !== 'string' || !VALUE_RE.test(value)) {
-      log.debug("Leaving TokenBiscuit.parseToken(). Not base64url.");
+      log.debug("Leaving TokenBiscuit.valueRefusal(). Not base64url.");
       return this.refusal('STS-GNAP-0322', 'the token value is not ' +
                           'URL-safe base64.');
     }
-    const x = this.rawKey(keys && keys.publicKey, 'x');
-    if (!x) {
-      log.debug("Leaving TokenBiscuit.parseToken(). Public key unusable.");
+    log.debug("Leaving TokenBiscuit.valueRefusal().");
+    return null;
+  }
+
+  // A `crypto.js` answer that stopped at the key or the parse, as this
+  // format's refusal; null for any other stage.
+  private parseRefusal(answer: any): any {
+    const { log } = this.deps;
+    log.debug("Entering TokenBiscuit.parseRefusal().");
+    if (answer.stage === 'key') {
+      log.debug("Leaving TokenBiscuit.parseRefusal(). Public key unusable.");
       return this.refusal('STS-GNAP-0320', 'a biscuit is verified with an ' +
                           'Ed25519 public KeyObject.');
     }
-    try {
-      const root = bg.PublicKey.fromBytes(new Uint8Array(x),
-                                          bg.SignatureAlgorithm.Ed25519);
-      const token = bg.Biscuit.fromBase64(value, root);
-      log.debug("Leaving TokenBiscuit.parseToken(). Parsed.");
-      return { ok: true, token: token };
-    } catch (e) {
-      log.debug("Caught in TokenBiscuit.parseToken(): " + this.errorText(e));
-      log.debug("Leaving TokenBiscuit.parseToken(). " + this.errorText(e));
+    if (answer.stage === 'parse') {
+      log.debug("Leaving TokenBiscuit.parseRefusal(). " +
+                this.errorText(answer.error));
       return this.refusal('STS-GNAP-0322', 'the biscuit did not parse, or ' +
                           'its signature chain does not verify under this ' +
                           'authorization server\'s public key: ' +
-                          this.errorText(e));
+                          this.errorText(answer.error));
     }
+    if (answer.stage === 'load') {
+      log.debug("Leaving TokenBiscuit.parseRefusal(). Library unavailable.");
+      return this.loadRefusal(answer.error);
+    }
+    log.debug("Leaving TokenBiscuit.parseRefusal().");
+    return null;
   }
 
   // The request facts an attenuation block may reason about (see the
@@ -575,10 +638,11 @@ class TokenBiscuit {
     log.debug("Leaving TokenBiscuit.requestProgram().");
   }
 
-  private buildAuthorizer(bg: any, token: any, context: any,
-                          now: number): any {
+  // The authorizer's facts and its one policy (see the header), as
+  // `{ source, params }` for `crypto.biscuitAuthorize()`.
+  private authorizerProgram(context: any, now: number): any {
     const { log } = this.deps;
-    log.debug("Entering TokenBiscuit.buildAuthorizer().");
+    log.debug("Entering TokenBiscuit.authorizerProgram().");
     const ctx = context || {};
     const p = this.program();
     p.add('time(?);', [this.dateTerm(now)]);
@@ -597,21 +661,23 @@ class TokenBiscuit {
       this.requestProgram(p, ctx.requiredAccess);
     }
     p.add('allow if true;');
-    const builder = new bg.AuthorizerBuilder();
-    builder.addCodeWithParameters(p.source(), p.params, {});
-    const authorizer = builder.buildAuthenticated(token);
-    log.debug("Leaving TokenBiscuit.buildAuthorizer().");
-    return authorizer;
+    log.debug("Leaving TokenBiscuit.authorizerProgram().");
+    return { source: p.source(), params: p.params };
   }
 
-  private query(bg: any, authorizer: any, rule: string): any[][] {
+  // One model query's answer (`MODEL_QUERIES`): its rows when it ran, and
+  // the error `crypto.js` stopped at when it did not.
+  private query(answers: any, rule: string): any[][] {
     const { log } = this.deps;
     log.debug("Entering TokenBiscuit.query().");
+    const i = MODEL_QUERIES.indexOf(rule);
+    if (i < 0 || i >= answers.rows.length) {
+      log.debug("Leaving TokenBiscuit.query(). Not answered.");
+      throw answers.queryError ||
+            new Error('the biscuit query "' + rule + '" was not run');
+    }
     log.debug("Leaving TokenBiscuit.query().");
-    return authorizer.queryWithLimits(bg.Rule.fromString(rule), LIMITS)
-                     .map(function (f) {
-      return f.terms();
-    });
+    return answers.rows[i];
   }
 
   private seconds(term: unknown): number | undefined {
@@ -627,13 +693,13 @@ class TokenBiscuit {
   // authority block and the authorizer's own facts, never an attenuation
   // block's, so nothing a later block says can reach the model.
   // -------------------------------------------------------------------------
-  private readModel(bg: any, authorizer: any): any {
+  private readModel(answers: any): any {
     const { log, access } = this.deps;
     const self = this;
     log.debug("Entering TokenBiscuit.readModel().");
     function one(rule: string) {
       log.debug("Entering one().");
-      const rows = self.query(bg, authorizer, rule);
+      const rows = self.query(answers, rule);
       log.debug("Leaving one().");
       return rows.length === 1 ? rows[0][0] :
              (rows.length === 0 ? null : undefined);
@@ -646,15 +712,33 @@ class TokenBiscuit {
     const sub = one('data($v) <- subject($v)');
     const client = one('data($v) <- client_instance($v)');
     const label = one('data($v) <- label($v)');
-    const aud = this.query(bg, authorizer, 'data($v) <- audience($v)').map(
+    const grant = one('data($v) <- grant($v)');
+    const audSet = this.query(answers, 'data($v) <- audience($v)')
+      .map(function (r) {
+        return r[0];
+      });
+    const audRows = this.query(answers,
+                               'data($i, $v) <- audience_at($i, $v)')
+      .sort(function (a, b) {
+        return a[0] - b[0];
+      });
+    const aud = audRows.map(function (r) {
+      return r[1];
+    });
+    if (audRows.some(function (r, i) { return r[0] !== i; }) ||
+        aud.length !== audSet.length ||
+        audSet.some(function (one) { return aud.indexOf(one) < 0; })) {
+      log.debug("Leaving TokenBiscuit.readModel(). The audience facts " +
+                "disagree.");
+      return this.refusal('STS-GNAP-0323', 'the biscuit\'s audience_at ' +
+                          'facts are not 0..n-1 over exactly its audience ' +
+                          'facts.');
+    }
+    const flags = this.query(answers, 'data($v) <- flag($v)').map(
         function (r) {
           return r[0];
         });
-    const flags = this.query(bg, authorizer, 'data($v) <- flag($v)').map(
-        function (r) {
-          return r[0];
-        });
-    const rows = this.query(bg, authorizer,
+    const rows = this.query(answers,
                             'data($i, $j) <- access($i, $j)')
       .sort(function (a, b) {
         return a[0] - b[0];
@@ -678,15 +762,47 @@ class TokenBiscuit {
                             i + ' ' + 'is not JSON.');
       }
     }
+    const actorRows = this.query(answers,
+                                 'data($i, $s) <- actor($i, $s)')
+      .sort(function (a, b) {
+        return a[0] - b[0];
+      });
+    const issRows = this.query(answers,
+                               'data($i, $s) <- actor_iss($i, $s)');
+    const actors: any[] = [];
+    for (let i = 0; i < actorRows.length; i++) {
+      if (actorRows[i][0] !== i || typeof actorRows[i][1] !== 'string') {
+        log.debug("Leaving TokenBiscuit.readModel(). actor indices are not " +
+                  "0..n-1.");
+        return this.refusal('STS-GNAP-0323', 'the biscuit\'s actor facts ' +
+                            'are not numbered 0..n-1 with one actor each.');
+      }
+      actors.push({ sub: actorRows[i][1] });
+    }
+    // #526: at most one issuer per actor, and none for an index with no
+    // actor — either is a chain no authorization server wrote.
+    for (let k = 0; k < issRows.length; k++) {
+      const at = issRows[k][0];
+      if (typeof at !== 'number' || !actors[at] ||
+          typeof issRows[k][1] !== 'string' ||
+          actors[at].iss !== undefined) {
+        log.debug("Leaving TokenBiscuit.readModel(). An actor_iss fact " +
+                  "names no actor, or repeats one.");
+        return this.refusal('STS-GNAP-0323', 'the biscuit\'s actor_iss ' +
+                            'facts must name an actor, one issuer each.');
+      }
+      actors[at].iss = issRows[k][1];
+    }
     const jkt = one('data($v) <- cnf_jkt($v)');
     const x5t = one('data($v) <- cnf_x5t($v)');
     const kid = one('data($v) <- cnf_kid($v)');
-    const bearer = this.query(bg, authorizer,
+    const bearer = this.query(answers,
                               'data($v) <- bearer($v)').length;
     const bindings = [jkt, x5t, kid].filter(function (v) {
       return v !== null;
     });
-    if ([jti, iss, iat, exp, nbf, sub, client, label, jkt, x5t, kid].some(
+    if ([jti, iss, iat, exp, nbf, sub, client, label, grant, jkt, x5t,
+         kid].some(
         function (v) {
           return v === undefined;
         }) ||
@@ -712,7 +828,9 @@ class TokenBiscuit {
       cnf: cnf, iat: this.seconds(iat),
       nbf: nbf === null ? null : this.seconds(nbf),
       exp: this.seconds(exp),
-      label: label
+      label: label,
+      act: access.nestActors(actors),
+      grant: grant
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -763,74 +881,72 @@ class TokenBiscuit {
    * @returns `{ ok: true, model, attenuated }`, or a refusal
    */
   async verify(value: unknown, keys: any, context?: any): Promise<any> {
-    const { log, access, nowSec } = this.deps;
+    const { log, access, nowSec, stsCrypto } = this.deps;
     log.debug("Entering TokenBiscuit.verify().");
     const lib = await this.library();
     if (!lib.ok) {
       log.debug("Leaving TokenBiscuit.verify(). Library unavailable.");
       return lib;
     }
-    const bg = lib.bg;
-    const parsed = this.parseToken(bg, value, keys);
-    if (!parsed.ok) {
+    const badValue = this.valueRefusal(value);
+    if (badValue) {
       log.debug("Leaving TokenBiscuit.verify(). Parse refused.");
-      return parsed;
+      return badValue;
     }
-    const token = parsed.token;
     const ctx = context || {};
     const now = Number.isSafeInteger(ctx.now) ? ctx.now : nowSec();
-    let authorizer = null;
-    try {
-      try {
-        authorizer = this.buildAuthorizer(bg, token, ctx, now);
-      } catch (e) {
-        log.debug("Caught in TokenBiscuit.verify(): " + this.errorText(e));
-        log.debug("Leaving TokenBiscuit.verify(). Authorizer could not be " +
-                  "built: " + this.errorText(e));
-        return this.refusal('STS-GNAP-0324', 'the biscuit authorizer could ' +
-                            'not be built for this presentation: ' +
-                            this.errorText(e));
+    // The token is verified, the authorizer built, the model queries and
+    // the authorization run, all in `crypto.js` and in that order; what
+    // each answered is read here in the order it always was.
+    const answers = await stsCrypto.biscuitAuthorize(value as string,
+                                                     keys && keys.publicKey, {
+      authorizer: () => this.authorizerProgram(ctx, now),
+      queries: MODEL_QUERIES,
+      limits: LIMITS
+    });
+    if (!answers.ok) {
+      const refused = this.parseRefusal(answers);
+      if (refused) {
+        log.debug("Leaving TokenBiscuit.verify(). Parse refused.");
+        return refused;
       }
-      let read;
-      try {
-        read = this.readModel(bg, authorizer);
-      } catch (e) {
-        log.debug("Caught in TokenBiscuit.verify(): " + this.errorText(e));
-        log.debug("Leaving TokenBiscuit.verify(). Model query failed: " +
-                  this.errorText(e));
-        return e && e.RunLimit ? this.authorizationRefusal(e)
-          : this.refusal('STS-GNAP-0323', 'the biscuit\'s authority block ' +
-                         'could not be read: ' + this.errorText(e));
-      }
-      if (!read.ok) {
-        log.debug("Leaving TokenBiscuit.verify(). Model refused.");
-        return read;
-      }
-      const failed = access.checkPresentation(read.model,
-                                              Object.assign({}, ctx,
-                                                            { now: now }));
-      if (failed) {
-        log.debug("Leaving TokenBiscuit.verify(). Presentation refused.");
-        return failed;
-      }
-      try {
-        authorizer.authorizeWithLimits(LIMITS);
-      } catch (e) {
-        log.debug("Caught in TokenBiscuit.verify(): " + this.errorText(e));
-        log.debug("Leaving TokenBiscuit.verify(). Authorization refused: " +
-                  this.errorText(e));
-        return this.authorizationRefusal(e);
-      }
-      const blocks = token.countBlocks();
-      log.debug("Leaving TokenBiscuit.verify(). Verified jti=" +
-                read.model.jti + " blocks=" + blocks);
-      return { ok: true, model: read.model, attenuated: blocks > 1 };
-    } finally {
-      if (authorizer) {
-        authorizer.free();
-      }
-      token.free();
+      log.debug("Leaving TokenBiscuit.verify(). Authorizer could not be " +
+                "built: " + this.errorText(answers.error));
+      return this.refusal('STS-GNAP-0324', 'the biscuit authorizer could ' +
+                          'not be built for this presentation: ' +
+                          this.errorText(answers.error));
     }
+    let read;
+    try {
+      read = this.readModel(answers);
+    } catch (e) {
+      log.debug("Caught in TokenBiscuit.verify(): " + this.errorText(e));
+      log.debug("Leaving TokenBiscuit.verify(). Model query failed: " +
+                this.errorText(e));
+      return e && e.RunLimit ? this.authorizationRefusal(e)
+        : this.refusal('STS-GNAP-0323', 'the biscuit\'s authority block ' +
+                       'could not be read: ' + this.errorText(e));
+    }
+    if (!read.ok) {
+      log.debug("Leaving TokenBiscuit.verify(). Model refused.");
+      return read;
+    }
+    const failed = access.checkPresentation(read.model,
+                                            Object.assign({}, ctx,
+                                                          { now: now }));
+    if (failed) {
+      log.debug("Leaving TokenBiscuit.verify(). Presentation refused.");
+      return failed;
+    }
+    if (answers.authorizeError) {
+      log.debug("Leaving TokenBiscuit.verify(). Authorization refused: " +
+                this.errorText(answers.authorizeError));
+      return this.authorizationRefusal(answers.authorizeError);
+    }
+    const blocks = answers.blocks;
+    log.debug("Leaving TokenBiscuit.verify(). Verified jti=" +
+              read.model.jti + " blocks=" + blocks);
+    return { ok: true, model: read.model, attenuated: blocks > 1 };
   }
 
   // -------------------------------------------------------------------------
@@ -856,7 +972,7 @@ class TokenBiscuit {
    */
   async attenuate(value: unknown, datalogSource: unknown, keys: any,
                   parameters?: Record<string, unknown>): Promise<any> {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering TokenBiscuit.attenuate().");
     if (typeof datalogSource !== 'string' || !datalogSource.trim()) {
       log.debug("Leaving TokenBiscuit.attenuate(). No source.");
@@ -868,48 +984,51 @@ class TokenBiscuit {
       log.debug("Leaving TokenBiscuit.attenuate(). Library unavailable.");
       return lib;
     }
-    const bg = lib.bg;
-    const parsed = this.parseToken(bg, value, keys);
-    if (!parsed.ok) {
+    const badValue = this.valueRefusal(value);
+    if (badValue) {
       log.debug("Leaving TokenBiscuit.attenuate(). Parse refused.");
-      return parsed;
+      return badValue;
     }
-    const params = {};
-    const given = parameters || {};
-    const names = Object.keys(given);
-    for (let i = 0; i < names.length; i++) {
-      const v = given[names[i]];
-      if (typeof v === 'string' || typeof v === 'boolean' ||
-          Number.isSafeInteger(v)) {
-        params[names[i]] = v;
-      } else if (v instanceof Date) {
-        params[names[i]] = { date: v.toISOString() };
-      } else {
-        parsed.token.free();
-        log.debug("Leaving TokenBiscuit.attenuate(). Parameter " + names[i] +
-                  " is not a term.");
-        return this.refusal('STS-GNAP-0326',
-                            'attenuation parameter "' + names[i] + '" ' +
-                            'must be a string, boolean, integer or Date.');
+    // The block's parameters are checked once the token has parsed, as
+    // they always were: `crypto.js` calls this after the parse.
+    const prepare = () => {
+      const params = {};
+      const given = parameters || {};
+      const names = Object.keys(given);
+      for (let i = 0; i < names.length; i++) {
+        const v = given[names[i]];
+        if (typeof v === 'string' || typeof v === 'boolean' ||
+            Number.isSafeInteger(v)) {
+          params[names[i]] = v;
+        } else if (v instanceof Date) {
+          params[names[i]] = { date: v.toISOString() };
+        } else {
+          log.debug("Parameter " + names[i] + " is not a term.");
+          return { refusal: this.refusal('STS-GNAP-0326',
+                                         'attenuation parameter "' +
+                                         names[i] + '" must be a string, ' +
+                                         'boolean, integer or Date.') };
+        }
       }
-    }
-    let out;
-    try {
-      const block = bg.Biscuit.block_builder();
-      block.addCodeWithParameters(datalogSource, params, {});
-      const next = parsed.token.appendBlock(block);
-      out = next.toBase64();
-      next.free();
-    } catch (e) {
-      log.debug("Caught in TokenBiscuit.attenuate(): " + this.errorText(e));
+      return { source: datalogSource, params: params };
+    };
+    const appended = await stsCrypto.biscuitAttenuate(
+        value as string, keys && keys.publicKey, prepare);
+    if (!appended.ok) {
+      const refused = appended.stage === 'prepare' ? appended.refusal
+        : this.parseRefusal(appended);
+      if (refused) {
+        log.debug("Leaving TokenBiscuit.attenuate(). Refused at " +
+                  appended.stage + ".");
+        return refused;
+      }
       log.debug("Leaving TokenBiscuit.attenuate(). Library refused: " +
-                this.errorText(e));
+                this.errorText(appended.error));
       return this.refusal('STS-GNAP-0326',
                           'the attenuation block was refused: ' +
-                          this.errorText(e));
-    } finally {
-      parsed.token.free();
+                          this.errorText(appended.error));
     }
+    const out = appended.value;
     log.debug("Leaving TokenBiscuit.attenuate(). Appended.");
     return { ok: true, value: out, format: FORMAT };
   }
@@ -935,7 +1054,7 @@ class TokenBiscuit {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'],
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'],
       cannot: []
     };
     log.debug("Leaving TokenBiscuit.describe().");
@@ -960,9 +1079,7 @@ class TokenBiscuit {
       },
       errorCodes: errorCodes,
       access: gnapAccess,
-      fs: fs,
-      path: path,
-      url: url
+      stsCrypto: stsCrypto
     };
   }
 }
@@ -1010,6 +1127,5 @@ export = {
   mint: slot.forward('mint'),
   verify: slot.forward('verify'),
   attenuate: slot.forward('attenuate'),
-  describe: slot.forward('describe'),
-  loadBiscuit: slot.forward('loadBiscuit')
+  describe: slot.forward('describe')
 };

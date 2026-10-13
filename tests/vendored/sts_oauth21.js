@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -30,6 +30,8 @@
 // job removes a realm* in `tests/CLAUDE.md`.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -164,12 +166,41 @@ function asciiDescription(body) {
     String((body && body.error_description) || ""));
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // One browser, manual redirects and a cookie jar of its own, for
 // `sts_consent.js`'s reason: which redirect comes back IS the assertion.
 function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -212,14 +243,16 @@ async function authorizeSignedIn(prefix, query) {
     "an unauthenticated authorization request should go to the sign-in " +
     "screen; it answered " + r.status + " " + r.location + " " +
     r.text.slice(0, 300));
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", prefix + "/authn/login",
-                 form({ authn_id: authnId, username: PERSON,
-                        password: PASSWORD, action: "login" }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in form should redirect, got " + r.status);
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, in the
+  // realm the request was made in.
+  const answer = await authnSignin.submit(base + prefix, r.location,
+    { action: "login", username: PERSON, password: PASSWORD },
+    { cookie: jarHeader(b) });
+  keepCookies(b, answer);
+  assert.ok(answer.next === "redirect",
+    "the sign-in should answer where to go, got " + answer.status + " " +
+    answer.next + " " + JSON.stringify(answer.errors));
+  r = { status: 303, location: answer.location };
   r = await b.go("GET", r.location);
   log.debug("Leaving authorizeSignedIn(). " + r.status + " " + r.location);
   return r;
@@ -324,8 +357,12 @@ async function theAuthorizationEndpoint() {
   log.debug("Entering theAuthorizationEndpoint().");
   log.info("=== 2. the authorization endpoint ===");
   const p = pkce();
+  // A REGISTERED client with no redirect URI of its own (#496): in product a
+  // client nobody registered is refused before its redirect URI is looked
+  // at, below, so section 2.3.1's refusal is asked of LOCKED, which this job
+  // created with none.
   const unregistered = await send(base + PREFIX + "/oauth2/authorize?" + form({
-    response_type: "code", client_id: "o21-never-" + REALM,
+    response_type: "code", client_id: LOCKED,
     redirect_uri: REDIRECT, code_challenge: p.challenge,
     code_challenge_method: "S256" }));
   check("A CLIENT WITH NO REDIRECT URI OF ITS OWN IS REFUSED ON THIS " +
@@ -341,6 +378,18 @@ async function theAuthorizationEndpoint() {
                     "the error_description is within section 3.2.4's " +
                     "grammar: " + unregistered.body.error_description);
         });
+  if (await facts.isProduct(base + PREFIX + "/admin-api")) {
+    const never = await send(base + PREFIX + "/oauth2/authorize?" + form({
+      response_type: "code", client_id: "o21-never-" + REALM,
+      redirect_uri: REDIRECT, code_challenge: p.challenge,
+      code_challenge_method: "S256" }));
+    check("PRODUCT: A CLIENT NOBODY REGISTERED IS REFUSED ON THIS SERVER — " +
+          "400 invalid_client, nothing redirected (#496)", function () {
+            assert.strictEqual(never.status, 400, never.raw.slice(0, 300));
+            assert.strictEqual(never.location, "");
+            assert.strictEqual(never.body.error, "invalid_client");
+          });
+  }
   const ambiguous = await send(base + PREFIX + "/oauth2/authorize?" + form({
     response_type: "code", client_id: TWO_URIS, code_challenge: p.challenge,
     code_challenge_method: "S256" }));

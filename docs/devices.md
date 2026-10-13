@@ -41,7 +41,7 @@ says the same from the running build, and is the one to trust.
   when the credential was registered).
 * **Compliance**: `compliant`, `not-compliant` or `unknown` (where every device
   starts), with the previous value and who set it — an administrator, an MDM
-  or posture feed, or development's test control ([below](#compliance)).
+  or posture feed, or a partner's CAEP signal ([below](#compliance)).
 * **Status and risk**: a device can be marked **compromised**, which ends the
   sessions it authenticated and revokes what it was trusted with
   ([below](#a-compromised-or-removed-device)); and it carries a risk level —
@@ -102,7 +102,24 @@ administrator); one naming none creates a device owned by the requester. A
 request may carry a TPM key attestation in the `id-aa-attestation` attribute
 of draft-ietf-lamps-csr-attestation, as a TCG `tcg-attest-tpm-certify`
 statement with the Attestation Key's certificate chain; it is attested when
-that chain ends at `devices.tpmTrustAnchors`. A device renews by enrolling
+that chain ends at `devices.tpmTrustAnchors`.
+
+The statement must also be **fresh**. Its `extraData` must be a nonce from
+EST's `/.well-known/est/device/nonce`, sent back with that answer's cookie
+([EST](est.md#the-attestation-freshness-nonce)). Product mode refuses a
+statement that is not fresh (STS-DEVICE-0050). Development mode records
+freshness `unproven`. SCEP has no nonce operation, so in product mode a TPM
+statement over SCEP is refused.
+
+**The statement format.** No current specification defines the TPM
+statement. draft-ietf-lamps-csr-attestation revision 29 defines none, and
+revision 21 removed the TPM appendix. The service reads revision 20's
+appendix A.2.3: `Tcg-csr-tpm-certify ::= SEQUENCE { tpmSAttest, signature,
+tpmTPublic OPTIONAL }`, each an OCTET STRING, with the TPM structures sized
+or bare. The places where that text disagrees with itself are listed in
+`common/crypto.js`, beside the codec.
+
+A device renews by enrolling
 again, naming its URN; `/simplereenroll` and SCEP RenewalReq are refused for
 it, and ACME does not issue it.
 
@@ -261,8 +278,7 @@ counts changes by source, day by day.
 |---|---|---|
 | An administrator: the **Compliance** form on a device's page, or `POST /admin-api/devices/set-compliance` | `admin` | Admin Write. May also set `unknown`, withdrawing a vouch. |
 | An MDM or posture feed: `POST /admin-api/device-compliance` | `mdm` | A client holding an access token with the **`device:compliance`** scope, and nothing else, whose application is a member of the `DEVICE_COMPLIANCE` role. |
-| The test control: `POST /devices/test/compliance` | `test-control` | Anybody, **in development only**; product answers `403`. |
-| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A foreign transmitter an administrator registered on **Shared Signals transmitters** (#153). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
+| A received CAEP `device-compliance-change` from a trusted transmitter | `caep` | A federation partner whose Shared Signals this realm receives, as the `signal-response` policy permits (#153, #373). A device manager is an `ssf` relationship on **Federation** (#374). The device is named by its id (an `iss_sub` subject's `sub`) or a key thumbprint. |
 
 ### Integrating an MDM or posture feed
 
@@ -325,9 +341,19 @@ or `POST /admin-api/devices/set-status` with `"status":"compromised"`):
 * revokes its Native SSO `device_secret`;
 * revokes every certificate this service's EST or SCEP Issuing CA issued it,
   with reason **keyCompromise**, so its CRL and OCSP responder say so;
+* ends every GNAP grant whose client key is one of the device's keys —
+  including a client proving by mutual TLS with one of the device's
+  certificates — and revokes every OAuth access or refresh token bound to the
+  device: DPoP-bound to one of its JWK keys, or bound by mutual TLS (RFC 8705
+  `x5t#S256`) to a certificate over one of its keys — the certificate the
+  device's `x509` key holds, or any other certificate over the same key (one
+  another CA issued, or a re-issue this register never saw), because the key
+  under a bound certificate is recorded when the token is issued
+  ([#432](https://github.com/rcbj/iya-sts/issues/432)). A WebAuthn key binds
+  no token;
 * raises its risk level to `HIGH`;
-* sends RISC `credential-compromise` and `sessions-revoked` for a person's
-  device (below).
+* sends RISC `credential-compromise` for a person's device, and
+  `sessions-revoked` where `risc.autoEmitTypes` names it (below).
 
 The device stays in the register, recognised and marked compromised.
 **Restoring it** puts back the risk level the compromise raised; nothing
@@ -336,13 +362,14 @@ next Native SSO sign-in.
 
 **Removing a device** ends the sessions it authenticated and revokes its
 certificates with reason **cessationOfOperation** (keyCompromise when it was
-compromised), and sends RISC `sessions-revoked` for a person's device.
+compromised). For a person's device it sends RISC `sessions-revoked` where
+`risc.autoEmitTypes` names it.
 
 ## What goes out over Shared Signals
 
 Each event is sent to every stream that asked for its type and covers its
 subject, when `caep.autoEmitTypes` or `risc.autoEmitTypes` names it (all of
-them do by default).
+them do by default, except RISC `sessions-revoked`).
 
 | Event | When |
 |---|---|
@@ -351,7 +378,7 @@ them do by default).
 | CAEP `credential-change` | a device key is added (`create`), re-issued over EST (`update`) or removed (`delete`); a Native SSO secret is issued (`create`) or revoked (`revoke`); a device is removed (`delete`, per credential) |
 | CAEP `session-established`, `session-presented`, `session-revoked` | as for every session — and the subject names the **device** when a registered device authenticated the session |
 | RISC `credential-compromise` | a person's device is marked compromised: one per kind of credential it held |
-| RISC `sessions-revoked` | a person's device is marked compromised or removed |
+| RISC `sessions-revoked` | a person's device is marked compromised or removed — only where `risc.autoEmitTypes` names it, which the default does not |
 
 **The subject** is SSF's complex subject with a `device` member —
 `{"format":"iss_sub","iss":<this realm's issuer>,"sub":<the device id>}`, the
@@ -366,8 +393,7 @@ has vouched for it. An event goes out only when the sent value changes —
 `unknown` → `not-compliant` is no event, `unknown` → `compliant` is
 `not-compliant` → `compliant`, and an administrator setting a compliant
 device back to `unknown` is `compliant` → `not-compliant`.
-`initiating_entity` is `admin` for an administrator and `system` for the feed
-and the test control.
+`initiating_entity` is `admin` for an administrator and `system` for the feed.
 
 **Credential types.** A certificate is `x509` with its issuer and serial; a
 linked WebAuthn credential is `fido2-platform` or `fido2-roaming`. A device's
@@ -378,9 +404,10 @@ transmitter and receiver agree on.
 
 **RISC and the deprecated `sessions-revoked`.** RISC 1.0 says new
 implementations should use CAEP's `session-revoked`, and each ended session
-does send one. `sessions-revoked` is sent as well, with the device beside the
-person in the subject, meaning *every session of this account on this
-device*. Remove it from `risc.autoEmitTypes` to send only the CAEP events.
+sends one. So `sessions-revoked` is not in `risc.autoEmitTypes`' default
+([#269](https://github.com/rcbj/iya-sts/issues/269)). Add it for a receiver
+that still needs it: it goes out with the device beside the person in the
+subject, meaning *every session of this account on this device*.
 
 ## Risk scoring
 
@@ -416,12 +443,17 @@ proved the sign-in adds up to eight signals. Each is a factor on the score, and
 * **Monitoring → Risk** shows the device beside the browser on each
   assessment.
 
-**Where the screen's own WebAuthn step is not scored.** The sign-in screen
+**The screen's own WebAuthn step is scored too.** The sign-in screen
 scores the sign-in before its WebAuthn ceremony, because the score decides
-whether to ask for one. A platform credential presented in that step is
-therefore not in that sign-in's score. It is still on the session, so the
-policy, the acr and the claim below all see it. A client certificate on the
-connection is scored at every door.
+whether to ask for one. When the ceremony is done, the same assessment is
+amended with the device the key belongs to, before the session is decided.
+Only the device's signals are worked out again, and the history counts the
+sign-in once. So a person signing in with a platform credential linked to
+their own registered device is not `unregistered-device`, and a compliant
+device lowers the score. This works whether the key is the first factor or the
+second, and after a password, a wallet or an emailed code. Monitoring → Risk
+shows the amended assessment. A client certificate on the connection is
+scored at every door.
 
 ## The issuance policy
 
@@ -522,9 +554,10 @@ difference: **product refuses a key a device or its owner presents without
 an attestation that verified and chained to a trusted root** (a portal key
 proof, a linked WebAuthn credential, an EST or SCEP device certificate);
 development registers it as self-asserted. An administrator's key entered by
-value is accepted in both, recorded as self-asserted. **The compliance test
-control is open in development only**; product refuses it
-(`STS-DEVICE-0035`), and the MDM feed under `device:compliance` is the door.
+value is accepted in both, recorded as self-asserted. **There is no
+compliance test control**: `POST /devices/test/compliance` was deleted
+(#597), and the MDM feed under `device:compliance` is the door in both
+modes.
 
 ### Attestation trust
 
@@ -538,6 +571,46 @@ control is open in development only**; product refuses it
 A statement that does not verify is refused; one that verifies and chains to
 none of these is self-asserted. **Protocols → Device registration** lists the
 shipped roots by subject and fingerprint.
+
+### Google's Android attestation status list
+
+A chain can reach Google's roots and still contain a certificate that Google
+has **revoked or suspended**, for example a leaked batch key. Google publishes
+these certificates by serial number at
+`https://android.googleapis.com/attestation/status` (#256). Every certificate
+of an Android chain is looked up in that list. This happens both when a device
+registers and when a WebAuthn `android-key` statement arrives at sign-in:
+
+- **Revoked or suspended:** the device key is *self-asserted* (product refuses
+  it, `STS-DEVICE-0047`) and the WebAuthn statement is *untrusted*
+  (`STS-AUTHN-0297`).
+- **Not on the list:** the key is attested as before, and its summary names the
+  list version that was checked.
+- **No current list** (never downloaded, the download failing, or older than
+  `devices.androidStatusStaleHours`): the key is still attested, with its
+  revocation **unchecked** and the reason. When
+  `devices.androidRevocationRequired` is on in product mode, an unchecked chain
+  counts as unattested instead (`STS-DEVICE-0048`).
+
+The list is the risk dataset `android.attestation-status`, shown on
+**Monitoring → Risk**. The `devices.android-status-refresh` scheduler job
+downloads it daily from `devices.androidStatusUrl`, which is Google's address by
+default. The list can also be uploaded there by hand. Each key keeps its
+chain's serial numbers, so whenever a new list is activated, and daily, the
+`devices.android-status-recheck` job looks them up again:
+
+- A device key the new list revokes is **downgraded to self-asserted**. The
+  device's level is recomputed, an audit row is written, and a CAEP
+  `credential-change` (`update`) is sent. The device's *status* is not
+  changed: the attestation no longer proves where the key lives, which is not
+  the same as the device being compromised.
+- A security key's attestation is marked untrusted in the same way. The key
+  still signs its person in.
+- A key registered before this check was added has no serial numbers stored,
+  so it cannot be rechecked. Its page says *revocation unknown*.
+
+**Protocols → Device registration** shows the active list, its age, the
+address and the job (`GET /admin-api/device-registration`, `androidStatus`).
 
 ## Configuration
 
@@ -555,6 +628,11 @@ Drawn on **Protocols → Device registration**; the live source is that page and
 | `devices.maxChallenges` | `STS_DEVICES_MAX_CHALLENGES` | `10000` | yes | Unanswered enrolment challenges held per realm. |
 | `devices.androidAttestationTrustAnchors` | `STS_DEVICES_ANDROID_ATTESTATION_TRUST_ANCHORS` | *(empty: Google's)* | yes | Android Key Attestation roots, replacing the shipped ones. |
 | `devices.androidMinimumSecurityLevel` | `STS_DEVICES_ANDROID_MINIMUM_SECURITY_LEVEL` | `trusted-environment` | yes | `trusted-environment` or `strongbox`. |
+| `devices.androidStatusUrl` | `STS_DEVICES_ANDROID_STATUS_URL` | Google's status list | yes | Where `devices.android-status-refresh` downloads the status list from; empty dials nobody. |
+| `devices.androidStatusRefreshS` | `STS_DEVICES_ANDROID_STATUS_REFRESH_S` | `86400` | yes | How often it is downloaded. |
+| `devices.androidStatusMaxBytes` | `STS_DEVICES_ANDROID_STATUS_MAX_BYTES` | `16777216` | yes | The most read of one download. |
+| `devices.androidStatusStaleHours` | `STS_DEVICES_ANDROID_STATUS_STALE_HOURS` | `48` | yes | After this long the active list is stale and chains are unchecked. |
+| `devices.androidRevocationRequired` | `STS_DEVICES_ANDROID_REVOCATION_REQUIRED` | `false` | yes | In product mode, an unchecked chain is not attested. |
 | `devices.appleAppAttestTrustAnchors` | `STS_DEVICES_APPLE_APP_ATTEST_TRUST_ANCHORS` | *(empty: Apple's)* | yes | App Attest roots, replacing the shipped one. |
 | `devices.appleAppAttestAppIds` | `STS_DEVICES_APPLE_APP_ATTEST_APP_IDS` | *(empty)* | yes | `TEAMID.bundle.id` of the apps whose keys are registered; empty accepts none. |
 | `devices.appleAppAttestAllowDevelopment` | `STS_DEVICES_APPLE_APP_ATTEST_ALLOW_DEVELOPMENT` | `false` | yes | Accept App Attest's development environment. |

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -123,7 +123,7 @@ const EVENTS: Record<string, [string, string]> = {
                                                       'answered active'],
   'rs.registration': ['registrations', 'resource sets registered'],
   'rs.derivation': ['derivations', 'downstream tokens derived'],
-  'rs.presented': ['presented', 'tokens presented at the demonstration RS']
+  'rs.presented': ['presented', 'access tokens issued for it']
 };
 
 const FORMATS = ['jwt-signed', 'jwt-encrypted', 'macaroon', 'biscuit', 'zcap'];

@@ -1,0 +1,12 @@
+{
+  "what": "Section 7.2 as a table: the seven cases the embedded PEP (xacml.js enforce()) and the remote PEP (rust/bins/xacml-pep) are both held to — the two decisions the biases agree on, the two they differ on, and the obligation rule on each side. tests/xacml_pep.js asserts the embedded one against this file, and the Rust crate's own test asserts the remote one, so two implementations are checked against one expectation.",
+  "cases": [
+    { "decision": "Permit", "obligations": [], "deny-biased": true, "permit-biased": true },
+    { "decision": "Deny", "obligations": [], "deny-biased": false, "permit-biased": false },
+    { "decision": "Indeterminate", "obligations": [], "deny-biased": false, "permit-biased": true },
+    { "decision": "NotApplicable", "obligations": [], "deny-biased": false, "permit-biased": true },
+    { "decision": "Permit", "obligations": ["urn:sts:xacml:obligation:log"], "deny-biased": true, "permit-biased": true },
+    { "decision": "Permit", "obligations": ["urn:test:cannot-do-this"], "deny-biased": false, "permit-biased": false },
+    { "decision": "Deny", "obligations": ["urn:test:cannot-do-this"], "deny-biased": false, "permit-biased": false }
+  ]
+}

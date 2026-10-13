@@ -1,0 +1,4 @@
+{
+  "already.summary": "{count} ámbito(s) que ya ha aceptado para esta aplicación",
+  "already.global": "consentido para todos en la entrada de esta aplicación (<code>oauthGlobalConsent</code>) — nunca se le ha preguntado"
+}

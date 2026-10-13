@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -53,7 +53,7 @@ function run(t) {
   log.debug("Entering run().");
 
   // --- 1. What a minted secret is ----------------------------------------
-  const bytes = Number(config.value('oauth2.registeredSecretBytes')) || 24;
+  const bytes = Number(config.value('oauth2.registeredSecretBytes'));
   const one = applications.mintClientSecret();
   const two = applications.mintClientSecret();
   t.check(/^[A-Za-z0-9_-]+$/.test(one) &&
@@ -84,8 +84,12 @@ function run(t) {
   const first = function (value) {
     return String([].concat(value === undefined ? [] : value)[0] || '');
   };
-  t.check(created && created.ok === true && entry &&
-          first(entry.fields.oauthClientSecret) === generated.clientSecret,
+  // The entry holds the secret as a RECORD (2026-10-01): read it back the
+  // way every verifier does.
+  const stored = entry ? applications.primaryClientSecretOf(entry.fields)
+                       : null;
+  t.check(created && created.ok === true && stored &&
+          stored.secret === generated.clientSecret,
           '3a. a create carrying the generated secret stores it',
           JSON.stringify(created && (created.errors || created.ok)));
   t.equal(first(entry && entry.fields.oauthTokenEndpointAuthMethod),

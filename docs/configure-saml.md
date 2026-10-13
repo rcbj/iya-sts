@@ -27,11 +27,8 @@ below, and the application attribute editor.
 
 | Page | Console menu | What you do there |
 |---|---|---|
-| `/admin/saml2` | **Protocols → SAML → SAML 2.0 identity provider** | Register an SP, import one from MDQ, and change the `SAML` and `SAML 2.0` settings groups. |
-| `/admin/saml2?sp=<entityID>` | click an SP's row | Upload its metadata, set its certificates and logout address, and find the IdP metadata URL to give it. |
-| `/admin/saml11` | **Protocols → SAML → SAML 1.1 identity provider** | Register a relying party, and change the `SAML` and `SAML 1.1` settings groups. |
-| `/admin/saml-assertions` | **Protocols → SAML → SAML assertions** | Change the signing, encryption, lifetime and NameID settings (the `SAML 2.0 assertions` and `SAML 1.1 assertions` groups). |
-| `/admin/saml-attributes` | **Protocols → SAML → Custom SAML attributes** | Add attributes to every assertion. |
+| `/admin/saml2` | **Protocols → SAML** | Register SAML 2.0 service providers and configure both profiles, assertion settings and custom attributes in the page's tabs. |
+| `/admin/saml2?sp=<entityID>` | click a service provider's row | Upload its metadata, set its certificates and logout address, and find the IdP metadata URL to give it. |
 | `/admin/applications?application=<id>` | **Directory → Applications** | Set per-SP overrides with **Set** / **Add to** / **Remove from**. |
 
 Each settings group is saved with its own **Save <group>** button, for example
@@ -62,7 +59,7 @@ encryption certificates, its NameID formats, and its `AuthnRequestsSigned` /
 `saml_peer_kit.js`.
 
 **Console:**
-1. On **SAML 2.0 identity provider**, in **Register a service provider**, enter the SP's **entityID** (for example `https://sp.example.com/saml`) and click **Register**.
+1. On **Protocols → SAML**, in **Register a service provider**, enter the SP's **entityID** (for example `https://sp.example.com/saml`) and click **Register**.
 2. Click the new row. Under **Its metadata**, paste the SP's metadata into **Upload a document** (or pick it under **or a file**), and click **Consume it**.
 3. In **The endpoints it is configured from**, copy the **Metadata** URL. That is the IdP metadata to load into the SP.
 
@@ -81,11 +78,11 @@ curl -sk "$BASE/saml2/metadata/$(jq -rn --arg s https://sp.example.com/saml '$s|
 
 If you declare `saml2` with no `samlEntityId`, the identifier is used as the
 entityID, which is why `"fields": {}` is enough. The interoperability jobs
-first create a realm for the SP, and set its IdP entityID there:
+first create a realm for the SP; the IdP's entityID there is that realm's
+OAuth 2.0 issuer, which is not a setting (#523):
 
 ```bash
-api realms/create '{"id":"sp1","domain":"sp1.example.net","name":"sp1",
-  "overrides":{"saml2.entityId":"'"$BASE"'/realm/sp1/saml2/idp"}}'
+api realms/create '{"id":"sp1","domain":"sp1.example.net","name":"sp1"}'
 ```
 
 **To have the metadata fetched from a URL instead of uploaded:** set
@@ -436,8 +433,6 @@ form. The attributes are `saml11AssertionLifetimeMin`, `saml11SignAssertion`,
 
 | Setting | Default | What it does |
 |---|---|---|
-| `saml11.providerId` | `urn:sts:idp:saml11` | The IdP's providerID. It must not be empty in product mode. |
-| `saml11.perApplicationProviderId` | `true` | Issues as `<providerId>:<slug>` for each relying party. |
 | `saml11.defaultProfile` | `post` | The profile used when the request names none: `post` or `artifact`. |
 | `saml11.signAssertion` / `saml11.signResponse` | `true` | Signs the assertion / the Response. Turning either off is refused in product mode. |
 | `saml11.nameIdFormat` | `…:1.1:nameid-format:unspecified` | The NameIdentifier format. |
@@ -464,6 +459,13 @@ After signing in, the person's browser posts a signed `samlp:Response` to the
 The profile is chosen by the `profile` parameter first. If there is none, the
 binding of the registered `shire` decides. Failing both,
 `saml11.defaultProfile` applies.
+
+The Shibboleth SP 1.3 form is accepted as it is sent: `providerId`, `shire`,
+a lower-case `target` (returned as `TARGET`) and `time`, which is accepted
+and ignored, so a stale value does not refuse the request. The job
+`sts_saml11.js` sends that form with no `profile` to a relying party whose
+metadata names a `browser-post` endpoint, and to one whose metadata names an
+`artifact-01` endpoint, and checks that each binding selects its profile.
 
 In product mode, the `shire` must exactly match a registered
 `samlAssertionConsumerService`, and a request that names no registered
@@ -531,7 +533,7 @@ the per-relying-party `saml11NameIdFormat`:
 |---|---|
 | `emailAddress` | the person's mail |
 | `X509SubjectName` | `CN=<username>` |
-| `WindowsDomainQualifiedName` | `MOCKSTS\<username>` |
+| `WindowsDomainQualifiedName` | `IYASTS\<username>` |
 | `unspecified` | the username |
 
 Custom attributes use the `saml11` set:

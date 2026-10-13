@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -85,6 +85,9 @@ import mode = require('./mode');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// The sentences `describe()` makes are filled from SENTENCES below, so the
+// server can translate them into a console reader's language (#543).
+import serverProse = require('./server_prose');
 
 const { log } = helpers;
 
@@ -188,6 +191,27 @@ const NIST_EMAIL_WARNING =
  * The sign-in mechanisms the policy decides on, each with the roles it can take
  * (first factor, second factor) and its default in each.
  */
+// ---------------------------------------------------------------------------
+// THE SENTENCES `describe()` MAKES, as templates (#543 phase 2) — one copy,
+// filled there with `ServerProse.fill()` and matched by
+// `common/server_prose.ts` to refill in a console reader's language. A
+// `param.` key is a phrase that only ever stands inside another sentence.
+// ---------------------------------------------------------------------------
+const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  firstFactors: 'first factors: {{list}}',
+  secondFactors: 'second factors: {{list}}',
+  'param.none': 'none',
+  secondAlways: 'a second factor is required of everybody',
+  secondIfHeld: 'a second factor is required of those who hold one',
+  adminAlways: 'administrators must set one up (the built-in administrator ' +
+    'is offered one)',
+  adminOffer: 'administrators who hold none are offered one at each sign-in',
+  adminAsked: 'administrators are asked as everybody else is',
+  emailTtl: 'an emailed code or link is valid for {{n}} seconds',
+  emailTtlInactive: 'an emailed code or link is valid for {{n}} seconds — ' +
+    'INACTIVE: this realm cannot send mail'
+});
+
 const MECHANISMS: Mechanism[] = [
   { id: 'password', label: 'Password', primary: true, secondFactor: true,
     what: 'A password on the sign-in screen. As a SECOND factor it is the ' +
@@ -439,6 +463,10 @@ class AuthnPolicy {
    * The directory schema of `ou=authnPolicies`.
    */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The sentences `describe()` makes, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
   /**
    * The warning drawn beside the emailed mechanisms.
    */
@@ -932,6 +960,7 @@ class AuthnPolicy {
     const { log } = this.deps;
     log.debug("Entering AuthnPolicy.describe().");
     const rules = profile || this.read(DEFAULT_PROFILE);
+    const fill = serverProse.fill;
     const names = (role: Role): string => {
       log.debug("Entering AuthnPolicy.describe() names().");
       const on = MECHANISMS.filter((m) => {
@@ -940,20 +969,19 @@ class AuthnPolicy {
         return m.label;
       });
       log.debug("Leaving AuthnPolicy.describe() names().");
-      return on.length ? on.join(', ') : 'none';
+      return on.length ? on.join(', ') : SENTENCES['param.none'];
     };
     const out = [
-      'first factors: ' + names('primary'),
-      'second factors: ' + names('second-factor'),
+      fill(SENTENCES.firstFactors, { list: names('primary') }),
+      fill(SENTENCES.secondFactors, { list: names('second-factor') }),
       rules.requireSecondFactor === 'always'
-        ? 'a second factor is required of everybody'
-        : 'a second factor is required of those who hold one',
+        ? SENTENCES.secondAlways
+        : SENTENCES.secondIfHeld,
       rules.requireSecondFactorForAdministrators === 'always'
-        ? 'administrators must set one up (the built-in administrator is ' +
-          'offered one)'
+        ? SENTENCES.adminAlways
         : (rules.requireSecondFactorForAdministrators === 'offer'
-          ? 'administrators who hold none are offered one at each sign-in'
-          : 'administrators are asked as everybody else is')
+          ? SENTENCES.adminOffer
+          : SENTENCES.adminAsked)
     ];
     const email = MECHANISMS.some((m) => {
       return m.email && (this.allows(m.id, 'primary', rules) ||
@@ -961,9 +989,9 @@ class AuthnPolicy {
     });
     if (email) {
       const s = this.emailSettings(rules);
-      out.push('an emailed code or link is valid for ' + s.ttlS +
-               ' seconds' + (this.mailUsable() ? ''
-                 : ' — INACTIVE: this realm cannot send mail'));
+      out.push(fill(this.mailUsable() ? SENTENCES.emailTtl
+                                      : SENTENCES.emailTtlInactive,
+                    { n: s.ttlS }));
     }
     log.debug("Leaving AuthnPolicy.describe().");
     return out;
@@ -1193,6 +1221,7 @@ export = {
   FIELD_BY_KEY: AuthnPolicy.FIELD_BY_KEY,
   MECHANISMS: AuthnPolicy.MECHANISMS,
   SCHEMA: AuthnPolicy.SCHEMA,
+  SENTENCES: AuthnPolicy.SENTENCES,
   NIST_EMAIL_WARNING: AuthnPolicy.NIST_EMAIL_WARNING,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),

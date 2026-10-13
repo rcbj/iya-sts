@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -147,7 +147,8 @@
 //
 // **THE DISCOVERY ENDPOINTS ARE OPEN.** /ServiceProviderConfig, /ResourceTypes
 // and /Schemas answer without a credential unless `scim.authDiscovery` says
-// otherwise, which is the bootstrapping argument POST /tls/trust already makes:
+// otherwise, which is the bootstrapping argument the open POST /tls/trust made
+// until #597 deleted it:
 // the ServiceProviderConfig is where a client READS which schemes exist, so
 // demanding a credential to fetch it means a client must already know the
 // answer to the question it is asking. RFC 7644 section 4 says nothing either
@@ -258,6 +259,22 @@ import fedLinks = require('../federation/federation_links');
 // Every SCIM error this module sends carries an STS-SCIM-* code on the
 // response — see common/error_codes.js. A leaf.
 import errorCodes = require('../common/error_codes');
+// The mode (common/mode.js): which of the two warnings `GET /scim` draws is
+// true in this realm (#543 round 2).
+import mode = require('../common/mode');
+// WHICH CELL ANSWERS (#98): asked by handle() before the caller is
+// authenticated, and by the User ingress before a person is written. A
+// library that registers nothing; `scim_cells.ts` argues every operation.
+import scimCells = require('./scim_cells');
+import realms = require('../common/realms');
+import cells = require('../common/cells');
+// THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `fill()` makes the
+// templated sentences of `description()`, and `harvest()` collects this
+// module's tables for the scim namespace. Safe at the top: it requires only
+// libraries that never require this module back.
+import serverProse = require('../common/server_prose');
+// The description page's shell and script (#584).
+import DescriptionPages = require('../common/description_pages');
 
 // A function the directory, `scim_auth`, `scim_map` and the others offer, as
 // this module calls it. Their own modules are the authority on the shapes.
@@ -272,7 +289,7 @@ interface ScimDeps {
     error(message: string): void;
   };
   xmlEscape(text: unknown): string;
-  baseUrlOf(req: ScimRequest): string;
+  baseUrlOf(req: ScimRequest, app?: string): string;
   validation: { checkDocument: Fn };
   config: { value(key: string): any };
   stats: { recordScim: Fn; identityOf: Fn; scimSnapshot: Fn };
@@ -285,7 +302,7 @@ interface ScimDeps {
                     'readGroupEntry' | 'allGroupEntries' | 'nameUsableInDn' |
                     'groupDnFor' | 'writeGroupEntry' | 'deleteGroupEntry' |
                     'objectFor' | 'groupsDn' | 'baseDn' | 'personCount' |
-                    'entryCount', Fn>;
+                    'entryCount' | 'inPersonBatch' | 'personBatchStep', Fn>;
   createClaims: { refusalMessage: Fn };
   scimAuth: Record<'schemesForConfig' | 'authenticateSpent' |
                    'schemesBeyondTheCanonicalList' | 'primarySchemeId' |
@@ -380,7 +397,8 @@ const CANONICAL_TYPES: Record<string, string[]> = {
 //     registration at /.well-known/hoba/register, and a client that speaks HOBA
 //     looks there. Inventing /scim/v2/hoba-keys would have been tidier and
 //     would have been a path nothing knows about.
-//   * It is UNAUTHENTICATED for the reason POST /tls/trust is: it is how a
+//   * It is UNAUTHENTICATED for the reason the open POST /tls/trust was
+//     until #597: it is how a
 //     caller GETS a credential, so requiring one to reach it would make the
 //     scheme unusable by anybody who did not already have another. In
 //     development mode anybody may register any key for any name, which is the
@@ -394,6 +412,207 @@ const CANONICAL_TYPES: Record<string, string[]> = {
 // indistinguishable from one nobody implemented.
 // ---------------------------------------------------------------------------
 const HOBA_REGISTER_PATH = '/.well-known/hoba/register';
+
+// ---------------------------------------------------------------------------
+// WHAT `description()` SAYS, as tables and templates (#543 phase 2b). One
+// copy: `description()` reads and fills them, and `common/server_prose.ts`
+// matches an answer to `GET /admin-api/scim` and `/scim/monitor` against
+// them to refill it in a console reader's language. Each is the sentence
+// `description()` made inline until #543, byte for byte; a template's
+// parameters are data (a scope, a reserved value, a number) and are carried
+// over untranslated.
+// ---------------------------------------------------------------------------
+// The one part of the first "does not do" sentence that varies with whether a
+// credential is required at all. A template could not carry it: an EMPTY
+// parameter matches nothing, so each of the four is a sentence of its own.
+const NOT_REQUIRED = ' — except that it is currently turned off here, so it ' +
+  'is not';
+const PERMISSIVE_HEAD = 'IT AUTHENTICATES, AND IT CHECKS ALMOST NOTHING. A ' +
+  'credential is required';
+const PERMISSIVE_TAIL = ', and every scheme behind that requirement is ' +
+  'permissive: any caller can get an access token with either scope from ' +
+  'this service\'s own token endpoint with any grant, any username with any ' +
+  'password but "invalid" passes Basic, any username passes Digest with the ' +
+  'one shared password, and anybody can register a HOBA key for any name. ' +
+  'It is a turnstile, not a lock. What it buys is that a client\'s 401, ' +
+  '403, challenge-response and scope handling can be exercised at all — ' +
+  'none of which an open endpoint can produce. Do not put this port on a ' +
+  'public address on the strength of it.';
+const PRODUCT_HEAD = 'IT AUTHENTICATES, AND IN PRODUCT MODE IT CHECKS. A ' +
+  'credential is required';
+const PRODUCT_TAIL = ', and each scheme behind that requirement is ' +
+  'verified: an access token must come from this service\'s own token ' +
+  'endpoint with the scope, a Basic password is checked against the hashed ' +
+  'userPassword on the person\'s entry, a HOBA key must have been ' +
+  'registered by its signed-in owner, and Digest is not offered.';
+
+// The sentences that matter most, in the order somebody is likely to be
+// surprised by them. The first is one of four, by mode (#70) and by
+// `scim.authRequired`; `description()` picks it.
+const DOES_NOT_DO = Object.freeze({
+  permissive: PERMISSIVE_HEAD + PERMISSIVE_TAIL,
+  permissiveOff: PERMISSIVE_HEAD + NOT_REQUIRED + PERMISSIVE_TAIL,
+  product: PRODUCT_HEAD + PRODUCT_TAIL,
+  productOff: PRODUCT_HEAD + NOT_REQUIRED + PRODUCT_TAIL,
+  scope: 'A SCOPE GRANTS AND NOTHING ELSE READS ONE. scim:read and ' +
+    'scim:write are the first scope requirement anywhere in this service, ' +
+    'and they apply at these endpoints only — no other surface here reads a ' +
+    'scope, and holding one confers nothing beyond /scim/v2. Note also that ' +
+    'only the OAuth schemes carry scopes at all: Basic, Digest, HOBA, a ' +
+    'cookie and a client certificate authenticate a caller who may then do ' +
+    'both, so a caller who cannot get a scope can simply use another ' +
+    'scheme. Each scheme has a switch of its own for exactly that reason.',
+  active: 'active: false DISABLES THE ACCOUNT (since 2026-09-17). It is the ' +
+    'password-policy lock pwdAccountLockedTime on the entry, and every door ' +
+    'refuses the person while it is set — a password, a session, a token ' +
+    'grant, a Kerberos AS-REQ — and everything they held is ended when it ' +
+    'is written. active: true enables them again; a resource that leaves ' +
+    'active out leaves the account as it was.',
+  etag: 'NO ETag AND NO changePassword, both advertised as unsupported ' +
+    'rather than half-implemented. A version built over a timestamp with ' +
+    'one-second resolution would be a concurrency control a client trusts ' +
+    'and that is wrong; and no password in this service is checked, so ' +
+    'there is none to change.',
+  member: 'A MEMBER THAT NAMES NOTHING IS ACCEPTED. This directory does no ' +
+    'referential integrity on purpose — deleting a user leaves their DN in ' +
+    'every group that listed them — so refusing a dangling member here ' +
+    'would make that state impossible to reproduce. /admin/groups reports ' +
+    'them.'
+});
+
+// What each endpoint is, keyed by a name of this table's own (the methods
+// repeat, so a method cannot key it). `bulk` is a template: its limit is
+// the setting's.
+const ENDPOINT_WHAT = Object.freeze({
+  serviceProviderConfig: 'What this server supports. Read it first.',
+  resourceTypes: 'User and Group.',
+  schemas: 'The core User and Group schemas, and the enterprise User ' +
+    'extension.',
+  usersList: 'The list, with ?filter, ?sortBy, ?startIndex, ?count, ' +
+    '?attributes.',
+  usersCreate: 'Create.',
+  usersSearch: 'The same query as a POST body, for a filter too long for a ' +
+    'URL.',
+  userRead: 'One user.',
+  userReplace: 'Replace.',
+  userModify: 'Modify (section 3.5.2), path grammar and all.',
+  userDelete: 'Delete.',
+  groups: 'Groups, whose members are resolved from member, uniqueMember and ' +
+    'memberUid alike.',
+  search: 'A query across BOTH resource types at once.',
+  bulk: 'Up to {{n}} operations in one request.',
+  me: 'The subject this request authenticated as (section 3.11), delegated ' +
+    'to the same User handlers. 501 when nothing authenticated, and on ' +
+    'POST; 404 when the credential names somebody with no entry here.',
+  hoba: 'Register a HOBA public key (RFC 7486 section 7). Unauthenticated ' +
+    'on purpose — it is how a caller gets a credential. GET describes it.'
+});
+
+// The refusals a client can provoke, each a `what` and an `answer`. `key`
+// names a row for the prose catalog and is not sent. The four templates'
+// parameters are the scopes (`read`, `write`) and the two reserved values
+// (`password`, `username`); `description()` fills every member, and a
+// member with no placeholder comes back as written.
+const REACHABLE_NEGATIVES = Object.freeze([
+  { key: 'noCredential',
+    what: 'A request with no credential',
+    answer: '401, with a WWW-Authenticate header per offered scheme — RFC ' +
+      '7644 section 2 makes that header a SHALL. The discovery endpoints are ' +
+      'exempt unless scim.authDiscovery is on.' },
+  { key: 'wrongScope',
+    what: 'An access token with the wrong scope for the operation',
+    answer: '403 with WWW-Authenticate: Bearer error="insufficient_scope", ' +
+      'scope="{{write}}". Reads need "{{read}}" and writes need ' +
+      '"{{write}}"; neither implies the other.' },
+  { key: 'foreignToken',
+    what: 'An access token this service did not issue, or one that was ' +
+      'revoked',
+    answer: '401. These endpoints verify the signature, unlike the OID4VCI ' +
+      'credential endpoints, which accept a foreign token: a scope on a ' +
+      'token nobody verified is a permission its holder wrote for ' +
+      'themselves.' },
+  { key: 'refusedPassword',
+    what: 'Basic with the password "{{password}}"',
+    answer: '401 — the same reserved value every other family here ' +
+      'refuses.' },
+  { key: 'digest',
+    what: 'Digest with a wrong password, a stale nonce, or a repeated nc',
+    answer: '401 three ways: the password really is checked here, a stale ' +
+      'nonce carries stale=true (which a conforming client retries ' +
+      'silently), and a replayed nonce count does NOT — it was a valid ' +
+      'credential and has been seen before, which is a different ' +
+      'sentence.' },
+  { key: 'hoba',
+    what: 'A HOBA signature that does not verify, or a reused (kid, ' +
+      'challenge, nonce)',
+    answer: '401. The signature is really verified — RSA-SHA256 over RFC ' +
+      '7486 section 5\'s length-prefixed blob — and the challenge may be ' +
+      'REUSED until its max-age, so what is refused as a replay is the ' +
+      'triple and not the challenge.' },
+  { key: 'otherScheme',
+    what: 'A credential in a scheme this service does not offer',
+    answer: '401 naming the ones it does. An access token in the query ' +
+      'string is refused separately, by the same check /oauth2/userinfo ' +
+      'uses.' },
+  { key: 'meAlias',
+    what: 'GET /Me with no credential, or POST /Me',
+    answer: '501 — the alias is unavailable rather than the resource ' +
+      'missing. A credential naming somebody with no entry gets 404.' },
+  { key: 'refusedUsername',
+    what: 'A userName of "{{username}}"',
+    answer: '400 invalidValue — the same reserved value the password grant, ' +
+      'WS-Trust, the WS-Federation sign-in screen and every LDAP bind here ' +
+      'refuse.' },
+  { key: 'duplicate',
+    what: 'A second user with a userName somebody already has',
+    answer: '409 uniqueness.' },
+  { key: 'specialCharacter',
+    what: 'A userName or displayName carrying an RFC 4514 special character ' +
+      '(a comma, a quote, a plus, a hash, a semicolon, an equals, an angle ' +
+      'bracket or a backslash)',
+    answer: '400 invalidValue — the entry\'s DN is built from the name, so ' +
+      'a name carrying one would produce an entry the other doors cannot ' +
+      'name. It is the SAME refusal the console and the management API ' +
+      'give, from the same rule; an ldapadd can still create such an entry ' +
+      'with the escaping written out.' },
+  { key: 'dnShaped',
+    what: 'A userName that is DN-shaped or DID-shaped',
+    answer: '400 invalidValue — an entry named by a distinguished name gets ' +
+      'here by presenting a client certificate and one named by a ' +
+      'decentralized identifier by presenting that, so there is nothing to ' +
+      'create one from by hand. Also the console\'s and the management ' +
+      'API\'s answer, from the same function.' },
+  { key: 'unknownId', what: 'An id that names nothing', answer: '404.' },
+  { key: 'badFilter',
+    what: 'A filter this server cannot evaluate',
+    answer: '400 invalidFilter — refused rather than answered with an empty ' +
+      'list, because "no results" and "I could not read your filter" are ' +
+      'different answers.' },
+  { key: 'meMethod', what: 'Any method on /Me', answer: '501.' }
+].map(function (row) {
+  return Object.freeze(row);
+}));
+
+// The three sentences besides: the store, the identifier, the mapping.
+const DESCRIPTION_PROSE = Object.freeze({
+  store: 'The embedded LDAP directory in this process. There is no second ' +
+    'store and no cache: a SCIM POST and an ldapadd write the same entry, ' +
+    'and a person provisioned here appears on /admin/users, in an ' +
+    'ldapsearch, and in the attributes their access token carries.',
+  identifiersWhy: 'RFC 7643 section 3.1 asks for an opaque, ' +
+    'server-assigned, unique identifier that is never reassigned. It was ' +
+    'the entry\'s DN until 2026-09-14, and a rename reassigned it. The ' +
+    'entryUUID is assigned when the entry is created, survives a rename, ' +
+    'and is the same value a person\'s token carries in `sub` as ' +
+    'urn:uuid:<value>. A DN presented as an id still resolves, for a client ' +
+    'that stored one before the change. Member and manager values are ids ' +
+    'too, and are stored as the DNs LDAP holds.',
+  mapping: 'Which LDAP attribute each SCIM member is. The whole table, with ' +
+    'the schema document that defines each attribute, is on /admin/scim.'
+});
+
+// The routes whose answers carry the scim namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/scim', '/admin-api/scim/monitor'];
 
 /**
  * SCIM 2.0 (RFC 7642, 7643, 7644) at `/scim/v2`, on scimmy, provisioning into
@@ -409,6 +628,30 @@ class Scim {
    * The one user name SCIM refuses, `invalid`, beside the one refused password.
    */
   static readonly REFUSED_USERNAME = REFUSED_USERNAME;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's part of the scim namespace (#543 phase 2b): the
+   * sentences `description()` reads out of its tables, and its templates.
+   * Static, so that extracting the namespace builds no instance.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering Scim.prose().");
+    const harvest = serverProse.harvest;
+    const out: Record<string, string> = Object.assign({},
+      harvest('scim.doesNotDo', DOES_NOT_DO, Object.keys(DOES_NOT_DO)),
+      harvest('scim.endpoints', ENDPOINT_WHAT, Object.keys(ENDPOINT_WHAT)),
+      harvest('scim.negatives', REACHABLE_NEGATIVES, ['what', 'answer']),
+      harvest('scim.description', DESCRIPTION_PROSE,
+              Object.keys(DESCRIPTION_PROSE)));
+    helpers.log.debug("Leaving Scim.prose(). " + Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds the SCIM surface from the modules it reads.
@@ -831,6 +1074,11 @@ class Scim {
         return;
       }
 
+      // EVERYTHING AFTER THE PLACEMENT BELOW, unchanged but for being an
+      // arrow function (so `this` is still the instance) that both of the
+      // placement's outcomes reach.
+      const authenticateAndRun = (): any => {
+      log.debug("Entering authenticateAndRun().");
       // WHO IS ASKING. scim_auth.ts decides and never touches `res`; the answer
       // is turned into SCIM's own error shape here, because what a refusal
       // LOOKS like is protocol knowledge and stays in the protocol module. The
@@ -886,6 +1134,49 @@ class Scim {
                       (ex && ex.stack ? ex.stack : ex));
           }
           this.sendScimError(req, res, info, ex);
+        });
+      log.debug("Leaving authenticateAndRun().");
+      return undefined;
+      };
+
+      // WHICH CELL ANSWERS (#98), FIRST — before the gate below, because a
+      // Digest nonce count and a HOBA signature are spent where they are
+      // checked, and the cell that owns the request must be the one that
+      // spends them. A request about a person homed in another cell is sent
+      // there whole; a Group write or a BulkRequest spanning cells is
+      // refused whole. `scim_cells.ts` argues each operation; single-cell
+      // mode does not ask at all, so its gate starts in the same tick it
+      // always did.
+      if (!cells.isMulti()) {
+        authenticateAndRun();
+        log.debug("Leaving the SCIM handler (the answer is on its way).");
+        return;
+      }
+      scimCells.place(req, res, info, realms.currentId())
+        .then((placed) => {
+          if (placed.relayed) {
+            log.debug("The SCIM request was relayed to its home cell.");
+            return undefined;
+          }
+          if (placed.refusal) {
+            const r = placed.refusal;
+            // error-code: none — scim_cells.ts chose the STS-CELL code
+            this.sendScimError(req, res, info,
+                               coded(r.code, new SCIMMY.Types.Error(
+                                 r.status, r.scimType, r.detail)));
+            log.debug("The SCIM request could not be placed in one cell.");
+            return undefined;
+          }
+          return authenticateAndRun();
+        })
+        .catch((ex) => {
+          log.debug("Caught in Scim.handle(): " + ((ex && ex.message) || ex));
+          // A placement that failed is served here, which is what an unknown
+          // person always was: the owning cell, if there is one, answers for
+          // its own when it is asked (`oauth2.ts`'s back-channel placement
+          // makes the same choice). Unless an answer has already started,
+          // which is a relay that failed after it began and has answered.
+          return res.headersSent ? undefined : authenticateAndRun();
         });
       log.debug("Leaving the SCIM handler (the answer is on its way).");
     };
@@ -1359,6 +1650,19 @@ class Scim {
         description: 'The region of birth.' }),
       new Attribute('string', 'placeOfBirthLocality', {
         description: 'The locality of birth.' }),
+      // WHERE A NEW PERSON IS HOMED (#98 D1), in a service deployed as cells:
+      // the cell id, on a create only. Write-only and never returned — a
+      // cell is a routing fact nothing a client reads may name — and never
+      // stored on the entry: the entry existing in that cell IS the home.
+      // An update naming another cell is refused (re-homing is an
+      // administrator's act); a single-cell service ignores it.
+      // `scim_cells.ts` reads it.
+      new Attribute('string', 'homeCell', {
+        direction: 'in', returned: 'never', caseExact: true,
+        description: 'On a create in a service deployed as several regions: ' +
+          'the region the person is homed in, whose data stays there. The ' +
+          'realm\'s default when not sent. Never returned, and not ' +
+          'changed by a later write.' }),
       new Attribute('complex', 'federationLinks', {
         multiValued: true,
         description: 'Each a federation partner\'s identifier for the ' +
@@ -1546,6 +1850,21 @@ class Scim {
     log.debug("Leaving Scim.claimingIngress().");
     return async (resource, data, ctx) => {
       const req = (ctx || {}).req;
+      // THE PERSON'S CELL (#98), before either claim below and before
+      // anything is written: a create is homed HERE and claims its login
+      // name in the global routing index first; an update may not ask to
+      // move the person. Every User write passes, a BulkRequest's included,
+      // which is why it is here and not in the create handler.
+      // `scim_cells.ts`'s `ingressRefusal()`; nothing in single-cell mode.
+      if (type === 'User') {
+        const refused = await scimCells.ingressRefusal(data, !resource.id,
+                                                       realms.currentId());
+        if (refused) {
+          // error-code: none — scim_cells.ts chose the STS-CELL code
+          throw coded(refused.code, new SCIMMY.Types.Error(
+            refused.status, refused.scimType, refused.detail));
+        }
+      }
       if (resource.id || (req && req.__scimCreateClaimed)) {
         return handler(resource, data, ctx);
       }
@@ -1865,6 +2184,11 @@ class Scim {
             // it is passed rather than resolved because only this request
             // knows.
             actor: (req && req.scimAuth && req.scimAuth.principal) || '',
+            // THE PROVISIONING CLIENT (#539), whose locale policy gives the
+            // person a language where the resource names none. Only an
+            // OAuth caller has a client_id; any other scheme gets the
+            // realm's default profile.
+            application: (req && req.scimAuth && req.scimAuth.clientId) || '',
             note: 'provisioned over SCIM 2.0' +
                   ((req && req.scimAuth && req.scimAuth.scheme &&
                     req.scimAuth.scheme !== 'anonymous')
@@ -1893,6 +2217,19 @@ class Scim {
         const before = directory.readPerson(dn);
         const converted = scimMap.fromScimUser(data,
                                                before ? before.attributes : {});
+        // A LANGUAGE THE LOCALE POLICY GAVE THE NEW PERSON (#539) survives
+        // the merge where the resource names none: the merge replaces what
+        // SCIM maps, and an absent preferredLanguage would otherwise remove
+        // the one createUser() just wrote. Only on a create — an update that
+        // leaves it out is a client's removal, and is honoured.
+        if (!existing && before && !converted.attributes.preferredLanguage &&
+            !converted.attributes.preferredlanguage) {
+          const given = (before.attributes || {}).preferredlanguage ||
+                        (before.attributes || {}).preferredLanguage;
+          if (given && [].concat(given).length) {
+            converted.attributes.preferredLanguage = [].concat(given);
+          }
+        }
         if (converted.errors.length) {
           throw coded('STS-SCIM-0010',
             new SCIMMY.Types.Error(400, 'invalidValue',
@@ -1977,7 +2314,7 @@ class Scim {
                   (written.created ? 'created.' : 'updated.'));
         return scimMap.prune(this.userResourceFor(entry, req));
       }))
-      .degress((resource, ctx) => {
+      .degress(async (resource, ctx) => {
         log.debug("Entering the SCIM User degress handler. id=" + resource.id);
         const removed = directory.deletePerson(resource.id);
         if (!removed.ok && removed.reason === 'protected') {
@@ -2003,19 +2340,19 @@ class Scim {
               : 'There is no entry at ' + resource.id + ' under ' +
                 directory.usersDn() + '.'));
         }
-        // The dangling memberships this delete just created, logged rather than
-        // repaired: referential integrity is a directory feature and not a
-        // protocol rule, and /admin/groups exists to report exactly this. A
-        // SCIM client that means to remove somebody from their groups has to
-        // say so.
-        if ((removed.dangling || []).length) {
-          log.info('scim: ' + resource.id + ' was deleted and is still ' +
-                   'listed as a member by ' + removed.dangling.length +
-                   ' group(s). This ' +
-                   'directory does no referential integrity on purpose; ' +
-                   '/admin/groups reports them as dangling members.');
-        }
+        // The dangling memberships a delete leaves are logged by the
+        // directory for the batch, in one walk (#351): referential integrity
+        // is a directory feature and not a protocol rule, and /admin/groups
+        // exists to report exactly this. A SCIM client that means to remove
+        // somebody from their groups has to say so.
         this.auditScim('user.delete', resource.id, {}, (ctx || {}).req);
+        // INSIDE A BULK (#351), every so many deletes: the batch's gathered
+        // sign-outs are handed over and the event loop turns once, so a
+        // BulkRequest of thousands never holds this process for all of them.
+        const step = directory.personBatchStep();
+        if (step) {
+          await step;
+        }
         log.debug("Leaving the SCIM User degress handler.");
       });
 
@@ -2520,35 +2857,9 @@ class Scim {
   // protocol surface is, what it will and will not do, and where to point a
   // client — plus ?format=json so a test can read the same facts. It is NOT a
   // SCIM endpoint and says so; a real SCIM server publishes none of this.
+  // Since #584 the page is drawn in the browser (`web_scim_description.ts`)
+  // from the document below, which its shell carries.
   // ---------------------------------------------------------------------------
-  private pageShell(title: string, inner: string): string {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering Scim.pageShell().");
-    log.debug("Leaving Scim.pageShell().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-      '<meta name="viewport" content="width=device-width, initial-scale=1">' +
-      '<title>' + xmlEscape(title) +
-      '</title><style>body{font-family:system-ui,-apple-system,"Segoe UI",' +
-      'Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem;color:#222;' +
-      'line-height:1.45}.card{background:#fff;border:1px solid ' +
-      '#d5d5dd;border-radius:10px;padding:24px 28px;max-width:60rem;margin:0 ' +
-      'auto;box-shadow:0 6px 24px ' +
-      'rgba(0,0,0,.08)}h1{font-size:1.3em;margin:0 ' +
-      '0 4px;color:#12107c}h2{font-size:1em;margin:1.4em 0 ' +
-      '.4em}p.sub{color:#666;font-size:.85em;margin:0 0 ' +
-      '18px}.warn{background:#fff8e1;border:1px solid #ffe082;padding:9px ' +
-      '12px;border-radius:5px;font-size:.82em;margin:0 0 ' +
-      '16px}table{border-collapse:collapse;width:100%;margin:.5rem 0 ' +
-      '1rem;font-size:.85em}th,td{border:1px solid #ddd;padding:.35rem ' +
-      '.55rem;' +
-      'text-align:left;vertical-align:top}th{background:#f0f0f5}' +
-      'code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;' +
-      'font-size:.85em;background:#f4f4f8;padding:.1rem .25rem;' +
-      'border-radius:3px;word-break:break-all}a{color:#12107c}ul{margin:.3em ' +
-      '0;padding-left:1.2em}li{margin:.2em 0}</style></head><body><div ' +
-      'class="card">' + inner + '</div></body></html>\n';
-  }
-
   // What this surface is, as data. Shared by the page and by ?format=json so
   // the two cannot disagree — the same reason /admin/sts-metadata reads the
   // router.
@@ -2563,6 +2874,11 @@ class Scim {
     const { log, baseUrlOf, stats, directory, scimAuth, scimMap } = this.deps;
     log.debug("Entering Scim.description().");
     const base = baseUrlOf(req);
+    const fill = serverProse.fill;
+    const negativeParams = { read: scimAuth.scopeRead(),
+                             write: scimAuth.scopeWrite(),
+                             password: scimAuth.REFUSED_PASSWORD,
+                             username: REFUSED_USERNAME };
     const out = {
       enabled: this.enabled(),
       baseUrl: base + BASE,
@@ -2575,11 +2891,7 @@ class Scim {
       // offered.
       authentication: scimAuth.describe(req),
       store: {
-        what: 'The embedded LDAP directory in this process. There is no ' +
-              'second store and no cache: a SCIM POST and an ldapadd write ' +
-              'the same entry, and a person provisioned here appears on ' +
-              '/admin/users, in an ldapsearch, and in the attributes their ' +
-              'access token carries.',
+        what: DESCRIPTION_PROSE.store,
         users: directory.usersDn(),
         groups: directory.groupsDn(),
         baseDn: directory.baseDn(),
@@ -2590,188 +2902,63 @@ class Scim {
       },
       identifiers: {
         id: "the entry's entryUUID (RFC 4530)",
-        why: 'RFC 7643 section 3.1 asks for an opaque, server-assigned, ' +
-             'unique identifier that is never reassigned. It was the ' +
-             'entry\'s DN until 2026-09-14, and a rename reassigned it. The ' +
-             'entryUUID is assigned when the entry is created, survives a ' +
-             'rename, and is the same value a person\'s token carries in ' +
-             '`sub` as urn:uuid:<value>. A DN presented as an id still ' +
-             'resolves, for a client that stored one before the change. ' +
-             'Member and manager values are ids too, and are stored as the ' +
-             'DNs LDAP holds.',
+        why: DESCRIPTION_PROSE.identifiersWhy,
         example: base + BASE + '/Users/' +
                  directory.resourceIdOfDn('uid=alice,' + directory.usersDn())
       },
       endpoints: [
         { method: 'GET', path: BASE + '/ServiceProviderConfig',
-          what: 'What this server supports. Read it first.' },
+          what: ENDPOINT_WHAT.serviceProviderConfig },
         { method: 'GET', path: BASE + '/ResourceTypes',
-          what: 'User and Group.' },
+          what: ENDPOINT_WHAT.resourceTypes },
         { method: 'GET', path: BASE + '/Schemas',
-          what: 'The core User and Group schemas, and the enterprise User ' +
-                'extension.' },
+          what: ENDPOINT_WHAT.schemas },
         { method: 'GET', path: BASE + '/Users',
-          what: 'The list, with ?filter, ?sortBy, ?startIndex, ?count, ' +
-                '?attributes.' },
-        { method: 'POST', path: BASE + '/Users', what: 'Create.' },
+          what: ENDPOINT_WHAT.usersList },
+        { method: 'POST', path: BASE + '/Users',
+          what: ENDPOINT_WHAT.usersCreate },
         { method: 'POST', path: BASE + '/Users/.search',
-          what:
-            'The same query as a POST body, for a filter too long for a URL.' },
-        { method: 'GET', path: BASE + '/Users/{id}', what: 'One user.' },
-        { method: 'PUT', path: BASE + '/Users/{id}', what: 'Replace.' },
+          what: ENDPOINT_WHAT.usersSearch },
+        { method: 'GET', path: BASE + '/Users/{id}',
+          what: ENDPOINT_WHAT.userRead },
+        { method: 'PUT', path: BASE + '/Users/{id}',
+          what: ENDPOINT_WHAT.userReplace },
         { method: 'PATCH', path: BASE + '/Users/{id}',
-          what: 'Modify (section 3.5.2), path grammar and all.' },
-        { method: 'DELETE', path: BASE + '/Users/{id}', what: 'Delete.' },
+          what: ENDPOINT_WHAT.userModify },
+        { method: 'DELETE', path: BASE + '/Users/{id}',
+          what: ENDPOINT_WHAT.userDelete },
         { method: '(the same seven)', path: BASE + '/Groups',
-          what: 'Groups, whose members are resolved from member, ' +
-                'uniqueMember and memberUid alike.' },
+          what: ENDPOINT_WHAT.groups },
         { method: 'POST', path: BASE + '/.search',
-          what: 'A query across BOTH resource types at once.' },
+          what: ENDPOINT_WHAT.search },
         { method: 'POST', path: BASE + '/Bulk',
-          what: 'Up to ' + this.bulkMaxOperations() +
-                ' operations in one request.' },
+          what: fill(ENDPOINT_WHAT.bulk, { n: this.bulkMaxOperations() }) },
         { method: 'GET / PUT / PATCH / DELETE', path: BASE + '/Me',
-          what: 'The subject this request authenticated as (section 3.11), ' +
-                'delegated to the same User handlers. 501 when nothing ' +
-                'authenticated, and on POST; 404 when the credential names ' +
-                'somebody with no entry here.' },
+          what: ENDPOINT_WHAT.me },
         { method: 'POST', path: '/.well-known/hoba/register',
-          what: 'Register a HOBA public key (RFC 7486 section 7). ' +
-                'Unauthenticated on purpose — it is how a caller gets a ' +
-                'credential. GET describes it.' }
+          what: ENDPOINT_WHAT.hoba }
       ],
-      // The four sentences that matter most, in the order somebody is likely to
-      // be surprised by them.
+      // The sentences that matter most, in the order somebody is likely to
+      // be surprised by them (`DOES_NOT_DO`).
       doesNotDo: [
         // Mode-dependent since #70: this said "checks almost nothing" in
         // product mode too, where every scheme is verified.
         scimAuth.permissive()
-          ? 'IT AUTHENTICATES, AND IT CHECKS ALMOST NOTHING. A credential is ' +
-            'required' + (scimAuth.authRequired() ? '' : ' — except that it ' +
-            'is currently turned off here, so it is not') + ', and every ' +
-            'scheme behind that requirement is permissive: any caller can ' +
-            'get an access token with either scope from this service\'s own ' +
-            'token endpoint with any grant, any username with any password ' +
-            'but "invalid" passes Basic, any username passes Digest with the ' +
-            'one shared password, and anybody can register a HOBA key for ' +
-            'any name. It is a turnstile, not a lock. What it buys is that ' +
-            'a client\'s 401, 403, challenge-response and scope handling can ' +
-            'be exercised at all — none of which an open endpoint can ' +
-            'produce. ' +
-            'Do not put this port on a public address on the strength of it.'
-          : 'IT AUTHENTICATES, AND IN PRODUCT MODE IT CHECKS. A credential ' +
-            'is required' +
-            (scimAuth.authRequired() ? '' : ' — except that it is ' +
-            'currently turned off here, so it is not') + ', and each ' +
-            'scheme behind that requirement is verified: an access token ' +
-            'must come from this service\'s own token endpoint with the ' +
-            'scope, a Basic password is checked against the hashed ' +
-            'userPassword on the person\'s entry, a HOBA key must have been ' +
-            'registered by its signed-in owner, and Digest is not offered.',
-
-        'A SCOPE GRANTS AND NOTHING ELSE READS ONE. scim:read and scim:write ' +
-        'are the first scope requirement anywhere in this service, and they ' +
-        'apply at these endpoints only — no other surface here reads a ' +
-        'scope, and holding one confers nothing beyond /scim/v2. Note also ' +
-        'that only the OAuth schemes carry scopes at all: Basic, Digest, ' +
-        'HOBA, a cookie and a client certificate authenticate a caller who ' +
-        'may then do both, so a caller who cannot get a scope can simply use ' +
-        'another scheme. Each scheme has a switch of its own for exactly ' +
-        'that reason.',
-
-        'active: false DISABLES THE ACCOUNT (since 2026-09-17). It is the ' +
-        'password-policy lock pwdAccountLockedTime on the entry, and every ' +
-        'door refuses the person while it is set — a password, a session, a ' +
-        'token grant, a Kerberos AS-REQ — and everything they held is ended ' +
-        'when it is written. active: true enables them again; a resource ' +
-        'that leaves active out leaves the account as it was.',
-
-        'NO ETag AND NO changePassword, both advertised as unsupported ' +
-        'rather than half-implemented. A version built over a timestamp with ' +
-        'one-second resolution would be a concurrency control a client ' +
-        'trusts and that is wrong; and no password in this service is ' +
-        'checked, so there is none to change.',
-
-        'A MEMBER THAT NAMES NOTHING IS ACCEPTED. This directory does no ' +
-        'referential integrity on purpose — deleting a user leaves their DN ' +
-        'in every group that listed them — so refusing a dangling member ' +
-        'here would make that state impossible to reproduce. /admin/groups ' +
-        'reports them.'
+          ? (scimAuth.authRequired() ? DOES_NOT_DO.permissive
+                                     : DOES_NOT_DO.permissiveOff)
+          : (scimAuth.authRequired() ? DOES_NOT_DO.product
+                                     : DOES_NOT_DO.productOff),
+        DOES_NOT_DO.scope,
+        DOES_NOT_DO.active,
+        DOES_NOT_DO.etag,
+        DOES_NOT_DO.member
       ],
-      reachableNegatives: [
-        { what: 'A request with no credential',
-          answer: '401, with a WWW-Authenticate header per offered scheme — ' +
-                  'RFC 7644 section 2 makes that header a SHALL. The ' +
-                  'discovery endpoints are exempt unless scim.authDiscovery ' +
-                  'is on.' },
-        { what: 'An access token with the wrong scope for the operation',
-          answer: '403 with WWW-Authenticate: Bearer ' +
-                  'error="insufficient_scope", ' +
-                  'scope="' + scimAuth.scopeWrite() + '". Reads need "' +
-                  scimAuth.scopeRead() + '" and writes need "' +
-                  scimAuth.scopeWrite() + '"; neither implies the other.' },
-        { what: 'An access token this service did not issue, or one that was ' +
-                'revoked',
-          answer: '401. These endpoints verify the signature, unlike the ' +
-                  'OID4VCI credential endpoints, which accept a foreign ' +
-                  'token: a scope on a token nobody verified is a permission ' +
-                  'its holder wrote for themselves.' },
-        { what: 'Basic with the password "' + scimAuth.REFUSED_PASSWORD + '"',
-          answer:
-            '401 — the same reserved value every other family here refuses.' },
-        { what: 'Digest with a wrong password, a stale nonce, or a repeated nc',
-          answer: '401 three ways: the password really is checked here, a ' +
-                  'stale nonce carries stale=true (which a conforming client ' +
-                  'retries silently), and a replayed nonce count does NOT — ' +
-                  'it was a valid credential and has been seen before, which ' +
-                  'is a different sentence.' },
-        { what: 'A HOBA signature that does not verify, or a reused ' +
-                '(kid, challenge, nonce)',
-          answer: '401. The signature is really verified — RSA-SHA256 over ' +
-                  'RFC 7486 section 5\'s length-prefixed blob — and the ' +
-                  'challenge may be REUSED until its max-age, so what is ' +
-                  'refused as a replay is the triple and not the challenge.' },
-        { what: 'A credential in a scheme this service does not offer',
-          answer: '401 naming the ones it does. An access token in the query ' +
-                  'string is refused separately, by the same check ' +
-                  '/oauth2/userinfo uses.' },
-        { what: 'GET /Me with no credential, or POST /Me',
-          answer: '501 — the alias is unavailable rather than the resource ' +
-                  'missing. A credential naming somebody with no entry gets ' +
-                  '404.' },
-        { what: 'A userName of "' + REFUSED_USERNAME + '"',
-          answer: '400 invalidValue — the same reserved value the password ' +
-                  'grant, WS-Trust, the WS-Federation sign-in screen and ' +
-                  'every LDAP bind here refuse.' },
-        { what: 'A second user with a userName somebody already has',
-          answer: '409 uniqueness.' },
-        { what: 'A userName or displayName carrying an RFC 4514 special ' +
-                'character (a comma, a quote, a plus, a hash, a semicolon, ' +
-                'an equals, an angle bracket or a backslash)',
-          answer: '400 invalidValue — the entry\'s DN is built from the ' +
-                  'name, so a name carrying one would produce an entry the ' +
-                  'other doors cannot name. It is the SAME refusal the ' +
-                  'console and the management API give, from the same rule; ' +
-                  'an ldapadd can still create such an entry with the ' +
-                  'escaping written out.' },
-        { what: 'A userName that is DN-shaped or DID-shaped',
-          answer: '400 invalidValue — an entry named by a distinguished name ' +
-                  'gets here by presenting a client certificate and one ' +
-                  'named by a decentralized identifier by presenting that, ' +
-                  'so there is nothing to create one from by hand. Also the ' +
-                  'console\'s and the management API\'s answer, from the ' +
-                  'same function.' },
-        { what: 'An id that names nothing', answer: '404.' },
-        { what: 'A filter this server cannot evaluate',
-          answer: '400 invalidFilter — refused rather than answered with an ' +
-                  'empty list, because "no results" and "I could not read ' +
-                  'your filter" are different answers.' },
-        { what: 'Any method on /Me', answer: '501.' }
-      ],
+      reachableNegatives: REACHABLE_NEGATIVES.map((row) => {
+        return { what: fill(row.what, negativeParams),
+                 answer: fill(row.answer, negativeParams) };
+      }),
       mapping: Object.assign({
-        what: 'Which LDAP attribute each SCIM member is. The whole table, ' +
-              'with the schema document that defines each attribute, is on ' +
-              '/admin/scim.'
+        what: DESCRIPTION_PROSE.mapping
       // ONE PROJECTION, IN scim_map.ts, SINCE 2026-09-06. This endpoint and
       // /admin-api/scim each had one of their own and they had already drifted
       // — the same table, published by one service at two endpoints, describing
@@ -2779,8 +2966,9 @@ class Scim {
       // length.
       }, scimMap.describeMapping()),
       counters: stats.scimSnapshot(),
-      console: base + '/admin/scim',
-      managementApi: base + '/admin-api/scim'
+      console: helpers.rebaseTo(base, 'admin-console') + '/admin/scim',
+      managementApi: helpers.rebaseTo(base, 'management-api') +
+                     '/admin-api/scim'
     };
     log.debug("Leaving Scim.description(). " + out.endpoints.length +
               " endpoint(s) described.");
@@ -3030,27 +3218,17 @@ class Scim {
                   directory.usersDn() + ', ' +
                   'as "<kid> <base64 DER>". An ldapsearch and /admin/users ' +
                   'show it.',
-        console: baseUrlOf(req) + '/admin/scim',
+        console: baseUrlOf(req, 'admin-console') + '/admin/scim',
         surface: baseUrlOf(req) + '/scim'
       }, null, 2));
       log.debug("Leaving GET " + HOBA_REGISTER_PATH + ".");
     });
 
-    app.post(HOBA_REGISTER_PATH, (req, res) => {
-      log.debug("Entering POST " + HOBA_REGISTER_PATH + ".");
-      if (!this.enabled()) {
-        errorCodes.mark(res, 'STS-SCIM-0001');
-        res.status(501).type('application/json')
-           .set('Cache-Control', 'no-store')
-           .send(JSON.stringify({ error: 'SCIM is turned off on this service ' +
-                                         '(scim.enabled), and HOBA ' +
-                                         'registration is part of its ' +
-                                         'authentication surface. The route ' +
-                                         'is registered, which is why this ' +
-                                         'is a 501 and not a 404.' }, null, 2));
-        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". SCIM is off.");
-        return;
-      }
+    // THE REGISTRATION ITSELF, once it is known to be answered here — split
+    // out of the route (#98) so the cell placement can come first and both of
+    // its outcomes reach it.
+    const answerHobaRegistration = (req: any, res: any): void => {
+      log.debug("Entering answerHobaRegistration().");
       const result = scimAuth.registerHobaKey(req);
       Object.keys(result.headers || {}).forEach((name) => {
         res.set(name, result.headers[name]);
@@ -3061,8 +3239,7 @@ class Scim {
            .type('application/json')
            .set('Cache-Control', 'no-store')
            .send(JSON.stringify({ error: result.detail }, null, 2));
-        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". " + result.status +
-                  ".");
+        log.debug("Leaving answerHobaRegistration(). " + result.status + ".");
         return;
       }
       // The directory row, in the directory's own vocabulary — a registration
@@ -3081,8 +3258,50 @@ class Scim {
          .type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(result.body, null, 2));
-      log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". Registered " +
+      log.debug("Leaving answerHobaRegistration(). Registered " +
                 result.body.kid + ".");
+    };
+
+    app.post(HOBA_REGISTER_PATH, (req, res) => {
+      log.debug("Entering POST " + HOBA_REGISTER_PATH + ".");
+      if (!this.enabled()) {
+        errorCodes.mark(res, 'STS-SCIM-0001');
+        res.status(501).type('application/json')
+           .set('Cache-Control', 'no-store')
+           .send(JSON.stringify({ error: 'SCIM is turned off on this service ' +
+                                         '(scim.enabled), and HOBA ' +
+                                         'registration is part of its ' +
+                                         'authentication surface. The route ' +
+                                         'is registered, which is why this ' +
+                                         'is a 501 and not a 404.' }, null, 2));
+        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". SCIM is off.");
+        return;
+      }
+      if (cells.isMulti() && !req.stsCellRelay) {
+        // THE PERSON'S CELL (#98), before anything is read or written: a
+        // key goes on the entry where it is homed, and a new name is made
+        // where a new person is homed. The body is form-encoded text here.
+        const raw = typeof req.body === 'string' ? req.body : '';
+        const username = String(new URLSearchParams(raw).get('username') ||
+                                '').trim();
+        scimCells.placeHobaRegistration(req, res, realms.currentId(),
+                                        username)
+          .then((relayed) => {
+            if (!relayed) {
+              answerHobaRegistration(req, res);
+            }
+          }, (e) => {
+            log.debug("Caught in POST " + HOBA_REGISTER_PATH + ": " +
+                      ((e && e.message) || e));
+            if (!res.headersSent) {
+              answerHobaRegistration(req, res);
+            }
+          });
+        log.debug("Leaving POST " + HOBA_REGISTER_PATH + ". Placing it.");
+        return;
+      }
+      answerHobaRegistration(req, res);
+      log.debug("Leaving POST " + HOBA_REGISTER_PATH + ".");
     });
 
     // --- Users (sections 3.3 to 3.6) -----------------------------------------
@@ -3196,9 +3415,16 @@ class Scim {
                                         'published as ' +
             'bulk.maxPayloadSize in the ServiceProviderConfig).'));
         }
-        const result = await new SCIMMY.Messages.BulkRequest(
-          body, this.bulkMaxOperations())
-          .apply([SCIMMY.Resources.User, SCIMMY.Resources.Group], { req: req });
+        // ONE BATCH OF PERSON DELETES (#351): each operation is still applied
+        // in order and answered with its own status, as section 3.7 requires,
+        // and a delete's entry goes at once; what each deleted person held is
+        // read and ended for the batch together, not one person at a time.
+        const bulk = new SCIMMY.Messages.BulkRequest(body,
+                                                     this.bulkMaxOperations());
+        const result = await directory.inPersonBatch(() => {
+          return bulk.apply([SCIMMY.Resources.User, SCIMMY.Resources.Group],
+                            { req: req });
+        }, { door: 'a SCIM Bulk' });
         // 200 rather than a status derived from the operations inside: RFC 7644
         // section 3.7 puts each operation's own status in its own `status`
         // member, and a bulk that was accepted and processed succeeded whatever
@@ -3237,131 +3463,32 @@ class Scim {
     app.patch(BASE + '/*', unknown);
     app.delete(BASE + '/*', unknown);
 
+    // THE DESCRIPTION PAGE (#584): not a SCIM endpoint, as it says, and so
+    // a static surface's shell since #584 (`common/description_pages.ts`).
+    // `/scim/v2/*` is SCIM's and is unchanged.
     app.get('/scim', (req, res) => {
       log.debug("Entering GET /scim.");
       const info = this.description(req);
-      if (String(req.query.format || '').toLowerCase() === 'json') {
+      if (DescriptionPages.asksForJson(req,
+            String(req.query.format || '').toLowerCase() === 'json')) {
         res.status(200).set('Cache-Control', 'no-store').json(info);
         log.debug("Leaving GET /scim. JSON.");
         return;
       }
-      const endpoints = info.endpoints.map((row) => {
-        return '<tr><td><code>' + xmlEscape(row.method) +
-          '</code></td><td><code>' +
-          xmlEscape(row.path) + '</code></td><td>' + xmlEscape(row.what) +
-          '</td></tr>';
-      }).join('');
-      const negatives = info.reachableNegatives.map((row) => {
-        return '<tr><td>' + xmlEscape(row.what) + '</td><td>' +
-          xmlEscape(row.answer) +
-          '</td></tr>';
-      }).join('');
-      const auth = info.authentication;
-      const schemeRows = auth.schemes.map((row) => {
-        return '<tr><td>' + xmlEscape(row.name) +
-          (row.primary ? ' <em>(primary)</em>' : '') + '</td>' +
-          '<td><code>' + xmlEscape(row.type) + '</code>' +
-          (row.canonical ? '' : ' <em>(no canonical value in RFC 7643)</em>') +
-          '</td><td>' + (row.enabled ? 'offered' : 'off') +
-          ' <span class="sub">(<code>' + xmlEscape(row.setting) +
-          '</code>)</span></td><td>' + (row.scoped ? 'scopes' : 'everything') +
-          '</td><td>' + xmlEscape(row.spec) + '</td></tr><tr><td ' +
-          'colspan="5" class="sub">' + xmlEscape(row.description) +
-          '</td></tr>';
-      }).join('');
-      const policyRows = auth.policy.map((text) => {
-        return '<li>' + xmlEscape(text) + '</li>';
-      }).join('');
-      const mapping = info.mapping.user.map((row) => {
-        return '<tr><td><code>' + xmlEscape(row.scim) +
-          '</code></td><td><code>' +
-          xmlEscape(row.ldap) + '</code></td><td>' + xmlEscape(row.kind) +
-          (row.readOnly ? ', read-only' : '') + '</td></tr>';
-      }).join('');
-      const inner = '<h1>SCIM 2.0 — provisioning into the directory</h1>' +
-        '<p class="sub">RFC 7642, 7643 and 7644, at <code>' +
-        xmlEscape(info.baseUrl) +
-        '</code>. ' + (info.enabled ? '' : '<strong>Turned off</strong> ' +
-          '(<code>scim.enabled</code>) — every endpoint answers 501. ') +
-        'This page is not a SCIM endpoint; a real server publishes none of ' +
-        'it.</p><div class="warn"><strong>These endpoints require a ' +
-        'credential' +
-        (auth.required ? '' : ' — except that it is currently ' +
-          'turned off here, so right now they do not') +
-        ', and almost nothing is checked about it.</strong> They create and ' +
-        'DELETE accounts, which is why this is the one surface in this ' +
-        'service that asks at all. The schemes below are permissive, bar ' +
-        'one: an access token carries a SCIM scope only when <a ' +
-        'href="/oauth2/token">the token endpoint</a> issued it to a client ' +
-        'whose <code>oauthAllowedScope</code> declares it, and only while ' +
-        'the client still does. Beside that, any ' +
-        'username with any password but <code>invalid</code> passes Basic, ' +
-        'any username passes Digest with one shared password, and anybody ' +
-        'can register a HOBA key for any name. A turnstile, not a lock — ' +
-        'what it buys is that a client\'s 401, 403 and challenge-response ' +
-        'paths can be run at all. <strong>And <code>active: false</code> ' +
-        'disables the account</strong> — it writes the password-policy lock ' +
-        '<code>pwdAccountLockedTime</code>, every door then refuses the ' +
-        'person, and everything they held is ended, exactly as the Disable ' +
-        'button on their <code>/admin/users</code> page does.</div><h2>What ' +
-        'it provisions ' +
-        'into</h2><p>' + xmlEscape(info.store.what) + '</p>' +
-        '<ul><li>People: <code>' + xmlEscape(info.store.users) + '</code> — ' +
-        info.store.userCount + ' entry/entries</li>' +
-        '<li>Groups: <code>' + xmlEscape(info.store.groups) + '</code> — ' +
-        info.store.groupCount + ' group(s), by placement or by ' +
-                                'objectClass</li>' +
-        '<li>The whole directory holds ' + info.store.entryCount +
-        ' of a maximum ' +
-        info.store.maxEntries + ' entries</li></ul>' +
-        '<h2>The <code>id</code> is the DN</h2>' +
-        '<p>' + xmlEscape(info.identifiers.why) + '</p>' +
-        '<p>For example: <code>' + xmlEscape(info.identifiers.example) +
-        '</code></p><h2>Authentication</h2><p>RFC 7644 section 2 defines no ' +
-        'credential of its own — it delegates to TLS and to RFC 7235 and ' +
-        'NAMES six schemes. All six are here. Its one <em>SHALL</em> is that ' +
-        'a provider indicate its schemes in <code>WWW-Authenticate</code>, ' +
-        'which every 401 from these endpoints does; its one <em>MUST</em> is ' +
-        'that a provider be able to map an authenticated client to an access ' +
-        'control policy, which is the list under the table. The realm is ' +
-        '<code>' + xmlEscape(auth.realm) + '</code>. Discovery ' +
-        '(<code>/ServiceProviderConfig</code>, <code>/ResourceTypes</code>, ' +
-        '<code>/Schemas</code>) is ' +
-        (auth.discoveryOpen ? 'OPEN — a client ' +
-          'has to be able to read which schemes exist before it can use one' :
-          'closed too (<code>scim.authDiscovery</code>)') + '.</p>' +
-        '<table><tr><th>Scheme</th><th>type</th><th>State</th><th>May do</th>' +
-        '<th>Defined by</th></tr>' + schemeRows + '</table>' +
-        '<p>The two OAuth scopes are <code>' + xmlEscape(auth.scopes.read) +
-        '</code> and <code>' + xmlEscape(auth.scopes.write) + '</code>, ' +
-        'published in <code>scopes_supported</code> in both discovery ' +
-        'documents. Digest ' +
-        'offers ' + xmlEscape(auth.digestAlgorithms.join(', ')) +
-        '. HOBA keys are registered at ' +
-        '<code>' + xmlEscape(auth.hobaRegistration) + '</code>.</p>' +
-        '<h3>The access control policy</h3><ul>' + policyRows + '</ul>' +
-
-        '<h2>Endpoints</h2>' +
-        '<table><tr><th>Method</th><th>Path</th><th>What</th></tr>' +
-        endpoints +
-        '</table><h2>What ' +
-        'it deliberately does not do</h2><ul>' +
-        info.doesNotDo.map((text) => {
-          return '<li>' + xmlEscape(text) + '</li>';
-        }).join('') + '</ul>' +
-        '<h2>Things you can make fail</h2>' +
-        '<table><tr><th>Do this</th><th>Get this</th></tr>' + negatives +
-        '</table><h2>The User ' +
-        'mapping</h2><table><tr><th>SCIM</th><th>LDAP</th><th>How</th></tr>' +
-        mapping + '</table><p ' +
-        'class="sub"><a href="/scim?format=json">This page as JSON</a> ' +
-        '&middot; <a href="' + xmlEscape(BASE) +
-        '/ServiceProviderConfig">ServiceProviderConfig</a> ' +
-        '&middot; <a href="/admin/scim">the console page</a> &middot; <a ' +
-        'href="/admin/ldap/service">the directory this writes into</a></p>';
-      res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.pageShell('SCIM 2.0', inner));
-      log.debug("Leaving GET /scim. HTML.");
+      // Beside the document, the two facts the page drew that it does not
+      // hold: whether this realm VERIFIES a credential (per mode, #543
+      // round 2), and the SCIM base path.
+      DescriptionPages.send(req, res, { base: '/scim', title: 'SCIM 2.0',
+        view: { kind: 'scim', document: info,
+                verifiesCredentials: mode.verifiesCredentials(),
+                base: BASE } });
+      log.debug("Leaving GET /scim. The shell.");
+    });
+    // Its script (#584), on this application's own path (#472).
+    app.get(DescriptionPages.scriptPath('/scim'), (req, res) => {
+      log.debug("Entering GET /scim/description.js.");
+      DescriptionPages.script(req, res);
+      log.debug("Leaving GET /scim/description.js.");
     });
     log.debug("Leaving Scim.registerRoutes().");
   }
@@ -3498,6 +3625,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   BASE: Scim.BASE,
   REFUSED_USERNAME: Scim.REFUSED_USERNAME,
+  PROSE_ROUTES: Scim.PROSE_ROUTES,
+  prose: Scim.prose,
   enabled: slot.forward('enabled'),
   description: slot.forward('description')
 };

@@ -1,0 +1,6 @@
+{
+  "endpoints.route./admin-api/mail/:action.name": {
+    "en": "cff7055c2db49c6a",
+    "text": "Actions de courriel"
+  }
+}

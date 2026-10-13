@@ -11,10 +11,12 @@ It accepts requests in the
 and it reads and writes policies as XACML XML and as
 [ALFA](https://docs.oasis-open.org/xacml/alfa-for-xacml/v1.0/alfa-for-xacml-v1.0.html).
 Around the PDP it has a policy repository (the PAP), a Policy Information
-Point backed by the embedded directory, a guided policy editor, and three
-**embedded** enforcement points. Two of those embedded PEPs decide this
-service's own token issuance and its own access control. It also supplies
-policy to **remote** PEPs that run in other processes. Every trust realm has
+Point backed by the embedded directory, a guided policy editor, and
+**embedded** enforcement points that decide this service's own token
+issuance, its own access control and its reactions to risk and signals. It
+also supplies policy to **remote** PEPs that run in other processes; the
+[remote PEP](remote-pep.md) container is the one to point a client at to
+watch a decision enforced. Every trust realm has
 its own repository, its own register of remote PEPs and its own counters.
 
 Every other protocol family here authenticates or provisions someone. This one
@@ -51,7 +53,10 @@ licensed, unlike this repository.
 | `GET /xacml` | describes the surface, including which role each endpoint requires. `?format=json` returns the same as data |
 | `POST /xacml/pdp` | a decision: a JSON Profile request in, a JSON Profile response out |
 | `GET /xacml/policies` | the repository as the PDP sees it, with the policy documents |
-| `GET /xacml/protected` | the demonstration PEP: 200 or 403 for the `?subject=` you name |
+
+A demonstration resource that a PEP guards — 200 or 403 for the `?subject=`
+you name — is the [remote PEP](remote-pep.md)'s `GET /protected` (it was
+`GET /xacml/protected` on this service until #596).
 
 In a trust realm every path is under `/realm/{id}`. A malformed request gets a
 400, never an Indeterminate. `xacml.returnPolicyIdList` returns the list of
@@ -162,7 +167,7 @@ cached, so each decision makes a fresh query.
 
 ### The embedded PEPs: this service's own issuance and access
 
-Five PEPs are built into the process:
+Four PEPs are built into the process:
 
 | PEP | Decides | Policy |
 |---|---|---|
@@ -170,7 +175,6 @@ Five PEPs are built into the process:
 | **access** | who may reach the admin console, the management API, the User Portal, SCIM, the SPIRE Server API, the embedded debugger and the `/xacml` surface | `xacml.accessPolicy` (`access-control`) |
 | **risk response** | what happens when a person's risk level changes: a CAEP announcement, ending everything they hold, a RISC credential-compromise, disabling the account — one question per reaction, a Permit meaning do it ([Risk scoring](risk-scoring.md#when-a-persons-risk-changes)) | `xacml.riskResponsePolicy` (`risk-response`) |
 | **signal response** | what this service's own console and portal do with a verified CAEP or RISC event they receive: whether it ends their own sessions for the person it names ([Signals received](signals-received.md#what-the-console-and-the-portal-do-with-a-signal)) | `xacml.signalResponsePolicy` (`signal-response`) |
-| **demonstration** | `GET /xacml/protected` | the repository root |
 
 **The issuance policy also decides which OAuth scopes are issued** (#304,
 #305). For each requested scope, the issuance PEP asks one more question: the
@@ -189,6 +193,52 @@ built-in policy decides. RFC 9396 authorization details are asked about in the
 same way (action `issue-authorization-detail`) for the client's registered
 types and the types the server publishes.
 
+**The issuance policy also decides each GNAP access right** (#432). For every
+right a GNAP grant asks for, the grant engine asks one question: the action is
+`issue-gnap-right` and the resource is the right's type (or its reference
+string). The facts are under `urn:sts:xacml:gnap:` — the right's `kind`, its
+`right-action`, `right-location`, `right-datatype`, `right-identifier` and
+`right-privilege`; whether the access-type catalogue declares its type
+(`catalogued`) and what it declares (`type-owner`, `type-bearer`,
+`type-max-lifetime`, `type-acr`, `type-interaction`, `type-consent-action`,
+`type-derivable-from`, `type-introspection-claim`); the token (`token-label`,
+`token-bearer`, `token-format`, `token-target`); the client
+(`client-class`, `client-has-allowed-access`, `client-bearer-refused`,
+`right-listed`, `reference-registered`, `protected`, `protected-declared`);
+and who approved it and how (`approver`, `approval`), the session
+(`session-acr`, `session-amr`), its risk (`risk-level`, `risk-signal`) and
+registered device (`device-*`). The stage is `request` or `issue`. The
+answer's obligation `urn:sts:xacml:obligation:gnap-right` carries
+`urn:sts:xacml:gnap-right-verdict` (`keep`, `narrow` or `refuse`),
+`urn:sts:xacml:gnap-right-code`, any number of
+`urn:sts:xacml:gnap-right-drop-action`, `-drop-location`, `-drop-datatype`
+and `-drop-privilege` values, and `urn:sts:xacml:gnap-right-max-lifetime`.
+Several obligations in one answer are merged: refuse over narrow over keep,
+the drops together, the shortest lifetime. The built-in `role-issuance`
+policy holds the rules (`decideGnapRights`); a document without them leaves
+the question to the built-in policy, and a verdict this service does not
+know refuses the right. [GNAP](gnap.md#each-right-is-a-question-to-the-issuance-policy)
+describes what each rule does.
+
+**Where the service is deployed as cells, the issuance policy also decides
+where a person's data may go** (#98). A cell asks three questions: may a
+visitor's session be held here (`hold-session`), may a request about them be
+served here at all, even by relaying it to their home cell
+(`serve-request`), and may another cell's residents be released to a reader
+here (`release-attributes`). The request carries the person's home
+jurisdiction, the cell's jurisdiction, the client's country when it is known,
+whether the realm lists the transfer in `cells.permittedTransfers`, and
+`cells.hardGeofence`. The answer's obligation
+`urn:sts:xacml:obligation:transfer` says `hold` or `relay`, `serve` or
+`refuse`, `release` or `withhold`. The built-in rule is strict: a session is
+held, and residents released, only within one jurisdiction or where the realm
+lists the transfer; anything else is relayed to the home cell, and refused
+only under a hard geofence. A realm can loosen this in its own issuance
+policy, for example with a rule that lets `us` subjects hold sessions in
+`eu`. **Each loosening is a decision that personal data may be processed in
+another jurisdiction; make it only where the law of both allows it.** A
+document without the transfer rules leaves them to the built-in policy.
+
 The issuance PEP builds a request in which the subject is the party being
 authenticated (in a `client_credentials` grant, that is the client). The
 request carries the roles the subject holds and any roles found in a token it
@@ -206,6 +256,29 @@ that application, the role counts under its short name (`reader`): the
 application's `appRequiredRole` can name it, and tokens and assertions for that
 application carry it in the roles claim. Tokens for any other application never
 carry it. Realm-wide roles work as before and appear everywhere.
+
+**The roles an application requires are set on its own page** (#458): the
+*Roles* tab of `/admin/applications?application=<id>`, in the section *Roles a
+person must hold to use it*. Each required role is listed with what it
+resolves to — a built-in role, a realm-wide role, one of the application's own
+roles, or nothing (a requirement nobody can meet, so everybody is refused) —
+with a **Remove** button, and a **Require** control adds one from the roles
+that could meet it. Empty means everybody. The user portal's *Applications*
+page lists the application only to people who hold one of the roles. Through
+the management API the same list is `POST /admin-api/applications/add` and
+`remove` with `attribute: appRequiredRole`, and `GET
+/admin-api/applications?application=<id>` returns it, resolved, as
+`applicationRoles.required`.
+
+**An application can hold a role as itself** (#93): add it as a member, on
+`/admin/roles` or in the *Application permissions* section of its own page on
+`/admin/applications` (`POST /admin-api/roles/add-member` with
+`kind: application`). Its `client_credentials` access tokens then carry the
+role in the roles claim: a realm-wide role in every token, another
+application's role only in a token for that application, under its short
+name. Such a token has no `username`; its `sub` names the application. A role
+can be limited to people or to applications (`memberTypes`), and it can have a
+display name. Its stable id is the entry's `entryUUID`.
 
 **The request also carries the RISK of the authentication** the issuance
 rests on, as four environment attributes (`urn:sts:xacml:risk-level`,
@@ -236,8 +309,8 @@ application:
   for that restriction, and silently allowing it would be the worst failure
   this feature could have.
 
-A Deny, NotApplicable or Indeterminate always refuses an issuance.
-`xacml.pepBias` does not apply to the issuance PEP.
+A Deny, NotApplicable or Indeterminate always refuses an issuance: the
+issuance PEP is deny-biased, and nothing makes it otherwise.
 
 ### The gated surfaces: two roles, two groups
 
@@ -251,7 +324,7 @@ caller is admitted through a chain of four checks:
 
 | Endpoints | Role | Group |
 |---|---|---|
-| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | `XACML_USER` | `roles.xacmlUserGroup` (`xacml-users`) |
+| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | `XACML_USER` | `roles.xacmlUserGroup` (`xacml-users`) |
 | `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `POST /xacml/pep/heartbeat`, `POST /xacml/pip` | `REMOTE_PEPS` | `roles.remotePepGroup` (`remote-peps`) |
 
 **The certificate says who the caller is, and the group says whether they get
@@ -259,7 +332,7 @@ in.** A valid certificate for an entry outside the group is refused, and the
 refusal says the certificate itself was fine. There are **two** groups because
 the second set of endpoints hands out the documents this service enforces its
 own access with, and a named person's directory attributes. Admitting a caller
-to the demonstration endpoints must not admit it to those. `POST /xacml/pip`
+to the XACML endpoints proper must not admit it to those. `POST /xacml/pip`
 is outside `/xacml/pep/`, but it takes the narrower role because what it
 returns is personal data. A person is given a role by being added to the
 group, and that takes effect on their next request.
@@ -329,7 +402,6 @@ modes. See [What is not checked](what-is-not-checked.md).
 | `xacml.issuancePolicy` | `STS_XACML_ISSUANCE_POLICY` | `role-issuance` | yes | The policy the issuance PEP evaluates. A repository entry with this name overrides the built-in one. |
 | `xacml.riskResponsePolicy` | `STS_XACML_RISK_RESPONSE_POLICY` | `risk-response` | yes | The policy asked what happens when a person's risk level changes. A repository entry with this name overrides the built-in one. |
 | `xacml.maxPolicies` | `STS_XACML_MAX_POLICIES` | `200` | yes | How many entries `ou=policies` may hold. A create past the limit is refused, and nothing is evicted. |
-| `xacml.pepBias` | `STS_XACML_PEP_BIAS` | `deny-biased` | yes | The demonstration PEP's bias (section 7.2): `deny-biased` or `permit-biased`. |
 | `xacml.returnPolicyIdList` | `STS_XACML_RETURN_POLICY_ID_LIST` | `false` | yes | Returns the list of policies that applied, even when the request did not ask for it. |
 | `xacml.remotePeps` | `STS_XACML_REMOTE_PEPS` | `true` | yes | Whether `/xacml/pep/*` and `POST /xacml/pip` answer. When off they answer 501. |
 | `xacml.pepRequireCertificate` | `STS_XACML_PEP_REQUIRE_CERTIFICATE` | `true` | yes | Whether a PEP registration needs a client certificate. When off, a registration without one is marked unauthenticated. |
@@ -444,15 +516,17 @@ enforcing, and each disabled row says so.
 ### `/admin/xacml/decide` — Try a decision
 
 Ask the PDP about a subject. You see the decision, which policies applied,
-what the PIP found on the subject's directory entry, and, separately, what
-the embedded PEP would do with that decision. When a policy seems not to work,
-it is nearly always because only one of those two answers was being looked
-at. What the embedded PEP *would* do here is not counted as an enforcement.
+what the PIP found on the subject's directory entry, and, separately, what a
+deny-biased PEP would do with that decision (the API answer,
+`GET /admin-api/xacml/decide`, carries the permit-biased outcome beside it).
+When a policy seems not to work, it is nearly always because only one of those
+two answers was being looked at. What a PEP *would* do here is not counted as
+an enforcement.
 
 ### Elsewhere
 
 * **Monitoring → XACML decisions** (`/admin/xacml/monitor`) shows decisions
-  and enforcements per PEP: the three embedded PEPs, every remote PEP, and
+  and enforcements per PEP: the issuance and access PEPs, every remote PEP, and
   `POST /xacml/pdp`. Totals are given for this service, for the remote PEPs
   and combined. The counters start with the process and have no reset. The
   lasting record of a refusal is the audit log (`/admin/audit`), under

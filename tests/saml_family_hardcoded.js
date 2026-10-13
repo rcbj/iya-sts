@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -18,7 +18,8 @@
 //      called a certificate, a Kerberos ticket, a federated sign-in and the
 //      unauthenticated session a PASSWORD, in every mode;
 //   B. where a response may be delivered — any address in development, only a
-//      registered one in product, and never a built-in mock;
+//      registered one in product, and with neither a refusal in both (the
+//      built-in mocks were deleted, #592);
 //   C. the configured signature algorithm reaching a signature that verifies;
 //   D. the two builders' defaults and the SAML 1.1 AttributeQuery shape;
 //   E. WS-Trust: no credential, an unverified assertion, a delegation with no
@@ -52,6 +53,15 @@ const log = require('bunyan').createLogger({ name: 'saml_family_hardcoded',
   level: process.env.LOG_LEVEL || 'info' });
 
 // --- plumbing ----------------------------------------------------------------
+
+// THE IdP'S OWN NAME (#519): a token presented as the requester's
+// credential is addressed to its holder or to this IdP, and the realm's
+// WS-Trust issuer name is one of the names it answers to.
+function idpAudience() {
+  log.debug("Entering idpAudience().");
+  log.debug("Leaving idpAudience().");
+  return require('../common/issuer_names').issuer();
+}
 
 function fakeReq(method, path, query, body, cookie) {
   log.debug("Entering fakeReq().");
@@ -167,8 +177,17 @@ function rst(inner, security) {
     'xmlns:wst="http://docs.oasis-open.org/ws-sx/ws-trust/200512">' +
     '<wst:RequestType>' +
     'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType>' +
+    // #496: a REGISTERED AppliesTo (registered in run()), because product
+    // refuses an RST naming none, or one nobody registered, before anything
+    // these checks are about is read.
+    '<wsp:AppliesTo xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/' +
+    'policy"><wsa:EndpointReference xmlns:wsa="http://www.w3.org/2005/08/' +
+    'addressing"><wsa:Address>' + SFH_APPLIES_TO + '</wsa:Address>' +
+    '</wsa:EndpointReference></wsp:AppliesTo>' +
     inner + '</wst:RequestSecurityToken></s:Body></s:Envelope>';
 }
+
+const SFH_APPLIES_TO = 'https://sfh-rp-' + process.pid + '.example';
 
 function run(t) {
   log.debug("Entering run().");
@@ -257,7 +276,6 @@ function run(t) {
     log.debug("Entering spec().");
     log.debug("Leaving spec().");
     return { requested: requested, registered: registered,
-             fallback: 'https://idp.test/saml2/sp',
              attribute: 'samlAssertionConsumerService',
              parameter: 'AssertionConsumerServiceURL',
              application: 'sp-1' };
@@ -270,9 +288,12 @@ function run(t) {
             'https://a/2',
             'development: with none named, the LAST registered value, as ' +
             'both SAML modules took');
-    t.equal(returnAddress.resolve(spec('', [])).url,
-            'https://idp.test/saml2/sp',
-            'development: with nothing at all, the built-in mock');
+    const nowhere = returnAddress.resolve(spec('', []));
+    t.check(nowhere.ok === false &&
+            /samlAssertionConsumerService/.test(String(nowhere.why)),
+            'development: with nothing at all, a refusal naming the ' +
+            'attribute — there is no built-in mock (#592)',
+            String(nowhere.why));
   });
   withMode(config, 'product', function () {
     const refused = returnAddress.resolve(spec('https://evil.test/acs',
@@ -292,8 +313,7 @@ function run(t) {
             'https://sp.test/acs',
             'with none named, the registered one');
     t.equal(returnAddress.resolve(spec('', [])).ok, false,
-            'PRODUCT: with nothing registered there is NO fallback to the ' +
-            'built-in mock');
+            'PRODUCT: with nothing registered it is refused');
   });
 
   // -------------------------------------------------------------------------
@@ -335,7 +355,7 @@ function run(t) {
   }
   t.check(/<md:OrganizationName xml:lang="en">sts</.test(
             documentSettings.organizationElement('https://idp.test')),
-          'and the default is the product name, sts (mock-sts until ' +
+          'and the default is the product name, sts (iya-sts until ' +
           '2026-09-12)');
 
   // -------------------------------------------------------------------------
@@ -368,6 +388,14 @@ function run(t) {
   // -------------------------------------------------------------------------
   t.log.info('E. WS-Trust');
   // -------------------------------------------------------------------------
+  // The registry needs the directory; a full `npm test` has loaded it by
+  // now, and a run of this file alone has not.
+  require('../ldap/ldap_server');
+  const sfhApp = require('../common/applications').createApplication({
+    identifier: 'sfh-rp-' + process.pid, protocols: ['wstrust'],
+    fields: { wstrustAppliesTo: [SFH_APPLIES_TO] } });
+  t.check(sfhApp && sfhApp.ok, 'precondition: the AppliesTo is registered ' +
+          '(#496)', JSON.stringify(sfhApp));
   const devAnon = withMode(config, 'development', function () {
     return wstrust.handleRst(rst(''), 'application/soap+xml');
   });
@@ -385,7 +413,7 @@ function run(t) {
           'present',
           prodAnon.body.slice(0, 300));
 
-  const issued = saml2.buildSamlAssertion('carol', 'https://rp.test', 5);
+  const issued = saml2.buildSamlAssertion('carol', idpAudience(), 5);
   const prodAssertion = withMode(config, 'product', function () {
     return wstrust.handleRst(rst('', issued), 'application/soap+xml');
   });
@@ -660,6 +688,13 @@ function run(t) {
   // (`saml2.requireSignedAuthnRequests` is on there by default), and what this
   // check is about is the address rule. `tests/saml_request_signatures.js`
   // holds the signature rule.
+  // #496: a REGISTERED service provider — product refuses an Issuer
+  // nobody registered before the address is read.
+  const prodSp = require('../common/applications').createApplication({
+    identifier: 'https://prod-sp-' + stamp + '.test', protocols: ['saml2'],
+    fields: {} });
+  t.check(prodSp && prodSp.ok, 'precondition: the service provider is ' +
+          'registered', JSON.stringify(prodSp));
   const prodSso = withMode(config, 'product', function () {
     config.setOverride('saml2.requireSignedAuthnRequests', 'off');
     try {
@@ -688,6 +723,12 @@ function run(t) {
     return callWsfed('urn:dev:rp:' + stamp);
   }).statusCode, 303, 'development: an unregistered wreply goes on to the ' +
                       'sign-in screen');
+  // #496: a REGISTERED relying party with no wreply registered — product
+  // refuses a wtrealm nobody registered before the wreply is read.
+  const prodRp = require('../common/applications').createApplication({
+    identifier: 'urn:prod:rp:' + stamp, protocols: ['wsfed'], fields: {} });
+  t.check(prodRp && prodRp.ok, 'precondition: the wtrealm is registered',
+          JSON.stringify(prodRp));
   const prodWsfed = withMode(config, 'product', function () {
     return callWsfed('urn:prod:rp:' + stamp);
   });
@@ -695,26 +736,15 @@ function run(t) {
           'PRODUCT: an unregistered wreply is refused, naming wsfedReplyUrl',
           prodWsfed.statusCode + ' ' + prodWsfed.body.slice(0, 200));
 
-  try {
-    config.setOverride('saml2.entityId', '');
-    t.equal(withMode(config, 'development',
-                     function () { return saml2sso.idpEntityIdFor(''); }),
-            'urn:sts:idp', 'development: an empty saml2.entityId still falls ' +
-                           'back');
-    const metadata = handlerFor(app, 'get', '/saml2/metadata');
-    const prodMeta = withMode(config, 'product', function () {
-      const res = fakeRes();
-      metadata(fakeReq('GET', '/saml2/metadata', {}), res);
-      return res;
+  // #523: the identity provider's entityID is the realm's OAuth issuer in
+  // both modes, never empty, never invented — there is no setting to empty.
+  t.check(['development', 'product'].every(function (m) {
+    return withMode(config, m, function () {
+      return saml2sso.idpEntityId() ===
+             require('../common/issuer_names').issuer();
     });
-    t.check(prodMeta.statusCode === 503 &&
-            /saml2\.entityId/.test(prodMeta.body),
-            'PRODUCT: an empty saml2.entityId publishes no metadata under an ' +
-            'invented name',
-            prodMeta.statusCode + ' ' + prodMeta.body);
-  } finally {
-    config.clearOverride('saml2.entityId');
-  }
+  }), 'the SAML 2.0 entityID is the realm\'s one issuer in both modes ' +
+      '(#523)', saml2sso.idpEntityId());
 
   // -------------------------------------------------------------------------
   t.log.info('I. outbound switch and metadata honesty');

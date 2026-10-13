@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -119,6 +119,8 @@ import realms = require('../common/realms');
 import mode = require('../common/mode');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
+// #221: the one predicate every door asks (a leaf).
+import serviceAccounts = require('../common/service_accounts');
 import events = require('./ssf_events');
 import subjects = require('./ssf_subjects');
 
@@ -133,6 +135,16 @@ interface RiscRow {
   email: string;
   phone: string;
   subject?: string;
+  // WHAT KIND OF ACCOUNT (#221 P5): `person` (a directory person entry,
+  // which a service account also is) or `application` (an application
+  // entry, keyed `application:<identifier>`). Absent on a row from before
+  // #221, which is a person's.
+  kind?: string;
+  // The application's identifier, on an application's row.
+  application?: string;
+  // Whether the person entry is flagged a service account (#221 P1), as the
+  // last directory write of it said. See serviceAccountIn().
+  serviceAccount?: boolean;
   formerIdentifiers: string[];
   // Identifiers this account gave up, and when — an address it moved off, or
   // everything it held when it was purged (#146). What `identifier-recycled`
@@ -197,6 +209,9 @@ interface RiscRegisterDeps {
   subjects: {
     describeSubject(subject: unknown): string;
     complexSubject(members: Record<string, any>): Record<string, any>;
+    applicationSubject(identifier: string,
+                       sessionId: string): Record<string, any> | null;
+    applicationIdOf(subject: unknown): string;
     subjectForUser(name: string, format: string, iss: string,
                    facts?: Record<string, any>): Record<string, any>;
   };
@@ -336,6 +351,16 @@ const register = realms.map({ persist: 'risc.register' });
  * It sends nothing: `observe()` and `observeAct()` answer the events that are
  * due and `ssf/ssf.ts` delivers them.
  */
+
+// WHAT THE COMMON CLAIMS WERE BUILT FROM (2026-10-01), kept on the payload
+// under a symbol so it rides along in this process and never in a SET: the
+// event's timestamp and its two reasons whether or not the service-wide
+// settings put them in. A stream whose owning application overrides
+// risc.includeReasons, risc.reasonLanguage or risc.omitEventTimestamp
+// has its SET's copy rebuilt from it (`ssf.ts`'s commonClaimsForStream()).
+// Typed `any`: a symbol may not index the `Record<string, any>` payloads.
+const COMMON_SOURCE: any = Symbol.for('sts.ssf.commonSource');
+
 class RiscRegister {
   /**
    * The acts this service can observe, each mapped to the short name of the
@@ -541,6 +566,19 @@ class RiscRegister {
     const catalogue = events.EVENT_BY_URI[String(uri || '')];
     const formats = (catalogue && Array.isArray(catalogue.subjectFormats))
       ? catalogue.subjectFormats : null;
+    // AN APPLICATION'S ACCOUNT (#221 P5) IS NAMED BY ITS APPLICATION MEMBER,
+    // whatever `risc.subjectFormat` says: that setting chooses how a PERSON
+    // is named, and none of its formats names an application. The subject
+    // is complex for the reason `ssf_subjects.js` gives — a bare `opaque`
+    // would not say what kind of principal it is — and that is not the
+    // narrowing the paragraph above refuses: the member IS the account.
+    // Google's spelling is not applied to it (section 3.1 is about the
+    // simple identifiers Google's transmitter sends).
+    if (row.kind === 'application' && row.application) {
+      const named = subjects.applicationSubject(String(row.application), '');
+      log.debug("Leaving RiscRegister.subjectFor(). An application.");
+      return named;
+    }
     let subject;
     if (formats && formats.indexOf('email') >= 0) {
       const email = String(row.email || this.defaultEmailFor(row));
@@ -677,6 +715,15 @@ class RiscRegister {
     // A complex subject (#164 phase 4: a device's act) names the account in
     // its `user` member.
     if (body.format === 'complex') {
+      // An APPLICATION's account (#221 P5) is named by the complex
+      // subject's `application` member and filed under
+      // `application:<identifier>`.
+      const application = this.deps.subjects.applicationIdOf(body);
+      if (!body.user && application) {
+        const id = RiscRegister.applicationAccountId(application);
+        log.debug("Leaving RiscRegister.accountIdOf(). An application.");
+        return register.has(id) ? id : '';
+      }
       const found = body.user ? this.accountIdOf(body.user) : '';
       log.debug("Leaving RiscRegister.accountIdOf(). Complex: " +
                 (found || '(none)'));
@@ -943,10 +990,16 @@ class RiscRegister {
                 'of them.');
       return out;
     }
+    const timestamp = typeof asked.eventTimestamp === 'number'
+      ? asked.eventTimestamp : nowSec();
     if (!config.value('risc.omitEventTimestamp')) {
-      out.event_timestamp = typeof asked.eventTimestamp === 'number'
-        ? asked.eventTimestamp : nowSec();
+      out.event_timestamp = timestamp;
     }
+    Object.defineProperty(out, COMMON_SOURCE, {
+      value: { family: 'risc', eventTimestamp: timestamp,
+               reasonAdmin: asked.reasonAdmin ? String(asked.reasonAdmin) : '',
+               reasonUser: asked.reasonUser ? String(asked.reasonUser) : '' },
+      enumerable: false });
     const tag = String(config.value('risc.reasonLanguage') || 'en');
     if (config.value('risc.includeReasons')) {
       if (asked.reasonAdmin) {
@@ -985,8 +1038,13 @@ class RiscRegister {
       log.debug("Leaving RiscRegister.buildPayload(). Unknown type.");
       return {};
     }
-    const payload = Object.assign({}, row.generate(values || {}),
-                                  this.commonClaims(uri, options));
+    const common = this.commonClaims(uri, options);
+    const payload = Object.assign({}, row.generate(values || {}), common);
+    if (common[COMMON_SOURCE]) {
+      Object.defineProperty(payload, COMMON_SOURCE,
+                            { value: common[COMMON_SOURCE],
+                              enumerable: false });
+    }
     log.debug("Leaving RiscRegister.buildPayload(). " +
               Object.keys(payload).length + ' member(s).');
     return payload;
@@ -1025,10 +1083,19 @@ class RiscRegister {
    * @param uri - the event type URI
    * @returns `{ send, why }`; `why` says why an event was suppressed
    */
-  gate(row: RiscRow, uri: string): { send: boolean; why: string } {
+  gate(row: RiscRow, uri: string): { send: boolean; why: string;
+                                     notApplicable?: string } {
     const { log, config } = this.deps;
     log.debug("Entering RiscRegister.gate(). " + uri);
     const short = this.shortNameOf(uri);
+    // NOT A HOLDER'S CHOICE TO MAKE (#221 P5): the gate is SAID not to
+    // apply, never silently skipped — see optOutApplies().
+    const applies = this.optOutApplies(row);
+    if (!applies.applies) {
+      log.debug("Leaving RiscRegister.gate(). The opt-out gate does not " +
+                'apply to this account.');
+      return { send: true, why: '', notApplicable: applies.why };
+    }
     if (OPT_OUT_EVENTS[short]) {
       log.debug("Leaving RiscRegister.gate(). An opt-out event is never " +
                 'suppressed.');
@@ -1049,6 +1116,100 @@ class RiscRegister {
       'ignores an opt-out gets to be shown doing it.';
     log.debug("Leaving RiscRegister.gate(). Suppressed.");
     return { send: false, why: why };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHOM THE OPT-OUT GATE IS FOR (#221 P5, rcbj's decision of 2026-10-05).
+  //
+  // RISC 1.0 section 2.8 makes opting out the ACCOUNT HOLDER's choice: the
+  // person whose events they are decides whether they are exchanged. Two
+  // kinds of account here have no such holder:
+  //
+  //   * an APPLICATION entry — nobody signs in as it to choose, and its
+  //     events are its operators' business, which is what RISC is for;
+  //   * a SERVICE ACCOUNT (#221 P1) — a person entry flagged as one, owned by
+  //     a person or group answerable for it, and used by software. Its owner
+  //     is not the account, and an opt-out would silence the events about a
+  //     credential every consumer of it relies on.
+  //
+  // For both, the gate is NOT APPLIED, and that is stated rather than done
+  // silently: `gate()` answers `notApplicable` with this sentence, the row
+  // records it once in its notes, `optOutOf()` offers no move and says why,
+  // and `report()` carries `optOutApplies: false` beside it. A row's opt state
+  // stays `opt-in` (participating), which is what it was.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether RISC section 2.8's opt-out gate applies to an account: not
+   * to an application, and not to a service account, neither of which has an
+   * account holder to make the choice.
+   *
+   * @param row - the account's row
+   * @returns `{ applies, why }`; `why` says why it does not
+   */
+  optOutApplies(row: Partial<RiscRow> | null): { applies: boolean;
+                                                 why: string } {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.optOutApplies().");
+    if (row && row.kind === 'application') {
+      log.debug("Leaving RiscRegister.optOutApplies(). An application.");
+      return { applies: false, why: 'This account is an APPLICATION, and ' +
+        'RISC section 2.8\'s opt-out is the account holder\'s choice: an ' +
+        'application has no holder to make it, so the opt-out gate does ' +
+        'not apply and every event about it is exchanged.' };
+    }
+    if (row && row.serviceAccount === true) {
+      log.debug("Leaving RiscRegister.optOutApplies(). A service account.");
+      return { applies: false, why: 'This account is a SERVICE ACCOUNT, ' +
+        'and RISC section 2.8\'s opt-out is the account holder\'s choice: ' +
+        'a service account is used by software and answered for by its ' +
+        'owner, so it has no holder to make it. The opt-out gate does not ' +
+        'apply and every event about it is exchanged.' };
+    }
+    log.debug("Leaving RiscRegister.optOutApplies(). It applies.");
+    return { applies: true, why: '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHETHER A PERSON ENTRY IS A SERVICE ACCOUNT, read off a directory
+  // snapshot (lower-cased attribute names, as `ldap_server.js` hands them).
+  //
+  // ONE FUNCTION, SO THAT IT CAN BE POINTED AT THE ONE PREDICATE. #221's
+  // design gives a service account the auxiliary attribute `stsServiceAccount`
+  // (TRUE) and says every door asks `common/service_accounts.ts`'s
+  // `isServiceAccount(entry)` rather than reading the attribute. That module
+  // is P1's, and this body is a call to it — the snapshot handed here is a
+  // stored entry's attributes, one of the shapes the predicate reads.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a person entry's attributes flag it a service account
+   * (`stsServiceAccount` TRUE).
+   *
+   * @param attributes - the entry's attributes, lower-cased names
+   * @returns true for a service account
+   */
+  static serviceAccountIn(attributes?: Record<string, any> | null): boolean {
+    helpers.log.debug("Entering RiscRegister.serviceAccountIn().");
+    const flagged = serviceAccounts.isServiceAccount(
+      { attributes: attributes || {} });
+    helpers.log.debug("Leaving RiscRegister.serviceAccountIn(). " + flagged);
+    return flagged;
+  }
+
+  // The register key of an application's account (#221 P5): its identifier
+  // under a prefix no username here carries, so an application and a person
+  // of the same name are two rows.
+  /**
+   * Returns the register key of an application's account,
+   * `application:<identifier>`.
+   *
+   * @param identifier - the application's identifier
+   * @returns the key, or '' for an empty identifier
+   */
+  static applicationAccountId(identifier: unknown): string {
+    helpers.log.debug("Entering RiscRegister.applicationAccountId().");
+    const id = String(identifier == null ? '' : identifier);
+    helpers.log.debug("Leaving RiscRegister.applicationAccountId().");
+    return id ? 'application:' + id : '';
   }
 
   private shortNameOf(uri: unknown): string {
@@ -1475,6 +1636,11 @@ class RiscRegister {
     if (snapshotUuid) {
       row.subject = 'urn:uuid:' + String(snapshotUuid).toLowerCase();
     }
+    // A SERVICE ACCOUNT (#221), as the entry says on this write — the opt-out
+    // gate does not apply to one (optOutApplies()).
+    row.kind = row.kind || 'person';
+    row.serviceAccount = RiscRegister.serviceAccountIn(deleted ? before
+                                                               : after);
     row.updatedAt = iso();
 
     // A DESCRIPTOR AND NOT A BARE NAME, because everything below reads
@@ -1557,6 +1723,11 @@ class RiscRegister {
       }
       const uri = events.RISC_PREFIX + short;
       const allowedOut = this.gate(row, uri);
+      if (allowedOut.notApplicable &&
+          row.notes.indexOf(allowedOut.notApplicable) < 0) {
+        row.notes.push(allowedOut.notApplicable);
+        row.notes = row.notes.slice(-5);
+      }
       if (!allowedOut.send) {
         this.applyActLocally(row, act);
         row.suppressed += 1;
@@ -1626,7 +1797,12 @@ class RiscRegister {
     const { log, iso } = this.deps;
     log.debug("Entering RiscRegister.observeAct().");
     const asked = notice || {};
-    const accountId = String(asked.username || '');
+    // AN APPLICATION'S ACT (#221 P5) names it by `application`, and its row
+    // is `application:<identifier>`.
+    const application = String(asked.application || '');
+    const accountId = application
+      ? RiscRegister.applicationAccountId(application)
+      : String(asked.username || '');
     const act = String(asked.act || '');
     if (!this.enabled() || !accountId || !AUTO_ACTS[act]) {
       log.debug("Leaving RiscRegister.observeAct(). Off, nothing named, or " +
@@ -1636,13 +1812,21 @@ class RiscRegister {
     let row = register.get(accountId);
     if (!row) {
       row = this.blankRow({
-        accountId: accountId, sub: accountId, username: accountId,
+        accountId: accountId, sub: application || accountId,
+        username: application || accountId,
         iss: String(asked.issuer || ''), dn: String(asked.dn || ''),
         realm: String(asked.realm || ''),
         email: String(asked.email || ''), phone: String(asked.phone || '')
       });
+      if (application) {
+        row.kind = 'application';
+        row.application = application;
+      }
       register.set(accountId, row);
       this.trim();
+    }
+    if (typeof asked.serviceAccount === 'boolean' && !application) {
+      row.serviceAccount = asked.serviceAccount;
     }
     if (asked.issuer && !row.iss) {
       row.iss = String(asked.issuer);
@@ -2229,18 +2413,24 @@ class RiscRegister {
    * @returns `{ state, since, moves }`
    */
   optOutOf(accountId: unknown): { state: string; since: string;
-                                   moves: string[] } {
+                                   moves: string[]; applies: boolean;
+                                   why: string } {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.optOutOf().");
     const row = register.get(String(accountId || ''));
     const state = row ? row.optOut : 'opt-in';
-    const moves = state === 'opt-in' ? ['optOutInitiated']
+    // An account the gate does not apply to (#221 P5) is offered no move,
+    // and is told why.
+    const applies = this.optOutApplies(row);
+    const moves = !applies.applies ? []
+      : state === 'opt-in' ? ['optOutInitiated']
       : state === 'opt-out-initiated' ? ['optOutCancelled']
       : ['optIn'];
     log.debug("Leaving RiscRegister.optOutOf(). " + state);
     return { state: state,
              since: String((row && row.optOutInitiatedAt) || ''),
-             moves: moves };
+             moves: moves, applies: applies.applies,
+             why: applies.why };
   }
 
   // Whether `act` is a move the account holder may make now.
@@ -2436,7 +2626,11 @@ class RiscRegister {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         lifecycle: row.lifecycle,
+        kind: row.kind || 'person',
+        application: row.application || '',
+        serviceAccount: row.serviceAccount === true,
         optOut: row.optOut,
+        optOutApplies: this.optOutApplies(row).applies,
         credentialStanding: row.credentialStanding,
         credentialChangeRequired: row.credentialChangeRequired,
         recoveryActivated: row.recoveryActivated,
@@ -2574,6 +2768,11 @@ export = {
   // The account holder's section 2.8 choice (#146).
   optOutOf: slot.forward('optOutOf'),
   optOutMoveAllowed: slot.forward('optOutMoveAllowed'),
+  // Whom the opt-out gate is for (#221 P5): not an application, not a
+  // service account.
+  optOutApplies: slot.forward('optOutApplies'),
+  serviceAccountIn: RiscRegister.serviceAccountIn,
+  applicationAccountId: RiscRegister.applicationAccountId,
   optOutsDue: slot.forward('optOutsDue'),
   reset: slot.forward('reset'),
   clear: slot.forward('clear'),

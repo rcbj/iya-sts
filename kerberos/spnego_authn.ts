@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -9,11 +9,12 @@
 // SPNEGO AS A WAY OF SIGNING IN — Kerberos, over HTTP, producing the SESSION
 // that every protocol family in this service reads.
 //
-// `/spnego/protected` next door has authenticated people since the day it was
-// written, and then thrown the identity away: it prints a table saying who the
-// ticket named and stops. This module is the same handshake with the last step
-// added. Past it, a person who holds a Kerberos ticket has a browser session
-// here, and `/oauth2/authorize`, `/wsfed`, `/saml2/sso`, `/saml11/sso`,
+// `/spnego/protected` next door authenticated people from the day it was
+// written (until #595 moved it to the development companion), and then threw
+// the identity away: it printed a table saying who the ticket named and
+// stopped. This module is the same handshake with the last step added.
+// Past it, a person who holds a Kerberos ticket has a browser session here,
+// and `/oauth2/authorize`, `/wsfed`, `/saml2/sso`, `/saml11/sso`,
 // `/federation` and `/admin` all see it — because they all read the one session
 // `authn.js` owns and none of them is told how it was established.
 //
@@ -49,8 +50,9 @@
 // `authn.js` to this file would do exactly that, and would close a cycle
 // besides, since this file requires `authn.js` for `startSession()`. #50's R1
 // did not change that: this file registers nothing when required any more,
-// but it requires `./spnego.js`, a locked JavaScript file of the parent
-// project that still registers its routes when it is required.
+// but it requires `./spnego.js`, a JavaScript file (this repository's own,
+// copied by the parent's tests image) that still registers its routes when
+// it is required.
 //
 // **AND IT NEEDED NO INVERTED HOOK EITHER**, which is worth saying because rule
 // 3e's inventory already holds many slots and one more is the obvious move. It
@@ -153,6 +155,16 @@ import spnegoPage = require('./spnego.js');
 // ERROR CODES, a leaf. A negotiation's refusal is marked by
 // exchange.applyVerdict(); the three marked here are this door's own.
 import errorCodes = require('../common/error_codes');
+// THE LANGUAGE OF THE PAGE (#539). Libraries: the catalogs, the request's
+// language and the chooser, and the realm prefix the chooser posts under.
+import i18n = require('../common/i18n');
+import PageLocale = require('../common/page_locale');
+import realms = require('../common/realms');
+// THE SIGN-IN SURFACE'S SHELL (#575): the document three of this door's
+// bodies are now, with the state its page is drawn from. A library.
+import ShellDocument = require('../common/shell_document');
+
+type Translator = InstanceType<typeof i18n.Translator>;
 
 const page = spnegoPage.page;
 const checksTable = spnegoPage.checksTable;
@@ -342,17 +354,27 @@ class SpnegoAuthn {
   // section 5 says an indicator must be read with the realm that wrote it, so
   // `ownRealm` is false for a ticket from a foreign realm and its indicators
   // count for nothing.
+  //
+  // **AND PKINIT (#179, 2026-10-05).** A ticket whose TGT came from a
+  // certificate carries `pkinit`, and `pre-authent` — but NO password was
+  // proven, so `pre-authent` is not `pwd` on it. The certificate is `swk`, as
+  // `/tls/sign-in` says of one, unless the KDC also wrote `pkinit-hardware`:
+  // a smart-card logon certificate over a key this service did not generate
+  // (krb5_pkinit.ts's header), with hw-authent set, which is `hwk`. One
+  // factor either way, so `acr "1"` — rcbj's answer on #179.
   // ---------------------------------------------------------------------------
   /**
    * Derives the session's `amr` and `acr` from a ticket's own flags and
    * authentication indicators: `pwd` for pre-authent, `hwk` for hw-authent,
-   * `otp` for the RFC 8129 indicator from this realm; `mfa` only for two.
+   * `otp` for the RFC 8129 indicator from this realm, `swk` for a PKINIT
+   * certificate not marked hardware-bound (and never `pwd` for one); `mfa`
+   * only for two.
    *
    * @param ticketFlags - the ticket's flag names
    * @param indicators - the ticket's authentication indicators
    * @param ownRealm - false for a ticket from a foreign realm, whose indicators
    *   count for nothing
-   * @returns `{ amr, acr, method, password, hardware, otp }`
+   * @returns `{ amr, acr, method, password, hardware, otp, pkinit }`
    */
   factorsFor(ticketFlags, indicators?, ownRealm?) {
     const { log } = this.deps;
@@ -360,16 +382,19 @@ class SpnegoAuthn {
               (ticketFlags || []).join(',') + ' indicators=' +
               (indicators || []).join(','));
     const flags = ticketFlags || [];
-    const password = flags.indexOf('pre-authent') !== -1;
+    const own = ownRealm !== false ? (indicators || []) : [];
+    const pkinit = own.indexOf('pkinit') !== -1;
+    const password = flags.indexOf('pre-authent') !== -1 && !pkinit;
     const hardware = flags.indexOf('hw-authent') !== -1;
-    const otp = ownRealm !== false &&
-                (indicators || []).indexOf('otp') !== -1;
+    const otp = own.indexOf('otp') !== -1;
     const amr = [];
     if (password) {
       amr.push('pwd');
     }
     if (hardware) {
       amr.push('hwk');
+    } else if (pkinit) {
+      amr.push('swk');
     }
     if (otp) {
       amr.push('otp');
@@ -381,7 +406,11 @@ class SpnegoAuthn {
     const acr = (password && (hardware || otp)) ? 'mfa'
       : (amr.length ? '1' : '0');
     const method = 'Kerberos ticket over SPNEGO' +
-      (password && otp
+      (pkinit
+         ? ' (the KDC checked a certificate with PKINIT' +
+           (hardware ? ', a smart-card logon certificate whose key this ' +
+                       'service never held' : '') + ')'
+         : password && otp
          ? ' (the KDC checked the password and an authenticator app code, ' +
            'with FAST and OTP pre-authentication)'
          : password && hardware
@@ -396,7 +425,7 @@ class SpnegoAuthn {
     log.debug('Leaving SpnegoAuthn.factorsFor(). amr=' + amr.join(',') +
               ', acr=' + acr);
     return { amr: amr, acr: acr, method: method, password: password,
-             hardware: hardware, otp: otp };
+             hardware: hardware, otp: otp, pkinit: pkinit };
   }
 
   // Is this door open at all? A function rather than a constant, because the
@@ -425,22 +454,22 @@ class SpnegoAuthn {
    * @param record - the pending sign-in record, or null
    * @returns the HTML
    */
-  fallbackHtml(record) {
+  fallbackHtml(record, translator?: Translator) {
     const { log, xmlEscape, authn } = this.deps;
     log.debug('Entering SpnegoAuthn.fallbackHtml().');
+    // A REFUSAL PAGE draws it in English (#539: refusals are not translated),
+    // from the English catalog, so its words are written once.
+    const t = translator || this.english();
     if (!record) {
       log.debug('Leaving SpnegoAuthn.fallbackHtml(). Nothing was interrupted.');
-      return '<p class="sub">Nothing sent you here, so there is nothing to ' +
-             'go ' +
-        'back to. This door can be used on its own — a client that holds a ' +
-        'ticket gets a session and no application had to ask.</p>';
+      return '<p class="sub">' + t.html('spnego.fallback.none') + '</p>';
     }
     const html = '<p><a href="' + xmlEscape(authn.LOGIN_PATH) + '?authn=' +
-      encodeURIComponent(record.id) + '"><strong>Sign in with a username ' +
-      'instead</strong></a> &mdash; the request that sent you here is still ' +
-      'waiting, and it will carry on either way.</p>' +
-      '<p class="sub">Signing in for: <code>' +
-      xmlEscape(record.protocol || '') + '</code>' +
+      encodeURIComponent(record.id) + '">' +
+      t.html('spnego.fallback.instead') + '</a> ' +
+      t.html('spnego.fallback.stillWaiting') + '</p>' +
+      '<p class="sub">' + t.html('spnego.fallback.signingInFor',
+                                 { protocol: record.protocol || '' }) +
       (record.application
          ? ' &middot; <code>' + xmlEscape(record.application) + '</code>'
          : '') + '</p>';
@@ -448,26 +477,131 @@ class SpnegoAuthn {
     return html;
   }
 
+  // THE TWO TRANSLATORS (#539). English, from the English catalog, for a
+  // refusal page and a caller that names none; and the request's, with the
+  // `framing` `spnego.js`'s page() draws it in — `lang` and `dir`, the
+  // language chooser returning to this same GET, and the chooser's CSS.
   /**
-   * Returns a table of the service principal name, the realm and the hosts the
-   * acceptor answers for.
+   * Returns a translator that always answers in English.
    *
-   * @returns the HTML
+   * @returns the translator
    */
-  spnFacts() {
-    const { log, xmlEscape, exchange, principals } = this.deps;
-    log.debug('Entering SpnegoAuthn.spnFacts().');
-    const html = '<table>' +
-      '<tr><th>What</th><th>Value</th></tr>' +
-      '<tr><td>Service principal name</td><td><code>' +
-        xmlEscape(exchange.SPN + '@' + principals.REALM) + '</code></td></tr>' +
-      '<tr><td>Realm</td><td><code>' + xmlEscape(principals.REALM) +
-        '</code></td></tr>' +
-      '<tr><td>Also answers for hosts</td><td><code>' +
-        xmlEscape(principals.SERVICE_DOMAINS.join(', ')) + '</code></td></tr>' +
-      '</table>';
-    log.debug('Leaving SpnegoAuthn.spnFacts().');
-    return html;
+  private english(): Translator {
+    const { log } = this.deps;
+    log.debug('Entering SpnegoAuthn.english().');
+    log.debug('Leaving SpnegoAuthn.english().');
+    return i18n.translator([i18n.SOURCE]);
+  }
+
+  /**
+   * Returns the request's translator, and the framing `page()` draws a
+   * translated page with.
+   *
+   * @param record - the interrupted sign-in, or null
+   * @param username - the person signed in, where one is
+   * @returns `{ t, framing }`
+   */
+  private framed(record, username?: string): { t: Translator;
+                                                framing: any } {
+    const { log } = this.deps;
+    log.debug('Entering SpnegoAuthn.framed().');
+    const t = PageLocale.forPage({
+      application: record ? String(record.application || '') : '',
+      uiLocales: record ? String(record.uiLocales || '') : '',
+      username: username || ''
+    });
+    const prefix = realms.currentPrefix();
+    const framing = {
+      htmlAttributes: PageLocale.htmlAttributes(t),
+      top: PageLocale.chooser(t, prefix, PageLocale.herePath(prefix +
+        SPNEGO_PATH + (record ? '?authn=' + encodeURIComponent(record.id)
+                              : ''))),
+      style: CHOOSER_CSS
+    };
+    log.debug('Leaving SpnegoAuthn.framed(). ' + t.locale);
+    return { t: t, framing: framing };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE SIGN-IN SURFACE'S SHELL, FOR THREE OF THIS DOOR'S BODIES (#575).
+  //
+  // The RFC 4559 exchange is not converted (#569's rule): the first 401 and
+  // its `WWW-Authenticate: Negotiate`, the `Authorization` round trips, the
+  // final mutual-authentication token, the 403 when the door is off and the
+  // 303 to `returnTo` keep their statuses, their headers and the top-level
+  // navigation that carries them — the browser's Negotiate, never a
+  // `fetch()`. Only what a PERSON reads on three of those responses changes:
+  // the first 401's body, the 403's, and the signed-in 200's when nothing was
+  // interrupted. Each is the sign-in surface's shell (`authn.signInShell()`'s
+  // document and policy), and the page's state rides on it in
+  // `data-sts-state` — there is nothing to fetch it from, since the verdict
+  // and the session it drew exist only on this one response.
+  // `kerberos/web_authn_spnego.ts` draws it, in the browser's language
+  // (#539's order; the pending sign-in's `ui_locales`, a signed-in person's
+  // own language), and SCRIPT IS REQUIRED (rcbj on #569).
+  //
+  // THE CALLER HAS SET THE STATUS AND THE HEADERS (`applyVerdict()`, or the
+  // refusal's own). This sets the shell's Content-Security-Policy — the one
+  // header that has to change for a page that runs a script, through
+  // `app.contentSecurityPolicy()` so `frame-ancestors` cannot be dropped — and
+  // the body. Not `ShellDocument.serve()`, which answers 200.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns what a page needs of the pending sign-in: its id, protocol and
+   * application, or null where nothing was interrupted.
+   *
+   * @param record - the pending sign-in record, or null
+   * @returns `{ id, protocol, application }`, or null
+   */
+  pendingView(record) {
+    const { log } = this.deps;
+    log.debug('Entering SpnegoAuthn.pendingView().');
+    if (!record) {
+      log.debug('Leaving SpnegoAuthn.pendingView(). Nothing was interrupted.');
+      return null;
+    }
+    log.debug('Leaving SpnegoAuthn.pendingView().');
+    return { id: String(record.id), protocol: String(record.protocol || ''),
+             application: String(record.application || '') };
+  }
+
+  /**
+   * Sends the sign-in surface's shell carrying a page's state, keeping the
+   * status and headers the caller set.
+   *
+   * @param req - the request
+   * @param res - the response, its status and headers set
+   * @param record - the pending sign-in, or null
+   * @param view - the page's view
+   * @param own - a signed-in person's own language, or null
+   */
+  sendShell(req, res, record, view, own?) {
+    const { log, authn } = this.deps;
+    log.debug('Entering SpnegoAuthn.sendShell(). ' + view.kind);
+    const state = Object.assign({ view: view },
+      record && record.uiLocales ? { uiLocales: String(record.uiLocales) }
+                                 : {},
+      own ? { preferredLanguage: own } : {});
+    const html = ShellDocument.document({
+      title: 'Sign in with Kerberos — IYA STS',
+      attributes: ([['data-sts-prefix', realms.currentPrefix()],
+                    ['data-sts-state', JSON.stringify(state)]] as
+                   Array<[string, string]>)
+        .concat(PageLocale.shellAttributes(req, record
+          ? String(record.application || '') : '')),
+      stylesheets: ['/web/card.css'],
+      script: authn.SIGNIN_SCRIPT_PATH,
+      open: '<div class="card wide">',
+      close: '</div>',
+      noscript: '<h1>Sign in with Kerberos</h1><div class="err">This page ' +
+        'is a script that runs in your browser, and with scripts blocked ' +
+        'there is nothing it can show. Allow scripts for this page.</div>',
+      loading: '<p class="sub">Loading&hellip;</p>'
+    });
+    res.set('Content-Security-Policy',
+            ShellDocument.policy(app, { csp: { 'style-src': "'self'" } }));
+    res.type('html').send(html);
+    log.debug('Leaving SpnegoAuthn.sendShell().');
   }
 
   // ---------------------------------------------------------------------------
@@ -507,18 +641,17 @@ class SpnegoAuthn {
       log.info('krb5-spnego-authn: refused a sign-in because ' +
         'krb5.spnegoAuthentication is off.');
       errorCodes.mark(res, 'STS-KRB-0097');
-      res.status(403).type('html').set('Cache-Control', 'no-store').send(
-        page('Integrated authentication is off',
-          '<h1>403 &mdash; integrated authentication is off</h1><div ' +
-          'class="err">This service can sign people in with a Kerberos ' +
-          'ticket, and <code>krb5.spnegoAuthentication</code> is set to ' +
-          'false.</div><p>Turn it on at <a ' +
-          'href="/admin/kerberos">/admin/kerberos</a>, or with <code>POST ' +
-          '/admin-api/config/set</code>. Nothing else changes when it is ' +
-          'off: <a href="/spnego/protected">/spnego/protected</a> still ' +
-          'performs the whole handshake and shows you both halves of it ' +
-          '&mdash; what it will not do is give you a session.</p>' +
-          this.fallbackHtml(record)));
+      // THE STATUS AND THE HEADERS ARE THE REFUSAL'S, AS THEY WERE (#575):
+      // 403 and `no-store`. The body is the sign-in surface's shell, whose
+      // page names the setting — and so does the state it carries.
+      res.status(403).set('Cache-Control', 'no-store');
+      this.sendShell(req, res, record, {
+        door: 'spnego', kind: 'off',
+        setting: 'krb5.spnegoAuthentication',
+        // No `demoPath` since #595: the demonstration page it named,
+        // `/spnego/protected`, is the development companion's.
+        pending: this.pendingView(record)
+      });
       log.debug('Leaving SpnegoAuthn.handleSignIn(). The door is closed.');
       return;
     }
@@ -540,8 +673,30 @@ class SpnegoAuthn {
 
     exchange.applyVerdict(res, verdict);
 
+    if (!verdict.ok && verdict.code === 'no-authorization') {
+      // THE FIRST 401 (#575): `applyVerdict()` has set its status, its
+      // `WWW-Authenticate: Negotiate` and `no-store`, exactly as before; the
+      // body a person reads when their browser does not answer the challenge
+      // is the sign-in surface's shell, drawn from the state it carries —
+      // the link back to the password screen, and the service principal a
+      // program asks a ticket for.
+      this.sendShell(req, res, record, {
+        door: 'spnego', kind: 'challenge',
+        pending: this.pendingView(record),
+        spn: exchange.SPN, realm: principals.REALM,
+        // Empty in product mode: the KDC knows only `spn` (2026-10-12).
+        hosts: principals.ADVERTISED_SERVICE_HOSTS,
+        checks: verdict.checks || null
+      });
+      log.debug('Leaving SpnegoAuthn.handleSignIn(). The challenge.');
+      return;
+    }
+
     if (!verdict.ok) {
-      const first = verdict.code === 'no-authorization';
+      // A CONTINUATION AND A TERMINAL REFUSAL are the negotiation's own
+      // diagnostics, and stay drawn here: #575 converts the first 401's body
+      // only, the one a person whose browser does not negotiate reads.
+      //
       // A CONTINUATION IS NOT A FAILURE, and saying so is the one thing this
       // page has to get right that the protected page does not: three of the
       // fifteen outcomes are the acceptor asking for another round trip, and a
@@ -549,31 +704,25 @@ class SpnegoAuthn {
       // fix something that is working.
       const waiting = !exchange.OUTCOMES[verdict.code] ||
                       !exchange.OUTCOMES[verdict.code].terminal;
+      // A CONTINUATION IS TRANSLATED (#539); a terminal refusal is not —
+      // rcbj's decision on #539 — so it is drawn in English, as it was, with
+      // no chooser. The acceptor's own reason and the checks table are the
+      // negotiation's diagnostics, and stay as they are.
+      const framed = waiting ? this.framed(record)
+        : { t: this.english(), framing: undefined };
+      const t = framed.t;
       res.type('html').send(page(
-        first ? 'Sign in with Kerberos'
-              : waiting ? 'Kerberos: one more round trip'
-                        : 'Kerberos sign-in refused',
-        '<h1>' + (first
-          ? 'Sign in with a Kerberos ticket'
-          : waiting
-            ? '401 &mdash; the negotiation is not finished'
-            : '401 &mdash; that ticket did not sign you in') + '</h1>' +
-        (first
-          ? '<p>This service asked your client for a Kerberos ticket ' +
-            '(<code>WWW-Authenticate: Negotiate</code>, RFC 4559). If it has ' +
-            'one, or can get one, it will repeat this request with it and ' +
-            'you will be signed in without typing anything.</p>'
-          : '<div class="' + (waiting ? 'ok' : 'err') + '">' +
-            xmlEscape(verdict.reason) + '</div>') +
-        (waiting && !first
-          ? '<p>Your client should answer this reply with another token. If ' +
-            'you are reading this page, it did not &mdash; the exchange is ' +
-            'unfinished rather than refused.</p>'
-          : '') +
-        (verdict.checks ? '<h2>What this service checked</h2>' +
+        waiting ? t.text('spnego.waiting.title') : 'Kerberos sign-in refused',
+        '<h1>' + (waiting
+          ? t.html('spnego.waiting.heading')
+          : '401 &mdash; that ticket did not sign you in') + '</h1>' +
+        '<div class="' + (waiting ? 'ok' : 'err') + '">' +
+          xmlEscape(verdict.reason) + '</div>' +
+        (waiting ? '<p>' + t.html('spnego.waiting.note') + '</p>' : '') +
+        (verdict.checks ? '<h2>' + t.html('spnego.checked') + '</h2>' +
           checksTable(verdict.checks) : '') +
-        this.fallbackHtml(record) +
-        (first ? BROWSER_NOTE + this.spnFacts() : '')));
+        this.fallbackHtml(record, t),
+        framed.framing));
       log.debug('Leaving SpnegoAuthn.handleSignIn(). ' + verdict.code + '.');
       return;
     }
@@ -678,47 +827,23 @@ class SpnegoAuthn {
 
     // Nothing was interrupted, so this is the whole of it: a page saying who
     // you now are. The same shape federation's own entry point draws when it is
-    // reached without a `returnTo`.
-    res.type('html').send(page('Signed in',
-      '<h1>200 &mdash; you are signed in</h1>' +
-      '<div class="ok">Signed in as <strong>' + xmlEscape(username) +
-      '</strong>, from the Kerberos principal <code>' +
-      xmlEscape(verdict.client) + '</code>.</div>' +
-      '<p>The session cookie is set. Every protocol this service speaks ' +
-      'reads the same session, so an <code>/oauth2/authorize</code>, a ' +
-      '<code>wsignin1.0</code>, a SAML AuthnRequest or the admin console ' +
-      'will now complete without asking you for anything.</p>' +
-      '<table>' +
-      '<tr><th>What</th><th>Value</th></tr>' +
-      '<tr><td>Session</td><td><code>' + xmlEscape(session.id) +
-        '</code></td></tr>' +
-      '<tr><td>Subject</td><td><code>' + xmlEscape(session.user.sub) +
-        '</code></td></tr>' +
-      '<tr><td>Ticket flags</td><td><code>' +
-        xmlEscape((verdict.ticketFlags || []).join(', ') || 'none') +
-        '</code></td></tr>' +
-      '<tr><td>Authentication indicators (RFC 8129)</td><td><code>' +
-        xmlEscape((verdict.authIndicators || []).join(', ') || 'none') +
-        '</code></td></tr>' +
-      '<tr><td>amr</td><td><code>' +
-        xmlEscape(factors.amr.join(', ') || '(none claimed)') + '</code>' +
-        (factors.amr.length ? '' : ' &mdash; the ticket claims no ' +
-          'pre-authentication, so this service claims no authentication ' +
-          'method') +
-        '</td></tr>' +
-      '<tr><td>acr</td><td><code>' + xmlEscape(factors.acr) +
-      '</code></td></tr><tr><td>Mechanism</td><td><code>' +
-        xmlEscape(spnego.mechName(verdict.selected)) + '</code>' +
-        (verdict.rawKerberos ? ' &mdash; a bare Kerberos token, no negotiation'
-                             : '') + '</td></tr>' +
-      '<tr><td>mechListMIC</td><td>' + (verdict.micVerified
-        ? '<span class="pass">verified</span>'
-        : '<span class="fail">not sent</span>') + '</td></tr></table>' +
-      (verdict.checks ? '<h2>What this service checked</h2>' +
-        checksTable(verdict.checks) : '') +
-      '<p class="sub"><a href="/admin/users">/admin/users</a> now has a row ' +
-      'for this person, and the embedded directory has an entry. <a ' +
-      'href="/logout">/logout</a> ends it.</p>'));
+    // reached without a `returnTo`. THE STATUS AND THE HEADERS ARE
+    // `applyVerdict()`'s and the session's (#575): 200, the final
+    // `WWW-Authenticate` token that is the mutual half of the exchange,
+    // `no-store` and the session cookie; the body is the sign-in surface's
+    // shell, drawn in the signed-in person's language (#539) from the state
+    // it carries.
+    this.sendShell(req, res, null, {
+      door: 'spnego', kind: 'signed-in',
+      username: username, principal: verdict.client,
+      session: session.id, subject: session.user.sub,
+      flags: (verdict.ticketFlags || []).slice(),
+      indicators: (verdict.authIndicators || []).slice(),
+      amr: factors.amr.slice(), acr: factors.acr,
+      mechanism: spnego.mechName(verdict.selected),
+      bare: !!verdict.rawKerberos, mic: !!verdict.micVerified,
+      checks: verdict.checks || null
+    }, authn.preferredLanguageOf(username));
     log.debug('Leaving SpnegoAuthn.handleSignIn(). Signed in with nothing to ' +
               'return to.');
   }
@@ -775,17 +900,15 @@ const slot = new InstanceSlot<SpnegoAuthn>(
 // What a browser that cannot do Negotiate is looking at, said once. It is on
 // the first challenge only: the later pages are refusals of a token that WAS
 // sent, so the client evidently can.
-const BROWSER_NOTE =
-  '<h2>If nothing happened</h2><p>Most browsers send <code>Negotiate</code> ' +
-  'only to hosts on an explicit allow-list, and the machine needs a Kerberos ' +
-  'credential cache in this realm besides. In Chrome that is ' +
-  '<code>--auth-server-allowlist</code>; in Firefox it is ' +
-  '<code>network.negotiate-auth.trusted-uris</code>. Without both, what you ' +
-  'see is this page and no ticket is ever requested &mdash; which is not a ' +
-  'failure of anything here, and is why the link above exists.</p><p ' +
-  'class="sub">A program does not have this problem: get a ticket for the ' +
-  'service principal named below and send it as <code>Authorization: ' +
-  'Negotiate &lt;base64&gt;</code>. That is all this endpoint is.</p>';
+// "If nothing happened", which was a constant here, is three messages of the
+// `spnego` catalog since #539 (`spnego.ifNothing.*`).
+
+// The language chooser's look on this page (#539): the shell's own CSS knows
+// nothing of it, and its `button` and `select` would otherwise be unstyled.
+const CHOOSER_CSS = 'form.language-chooser{float:right;font-size:.8em;' +
+  'margin:0 0 6px 8px}form.language-chooser select,form.language-chooser ' +
+  'button{font-size:1em;padding:2px 6px}form.language-chooser label{margin:' +
+  '0 4px 0 0}';
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the

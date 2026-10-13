@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -62,7 +62,6 @@
 // exported beside them.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -74,8 +73,17 @@ import jwt = require('jsonwebtoken');
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import config = require('../common/config');
-import bbs2023 = require('../common/vendored/bbs2023.js');
 import helpers = require('../common/helpers');
+import LazyModule = require('../common/lazy_module');
+// THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
+// at its top, and together they are resident memory in every request worker
+// that never issues or verifies a BBS credential. `common/lazy_module.ts`
+// argues it; `common/helpers.js` defers the same file by hand.
+type Bbs2023 = typeof import('../common/vendored/bbs2023.js');
+const bbs2023: Bbs2023 = LazyModule.of('common/vendored/bbs2023.js',
+  function () {
+    return require('../common/vendored/bbs2023.js') as Bbs2023;
+  }, helpers.log);
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('../oauth-oidc/dpop');
 import mode = require('../common/mode');
@@ -159,7 +167,6 @@ interface VcIssuerDeps {
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
   publishedKidFor: typeof helpers.publishedKidFor;
-  crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   config: typeof config;
   bbs2023: typeof bbs2023;
@@ -215,7 +222,9 @@ interface VcIssuerDeps {
  * The `c_nonce` values this issuer has handed out and not yet seen used, per
  * trust realm; each is single-use.
  */
-const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age' });
+const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age',
+                               // #333: the value IS the expiry, ms.
+                               expiresAt: realms.expiryField(null, 1) });
 
 // `oid4vci.cNonceTtlS` since 2026-09-12; the constant is its default and keeps
 // its exported name.
@@ -283,7 +292,10 @@ const CLAIM_SKEW_MS = 60 * 1000;
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
 // id -> { accessToken, expires, event }
-const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds' });
+const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds',
+                                     // #333: its `expires`, ms.
+                                     expiresAt: realms.expiryField('expires',
+                                                                   1) });
 
 // ---------------------------------------------------------------------------
 // Credential Response encryption (OID4VCI section 10).
@@ -297,7 +309,18 @@ const VCI_ENC_ALG = 'RSA-OAEP-256';
 // wherever it names one (section 5, OpenID4VP) and the one the OpenID
 // conformance suite's HAIP issuer plan sends a P-256 key for. RSA-OAEP-256
 // stays for an RSA key; each is taken only with the key type it fits.
-const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'];
+//
+// AND THE ML-KEM AND HPKE KEY ENCRYPTION ALGS (#82): a wallet whose
+// `credential_response_encryption.jwk` names one of them in its `alg` gets
+// the Credential Response encrypted with post-quantum or PQ/T hybrid key
+// establishment — ML-KEM-768 for pqc-kem-05, HPKE-10-KE for X-Wing. Not
+// HPKE Integrated Encryption: section 10 requires an `enc` and that mode
+// has none.
+const VCI_KEM_ALGS = stsCrypto.JWE_MLKEM_ALGS.concat(
+  stsCrypto.JWE_HPKE_ALGS.filter(function (alg) {
+    return !stsCrypto.isIntegratedJweAlg(alg);
+  }));
+const VCI_ENC_ALGS = [VCI_ENC_ALG, 'ECDH-ES'].concat(VCI_KEM_ALGS);
 const VCI_ENC_CURVES = ['P-256', 'P-384', 'P-521'];
 
 // The implemented list, kept under its old name. What is ADVERTISED and
@@ -334,8 +357,9 @@ const VCI_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
 // is advertised and accepted (`oid4vci.requestEncryptionEncValues`).
 const VCI_REQUEST_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
 
-// How the most recent Credential Request actually arrived, readable at the
-// non-spec GET /oid4vci/last_request.
+// How the most recent Credential Request actually arrived, readable at
+// `GET /admin-api/oid4vci/last-request` (Admin Read, #594; until then the
+// non-spec, development-only GET /oid4vci/last_request).
 //
 // This exists because a wallet's claim to have encrypted something is not
 // observable from the wallet. A pane that assembles a perfect JWE, displays it,
@@ -444,7 +468,6 @@ class VcIssuer {
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
       publishedKidFor: helpers.publishedKidFor,
-      crypto: crypto,
       stsCrypto: stsCrypto,
       config: config,
       bbs2023: bbs2023,
@@ -630,7 +653,10 @@ class VcIssuer {
       // as well, which nothing implemented — metadata that overstates is worse
       // than metadata that says little.
       credential_response_encryption: {
-        alg_values_supported: VCI_ENC_ALGS.slice(),
+        // The ML-KEM and HPKE ones only where `keys.offerKemEncryption` is
+        // on (helpers.offeredJweAlgs(), 2026-09-28): drafts, and the
+        // OpenID4VCI conformance suite refuses the metadata naming them.
+        alg_values_supported: helpers.offeredJweAlgs(VCI_ENC_ALGS),
         enc_values_supported: this.responseEncValues(),
         // DEFLATE before encryption (section 8.2's `zip`, #187). Requests
         // are not decompressed — credential_request_encryption says none.
@@ -965,7 +991,7 @@ class VcIssuer {
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify({
       issuer: base,
-      jwks_uri: base + '/oauth2/jwks',
+      jwks_uri: helpers.rebaseTo(base, 'oauth-oidc') + '/oauth2/jwks',
       issuer_did: stsDid(req)
     }, null, 2));
     log.debug("Leaving VcIssuer.sendJwtVcIssuerMetadata().");
@@ -1017,7 +1043,7 @@ class VcIssuer {
     blocks.forEach(function (pem, i) {
       try {
         out.push({ label: 'trusted key attester ' + (i + 1),
-                   cert: new crypto.X509Certificate(pem) });
+                   cert: stsCrypto.parseCertificate(pem) });
       } catch (e) {
         log.debug("Caught in VcIssuer.attesterKeys(): " +
                   ((e && e.message) || e));
@@ -1181,7 +1207,7 @@ class VcIssuer {
   // advertises every asymmetric algorithm in the shared table — the eleven
   // post-quantum and composite ones included. Verifying one of those takes
   // SECONDS on the thread that owns every listener here, and a wallet may send
-  // a batch of them. See common/worker.js.
+  // a batch of them. See common/pq_native.js.
   private async verifyProofJwt(proofJwt, credentialIssuer) {
     const { log, logArtifact, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
     log.debug("Entering VcIssuer.verifyProofJwt().");
@@ -1294,14 +1320,13 @@ class VcIssuer {
   // A Disclosure is base64url(JSON [salt, claim name, claim value]); the digest
   // that goes in _sd is base64url(SHA-256(the ASCII of that base64url string)).
   private makeDisclosure(name, value) {
-    const { log, b64u, crypto } = this.deps;
+    const { log, b64u, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.makeDisclosure(). name=" + name);
-    const salt = b64u(crypto.randomBytes(16));
+    const salt = b64u(stsCrypto.randomBytes(16));
     const encoded = b64u(Buffer.from(JSON.stringify([salt, name, value]),
                                      'utf8'));
-    const digest = b64u(crypto.createHash('sha256')
-                              .update(encoded, 'ascii')
-                              .digest());
+    const digest = b64u(stsCrypto.digest('sha256',
+                                         Buffer.from(encoded, 'ascii')));
     log.debug("Leaving VcIssuer.makeDisclosure(). digest=" + digest);
     return { salt: salt, name: name, value: value, encoded: encoded,
              digest: digest };
@@ -1309,7 +1334,7 @@ class VcIssuer {
 
   private async buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
                              issuerDid, status) {
-    const { log, logArtifact, b64u, certificateHeaderFor, crypto, stsCrypto,
+    const { log, logArtifact, b64u, certificateHeaderFor, stsCrypto,
             VCI_VCT } = this.deps;
     // An extension, not the spec: draft-ietf-oauth-sd-jwt-vc defines no
     // DID-based issuer signature mechanism. When one is configured the iss
@@ -1334,9 +1359,8 @@ class VcIssuer {
       });
     // A decoy digest: RFC 9901 section 4.2.5 — hash a random value so the count
     // of _sd entries does not reveal how many claims there really are.
-    const decoy = b64u(crypto.createHash('sha256')
-                             .update(b64u(crypto.randomBytes(16)), 'ascii')
-                             .digest());
+    const decoy = b64u(stsCrypto.digest('sha256',
+      Buffer.from(b64u(stsCrypto.randomBytes(16)), 'ascii')));
     const digests = disclosures.map((d) => { return d.digest; })
                                .concat([decoy])
                                .sort();
@@ -1351,7 +1375,7 @@ class VcIssuer {
       nbf: times.nbf,
       exp: times.exp,
       vct: VCI_VCT,
-      sub: subjectClaims.sub || 'urn:uuid:' + crypto.randomUUID(),
+      sub: subjectClaims.sub || 'urn:uuid:' + stsCrypto.randomUuid(),
       cnf: { jwk: holderJwk },
       _sd_alg: 'sha-256',
       _sd: digests
@@ -1412,7 +1436,7 @@ class VcIssuer {
   // signed with that key rather than a Key Binding JWT.
   private async buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer,
                                issuerDid, status) {
-    const { log, logArtifact, certificateHeaderFor, crypto, stsCrypto,
+    const { log, logArtifact, certificateHeaderFor, stsCrypto,
             VCI_JWT_TYPES, VC_CONTEXT } = this.deps;
     // As for ldp_vc, naming the issuer by DID is ordinary in a W3C credential
     // rather than an extension — this is VCDM, and the DID goes in both the
@@ -1431,7 +1455,8 @@ class VcIssuer {
     const now = rounded.nbf;
     const exp = rounded.exp;
     const signer = await this.credentialSignerAsync();
-    const subjectId = subjectClaims.sub || ('urn:uuid:' + crypto.randomUUID());
+    const subjectId = subjectClaims.sub ||
+                      ('urn:uuid:' + stsCrypto.randomUuid());
 
     // credentialSubject.id is the subject identifier; the rest of the claims
     // sit beside it. `sub` is not repeated inside as a claim of its own — it IS
@@ -1464,7 +1489,7 @@ class VcIssuer {
       iat: now,
       nbf: now,
       exp: exp,
-      jti: 'urn:uuid:' + crypto.randomUUID(),
+      jti: 'urn:uuid:' + stsCrypto.randomUuid(),
       cnf: { jwk: holderJwk },
       vc: vc
     };
@@ -2014,7 +2039,7 @@ class VcIssuer {
    * @returns the claims
    */
   subjectClaimsFrom(accessToken, configId) {
-    const { log, jsonFromB64u, crypto, stats, vciFormatOf, vcClaims
+    const { log, jsonFromB64u, stsCrypto, stats, vciFormatOf, vcClaims
             } = this.deps;
     log.debug("Entering VcIssuer.subjectClaimsFrom(). configId=" +
               (configId || '(none)'));
@@ -2080,11 +2105,16 @@ class VcIssuer {
     // as an empty selection: the whole configured set is issued, exactly as
     // before.
     const asked = this.requestedClaimPaths(accessToken, configId);
-    const rows = asked ? vcClaims.rowsForPaths(asked, vciFormatOf(configId)) :
-                 null;
+    // THE CLIENT'S OWN SELECTION (#495), replacing the realm's for a
+    // credential issued on its access token; null is the realm's.
+    const own = this.applicationRowsFor(t.client_id || t.azp || '');
+    const rows = asked
+      ? vcClaims.rowsForPaths(asked, vciFormatOf(configId), own || undefined)
+      : own;
     const built = vcClaims.subjectClaimsFor(user, t, rows);
     const claims = Object.assign({ sub: t.sub ||
-                                        ('urn:uuid:' + crypto.randomUUID()) },
+                                        ('urn:uuid:' +
+                                         stsCrypto.randomUuid()) },
                                  built.claims);
     log.debug("Leaving VcIssuer.subjectClaimsFrom(). The credential will " +
               "describe " + user +
@@ -2113,6 +2143,30 @@ class VcIssuer {
   // array), so a caller that could not tell them apart would issue an empty
   // credential to every wallet that used a scope.
   // ---------------------------------------------------------------------------
+  // THE APPLICATION A CREDENTIAL IS ISSUED TO (#495): the access token's
+  // client, found as the claim sets find theirs. A registry that throws
+  // costs the client's own selection and never the credential.
+  private applicationRowsFor(clientId) {
+    const { log, stats, vcClaims } = this.deps;
+    log.debug("Entering VcIssuer.applicationRowsFor().");
+    if (!clientId) {
+      log.debug("Leaving VcIssuer.applicationRowsFor(). No client.");
+      return null;
+    }
+    try {
+      const application = stats.claimApplicationOf('access_token',
+                                                   { client_id: clientId });
+      log.debug("Leaving VcIssuer.applicationRowsFor().");
+      return application ? vcClaims.applicationRows(application) : null;
+    } catch (e) {
+      log.debug("Caught in VcIssuer.applicationRowsFor(): " +
+                ((e && e.message) || e));
+      // The realm's selection is issued: see the comment above.
+      log.debug("Leaving VcIssuer.applicationRowsFor(). Failed.");
+      return null;
+    }
+  }
+
   private requestedClaimPaths(accessToken, configId) {
     const { log, STS, stsCrypto } = this.deps;
     log.debug("Entering VcIssuer.requestedClaimPaths(). configId=" +
@@ -2285,9 +2339,9 @@ class VcIssuer {
   }
 
   private newNotificationId(accessToken) {
-    const { log, b64u, crypto, offerTtlMs, notificationIds } = this.deps;
+    const { log, b64u, stsCrypto, offerTtlMs, notificationIds } = this.deps;
     log.debug("Entering VcIssuer.newNotificationId().");
-    const id = b64u(crypto.randomBytes(12));
+    const id = b64u(stsCrypto.randomBytes(12));
     notificationIds.set(id,
                         { accessToken: accessToken,
                           expires: Date.now() + offerTtlMs(), event: null });
@@ -2367,7 +2421,14 @@ class VcIssuer {
     log.debug("Entering VcIssuer.credentialRequestEncryptionMetadata().");
     log.debug("Leaving VcIssuer.credentialRequestEncryptionMetadata().");
     return {
-      jwks: { keys: [this.requestEncryptionKeys().publicJwk] },
+      // The RSA key, and — where an administrator opted the realm in
+      // (`keys.encryptionKemAlgs`, #82) — each of its ML-KEM and HPKE Key
+      // Encryption keys: section 10's request JWE takes its `alg` from the
+      // key the wallet picked, so a key with an `alg` is the whole offer.
+      jwks: { keys: [this.requestEncryptionKeys().publicJwk].concat(
+        this.requestKemKeys().map(function (one) {
+          return stsCrypto.publicJweKemJwk(one.publicJwk);
+        })) },
       enc_values_supported: this.requestEncValues(),
       // zip_values_supported is deliberately absent: "If absent then no
       // compression algorithms are supported", and this issuer does not
@@ -2375,6 +2436,18 @@ class VcIssuer {
       // lie, which is the same rule the response side follows.
       encryption_required: this.vciRequestEncryptionRequired()
     };
+  }
+
+  // The realm's KEM decryption keys a Credential Request may be encrypted to
+  // (#82): the Key Encryption ones only, for the `enc` reason above.
+  private requestKemKeys(): any[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.requestKemKeys().");
+    const out = helpers.kemEncryptionKeysFor().filter(function (one) {
+      return VCI_KEM_ALGS.indexOf(one.alg) >= 0;
+    });
+    log.debug("Leaving VcIssuer.requestKemKeys(). " + out.length);
+    return out;
   }
 
   // The mirror of encryptToJwe(): RSA-OAEP-256 unwrap of the content key, then
@@ -2406,11 +2479,33 @@ class VcIssuer {
     // The hand-rolled implementation was KEPT rather than replaced by a JOSE
     // library, for the reason encryptToJwe() has always given: having the steps
     // visible is the point of a mock. It is simply in one place now.
-    const result = stsCrypto.decryptJweCompact(compact, {
-      privateKey: this.requestEncryptionKeys().privateKey,
-      allowedEnc: this.requestEncValues(),
-      expectedKid: this.requestEncryptionKeys().publicJwk.kid
-    });
+    // WHICH KEY: the header's alg picks it (#82). An ML-KEM or HPKE alg
+    // opens only with the realm's key for exactly that alg, and only where
+    // one is published; everything else is the RSA key, as it always was.
+    let headerAlg = '';
+    try {
+      headerAlg = String(JSON.parse(Buffer.from(String(compact || '')
+        .split('.')[0], 'base64url').toString('utf8')).alg || '');
+    } catch (e) {
+      log.debug("Caught in VcIssuer.decryptJweRequest(): " +
+                ((e && e.message) || e));
+      headerAlg = '';
+    }
+    const kemKey = this.requestKemKeys().filter(function (one) {
+      return one.alg === headerAlg;
+    })[0];
+    const result = kemKey
+      ? stsCrypto.decryptJweCompact(compact, {
+          privateJwk: kemKey.privateJwk,
+          allowedAlg: [kemKey.alg],
+          allowedEnc: this.requestEncValues(),
+          expectedKid: kemKey.publicJwk.kid
+        })
+      : stsCrypto.decryptJweCompact(compact, {
+          privateKey: this.requestEncryptionKeys().privateKey,
+          allowedEnc: this.requestEncValues(),
+          expectedKid: this.requestEncryptionKeys().publicJwk.kid
+        });
     logArtifact('OID4VCI Credential Request',
                 'JWE protected header as received', result.header);
     let body;
@@ -2548,10 +2643,36 @@ class VcIssuer {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.encryptionProblem().");
     const jwk = encryption.jwk;
+    // A KEY THAT NAMES AN ML-KEM OR HPKE KEY ENCRYPTION ALG (#82) is judged
+    // by `common/crypto.js`'s own check of that alg against the key, and
+    // then by the same `enc` and `zip` rules below.
+    // Only while the realm OFFERS them (`keys.offerKemEncryption`).
+    const offeredKem = helpers.offeredJweAlgs(VCI_KEM_ALGS);
+    const kemAlg = jwk && offeredKem.indexOf(String(jwk.alg || '')) >= 0
+      ? String(jwk.alg) : '';
+    if (jwk && jwk.kty === 'AKP' && !kemAlg) {
+      log.debug("Leaving VcIssuer.encryptionProblem(). AKP without a KEM " +
+                "alg.");
+      return offeredKem.length
+        ? 'credential_response_encryption.jwk is an AKP key, and an AKP ' +
+          'key names its algorithm: this issuer encrypts to one whose ' +
+          '`alg` is one of ' + offeredKem.join(', ') + '; this one ' +
+          'says "' + (jwk.alg || '(none)') + '".'
+        : 'credential_response_encryption.jwk is an AKP key, and this ' +
+          'issuer offers no ML-KEM or HPKE encryption ' +
+          '(keys.offerKemEncryption is off in this realm).';
+    }
+    if (kemAlg && !stsCrypto.jweRecipientKeyFits(kemAlg, jwk)) {
+      log.debug("Leaving VcIssuer.encryptionProblem(). The KEM key does " +
+                "not fit its alg.");
+      return 'credential_response_encryption.jwk names alg "' + kemAlg +
+             '", which needs ' + stsCrypto.jweRecipientKeyNeed(kemAlg) +
+             ', and this key is not one.';
+    }
     const rsa = !!jwk && jwk.kty === 'RSA' && !!jwk.n && !!jwk.e;
     const ec = !!jwk && jwk.kty === 'EC' && !!jwk.x && !!jwk.y &&
                VCI_ENC_CURVES.indexOf(jwk.crv) >= 0;
-    if (!rsa && !ec) {
+    if (!rsa && !ec && !kemAlg) {
       log.debug("Leaving VcIssuer.encryptionProblem(). The key is unusable.");
       return 'credential_response_encryption.jwk must be an RSA public key ' +
              '(for ' + VCI_ENC_ALG + ') or an EC public key on ' +
@@ -2559,7 +2680,7 @@ class VcIssuer {
     }
     const alg = jwk.alg || encryption.alg ||
                 (rsa ? VCI_ENC_ALG : 'ECDH-ES');
-    if (alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
+    if (!kemAlg && alg !== (rsa ? VCI_ENC_ALG : 'ECDH-ES')) {
       log.debug("Leaving VcIssuer.encryptionProblem(). Unsupported alg " +
                 alg);
       return 'This issuer encrypts to ' + (rsa ? 'an RSA' : 'an EC') +
@@ -2611,8 +2732,13 @@ class VcIssuer {
     const compact = stsCrypto.encryptJweCompact(plaintext, {
       jwk: encryption.jwk,
       enc: encryption.enc,
-      alg: encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
-        VCI_ENC_ALG,
+      // The key's own alg where it names an ML-KEM or HPKE one (#82) —
+      // `encryptionProblem()` has already held the key to it.
+      alg: encryption.jwk &&
+           VCI_KEM_ALGS.indexOf(String(encryption.jwk.alg || '')) >= 0
+        ? String(encryption.jwk.alg)
+        : (encryption.jwk && encryption.jwk.kty === 'EC' ? 'ECDH-ES' :
+          VCI_ENC_ALG),
       zip: encryption.zip === 'DEF' ? 'DEF' : undefined
     });
     log.debug("Leaving VcIssuer.encryptToJwe(). " + compact.length +
@@ -2655,7 +2781,7 @@ class VcIssuer {
    */
   registerRoutes(app: RouteApp): void {
     const { log, logArtifact, baseUrlOf, b64u, randomId, bbsKeyPair, vciError,
-            crypto, config, bbs2023, dpop, errorCodes, vciBatchSize,
+            stsCrypto, config, bbs2023, dpop, errorCodes, vciBatchSize,
             VCI_CONFIGS, VCI_CONFIG_ID, configIdOfIdentifier, vciConfigIds,
             vciFormatOf, issuerDidFor, deferredIntervalS, deferredReadyMs,
             deferredAccessTokens, deferredTransactions, offerTtlMs, vciNonces,
@@ -2684,7 +2810,7 @@ class VcIssuer {
     // --- Nonce Endpoint ------------------------------------------------------
     app.post('/oid4vci/nonce', (req, res) => {
       log.debug("Entering the OID4VCI nonce endpoint.");
-      const nonce = b64u(crypto.randomBytes(24));
+      const nonce = b64u(stsCrypto.randomBytes(24));
       const now = Date.now();
       // The expired go first, then the bound (oid4vci.cNonceCacheSize): a
       // c_nonce is a value this issuer handed out, so at the bound the
@@ -3265,63 +3391,61 @@ class VcIssuer {
                 event + " for " + id + ".");
     });
 
-    // Non-spec, like GET /oid4vci/notification/:id and GET
-    // /oid4vp/result/:state: how the last Credential Request actually arrived
-    // on the wire.
-    //
-    // A wallet cannot prove its own encryption. Everything observable in the
-    // page — the media type it displays, the ciphertext in its pane, even a
-    // credential coming back — is equally consistent with a wallet that built a
-    // JWE and then posted the plaintext, because with encryption_required false
-    // the issuer accepts that JSON and issues from it. This is the only place
-    // the truth lives.
-    app.get('/oid4vci/last_request', (req, res) => {
-      log.debug("Entering the (non-spec) last credential request endpoint.");
-      res.set('Cache-Control', 'no-store');
-      const last = this.lastCredentialRequestRecord();
-      res.status(200).type('application/json')
-         .send(JSON.stringify(last, null, 2));
-      log.debug("Leaving the (non-spec) last credential request endpoint. " +
-                "encrypted=" +
-                last.encrypted);
-    });
-
-    // What this issuer was told about a credential. Not part of OID4VCI — it
-    // exists so a test can check that a notification actually arrived and was
-    // understood, rather than trusting a 204.
-    app.get('/oid4vci/notification/:id', (req, res) => {
-      log.debug("Entering the notification inspection endpoint. id=" +
-                req.params.id);
-      const record = notificationIds.get(String(req.params.id));
-      if (!record) {
-        log.debug("Leaving the notification inspection endpoint. Unknown " +
-                  "id.");
-        errorCodes.mark(res, 'STS-VC-0024');
-        return vciError(res, 404, 'invalid_notification_id', 'No such ' +
-            'notification_id.');
-      }
-      res.status(200).type('application/json').send(JSON.stringify({
-        notification_id: req.params.id,
-        event: record.event,
-        event_description: record.description || '',
-        notified_at: record.notifiedAt || null
-      }));
-      log.debug("Leaving the notification inspection endpoint.");
-    });
     log.debug("Leaving VcIssuer.registerRoutes().");
   }
 
-  // The record `GET /oid4vci/last_request` answers with, for the tests.
+  // ---------------------------------------------------------------------------
+  // WHAT THE ISSUER SAW, FOR AN ADMINISTRATOR (#594). Until then the non-spec
+  // `GET /oid4vci/last_request` and `GET /oid4vci/notification/:id` answered
+  // these to anybody, in a development realm; they are Admin Read
+  // operations now — `GET /admin-api/oid4vci/last-request` and `GET
+  // /admin-api/oid4vci/notifications?id=` — because what a wallet sent and
+  // what it said it did with a credential are an operator's facts, and a
+  // product realm needs them as much as a wallet under test does.
+  //
+  // A wallet cannot prove its own encryption: everything observable in it —
+  // the media type it displays, the ciphertext in its pane, even a credential
+  // coming back — is equally consistent with a wallet that built a JWE and
+  // then posted the plaintext, because with encryption_required false the
+  // issuer accepts that JSON and issues from it. The first record is the
+  // only place the truth lives. The second is so that a notification can be
+  // seen to have arrived and been understood, rather than trusted from a
+  // 204.
+  // ---------------------------------------------------------------------------
   /**
-   * Returns the record `GET /oid4vci/last_request` answers with.
+   * How the last Credential Request arrived: its media type, and the kid,
+   * alg and enc of an encrypted one — never the request itself.
    *
-   * @returns the record
+   * @returns the record, `{ seen: false }` before any
    */
   lastCredentialRequest() {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.lastCredentialRequest().");
     log.debug("Leaving VcIssuer.lastCredentialRequest().");
     return this.lastCredentialRequestRecord();
+  }
+
+  /**
+   * What the Notification Endpoint was told about one issued credential.
+   *
+   * @param id - the notification_id the credential response carried
+   * @returns `{ notification_id, event, event_description, notified_at }`
+   *   (`event` null until the wallet notifies), or null for an id this
+   *   issuer did not issue
+   */
+  notificationRecord(id: unknown) {
+    const { log, notificationIds } = this.deps;
+    log.debug("Entering VcIssuer.notificationRecord().");
+    const key = String(id || '');
+    const record = key ? notificationIds.get(key) : null;
+    if (!record) {
+      log.debug("Leaving VcIssuer.notificationRecord(). Unknown.");
+      return null;
+    }
+    log.debug("Leaving VcIssuer.notificationRecord().");
+    return { notification_id: key, event: record.event || null,
+             event_description: record.description || '',
+             notified_at: record.notifiedAt || null };
   }
 }
 
@@ -3401,5 +3525,8 @@ export = {
   // (#187's ECDH-ES).
   encryptionProblem: slot.forward('encryptionProblem'),
   encryptToJwe: slot.forward('encryptToJwe'),
-  lastCredentialRequest: slot.forward('lastCredentialRequest')
+  lastCredentialRequest: slot.forward('lastCredentialRequest'),
+  // #594: the notification readback, for `GET /admin-api/oid4vci/
+  // notifications`.
+  notificationRecord: slot.forward('notificationRecord')
 };

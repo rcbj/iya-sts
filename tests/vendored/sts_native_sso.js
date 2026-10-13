@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -42,12 +42,15 @@
 // management API.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const consentScreen = require("./consent_screen.js");
+const PORTAL_SIGNIN = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -188,21 +191,6 @@ async function hop(who, method, url, opts) {
                                 "" };
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 function pkce() {
   log.debug("Entering pkce().");
   const verifier = crypto.randomBytes(32).toString("base64url");
@@ -238,12 +226,15 @@ async function codeGrant(who, app, scope, extra) {
   for (let n = 0; n < 8 && r.location && r.location.indexOf(root) === 0 &&
                   !consentScreen.isConsentScreen(r.location); n += 1) {
     if (/\/authn\/login\?/.test(r.location)) {
-      const page = await hop(who, "GET", r.location);
-      const fields = hiddenFields(page.text);
-      fields.username = HOLDER;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await hop(who, "POST", base + "/authn/login", { form: fields });
+      // THE SCREEN OVER `/authn-api` (#571), through the one helper, with
+      // this jar's cookies; its answer's `location` is where the flow goes.
+      const answer = await authnSignin.submit(base, r.location,
+        { action: "login", username: HOLDER, password: PASSWORD },
+        { cookie: who.header() });
+      who.take({ headers: answer.headers });
+      r = { status: authnSignin.responseLike(answer).status,
+            text: answer.text || "", json: answer.json,
+            location: answer.location };
     } else {
       r = await hop(who, "GET", r.location);
     }
@@ -583,16 +574,18 @@ async function test() {
                        "user");
   });
   // The person's own page, in the browser section 2 signed in: the portal's
-  // code flow rides on that sign-on session.
-  let page = await hop(browser, "GET", base + "/portal/devices");
-  for (let n = 0; n < 12 && (page.status === 302 || page.status === 303);
-       n += 1) {
-    page = await hop(browser, "GET", page.location);
-  }
+  // code flow rides on that sign-on session. Since #568 the portal is a
+  // static application, so the flow is the one its script runs
+  // (`portal_signin.js`, single sign-on on the browser's cookie) and the
+  // page is `/account-api/devices`' answer drawn by its renderers.
+  const portal = await PORTAL_SIGNIN.signInToThePortal(base, HOLDER, null,
+    { cookie: browser.header() });
+  const page = await portal.draw("/portal/devices");
   check("/portal/devices lists the device, with a Remove", function () {
-    assert.strictEqual(page.status, 200, page.text.slice(0, 300));
-    assert.ok(page.text.indexOf(held[0].id) >= 0, "the device is listed");
-    assert.ok(/value="remove"/.test(page.text), "no Remove form");
+    assert.strictEqual(page.status, 200,
+                       JSON.stringify(page.json).slice(0, 300));
+    assert.ok(page.html.indexOf(held[0].id) >= 0, "the device is listed");
+    assert.ok(/value="remove"/.test(page.html), "no Remove form");
   });
   await ok(api + "/users/remove-device", { user: HOLDER, id: held[0].id },
            "removed the device");

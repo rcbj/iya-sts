@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -72,7 +72,11 @@ import asn1js = require('asn1js');
 import pqJose = require('./pq_jose');
 // The vendored registry: every post-quantum algorithm by id, name and OID.
 import pqcX509 = require('./vendored/pqc_x509');
+// The JWE key establishment table (#82), for the JOSE KEM names — ML-KEM's
+// key-wrapping forms and the HPKE suites — the X.509 registry does not use.
+import stsCrypto = require('./crypto');
 import InstanceSlot = require('./instance_slot');
+import PqcBadgeView = require('../admin-ui/web_pqc_badge');
 
 type PqcKind = 'pq' | 'composite' | 'kem' | 'hybrid';
 
@@ -110,6 +114,9 @@ interface Logger {
 interface PqcSupportDeps {
   log: Logger;
   joseComposites: Record<string, { ml: string; trad: string }>;
+  // `common/crypto.js`'s describeJweKemAlg (#82): null for a name that is
+  // not an ML-KEM or HPKE JWE alg.
+  joseKem: (alg: string) => any;
   registry: {
     alg(name: string): RegistryEntry | null | undefined;
     algForOid(oid: string): RegistryEntry | null | undefined;
@@ -172,6 +179,7 @@ class PqcSupport {
     return {
       log: log,
       joseComposites: pqJose.COMPOSITES,
+      joseKem: stsCrypto.describeJweKemAlg,
       registry: pqcX509
     };
   }
@@ -229,6 +237,18 @@ class PqcSupport {
     if (!text) {
       log.debug("Leaving PqcSupport.ofAlgorithm(). Nothing named.");
       return null;
+    }
+    // A JOSE KEY ESTABLISHMENT ALG (#82): an ML-KEM one, or an HPKE suite
+    // over ML-KEM or a PQ/T hybrid. The classical HPKE suites (HPKE-0 to 7)
+    // are classical and fall through to null.
+    const kemAlg = this.deps.joseKem ? this.deps.joseKem(text) : null;
+    if (kemAlg && kemAlg.postQuantum) {
+      log.debug("Leaving PqcSupport.ofAlgorithm(). A JOSE KEM alg.");
+      return { kind: 'kem', algorithm: text,
+               label: kemAlg.kem + (kemAlg.family === 'HPKE'
+                 ? ' (HPKE, ' + kemAlg.mode + ')' : ''),
+               family: kemAlg.hybrid ? 'PQ/T hybrid KEM' : 'ML-KEM',
+               standard: kemAlg.spec };
     }
     const jose = joseComposites[text];
     if (jose) {
@@ -362,23 +382,12 @@ class PqcSupport {
   sentence(info: PqcInfo | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering PqcSupport.sentence().");
-    if (!info) {
-      log.debug("Leaving PqcSupport.sentence().");
-      return '';
-    }
-    const text = ({
-      pq: 'Post-quantum key pair: ' + info.label,
-      composite: 'Composite post-quantum key pair: ' + info.label +
-                 ' — both halves must verify',
-      kem: 'Post-quantum key-establishment key: ' + info.label +
-           ' — it signs nothing',
-      hybrid: 'Hybrid: a classical key whose certificate carries an ' +
-              info.label
-    } as Record<string, string>)[info.kind] ||
-      'Post-quantum: ' + info.label;
     log.debug("Leaving PqcSupport.sentence().");
-    return text + (info.standard ? ' (' + info.standard + ')' : '');
+    // The badge renderer's (#446): a page drawn in a browser says it the
+    // same way.
+    return PqcBadgeView.sentence(info);
   }
+
 }
 
 // ---------------------------------------------------------------------------

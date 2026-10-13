@@ -1,0 +1,1442 @@
+{
+  "kinds.password.label": {
+    "en": "21b86a0e7f34e88d",
+    "text": "Politique de mot de passe"
+  },
+  "kinds.password.appliesTo": {
+    "en": "e33b031ac2855712",
+    "text": "au PROCHAIN mot de passe défini dans ce domaine, et à rien de ce qui est déjà stocké"
+  },
+  "kinds.password.fallsBackTo": {
+    "en": "e1a34c11cd145d88",
+    "text": "les valeurs par défaut intégrées"
+  },
+  "kinds.password.param.noun": {
+    "en": "3df37c27d5224b9e",
+    "text": "profil de politique de mot de passe"
+  },
+  "password.FIELDS.minLength.label": {
+    "en": "54fda5553dbf64a5",
+    "text": "Longueur minimale"
+  },
+  "password.FIELDS.minLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "caractères"
+  },
+  "password.FIELDS.minLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "Le mot de passe le plus court que ce service acceptera de définir, compté en caractères (points de code Unicode ; un emoji compte donc pour un). L’attribut est celui de draft-behera-ldap-password-policy. La valeur par défaut est douze ; NIST SP 800-63B demande au moins 8, et 15 lorsqu’un mot de passe est le seul facteur."
+  },
+  "password.FIELDS.history.label": {
+    "en": "58e5a89d48d65a94",
+    "text": "Anciens mots de passe non réutilisables"
+  },
+  "password.FIELDS.history.unit": {
+    "en": "3049a1f8327e0215",
+    "text": "mots de passe"
+  },
+  "password.FIELDS.history.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "Combien des ANCIENS mots de passe d’une personne sont mémorisés et refusés. Le mot de passe actuel est toujours refusé lui aussi tant que cette valeur est supérieure à 0 ; 5 signifie donc qu’un nouveau mot de passe ne peut être aucun des six derniers. 0 désactive la règle. C’est l’attribut du brouillon, avec le sens que lui donne le brouillon. Chaque mot de passe mémorisé est conservé sous la forme du hachage scrypt sous lequel il était déjà stocké, dans pwdHistory sur l’entrée de la personne elle-même, et vérifier un nouveau mot de passe coûte une comparaison de hachage par mot de passe mémorisé."
+  },
+  "password.FIELDS.minSymbols.label": {
+    "en": "95033032ad043277",
+    "text": "Nombre minimal de symboles"
+  },
+  "password.FIELDS.minSymbols.unit": {
+    "en": "1ea50a8caf608504",
+    "text": "symboles"
+  },
+  "password.FIELDS.minSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "Combien de caractères qui ne sont ni une lettre, ni un chiffre, ni un espace blanc un mot de passe doit contenir. 0 désactive la règle."
+  },
+  "password.FIELDS.requireUppercase.label": {
+    "en": "41d8365a4b5a8473",
+    "text": "Exiger une lettre majuscule"
+  },
+  "password.FIELDS.requireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "Indique si un mot de passe doit contenir au moins une lettre majuscule, dans n’importe quelle écriture."
+  },
+  "password.FIELDS.requireDigit.label": {
+    "en": "eaa0c73c3cc00f02",
+    "text": "Exiger un chiffre"
+  },
+  "password.FIELDS.requireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "Indique si un mot de passe doit contenir au moins un chiffre décimal."
+  },
+  "password.FIELDS.generatedLength.label": {
+    "en": "9a6d2215cc16392c",
+    "text": "Longueur d’un mot de passe généré"
+  },
+  "password.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "caractères"
+  },
+  "password.FIELDS.generatedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "La longueur d’un mot de passe que ce service INVENTE — pour un nouvel utilisateur créé depuis la console ou /admin-api, l’action Générer d’un opérateur, et le compte d’amorçage du mode produit. Elle doit être au moins égale à la longueur minimale et au moins égale à deux fois le nombre de symboles plus deux. Vingt caractères tirés d’un alphabet de 90 caractères représentent environ 130 bits."
+  },
+  "password.SCHEMA.objectClasses.pwdPolicy.what": {
+    "en": "ab642ea5cb282745",
+    "text": "La classe de draft-behera-ldap-password-policy pour une entrée de politique de mot de passe. `pwdAttribute` nomme l’attribut que régit la politique, et ici c’est toujours `userPassword`."
+  },
+  "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
+    "en": "4daf3a60dd76691a",
+    "text": "La classe propre à ce service, qui porte les règles de composition et la longueur générée, pour lesquelles le brouillon n’a pas d’attribut. L’entrée est nommée par le PROFIL (`cn=default`)."
+  },
+  "password.SCHEMA.attributes.pwdAttribute.what": {
+    "en": "603a95b316f4b6f5",
+    "text": "L’attribut que régit cette politique : `userPassword`."
+  },
+  "password.SCHEMA.attributes.pwdMinLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "Le mot de passe le plus court que ce service acceptera de définir, compté en caractères (points de code Unicode ; un emoji compte donc pour un). L’attribut est celui de draft-behera-ldap-password-policy. La valeur par défaut est douze ; NIST SP 800-63B demande au moins 8, et 15 lorsqu’un mot de passe est le seul facteur."
+  },
+  "password.SCHEMA.attributes.pwdInHistory.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "Combien des ANCIENS mots de passe d’une personne sont mémorisés et refusés. Le mot de passe actuel est toujours refusé lui aussi tant que cette valeur est supérieure à 0 ; 5 signifie donc qu’un nouveau mot de passe ne peut être aucun des six derniers. 0 désactive la règle. C’est l’attribut du brouillon, avec le sens que lui donne le brouillon. Chaque mot de passe mémorisé est conservé sous la forme du hachage scrypt sous lequel il était déjà stocké, dans pwdHistory sur l’entrée de la personne elle-même, et vérifier un nouveau mot de passe coûte une comparaison de hachage par mot de passe mémorisé."
+  },
+  "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "Combien de caractères qui ne sont ni une lettre, ni un chiffre, ni un espace blanc un mot de passe doit contenir. 0 désactive la règle."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "Indique si un mot de passe doit contenir au moins une lettre majuscule, dans n’importe quelle écriture."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "Indique si un mot de passe doit contenir au moins un chiffre décimal."
+  },
+  "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "La longueur d’un mot de passe que ce service INVENTE — pour un nouvel utilisateur créé depuis la console ou /admin-api, l’action Générer d’un opérateur, et le compte d’amorçage du mode produit. Elle doit être au moins égale à la longueur minimale et au moins égale à deux fois le nombre de symboles plus deux. Vingt caractères tirés d’un alphabet de 90 caractères représentent environ 130 bits."
+  },
+  "password.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "À quoi sert le profil, pour la personne suivante."
+  },
+  "password.SCHEMA.personAttributes.pwdHistory.what": {
+    "en": "a057113a3f0da3b5",
+    "text": "Une valeur par ancien mot de passe mémorisé, sous la forme du brouillon `time#syntaxOID#length#data` — les données étant le hachage scrypt sous lequel ce mot de passe était stocké, jamais le mot de passe. Tenu à jour par ce service et refusé lors d’un add ou d’un modify LDAP, car un historique que n’importe qui peut modifier est un historique que n’importe qui peut vider."
+  },
+  "password.SCHEMA.personAttributes.pwdChangedTime.what": {
+    "en": "3c870b2e0c097f36",
+    "text": "La date à laquelle le mot de passe a été défini pour la dernière fois, au format GeneralizedTime. Tenu à jour par ce service."
+  },
+  "password.sentences.minLength": {
+    "en": "68a35ccf19e404fb",
+    "text": "au moins {{n}} caractères"
+  },
+  "password.sentences.minSymbolsOne": {
+    "en": "bcd5d7597e2d9c28",
+    "text": "au moins {{n}} symbole (un caractère qui n’est ni une lettre, ni un chiffre, ni un espace)"
+  },
+  "password.sentences.minSymbolsMany": {
+    "en": "59951161d553809a",
+    "text": "au moins {{n}} symboles (un caractère qui n’est ni une lettre, ni un chiffre, ni un espace)"
+  },
+  "password.sentences.uppercase": {
+    "en": "4a27754133d00695",
+    "text": "une lettre majuscule"
+  },
+  "password.sentences.digit": {
+    "en": "d24f1fa16d122006",
+    "text": "un chiffre"
+  },
+  "password.sentences.history": {
+    "en": "524e6c7233b4e109",
+    "text": "ni votre mot de passe actuel, ni aucun des {{n}} précédents"
+  },
+  "kinds.authn.label": {
+    "en": "07e21daf38c77b35",
+    "text": "Politique d’authentification"
+  },
+  "kinds.authn.governs": {
+    "en": "2a4cfd66f045124b",
+    "text": "quels mécanismes sont acceptés comme premier et comme second facteur"
+  },
+  "kinds.authn.appliesTo": {
+    "en": "3e20938990b921a7",
+    "text": "à la PROCHAINE connexion dans ce domaine ; une session déjà ouverte conserve les facteurs avec lesquels elle a été ouverte"
+  },
+  "kinds.authn.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "le profil du domaine par défaut s’il en a un, et les valeurs par défaut intégrées sinon"
+  },
+  "kinds.authn.param.noun": {
+    "en": "d3123a2955133922",
+    "text": "profil de politique d’authentification"
+  },
+  "authn.FIELDS.requireSecondFactor.label": {
+    "en": "fac9928873cc8d82",
+    "text": "Second facteur exigé"
+  },
+  "authn.FIELDS.requireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held` : un second facteur est demandé à une personne lorsqu’elle en détient un (ou lorsque son entrée indique stsMfaRequired). `always` : il est demandé à tout le monde dans ce domaine, et quelqu’un qui n’en détient aucun est invité à en enregistrer un à sa prochaine connexion. Ce champ a remplacé authn.mfaRequired. Il n’existe pas de « jamais » : un facteur détenu est toujours demandé."
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.label": {
+    "en": "1bc5adb51edf4c2b",
+    "text": "Second facteur pour les administrateurs"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "Pour toute personne détenant un rôle de console (Admin Read ou Admin Write) qui ne détient aucun second facteur. `offer` : l’étape qui en configure un lui est présentée, avec un bouton Ignorer, à chaque connexion. `always` : elle doit en configurer un avant d’être connectée — sauf l’administrateur intégré du domaine par défaut (admin.bootstrapUsername), à qui il n’est jamais que proposé, afin qu’un service ne se retrouve jamais sans personne capable de se connecter. `if-held` : comme tout le monde, selon le champ ci-dessus. PLUS FAIBLE QUE `always` : un administrateur protégé par un seul mot de passe est un administrateur que devient quiconque possède ce mot de passe."
+  },
+  "authn.FIELDS.passwordPrimary.label": {
+    "en": "8459feba5558b2cd",
+    "text": "Mot de passe — comme premier facteur"
+  },
+  "authn.FIELDS.passwordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
+  },
+  "authn.FIELDS.passwordSecondFactor.label": {
+    "en": "12355f2b5a9fbbc8",
+    "text": "Mot de passe — comme second facteur"
+  },
+  "authn.FIELDS.passwordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
+  },
+  "authn.FIELDS.passkeyPrimary.label": {
+    "en": "2f59d674bec89e1d",
+    "text": "Clé de sécurité ou clé d’accès (sans mot de passe) — comme premier facteur"
+  },
+  "authn.FIELDS.passkeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "Un identifiant WebAuthn enregistré dans le rôle principal, qui connecte sans mot de passe."
+  },
+  "authn.FIELDS.securityKeySecondFactor.label": {
+    "en": "62611e734d22b2fe",
+    "text": "Clé de sécurité (second facteur) — comme second facteur"
+  },
+  "authn.FIELDS.securityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "Un identifiant WebAuthn enregistré dans le rôle mfa, demandé après un premier facteur."
+  },
+  "authn.FIELDS.totpSecondFactor.label": {
+    "en": "4dbb7fdae02261a7",
+    "text": "Application d’authentification (TOTP) — comme second facteur"
+  },
+  "authn.FIELDS.totpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.label": {
+    "en": "ee9982b48a9c6a90",
+    "text": "Code de récupération — comme second facteur"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "Un code à usage unique tiré d’un jeu que la personne a généré. Désactivé ici, aucun nouveau jeu ne peut être généré ; un jeu déjà détenu fonctionne toujours (cette ligne a remplacé backupCodes.enabled, et en conserve le contrat)."
+  },
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "Code à six chiffres envoyé par e-mail — comme premier facteur"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "Code à six chiffres envoyé par e-mail — comme second facteur"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "Lien de connexion envoyé par e-mail — comme premier facteur"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "Lien de connexion envoyé par e-mail — comme second facteur"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.FIELDS.certificatePrimary.label": {
+    "en": "d304f2a565b7a9e3",
+    "text": "Certificat client TLS — comme premier facteur"
+  },
+  "authn.FIELDS.certificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "GET /tls/sign-in avec un certificat client vérifié."
+  },
+  "authn.FIELDS.kerberosPrimary.label": {
+    "en": "f2f6ed9dd0454fdc",
+    "text": "Kerberos (SPNEGO) — comme premier facteur"
+  },
+  "authn.FIELDS.kerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego avec un ticket Kerberos."
+  },
+  "authn.FIELDS.walletPrimary.label": {
+    "en": "f215dfc0a7d74e7f",
+    "text": "Présentation depuis un portefeuille — comme premier facteur"
+  },
+  "authn.FIELDS.walletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet avec un justificatif émis par ce domaine, ou un ID Token SIOPv2 auto-émis par une clé enregistrée. Comme SECOND facteur, le portefeuille présenté après un mot de passe."
+  },
+  "authn.FIELDS.walletSecondFactor.label": {
+    "en": "d77b29a6f118e61d",
+    "text": "Présentation depuis un portefeuille — comme second facteur"
+  },
+  "authn.FIELDS.walletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet avec un justificatif émis par ce domaine, ou un ID Token SIOPv2 auto-émis par une clé enregistrée. Comme SECOND facteur, le portefeuille présenté après un mot de passe."
+  },
+  "authn.FIELDS.federationPrimary.label": {
+    "en": "60fa1bebb39d244f",
+    "text": "Partenaire de fédération — comme premier facteur"
+  },
+  "authn.FIELDS.federationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "Une connexion attestée par un partenaire de fédération configuré."
+  },
+  "authn.FIELDS.emailCodeTtlS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "secondes"
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "Durée de validité d’un code ou d’un lien envoyé par e-mail"
+  },
+  "authn.FIELDS.emailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "À partir du moment de son envoi. Dix minutes au plus, la limite fixée par NIST SP 800-63B-4 section 3.1.3.2 pour un secret hors bande."
+  },
+  "authn.FIELDS.emailCodeAttempts.unit": {
+    "en": "1ac7d61d1d29fc2e",
+    "text": "tentatives"
+  },
+  "authn.FIELDS.emailCodeAttempts.label": {
+    "en": "c0cb3753ee818f64",
+    "text": "Codes erronés avant la fin de l’étape de connexion"
+  },
+  "authn.FIELDS.emailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "Combien de codes erronés une étape de connexion accepte avant d’être close, la personne devant alors recommencer. Les limites de débit par personne et par réseau s’appliquent également."
+  },
+  "authn.FIELDS.emailResendS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "secondes"
+  },
+  "authn.FIELDS.emailResendS.label": {
+    "en": "0780d5107e58e3e7",
+    "text": "Délai minimal avant l’envoi d’un autre code ou lien"
+  },
+  "authn.FIELDS.emailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "Un nouveau code ou lien remplace le précédent, qui cesse de fonctionner. Trois au plus sont envoyés pour une même étape de connexion."
+  },
+  "authn.FIELDS.emailFailureLimit.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "échecs"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "Échecs consécutifs avant la désactivation du facteur e-mail d’une personne"
+  },
+  "authn.FIELDS.emailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 section 3.2.2 demande au plus 100. La personne, ainsi que ses administrateurs, en sont informés, et la personne le réactive depuis le portail."
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.label": {
+    "en": "3810571654974307",
+    "text": "Un navigateur mémorisé peut se dispenser du second facteur"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une personne qui se connecte sur un navigateur qu’elle a choisi de mémoriser ne se voit pas redemander son second facteur dans la période ci-dessous suivant la dernière fois qu’elle l’a fourni sur ce navigateur. JAMAIS sur la console d’administration, le portail utilisateur ou le débogueur de protocoles ; jamais pour un administrateur ; jamais tant que le risque de la connexion est moyen ou plus élevé ; et la connexion ne compte alors que pour UN facteur auprès de chaque partie de confiance — amr [\"pwd\"] et acr \"1\", comme un simple mot de passe — de sorte qu’une application qui demande « mfa » se le voit refuser. Le navigateur est reconnu par un cookie au porteur : quiconque copie le cookie se dispense lui aussi du second facteur, jusqu’à ce que la copie soit détectée."
+  },
+  "authn.FIELDS.rememberedBrowserDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "authn.FIELDS.rememberedBrowserDays.label": {
+    "en": "dcd7c57a1e61d82f",
+    "text": "Durée pendant laquelle un navigateur mémorisé se dispense du second facteur"
+  },
+  "authn.FIELDS.rememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "Comptée à partir de la dernière fois que la personne a fourni son second facteur sur ce navigateur. Passé ce délai, il lui est redemandé, et le fournir fait repartir la période."
+  },
+  "authn.SCHEMA.objectClasses.stsAuthnPolicy.what": {
+    "en": "f5f9a5956c21100f",
+    "text": "La classe de ce service pour une politique d’authentification : quels mécanismes sont acceptés comme premier et comme second facteur, et quand un second facteur est exigé. L’entrée est nommée par le PROFIL (`cn=default`)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held` : un second facteur est demandé à une personne lorsqu’elle en détient un (ou lorsque son entrée indique stsMfaRequired). `always` : il est demandé à tout le monde dans ce domaine, et quelqu’un qui n’en détient aucun est invité à en enregistrer un à sa prochaine connexion. Ce champ a remplacé authn.mfaRequired. Il n’existe pas de « jamais » : un facteur détenu est toujours demandé."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "Pour toute personne détenant un rôle de console (Admin Read ou Admin Write) qui ne détient aucun second facteur. `offer` : l’étape qui en configure un lui est présentée, avec un bouton Ignorer, à chaque connexion. `always` : elle doit en configurer un avant d’être connectée — sauf l’administrateur intégré du domaine par défaut (admin.bootstrapUsername), à qui il n’est jamais que proposé, afin qu’un service ne se retrouve jamais sans personne capable de se connecter. `if-held` : comme tout le monde, selon le champ ci-dessus. PLUS FAIBLE QUE `always` : un administrateur protégé par un seul mot de passe est un administrateur que devient quiconque possède ce mot de passe."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "Un identifiant WebAuthn enregistré dans le rôle principal, qui connecte sans mot de passe."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "Un identifiant WebAuthn enregistré dans le rôle mfa, demandé après un premier facteur."
+  },
+  "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "Un code à usage unique tiré d’un jeu que la personne a généré. Désactivé ici, aucun nouveau jeu ne peut être généré ; un jeu déjà détenu fonctionne toujours (cette ligne a remplacé backupCodes.enabled, et en conserve le contrat)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "GET /tls/sign-in avec un certificat client vérifié."
+  },
+  "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego avec un ticket Kerberos."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet avec un justificatif émis par ce domaine, ou un ID Token SIOPv2 auto-émis par une clé enregistrée. Comme SECOND facteur, le portefeuille présenté après un mot de passe."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet avec un justificatif émis par ce domaine, ou un ID Token SIOPv2 auto-émis par une clé enregistrée. Comme SECOND facteur, le portefeuille présenté après un mot de passe."
+  },
+  "authn.SCHEMA.attributes.stsAuthnFederationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "Une connexion attestée par un partenaire de fédération configuré."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "À partir du moment de son envoi. Dix minutes au plus, la limite fixée par NIST SP 800-63B-4 section 3.1.3.2 pour un secret hors bande."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "Combien de codes erronés une étape de connexion accepte avant d’être close, la personne devant alors recommencer. Les limites de débit par personne et par réseau s’appliquent également."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "Un nouveau code ou lien remplace le précédent, qui cesse de fonctionner. Trois au plus sont envoyés pour une même étape de connexion."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "NIST SP 800-63B-4 section 3.2.2 demande au plus 100. La personne, ainsi que ses administrateurs, en sont informés, et la personne le réactive depuis le portail."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une personne qui se connecte sur un navigateur qu’elle a choisi de mémoriser ne se voit pas redemander son second facteur dans la période ci-dessous suivant la dernière fois qu’elle l’a fourni sur ce navigateur. JAMAIS sur la console d’administration, le portail utilisateur ou le débogueur de protocoles ; jamais pour un administrateur ; jamais tant que le risque de la connexion est moyen ou plus élevé ; et la connexion ne compte alors que pour UN facteur auprès de chaque partie de confiance — amr [\"pwd\"] et acr \"1\", comme un simple mot de passe — de sorte qu’une application qui demande « mfa » se le voit refuser. Le navigateur est reconnu par un cookie au porteur : quiconque copie le cookie se dispense lui aussi du second facteur, jusqu’à ce que la copie soit détectée."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "Comptée à partir de la dernière fois que la personne a fourni son second facteur sur ce navigateur. Passé ce délai, il lui est redemandé, et le fournir fait repartir la période."
+  },
+  "authn.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "À quoi sert le profil, pour la personne suivante."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "Le second facteur par e-mail que cette personne a choisi : `code` ou `link`. Absent : aucun. Défini sur /portal/mfa, effacé sur /admin/mfa et après un trop grand nombre d’échecs consécutifs."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "Codes ou liens envoyés par e-mail ayant échoué consécutivement, remis à zéro par une réussite. Tenu à jour par ce service."
+  },
+  "authn.MECHANISMS.password.label": {
+    "en": "e7cf3ef4f17c3999",
+    "text": "Mot de passe"
+  },
+  "authn.MECHANISMS.password.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Un mot de passe sur l’écran de connexion. Comme SECOND facteur, c’est le mot de passe demandé après un portefeuille ou un autre premier facteur sans mot de passe."
+  },
+  "authn.MECHANISMS.passkey.label": {
+    "en": "84a03e8c438f4cfa",
+    "text": "Clé de sécurité ou clé d’accès (sans mot de passe)"
+  },
+  "authn.MECHANISMS.passkey.what": {
+    "en": "fa5464ced243d64c",
+    "text": "Un identifiant WebAuthn enregistré dans le rôle principal, qui connecte sans mot de passe."
+  },
+  "authn.MECHANISMS.securityKey.label": {
+    "en": "f7b41914800bf87a",
+    "text": "Clé de sécurité (second facteur)"
+  },
+  "authn.MECHANISMS.securityKey.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "Un identifiant WebAuthn enregistré dans le rôle mfa, demandé après un premier facteur."
+  },
+  "authn.MECHANISMS.totp.label": {
+    "en": "6e6d78e296bae6dd",
+    "text": "Application d’authentification (TOTP)"
+  },
+  "authn.MECHANISMS.totp.what": {
+    "en": "ea01b0588ad42047",
+    "text": "Un code à usage unique RFC 6238. Jamais un premier facteur : ce service détient le même secret partagé que l’application. Désactivé ici, personne ne peut en ENREGISTRER un ; une personne qui en détient déjà un doit toujours le fournir, car un interrupteur qui ramènerait chaque compte enregistré à un simple mot de passe ferait autre chose que ce qu’il annonce (cette ligne a remplacé totp.enabled, et en conserve le contrat)."
+  },
+  "authn.MECHANISMS.recoveryCode.label": {
+    "en": "5bda8302b5ecf4d3",
+    "text": "Code de récupération"
+  },
+  "authn.MECHANISMS.recoveryCode.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "Un code à usage unique tiré d’un jeu que la personne a généré. Désactivé ici, aucun nouveau jeu ne peut être généré ; un jeu déjà détenu fonctionne toujours (cette ligne a remplacé backupCodes.enabled, et en conserve le contrat)."
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "Code à six chiffres envoyé par e-mail"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Un code à six chiffres envoyé à l’adresse VÉRIFIÉE de la personne. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "Lien de connexion envoyé par e-mail"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Un lien à usage unique envoyé à l’adresse VÉRIFIÉE de la personne, qui ne termine la connexion que dans le navigateur qui l’a commencée. NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.MECHANISMS.certificate.label": {
+    "en": "484883fec27a25ab",
+    "text": "Certificat client TLS"
+  },
+  "authn.MECHANISMS.certificate.what": {
+    "en": "458b5463993c8ba4",
+    "text": "GET /tls/sign-in avec un certificat client vérifié."
+  },
+  "authn.MECHANISMS.kerberos.label": {
+    "en": "a8316dcb1a42420f",
+    "text": "Kerberos (SPNEGO)"
+  },
+  "authn.MECHANISMS.kerberos.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego avec un ticket Kerberos."
+  },
+  "authn.MECHANISMS.wallet.label": {
+    "en": "696e7476221a3382",
+    "text": "Présentation depuis un portefeuille"
+  },
+  "authn.MECHANISMS.wallet.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet avec un justificatif émis par ce domaine, ou un ID Token SIOPv2 auto-émis par une clé enregistrée. Comme SECOND facteur, le portefeuille présenté après un mot de passe."
+  },
+  "authn.MECHANISMS.federation.label": {
+    "en": "a96ac2d1dc7dff02",
+    "text": "Partenaire de fédération"
+  },
+  "authn.MECHANISMS.federation.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "Une connexion attestée par un partenaire de fédération configuré."
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 section 3.1.3.1 : « Email SHALL NOT be used for out-of-band authentication », car une boîte aux lettres peut être atteinte avec un simple mot de passe, et un courrier peut être lu en transit ou détourné. Désactivé par défaut pour cette raison ; ne l’activez que là où c’est un risque accepté."
+  },
+  "authn.sentences.firstFactors": {
+    "en": "1d98bbbf6bae810b",
+    "text": "premiers facteurs : {{list}}"
+  },
+  "authn.sentences.secondFactors": {
+    "en": "0e43f24fd8e81289",
+    "text": "seconds facteurs : {{list}}"
+  },
+  "authn.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "aucun"
+  },
+  "authn.sentences.secondAlways": {
+    "en": "b1727eb39a8cf698",
+    "text": "un second facteur est exigé de tout le monde"
+  },
+  "authn.sentences.secondIfHeld": {
+    "en": "644fee6946608afb",
+    "text": "un second facteur est exigé de ceux qui en détiennent un"
+  },
+  "authn.sentences.adminAlways": {
+    "en": "f38bf66a5f6f79eb",
+    "text": "les administrateurs doivent en configurer un (il est proposé à l’administrateur intégré)"
+  },
+  "authn.sentences.adminOffer": {
+    "en": "64f9643cf453bfee",
+    "text": "les administrateurs qui n’en détiennent aucun se voient en proposer un à chaque connexion"
+  },
+  "authn.sentences.adminAsked": {
+    "en": "69fccba563079867",
+    "text": "les administrateurs sont soumis à la même demande que tout le monde"
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "un code ou un lien envoyé par e-mail est valable {{n}} secondes"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "un code ou un lien envoyé par e-mail est valable {{n}} secondes — INACTIF : ce domaine ne peut pas envoyer de courrier"
+  },
+  "kinds.serviceAccount.label": {
+    "en": "029b1070484594c2",
+    "text": "Politique des comptes de service"
+  },
+  "kinds.serviceAccount.governs": {
+    "en": "dc2f42e8f87a7bcd",
+    "text": "ce qu’un compte de service peut faire — le second facteur, le navigateur, les portes à mot de passe — et la rotation de son mot de passe"
+  },
+  "kinds.serviceAccount.appliesTo": {
+    "en": "7529888c07b7db03",
+    "text": "à chaque compte de service de ce domaine, à partir de sa prochaine connexion, de son prochain bind ou de sa prochaine rotation"
+  },
+  "kinds.serviceAccount.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "le profil du domaine par défaut s’il en a un, et les valeurs par défaut intégrées sinon"
+  },
+  "kinds.serviceAccount.param.noun": {
+    "en": "35eeb58fca1d2edf",
+    "text": "profil de politique des comptes de service"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.label": {
+    "en": "5c60d609e3a83940",
+    "text": "Les comptes de service sont dispensés du second facteur"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, les exigences de second facteur de la politique d’authentification ne s’appliquent pas à un compte de service de ce domaine, pas plus que le refus d’un simple mot de passe aux portes à mot de passe (#101). L’amr du compte n’indique toujours que pwd ; une partie de confiance qui demande davantage se le voit donc refuser. PLUS FAIBLE : un compte protégé par un seul mot de passe est un compte que devient quiconque possède ce mot de passe."
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.label": {
+    "en": "4ed97ae3678854cb",
+    "text": "Les comptes de service peuvent se connecter dans un navigateur"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Désactivé, l’écran de connexion, le portail utilisateur et la console d’administration refusent un compte de service, quel que soit le premier facteur qu’il présente, et transformer une personne en compte de service met fin à ses sessions de navigateur. Un compte de service est utilisé par un programme, et un programme n’a rien à faire sur un écran de connexion."
+  },
+  "serviceAccount.FIELDS.allowLdapBind.label": {
+    "en": "6990793c25a0ff94",
+    "text": "Porte : bind simple LDAP"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "Un bind sur 389 ou 636 (RFC 4513). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.FIELDS.allowWsTrust.label": {
+    "en": "66d43931f786043d",
+    "text": "Porte : UsernameToken WS-Trust"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "Un UsernameToken WS-Security envoyé au service d’émission de jetons de sécurité. Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.FIELDS.allowScim.label": {
+    "en": "069d413789335b8c",
+    "text": "Porte : HTTP Basic SCIM"
+  },
+  "serviceAccount.FIELDS.allowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic sur /scim/v2 (RFC 7617). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.FIELDS.allowSsf.label": {
+    "en": "bc59f0c260a825d0",
+    "text": "Porte : HTTP Basic Shared Signals"
+  },
+  "serviceAccount.FIELDS.allowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic sur les points de terminaison /ssf (RFC 7617). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.FIELDS.allowEst.label": {
+    "en": "259d4d38a4e9d8cc",
+    "text": "Porte : HTTP Basic EST"
+  },
+  "serviceAccount.FIELDS.allowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic sur /.well-known/est (RFC 7030 section 3.2.3). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.FIELDS.allowKerberos.label": {
+    "en": "d9a91a667be2b5f9",
+    "text": "Porte : échange AS Kerberos"
+  },
+  "serviceAccount.FIELDS.allowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "Un AS-REQ dont la pré-authentification prouve la clé du mot de passe (RFC 4120), et MS-KKDCP. Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.label": {
+    "en": "fce855bdcd0e1ba9",
+    "text": "Porte : octroi par mot de passe OAuth 2.0"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password au point de terminaison de jeton (RFC 6749 section 4.3), là où le domaine autorise cet octroi. Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.FIELDS.rotationEnabled.label": {
+    "en": "365f31e83a78cc6c",
+    "text": "Faire tourner automatiquement les mots de passe des comptes de service"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, la tâche service-accounts.rotate donne à chaque compte de service qui nomme une destination de publication un nouveau mot de passe généré à chaque intervalle : publié vers la destination D’ABORD, son hachage enregistré seulement après la réussite de la publication, l’ancien mot de passe étant conservé pendant le chevauchement ci-dessous. Une publication échouée ne change rien. Ne peut pas être activé tant que ce domaine n’a aucune destination de publication."
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "jours"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.label": {
+    "en": "bb5664abd72273db",
+    "text": "Intervalle de rotation"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "Durée pendant laquelle le mot de passe d’un compte de service est conservé avant que la tâche ne le remplace, comptée à partir de la dernière rotation (ou du dernier changement de mot de passe du compte)."
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.unit": {
+    "en": "90e63d85fa1ab2c8",
+    "text": "minutes"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.label": {
+    "en": "146af6815514852b",
+    "text": "Durée pendant laquelle l’ancien mot de passe fonctionne encore"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "Après une rotation, l’ancien mot de passe est accepté pendant cette durée, afin qu’un consommateur lent à lire le nouveau ne soit pas refusé — ni compté comme une tentative de devinette par l’évaluation des risques (#226). Les anciennes clés Kerberos sont conservées aussi longtemps. 0 : l’ancien mot de passe cesse immédiatement de fonctionner."
+  },
+  "serviceAccount.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "caractères"
+  },
+  "serviceAccount.FIELDS.generatedLength.label": {
+    "en": "f2c4928b6c7393e9",
+    "text": "Longueur d’un mot de passe renouvelé"
+  },
+  "serviceAccount.FIELDS.generatedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "Tiré par le générateur de la politique de mot de passe ; il respecte donc cette politique et n’est jamais plus court que sa longueur minimale."
+  },
+  "serviceAccount.FIELDS.requireOwner.label": {
+    "en": "1c075e89b0a877a8",
+    "text": "Un compte de service doit nommer un propriétaire"
+  },
+  "serviceAccount.FIELDS.requireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "ACTIVÉ PAR DÉFAUT. Le propriétaire — une personne ou un groupe de ce domaine — est celui qui répond du compte ; un compte de service ne peut pas être enregistré sans propriétaire tant que ce paramètre est activé."
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "échecs"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.label": {
+    "en": "74f32eb1fa2cb6f2",
+    "text": "Rotations échouées consécutives avant l’alarme"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "Une rotation échouée est réessayée à la prochaine exécution de la tâche. Après ce nombre d’échecs consécutifs, le compte est signalé sur Supervision → Comptes de service et journalisé comme une alarme (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
+    "en": "0ff4e4aa3597259f",
+    "text": "La classe de ce service pour une politique des comptes de service : ce qu’un compte de service de ce domaine peut faire et comment son mot de passe tourne. L’entrée est nommée par le PROFIL (`cn=default`)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, les exigences de second facteur de la politique d’authentification ne s’appliquent pas à un compte de service de ce domaine, pas plus que le refus d’un simple mot de passe aux portes à mot de passe (#101). L’amr du compte n’indique toujours que pwd ; une partie de confiance qui demande davantage se le voit donc refuser. PLUS FAIBLE : un compte protégé par un seul mot de passe est un compte que devient quiconque possède ce mot de passe."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Désactivé, l’écran de connexion, le portail utilisateur et la console d’administration refusent un compte de service, quel que soit le premier facteur qu’il présente, et transformer une personne en compte de service met fin à ses sessions de navigateur. Un compte de service est utilisé par un programme, et un programme n’a rien à faire sur un écran de connexion."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "Un bind sur 389 ou 636 (RFC 4513). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "Un UsernameToken WS-Security envoyé au service d’émission de jetons de sécurité. Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic sur /scim/v2 (RFC 7617). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic sur les points de terminaison /ssf (RFC 7617). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic sur /.well-known/est (RFC 7030 section 3.2.3). Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "Un AS-REQ dont la pré-authentification prouve la clé du mot de passe (RFC 4120), et MS-KKDCP. Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password au point de terminaison de jeton (RFC 6749 section 4.3), là où le domaine autorise cet octroi. Désactivé, le mot de passe correct d’un compte de service y est refusé comme le serait un mot de passe erroné."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, la tâche service-accounts.rotate donne à chaque compte de service qui nomme une destination de publication un nouveau mot de passe généré à chaque intervalle : publié vers la destination D’ABORD, son hachage enregistré seulement après la réussite de la publication, l’ancien mot de passe étant conservé pendant le chevauchement ci-dessous. Une publication échouée ne change rien. Ne peut pas être activé tant que ce domaine n’a aucune destination de publication."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "Durée pendant laquelle le mot de passe d’un compte de service est conservé avant que la tâche ne le remplace, comptée à partir de la dernière rotation (ou du dernier changement de mot de passe du compte)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "Après une rotation, l’ancien mot de passe est accepté pendant cette durée, afin qu’un consommateur lent à lire le nouveau ne soit pas refusé — ni compté comme une tentative de devinette par l’évaluation des risques (#226). Les anciennes clés Kerberos sont conservées aussi longtemps. 0 : l’ancien mot de passe cesse immédiatement de fonctionner."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctGeneratedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "Tiré par le générateur de la politique de mot de passe ; il respecte donc cette politique et n’est jamais plus court que sa longueur minimale."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRequireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "ACTIVÉ PAR DÉFAUT. Le propriétaire — une personne ou un groupe de ce domaine — est celui qui répond du compte ; un compte de service ne peut pas être enregistré sans propriétaire tant que ce paramètre est activé."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "Une rotation échouée est réessayée à la prochaine exécution de la tâche. Après ce nombre d’échecs consécutifs, le compte est signalé sur Supervision → Comptes de service et journalisé comme une alarme (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "À quoi sert le profil, pour la personne suivante."
+  },
+  "serviceAccount.DOORS.allowLdapBind.label": {
+    "en": "02f30171dcced882",
+    "text": "Bind simple LDAP"
+  },
+  "serviceAccount.DOORS.allowLdapBind.what": {
+    "en": "3a8c8bfe4923e585",
+    "text": "Un bind sur 389 ou 636 (RFC 4513)."
+  },
+  "serviceAccount.DOORS.allowWsTrust.label": {
+    "en": "a1d8fa9805648e7d",
+    "text": "UsernameToken WS-Trust"
+  },
+  "serviceAccount.DOORS.allowWsTrust.what": {
+    "en": "4d920a20f96a19a1",
+    "text": "Un UsernameToken WS-Security envoyé au service d’émission de jetons de sécurité."
+  },
+  "serviceAccount.DOORS.allowScim.label": {
+    "en": "13441836ceee258a",
+    "text": "HTTP Basic SCIM"
+  },
+  "serviceAccount.DOORS.allowScim.what": {
+    "en": "506c021bbd796caa",
+    "text": "HTTP Basic sur /scim/v2 (RFC 7617)."
+  },
+  "serviceAccount.DOORS.allowSsf.label": {
+    "en": "5f0a37c29c6be8ab",
+    "text": "HTTP Basic Shared Signals"
+  },
+  "serviceAccount.DOORS.allowSsf.what": {
+    "en": "41e56e2806f5f363",
+    "text": "HTTP Basic sur les points de terminaison /ssf (RFC 7617)."
+  },
+  "serviceAccount.DOORS.allowEst.label": {
+    "en": "90892c78280ab239",
+    "text": "HTTP Basic EST"
+  },
+  "serviceAccount.DOORS.allowEst.what": {
+    "en": "a40e0a702c1600f6",
+    "text": "HTTP Basic sur /.well-known/est (RFC 7030 section 3.2.3)."
+  },
+  "serviceAccount.DOORS.allowKerberos.label": {
+    "en": "b707a90f8fd22d69",
+    "text": "Échange AS Kerberos"
+  },
+  "serviceAccount.DOORS.allowKerberos.what": {
+    "en": "22fac9e9e9e7d0a8",
+    "text": "Un AS-REQ dont la pré-authentification prouve la clé du mot de passe (RFC 4120), et MS-KKDCP."
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.label": {
+    "en": "a55abf2085020a8c",
+    "text": "Octroi par mot de passe OAuth 2.0"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.what": {
+    "en": "7fe8d96fec703361",
+    "text": "grant_type=password au point de terminaison de jeton (RFC 6749 section 4.3), là où le domaine autorise cet octroi."
+  },
+  "serviceAccount.sentences.exempt": {
+    "en": "b26ecbca5a57dc48",
+    "text": "les comptes de service sont DISPENSÉS du second facteur"
+  },
+  "serviceAccount.sentences.notExempt": {
+    "en": "b02c592e6db99be5",
+    "text": "les comptes de service respectent les mêmes règles de second facteur que tout le monde"
+  },
+  "serviceAccount.sentences.browser": {
+    "en": "93b1e12955e68cb6",
+    "text": "les comptes de service peuvent se connecter dans un navigateur"
+  },
+  "serviceAccount.sentences.noBrowser": {
+    "en": "63d0aee214048278",
+    "text": "les comptes de service sont refusés à toute connexion dans un navigateur"
+  },
+  "serviceAccount.sentences.doors": {
+    "en": "c501e87ae7952f69",
+    "text": "portes à mot de passe : {{list}}"
+  },
+  "serviceAccount.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "aucune"
+  },
+  "serviceAccount.sentences.rotation": {
+    "en": "12695290fe4a7d33",
+    "text": "les mots de passe tournent tous les {{days}} jours, l’ancien fonctionnant encore pendant {{minutes}} minutes"
+  },
+  "serviceAccount.sentences.noRotation": {
+    "en": "4ff442ba6a6ee158",
+    "text": "les mots de passe ne tournent pas automatiquement"
+  },
+  "serviceAccount.sentences.owner": {
+    "en": "d9eff26803e4db69",
+    "text": "chaque compte de service nomme un propriétaire"
+  },
+  "serviceAccount.sentences.noOwner": {
+    "en": "6ad1c61ec9cf3e86",
+    "text": "un compte de service peut n’avoir aucun propriétaire"
+  },
+  "kinds.passkey.label": {
+    "en": "dc0e1f0076ac175f",
+    "text": "Politique des clés d’accès"
+  },
+  "kinds.passkey.governs": {
+    "en": "31eeef667c347730",
+    "text": "le comportement des clés d’accès — si une connexion peut ne nommer aucun nom d’utilisateur, et ce qu’une clé de sécurité doit stocker"
+  },
+  "kinds.passkey.appliesTo": {
+    "en": "1e3aef415c5feb43",
+    "text": "à la PROCHAINE connexion et à la PROCHAINE clé d’accès enregistrée dans ce domaine ; une clé d’accès déjà enregistrée conserve ce que son authentificateur a stocké"
+  },
+  "kinds.passkey.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "le profil du domaine par défaut s’il en a un, et les valeurs par défaut intégrées sinon"
+  },
+  "kinds.passkey.param.noun": {
+    "en": "eb904193445442cf",
+    "text": "profil de politique des clés d’accès"
+  },
+  "passkey.FIELDS.allowUsernameless.label": {
+    "en": "188831dad6ee4817",
+    "text": "Autoriser une connexion par clé d’accès sans nom d’utilisateur"
+  },
+  "passkey.FIELDS.allowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "ACTIVÉ PAR DÉFAUT. Activé, l’écran de connexion propose *Se connecter avec une clé d’accès* et le remplissage automatique du champ du nom d’utilisateur, qui demandent au navigateur n’importe quel identifiant détectable de ce domaine (WebAuthn Level 3 section 5.4, `allowCredentials` vide) et connectent le compte que nomme son identifiant d’utilisateur (user handle), la vérification de l’utilisateur étant exigée et contrôlée. Désactivé, aucun des deux n’est proposé et une connexion nomme toujours d’abord la personne. Remplace le paramètre webauthn.usernameless."
+  },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "Exiger une connexion par clé d’accès sans nom d’utilisateur"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (appAuthnMechanism `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
+  },
+  "passkey.FIELDS.securityKeyResidentKey.label": {
+    "en": "d2b810facc1c57f0",
+    "text": "Ce que demande « Utiliser une clé de sécurité » lorsque la connexion sans nom d’utilisateur est activée"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "Le `residentKey` qu’envoie un enregistrement via *Utiliser une clé de sécurité* (ou un enregistrement qui ne nomme aucun type) TANT QUE la connexion sans nom d’utilisateur est ACTIVÉE. Lorsqu’elle est désactivée, le bouton demande toujours `required` ; il crée donc un identifiant détectable comme le fait *Créer une clé d’accès* (qui demande toujours `required`). `discouraged` ou `preferred` épargnent les quelques emplacements résidents d’une clé de sécurité, au prix d’une clé qui a besoin du nom d’utilisateur pour se connecter. Remplace le paramètre webauthn.residentKey."
+  },
+  "passkey.FIELDS.backupEligibility.label": {
+    "en": "ddcad787bb43ec66",
+    "text": "Clés d’accès synchronisées (éligibles à la sauvegarde)"
+  },
+  "passkey.FIELDS.backupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow` (la valeur par défaut) accepte n’importe quelle clé d’accès. `disallow` n’accepte que les clés LIÉES À UN APPAREIL : une clé d’accès dont l’authentificateur indique qu’elle peut être sauvegardée ou synchronisée (l’indicateur BE, WebAuthn Level 3 section 6.1) est refusée lors de son enregistrement et lorsqu’elle connecte quelqu’un ; une clé d’accès synchronisée enregistrée avant que le domaine ne dise non cesse donc aussi de fonctionner. BE ne change jamais pour un identifiant."
+  },
+  "passkey.FIELDS.enforcePinLength.label": {
+    "en": "31eb482ccf4b3fd1",
+    "text": "Exiger une longueur minimale de PIN pour les clés de sécurité"
+  },
+  "passkey.FIELDS.enforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, l’enregistrement demande à l’authentificateur sa longueur minimale de PIN (CTAP 2.1 section 12.4, l’extension minPinLength), l’enregistre sur la clé, et refuse une clé dont le minimum est inférieur à la ligne suivante, à l’enregistrement et à chaque connexion. Une clé ne répond qu’aux parties de confiance auxquelles elle a été configurée pour l’indiquer (CTAP 2.1 setMinPINLength avec cet RP ID) ; toute autre clé, et toute clé d’accès de plateforme ou synchronisée, ne l’indique pas, et est refusée à moins que la ligne d’après ne soit activée."
+  },
+  "passkey.FIELDS.minPinLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "caractères"
+  },
+  "passkey.FIELDS.minPinLength.label": {
+    "en": "bd44e050db3c8cd9",
+    "text": "Longueur minimale du PIN d’une clé de sécurité"
+  },
+  "passkey.FIELDS.minPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "Le PIN le plus court qu’une clé de sécurité peut être configurée pour accepter, tel que la clé elle-même l’indique, tant que la ligne ci-dessus est activée. Entre 4 (le plancher propre à CTAP 2.1) et 63."
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.label": {
+    "en": "ac66a26b34cdd414",
+    "text": "Accepter une clé qui n’indique pas la longueur de son PIN"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "DÉSACTIVÉ PAR DÉFAUT, ce qui est la lecture stricte : tant que la longueur du PIN est imposée, une clé qui ne l’indique pas est refusée. Activé, une telle clé est acceptée et seul un minimum indiqué est soumis à la règle — la règle ne lie donc alors que les clés configurées pour l’indiquer à cette partie de confiance."
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.label": {
+    "en": "659120b1356b126b",
+    "text": "Soumettre chaque connexion aux règles d’attestation en vigueur"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Les règles d’attestation (les paramètres webauthn.attestation* : la politique, la liste d’AAGUID, le niveau de certification et FIPS) sont vérifiées lors de l’enregistrement d’une clé d’accès. Activé, elles sont vérifiées à nouveau à chaque connexion, par rapport à ce qui a été enregistré alors et au FIDO Metadata Service tel qu’il est aujourd’hui ; une clé enregistrée avant le durcissement d’une règle, ou dont le modèle a depuis été signalé compromis, cesse donc de connecter qui que ce soit. Une clé sans attestation de confiance échoue à toute règle qui en exige une."
+  },
+  "passkey.FIELDS.passkeyHints.label": {
+    "en": "7445bda72b06c415",
+    "text": "Indications qu’envoie « Créer une clé d’accès »"
+  },
+  "passkey.FIELDS.passkeyHints.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "Les indications (hints) WebAuthn (Level 3 section 5.4.8) qu’envoie *Créer une clé d’accès* sur le portail, dans l’ordre, parmi security-key, client-device et hybrid, ou aucune. Elles indiquent au navigateur quelle manière de créer la clé d’accès proposer en premier. Une indication ne peut pas contredire webauthn.authenticatorAttachment : client-device implique platform, security-key et hybrid impliquent cross-platform."
+  },
+  "passkey.FIELDS.securityKeyHints.label": {
+    "en": "3fc22a70aa3a1e64",
+    "text": "Indications qu’envoie « Utiliser une clé de sécurité »"
+  },
+  "passkey.FIELDS.securityKeyHints.what": {
+    "en": "6046d3d271c529e3",
+    "text": "Les indications qu’envoie *Utiliser une clé de sécurité*, dans l’ordre, ou aucune. Le bouton demande un authentificateur cross-platform ; client-device le contredit donc et est refusé."
+  },
+  "passkey.FIELDS.signInHints.label": {
+    "en": "8b1e49c893942fb6",
+    "text": "Indications qu’envoie une connexion par clé d’accès"
+  },
+  "passkey.FIELDS.signInHints.what": {
+    "en": "c748dd352b0e7351",
+    "text": "Les indications qu’envoie une cérémonie de connexion — l’étape de la clé d’accès, la connexion sans nom d’utilisateur et son remplissage automatique — dans l’ordre, ou aucune (la valeur par défaut : le navigateur propose toutes les manières qu’il connaît)."
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.label": {
+    "en": "ca9457e38cd942c9",
+    "text": "Attribut d’annuaire contenant les numéros de série des clés de sécurité d’une personne"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "VIDE PAR DÉFAUT : aucun numéro de série n’est vérifié. Défini sur un attribut de l’entrée d’une personne (par exemple `serialNumber`, qui peut contenir plusieurs valeurs), une clé de sécurité ne s’enregistre qu’avec une attestation d’entreprise DE CONFIANCE dont le certificat nomme un numéro de série d’appareil qui fait partie des valeurs de cette personne. Nécessite que webauthn.attestation soit défini sur enterprise, et que le fournisseur ou la plateforme soit configuré pour communiquer l’attestation d’entreprise à cet RP ID ; sans cela, le navigateur envoie une attestation ordinaire et tout enregistrement est refusé."
+  },
+  "passkey.FIELDS.userDisplayName.label": {
+    "en": "357a8bc7ceaa1129",
+    "text": "Le nom qu’une invite de clé d’accès affiche pour la personne"
+  },
+  "passkey.FIELDS.userDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "VIDE PAR DÉFAUT : le nom que connaît la connexion, sinon le nom d’utilisateur. Sinon, jusqu’à six attributs d’annuaire dans l’ordre, séparés par des virgules ; un groupe d’attributs séparés par des espaces (givenName sn) joint leurs valeurs. Le premier dont chaque attribut a une valeur devient user.displayName (WebAuthn Level 3 section 5.4.3), les caractères de contrôle et de changement de direction étant supprimés, avec 64 caractères au plus. Le nom d’utilisateur est toujours user.name."
+  },
+  "passkey.FIELDS.rpNameExtras.label": {
+    "en": "0b47e644dc75f546",
+    "text": "Ce qu’une invite de clé d’accès ajoute au nom du service"
+  },
+  "passkey.FIELDS.rpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none` (la valeur par défaut) affiche webauthn.rpName seul. `realm`, `organisation` ou `realm-and-organisation` ajoutent le nom du domaine et/ou saml.organizationName, afin qu’une personne ayant des comptes dans plusieurs domaines puisse distinguer les invites."
+  },
+  "passkey.FIELDS.credentialLabel.label": {
+    "en": "b9fb7cb97e11075a",
+    "text": "Le nom donné à une nouvelle clé d’accès"
+  },
+  "passkey.FIELDS.credentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "VIDE PAR DÉFAUT : le nom du fournisseur, sinon « Passkey » ou « Security key ». Sinon, ce texte, avec {provider} et {kind} remplis, de 60 caractères au plus. La personne peut la renommer ensuite, comme toujours."
+  },
+  "passkey.FIELDS.aggregateDevices.label": {
+    "en": "f019bccb105e42cd",
+    "text": "Proposer les clés d’accès d’une personne comme un seul choix de connexion"
+  },
+  "passkey.FIELDS.aggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "ACTIVÉ PAR DÉFAUT : une seule étape « Utiliser la clé d’accès » dont la requête liste toutes les clés d’accès de la personne, et le navigateur propose celle qui est présente. Désactivé, une personne qui en a plusieurs se voit proposer un choix par clé d’accès, par son nom, et la requête ne nomme que celle-là."
+  },
+  "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
+    "en": "44bab556bd6240cc",
+    "text": "La classe de ce service pour une politique des clés d’accès : le comportement des clés d’accès dans ce domaine. L’entrée est nommée par le PROFIL (`cn=default`)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAllowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "ACTIVÉ PAR DÉFAUT. Activé, l’écran de connexion propose *Se connecter avec une clé d’accès* et le remplissage automatique du champ du nom d’utilisateur, qui demandent au navigateur n’importe quel identifiant détectable de ce domaine (WebAuthn Level 3 section 5.4, `allowCredentials` vide) et connectent le compte que nomme son identifiant d’utilisateur (user handle), la vérification de l’utilisateur étant exigée et contrôlée. Désactivé, aucun des deux n’est proposé et une connexion nomme toujours d’abord la personne. Remplace le paramètre webauthn.usernameless."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, une application dont le mécanisme d’authentification est une clé d’accès et rien d’autre (appAuthnMechanism `webauthn` seul) reçoit un écran de connexion sans champ du nom d’utilisateur : *Se connecter avec une clé d’accès* est le moyen d’entrer, et une connexion qui nomme une personne est refusée. Nécessite la ligne ci-dessus. Le profil `default` du domaine ne l’applique pas à la console d’administration, au débogueur ni au portail utilisateur ; un profil nommé qui sélectionne cette application l’applique."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "Le `residentKey` qu’envoie un enregistrement via *Utiliser une clé de sécurité* (ou un enregistrement qui ne nomme aucun type) TANT QUE la connexion sans nom d’utilisateur est ACTIVÉE. Lorsqu’elle est désactivée, le bouton demande toujours `required` ; il crée donc un identifiant détectable comme le fait *Créer une clé d’accès* (qui demande toujours `required`). `discouraged` ou `preferred` épargnent les quelques emplacements résidents d’une clé de sécurité, au prix d’une clé qui a besoin du nom d’utilisateur pour se connecter. Remplace le paramètre webauthn.residentKey."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyBackupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "`allow` (la valeur par défaut) accepte n’importe quelle clé d’accès. `disallow` n’accepte que les clés LIÉES À UN APPAREIL : une clé d’accès dont l’authentificateur indique qu’elle peut être sauvegardée ou synchronisée (l’indicateur BE, WebAuthn Level 3 section 6.1) est refusée lors de son enregistrement et lorsqu’elle connecte quelqu’un ; une clé d’accès synchronisée enregistrée avant que le domaine ne dise non cesse donc aussi de fonctionner. BE ne change jamais pour un identifiant."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Activé, l’enregistrement demande à l’authentificateur sa longueur minimale de PIN (CTAP 2.1 section 12.4, l’extension minPinLength), l’enregistre sur la clé, et refuse une clé dont le minimum est inférieur à la ligne suivante, à l’enregistrement et à chaque connexion. Une clé ne répond qu’aux parties de confiance auxquelles elle a été configurée pour l’indiquer (CTAP 2.1 setMinPINLength avec cet RP ID) ; toute autre clé, et toute clé d’accès de plateforme ou synchronisée, ne l’indique pas, et est refusée à moins que la ligne d’après ne soit activée."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyMinPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "Le PIN le plus court qu’une clé de sécurité peut être configurée pour accepter, tel que la clé elle-même l’indique, tant que la ligne ci-dessus est activée. Entre 4 (le plancher propre à CTAP 2.1) et 63."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "DÉSACTIVÉ PAR DÉFAUT, ce qui est la lecture stricte : tant que la longueur du PIN est imposée, une clé qui ne l’indique pas est refusée. Activé, une telle clé est acceptée et seul un minimum indiqué est soumis à la règle — la règle ne lie donc alors que les clés configurées pour l’indiquer à cette partie de confiance."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "DÉSACTIVÉ PAR DÉFAUT. Les règles d’attestation (les paramètres webauthn.attestation* : la politique, la liste d’AAGUID, le niveau de certification et FIPS) sont vérifiées lors de l’enregistrement d’une clé d’accès. Activé, elles sont vérifiées à nouveau à chaque connexion, par rapport à ce qui a été enregistré alors et au FIDO Metadata Service tel qu’il est aujourd’hui ; une clé enregistrée avant le durcissement d’une règle, ou dont le modèle a depuis été signalé compromis, cesse donc de connecter qui que ce soit. Une clé sans attestation de confiance échoue à toute règle qui en exige une."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "Les indications (hints) WebAuthn (Level 3 section 5.4.8) qu’envoie *Créer une clé d’accès* sur le portail, dans l’ordre, parmi security-key, client-device et hybrid, ou aucune. Elles indiquent au navigateur quelle manière de créer la clé d’accès proposer en premier. Une indication ne peut pas contredire webauthn.authenticatorAttachment : client-device implique platform, security-key et hybrid impliquent cross-platform."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSecurityKey.what": {
+    "en": "6046d3d271c529e3",
+    "text": "Les indications qu’envoie *Utiliser une clé de sécurité*, dans l’ordre, ou aucune. Le bouton demande un authentificateur cross-platform ; client-device le contredit donc et est refusé."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSignIn.what": {
+    "en": "c748dd352b0e7351",
+    "text": "Les indications qu’envoie une cérémonie de connexion — l’étape de la clé d’accès, la connexion sans nom d’utilisateur et son remplissage automatique — dans l’ordre, ou aucune (la valeur par défaut : le navigateur propose toutes les manières qu’il connaît)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "VIDE PAR DÉFAUT : aucun numéro de série n’est vérifié. Défini sur un attribut de l’entrée d’une personne (par exemple `serialNumber`, qui peut contenir plusieurs valeurs), une clé de sécurité ne s’enregistre qu’avec une attestation d’entreprise DE CONFIANCE dont le certificat nomme un numéro de série d’appareil qui fait partie des valeurs de cette personne. Nécessite que webauthn.attestation soit défini sur enterprise, et que le fournisseur ou la plateforme soit configuré pour communiquer l’attestation d’entreprise à cet RP ID ; sans cela, le navigateur envoie une attestation ordinaire et tout enregistrement est refusé."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyUserDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "VIDE PAR DÉFAUT : le nom que connaît la connexion, sinon le nom d’utilisateur. Sinon, jusqu’à six attributs d’annuaire dans l’ordre, séparés par des virgules ; un groupe d’attributs séparés par des espaces (givenName sn) joint leurs valeurs. Le premier dont chaque attribut a une valeur devient user.displayName (WebAuthn Level 3 section 5.4.3), les caractères de contrôle et de changement de direction étant supprimés, avec 64 caractères au plus. Le nom d’utilisateur est toujours user.name."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "`none` (la valeur par défaut) affiche webauthn.rpName seul. `realm`, `organisation` ou `realm-and-organisation` ajoutent le nom du domaine et/ou saml.organizationName, afin qu’une personne ayant des comptes dans plusieurs domaines puisse distinguer les invites."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "VIDE PAR DÉFAUT : le nom du fournisseur, sinon « Passkey » ou « Security key ». Sinon, ce texte, avec {provider} et {kind} remplis, de 60 caractères au plus. La personne peut la renommer ensuite, comme toujours."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "ACTIVÉ PAR DÉFAUT : une seule étape « Utiliser la clé d’accès » dont la requête liste toutes les clés d’accès de la personne, et le navigateur propose celle qui est présente. Désactivé, une personne qui en a plusieurs se voit proposer un choix par clé d’accès, par son nom, et la requête ne nomme que celle-là."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
+    "en": "03ba679923c40b45",
+    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique des clés d’accès nommée, lors d’une connexion pour l’une d’elles."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectGroup.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "Les groupes (cn ou DN) aux membres desquels s’applique une politique des clés d’accès nommée."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "Quelle politique des clés d’accès nommée l’emporte lorsque plusieurs correspondent : la plus basse, de 1 à 1000."
+  },
+  "passkey.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "À quoi sert le profil, pour la personne suivante."
+  },
+  "passkey.SELECTORS.selectApplications.what": {
+    "en": "03ba679923c40b45",
+    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique des clés d’accès nommée, lors d’une connexion pour l’une d’elles."
+  },
+  "passkey.SELECTORS.selectGroups.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "Les groupes (cn ou DN) aux membres desquels s’applique une politique des clés d’accès nommée."
+  },
+  "passkey.SELECTORS.precedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "Quelle politique des clés d’accès nommée l’emporte lorsque plusieurs correspondent : la plus basse, de 1 à 1000."
+  },
+  "passkey.sentences.usernameless": {
+    "en": "e6aa1e26ce9d38a9",
+    "text": "une clé d’accès peut connecter une personne sans nom d’utilisateur (vérification de l’utilisateur exigée)"
+  },
+  "passkey.sentences.noUsernameless": {
+    "en": "1152c46cd0b86b19",
+    "text": "chaque connexion nomme d’abord la personne : aucune connexion par clé d’accès sans nom d’utilisateur"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "une application qui se connecte avec une clé d’accès seule ne demande aucun nom d’utilisateur : une connexion par clé d’accès sans nom d’utilisateur est le seul moyen d’entrer"
+  },
+  "passkey.sentences.createPasskey": {
+    "en": "69c8c2e4b8f32675",
+    "text": "« Créer une clé d’accès » demande un identifiant détectable (residentKey required)"
+  },
+  "passkey.sentences.securityKeyRequired": {
+    "en": "c839fcbdde6e65d6",
+    "text": "« Utiliser une clé de sécurité » demande residentKey {{value}} ; il crée donc lui aussi un identifiant détectable"
+  },
+  "passkey.sentences.securityKeyOther": {
+    "en": "89e2cb66e39ae79a",
+    "text": "« Utiliser une clé de sécurité » demande residentKey {{value}} ; une clé enregistrée par ce biais peut donc avoir besoin du nom d’utilisateur pour se connecter"
+  },
+  "passkey.sentences.deviceBound": {
+    "en": "a427e63844dd9c4c",
+    "text": "uniquement des clés d’accès liées à un appareil : une clé d’accès synchronisée (éligible à la sauvegarde) est refusée à l’enregistrement et à la connexion"
+  },
+  "passkey.sentences.synced": {
+    "en": "eaf735600d87b945",
+    "text": "les clés d’accès synchronisées (éligibles à la sauvegarde) sont acceptées"
+  },
+  "passkey.sentences.noPinLength": {
+    "en": "8164ad4cf915e055",
+    "text": "aucune longueur minimale de PIN n’est demandée à une clé de sécurité"
+  },
+  "passkey.sentences.pinLengthAccepted": {
+    "en": "02246cda94f0a345",
+    "text": "une clé de sécurité doit indiquer un PIN minimal d’au moins {{n}} caractères, à l’enregistrement et à la connexion ; une clé qui ne l’indique pas est acceptée"
+  },
+  "passkey.sentences.pinLengthRefused": {
+    "en": "0c6d08464be7bf6b",
+    "text": "une clé de sécurité doit indiquer un PIN minimal d’au moins {{n}} caractères, à l’enregistrement et à la connexion ; une clé qui ne l’indique pas est refusée"
+  },
+  "passkey.sentences.attestationAtSignIn": {
+    "en": "af2ddecba8c5bae6",
+    "text": "chaque connexion par clé d’accès est soumise aux règles d’attestation en vigueur"
+  },
+  "passkey.sentences.attestationAtRegistration": {
+    "en": "9a09dd3ab4e05b1e",
+    "text": "les règles d’attestation sont vérifiées lors de l’enregistrement d’une clé d’accès"
+  },
+  "passkey.sentences.hints": {
+    "en": "261fe70414f521a7",
+    "text": "indications de « Créer une clé d’accès » : {{passkey}} ; de « Utiliser une clé de sécurité » : {{securityKey}} ; d’une connexion : {{signIn}}"
+  },
+  "passkey.sentences.param.nothing": {
+    "en": "1785cfc3bc6ac773",
+    "text": "rien"
+  },
+  "passkey.sentences.enterpriseSerial": {
+    "en": "983521bbcf6dc708",
+    "text": "une clé de sécurité ne s’enregistre qu’avec une attestation d’entreprise de confiance nommant un numéro de série figurant dans l’attribut {{attribute}} de la personne"
+  },
+  "passkey.sentences.noEnterpriseSerial": {
+    "en": "445b66c4d3c95e44",
+    "text": "aucun numéro de série de clé de sécurité n’est vérifié"
+  },
+  "passkey.sentences.promptAttribute": {
+    "en": "32513ed5a676c725",
+    "text": "une invite de clé d’accès affiche l’attribut {{attribute}} de la personne"
+  },
+  "passkey.sentences.promptAttributeExtras": {
+    "en": "f1fb4090f02acc0b",
+    "text": "une invite de clé d’accès affiche l’attribut {{attribute}} de la personne, et le nom du service accompagné de : {{extras}}"
+  },
+  "passkey.sentences.promptName": {
+    "en": "22388086c95f252f",
+    "text": "une invite de clé d’accès affiche le nom de la personne tel que le connaît la connexion"
+  },
+  "passkey.sentences.promptNameExtras": {
+    "en": "09f9434240ad3432",
+    "text": "une invite de clé d’accès affiche le nom de la personne tel que le connaît la connexion, et le nom du service accompagné de : {{extras}}"
+  },
+  "passkey.sentences.chooseOne": {
+    "en": "da1b6a76a9549c9d",
+    "text": "une personne ayant plusieurs clés d’accès en choisit une à la connexion"
+  },
+  "passkey.sentences.aggregate": {
+    "en": "fa8fc40822659fe4",
+    "text": "les clés d’accès d’une personne sont proposées comme un seul choix de connexion"
+  },
+  "kinds.locale.label": {
+    "en": "1219a9dcfb9aa19f",
+    "text": "Politique de langue"
+  },
+  "kinds.locale.governs": {
+    "en": "2e133e6f61161db9",
+    "text": "la langue de repli d’une page, la langue dans laquelle un courrier est rédigé lorsqu’une personne n’en nomme aucune, et la preferredLanguage attribuée à une nouvelle personne"
+  },
+  "kinds.locale.appliesTo": {
+    "en": "b98c6ab7f1daa0a4",
+    "text": "à la PROCHAINE page affichée et à la PROCHAINE personne créée dans ce domaine ; une personne créée auparavant conserve la preferredLanguage qu’elle a, ou aucune"
+  },
+  "kinds.locale.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "le profil du domaine par défaut s’il en a un, et les valeurs par défaut intégrées sinon"
+  },
+  "kinds.locale.param.noun": {
+    "en": "373333108748fdd2",
+    "text": "profil de politique de langue"
+  },
+  "locale.FIELDS.defaultLocale.label": {
+    "en": "07c569d962377b98",
+    "text": "Langue et région par défaut"
+  },
+  "locale.FIELDS.defaultLocale.what": {
+    "en": "7b103155bd0c34db",
+    "text": "Une étiquette de langue BCP 47 (RFC 5646), comme en, fr-CA ou zh-TW. Les pages sont affichées dans cette langue lorsque la requête, la preferredLanguage de la personne, le sélecteur de langue et le navigateur ne nomment rien à quoi un catalogue réponde ; les dates et les nombres sont formatés pour elle même là où aucun catalogue ne le fait. Le courrier adressé à une personne dont l’entrée ne nomme aucune langue est rédigé dans cette langue. Remplace le paramètre mail.defaultLanguage."
+  },
+  "locale.FIELDS.populatePreferredLanguage.label": {
+    "en": "7b464462632db810",
+    "text": "Attribuer cette langue à une nouvelle personne"
+  },
+  "locale.FIELDS.populatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création fait partie de ses applications. Les entrées existantes ne sont jamais réécrites."
+  },
+  "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
+    "en": "2c86d88e73ffc794",
+    "text": "La classe de ce service pour une politique de langue : la langue de repli des pages d’un domaine, qu’il attribue aussi à une nouvelle personne. Nommée par le PROFIL (`cn=default`, ou un profil nommé choisi par application)."
+  },
+  "locale.SCHEMA.attributes.stsLocaleDefault.what": {
+    "en": "7b103155bd0c34db",
+    "text": "Une étiquette de langue BCP 47 (RFC 5646), comme en, fr-CA ou zh-TW. Les pages sont affichées dans cette langue lorsque la requête, la preferredLanguage de la personne, le sélecteur de langue et le navigateur ne nomment rien à quoi un catalogue réponde ; les dates et les nombres sont formatés pour elle même là où aucun catalogue ne le fait. Le courrier adressé à une personne dont l’entrée ne nomme aucune langue est rédigé dans cette langue. Remplace le paramètre mail.defaultLanguage."
+  },
+  "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "ACTIVÉ PAR DÉFAUT. Une entrée de personne créée dans ce domaine sans preferredLanguage (RFC 2798 section 2.7) reçoit comme telle la langue par défaut ci-dessus — qu’elle soit créée par la console, l’API de gestion, SCIM, une inscription fédérée ou en libre-service, ou un chargement en masse. Un profil nommé s’applique lorsque l’application à l’origine de la création fait partie de ses applications. Les entrées existantes ne sont jamais réécrites."
+  },
+  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique de langue nommée. Une application figure dans un profil nommé au plus."
+  },
+  "locale.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "À quoi sert le profil, pour la personne suivante."
+  },
+  "locale.SCHEMA.personAttributes.stsPreferredLanguagePopulated.what": {
+    "en": "839242d6ed29c817",
+    "text": "La preferredLanguage que la politique de langue a attribuée à cette personne lors de la création de son entrée. Tant que preferredLanguage lui est encore égale, c’est le choix de la POLITIQUE, et une page la classe après la langue du navigateur ; dès que quelqu’un en définit une autre, c’est celle de la personne. Écrit uniquement par ce service."
+  },
+  "locale.SELECTORS.selectApplications.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "Les applications (identifiant ou client_id) auxquelles s’applique une politique de langue nommée. Une application figure dans un profil nommé au plus."
+  },
+  "locale.sentences.drawnIn": {
+    "en": "def5bb364db8e407",
+    "text": "une page dont le lecteur ne nomme aucune langue à laquelle un catalogue réponde est affichée en {{tag}}"
+  },
+  "locale.sentences.drawnInUncatalogued": {
+    "en": "86507629ace6469e",
+    "text": "une page dont le lecteur ne nomme aucune langue à laquelle un catalogue réponde est affichée en {{tag}} — à laquelle aucun catalogue ne répond ; ses textes sont donc en anglais et ses dates et nombres sont formatés pour {{tag}}"
+  },
+  "locale.sentences.populated": {
+    "en": "357f756fb2f30745",
+    "text": "une personne créée sans preferredLanguage reçoit {{tag}}"
+  },
+  "locale.sentences.notPopulated": {
+    "en": "bacca940fb64dcc5",
+    "text": "une personne créée sans preferredLanguage n’en reçoit aucune"
+  },
+  "locale.sentences.mail": {
+    "en": "ab1ab635d8ef149d",
+    "text": "le courrier adressé à une personne dont l’entrée ne nomme aucune langue est rédigé en {{tag}}"
+  },
+  "locale.sentences.appliesTo": {
+    "en": "098d842668109368",
+    "text": "s’applique à {{list}}"
+  },
+  "locale.sentences.param.noApplication": {
+    "en": "cb8bd4fa96dda063",
+    "text": "aucune application"
+  },
+  "messages.saved": {
+    "en": "aff7d1fa6042bebd",
+    "text": "Le {{noun}} « {{name}} » est enregistré sous {{dn}}. Il s’applique {{appliesTo}}."
+  },
+  "messages.savedNotEnforced": {
+    "en": "0e2ffb6b206220b6",
+    "text": "Le {{noun}} « {{name}} » est enregistré sous {{dn}}. Il s’applique {{appliesTo}} — et il n’est pas appliqué ici tant que ce domaine n’est pas en mode produit."
+  },
+  "messages.removed": {
+    "en": "07e9be78127c21d9",
+    "text": "Le profil stocké a été supprimé, et ce domaine suit désormais {{fallsBackTo}} : {{rules}}."
+  },
+  "messages.nothingStored": {
+    "en": "6e3d9c2876ac0650",
+    "text": "Rien n’était stocké dans ce domaine ; il suivait donc déjà {{fallsBackTo}}."
+  },
+  "page.enforced": {
+    "en": "f7172b346c62f1ca",
+    "text": "APPLIQUÉE. Ce domaine est en mode produit ; chaque mot de passe défini ici — à chacune des portes ci-dessous — doit donc respecter le profil, et un nouveau mot de passe ne peut pas reprendre un mot de passe mémorisé."
+  },
+  "page.notEnforced": {
+    "en": "d48ea6d943af779a",
+    "text": "NON APPLIQUÉE. Ce domaine est en mode développement, où aucun mot de passe n’est vérifié à aucune porte ; une règle portant sur un mot de passe serait donc une règle portant sur un identifiant que rien ne lit. L’historique est néanmoins ENREGISTRÉ, si bien qu’un domaine passé en mode produit démarre avec un historique. Un mot de passe GÉNÉRÉ respecte le profil dans les deux modes."
+  },
+  "page.source": {
+    "en": "3f584f451203473d",
+    "text": "crypto.randomInt de node, avec échantillonnage par rejet afin qu’aucun caractère du réservoir ne soit plus probable qu’un autre"
+  },
+  "page.drawsUntil": {
+    "en": "c06275d67751acb9",
+    "text": "le mot de passe respecte le profil ; chaque mot de passe généré est donc uniforme sur l’ensemble des mots de passe qu’accepte le profil"
+  },
+  "page.notDoors": {
+    "en": "8bb9eaa9dc06e164",
+    "text": "SCIM ne transporte aucun mot de passe (ce service annonce changePassword: false), et un mot de passe n’est jamais défini par une connexion. Les mots de passe stockés AVANT la modification d’une règle ne sont pas revérifiés : rien ici ne conserve un mot de passe sous une forme qui le permettrait, et la règle s’applique à partir du prochain changement."
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "Ce domaine ne peut pas envoyer de courrier ; les deux mécanismes par e-mail ne peuvent donc pas être activés et ne sont jamais proposés. Configurez un transport dans Configuration du serveur > Courrier."
+  },
+  "page.doors.0.door": {
+    "en": "8327644f61eb973a",
+    "text": "/admin/users/new et /admin/users (Définir le mot de passe)"
+  },
+  "page.doors.1.door": {
+    "en": "87ea56f7e0e44acd",
+    "text": "POST /admin-api/users/create et /admin-api/users/set-password"
+  },
+  "page.doors.3.door": {
+    "en": "bf7698db188665b7",
+    "text": "/portal/activate (le premier mot de passe qu’une personne définit)"
+  },
+  "page.doors.4.door": {
+    "en": "68ddb58dcaaf956f",
+    "text": "un add ou un modify LDAP de userPassword sur 389 ou 636"
+  },
+  "page.pools.0": {
+    "en": "66175c2ffcf81f48",
+    "text": "lettres minuscules"
+  },
+  "page.pools.1": {
+    "en": "d4622acef3c349eb",
+    "text": "lettres majuscules"
+  },
+  "page.pools.2": {
+    "en": "cc6b6bad31a0ff4d",
+    "text": "chiffres"
+  },
+  "page.pools.3": {
+    "en": "1ea50a8caf608504",
+    "text": "symboles"
+  }
+}

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -179,11 +179,18 @@ const GRANT_ERROR = 'invalid_grant';
  * The one subject confirmation method this profile names.
  */
 const BEARER = 'urn:oasis:names:tc:SAML:2.0:cm:bearer';
+// SAML 1.1's bearer confirmation method (saml-bind-1.1 section 4.1.1.2 and
+// saml-core-1.1 section 7.1), for an assertion EXCHANGED under RFC 8693
+// (#114) — RFC 7522 itself is SAML 2.0 only.
+const BEARER_11 = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
 // SAML core section 2.5.1. The condition types this service RECOGNISES —
 // anything else makes the assertion Invalid rather than being ignored, which
 // is item 11 and is the one check here that most implementations skip.
 const KNOWN_CONDITIONS = ['AudienceRestriction', 'OneTimeUse',
-                          'ProxyRestriction'];
+                          'ProxyRestriction',
+                          // SAML 1.1's two (saml-core-1.1 section 2.3.2.1).
+                          'AudienceRestrictionCondition',
+                          'DoNotCacheCondition'];
 
 // ---------------------------------------------------------------------------
 // THE USED-ASSERTION HISTORY (2026-09-13). Item 6 lets a server keep the set of
@@ -441,6 +448,14 @@ function read(xml) {
                : '') + '.' };
   }
 
+  // A SAML 1.1 assertion (#114): MajorVersion and MinorVersion rather than
+  // Version, and its subject inside each statement. Read into the SAME
+  // shape, so `verify()` decides on one set of facts.
+  if (root.getAttribute('MajorVersion')) {
+    log.debug('Leaving read(). SAML 1.1.');
+    return readSaml11(root);
+  }
+
   const subject = firstByLocal(root, 'Subject');
   const nameId = subject ? firstByLocal(subject, 'NameID') : null;
   const encryptedId = subject ? firstByLocal(subject, 'EncryptedID') : null;
@@ -566,6 +581,122 @@ function read(xml) {
     keyInfoCertificate: keyInfoCertificate
   };
   log.debug('Leaving read(). issuer=' + out.issuer + ', id=' + out.id);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// A SAML 1.1 ASSERTION, READ INTO `read()`'s SHAPE (#114). saml-core-1.1:
+// AssertionID, Issuer and IssueInstant are ATTRIBUTES of <Assertion>; the
+// <Conditions> carry <AudienceRestrictionCondition>; the subject is in each
+// statement (<AuthenticationStatement>, <AttributeStatement>, ...), as
+// <Subject><NameIdentifier/><SubjectConfirmation><ConfirmationMethod/>.
+// A 1.1 confirmation has no Recipient or NotOnOrAfter, so it carries no
+// data, and the expiry is the <Conditions>' alone. Nothing read here is
+// believed until the signature (Reference URI="#<AssertionID>") verifies.
+// ---------------------------------------------------------------------------
+/**
+ * Reads a SAML 1.1 `<Assertion>` into `read()`'s shape.
+ *
+ * @param root - the parsed `<Assertion>` element
+ * @returns the parts, as `read()` returns them, with `version` `1.1`
+ */
+function readSaml11(root) {
+  log.debug('Entering readSaml11().');
+  const statements = [];
+  for (let i = 0; i < root.childNodes.length; i++) {
+    const node = root.childNodes[i];
+    if (node.nodeType === 1 && /Statement$/.test(node.localName)) {
+      statements.push(node);
+    }
+  }
+  // THE SUBJECT, the same in every statement or refused: two statements
+  // naming two people would be a document saying two things.
+  const subjects = statements.map(function (one) {
+    return firstByLocal(one, 'Subject');
+  }).filter(Boolean);
+  const names = subjects.map(function (one) {
+    return textOf(firstByLocal(one, 'NameIdentifier'));
+  });
+  const distinct = names.filter(function (one, i) {
+    return names.indexOf(one) === i;
+  });
+  const first = subjects[0] || null;
+  const nameIdentifier = first ? firstByLocal(first, 'NameIdentifier') : null;
+  const confirmations = [];
+  subjects.forEach(function (one) {
+    childrenByLocal(one, 'SubjectConfirmation').forEach(function (sc) {
+      childrenByLocal(sc, 'ConfirmationMethod').forEach(function (cm) {
+        confirmations.push({ method: textOf(cm), hasData: false,
+                             recipient: '', notOnOrAfter: '', notBefore: '',
+                             inResponseTo: '', address: '' });
+      });
+    });
+  });
+  const conditionsEl = firstByLocal(root, 'Conditions');
+  const audiences = [];
+  const unknownConditions = [];
+  if (conditionsEl) {
+    for (let i = 0; i < conditionsEl.childNodes.length; i++) {
+      const node = conditionsEl.childNodes[i];
+      if (node.nodeType !== 1) {
+        continue;
+      }
+      if (node.localName === 'AudienceRestrictionCondition') {
+        childrenByLocal(node, 'Audience').forEach(function (one) {
+          const value = textOf(one);
+          if (value) {
+            audiences.push(value);
+          }
+        });
+      } else if (KNOWN_CONDITIONS.indexOf(node.localName) < 0) {
+        unknownConditions.push(node.localName);
+      }
+    }
+  }
+  const attributes = {};
+  childrenByLocal(root, 'AttributeStatement').forEach(function (statement) {
+    childrenByLocal(statement, 'Attribute').forEach(function (one) {
+      const name = attr(one, 'AttributeName');
+      if (!name) {
+        return;
+      }
+      const values = childrenByLocal(one, 'AttributeValue').map(textOf);
+      attributes[name] = (attributes[name] || []).concat(
+        values.length ? values : ['']);
+    });
+  });
+  const signature = firstByLocal(root, 'Signature');
+  let keyInfoCertificate = '';
+  if (signature) {
+    const keyInfo = firstByLocal(signature, 'KeyInfo');
+    const x509Data = keyInfo ? firstByLocal(keyInfo, 'X509Data') : null;
+    const x509 = x509Data ? firstByLocal(x509Data, 'X509Certificate') : null;
+    keyInfoCertificate = textOf(x509).replace(/\s+/g, '');
+  }
+  const out = {
+    ok: true,
+    id: attr(root, 'AssertionID').trim(),
+    version: attr(root, 'MajorVersion') + '.' + attr(root, 'MinorVersion'),
+    issueInstant: attr(root, 'IssueInstant'),
+    issuer: attr(root, 'Issuer'),
+    hasSubject: !!first,
+    // Two statements naming two subjects read as none, which the subject
+    // check then refuses.
+    subject: distinct.length === 1 ? distinct[0] : '',
+    nameIdFormat: attr(nameIdentifier, 'Format'),
+    subjectWasEncrypted: false,
+    confirmations: confirmations,
+    hasConditions: !!conditionsEl,
+    notBefore: attr(conditionsEl, 'NotBefore'),
+    notOnOrAfter: attr(conditionsEl, 'NotOnOrAfter'),
+    audiences: audiences,
+    unknownConditions: unknownConditions,
+    attributes: attributes,
+    authnStatements: childrenByLocal(root, 'AuthenticationStatement').length,
+    signed: !!signature,
+    keyInfoCertificate: keyInfoCertificate
+  };
+  log.debug('Leaving readSaml11(). issuer=' + out.issuer + ', id=' + out.id);
   return out;
 }
 
@@ -803,8 +934,18 @@ async function verify(opts) {
   const options = opts || {};
   const audiences = (options.audiences || []).map(String);
   const asClient = !!options.clientId;
+  // #114: the assertion presented as an RFC 8693 subject_token or
+  // actor_token. Every check below holds except four the exchange decides:
+  // whether the GRANT is on (an exchange is not the grant), which VERSION
+  // (`samlVersion`, the declared token type's — SAML 1.1 has no RFC 7521
+  // profile, and is exchanged here all the same), the AUDIENCE
+  // (`audienceCheck`, `oauth2.tokenExchangeAudience`'s rule) and the
+  // RECIPIENTS a bearer confirmation may name (`recipients`, beside the
+  // token endpoint).
+  const exchange = options.use === 'token-exchange';
+  const recipients = audiences.concat((options.recipients || []).map(String));
 
-  if (!asClient && !enabled()) {
+  if (!asClient && !exchange && !enabled()) {
     log.debug('Leaving verify(). The grant is switched off.');
     return { ok: false, errorCode: 'STS-OAUTH-0056',
              error: 'unsupported_grant_type',
@@ -836,7 +977,16 @@ async function verify(opts) {
     log.debug('Leaving verify(). It would not parse.');
     return refuse('STS-OAUTH-0059', parsed.why);
   }
-  if (parsed.version && parsed.version !== '2.0') {
+  if (exchange && parsed.version !== String(options.samlVersion || '2.0')) {
+    log.debug('Leaving verify(). Not the version the type declared.');
+    return refuse('STS-OAUTH-0797', 'this assertion says it is SAML ' +
+                  (parsed.version || 'of no version') + ' and the token ' +
+                  'exchange declared ' + (options.samlVersion === '1.1'
+                    ? 'urn:ietf:params:oauth:token-type:saml1'
+                    : 'urn:ietf:params:oauth:token-type:saml2') +
+                  ' (RFC 8693 section 3: the type says what the token IS).');
+  }
+  if (!exchange && parsed.version && parsed.version !== '2.0') {
     // SAML 1.1 assertions exist here — `saml/saml11.ts` builds them — and this
     // profile is not about them. Named rather than left to fail somewhere in
     // the Conditions, because the two documents look alike enough that
@@ -1104,9 +1254,19 @@ async function verify(opts) {
                                         : 'no <Conditions> at all') + '. ' +
                   'Acceptable values here are ' + audiences.join(' or ') + '.');
   }
-  const matchedAudience = parsed.audiences.filter(function (one) {
-    return audiences.indexOf(one) >= 0;
-  })[0];
+  const matchedAudience = exchange && options.audienceCheck
+    ? options.audienceCheck(parsed.audiences)
+    : parsed.audiences.filter(function (one) {
+      return audiences.indexOf(one) >= 0;
+    })[0];
+  if (!matchedAudience && exchange && options.audienceCheck) {
+    log.debug("Leaving verify(). The exchange's audience rule refused.");
+    return refuse('STS-OAUTH-0796', 'this assertion is addressed to ' +
+                  parsed.audiences.join(', ') + ', which ' +
+                  'oauth2.tokenExchangeAudience does not accept for a token ' +
+                  'exchange: ' + (options.audienceRule ||
+                                  'this authorization server') + '.');
+  }
   if (!matchedAudience) {
     log.debug("Leaving verify().");
     return refuse('STS-OAUTH-0073', 'RFC 7522 section 3 item 2: this ' +
@@ -1169,15 +1329,17 @@ async function verify(opts) {
   // <SubjectConfirmation> (but MAY still use the rest of the Assertion)" —
   // rather than making the assertion invalid, which is a distinction almost
   // every implementation collapses.
+  // SAML 1.1 names its bearer method differently (#114).
+  const bearerMethod = parsed.version === '1.1' ? BEARER_11 : BEARER;
   const bearer = parsed.confirmations.filter(function (one) {
-    return one.method === BEARER;
+    return one.method === bearerMethod;
   });
   if (!bearer.length) {
     log.debug("Leaving verify().");
     return refuse('STS-OAUTH-0076', 'RFC 7522 section 3 item 5: the ' +
                   '<Subject> must contain at least one <SubjectConfirmation> ' +
                   'whose Method is "' +
-                  BEARER + '". This assertion carries ' +
+                  bearerMethod + '". This assertion carries ' +
                   (parsed.confirmations.length
                     ? parsed.confirmations.map(function (one) {
                         return '"' + one.method + '"';
@@ -1211,7 +1373,7 @@ async function verify(opts) {
         discarded.push(Object.assign({ why: 'no Recipient' }, one));
         continue;
       }
-      if (audiences.indexOf(one.recipient) < 0) {
+      if (recipients.indexOf(one.recipient) < 0) {
         discarded.push(Object.assign({ why: 'Recipient "' + one.recipient +
                                             '" is not this token endpoint' },
                                      one));
@@ -1314,8 +1476,9 @@ async function verify(opts) {
   // The LAST refusal of the document itself — nothing below this refuses — so
   // an assertion refused for any other reason is not also used up.
   const spent = await usedAssertions.claim({
-    format: 'saml',
-    use: asClient ? 'client-authentication' : 'authorization-grant',
+    format: parsed.version === '1.1' ? 'saml11' : 'saml',
+    use: asClient ? 'client-authentication'
+      : (exchange ? 'token-exchange' : 'authorization-grant'),
     issuer: iss, identifier: parsed.id,
     // Section 2.2's client, or the client making a section 2.1 token request
     // where it named itself. Recorded for the console; not part of the key.

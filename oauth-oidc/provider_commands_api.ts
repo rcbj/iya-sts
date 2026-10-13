@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -28,6 +28,7 @@ interface ProviderCommandsApiDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
   errorCodes: typeof errorCodes;
   loadCommands(): Json;
+  loadViews(): Json;
   loadOutbound(): Json;
 }
 
@@ -76,6 +77,10 @@ class ProviderCommandsApi {
       },
       loadOutbound: function (): Json {
         return require('./outbound_delivery');
+      },
+      // The console's paging, required lazily for the modules' reason.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -107,6 +112,99 @@ class ProviderCommandsApi {
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify(reply, null, 2));
     log.debug("Leaving ProviderCommandsApi.sendJson().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // BOTH PAGES' LISTS, PAGED (#313's sweep, 2026-10-12).
+  //
+  // `/admin/commands` drew its accounts and deliveries cut at 500 and its
+  // runs at 100, silently, and `/admin/deliveries` each kind at 200: a row
+  // past the cut could not be reached from the page or from this API. The
+  // two reports now answer whole and these two views page them — one
+  // parameter per list, one shared `per` — so the page, which is drawn from
+  // this answer, and a caller read the same slice. Counts are over the
+  // whole lists.
+  // ---------------------------------------------------------------------------
+  /**
+   * The page parameter of one delivery kind's table: its id in camel case,
+   * `backchannel-logout` moving on `backchannelLogoutPage`.
+   *
+   * @param id - the kind's id
+   * @returns the parameter's name
+   */
+  static kindParam(id: string): string {
+    helpers.log.debug("Entering ProviderCommandsApi.kindParam().");
+    helpers.log.debug("Leaving ProviderCommandsApi.kindParam().");
+    return ProviderCommandsApi.kindName(id) + 'Page';
+  }
+
+  /**
+   * One delivery kind's list name, its id in camel case.
+   *
+   * @param id - the kind's id
+   * @returns the name `pagingOf()` takes
+   */
+  static kindName(id: string): string {
+    helpers.log.debug("Entering ProviderCommandsApi.kindName().");
+    helpers.log.debug("Leaving ProviderCommandsApi.kindName().");
+    return String(id || '').replace(/-([a-z])/g, function (all: string,
+                                                         c: string): string {
+      return c.toUpperCase();
+    });
+  }
+
+  /**
+   * Builds `/admin/commands`' answer, each of its four lists one page.
+   *
+   * @param query - the request's query
+   * @returns the report, paged
+   */
+  commandsView(query: Json): Json {
+    const { log, loadCommands, loadViews } = this.deps;
+    log.debug("Entering ProviderCommandsApi.commandsView().");
+    const views = loadViews();
+    const report = loadCommands().report({ q: query.q, state: query.state });
+    const out = Object.assign({}, report, {
+      // Every client's id, for the two send forms' menus: a menu built from
+      // the page would offer only the clients on it.
+      clientIds: report.clients.map(function (c: Json): string {
+        return c.clientId;
+      }),
+      listCounts: {}, paging: {}
+    });
+    ['clients', 'accounts', 'runs', 'deliveries'].forEach(function (name) {
+      const page = views.pagedRows(query, report[name] || [],
+                                   { name: name, noun: name });
+      out[name] = page.shown;
+      out.listCounts[name] = (report[name] || []).length;
+      out.paging[name] = views.pagingJson(page.paging);
+    });
+    log.debug("Leaving ProviderCommandsApi.commandsView().");
+    return out;
+  }
+
+  /**
+   * Builds `/admin/deliveries`' answer, each kind's rows one page.
+   *
+   * @param query - the request's query
+   * @returns the kinds, each paged, and the states
+   */
+  deliveriesView(query: Json): Json {
+    const { log, loadOutbound, loadViews } = this.deps;
+    log.debug("Entering ProviderCommandsApi.deliveriesView().");
+    const views = loadViews();
+    const report = loadOutbound().kindReport({ state: query.state,
+                                               q: query.q, kind: query.kind });
+    const kinds = report.kinds.map(function (k: Json): Json {
+      const page = views.pagedRows(query, k.rows || [],
+        { name: ProviderCommandsApi.kindName(k.id), noun: 'deliveries' });
+      return Object.assign({}, k, { rows: page.shown,
+        matched: (k.rows || []).length,
+        paging: views.pagingJson(page.paging) });
+    });
+    log.debug("Leaving ProviderCommandsApi.deliveriesView(). " +
+              kinds.length + " kind(s).");
+    return Object.assign({}, report, { kinds: kinds });
   }
 
   /**
@@ -141,15 +239,34 @@ class ProviderCommandsApi {
           'command deliveries. `state` and `q` narrow the deliveries. Never ' +
           'a token.',
         mirrors: 'GET /admin/commands',
+        parameters: ['clients', 'accounts', 'runs', 'deliveries']
+          .map(function (name: string): Json {
+            return { name: name + 'Page', in: 'query', required: false,
+                     schema: { type: 'integer', minimum: 1 },
+                     description: 'Which page of `' + name + '`. Each list ' +
+                       'moves on its own parameter and they share `per`.' };
+          }).concat([
+            { name: 'state', in: 'query', required: false,
+              schema: { type: 'string', maxLength: 16 },
+              description: 'Only deliveries in this state: pending, ' +
+                           'sent or dead.' },
+            { name: 'q', in: 'query', required: false,
+              schema: { type: 'string', maxLength: 256 },
+              description: 'Narrows the deliveries.' },
+            { name: 'per', in: 'query', required: false,
+              schema: { type: 'integer', minimum: 1 },
+              description: 'Rows per page of each list, capped.' }]),
         responseDescription: 'The report.',
         responseSchema: { type: 'object', additionalProperties: true,
                           description: '`enabled`, `automatic`, `issuer`, ' +
-                            '`clients`, `accounts`, `runs`, `deliveries`, ' +
+                            '`clients`, `accounts`, `runs` and ' +
+                            '`deliveries` (one page each, `paging.<list>`), ' +
+                            '`listCounts` (each list whole), `clientIds` ' +
+                            '(every client, for the send forms), ' +
                             '`counts`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API commands endpoint.");
-          self.sendJson(res, 200, loadCommands().report({
-            q: req.query.q, state: req.query.state }));
+          self.sendJson(res, 200, self.commandsView(req.query || {}));
           log.debug("Leaving the management API commands endpoint.");
         } },
 
@@ -237,13 +354,36 @@ class ProviderCommandsApi {
           'state and its rows, newest first. `state` (pending, sent, dead), ' +
           '`kind` and `q` narrow. Never a token or a body.',
         mirrors: 'GET /admin/deliveries',
+        parameters: [
+          { name: 'state', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 16 },
+            description: 'Only deliveries in this state: pending, sent or ' +
+                         'dead; empty for every state.' },
+          { name: 'kind', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 64 },
+            description: 'Only this kind.' },
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'Narrows the deliveries.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page of each kind, capped.' }
+        ].concat(loadOutbound().KINDS
+          .map(ProviderCommandsApi.kindParam)
+          .map(function (name: string): Json {
+            return { name: name, in: 'query', required: false,
+                     schema: { type: 'integer', minimum: 1 },
+                     description: 'Which page of one kind\'s rows; each ' +
+                       'kind moves on its own parameter, its `paging.param`.' };
+          })),
         responseDescription: 'The kinds.',
         responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`kinds`, `states`.' },
+                          description: '`kinds` — each with `rows`, one ' +
+                            'page of what `state` and `q` matched, ' +
+                            '`matched` and `paging` — and `states`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API deliveries endpoint.");
-          self.sendJson(res, 200, loadOutbound().kindReport({
-            state: req.query.state, q: req.query.q, kind: req.query.kind }));
+          self.sendJson(res, 200, self.deliveriesView(req.query || {}));
           log.debug("Leaving the management API deliveries endpoint.");
         } },
 

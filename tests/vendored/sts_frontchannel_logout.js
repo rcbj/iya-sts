@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -32,6 +32,8 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
@@ -134,6 +136,8 @@ function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -216,14 +220,12 @@ function atClient(r, redirect) {
 
 async function signIn(b, location, who) {
   log.debug("Entering signIn(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200, "the sign-in screen: " + page.status +
-                     " " + page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, with this
+  // browser's jar: the answer is read as the form's 303 was.
+  const posted = await authnSignin.signInWithJar(base + R, location,
+    { action: "login", username: who, password: PASSWORD }, b.jar);
+  assert.ok(posted.answer.view, "the sign-in screen: " +
+            posted.answer.status + " " + JSON.stringify(posted.answer.json));
   log.debug("Leaving signIn().");
   return posted;
 }
@@ -286,12 +288,9 @@ async function signedInThroughNamedServer(client) {
                      form(params));
   if ((r.status === 302 || r.status === 303) &&
       /\/authn\/login\?authn=/.test(r.location)) {
-    const page = await b.go("GET", r.location);
-    const fields = hiddenFields(page.text);
-    fields.username = ALICE;
-    fields.password = PASSWORD;
-    fields.action = "login";
-    const posted = await b.go("POST", R + "/authn/login", form(fields));
+    // THE SCREEN OVER `/authn-api` (#571).
+    const posted = await authnSignin.signInWithJar(base + R, r.location,
+      { action: "login", username: ALICE, password: PASSWORD }, b.jar);
     r = await b.go("GET", posted.location);
   }
   assert.ok((r.status === 302 || r.status === 303) &&
@@ -449,10 +448,13 @@ async function test() {
     { application: client.client_id, attribute: "oauthRedirectUri",
       value: REDIRECT }, "removed the one the frontchannel URI matched");
   // The inventory first: /logout lists every relying party the session
-  // holds, and says why one will not be notified.
-  const inventory = await b.go("GET", R + "/logout");
+  // holds, and says why one will not be notified. The page is a static
+  // surface since #577: its shell, then the view it is drawn from.
+  const shell = await b.go("GET", R + "/logout");
+  const inventory = await b.go("GET", R + "/authn-api/logout");
   check("/logout lists the client as not to be notified, with section 2's " +
         "reason", function () {
+    assert.strictEqual(shell.status, 200, shell.text.slice(0, 400));
     assert.strictEqual(inventory.status, 200, inventory.text.slice(0, 400));
     assert.ok(/Front-Channel Logout 1\.0 section 2/.test(inventory.text),
               inventory.text.slice(0, 2000));

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -38,6 +38,8 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const forge = require("node-forge");
@@ -148,6 +150,8 @@ function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    // The jar, for the sign-in over /authn-api (#571).
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -203,14 +207,12 @@ function hiddenFields(html) {
 
 async function signIn(b, location, who) {
   log.debug("Entering signIn(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200, "the sign-in screen: " + page.status +
-                     " " + page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper, with this
+  // browser's jar: the answer is read as the form's 303 was.
+  const posted = await authnSignin.signInWithJar(base + R, location,
+    { action: "login", username: who, password: PASSWORD }, b.jar);
+  assert.ok(posted.answer.view, "the sign-in screen: " +
+            posted.answer.status + " " + JSON.stringify(posted.answer.json));
   log.debug("Leaving signIn().");
   return posted;
 }
@@ -256,7 +258,10 @@ function certificate(subject, publicKey, issuer, signingKey, ca) {
   log.debug("Entering certificate(). " + subject);
   const cert = forge.pki.createCertificate();
   cert.publicKey = publicKey;
-  cert.serialNumber = "0" + nodeCrypto.randomBytes(8).toString("hex");
+  // "01" and not "0": forge pads an odd-length hex serial to 00 xx..., a
+  // non-minimal DER INTEGER OpenSSL refuses as "illegal padding" whenever
+  // xx < 0x80 (an intermittent failure of this job).
+  cert.serialNumber = "01" + nodeCrypto.randomBytes(8).toString("hex");
   cert.validity.notBefore = new Date(Date.now() - 3600 * 1000);
   cert.validity.notAfter = new Date(Date.now() + 86400 * 1000);
   cert.setSubject([{ name: "commonName", value: subject }]);
@@ -499,6 +504,18 @@ async function test() {
     assert.strictEqual(r.status, 400, r.raw.slice(0, 300));
     assert.strictEqual(r.body.error, "invalid_grant");
   });
+  // That refusal SPENT the code in product mode: a code is presented once,
+  // whatever the outcome (RFC 6749 section 4.1.2, #424). The right
+  // instance redeems a fresh one, pushed and authorized again.
+  r = await postForm(parUrl, params, attested(k1));
+  r = await follow(alice, await alice.go("GET", R + "/oauth2/authorize?" +
+    form({ client_id: clientId, request_uri: r.body.request_uri })), ALICE);
+  const again = r.location && r.location.indexOf(REDIRECT) === 0
+    ? new URL(r.location).searchParams : null;
+  check("a fresh authorization gives another code", function () {
+    assert.ok(again && again.get("code"), r.status + " " + r.location);
+  });
+  redeem.code = again.get("code");
   const proof = attested(k1);
   r = await postForm(tokenUrl, redeem, proof);
   check("and by the instance it was pushed by, issued", function () {

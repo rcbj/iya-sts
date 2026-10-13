@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -944,14 +944,14 @@ function parseXml(xml, what, opts) {
 // 5mb, so ten times that payload is half a minute of a service that answers
 // nobody.
 //
-// **AND "ANSWERS NOBODY" IS LITERAL HERE.** This process runs every listener
-// it owns on ONE THREAD — the express app, the KDC on TCP and UDP 88, the
-// Kerberos service, the LDAP directory and the SPIFFE gRPC surfaces among
-// them. That is the argument `common/CLAUDE.md` makes about post-quantum
-// signing, and the whole reason `common/worker_pool.js` exists:
-// a synchronous computation here does not slow this service down, it STOPS it,
-// and a KDC that does not answer looks from the outside exactly like a KDC that
-// is not there.
+// **AND "ANSWERS NOBODY" IS LITERAL HERE.** This process runs every listener it
+// owns on ONE THREAD — the express app, the KDC on TCP and UDP 88, the Kerberos
+// service, the LDAP directory and the SPIFFE gRPC surfaces among them. That is
+// the argument `common/CLAUDE.md` makes about post-quantum signing, and the
+// reason post-quantum signing runs on libuv's thread pool
+// (`common/pq_native.js`): a synchronous computation here does not slow this
+// service down, it STOPS it, and a KDC that does not answer looks from the
+// outside exactly like a KDC that is not there.
 //
 // The GET binding turned out to be bounded already, by accident: node's own
 // 16 KB header limit answers 431 to a URL long enough to carry a useful bomb.

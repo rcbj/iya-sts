@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -143,17 +143,18 @@
 // shape: `FederationSp` takes every module of this service it reads — and
 // each helper it used to destructure — through its constructor as
 // `FederationSpDeps`, and its four endpoints are registered by
-// `registerRoutes(app)`. node's `crypto` and `zlib`, `jsonwebtoken` and
-// xmldom are libraries and are used directly. Since #50's R2 the composition
-// root builds the instance; the module's old names are FACADES forwarding to
-// it, for the modules and tests that require it by them, and a process
-// without the root builds a default at load. Loading the module registers
-// NOTHING (#50, R1): the module exports `registerRoutes(app)`, and
-// `common/protocol_stack.ts` calls it at the point in the route order where
-// requiring this module used to register the routes (rule 1).
+// `registerRoutes(app)`. node's `zlib`, `jsonwebtoken` and xmldom are
+// libraries and are used directly; node's `crypto` is not, since #453 — every
+// digest, random value and key goes through `common/crypto.js`. Since #50's
+// R2 the composition root builds the instance; the module's old names are
+// FACADES forwarding to it, for the modules and tests that require it by
+// them, and a process without the root builds a default at load. Loading
+// the module registers NOTHING (#50, R1): the module exports
+// `registerRoutes(app)`, and `common/protocol_stack.ts` calls it at the
+// point in the route order where requiring this module used to register the
+// routes (rule 1).
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import zlib = require('zlib');
 import jwt = require('jsonwebtoken');
 import xmldom = require('@xmldom/xmldom');
@@ -188,6 +189,13 @@ import realms = require('./../common/realms');
 import documentSettings = require('./../saml/document_settings');
 import helpers = require('./../common/helpers');
 import InstanceSlot = require('./../common/instance_slot');
+// THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
+// no route and closes no cycle. Only the pages a PERSON passes through use it
+// — the outbound hand-off and the signed-in page; refusals stay English.
+import PageLocale = require('./../common/page_locale');
+// THE FEDERATION PAGES' SHELL (#580): the landing page, and what the login
+// and linking endpoints say, drawn in the browser.
+import FederationPages = require('./federation_pages');
 // WHICH PEOPLE A PARTNER MAY ASSERT (#109). `mode.js` answers whether a name
 // match is allowed at all; `federation_links.ts` is the link's format, a
 // static utility class; the console roster (`admin_rbac.ts`, built by the
@@ -196,12 +204,21 @@ import InstanceSlot = require('./../common/instance_slot');
 // register nothing and require nothing here back.
 import mode = require('./../common/mode');
 import links = require('./federation_links');
+// A partner's block on a person (#373): a leaf store the receiver writes.
+import fedBlocks = require('./federation_blocks');
 import rbac = require('./../admin-ui/admin_rbac');
 import roles = require('./../common/roles');
 // A PARTNER'S ENCRYPTED ASSERTION OR ID TOKEN (#168): the key it is encrypted
 // to and the policy it is decrypted under. A static utility class that
 // registers no route and requires nothing here back.
 import fedEncryption = require('./federation_encryption');
+// A FLOW'S HANDLE NAMES THE CELL THAT HOLDS IT (#98 D10): stamped when it is
+// minted (putContext()), read where a partner's answer arrives (consume()).
+// Libraries that register no route.
+import cellLocator = require('./../common/cell_locator');
+import cellPlacement = require('./../common/cell_placement');
+import cells = require('./../common/cells');
+import cellRouting = require('./../common/cell_routing');
 
 const { DOMParser, XMLSerializer } = xmldom;
 
@@ -260,6 +277,9 @@ const LOGIN_PATH = federation.PATHS.login;
 const ACS_PATH = federation.PATHS.acs;
 const METADATA_PATH = federation.PATHS.metadata;
 const LINK_PATH = federation.PATHS.link;
+// The inter-cell operation that asks whether a resident carries a partner's
+// link (#98 D9): see FederationSp.homeOfSubject().
+const LINK_HOME_OP = 'federation-link-home';
 // A partner's sign-out (#167), served by `federation_slo.ts`; named here too
 // because the ACS points at it and the metadata publishes it.
 const SLO_PATH = federation.PATHS.slo;
@@ -313,7 +333,9 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
 const contexts = realms.map({ persist: 'federation_sp.contexts',
-                              retain: 'age' });
+                              retain: 'age',
+                              // #333: the context's `expires`, ms.
+                              expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML
@@ -496,6 +518,12 @@ class FederationSp {
     app.get(federation.PATHS.jwks + '/:id', (req, res) => {
       return this.jwksEndpoint(req, res);
     });
+    // GET /federation/pages.js — the script of the three pages above that
+    // are this service's own (#580): the landing page, and what the login
+    // and linking endpoints say.
+    app.get(FederationPages.SCRIPT_PATH, (req, res) => {
+      return FederationPages.script(req, res);
+    });
     // GET /federation
     app.get(BASE_PATH, (req, res) => {
       return this.indexEndpoint(req, res);
@@ -539,12 +567,18 @@ class FederationSp {
    * oldest context is dropped once `federation.maxContexts` are held.
    *
    * @param record - what the flow needs back when the response arrives
-   * @returns the handle, `fed-` and a random value
+   * @returns the handle, `fed-` and a random value (stamped with this cell
+   *   in a service deployed as cells)
    */
   putContext(record) {
     const { log, randomId } = this.deps;
     log.debug("Entering FederationSp.putContext().");
-    const handle = 'fed-' + randomId(18);
+    // STAMPED WITH THE CELL THAT HOLDS IT (#98 D10): the context store is
+    // the cell's, and a handle comes back — as a RelayState, a wctx, a
+    // state, or `/federation/link/{handle}`'s path segment — at whichever
+    // cell the browser reaches next. Twelve base64url characters: 40 in all,
+    // inside the handle pattern's 64 and SAML's 80-byte RelayState.
+    const handle = 'fed-' + cellLocator.stamp(randomId(18));
     const now = Date.now();
     contexts.forEach((value, key) => {
       if (value.expires < now) contexts.delete(key);
@@ -606,7 +640,10 @@ class FederationSp {
     log.debug("Leaving FederationSp.fromContext().");
     return {
       returnTo: (context && context.returnTo) || '',
-      application: (context && context.application) || ''
+      application: (context && context.application) || '',
+      // The sign-in screen's pending record, for a restart at the person's
+      // home cell (#98 D9); '' in single-cell mode.
+      authnPending: (context && context.authnPending) || ''
     };
   }
 
@@ -646,11 +683,15 @@ class FederationSp {
     return !!config.value('federation.enabled');
   }
 
-  private page(title, body) {
+  // `t` is the page's translator (#539), for a page a person passes through;
+  // without one the page is English, exactly as it always was.
+  private page(title, body, t?) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.page().");
     log.debug("Leaving FederationSp.page().");
-    return '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    return '<!DOCTYPE html>\n<html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8">' +
       '<meta name="viewport" content="width=device-width,initial-scale=1">' +
       '<title>' + xmlEscape(title) + '</title><style>' + STYLE +
       '</style></head><body>' +
@@ -660,12 +701,24 @@ class FederationSp {
   // A refusal, and it does three things every time: it draws the reason, it
   // writes `fedLastError` on the relationship, and it answers a status code a
   // test can assert on. See decision 6 — it never redirects.
+  //
+  // ON THE LOGIN AND LINKING ENDPOINTS (#580) the reason is drawn in the
+  // browser: the shell, with `what`, `why` and the relationship in
+  // `data-sts-state` (`federation_pages.ts`), the status unchanged. On the
+  // assertion consumer service — a specification's endpoint — it is drawn
+  // here, as it always was. `what` and `why` are TEXT either way.
   // error-code: none — the definition of the helper, not a call to it
   private refuse(res, record, status, what, why, extra?) {
     const { federation, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.refuse(). what=" + what);
     const id = (record && record.fedId) || '';
     if (id) federation.recordFailure(id, what + ': ' + why);
+    if (FederationPages.onSurface(res)) {
+      FederationPages.send(res, status,
+                           FederationPages.refusedView(what, why, id));
+      log.debug("Leaving FederationSp.refuse(). " + status + ', the shell.');
+      return;
+    }
     const body = '<h1>The federated sign-in was refused</h1>' +
       '<p class="bad">' + xmlEscape(what) + '</p>' +
       '<p>' + xmlEscape(why) + '</p>' +
@@ -698,10 +751,10 @@ class FederationSp {
   // WS-Federation `wtrealm` and the OAuth `client_id` fallback — and four
   // spellings of it would be four things a partner had to be configured with.
   //
-  // It is PER RELATIONSHIP rather than one constant, which is the same decision
-  // `saml2.perApplicationEntityId` makes in the other direction and for the
-  // same reason: a partner keying its trust store off an entityID must be able
-  // to be given one that is only ours-with-them.
+  // It is PER RELATIONSHIP rather than one constant: a partner keying its
+  // trust store off an entityID must be able to be given one that is only
+  // ours-with-them. (The other direction made the same decision until #523,
+  // when this service as an IDENTITY PROVIDER became one name per realm.)
   // ---------------------------------------------------------------------------
   //
   // **AND IT IS DERIVED FROM THE BASE URL, WHICH IS THE ONE THING TO KNOW ABOUT
@@ -1265,9 +1318,17 @@ class FederationSp {
   // Steps 3 to 5 are finishSignIn(), which the linking step calls too.
   // ---------------------------------------------------------------------------
   private completeSignIn(req, res, record, result) {
-    const { fedMap, errorCodes, log } = this.deps;
+    const { fedMap, errorCodes, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeSignIn(). id=" + record.fedId);
     const mapped = fedMap.mapIncoming(record, result.bag, result.subject);
+    // What was dropped, for /admin/federation (#94). A store that cannot be
+    // written costs the list and never the sign-in.
+    try {
+      federation.recordUnmapped(record.fedId, mapped.unmapped);
+    } catch (e) {
+      log.debug("Caught in FederationSp.completeSignIn(): " +
+                ((e && e.message) || e));
+    }
     if (!mapped.username) {
       log.debug("Leaving FederationSp.completeSignIn(). There is no username.");
       errorCodes.mark(res, 'STS-FED-0043');
@@ -1283,19 +1344,191 @@ class FederationSp {
                         'configured to take one from an attribute instead'),
                     this.bagTable(result.bag));
     }
+    // A PERSON HOMED IN ANOTHER CELL (#98 D9), before the subject is decided
+    // against a directory that does not hold them — and so before anything
+    // is linked, provisioned or signed in here. See homeOfSubject().
+    if (cells.isMulti()) {
+      const self = this;
+      log.debug("Leaving FederationSp.completeSignIn(). Asking where the " +
+                "subject is homed.");
+      return this.homeOfSubject(record, result, mapped)
+        .then(function (home: string): unknown {
+          if (home) {
+            return self.restartAtHome(req, res, record, result, home);
+          }
+          return self.decideAndFinish(req, res, record, result, mapped);
+        });
+    }
+    log.debug("Leaving FederationSp.completeSignIn(). Deciding.");
+    return this.decideAndFinish(req, res, record, result, mapped);
+  }
+
+  // Steps 2 to 5 of completeSignIn(), once the subject is known to be decided
+  // HERE.
+  private decideAndFinish(req, res, record, result, mapped) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.decideAndFinish(). id=" + record.fedId);
     const decision = this.subjectDecision(record, result, mapped);
     if (!decision.ok) {
-      log.debug("Leaving FederationSp.completeSignIn(). The subject was " +
+      log.debug("Leaving FederationSp.decideAndFinish(). The subject was " +
                 "refused: " + decision.code);
       return this.refuseSubject(res, record, result, mapped, decision);
     }
     if (decision.confirm) {
-      log.debug("Leaving FederationSp.completeSignIn(). A local sign-in " +
+      log.debug("Leaving FederationSp.decideAndFinish(). A local sign-in " +
                 "first, to link " + decision.username + ".");
       return this.beginLinking(req, res, record, result, decision);
     }
-    log.debug("Leaving FederationSp.completeSignIn(). " + decision.how + ".");
+    log.debug("Leaving FederationSp.decideAndFinish(). " + decision.how + ".");
     return this.finishSignIn(req, res, record, result, mapped, decision);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHERE THE PARTNER'S SUBJECT IS HOMED (#98 D9), in a service deployed as
+  // cells. subjectDecision() reads THIS cell's directory, which holds its
+  // residents and — for a session exported here — projections of people
+  // homed elsewhere, which are not residents. A person homed in another cell
+  // is found three ways, in the order subjectDecision() would find them:
+  //
+  //   1. the person a local entry's federationLink names — a projection's
+  //      home from the routing index;
+  //   2. with no local holder, a RESIDENT of another cell carrying the link,
+  //      asked of every peer (`federation-link-home`): the routing index
+  //      keeps names and entryUUIDs, not links;
+  //   3. the NAMES the relationship's policy would sign in or create — the
+  //      mapped username under any-existing and link-at-first-sign-in, the
+  //      namespaced name under every policy that creates one — from the
+  //      routing index. A name homed elsewhere is never created here, which
+  //      is also what the index's own claim at creation refuses.
+  //
+  // Nothing personal leaves this cell and the assertion is not forwarded:
+  // the flow restarts at home (restartAtHome()), where the partner — which
+  // holds its own sign-on session — answers again at home's consumer, and
+  // the decision, a link-at-first-sign-in included, is made there.
+  // Answers '' to decide here: single-cell mode, a subject resident here or
+  // unknown everywhere, and a peer that cannot be asked (STS-CELL-0123).
+  // ---------------------------------------------------------------------------
+  private homeOfSubject(record, result, mapped): Promise<string> {
+    const { federation, links, log } = this.deps;
+    log.debug("Entering FederationSp.homeOfSubject(). id=" + record.fedId);
+    const realmId = realms.currentId();
+    const elsewhere = function (home: string): string {
+      return home && home !== cells.id() && cells.get(home) ? home : '';
+    };
+    const stable = links.stableSubjectOf(record, result);
+    const holders = stable.ok ? federation.peopleLinkedBy(stable.value) : [];
+    if (holders.length === 1) {
+      log.debug("Leaving FederationSp.homeOfSubject(). A linked person.");
+      return cellRouting.homeOf(realmId, 'name', holders[0].username)
+        .then(elsewhere);
+    }
+    if (holders.length > 1) {
+      log.debug("Leaving FederationSp.homeOfSubject(). Ambiguous; decided " +
+                "here.");
+      return Promise.resolve('');
+    }
+    const policy = federation.subjectPolicyOf(record);
+    const names = [];
+    if (policy === 'any-existing' || policy === 'link-at-first-sign-in') {
+      names.push(mapped.username);
+    }
+    if (policy !== 'any-existing' && policy !== 'pre-linked') {
+      names.push(links.namespacedName(record.fedId, mapped.username));
+    }
+    const byLink = stable.ok
+      ? FederationSp.linkHomeAtPeers(realmId, stable.value)
+      : Promise.resolve('');
+    log.debug("Leaving FederationSp.homeOfSubject(). Asking the peers and " +
+              "the routing index.");
+    return byLink.then(function (home: string): Promise<string> | string {
+      if (home) {
+        return home;
+      }
+      return names.reduce(function (found: Promise<string>, name: string) {
+        return found.then(function (had: string) {
+          return had || !name ? had
+            : cellRouting.homeOf(realmId, 'name', name).then(elsewhere);
+        });
+      }, Promise.resolve(''));
+    });
+  }
+
+  /**
+   * Asks every other cell whether one of its RESIDENTS carries a
+   * federationLink.
+   *
+   * @param realmId - the realm
+   * @param link - the link value (`links.stableSubjectOf().value`)
+   * @returns a promise of the first cell that holds one, or ''
+   */
+  static linkHomeAtPeers(realmId: string, link: string): Promise<string> {
+    helpers.log.debug("Entering FederationSp.linkHomeAtPeers().");
+    const channel = require('./../common/cell_channel');
+    const asks = cells.peers().map(function (peer) {
+      return channel.call(peer.id, LINK_HOME_OP, { realm: realmId,
+                                                   link: link })
+        .then(function (answer: any) {
+          return answer && answer.holds ? peer.id : '';
+        }, function (err: any) {
+          helpers.log.warn(errorCodes.tag('STS-CELL-0123') + 'federation: ' +
+                           'cell "' + peer.id + '" could not be asked ' +
+                           'whether a person there carries a partner\'s ' +
+                           'link (' + ((err && err.message) || err) + '); ' +
+                           'the subject is decided without it.');
+          return '';
+        });
+    });
+    helpers.log.debug("Leaving FederationSp.linkHomeAtPeers(). " +
+                      asks.length + " peer(s).");
+    return Promise.all(asks).then(function (found: string[]) {
+      return found.filter(Boolean)[0] || '';
+    });
+  }
+
+  /**
+   * Answers another cell's `federation-link-home`: whether a person RESIDENT
+   * here — not a projection — carries the link.
+   *
+   * @param body - `{ realm, link }`
+   * @returns `{ holds }`
+   * @throws an Error for an unknown realm
+   */
+  static answerLinkHome(body: any): { holds: boolean } {
+    helpers.log.debug("Entering FederationSp.answerLinkHome().");
+    const realmId = String((body && body.realm) || '');
+    const realm = realmId ? realms.get(realmId)
+                          : realms.get(realms.DEFAULT_ID);
+    if (!realm) {
+      helpers.log.debug("Leaving FederationSp.answerLinkHome(). No realm.");
+      throw new Error('no such realm');
+    }
+    let holds = false;
+    realms.run(realm, function () {
+      const cellSessions = require('./../common/cell_sessions');
+      holds = federation.peopleLinkedBy(String(body.link || ''))
+        .some(function (one) {
+          return !cellSessions.isProjected(realmId, 'name', one.username);
+        });
+    });
+    helpers.log.debug("Leaving FederationSp.answerLinkHome(). " + holds);
+    return { holds: holds };
+  }
+
+  // THE FLOW RESTARTS AT HOME (#98 D9): the browser is pinned to the home
+  // cell and sent back to the start the sign-in screen recorded
+  // (`authn.restartPendingAtHome()`, the sign-in screen's own restart), or to
+  // the flow's return address when it recorded none. The verified assertion
+  // is dropped here, unused: nothing about the person is written or carried.
+  private restartAtHome(req, res, record, result, home: string) {
+    const { authn, log } = this.deps;
+    log.debug("Entering FederationSp.restartAtHome(). home=" + home);
+    log.info('federation: ' + record.fedId + '\'s partner asserted a person ' +
+             'homed in cell "' + home + '"; the flow restarts there (#98 ' +
+             'D9).');
+    log.debug("Leaving FederationSp.restartAtHome().");
+    return authn.restartPendingAtHome(req, res,
+                                      String(result.authnPending || ''),
+                                      String(result.returnTo || ''), home);
   }
 
   // ---------------------------------------------------------------------------
@@ -1417,6 +1650,23 @@ class FederationSp {
       }
     }
     const person = federation.federatedPerson(target);
+    // THE PARTNER STOPPED VOUCHING FOR THIS PERSON (#373): a verified
+    // account-disabled from its own Shared Signals blocks its sign-ins of
+    // them, and only its — before any rule, because nothing else this
+    // partner says about the person can outweigh the partner saying stop.
+    const stopped = fedBlocks.blockOf(record.fedId,
+                                      person ? person.username : target);
+    if (stopped) {
+      log.debug("Leaving FederationSp.subjectDecision(). Blocked.");
+      return this.subjectRefusal('STS-FED-0156', 'blocked',
+        'The partner has stopped vouching for this person',
+        'A verified ' + (stopped.event || 'account-disabled') + ' event ' +
+        'from this partner\'s Shared Signals (at ' +
+        new Date(Number(stopped.at) || 0).toISOString() + ') blocks its ' +
+        'sign-ins of ' + stopped.username + '. Its account-enabled lifts ' +
+        'that, and so can an administrator on the relationship\'s page. ' +
+        'Signing in here another way is unaffected.');
+    }
     const rules = this.subjectRules(record, mapped, target, person);
     if (!rules.ok) {
       log.debug("Leaving FederationSp.subjectDecision(). A rule refused.");
@@ -1716,14 +1966,14 @@ class FederationSp {
   // order.
   // ---------------------------------------------------------------------------
   private linkEndpoint(req, res) {
-    const { federation, fedMap, authn, errorCodes, audit, log, xmlEscape } =
-      this.deps;
+    const { federation, fedMap, authn, errorCodes, audit, log } = this.deps;
     log.debug("Entering the federation linking endpoint.");
+    // A PAGE OF THE FEDERATION SURFACE (#580): every refusal below, and the
+    // signed-in page where nothing asked to be returned to, is the shell.
+    FederationPages.mark(res);
     if (!this.enabled()) {
       errorCodes.mark(res, 'STS-FED-0001');
-      res.status(404).type('html').send(this.page('Not here',
-        '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
-        'off.</p>'));
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
       log.debug("Leaving the federation linking endpoint. Federation is off.");
       return;
     }
@@ -1740,14 +1990,14 @@ class FederationSp {
     }
     const record = federation.get(context.id);
     if (!record || record.fedRole !== 'service-provider' ||
-        !federation.isUsable(record)) {
+        !federation.signsIn(record) || !federation.isUsable(record)) {
       errorCodes.mark(res, record && federation.isEnabled(record)
         ? 'STS-FED-0006' : 'STS-FED-0005');
       log.debug("Leaving the federation linking endpoint. The relationship " +
                 "is not usable now.");
       return this.refuse(res, record || null, 403, 'That relationship is ' +
                                                    'not usable',
-        'The relationship "' + xmlEscape(context.id) + '" is disabled, ' +
+        'The relationship "' + context.id + '" is disabled, ' +
         'half-configured or gone since the partner answered.');
     }
     // THE BROWSER THAT STARTED IT (see LINK_COOKIE), asked before anything
@@ -1839,18 +2089,18 @@ class FederationSp {
     const { log } = this.deps;
     log.debug("Entering FederationSp.bindingHashOf().");
     log.debug("Leaving FederationSp.bindingHashOf().");
-    return crypto.createHash('sha256').update(String(value), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(value), 'base64url');
   }
 
   // Two binding hashes compared in constant time.
   private sameBinding(a, b) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.sameBinding().");
-    const left = Buffer.from(String(a || ''), 'utf8');
-    const right = Buffer.from(String(b || ''), 'utf8');
-    const same = left.length > 0 && left.length === right.length &&
-                 crypto.timingSafeEqual(left, right);
+    // An empty binding matches nothing; two of different lengths answer
+    // false in constantTimeEquals(), as the length check here did.
+    const left = String(a || '');
+    const same = left.length > 0 &&
+                 stsCrypto.constantTimeEquals(left, String(b || ''));
     log.debug("Leaving FederationSp.sameBinding(). " + same);
     return same;
   }
@@ -2068,8 +2318,8 @@ class FederationSp {
         'The assertion verified and the partner is configured, but this ' +
         'service holds no directory entry for ' + username + ', and ' +
         (federation.boolOf(record.fedAutocreateUsers, true)
-          ? 'the directory would not create one (product mode creates ' +
-            'nobody, ldap.autocreateUsers is off, or it is full).'
+          ? 'the directory would not create one (the subject policy ' +
+            'refused it, or the directory is full).'
           : 'dynamic provisioning (fedAutocreateUsers) is off on this ' +
             'relationship, so the person has to be created here first — ' +
             'through SCIM, /admin/users/new or the management API — and ' +
@@ -2109,22 +2359,49 @@ class FederationSp {
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
 
     const returnTo = result.returnTo || '';
-    if (returnTo) {
-      // 303, for the reason `authn.js`'s returnToCaller() gives at length: this
-      // may follow a POST carrying an assertion, and 302's behaviour after a
-      // POST is historically ambiguous where 303's is defined.
-      res.redirect(303, returnTo);
-      log.debug("Leaving FederationSp.startFederatedSession(). Sent them on to " +
-                returnTo + '.');
-      return;
-    }
-    res.type('html').set('Cache-Control', 'no-store').send(
-      this.page('Signed in',
-                this.signedInPage(record,
-                                  Object.assign({}, mapped,
-                                                { username: username }),
-                                  result, session)));
-    log.debug("Leaving FederationSp.startFederatedSession(). Drew the result page.");
+    const self = this;
+    // THE ATTRIBUTE SOURCES A SIGN-IN READS (#94), after the partner's
+    // attributes are on the entry and before the browser goes on — so a
+    // source's column wins over a partner's value for an attribute both
+    // name, and a refusing source that failed is this relationship's
+    // refusal page rather than a session.
+    this.deps.authn.afterSignIn(res, function (): void {
+      if (returnTo) {
+        // 303, for the reason `authn.js`'s returnToCaller() gives at length:
+        // this may follow a POST carrying an assertion, and 302's behaviour
+        // after a POST is historically ambiguous where 303's is defined.
+        res.redirect(303, returnTo);
+        return;
+      }
+      // THE LINKING STEP'S OUTCOME (#580) is a page of the federation
+      // surface: its facts in the shell, drawn in the browser in the
+      // person's language — the application's default, then their own.
+      if (FederationPages.onSurface(res)) {
+        FederationPages.send(res, 200, self.signedInView(record,
+          Object.assign({}, mapped, { username: username }), result,
+          session), { application: result.application || '',
+                      own: self.deps.authn.preferredLanguageOf(username) });
+        return;
+      }
+      // In the person's language (#539): the application they were signing
+      // in to, where the login endpoint was told it, and the person.
+      const t = PageLocale.forPage({ application: result.application || '',
+                                     username: username });
+      res.type('html').set('Cache-Control', 'no-store').send(
+        self.page(t.text('handoff.federation.signedIn.title'),
+                  self.signedInPage(record,
+                                    Object.assign({}, mapped,
+                                                  { username: username }),
+                                    result, session, t), t));
+    }, function (why: string): void {
+      // error-code: none — afterSignIn() marked STS-ATTR-0012 on `res`
+      self.refuse(res, record, 403, 'An attribute source refused the sign-in',
+                  why + ' This realm\'s attribute source says a sign-in it ' +
+                  'cannot read is refused, and the session was ended.');
+    });
+    log.debug("Leaving FederationSp.startFederatedSession(). " +
+              (returnTo ? "Sending them on to " + returnTo + "."
+                        : "Drawing the result page."));
   }
 
   // ---------------------------------------------------------------------------
@@ -2244,7 +2521,48 @@ class FederationSp {
       }).join('') + '</table>';
   }
 
-  private signedInPage(record, mapped, result, session) {
+  // THE SAME PAGE'S FACTS, for the federation surface (#580): what
+  // `signedInPage()` draws, with no word of it — the browser draws them from
+  // the `handoff` catalogs (`federation/web_federation_views.ts`).
+  private signedInView(record, mapped, result, session) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.signedInView().");
+    const view = {
+      kind: 'signedIn', relationship: String(record.fedId),
+      partner: String(record.fedName || record.fedId),
+      peer: String(record.fedPeer || ''),
+      protocol: String((federation.protocolRow(record.fedProtocol) ||
+                        {}).label || record.fedProtocol || ''),
+      subject: String(result.subject || ''),
+      username: String(mapped.username || ''),
+      usernamePrefixed: !!mapped.usernamePrefixed,
+      usernameFrom: String(mapped.usernameFrom || ''),
+      session: String((session && session.id) || ''),
+      autocreate: federation.boolOf(record.fedAutocreateUsers, true),
+      updates: federation.boolOf(record.fedUpdateUserAttributes, true),
+      mapped: (mapped.mapped || []).map(function (one) {
+        return { incoming: String(one.incoming), ldap: String(one.ldap),
+                 values: (one.values || []).map(String),
+                 where: String(one.where || '') };
+      }),
+      unmapped: (mapped.unmapped || []).map(function (one) {
+        return { incoming: String(one.incoming),
+                 values: (one.values || []).map(String) };
+      })
+    };
+    log.debug("Leaving FederationSp.signedInView().");
+    return view;
+  }
+
+  //
+  // IN THE PERSON'S LANGUAGE (#539): `t` is the page's translator. What the
+  // partner sent, the mapping's own words and the setting names are data
+  // and stay as they are. No language chooser: the page is drawn by the
+  // assertion consumer service, at the end of a POST or a redirect carrying
+  // a one-time answer, and no GET draws it again. (The same page at the end
+  // of a linking step is the federation surface's since #580:
+  // `signedInView()`.)
+  private signedInPage(record, mapped, result, session, t) {
     const { federation, log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.signedInPage().");
     const rows = mapped.mapped.map((one) => {
@@ -2258,72 +2576,76 @@ class FederationSp {
       return '<tr><td><code>' + xmlEscape(one.incoming) + '</code></td><td ' +
                                                           'colspan="2">' +
         one.values.map((v) => { return xmlEscape(v); }).join('<br>') +
-        '</td><td class="note">nothing maps this name, so it was NOT ' +
-        'written</td></tr>';
+        '</td><td class="note">' +
+        t.html('handoff.federation.signedIn.notWritten') + '</td></tr>';
     }).join('');
     log.debug("Leaving FederationSp.signedInPage().");
-    return '<h1>Signed in through ' +
-      xmlEscape(record.fedName || record.fedId) +
-      '</h1><p>This ' +
-      'service is now signing you in as <code>' + xmlEscape(mapped.username) +
-      '</code>. The session is <code>' + xmlEscape(session.id) + '</code>, ' +
-      'and it is the SAME session every other protocol here reads — so an ' +
-      'OAuth 2.0 authorization request, a WS-Federation sign-in or the admin ' +
-      'console will now find you signed ' +
-      'in.</p><table><tr><th>What</th><th>Value</th></tr><tr><td>Partner' +
-      '</td><td><code>' + xmlEscape(record.fedPeer || '(unnamed)') +
-      '</code></td></tr><tr><td>Protocol</td><td>' +
+    return '<h1>' + t.html('handoff.federation.signedIn.heading',
+                           { partner: record.fedName || record.fedId }) +
+      '</h1><p>' +
+      t.html('handoff.federation.signedIn.lead',
+             { username: mapped.username, session: session.id }) +
+      '</p><table><tr><th>' + t.html('handoff.federation.signedIn.what') +
+      '</th><th>' + t.html('handoff.federation.signedIn.value') +
+      '</th></tr><tr><td>' + t.html('handoff.federation.signedIn.partner') +
+      '</td><td><code>' + (record.fedPeer ? xmlEscape(record.fedPeer)
+        : t.html('handoff.federation.signedIn.unnamed')) +
+      '</code></td></tr><tr><td>' +
+      t.html('handoff.federation.signedIn.protocol') + '</td><td>' +
         xmlEscape((federation.protocolRow(record.fedProtocol) ||
                    {}).label || record.fedProtocol) +
         '</td></tr>' +
-      '<tr><td>Subject the partner sent</td><td><code>' + xmlEscape(
-          result.subject || '(none)') +
+      '<tr><td>' + t.html('handoff.federation.signedIn.subject') +
+        '</td><td><code>' + (result.subject ? xmlEscape(result.subject)
+          : t.html('handoff.federation.signedIn.none')) +
         '</code></td></tr>' +
-      '<tr><td>Username here</td><td><code>' + xmlEscape(
+      '<tr><td>' + t.html('handoff.federation.signedIn.usernameHere') +
+        '</td><td><code>' + xmlEscape(
           mapped.username) + '</code>' +
         (mapped.usernamePrefixed
-          ? ' <span class="note">(federation.usernamePrefix was ' +
-            'applied)</span>' :
+          ? ' <span class="note">' +
+            t.html('handoff.federation.signedIn.prefixed') + '</span>' :
          '') +
-        ' <span class="note">from ' + xmlEscape(mapped.usernameFrom) +
-      '</span></td></tr><tr><td>Directory ' +
-      'entry</td><td>' +
+        ' <span class="note">' +
+        t.html('handoff.federation.signedIn.from',
+               { source: mapped.usernameFrom }) +
+      '</span></td></tr><tr><td>' +
+      t.html('handoff.federation.signedIn.entry') + '</td><td>' +
         (federation.boolOf(record.fedAutocreateUsers, true)
-          ? 'created if absent, under <code>ou=users</code> — see ' +
+          ? t.html('handoff.federation.signedIn.created') + ' ' +
             '<a href="/admin/users">/admin/users</a>'
-          : '<span class="note">NEVER created here: fedAutocreateUsers is ' +
-            'off on this relationship, so the person must already have an ' +
-            'entry</span>') +
+          : '<span class="note">' +
+            t.html('handoff.federation.signedIn.neverCreated') + '</span>') +
         (federation.boolOf(record.fedUpdateUserAttributes, true)
-          ? '; its attributes are updated from this assertion'
-          : '<span class="note">; its attributes are written only when this ' +
-            'sign-in creates it (fedUpdateUserAttributes is off)</span>') +
+          ? t.html('handoff.federation.signedIn.updated')
+          : '<span class="note">' +
+            t.html('handoff.federation.signedIn.writtenOnce') + '</span>') +
         '</td></tr></table>' +
-      (rows ? '<h2>Attributes mapped onto the directory ' +
-        'entry</h2><table><tr><th>The partner ' +
-        'sent</th><th>Became</th><th>Value(s)</th><th>Decided by</th></tr>' +
+      (rows ? '<h2>' + t.html('handoff.federation.signedIn.mappedHeading') +
+        '</h2><table><tr><th>' +
+        t.html('handoff.federation.signedIn.partnerSent') + '</th><th>' +
+        t.html('handoff.federation.signedIn.became') + '</th><th>' +
+        t.html('handoff.federation.signedIn.values') + '</th><th>' +
+        t.html('handoff.federation.signedIn.decidedBy') + '</th></tr>' +
         rows + unmapped + '</table>'
-        : '<h2>Attributes</h2><p class="note">The partner sent no attributes ' +
-          'at all, so the entry carries only the ' +
-          'username.</p>' +
+        : '<h2>' + t.html('handoff.federation.signedIn.attributes') +
+          '</h2><p class="note">' +
+          t.html('handoff.federation.signedIn.noAttributes') + '</p>' +
           (unmapped ? '<table>' + unmapped + '</table>' : '')) +
       (mapped.unmapped.length
-        ? '<p class="note"><strong>' + mapped.unmapped.length + ' ' +
-            'attribute(s) ' +
-          'were thrown away</strong> because nothing maps their names. That ' +
-          'is ' +
-          'deliberate — this directory has no schema, so an attribute ' +
-          'written ' +
-          'under an unrecognised name would be accepted silently and nothing ' +
-          'would ever report that the name was wrong. Add a mapping on <a ' +
+        ? '<p class="note">' +
+          t.html('handoff.federation.signedIn.thrownAway',
+                 { n: mapped.unmapped.length }) + ' <a ' +
           'href="/admin/federation?relationship=' +
           encodeURIComponent(record.fedId) +
-          '">the relationship</a> to keep one.</p>'
+          '">' + t.html('handoff.federation.signedIn.theRelationship') +
+          '</a> ' + t.html('handoff.federation.signedIn.toKeepOne') + '</p>'
         : '') +
-      '<p><a href="' + BASE_PATH + '">Back to the federation index</a> · ' +
+      '<p><a href="' + BASE_PATH + '">' +
+      t.html('handoff.federation.signedIn.backToIndex') + '</a> · ' +
       '<a href="/admin/federation?relationship=' + encodeURIComponent(
           record.fedId) +
-      '">This relationship in the console</a></p>';
+      '">' + t.html('handoff.federation.signedIn.inConsole') + '</a></p>';
   }
 
   // Where to come back to, validated. See decision 4 — the check catches a
@@ -2364,7 +2686,7 @@ class FederationSp {
       xmlEscape, iso
     } = this.deps;
     log.debug("Entering FederationSp.authnRequestXml().");
-    const id = '_' + crypto.randomBytes(16).toString('hex');
+    const id = '_' + stsCrypto.randomBytes(16).toString('hex');
     const xml =
       '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
         NS_SAML + '" ' +
@@ -2411,30 +2733,47 @@ class FederationSp {
   // person is leaving this service for somebody else's and a deliberate click
   // is worth having there. It also means this feature adds no CSP relaxation at
   // all.
-  private postBindingPage(action, fields, record) {
+  //
+  // IN THE PERSON'S LANGUAGE (#539): the application they were signing in
+  // to, where the login endpoint was told it. With a language chooser, since
+  // this page waits for a click: the GET that drew it draws it again, with a
+  // fresh request and context — the one on the page it replaces is simply
+  // never used, and expires.
+  private postBindingPage(action, fields, record, application) {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering FederationSp.postBindingPage().");
+    const t = PageLocale.forPage({ application: application || '' });
     const inputs = Object.keys(fields).map((name) => {
       return '<input type="hidden" name="' + xmlEscape(name) + '" value="' +
         xmlEscape(String(fields[name])) + '">';
     }).join('');
+    const names = Object.keys(fields);
+    // Two fields — SAMLRequest and RelayState — is the one case there is;
+    // any other count is named as a list, rather than a sentence assumed.
+    const posts = names.length === 2
+      ? t.html('handoff.federation.continueTo.postsTwo',
+               { first: names[0], second: names[1] })
+      : t.html('handoff.federation.continueTo.postsList',
+               { fields: names.join(', ') });
+    const partner = record.fedName || record.fedId;
     log.debug("Leaving FederationSp.postBindingPage().");
-    return this.page('Continue to ' + (record.fedName || record.fedId),
-      '<h1>Continue to ' + xmlEscape(record.fedName || record.fedId) + '</h1>' +
-      '<p>This service is about to send you to <code>' +
-      xmlEscape(record.fedSsoUrl) +
-      '</code> to sign in. It will post ' +
-      Object.keys(fields)
-            .map((n) => { return '<code>' + xmlEscape(n) + '</code>'; })
-        .join(' and ') + ' there.</p><p class="note">There is no script on ' +
-      'this page and it does not submit itself. Five pages in this service ' +
-      'DO auto-post, and each one argues for itself; this one does not, ' +
-      'because you are leaving this service for a foreign identity provider ' +
-      'and that is exactly the moment a deliberate click is worth ' +
-      'having.</p><form method="post" ' +
+    return this.page(t.text('handoff.federation.continueTo.title',
+                            { partner: partner }),
+      PageLocale.chooser(t, realms.currentPrefix(),
+        // The start's own parameters, and no others (`herePath()`).
+        PageLocale.herePath(realms.currentPrefix() + LOGIN_PATH + '/' +
+                            encodeURIComponent(record.fedId),
+                            ['returnTo', 'return_to', 'authn',
+                             'application'])) +
+      '<h1>' + t.html('handoff.federation.continueTo.title',
+                      { partner: partner }) + '</h1>' +
+      '<p>' + t.html('handoff.federation.continueTo.lead',
+                     { url: record.fedSsoUrl }) + ' ' + posts +
+      '</p><p class="note">' + t.html('handoff.federation.continueTo.note') +
+      '</p><form method="post" ' +
       'action="' + xmlEscape(action) + '">' + inputs +
-      '<button type="submit">Continue to the identity ' +
-      'provider</button></form>');
+      '<button type="submit">' + t.html('handoff.federation.continueToIdp') +
+      '</button></form>', t);
   }
 
   // ---------------------------------------------------------------------------
@@ -2494,10 +2833,8 @@ class FederationSp {
   private pkcePair() {
     const { log } = this.deps;
     log.debug("Entering FederationSp.pkcePair().");
-    const verifier = crypto.randomBytes(32).toString('base64url');
-    const challenge = crypto.createHash('sha256')
-                            .update(verifier)
-                            .digest('base64url');
+    const verifier = stsCrypto.randomBytes(32).toString('base64url');
+    const challenge = stsCrypto.digest('sha256', verifier, 'base64url');
     log.debug("Leaving FederationSp.pkcePair().");
     return { verifier: verifier, challenge: challenge };
   }
@@ -2510,12 +2847,14 @@ class FederationSp {
       federation, errorCodes, log, xmlEscape, baseUrlOf, randomId
     } = this.deps;
     log.debug("Entering the federation login endpoint. id=" + req.params.id);
+    // A PAGE OF THE FEDERATION SURFACE (#580): what this endpoint SAYS — it
+    // will not start a sign-in — is the shell, drawn in the browser. Where
+    // it starts one it answers the redirect or the POST binding's form, as
+    // it always did.
+    FederationPages.mark(res);
     if (!this.enabled()) {
       errorCodes.mark(res, 'STS-FED-0001');
-      res.status(404).type('html').send(this.page('Not here',
-        '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
-        'off, so no federation endpoint answers. No relationship was ' +
-        'changed.</p>'));
+      FederationPages.send(res, 404, FederationPages.notHereView('off'));
       log.debug("Leaving the federation login endpoint. Federation is off.");
       return;
     }
@@ -2523,12 +2862,8 @@ class FederationSp {
     const record = federation.get(id);
     if (!record) {
       errorCodes.mark(res, 'STS-FED-0002');
-      res.status(404).type('html').send(this.page('No such relationship',
-        '<h1>No such federation relationship</h1><p>There is no relationship ' +
-        'called <code>' +
-        xmlEscape(id) + '</code>. The configured ones are at <a href="' +
-        BASE_PATH + '">' +
-        BASE_PATH + '</a>.</p>'));
+      FederationPages.send(res, 404,
+                           FederationPages.notHereView('noRelationship', id));
       log.debug("Leaving the federation login endpoint. No such relationship.");
       return;
     }
@@ -2541,10 +2876,19 @@ class FederationSp {
         'consumes from and asserts to is two relationships — see ' +
         'federation/CLAUDE.md.');
     }
+    // A PARTNER THAT ONLY SENDS SHARED SIGNALS (#374) has nowhere to send
+    // anybody: it is a transmitter, and nothing more.
+    if (!federation.signsIn(record)) {
+      errorCodes.mark(res, 'STS-FED-0155');
+      log.debug("Leaving the federation login endpoint. Signals only.");
+      return this.refuse(res, record, 400, 'That partner signs nobody in',
+        '"' + id + '" is an ssf relationship: the partner sends this ' +
+        'service Shared Signals, and signs nobody in.');
+    }
     if (!federation.isEnabled(record)) {
       errorCodes.mark(res, 'STS-FED-0005');
       return this.refuse(res, record, 403, 'That relationship is disabled',
-        'It exists and is configured, and <code>fedEnabled</code> is FALSE. ' +
+        'It exists and is configured, and fedEnabled is FALSE. ' +
         'Every relationship is created disabled deliberately: a partner that ' +
         'half-exists and silently accepts assertions is the failure this ' +
         'whole register is arranged to prevent. Enable it on ' +
@@ -2566,6 +2910,12 @@ class FederationSp {
     const pkce = this.pkcePair();
     const contextRecord: any = {
       id: record.fedId, protocol: record.fedProtocol, returnTo: returnTo,
+      // THE SIGN-IN SCREEN'S PENDING RECORD (#98 D9), named by `authn.ts` in
+      // a service deployed as cells: where the flow STARTED, should the
+      // partner assert a person homed in another cell (completeSignIn()).
+      // Only an id; the record stays in the sign-in service's store.
+      authnPending: /^[A-Za-z0-9_-]{1,64}$/.test(String(req.query.authn || ''))
+        ? String(req.query.authn) : '',
       // WHAT THE PERSON WAS SIGNING IN TO, carried across the round trip so
       // that completeSignIn() can move the relationship's per-application
       // counts.
@@ -2600,7 +2950,7 @@ class FederationSp {
                           { SAMLRequest: Buffer.from(built.xml, 'utf8')
                                                .toString('base64'),
                             RelayState: handle },
-                          record));
+                          record, contextRecord.application));
         log.debug("Leaving the federation login endpoint. SAML 2.0 over HTTP " +
                   'POST.');
         return;
@@ -2708,7 +3058,7 @@ class FederationSp {
           errorCodes.mark(res, String(got.code || 'STS-FED-0148'));
           log.debug("Leaving the federation login endpoint. Not resolved.");
           return this.refuse(res, record, 502, 'The OpenID Provider could ' +
-                             'not be trusted', xmlEscape(String(got.why)));
+                             'not be trusted', String(got.why));
         }
         const handle = this.putContext(contextRecord);
         const params = this.authorizationParams(base, got.record,
@@ -2725,7 +3075,7 @@ class FederationSp {
                   (e && e.stack ? e.stack : e));
         errorCodes.mark(res, 'STS-FED-0042');
         this.refuse(res, record, 500, 'This service failed while starting ' +
-                    'the sign-in', xmlEscape(String((e && e.message) || e)));
+                    'the sign-in', String((e && e.message) || e));
       });
       log.debug("Leaving the federation login endpoint. Resolving the OP.");
       return;
@@ -2962,9 +3312,9 @@ class FederationSp {
   // A SAML RESPONSE, 2.0 or 1.1, verified check by check.
   //
   // Every check is made and the FIRST failure refuses. That is deliberately not
-  // the shape `/wsfed/rp` and `/saml2/sp` use — those are mock relying parties
-  // whose whole job is to report every check to a person reading the page, so
-  // they collect verdicts and show them all. THIS endpoint issues a session, so
+  // the shape the mock relying parties used (deleted, #592) — their whole job
+  // was to report every check to a person reading the page, so they collected
+  // verdicts and showed them all. THIS endpoint issues a session, so
   // it stops at the first thing that is wrong: continuing past a failed
   // signature in order to report the audience as well would mean parsing an
   // unverified document to build a nicer error page.
@@ -3242,7 +3592,8 @@ class FederationSp {
         amr: this.federatedAmr([]),
         acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
-        application: this.fromContext(context).application
+        application: this.fromContext(context).application,
+        authnPending: this.fromContext(context).authnPending
       });
     });
   }
@@ -3464,7 +3815,8 @@ class FederationSp {
         sessionNotOnOrAfter: bound.at,
         amr: this.federatedAmr([]), acr: contents.context || '',
         returnTo: this.fromContext(context).returnTo,
-        application: this.fromContext(context).application
+        application: this.fromContext(context).application,
+        authnPending: this.fromContext(context).authnPending
       });
     });
   }
@@ -3616,7 +3968,7 @@ class FederationSp {
     for (let i = 0; i < candidates.length; i++) {
       let pem = null;
       try {
-        pem = crypto.createPublicKey({ key: candidates[i], format: 'jwk' });
+        pem = stsCrypto.publicKeyFromJwk(candidates[i]);
       } catch (e) {
         lastWhy = 'a key in the set could not be read: ' + e.message;
         lastCode = 'STS-FED-0036';
@@ -3757,9 +4109,9 @@ class FederationSp {
         .then(function (assertion) {
           form.client_assertion = assertion;
         });
-    } else if (record.fedClientSecret) {
+    } else if (federation.clientSecretOf(record)) {
       options.basic = { user: record.fedClientId,
-                        pass: record.fedClientSecret };
+                        pass: federation.clientSecretOf(record) };
     } else {
       // A public client. The client_id goes in the body, which is what RFC 6749
       // section 4.1.3 requires when the client does not authenticate.
@@ -4023,7 +4375,8 @@ class FederationSp {
               ? String(idToken) : '',
             acr: String(payload.acr || ''),
             returnTo: this.fromContext(context).returnTo,
-            application: this.fromContext(context).application
+            application: this.fromContext(context).application,
+            authnPending: this.fromContext(context).authnPending
           });
         }, verified.jwk);
       };
@@ -4168,7 +4521,8 @@ class FederationSp {
             amr: this.federatedAmr([]),
             acr: '',
             returnTo: this.fromContext(context).returnTo,
-            application: this.fromContext(context).application
+            application: this.fromContext(context).application,
+            authnPending: this.fromContext(context).authnPending
           });
         }, verified.jwk);
       });
@@ -4218,7 +4572,8 @@ class FederationSp {
         issuer: String(record.fedPeer || ''),
         bag: bag, amr: this.federatedAmr([]), acr: '',
         returnTo: this.fromContext(context).returnTo,
-        application: this.fromContext(context).application
+        application: this.fromContext(context).application,
+        authnPending: this.fromContext(context).authnPending
       });
     });
   }
@@ -4243,7 +4598,9 @@ class FederationSp {
     }
     const id = String(req.params.id || '');
     const record = federation.get(id);
-    if (!record || record.fedRole !== 'service-provider') {
+    // An ssf relationship (#374) has no assertion consumer service.
+    if (!record || record.fedRole !== 'service-provider' ||
+        !federation.signsIn(record)) {
       errorCodes.mark(res, 'STS-FED-0002');
       res.status(404).type('html').send(this.page('No such relationship',
         '<h1>No such assertion consumer service</h1><p>There is no ' +
@@ -4267,6 +4624,22 @@ class FederationSp {
             'for.');
     }
     const params = this.paramsOf(req);
+    // THE FLOW'S CELL (#98 D10), before the response is verified or anything
+    // in it spent: a partner's answer names the context this service stored
+    // when the flow began — RelayState, SAML 1.1's fedctx, wctx or state —
+    // and that context is held only by the cell that stamped it. A
+    // browser pinned elsewhere was placed at the edge already; this is the
+    // one that was not. An unsolicited response names nothing and is served
+    // here.
+    const named: any = params;
+    const flowHandle = String(named.RelayState || named.fedctx ||
+                              named.wctx || named.state || '');
+    if (cellPlacement.relayIfElsewhere(req, res, flowHandle,
+                                       'a federation partner\'s response')) {
+      log.debug("Leaving FederationSp.consume(). Relayed to the cell that " +
+                "holds the flow.");
+      return undefined;
+    }
     try {
       if (record.fedProtocol === 'saml2') {
         log.debug("Leaving FederationSp.consume().");
@@ -4502,144 +4875,59 @@ class FederationSp {
 
   // ---------------------------------------------------------------------------
   // GET /federation — what all of this is.
+  //
+  // A PAGE OF THE FEDERATION SURFACE SINCE #580: the shell, with the facts
+  // in `data-sts-state` — the relationships in each direction, the
+  // endpoints' paths, the base this service sees itself at and whether the
+  // sign-in screen offers partners — and every word of it drawn in the
+  // browser from the `federationPages` catalogs
+  // (`federation/web_federation_views.ts`).
   // ---------------------------------------------------------------------------
   private indexEndpoint(req, res) {
-    const { config, federation, log, xmlEscape, baseUrlOf } = this.deps;
+    const { config, federation, log, baseUrlOf } = this.deps;
     log.debug("Entering the federation index.");
-    const base = baseUrlOf(req);
+    FederationPages.mark(res);
     const all = federation.list();
-    const consuming =
-        all.filter((one) => { return one.fedRole === 'service-provider'; });
+    const protocolOf = function (record): string {
+      return String((federation.protocolRow(record.fedProtocol) || {})
+        .label || record.fedProtocol || '');
+    };
+    const consuming = all.filter((one) => {
+      return one.fedRole === 'service-provider';
+    }).map((record) => {
+      const usable = federation.isUsable(record);
+      return {
+        id: String(record.fedId), protocol: protocolOf(record),
+        peer: String(record.fedPeer || ''),
+        state: usable ? 'ready'
+          : (federation.isEnabled(record) ? 'incomplete' : 'disabled'),
+        missing: usable ? [] : federation.readinessOf(record).missing
+          .map(String),
+        metadata: record.fedProtocol === 'saml2' ||
+                  record.fedProtocol === 'saml11'
+      };
+    });
     const asserting = all.filter((one) => {
       return one.fedRole === 'identity-provider';
+    }).map((record) => {
+      return {
+        id: String(record.fedId), protocol: protocolOf(record),
+        application: String(record.fedApplication || ''),
+        release: (record.fedRelease || []).map(String)
+      };
     });
-
-    const consumeRows = consuming.map((record) => {
-      const readiness = federation.readinessOf(record);
-      const usable = federation.isUsable(record);
-      return '<tr><td><code>' + xmlEscape(record.fedId) + '</code></td>' +
-        '<td>' +
-        xmlEscape((federation.protocolRow(record.fedProtocol) || {}).label ||
-                           record.fedProtocol) + '</td>' +
-        '<td><code>' + xmlEscape(record.fedPeer || '(none set)') +
-        '</code></td><td ' +
-        'class="' + (usable ? 'ok' : 'bad') + '">' +
-          (usable ? 'ready'
-                  : (federation.isEnabled(record)
-                       ? 'enabled, not configured: ' +
-                         xmlEscape(readiness.missing.join(', '))
-                       : 'disabled')) + '</td>' +
-        '<td>' + (usable
-          ? '<a href="' + LOGIN_PATH + '/' + encodeURIComponent(record.fedId) +
-              '">Sign ' +
-              'in</a>'
-          : '<span class="note">—</span>') +
-          ((record.fedProtocol === 'saml2' || record.fedProtocol === 'saml11')
-            ? ' · <a href="' + METADATA_PATH + '/' +
-              encodeURIComponent(record.fedId) +
-              '">metadata</a>'
-            : '') + '</td></tr>';
-    }).join('');
-
-    const assertRows = asserting.map((record) => {
-      return '<tr><td><code>' + xmlEscape(record.fedId) + '</code></td>' +
-        '<td>' +
-        xmlEscape((federation.protocolRow(record.fedProtocol) || {}).label ||
-                           record.fedProtocol) + '</td>' +
-        '<td><code>' +
-        xmlEscape(record.fedApplication || '(no application named)') +
-        '</code></td><td>' + (record.fedRelease && record.fedRelease.length
-          ? xmlEscape(record.fedRelease.join(', '))
-          : '<span class="note">no release policy — this partner gets ' +
-            'whatever /admin/claims and /admin/saml-attributes would give ' +
-            'anybody</span>') + '</td></tr>';
-    }).join('');
-
-    const body = '<h1>Federation</h1><p>This service can be <strong>either ' +
-      'end</strong> of a federation relationship, in five protocols: SAML ' +
-      '2.0, ' +
-      'SAML 1.1, WS-Federation 1.2, OpenID Connect and OAuth 2.0.</p><p ' +
-      'class="note"><strong>This is the one feature here that has to be ' +
-      'configured before it will do anything.</strong> Everywhere else this ' +
-      'service accepts what it is given — any username, any client_id, any ' +
-      'entityID, any LDAP bind. It cannot do that here: what arrives at an ' +
-      'assertion consumer service is an unauthenticated request claiming to ' +
-      'be ' +
-      'a person, and the session it produces is the one every other protocol ' +
-      'in this process reads. So a relationship is created DISABLED, and an ' +
-      'assertion is refused unless it verifies against the key configured on ' +
-      'it.</p><h2>Consuming: a foreign identity provider signs people in ' +
-      'here</h2>' +
-      (consumeRows
-        ? '<table><tr><th>Relationship</th><th>Protocol</th><th>Partner</th>' +
-          '<th>State</th><th></th></tr>' + consumeRows + '</table>'
-        : '<p class="note">None configured. Add one on ' +
-          '<a href="/admin/federation">/admin/federation</a>, or through ' +
-          '<code>POST /admin-api/federation/create</code>.</p>') +
-      '<h2>Asserting: this service signs people in to a foreign service ' +
-      'provider</h2>' +
-      (assertRows
-        ? '<table><tr><th>Relationship</th><th>Protocol</th><th>' +
-          'Application</th><th>Attributes ' +
-          'released</th></tr>' + assertRows + '</table>'
-        : '<p class="note">None configured. Every protocol endpoint here ' +
-          'already issues to anybody that asks — what an ' +
-          'identity-provider-side relationship adds is the partner being ' +
-          'marked as a federation partner rather than a test client, and a ' +
-          'list of which attributes are released to it.</p>') +
-      '<h2>Endpoints</h2><table><tr><th>Path</th><th>What</th></tr>' +
-      '<tr><td><code>' + LOGIN_PATH + '/{id}</code></td><td>Start a ' +
-        'federated ' +
-        'sign-in. Takes <code>?returnTo=</code>, a path on this service to ' +
-        'land on ' +
-        'afterwards.</td></tr><tr><td><code>' + ACS_PATH +
-      '/{id}</code></td><td>Where ' +
-        'the answer comes back: the assertion consumer service, the ' +
-        'WS-Federation <code>wreply</code> and the OAuth 2.0 ' +
-        '<code>redirect_uri</code>, all one path. <strong>This is the URL to ' +
-        'configure at the ' +
-        'partner.</strong></td></tr><tr><td><code>' + METADATA_PATH +
-      '/{id}</code></td><td>This ' +
-        'service\'s own SAML metadata for that partner. Unsigned, ' +
-        'deliberately.</td></tr>' +
-      // A PARTNER'S SIGN-OUT (#167), served by federation_slo.ts.
-      '<tr><td><code>' + SLO_PATH + '/{id}</code></td><td>Where a ' +
-        'partner\'s sign-out arrives in a browser: the SAML ' +
-        'SingleLogoutService, the WS-Federation cleanup URL and the OpenID ' +
-        'Connect post_logout_redirect_uri. It ends only the session the ' +
-        'partner names, after the same signature check a sign-in gets.' +
-        '</td></tr><tr><td><code>' + federation.PATHS.backchannelLogout +
-        '/{id}</code></td><td>The OpenID Connect backchannel_logout_uri to ' +
-        'register at the partner.</td></tr><tr><td><code>' +
-        federation.PATHS.frontchannelLogout + '/{id}</code></td><td>The ' +
-        'OpenID Connect frontchannel_logout_uri to register at the partner, ' +
-        'with frontchannel_logout_session_required.</td></tr></table>' +
-        '<p class="note">The base URL this ' +
-        'service sees itself at is <code>' + xmlEscape(base) +
-      '</code>, so the URLs above are absolute from there.</p>' +
-      // **`/portal` AND NOT `/authn/login`, WHICH IS NOT A PAGE ANYBODY CAN BE
-      // SENT TO.** That endpoint draws a form for a PENDING AUTHENTICATION
-      // RECORD and answers `There is no sign-in waiting under that id` to a
-      // request naming none, so this link was an error page for as long as it
-      // existed. `/portal` has no session either, so `requireSignIn()` there
-      // calls `beginAuthentication()` and the browser arrives at the very
-      // screen this link promises — with the partner buttons on it, which is
-      // the whole point of the sentence around it — and lands on the reader's
-      // own account page once they have used one. The record is minted when the
-      // link is PRESSED rather than when this page is drawn, which is what
-      // keeps it from expiring on a page somebody left open. `portal/portal.ts`
-      // carries the full argument; the same mistake was in two other files on
-      // 2026-09-06.
-      '<p><a href="/admin/federation">Configure relationships in the ' +
-      'console</a> · <a href="/portal">The sign-in screen</a>' +
-      (config.value('federation.loginButtons')
-        ? ', which offers every usable partner as a button'
-        : ' (federation.loginButtons is off, so no partner is offered there)') +
-      '</p>';
-    res.type('html')
-       .set('Cache-Control', 'no-store')
-       .send(this.page('Federation', body));
-    log.debug("Leaving the federation index.");
+    const view = {
+      kind: 'index', base: String(baseUrlOf(req)),
+      loginButtons: !!config.value('federation.loginButtons'),
+      consuming: consuming, asserting: asserting,
+      paths: { login: LOGIN_PATH, acs: ACS_PATH, metadata: METADATA_PATH,
+               slo: SLO_PATH,
+               backchannel: federation.PATHS.backchannelLogout,
+               frontchannel: federation.PATHS.frontchannelLogout }
+    };
+    FederationPages.send(res, 200, view);
+    log.debug("Leaving the federation index. " + consuming.length +
+              " consuming, " + asserting.length + " asserting.");
   }
 }
 
@@ -4665,6 +4953,13 @@ const slot = new InstanceSlot<FederationSp>(
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
+
+// A PEER'S QUESTION ABOUT A PARTNER'S LINK (#98 D9): see homeOfSubject().
+// Registered once at load; registering binds and dials nothing.
+require('./../common/cell_channel').registerOp(LINK_HOME_OP,
+  function (body: any) {
+    return FederationSp.answerLinkHome(body);
+  });
 
 /**
  * This service as a federation service provider: signing a person in through a

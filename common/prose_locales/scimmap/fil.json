@@ -1,0 +1,42 @@
+{
+  "scimmap.user.userName.note": {
+    "en": "e802eafbefe0f779",
+    "text": "Ang SCIM uniqueness constraint. Ito ang RDN ng auto-created na entry, kaya para sa sinumang na-authenticate ng serbisyong ito ay ito rin ang kanilang sign-in name — pero HINDI ito ang SCIM id, na siyang entryUUID ng entry."
+  },
+  "scimmap.user.externalId.note": {
+    "en": "0cc0684760f06756",
+    "text": "Ang sariling identifier ng provisioning client para sa taong ito. Itinatago nang verbatim at walang bumabasa nito rito."
+  },
+  "scimmap.user.active.note": {
+    "en": "eef190d9fd08aa38",
+    "text": "DINI-DISABLE ANG ACCOUNT. Ang false ay nagsusulat ng administrative lock na 000001010000Z at tinatapos ang lahat ng hawak ng tao; tatanggihan na siya ng bawat pinto. Inaalis ito ng true. Kapag hindi ipinadala: walang pagbabago."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": {
+    "en": "c77936e2f9b505c6",
+    "text": "Isang DN sa directory at isang id sa SCIM, na isinasalin sa parehong direksyon ng mga SCIM handler mula nang maging entryUUID ang id (2026-09-14). Ang value na walang pinapangalanang entry ay itinatago gaya ng pagkakapadala nito."
+  },
+  "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": {
+    "en": "8de71db77907d2e4",
+    "text": "Kung aling mga subject ng federation partner ang nagsa-sign in sa taong ito, bawat isa ay { relationship, issuer, subject } — opsyonal ang issuer sa pagpasok, ang fedPeer ng relationship. KAPAG HINDI IPINADALA: walang pagbabago, kaya ang provisioning client na walang alam sa extension na ito ay hindi makapag-a-unlink ng sinuman sa pag-iwan dito. Kapag ipinadala, kahit walang laman: pinapalitan, at ang bawat link na inalis ay tumatapos sa mga session na pinag-sign in-an ng partner na iyon sa tao. Ang link na dala ng ibang tao ay tinatanggihan nang 409."
+  },
+  "scimmap.user.groups.note": {
+    "en": "6cd6a13675bf364b",
+    "text": "READ-ONLY, gaya ng hinihingi ng RFC 7643 section 4.1.2. Ang membership ay katotohanan tungkol sa entry ng GROUP, kaya binabago ito sa pamamagitan ng Group resource at hindi kailanman sa pamamagitan ng User. Nire-resolve ng groupsOfUser() ng ldap_server.js, na siya ring function na binabasa ng groups claim — kaya hindi maaaring magkasalungat ang token at ang SCIM resource tungkol sa kung sino ang nasa ano."
+  },
+  "scimmap.group.members.note": {
+    "en": "e791c95075db5178",
+    "text": "Nire-resolve ng READ ang member, uniqueMember at memberUid nang pare-pareho; inilalagay ng WRITE ang bagong value sa `member`, dahil DN ang SCIM member id. Ang dangling na member — DN na walang nakatago — ay ibinabalik bilang member, dahil ang pagsasabi ng group ang katotohanan, at sinasadyang walang referential integrity ang directory na ito."
+  },
+  "scimmap.schema.plain": {
+    "en": "9eb4e31a2b06f959",
+    "text": "sariling uri ng serbisyong ito (walang standard na type)"
+  },
+  "scimmap.schema.claims": {
+    "en": "1af3e6d95ddf4877",
+    "text": "sariling uri ng serbisyong ito (#128; walang standard na type)"
+  },
+  "scimmap.schema.federation": {
+    "en": "e45ae284f8f1439e",
+    "text": "sariling uri ng serbisyong ito (#109; walang standard na type)"
+  }
+}

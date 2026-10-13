@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -698,7 +698,11 @@ function tokenClientDeclarationRefusal(opts) {
   const registered = opts.registered || {};
   const presented = opts.presented || {};
 
-  if (String(registered.token_endpoint_auth_method || '') === 'saml2_bearer' ||
+  // Any declared `saml2_bearer` (2026-10-01, several methods): declaring
+  // it is what section 2.4 refuses, whichever method this request used.
+  const declaredMethods = [].concat(registered.token_endpoint_auth_methods ||
+                                    [registered.token_endpoint_auth_method]);
+  if (declaredMethods.map(String).indexOf('saml2_bearer') >= 0 ||
       (presented.assertion && presented.samlAssertion)) {
     log.debug("Leaving tokenClientDeclarationRefusal(). SAML client " +
               "authentication.");

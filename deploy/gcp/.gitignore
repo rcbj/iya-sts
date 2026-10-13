@@ -1,0 +1,8 @@
+# The provider binary is ~700 MB; committing it blocks every push.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+# Per-developer values (allowed CIDRs, image tags). Examples are committed.
+*.auto.tfvars

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -90,7 +90,6 @@
 // disowns) can all require it without a cycle.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 import helpers = require('../common/helpers');
 import realms = require('../common/realms');
 import stsCrypto = require('../common/crypto');
@@ -156,7 +155,11 @@ const MAX_PER_ROW = 64;
 // key -> { key, kind, subject, jkt, format, configId, credentials: Issued[],
 //          expiresAt, issuedAt, disownedAt, disownedVia }
 // PER TRUST REALM; see the header.
-const issued = realms.map({ persist: 'vc_issued.credentials' });
+// `expiresAt` (#333): the row's `expiresAt`, ms — the latest of its
+// credentials', 0 when any has none (kept). A DISOWNED row keeps refusing
+// until then, which is why it is not earlier.
+const issued = realms.map({ persist: 'vc_issued.credentials',
+                            expiresAt: realms.expiryField('expiresAt', 1) });
 
 // Described to `/admin/caches` (rule 3ap, #38 follow-ups). It is not a cache:
 // it cannot be rebuilt, and a lookup that misses refuses a sign-in — which is
@@ -272,8 +275,8 @@ class VcIssued {
     const { log } = this.deps;
     log.debug("Entering VcIssued.digestOf().");
     const jwt = String(credential || '').split('~')[0];
-    const digest = crypto.createHash('sha256').update(jwt, 'ascii')
-      .digest('base64url');
+    const digest = stsCrypto.digest('sha256', Buffer.from(jwt, 'ascii'),
+                                    'base64url');
     log.debug("Leaving VcIssued.digestOf().");
     return digest;
   }
@@ -289,8 +292,8 @@ class VcIssued {
     const { log } = this.deps;
     log.debug("Entering VcIssued.keyForHolder().");
     log.debug("Leaving VcIssued.keyForHolder().");
-    return 'ldp:' + jkt + ':' + crypto.createHash('sha256')
-      .update(String(subject), 'utf8').digest('base64url');
+    return 'ldp:' + jkt + ':' +
+           stsCrypto.digest('sha256', String(subject), 'base64url');
   }
 
   // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ family here and the first one that TALKS BACK.
 
 | File | What it is |
 |---|---|
-| `ssf.ts` | The routes. The metadata document, the stream management API, status, subjects, verification, poll delivery, and the two endpoints that are not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, which are this service acting as a RECEIVER so that a client can be the transmitter. |
+| `ssf.ts` | The routes. The metadata document, the stream management API, status, subjects, verification and poll delivery. The two endpoints that were not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, this service acting as a RECEIVER so that a client could be the transmitter — were deleted by #593 (see *The roles reversed are the test peer's*, below). |
 | `ssf_subjects.js` | **RFC 9493** subject identifiers: the eight formats with their CLOSED member sets, SSF's complex subject, and the nesting ban. A LIBRARY. |
 | `ssf_events.js` | The event vocabulary — SSF's two — and the **RFC 8417** Security Event Token they travel in. A LIBRARY. |
 | `ssf_streams.ts` | The streams, their subjects and their queues, per trust realm — the queue as a row per SET since 2026-09-13. A LIBRARY. |
@@ -526,9 +526,13 @@ signed SET through `accept()`: development observes; the person's own
 console session is ended, once; somebody else's event, an unverified SET
 and an unpermitted event end nothing; and a disabled policy ends nothing.
 
-**A FOREIGN transmitter's events are acted on since #153** (see *THIS REALM
-AS A RECEIVER*, below), under the same rule: nothing acts unless the SET
-verified, and what it does is the same policy's decision.
+**A FEDERATION PARTNER's events are acted on since #153** (see *A PARTNER'S
+SHARED SIGNALS*, below; on the relationship since #373), under the same
+rule: nothing acts unless the SET verified, and what it does is the same
+policy's decision. **Since #432 that includes `signal-revoke-grants`** — a
+partner's word about a person revokes their GNAP and OAuth grants and tokens,
+behind `ssf.signalsRevokeGrants` — and only from a partner: this surface's
+own receivers hear this service's own events.
 
 ---
 
@@ -555,6 +559,20 @@ whole rule rather than a convenience:
 The middle state exchanges everything, and the specification says why: it
 exists to stop a hijacker from opting out the moment they take an account over
 and silencing the very events that would report them.
+
+**AND THE GATE IS FOR AN ACCOUNT HOLDER, WHICH TWO KINDS OF ACCOUNT HAVE NOT
+(#221 P5, rcbj's decision of 2026-10-05).** An APPLICATION entry and a SERVICE
+ACCOUNT (a person entry flagged `stsServiceAccount`) have nobody whose choice
+section 2.8's opt-out is. So `risc.optOutApplies()` answers no for both, and
+the gate is NOT APPLIED — and says so rather than silently: `gate()` answers
+`notApplicable` with the sentence, the row keeps it in its notes once,
+`optOutOf()` offers no move and carries `applies: false` and `why`,
+`report()` carries `optOutApplies`, and `/portal/signals` shows a service
+account the sentence instead of a button (a POST of a move is the same 409,
+STS-PORTAL-0075, with that sentence). Whether a person entry IS a service
+account is read off the directory write (`RiscRegister.serviceAccountIn()`,
+the attribute), the one function to point at P1's `isServiceAccount()` when
+`common/service_accounts.ts` lands.
 
 **One more asymmetry, and it looks like a bug until it is stated.** A
 suppressed AUTOMATIC event still moves the register and a suppressed HAND
@@ -655,7 +673,8 @@ after delivery, so without the claim a second run of the job would send
   as the initiating entity (`common/mail_uses.ts`).
 - The deprecated `sessions-revoked` is by hand only.
 - A received event is acted on only by the console's and portal's own
-  receivers (#62), and by a realm receiving a foreign transmitter (#153).
+  receivers (#62), and by a realm receiving a federation partner's Shared
+  Signals (#153, #373).
 
 ---
 
@@ -710,6 +729,16 @@ drop, the register stays over its cap and logs `STS-SSF-0130` rather than
 choose whose choice to lose. `tests/risc_register.js` section O.
 
 ---
+
+## A BURST OF RISC EVENTS IS ONE LINE (#351, 2026-09-29)
+
+A SCIM Bulk of a thousand deletes is a thousand `account-purged` events, and
+each said "went to N of M stream(s)" (or "NO STREAM takes it") at info.
+Every SET is still built and sent per subject, as SSF requires; only the
+sentence is gathered. `riscTally()` counts each event's outcome by type, and
+once nothing is in flight and the event loop has turned it says the burst:
+the old sentence word for word when it was one event, a count when it was
+more. `/admin/risc-accounts` keeps the per-account record either way.
 
 ## THREE THINGS ABOUT RISC'S ROWS THAT SURPRISE SOMEBODY WHO KNOWS CAEP
 
@@ -1059,9 +1088,92 @@ stream IDs and aud values"; nothing here did.
   build.
 
 The receivers still CHECK `aud`, and now `iss` and `typ` too (sections 4.1.6 and
-4.1.1): `ssf_receivers.ts`'s `accept()` against the stream's own values, and
-`/ssf/receive` against `ssf.receiveIssuers` / `ssf.receiveAudiences`, which
-default to the only issuer whose key it holds and to the endpoint's own URL.
+4.1.1): `ssf_receivers.ts`'s `accept()` against the stream's own values.
+`/ssf/receive` checked them against `ssf.receiveIssuers` /
+`ssf.receiveAudiences` until #593 deleted it with both settings.
+
+---
+
+## A PERSON'S STREAM IS ABOUT THAT PERSON (#336, 2026-09-28)
+
+**Found from a relying party's side.** A CAEP receiver signed a person in with
+the authorization code grant, then created its stream with that person's
+access token (`ssf:read ssf:write`; the client's `oauthAllowedScope` declared
+both, so #110's check passed). Under `default_subjects: ALL` it was sent every
+other person's `session-established`, `credential-change` and
+`risk-level-change`. The CAEP Interoperability Profile allows exactly this kind
+of token (section 2.7.1: client credentials OR authorization code), and SSF
+1.0 section 10.1 requires "that only authorized parties can access the shared
+signals". A person is an authorized party for their own signals and nobody
+else's. Basic had the same gap: in product mode every verified directory
+person can create a stream.
+
+* **What kind of party authenticated is on the decision.** `ssf_auth.ts` puts
+  an `owner` on every accepted decision:
+  * `person`: a token whose principal is not its own client, so it was issued
+    FOR somebody. It carries the `sub` and the client.
+  * `client`: the client's own token, in either spelling of `sub`.
+  * `basic`: a name and password.
+  * `gnap`: a GNAP application.
+
+  `ssf.ts`'s `contextOf()` carries it to `createStream()`. It comes from the
+  context and never from the body, for the same reason as `internalSurface`.
+* **The owner is recorded at creation** as `ownerPerson` (`sub`, client,
+  username). `ownerPersonOf()` resolves the username:
+  * A public `sub` resolves through `nameForSubject()`.
+  * An ephemeral one resolves through `pairwise_subjects.localFor()`, AT
+    CREATION, while the mapping still exists.
+  * A pairwise one cannot be reversed, so it is matched FORWARDS at delivery:
+    the event's public `sub` is mapped through the owner's client and compared.
+    Only for a client whose `subject_type` is `pairwise`, because asking an
+    ephemeral client's mapping would mint one per event.
+  * A Basic name counts as a person only when the directory holds it. In
+    development any name authenticates, and every receiver under test relies
+    on a made-up name keeping the old behaviour.
+* **`ownerPersonCovers()` is the one decision**, asked in two places:
+  * by `streamCoversSubject()`, BEFORE the subject list and the family scopes,
+    so a list naming somebody else cannot widen the stream;
+  * by `POST /ssf/subjects/add`, which refuses with `403 access_denied`
+    (STS-SSF-0131). SSF 1.0 section 8.1.3.2 lets a transmitter ignore such a
+    request silently, but a receiver that believed it had subscribed would wait
+    forever. A malformed subject still gets its 400 (STS-SSF-0017) first.
+
+  It matches:
+  * an `iss_sub` by `sub`;
+  * `email`, `phone_number`, `account` and `opaque` through
+    `risc.accountIdOf()`, the register that already knows every identifier an
+    account has had. `risc.ts` requires nothing in this directory but
+    `ssf_events` and `ssf_subjects`, and it is required lazily, so there is no
+    cycle;
+  * `aliases` when any alias matches;
+  * a complex subject by its `user` member. With no `user` it names nobody.
+  * An event with no subject (SSF's own two) still goes to the stream.
+* **Built in, not a registered subject scope.** It is the same shape as GNAP's
+  scope (it takes events away and never adds one), but it is about who OWNS
+  the stream, which is `ssf_streams.ts`'s own fact. Registering it through
+  `setSubjectScope()` would make the store depend on a hook to know its own
+  records.
+* **A stream from before** carries no `ownerPerson`. If its `createdBy` is a
+  person's `urn:uuid:` subject, `ownerPersonOfRecord()` treats it as theirs, so
+  existing user-token streams are narrowed without being recreated. A pairwise
+  or Basic owner from before is not recognised.
+* **Unaffected:** a client's own stream, a GNAP application's, this service's
+  own two (`internalSurface`), and everything while
+  `ssf.personStreamsSelfOnly` is off.
+* **The `ssf.defaultSubjects` description said the opposite of the code.** It
+  said that with ALL "adding one narrows nothing", and the comment above
+  `addSubject()` said the same. `streamCoversSubject()` has always narrowed to
+  a non-empty list. Both now say so, and add that removing the last subject
+  widens the stream back to everybody. A receiver that believed the old text
+  kept its list empty and received the whole realm.
+
+`tests/ssf_person_streams.js` asserts all of the above in a child process:
+twenty-two assertions. Eight mutants, all caught: the coverage hook removed;
+person tokens reported as client tokens; the legacy `createdBy` fallback
+removed; the pairwise forward match removed; the ephemeral mapping removed; a
+complex subject judged whole rather than by `user`; every Basic name treated as
+a person; the internal streams recorded as a person's. The Add Subject 403 in
+`ssf.ts` is not covered by it; a vendored job with a person's token would be.
 
 ---
 
@@ -1192,6 +1304,17 @@ a key-bound GNAP access token whose access names `ssf:read` / `ssf:write`, so a
 GNAP web application owns a stream as ITSELF — which is what
 `gnap/gnap_signals.ts`'s subject scope needs. It takes only the `GNAP` scheme;
 `Bearer` on these endpoints stays OAuth 2.0.
+
+**A GNAP RESOURCE SERVER OWNS A STREAM THE SAME WAY (#432, 2026-10-03)**, and
+the second scope is `gnap/gnap_signals.ts`'s `rsCovers()`: a stream whose owner
+is a `gnap-resource-server` entry hears `session-revoked` only for the
+`gnap-token:` and `gnap-grant:` sessions audienced to it. Nothing changed
+here — the scheme already made the owner the application, and the scope is a
+registered subject scope that only takes events away. GNAP now also emits a
+`session-revoked` with NO `user` member for a token nobody approved;
+`ownerPersonCovers()` already refuses such a subject on a person's stream, and
+the internal receivers match a GNAP session id against no session of theirs.
+`gnap/CLAUDE.md` argues it.
 
 ## `ssfAllowedEvents`: THE ONE PLACE AN APPLICATION ENTRY LIMITS A STREAM (2026-09-12)
 
@@ -1395,8 +1518,9 @@ the half a reader cannot discover from a protocol trace.
   a subject's assurance moved, and it did not. The next sign-in or step-up is
   held to the new policy.
 * ~~It is not a receiver of anybody else's transmitter~~ — **reversed
-  2026-09-26 (#153)**: a realm registers a foreign transmitter by its issuer
-  and receives from it; see *THIS REALM AS A RECEIVER*, below.
+  2026-09-26 (#153)**: a realm receives a federation partner's Shared
+  Signals, configured on the relationship since #373; see *A PARTNER'S
+  SHARED SIGNALS*, below.
 * **It verifies nothing about a subject.** A stream may name somebody who has
   never been here, which is what a receiver's "I do not know this subject" path
   needs.
@@ -1981,8 +2105,9 @@ did; nothing is migrated.
 **A certificate goes out as `x509` with `x509_issuer` and `x509_serial`**,
 through `accountSignals.certificateChanged({ pem })`. That call uses
 `common/crypto.js`'s `certificateIdentifiers()`: the issuer as an RFC 4514
-string, and the serial as the lower-case hex the PKI registers use. Only a
-PERSON's certificate is sent; an application has no CAEP subject here.
+string, and the serial as the lower-case hex the PKI registers use. An
+APPLICATION's certificate is sent too since #221 P5, under the application
+subject (*An application's own subject*, below).
 **Recovery codes have no CAEP type**, so the portal's confirm sends RISC's
 `recovery-information-changed`, as the console's clear does.
 
@@ -2017,7 +2142,7 @@ fingerprint, as CAEP defines the member, and not the header.
 * `device-compliance-change` is emitted by the device register (#164)
   whenever a device's compliance changes.
 * Acting on a RECEIVED event: the console's and portal's receivers (#62)
-  and foreign transmitters (#153), a received `device-compliance-change`
+  and federation partners (#153, #373), a received `device-compliance-change`
   included (below).
 
 ## TOKEN-CLAIMS-CHANGE FROM EVERY OTHER DOOR, AND TO EVERY HOLDER (#238, 2026-09-26)
@@ -2068,9 +2193,9 @@ the value), `admin_stats.setClaimSet()`, `claim_attributes.setSelection()`, a
 release list (`federation.js`'s `announceReleaseChange()`) —
 `admin_stats.announceClaimsReshaped()` for the last four. **Not sent:**
 adding a grant or scope (a token carries what was asked for),
-`appRequiredRole` (who may be ISSUED a token, no claim in one), the UserInfo
-set (built per call), and an application's own `client_credentials` tokens,
-whose subject waits on #221.
+`appRequiredRole` (who may be ISSUED a token, no claim in one) and the
+UserInfo set (built per call). An application's own `client_credentials`
+tokens are a holder of their own since #221 P5 (below).
 
 **IDENTITY ASSURANCE (#243)** — `identity_assurance.ts`'s `store()` is the
 one write for `record()`, `remove()` and `recordAutomatic()`, and announces
@@ -2087,64 +2212,121 @@ ordered.
 `tests/caep_claims_doors.js` and `tests/vendored/sts_caep_claims_doors.js`
 hold both.
 
-## THIS REALM AS A RECEIVER OF A FOREIGN TRANSMITTER (2026-09-26, #153)
+## A PARTNER'S SHARED SIGNALS: THIS REALM AS A RECEIVER (#153, 2026-09-26; #373 and #374, 2026-10-01)
 
-rcbj's answers were every recommendation: only a transmitter an
-administrator registers; both poll and push; act on session-revoked,
-credential-change and account disabled or enabled; map subjects through a
-federation relationship. `ssf/ssf_transmitters.ts` carries the argument in
-its header. The points a reader of this directory needs:
+#153 built a register of foreign transmitters (`ssf.foreignTransmitters`)
+that had to name a federation relationship to map subjects. **rcbj's call on
+#373: a foreign transmitter is a federation partner in spirit** — a party
+that asks this service for nothing and makes statements about people who
+sign in through it, which is what a service-provider-side relationship
+already is. So the stream is CONFIGURED ON THE RELATIONSHIP
+(`federation/federation.js`, the `fedSignals*` fields) and
+`ssf/ssf_transmitters.ts` keeps only what is MINTED: the discovered
+configuration, the stream at the partner, the push secret's digest,
+verification, the inbox and the account locks, keyed by `fedId`. The
+register was dropped with no migration. **#374 added the partner that signs
+nobody in** — an MDM, an EDR, an HR feed — as a sixth relationship protocol,
+`ssf`. `federation/CLAUDE.md` carries the relationship half; what a reader
+of this directory needs:
 
-* **Registration is by ISSUER.** The configuration document is fetched from
-  `/.well-known/ssf-configuration` inserted before the issuer's path (section
-  7), and it must name that issuer, a `jwks_uri` and a
-  `configuration_endpoint`. Every address dialled afterwards comes from that
-  document: stream management, status, subjects, verification and the poll
-  endpoint the stream names. They go through
-  `federation_http.fetchPublished()`, which gained `method`, `headers` and
-  `body` for them. Its bounds are unchanged: internal addresses refused in
-  product mode, the connection pinned, no redirect, a cap. It is the fifteenth
-  row of root CLAUDE.md's "Dial a URL a CALLER supplied" index. It reverses
-  this file's *no create stream on the console* rule for this direction only:
-  there the address would be one a console user typed for us to deliver to,
-  and here it is the transmitter's own.
-* **This realm authenticates to the transmitter** by client credentials at
-  an administrator-named token endpoint (token cached per process, short),
-  or by a pasted bearer. Secrets live in the persisted register, sealed at
-  rest like every minted row, and no page or answer shows them.
-* **Push** is `POST /ssf/transmitters/{id}/push`. The Authorization header
-  this realm gave the transmitter at stream creation is kept as its digest
-  and compared in constant time. **Poll** is the `ssf.foreign-poll` cluster
-  job, per realm. What was received is acknowledged (`ack`) or refused
-  (`setErrs`) on the next request, with one more request after the last
-  round to acknowledge it.
-* **Verification** is done here, not by `ssf_events.verifySet()`, which only
-  knows this realm's keys. The signature is checked against the
-  transmitter's `jwks_uri`, reusing `oauth-oidc/client_jwks.js`'s cache, with
-  the kid named or else each key and the asymmetric algorithms named. Then
-  `typ` must be secevent+jwt, `iss` the transmitter's, and `aud` the
-  stream's. A `jti` is accepted once, and the inbox that holds it is also the
-  history. In product an unverified SET is refused (`invalid_key`). In
-  development it is recorded and acted on in no way.
-* **Reactions** come from the `signal-response` policy, asked with the
-  surface `foreign:<id>`, and there are three new actions:
-  * `signal-end-person-sessions`: a global sign-out of the person here;
-  * `signal-disable-account` (`account_state.setDisabled`, which re-emits
-    RISC to this realm's own receivers);
-  * `signal-enable-account`, only for a lock this transmitter's own event put
-    there (`ssf.foreignLocks`).
+* **Only a relationship an administrator configured, enabled, with its
+  signals on.** The issuer is `fedSignalsIssuer`, else `fedPeer` — so a
+  partner's SSF issuer is checked against the partner, which #153's register
+  never did. The configuration document is fetched from
+  `/.well-known/ssf-configuration` inserted before the issuer's path
+  (section 7) and must name it, a `jwks_uri` and a `configuration_endpoint`;
+  every address dialled afterwards is one that document named, through
+  `federation_http.fetchPublished()` (root CLAUDE.md's fifteenth "Dial a URL"
+  row). Discovery runs on its own act or before a stream is created, and
+  again whenever the issuer changes.
+* **This realm authenticates to the partner** by client credentials —
+  `fedSignalsTokenUrl`, `fedSignalsClientId`, `fedSignalsClientSecret`,
+  each falling back to the sign-in relationship's own `fedTokenUrl`,
+  `fedClientId`, `fedClientSecret` — or a `fedSignalsBearer`. The two
+  signals credentials are SEALED under the key-encryption key wherever keys
+  persist (`STS-FED-0154` refuses rather than writes one in clear); the
+  sign-in secret is in clear and says so.
+* **Push** is `POST /federation/signals/{id}` (it was
+  `/ssf/transmitters/{id}/push`). The relationship must be enabled with its
+  signals on, then the Authorization header this realm gave the partner is
+  compared, as its digest, in constant time. **Poll** is the
+  `ssf.foreign-poll` cluster job, per realm, over every relationship
+  streaming by poll; what was received is acknowledged (`ack`) or refused
+  (`setErrs`) on the next request.
+* **Verification** is done here, against the configuration's `jwks_uri` —
+  not the sign-in relationship's keys, which may be another set — reusing
+  `oauth-oidc/client_jwks.js`'s cache. Then `typ`, `iss` (the discovered
+  issuer), `aud` (the stream's) and a `jti` seen once. Product refuses an
+  unverified SET (`invalid_key`); development records it and acts in no way.
+* **Reactions** are the `signal-response` policy's, asked with the surface
+  `federation:<id>` and a new environment attribute, the relationship KIND
+  (`sign-in` or `signals-only`). rcbj's decisions:
+  * a SIGN-IN partner's `session-revoked` (and credential-change,
+    sessions-revoked, credential-compromise, account-purged) ends **only the
+    sessions that relationship started for the person** —
+    `signal-end-partner-sessions`, through `logout.endPartnerSession()` as
+    the partner's own sign-out does (#167) — the one a `complex` subject's
+    `session` names, else every one. A local sign-in and other partners are
+    untouched. (#153 ended every session.)
+  * its `account-disabled` **blocks its sign-ins of the person**
+    (`signal-block-relationship`, `federation/federation_blocks.ts`) and ends
+    its sessions; `federation_sp.ts`'s `subjectDecision()` refuses the next
+    one with `STS-FED-0156`; its `account-enabled` lifts it
+    (`signal-unblock-relationship`), and so can an administrator
+    (`signals-unblock`). The local account stays enabled. (#153 locked it.)
+  * a SIGNALS-ONLY partner's events are **recorded and nothing more** by
+    default; `signal-end-person-sessions` and `signal-disable-account` exist
+    for an operator's policy to permit, and `signal-enable-account` lifts
+    only a lock that relationship's own event put there (`ssf.relationshipLocks`).
+  * either kind's `device-compliance-change` sets the device
+    (`signal-set-device-compliance`, permitted by default) — **through the
+    policy and the development observe gate**, which #153's code skipped.
+  * a global sign-out from a sign-in partner exists as
+    `partnerGlobalSignOutEvents`, empty by default.
+  * **ITS WORD REACHES WHAT THE PERSON DELEGATED (#432, 2026-10-03; rcbj's
+    decision 1).** A sign-in partner's `session-revoked`, `account-disabled`,
+    `account-purged` and `credential-compromise` permit
+    `signal-revoke-grants`: `logout.revokeGrantsOf()` ends every GNAP grant
+    the person approved and every OAuth grant, token and unredeemed code held
+    for them — for a `session-revoked`, only what was issued on the sessions
+    that relationship started (worked out BEFORE `signal-end-partner-sessions`
+    ends them, since the sessions are gone afterwards and what was issued on
+    them is still recorded against their ids). It ends no session: that is
+    the reactions above. A signals-only partner's
+    (`signalsOnlyRevokeGrantEvents`) is empty, #374's rule. **`ssf.signalsRevokeGrants`**
+    (on by default; rcbj: "provide a flag to disable this behavior") turns it
+    off, and the row then says `skipped`. #117's rules hold unchanged — a
+    verified SET only, the realm it arrived in, development observes — and
+    the row records what was revoked (`revoked`, and per family). It
+    REVERSES `gnap/CLAUDE.md`'s "signals do not revoke grants", which was
+    written when the only signals here were this service's own; this
+    service's own receivers still get no such reaction, for that reason —
+    acting on its own `session-revoked` about a grant it had just revoked
+    would be a loop.
+* **Subjects.** A sign-in partner's `iss_sub` (its `iss` being `fedPeer` or
+  the SSF issuer) is the ONE person whose `federationLink` is
+  `<id> <fedPeer> <sub>` — the identifier the partner signs them in with,
+  which for SAML is the persistent NameID: a SAML partner's transmitter must
+  send that NameID as `sub`. A signals-only partner's links are written by
+  an administrator on the person's page: `<id> <iss> <sub>` for an iss_sub
+  subject (any `iss`), `<id> opaque <id>` for an opaque one. An `email`
+  subject matches only where `fedSignalEmailMatch` is on. A `complex`
+  subject's `user` is what is mapped. Anything else names nobody and is
+  recorded.
+* **The console.** Configuration and every act — Discover, Create stream,
+  Read, Send fedSignalsEvents, Verify, Poll now, Pause, Enable, Delete
+  stream, Unblock — are on the relationship's page (`#signals`), each
+  `POST /admin-api/federation/signals-*` (rule 7). An identity-provider-side
+  relationship shows, read only, the streams its application owns on this
+  service's own transmitter. `/admin/ssf/transmitters` is now Monitoring →
+  Signals from partners, read only, with `GET /admin-api/ssf/transmitters`
+  its twin. Deleting a relationship deletes its stream at the partner first
+  and forgets everything minted for it; accounts a partner disabled stay
+  disabled.
 
-  The template's foreign rules require that surface prefix, so the console's
-  and portal's receivers never match them. Development only records what it
-  would do, unless `ssf.actOnSignalsInDevelopment` is on.
-* **Subjects.** An `iss_sub` with the relationship's `fedPeer` is the ONE
-  person whose `federationLink` holds it. An `email` subject is matched only
-  where the relationship sets `fedSignalEmailMatch`, which is off by default:
-  an address is not an identifier. Anything else names nobody, and the SET is
-  recorded. A `complex` subject's `user` member is what is mapped.
-* **CAEP device-compliance-change** goes to `devices.setCompliance()` when
-  the device register offers it (#164). The device is found by the subject's
-  `sub` or a key thumbprint.
+`tests/ssf_transmitters.js` holds all of it in process;
+`tests/vendored/sts_ssf_foreign_receiver.js` (`local: true`) over HTTP, with
+one realm's transmitter as the partner.
 
 ## DETECTED COMPROMISES, AND THE LAST CREDENTIALS (#231, #236, #237, 2026-09-26)
 
@@ -2191,7 +2373,8 @@ A SCEP challenge IS a password; the friendly name keeps it apart from the
 account's own, for a receiver and for the person's "password changed" mail
 (which is sent only for an unnamed `password`). Binding an EAB key and
 redeeming a challenge send nothing: the certificate each produces is
-already `x509`. Only a person's credential is sent. **#86's closed sets name
+already `x509`. A person's credential is sent about the person, and an
+application's EAB key or challenge about the application (#221 P5). **#86's closed sets name
 no credential type** (`CREDENTIAL_TYPES` is an `openenum`: an unknown value
 is a warning, never a refusal), so nothing there changed.
 
@@ -2210,6 +2393,25 @@ is a warning, never a refusal), so nothing there changed.
 
 `tests/credential_signals.js` holds every row in process;
 `tests/vendored/sts_credential_signals.js` the ones a wire can reach.
+
+## A SUBJECT IS NAMED UNDER THE STREAM'S ISSUER (#154, 2026-10-05)
+
+The doors that raise an event with no request in hand — `/admin-api`'s
+set-password, disable and enable, and the automatic CAEP and RISC emissions —
+named the person `iss_sub` under `issuerFor(null)`, this process's own
+address, while each SET's `iss` is the stream's: the issuer its receiver
+discovered. Behind a published port or a proxy the two differ, so a receiver
+refused the subject, and a stream that had ADDED the person under the
+discovered issuer was never a candidate (`subjectKey()` is the pair).
+`ssf.ts`'s `subjectUnderStreamIssuer()` re-issues, per stream, an `iss_sub`
+naming that request-less issuer — at the top or as a complex subject's
+member — under the stream's `iss`; `coversSubject()` asks every emitter's
+candidate filter with it, and `transmitNow()` sends it. A partner's subject
+and one already under the stream's issuer are untouched.
+`tests/ssf_subject_issuer.js` holds it in process, with the published issuer
+set on the stream by hand; `tests/vendored/sts_ssf_subject_issuer.js` over the
+wire, with the issuer DISCOVERED at the URL the suite reaches, which is where
+the mismatch happens (every local mode and an AWS target).
 
 ## A RENAMED ACCOUNT KEEPS ITS RISC ROW (2026-09-14)
 
@@ -2286,11 +2488,151 @@ same way, through `pairwise_subjects.deviceIdFor()`:
 * an ephemeral client is told no device, and the member is dropped;
 * a public client is told the register's id.
 
-An application's device has no `user` member and is sent as it is: pairwise
-subjects protect End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
+An application's device has no `user` member: since #221 it carries an
+`application` member naming its owner (format `opaque`, the application's
+identifier — the member every other event about the application carries),
+and its device id is sent as it is, because pairwise subjects protect
+End-Users. `oauth-oidc/CLAUDE.md` 3bo argues the claim.
 
 **RISK SCORING SETS A DEVICE'S LEVEL** (#164 phase 5): after a sign-in the
 person's own device proved, the device takes that sign-in's level, so the
 `risk-level-change` with principal `DEVICE` above now fires on risk as well
 as on a compromise (`risk/CLAUDE.md`, *The registered device*).
 
+
+## A RECEIVER APPLICATION'S STREAMS ARE SENT WITH ITS OWN SETTINGS (2026-10-01)
+
+rcbj asked for an inbound CAEP or RISC stream to be tied to the application
+that created it, and for the settings that make sense per receiver to be
+exposed on that application. A stream's owner is its `createdBy` principal,
+matched to an application by identifier or by `ssfReceiverId`
+(`applications.ssfAllowedEventsFor()`'s lookup, cached per realm on
+`applicationsVersion()`, so it costs nothing per event).
+
+**Twenty settings may be overridden on the application entry** —
+`ssfCaepIncludeReasons`, `ssfCaepReasonLanguage`, `ssfCaepOmitEventTimestamp`,
+their three RISC twins, and `ssfSigningAlgorithm`, `ssfMinVerificationInterval`,
+`ssfInactivityTimeoutS`, `ssfInactivityAction`, `ssfVerificationEveryS`,
+`ssfStreamStatusOnCreate`, `ssfMaxStreams`, `ssfMaxSubjectsPerStream`,
+`ssfMaxQueuedEvents`, `ssfPollMaxEvents`, `ssfDeadLetterMaxPerStream`,
+`ssfPushTimeoutMs`, `ssfPushRetries` and `ssfPushRetryDelayMs`. An empty one
+inherits the service setting, which is the default every new stream starts
+from. **Left off, each for a reason:** `ssf.defaultSubjects` and
+`ssf.deliveryMethods` (published transmitter metadata, one answer for every
+receiver), `caep.defaultRiskLevel` and `caep.assuranceNamespace` (facts about
+the SUBJECT, not the delivery), `risc.subjectFormat` (the stream's own
+`format` already chooses it), `risc.honourOptOut` (the account holder's RISC
+section 2.8 choice is not a receiver's to waive), and the `enabled` and
+`eventsSupported` switches (`ssfAllowedEvents` narrows per receiver already).
+
+**NOTHING HERE CAN MAKE A SET NON-CONFORMANT, AND THAT IS HOW THE LIST WAS
+CHOSEN.** The reason and timestamp switches move only OPTIONAL members, and a
+reason stays an object keyed by a language tag, which is BCP 47-checked at the
+write. Every algorithm `ssf.signingAlgorithm` allows is asymmetric with a key
+in this transmitter's JWKS. The limits, timeouts and retries are this
+transmitter's own behaviour. Pausing and enabling still go through
+`changeStatus()`, so the receiver gets `stream-updated` first (SSF 1.0 section
+8.1.5). A stream's receiver-set members are the receiver's (section 8.1.1) and
+are shown, never edited, on the application's page.
+
+**ONE PAYLOAD, MANY STREAMS.** `caep.ts` and `risc.ts` build a payload once
+and every stream is sent it. `commonClaims()` now hangs a non-enumerable
+`Symbol.for('sts.ssf.commonSource')` on it: the family, the timestamp and the
+two reason texts. `ssf.ts`'s `commonClaimsForStream()` rebuilds a COPY for a
+stream whose owner overrides one of the three, and returns the payload
+untouched otherwise. `signingOptionsFor()` and `pushOptionsFor()` do the same
+for the algorithm and the push's timeout and retries. The limits read
+`SsfStreams.ownerSetting()` through `limit()`, with the owner passed at each
+place a limit is read; an internal stream asks no application.
+
+`tests/ssf_application_settings.js` holds it (five mutants, all caught); the
+console section is `admin-ui/CLAUDE.md`'s, the write rule `common/CLAUDE.md`'s.
+
+
+## AN APPLICATION'S OWN SUBJECT, AND THE NON-HUMAN ROWS (#221 P5, 2026-10-06)
+
+rcbj's 2026-09-27 table on #221 listed every act on a non-human identity that
+#231–#245 stopped at, because each sent signals about a PERSON only. Each row
+is now a funnel change at the place the table named, on the same patterns.
+
+**THE SUBJECT.** SSF 1.0 section 3.3's complex subject has an `application`
+member, and an application entry is named
+`{ "format": "complex", "application": { "format": "opaque", "id": <id> } }`,
+the id being the identifier the realm's registry holds it under — an OAuth
+client's `client_id`. `ssf_subjects.js`'s `applicationSubject()` builds it and
+its header argues the three choices:
+* **`opaque`, not `uri`**: a client_id is usually not an absolute URI, and a
+  `uri` would have to be a name nobody was issued; `opaque` carries the value
+  the receiver holds. The SET's `iss` scopes it to the realm, which is what
+  RFC 9493 section 3.2.4 asks of an opaque id.
+* **not `iss_sub`**: that pair names a PERSON here (an ID Token's `iss` and
+  `sub`); a receiver reading one reads a user.
+* **always complex**: a bare `opaque` says nothing about what kind of
+  principal it is. RISC's subject is complex here too, which the plain-subject
+  argument in `risc.ts` allows: the member IS the account, it narrows nothing.
+
+A SPIFFE workload is the same member with format `uri` (its SPIFFE ID); a
+registration entry's removal names it as a plain `uri`. A SERVICE ACCOUNT is
+a person entry (P1) and keeps a person's `iss_sub`.
+
+**THE GRAMMAR AND THE FILTERS NEEDED NOTHING NEW**: `ssf_subjects.js` already
+accepted the member and `streamCoversSubject()` already matched it — a stream
+that adds the complex subject, or the bare opaque member, covers every event
+about the application, with or without a session.
+
+| Row | What is sent | Where |
+|---|---|---|
+| client secret added / regenerated or rotated / removed or expired | CAEP `credential-change`, `urn:iya:sts:credential-type:client-secret`, create / update / revoke | `common/applications.js` `save()`: the record carries its credential snapshot from `recordFromAttributes()`, and the writes of one act are merged and flushed on a microtask (`noteCredentialWrite()`, `announceCredentialChanges()`) |
+| registered `jwks` / `jwks_uri` | `urn:iya:sts:credential-type:jwk`, create / update / revoke | the same |
+| RFC 7523 key pair issued or uploaded; RFC 7522 key pair and certificates; SAML certificates | `x509` (with issuer and serial), `jwk` for a key set alone; ONE event per act (seven writes on `/admin/pki`) | the same |
+| TLS client certificate issued / revoked | `x509` create / revoke; RISC `credential-compromise` for keyCompromise | `common/tls_client_certificates.js` `issue()`, `revoke()` |
+| ACME / EST / SCEP certificate, EAB key, challenge | `x509`; `...:acme-eab-key`, `password` | `common/cert_enrollment.ts` `issue()`, `revokeEnrolled()`, `signalEnrolmentCredential()` |
+| a certificate revoked on `/admin/pki` | `x509` revoke; RISC `credential-compromise` | `admin-ui/pki_admin.ts` `revoke-certificate` |
+| an authority above it reissued, rebuilt or revoked | `x509` update / revoke; RISC `credential-compromise` | `ssf/service_signals.ts` — `holdingsOf()` walks application slots and `subjectKind: 'application'` key pairs |
+| its own tokens' claims moved (permissions, allowed scopes, claim configuration) | `token-claims-change` | `admin_stats.liveClaimBearers()` lists a client_credentials token under the APPLICATION (`applicationOfToken()`); `ssf.ts` `claimsFanOut()` → `applicationClaimsEmit()` |
+| its own role (`roleMemberApplication`) | `token-claims-change`, the roles claim | `ldap/ldap_server.js` `noteRoleChange()` → `noteApplicationRoleChange()` |
+| its client_credentials grant revoked | `session-revoked`, session `oauth-grant:<id>` | `oauth-oidc/oauth_grant_signals.ts` `observe()` / `subjectFor()` |
+| entry deleted | RISC `account-purged`; register row `application:<id>`, `kind: 'application'` | `ldap/ldap_server.js` `noteApplicationRemoved()`, from `deleteApplicationEntry()` and the LDAP delete handler; `account_signals.applicationPurged()`; `risc.observeAct()` |
+| a session it authenticated (SCIM, WS-Trust), a SPIRE caller's | session events under `application` (opaque / uri) | `ssf.ts` `principalOfSession()`, asked once per CAEP row (`caep.observe()`'s `classifyPrincipal`) |
+| SPIFFE registration entry removed | `credential-change`, `...:spiffe-registration`, update (another still names it) / delete (the last) | `spiffe/spiffe_registry.ts` `signalRegistrationRemoved()` |
+
+**DECIDED HERE, AND WHY:**
+* **No `account-disabled` for an application**: the registry has no disabled
+  state (`applications.js`, *A GNAP client's grants end with its entry*).
+  Deletion is the one lifecycle act.
+* **No `session-revoked` for a SPIFFE registration removed**: nothing ended —
+  an SVID already issued verifies until it expires, and a workload holds no
+  session here.
+* **The seeding of this service's own applications is quiet** (`save(record,
+  { quiet: true })`): provisioning at start, which a development process would
+  otherwise announce on every start; any later change is announced.
+* **The initiating entity of an application credential change** is `admin`
+  where the door named an actor (the console, `/admin-api`) and `system`
+  otherwise (registration, the expiry job).
+* **No mail notice**: the security-notice mails are a person's
+  (`AccountSignals.notPersonal()`).
+
+**AND OVER THE LDAP SOCKET** (#221, closing what P5 left): an add or modify of
+an application entry over the socket is committed by the directory itself,
+not through `save()`, so the directory hands the entry's attributes as they
+were and as they are to `applications.noteDirectoryWrite()` — the SAME
+comparison and the same queue, so an act that also passed through `save()` is
+announced once, and the bound DN makes the entity `admin`. A delete is not:
+the application is gone, and RISC `account-purged` says so. A SPIFFE
+registration entry deleted over the socket is reported through
+`spiffe_registry.noteEntryRemovedOutside()` exactly as `deleteEntry()` reports
+its own. A GNAP client's key (`gnapKey`) is GNAP's own and ends its grants
+instead.
+
+`tests/application_signals.js` holds every row in process (the recorder sits
+on `ssf_streams.ts`'s three filters, so the real emitters build each event);
+`tests/vendored/sts_application_signals.js` subscribes a receiver to an
+application and rotates its secret over the wire.
+
+## The roles reversed are the test peer's (#593, 2026-10-12)
+
+`POST /ssf/receive` and `GET /ssf/received` were the receiver "for the debugger's benefit": a SET pushed AT this service, recorded whether or not it verified, with `typ`, `iss` and `aud` checked against `ssf.receiveIssuers` / `ssf.receiveAudiences`. #585 made them development only; #593 deleted them, because the test peer (`tests/peer/peer_ssf.js`, #586) is an SSF push receiver that talks to this service only through the protocol, and this service's own receivers are the console's and the portal's (`ssf_receivers.ts`), which are not demonstrations and are unchanged. What went with them: the inbox store (`ssf_streams.received`, a `merge: 'own'` accumulator), the console's *Pushed at this service* section and its `clear-received` action (and `POST /admin-api/ssf/clear-received`), the settings `ssf.receiveEnabled`, `ssf.receiveIssuers` and `ssf.receiveAudiences`, and `STS-SSF-0022`–`0025` and `0106` (retired). `ssf.receiveRequireSignature` stays — the console's and portal's receivers and a federation partner's signals read it through `mode.refusesUnverifiedSignals()` — and so does `ssf.maxReceivedEvents`, the receivers' inbox cap. **Owed by the parent project**: its `caep_page.js` pushes at `/ssf/receive`.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /ssf` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `ssf/web_ssf_description.ts` from the `describeSsf` catalogs, with `/ssf/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds each stream's delivery method by name. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

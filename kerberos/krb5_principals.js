@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -43,7 +43,8 @@
 //
 // **Anybody can authenticate, and everybody's password is the same.** See
 // USER_PASSWORD below for why Kerberos cannot simply check no password the way
-// the rest of this service does not, and findOrCreateUser() for the accounts
+// the rest of this service does not in development mode, and
+// findOrCreateUser() for the accounts
 // that are not in the table until somebody asks for one.
 //
 // **ALL OF THAT IS DEVELOPMENT MODE (2026-09-12).** In product mode the fixture
@@ -76,10 +77,10 @@
 
 const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
-// node's own, for the SHA-256 an on-demand RID is derived from (see
-// autoRidFor()). A builtin, so it adds nothing to the parent project's COPY
-// set.
-const nodeCrypto = require('crypto');
+// `common/crypto.js`, for the SHA-256 an on-demand RID is derived from (see
+// autoRidFor()). `helpers.js` below already requires it at load, so this
+// adds no file to the parent project's COPY set (#453).
+const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
 // The mode. A LEAF (rule 3) that registers nothing and requires only `config`,
@@ -404,7 +405,8 @@ function serviceDomainsFor() {
 // (`ctx.AUTO_SERVICE_PASSWORD`), and it is PUBLISHED by GET /krb5/principals
 // for the same reason USER_PASSWORD is: a debugger whose accounts are unusable
 // without reading the source is worse than one that says what they are. It is
-// what lets a reader decrypt a service ticket this mock issued — the ticket's
+// what lets a reader decrypt a service ticket this service issued — the
+// ticket's
 // own EncTicketPart, the PAC inside it, the four signatures — which is
 // otherwise the one thing a client can never see. The CONFIGURED service
 // accounts keep their own separate passwords, so nothing about this weakens an
@@ -1415,8 +1417,7 @@ function autoRidFor(nameComponents, realm) {
   const span = AUTO_RID_LIMIT - AUTO_RID_BASE;
   // A label in front of the name, so this digest is never the same bytes as
   // any other SHA-256 of a principal name something else computes.
-  const digest = nodeCrypto.createHash('sha256')
-    .update('sts-krb5-auto-rid:' + key, 'utf8').digest();
+  const digest = stsCrypto.digest('sha256', 'sts-krb5-auto-rid:' + key);
   // 48 bits is an exact integer in a double, and 2^48 mod ~2^30 leaves a bias
   // of about one part in a quarter of a million — nothing a SID can show.
   const start = digest.readUIntBE(0, 6) % span;
@@ -1491,15 +1492,10 @@ function register(def) {
     requiresPreAuth: def.requiresPreAuth !== false,
     revoked: !!def.revoked,
     passwordExpired: !!def.passwordExpired,
-    okAsDelegate: !!def.okAsDelegate,
-    // Delegation, kept as two SEPARATE lists because they are configured on
-    // opposite accounts and conflating them would hide the only thing about
-    // RBCD worth knowing.
-    trustedToAuthenticateForDelegation:
-      !!def.trustedToAuthenticateForDelegation,
-    notDelegated: !!def.notDelegated,
-    allowedToDelegateTo: def.allowedToDelegateTo || [],
-    allowedToActOnBehalfOf: def.allowedToActOnBehalfOf || [],
+    // DELEGATION IS NOT HERE SINCE #186: ok-as-delegate, NOT_DELEGATED,
+    // protocol transition and the two msDS-* lists are the common controls
+    // on the directory's entries (`kerberos/krb5_delegation.ts`), and a
+    // fixture's rules are seeds for them (delegationSeeds()).
     description: def.description,
     // Whether findOrCreateUser() made this one at runtime rather than it being
     // configured. Reported by GET /krb5/principals, because a table that grows
@@ -1662,6 +1658,12 @@ function configuredServiceDefinition(ctx) {
   }
   const password = String(config.value('krb5.servicePassword') || '');
   if (!password) {
+    // `passwordRefused`, in both refusals below (2026-10-12): the SPN is
+    // usable and only the PASSWORD is missing or published, which is the case
+    // a product key source answers with a random key of its own
+    // (`krb5_person_keys.ts`, `acceptorKeyMissing()`). The mode is asked
+    // there, not here.
+    account.passwordRefused = true;
     account.reason = 'krb5.servicePassword (KRB5_SERVICE_PASSWORD) ' +
       'is empty, so the ' +
       'account ' + spn + '@' + REALM + ' was not created and ' +
@@ -1672,14 +1674,17 @@ function configuredServiceDefinition(ctx) {
   }
   if (!ctx.SEEDS_DEMO &&
       password === publishedDefault('krb5.servicePassword')) {
+    account.passwordRefused = true;
     account.reason = 'product mode refuses the published default ' +
       'krb5.servicePassword: that value is written in this service\'s ' +
       'source, so a key derived from it would let anybody mint a ticket this ' +
       'acceptor accepts. The ' +
       'account ' + spn + '@' + REALM + ' was NOT created, so ' +
-      'the acceptor on krb5.servicePort and /authn/spnego accept no ticket. ' +
+      'the acceptor at /authn/spnego accepts no ticket. ' +
       'Set KRB5_SERVICE_PASSWORD to the password of that SPN\'s account in ' +
-      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt).';
+      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt), ' +
+      'or leave it and let this KDC key the SPN at random, which a product ' +
+      'service does by itself where it can store the key.';
     log.warn(errorCodes.tag('STS-KRB-0061') + 'krb5: ' + account.reason);
     log.debug('Leaving configuredServiceDefinition(). Published default ' +
               'refused.');
@@ -1913,7 +1918,8 @@ function inactiveContext(id, reason) {
     KDC_ETYPES: [], KVNO: null, USER_PASSWORD: null,
     AUTO_SERVICE_PASSWORD: null, SERVICE_DOMAINS: [], DOMAIN_SID: '',
     KRBTGT_PASSWORD: null, KRBTGT_FROM_PASSWORD: false,
-    serviceAccount: { spn: '', available: false, reason: reason },
+    serviceAccount: { spn: '', available: false, reason: reason,
+                      passwordRefused: false },
     krbtgtReason: reason, configuredKeys: new Set(),
     signature: builtFromSignature(realms.get(id))
   };
@@ -1947,7 +1953,8 @@ function buildContext(realm) {
       KRBTGT_PASSWORD: fromPassword ?
         mode.valueInForce('krb5.krbtgtPassword') : null,
       KRBTGT_FROM_PASSWORD: fromPassword,
-      serviceAccount: { spn: '', available: false, reason: '' },
+      serviceAccount: { spn: '', available: false, reason: '',
+                        passwordRefused: false },
       krbtgtReason: '',
       configuredKeys: new Set(),
       signature: builtFromSignature(isDefault ? null : realm)
@@ -2704,6 +2711,51 @@ function personShaped(nameComponents, realm) {
 }
 
 // ---------------------------------------------------------------------------
+// THE SIGN-IN'S RISK, DECIDED AT THE DOOR (#499; rcbj's decision 2). Asked by
+// the KDC once an AS-REQ's pre-authentication has verified, before a ticket
+// is built: the source (`krb5_person_keys.ts`) assesses the sign-in with the
+// risk engine, records it — so the person's standing is THIS sign-in's, which
+// is what the TGS-REQs after it are decided on — and asks the issuance policy.
+// Answers `{ refused: true, errorCode, eText }` when the policy refused it on
+// risk, and null otherwise. One component, this KDC's own realm; a source
+// without the function (the parent project's in-process jobs have none), or
+// one that threw, refuses nobody — an assessment that could not be made is
+// "no facts", which never denies.
+// ---------------------------------------------------------------------------
+/**
+ * Asks the key source to assess an AS-REQ's sign-in for risk and decide on it,
+ * after pre-authentication verified.
+ *
+ * @param nameComponents - the principal's name components
+ * @param realm - the Kerberos realm; the ambient KDC's own by default
+ * @param detail - `{ indicators, pkinit, hardware, method }` of the
+ *   pre-authentication
+ * @returns `{ refused, errorCode, eText }` when refused on risk, or null
+ */
+async function decideSignIn(nameComponents, realm, detail) {
+  log.debug('Entering decideSignIn().');
+  const ctx = current();
+  if (!keySource || typeof keySource.decideSignIn !== 'function' ||
+      !Array.isArray(nameComponents) || nameComponents.length !== 1 ||
+      !nameComponents[0] || (realm || ctx.REALM) !== ctx.REALM) {
+    log.debug('Leaving decideSignIn(). Not asked.');
+    return null;
+  }
+  let answer = null;
+  try {
+    answer = await keySource.decideSignIn(String(nameComponents[0]),
+                                          detail || {});
+  } catch (e) {
+    log.debug('Caught in decideSignIn(): ' + ((e && e.message) || e));
+    // Unknown never denies: the ticket is decided as it was before #499.
+    answer = null;
+  }
+  log.debug('Leaving decideSignIn(). ' +
+            (answer && answer.refused ? 'Refused.' : 'Not refused.'));
+  return answer && answer.refused ? answer : null;
+}
+
+// ---------------------------------------------------------------------------
 // IS THIS PERSON'S ACCOUNT DISABLED? (2026-09-17). Asked by the KDC before an
 // AS-REQ or an S4U2Self is answered, in BOTH modes — a development KDC that
 // would create the principal on the spot still refuses a person an
@@ -2804,6 +2856,23 @@ function preauthProvider() {
   return (keySource && keySource.fast &&
           typeof keySource.fast.openAsRequest === 'function')
     ? keySource.fast : null;
+}
+
+// THE PKINIT PROVIDER (#179), handed over inside the key source beside FAST
+// and for FAST's reason: `krb5_kdc.js` reaches it here and requires nothing
+// new. Null without a key source — the parent project's in-process jobs —
+// so PA-PK-AS-REQ stays unknown padata there, as it always was.
+/**
+ * Returns the PKINIT provider handed over inside the key source.
+ *
+ * @returns the `krb5_pkinit.ts` instance, or null
+ */
+function pkinitProvider() {
+  log.debug('Entering pkinitProvider().');
+  log.debug('Leaving pkinitProvider().');
+  return (keySource && keySource.pkinit &&
+          typeof keySource.pkinit.checkRequest === 'function')
+    ? keySource.pkinit : null;
 }
 
 // The e-texts, one per state the source can report. No em dash and nothing
@@ -2916,10 +2985,89 @@ function directoryUser(name) {
   }
   withKeyCache(record);
   record.keys = new Map(answer.keys);
+  // Keyed now, so not the keyless record certificatePerson() made (#179).
+  record.keyless = false;
   noteKeyed(record);
   attachRetained(record, answer);
   log.debug('Leaving directoryUser(). kvno ' + record.kvno + '.');
   return { principal: record, refusal: null };
+}
+
+// ---------------------------------------------------------------------------
+// A PERSON WITH NO KERBEROS KEYS YET, FOR PKINIT (#179, 2026-10-05).
+//
+// `directoryUser()` refuses a person whose keys were never derived — nobody
+// has typed their password at a door that derives them — or were derived
+// from a password they no longer have, and the refusal tells them to sign in
+// once. That is right for a password, and wrong for a CERTIFICATE: PKINIT
+// needs no long-term key at all (the reply key is agreed by Diffie-Hellman),
+// and a person whose only credential is a smart card may never sign in with
+// a password anywhere. So the KDC asks this, for those two states only, when
+// PKINIT is on: the same registered record a keyed person gets — the PAC, the
+// sign-out instant, everything the TGS reads — with NO keys and `keyless`
+// set. The KDC asks only for a request that brings no password: one that
+// does keeps the "sign in once" refusal, the useful sentence for somebody
+// typing one. Any other state (unknown, off, unreadable) is refused as
+// before. Null when the name is not a directory person's.
+// ---------------------------------------------------------------------------
+/**
+ * Returns a directory person whose Kerberos keys are absent or stale as a
+ * keyless principal, for PKINIT; null otherwise.
+ *
+ * @param nameComponents - the client name
+ * @param realm - the Kerberos realm
+ * @returns the principal, `keyless` set, or null
+ */
+function certificatePerson(nameComponents, realm) {
+  log.debug('Entering certificatePerson().');
+  if (!keySource || !personShaped(nameComponents, realm)) {
+    log.debug('Leaving certificatePerson(). Not a directory person.');
+    return null;
+  }
+  const name = String(nameComponents[0]);
+  let answer = null;
+  try {
+    answer = keySource.personKeys(name) || {};
+  } catch (e) {
+    log.debug('Caught in certificatePerson(): ' + ((e && e.message) || e));
+    answer = { state: 'unreadable' };
+  }
+  if (answer.state !== 'none' && answer.state !== 'stale') {
+    log.debug('Leaving certificatePerson(). State ' + answer.state + '.');
+    return null;
+  }
+  const REALM = current().REALM;
+  const key = name + '@' + REALM;
+  let record = principals.get(key);
+  if (!record) {
+    record = register({
+      name: [name],
+      type: 1,
+      realm: REALM,
+      salt: REALM + name,
+      etypes: offeredEtypes(current()),
+      directoryKeys: true,
+      description: 'a person in the directory with no Kerberos keys, ' +
+                   'authenticated by a certificate (PKINIT)',
+      pac: {
+        rid: autoRidFor([name], REALM),
+        groups: [RID.DOMAIN_USERS],
+        userAccountControl: UAC.NORMAL_ACCOUNT,
+        // S-1-18-1 would say a password logon; this one was a certificate,
+        // which is what S-1-18-1's sibling for a key-trust logon is not
+        // either, so the authentication-authority SID is left out.
+        extraSids: ['S-1-5-11']
+      }
+    });
+    principals.set(key, record);
+  }
+  withKeyCache(record);
+  record.keys = new Map();
+  record.keyless = true;
+  log.info('krb5: ' + key + ' has no Kerberos keys (' + answer.state + '); ' +
+           'it may authenticate with a certificate (PKINIT) and nothing else.');
+  log.debug('Leaving certificatePerson().');
+  return record;
 }
 
 // ---------------------------------------------------------------------------
@@ -3034,8 +3182,9 @@ function lookupUser(nameComponents, realm) {
 // signed out and never auto-created, so there is nothing a record would carry
 // that the application entry does not. It is built afresh per lookup over the
 // configured account where one exists — so a stored key for the acceptor's own
-// SPN keeps that account's `okAsDelegate`, delegation rules and PAC identity
-// and replaces only its KEY — and over a plain service shape where none does.
+// SPN keeps that account's PAC identity and replaces only its KEY — and over
+// a plain service shape where none does. (Its delegation was never the
+// record's to keep: since #186 it is the application entry's.)
 //
 // **THIS REALM'S OWN KRBTGT IS ASKED TOO, SINCE #169 (2026-09-23)**, through
 // the key source's `krbtgtKeys()` rather than `serviceKeys()`: the krbtgt key
@@ -3088,11 +3237,6 @@ function storedService(nameComponents, realm) {
     requiresPreAuth: true,
     revoked: false,
     passwordExpired: false,
-    okAsDelegate: false,
-    trustedToAuthenticateForDelegation: false,
-    notDelegated: false,
-    allowedToDelegateTo: [],
-    allowedToActOnBehalfOf: [],
     description: 'a service principal with a stored random key',
     autoCreated: false,
     pac: { rid: 1100, primaryGroupRid: RID.DOMAIN_COMPUTERS,
@@ -3706,141 +3850,133 @@ function etypeInfo2For(principal, requested) {
  */
 function delegationPolicy() {
   log.debug('Entering delegationPolicy().');
+  const ctx = current();
   const pairs = [];
   const accounts = [];
-  const all = Array.from(principals.values());
-
-  // Does this KDC know the principal an attribute names? A misspelt SPN in
-  // either list is the ordinary configuration mistake and it fails at TGS time
-  // with an error about authorization rather than about spelling, so the table
-  // says so here instead. Both lists hold bare SPNs with no realm — which is
-  // what the KDC compares against — so the account's own realm is what to look
-  // them up in.
-  const knows = function (spn, realm) {
-    log.debug("Entering knows().");
-    log.debug("Leaving knows().");
-    return !!find(String(spn || '').split('/'), realm);
+  // THE ENTRIES, since #186: a Kerberos service's delegation is the common
+  // controls on its application entry (identifier `SPN@REALM`), read here
+  // LAZILY — `common/applications.js` is no load-time dependency of the
+  // principal table. In a process with no directory the registry answers
+  // empty, and so does this.
+  const applications = require('../common/applications');
+  const valuesOf = function (row, attribute) {
+    log.debug("Entering valuesOf().");
+    const raw = row && row.fields ? row.fields[attribute] : undefined;
+    log.debug("Leaving valuesOf().");
+    return (Array.isArray(raw) ? raw : (raw === undefined || raw === null ||
+      raw === '' ? [] : [raw])).map(String).filter(Boolean);
   };
-
-  all.forEach(function (principal) {
-    const name = principal.name.join('/');
-
+  const flag = function (row, attribute) {
+    log.debug("Entering flag().");
+    log.debug("Leaving flag().");
+    return (valuesOf(row, attribute)[0] || '').toUpperCase() === 'TRUE';
+  };
+  const suffix = '@' + ctx.REALM;
+  const services = (applications.list() || []).filter(function (row) {
+    return row && String(row.identifier || '').endsWith(suffix) &&
+      /\//.test(String(row.identifier || ''));
+  });
+  const known = function (identifier) {
+    log.debug("Entering known().");
+    log.debug("Leaving known().");
+    return !!find(String(identifier).replace(/@[^@]*$/, '').split('/'),
+                  ctx.REALM);
+  };
+  services.forEach(function (row) {
+    const id = String(row.identifier);
+    const semantics = valuesOf(row, 'appDelegationSemantics')
+      .map(function (one) { return one.toLowerCase(); });
+    const impersonates = semantics.indexOf('impersonation') >= 0;
     // CLASSIC — the permission is on THIS account and names what it may reach.
-    (principal.allowedToDelegateTo || []).forEach(function (target) {
-      const targetPrincipal = find(String(target).split('/'), principal.realm);
+    valuesOf(row, 'appAllowedToDelegateTo').forEach(function (target) {
       const warnings = [];
-      if (!principal.trustedToAuthenticateForDelegation) {
-        warnings.push('This account is NOT trusted for protocol transition ' +
-          '(TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION), so the ticket it gets ' +
+      if (!impersonates) {
+        warnings.push('This account does not allow IMPERSONATION ' +
+          '(appDelegationSemantics, which replaced ' +
+          'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION), so the ticket it gets ' +
           'back from S4U2Self is not FORWARDABLE — and classic constrained ' +
           'delegation requires forwardable evidence. S4U2Self will succeed ' +
           'and S4U2Proxy will then fail complaining about the evidence ' +
           'ticket, which is two steps from the attribute that caused it. ' +
-          'Resource-based delegation would not have needed either flag.');
+          'Resource-based delegation would not have needed it.');
       }
-      if (!targetPrincipal) {
-        warnings.push('This KDC has no principal called ' + target + ' in ' +
-          principal.realm + '. The attribute names a SERVICE and the SPN has ' +
-          'to match exactly; a ticket request for a name this KDC does not ' +
-          'know is refused before the authorization is ever consulted.');
+      if (!known(target)) {
+        warnings.push('This KDC has no principal called ' + target + '. ' +
+          'The attribute names a SERVICE by its identifier (SPN@REALM) and ' +
+          'has to match exactly; a ticket request for a name this KDC does ' +
+          'not know is refused before the policy is ever asked.');
       }
       pairs.push({
         mechanism: 'classic',
-        // The delegation store's own type id, so the observed table and this
-        // one can be read against each other without a lookup written twice.
         type: 'krb5-s4u2proxy-classic',
-        frontEnd: name + '@' + principal.realm,
-        target: target + '@' + principal.realm,
-        realm: principal.realm,
-        attribute: 'msDS-AllowedToDelegateTo',
-        // WHICH ACCOUNT the permission lives on. It is the whole difference
-        // between the two mechanisms and it is the column to read first.
-        setOn: name + '@' + principal.realm,
+        frontEnd: id,
+        target: /@/.test(target) ? target : target + suffix,
+        realm: ctx.REALM,
+        attribute: 'appAllowedToDelegateTo',
+        setOn: id,
         setOnRole: 'front end',
         requires: 'a FORWARDABLE evidence ticket, which S4U2Self only ' +
-                  'returns to an account flagged ' +
-                  'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION',
-        targetKnown: !!targetPrincipal,
+                  'returns to an account allowing impersonation ' +
+                  '(appDelegationSemantics)',
+        targetKnown: known(target),
         warning: warnings.join(' '),
-        note: principal.description || ''
+        note: String(row.description || '')
       });
     });
-
-    // RESOURCE-BASED — the permission is on THIS account and names who may act
-    // on its behalf, so the pair is built the other way round.
-    (principal.allowedToActOnBehalfOf || []).forEach(function (requester) {
-      const requesterPrincipal = find(String(requester).split('/'),
-                                      principal.realm);
+    // RESOURCE-BASED — the permission is on THIS account and names who may
+    // act on its behalf, so the pair is built the other way round.
+    valuesOf(row, 'appAllowedToActOnBehalfOf').forEach(function (requester) {
       const warnings = [];
-      if (!requesterPrincipal) {
-        warnings.push('This KDC has no principal called ' + requester + ' in ' +
-          principal.realm + '. Whoever the attribute meant to authorize ' +
-          'cannot present a ticket here under that name.');
+      if (/\//.test(requester) && !known(requester)) {
+        warnings.push('This KDC has no principal called ' + requester + '. ' +
+          'Whoever the attribute meant to authorize cannot present a ticket ' +
+          'here under that name.');
       }
-      // The PA-PAC-OPTIONS requirement is NOT a warning and used to be pushed
-      // here unconditionally, which meant every resource-based pair reported
-      // something missing for ever and the field could never say "nothing is".
-      // It is a property of the mechanism, so it belongs in `requires` — where
-      // it already was — and a warning that fires on every row is a warning
-      // nobody reads by the third one.
       pairs.push({
         mechanism: 'rbcd',
         type: 'krb5-s4u2proxy-rbcd',
-        frontEnd: requester + '@' + principal.realm,
-        target: name + '@' + principal.realm,
-        realm: principal.realm,
-        attribute: 'msDS-AllowedToActOnBehalfOfOtherIdentity',
-        setOn: name + '@' + principal.realm,
+        frontEnd: /@/.test(requester) ? requester : requester + suffix,
+        target: id,
+        realm: ctx.REALM,
+        attribute: 'appAllowedToActOnBehalfOf',
+        setOn: id,
         setOnRole: 'back end',
         requires: 'PA-PAC-OPTIONS with the resource-based bit. It needs NO ' +
                   'forwardable evidence and no flag on the front end, which ' +
                   'is why it is the easier path',
-        targetKnown: knows(name, principal.realm),
+        targetKnown: known(id),
         warning: warnings.join(' '),
-        note: principal.description || ''
+        note: String(row.description || '')
       });
     });
-
-    // The account-level flags. Reported whether or not a pair names the
-    // account, because two of the three are what STOP delegation rather than
-    // permit it, and an account that appears in no pair is precisely the one
-    // somebody is wondering about.
-    if (principal.notDelegated ||
-        principal.trustedToAuthenticateForDelegation ||
-        principal.okAsDelegate) {
+    const notDelegated = flag(row, 'appNotDelegated');
+    const okAsDelegate = flag(row, 'krb5TrustedForDelegation');
+    if (notDelegated || impersonates || okAsDelegate) {
       accounts.push({
-        principal: name + '@' + principal.realm,
-        realm: principal.realm,
-        notDelegated: !!principal.notDelegated,
-        trustedToAuthenticateForDelegation:
-          !!principal.trustedToAuthenticateForDelegation,
-        okAsDelegate: !!principal.okAsDelegate,
-        autoCreated: !!principal.autoCreated,
-        description: principal.description || '',
-        // What each flag DOES, said once here rather than in the page: these
-        // are the three sentences people get wrong, and the last of them is the
-        // one that is not a control at all.
+        principal: id,
+        realm: ctx.REALM,
+        notDelegated: notDelegated,
+        trustedToAuthenticateForDelegation: impersonates,
+        okAsDelegate: okAsDelegate,
+        autoCreated: false,
+        description: String(row.description || ''),
         effects: [
-          principal.notDelegated
-            ? 'NOT_DELEGATED — "sensitive and cannot be delegated". The KDC ' +
-              'refuses this account a forwardable ticket at all, so no ' +
-              'service anywhere can forward its TGT. It is the one control ' +
-              'that lives on the account being PROTECTED rather than on any ' +
-              'service, which is what makes it work no matter which service ' +
-              'the user visits.'
+          notDelegated
+            ? 'appNotDelegated — nobody may act for this account, in any ' +
+              'protocol, and the KDC gives it no forwardable ticket.'
             : '',
-          principal.trustedToAuthenticateForDelegation
-            ? 'TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION — protocol transition. ' +
-              'This account gets a FORWARDABLE ticket out of S4U2Self, which ' +
-              'is what classic constrained delegation then needs as ' +
+          impersonates
+            ? 'appDelegationSemantics allows impersonation — protocol ' +
+              'transition. This account gets a FORWARDABLE ticket out of ' +
+              'S4U2Self, which classic constrained delegation then needs as ' +
               'evidence. Without it S4U2Self still works and simply returns ' +
               'a ticket that is not forwardable.'
             : '',
-          principal.okAsDelegate
-            ? 'ok-as-delegate — ADVICE TO THE CLIENT and not a control. The ' +
-              'flag on a service ticket tells the client this service may be ' +
-              'trusted with forwarded credentials; a client is free to ' +
-              'ignore it, and this KDC enforces nothing by it.'
+          okAsDelegate
+            ? 'krb5TrustedForDelegation — UNCONSTRAINED delegation. Its ' +
+              'tickets carry ok-as-delegate, ADVICE to a client that it may ' +
+              'forward its TGT here; a protected person\'s TGT is never ' +
+              'forwardable, so it never comes.'
             : ''
         ].filter(Boolean)
       });
@@ -3848,9 +3984,7 @@ function delegationPolicy() {
   });
 
   // Stable order, so two readings of the page put the rows in the same places:
-  // by target, then by front end. Not by insertion, which is the order the
-  // definitions happen to be written in and would change under an edit that
-  // changed nothing else.
+  // by target, then by front end.
   pairs.sort(function (a, b) {
     return a.target.localeCompare(b.target) ||
            a.frontEnd.localeCompare(b.frontEnd);
@@ -3862,6 +3996,78 @@ function delegationPolicy() {
   log.debug('Leaving delegationPolicy(). ' + pairs.length + ' pair(s), ' +
             accounts.length + ' account(s).');
   return { pairs: pairs, accounts: accounts };
+}
+
+// ---------------------------------------------------------------------------
+// THE FIXTURES' DELEGATION, AS SEEDS FOR THE ENTRIES (#186).
+//
+// Until #186 the fixture accounts carried their own msDS-* rules and the KDC
+// read them off this table. Delegation is the common controls on the
+// directory's entries now (rcbj: "entries only"), so in DEVELOPMENT — the
+// fixtures exist only there — each rule becomes a value a seed writes onto
+// the service's application entry, in the common vocabulary:
+//
+//   okAsDelegate                          krb5TrustedForDelegation TRUE
+//   trustedToAuthenticateForDelegation    appDelegationSemantics delegation,
+//                                         impersonation
+//   allowedToDelegateTo                   appAllowedToDelegateTo SPN@REALM
+//   allowedToActOnBehalfOf                appAllowedToActOnBehalfOf SPN@REALM
+//
+// Every fixture SERVICE is seeded, with or without rules: the policy refuses
+// a target no application registers. The person `sensitive` (NOT_DELEGATED)
+// is the directory's own demo seed.
+// `kerberos/krb5_delegation.ts` writes these when it is first asked in a
+// realm, filling only what an entry does not already hold.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the development fixtures' delegation rules as seeds for the
+ * services' application entries, in the ambient realm; none in product.
+ *
+ * @returns `[{ identifier, fields }]`
+ */
+function delegationSeeds() {
+  log.debug('Entering delegationSeeds().');
+  const ctx = current();
+  if (!ctx.SEEDS_DEMO) {
+    log.debug('Leaving delegationSeeds(). Product: none.');
+    return [];
+  }
+  const defs = definitionsFor(ctx);
+  const service = configuredServiceDefinition(ctx);
+  const all = defs.fixtures.concat(service ? [service] : []);
+  const out = [];
+  const seen = {};
+  all.forEach(function (def) {
+    if (!def || def.type === 1 || !def.name || def.name[0] === 'krbtgt') {
+      return;
+    }
+    const identifier = def.name.join('/') + '@' + (def.realm || ctx.REALM);
+    const fields = {};
+    if (def.okAsDelegate) {
+      fields.krb5TrustedForDelegation = 'TRUE';
+    }
+    if (def.trustedToAuthenticateForDelegation) {
+      fields.appDelegationSemantics = ['delegation', 'impersonation'];
+    }
+    if ((def.allowedToDelegateTo || []).length) {
+      fields.appAllowedToDelegateTo = def.allowedToDelegateTo.map(
+        function (one) { return one + '@' + ctx.REALM; });
+    }
+    if ((def.allowedToActOnBehalfOf || []).length) {
+      fields.appAllowedToActOnBehalfOf = def.allowedToActOnBehalfOf.map(
+        function (one) { return one + '@' + ctx.REALM; });
+    }
+    // EVERY fixture service, rules or not: the policy refuses a target no
+    // application registers, so a back end with no rules of its own still
+    // needs its entry before anybody delegates to it.
+    if (!seen[identifier]) {
+      seen[identifier] = true;
+      out.push({ identifier: identifier, fields: fields,
+                 description: def.description || '' });
+    }
+  });
+  log.debug('Leaving delegationSeeds(). ' + out.length);
+  return out;
 }
 
 /**
@@ -3889,13 +4095,52 @@ module.exports = {
     // for this SPN at /admin/kerberos/principals, which the acceptor prefers
     // over the password-derived account. An account refused for its published
     // password is then keyed anyway, which is the way out that refusal names.
-    const stored = !!ctx.serviceAccount.spn &&
+    let stored = !!ctx.serviceAccount.spn &&
       !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+    // THE KEY SOURCE MAY KEY THE ACCEPTOR ITSELF (2026-10-12): where the
+    // account was refused only for its password, a product key source makes
+    // a random key for the SPN — at once where it is the store's only writer,
+    // under a claim otherwise — so a trust realm that turned Kerberos on after
+    // the start has an acceptor without a restart. The source asks the mode;
+    // an older source without the member leaves this as it was.
+    if (!stored && ctx.serviceAccount.passwordRefused && keySource &&
+        typeof keySource.acceptorKeyMissing === 'function') {
+      try {
+        stored = !!keySource.acceptorKeyMissing(ctx.serviceAccount.spn) &&
+          !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+      } catch (e) {
+        // Reported and treated as no key: the acceptor refuses and says why,
+        // which is what it did before the source could make one.
+        log.error(errorCodes.tag('STS-KRB-0210') + 'krb5: making a key for ' +
+                  'the acceptor\'s SPN ' + ctx.serviceAccount.spn +
+                  ' threw: ' + ((e && e.message) || e));
+        stored = false;
+      }
+    }
     log.debug("Leaving serviceAccount().");
     return { spn: ctx.serviceAccount.spn,
              available: ctx.serviceAccount.available || stored,
              storedKey: stored,
              reason: stored ? '' : ctx.serviceAccount.reason };
+  },
+  // The acceptor's CONFIGURED account in the ambient realm, without asking
+  // the key source (2026-10-12): whether `krb5.servicePassword` built it, and
+  // whether it was refused only for its password. The key source reads it to
+  // decide whether to key the SPN itself, and whether a key it made earlier
+  // still answers — an operator's own password wins over it.
+  /**
+   * Returns the acceptor's configured account in the ambient realm, without
+   * consulting the key source.
+   *
+   * @returns `{ spn, configured, passwordRefused }`
+   */
+  acceptorAccount: function () {
+    log.debug("Entering acceptorAccount().");
+    const ctx = current();
+    log.debug("Leaving acceptorAccount().");
+    return { spn: String(ctx.serviceAccount.spn || ''),
+             configured: !!ctx.serviceAccount.available,
+             passwordRefused: !!ctx.serviceAccount.passwordRefused };
   },
   // The SPN the acceptor holds in the AMBIENT realm, as components — what
   // `krb5_service.js` read once from `krb5.servicePrincipal` until that became
@@ -3954,7 +4199,10 @@ module.exports = {
   lookupUser: lookupUser,
   personDisabled: personDisabled,
   personSecondFactor: personSecondFactor,
+  decideSignIn: decideSignIn,
   preauthProvider: preauthProvider,
+  pkinitProvider: pkinitProvider,
+  certificatePerson: certificatePerson,
   // Previous key versions (see PREVIOUS KEY VERSIONS).
   retainedKeyFor: retainedKeyFor,
   retainedKvnosOf: retainedKvnosOf,
@@ -3991,6 +4239,7 @@ module.exports = {
   publishedDefault: publishedDefault,
   find: find,
   delegationPolicy: delegationPolicy,
+  delegationSeeds: delegationSeeds,
   findOrCreateUser: findOrCreateUser,
   findOrCreateService: findOrCreateService,
   reservedUnknown: reservedUnknown,
@@ -4010,6 +4259,48 @@ module.exports = {
     current();
     log.debug("Leaving all().");
     return Array.from(principals.values());
+  },
+  /**
+   * Every principal in the ambient realm's database, described by its PUBLIC
+   * fields only: the name, the name type, the salt, the enctypes and kvno,
+   * and the flags — what a client can learn from PA-ETYPE-INFO2 and the
+   * replies anyway, and never a key or a password. What the demonstration
+   * document `GET /krb5/principals` listed until #595; `GET
+   * /admin-api/kerberos/principals` lists it now, as `database`, behind the
+   * API's token. Sorted by name, so a page of it is stable.
+   *
+   * @returns the rows
+   */
+  describeAll: function () {
+    log.debug("Entering describeAll().");
+    const rows = module.exports.all().map(function (p) {
+      return {
+        principal: p.name.join('/') + '@' + p.realm,
+        nameType: p.type,
+        salt: p.salt,
+        etypes: supportedEtypes(p).map(function (id) {
+          return { etype: id, name: kcrypto.etypeName(id) };
+        }),
+        requiresPreAuth: !!p.requiresPreAuth,
+        revoked: !!p.revoked,
+        passwordExpired: !!p.passwordExpired,
+        okAsDelegate: !!p.okAsDelegate,
+        kvno: p.kvno,
+        // Created on first sight (development): somebody authenticated as a
+        // name nobody configured.
+        autoCreated: !!p.autoCreated,
+        // A person keyed from their own password: says only where the keys
+        // come from, which are never on the record.
+        directoryKeys: !!p.directoryKeys,
+        description: p.description || ''
+      };
+    });
+    rows.sort(function (a, b) {
+      return a.principal < b.principal ? -1 : a.principal > b.principal ? 1
+        : 0;
+    });
+    log.debug("Leaving describeAll(). " + rows.length);
+    return rows;
   },
   // The RID an account made at runtime under this name would be given, and
   // the range it is drawn from — see autoRidFor(). Exported so a test can ask
@@ -4096,5 +4387,25 @@ module.exports = {
       ? function () { return offeredEtypes(current()); }
       : function () { return current()[pair[1]]; }
   });
+});
+
+// THE HOSTS A CLIENT'S OWN SPN GUESS IS HONOURED FOR, as a page or a header
+// may ADVERTISE them (2026-10-12). `SERVICE_DOMAINS` is the list the KDC
+// registers an `HTTP/<host>` principal for on first sight — and it does that
+// only where `mode.autoCreates()` (see the S_PRINCIPAL_UNKNOWN branch and
+// `krb5_kdc.js`'s `serviceHosts`). In product mode the KDC knows exactly the
+// one SPN `krb5.servicePrincipal` names, so advertising the list there sent a
+// browser at `https://localhost` to ask for `HTTP/localhost`, which it was
+// refused with nothing on the page saying why. A getter rather than a
+// require of `common/mode` in `spnego.js` and `spnego_exchange.js`, which are
+// in the parent project's COPY closure: this module already asks the mode.
+// Named through a variable, as the properties above are, so the type checker
+// reads it as the same kind of computed property rather than a second export.
+const ADVERTISED_HOSTS_KEY = 'ADVERTISED_SERVICE_HOSTS';
+Object.defineProperty(module.exports, ADVERTISED_HOSTS_KEY, {
+  enumerable: true,
+  get: function () {
+    return mode.autoCreates() ? current().SERVICE_DOMAINS.slice() : [];
+  }
 });
 

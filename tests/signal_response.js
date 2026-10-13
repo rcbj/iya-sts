@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -25,8 +25,8 @@
 //      not permit ends nothing.
 //   D. A DISABLED POLICY decides nothing, and nothing is ended.
 //   F. PRODUCT MODE REFUSES AN UNVERIFIED SET (#117) at the console's
-//      receiver and at /ssf/receive, whatever ssf.receiveRequireSignature
-//      says; development still accepts one at /ssf/receive and records it.
+//      receiver, whatever ssf.receiveRequireSignature says; and there is no
+//      /ssf/receive in either mode (#593 deleted it; Express's own 404).
 //
 // In a child process, because it loads the whole protocol stack.
 // ===========================================================================
@@ -73,10 +73,16 @@ function childMain() {
       return r.id.split(':rule:')[1];
     }).join(',');
     note(slugs === 'end-sessions,end-sessions-on-risk,' +
-                   'foreign-end-sessions,foreign-disable,foreign-enable',
+                   'partner-end-sessions,partner-block,partner-unblock,' +
+                   'partner-revoke-grants,' +
+                   'signals-only-enable,device-compliance',
          'A1. the built-in policy ends sessions on the listed events and on ' +
-         'a risk-level-change to HIGH, and a foreign transmitter\'s (#153) ' +
-         'end sessions, disable and enable', slugs);
+         'a risk-level-change to HIGH; a sign-in partner\'s (#373) end the ' +
+         'sessions it started, block and unblock its sign-ins and revoke ' +
+         'the person\'s grants and tokens (#432); a ' +
+         'signals-only partner\'s (#374) only lift its own lock; and a ' +
+         'device\'s compliance is set — the global sign-out and the ' +
+         'account lock are permitted by no rule', slugs);
     let roundTrips = '';
     try {
       xacmlXml.parsePolicy(xacmlXml.writePolicy(plain.policy));
@@ -322,33 +328,29 @@ function childMain() {
                                                              : 'AAAA');
     };
     config.setOverride('ssf.receiveRequireSignature', false);
+    // DELETED BY #593: the test peer is that push receiver now, so a SET
+    // pushed at /ssf/receive finds an unrouted path in development too.
     const devReceive = await pushAtReceive(forgedToken());
     config.setOverride('global.mode', 'product');
     let prodInternal = null;
-    let prodReceive = null;
     try {
       prodInternal = push('session-revoked', erin, {}, true);
-      prodReceive = await pushAtReceive(forgedToken());
     } finally {
       config.clearOverride('global.mode');
       config.clearOverride('ssf.receiveRequireSignature');
       server.close();
     }
-    // Development passes the signature step and RECORDS it; this test's
-    // issuer is not the listener's own, so it is then refused for that.
-    note(!/invalid_key/.test(devReceive.text) &&
-         /has been recorded/.test(devReceive.text),
-         'F1. development gets an unverified SET past the signature step at ' +
-         '/ssf/receive and records it, as the debugger needs',
+    note(devReceive.status === 404 &&
+         /Cannot POST \/ssf\/receive/.test(devReceive.text),
+         'F1. there is no /ssf/receive, in development either (#593)',
          devReceive.status + ' ' + devReceive.text.slice(0, 200));
     note(prodInternal.status === 400 &&
          prodInternal.body.err === 'invalid_key' &&
-         prodInternal.entry.reactions.length === 0 &&
-         prodReceive.status === 400 && /invalid_key/.test(prodReceive.text),
-         'F2. product refuses one at the console\'s receiver and at ' +
-         '/ssf/receive with invalid_key, the setting off (#117)',
-         JSON.stringify([prodInternal.status, prodReceive.status,
-                         prodReceive.text.slice(0, 200)]));
+         prodInternal.entry.reactions.length === 0,
+         'F2. product refuses one at the console\'s receiver with ' +
+         'invalid_key, the setting off (#117)',
+         JSON.stringify([prodInternal.status,
+                         prodInternal.body && prodInternal.body.err]));
 
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

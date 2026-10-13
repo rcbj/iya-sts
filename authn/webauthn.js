@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: webauthn.js
 //
@@ -38,7 +38,6 @@
 
 'use strict';
 
-const crypto = require('crypto');
 // The service's shared logger when this module is loaded inside the service,
 // and a silent fallback when it is loaded ON ITS OWN — which the debugger's
 // cross-implementation test does, copying this one file next to its own
@@ -61,8 +60,11 @@ try {
   loadProblem = 'the service logger is not reachable: ' +
                 ((e && e.message) || e);
 }
-// `common/crypto.js` for base64url, and the same standalone case: without it,
-// Node's own `base64url` encoding, which is what that function wraps.
+// `common/crypto.js` for base64url, the SHA-256 of the client data and every
+// signature check (#453: every cryptographic operation of the service is
+// that file's), and the same standalone case: without it, Node's own
+// `base64url` encoding, which is what that function wraps, and node's
+// `crypto` reached by `standaloneNodeCrypto()` below.
 let stsCrypto = null;
 try {
   stsCrypto = require('../common/crypto');
@@ -201,7 +203,8 @@ function cborDecodeFirst(buf, offset) {
 /**
  * COSE elliptic curve identifiers mapped to their JOSE curve names.
  */
-const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519' };
+const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519',
+                      7: 'Ed448', 8: 'secp256k1' };
 // PS256/384/512 are RFC 8230's RSASSA-PSS, which TPM authenticators commonly
 // use (#105). ML-DSA-44/65/87 are RFC 9964's (published May 2026 from
 // draft-ietf-cose-dilithium-11): key type AKP (7), the public key at label
@@ -209,6 +212,13 @@ const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519' };
 // `verifyCoseSignature()`, so a copy of this file loaded ON ITS OWN (see the
 // header) recognises them and refuses their signatures rather than
 // misreading them — it has no RSASSA-PSS salt rule and no ML-DSA.
+//
+// AND EVERY OTHER SIGNATURE ALGORITHM AN AUTHENTICATOR CAN USE (2026-10-01):
+// RFC 9864's fully specified ESP256 (-9), ESP384 (-51), ESP512 (-52),
+// Ed25519 (-19) and Ed448 (-53), and RFC 8812's ES256K (-47, secp256k1, COSE
+// curve 8; Ed448 is curve 7). Their curve is part of the algorithm and is
+// checked in `verifyCoseSignature()`, so they too are refused by a copy
+// loaded on its own rather than checked without that rule.
 /**
  * The COSE algorithm identifiers this relying party accepts, mapped to their
  * JOSE names (ECDSA, EdDSA, RSASSA-PKCS1-v1_5, RSASSA-PSS and ML-DSA).
@@ -218,7 +228,18 @@ const COSE_ALGS = {
   '-257': 'RS256', '-258': 'RS384', '-259': 'RS512',
   '-37': 'PS256', '-38': 'PS384', '-39': 'PS512',
   '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
+  '-9': 'ESP256', '-51': 'ESP384', '-52': 'ESP512', '-47': 'ES256K',
+  '-19': 'Ed25519', '-53': 'Ed448',
+  // SHA-1. INSECURE (2026-10-01): verified only where the caller passes
+  // `allowInsecure`, which `webauthn.insecureAlgorithms` (development only,
+  // off by default) decides — see `INSECURE_COSE_ALGS` below.
+  '-65535': 'RS1',
 };
+/**
+ * The COSE algorithms that are broken, accepted only where the caller says
+ * so (`allowInsecure`): SHA-1's RS1.
+ */
+const INSECURE_COSE_ALGS = [-65535];
 // COSE key type AKP (RFC 9964 section 4) and its `pub` label.
 /**
  * The COSE key type AKP (RFC 9964), which an ML-DSA key has.
@@ -373,10 +394,26 @@ function parseClientData(buf, expectedType) {
   return { json: json, text: text, typeMatches: json.type === expectedType };
 }
 
+// THE ONE PLACE THIS FILE REACHES NODE'S `crypto` ITSELF, and only when it
+// is loaded ON ITS OWN (#453): the debugger's cross-implementation test
+// stages this one file without `common/crypto.js` beside it, and a verifier
+// with no digest and no signature check could not be checked by anybody. In
+// the service `stsCrypto` is always there and this is never called, which is
+// why the require is here, inside the function, and not at the top.
+function standaloneNodeCrypto() {
+  log.debug("Entering standaloneNodeCrypto().");
+  log.debug("Leaving standaloneNodeCrypto().");
+  return require('crypto');
+}
+
 function sha256(buf) {
   log.debug("Entering sha256().");
-  log.debug("Leaving sha256().");
-  return crypto.createHash('sha256').update(buf).digest();
+  if (stsCrypto) {
+    log.debug("Leaving sha256().");
+    return stsCrypto.digest('sha256', buf);
+  }
+  log.debug("Leaving sha256(). Standalone.");
+  return standaloneNodeCrypto().createHash('sha256').update(buf).digest();
 }
 
 // Every check by name, in order, so a caller can report WHICH one failed. A
@@ -446,14 +483,16 @@ function coseAlgOfJwk(jwk) {
 // Does `signature` verify over `data` under the stored `jwk`? Through
 // `common/crypto.js` in the service; a copy of this file loaded on its own
 // checks the classical algorithms with node and refuses the rest.
-function verifyWithJwk(jwk, data, signature) {
+function verifyWithJwk(jwk, data, signature, allowInsecure) {
   log.debug("Entering verifyWithJwk().");
   const coseAlg = coseAlgOfJwk(jwk);
   if (stsCrypto && typeof stsCrypto.verifyCoseSignature === 'function') {
-    const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature);
+    const ok = stsCrypto.verifyCoseSignature(coseAlg, jwk, data, signature,
+      { allowInsecure: !!allowInsecure });
     log.debug("Leaving verifyWithJwk(). " + ok);
     return ok;
   }
+  const crypto = standaloneNodeCrypto();
   const name = COSE_ALGS[String(coseAlg)];
   const bare = Object.assign({}, jwk);
   delete bare.alg;
@@ -607,6 +646,10 @@ function verifyRegistration(input) {
     credentialIdRaw: authData.credentialId,
     rpIdHash: authData.rpIdHash,
     coseAlg: key ? key.coseAlg : null,
+    // THE AUTHENTICATOR'S EXTENSION OUTPUTS (#529), the ED flag's CBOR map as
+    // plain data: CTAP 2.1's `minPinLength` comes back here. Null where the
+    // flag is clear. Parsed above and dropped until then.
+    extensions: authData.extensions ? plainOf(authData.extensions) : null,
   };
   log.debug('Leaving verifyRegistration(). ok=' + result.ok);
   return result;
@@ -621,10 +664,11 @@ function verifyRegistration(input) {
  * authenticator data and the client data hash.
  * @param input - `authenticatorData`, `clientDataJSON` and `signature`
  * (base64url), `publicKeyJwk`, `expectedChallenge`, `expectedOrigin`,
- * `expectedRpId`, and optionally `requireUserVerification` and
- * `previousSignCount`
+ * `expectedRpId`, and optionally `requireUserVerification`,
+ * `previousSignCount` and `allowInsecure` (accept RS1)
  * @returns `ok`, every check with its result, whether the signature is
- * valid, the signature counter and the flags
+ * valid, the signature counter, the flags, and the algorithm checked with
+ * (`coseAlg`, `algorithm`)
  * @throws when the authenticator data cannot be parsed
  */
 function verifyAssertion(input) {
@@ -660,12 +704,24 @@ function verifyAssertion(input) {
           'now ' + authData.signCount + ', was ' + input.previousSignCount);
   }
 
+  // WHICH ALGORITHM THIS ASSERTION IS CHECKED WITH (2026-10-01): the stored
+  // key's, reported on the result so the sign-in can record it, and refused
+  // by name — its own check, not a bad signature — where it is insecure and
+  // the caller did not allow it (`webauthn.insecureAlgorithms`).
+  const coseAlg = coseAlgOfJwk(input.publicKeyJwk);
+  if (INSECURE_COSE_ALGS.indexOf(coseAlg) >= 0) {
+    c.add('algorithm is allowed', !!input.allowInsecure,
+          COSE_ALGS[String(coseAlg)] + ' is insecure and ' +
+          'webauthn.insecureAlgorithms is off');
+  }
+
   // The signed message: raw authenticator data, then the HASH of the client
   // data.
   const signedData = Buffer.concat([authDataBuf, sha256(clientDataJSON)]);
   let signatureValid = false;
   try {
-    signatureValid = verifyWithJwk(input.publicKeyJwk, signedData, signature);
+    signatureValid = verifyWithJwk(input.publicKeyJwk, signedData, signature,
+                                   input.allowInsecure);
   } catch (e) {
     // A key node cannot import, or a signature it cannot parse. Both are
     // verification failures rather than crashes, and the reason belongs in the
@@ -690,6 +746,9 @@ function verifyAssertion(input) {
     signatureValid: signatureValid,
     signCount: authData.signCount,
     flags: authData.flags,
+    // The algorithm the signature was checked with: COSE identifier and name.
+    coseAlg: coseAlg,
+    algorithm: COSE_ALGS[String(coseAlg)] || null,
   };
   log.debug('Leaving verifyAssertion(). ok=' + result.ok);
   return result;
@@ -710,6 +769,7 @@ module.exports = {
   // file verifies, and the alternative was a list of algorithms typed into a
   // console page that would have drifted the first time one was added here.
   COSE_ALGS,
+  INSECURE_COSE_ALGS,
   COSE_CURVES,
   COSE_KTY_AKP,
   MAX_CREDENTIAL_ID_BYTES,

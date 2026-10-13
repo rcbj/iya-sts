@@ -1,16 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# ONE THREE-NODE mock-sts ENVIRONMENT, CREATED AND DESTROYED PER RUN (issue #51).
+# ONE THREE-NODE iya-sts ENVIRONMENT, CREATED AND DESTROYED PER RUN (issue #51).
 #
-# Applied as the `mock-sts-deployer` role, never as an administrator: the
+# Applied as the `iya-sts-deployer` role, never as an administrator: the
 # deployer's policy (../foundation/iam_deployer.tf) is the proof that this
 # stack needs no more than it grants. Everything here depends on the
 # long-lived foundation stack existing first.
 #
 # The state key names the environment, so `dev` and `ci` never share state:
-#   terraform init -backend-config="bucket=mock-sts-terraform-state-<account>" \
+#   terraform init -backend-config="bucket=iya-sts-terraform-state-<account>" \
 #                  -backend-config="key=environment/dev.tfstate"
 # ---------------------------------------------------------------------------
 terraform {

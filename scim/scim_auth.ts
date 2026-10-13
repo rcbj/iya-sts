@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -199,7 +199,6 @@
 // when this module loads. `ScimAuth` is exported for the root.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // One signer, one verifier and one constant-time comparison for the whole
 // service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
@@ -243,6 +242,11 @@ import clusterClaims = require('../cluster/cluster_claims');
 // WHICH CLIENTS MAY HOLD THE SCIM SCOPES (#110), asked again of every token.
 import scopePolicy = require('../common/scope_policy');
 import capabilities = require('../cluster/cluster_capabilities');
+// THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `fill()` makes the
+// policy's templated sentence, and `harvest()` collects this module's tables
+// for the scim namespace. Safe at the top: it requires only libraries that
+// never require this module back.
+import serverProse = require('../common/server_prose');
 
 // `mtls.js` is required for its place in the require order and nothing of it
 // is called here; this reference keeps TypeScript from eliding the require.
@@ -285,8 +289,17 @@ void mtls;
 // `cluster_claims.js` before a credential is accepted (`spendPresented()`),
 // which is what decides a replay presented at two nodes at once.
 // ---------------------------------------------------------------------------
-const digestNonces = realms.map({ persist: 'scim.digestNonces',
-                                  retain: 'age' });
+// `expiresAt` (#333): a nonce lives `scim.digestNonceSeconds` from `at`.
+const digestNonces = realms.map({
+  persist: 'scim.digestNonces',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: any): number | null {
+    const at = Number(row && row.at);
+    const ttlS = Number(config.value('scim.digestNonceSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 // nonce -> the nonce-counts this process has accepted. Per realm for
 // `digestNonces`'s reason. It was not persisted (see above) until
 // 2026-09-18 — below.
@@ -342,8 +355,18 @@ const MAX_COUNTS_PER_NONCE = 1024;
 // is last writer wins. **It is persisted since 2026-09-18** all the same
 // (`scim.hobaSeen`), so a restarted process's fast refusal survives the
 // restart; the claim is still what decides between two live processes.
-const hobaChallenges = realms.map({ persist: 'scim.hobaChallenges',
-                                    retain: 'age' });
+// `expiresAt` (#333): the value is when the challenge was ISSUED, ms; it
+// lives `scim.hobaMaxAgeSeconds`.
+const hobaChallenges = realms.map({
+  persist: 'scim.hobaChallenges',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (issuedMs: any): number | null {
+    const at = Number(issuedMs);
+    const ttlS = Number(config.value('scim.hobaMaxAgeSeconds'));
+    return at > 0 && ttlS > 0 ? at + ttlS * 1000 : null;
+  }
+});
 const hobaSeen = realms.map({ persist: 'scim.hobaSeen', retain: 'age' });
 
 // ---------------------------------------------------------------------------
@@ -593,7 +616,6 @@ interface ChallengeStore {
 
 interface ScimAuthDeps {
   log: typeof helpers.log;
-  crypto: typeof crypto;
   stsCrypto: typeof stsCrypto;
   credentials: typeof credentials;
   mode: typeof mode;
@@ -621,6 +643,133 @@ interface ScimAuthDeps {
   hobaChallenges: ChallengeStore;
   hobaSeen: ChallengeStore;
 }
+
+// ---------------------------------------------------------------------------
+// WHAT `describe()` SAYS, as tables and templates (#543 phase 2b). One copy:
+// the scheme table and `describe()` read them, and `common/server_prose.ts`
+// matches an answer to `GET /admin-api/scim` and `/scim/monitor` against
+// them to refill it in a console reader's language. Each is the sentence
+// written inline until #543, byte for byte. A scheme's `name` stays where it
+// is and stays English: it is the scheme's name, not a sentence about it.
+// ---------------------------------------------------------------------------
+// What each scheme costs a caller, keyed by the scheme's `id`.
+const SCHEME_DESCRIPTIONS = Object.freeze({
+  bearer: 'An access token issued by this service\'s own authorization ' +
+    'server, presented as "Authorization: Bearer <token>". Any grant ' +
+    'will do — authorization code, client credentials, password, ' +
+    'refresh, device, token exchange — but the SCIM scopes are issued ' +
+    'only to a client whose oauthAllowedScope declares them, in every ' +
+    'mode. The token must carry the read scope to read and the write ' +
+    'scope to write, its client must still declare that scope, it ' +
+    'must be one THIS service signed, must not have ' +
+    'been revoked, and must not have been narrowed by RFC 8707 to a ' +
+    'different resource.',
+  dpop: 'The proof-of-possession token RFC 7644 section 2 names, in the ' +
+    'shape this service already issues: an access token bound to a key ' +
+    '(cnf.jkt), presented as "Authorization: DPoP <token>" with a ' +
+    'fresh DPoP proof over the method and URL. An RFC 8705 ' +
+    'certificate-bound token is the other proof-of-possession form and ' +
+    'is honoured on the same path. Handled by the same check as the ' +
+    'Bearer row — they are one credential with two ways of being held ' +
+    '— and listed separately because a client reading this document is ' +
+    'entitled to know the bound form is understood.',
+  // BOTH MODES' TRUTH (#543 round 2): it said "No password is checked"
+  // unqualified, and it is also the ServiceProviderConfig's description of
+  // the scheme, built at require time before any realm's mode is known — so
+  // one sentence that is true in both rather than a choice per request.
+  basic: 'In product mode the password is verified against the person\'s ' +
+    'hashed userPassword, and a person who holds or must hold a second ' +
+    'factor is refused their own password and uses an app password. In ' +
+    'development mode any username and any password pass, exactly as ' +
+    'every LDAP bind there succeeds — with the single exception of the ' +
+    'password "invalid", which is refused so that a 401 stays reachable — ' +
+    'so what this authenticates there is a NAME, and that name is what the ' +
+    'audit log records. RFC 7644 section 2 DISCOURAGES this scheme, in ' +
+    'those words, because it rests on a relatively static symmetric ' +
+    'secret; it is implemented anyway because it is what a provisioning ' +
+    'client most often meets and its 401 handling is worth being able to ' +
+    'run.',
+  // BOTH MODES' TRUTH, like `basic` above (#543 round 2): "the one scheme
+  // here where the password really is checked" and "this service registers
+  // everybody" were development's facts stated unconditionally.
+  digest: 'In product mode this scheme is NOT offered, and is refused: a ' +
+    'password is stored as a salted scrypt hash, which cannot answer an ' +
+    'RFC 7616 exchange. In development mode it is the one scheme where ' +
+    'the password really is checked, and it cannot not be: the response ' +
+    'is a hash over the password, so a server that accepted anything ' +
+    'would not be performing the exchange at all. So it does what ' +
+    'Kerberos does for the same reason — ANY username authenticates and ' +
+    'every one of them shares one password (scim.digestPassword). ' +
+    'SHA-256 and SHA-512-256 are offered, in that order, with the -sess ' +
+    'variants, and MD5 last only where scim.digestMd5 turns it on; qop is ' +
+    'auth. A wrong password is a 401, a stale nonce is a 401 with ' +
+    'stale=true, and a replayed nonce count is a 401 — three negatives ' +
+    'that are otherwise hard to provoke.',
+  hoba: 'The signature-based scheme RFC 7644 section 2 names, and the only ' +
+    'one of the six with no password anywhere in it. A client ' +
+    'registers a public key at /.well-known/hoba/register — in ' +
+    'development mode anybody may, for any name; in product mode only ' +
+    'the signed-in owner of an existing account may, and a registration ' +
+    'never creates an account — and then signs the server\'s challenge ' +
+    'together with the origin, the realm and its own key id and nonce. ' +
+    'THE SIGNATURE IS REALLY VERIFIED, in both modes: a signature check ' +
+    'that passes anything is not the scheme. RSA with SHA-256 ' +
+    '(algorithm 0) only.',
+  cookie: 'The browser sign-on session this service already has — the one ' +
+    '/authn/login establishes and WS-Federation shares — offered here ' +
+    'because section 2 names it: "clients may assert HTTP cookies over ' +
+    'TLS that contain an authentication state understood by the SCIM ' +
+    'service provider". It is what makes a SCIM call from a page on ' +
+    'this service work with no second credential. There is no ' +
+    'challenge for it: a server cannot ask for a cookie in ' +
+    'WWW-Authenticate, so it is used when it is there and never ' +
+    'demanded.',
+  clientcert: 'Mutual TLS, the first scheme RFC 7644 section 2 names. ' +
+    'Available only where this request arrived over TLS with a certificate ' +
+    'that VERIFIED against an anchor in the client truststore ' +
+    '(/admin/tls/trust) — so on ' +
+    'the main port only when it is bound as HTTPS (global.https, which ' +
+    'oauth2.rfc9700 turns on). The identity is the subject in RFC 4514 ' +
+    'form, which is the same string /admin/users and the directory ' +
+    'already file a certificate under. It is not recorded again here: ' +
+    'tls_server.js records a certificate once per CONNECTION on ' +
+    'purpose, and counting it per request would undo that from the ' +
+    'other end.'
+});
+
+// Why an ON `scim.authDigest` is not an offered scheme in product mode.
+const REFUSED_BY_MODE = 'HTTP Digest needs the server to hold each password ' +
+  'or its RFC 7616 hash, and product mode holds only a scrypt hash; the ' +
+  'shared scim.digestPassword is not a credential a deployment can offer.';
+
+// The access control policy, in four sentences. `oauth` is a template: its
+// parameters are the two configured scopes, carried over untranslated.
+const POLICY = Object.freeze({
+  oauth: 'An OAuth credential — a Bearer or DPoP access token — may do what ' +
+    'its scopes say: "{{read}}" to read and "{{write}}" to write. Neither ' +
+    'implies the other, so that a client\'s handling of a read-only ' +
+    'credential is something this service can actually produce.',
+  others: 'EVERY OTHER SCHEME MAY DO BOTH. Basic, Digest, HOBA, a session ' +
+    'cookie and a client certificate carry no scopes, so the policy for ' +
+    'them is the whole surface. That is worth reading twice: a caller who ' +
+    'cannot get a scope can use Basic instead, which is why each scheme has ' +
+    'a switch of its own — a deployment exercising scope handling turns the ' +
+    'other five off.',
+  rfc: 'RFC 7644 section 2 requires a provider to be ABLE to map an ' +
+    'authenticated client to an access control policy. This is that ' +
+    'policy. It is two lines because in development mode this service ' +
+    'authenticates nobody in the sense that matters — it is a turnstile, ' +
+    'not a lock — and in product mode, where every credential is verified, ' +
+    'what a verified caller may do is still these two lines.',
+  tied: 'A SCOPE IS TIED TO A CLIENT (#110). The SCIM scopes are issued only ' +
+    'to a client whose oauthAllowedScope declares them, in both modes, and ' +
+    'a token is honoured only while its client still declares the scope it ' +
+    'uses — so removing the declaration cuts off tokens already issued ' +
+    '(STS-SCIM-0079).'
+});
+
+// The routes whose answers carry the scim namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/scim', '/admin-api/scim/monitor'];
 
 /**
  * Who is asking at the SCIM endpoints, and what they may do: RFC 7644 section
@@ -688,7 +837,6 @@ class ScimAuth {
     helpers.log.debug("Leaving ScimAuth.defaultDeps().");
     return {
       log: helpers.log,
-      crypto: crypto,
       stsCrypto: stsCrypto,
       credentials: credentials,
       mode: mode,
@@ -901,6 +1049,31 @@ class ScimAuth {
    */
   static readonly REFUSED_PASSWORD = 'invalid';
 
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's part of the scim namespace (#543 phase 2b): what
+   * each scheme costs a caller, why product mode refuses Digest, and the
+   * access control policy, the first sentence a template. Static, so that
+   * extracting the namespace builds no instance.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering ScimAuth.prose().");
+    const harvest = serverProse.harvest;
+    const out: Record<string, string> = Object.assign({},
+      harvest('auth.schemes', SCHEME_DESCRIPTIONS,
+              Object.keys(SCHEME_DESCRIPTIONS)),
+      harvest('auth.policy', POLICY, Object.keys(POLICY)));
+    out['auth.refusedByMode'] = REFUSED_BY_MODE;
+    helpers.log.debug("Leaving ScimAuth.prose(). " + Object.keys(out).length);
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // THE SCHEMES.
   //
@@ -932,17 +1105,7 @@ class ScimAuth {
         recorded: false,
         spec: 'RFC 6750',
         specUri: 'https://www.rfc-editor.org/rfc/rfc6750',
-        description:
-          'An access token issued by this service\'s own authorization ' +
-          'server, presented as "Authorization: Bearer <token>". Any grant ' +
-          'will do — authorization code, client credentials, password, ' +
-          'refresh, device, token exchange — but the SCIM scopes are issued ' +
-          'only to a client whose oauthAllowedScope declares them, in every ' +
-          'mode. The token must carry the read scope to read and the write ' +
-          'scope to write, its client must still declare that scope, it ' +
-          'must be one THIS service signed, must not have ' +
-          'been revoked, and must not have been narrowed by RFC 8707 to a ' +
-          'different resource.',
+        description: SCHEME_DESCRIPTIONS.bearer,
         attempt: this.attemptBearer.bind(this),
         challenge: this.bearerChallenge.bind(this)
       },
@@ -956,16 +1119,7 @@ class ScimAuth {
         recorded: false,
         spec: 'RFC 9449',
         specUri: 'https://www.rfc-editor.org/rfc/rfc9449',
-        description:
-          'The proof-of-possession token RFC 7644 section 2 names, in the ' +
-          'shape this service already issues: an access token bound to a key ' +
-          '(cnf.jkt), presented as "Authorization: DPoP <token>" with a ' +
-          'fresh DPoP proof over the method and URL. An RFC 8705 ' +
-          'certificate-bound token is the other proof-of-possession form and ' +
-          'is honoured on the same path. Handled by the same check as the ' +
-          'Bearer row — they are one credential with two ways of being held ' +
-          '— and listed separately because a client reading this document is ' +
-          'entitled to know the bound form is understood.',
+        description: SCHEME_DESCRIPTIONS.dpop,
         attempt: null,
         challenge: null
       },
@@ -979,16 +1133,7 @@ class ScimAuth {
         recorded: true,
         spec: 'RFC 7617',
         specUri: 'https://www.rfc-editor.org/rfc/rfc7617',
-        description:
-          'Any username and any password, exactly as every LDAP bind here ' +
-          'succeeds — with the single exception of the password "invalid", ' +
-          'which is refused so that a 401 stays reachable. RFC 7644 section ' +
-          '2 DISCOURAGES this scheme, in those words, because it rests on a ' +
-          'relatively static symmetric secret; it is implemented anyway ' +
-          'because it is what a provisioning client most often meets and its ' +
-          '401 handling is worth being able to run. No password is checked, ' +
-          'so what this authenticates is a NAME, and that name is what the ' +
-          'audit log records.',
+        description: SCHEME_DESCRIPTIONS.basic,
         attempt: this.attemptBasic.bind(this),
         challenge: this.basicChallenge.bind(this)
       },
@@ -1002,18 +1147,7 @@ class ScimAuth {
         recorded: true,
         spec: 'RFC 7616',
         specUri: 'https://www.rfc-editor.org/rfc/rfc7616',
-        description:
-          'The one scheme here where the password really is checked, and it ' +
-          'cannot not be: the response is a hash over the password, so a ' +
-          'server that accepted anything would not be performing the ' +
-          'exchange at all. So it does what Kerberos does for the same ' +
-          'reason — ANY username authenticates and every one of them shares ' +
-          'one password (scim.digestPassword). SHA-256 and SHA-512-256 are ' +
-          'offered, in that order, with the -sess variants, and MD5 last ' +
-          'only where scim.digestMd5 turns it on; qop is auth. A wrong ' +
-          'password is a 401, a stale nonce is a 401 with ' +
-          'stale=true, and a replayed nonce count is a 401 — three negatives ' +
-          'that are otherwise hard to provoke.',
+        description: SCHEME_DESCRIPTIONS.digest,
         attempt: this.attemptDigest.bind(this),
         challenge: this.digestChallenge.bind(this)
       },
@@ -1027,16 +1161,7 @@ class ScimAuth {
         recorded: true,
         spec: 'RFC 7486',
         specUri: 'https://www.rfc-editor.org/rfc/rfc7486',
-        description:
-          'The signature-based scheme RFC 7644 section 2 names, and the only ' +
-          'one of the six with no password anywhere in it. A client ' +
-          'registers a public key at /.well-known/hoba/register — anybody ' +
-          'may, this service registers everybody — and then signs the ' +
-          'server\'s challenge together with the origin, the realm and its ' +
-          'own key id and nonce. THE SIGNATURE IS REALLY VERIFIED, for the ' +
-          'reason the Digest password really is checked: a signature check ' +
-          'that passes anything is not the scheme. RSA with SHA-256 ' +
-          '(algorithm 0) only.',
+        description: SCHEME_DESCRIPTIONS.hoba,
         attempt: this.attemptHoba.bind(this),
         challenge: this.hobaChallenge.bind(this)
       },
@@ -1050,16 +1175,7 @@ class ScimAuth {
         recorded: false,
         spec: 'RFC 7644 section 2 ("Cookies")',
         specUri: 'https://www.rfc-editor.org/rfc/rfc7644#section-2',
-        description:
-          'The browser sign-on session this service already has — the one ' +
-          '/authn/login establishes and WS-Federation shares — offered here ' +
-          'because section 2 names it: "clients may assert HTTP cookies over ' +
-          'TLS that contain an authentication state understood by the SCIM ' +
-          'service provider". It is what makes a SCIM call from a page on ' +
-          'this service work with no second credential. There is no ' +
-          'challenge for it: a server cannot ask for a cookie in ' +
-          'WWW-Authenticate, so it is used when it is there and never ' +
-          'demanded.',
+        description: SCHEME_DESCRIPTIONS.cookie,
         attempt: this.attemptCookie.bind(this),
         challenge: null
       },
@@ -1073,17 +1189,7 @@ class ScimAuth {
         recorded: false,
         spec: 'RFC 8446 / RFC 5280',
         specUri: 'https://www.rfc-editor.org/rfc/rfc8446',
-        description:
-          'Mutual TLS, the first scheme RFC 7644 section 2 names. Available ' +
-          'only where this request arrived over TLS with a certificate that ' +
-          'VERIFIED against an anchor somebody POSTed to /tls/trust — so on ' +
-          'the main port only when it is bound as HTTPS (global.https, which ' +
-          'oauth2.rfc9700 turns on). The identity is the subject in RFC 4514 ' +
-          'form, which is the same string /admin/users and the directory ' +
-          'already file a certificate under. It is not recorded again here: ' +
-          'tls_server.js records a certificate once per CONNECTION on ' +
-          'purpose, and counting it per request would undo that from the ' +
-          'other end.',
+        description: SCHEME_DESCRIPTIONS.clientcert,
         attempt: this.attemptClientCertificate.bind(this),
         challenge: null
       }
@@ -1157,11 +1263,11 @@ class ScimAuth {
   // the first it understands. MD5 is last, and offered only where
   // `scim.digestMd5` turns it on (off by default, development only, #182).
   private digestChallenge(req, opts?) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScimAuth.digestChallenge().");
     const stale = !!(opts && opts.stale);
     const nonce = this.issueDigestNonce();
-    const opaque = crypto.randomBytes(8).toString('hex');
+    const opaque = stsCrypto.randomBytes(8).toString('hex');
     const out = this.digestAlgorithms().map((row) => {
       return 'Digest realm="' + this.realm() + '", qop="auth", algorithm=' +
         row.token +
@@ -1367,10 +1473,18 @@ class ScimAuth {
     // — so the client_id is the principal and `isClient` says why the name
     // looks like an application. `username` is what every user-bearing grant
     // here carries alongside `sub`, and it is the form the audit log and
-    // /admin/users file people under.
-    const isClient = !claims.username && !claims.sub;
-    const principal = String(claims.username || claims.sub ||
-                             claims.client_id || '').trim();
+    // /admin/users file people under. A client's token is told by its `sub`,
+    // which names the client — the client_id, or `urn:sts:client:<id>` in
+    // RFC 9700 mode — the rule `role_permissions.ts`'s isClientToken() and
+    // `ssf_auth.ts`'s principalOfClaims() state; it carries no `username`
+    // since #93, so its principal is the client_id in both modes.
+    const clientId = String(claims.client_id || '');
+    const sub = String(claims.sub || '');
+    const isClient = !claims.username &&
+      (!sub || (!!clientId &&
+                (sub === clientId || sub === 'urn:sts:client:' + clientId)));
+    const principal = String((isClient ? clientId : '') || claims.username ||
+                             sub || clientId).trim();
 
     log.debug("Leaving ScimAuth.attemptBearer(). " + row + " for " +
               (principal || '(unnamed)') + ".");
@@ -1436,10 +1550,16 @@ class ScimAuth {
     const password = decoded.slice(cut + 1);
     if (!username) {
       log.debug("Leaving ScimAuth.attemptBasic(). The username is empty.");
+      // Per mode (#543 round 2): "This service checks no password" was the
+      // answer in product too, where the password is verified.
       return this.coded('STS-SCIM-0036', this.unauthenticated(req,
-        'The Basic credential names nobody. This service checks no password, ' +
-        'so the username is the whole of what it authenticates and an empty ' +
-        'one authenticates nothing.'));
+        'The Basic credential names nobody. ' +
+        (mode.verifiesCredentials()
+          ? 'A password is verified against a person\'s directory entry, ' +
+            'and an empty username names no entry to verify it against.'
+          : 'This realm is in development mode and checks no password, so ' +
+            'the username is the whole of what it authenticates and an ' +
+            'empty one authenticates nothing.')));
     }
     // THE CREDENTIAL (2026-09-06). One call, both modes. In development this is
     // exactly what the branch it replaced did — refuse the reserved string,
@@ -1447,8 +1567,8 @@ class ScimAuth {
     // it verifies against the hashed `userPassword` on the person's entry.
     const early = req[ScimAuth.BASIC_VERDICT];
     const checked = (early && early.username === username &&
-                     early.digest === crypto.createHash('sha256')
-                       .update(password).digest('hex'))
+                     early.digest === stsCrypto.digest('sha256', password,
+                                                       'hex'))
       ? early.checked
       : credentials.verify(username, password, { via: 'SCIM HTTP Basic',
                                                  door: 'scim' });
@@ -1525,14 +1645,14 @@ class ScimAuth {
   ];
 
   private filterDigestAlgorithms(): DigestAlgorithm[] {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScimAuth.filterDigestAlgorithms().");
     const out = ScimAuth.DIGEST_CANDIDATES.filter(function (row) {
       // Checked against the openssl this process actually has rather than
       // assumed. `sha512-256` is missing from some builds and `md5` from a
       // FIPS one, and a challenge naming an algorithm this process cannot
       // compute would be an instruction a client follows into a 500.
-      const available = crypto.getHashes().indexOf(row.hash) >= 0;
+      const available = stsCrypto.digestSupported(row.hash);
       if (!available) {
         log.warn('scim: this node build cannot compute ' + row.hash +
                  ', so HTTP Digest will not offer ' + row.token +
@@ -1631,7 +1751,7 @@ class ScimAuth {
   }
 
   private issueDigestNonce() {
-    const { log, crypto, digestNonces } = this.deps;
+    const { log, stsCrypto, digestNonces } = this.deps;
     log.debug("Entering ScimAuth.issueDigestNonce().");
     const now = Date.now();
     const ttl = this.digestNonceSeconds() * 1000;
@@ -1649,7 +1769,7 @@ class ScimAuth {
       // is the least recently issued.
       this.forgetDigestNonce(digestNonces.keys().next().value);
     }
-    const nonce = crypto.randomBytes(18).toString('base64');
+    const nonce = stsCrypto.randomBytes(18).toString('base64');
     // `{ at }` only — the counts are not in the row (see the declaration).
     digestNonces.set(nonce, { at: now });
     log.debug("Leaving ScimAuth.issueDigestNonce(). " + digestNonces.size +
@@ -1687,7 +1807,7 @@ class ScimAuth {
   }
 
   private digestHash(algorithmToken, text?) {
-    const { log, crypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering ScimAuth.digestHash().");
     const base = String(algorithmToken || 'MD5').replace(/-sess$/i, '')
                                                 .toUpperCase();
@@ -1699,7 +1819,7 @@ class ScimAuth {
       return null;
     }
     log.debug("Leaving ScimAuth.digestHash().");
-    return crypto.createHash(row.hash).update(text, 'utf8').digest('hex');
+    return stsCrypto.httpDigestHash(row.hash, text);
   }
 
   private attemptDigest(req, ctx?) {
@@ -1974,7 +2094,7 @@ class ScimAuth {
   }
 
   private issueHobaChallenge() {
-    const { log, crypto, hobaChallenges } = this.deps;
+    const { log, stsCrypto, hobaChallenges } = this.deps;
     log.debug("Entering ScimAuth.issueHobaChallenge().");
     const now = Date.now();
     const ttl = this.hobaMaxAgeSeconds() * 1000;
@@ -1986,7 +2106,7 @@ class ScimAuth {
     while (hobaChallenges.size >= this.maxHobaChallenges()) {
       hobaChallenges.delete(hobaChallenges.keys().next().value);
     }
-    const challenge = crypto.randomBytes(16).toString('base64url');
+    const challenge = stsCrypto.randomBytes(16).toString('base64url');
     hobaChallenges.set(challenge, now);
     log.debug("Leaving ScimAuth.issueHobaChallenge(). " + hobaChallenges.size +
               " " +
@@ -2135,7 +2255,8 @@ class ScimAuth {
   }
 
   private attemptHoba(req, ctx?) {
-    const { log, crypto, errorCodes, hobaChallenges, hobaSeen } = this.deps;
+    const { log, stsCrypto, errorCodes, hobaChallenges, hobaSeen } =
+      this.deps;
     log.debug("Entering ScimAuth.attemptHoba().");
     if (this.authorizationScheme(req) !== 'hoba') {
       log.debug("Leaving ScimAuth.attemptHoba(). Not a HOBA credential.");
@@ -2233,7 +2354,7 @@ class ScimAuth {
 
     let key = null;
     try {
-      key = crypto.createPublicKey({
+      key = stsCrypto.publicKeyOf({
         key: Buffer.from(registered.der, 'base64'), format: 'der', type: 'spki'
       });
     } catch (e) {
@@ -2260,8 +2381,8 @@ class ScimAuth {
                               kid, challenge]);
     let verified = false;
     try {
-      verified = crypto.verify('sha256', Buffer.from(tbs, 'utf8'), key,
-                               signature);
+      verified = stsCrypto.signatureValid('sha256', Buffer.from(tbs, 'utf8'),
+                                          key, signature);
     } catch (e) {
       // A malformed signature makes verify() throw rather than return false.
       // Treated as a refusal, because from the caller's side the two are one
@@ -2375,7 +2496,8 @@ class ScimAuth {
   // The first scheme RFC 7644 section 2 names. Available only where this
   // request arrived over TLS and the certificate VERIFIED — which means
   // `global.https` is on, so the main port asks every connection for one, and
-  // the chain ends at an anchor somebody POSTed to /tls/trust or, for a
+  // the chain ends at an anchor somebody added through
+  // /admin-api/tls/trust or, for a
   // certificate this service issued, at the service Root
   // (`tls.trustIssuedClientCertificates`; see tls/CLAUDE.md).
   //
@@ -2483,7 +2605,7 @@ class ScimAuth {
       ok: true, scheme: 'clientcert', principal: subject, isClient: false,
       scopes: '',
       note:
-        'a client certificate that verified against an anchor from /tls/trust' +
+        'a client certificate that verified against the client truststore' +
             (certificate.fingerprint256 ?
              ' (' + certificate.fingerprint256 + ')' : '')
     };
@@ -2525,7 +2647,7 @@ class ScimAuth {
    *   with
    */
   registerHobaKey(req) {
-    const { log, crypto, stsCrypto, mode, parseBody, authn, directory,
+    const { log, stsCrypto, mode, parseBody, authn, directory,
             errorCodes } = this.deps;
     log.debug("Entering ScimAuth.registerHobaKey().");
     if (!this.schemeOn('scim.authHoba')) {
@@ -2547,7 +2669,7 @@ class ScimAuth {
     }
     let key = null;
     try {
-      key = crypto.createPublicKey(pem);
+      key = stsCrypto.publicKeyOf(pem);
     } catch (e) {
       // Not a key. The message from openssl is passed through, because it is
       // usually specific enough to fix the request in one go.
@@ -2790,7 +2912,8 @@ class ScimAuth {
   //
   // `need` is 'read', 'write' or 'none' — the last being the discovery
   // endpoints, which are open unless `scim.authDiscovery` says otherwise. That
-  // default is the bootstrapping argument /tls/trust already makes: the
+  // default is the bootstrapping argument the open /tls/trust made until
+  // #597: the
   // ServiceProviderConfig is where a client READS which schemes exist, so
   // requiring a credential to fetch it means a client must already know the
   // answer to the question it is asking. A deployment that wants everything
@@ -2853,7 +2976,7 @@ class ScimAuth {
   // ---------------------------------------------------------------------------
   /**
    * Decides as `authenticate()` does, with a Basic password verified in the
-   * worker pool and a single-use Digest or HOBA credential claimed across the
+   * thread pool and a single-use Digest or HOBA credential claimed across the
    * cluster before any session is made.
    *
    * @param req - the request
@@ -2878,14 +3001,14 @@ class ScimAuth {
   }
 
   // ---------------------------------------------------------------------------
-  // A BASIC PASSWORD, VERIFIED IN THE WORKER POOL (2026-09-21).
+  // A BASIC PASSWORD, VERIFIED ON LIBUV'S THREAD POOL (2026-09-21).
   //
   // `attemptBasic()` is synchronous, so in product mode it hashed the password
   // with scrypt ON THE REQUEST THREAD — about 70ms at the default cost, in
   // which this worker answered nothing else. The asynchronous path
   // (`authenticateSpent()`, which `scim.ts` takes) now asks
   // `credentials.verifyAsync()` first, which is the same check with the hash
-  // done in the worker pool, and leaves the verdict on the request for
+  // done on libuv's thread pool, and leaves the verdict on the request for
   // `attemptBasic()` to use. It keeps the username and a SHA-256 of the
   // password beside the verdict — never the password — so a verdict is only
   // used for the credential it was reached for. Only when the Basic scheme is
@@ -2932,8 +3055,7 @@ class ScimAuth {
       .then((checked) => {
         Object.defineProperty(req, ScimAuth.BASIC_VERDICT, {
           value: { username: pair.username,
-                   digest: crypto.createHash('sha256').update(pair.password)
-                     .digest('hex'),
+                   digest: stsCrypto.digest('sha256', pair.password, 'hex'),
                    checked: checked },
           enumerable: false });
         return null;
@@ -3243,7 +3365,7 @@ class ScimAuth {
   // somebody has turned `requireAuthenticated` into a requirement for this
   // surface.
   private sessionFor(decision) {
-    const { log, crypto, authn, errorCodes } = this.deps;
+    const { log, stsCrypto, authn, errorCodes } = this.deps;
     log.debug("Entering ScimAuth.sessionFor().");
     if (!decision || decision.anonymous || !decision.principal) {
       log.debug("Leaving ScimAuth.sessionFor(). Nobody authenticated.");
@@ -3262,10 +3384,9 @@ class ScimAuth {
       //
       // It is still hashed, because the principal can be a DN or an email and a
       // session id is printed on `/admin/sessions` and in audit rows.
-      const key = crypto.createHash('sha256')
-        .update('scim ' + String(decision.scheme || '') + ' ' +
-                String(decision.principal || ''))
-        .digest('hex').slice(0, 24);
+      const key = stsCrypto.digest('sha256',
+        'scim ' + String(decision.scheme || '') + ' ' +
+        String(decision.principal || ''), 'hex').slice(0, 24);
       const session = authn.startSession(
         { set: () => {}, req: null }, decision.principal,
         ['pwd'], '1', 'SCIM',
@@ -3375,7 +3496,7 @@ class ScimAuth {
     // therefore no honest value to give it. A throw there takes the whole
     // service down over an optional member.
     if (base) {
-      out.documentationUri = base + '/scim';
+      out.documentationUri = helpers.rebaseTo(base, 'scim') + '/scim';
     }
     log.debug("Leaving ScimAuth.schemeDocument().");
     return out;
@@ -3472,10 +3593,7 @@ class ScimAuth {
           // Why an ON setting is not an offered scheme, where that is the case.
           refusedByMode: row.id === 'digest' && this.schemeOn(row.setting) &&
                          !this.digestAllowedByMode()
-            ? 'HTTP Digest needs the server to hold each password or its RFC ' +
-              '7616 hash, and product mode holds only a scrypt hash; the ' +
-              'shared scim.digestPassword is not a credential a deployment ' +
-              'can offer.'
+            ? REFUSED_BY_MODE
             : '',
           setting: row.setting,
           primary: !!row.primary,
@@ -3488,30 +3606,11 @@ class ScimAuth {
         };
       }),
       policy: [
-        'An OAuth credential — a Bearer or DPoP access token — may do what ' +
-        'its scopes say: "' +
-        this.scopeRead() + '" to read and "' + this.scopeWrite() +
-        '" to write. Neither ' +
-        'implies the other, so that a client\'s handling of a read-only ' +
-        'credential is something this service can actually produce.',
-
-        'EVERY OTHER SCHEME MAY DO BOTH. Basic, Digest, HOBA, a session ' +
-        'cookie and a client certificate carry no scopes, so the policy for ' +
-        'them is the whole surface. That is worth reading twice: a caller ' +
-        'who cannot get a scope can use Basic instead, which is why each ' +
-        'scheme has a switch of its own — a deployment exercising scope ' +
-        'handling turns the other five off.',
-
-        'RFC 7644 section 2 requires a provider to be ABLE to map an ' +
-        'authenticated client to an access control policy. This is that ' +
-        'policy. It is two lines because this service authenticates nobody ' +
-        'in the sense that matters — it is a turnstile, not a lock.',
-
-        'A SCOPE IS TIED TO A CLIENT (#110). The SCIM scopes are issued only ' +
-        'to a client whose oauthAllowedScope declares them, in both modes, ' +
-        'and a token is honoured only while its client still declares the ' +
-        'scope it uses — so removing the declaration cuts off tokens ' +
-        'already issued (STS-SCIM-0079).'
+        serverProse.fill(POLICY.oauth, { read: this.scopeRead(),
+                                         write: this.scopeWrite() }),
+        POLICY.others,
+        POLICY.rfc,
+        POLICY.tied
       ]
     };
     log.debug("Leaving ScimAuth.describe(). " + out.schemes.length +
@@ -3609,6 +3708,8 @@ export = {
   },
   HOBA_ALG_RSA_SHA256: ScimAuth.HOBA_ALG_RSA_SHA256,
   REFUSED_PASSWORD: ScimAuth.REFUSED_PASSWORD,
+  PROSE_ROUTES: ScimAuth.PROSE_ROUTES,
+  prose: ScimAuth.prose,
   authRequired: slot.forward('authRequired'),
   permissive: slot.forward('permissive'),
   authDiscovery: slot.forward('authDiscovery'),

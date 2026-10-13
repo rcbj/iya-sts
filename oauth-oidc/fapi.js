@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -345,7 +345,9 @@ const ADVANCED_REQUIREMENTS = [
     title: 'A JWS-signed request object, by value or by reference',
     note: 'An unsigned or absent request object is refused (RFC 9101, ' +
           'STS-OAUTH-0340 / 0357); a push must carry `request` ' +
-          '(STS-OAUTH-0415).' },
+          '(STS-OAUTH-0415). THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT ' +
+          '(#568): sts-admin-console and sts-user-portal hold no key to ' +
+          'sign one with, and do not conform to this profile.' },
   { id: 'response-type', section: '5.2.2 item 2', level: 'SHALL',
     enforced: 'yes',
     title: 'code id_token, or code with response_mode=jwt (JARM)',
@@ -362,7 +364,11 @@ const ADVANCED_REQUIREMENTS = [
     note: 'A token request that would mint an unconstrained access token is ' +
           'refused (STS-OAUTH-0583). DPoP counts unless ' +
           'oauth2.fapiRequireMtls is on (rcbj\'s decision on #139); ' +
-          'mtls_endpoint_aliases is published where the port is TLS.' },
+          'mtls_endpoint_aliases is published where the port is TLS. TWO ' +
+          'EXCEPTIONS (#446, #568): the public clients sts-admin-console ' +
+          'and sts-user-portal hold no certificate to present, and their ' +
+          'DPoP-bound tokens are accepted with oauth2.fapiRequireMtls on; ' +
+          'they do not conform there.' },
   { id: 'parameters-from-object', section: '5.2.2 item 10', level: 'SHALL',
     enforced: 'already',
     title: 'Only parameters inside the signed request object are used',
@@ -384,7 +390,12 @@ const ADVANCED_REQUIREMENTS = [
     enforced: 'yes',
     title: 'Public clients are not supported',
     note: 'token_endpoint_auth_method none is refused at registration and ' +
-          'at the token and PAR endpoints.' },
+          'at the token and PAR endpoints.' +
+          ' TWO EXCEPTIONS (#446, #568): the seeded sts-admin-console ' +
+          'and sts-user-portal clients, when they are public clients, may ' +
+          'use the token and PAR endpoints. Every token issued to them is ' +
+          'DPoP-bound, and the console and the portal do not conform to ' +
+          'this profile.' },
   { id: 'par-pkce', section: '5.2.2 item 18', level: 'SHALL',
     enforced: 'yes',
     title: 'A pushed request uses PKCE with S256',
@@ -414,7 +425,12 @@ const FAPI2_REQUIREMENTS = [
   { id: 'confidential-only', section: '5.3.2.1 item 3', level: 'SHALL',
     enforced: 'yes', title: 'Confidential clients only',
     note: 'A public client is refused at registration and at the token and ' +
-          'PAR endpoints (STS-OAUTH-0580, STS-REG-0174).' },
+          'PAR endpoints (STS-OAUTH-0580, STS-REG-0174).' +
+          ' TWO EXCEPTIONS (#446, #568): the seeded sts-admin-console ' +
+          'and sts-user-portal clients, when they are public clients, may ' +
+          'use the token and PAR endpoints. Every token issued to them is ' +
+          'DPoP-bound, and the console and the portal do not conform to ' +
+          'this profile.' },
   { id: 'sender-constrained', section: '5.3.2.1 items 4-5', level: 'SHALL',
     enforced: 'yes',
     title: 'Only sender-constrained access tokens, by mTLS or DPoP',
@@ -494,7 +510,9 @@ const MESSAGE_SIGNING_REQUIREMENTS = [
   { id: 'signed-request-at-par', section: '5.3.2 item 1', level: 'SHALL',
     enforced: 'yes',
     title: 'A JAR-signed request object at the PAR endpoint',
-    note: 'A push of plain parameters is refused (STS-OAUTH-0415).' },
+    note: 'A push of plain parameters is refused (STS-OAUTH-0415), except ' +
+          'from the two hosted public clients (#568), which hold no key ' +
+          'to sign one with and do not conform to this profile.' },
   { id: 'request-object-claims', section: '5.3.2 items 2-4', level: 'SHALL',
     enforced: 'yes',
     title: 'aud the issuer; nbf at most 60 minutes old; exp at most 60 ' +
@@ -965,19 +983,66 @@ function clientIdentifierRefusal(ids) {
 // THE CLIENT'S AUTHENTICATION at the token and PAR endpoints. `method` is
 // what the client's entry declares (`bcp.observeClientAuthentication()`'s
 // `method`); `none` is a public client, which section 5.2.3 allows.
+//
+// THE ONE PUBLIC CLIENT THE CONFIDENTIAL-ONLY PROFILES ALLOW (#446,
+// 2026-10-05): the admin console. It is becoming a static application in
+// the browser — a public client whose every token is DPoP-bound
+// (`sender_constraints.js`'s `DPOP_BOUND_PUBLIC_CLIENTS`) — and FAPI 1.0
+// Advanced and FAPI 2.0 support no public client at all. Refusing it would
+// leave a realm with one of those profiles on with no console, so rcbj's
+// decision is a named exception: the seeded console client, and only when it
+// IS public, is let past this check. **The console does not conform to the
+// profile there, and the two requirement rows above and the documentation
+// say so**; every other client of the realm is held to the profile as
+// before, and the console's own tokens are still sender-constrained, which
+// is the half of the profile's intent that survives.
 // ---------------------------------------------------------------------------
+// AND THE USER PORTAL SINCE #568 (2026-10-12), on the same terms and for the
+// same reason: rcbj's decision made it a static application and a public
+// client whose every token is DPoP-bound, and a realm with a confidential-only
+// profile on would otherwise have no portal. It does not conform there
+// either, and the requirement rows say so.
+/**
+ * The hosted clients allowed to be public clients under a profile that
+ * supports none: the admin console and the user portal.
+ */
+const PUBLIC_CLIENT_EXEMPT = ['sts-admin-console', 'sts-user-portal'];
+
+/**
+ * Tells whether a client is the public client the confidential-only profiles
+ * make an exception for.
+ *
+ * @param clientId - the client
+ * @param method - the method its entry declares
+ * @returns true for the admin console declared as a public client
+ */
+function publicClientExempt(clientId, method) {
+  log.debug("Entering publicClientExempt().");
+  const answer = String(method || '') === 'none' &&
+    PUBLIC_CLIENT_EXEMPT.indexOf(String(clientId || '')) >= 0;
+  log.debug("Leaving publicClientExempt(). " + answer);
+  return answer;
+}
+
 /**
  * Refuses, at the token and PAR endpoints, a client authentication method the
  * profile in force does not allow.
  *
  * @param method - the method the client's entry declares
+ * @param clientId - optional; the client, for the one public client the
+ *   confidential-only profiles allow
  * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
  */
-function clientAuthenticationRefusal(method) {
+function clientAuthenticationRefusal(method, clientId) {
   log.debug("Entering clientAuthenticationRefusal(). " + method);
   const used = String(method || '');
   if (!enabled() || !used) {
     log.debug("Leaving clientAuthenticationRefusal(). Nothing to judge.");
+    return null;
+  }
+  if (publicClientExempt(clientId, used)) {
+    log.debug("Leaving clientAuthenticationRefusal(). The admin console, " +
+              "the one public client allowed.");
     return null;
   }
   const allowed = allowedMethods();
@@ -1489,14 +1554,23 @@ function requiresMtls() {
   return advanced() && !!config.value('oauth2.fapiRequireMtls');
 }
 
+// THE TWO PUBLIC CLIENTS (#446, #568) ARE BOUND BY DPoP AND NOTHING ELSE:
+// a page in a browser holds no client certificate to present. Under
+// `oauth2.fapiRequireMtls` a DPoP-bound token from either is still accepted,
+// for PUBLIC_CLIENT_EXEMPT's reason — a realm that required mutual TLS would
+// otherwise have no console and no portal — and the requirement rows say they
+// do not conform there. An UNBOUND token from them is refused as from anybody.
 /**
  * Refuses, under FAPI 1.0 Advanced or 2.0, an access token about to be issued
  * that is not sender-constrained enough.
  *
  * @param binding - `dpop` and `mtls`, what binds the token
+ * @param clientId - optional; the client, for the two public clients whose
+ *   only binding is DPoP
+ * @param method - optional; the method the client's entry declares
  * @returns null, or `{ ok: false, errorCode, error, requirement, description }`
  */
-function senderConstraintRefusal(binding) {
+function senderConstraintRefusal(binding, clientId, method) {
   log.debug("Entering senderConstraintRefusal().");
   if (!advanced() && !fapi2()) {
     log.debug("Leaving senderConstraintRefusal(). Not Advanced.");
@@ -1505,6 +1579,11 @@ function senderConstraintRefusal(binding) {
   const b = binding || {};
   if (b.mtls || (b.dpop && !requiresMtls())) {
     log.debug("Leaving senderConstraintRefusal(). Bound.");
+    return null;
+  }
+  if (b.dpop && publicClientExempt(clientId, method)) {
+    log.debug("Leaving senderConstraintRefusal(). A DPoP-bound public " +
+              "client, which holds no certificate to present.");
     return null;
   }
   log.debug("Leaving senderConstraintRefusal(). Unbound.");
@@ -1637,6 +1716,18 @@ function applyToMetadata(metadata) {
       metadata.response_modes_supported = metadata.response_modes_supported
         .filter(function (one) {
           return JARM_MODES.indexOf(one) >= 0;
+        });
+    }
+    // FAPI 1.0 ADVANCED ANSWERS NOTHING IN A PLAIN QUERY (Part 2 section
+    // 5.2.2 item 2): `code` is allowed only with JARM (STS-OAUTH-0783), and
+    // `code id_token` carries an ID Token, which never travels in a query
+    // (OAuth 2.0 Multiple Response Type Encoding Practices section 5). So
+    // `query` is not advertised, and a client reading the document — the
+    // static console's and portal's runtimes among them — asks for JARM.
+    if (advanced() && Array.isArray(metadata.response_modes_supported)) {
+      metadata.response_modes_supported = metadata.response_modes_supported
+        .filter(function (one) {
+          return one !== 'query';
         });
     }
     if (fapi2()) {
@@ -1776,6 +1867,8 @@ module.exports = {
   senderConstraintRefusal: senderConstraintRefusal,
   authorizationRefusal: authorizationRefusal,
   clientAuthenticationRefusal: clientAuthenticationRefusal,
+  PUBLIC_CLIENT_EXEMPT: PUBLIC_CLIENT_EXEMPT,
+  publicClientExempt: publicClientExempt,
   cibaRefusal: cibaRefusal,
   clientIdentifierRefusal: clientIdentifierRefusal,
   keyBits: keyBits,

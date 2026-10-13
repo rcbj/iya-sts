@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -13,323 +13,110 @@
 // front of them is the one they started — and Approve and Deny. Nothing
 // reaches the person but this page; a push to a device is #164's.
 //
+// **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS** — the page's view
+// and the answer — and the page is drawn in the browser by `web_ciba.ts`.
+//
 // **AN APPROVAL IS AS STRONG AS THE REQUEST ASKS.** A live sign-on session
 // approves a request with no `acr_values`. One that asks for more than the
-// session proved (RFC 9470's levels, `step_up.ts`) is not approved: the page
-// offers to sign in again with what it asks — the portal's own sign-in with
-// `acr_values` and `prompt=login` — and the Approve button takes after that.
+// session proved (RFC 9470's levels, `step_up.ts`) is not approved: the
+// answer carries `stepUp` — the levels the request names, `prompt=login` —
+// and the portal signs in again with them and comes back here, where the
+// Approve button takes after that. The session judged is the SIGN-ON
+// session the access token was issued on (`caller.signOn`), which is what
+// the portal's own session stood for. Until #568 the page said so in a
+// sentence naming `?stepup=<id>`; that address still begins the sign-in,
+// answered as `stepUp` by the view.
 //
 // **AND THE PERSON'S USER CODE**, set or cleared here: a secret a client
 // that registered `backchannel_user_code_parameter` must send with every
 // request (CIBA section 7.1), hashed on the entry like a password.
 //
-// **THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT** — the
+// **THE IDENTITY IS THE TOKEN'S AND THERE IS NO PARAMETER FOR IT** — the
 // portal's rule (portal/CLAUDE.md): a form names a REQUEST, and one that is
-// not waiting for this person is refused. **A REAL SUBMIT BUTTON AND NO
-// SCRIPT**, under the service-wide `script-src 'none'`.
+// not waiting for this person is refused.
 //
-// **IT IS A FILE BESIDE `portal.ts`**, registered through `register(context)`
-// exactly as `portal_devices.ts` is, and for its reason.
+// **AND GNAP GRANTS WAITING FOR THEIR OWNER (#432 phase 6).** A GNAP request
+// naming this person while somebody else was at the approval page, or
+// offering no interaction at all (RFC 9635 sections 1.4 and 2.4), waits
+// here, in a section of its own below the CIBA requests. What is reused is
+// the page's mechanism — the token's subject is the identity, a form names a
+// request, one answer, the step-up with the acr values the rights need — and
+// not CIBA's store: the request is a GNAP grant, held and continued by
+// `gnap/`, and `gnap/gnap_approval.ts` (reached LAZILY: the portal is built
+// at 8a and GNAP at 23d) lists and answers it. The rights are drawn as the
+// approval page draws them, each with a checkbox the person may untick, and
+// each right's LIMIT CONTROLS (#432 phase 5) arrive in the view as markup
+// `LimitsForm.controls()` drew on the server — the console's arrangement for
+// a drawing whose rules are the server's (`AdminViews.delegationMapKey()`).
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import authn = require('../authn/authn');
-import oidcRp = require('../common/oidc_rp');
+import config = require('../common/config');
+import validation = require('../common/validation');
 import ciba = require('../oauth-oidc/ciba');
 import stepUp = require('../oauth-oidc/step_up');
+// #432 phase 5: a waiting right's limits, drawn and read back as the approval
+// page does. A static utility class that loads nothing of GNAP's engine.
+import LimitsForm = require('../common/limits_form');
 
-type Req = import('express').Request;
-type Res = import('express').Response;
 type Json = any;
+type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountContext = import('../types/account-api').AccountContext;
+type AccountCaller = import('../types/account-api').AccountCaller;
 
-// What the portal hands over — `portal_devices.ts`'s context.
-interface PortalContext {
-  app: {
-    get(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-    post(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-  };
-  BASE: string;
-  log: {
-    debug(message: string): void;
-    info(message: string): void;
-  };
-  esc(value: unknown): string;
-  shell(path: string, session: Json, message: unknown, error: unknown,
-        body: string): string;
-  send(res: Res, status: number, body: string): unknown;
-  requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
-  // error-code: none — the portal helper's type, not a call to it.
-  refuseShape(res: Res, result: Json): unknown;
-  innerCode(result: Json): string;
-  baseUrlOf(req: Req): string;
-  parseBody(req: Req): Json;
-  validation: Json;
-  websecurity: Json;
-  accessGate: Json;
-  audit: Json;
-  errorCodes: Json;
-  config: { value(key: string): any };
+const vz = validation.z;
+const vt = validation.types;
+
+// GNAP's approval library, LAZILY (#432 phase 6): the portal is built at
+// 8a and GNAP at 23d, and requiring it here would load GNAP's stores and
+// engine early.
+function gnapApproval(): Json {
+  helpers.log.debug("Entering gnapApproval().");
+  helpers.log.debug("Leaving gnapApproval().");
+  return require('../gnap/gnap_approval');
 }
 
 interface PortalCibaDeps {
-  // For the constructor only: a page logs through the portal's context.
-  log: { debug(message: string): void };
+  log: { debug(message: string): void; info(message: string): void };
+  config: { value(key: string): any };
   authn: Json;
-  oidcRp: Json;
   ciba: Json;
   stepUp: Json;
 }
 
-class PortalCibaPage {
-  readonly PATH: string;
-  private readonly FORM: Json;
-  private readonly QUERY: Json;
+// THE FORM, checked by the handler rather than by the API's wrapper: a GNAP
+// request's limit controls (`lim_t<k>r<r>_<member>`, #432 phase 5) are not
+// this form's, a receiver control repeats, and `LimitsForm.strip()` takes
+// them off before the schema is asked — as it did on the page. `right` is a
+// repeated checkbox, an array in a JSON body.
+const FORM = vz.object({
+  action: vt.oneOf(['approve', 'deny', 'set-code', 'clear-code',
+                    'gnap-approve', 'gnap-deny']),
+  id: vz.string().max(256).optional(),
+  code: vz.string().max(64).optional(),
+  right: vt.repeatable(vt.token).optional(),
+  subject: vt.opt(vt.oneOf(['yes']))
+});
 
-  constructor(private readonly deps: PortalCibaDeps,
-              private readonly ctx: PortalContext) {
-    ctx.log.debug("Entering PortalCibaPage.constructor().");
-    const vz = ctx.validation.z;
-    const vt = ctx.validation.types;
-    this.PATH = ctx.BASE + '/ciba';
-    this.FORM = vz.object({
-      action: vt.oneOf(['approve', 'deny', 'set-code', 'clear-code']),
-      id: vz.string().max(256).optional(),
-      code: vz.string().max(64).optional(),
-      csrf_token: vt.opt(vt.token)
-    });
-    this.QUERY = vz.object({
-      done: vz.string().max(200).optional(),
-      stepup: vz.string().max(256).optional()
-    });
-    ctx.log.debug("Leaving PortalCibaPage.constructor().");
-  }
-
-  private page(session: Json, message: unknown, error: unknown): string {
-    const { log, shell, esc, websecurity, config } = this.ctx;
-    const { ciba } = this.deps;
-    log.debug("Entering PortalCibaPage.page().");
-    const who = String(session.user.username);
-    const waiting = ciba.pendingFor(who);
-    const csrf = websecurity.field(session.id);
-    const PATH = this.PATH;
-    const form = function (action: string, id: string, label: string,
-                           danger: boolean): string {
-      return '<form method="post" action="' + esc(PATH) + '" ' +
-        'style="display:inline">' + csrf +
-        '<input type="hidden" name="action" value="' + action + '">' +
-        '<input type="hidden" name="id" value="' + esc(id) + '">' +
-        '<button type="submit"' + (danger ? ' class="danger"' : '') +
-        ' id="ciba-' + action + '">' + label + '</button></form> ';
-    };
-    const rows = waiting.map(function (one: Json) {
-      return '<div class="card ciba-request" id="ciba-' + esc(one.id.slice(0,
-        12)) + '"><p><strong>' + esc(one.clientName) + '</strong> asks to ' +
-        'sign you in.</p>' +
-        (one.bindingMessage
-          ? '<p>It says: <strong id="ciba-binding">' +
-            esc(one.bindingMessage) + '</strong> — check that this is what ' +
-            'the other device shows.</p>' : '') +
-        (one.requestContext
-          ? '<p class="sub" id="ciba-context">Where it was asked from: ' +
-            Object.keys(one.requestContext).slice(0, 12).map(function (k) {
-              return esc(k) + ' <code>' + esc(JSON.stringify(
-                one.requestContext[k]).slice(0, 200)) + '</code>';
-            }).join('; ') + '</p>' : '') +
-        '<p class="sub">Access: <code>' + esc(one.scope) + '</code>' +
-        (one.acrValues.length ? '; needs sign-in level <code>' +
-          esc(one.acrValues.join(' ')) + '</code>' : '') + '. Expires ' +
-        esc(new Date(one.expiresAt).toISOString()) + '.</p>' +
-        form('approve', one.id, 'Approve', false) +
-        form('deny', one.id, 'Deny', true) + '</div>';
-    });
-    const hasCode = ciba.hasUserCode(who);
-    const body = '<div class="card"><h2>Sign-in requests</h2>' +
-      '<p class="sub">An application that cannot show you a sign-in ' +
-      'screen — a call centre, a till — can ask to sign you in here ' +
-      'instead (OpenID Connect CIBA). Approve only a request you started.' +
-      (config.value('oauth2.ciba') ? '' : ' Signing in this way is ' +
-        'turned off here.') + '</p>' +
-      (rows.length ? rows.join('') :
-        '<p id="ciba-none">Nothing is waiting for you.</p>') + '</div>' +
-      '<div class="card"><h2>Your user code</h2><p class="sub">Some ' +
-      'applications must send a code only you know with every request, ' +
-      'so an application that knows only your name cannot bother you. ' +
-      'You have ' + (hasCode ? 'set one' : 'not set one') + '.</p>' +
-      '<form method="post" action="' + esc(PATH) + '">' + csrf +
-      '<input type="hidden" name="action" value="set-code">' +
-      '<label>New user code <input type="password" name="code" ' +
-      'minlength="4" maxlength="64" required autocomplete="off"></label> ' +
-      '<button type="submit" id="ciba-set-code">Set</button></form>' +
-      (hasCode ? '<form method="post" action="' + esc(PATH) + '">' + csrf +
-        '<input type="hidden" name="action" value="clear-code">' +
-        '<button class="danger" type="submit">Clear it</button></form>' :
-        '') + '</div>';
-    log.debug("Leaving PortalCibaPage.page().");
-    return shell(this.PATH, session, message, error, body);
-  }
-
-  private getPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const { oidcRp, ciba } = this.deps;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.READ);
-    if (!session) {
-      log.debug('Leaving GET ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.QUERY);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    // THE STEP-UP: the portal's own sign-in again, asking for the levels
-    // the request names, and back here to press Approve once more.
-    if (asked.value.stepup) {
-      const record = ciba.get(asked.value.stepup);
-      if (record && String(record.username).toLowerCase() ===
-          String(session.user.username).toLowerCase()) {
-        log.debug('Leaving GET ' + PATH + '. Signing in again.');
-        return oidcRp.beginSignIn(req, res, 'portal', {
-          returnTo: PATH, prompt: 'login', acrValues: record.acrValues });
-      }
-    }
-    log.debug('Leaving GET ' + PATH + '.');
-    return ctx.send(res, 200, this.page(session, asked.value.done || null,
-                                        null));
-  }
-
-  private async postPage(req: Req, res: Res): Promise<unknown> {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const { ciba, authn, stepUp } = this.deps;
-    const PATH = this.PATH;
-    log.debug('Entering POST ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving POST ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const who = String(session.user.username);
-    const posted = ctx.validation.checkParsed(ctx.parseBody(req), 'body',
-                                              this.FORM);
-    if (!posted.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
-      log.debug('Leaving POST ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, posted);
-    }
-    const body = posted.value;
-    const csrf = ctx.websecurity.checkCsrf(session.id, body);
-    if (!csrf.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(csrf) || 'STS-PORTAL-0017');
-      log.debug('Leaving POST ' + PATH + '. CSRF.');
-      return ctx.send(res, 403, this.page(session, null, csrf.detail));
-    }
-    if (body.action === 'set-code' || body.action === 'clear-code') {
-      const set = ciba.setUserCode(who, body.action === 'set-code' ?
-                                        String(body.code || '') : '');
-      if (!set.ok) {
-        ctx.errorCodes.mark(res, 'STS-PORTAL-0090');
-        log.debug('Leaving POST ' + PATH + '. The code was refused.');
-        return ctx.send(res, 400, this.page(session, null, set.error));
-      }
-      log.debug('Leaving POST ' + PATH + '. The code.');
-      res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-        set.set ? 'Your user code is set.' : 'Your user code is cleared.'))
-        .end();
-      return undefined;
-    }
-    const approve = body.action === 'approve';
-    const record = ciba.get(body.id);
-    // The sign-on session this browser holds is what the approval proves:
-    // its acr, amr and when it signed in.
-    const signOn = authn.sessionOf(req) || {};
-    if (approve && record && record.acrValues && record.acrValues.length) {
-      const assessed = stepUp.assessSession(
-        { acrValues: record.acrValues, maxAge: null }, signOn);
-      if (!assessed.met) {
-        ctx.errorCodes.mark(res, 'STS-PORTAL-0091');
-        log.debug('Leaving POST ' + PATH + '. A stronger sign-in needed.');
-        return ctx.send(res, 403, this.page(session, null,
-          'This request asks for sign-in level ' +
-          record.acrValues.join(' ') + ', more than this session proved. ' +
-          'Sign in again with it (' + PATH + '?stepup=' +
-          encodeURIComponent(record.id) + '), then approve.'));
-      }
-    }
-    const answered = await ciba.answerAndNotify(body.id, who, approve, {
-      acr: signOn.acr || '', amr: signOn.amr || [],
-      authTime: signOn.authTime,
-      // The tokens are issued ON this session (#239), so its end revokes
-      // their refresh token as a sign-out does every grant's.
-      sessionId: signOn.id || '' });
-    if (!answered.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0089');
-      log.debug('Leaving POST ' + PATH + '. Refused.');
-      return ctx.send(res, 400, this.page(session, null, answered.why));
-    }
-    if (approve && signOn.id) {
-      this.notePresented(signOn, req);
-    }
-    log.debug('Leaving POST ' + PATH + '. Answered.');
-    res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      approve ? 'Approved: the application is signing you in.' :
-                'Denied.')).end();
-    return undefined;
-  }
-
-  // -------------------------------------------------------------------------
-  // AN APPROVAL IS SINGLE SIGN-ON, AND CAEP's `session-presented` (#240).
-  //
-  // The client that asked at `/oauth2/bc-authorize` is issued tokens on the
-  // strength of the sign-on session this browser holds — its `acr`, `amr` and
-  // `auth_time` are what the approval proves, and the person authenticates
-  // nowhere new. That is an existing session presented and honoured for a
-  // client it was not made for, which is what the event means. A DENIAL
-  // honours nothing and reports nothing.
-  // -------------------------------------------------------------------------
-  private notePresented(session: Json, req: Req): void {
-    const { log } = this.ctx;
-    const { authn } = this.deps;
-    log.debug("Entering PortalCibaPage.notePresented().");
-    authn.notePresented(session, 'OpenID Connect CIBA', req);
-    log.debug("Leaving PortalCibaPage.notePresented().");
-  }
-
-  registerRoutes(app: PortalContext['app']): void {
-    const self = this;
-    const { log } = this.ctx;
-    log.debug("Entering PortalCibaPage.registerRoutes().");
-    app.get(this.PATH, function (req, res) {
-      return self.getPage(req, res);
-    });
-    app.post(this.PATH, function (req, res) {
-      return self.postPage(req, res).catch(function (e) {
-        log.debug("Caught in POST " + self.PATH + ": " +
-                  ((e && e.message) || e));
-        self.ctx.errorCodes.mark(res, 'STS-PORTAL-0089');
-        return self.ctx.send(res, 500, 'The request could not be answered.');
-      });
-    });
-    log.debug("Leaving PortalCibaPage.registerRoutes().");
-  }
-}
+const QUERY = vz.object({
+  stepup: vz.string().max(256).optional()
+    .describe('A CIBA request id: answered `stepUp`, the sign-in again its ' +
+              'acr values need.'),
+  gnapstepup: vz.string().max(256).optional()
+    .describe('A waiting GNAP request id: answered `stepUp`, the sign-in ' +
+              'again its rights need.')
+});
 
 /**
- * The portal page at /portal/ciba: where a person approves or denies a CIBA
- * backchannel sign-in request, as strongly as the request asks (#131).
- *
- * Its routes are registered by `register()`, which `portal.ts` calls at the one
- * point in its body where the route order is right.
+ * `/portal/ciba`'s account API operations: where a person approves or
+ * denies a CIBA backchannel sign-in request, as strongly as the request
+ * asks (#131), and answers a GNAP grant waiting for them (#432).
  */
 class PortalCiba {
   /**
-   * Builds the page's module over its dependencies.
+   * Builds the module over its dependencies.
    *
    * @param deps - the modules the page reads and writes through
    */
@@ -346,28 +133,409 @@ class PortalCiba {
   static defaultDeps(): PortalCibaDeps {
     helpers.log.debug("Entering PortalCiba.defaultDeps().");
     helpers.log.debug("Leaving PortalCiba.defaultDeps().");
-    return { log: helpers.log, authn: authn, oidcRp: oidcRp, ciba: ciba,
+    return { log: helpers.log, config: config, authn: authn, ciba: ciba,
              stepUp: stepUp };
   }
 
+  // Escaping for the limit controls the server draws into the view. Per
+  // value drawn, so no Entering/Leaving pair — the hot-path exception the
+  // code style allows, stated.
   /**
-   * Registers the page's routes on the portal's app.
+   * Escapes text for HTML.
    *
-   * @param context - what the portal shares with its pages: the app, `BASE`,
-   *   the logger, the page shell, the sign-in check and the refusal helpers
-   * @returns the page's path
+   * @param value - the text
+   * @returns the escaped text
    */
-  register(context: PortalContext): { path: string } {
-    context.log.debug("Entering PortalCiba.register().");
-    const page = new PortalCibaPage(this.deps, context);
-    page.registerRoutes(context.app);
-    context.log.debug("Leaving PortalCiba.register().");
-    return { path: page.PATH };
+  static esc(value: unknown): string {
+    return String(value === undefined || value === null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // One right, as the approval page describes it: a reference, or a type
+  // and its dimensions. The member names are GNAP's own (#539).
+  /**
+   * One right's description, as data.
+   *
+   * @param right - the access right
+   * @returns `{ reference }` or `{ type, parts }`
+   */
+  rightOf(right: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering PortalCiba.rightOf().");
+    if (typeof right === 'string') {
+      log.debug("Leaving PortalCiba.rightOf(). A reference.");
+      return { reference: right };
+    }
+    const parts: string[] = [];
+    ['actions', 'datatypes', 'locations', 'privileges'].forEach(
+      function (dim: string): void {
+        if (Array.isArray(right[dim]) && right[dim].length) {
+          parts.push(dim + ': ' + right[dim].join(', '));
+        }
+      });
+    if (right.identifier) {
+      parts.push('identifier: ' + right.identifier);
+    }
+    log.debug("Leaving PortalCiba.rightOf().");
+    return { type: String(right.type || ''), parts: parts.join('; ') };
+  }
+
+  /**
+   * The GNAP grants waiting for this person, as the view carries them.
+   *
+   * @param username - the signed-in person
+   * @returns the rows
+   */
+  gnapWaiting(username: string): Json[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalCiba.gnapWaiting().");
+    let waiting: Json[] = [];
+    try {
+      waiting = gnapApproval().pendingFor(username);
+    } catch (e) {
+      log.debug("Caught in PortalCiba.gnapWaiting(): " +
+                ((e && e.message) || e));
+      // GNAP not loaded in this process: nothing of it can be waiting.
+      waiting = [];
+    }
+    const out = waiting.map(function (one: Json): Json {
+      const rights: Json[] = [];
+      (one.tokens || []).forEach(function (token: Json, k: number): void {
+        (token.access || []).forEach(function (right: Json,
+                                               r: number): void {
+          rights.push(Object.assign({ field: 't' + k + 'r' + r,
+            limitsHtml: LimitsForm.controls(right, k, r, PortalCiba.esc) },
+            self.rightOf(right)));
+        });
+      });
+      return { id: String(one.id), display: one.display, client: one.client,
+               declared: !!one.declared,
+               requestedBy: String(one.requestedBy || ''),
+               acr: (one.acr || []).slice(0), subject: !!one.subject,
+               expiresAt: one.expiresAt, rights: rights };
+    });
+    log.debug("Leaving PortalCiba.gnapWaiting(). " + out.length);
+    return out;
+  }
+
+  /**
+   * The page's view.
+   *
+   * @param username - the signed-in person
+   * @returns the view
+   */
+  view(username: string): Json {
+    const { log, ciba, config } = this.deps;
+    log.debug("Entering PortalCiba.view().");
+    const requests = ciba.pendingFor(username).map(function (one: Json) {
+      const context = one.requestContext
+        ? Object.keys(one.requestContext).slice(0, 12)
+          .map(function (k: string): Json {
+            return { name: k, value: JSON.stringify(one.requestContext[k])
+                                       .slice(0, 200) };
+          }) : null;
+      return { id: String(one.id), clientName: one.clientName,
+               bindingMessage: one.bindingMessage || '',
+               requestContext: context, scope: one.scope,
+               acrValues: (one.acrValues || []).slice(0),
+               expiresAt: one.expiresAt };
+    });
+    log.debug("Leaving PortalCiba.view().");
+    return { enabled: !!config.value('oauth2.ciba'), requests: requests,
+             hasCode: !!ciba.hasUserCode(username),
+             gnap: this.gnapWaiting(username) };
+  }
+
+  // The acr values a waiting GNAP request's rights need, the strongest
+  // first, as one space-separated value — `acr_values`'s shape.
+  /**
+   * What a GNAP request's step-up asks for.
+   *
+   * @param username - the signed-in person
+   * @param id - the waiting request
+   * @returns the acr values, or '' where it asks for none
+   */
+  gnapAsk(username: string, id: string): string {
+    const { log } = this.deps;
+    log.debug("Entering PortalCiba.gnapAsk().");
+    const waiting = gnapApproval().pendingFor(username)
+      .filter(function (one: Json): boolean {
+        return one.id === id;
+      })[0];
+    if (!waiting || !waiting.acr.length) {
+      log.debug("Leaving PortalCiba.gnapAsk(). None.");
+      return '';
+    }
+    const ask = gnapApproval().assess(waiting.acr, {}).ask;
+    log.debug("Leaving PortalCiba.gnapAsk().");
+    return Array.isArray(ask) ? ask.join(' ') : String(ask || '');
+  }
+
+  /**
+   * GET: the view — or, with `stepup` or `gnapstepup`, the sign-in again
+   * a request needs, as `stepUp`.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param query - the checked query
+   * @returns nothing
+   */
+  getView(ctx: AccountContext, res: Json, caller: AccountCaller,
+          query: Json): unknown {
+    const { log, ciba } = this.deps;
+    log.debug("Entering PortalCiba.getView().");
+    const who = caller.username;
+    // THE STEP-UP: the portal's own sign-in again, asking for the levels
+    // the request names, and back here to press Approve once more.
+    if (query.stepup) {
+      const record = ciba.get(query.stepup);
+      if (record && String(record.username).toLowerCase() ===
+          who.toLowerCase()) {
+        log.debug("Leaving PortalCiba.getView(). Signing in again.");
+        return ctx.json(res, 200, { stepUp: {
+          acrValues: (record.acrValues || []).join(' '),
+          prompt: 'login' } });
+      }
+    }
+    // THE GNAP STEP-UP (#432 phase 6): the same, with every acr the
+    // request's rights need, the strongest first.
+    if (query.gnapstepup) {
+      let ask = '';
+      try {
+        ask = this.gnapAsk(who, String(query.gnapstepup));
+      } catch (e) {
+        log.debug("Caught in PortalCiba.getView(): " +
+                  ((e && e.message) || e));
+        // GNAP not loaded in this process: nothing to step up for.
+        ask = '';
+      }
+      if (ask) {
+        log.debug("Leaving PortalCiba.getView(). Signing in again (GNAP).");
+        return ctx.json(res, 200, { stepUp: { acrValues: ask,
+                                              prompt: 'login' } });
+      }
+    }
+    log.debug("Leaving PortalCiba.getView().");
+    return ctx.json(res, 200, this.view(who));
+  }
+
+  /**
+   * POST: the person's user code, or an answer to a request.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @returns nothing
+   */
+  async answer(ctx: AccountContext, req: Json, res: Json,
+               caller: AccountCaller): Promise<unknown> {
+    const { log, ciba, authn, stepUp } = this.deps;
+    log.debug("Entering PortalCiba.answer().");
+    const who = caller.username;
+    const raw = ctx.parseBody(req) || {};
+    const posted = ctx.validation.checkParsed(LimitsForm.strip(raw), 'body',
+                                              FORM);
+    if (!posted.ok) {
+      log.debug("Leaving PortalCiba.answer(). Malformed.");
+      return ctx.refuse(res, 400, ctx.errorCodes.codeOf(posted) ||
+                        'STS-PORTAL-0001', posted.detail);
+    }
+    const body = posted.value;
+    const t = ctx.translatorFor(who);
+    if (body.action === 'set-code' || body.action === 'clear-code') {
+      const set = ciba.setUserCode(who, body.action === 'set-code' ?
+                                        String(body.code || '') : '');
+      if (!set.ok) {
+        log.debug("Leaving PortalCiba.answer(). The code was refused.");
+        return ctx.refuse(res, 400, 'STS-PORTAL-0090', set.error);
+      }
+      log.debug("Leaving PortalCiba.answer(). The code.");
+      return ctx.json(res, 200, { ok: true,
+        message: set.set ? t.text('portalCiba.done.codeSet')
+                         : t.text('portalCiba.done.codeCleared') });
+    }
+    if (body.action === 'gnap-approve' || body.action === 'gnap-deny') {
+      log.debug("Leaving PortalCiba.answer(). A GNAP request.");
+      return this.answerGnap(ctx, req, res, caller, body, raw);
+    }
+    const approve = body.action === 'approve';
+    const record = ciba.get(body.id);
+    // The sign-on session the token was issued on is what the approval
+    // proves: its acr, amr and when it signed in.
+    const signOn = caller.signOn || {};
+    if (approve && record && record.acrValues && record.acrValues.length) {
+      const assessed = stepUp.assessSession(
+        { acrValues: record.acrValues, maxAge: null }, signOn);
+      if (!assessed.met) {
+        log.debug("Leaving PortalCiba.answer(). A stronger sign-in needed.");
+        return ctx.refuse(res, 403, 'STS-PORTAL-0091',
+          'This request asks for sign-in level ' +
+          record.acrValues.join(' ') + ', more than this session proved. ' +
+          'Sign in again with it, then approve.',
+          { stepUp: { acrValues: record.acrValues.join(' '),
+                      prompt: 'login' } });
+      }
+    }
+    const answered = await ciba.answerAndNotify(body.id, who, approve, {
+      acr: signOn.acr || '', amr: signOn.amr || [],
+      authTime: signOn.authTime,
+      // The tokens are issued ON this session (#239), so its end revokes
+      // their refresh token as a sign-out does every grant's.
+      sessionId: signOn.id || '' });
+    if (!answered.ok) {
+      log.debug("Leaving PortalCiba.answer(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0089', answered.why);
+    }
+    // AN APPROVAL IS SINGLE SIGN-ON, AND CAEP's `session-presented` (#240):
+    // the client is issued tokens on the strength of the sign-on session —
+    // an existing session presented and honoured for a client it was not
+    // made for. A DENIAL honours nothing and reports nothing.
+    if (approve && signOn.id) {
+      // The SIGN-ON session, by the name every profile's call uses
+      // (`tests/caep_presented_every_protocol.js` reads it).
+      const session = signOn;
+      authn.notePresented(session, 'OpenID Connect CIBA', req);
+    }
+    log.debug("Leaving PortalCiba.answer(). Answered.");
+    return ctx.json(res, 200, { ok: true,
+      message: approve ? t.text('portalCiba.done.approved')
+                       : t.text('portalCiba.done.denied') });
+  }
+
+  /**
+   * Answers a GNAP grant waiting for this person.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @param raw - the body as sent, the limit controls in it
+   * @returns nothing
+   */
+  async answerGnap(ctx: AccountContext, req: Json, res: Json,
+                   caller: AccountCaller, body: Json,
+                   raw: Json): Promise<unknown> {
+    const { log, authn } = this.deps;
+    log.debug("Entering PortalCiba.answerGnap().");
+    const who = caller.username;
+    const approve = body.action === 'gnap-approve';
+    // A checkbox column is an array in a JSON body, one value where one box
+    // was ticked: `bodyValues()` reads both.
+    const ticked: string[] = approve
+      ? helpers.bodyValues(req, raw, 'right') : [];
+    const signOn = caller.signOn || {};
+    const answered = await gnapApproval().answer(who, signOn,
+      String(body.id || ''),
+      { approve: approve, ticked: ticked, subject: body.subject === 'yes',
+        req: req,
+        form: {
+          value: function (name: string): string | undefined {
+            return typeof raw[name] === 'string' ? raw[name] : undefined;
+          },
+          values: function (name: string): string[] {
+            return helpers.bodyValues(req, raw, name);
+          }
+        } });
+    if (!answered.ok) {
+      log.debug("Leaving PortalCiba.answerGnap(). Refused.");
+      if (answered.stepUp) {
+        let ask = '';
+        try {
+          ask = this.gnapAsk(who, String(body.id || ''));
+        } catch (e) {
+          log.debug("Caught in PortalCiba.answerGnap(): " +
+                    ((e && e.message) || e));
+          // The request went while it was answered: the refusal stands.
+          ask = '';
+        }
+        return ctx.refuse(res, 403, answered.code || 'STS-PORTAL-0243',
+          answered.why, ask ? { stepUp: { acrValues: ask,
+                                          prompt: 'login' } } : {});
+      }
+      return ctx.refuse(res, 400, answered.code || 'STS-PORTAL-0243',
+                        answered.why);
+    }
+    if (answered.approved && signOn.id) {
+      authn.notePresented(signOn, 'GNAP', req);
+    }
+    log.debug("Leaving PortalCiba.answerGnap(). Answered.");
+    const t = ctx.translatorFor(who);
+    return ctx.json(res, 200, { ok: true,
+      message: answered.approved ? t.text('portalCiba.done.gnapApproved')
+                                 : t.text('portalCiba.done.denied') });
+  }
+
+  /**
+   * The operations, for `account-api/account_api.ts`.
+   *
+   * @param ctx - the account API's helpers
+   * @returns the operations
+   */
+  accountOperations(ctx: AccountContext): AccountOperation[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalCiba.accountOperations().");
+    const rows: AccountOperation[] = [
+      { method: 'GET', path: ctx.BASE + '/ciba',
+        operationId: 'getSignInRequests', tag: 'Sign-in requests',
+        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/ciba',
+        summary: 'The sign-in requests waiting for you, and your user code',
+        description: 'The CIBA requests a client made to sign you in ' +
+          'elsewhere (each with its binding message, scopes, requested ' +
+          'acr values and expiry), whether you have a CIBA user code, and ' +
+          'the GNAP grants waiting for you as their owner — each right with ' +
+          '`field` (the checkbox value) and `limitsHtml` (its limit ' +
+          'controls). With `stepup` or `gnapstepup` the answer is only ' +
+          '`stepUp`: sign in again with `acrValues`, `prompt=login`.',
+        query: QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.getView(ctx, res, caller, input.query);
+        } },
+      { method: 'POST', path: ctx.BASE + '/ciba',
+        operationId: 'answerSignInRequest', tag: 'Sign-in requests',
+        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/ciba',
+        summary: 'Sets your user code, or answers a request',
+        description: 'A JSON body: `action` — `set-code` (with `code`), ' +
+          '`clear-code`, `approve` / `deny` (with the CIBA request\'s ' +
+          '`id`), or `gnap-approve` / `gnap-deny` (with the GNAP request\'s ' +
+          '`id`, the ticked `right` values, `subject: "yes"`, and any ' +
+          '`lim_t<k>r<r>_<member>` limit controls lowered). An approval ' +
+          'stronger than the sign-on session proved is refused 403 with ' +
+          '`stepUp`.',
+        statuses: { 403: 'A stronger sign-in is needed (`stepUp`).' },
+        // DOCUMENTED, NOT CHECKED BY THE WRAPPER: the handler checks the body
+        // itself after `LimitsForm.strip()`, because a GNAP right's limit
+        // controls are named per right and may repeat (#568).
+        bodyDoc: { type: 'object', required: ['action'],
+          properties: {
+            action: { type: 'string', enum: ['set-code', 'clear-code',
+              'approve', 'deny', 'gnap-approve', 'gnap-deny'] },
+            id: { type: 'string', description: 'The request\'s id.' },
+            code: { type: 'string', description: 'Your user code.' },
+            right: { oneOf: [{ type: 'string' },
+                             { type: 'array', items: { type: 'string' } }],
+                     description: 'The GNAP rights ticked.' },
+            subject: { type: 'string', enum: ['yes'],
+                       description: 'Release your identity (GNAP).' } },
+          patternProperties: { '^lim_t[0-9]+r[0-9]+_[A-Za-z]+$': {
+            description: 'A limit control lowered on one right.' } } },
+        handler: function (req: Json, res: Json,
+                           caller: AccountCaller): unknown {
+          return self.answer(ctx, req, res, caller);
+        } }
+    ];
+    log.debug("Leaving PortalCiba.accountOperations().");
+    return rows;
   }
 }
 
-// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2) — see
-// `portal_certificates.ts`.
+// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2).
 const slot = new InstanceSlot<PortalCiba>(
   'portal/portal_ciba',
   () => new PortalCiba(PortalCiba.defaultDeps()),
@@ -377,12 +545,12 @@ const slot = new InstanceSlot<PortalCiba>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The portal page at /portal/ciba, registered by `portal.ts`.
+ * `/portal/ciba`'s account API operations (#131, #432, #568).
  * @namespace
  */
 export = {
   PortalCiba: PortalCiba,
   installInstance: (instance: PortalCiba): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  register: slot.forward('register')
+  accountOperations: slot.forward('accountOperations')
 };

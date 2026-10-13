@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -34,11 +34,20 @@
 // `tests/mail.js` 15f and `tests/risc_identifiers_recovery.js` B3 and B6 in
 // process.
 //
+// SINCE #568 the portal is a static application over `/account-api`: a
+// person signs in as it does (`portal_signin.js`), the opt-out moves and the
+// authenticator and recovery-code forms are the operations the pages post
+// to, and the recovery-code sign-in starts at the realm's authorization
+// endpoint as the portal's own page sends the browser there.
+//
 // OWNED HERE (local: true): this repository's own transmitter, portal and
 // sign-in.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
+const portal = require("./portal_signin.js");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 
@@ -145,11 +154,40 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // One browser, with a cookie jar.
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -186,21 +224,6 @@ function browser(name) {
   };
   log.debug("Leaving browser().");
   return self;
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 function decode(token) {
@@ -282,36 +305,22 @@ function userOf(set) {
   return sub && sub.format === "complex" ? sub.user : sub;
 }
 
+// SIGNED IN AS THE STATIC PORTAL SIGNS IN (#568): PKCE as `sts-user-portal`,
+// a DPoP-bound token for the realm's `/account-api`.
 async function signInToPortal(who) {
   log.debug("Entering signInToPortal().");
-  const b = browser(who);
-  let r = await b.go("GET", R + "/portal");
-  for (let i = 0; i < 8 && (r.status === 302 || r.status === 303); i++) {
-    if (/\/authn\/login\?authn=/.test(r.location)) {
-      const page = await b.go("GET", r.location);
-      const fields = hiddenFields(page.text);
-      fields.username = who;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
-      continue;
-    }
-    r = await b.go("GET", r.location);
-  }
-  assert.strictEqual(r.status, 200, "the portal after sign-in: " + r.status +
-                     " " + r.location + " " + String(r.text).slice(0, 300));
+  const c = await portal.signInToThePortal(base + R, who, null,
+                                           { password: PASSWORD });
+  assert.ok(c.token, "no portal token for " + who);
   log.debug("Leaving signInToPortal().");
-  return b;
+  return c;
 }
 
-// POST one opt-out move from the page's own form (and its CSRF token).
-async function move(b, which) {
+// One opt-out move, sent to the operation the page's form posts to (#568:
+// `POST /account-api/signals`).
+async function move(c, which) {
   log.debug("Entering move(). " + which);
-  const page = await b.go("GET", R + "/portal/signals");
-  const csrf = (String(page.text)
-    .match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
-  const r = await b.go("POST", R + "/portal/signals",
-                       form({ move: which, csrf_token: csrf }));
+  const r = await c.act("/portal/signals", { move: which });
   log.debug("Leaving move(). " + r.status);
   return r;
 }
@@ -360,47 +369,27 @@ function totpFor(secret) {
   return String(binary % 1000000).padStart(6, "0");
 }
 
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
 // An authenticator app enrolled on the portal, then a set of recovery codes
-// generated and confirmed. Answers the codes as the page printed them.
-async function enrolAndGenerate(b) {
+// generated and confirmed — through the operations the page's forms post to
+// since #568. Answers the codes as the answer carried them, once.
+async function enrolAndGenerate(c) {
   log.debug("Entering enrolAndGenerate().");
-  let page = await b.go("GET", R + "/portal/mfa");
-  await b.go("POST", R + "/portal/mfa",
-             form({ action: "start", csrf_token: csrfOf(page.text) }));
-  page = await b.go("GET", R + "/portal/mfa");
-  const secret = ((String(page.text)
-    .match(/<th>Secret<\/th><td><code>([^<]+)<\/code>/) || [])[1] || "")
-    .replace(/\s+/g, "");
+  await c.act("/portal/mfa", { action: "start" });
+  let page = await c.page("/portal/mfa");
+  const secret = String((page.json && page.json.setup &&
+                         page.json.setup.grouped) || "").replace(/\s+/g, "");
   assert.ok(secret, "no shared secret on /portal/mfa: " +
             String(page.text).slice(0, 400));
-  await b.go("POST", R + "/portal/mfa",
-    form({ action: "confirm", code: totpFor(secret),
-           csrf_token: csrfOf(page.text) }));
-  page = await b.go("GET", R + "/portal/mfa");
-  const shown = await b.go("POST", R + "/portal/mfa",
-    form({ action: "generate-codes", csrf_token: csrfOf(page.text) }));
-  const list = String(shown.text).match(/<ul class="codes">([\s\S]*?)<\/ul>/);
-  const codes = [];
-  const re = /<code(?: class="[^"]*")?>([^<]+)<\/code>/g;
-  let m;
-  while (list && (m = re.exec(list[1])) !== null) {
-    codes.push(m[1]);
-  }
+  await c.act("/portal/mfa", { action: "confirm", code: totpFor(secret) });
+  const shown = await c.act("/portal/mfa", { action: "generate-codes" });
+  const fresh = (shown.json && shown.json.view && shown.json.view.fresh) ||
+                {};
+  const codes = (fresh.codes || []).slice(0);
   assert.ok(codes.length >= 2, "no recovery codes were shown: " +
             String(shown.text).slice(0, 400));
-  const handle = (String(shown.text)
-    .match(/name="handle" value="([^"]+)"/) || [])[1];
-  const confirmed = await b.go("POST", R + "/portal/mfa",
-    form({ action: "confirm-codes", handle: handle,
-           csrf_token: csrfOf(shown.text) }));
-  assert.ok(confirmed.status === 303 || confirmed.status === 200,
+  const confirmed = await c.act("/portal/mfa",
+    { action: "confirm-codes", handle: fresh.handle });
+  assert.ok(confirmed.status === 200,
             "confirming the codes answered " + confirmed.status);
   log.debug("Leaving enrolAndGenerate().");
   return codes;
@@ -411,29 +400,53 @@ async function enrolAndGenerate(b) {
 async function signInWithRecoveryCode(who, code) {
   log.debug("Entering signInWithRecoveryCode().");
   const b = browser(who);
-  let r = await b.go("GET", R + "/portal");
+  // THE PORTAL'S OWN AUTHORIZATION REQUEST (#568): the portal is a static
+  // page that starts its sign-in in the browser, so the walk starts where
+  // that page sends the browser — the realm's authorization endpoint, as
+  // `sts-user-portal` with PKCE — after the shell has registered its
+  // callback. The code that comes back is not redeemed: what is asserted
+  // is the recovery code spent on the way.
+  await b.go("GET", R + "/portal");
+  const verifier = nodeCrypto.randomBytes(32).toString("base64url");
+  let r = await b.go("GET", R + "/oauth2/authorize?" + form({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: base + R + "/portal/callback",
+    scope: "openid account:manage", state: "risc233",
+    code_challenge: nodeCrypto.createHash("sha256").update(verifier)
+      .digest("base64url"),
+    code_challenge_method: "S256", resource: base + R + "/account-api" }));
   let spent = false;
   for (let i = 0; i < 10 && (r.status === 302 || r.status === 303); i++) {
     if (/\/authn\/login\?authn=/.test(r.location)) {
-      const page = await b.go("GET", r.location);
-      const fields = hiddenFields(page.text);
-      fields.username = who;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
-      if (r.status === 200) {
-        const link = (String(r.text)
-          .match(/href="([^"]*\/authn\/backup-code\?mfa=[^"]+)"/) || [])[1];
-        assert.ok(link, "the one-time code screen offers no recovery code " +
-                  "link: " + String(r.text).slice(0, 400));
-        const screen = await b.go("GET", link.replace(/&amp;/g, "&"));
-        const mfaId = (String(screen.text)
-          .match(/name="mfa_id" value="([^"]+)"/) || [])[1];
-        const action = (String(screen.text)
-          .match(/<form[^>]*action="([^"]*backup-code[^"]*)"/) || [])[1] ||
-          R + "/authn/backup-code";
-        r = await b.go("POST", action.replace(/&amp;/g, "&"),
-                       form({ mfa_id: mfaId, code: code }));
+      // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+      // answer read as the form's POST was — the code page fetched from
+      // the address it names.
+      const answer = await authnSignin.submit(base + R, r.location,
+        { action: "login", username: who, password: PASSWORD },
+        { cookie: jarHeader(b), headers: { "User-Agent": AGENT } });
+      keepCookies(b, answer);
+      r = await authnSignin.asFormAnswer(answer, function (m, u) {
+        return b.go(m, u);
+      });
+      if (r.status === 200 && r.step) {
+        // THE CODE PAGE IS THE SIGN-IN SURFACE'S (#572): it offers the
+        // recovery code as a way round (its view's `links.backup`), whose
+        // page is the same step's, and the code goes to that page's act.
+        assert.ok(r.step.view && r.step.view.links &&
+                  r.step.view.links.backup,
+                  "the one-time code screen offers no recovery code link: " +
+                  String(r.text).slice(0, 400));
+        const screen = await authnSignin.step(base + R +
+          "/authn/backup-code?mfa=" + encodeURIComponent(r.step.id),
+          { cookie: jarHeader(b), headers: { "User-Agent": AGENT } });
+        assert.ok(screen.view && screen.view.page === "backup-code",
+                  "the recovery code page was not drawn: " +
+                  String(screen.text).slice(0, 300));
+        const a = await authnSignin.stepAct(screen, "backup-code",
+          { code: code }, { headers: { "User-Agent": AGENT } });
+        keepCookies(b, a);
+        r = { status: a.next === "redirect" ? 303 : a.status,
+              location: a.location, text: a.text };
         spent = r.status === 302 || r.status === 303;
       }
       continue;

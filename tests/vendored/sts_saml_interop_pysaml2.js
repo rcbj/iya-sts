@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // PYSAML2 AS A SCRIPTED SAML 2.0 SERVICE PROVIDER, NEGATIVE CASES INCLUDED
@@ -86,9 +86,7 @@ async function makeWorld(realmMode) {
   const rb = kit.realmBase(realm);
   const w = { mode: realmMode, realm: realm, rb: rb,
               person: names.usernameFor("py" + tag) };
-  await kit.ensureRealm(realm, realmMode, {
-    "saml2.entityId": rb + "/saml2/idp"
-  });
+  await kit.ensureRealm(realm, realmMode, {});
   await kit.createPerson(realm, w.person, PASSWORD);
   const md = await peer("GET", "/metadata");
   w.sp = (/entityID="([^"]+)"/.exec(md.text) || [])[1];

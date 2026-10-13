@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: env/defaults.js
 //
@@ -63,6 +63,22 @@ var config = {
     corsOrigins: ""                // Origins treated as this service's own
   },
 
+  // --- Custom listeners ------------------------------------------------
+  listeners: {
+    custom: "",         // The service's custom listeners
+    realm: "",          // This realm's own listeners; restart to apply
+    applications: "",   // Which application is on which listener
+    adminOnMain: false  // Rescue: the console and the API on the main port; restart to apply
+  },
+
+  // --- HTTP connections ------------------------------------------------
+  http: {
+    keepAliveTimeoutS: 60,   // Idle connection kept for (s)
+    headersTimeoutS: 0,      // Request header timeout (s)
+    maxRequestsPerSocket: 0, // Requests per connection
+    maxConnections: 0        // Open connections at most
+  },
+
   // --- Admin console ---------------------------------------------------
   admin: {
     bootstrapUsername: "admin", // Bootstrap administrator account; restart to apply
@@ -79,11 +95,12 @@ var config = {
     tokenFormats: "jwt-signed,jwt-encrypted,macaroon,biscuit,zcap",        // Token formats offered
     zcapCryptosuite: "eddsa-jcs-2022",                                     // ZCAP proof suite
     accessTokenLifetimeS: 3600,                                            // Access token lifetime (seconds)
+    grantLifetimeS: 86400,                                                 // Grant lifetime (seconds)
     interactionLifetimeS: 600,                                             // Interaction lifetime (seconds)
     continueWaitS: 5,                                                      // Continuation wait (seconds)
     maxPolls: 60,                                                          // Polls allowed before too_many_attempts
     signatureMaxAgeS: 300,                                                 // Key proof freshness (seconds)
-    replayCacheSize: 100000,                                               // Signature replay history size (per realm)
+    replayCacheSize: 10000,                                                // Signature replay history size (per realm)
     interactionStartModes: "redirect,app,user_code,user_code_uri",         // Interaction start modes
     finishMethods: "redirect,push",                                        // Interaction finish methods
     keyProofs: "httpsig,mtls,jwsd,jws",                                    // Key proofing methods
@@ -100,12 +117,15 @@ var config = {
     continueAfterApproval: true,                                           // Keep approved grants continuable
     consentRequired: true,                                                 // Ask the resource owner
     rememberApprovals: true,                                               // Remember approvals
-    allowCrossUser: false,                                                 // Allow a different person to approve
+    ownerApproval: false,                                                  // Approval by an absent resource owner
+    ownerApprovalLifetimeS: 600,                                           // Time an absent owner has to answer
+    ownerApprovalMaxPending: 5,                                            // Requests one person may have waiting
     userCodeLength: 8,                                                     // User code length
     unknownAccessReferences: "accept",                                     // Unregistered access references
     introspection: true,                                                   // Offer token introspection
     resourceRegistration: true,                                            // Offer resource set registration
     tokenDerivation: true,                                                 // Allow downstream token derivation
+    maxDerivationDepth: 2,                                                 // Deepest derivation chain
     pushFinish: true,                                                      // Deliver push interaction finishes
     pushAllowHttp: false,                                                  // Allow http:// for push
     pushSkipTlsVerification: false,                                        // Skip TLS verification for push (development only)
@@ -114,7 +134,7 @@ var config = {
     pushTimeoutMs: 5000,                                                   // Push timeout (ms)
     jweEnc: "A256GCM",                                                     // jwt-encrypted content encryption
     accessTokenCertificateHeader: "x5u",                                   // JWT access token certificate header
-    demoResourceServer: true,                                              // Run the demonstration resource server
+    ownerLookupCacheS: 60,                                                 // Owner lookup cache (seconds)
     caepEvents: true,                                                      // Emit CAEP for grants and tokens
     scopedSignals: true                                                    // Scope a GNAP web application's streams
   },
@@ -125,7 +145,6 @@ var config = {
     accessPolicy: "access-control",          // Access policy name
     enabled: true,                           // XACML enabled
     maxPolicies: 200,                        // Policies the repository may hold
-    pepBias: "deny-biased",                  // What the embedded PEP does with a non-Permit
     returnPolicyIdList: false,               // Always return the applicable policy identifiers
     remotePeps: true,                        // Remote Policy Enforcement Points may register
     pepRequireCertificate: true,             // A registering PEP must present a client certificate
@@ -159,8 +178,10 @@ var config = {
   // --- Web security ----------------------------------------------------
   authn: {
     sessionSweepS: 30,              // How often expired sessions are ended (seconds)
+    cookieDomain: "",               // Sign-on session cookie domain
     sessionLifetimeS: 3600,         // Session lifetime (seconds)
     sessionIdleTimeoutS: 0,         // Session idle timeout (seconds, 0 = none)
+    maxSessions: 100000,            // Most sign-on sessions per realm
     pendingTtlS: 600,               // How long a sign-in waits at the screen (seconds)
     mfaStepTtlS: 300,               // How long a second-factor step waits (seconds)
     passwordAloneDoors: "",         // Password-only doors that accept a password alone
@@ -207,58 +228,77 @@ var config = {
 
   // --- WebAuthn --------------------------------------------------------
   webauthn: {
-    enabled: true,                            // Offer security keys (WebAuthn)
-    rpName: "Mock authorization server",      // Relying party name
-    rpId: "",                                 // RP ID override
-    allowedOrigins: "",                       // Allowed origins
-    algorithms: "ES256,RS256",                // Algorithms offered
-    userVerification: "preferred",            // User verification
-    attestation: "direct",                    // Attestation conveyance
-    attestationPolicy: "by-mode",             // Attestation policy
-    attestationTrustAnchors: "",              // Attestation trust anchors (PEM)
-    attestationAllowedAaguids: "",            // Allowed authenticator models (AAGUIDs)
-    attestationMinCertificationLevel: "none", // Least FIDO certification level
-    attestationRequireFips: false,            // Require a FIPS 140 certified model
-    attestationAllowSafetynet: false,         // Trust android-safetynet attestation
-    attestationAndroidSoftwareKeys: false,    // Accept Android keys not enforced in the TEE
-    timeoutMs: 60000,                         // Ceremony timeout (ms)
-    authenticatorAttachment: "any",           // Authenticator attachment (CTAP)
-    residentKey: "discouraged",               // Discoverable credential (CTAP resident key)
-    credProps: true,                          // Ask for the credProps extension
-    primaryAllowed: true,                     // Allow a key as a PRIMARY credential
-    mfaAllowed: true,                         // Allow a key as a SECOND factor
-    maxKeysPerPerson: 10                      // Keys per person
+    enabled: true,                                                                                                                                     // Offer security keys (WebAuthn)
+    rpName: "IYA STS",                                                                                                                                 // Relying party name
+    rpId: "",                                                                                                                                          // RP ID override
+    allowedOrigins: "",                                                                                                                                // Allowed origins
+    algorithms: "ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,RS256,RS384,RS512", // Algorithms offered
+    insecureAlgorithms: false,                                                                                                                         // Use insecure algorithms (development only)
+    pqcOnly: false,                                                                                                                                    // Request post-quantum algorithms only
+    userVerification: "required",                                                                                                                      // User verification
+    attestation: "direct",                                                                                                                             // Attestation conveyance
+    attestationPolicy: "by-mode",                                                                                                                      // Attestation policy
+    attestationTrustAnchors: "",                                                                                                                       // Attestation trust anchors (PEM)
+    attestationAllowedAaguids: "",                                                                                                                     // Allowed authenticator models (AAGUIDs)
+    attestationMinCertificationLevel: "none",                                                                                                          // Least FIDO certification level
+    attestationRequireFips: false,                                                                                                                     // Require a FIPS 140 certified model
+    attestationAllowSafetynet: false,                                                                                                                  // Trust android-safetynet attestation
+    attestationAndroidSoftwareKeys: false,                                                                                                             // Accept Android keys not enforced in the TEE
+    timeoutMs: 60000,                                                                                                                                  // Ceremony timeout (ms)
+    authenticatorAttachment: "any",                                                                                                                    // Authenticator attachment (CTAP)
+    credProps: true,                                                                                                                                   // Ask for the credProps extension
+    primaryAllowed: true,                                                                                                                              // Allow a key as a PRIMARY credential
+    mfaAllowed: true,                                                                                                                                  // Allow a key as a SECOND factor
+    maxKeysPerPerson: 10                                                                                                                               // Keys per person
   },
 
   // --- Key material ----------------------------------------------------
   keys: {
-    source: "auto",                  // Where signing keys come from; restart to apply
-    plaintextRetention: "timed",     // How long a decrypted private key is kept
-    plaintextTtlS: 300,              // Decrypted key idle timeout (seconds)
-    signerModel: "per-algorithm",    // Signer model
-    kidFormat: "internal",           // Signed token kid format
-    kekProvider: "file",             // Key-encryption key provider; restart to apply
-    kekFile: "/run/secrets/sts-kek", // Key-encryption key file; restart to apply
-    kekRef: "",                      // Key-encryption key reference; restart to apply
-    kekVault: "",                    // Vault or Key Vault URL; restart to apply
-    vaultClientCert: "",             // Client certificate for the secret store; restart to apply
-    vaultClientKey: "",              // Client key for the secret store; restart to apply
-    vaultCaCert: "",                 // Trust anchor for the secret store; restart to apply
-    vaultCertRole: "",               // Certificate auth role; restart to apply
-    vaultCertAuthMount: "cert",      // Certificate auth mount path; restart to apply
-    kekField: "value",               // Vault secret field; restart to apply
-    kekToken: "",                    // Vault token; restart to apply
-    storeProbeTimeoutMs: 5000,       // Secret store probe timeout (ms)
-    kekRegion: ""                    // AWS region; restart to apply
+    source: "auto",                    // Where signing keys come from; restart to apply
+    plaintextRetention: "timed",       // How long a decrypted private key is kept
+    plaintextTtlS: 300,                // Decrypted key idle timeout (seconds)
+    signerModel: "per-algorithm",      // Signer model
+    encryptionKemAlgs: "",             // Post-quantum / hybrid decryption keys
+    offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
+    kidFormat: "internal",             // Signed token kid format
+    kekProvider: "file",               // Key-encryption key provider; restart to apply
+    kekTransitMount: "transit",        // Transit engine mount; restart to apply
+    kekFile: "/run/secrets/sts-kek",   // Key-encryption key file; restart to apply
+    kekRef: "",                        // Key-encryption key reference; restart to apply
+    kekVault: "",                      // Vault or Key Vault URL; restart to apply
+    vaultClientCert: "",               // Client certificate for the secret store; restart to apply
+    vaultClientKey: "",                // Client key for the secret store; restart to apply
+    vaultCaCert: "",                   // Trust anchor for the secret store; restart to apply
+    vaultCertRole: "",                 // Certificate auth role; restart to apply
+    vaultCertAuthMount: "cert",        // Certificate auth mount path; restart to apply
+    kekField: "value",                 // Vault secret field; restart to apply
+    kekToken: "",                      // Vault token; restart to apply
+    storeProbeTimeoutMs: 5000,         // Secret store probe timeout (ms)
+    kekRegion: "",                     // AWS region; restart to apply
+    cellKekProvider: "none",           // Where the cell key-encryption key is read from; restart to apply
+    cellKekRef: "",                    // The cell key-encryption key's location; restart to apply
+    cellKekField: "",                  // The field the cell key is in; restart to apply
+    cellKekRegion: "",                 // AWS region of the cell key; restart to apply
+    cellKekVault: "",                  // Key Vault URL of the cell key; restart to apply
+    dataKeyRotationDays: 365,          // Rotate every data encryption key after (days)
+    directoryCipher: "aes-256-gcm",    // Cipher for data stored in the directory
+    dataKeyActivationLeadSeconds: 300, // A new data encryption key is used after (seconds)
+    dataKeyRetireAfterDays: 7,         // Keep a replaced data encryption key at least (days)
+    previousKekProvider: "none",       // Where the previous key-encryption key is read from; restart to apply
+    previousKekRef: "",                // The previous key-encryption key's location; restart to apply
+    previousKekField: "",              // The field the previous key is in; restart to apply
+    previousKekRegion: "",             // AWS region of the previous key; restart to apply
+    previousKekVault: ""               // Key Vault URL of the previous key; restart to apply
   },
 
   // --- Global ----------------------------------------------------------
   workers: {
-    count: 5,                                                      // Worker processes
-    jobTimeoutS: 120,                                              // Worker job timeout (seconds)
-    requestCount: 0,                                               // Request worker processes; restart to apply
-    dispatch: "",                                                  // Handled in a request worker; restart to apply
-    fanout: "/scim,/xacml,/admin-api",                             // Dispatched paths with no session affinity; restart to apply
+    startTimeoutMs: 60000,                                         // Request worker start limit (ms); restart to apply
+    requestCount: 1,                                               // Request worker threads; restart to apply
+    heapLimitMb: 0,                                                // Heap limit per process (MiB); restart to apply
+    startConcurrency: 1,                                           // Request workers starting at once; restart to apply
+    dispatch: "*",                                                 // Handled in a request worker; restart to apply
+    fanout: "/scim,/xacml,/admin-api,/account-api",                // Dispatched paths with no session affinity; restart to apply
     surfaceCount: 0,                                               // Hosted-surface worker processes; restart to apply
     surfaces: "/admin,/portal",                                    // Paths handled by the hosted-surface workers; restart to apply
     batch: "/scim,/admin/signals/receive,/portal/signals/receive", // Batch traffic paths
@@ -267,7 +307,7 @@ var config = {
     batchQueueLimit: 5000,                                         // Batch requests waiting
     batchQueueTimeoutS: 60,                                        // Longest a batch request waits (seconds)
     maxSockets: 64,                                                // Connections per request worker; restart to apply
-    readYourWrite: false,                                          // Read-your-write across request workers
+    readYourWrite: true,                                           // Read-your-write across request workers
     socketDir: ""                                                  // Request worker socket directory; restart to apply
   },
 
@@ -280,186 +320,200 @@ var config = {
 
   // --- OAuth 2.0 / OIDC ------------------------------------------------
   oauth2: {
-    issuer: "",                                  // Issuer identifier
-    rfc9700: false,                              // RFC 9700 mode; restart to apply
-    oauth21: false,                              // OAuth 2.1 mode; restart to apply
-    fapi: "off",                                 // FAPI profile; restart to apply
-    fapiRequireMtls: false,                      // FAPI Advanced: require mutual TLS
-    accessTokenSigningAlg: "default",            // Access token signing algorithm
-    jarmResponseLifetimeS: 600,                  // JARM response lifetime (s)
-    consentRequired: true,                       // Ask for consent
-    refreshRequiresConsent: true,                // Refresh requires recorded consent
-    delegatedPermissionsEnforced: false,         // Enforce delegated permissions
-    tokenExchangeRefreshToken: "when-requested", // Refresh token from a token exchange
-    breakIdTokenNonce: false,                    // Break the ID Token nonce (development only)
-    refreshIdleSeconds: 86400,                   // Refresh token idle timeout (s)
-    revokeRefreshOnLogout: true,                 // Revoke refresh tokens on sign-out
-    eddsaCurve: "Ed25519",                       // EdDSA curve
-    jwtBearerGrant: true,                        // JWT bearer authorization grant (RFC 7523 section 2.1)
-    jwtBearerRequireRegisteredIssuer: true,      // Require a registered assertion issuer
-    jwtBearerMaxLifetimeS: 300,                  // Longest assertion lifetime accepted (s)
-    saml2BearerGrant: true,                      // SAML 2.0 bearer authorization grant (RFC 7522 section 2.1)
-    saml2BearerRequireRegisteredIssuer: true,    // Require a registered SAML assertion issuer
-    saml2BearerMaxLifetimeS: 300,                // Longest SAML assertion lifetime accepted (s)
-    clientAssertionSkewS: 60,                    // Client assertion clock skew (s)
-    clientAttestationTrustAnchors: "",           // Trusted client attesters: certificate anchors (PEM)
-    clientAttestationTrustedKeys: "",            // Trusted client attesters: keys (JWKS)
-    clientAttestationChallengeRequired: true,    // Require a server challenge in a client attestation PoP
-    clientAttestationChallengeTtlS: 300,         // Client attestation challenge lifetime (s)
-    clientAttestationChallengeCacheSize: 10000,  // Client attestation challenges held per realm
-    clientAttestationMaxAgeS: 86400,             // Oldest client attestation accepted (s)
-    clientAttestationPopMaxAgeS: 300,            // Oldest client attestation PoP accepted (s)
-    fapiAllowClientAttestation: false,           // FAPI 2.0: accept client attestation (HAIP)
-    assertionReplayCacheSize: 1000,              // Assertion replay cache size (per realm)
-    dpopNonceRequired: false,                    // Require a DPoP server nonce
-    dpopIatSkewS: 300,                           // DPoP proof iat window (s)
-    dpopNonceTtlS: 300,                          // DPoP server nonce lifetime (s)
-    dpopReplayCacheSize: 100000,                 // DPoP proof replay history size (per realm)
-    dpopNonceCacheSize: 10000,                   // DPoP server nonces held (per realm)
-    refreshTokenRotation: false,                 // Rotate refresh tokens
-    refreshTokenRequireDpop: false,              // Require DPoP on refresh tokens
-    refreshTokenRequireMtls: false,              // Require mutual TLS on refresh tokens
-    accessTokenRequireDpop: false,               // Require DPoP for every access token
-    accessTokenRequireMtls: false,               // Require mutual TLS for every access token
-    openRegistration: false,                     // Open dynamic client registration (product mode)
-    softwareStatementRequireTrustedIssuer: true, // Refuse a software statement from an undeclared issuer
-    softwareStatementOpensRegistration: true,    // A trusted software statement opens a closed registration endpoint
-    softwareStatementRequired: false,            // Require a software statement on every registration
-    softwareStatementLifetimeS: 31536000,        // Issued software statement lifetime (s)
-    clientSecretOverlapS: 604800,                // Keep a rotated client secret working for (seconds)
-    clientSecretExpiryWarningDays: 14,           // Warn about an expiring client secret this many days ahead
-    registeredSecretLifetimeS: 0,                // Dynamically registered secret lifetime (s)
-    registeredClientIdPrefix: "sts-client-",     // Dynamically registered client_id prefix
-    registeredClientIdBytes: 8,                  // Dynamically registered client_id random bytes
-    registeredSecretBytes: 48,                   // Dynamically registered secret random bytes
-    authorizationCodeTtlS: 300,                  // Authorization code lifetime (s)
-    redeemedCodeCacheSize: 10000,                // Redeemed authorization codes remembered (per realm)
-    codeReplayIdempotent: false,                 // Answer a repeated code redemption with the same tokens
-    maxPendingTransactions: 500,                 // RFC 9700: remembered transactions (per realm)
-    maxRefreshTokenFamilies: 2000,               // RFC 9700: remembered refresh tokens (per realm)
-    signedMetadataAlgorithm: "RS256",            // Algorithm signed_metadata is signed with
-    accessTokenCertificateHeader: "x5u",         // Access token certificate header
-    idTokenCertificateHeader: "x5u",             // ID Token certificate header
-    refreshTokenCertificateHeader: "x5u",        // Refresh token certificate header
-    userinfoCertificateHeader: "x5u",            // Signed UserInfo certificate header
-    introspectionCertificateHeader: "x5u",       // JWT introspection response certificate header
-    signedMetadataCertificateHeader: "x5u",      // signed_metadata certificate header
-    signedMetadataCacheS: 60,                    // signed_metadata cache (s)
-    maxSignedMetadataEntries: 64,                // signed_metadata cache entries
-    basicAuthRealm: "sts",                       // Token endpoint Basic realm
-    maxAuthorizationServerProfiles: 200,         // Named authorization servers (per realm)
-    deviceAuthorization: false,                  // Device authorization grant (RFC 8628)
-    deviceCodeLifetimeS: 600,                    // Device code lifetime (seconds)
-    deviceCodeIntervalS: 5,                      // Device code polling interval (seconds)
-    ciba: false,                                 // CIBA (backchannel authentication)
-    cibaDefaultExpiryS: 120,                     // CIBA request lifetime (s)
-    cibaMaxExpiryS: 600,                         // CIBA request longest lifetime (s)
-    cibaIntervalS: 5,                            // CIBA poll interval (s)
-    cibaMaxPendingPerPerson: 5,                  // CIBA requests waiting per person
-    cibaNotifyTimeoutMs: 5000,                   // CIBA notification timeout (ms)
-    cibaNotifyAttempts: 5,                       // CIBA notification attempts
-    cibaNotifyBackoffMs: 2000,                   // CIBA notification backoff (ms)
-    providerCommands: false,                     // OpenID Provider Commands
-    commandAutomatic: true,                      // Automatic provider commands
-    commandTokenTtlS: 120,                       // Command Token lifetime (s)
-    commandAttempts: 5,                          // Command attempts
-    commandTimeoutMs: 10000,                     // Command timeout (ms)
-    commandBackoffMs: 2000,                      // Command backoff (ms)
-    commandLeaseMs: 60000,                       // Command attempt lease (ms)
-    commandRetentionS: 86400,                    // Command retention (s)
-    commandMaxRows: 5000,                        // Command rows kept
-    commandConcurrency: 8,                       // Commands in flight
-    commandSummaryS: 60,                         // Command summary interval (s)
-    commandSweepS: 15,                           // Command sweep interval (s)
-    commandCallbackTtlS: 86400,                  // Command callback token lifetime (s)
-    commandStreamIdleMs: 30000,                  // Tenant command stream idle timeout (ms)
-    commandStreamResumes: 3,                     // Tenant command stream resumptions
-    commandStreamMaxEvents: 1000000,             // Tenant command stream event cap
-    commandMetadataMaxGroups: 200,               // Groups in a metadata command
-    cibaNotifyRetentionS: 3600,                  // CIBA notification retention (s)
-    cibaNotifyMaxRows: 2000,                     // CIBA notification rows kept
-    cibaNotifyConcurrency: 8,                    // CIBA notifications in flight
-    cibaNotifySummaryS: 60,                      // CIBA notification summary interval (s)
-    cibaSweepS: 30,                              // CIBA sweep interval (s)
-    maxRequestedClaims: 64,                      // Claims one claims request may name
-    idaTrustFrameworks: "urn:sts:local",         // Identity Assurance trust frameworks
-    idaAutomaticVerifications: true,             // Sign-ins record an identity verification
-    accessTokenTtlS: 3600,                       // Access token lifetime (s)
-    idTokenTtlS: 3600,                           // ID Token lifetime (s)
-    refreshTokenTtlS: 86400,                     // Refresh token lifetime (s)
-    expiredTokenRetentionS: 86400,               // Keep an expired token on /admin/tokens for (seconds)
-    clockSkewS: 30,                              // Token clock skew (s)
-    redirectUris: "",                            // Registered redirect URIs
-    loopbackPortWildcard: true,                  // Loopback port wildcard
-    refreshTokenEncryptionAlg: "RSA-OAEP-256",   // Refresh token encryption: key management (alg)
-    refreshTokenEncryptionEnc: "A256GCM",        // Refresh token encryption: content (enc)
-    refreshTokenEncryptionKeyBits: 2048,         // Refresh token encryption: RSA key size (bits)
-    refreshTokenEncryptionCurve: "P-256",        // Refresh token encryption: EC curve
-    requireSignedRequestObject: false,           // Require a signed request object (RFC 9101)
-    authorizationDetailsMaxEntries: 20,          // Most authorization_details entries in one request (RFC 9396)
-    requestUriTimeoutMs: 5000,                   // request_uri fetch timeout (ms)
-    requestUriMaxBytes: 65536,                   // request_uri largest response (bytes)
-    requireRequestObjectType: false,             // Require typ oauth-authz-req+jwt on a request object
-    requireRequestObjectIssuerAudience: false,   // Require iss and aud in a request object
-    requestObjectJtiOnce: true,                  // A request object's jti is accepted once
-    requestObjectJtiRetentionS: 3600,            // How long a request object's jti is kept without exp (s)
-    clientJwksCacheS: 300,                       // Client jwks_uri cache (s)
-    clientJwksRefetchS: 30,                      // Client jwks_uri refetch interval (s)
-    requestUriFragmentCheck: true,               // Check a request_uri's SHA-256 fragment against its content
-    requestUriCacheS: 0,                         // request_uri content cache (s)
-    requestObjectEncryptionKeyBits: 2048,        // Request object encryption: RSA key size (bits)
-    requestObjectEncryptionCurve: "P-256",       // Request object encryption: EC curve
-    pushedAuthorizationRequests: true,           // Pushed authorization requests (RFC 9126)
-    requirePushedAuthorizationRequests: false,   // Require pushed authorization requests
-    parRequestUriLifetimeS: 60,                  // Pushed request_uri lifetime (seconds)
-    parMaxRequests: 10000,                       // Pushed requests held at once
-    parMaxBodyBytes: 65536,                      // Largest pushed authorization request (bytes)
-    parRequestsPerMinute: 600,                   // Pushed requests per client per window
-    parAllowUnregisteredRedirectUris: false,     // Pushed requests may name an unregistered redirect_uri
-    stepUpAcrValues: "",                         // Step-up: acr values this service's resource server requires
-    stepUpMaxAgeS: -1,                           // Step-up: oldest authentication this service's resource server accepts (s)
-    keyBinding: true,                            // OpenID Connect Key Binding
-    sessionManagement: false,                    // OpenID Connect Session Management
-    frontchannelLogout: true,                    // OpenID Connect Front-Channel Logout
-    frontchannelLogoutWaitS: 3,                  // Front-channel logout: seconds before returning
-    backchannelLogout: true,                     // OpenID Connect Back-Channel Logout
-    backchannelLogoutOnExpiry: true,             // Back-channel logout on session expiry
-    backchannelLogoutTokenTtlS: 120,             // Back-channel Logout Token lifetime (seconds)
-    backchannelLogoutAttempts: 3,                // Back-channel logout delivery attempts
-    backchannelLogoutTimeoutMs: 5000,            // Back-channel logout request timeout (ms)
-    backchannelLogoutBackoffMs: 1000,            // Back-channel logout retry backoff (ms)
-    backchannelLogoutLeaseMs: 60000,             // Back-channel logout attempt lease (ms)
-    backchannelLogoutSweepS: 10,                 // Back-channel logout sweep interval (seconds)
-    backchannelLogoutRetentionS: 86400,          // Back-channel logout delivery retention (seconds)
-    backchannelLogoutMaxRows: 2000,              // Back-channel logout deliveries kept per realm
-    backchannelLogoutConcurrency: 8,             // Back-channel logout sweep concurrency
-    backchannelLogoutSummaryS: 60                // Back-channel logout summary interval (seconds)
+    issuer: "",                                    // Issuer identifier
+    rfc9700: false,                                // RFC 9700 mode; restart to apply
+    oauth21: false,                                // OAuth 2.1 mode; restart to apply
+    fapi: "off",                                   // FAPI profile; restart to apply
+    fapiRequireMtls: false,                        // FAPI Advanced: require mutual TLS
+    accessTokenSigningAlg: "default",              // Access token signing algorithm
+    jarmResponseLifetimeS: 600,                    // JARM response lifetime (s)
+    consentRequired: true,                         // Ask for consent
+    refreshRequiresConsent: true,                  // Refresh requires recorded consent
+    delegatedPermissionsEnforced: false,           // Enforce delegated permissions
+    tokenExchangeAudience: "authorization-server", // Audience of an assertion exchanged
+    tokenExchangeRefreshToken: "when-requested",   // Refresh token from a token exchange
+    breakIdTokenNonce: false,                      // Break the ID Token nonce (development only)
+    refreshIdleSeconds: 86400,                     // Refresh token idle timeout (s)
+    revokeRefreshOnLogout: true,                   // Revoke refresh tokens on sign-out
+    eddsaCurve: "Ed25519",                         // EdDSA curve
+    jwtBearerGrant: true,                          // JWT bearer authorization grant (RFC 7523 section 2.1)
+    jwtBearerRequireRegisteredIssuer: true,        // Require a registered assertion issuer
+    jwtBearerMaxLifetimeS: 300,                    // Longest assertion lifetime accepted (s)
+    saml2BearerGrant: true,                        // SAML 2.0 bearer authorization grant (RFC 7522 section 2.1)
+    saml2BearerRequireRegisteredIssuer: true,      // Require a registered SAML assertion issuer
+    saml2BearerMaxLifetimeS: 300,                  // Longest SAML assertion lifetime accepted (s)
+    clientAssertionSkewS: 60,                      // Client assertion clock skew (s)
+    clientAttestationTrustAnchors: "",             // Trusted client attesters: certificate anchors (PEM)
+    clientAttestationTrustedKeys: "",              // Trusted client attesters: keys (JWKS)
+    clientAttestationChallengeRequired: true,      // Require a server challenge in a client attestation PoP
+    clientAttestationChallengeTtlS: 300,           // Client attestation challenge lifetime (s)
+    clientAttestationChallengeCacheSize: 10000,    // Client attestation challenges held per realm
+    clientAttestationMaxAgeS: 86400,               // Oldest client attestation accepted (s)
+    clientAttestationPopMaxAgeS: 300,              // Oldest client attestation PoP accepted (s)
+    fapiAllowClientAttestation: false,             // FAPI 2.0: accept client attestation (HAIP)
+    assertionReplayCacheSize: 1000,                // Assertion replay cache size (per realm)
+    dpopNonceRequired: false,                      // Require a DPoP server nonce
+    dpopIatSkewS: 300,                             // DPoP proof iat window (s)
+    dpopNonceTtlS: 300,                            // DPoP server nonce lifetime (s)
+    dpopReplayCacheSize: 10000,                    // DPoP proof replay history size (per realm)
+    dpopNonceCacheSize: 10000,                     // DPoP server nonces held (per realm)
+    refreshTokenRotation: false,                   // Rotate refresh tokens
+    refreshTokenRequireDpop: false,                // Require DPoP on refresh tokens
+    refreshTokenRequireMtls: false,                // Require mutual TLS on refresh tokens
+    httpSignatures: "off",                         // FAPI 2.0 HTTP Signatures at the resource servers
+    httpSignatureMaxAgeS: 60,                      // Signed request age limit (s)
+    httpSignatureResponseAlg: "ES256",             // Signed response algorithm
+    accessTokenRequireDpop: false,                 // Require DPoP for every access token
+    accessTokenRequireMtls: false,                 // Require mutual TLS for every access token
+    openRegistration: false,                       // Open dynamic client registration (product mode)
+    softwareStatementRequireTrustedIssuer: true,   // Refuse a software statement from an undeclared issuer
+    softwareStatementOpensRegistration: true,      // A trusted software statement opens a closed registration endpoint
+    softwareStatementRequired: false,              // Require a software statement on every registration
+    softwareStatementLifetimeS: 31536000,          // Issued software statement lifetime (s)
+    clientSecretOverlapS: 604800,                  // Keep a rotated client secret working for (seconds)
+    clientSecretsMax: 5,                           // Client secrets an application may hold
+    clientSecretExpiryWarningDays: 14,             // Warn about an expiring client secret this many days ahead
+    clientSecretLifetimeDays: 0,                   // Client secret lifetime (days)
+    registeredClientIdPrefix: "sts-client-",       // Dynamically registered client_id prefix
+    registeredClientIdBytes: 8,                    // Dynamically registered client_id random bytes
+    registeredSecretBytes: 48,                     // Dynamically registered secret random bytes
+    authorizationCodeTtlS: 300,                    // Authorization code lifetime (s)
+    redeemedCodeCacheSize: 10000,                  // Redeemed authorization codes remembered (per realm)
+    codeReplayIdempotent: false,                   // Answer a repeated code redemption with the same tokens
+    maxPendingTransactions: 500,                   // RFC 9700: remembered transactions (per realm)
+    maxRefreshTokenFamilies: 2000,                 // RFC 9700: remembered refresh tokens (per realm)
+    signedMetadataAlgorithm: "RS256",              // Algorithm signed_metadata is signed with
+    accessTokenCertificateHeader: "x5u",           // Access token certificate header
+    idTokenCertificateHeader: "x5u",               // ID Token certificate header
+    refreshTokenCertificateHeader: "x5u",          // Refresh token certificate header
+    userinfoCertificateHeader: "x5u",              // Signed UserInfo certificate header
+    introspectionCertificateHeader: "x5u",         // JWT introspection response certificate header
+    signedMetadataCertificateHeader: "x5u",        // signed_metadata certificate header
+    signedMetadataCacheS: 60,                      // signed_metadata cache (s)
+    maxSignedMetadataEntries: 64,                  // signed_metadata cache entries
+    basicAuthRealm: "sts",                         // Token endpoint Basic realm
+    maxAuthorizationServerProfiles: 200,           // Named authorization servers (per realm)
+    deviceAuthorization: false,                    // Device authorization grant (RFC 8628)
+    deviceCodeLifetimeS: 600,                      // Device code lifetime (seconds)
+    deviceCodeIntervalS: 5,                        // Device code polling interval (seconds)
+    ciba: false,                                   // CIBA (backchannel authentication)
+    cibaDefaultExpiryS: 120,                       // CIBA request lifetime (s)
+    cibaMaxExpiryS: 600,                           // CIBA request longest lifetime (s)
+    cibaIntervalS: 5,                              // CIBA poll interval (s)
+    cibaMaxPendingPerPerson: 5,                    // CIBA requests waiting per person
+    cibaNotifyTimeoutMs: 5000,                     // CIBA notification timeout (ms)
+    cibaNotifyAttempts: 5,                         // CIBA notification attempts
+    cibaNotifyBackoffMs: 2000,                     // CIBA notification backoff (ms)
+    providerCommands: false,                       // OpenID Provider Commands
+    commandAutomatic: true,                        // Automatic provider commands
+    commandTokenTtlS: 120,                         // Command Token lifetime (s)
+    commandAttempts: 5,                            // Command attempts
+    commandTimeoutMs: 10000,                       // Command timeout (ms)
+    commandBackoffMs: 2000,                        // Command backoff (ms)
+    commandLeaseMs: 60000,                         // Command attempt lease (ms)
+    commandRetentionS: 86400,                      // Command retention (s)
+    commandMaxRows: 5000,                          // Command rows kept
+    commandConcurrency: 8,                         // Commands in flight
+    commandSummaryS: 60,                           // Command summary interval (s)
+    commandSweepS: 15,                             // Command sweep interval (s)
+    commandCallbackTtlS: 86400,                    // Command callback token lifetime (s)
+    commandStreamIdleMs: 30000,                    // Tenant command stream idle timeout (ms)
+    commandStreamResumes: 3,                       // Tenant command stream resumptions
+    commandStreamMaxEvents: 1000000,               // Tenant command stream event cap
+    commandMetadataMaxGroups: 200,                 // Groups in a metadata command
+    cibaNotifyRetentionS: 3600,                    // CIBA notification retention (s)
+    cibaNotifyMaxRows: 2000,                       // CIBA notification rows kept
+    cibaNotifyConcurrency: 8,                      // CIBA notifications in flight
+    cibaNotifySummaryS: 60,                        // CIBA notification summary interval (s)
+    cibaSweepS: 30,                                // CIBA sweep interval (s)
+    maxRequestedClaims: 64,                        // Claims one claims request may name
+    idaTrustFrameworks: "urn:sts:local",           // Identity Assurance trust frameworks
+    idaAutomaticVerifications: true,               // Sign-ins record an identity verification
+    accessTokenTtlS: 3600,                         // Access token lifetime (s)
+    idTokenTtlS: 3600,                             // ID Token lifetime (s)
+    refreshTokenTtlS: 86400,                       // Refresh token lifetime (s)
+    expiredTokenRetentionS: 86400,                 // Keep an expired token on /admin/tokens for (seconds)
+    accessTokenStatusListTtlS: 60,                 // Access-token status list time to live (s)
+    accessTokenStatusListLifetimeS: 3600,          // Access-token status list lifetime (s)
+    maxRevokedJtis: 100000,                        // Most revoked token ids kept per realm
+    clockSkewS: 30,                                // Token clock skew (s)
+    redirectUris: "",                              // Registered redirect URIs
+    loopbackPortWildcard: true,                    // Loopback port wildcard
+    refreshTokenEncryptionAlg: "RSA-OAEP-256",     // Refresh token encryption: key management (alg)
+    refreshTokenEncryptionEnc: "A256GCM",          // Refresh token encryption: content (enc)
+    refreshTokenEncryptionKeyBits: 2048,           // Refresh token encryption: RSA key size (bits)
+    refreshTokenEncryptionCurve: "P-256",          // Refresh token encryption: EC curve
+    requireSignedRequestObject: false,             // Require a signed request object (RFC 9101)
+    authorizationDetailsMaxEntries: 20,            // Most authorization_details entries in one request (RFC 9396)
+    requestUriTimeoutMs: 5000,                     // request_uri fetch timeout (ms)
+    requestUriMaxBytes: 65536,                     // request_uri largest response (bytes)
+    requireRequestObjectType: false,               // Require typ oauth-authz-req+jwt on a request object
+    requireRequestObjectIssuerAudience: false,     // Require iss and aud in a request object
+    requestObjectJtiOnce: true,                    // A request object's jti is accepted once
+    requestObjectJtiRetentionS: 3600,              // How long a request object's jti is kept without exp (s)
+    clientJwksCacheS: 300,                         // Client jwks_uri cache (s)
+    clientJwksRefetchS: 30,                        // Client jwks_uri refetch interval (s)
+    requestUriFragmentCheck: true,                 // Check a request_uri's SHA-256 fragment against its content
+    requestUriCacheS: 0,                           // request_uri content cache (s)
+    requestObjectEncryptionKeyBits: 2048,          // Request object encryption: RSA key size (bits)
+    requestObjectEncryptionCurve: "P-256",         // Request object encryption: EC curve
+    pushedAuthorizationRequests: true,             // Pushed authorization requests (RFC 9126)
+    requirePushedAuthorizationRequests: false,     // Require pushed authorization requests
+    parRequestUriLifetimeS: 60,                    // Pushed request_uri lifetime (seconds)
+    parMaxRequests: 10000,                         // Pushed requests held at once
+    parMaxBodyBytes: 65536,                        // Largest pushed authorization request (bytes)
+    parRequestsPerMinute: 600,                     // Pushed requests per client per window
+    parAllowUnregisteredRedirectUris: false,       // Pushed requests may name an unregistered redirect_uri
+    stepUpAcrValues: "",                           // Step-up: acr values this service's resource server requires
+    stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
+    errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
+    keyBinding: true,                              // OpenID Connect Key Binding
+    sessionManagement: false,                      // OpenID Connect Session Management
+    frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
+    frontchannelLogoutWaitS: 3,                    // Front-channel logout: seconds before returning
+    backchannelLogout: true,                       // OpenID Connect Back-Channel Logout
+    backchannelLogoutOnExpiry: true,               // Back-channel logout on session expiry
+    backchannelLogoutTokenTtlS: 120,               // Back-channel Logout Token lifetime (seconds)
+    backchannelLogoutAttempts: 3,                  // Back-channel logout delivery attempts
+    backchannelLogoutTimeoutMs: 5000,              // Back-channel logout request timeout (ms)
+    backchannelLogoutBackoffMs: 1000,              // Back-channel logout retry backoff (ms)
+    backchannelLogoutLeaseMs: 60000,               // Back-channel logout attempt lease (ms)
+    backchannelLogoutSweepS: 10,                   // Back-channel logout sweep interval (seconds)
+    backchannelLogoutRetentionS: 86400,            // Back-channel logout delivery retention (seconds)
+    backchannelLogoutMaxRows: 2000,                // Back-channel logout deliveries kept per realm
+    backchannelLogoutConcurrency: 8,               // Back-channel logout sweep concurrency
+    backchannelLogoutSummaryS: 60                  // Back-channel logout summary interval (seconds)
   },
 
   // --- Devices ---------------------------------------------------------
   devices: {
-    maxPerPerson: 20,                                   // Devices one person may hold
-    maxPerApplication: 1000,                            // Devices one application may own
-    maxKeysPerDevice: 10,                               // Keys one device may hold
-    eventsKept: 5000,                                   // Device events kept for monitoring
-    complianceFeedMaxReports: 500,                      // Compliance reports per feed request
-    challengeTtlSeconds: 300,                           // Enrolment challenge lifetime (seconds)
-    maxChallenges: 10000,                               // Enrolment challenges held
-    androidAttestationTrustAnchors: "",                 // Android Key Attestation roots (PEM)
-    androidMinimumSecurityLevel: "trusted-environment", // Android Key Attestation: least security level
-    appleAppAttestTrustAnchors: "",                     // Apple App Attest root (PEM)
-    appleAppAttestAppIds: "",                           // Apple App Attest app identifiers
-    appleAppAttestAllowDevelopment: false,              // Apple App Attest: accept the development environment
-    tpmTrustAnchors: "",                                // TPM attestation roots (PEM)
-    lastUsedResolutionSeconds: 60,                      // Last-used resolution (seconds)
-    expectRegistered: false,                            // Expect every person to sign in from a registered device
-    requireCompliantDevice: false,                      // Require a compliant registered device
-    compliantDeviceAttested: false,                     // A compliant device must also be attested
-    refuseCompromised: true,                            // Refuse a compromised device
-    browserDevices: true,                               // Remembered browsers
-    browserTokenLifetimeDays: 180,                      // Remembered browser cookie lifetime (days)
-    browserReissueGraceSeconds: 60,                     // Remembered browser: previous token accepted for (seconds)
-    browserTokenCertificateHeader: "x5u"                // Remembered browser token certificate header
+    maxPerPerson: 20,                                                      // Devices one person may hold
+    maxPerApplication: 1000,                                               // Devices one application may own
+    maxKeysPerDevice: 10,                                                  // Keys one device may hold
+    eventsKept: 5000,                                                      // Device events kept for monitoring
+    complianceFeedMaxReports: 500,                                         // Compliance reports per feed request
+    challengeTtlSeconds: 300,                                              // Enrolment challenge lifetime (seconds)
+    maxChallenges: 10000,                                                  // Enrolment challenges held
+    androidAttestationTrustAnchors: "",                                    // Android Key Attestation roots (PEM)
+    androidMinimumSecurityLevel: "trusted-environment",                    // Android Key Attestation: least security level
+    androidStatusUrl: "https://android.googleapis.com/attestation/status", // Android attestation status list address
+    androidStatusRefreshS: 86400,                                          // Download the Android status list every (seconds)
+    androidStatusMaxBytes: 16777216,                                       // Largest Android status list (bytes)
+    androidStatusStaleHours: 48,                                           // Android status list is stale after (hours)
+    androidRevocationRequired: false,                                      // An Android attestation needs a current status list
+    appleAppAttestTrustAnchors: "",                                        // Apple App Attest root (PEM)
+    appleAppAttestAppIds: "",                                              // Apple App Attest app identifiers
+    appleAppAttestAllowDevelopment: false,                                 // Apple App Attest: accept the development environment
+    tpmTrustAnchors: "",                                                   // TPM attestation roots (PEM)
+    lastUsedResolutionSeconds: 60,                                         // Last-used resolution (seconds)
+    expectRegistered: false,                                               // Expect every person to sign in from a registered device
+    requireCompliantDevice: false,                                         // Require a compliant registered device
+    compliantDeviceAttested: false,                                        // A compliant device must also be attested
+    refuseCompromised: true,                                               // Refuse a compromised device
+    browserDevices: true,                                                  // Remembered browsers
+    browserTokenLifetimeDays: 180,                                         // Remembered browser cookie lifetime (days)
+    browserReissueGraceSeconds: 60,                                        // Remembered browser: previous token accepted for (seconds)
+    browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
   },
 
   // --- PKI -------------------------------------------------------------
@@ -518,6 +572,7 @@ var config = {
     attemptsPerIdentity: 30,                                                                                                                       // Failed requests per account a window
     attemptsPerAddress: 120,                                                                                                                       // Failed requests per address a window
     nonceLifetimeS: 300,                                                                                                                           // Replay nonce lifetime (seconds)
+    maxSpentNonces: 10000,                                                                                                                         // Spent nonce history size (per realm)
     orderLifetimeS: 86400,                                                                                                                         // Order lifetime (seconds)
     eabLifetimeS: 604800                                                                                                                           // External account binding key lifetime (seconds)
   },
@@ -557,16 +612,18 @@ var config = {
 
   // --- Protocol debugger -----------------------------------------------
   debugger: {
-    enabled: "auto",                       // Embed the protocol debugger; restart to apply
-    port: 8444,                            // Debugger listener port; restart to apply
-    publicBaseUrl: "",                     // Debugger public base URL; restart to apply
-    uiDirectory: "debugger/embedded/ui",   // Built debugger UI; restart to apply
-    apiDirectory: "debugger/embedded/api", // Built debugger api; restart to apply
-    allowedDestinations: "",               // Extra destinations the api may dial in product mode; restart to apply
-    startTimeoutS: 30,                     // Seconds the api process has to start
-    restartLimit: 5,                       // Failed starts before the api is given up on
-    proxyTimeoutS: 120,                    // Seconds an /api call may take
-    maxRequestBytes: 5242880               // Largest /api request body
+    enabled: "auto",                         // Embed the protocol debugger; restart to apply
+    port: 8444,                              // Debugger listener port; restart to apply
+    publicBaseUrl: "",                       // Debugger public base URL; restart to apply
+    uiDirectory: "debugger/embedded/ui",     // Built debugger UI; restart to apply
+    apiDirectory: "debugger/embedded/api",   // Built debugger api; restart to apply
+    allowedDestinations: "",                 // Extra destinations the api may dial in product mode; restart to apply
+    startTimeoutS: 30,                       // Seconds the api process has to start
+    restartLimit: 5,                         // Failed starts before the api is given up on
+    proxyTimeoutS: 120,                      // Seconds an /api call may take
+    maxRequestBytes: 5242880,                // Largest /api request body
+    disableOptionalClientCertificate: false, // Debugger: do not ask for a client certificate
+    requireClientCertificate: false          // Debugger: require a client certificate
   },
 
   // --- Applications ----------------------------------------------------
@@ -604,20 +661,17 @@ var config = {
 
   // --- SAML ------------------------------------------------------------
   saml: {
-    issuer: "urn:wstrust:mock:sts",                         // Assertion issuer
-    clockSkewS: 0,                                          // Assertion clock skew (s)
-    signatureAlgorithm: "rsa-sha256",                       // XML signature algorithm
-    canonicalizationAlgorithm: "exclusive",                 // XML canonicalization
-    allowSha1Signatures: false,                             // Accept SHA-1 XML signatures
-    organizationName: "sts",                                // Metadata OrganizationName
-    organizationDisplayName: "Mock security token service", // Metadata OrganizationDisplayName
-    organizationUrl: ""                                     // Metadata OrganizationURL
+    clockSkewS: 0,                                     // Assertion clock skew (s)
+    signatureAlgorithm: "rsa-sha256",                  // XML signature algorithm
+    canonicalizationAlgorithm: "exclusive",            // XML canonicalization
+    allowSha1Signatures: false,                        // Accept SHA-1 XML signatures
+    organizationName: "sts",                           // Metadata OrganizationName
+    organizationDisplayName: "Security token service", // Metadata OrganizationDisplayName
+    organizationUrl: ""                                // Metadata OrganizationURL
   },
 
-  // --- SAML 2.0 --------------------------------------------------------
+  // --- SAML 2.0 assertions ---------------------------------------------
   saml2: {
-    entityId: "urn:sts:idp",                                               // Identity provider entityID
-    perApplicationEntityId: true,                                          // An entityID per service provider
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion
     signResponse: true,                                                    // Sign the response
@@ -632,7 +686,6 @@ var config = {
     unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
-    mockSpContextTtlMin: 30,                                               // Mock service provider RelayState lifetime (minutes)
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
     spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
@@ -642,10 +695,8 @@ var config = {
     mdqImportWithoutAnchors: false                                         // Allow an MDQ import with no trust anchor (product mode)
   },
 
-  // --- SAML 1.1 --------------------------------------------------------
+  // --- SAML 1.1 assertions ---------------------------------------------
   saml11: {
-    providerId: "urn:sts:idp:saml11",                                      // Identity provider providerID
-    perApplicationProviderId: true,                                        // A providerID per relying party
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
     signAssertion: true,                                                   // Sign the assertion
     signResponse: true,                                                    // Sign the response
@@ -660,18 +711,15 @@ var config = {
 
   // --- WS-Trust --------------------------------------------------------
   wstrust: {
-    issuer: "urn:wstrust:mock:sts", // Token issuer
-    tokenLifetimeMin: 60,           // Token lifetime (minutes)
-    maxTokenLifetimeMin: 1440,      // Longest lifetime a request may ask for (minutes)
-    jwtAlgorithm: "RS256",          // JWT signature algorithm
-    jwtCertificateHeader: "x5u"     // JWT certificate header
+    tokenLifetimeMin: 60,        // Token lifetime (minutes)
+    maxTokenLifetimeMin: 1440,   // Longest lifetime a request may ask for (minutes)
+    jwtAlgorithm: "RS256",       // JWT signature algorithm
+    jwtCertificateHeader: "x5u"  // JWT certificate header
   },
 
   // --- WS-Federation assertions ----------------------------------------
   wsfed: {
-    assertionLifetimeMin: 60,         // Assertion lifetime (minutes)
-    entityId: "urn:wstrust:mock:sts", // Entity ID
-    mockRpContextTtlMin: 30           // Mock relying party wctx lifetime (minutes)
+    assertionLifetimeMin: 60  // Assertion lifetime (minutes)
   },
 
   // --- TLS -------------------------------------------------------------
@@ -683,81 +731,111 @@ var config = {
     certificateFile: "",                                                                                                                                                                                                                                                                                       // Server certificate file; restart to apply
     keyFile: "",                                                                                                                                                                                                                                                                                               // Server private key file; restart to apply
     minVersion: "TLSv1.2",                                                                                                                                                                                                                                                                                     // Minimum TLS version; restart to apply
-    ciphers: "TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384",                                                                                                 // TLS cipher list; restart to apply
+    ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384",                                                                                                                                                                            // TLS 1.2 cipher list; restart to apply
     groups: "X25519MLKEM768:SecP256r1MLKEM768:SecP384r1MLKEM1024 / X25519:P-256 / X448:P-384:P-521",                                                                                                                                                                                                           // TLS key-exchange groups; restart to apply
     signatureAlgorithms: "mldsa65:mldsa87:mldsa44:ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512:ed25519:ed448:rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:rsa_pss_rsae_sha256:rsa_pss_rsae_sha384:rsa_pss_rsae_sha512:rsa_pkcs1_sha256:rsa_pkcs1_sha384:rsa_pkcs1_sha512", // TLS signature algorithms; restart to apply
+    disableTls12: true,                                                                                                                                                                                                                                                                                        // Disable TLS 1.2
+    tls13CipherSuites: "TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,TLS_CHACHA20_POLY1305_SHA256",                                                                                                                                                                                                           // TLS 1.3 cipher suites
+    pqcOnly: false,                                                                                                                                                                                                                                                                                            // Post-quantum safe only
+    mainPortDisableOptionalClientCertificate: false,                                                                                                                                                                                                                                                           // Main port: do not ask for a client certificate
+    mainPortRequireClientCertificate: false,                                                                                                                                                                                                                                                                   // Main port: require a client certificate
     sessionTicketRotationS: 3600,                                                                                                                                                                                                                                                                              // Shared session-ticket key rotation (s)
+    mainPortSharedTickets: true,                                                                                                                                                                                                                                                                               // Main port shares the cluster session-ticket key; restart to apply
+    sessionTimeoutS: 300,                                                                                                                                                                                                                                                                                      // TLS session lifetime (s)
+    sessionCacheSize: 2048,                                                                                                                                                                                                                                                                                    // TLS session cache size (sessions)
+    resumedChainWaitMs: 2000,                                                                                                                                                                                                                                                                                  // Wait for a resumed session's certificate chain (ms)
     trustAnchorsFile: "",                                                                                                                                                                                                                                                                                      // Client certificate trust anchors file; restart to apply
     selfSignedKeyBits: 2048,                                                                                                                                                                                                                                                                                   // Self-signed certificate RSA key size; restart to apply
     selfSignedValidityYears: 2,                                                                                                                                                                                                                                                                                // Self-signed certificate validity (years); restart to apply
     selfSignedOrganization: "sts"                                                                                                                                                                                                                                                                              // Self-signed certificate organization; restart to apply
   },
 
+  // --- Listener: LDAPS -------------------------------------------------
+  ldap: {
+    ldapsDisableOptionalClientCertificate: true,                                                                                                // LDAPS: do not ask for a client certificate
+    ldapsRequireClientCertificate: false,                                                                                                       // LDAPS: require a client certificate
+    port: 389,                                                                                                                                  // LDAP port; restart to apply
+    tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
+    autocreateUsers: true,                                                                                                                      // Auto-create users
+    maxEntries: 2000,                                                                                                                           // Maximum entries
+    workerDirectory: "memory",                                                                                                                  // Directory in request workers; restart to apply
+    workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
+    workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
+    sizeLimit: 500,                                                                                                                             // Search size limit
+    plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
+    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
+    directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
+    groupMembersReadable: false                                                                                                                 // Members may read their group's member list
+  },
+
   // --- OID4VCI ---------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",                    // Wallet URL
-    authorizationServer: "",                               // Authorization server
-    batchSize: 4,                                          // Batch size
-    deferredReadyMs: 4000,                                 // Deferred: ready after (ms)
-    deferredIntervalS: 2,                                  // Deferred: poll interval (s)
-    offerUsername: "diploma.student",                      // Offer username
-    requestEncryptionRequired: false,                      // Require encrypted credential requests
-    txCodeLength: 5,                                       // Transaction Code length (digits)
-    txCodeMaxAttempts: 5,                                  // Wrong Transaction Codes before the code is spent (product)
-    offerTtlS: 600,                                        // Credential Offer lifetime (s)
-    walletIssuancePath: "/vc-issuance-1.html",             // Wallet issuance page
-    allowedWalletUrls: "",                                 // Other wallet URLs an offer link may name (product)
-    requestEncryptionKeyBits: 2048,                        // Request encryption key size (bits)
-    requestEncryptionEncValues: "A128GCM,A256GCM",         // Request encryption: enc values
-    responseEncryptionEncValues: "A128GCM,A256GCM",        // Response encryption: enc values
-    responseEncryptionRequired: false,                     // Require encrypted credential responses
-    credentialLifetimeS: 2592000,                          // Issued credential lifetime (s)
-    credentialSigningAlgorithm: "RS256",                   // Algorithm credentials are signed with
-    credentialCertificateHeader: "x5u",                    // Credential certificate header
-    signedMetadataCertificateHeader: "x5u",                // Issuer signed_metadata certificate header
-    proofIatWindowS: 600,                                  // Proof of possession iat window (s)
-    cNonceTtlS: 300,                                       // c_nonce lifetime (s)
-    cNonceCacheSize: 10000,                                // c_nonce values held (per realm)
-    issuerDisplayName: "IdP Tools Mock Credential Issuer", // Issuer display name
-    domainLinkageLifetimeS: 31536000,                      // Domain Linkage Credential lifetime (s)
-    generatedDidCredentialLifetimeS: 3600,                 // /did/generate credential lifetime (s)
-    sdJwtIssuerDid: false,                                 // Name the SD-JWT VC issuer by DID; restart to apply
-    ldpVcIssuerDid: false,                                 // Name the ldp_vc issuer by DID; restart to apply
-    statusListTtlS: 300,                                   // Status list time to live (s)
-    statusListLifetimeS: 86400,                            // Status list lifetime (s)
-    keyAttestationRequired: false,                         // Require a key attestation
-    keyAttestationTrustedCertificates: ""                  // Trusted key attesters (PEM)
+    walletUrl: "",                                    // Web wallet URL
+    walletInvocation: "openid-credential-offer",      // How a wallet app is handed an offer
+    authorizationServer: "",                          // Authorization server
+    batchSize: 4,                                     // Batch size
+    deferredReadyMs: 4000,                            // Deferred: ready after (ms)
+    deferredIntervalS: 2,                             // Deferred: poll interval (s)
+    offerUsername: "diploma.student",                 // Offer username
+    requestEncryptionRequired: false,                 // Require encrypted credential requests
+    txCodeLength: 5,                                  // Transaction Code length (digits)
+    txCodeMaxAttempts: 5,                             // Wrong Transaction Codes before the code is spent (product)
+    offerTtlS: 600,                                   // Credential Offer lifetime (s)
+    walletIssuancePath: "",                           // Web wallet issuance page
+    requestEncryptionKeyBits: 2048,                   // Request encryption key size (bits)
+    requestEncryptionEncValues: "A128GCM,A256GCM",    // Request encryption: enc values
+    responseEncryptionEncValues: "A128GCM,A256GCM",   // Response encryption: enc values
+    responseEncryptionRequired: false,                // Require encrypted credential responses
+    credentialLifetimeS: 2592000,                     // Issued credential lifetime (s)
+    credentialSigningAlgorithm: "RS256",              // Algorithm credentials are signed with
+    credentialCertificateHeader: "x5u",               // Credential certificate header
+    signedMetadataCertificateHeader: "x5u",           // Issuer signed_metadata certificate header
+    proofIatWindowS: 600,                             // Proof of possession iat window (s)
+    cNonceTtlS: 300,                                  // c_nonce lifetime (s)
+    cNonceCacheSize: 10000,                           // c_nonce values held (per realm)
+    issuerDisplayName: "IdP Tools Credential Issuer", // Issuer display name
+    domainLinkageLifetimeS: 31536000,                 // Domain Linkage Credential lifetime (s)
+    sdJwtIssuerDid: false,                            // Name the SD-JWT VC issuer by DID; restart to apply
+    ldpVcIssuerDid: false,                            // Name the ldp_vc issuer by DID; restart to apply
+    statusListTtlS: 300,                              // Status list time to live (s)
+    statusListLifetimeS: 86400,                       // Status list lifetime (s)
+    keyAttestationRequired: false,                    // Require a key attestation
+    keyAttestationTrustedCertificates: ""             // Trusted key attesters (PEM)
   },
 
   // --- OID4VP ----------------------------------------------------------
   oid4vp: {
-    clientId: "sts-verifier",                          // Verifier client ID
-    requestObjectCertificateHeader: "x5u",             // Request Object certificate header
-    kbMaxAgeS: 600,                                    // Key Binding max age (s)
-    signInSelfIssued: false,                           // Sign in with a self-issued ID (SIOPv2)
-    siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
-    clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
-    x509DnsName: "",                                   // DNS name of the x509_san_dns Client Identifier
-    x509SigningAlgorithm: "ES256",                     // Signing algorithm of an x509 Client Identifier request
-    verifierAttestation: "",                           // Verifier Attestation JWT
-    claims: "given_name,family_name",                  // Requested claims
-    presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
-    maxTransactions: 5000,                             // Presentation requests waiting (per realm)
-    signInRegisterMaxEntries: 100000,                  // Wallet sign-in register size (per realm)
-    walletPresentationPath: "/vc-presentation-1.html", // Wallet presentation page
-    allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
-    trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
-    expectedVct: "urn:idptools:sd-jwt-vc:identity",    // Expected SD-JWT VC type (vct)
-    maxRequestedClaims: 40,                            // Claims one request may ask for
-    signIn: true,                                      // Sign in with a wallet
-    signInTtlS: 300,                                   // Wallet sign-in lifetime (s)
-    signInPollS: 3,                                    // Wallet sign-in page refresh (s)
-    signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
-    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
-    signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
-    statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
-    requireStatusReference: "all",                     // Require a status reference on every presented credential
-    statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
+    clientId: "sts-verifier",                        // Verifier client ID
+    walletInvocation: "openid4vp",                   // How a wallet app is handed a request
+    requestObjectCertificateHeader: "x5u",           // Request Object certificate header
+    kbMaxAgeS: 600,                                  // Key Binding max age (s)
+    signInSelfIssued: false,                         // Sign in with a self-issued ID (SIOPv2)
+    siopIdTokenMaxAgeS: 300,                         // Self-issued ID Token max age (s)
+    clientIdPrefix: "pre-registered",                // Client Identifier prefix of a signed request
+    x509DnsName: "",                                 // DNS name of the x509_san_dns Client Identifier
+    x509SigningAlgorithm: "ES256",                   // Signing algorithm of an x509 Client Identifier request
+    verifierAttestation: "",                         // Verifier Attestation JWT
+    claims: "given_name,family_name",                // Requested claims
+    presentationRequestTtlS: 600,                    // Presentation request lifetime (s)
+    maxTransactions: 5000,                           // Presentation requests waiting (per realm)
+    signInRegisterMaxEntries: 10000,                 // Wallet sign-in register size (per realm)
+    walletPresentationPath: "",                      // Web wallet presentation page
+    allowedWalletUrls: "",                           // Other wallet URLs a request link may name (product)
+    trustedIssuerCertificates: "",                   // Other trusted credential issuers (PEM)
+    expectedVct: "urn:idptools:sd-jwt-vc:identity",  // Expected SD-JWT VC type (vct)
+    maxRequestedClaims: 40,                          // Claims one request may ask for
+    signIn: true,                                    // Sign in with a wallet
+    signInClientIdPrefix: "x509_hash",               // Wallet sign-in: Client Identifier prefix
+    signInResponseMode: "direct_post.jwt",           // Wallet sign-in: response mode
+    signInTtlS: 300,                                 // Wallet sign-in lifetime (s)
+    signInPollS: 3,                                  // Wallet sign-in page refresh (s)
+    signInCrossDevice: false,                        // Wallet sign-in QR code (cross-device, relayable)
+    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",   // Wallet sign-in credential formats
+    signInDcApiResponseMode: "dc_api.jwt",           // Digital Credentials API response mode
+    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES", // Encrypted response: key algorithms offered
+    statusListMaxCacheS: 3600,                       // Longest a fetched status list is kept (s)
+    requireStatusReference: "all",                   // Require a status reference on every presented credential
+    statusOptionalIssuers: ""                        // Trusted issuers exempt from the status reference
   },
 
   // --- OpenID Federation -----------------------------------------------
@@ -792,12 +870,17 @@ var config = {
     collectionCacheS: 300                          // In-process collection kept for (s)
   },
 
+  // --- W3C VC API ------------------------------------------------------
+  vcApi: {
+    enabled: false,    // Serve the W3C VC API
+    maxPerWindow: 600  // VC API calls one client may make per rate-limit window
+  },
+
   // --- Kerberos --------------------------------------------------------
   krb5: {
     enabled: true,                                                 // Enable Kerberos
     realm: "EXAMPLE.COM",                                          // Realm; restart to apply
     kdcPort: 88,                                                   // KDC port; restart to apply
-    servicePort: 8888,                                             // Test service port; restart to apply
     servicePrincipal: "HTTP/web.example.com",                      // Service principal; restart to apply
     servicePassword: "service-account-password",                   // Service principal password; restart to apply
     serviceSalt: "",                                               // Service principal salt; restart to apply
@@ -806,6 +889,7 @@ var config = {
     ticketLifetimeSeconds: 36000,                                  // Ticket lifetime (s)
     renewLifetimeSeconds: 604800,                                  // Renewable lifetime (s)
     logonServer: "DC01",                                           // PAC logon server
+    pacClaims: false,                                              // PAC client claims (PAC_CLIENT_CLAIMS_INFO)
     maxRequestBytes: 131072,                                       // Largest KDC request over TCP (bytes)
     udpMaxReplyBytes: 1465,                                        // Largest KDC reply over UDP (bytes)
     serviceMaxTokenBytes: 65536,                                   // Largest AP-REQ the acceptor reads (bytes)
@@ -828,21 +912,13 @@ var config = {
     retainedKeyVersions: 1,                                        // Previous key versions kept
     retainedKeyTtlS: 0,                                            // Previous key version lifetime (s)
     krbtgtRotationIntervalDays: 180,                               // Rotate the krbtgt key every (days)
+    pkinit: true,                                                  // PKINIT (certificate pre-authentication)
+    pkinitRequireFreshness: true,                                  // PKINIT requires a freshness token
+    pkinitLegacyKdf: false,                                        // PKINIT accepts RFC 4556's own key derivation
+    pkinitKdcKeyAlgorithm: "ec-p256",                              // PKINIT KDC key algorithm
+    anonymousPkinit: true,                                         // Anonymous PKINIT (FAST armor)
     spnegoLoginButton: true,                                       // Offer Kerberos at the sign-in screen
     s2kparams: "omit"                                              // Send s2kparams
-  },
-
-  // --- LDAP ------------------------------------------------------------
-  ldap: {
-    port: 389,                                                                                                                                  // LDAP port; restart to apply
-    tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
-    autocreateUsers: true,                                                                                                                      // Auto-create users
-    maxEntries: 2000,                                                                                                                           // Maximum entries
-    sizeLimit: 500,                                                                                                                             // Search size limit
-    plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
-    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
-    directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
-    groupMembersReadable: false                                                                                                                 // Members may read their group's member list
   },
 
   // --- SCIM ------------------------------------------------------------
@@ -871,6 +947,26 @@ var config = {
     authClientCert: true         // Offer TLS client certificates
   },
 
+  // --- SCIM client -----------------------------------------------------
+  scimClient: {
+    attempts: 8,                // Delivery attempts
+    timeoutMs: 15000,           // Request timeout (ms)
+    backoffMs: 10000,           // Retry backoff (ms)
+    maxBackoffMs: 3600000,      // Longest backoff (ms)
+    leaseMs: 300000,            // Delivery lease (ms)
+    sweepS: 15,                 // Delivery sweep (seconds)
+    retentionS: 604800,         // Retention (seconds)
+    maxRows: 200000,            // Deliveries kept per realm
+    concurrency: 4,             // Concurrent deliveries
+    summaryS: 300,              // Summary interval (seconds)
+    reconcileCheckS: 60,        // Reconciliation check (seconds)
+    pageSize: 100,              // Reconciliation page size
+    etagRetries: 3,             // ETag re-reads
+    allowHttp: false,           // Allow http:// to a service provider (development only)
+    skipTlsVerification: false, // Skip TLS verification to a service provider (development only)
+    caFile: ""                  // CA certificates file
+  },
+
   // --- SSF -------------------------------------------------------------
   ssf: {
     enabled: true,                                                                                                                                        // SSF enabled
@@ -879,6 +975,7 @@ var config = {
     setCertificateHeader: "x5u",                                                                                                                          // SET certificate header
     deliveryMethods: "urn:ietf:rfc:8935,urn:ietf:rfc:8936",                                                                                               // Delivery methods offered
     defaultSubjects: "ALL",                                                                                                                               // What an empty subject list means
+    personStreamsSelfOnly: true,                                                                                                                          // A person's own stream carries only their events
     streamStatusOnCreate: "enabled",                                                                                                                      // Status a new stream is created in
     minVerificationInterval: 60,                                                                                                                          // Minimum verification interval (s)
     verificationRateLimit: false,                                                                                                                         // Enforce the verification interval
@@ -913,17 +1010,14 @@ var config = {
     maxStreamLogEntries: 200,                                                                                                                             // Log lines per stream
     authScopeRead: "ssf:read",                                                                                                                            // Scope to read a stream
     authScopeWrite: "ssf:write",                                                                                                                          // Scope to change a stream
-    receiveEnabled: true,                                                                                                                                 // Accept pushed events
-    receiveAudiences: "",                                                                                                                                 // Audiences POST /ssf/receive answers to
-    receiveIssuers: "",                                                                                                                                   // Issuers POST /ssf/receive accepts
     receiveRequireSignature: false,                                                                                                                       // Refuse a SET whose signature does not verify
-    foreignPollS: 30,                                                                                                                                     // Foreign transmitter poll interval (s)
-    foreignPollMaxEvents: 50,                                                                                                                             // Events asked per foreign poll
-    foreignPollMaxRounds: 5,                                                                                                                              // Foreign poll rounds
-    foreignMaxTransmitters: 20,                                                                                                                           // Foreign transmitters per realm
-    foreignInboxMax: 500,                                                                                                                                 // Foreign SETs kept
-    foreignTimeoutMs: 10000,                                                                                                                              // Foreign transmitter timeout (ms)
+    foreignPollS: 30,                                                                                                                                     // Partner signals poll interval (s)
+    foreignPollMaxEvents: 50,                                                                                                                             // Events asked per partner poll
+    foreignPollMaxRounds: 5,                                                                                                                              // Partner poll rounds
+    foreignInboxMax: 500,                                                                                                                                 // Partner SETs kept
+    foreignTimeoutMs: 10000,                                                                                                                              // Partner signals timeout (ms)
     actOnSignalsInDevelopment: false,                                                                                                                     // The console and portal act on received signals in development
+    signalsRevokeGrants: true,                                                                                                                            // A federation partner's signals revoke the person's grants and tokens
     legacySubClaim: false,                                                                                                                                // Also emit the deprecated `sub` claim (development only)
     breakSetSignature: false                                                                                                                              // Sign every SET badly (development only)
   },
@@ -977,7 +1071,7 @@ var config = {
     mdsStaleGraceDays: 7,                                  // FIDO metadata grace after its nextUpdate (days)
     rescoreEveryS: 300,                                    // Re-check live sessions every (seconds)
     standingCacheSize: 20000,                              // People whose standing each process holds
-    mediumScorePercent: 100,                               // MEDIUM from (percent of a score of 1)
+    mediumScorePercent: 300,                               // MEDIUM from (percent of a score of 1)
     highScorePercent: 1000,                                // HIGH from (percent of a score of 1)
     minimumHistory: 5,                                     // Earlier sign-ins before a person is scored
     geoMinimumCount: 3,                                    // Fewest people a place is numbered with on the map
@@ -995,7 +1089,7 @@ var config = {
   risc: {
     enabled: true,                                                                                                                                                                                                                                                                                    // RISC enabled
     autoEmit: true,                                                                                                                                                                                                                                                                                   // Emit events when the directory really changes
-    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,account-credential-change-required,recovery-information-changed,recovery-activated,credential-compromise,opt-out-initiated,opt-out-cancelled,opt-out-effective,opt-in,sessions-revoked",   // Which acts emit automatically
+    autoEmitTypes: "account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,account-credential-change-required,recovery-information-changed,recovery-activated,credential-compromise,opt-out-initiated,opt-out-cancelled,opt-out-effective,opt-in",                    // Which acts emit automatically
     recycleWindowDays: 365,                                                                                                                                                                                                                                                                           // Recycled identifier window (days)
     optOutDelayHours: 24,                                                                                                                                                                                                                                                                             // Opt-out takes effect after (hours)
     eventsSupported: "account-credential-change-required,account-purged,account-disabled,account-enabled,identifier-changed,identifier-recycled,credential-compromise,opt-in,opt-out-initiated,opt-out-cancelled,opt-out-effective,recovery-activated,recovery-information-changed,sessions-revoked", // RISC event types offered
@@ -1036,7 +1130,10 @@ var config = {
 
   // --- Delegation ------------------------------------------------------
   delegation: {
-    maxRecords: 2000  // Maximum delegation acts held
+    maxRecords: 2000,               // Maximum delegation acts held
+    defaultSemantics: "delegation", // Default semantics of an act
+    protectedGroups: "",            // Groups never acted for
+    actorRole: "DELEGATION_ACTOR"   // Role a person needs to act for somebody
   },
 
   // --- Logout ----------------------------------------------------------
@@ -1172,34 +1269,67 @@ var config = {
 
   // --- Persistence -----------------------------------------------------
   persistence: {
-    mode: "memory",                                       // Persistence mode; restart to apply
-    metricsTimeoutMs: 5000,                               // Database metrics statement timeout (ms)
-    dataDir: "./data",                                    // Data directory; restart to apply
-    databaseUrl: "postgres://sts:sts@localhost:5432/sts", // Database connection string; restart to apply
-    databasePasswordProvider: "none",                     // Where the database password is read from; restart to apply
-    databasePasswordRef: "",                              // The database password's location; restart to apply
-    databasePasswordField: "databasePassword",            // The field the password is in; restart to apply
-    databasePasswordVault: "",                            // Vault or Key Vault URL for the database password; restart to apply
-    databasePasswordRegion: "",                           // AWS region for the database password; restart to apply
-    databasePasswordToken: "",                            // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: false,                 // Verify the database certificate; restart to apply
-    writeDelay: 1500,                                     // Write delay (ms)
-    realms: true,                                         // Persist the realm registry; restart to apply
-    appconfig: true,                                      // Persist runtime setting changes; restart to apply
-    minted: true,                                         // Persist sessions, tokens and the audit log; restart to apply
-    mintedRetention: 604800000,                           // Minted state retention (ms)
-    coordinate: true,                                     // Coordinate with other processes; restart to apply
-    pollInterval: 5000,                                   // Change poll interval (ms)
-    changeLogRetentionS: 3600                             // Change log retention (s)
+    mode: "memory",                                        // Persistence mode; restart to apply
+    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    dataDir: "./data",                                     // Data directory; restart to apply
+    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
+    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
+    databasePasswordRef: "",                               // The database password's location; restart to apply
+    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
+    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
+    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
+    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
+    databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
+    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
+    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
+    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
+    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
+    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
+    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
+    writeDelay: 1500,                                      // Write delay (ms)
+    realms: true,                                          // Persist the realm registry; restart to apply
+    appconfig: true,                                       // Persist runtime setting changes; restart to apply
+    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                            // Minted state retention (ms)
+    coordinate: true,                                      // Coordinate with other processes; restart to apply
+    pollInterval: 5000,                                    // Change poll interval (ms)
+    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Cluster ---------------------------------------------------------
   cluster: {
-    mode: "auto",                  // Cluster mode; restart to apply
-    nodeName: "",                  // Node name; restart to apply
-    heartbeatMs: 2000,             // Heartbeat interval (ms); restart to apply
-    nodeTtlMs: 30000,              // Node lifetime (ms); restart to apply
-    acceptMissingCapabilities: ""  // Capabilities accepted as missing; restart to apply
+    mode: "auto",                   // Cluster mode; restart to apply
+    nodeName: "",                   // Node name; restart to apply
+    nodeSnapshotRetentionHours: 24, // Keep a gone node's snapshot (hours)
+    heartbeatMs: 2000,              // Heartbeat interval (ms); restart to apply
+    nodeTtlMs: 30000,               // Node lifetime (ms); restart to apply
+    acceptMissingCapabilities: ""   // Capabilities accepted as missing; restart to apply
+  },
+
+  // --- Cells -----------------------------------------------------------
+  cells: {
+    id: "",                         // This cell; restart to apply
+    jurisdiction: "",               // This cell's jurisdiction; restart to apply
+    peers: "",                      // The other cells; restart to apply
+    port: 8446,                     // Inter-cell port; restart to apply
+    hostname: "",                   // This cell's inter-cell host name; restart to apply
+    consoleUrl: "",                 // This cell's own console address; restart to apply
+    relayTimeoutMs: 10000,          // Inter-cell request timeout (ms)
+    deliveryAttempts: 12,           // Inter-cell delivery attempts
+    deliveryBackoffMs: 2000,        // Inter-cell delivery backoff (ms)
+    deliveryRetentionS: 86400,      // Inter-cell delivery retention (s)
+    deliveryMaxRows: 100000,        // Inter-cell deliveries held
+    deliveryConcurrency: 8,         // Inter-cell deliveries at once
+    deliverySummaryS: 300,          // Inter-cell delivery summary interval (s)
+    deliverySweepS: 30,             // Inter-cell delivery sweep interval (s)
+    homeUnreachable: "fail-closed", // When a person's home cell cannot be reached
+    failOpenGraceS: 900,            // Fail-open grace (s)
+    subjectCheckS: 60,              // Subject state check interval (s)
+    homeCell: "",                   // Default home cell for new people
+    jurisdictions: "",              // Jurisdictions people may be homed in
+    permittedTransfers: "",         // Transfers this realm permits
+    hardGeofence: false             // Refuse rather than relay
   },
 
   // --- Signing keys ----------------------------------------------------
@@ -1213,11 +1343,17 @@ var config = {
   scheduler: {
     enabled: true,        // Run scheduled jobs
     tickS: 15,            // How often the leader looks for due jobs (seconds)
-    historyDays: 30,      // How long a finished run is kept (days)
-    maxRuns: 5000,        // Most runs kept per realm
+    runHistoryCount: 100, // Runs kept per job
+    runHistoryHours: 24,  // Runs kept for (hours)
     disabledJobs: "",     // Jobs switched off
     runTimeoutS: 600,     // The longest a run may take (seconds)
     maxConcurrentRuns: 2  // Most runs going at once
+  },
+
+  // --- Attribute sources -----------------------------------------------
+  attributeSources: {
+    hostPatterns: "",  // Hosts an attribute source may name
+    refreshBatch: 200  // People per scheduled refresh
   },
 
   // --- Mail ------------------------------------------------------------
@@ -1225,7 +1361,6 @@ var config = {
     transport: "default",                // Mail transport
     from: "",                            // From address
     fromName: "",                        // From display name
-    defaultLanguage: "en",               // Default message language
     smtpPreset: "custom",                // SMTP preset
     smtpHost: "",                        // SMTP host
     smtpPort: 587,                       // SMTP port
@@ -1274,6 +1409,101 @@ var config = {
     verificationTtlMinutes: 1440,        // Address verification link lifetime (minutes)
     securityNotices: true,               // Security notices
     notifyAdministrators: true           // Tell administrators of system acts
+  },
+
+  // --- Listener: Main port ---------------------------------------------
+  listenerMain: {
+    minVersion: "inherit",                    // Main port: minimum TLS version; restart to apply
+    disableTls12: "inherit",                  // Main port: disable TLS 1.2
+    ciphers: "",                              // Main port: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",                    // Main port: tLS 1.3 cipher suites
+    pqcOnly: "inherit",                       // Main port: post-quantum safe only
+    groups: "",                               // Main port: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "",                  // Main port: tLS signature algorithms; restart to apply
+    trustAnchorsFile: "",                     // Main port: client certificate trust anchors file; restart to apply
+    trustIssuedClientCertificates: "inherit", // Main port: trust TLS client certificates issued on the user portal; restart to apply
+    sessionTimeoutS: -1,                      // Main port: tLS session lifetime (s)
+    sessionCacheSize: -1,                     // Main port: tLS session cache size (sessions)
+    keepAliveTimeoutS: -1,                    // Main port: idle connection kept for (s)
+    headersTimeoutS: -1,                      // Main port: request header timeout (s)
+    maxRequestsPerSocket: -1,                 // Main port: requests per connection
+    maxConnections: -1                        // Main port: open connections at most
+  },
+
+  // --- Listener: LDAPS -------------------------------------------------
+  listenerLdaps: {
+    minVersion: "inherit",                    // LDAPS: minimum TLS version; restart to apply
+    disableTls12: "inherit",                  // LDAPS: disable TLS 1.2
+    ciphers: "",                              // LDAPS: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",                    // LDAPS: tLS 1.3 cipher suites
+    pqcOnly: "inherit",                       // LDAPS: post-quantum safe only
+    groups: "",                               // LDAPS: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "",                  // LDAPS: tLS signature algorithms; restart to apply
+    trustAnchorsFile: "",                     // LDAPS: client certificate trust anchors file; restart to apply
+    trustIssuedClientCertificates: "inherit", // LDAPS: trust TLS client certificates issued on the user portal; restart to apply
+    sessionTimeoutS: -1,                      // LDAPS: tLS session lifetime (s)
+    sessionCacheSize: -1                      // LDAPS: tLS session cache size (sessions)
+  },
+
+  // --- Listener: Protocol debugger -------------------------------------
+  listenerDebugger: {
+    minVersion: "inherit",                    // Protocol debugger: minimum TLS version; restart to apply
+    disableTls12: "inherit",                  // Protocol debugger: disable TLS 1.2
+    ciphers: "",                              // Protocol debugger: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",                    // Protocol debugger: tLS 1.3 cipher suites
+    pqcOnly: "inherit",                       // Protocol debugger: post-quantum safe only
+    groups: "",                               // Protocol debugger: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "",                  // Protocol debugger: tLS signature algorithms; restart to apply
+    trustAnchorsFile: "",                     // Protocol debugger: client certificate trust anchors file; restart to apply
+    trustIssuedClientCertificates: "inherit", // Protocol debugger: trust TLS client certificates issued on the user portal; restart to apply
+    sessionTimeoutS: -1,                      // Protocol debugger: tLS session lifetime (s)
+    sessionCacheSize: -1,                     // Protocol debugger: tLS session cache size (sessions)
+    keepAliveTimeoutS: -1,                    // Protocol debugger: idle connection kept for (s)
+    headersTimeoutS: -1,                      // Protocol debugger: request header timeout (s)
+    maxRequestsPerSocket: -1,                 // Protocol debugger: requests per connection
+    maxConnections: -1                        // Protocol debugger: open connections at most
+  },
+
+  // --- Listener: SPIRE Server API --------------------------------------
+  listenerSpiffeServer: {
+    minVersion: "inherit",   // SPIRE Server API: minimum TLS version; restart to apply
+    disableTls12: "inherit", // SPIRE Server API: disable TLS 1.2
+    ciphers: "",             // SPIRE Server API: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",   // SPIRE Server API: tLS 1.3 cipher suites
+    pqcOnly: "inherit",      // SPIRE Server API: post-quantum safe only
+    groups: "",              // SPIRE Server API: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "", // SPIRE Server API: tLS signature algorithms; restart to apply
+    sessionTimeoutS: -1      // SPIRE Server API: tLS session lifetime (s)
+  },
+
+  // --- Listener: SPIFFE Broker API -------------------------------------
+  listenerSpiffeBroker: {
+    minVersion: "inherit",   // SPIFFE Broker API: minimum TLS version; restart to apply
+    disableTls12: "inherit", // SPIFFE Broker API: disable TLS 1.2
+    ciphers: "",             // SPIFFE Broker API: tLS 1.2 cipher list; restart to apply
+    tls13CipherSuites: "",   // SPIFFE Broker API: tLS 1.3 cipher suites
+    pqcOnly: "inherit",      // SPIFFE Broker API: post-quantum safe only
+    groups: "",              // SPIFFE Broker API: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "", // SPIFFE Broker API: tLS signature algorithms; restart to apply
+    sessionTimeoutS: -1      // SPIFFE Broker API: tLS session lifetime (s)
+  },
+
+  // --- Listener: Channel between cells ---------------------------------
+  listenerCell: {
+    tls13CipherSuites: "",   // Channel between cells: tLS 1.3 cipher suites
+    pqcOnly: "inherit",      // Channel between cells: post-quantum safe only
+    groups: "",              // Channel between cells: tLS key-exchange groups; restart to apply
+    signatureAlgorithms: "", // Channel between cells: tLS signature algorithms; restart to apply
+    sessionTimeoutS: -1,     // Channel between cells: tLS session lifetime (s)
+    sessionCacheSize: -1     // Channel between cells: tLS session cache size (sessions)
+  },
+
+  // --- Listener: Revocation (plain HTTP) -------------------------------
+  listenerRevocation: {
+    keepAliveTimeoutS: -1,    // Revocation (plain HTTP): idle connection kept for (s)
+    headersTimeoutS: -1,      // Revocation (plain HTTP): request header timeout (s)
+    maxRequestsPerSocket: -1, // Revocation (plain HTTP): requests per connection
+    maxConnections: -1        // Revocation (plain HTTP): open connections at most
   },
 };
 

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -24,9 +24,11 @@
 //      back-channel URIs it builds per module. The static variants register
 //      two clients here and hand the suite their credentials; the mutual TLS
 //      one gets certificates from the realm's CA.
-//   2. The plan is created with the discovery URL, the clients and the
-//      `browser` commands, and every module runs, one at a time. One browser
-//      list serves every module because every task in it is optional: sign
+//   2. The plan is created with the discovery URL and the clients and NO
+//      `browser` commands (#571): this service's sign-in screen is drawn by
+//      its script, which the suite's HtmlUnit browser cannot run, so every
+//      address a module asks a person to visit is left for one, and
+//      `conformance_browser.js` is that person, in headless Chrome — sign
 //      in, consent, an error page photographed into the module's
 //      placeholder, the callback; and on the end-session endpoint the page
 //      photographed, the confirmation pressed, and the return followed.
@@ -43,6 +45,7 @@ const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
 const oidf = require("./conformance_suite.js");
+const conformanceBrowser = require("./conformance_browser.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -134,8 +137,7 @@ const PLANS = [
   { key: "logout-front",
     name: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan",
     variant: { response_type: "code",
-               client_registration: "dynamic_client" },
-    frontchannel: true },
+               client_registration: "dynamic_client" } },
   { key: "logout-back",
     name: "oidcc-backchannel-rp-initiated-logout-certification-test-plan",
     variant: { response_type: "code",
@@ -264,123 +266,26 @@ function check(what, fn) {
 }
 
 // ---------------------------------------------------------------------------
-// THE SCRIPTED BROWSER (see the header).
+// THE PERSON (see the header): what they do on this service's sign-in screen
+// in the modules that want something other than a sign-in. A second sign-in
+// forced by prompt=login or max_age is photographed and then made; the three
+// registration modules expect the client's logo, policy or terms to be shown
+// there, so the screen is only photographed.
 // ---------------------------------------------------------------------------
-function browserFor(base, person, frontchannel) {
-  log.debug("Entering browserFor().");
-  const logoutTasks = [
-    // The confirmation page, or a refusal — photographed either way, then
-    // the confirmation pressed where there is one.
-    { task: "End-session page", optional: true,
-      match: base + "/oauth2/logout*",
-      commands: [
-        ["wait", "xpath", "//body", 10, ".*",
-         "update-image-placeholder-optional"],
-        ["click", "xpath", "//button[@value='yes']", "optional"]] }
-  ];
-  // Front-channel only: the notification page returns by a refresh, so the
-  // browser waits for it. Nowhere else — the suite's `wait` has no optional
-  // form, and the RP-Initiated modules whose right answer is NOT to return
-  // (no id_token_hint, a bad or absent post_logout_redirect_uri, no
-  // parameters) would time out on it with the page they wanted on screen.
-  if (frontchannel) {
-    logoutTasks.push({ task: "Return to the client", optional: true,
-                       match: base + "/oauth2/logout*",
-                       commands: [["wait", "contains",
-                                   "/post_logout_redirect", 20]] });
-  }
-  logoutTasks.push({ task: "Verify complete", optional: true,
-                     match: oidf.SUITE + "test/*/post_logout_redirect*" });
-  log.debug("Leaving browserFor().");
-  return [{
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      // No photograph here: a module whose placeholder is an ERROR page
-      // (an invalid redirect_uri the server may equally honour) would have
-      // it filled by the sign-in page and finish before its callback came.
-      // The modules that want the sign-in page photographed say so in
-      // overridesFor().
-      { task: "Sign in", optional: true, match: base + "/authn/login*",
-        commands: signInCommands(person) },
-      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
-        commands: [["click", "id", "consent-allow"]] },
-      // A refused authorization request shows this service's error page
-      // (an unregistered redirect_uri must not be redirected to): photographed
-      // into the placeholder, a REVIEW outcome.
-      { task: "Error page", optional: true,
-        match: base + "/oauth2/authorize*",
-        commands: [["wait", "xpath", "//body", 10, ".*",
-                    "update-image-placeholder-optional"]] },
-      { task: "Verify complete", optional: true,
-        match: oidf.SUITE + "test/*/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  }, {
-    match: base + "/oauth2/logout*",
-    tasks: logoutTasks
-  }, {
-    // Session Management (#121): the suite sends the browser to a page of
-    // its own that frames this realm's OP iframe beside an RP iframe, whose
-    // script asks the OP iframe and then moves the page to the suite's
-    // result URL. Without an entry here the suite has no browser for that
-    // URL and the module waits out its bound; the wait is what gives the
-    // page's script time to run.
-    match: oidf.SUITE + "test/*/*session_verify*",
-    tasks: [
-      { task: "Session check", match: oidf.SUITE + "test/*/*session_verify*",
-        commands: [["wait", "contains", "session_result", 20]] }
-    ]
-  }];
-}
-
-function signInCommands(person) {
-  log.debug("Entering signInCommands().");
-  log.debug("Leaving signInCommands().");
-  return [["text", "id", "username", person, "optional"],
-          ["text", "id", "password", PASSWORD, "optional"],
-          ["click", "id", "kc-login"]];
-}
-
-// The modules that ask for the sign-in page itself as their evidence: a
-// second sign-in forced by prompt=login or max_age, and the three
-// registration modules that expect the client's logo, policy or terms to be
-// shown there. The suite merges `override[<module>]` over the configuration.
-function overridesFor(base, person) {
-  log.debug("Entering overridesFor().");
-  const photographed = {
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      { task: "Sign in, photographed", optional: true,
-        match: base + "/authn/login*",
-        commands: [["wait", "id", "username", 10, ".*",
-                    "update-image-placeholder-optional"]]
-          .concat(signInCommands(person)) },
-      { task: "Consent", optional: true, match: base + "/oauth2/consent*",
-        commands: [["click", "id", "consent-allow"]] },
-      { task: "Verify complete", optional: true,
-        match: oidf.SUITE + "test/*/callback*",
-        commands: [["wait", "id", "submission_complete", 10]] }
-    ]
-  };
-  const onlyPhotographed = {
-    match: base + "/oauth2/authorize*",
-    tasks: [
-      { task: "The sign-in page, photographed",
-        match: base + "/authn/login*",
-        commands: [["wait", "id", "username", 10, ".*",
-                    "update-image-placeholder"]] }
-    ]
-  };
-  const out = {};
-  ["oidcc-prompt-login", "oidcc-max-age-1"].forEach(function (name) {
-    out[name] = { browser: [photographed] };
+function personFor(base, person) {
+  log.debug("Entering personFor().");
+  log.debug("Leaving personFor().");
+  return conformanceBrowser.person({
+    suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: base,
+    username: person, password: PASSWORD,
+    actions: {
+      "oidcc-prompt-login": "photograph",
+      "oidcc-max-age-1": "photograph",
+      "oidcc-registration-logo-uri": "photograph-only",
+      "oidcc-registration-policy-uri": "photograph-only",
+      "oidcc-registration-tos-uri": "photograph-only"
+    }
   });
-  ["oidcc-registration-logo-uri", "oidcc-registration-policy-uri",
-   "oidcc-registration-tos-uri"].forEach(function (name) {
-    out[name] = { browser: [onlyPhotographed] };
-  });
-  log.debug("Leaving overridesFor().");
-  return out;
 }
 
 // Two clients registered here, for the static variants.
@@ -469,10 +374,10 @@ async function prepare(plan) {
     // Not the suite's: taken off again before the plan is created, for the
     // operator above.
     realmApi: api,
+    // Not the suite's either: the person who signs in, for the same.
+    person: personFor(base, person),
     server: { discoveryUrl: base + "/.well-known/openid-configuration",
-              allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA },
-    browser: browserFor(base, person, !!plan.frontchannel),
-    override: overridesFor(base, person)
+              allow_unexpected_metadata_fields: oidf.EXTENSION_METADATA }
   };
   let recorded = null;
   if (plan.verification) {
@@ -533,15 +438,25 @@ async function prepare(plan) {
 function operatorFor(api) {
   log.debug("Entering operatorFor().");
   const started = {};
+  // Attempts per module. A step that throws (a request the service did not
+  // answer — the memory mode's event loop has been seen blocked for six
+  // seconds under the plans running side by side) is tried again on the
+  // next poll, because runModule() calls this on every poll while the module
+  // is CONFIGURED. It was marked started BEFORE the rotation until
+  // 2026-10-08, so one failed request left the module never started and the
+  // plan reported it unexplained. A repeated rotation is harmless: the
+  // module compares the JWKS before and after whatever rotations ran.
+  const attempts = {};
   log.debug("Leaving operatorFor().");
   return async function (id, info) {
     log.debug("Entering the OP operator. " + id);
     if (started[id] || !info || info.status !== "CONFIGURED" ||
-        info.testName !== "oidcc-server-rotate-keys") {
+        info.testName !== "oidcc-server-rotate-keys" ||
+        (attempts[id] || 0) >= 5) {
       log.debug("Leaving the OP operator. Nothing to do.");
       return;
     }
-    started[id] = true;
+    attempts[id] = (attempts[id] || 0) + 1;
     const rotated = await oidf.send(api + "/keys/rotate", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: "{}" });
@@ -557,6 +472,7 @@ function operatorFor(api) {
       await oidf.waitMs(1000);
     }
     const r = await oidf.suite("POST", "api/runner/" + id);
+    started[id] = true;
     log.info("  rotated the realm's signing keys and started the module: " +
              r.status);
     log.debug("Leaving the OP operator.");
@@ -575,9 +491,17 @@ async function runOnePlan(plan) {
   try {
     const configuration = await prepare(plan);
     const realmApi = configuration.realmApi;
+    const someone = configuration.person;
     delete configuration.realmApi;
+    delete configuration.person;
+    const operator = operatorFor(realmApi);
     ran = await oidf.runPlan(plan.name, plan.variant, configuration,
-                             plan.key, operatorFor(realmApi));
+                             plan.key, async function (id, info) {
+                               log.debug("Entering the plan's people.");
+                               await operator(id, info);
+                               await someone.visit(id, info);
+                               log.debug("Leaving the plan's people.");
+                             });
   } catch (e) {
     // One plan that cannot be set up or created is reported with the rest
     // rather than ending the run.
@@ -629,6 +553,7 @@ async function test() {
     workers.push(worker());
   }
   await Promise.all(workers);
+  await conformanceBrowser.quit();
   outcomes.forEach(function (lines) {
     lines.forEach(function (line) {
       unexpected.push(line);
@@ -651,8 +576,8 @@ new Command()
   .description("The OpenID Foundation conformance suite's OpenID Connect " +
     "plans (#187): the OP certification profiles, oidcc-test-plan's " +
     "variants, and the four logout plans, against this service.")
-  .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
-                                           "needs no browser)"))
+  .addOption(new Option("-u, --url <url>", "base url (unused: the " +
+                                           "service's is the realm's)"))
   .parse(process.argv);
 
 test().catch(function (e) {

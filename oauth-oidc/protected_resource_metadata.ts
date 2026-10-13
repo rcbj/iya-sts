@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -881,7 +881,8 @@ class ProtectedResourceMetadata {
   authorizationServersOf(req: Req) {
     const { helpers, jwtAccessToken, authorizationServers, log } = this.deps;
     log.debug("Entering ProtectedResourceMetadata.authorizationServersOf().");
-    const base = helpers.baseUrlOf(req);
+    // The authorization server's base, wherever the resource is (#472).
+    const base = helpers.baseUrlOf(req, 'oauth-oidc');
     const rows = [{ id: authorizationServers.DEFAULT_ID, label: 'default',
                     issuer: jwtAccessToken.issuerFor(base) }];
     authorizationServers.list().forEach(function (profile) {

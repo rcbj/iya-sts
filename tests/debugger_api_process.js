@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -11,7 +11,7 @@
 // `debugger/debugger_api_process.ts` forks the debugger's api and keeps it
 // running. This file forks a STAND-IN api — thirty lines written here that bind
 // the socket, say they are listening and report what they were given — and
-// asserts the five things the supervisor exists for:
+// asserts the six things the supervisor exists for:
 //
 //   A. the child is started with a BUILT environment: the contract's variables
 //      and PATH, HOME, LANG, TZ — and not a variable of this process's own,
@@ -23,7 +23,10 @@
 //      the NEW anchor, and is not counted as a failure;
 //   D. a child that keeps dying is restarted with backoff and GIVEN UP ON at
 //      `debugger.restartLimit`;
-//   E. `stop()` removes the socket directory.
+//   E. `stop()` removes the socket directory;
+//   F. the child answers `askMemory()` with its own `process.memoryUsage()`
+//      (#329), through `debugger_api_status.js`, which the fork preloads —
+//      the stand-in, like the real api, listens for no message itself.
 //
 // WHY IN PROCESS: every claim is about a process this service forks and the
 // environment it hands down, which no request can see — the real api answers
@@ -201,6 +204,24 @@ async function run(t) {
             'and is reported as a replacement');
 
     // -----------------------------------------------------------------------
+    t.log.info('=== F. the child answers its memory, through the preload ' +
+               '(#329) ===');
+    const memory = await apiProcess.askMemory(3000);
+    t.check(!!memory && memory.pid === second.pid && !!memory.memory &&
+            memory.memory.rss > 0 && memory.memory.heapUsed > 0 &&
+            memory.memory.heapTotal > 0 &&
+            typeof memory.memory.external === 'number' &&
+            typeof memory.memory.arrayBuffers === 'number' &&
+            !!memory.cpu && typeof memory.uptimeS === 'number',
+            'askMemory() is answered with the child\'s own memoryUsage(), ' +
+            'cpuUsage() and uptime — by debugger_api_status.js preloaded ' +
+            'into it, since the stand-in, like the real api, listens for ' +
+            'no message', JSON.stringify(memory));
+    const again = await ask();
+    t.equal(again.pid, second.pid,
+            'and the api answers on its socket as before');
+
+    // -----------------------------------------------------------------------
     t.log.info('=== D. a child that keeps dying is given up on ===');
     const startsBefore = apiProcess.status().starts;
     config.setOverride('debugger.restartLimit', '2');
@@ -234,6 +255,7 @@ module.exports = {
   name: 'debugger_api_process',
   describe: 'the embedded debugger\'s api child: a built environment, ready ' +
             'only when listening, replaced on a new trust anchor, given up ' +
-            'on after repeated deaths, and cleaned up on stop',
+            'on after repeated deaths, cleaned up on stop, and asked its ' +
+            'memory through the preload',
   run: run
 };

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -22,12 +22,14 @@
 //      audience `origin:<origin>` the specification requires;
 //   3. an answer whose presentation names the Client Identifier as its
 //      audience — a direct_post presentation replayed here — is refused;
-//   4. an answer posted from another origin is refused (STS-VC-0074), as is
+//   4. an answer sent from another site is refused at `/authn-api`'s door
+//      (STS-AUTHN-0326, #574), one from another of this service's origins
+//      by the wallet door (STS-VC-0074), as is
 //      one posted by another browser (STS-VC-0055), one for a transaction
 //      that was already answered (STS-VC-0057), an unencrypted answer to an
 //      encrypted request and a wrong protocol (STS-VC-0073);
-//   5. the no-script path: the form submitted with no answer says so and
-//      offers the same-device link (STS-VC-0081);
+//   5. an answer with nothing in it says so and points at the same-device
+//      link (STS-VC-0081);
 //   6. `oid4vp.signInDcApiResponseMode` = `dc_api` asks for an unencrypted
 //      answer, and that answer signs in.
 //
@@ -71,9 +73,9 @@ function childMain() {
     const aliceSub = await w.inRealm(function () {
       return m.helpers.subjectForName('dc-alice');
     });
-    const clientId = await w.inRealm(function () {
-      return m.config.value('oid4vp.clientId');
-    });
+    // The Client Identifier a sign-in signs under, the audience a holder
+    // proves for: x509_hash's since 2026-10-12 (`w.signInAudience()`).
+    const clientId = await w.signInAudience();
     const dcAud = 'origin:' + w.origin;
 
     // ==================================================================
@@ -104,13 +106,21 @@ function childMain() {
          JSON.stringify({ origins: payload.expected_origins,
                           mode: payload.response_mode }));
     const jwks = (payload.client_metadata || {}).jwks || { keys: [] };
-    note(jwks.keys.length === 1 && jwks.keys[0].alg === 'ECDH-ES' &&
-         jwks.keys[0].use === 'enc' && !!jwks.keys[0].kid &&
+    // #82: the X-Wing hybrid (HPKE-10-KE, an AKP key) first and the P-256
+    // ECDH-ES key HAIP requires second — `oid4vp.responseEncryptionKeyAlgs`.
+    note(jwks.keys.length === 2 && jwks.keys[0].alg === 'HPKE-10-KE' &&
+         jwks.keys[0].kty === 'AKP' && jwks.keys[1].alg === 'ECDH-ES' &&
+         jwks.keys.every(function (k) {
+           return k.use === 'enc' && !!k.kid;
+         }) && jwks.keys[0].kid !== jwks.keys[1].kid &&
          JSON.stringify(
            payload.client_metadata.encrypted_response_enc_values_supported)
            === JSON.stringify(['A128GCM', 'A256GCM']),
-         '1c. and an encryption key of its own, with the enc values section ' +
-         '8.3 asks for', JSON.stringify(jwks.keys[0] || {}));
+         '1c. and encryption keys of its own — the X-Wing hybrid first, ' +
+         'ECDH-ES second — with the enc values section 8.3 asks for',
+         JSON.stringify(jwks.keys.map(function (k) {
+           return { alg: k.alg, kty: k.kty, kid: k.kid };
+         })));
     note(payload.nonce === one.requestObject.nonce &&
          JSON.stringify(payload.dcql_query) ===
            JSON.stringify(one.requestObject.dcql_query),
@@ -135,6 +145,24 @@ function childMain() {
     await w.inRealm(function () {
       m.authn.endSessionById(session.id, 'the test, tidying up');
     });
+    // AND ENCRYPTED TO THE X-WING KEY (#82): the wallet that can protect the
+    // response against a future quantum adversary signs in the same way.
+    const hybridWho = w.browser();
+    const hybridOne = await w.start(hybridWho, w.pendingSignIn());
+    const hybrid = await w.answerDcApi(hybridWho, hybridOne,
+      w.presentSdJwt(issued.credential, holder, hybridOne.dcPayload.nonce,
+                     dcAud), { keyAlg: 'HPKE-10-KE' });
+    const hybridSession = w.sessionOf(hybridWho);
+    note(hybrid.status === 303 && !!hybridSession &&
+         hybridSession.user.username === 'dc-alice',
+         '2c. an answer encrypted to the X-Wing key (HPKE-10-KE, ' +
+         'draft-reddy-cose-jose-pqc-hybrid-hpke-11) signs in exactly as the ' +
+         'ECDH-ES one does', hybrid.status + ' ' + hybrid.code);
+    if (hybridSession) {
+      await w.inRealm(function () {
+        m.authn.endSessionById(hybridSession.id, 'the test, tidying up');
+      });
+    }
 
     // ==================================================================
     // 3. THE AUDIENCE IS THE ORIGIN, NOT THE CLIENT IDENTIFIER
@@ -160,11 +188,38 @@ function childMain() {
       w.presentSdJwt(issued.credential, holder,
                      otherOriginOne.dcPayload.nonce, dcAud),
       { origin: 'https://attacker.example' });
-    note(elsewhere.status === 403 && elsewhere.code === 'STS-VC-0074' &&
+    note(elsewhere.status === 403 && elsewhere.code === 'STS-AUTHN-0326' &&
          !w.sessionOf(otherOriginWho),
-         '4a. an answer posted from another origin is refused, STS-VC-0074',
+         '4a. an answer sent from another site is refused at /authn-api\'s ' +
+         'door, before the transaction is looked at, STS-AUTHN-0326 (#574)',
          elsewhere.status + ' ' + elsewhere.code);
+    // AND FROM AN ORIGIN THE DOOR ACCEPTS — another of this service's own —
+    // which is not the one the request named in expected_origins: the
+    // wallet door's own check, STS-VC-0074.
+    const ownOther = await w.inRealm(function () {
+      return require(ROOT + '/common/cors').ownOrigins(w.fakeReq(''))
+        .filter(function (one) {
+          return one !== w.origin;
+        })[0] || '';
+    });
+    note(!!ownOther, '4a-i. this service answers on an origin other than ' +
+         'the page\'s (the embedded debugger\'s, a listener\'s)', ownOther);
+    if (ownOther) {
+      const sibling = await w.answerDcApi(otherOriginWho, otherOriginOne,
+        w.presentSdJwt(issued.credential, holder,
+                       otherOriginOne.dcPayload.nonce, dcAud),
+        { origin: ownOther });
+      note(sibling.status === 403 && sibling.code === 'STS-VC-0074' &&
+           !w.sessionOf(otherOriginWho),
+           '4a-ii. an answer from another of this service\'s own origins ' +
+           'is refused by the wallet door, STS-VC-0074: the answer belongs ' +
+           'to the page on the origin expected_origins names',
+           sibling.status + ' ' + sibling.code);
+    }
+    // A STRANGER holds a session and a token of its own — a sign-in it
+    // started — and still is not the browser that started this one.
     const stranger = w.browser();
+    await w.start(stranger, w.pendingSignIn());
     const strangerPost = await w.answerDcApi(stranger, otherOriginOne,
       w.presentSdJwt(issued.credential, holder,
                      otherOriginOne.dcPayload.nonce, dcAud));
@@ -176,6 +231,9 @@ function childMain() {
     const good = await w.answerDcApi(otherOriginWho, otherOriginOne,
       w.presentSdJwt(issued.credential, holder,
                      otherOriginOne.dcPayload.nonce, dcAud));
+    // The sign-in replaced the browser's session, so the page's token is
+    // the new session's.
+    await w.refreshCsrf(otherOriginWho);
     const twice = await w.answerDcApi(otherOriginWho, otherOriginOne,
       w.presentSdJwt(issued.credential, holder,
                      otherOriginOne.dcPayload.nonce, dcAud));
@@ -226,24 +284,22 @@ function childMain() {
          'STS-VC-0073', badProtocol.status + ' ' + badProtocol.code);
 
     // ==================================================================
-    // 5. THE NO-SCRIPT PATH
+    // 5. NOTHING CAME BACK FROM THE BROWSER'S API
     // ==================================================================
     const noScriptWho = w.browser();
     const noScriptOne = await w.start(noScriptWho, w.pendingSignIn());
     const empty = await w.answerDcApi(noScriptWho, noScriptOne, '',
                                       { noResponse: true });
     note(empty.status === 400 && empty.code === 'STS-VC-0081' &&
-         /id="wallet-dcapi-noscript"/.test(empty.text) &&
-         /id="wallet-open"/.test(empty.text),
-         '5a. the form submitted with no answer — the script did not run — ' +
-         'says so and offers the same-device link, STS-VC-0081',
-         empty.status + ' ' + empty.code);
-    const sameDevice = /id="wallet-open" href="([^"]+)"/.exec(empty.text);
-    const sameDeviceUrl = sameDevice ? w.unescapeHtml(sameDevice[1]) : '';
+         empty.json && empty.json.next === 'refused' &&
+         /same-device link/.test((empty.json.errors || []).join(' ')),
+         '5a. an answer with nothing in it is refused and points at the ' +
+         'same-device link, STS-VC-0081', empty.status + ' ' + empty.code);
+    const sameDeviceUrl = String((noScriptOne.view || {}).sameDevice || '');
     note(/request_uri=/.test(sameDeviceUrl) && /client_id=/.test(
            sameDeviceUrl),
-         '5b. and that link is the wallet\'s own address carrying the ' +
-         'signed request by reference, which needs no script at all',
+         '5b. and that link, on the wait page\'s view, is the wallet\'s own ' +
+         'address carrying the signed request by reference',
          sameDeviceUrl.slice(0, 90));
 
     // ==================================================================

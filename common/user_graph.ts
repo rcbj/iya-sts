@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -257,9 +257,12 @@ const FLOWS = [
     // grant must not have.
     label: 'Password grant (resource owner credentials)', oidc: '',
     spec: 'RFC 6749 §4.3', browser: false,
-    what: 'A username and password went straight to the token endpoint. This ' +
-          'service checks no password in any grant, so what this row records ' +
-          'is that a name was presented and accepted.' },
+    // Both modes' truth (#543 round 2): it read "This service checks no
+    // password in any grant", unqualified.
+    what: 'A username and password went straight to the token endpoint. In ' +
+          'development mode no password is checked in any grant, so what ' +
+          'this row records is that a name was presented and accepted; ' +
+          'product mode offers no password grant (RFC 9700 section 2.4).' },
   { flow: 'token exchange', protocol: 'OAuth 2.0',
     label: 'Token Exchange', oidc: '', spec: 'RFC 8693',
     browser: false, delegating: true,

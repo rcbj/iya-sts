@@ -1,0 +1,5 @@
+{
+  "thWorkerThreads": "工作線程",
+  "currentWorkersWhy": "目前已啟動的工作線程，其中 {ready} 個已就緒",
+  "thThread": "線程"
+}

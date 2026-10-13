@@ -125,6 +125,52 @@ certificate to a DEVICE entry, decided by `core.issueForDevice()`
 beside the nine; `/simplereenroll` and `/serverkeygen` under it are refused
 by the core (`STS-DEVICE-0025`). `tests/vendored/sts_devices.js` drives it.
 
+## `/nonce`: attestation freshness (#257, 2026-10-06)
+
+**draft-ietf-lamps-csr-attestation-29 section 6.2 defers freshness to
+draft-ietf-lamps-attestation-freshness-08, whose section 5 says a compliant
+EST server MUST provide `/nonce`.** It is the one operation here with two
+methods: GET carries no content; POST carries
+`application/est-attestation-freshness+json` `{ len?, reqTypeInfo? }`. Both
+answer 200 `{ nonce, expiry }` in that media type. `OPERATIONS` carries
+`method: 'GET, POST'`, and `methodsOf()` is what registers both methods and
+builds the 405's `Allow`. rcbj's decisions, all four recorded on #257:
+
+* **It is AUTHENTICATED, exactly as an enrollment is**, and in the same
+  order of checks: placement, throttle, media type and size, credential,
+  then the body. Section 5.1 says the server "MAY request HTTP-based client
+  authentication". Section 8 says nonce state should be tied to an
+  authenticated requester. An anonymous `/nonce` would be a route that
+  creates state for anyone.
+* **The binding is a cookie AND the principal.** Section 5.1 requires "a
+  session-maintenance mechanism", either the same TLS session or an HTTP
+  cookie. A TLS session does not survive a request worker or a second
+  node, so the binding is a cookie. `sts_est_nonce` holds a random handle,
+  never the nonce, and is scoped to the EST paths as the client addressed
+  them. The row goes in `devices.challenges` with purpose
+  `csr-attestation`: `sessionId` is the handle and `username` is the
+  principal's `kind:id`. So a nonce another principal fetched does not
+  count, even when that principal sends the same cookie. `simpleenroll`
+  hands the handle to the core as `attestationSession`. The core spends the
+  TPM statement's extraData against it (`common/CLAUDE.md`, 3ag's
+  *Freshness*).
+* **The empty nonce** (the draft's "no freshness proof required") answers a
+  label naming a non-`device` profile, because nothing it issues reads an
+  attestation. The unlabelled path always gets a real nonce, since an
+  application's own default profile may be `device`.
+* **`len`** is the client's choice within 8..64, raised to 16 octets
+  (`crypto.RANDOM_TOKEN_MIN_BITS`). The draft's "SHOULD provide a nonce of
+  that size" allows that, and every TPM takes 16. The default is 32 octets,
+  a SHA-256 digest's size, which every TPM 2.0 accepts as qualifyingData.
+* **`reqTypeInfo`**: this service defines no type, so any request naming one
+  is answered 503 (`STS-EST-0036`), as in "unable to supply its respInfo".
+  A malformed request is 400 (`STS-EST-0034`), and so is another media type
+  (`STS-EST-0035`): section 5.1 answers every error 400, which is why this
+  is not 415 like `simpleenroll`'s.
+* **The mode split is the core's**, not this file's:
+  `mode.requiresFreshKeyAttestation()`. Product refuses an unproven
+  statement (`STS-DEVICE-0050`); development records it.
+
 ## A second-factor person's Basic password (2026-09-22, #101)
 
 `common/cert_enrollment.ts`'s three verifications (`authenticatePerson()` and
@@ -152,6 +198,7 @@ records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
 | 4.4.1.2 / 4.4.2 encrypted private key (DecryptKeyIdentifier, AsymmetricDecryptKeyIdentifier) | **not implemented** — refused 501, as the RFC requires, never answered with a clear key |
 | 4.5 CSR attributes | implemented, unauthenticated (4.5.1 permits either) |
 | RFC 8951 base64 + CTE on responses and parts | implemented; whitespace tolerated in requests |
+| draft-ietf-lamps-attestation-freshness-08 5.1 `/nonce` | implemented (GET, POST, `len`, `expiry`, the empty nonce, 400/503, a cookie binding); **no reqTypeInfo type** — 503; EST over CoAP (5.2) not served |
 
 ### Profiles and approaches that cannot be issued over EST
 
@@ -167,10 +214,42 @@ records `appPassword` when one was used. `authn/CLAUDE.md` owns the rule.
 * Every requested key usage, extended key usage and basic constraint in a CSR is
   ignored: the profile decides.
 
+## Cells: where an enrollment is served (#98 D10, 2026-09-28)
+
+`Est.placeRequest()` runs first in `enrollmentRequest()` — before the
+throttle, the credential and the body — and relays the request WHOLE to the
+home cell of the person its credential names: an HTTP Basic username, or,
+with no Authorization header, the `urn:sts:person:` of the TLS client
+certificate (read, not verified; the channel forwards the certificate, so
+the home cell checks it as its own). An application's client_id is served
+where it arrives: its entry is the global tier's. The certificate is then
+issued and written onto the entry in the cell that holds it
+(`common/cert_enrollment.ts`'s `issue()`), which is the only cell whose
+directory has it. `cacerts` and `csrattrs` are the same everywhere and are
+never relayed.
+
+**The documented exception — an administrator enrolling for a person homed
+in another cell.** The request is placed by the ADMINISTRATOR's credential,
+checked at the administrator's home; the certificate must be written at the
+TARGET's. One relay cannot reach both, so it is refused **403
+`STS-CELL-0101`** with a sentence saying why (rather than
+`STS-ENROLL-0012`'s "no such person", which would be false). The person
+enrolls as themselves, or an administrator homed in their region does it.
+
+## The monitor counts; the console decorates its page (#352, 2026-09-29)
+
+`/admin/est/monitor`'s four certificate tiles (held, valid, revoked, expired)
+built the whole list and filtered it four times; they are
+`certificateCountsInRealm()` now, the same records and `publicRecord()`'s same
+state rule, and no rows. `/admin/est` already sliced before `certificateRow()`.
+The listing underneath reads holders in one walk and never parses another
+family's records (`common/CLAUDE.md`, 3ag); `tests/certificate_listing_bounds.js`
+holds the counts equal to the list's.
+
 ## Error codes
 
 `STS-EST-0001`–`0022` for the protocol surface, `0030`–`0033` for the console
-and `/admin-api`; refusals decided by the core keep their `STS-ENROLL-*` code.
+and `/admin-api`, `0034`–`0036` for `/nonce` (#257); refusals decided by the core keep their `STS-ENROLL-*` code.
 `tests/error_codes.js` carries `estError(req, res` as a failure pattern.
 
 ## Tests
@@ -178,7 +257,7 @@ and `/admin-api`; refusals decided by the core keep their `STS-ENROLL-*` code.
 | File | What it holds |
 |---|---|
 | `tests/est_codec.js` | the strict body decoder (the non-canonical case included), OID encoding, a certs-only message read back by pkijs with each certificate BYTE FOR BYTE (EC and ML-DSA), csrattrs structure, multipart framing |
-| `tests/est_handlers.js` | in a child process: every refusal's STATUS AND CODE, plain HTTP answered in development and refused in a product-mode realm, product-mode passwords, a DecryptKeyIdentifier template (501), re-enrollment by client certificate and the supersede, the realm boundary of the certificate listing and the monitor, the Basic header's malformed shapes, the view model's refusals and that no view carries a private key |
+| `tests/est_handlers.js` | in a child process: every refusal's STATUS AND CODE, plain HTTP answered in development and refused in a product-mode realm, product-mode passwords, a DecryptKeyIdentifier template (501), re-enrollment by client certificate and the supersede, the realm boundary of the certificate listing and the monitor, the Basic header's malformed shapes, the view model's refusals and that no view carries a private key, and `/nonce` (#257): authenticated, the media type and the JSON, the cookie (a handle, scoped, HttpOnly, Secure), the binding to principal and cookie spent once, every refusal's code, the empty nonce, the 405's Allow |
 | `tests/vendored/sts_est_libest.js` | **Cisco's libest estclient, the reference client** (#209), in the DEFAULT realm and — since #251 — in a throwaway realm reached by `--path-seg <realm>` (the label form), whose own people, CA and CRL are asserted to be that realm's: `-g` bootstrapped from the Root and the answer used as the trust anchors after it, `-a` under a label, `-e` by Basic and by a certificate, `-e` with an `openssl` CSR for a registered host (CN the host, UID the entry), `-z`, `-r` and the superseded certificate then refused, `-q` with the key matching the certificate, and the refusals — none, a wrong password (product only), an unknown label, `root-ca`, an unregistered host, a self-signed certificate, `--auth-token`, `--srp` |
 | `tests/vendored/sts_est_enrollment.js` | over HTTPS with `est_client.js` (nothing from `est/`): every profile labelled, the application for itself, an administrator for another person, both `/serverkeygen` templates, re-enrollment and the CRL, revocation through `/admin-api`, and the negatives — cross-realm credentials and certificates, a non-enrolled certificate, refused and disallowed profiles, unregistered names, bad PoP, KEM keys, 413/415/400/404/405/501/503, throttling, product-mode wrong password and secret |
 

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -7,8 +7,11 @@
 //
 // ---------------------------------------------------------------------------
 // OPENID PROVIDER COMMANDS 1.0 (#151, 2026-09-26), over HTTP, in a
-// throwaway realm, against this service's own mock relying party
-// (`/oauth2/commands/mock-rp`, development only).
+// throwaway realm, against the TEST PEER's relying party (#596; until then
+// the service's own `/oauth2/commands/mock-rp`, which #591 P5 deleted):
+// `tests/peer/peer_commands.js`, a party outside the service that verifies
+// each Command Token against the realm's published keys and POSTs an
+// `_async` result to the realm's callback over HTTP.
 //
 //   1. REGISTRATION: command_endpoint accepted over https and refused over
 //      http, and echoed in the registration response.
@@ -20,6 +23,9 @@
 //   6. A 503 is retried; the Monitoring page's API lists every kind.
 //   7. THE CALLBACK refuses a bad token with RFC 6750's challenge.
 //
+// WITH NO TEST PEER (an AWS target) the whole job is skipped, saying so:
+// MANIFEST.js marks it `testPeer: true`, and a hand run says it here.
+//
 // OWNED HERE (local: true): this repository's provider and API.
 // ---------------------------------------------------------------------------
 
@@ -28,10 +34,7 @@ const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
-const fs = require("fs");
-const path = require("path");
-const tls = require("tls");
-const testCa = require("./outbound_test_ca.js");
+const testPeer = require("./test_peer.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -61,7 +64,10 @@ const base = root + "/realm/" + REALM;
 const api = base + "/admin-api";
 const PERSON = names.usernameFor("pc-person");
 const PASSWORD = "Pc-" + crypto.randomBytes(9).toString("base64url") + "-Aa1!";
-const MOCK = base + "/oauth2/commands/mock-rp";
+// The peer's command endpoint for this run's tenant, and the plain-HTTP
+// address of the accounts it holds; set in section 0.
+let MOCK = "";
+let MOCK_ACCOUNTS = "";
 
 let checks = 0;
 function check(what, fn) {
@@ -246,59 +252,22 @@ function accountOf(report, clientId) {
   })[0];
 }
 
-// THE REALM MUST TRUST THIS SERVICE, whose certificate is issued under a Root
-// made at start that its own outbound client does not know. The Root is read
-// off the handshake, written to the directory shared with the service (a file
-// of this job's own) and named as the realm's federation.outboundCaFile, which
-// product honours. With no shared directory a development service is told to
-// skip verification in this realm alone; product refuses that, and the job
-// says why.
-async function trustThisService(product) {
-  log.debug("Entering trustThisService().");
-  const where = testCa.caLocation();
-  if (where) {
-    const target = new URL(root);
-    const rootPem = await new Promise(function (resolve, reject) {
-      const socket = tls.connect({ host: target.hostname,
-        port: Number(target.port || 443), servername: target.hostname,
-        rejectUnauthorized: false }, function () {
-          let cert = socket.getPeerCertificate(true);
-          while (cert && cert.issuerCertificate &&
-                 cert.issuerCertificate !== cert &&
-                 cert.issuerCertificate.fingerprint256 !==
-                   cert.fingerprint256) {
-            cert = cert.issuerCertificate;
-          }
-          socket.end();
-          resolve("-----BEGIN CERTIFICATE-----\n" +
-            cert.raw.toString("base64").match(/.{1,64}/g).join("\n") +
-            "\n-----END CERTIFICATE-----\n");
-        });
-      socket.on("error", reject);
-    });
-    const name = "provider-commands-root-" + TAG + ".crt";
-    fs.mkdirSync(where.dir, { recursive: true });
-    fs.writeFileSync(path.join(where.dir, name), rootPem, { mode: 0o644 });
-    await ok(api + "/config/set", { key: "federation.outboundCaFile",
-      value: path.join(path.dirname(where.serviceFile), name) },
-      "named this service's Root as the realm's outbound CA");
-    log.debug("Leaving trustThisService(). CA file.");
-    return;
-  }
-  assert.ok(!product, testCa.skipReason());
-  await ok(api + "/config/set", { key: "federation.outboundSkipTlsVerification",
-    value: true }, "let the realm reach its own mock relying party");
-  log.debug("Leaving trustThisService(). Verification skipped.");
-}
-
 async function test() {
   log.debug("Entering test().");
   log.info("=== 0. a throwaway realm " + REALM + " ===");
-  // IN DEVELOPMENT MODE, SAID RATHER THAN INHERITED (2026-09-27). The mock
-  // relying party is this service, reached by its own name — a private
-  // address — and product mode never dials inside its own network. A realm
-  // created with no mode takes the process's, which is product in the
-  // single-node and cluster modes.
+  if (!testPeer.available()) {
+    log.info(testPeer.skipReason("every section: the relying party is the " +
+                                 "test peer's"));
+    log.info("Test completed successfully.");
+    log.debug("Leaving test(). No peer.");
+    return;
+  }
+  // IN DEVELOPMENT MODE, SAID RATHER THAN INHERITED (2026-09-27). The
+  // relying party is the test peer, reached by its name on the stack's
+  // private network — an internal address — and product mode never dials
+  // inside its own network (`federation_http.ts`). A realm created with no
+  // mode takes the process's, which is product in the single-node and
+  // cluster modes.
   await ok(root + "/admin-api/realms/create", { id: REALM,
     domain: REALM + ".example.net", name: "Provider commands " + TAG,
     overrides: { "global.mode": "development" } },
@@ -309,11 +278,18 @@ async function test() {
                                   value: true }, "turned commands on");
   await ok(api + "/config/set", { key: "oauth2.commandBackoffMs",
                                   value: 200 }, "shortened the backoff");
-  // The mock relying party is this service, dialled at its own address,
-  // whose certificate is this run's own. Product mode refuses to skip that
-  // verification (#171), so the service's Root is named as the realm's
-  // outbound CA instead: sts_claims_aggregation.js's arrangement.
-  await trustThisService(false);
+  // THE PEER'S TLS IS VERIFIED, as every outbound request's is (#171): its
+  // CA, made when it started and written to the directory the stack shares
+  // with the service, is the realm's outbound CA. The peer verifies the
+  // service in turn with the anchors `testPeer.tenant()` hands it.
+  const view = await testPeer.tenant(testPeer.tenantId("pc-" + TAG), base,
+                                     root);
+  MOCK = view.commands.endpoint;
+  MOCK_ACCOUNTS = testPeer.url() + "/t/" + encodeURIComponent(view.tenant) +
+                  "/commands";
+  await ok(api + "/config/set", { key: "federation.outboundCaFile",
+    value: process.env.TEST_PEER_CA_FILE || view.caFile },
+    "named the test peer's CA as the realm's outbound CA");
   await registry.ensurePerson(base, PERSON, PASSWORD);
 
   log.info("=== 1. registration ===");
@@ -356,7 +332,7 @@ async function test() {
     const a = accountOf(r, APP);
     return a && a.state === "active";
   });
-  const mock = (await hop(null, "GET", MOCK + "?client_id=" +
+  const mock = (await hop(null, "GET", MOCK_ACCOUNTS + "?client_id=" +
                           encodeURIComponent(APP))).json;
   check("the relying party created the account with its claims",
         function () {
@@ -369,8 +345,16 @@ async function test() {
     const a = accountOf(r, APP);
     return a && a.state === "suspended";
   });
-  check("an _async command is finished through the callback", function () {
-    assert.ok(true);
+  const called = await testPeer.waitFor(view.tenant, "commands", 0,
+    function (one) {
+      return one.kind === "callback" && one.command === "suspend_async";
+    }, 10000);
+  check("an _async command is finished through the callback, which the " +
+        "relying party POSTed over HTTP and the realm answered 204",
+        function () {
+    assert.ok(called, "the peer recorded no callback");
+    assert.strictEqual(called.status, 204, JSON.stringify(called));
+    assert.strictEqual(called.answer.account_state, "suspended");
   });
   await ok(api + "/commands/send-account", { clientId: APP,
     username: PERSON, command: "activate" }, "sent activate again");
@@ -444,14 +428,15 @@ async function test() {
   });
   const deliveries = (await hop(null, "GET", api + "/deliveries")).json;
   check("a 503 is retried and lands; /admin-api/deliveries lists the " +
-        "three kinds", function () {
+        "four kinds (cells' inter-cell deliveries joined the queue, #98)",
+        function () {
     const d = retried.deliveries.filter(function (one) {
       return one.clientId === FAIL && one.state === "sent";
     })[0];
     assert.strictEqual(d.attempts, 2);
     assert.deepStrictEqual(deliveries.kinds.map(function (k) {
       return k.id;
-    }), ["backchannel-logout", "ciba", "provider-commands"]);
+    }), ["backchannel-logout", "ciba", "cell-ops", "provider-commands"]);
   });
 
   log.info("=== 7. the callback ===");
@@ -470,8 +455,8 @@ async function test() {
 }
 
 new Command()
-  .description("OpenID Provider Commands (#151) against the mock relying " +
-    "party, over HTTP.")
+  .description("OpenID Provider Commands (#151) against the test peer's " +
+    "relying party (#596), over HTTP.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -90,8 +90,11 @@ const log = bunyan.createLogger({ name: 'run',
 // (#49) is the simulated cluster the two scheduler tests drive.
 // `webauthn_attestation_kit.js` (#105) is the software authenticator that
 // attests in all eight formats for `webauthn_attestation.js`.
+// `sync_query_kit.js` (#349) is the stand-in database the directory bridge's
+// thread loads for `sync_query.js`.
 const NOT_A_TEST = ['run.js', 'harness.js', 'wallet_kit.js',
-                    'scheduler_kit.js', 'webauthn_attestation_kit.js'];
+                    'scheduler_kit.js', 'webauthn_attestation_kit.js',
+                    'sync_query_kit.js'];
 
 // `patterns` is the `--only` filter: a file is kept when its name contains any
 // one of them. Empty means every file, which is what `npm test` asks for.

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_consent.js
 //
@@ -8,8 +8,10 @@
 //
 // `/oauth2/consent` is the one thing between a signed-in person and an
 // authorization response since 2026-09-01. This job drives it over HTTP with no
-// browser — the screen carries no script, so a form here is a form there — and
-// it is MOSTLY NEGATIVES, for the reason `sts_dpop.js` gives at length: a
+// browser — since #576 the screen is a page of the sign-in surface, drawn in
+// the browser from `/authn-api/consent/{id}` and answered there as JSON, so
+// this job reads that view and sends that answer (`authn_signin.js`), as the
+// page does — and it is MOSTLY NEGATIVES, for the reason `sts_dpop.js` gives at length: a
 // consent screen that draws, takes an Allow and hands over a code looks
 // finished and can be worth nothing. What makes it worth something is that it
 // refuses a replay, refuses somebody else's session, records nothing on a Deny,
@@ -51,6 +53,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
@@ -240,51 +244,68 @@ async function signIn(who, clientId, scope, extra) {
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
     "an unauthenticated authorization request should go to the sign-in " +
     "screen; it went to " + r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login" }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in form should redirect, got " + r.status);
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; this
+  // browser keeps one cookie, the session the sign-in set.
+  const signedIn = await authnSignin.submit(base, absolute(r.location),
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: b.cookie });
+  assert.strictEqual(signedIn.next, "redirect",
+    "the sign-in should answer where to go, got " + signedIn.status + " " +
+    JSON.stringify(signedIn.json));
+  b.cookie = (signedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) ||
+              [])[1] || "";
   assert.ok(b.cookie, "signing in should establish a session.");
-  r = await b.go("GET", r.location);
+  r = await b.go("GET", signedIn.location);
   log.debug("Leaving signIn(). " + r.status + " " + r.location);
   return { b: b, r: r };
 }
 
-// The consent screen the last answer pointed at, with its `consent_id` read out
-// of the FORM rather than off the query string — because the form is what an
-// answer is posted with, and reading the parameter instead would be asserting
-// this file's reading of the page rather than the page.
+// The consent screen the last answer pointed at, opened as its page does
+// since #576: the shell, then `GET /authn-api/consent/{id}` — the view the
+// page is drawn from, and the CSRF token its answer carries. `page` is the
+// view's JSON text, which says everything the page draws; `view` the view.
 async function screen(b, location) {
   log.debug("Entering screen().");
   assert.ok(/\/oauth2\/consent\?consent=/.test(location),
     "expected the consent screen, got " + location);
-  const r = await b.go("GET", location);
-  assert.strictEqual(r.status, 200,
-    "the consent screen should be drawn, got " + r.status);
-  const id = (r.text.match(/name="consent_id" value="([^"]+)"/) || [])[1];
-  assert.ok(id, "the consent screen carries no consent_id to post back.");
+  const opened = await authnSignin.consentPage(absolute(location),
+                                               { cookie: b.cookie });
+  assert.strictEqual(opened.shellStatus, 200,
+    "the consent screen's shell should be drawn, got " + opened.shellStatus);
+  assert.ok(opened.status === 200 && opened.view,
+    "the consent screen's view should be answered, got " + opened.status +
+    " " + String(opened.text).slice(0, 300));
   log.debug("Leaving screen().");
-  return { id: id, page: r.text, csp: r.csp };
+  return { id: opened.id, page: opened.text, view: opened.view,
+           opened: opened };
 }
 
-// The scopes the screen is ASKING about, out of its own list, so a section can
-// assert what is on the page rather than what this file expected to be.
+// Answers the consent screen as its page does (#576): `POST
+// /authn-api/consent/{id}`, JSON, with the CSRF token of this browser's
+// session. The answer NAMES where to go (`next: redirect`, `location`), as
+// the form's 303 did.
+async function answer(shown, action) {
+  log.debug("Entering answer(). " + action);
+  const answered = await authnSignin.answerConsent(shown.opened, action);
+  log.debug("Leaving answer(). " + answered.status + " " + answered.next);
+  return answered;
+}
+
+// The scopes the screen is ASKING about, out of its own view, so a section
+// can assert what is on the page rather than what this file expected to be.
 function askedOn(page) {
   log.debug("Entering askedOn().");
-  const list = (String(page).match(/<ul class="scopes">([\s\S]*?)<\/ul>/) ||
-                [])[1] || "";
+  let view = null;
+  try {
+    view = JSON.parse(String(page)).view;
+  } catch (e) {
+    log.debug("Caught in askedOn(): " + ((e && e.message) || e));
+    // Not the view: nothing is asked about.
+    view = null;
+  }
   log.debug("Leaving askedOn().");
-  // THE FIRST `<code>` OF EACH `<li>` AND NOT EVERY `<code>` IN THE LIST. A row
-  // for a delegated permission carries two more of them in its explanation —
-  // the application that exposes it and the base URI the token will be
-  // addressed to — and a sweep of the whole block reads one question as three.
-  return (list.match(/<li>[\s\S]*?<\/li>/g) || []).map(function (item) {
-    const first = (item.match(/<code>([^<]*)<\/code>/) || [])[1] || "";
-    return first.replace(/&#x2F;/g, "/").replace(/&amp;/g, "&");
+  return ((view && view.scopes) || []).map(function (one) {
+    return one.scope;
   }).sort();
 }
 
@@ -361,18 +382,25 @@ async function theFirstSignInIsAsked() {
     "and neither more nor fewer; it asked about " +
     JSON.stringify(askedOn(shown.page)));
 
-  // THE PAGE CARRIES NO SCRIPT, which is the whole reason it needs no CSP
-  // relaxation and the reason this job can drive it with fetch. A `<script`
-  // here would be one more scripted page in a service whose default is
-  // `script-src 'none'` (the root CLAUDE.md lists seven), and that file asks
-  // for the argument to be MADE rather than inherited.
-  assert.ok(shown.page.indexOf("<script") < 0,
-    "the consent screen must carry no script: it is two buttons in a form, " +
-    "and a page that needed one would be a fifth exception to this service's " +
-    "script-src 'none'.");
-  assert.ok(/script-src 'none'/.test(shown.csp),
-    "and the policy on it should be the service-wide one, untouched; it was " +
-    shown.csp);
+  // THE PAGE IS THE SIGN-IN SURFACE'S SHELL SINCE #576: the surface's
+  // script at this page's own address, no form, and a policy that allows
+  // script from 'self' only and keeps `frame-ancestors` — a static surface's
+  // exception, made through `app.contentSecurityPolicy()` (the root
+  // CLAUDE.md's *Pages with a script*).
+  const shell = await b.go("GET", r.location);
+  assert.ok(shell.text.indexOf('<script src="/oauth2/consent.js"') >= 0 ||
+            /<script src="\/realm\/[^"]+\/oauth2\/consent\.js"/
+              .test(shell.text),
+    "the consent screen's shell should load its script; it was " +
+    shell.text.slice(0, 300));
+  assert.ok(shell.text.indexOf("<form") < 0 &&
+            shell.text.indexOf("consent-allow") < 0,
+    "and draw no form: the page is drawn in the browser from its view");
+  assert.ok(/script-src 'self'/.test(shell.csp) &&
+            /frame-ancestors 'none'/.test(shell.csp) &&
+            !/unsafe-inline/.test(shell.csp),
+    "and its policy allows script from 'self' only and keeps " +
+    "frame-ancestors; it was " + shell.csp);
 
   // A GET RECORDS NOTHING. Drawing the screen twice must leave the person
   // exactly as unasked as before — otherwise anything that prefetches a link
@@ -384,12 +412,11 @@ async function theFirstSignInIsAsked() {
     "scanner all issue one, and any of them would otherwise have consented " +
     "for " + who);
 
-  const allowed = await b.go("POST", "/oauth2/consent",
-                             form({ consent_id: shown.id, action: "allow" }));
-  assert.strictEqual(allowed.status, 303,
-    "RFC 9700 section 4.12: the answer to this POST must be a 303, so the " +
-    "next request is a GET rather than a replay of the form. Got " +
-    allowed.status);
+  const allowed = await answer(shown, "allow");
+  assert.strictEqual(allowed.next, "redirect",
+    "Allow should NAME the authorization request to go back to, which the " +
+    "page follows with a GET — what the form's 303 did. Got " +
+    allowed.status + " " + JSON.stringify(allowed.json));
   const back = await b.go("GET", allowed.location);
   assert.ok(/[?&]code=/.test(back.location),
     "Allow should return to the authorization request and issue a code; it " +
@@ -410,8 +437,7 @@ async function theFirstSignInIsAsked() {
 
   // A REPLAY OF THE ANSWER IS REFUSED. The record was spent, so the back
   // button cannot answer it again.
-  const replay = await b.go("POST", "/oauth2/consent",
-                            form({ consent_id: shown.id, action: "allow" }));
+  const replay = await answer(shown, "allow");
   assert.strictEqual(replay.status, 400,
     "a consent id must be spendable once: a second POST of the same id is a " +
     "back button answering for somebody twice. Got " + replay.status);
@@ -451,17 +477,18 @@ async function theSecondSignInIsSilent(first) {
     "answered, which is how people learn to press Allow without reading; it " +
     "asked about " +
     JSON.stringify(askedOn(shown.page)));
-  assert.ok(/already agreed to/.test(shown.page),
+  assert.deepStrictEqual((shown.view.already || []).map(function (one) {
+    return one.scope;
+  }).sort(), ["openid", "profile"],
     "the two already agreed to are on the page under a fold, so a screen " +
     "that somebody has seen before explains why it is shorter this time");
 
   // -----------------------------------------------------------------------
   // DENY. The client is told, and NOTHING is written down.
   // -----------------------------------------------------------------------
-  const denied = await b.go("POST", "/oauth2/consent",
-                            form({ consent_id: shown.id, action: "deny" }));
-  assert.strictEqual(denied.status, 303,
-                     "Deny should redirect, got " + denied.status);
+  const denied = await answer(shown, "deny");
+  assert.strictEqual(denied.next, "redirect",
+                     "Deny should name where to go, got " + denied.status);
   const backAfterDeny = await b.go("GET", denied.location);
   assert.ok(/[?&]error=access_denied/.test(backAfterDeny.location),
     "Deny should reach the CLIENT as access_denied — the screen names the " +
@@ -520,8 +547,7 @@ async function thePromptParameterIsHonoured(first) {
   // CANCELLING A RE-CONSENT MUST NOT DESTROY WHAT WAS ALREADY AGREED. This is
   // the assertion that stops `prompt=consent` being implemented by clearing
   // the entry first, which would make Deny destructive.
-  const denied = await b.go("POST", "/oauth2/consent",
-                            form({ consent_id: shown.id, action: "deny" }));
+  const denied = await answer(shown, "deny");
   await b.go("GET", denied.location);
   const rows = await recordedFor(first.who);
   assert.deepStrictEqual(rows.map(function (one) { return one.scope; }).sort(),
@@ -575,8 +601,13 @@ async function theScreenRefusesWhatItShould() {
     "A CONSENT ASKED OF ONE PERSON MUST NOT BE DRAWN FOR ANOTHER. Their " +
     "session is perfectly good and belongs to somebody else; got " +
     stolenScreen.status);
-  const stolenAnswer = await interloper.b.go("POST", "/oauth2/consent",
-    form({ consent_id: id, action: "allow" }));
+  // THE ANSWER IS BOUND TO THE INTERLOPER'S OWN SESSION — the CSRF token of
+  // their own consent screen's view — so it passes the door and reaches the
+  // check that matters: whose session this is.
+  const theirs = await screen(interloper.b, interloper.r.location);
+  const stolenAnswer = await authnSignin.answerConsent(
+    Object.assign({}, theirs.opened, { id: decodeURIComponent(id) }),
+    "allow");
   assert.strictEqual(stolenAnswer.status, 400,
     "AND MUST NOT BE ANSWERED BY THEM. This is the one refusal at this door " +
     "whose absence would write something UNTRUE into the directory rather " +
@@ -589,10 +620,12 @@ async function theScreenRefusesWhatItShould() {
 
   // WITH NO SESSION AT ALL. The record still exists; there is simply nobody to
   // record an answer for.
-  const anonymous = browser("anonymous");
-  const anon = await anonymous.go("POST", "/oauth2/consent",
-    form({ consent_id: id, action: "allow" }));
-  assert.strictEqual(anon.status, 400,
+  // Since #576 it is refused at the door (403), before the id is looked
+  // up: an answer is bound to the browser's session, and it has none.
+  const anon = await authnSignin.answerConsent(
+    Object.assign({}, theirs.opened, { id: decodeURIComponent(id),
+                                       cookie: "" }), "allow");
+  assert.strictEqual(anon.status, 403,
     "an answer from a browser with no session belongs to nobody; got " +
     anon.status);
   assert.strictEqual((await recordedFor(who)).length, 0,
@@ -602,9 +635,8 @@ async function theScreenRefusesWhatItShould() {
   // pending record alone — a screen that spent itself on a refusal would turn
   // each of those into a denial of service against the person it was asked of.
   const shown = await screen(owner.b, owner.r.location);
-  const allowed = await owner.b.go("POST", "/oauth2/consent",
-    form({ consent_id: shown.id, action: "allow" }));
-  assert.strictEqual(allowed.status, 303,
+  const allowed = await answer(shown, "allow");
+  assert.strictEqual(allowed.next, "redirect",
     "the person it was asked of can still answer it after all of that; got " +
     allowed.status);
   const back = await owner.b.go("GET", allowed.location);
@@ -784,8 +816,7 @@ async function aRecordedAnswerCanBeTakenBack(first) {
   assert.deepStrictEqual(askedOn(shown.page), ["profile"],
     "about the revoked one ALONE — `openid` is still on their entry; it " +
     "asked about " + JSON.stringify(askedOn(shown.page)));
-  await first.b.go("POST", "/oauth2/consent",
-                   form({ consent_id: shown.id, action: "allow" }));
+  await answer(shown, "allow");
 
   await ok("/consent/forget-user-consent", { username: first.who },
            "forgot everything for one person");
@@ -866,7 +897,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_consent")
-  .description("Drive the mock STS's consent screen over HTTP: that it is " +
+  .description("Drive IYA STS's consent screen over HTTP: that it is " +
       "asked once and not twice, that it records one row per scope, that it " +
       "refuses a replay and somebody else's session, that Deny records " +
       "nothing — and that a global consent on an application's entry stops " +

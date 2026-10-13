@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -168,9 +168,16 @@ function withSettings(config, pairs, fn) {
 // A Destination since #190: a SIGNED request names where it was sent
 // (saml-bindings-2.0-os sections 3.4.5.2, 3.5.5.2) and this service refuses
 // one addressed elsewhere; the fake requests arrive at https://idp.test.
+// With no `acs` and no `index`, a stand-in address nothing answers at: a
+// service provider with no metadata and no registered address must name one,
+// or the request is refused (#592 deleted the mock SP it once fell back to).
+// `acs: null` names none, for a provider whose metadata registers endpoints.
 function authnRequest(opts) {
   log.debug("Entering authnRequest().");
-  const o = opts || {};
+  const o = Object.assign({}, opts || {});
+  if (o.acs === undefined && o.index === undefined) {
+    o.acs = 'https://sp.reqsig.test/acs';
+  }
   log.debug("Leaving authnRequest().");
   return '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="' + (o.id || '_req1') + '" ' +
@@ -871,7 +878,7 @@ function run(t) {
   const probe = function (opts) {
     log.debug("Entering probe().");
     const raw = redirectQuery(stsCrypto, authnRequest(Object.assign(
-      { issuer: spM, format: F_TRANSIENT }, opts)), 'p',
+      { issuer: spM, format: F_TRANSIENT, acs: null }, opts)), 'p',
       keyA.privateKeyPem);
     log.debug("Leaving probe().");
     return getSso(raw);
@@ -920,7 +927,7 @@ function run(t) {
           'a declared NameIDPolicy Format goes on to the sign-in screen',
           goodFormat.statusCode + ' ' + codeOf(goodFormat));
   const unsignedM = getSso(redirectQuery(stsCrypto,
-    authnRequest({ issuer: spM, id: '_h8' }), 'x'));
+    authnRequest({ issuer: spM, id: '_h8', acs: null }), 'x'));
   t.check(unsignedM.statusCode === 403 &&
           codeOf(unsignedM) === 'STS-SAML-0063',
           'IN DEVELOPMENT, an unsigned request from a service provider whose ' +
@@ -1039,14 +1046,11 @@ function run(t) {
                                                       sigAlg: RSA_SHA256 });
   t.check(!noCert.ok && errorCodes.codeOf(noCert) === 'STS-KEYS-0060',
           'and refuses to verify without a certificate');
-  t.check(helpers.STS.xml.certB64 && direct.implicitCertificatesFor(
-            'https://idp.test', 'https://idp.test/saml2/sp')[0] ===
-          helpers.STS.xml.certB64 &&
-          !direct.implicitCertificatesFor('https://idp.test',
-                                          'https://other.test/saml2/sp')
-            .length,
-          'this service\'s own key is trusted for its own mock service ' +
-          'provider and for nobody else');
+  // THERE IS NO IMPLICIT ANCHOR (#592): the one there was, this service's
+  // own certificate for its own mock service provider, went with that mock,
+  // so every service provider is verified against what is registered.
+  t.check(typeof direct.implicitCertificatesFor === 'undefined',
+          'no certificate is trusted implicitly for any service provider');
   log.debug("Leaving run().");
 }
 

@@ -13,17 +13,17 @@ written, which is the point it is making.
 Ask the service instead:
 
 ```bash
-curl -s localhost:8081/admin/sts-metadata            # a page
-curl -s 'localhost:8081/admin/sts-metadata?format=json' | jq
+# the page, in a browser: https://localhost:8081/admin/sts-metadata
+curl -s -H "Authorization: Bearer $TOKEN" \
+  localhost:8081/admin-api/sts-metadata | jq      # what the page is drawn from
 ```
 
-Both are **behind the console gate**: with no browser sign-on session the first is a 302 to the sign-in
-screen and the second is a `401 login_required`, because a redirect to an HTML
-login screen is not an answer a program can read. The gate cannot be turned
-off; sign in at `/authn/login` (any username in development mode, where no
-password is checked). **Everything under `/admin-api` needs an OAuth 2.0
-access token** audienced to that API (`admin:read` to read, `admin:write` to
-write); `ADMIN_API_AUTH_REQUIRED=false` turns that off.
+The page is the admin console's, which signs in in the browser and draws it
+from `GET /admin-api/sts-metadata`. **Everything under `/admin-api` needs an
+OAuth 2.0 access token** audienced to that API (`admin:read` to read,
+`admin:write` to write) — the [management API](management-api.md) says how
+to get one; `ADMIN_API_AUTH_REQUIRED=false` turns that off in development
+mode only. The console's own sign-in cannot be turned off.
 
 ## What that page is
 
@@ -39,7 +39,7 @@ request, so it cannot go stale by omission; the table in `sts_metadata.ts`
 supplies only the *name* and *description* for a path the router reports. Each
 row carries the method, the path, a sentence about what the endpoint is for, and
 a link to the specification it implements. Every **coverage note starts
-`full`, `partial` or `mock`** and says what is missing — a list of fifty
+`full`, `partial` or `minimal`** and says what is missing — a list of fifty
 specifications that did not mention that development mode checks no passwords
 and validates no access tokens would be the most misleading thing in the
 service.
@@ -50,7 +50,7 @@ Express's own `Cannot GET /oauth2/token`, and a route pattern with a
 `:parameter` or a `*` is not the address of anything. Those are listed unlinked
 with the reason shown — "POST only", "takes :id", "wildcard". The followable
 endpoints that *do* something when clicked (`/oauth2/authorize`,
-`/oauth2/logout`, `/oauth2/userinfo`, `/issuer/offer`, `/oid4vp/start`) carry an
+`/oauth2/logout`, `/oauth2/userinfo`) carry an
 `effect` note: the first answers **400** when followed bare, since it needs
 `client_id` and `redirect_uri`, and UserInfo answers **401**, being a protected
 resource. Links are root-relative, so they follow whichever host the page was
@@ -99,8 +99,8 @@ things here are exactly that:
   API and the SPIRE Server API
 
 Those are described by hand in the page's own table — the Kerberos sockets in
-the text of the three HTTP rows the walk can see (`/KdcProxy`,
-`/krb5/principals`, `/krb5/service`), since a described entry with no route
+the text of the HTTP row the walk can see (`/KdcProxy`, and the Kerberos card),
+since a described entry with no route
 behind it would trip the stale-path check. If you add one, describe it there or
 it goes unlisted with nothing failing.
 
@@ -110,8 +110,10 @@ looked as though they belonged on the main listener, while `/admin/sts-metadata`
 — walking that listener's router — could not see them; their rows there were the
 plain-HTTP views only and the listeners were described in the text. Both have
 been deleted. Everything that family answers is now a route on the
-router the page walks: `/tls`, `/tls/sign-in`, `/tls/server-certificate`,
-`/tls/forwarded` and the two truststore controls.
+router the page walks: `/tls/sign-in` and `/tls/server-certificate` (`/tls`,
+`/tls/forwarded` and the two open truststore controls were deleted by #597;
+what the first two showed is Monitoring → TLS connection, over
+`GET /admin-api/tls-connection`).
 
 ## The index of its own cryptography
 
@@ -133,7 +135,7 @@ the Kerberos encryption types from the codec, the SPIFFE authority key types,
 the COSE algorithms from the WebAuthn verifier, and so on across eleven modules
 — because a hand-kept list of algorithms disagrees with the code silently. Only
 the per-family prose and the standards list are hand-written, and every coverage
-note there starts `full`, `partial` or `mock`. **It checks its family list
+note there starts `full`, `partial` or `minimal`. **It checks its family list
 against the endpoint page's in both directions**, so a protocol family added
 without a crypto profile is reported, and so is a profile naming a family that
 no longer exists.
@@ -179,16 +181,16 @@ them can drift from what the service does:
 | `GET /admin/ldap/service` | The directory's state, both listeners separately, and the fact that it is schemaless |
 | `GET /federation` | Every configured federation relationship in both directions, and the URL to give each partner |
 | `GET /admin/ldap/federations` | The federation register as the directory holds it, with its schema — and the one container here where an `ldapmodify` is a security change |
-| `GET /tls` | The certificate the main port presents, the client certificate it asks for, and what a verified one does and does not mean (`GET /tls/sign-in` turns one into a session) |
+| `GET /admin/tls-connection` | Monitoring → TLS connection: the TLS version and cipher of the console's own request, the client certificate its connection presented (verified or not, the identity gate's answer, revocation), and every forwarding header with what was believed of it. Admin Read in both modes; `GET /admin-api/tls-connection` is its management-API twin (#597) |
 | `GET /admin/tls/trust` | Every client-certificate trust anchor, with where each came from (`tls.trustAnchorsFile` or added at runtime), and the add and remove controls. An admin console page; `GET /admin-api/tls/trust` and `POST /admin-api/tls/trust/{add,remove}` are its management-API twins. An anchor added at runtime is persisted in the default realm's `ou=trustAnchors`; one from the file comes back at every start |
 | `GET /scim` | The SCIM authentication schemes that are switched on |
-| `GET /krb5/principals` | The principal database, passwords included in development mode for the reason that page gives; in product mode the passwords are withheld and the page says why. A directory person keyed from their own password is listed with `directoryKeys: true` and never with a key |
-| `GET /admin/kerberos/principals` | Who the KDC holds a STORED long-term key for: directory people whose keys were derived from their own password (product mode), and service principals created with a random key — with create, rotate, delete and clear controls. A create or a rotate shows an MIT keytab ONCE — a rotate's carries the previous kvno too. Each row lists the PREVIOUS key versions still accepted for tickets issued under them (kvno, enctypes, expiry; `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`), with a Drop previous versions control that ends that window at once. And the realm's `krbtgt` key (#169) — where it comes from, its kvno, its last and next rotation, the versions kept — with Rotate the krbtgt key and Rotate and invalidate, both queued on the scheduler and neither showing a key. An admin console page; `GET /admin-api/kerberos/principals` and `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,clear-person-keys,drop-previous-service-keys,drop-previous-person-keys,reset-person-keytab,rotate-krbtgt,rotate-krbtgt-invalidate}` are its twins, and only the create and rotate replies and a person's keytab carry key material |
+| `GET /admin/kerberos/principals` | Who the KDC holds a STORED long-term key for: directory people whose keys were derived from their own password (product mode), and service principals created with a random key — with create, rotate, delete and clear controls. A create or a rotate shows an MIT keytab ONCE — a rotate's carries the previous kvno too. Each row lists the PREVIOUS key versions still accepted for tickets issued under them (kvno, enctypes, expiry; `krb5.retainedKeyVersions`, `krb5.retainedKeyTtlS`), with a Drop previous versions control that ends that window at once. And the KDC's whole database (#595: every principal by its public fields — the salts, enctypes, kvno and flags `/krb5/principals` listed before it was deleted, never a password). And the realm's `krbtgt` key (#169) — where it comes from, its kvno, its last and next rotation, the versions kept — with Rotate the krbtgt key and Rotate and invalidate, both queued on the scheduler and neither showing a key. An admin console page; `GET /admin-api/kerberos/principals` and `POST /admin-api/kerberos/principals/{create-service,rotate-service,delete-service,clear-person-keys,drop-previous-service-keys,drop-previous-person-keys,reset-person-keytab,rotate-krbtgt,rotate-krbtgt-invalidate}` are its twins, and only the create and rotate replies and a person's keytab carry key material |
 | `OPTIONS /gnap` and `GET /.well-known/gnap-as-rs` | GNAP's two discovery documents — the client's (RFC 9635 section 9) and the resource server's (RFC 9767 section 3.1), both read off the `gnap.*` settings and the authorization server profile. See [GNAP](gnap.md) |
 | `GET /gnap/keys` | The public keys that verify GNAP's self-contained token formats without introspection |
 | `GET /.well-known/openid-federation` | The realm's OpenID Federation Entity Configuration: its Federation Entity Keys, its federation, OpenID Provider, authorization server and verifier metadata, its superiors, and the Trust Marks it carries. The rest of the federation's endpoints are `/oidfed/*`. See [OpenID Federation](oidfed.md) |
 | `GET /oidfed/historical-keys` | Every Federation Entity Key the realm has retired or revoked, signed, with why |
 | `GET /admin-api/status` | Which console pages exist — what the parity test reads |
+| `GET /admin-api/me` | Who the access token names, what it may do, and which console pages it may reach |
 
 **Two rows in that table are behind the console's gate, and their `/admin-api`
 twins are not.** `GET /admin/ldap/service` and `GET /admin/ldap/federations`

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -102,9 +102,11 @@
 // claim rather than three promises.
 //
 // `libraryInfo()` / `packageDir()` are here for `describe()`, which the crypto
-// metadata page reads, and for the biscuit loader: a package's version is read
-// from its own package.json rather than written down, and one of the three
-// packages hides that file behind an exports map.
+// metadata page reads: a package's version is read from its own package.json
+// rather than written down, and one of the three packages hides that file
+// behind an exports map. (The biscuit loader, which read `packageDir()` too,
+// is `common/crypto.js`'s since #453 and walks `module.paths` itself, because
+// `crypto.js` is a leaf and may not require this file.)
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -122,6 +124,13 @@ import path = require('path');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
+
+// One entry of an actor chain (#526): the actor's subject and, where the
+// writer named one, the issuer that wrote it.
+interface ActorEntry {
+  sub: string;
+  iss?: string;
+}
 
 interface GnapAccessDeps {
   log: { debug(message: string): void };
@@ -162,6 +171,28 @@ const MAX_POINTS = 1024;
 const THUMBPRINT_RE = /^[A-Za-z0-9_-]{43}$/;
 const CONTROL_RE = /[\x00-\x1f\x7f]/;
 
+// ---------------------------------------------------------------------------
+// THE ACTOR CHAIN (#432 phase 1). A token DERIVED under RFC 9767 section 4
+// names who acted: the deriving resource server, and under it every resource
+// server that derived the token it was derived from. The model carries it as
+// RFC 8693 section 4.1's `act` — `{ sub, iss?, act? }`, the outermost the
+// most recent actor — because that is the one standard spelling of a
+// delegation chain and the two JWT formats write it as it is; the three
+// library formats spell the same chain in their own vocabulary
+// (`token_macaroon.ts`, `token_biscuit.ts`, `token_zcap.ts`). Since #526
+// every entry this authorization server writes carries `iss`, as the token
+// exchange's do (#471), so every format carries it too (the biscuit as an
+// `actor_iss` fact beside `actor`). Any OTHER member is refused rather than
+// carried: a model is what every format must be able to write back exactly,
+// and a `client_id` in one format's chain would be lost by another's.
+//
+// MAX_ACTOR_CHAIN is what a MODEL may hold, a bound on hostile input (a
+// presented macaroon or biscuit is read back into a model). How deep a chain
+// this authorization server ISSUES is `gnap.maxDerivationDepth`, which is
+// smaller and is asked where a derivation is decided.
+// ---------------------------------------------------------------------------
+const MAX_ACTOR_CHAIN = 16;
+
 /**
  * RFC 9635 section 8 access rights as a token reads them, and the four checks
  * every structured token format shares: time, audience, key binding and access.
@@ -189,6 +220,11 @@ class GnapAccess {
    * The cap on an access right's cross-product of dimension values.
    */
   static readonly MAX_POINTS = MAX_POINTS;
+  /**
+   * The deepest actor chain (`act`, RFC 8693 section 4.1) a token model may
+   * carry.
+   */
+  static readonly MAX_ACTOR_CHAIN = MAX_ACTOR_CHAIN;
 
   /**
    * Builds the library from the modules it reads.
@@ -657,6 +693,71 @@ class GnapAccess {
   }
 
   // -------------------------------------------------------------------------
+  // THE ACTOR CHAIN, FLATTENED: one `{ sub, iss? }` per actor, the most
+  // recent first, or null when `act` is not a chain this model may carry (a
+  // member other than `sub`, `iss` and `act`, an empty or control-bearing
+  // `sub` or `iss`, deeper than MAX_ACTOR_CHAIN). `null` and `undefined` are
+  // the empty chain.
+  // -------------------------------------------------------------------------
+  /**
+   * Flattens an RFC 8693 section 4.1 `act` chain into its entries, the most
+   * recent first.
+   *
+   * @param act - the nested `{ sub, iss?, act? }` chain, or null
+   * @returns the entries (empty for no chain), or null when it is not a
+   *   chain a token model may carry
+   */
+  actorChain(act: unknown): ActorEntry[] | null {
+    const { log } = this.deps;
+    log.debug("Entering GnapAccess.actorChain().");
+    const out: ActorEntry[] = [];
+    let level: any = act;
+    while (level !== null && level !== undefined) {
+      if (!this.isObject(level) || out.length >= MAX_ACTOR_CHAIN ||
+          Object.keys(level).some(function (k) {
+            return k !== 'sub' && k !== 'iss' && k !== 'act';
+          }) || !this.plainString(level.sub) ||
+          (level.iss !== undefined && !this.plainString(level.iss))) {
+        log.debug("Leaving GnapAccess.actorChain(). Not a chain.");
+        return null;
+      }
+      out.push(level.iss === undefined ? { sub: level.sub }
+                                       : { sub: level.sub, iss: level.iss });
+      level = level.act;
+    }
+    log.debug("Leaving GnapAccess.actorChain(). " + out.length + ".");
+    return out;
+  }
+
+  // The reverse: entries, the most recent first, nested as `act` with the
+  // members in one order (`sub`, `iss`, `act`), so every format writes the
+  // same JSON back. Null for none.
+  /**
+   * Nests actor entries, the most recent first, as an RFC 8693 section 4.1
+   * `act` chain.
+   *
+   * @param actors - the entries, the most recent first
+   * @returns the nested chain, or null when there are none
+   */
+  nestActors(actors: ActorEntry[]): any {
+    const { log } = this.deps;
+    log.debug("Entering GnapAccess.nestActors().");
+    let out: any = null;
+    for (let i = (actors || []).length - 1; i >= 0; i--) {
+      const one: any = { sub: actors[i].sub };
+      if (actors[i].iss !== undefined) {
+        one.iss = actors[i].iss;
+      }
+      if (out) {
+        one.act = out;
+      }
+      out = one;
+    }
+    log.debug("Leaving GnapAccess.nestActors().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
   // validateModel(model): the token model of RFC 9767 section 2.1, as the
   // design contract spells it, before a format mints it and after a format
   // reconstructs it. Returns `{ ok:true, model }` — a copy with every optional
@@ -789,6 +890,24 @@ class GnapAccess {
       log.debug("Leaving GnapAccess.validateModel().");
       return bad('"label" must be a non-empty string or null');
     }
+    // The actor chain (#432): rebuilt from its flattened form, so the model
+    // handed on is the canonical nesting and nothing a presenter added.
+    const actors = this.actorChain(model.act);
+    if (!actors) {
+      log.debug("Leaving GnapAccess.validateModel().");
+      return bad('"act" must be null or a chain of { sub, iss?, act? } at ' +
+                 'most ' + MAX_ACTOR_CHAIN + ' deep, each sub (and iss) a ' +
+                 'non-empty string');
+    }
+    // THE GRANT A RIGHT'S LIMITS ARE COUNTED AGAINST (#432 phase 5): a
+    // string the authorization server writes, or null for a model that
+    // names none (a token minted before there was one to name).
+    const grant = model.grant === undefined ? null : model.grant;
+    if (grant !== null && (!this.plainString(grant) || grant.length > 256)) {
+      log.debug("Leaving GnapAccess.validateModel().");
+      return bad('"grant" must be a non-empty string of at most 256 ' +
+                 'characters, or null');
+    }
     const out = {
       jti: model.jti,
       iss: model.iss,
@@ -801,7 +920,9 @@ class GnapAccess {
       iat: model.iat,
       nbf: nbf,
       exp: model.exp,
-      label: model.label === undefined ? null : model.label
+      label: model.label === undefined ? null : model.label,
+      act: this.nestActors(actors),
+      grant: grant
     };
     log.debug("Leaving GnapAccess.validateModel(). Valid.");
     return { ok: true, model: out };
@@ -1107,6 +1228,9 @@ export = {
   ARRAY_DIMENSIONS: GnapAccess.ARRAY_DIMENSIONS,
   COMMON_FIELDS: GnapAccess.COMMON_FIELDS,
   MAX_POINTS: GnapAccess.MAX_POINTS,
+  MAX_ACTOR_CHAIN: GnapAccess.MAX_ACTOR_CHAIN,
+  actorChain: slot.forward('actorChain'),
+  nestActors: slot.forward('nestActors'),
   refusal: slot.forward('refusal'),
   canonicalJson: slot.forward('canonicalJson'),
   normalise: slot.forward('normalise'),

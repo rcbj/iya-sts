@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -82,6 +82,21 @@ interface SpiffePeerDeps {
   loadAddon(): any;
 }
 
+// ---------------------------------------------------------------------------
+// WHAT A CONNECTION'S ROW SAYS WHEN ONLY ITS uid AND gid ARE ATTESTED
+// (#543 phase 2b): two sentences, one per cause, in a table so that the
+// `spiffe` namespace's `prose()` reads the same strings `observe()` writes.
+// They reach `GET /admin-api/spiffe` as `workloadAttestation.connections[]
+// .note`. A connection's `error` is a refusal and stays English.
+// ---------------------------------------------------------------------------
+const NOTES = Object.freeze({
+  unreadable: 'the peer\'s process could not be read, so only its uid and ' +
+              'gid are attested',
+  otherNamespace: 'the peer is in another pid namespace (pid 0), so only ' +
+                  'its uid and gid are attested — share the pid namespace ' +
+                  'for the rest'
+});
+
 /**
  * Who is on the other end of the Workload API's Unix socket: the kernel's peer
  * credentials and a pidfd, kept per connection.
@@ -103,6 +118,22 @@ class SpiffePeer {
   constructor(private readonly deps: SpiffePeerDeps) {
     deps.log.debug("Entering SpiffePeer.constructor().");
     deps.log.debug("Leaving SpiffePeer.constructor().");
+  }
+
+  /**
+   * Extracts this module's share of the `spiffe` namespace (#543 phase 2b):
+   * the two notes a connection's row carries.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    log.debug("Entering SpiffePeer.prose().");
+    const out: Record<string, string> = {};
+    Object.keys(NOTES).forEach(function (key) {
+      out['spiffe.peer.notes.' + key] = NOTES[key];
+    });
+    log.debug("Leaving SpiffePeer.prose(). " + Object.keys(out).length);
+    return out;
   }
 
   /**
@@ -270,12 +301,8 @@ class SpiffePeer {
           facts.visible = !!facts.starttime && facts.pidfd >= 0;
         }
         if (!facts.visible) {
-          facts.note = facts.pid > 0
-            ? 'the peer\'s process could not be read, so only its uid and ' +
-              'gid are attested'
-            : 'the peer is in another pid namespace (pid 0), so only its ' +
-              'uid and gid are attested — share the pid namespace for the ' +
-              'rest';
+          facts.note = facts.pid > 0 ? NOTES.unreadable
+                                     : NOTES.otherNamespace;
         }
       } catch (e) {
         log.debug("Caught in SpiffePeer.observe(): " + ((e && e.message) || e));
@@ -469,6 +496,9 @@ const shared = new SpiffePeer(SpiffePeer.defaultDeps());
  */
 export = {
   SpiffePeer: SpiffePeer,
+  // The `spiffe` namespace's route and English (#543).
+  PROSE_ROUTES: ['/admin-api/spiffe'],
+  prose: (): Record<string, string> => SpiffePeer.prose(),
   shared: shared,
   availability: () => shared.availability(),
   observe: (socket: any) => shared.observe(socket),

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -87,22 +87,64 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import authorizationServers = require('../oauth-oidc/authorization_servers');
 import InstanceSlot = require('../common/instance_slot');
+// #543: the rows' names are translated where an answer is sent, and the
+// computed ones are filled from templates `prose()` lists. A top-level
+// require is safe: `server_prose` requires only the early libraries, none
+// of which requires this module.
+import serverProse = require('../common/server_prose');
 
-const OAUTH_ISSUING = ['/oauth2/authorize', '/oauth2/token',
-                       '/oauth2/introspect', '/oauth2/revoke'];
-const SAML_ISSUING = ['/saml2/sso', '/saml2/ars', '/saml11/sso',
-                      '/saml11/responder', '/sts', '/wsfed'];
 const SSF_DELIVERY = ['/.well-known/ssf-configuration', '/ssf/stream',
                       '/ssf/status', '/ssf/subjects/add',
-                      '/ssf/subjects/remove', '/ssf/verify', '/ssf/poll',
-                      '/ssf/receive', '/ssf/received'];
+                      '/ssf/subjects/remove', '/ssf/verify', '/ssf/poll'];
 // The Protocols pages with no row, each with the reason. A page here is one
 // that lists its endpoints itself; `tests/protocol_endpoints.js` fails on a
 // Protocols page that is in neither table.
 const EXEMPT = {
   '/admin/gnap': 'draws its own list from gnap/gnap_console.ts, and was the ' +
-                 'model for this table'
+                 'model for this table',
+  // Under Protocols since 2026-10-01 because it CONFIGURES, not because it
+  // is a protocol: a delegated permission is asked for at the OAuth 2.0
+  // endpoints, which /admin/oauth2 lists, and the acts it keeps are made at
+  // the Kerberos, WS-Trust and token endpoints their own pages list.
+  '/admin/delegation-settings': 'configures registers other families\' ' +
+                                'endpoints read, and has no endpoint of ' +
+                                'its own to list',
+  // A hidden row (admin-ui/admin.ts): a tab of /admin/oauth2, kept in NAV
+  // only so SETTING_HOMES can name it; /admin/oauth2's row lists the
+  // endpoints, and a tab has no page of its own to draw a list on.
+  '/admin/token-lifetimes': 'a tab of /admin/oauth2, whose row lists ' +
+                            'the endpoints'
 };
+
+// ---------------------------------------------------------------------------
+// THE NAMES OF THE ROWS THIS FILE BUILDS ITSELF (#543 phase 3) — the
+// listeners the router cannot see — each filled where its row is built, so
+// the name and the template the server matches it against cannot differ.
+// A Kerberos realm's name is data. Not here, because each is a protocol or
+// product name or a transport, and on every route (the namespace's route is
+// `*`) such a word could equal a value anywhere: 'LDAP', 'LDAPS', the three
+// SPIFFE and SPIRE APIs, 'TCP', 'UDP', 'TLS', 'gRPC', 'gRPC over TLS' and
+// 'unix socket'.
+// ---------------------------------------------------------------------------
+const SOCKET_NAMES = Object.freeze({
+  kdc: 'Key Distribution Center',
+  kdcRealm: 'Key Distribution Center (realm {{realm}})',
+  mainPort: 'Client certificates on the main port',
+  mainPortTransport: 'TLS (a client certificate asked for, never required)'
+});
+
+// THE ENDPOINT NAMES NOT TRANSLATED although they hold a space: each is a
+// protocol or product name, the same on every page in every language. A
+// name of ONE WORD is never translated either ('SCIM', 'Users', 'Mode'):
+// on every route a single word is the likeliest thing to equal a value a
+// form sends back or a label another namespace owns.
+const UNTRANSLATED_NAMES = ['KDC Proxy (MS-KKDCP)', 'Shared Signals'];
+
+// The routes whose answers carry this namespace's prose (#543): EVERY
+// route, because every Protocols page answers `protocolEndpoints`, and
+// `/admin-api/sts-metadata` carries the same names. Kept to names short
+// and specific enough to be matched anywhere.
+const PROSE_ROUTES = ['*'];
 
 // One entry of THE TABLE: a route, a route per named server, or a socket.
 interface Entry {
@@ -165,6 +207,60 @@ class ProtocolEndpoints {
     deps.log.debug("Leaving ProtocolEndpoints.constructor().");
   }
 
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the endpoints namespace (#543 phase 3): the name of every
+   * route `sts_metadata.ts`'s `ENDPOINTS` describes, keyed by its path, and
+   * the names of the socket rows this file builds.
+   *
+   * `sts_metadata` is required HERE, when the namespace is first extracted
+   * — after the stack is up — and never at load, for the reason in the
+   * header. A name is left out when it is one word, when it is in
+   * `UNTRANSLATED_NAMES`, or when it is also a protocol card's name, an
+   * endpoint group or a specification's name: those are join keys, and on
+   * every route a translated one would no longer join.
+   *
+   * The name of a route repeated per named authorization server, `<name> —
+   * <id>`, is translated only as far as the whole string is a name: a
+   * template `{{name}} — {{server}}` would match any sentence on any page
+   * with a dash in it.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering ProtocolEndpoints.prose().");
+    const metadata = require('../sts_metadata');
+    const keys = new Set<string>(UNTRANSLATED_NAMES);
+    metadata.PROTOCOLS.forEach(function (card) {
+      keys.add(card.name);
+      card.groups.forEach(function (group) {
+        keys.add(group);
+      });
+    });
+    metadata.ENDPOINTS.forEach(function (row) {
+      keys.add(row.group);
+    });
+    metadata.SPECS.forEach(function (spec) {
+      keys.add(spec.name);
+    });
+    const named = metadata.ENDPOINTS.filter(function (row) {
+      return / /.test(row.name) && !keys.has(row.name);
+    }).map(function (row) {
+      return { key: row.path, name: row.name };
+    });
+    const out: Record<string, string> = Object.assign({},
+      serverProse.harvest('endpoints.route', named, ['name']),
+      serverProse.harvest('endpoints.socket', SOCKET_NAMES,
+                          Object.keys(SOCKET_NAMES)));
+    helpers.log.debug("Leaving ProtocolEndpoints.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
   // What the composition root passes, from the real modules: `require.cache`
   // and this file's directory for `loaded()`, as before.
   /**
@@ -225,78 +321,84 @@ class ProtocolEndpoints {
         '/oauth2/logout', '/oauth2/consent', '/oauth2/rfc9700',
         '/oauth2/oauth21',
         '/oauth2/fapi', '/oauth2/grants/:grantId',
-        '/dpop/nonce-mode'
-      ].map(route),
-      '/admin/authorization-servers': namedServerRoutes,
-      '/admin/token-lifetimes': OAUTH_ISSUING.map(route),
-      '/admin/claims': ['/oauth2/token', '/oauth2/userinfo',
-                        '/oauth2/introspect'].map(route),
-      '/admin/userinfo-claims': [this.route('/oauth2/userinfo'),
-                                 this.perServer('/:as/oauth2/userinfo')],
+        // The access-token status list (#432), shared with GNAP's JWTs; its
+        // two settings are on this page.
+        '/status-lists/access-tokens', '/status-lists'
+      ].map(route).concat(namedServerRoutes),
       '/admin/saml2': [
         '/saml2', '/saml2/metadata', '/saml2/metadata/:sp', '/saml2/sso',
         '/saml2/sso/:sp', '/saml2/ars', '/saml2/ars/:sp', '/saml2/slo',
-        '/saml2/slo/:sp', '/saml2/sp'
+        '/saml2/slo/:sp', '/saml11', '/saml11/metadata',
+        '/saml11/metadata/:rp', '/saml11/sso', '/saml11/sso/:rp',
+        '/saml11/responder', '/saml11/responder/:rp', '/sts',
+        '/wsfed'
       ].map(route),
-      '/admin/saml11': [
-        '/saml11', '/saml11/metadata', '/saml11/metadata/:rp', '/saml11/sso',
-        '/saml11/sso/:rp', '/saml11/responder', '/saml11/responder/:rp',
-        '/saml11/rp'
-      ].map(route),
-      '/admin/saml-assertions': SAML_ISSUING.map(route),
-      '/admin/saml-attributes': SAML_ISSUING.map(route),
-      '/admin/oid4vci': [
+      '/admin/vc': [
         '/.well-known/openid-credential-issuer', '/.well-known/jwt-vc-issuer',
-        '/oid4vci/nonce', '/oid4vci/credential', '/oid4vci/deferred_credential',
-        '/oid4vci/notification', '/oid4vci/credential-offer/:id', '/issuer',
-        '/issuer/offer', '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
-        '/.well-known/did-configuration.json'
-      ].map(route),
-      '/admin/vc': ['/.well-known/openid-credential-issuer',
-                    '/oid4vci/credential',
-                    '/oid4vci/deferred_credential', '/issuer/offer'].map(route),
-      '/admin/oid4vp': [
-        '/oid4vp/verifier', '/oid4vp/start', '/oid4vp/request/:id',
-        '/oid4vp/response', '/oid4vp/result/:state', '/oid4vp/done',
+        '/oid4vci/nonce', '/oid4vci/credential',
+        '/oid4vci/deferred_credential', '/oid4vci/notification',
+        '/oid4vci/credential-offer/:id',
+        // A person's own pre-authorized offer, on the portal (#589).
+        '/account-api/credentials/offerable',
+        '/account-api/credentials/offers',
+        '/bbs/keys/:id', '/.well-known/did.json', '/did.json',
+        '/.well-known/did-configuration.json', '/oid4vci/status-lists/1',
+        '/oid4vci/status-lists', '/oid4vci/status-lists/bitstring/:purpose',
+        '/oid4vp/request/:id', '/oid4vp/response',
         // The x509 Client Identifiers (#230), whose settings are here.
         '/oid4vp/verifier-certificate',
         // The wallet sign-in (#38), whose four settings are on this page.
-        '/authn/wallet', '/authn/wallet/wait'
+        '/authn/wallet', '/authn/wallet/wait',
+        // The W3C VC API (#598), a product surface whose settings are on
+        // this page; off by default, it answers 501 until a realm turns it
+        // on (vcApi.enabled).
+        '/vc-api/issuers', '/vc-api/issuers/:issuer/credentials/issue',
+        '/vc-api/holders/:holder/presentations/prove',
+        '/vc-api/credentials/derive', '/vc-api/credentials/verify',
+        '/vc-api/presentations/verify', '/vc-api/credentials/status',
+        '/vc-api/resolve', '/vc-api/dereference'
       ].map(route),
-      // THE STATUS LISTS (#38's follow-ups): what a verifier fetches to ask
-      // whether a credential this realm issued is still good, and the
-      // credential endpoints that put the reference in it.
-      '/admin/vc-status': [
-        '/oid4vci/status-lists/1', '/oid4vci/status-lists',
-        '/oid4vci/status-lists/bitstring/:purpose', '/oid4vci/credential',
-        '/oid4vci/deferred_credential'
-      ].map(route),
-      '/admin/vc-verifier-config': ['/oid4vp/verifier', '/oid4vp/start',
-                                    '/oid4vp/request/:id',
-                                    '/oid4vp/response'].map(route),
-      '/admin/spiffe': [this.route('/spiffe'), this.route('/spiffe/bundle'),
-                        this.route('/spiffe/federated/:trustDomain'),
-                        this.socket('spiffe-workload'),
-                        this.socket('spiffe-server')],
-      '/admin/spiffe/entries': [this.socket('spiffe-server'),
-                                this.socket('spiffe-workload')],
-      '/admin/spiffe/agents': [this.socket('spiffe-server'),
-                               this.route('/spiffe/bundle')],
-      // The SPIFFE Broker API's own listener (#170).
-      '/admin/spiffe/brokers': [this.socket('spiffe-broker'),
-                                this.route('/spiffe/bundle')],
+      // CERTIFICATE ISSUANCE (2026-09-13; one page since 2026-10-12): ACME,
+      // EST, SCEP and SPIFFE, on the Metadata tab of `/admin/cert-issuance`.
+      // Each family's rows are its registered Express paths, owned by that
+      // family's build (acme/, est/, scep/), and SPIFFE's its three HTTP
+      // routes and the sockets the router cannot see — the Workload API, the
+      // SPIRE Server API and the Broker API's own listener (#170).
+      '/admin/cert-issuance': [
+        // ===== ACME endpoints =====
+        '/enroll/acme/directory', '/enroll/acme/new-nonce',
+        '/enroll/acme/new-account', '/enroll/acme/new-order',
+        '/enroll/acme/account/:id', '/enroll/acme/account/:id/orders',
+        '/enroll/acme/order/:id', '/enroll/acme/order/:id/finalize',
+        '/enroll/acme/authz/:id', '/enroll/acme/challenge/:id',
+        '/enroll/acme/cert/:id', '/enroll/acme/revoke-cert',
+        '/enroll/acme/key-change', '/enroll/acme/renewal-info/:id',
+        // ===== EST endpoints =====
+        '/.well-known/est/cacerts', '/.well-known/est/simpleenroll',
+        '/.well-known/est/simplereenroll', '/.well-known/est/serverkeygen',
+        '/.well-known/est/csrattrs', '/.well-known/est/fullcmc',
+        '/.well-known/est/:label/cacerts',
+        '/.well-known/est/:label/simpleenroll',
+        '/.well-known/est/:label/simplereenroll',
+        '/.well-known/est/:label/serverkeygen',
+        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc',
+        // draft-ietf-lamps-attestation-freshness section 5.1 (#257).
+        '/.well-known/est/nonce', '/.well-known/est/:label/nonce',
+        // ===== SCEP endpoints =====
+        '/enroll/scep', '/enroll/scep/pkiclient.exe', '/enroll/scep/:profile',
+        '/enroll/scep/:profile/pkiclient.exe'
+      ].map(route).concat([
+        // ===== SPIFFE endpoints =====
+        this.route('/spiffe'), this.route('/spiffe/bundle'),
+        this.route('/spiffe/federated/:trustDomain'),
+        this.socket('spiffe-workload'), this.socket('spiffe-server'),
+        this.socket('spiffe-broker')
+      ]),
       '/admin/xacml': [
-        '/xacml', '/xacml/pdp', '/xacml/policies', '/xacml/protected',
+        '/xacml', '/xacml/pdp', '/xacml/policies',
         '/xacml/pep/register', '/xacml/pep/policies', '/xacml/pep/heartbeat',
         '/xacml/pip'
       ].map(route),
-      '/admin/xacml/policies': ['/xacml/policies',
-                                '/xacml/pep/policies'].map(route),
-      '/admin/xacml/editor': ['/xacml/policies', '/xacml/pdp'].map(route),
-      '/admin/xacml/peps': ['/xacml/pep/register', '/xacml/pep/policies',
-                            '/xacml/pep/heartbeat', '/xacml/pip'].map(route),
-      '/admin/xacml/decide': ['/xacml/pdp', '/xacml/protected',
-                              '/xacml/pip'].map(route),
       '/admin/scim': [
         '/scim', '/scim/v2/ServiceProviderConfig', '/scim/v2/ResourceTypes',
         '/scim/v2/ResourceTypes/:id', '/scim/v2/Schemas',
@@ -307,79 +409,57 @@ class ProtocolEndpoints {
         '/.well-known/hoba/register'
       ].map(route),
       '/admin/ssf': ['/ssf'].concat(SSF_DELIVERY).map(route),
-      // Foreign transmitters (#153): the push endpoint this realm gives one.
-      '/admin/ssf/transmitters': ['/ssf/transmitters/:id/push'].map(route),
-      '/admin/caep': SSF_DELIVERY.map(route),
-      '/admin/risc': SSF_DELIVERY.map(route),
       '/admin/federation': ['/federation', '/federation/login/:id',
                             '/federation/acs/:id', '/federation/link/:handle',
                             '/federation/metadata/:id',
                             '/federation/slo/:id',
                             '/federation/backchannel-logout/:id',
                             '/federation/frontchannel-logout/:id',
+                            // A partner's Shared Signals push (#373).
+                            '/federation/signals/:id',
                             '/authn/select-idp'].map(route),
-      '/admin/totp': ['/authn/totp', '/portal/mfa'].map(route),
-      '/admin/backup-codes': ['/authn/backup-code', '/portal/mfa'].map(route),
-      '/admin/webauthn': ['/authn/webauthn', '/portal/keys',
-                          '/portal/remove-key'].map(route),
+      // The portal's doors are its `/account-api` operations since #568.
+      // The second-factor steps' acts since #572.
+      '/admin/totp': ['/authn/totp', '/authn-api/mfa/:id/totp',
+                      '/authn-api/mfa/:id/setup/confirm',
+                      '/account-api/mfa'].map(route),
+      '/admin/backup-codes': ['/authn/backup-code',
+                              '/authn-api/mfa/:id/backup-code',
+                              '/account-api/mfa'].map(route),
+      '/admin/webauthn': ['/authn/webauthn',
+                          '/authn-api/mfa/:id/webauthn/options',
+                          '/authn-api/mfa/:id/webauthn', '/account-api/keys',
+                          '/account-api/keys/remove'].map(route),
       // DEVICE REGISTRATION (#164, #218): the doors a device arrives and is
       // recognised through today — Native SSO's token endpoint and its
       // revocation of a device_secret, and the owner's own list. Phase 2's
       // EST, SCEP and portal enrolment add theirs here.
       '/admin/device-registration': ['/oauth2/token', '/oauth2/revoke',
-                                     '/portal/devices',
-                                     '/portal/devices/challenge',
-                                     '/portal/devices/proof',
+                                     '/account-api/devices',
+                                     '/account-api/devices/challenge',
+                                     '/account-api/devices/proof',
                                      '/.well-known/est/:label/simpleenroll',
                                      '/enroll/scep'].map(route),
-      '/admin/kerberos': [this.socket('kdc'), this.socket('krb5-service'),
-                          this.route('/KdcProxy'),
-                          this.route('/krb5/principals'),
-                          this.route('/krb5/service'), this.route('/spnego'),
-                          this.route('/spnego/protected'),
+      // The demonstrations `/krb5/principals`, `/krb5/service`, `/spnego`,
+      // `/spnego/protected` and the protected service's TCP socket left with
+      // #595: the first is `GET /admin-api/kerberos/principals`, the rest
+      // are the development companion's.
+      '/admin/kerberos': [this.socket('kdc'), this.route('/KdcProxy'),
                           this.route('/authn/spnego')],
-      '/admin/kerberos/principals': [this.socket('kdc'),
-                                     this.route('/KdcProxy'),
-                                     this.route('/krb5/principals')],
       '/admin/ldap': [this.socket('ldap')],
       '/admin/wstrust': ['/sts', '/sts/cert'].map(route),
       '/admin/wsfed': ['/wsfed',
                        '/FederationMetadata/2007-06/FederationMetadata.xml',
-                       '/wsfed/rp'].map(route),
+                       '/wsfed/metadata/:rp'].map(route),
       '/admin/pki': ['/pki/revocation', '/pki/ca/:scope/:ca',
                      '/pki/crl/:scope/:ca', '/pki/ocsp/:scope/:ca',
                      '/pki/chain/:scope/:certificate'].map(route),
-      '/admin/tls': [this.socket('tls'), this.route('/tls'),
-                     this.route('/tls/forwarded'),
-                     this.route('/tls/server-certificate'),
-                     this.route('/tls/trust'),
-                     this.route('/tls/trust/clear')],
-      '/admin/tls/trust': [this.socket('tls'), this.route('/tls/trust'),
-                           this.route('/tls/trust/clear')],
-      // CERTIFICATE ENROLLMENT (2026-09-13). Each row is the family's
-      // registered Express paths, owned by that family's build; see acme/, est/
-      // and scep/.
-      // ===== ACME endpoints row =====
-      '/admin/acme': [
-        '/enroll/acme/directory', '/enroll/acme/new-nonce',
-        '/enroll/acme/new-account', '/enroll/acme/new-order',
-        '/enroll/acme/account/:id', '/enroll/acme/account/:id/orders',
-        '/enroll/acme/order/:id', '/enroll/acme/order/:id/finalize',
-        '/enroll/acme/authz/:id', '/enroll/acme/challenge/:id',
-        '/enroll/acme/cert/:id', '/enroll/acme/revoke-cert',
-        '/enroll/acme/key-change', '/enroll/acme/renewal-info/:id'
-      ].map(route),
-      // ===== EST endpoints row =====
-      '/admin/est': [
-        '/.well-known/est/cacerts', '/.well-known/est/simpleenroll',
-        '/.well-known/est/simplereenroll', '/.well-known/est/serverkeygen',
-        '/.well-known/est/csrattrs', '/.well-known/est/fullcmc',
-        '/.well-known/est/:label/cacerts',
-        '/.well-known/est/:label/simpleenroll',
-        '/.well-known/est/:label/simplereenroll',
-        '/.well-known/est/:label/serverkeygen',
-        '/.well-known/est/:label/csrattrs', '/.well-known/est/:label/fullcmc'
-      ].map(route),
+      // `/tls`, `/tls/forwarded` and the two open truststore acts went with
+      // #597: what the first two showed is Monitoring → TLS connection, and
+      // the truststore's doors are the console's and /admin-api's.
+      '/admin/tls': [this.socket('tls'), this.route('/tls/sign-in'),
+                     this.route('/tls/server-certificate')],
+      '/admin/tls/trust': [this.socket('tls')],
       // ===== OpenID Federation endpoints row (#132) =====
       '/admin/oidfed': [
         '/.well-known/openid-federation', '/oidfed/fetch', '/oidfed/list',
@@ -390,16 +470,11 @@ class ProtocolEndpoints {
       ].map(route),
       // ===== Claims Providers endpoints row (#147) =====
       '/admin/claim-providers': [
-        '/portal/claim-sources', '/portal/claim-sources/callback'
+        '/account-api/claim-sources', '/portal/claim-sources/callback'
       ].map(route),
       // ===== Provider Commands endpoints row (#151) =====
       '/admin/commands': [
-        '/oauth2/commands/callback', '/oauth2/commands/mock-rp'
-      ].map(route),
-      // ===== SCEP endpoints row =====
-      '/admin/scep': [
-        '/enroll/scep', '/enroll/scep/pkiclient.exe', '/enroll/scep/:profile',
-        '/enroll/scep/:profile/pkiclient.exe'
+        '/oauth2/commands/callback'
       ].map(route)
     };
   }
@@ -415,21 +490,16 @@ class ProtocolEndpoints {
         log.debug("Entering the kdc socket builder.");
         const kdc = self.loaded('../kerberos/krb5_kdc');
         const port = config.value('krb5.kdcPort');
-        const realm = kdc ? ' (realm ' + kdc.REALM + ')' : '';
+        const name = kdc
+          ? serverProse.fill(SOCKET_NAMES.kdcRealm, { realm: kdc.REALM })
+          : SOCKET_NAMES.kdc;
         log.debug("Leaving the kdc socket builder.");
         return [
-          { name: 'Key Distribution Center' + realm, methods: [],
+          { name: name, methods: [],
             url: 'tcp://' + host + ':' + port, transport: 'TCP' },
-          { name: 'Key Distribution Center' + realm, methods: [],
+          { name: name, methods: [],
             url: 'udp://' + host + ':' + port, transport: 'UDP' }
         ];
-      },
-      'krb5-service': function (host) {
-        log.debug("Entering the krb5-service socket builder.");
-        log.debug("Leaving the krb5-service socket builder.");
-        return [{ name: 'The protected Kerberos service (AP-REQ)', methods: [],
-                  url: 'tcp://' + host + ':' + config.value('krb5.servicePort'),
-                  transport: 'TCP' }];
       },
       ldap: function (host) {
         log.debug("Entering the ldap socket builder.");
@@ -464,9 +534,9 @@ class ProtocolEndpoints {
         // in, so this answers the same under every prefix and carries none.
         log.debug("Leaving the tls socket builder.");
         return [
-          { name: 'Client certificates on the main port', methods: [],
+          { name: SOCKET_NAMES.mainPort, methods: [],
             url: 'https://' + host + ':' + config.value('global.port') + '/',
-            transport: 'TLS (a client certificate asked for, never required)' }
+            transport: SOCKET_NAMES.mainPortTransport }
         ];
       },
       'spiffe-workload': function () {
@@ -530,7 +600,10 @@ class ProtocolEndpoints {
     const { log } = this.deps;
     log.debug("Entering ProtocolEndpoints.templated().");
     log.debug("Leaving ProtocolEndpoints.templated().");
-    return expressPath.replace(/:([A-Za-z_]+)/g, '{$1}')
+    // A parameter name may hold a digit, as Express allows and
+    // `sts_metadata.ts`'s `linkabilityOf()` reads it; `[A-Za-z_]` alone cut a
+    // `:p1` at the digit and drew `{p}1`.
+    return expressPath.replace(/:([A-Za-z0-9_]+)/g, '{$1}')
                       .replace(/\*$/, '{path}');
   }
 
@@ -563,6 +636,13 @@ class ProtocolEndpoints {
       metadata.ENDPOINTS.forEach(function (row) {
         names.set(row.path, row.name);
       });
+      // AND THE ACCOUNT API'S (#568), which `sts_metadata.ts` reads off that
+      // API's own table rather than keeping a second copy in `ENDPOINTS`.
+      if (typeof metadata.accountApiEndpoints === 'function') {
+        metadata.accountApiEndpoints().forEach(function (row) {
+          names.set(row.path, row.name);
+        });
+      }
       metadata.registeredRoutes().forEach(function (row) {
         methods.set(row.path, row.methods);
       });
@@ -743,6 +823,10 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   ProtocolEndpoints: ProtocolEndpoints,
+  // The routes whose answers carry this module's prose, and its English
+  // (#543).
+  PROSE_ROUTES: ProtocolEndpoints.PROSE_ROUTES,
+  prose: ProtocolEndpoints.prose,
   installInstance: (instance: ProtocolEndpoints): void =>
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),

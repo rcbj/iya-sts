@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -30,8 +30,9 @@
 //   A. the same verifier on the other paths: a federation partner's
 //      assertion (/federation/acs) and an RFC 7522 assertion — EC, EdDSA and
 //      ML-DSA accepted, SHA-1 refused then accepted — and the paths whose
-//      anchor is THIS service's own RSA key (WS-Trust, WS-Federation,
-//      SAML 1.1, GNAP), where SHA-1 is refused then accepted;
+//      anchor is THIS service's own RSA key (WS-Trust, WS-Federation and
+//      GNAP; SAML 1.1's went with its mock relying party, #592), where SHA-1
+//      is refused then accepted;
 //   and the algorithms nothing verifies (MD5, HMAC, HSS/LMS) are refused by
 //   name as not checkable, never as a wrong signature.
 //
@@ -63,7 +64,10 @@ function authnRequest(issuer, id) {
   return '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="' + id + '" Version="2.0" ' +
     'IssueInstant="' + new Date().toISOString() + '" ' +
-    'Destination="https://idp.test/saml2/sso">' +
+    'Destination="https://idp.test/saml2/sso" ' +
+    // A stand-in address nothing answers at: with none, and none
+    // registered, the request is refused since #592 deleted the mock SP.
+    'AssertionConsumerServiceURL="https://sp.sigalg.test/acs">' +
     '<saml:Issuer>' + issuer + '</saml:Issuer></samlp:AuthnRequest>';
 }
 
@@ -627,8 +631,6 @@ async function run(t) {
     'https://idp.test', 'https://rp.test', '_o1'));
   const wsfed = require('../ws-federation/wsfed');
   const wstrust = require('../ws-trust/wstrust');
-  const saml11sso = require('../saml/saml11_sso');
-  const s11 = new saml11sso.Saml11Sso(saml11sso.Saml11Sso.defaultDeps());
   const gnapSubject = require('../gnap/gnap_subject');
   const gnap = new gnapSubject.GnapSubject(
     gnapSubject.GnapSubject.defaultDeps());
@@ -649,9 +651,8 @@ async function run(t) {
       return /saml\.allowSha1Signatures/.test(String(checked.reason || ''))
         ? false : 'refused otherwise: ' + checked.reason;
     }],
-    ['SAML 1.1', function () {
-      return s11.verifySignature(own, 'Assertion').ok;
-    }],
+    // SAML 1.1's path was the mock relying party's verifier, deleted with
+    // it (#592): this service verifies no SAML 1.1 assertion it signed.
     ['GNAP', function () {
       return gnap.usernameFromAssertion({ format: 'saml2',
         value: Buffer.from(own, 'utf8').toString('base64url') }, {}).ok;
@@ -667,10 +668,9 @@ async function run(t) {
     'https://idp.test', 'https://rp.test', '_o2'), {
     privateKeyPem: STS.xml.privateKeyPem, certPem: STS.xml.certPem,
     what: 'an ordinary test document' });
-  t.check(wsfed.verifyAssertionSignature(ownSha256, 'Assertion').ok &&
-          s11.verifySignature(ownSha256, 'Assertion').ok,
+  t.check(wsfed.verifyAssertionSignature(ownSha256, 'Assertion').ok,
           'and the service\'s ordinary RSA-SHA256 signature still verifies ' +
-          'on those paths');
+          'there');
   log.debug("Leaving run().");
 }
 

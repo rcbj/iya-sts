@@ -339,8 +339,8 @@ does:
 Over MS-KKDCP there are two doors. A bare `/KdcProxy` routes by the name, like
 the socket. A realm's own `/realm/acme/KdcProxy` is **pinned** to that realm and
 refuses another realm's name with `KDC_ERR_WRONG_REALM` (`STS-KRB-0122`) — the
-prefix is an address somebody chose. The acceptor on `krb5.servicePort` and
-SPNEGO follow the same two rules: a ticket is accepted in the realm that issued
+prefix is an address somebody chose. The SPNEGO acceptor follows the same two
+rules: a ticket is accepted in the realm that issued
 it, and a ticket from another realm presented under a realm's prefix is refused
 (`STS-KRB-0126`).
 
@@ -350,11 +350,61 @@ another — it is unknown there. The cross-realm referral this service does serv
 is the development-mode second realm (`krb5.trustedRealm`, `PARTNER.COM`), which
 belongs to the default realm alone.
 
-**What is still the process's:** the two sockets (`krb5.kdcPort`,
-`krb5.servicePort`), so a realm cannot move or take a port of its own, and that
-development trust. A realm administrator manages their realm's Kerberos —
+**What is still the process's:** the KDC's socket (`krb5.kdcPort`), so a realm
+cannot move or take a port of its own, and that development trust. A realm administrator manages their realm's Kerberos —
 principals, keytabs and the settings the database is built from — and those five
 settings stay service-wide.
+
+### Optionally separated — listeners of its own (#99, #472)
+
+A realm can be reached at a host name and load balancer of its own, on a
+port of its own on every node. **The `/realm/<id>` prefix still decides the
+realm**; what changes is the scheme, host and port the realm's URLs are built
+on — `https://acme.example.com/realm/acme/...` instead of
+`https://idp.example.com/realm/acme/...` — and, if you like, which of its
+applications each port answers.
+
+It is two settings, set **on the realm** (`POST
+/realm/<id>/admin-api/listeners/set-listeners` and `.../set-applications`, or
+Server configuration → Listeners read inside the realm), described on
+[Listeners and hosted applications](listeners.md):
+
+* `listeners.realm`, the realm's own listeners: each an `id`, a `port`, the
+  `publicBaseUrl` its load balancer answers under, and optionally its
+  `hostnames`, certificate files, `clientAuth` and `tls` settings. Without
+  certificate files the realm's own `realm-tls` Issuing CA issues one per
+  node and renews it, trusted only by a client that trusts this service's
+  Root.
+* `listeners.applications`, the realm's mapping, read before the service's.
+  To serve the whole realm on its listener, as a realm's own listener did
+  before #472, map `*` to it, beside `main` to keep the main port answering:
+
+  ```json
+  { "*": { "listeners": ["main", "acme-front"], "advertised": "acme-front" } }
+  ```
+
+What a realm's listener does:
+
+* it is built like the main port — the same truststore, TLS policy and PROXY
+  protocol, its own `clientAuth` and `tls` settings where it has them;
+* **it answers only that realm's paths**: the default realm's and every other
+  realm's are 404 there (`STS-TLS-0041`), so a realm's host fronts that realm
+  alone; and of the realm's paths, only those of the applications mapped to
+  it (`STS-TLS-0047`);
+* it is bound, rebound and closed at once when the realm's listeners change,
+  on every node; one that cannot bind is recorded with its reason
+  (`STS-TLS-0039`, `STS-TLS-0040`) and shown in `GET /admin-api/realms`
+  (`listeners`) and `GET /realm/<id>/admin-api/listeners` — the service keeps
+  running;
+* the realm's console and portal sign-in callbacks on its base are registered
+  on their clients in every mode, because an administrator configured them.
+
+The load balancer and DNS record in front of it are the deployment's: on AWS,
+`var.realm_listeners` in `deploy/aws/environment` makes a network load
+balancer per realm (`realm_listeners.tf`), and its `realm_listener_settings`
+output prints the `/admin-api` calls that match. **Not yet:** custom listeners
+in a service running as several cells (`STS-CORE-0148`), and LDAPS, the KDC or
+SPIFFE ports per realm by this mechanism.
 
 ### Not separated — the TLS certificate and client certificates
 
@@ -368,17 +418,17 @@ request.
 
 ### Not separated — the key-encryption key
 
-**A realm is not a cryptographic boundary at rest.** Each realm has its own
-signing keys and its own branch of the certificate authority — that is the table
-above — but the key that ENCRYPTS all of it before it reaches the store is a
-single one for the whole deployment, read once at startup from
-`keys.kekProvider`.
+**A realm has keys of its own at rest, but not an independent boundary.**
+Each realm has its own signing keys and its own branch of the certificate
+authority — that is the table above — and since #391 its own DATA ENCRYPTION
+KEYS: everything sealed for a realm is encrypted under keys no other realm's
+values use. Those data keys are all wrapped under a single key-encryption key
+for the whole deployment, read once at startup from `keys.kekProvider`.
 
-So anybody who can read that key can open every realm's sealed data, and
-rotating it rotates every realm at once. Per-record separation does exist (every
-sealed value gets its own derived key), but it is per record and not per tenant.
-[Encryption at rest](encryption-at-rest.md) argues it, and says what making it
-per realm would cost.
+So anybody who can read that key can unwrap every realm's data keys, and
+rotating it re-wraps every realm's at once.
+[Encryption at rest](encryption-at-rest.md) argues it, and says what a
+key-encryption key per realm would cost.
 
 `GET /realms` and `/admin/realms` both publish this list family by family, so it
 is something the service tells you rather than something to remember.

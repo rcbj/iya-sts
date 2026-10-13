@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -158,7 +158,8 @@ const RESOURCE = {
   // `xacml/xacml.ts`'s pepAccess() where it is asked.
   XACML_PEP_API: 'xacml-pep-api',
   // THE XACML SURFACE PROPER: GET /xacml, POST /xacml/pdp, GET
-  // /xacml/policies, GET /xacml/protected. The seventh resource and the second
+  // /xacml/policies (and GET /xacml/protected until #596 moved it to the
+  // remote PEP). The seventh resource and the second
   // that is restricted from the start — it requires `XACML_USER`, which
   // `xacml/xacml.ts` puts in the request.
   //
@@ -166,7 +167,7 @@ const RESOURCE = {
   // the two ids are what make the separation writable: an operator adding a
   // second Permit rule for a helpdesk role, or narrowing one surface and not
   // the other, needs two names to target. One id covering all eight endpoints
-  // would mean every policy anybody wrote about the demonstration surface also
+  // would mean every policy anybody wrote about the XACML surface proper also
   // decided who may pull the documents this service enforces its own access
   // with, which is the collapse `roles.js` keeps the two roles apart to
   // prevent — and a policy layer that cannot express the distinction its own
@@ -218,8 +219,20 @@ interface AccessRequest {
   subject?: AccessSubject | null;
   owner?: unknown;
   requiredRoles?: string[];
+  requiredAllRoles?: string[];
+  ownedObject?: OwnedObject | null;
   context?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+// The object an owner would administer (#607). See `check()`.
+interface OwnedObject {
+  kind: string;
+  id: string;
+  action: string;
+  requiredRole: string;
+  attributes?: string[];
+  person: string;
 }
 
 // What it answers. A decider's answer may carry more (an error code under a
@@ -354,7 +367,21 @@ class AccessGate {
   //                the roles this request demands, where the CALLER states the
   //                requirement (the XACML surfaces, the debugger, the
   //                management API's token path); absent for a surface an
-  //                operator narrows by policy.
+  //                operator narrows by policy. ANY ONE of them satisfies it.
+  //     requiredAllRoles
+  //                roles the subject must hold EVERY one of, beside the above
+  //                (#454): the management API's console operations ask for
+  //                ADMIN_CONSOLE and, where they show realm data, ADMIN_READ
+  //                too. Absent or empty, it asks nothing.
+  //     ownedObject
+  //                the object an OWNER would administer (#607), where the
+  //                management API's operation is one an owner may ask:
+  //                `{ kind, id, action, requiredRole, attributes, person }`
+  //                — the kind of object, how the request names it, the
+  //                action, OWNER_READ or OWNER_WRITE, the attributes it
+  //                would write, and the person by username. The policy's
+  //                owner rule decides on it beside `requiredRoles`; absent,
+  //                that rule cannot permit.
   //     context    anything else worth deciding on: the method, the path. For
   //                the log and for a policy that wants it. }
   //

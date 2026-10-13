@@ -1,6 +1,9 @@
 # federation/
 
-Federation relationships: this service as either end of one, in five protocols.
+Federation relationships: this service as either end of one, in five
+sign-in protocols — and a sixth, `ssf` (#374), for a partner that only sends
+Shared Signals. A partner's Shared Signals are configured on its
+relationship (#373); see *A PARTNER'S SHARED SIGNALS* below.
 
 | File | What it is |
 |---|---|
@@ -11,6 +14,7 @@ Federation relationships: this service as either end of one, in five protocols.
 | `federation_sp.ts` | The five endpoints. The service-provider half — the one place this service CONSUMES what somebody else issued — and `subjectDecision()`, which says which local person a verified subject may become (#109). |
 | `federation_slo.ts` | **A partner's sign-out, in both directions** (#167): `/federation/slo/{id}`, `/federation/backchannel-logout/{id}` and `/federation/frontchannel-logout/{id}`, and what `logout/logout.ts` draws to tell a partner of a sign-out here. See *A PARTNER'S SIGN-OUT* below. |
 | `federation_links.ts` | **The link between a partner's subject and a person** (#109): the `federationLink` format, the stable subject a verified response carries, the one check a requested link goes through (console, `/admin-api`, SCIM), and what removing one ends. A static utility class. |
+| `federation_blocks.ts` | **A partner's stop on one person** (#373): the (relationship, person) pairs a verified `account-disabled` from the partner's own Shared Signals put there, which `federation_sp.ts`'s `subjectDecision()` refuses (`STS-FED-0156`). A leaf store; `ssf/ssf_transmitters.ts` writes it. |
 | `federation_encryption.ts` | **What a partner encrypts to** (#168): each relationship's encryption key — issued under the realm's Intermediate, sealed, rotated with a grace period, retired by the scheduler job `federation.encryption-key-retire`, published — and the policy a partner's `EncryptedAssertion`, `EncryptedID`, `EncryptedAttribute`, WS-Federation token and JWE ID Token or Logout Token is decrypted under. A static utility class. See *A PARTNER'S ENCRYPTED ASSERTION* below. |
 
 ---
@@ -876,6 +880,36 @@ so nothing downstream would ever report that the name was wrong. Listing them as
 unmapped is what turns a partner's fifteenth claim into a line somebody can act
 on, and mapping it is one form field away.
 
+**The list on `/admin/federation` was promised here and not built until #94
+(2026-09-28).** It is `federation.js`'s `recordUnmapped()` / `unmappedOf()`: a
+per-realm persisted store (`federation.unmapped`, in `sts_minted`) of the names
+each relationship's partner sent and nothing wrote, at most 50 per
+relationship, written only when a name is new, its reason changed or an hour
+has passed. It is drawn under `fedAttributeMap` as *Sent and not written*, each
+row with a Map form holding `<name>=`, and returned as `unmappedAttributes` by
+`GET /admin-api/federation?id=`.
+
+### A mapping may not target what this service keeps (#94)
+
+Until #94 a `fedAttributeMap` target was not looked at. `groups=memberOf`
+put a partner's value into a person's group memberships, which grant console
+roles. `x=pwdAccountLockedTime` disabled them. `x=stsTotpCredential` replaced
+their second factor. **`common/sourced_attributes.ts` is the rule**, shared
+with #94's attribute sources:
+* **refused by prefix:** `sts*`, `app*`, `fed*`/`federation*`, `pwd*` and
+  `hoba*`, so the next credential attribute is covered without an edit;
+* **refused by name:** `uid`, `objectClass`, `memberOf`, `userPassword` and the
+  operational attributes.
+
+**`mail` is not refused**: a partner's `email` is the default table's ordinary
+target. It is held at three points:
+* `update()` refuses the mapping on write (`STS-FED-0151` not a mapping,
+  `STS-FED-0152` a refused target). Removing one is never refused, so a mapping
+  written before #94 can be taken off.
+* `federation_map.ts`'s `mapIncoming()` drops it at sign-in as unmapped, with
+  the reason (`STS-FED-0153`).
+* `ldap_server.js`'s `applyFederatedAttributes()` refuses it at the write.
+
 ### Two names for one attribute: values concatenated, each kept once (#189)
 
 Two incoming names that map to one directory attribute have their values
@@ -1034,9 +1068,26 @@ here.** A federated `mail` and an invented `mail` are indistinguishable on the
 entry — both are ordinary directory attributes — and telling them apart is
 exactly the question a person reading a federated directory entry has.
 
+**It is TOLD since #94 (2026-09-28).** A write that changed a value describing
+a person who already existed calls `noteAccountChange('updated', …)` with the
+entry before and after. That call reaches:
+* CAEP `token-claims-change`, for what their live tokens carry;
+* RISC, for an identifier;
+* the former address, told of a new `mail`, the mail flow's notice;
+* Provider Commands.
+
+Until then this was the one silent door onto a person's attributes: a partner
+could change someone's address and nothing downstream heard. It fires once
+per write, and not for a sign-in that changed only `federationLastSeen` or
+the provenance attributes. It does not fire for an entry the sign-in
+created, because its creation is announced by the create.
+
 ---
 
 ## THE FIVE PROTOCOLS, AND WHERE EACH IS GENUINELY DIFFERENT
+
+(A sixth, `ssf`, signs nobody in and is not among them: see *A PARTNER'S
+SHARED SIGNALS* below.)
 
 **SAML 2.0** is the ordinary case: an `<AuthnRequest>` out, a `<Response>` back
 on the POST binding. `ProtocolBinding` asks for HTTP-POST always, because a
@@ -1078,11 +1129,114 @@ because doing it silently would be this repository teaching the mistake.
 
 ---
 
+## THE ERROR AND OUTCOME PAGES OF THIS SERVICE'S OWN FLOWS (#580, 2026-10-12)
+
+#569 converts every page this service defines for itself into a static
+surface, and **never touches what a specification's endpoint answers**
+(rcbj, 2026-10-12). #580 is the error and outcome pages, and its first step
+was this inventory: every candidate page, which kind it is, and so whether
+it is converted.
+
+| Page | Where it is drawn | Kind | Converted |
+|---|---|---|---|
+| The federation landing page, `GET /federation` | `federation_sp.ts` `indexEndpoint()` | this service's own | **yes** |
+| `/federation/login/{id}`'s refusals — off (404), no such relationship (404), the other direction (400), signals only (400), disabled (403), not fully configured (409), the OpenID Federation OP not trusted (502), a failure while starting (500) | `loginEndpoint()`, through `refuse()` and `page()` | this service's own (the START of an outbound request is not a protocol endpoint: nothing a specification defines arrives there) | **yes** |
+| `/federation/link/{handle}`'s refusals — off (404), no link waiting (400), unusable relationship (403), another browser (403), the local sign-in ended (403), no fresh local sign-in (403), the subject now names somebody else (403), the subject decision refusing again, the session refused (provisioning, risk, the issuance policy, an attribute source) — and its OUTCOME, the signed-in page where nothing asked to be returned to | `linkEndpoint()`, and through it `refuseSubject()`, `finishSignIn()` and `startFederatedSession()` | this service's own (#109's linking step is this service's invention) | **yes** |
+| The outbound HTTP-POST binding page (`postBindingPage()`) on `/federation/login/{id}` | `federation_sp.ts` | a protocol document (SAML 2.0 HTTP-POST binding; #569's list of eight) | no |
+| The assertion consumer service `/federation/acs/{id}`: its refusals, `beginLinking()`'s, and the signed-in page with no `returnTo` | `consume()`, the same `refuse()` and `startFederatedSession()` | a specification's endpoint (SAML ACS, WS-Federation `wreply`, OAuth `redirect_uri`) | no — #580's body lists it |
+| `/federation/metadata/{id}` and `/federation/jwks/{id}`'s 404 pages | `metadataEndpoint()`, `jwksEndpoint()` | a metadata endpoint's answer; not a page a person is sent to | no (left server-drawn) |
+| `federation_slo.ts`: `refuse()` and every signed-out, confirm and front-channel page | `federation_slo.ts` | a specification's sign-out endpoints | no — #580's body lists `refuse()` |
+| The emailed factor's end pages (`endPage()` in #580's body) | `authn/email_factor.ts` | this service's own | **already**, by #573: `endAnswer()` answers `/authn-api`'s JSON and `authn/web_authn_email.ts` draws it |
+| The wallet sign-in's error and closed pages (`failed()`, `closedPage()` in #580's body) | `oid4vc/vc_signin.ts` | this service's own | **already**, by #574: `refuse()`/`closed()` answer `/authn-api/wallet`'s views and `oid4vc/web_vc_signin.ts` draws them |
+| The authorization endpoint's error interstitial (`sendRedirectInterstitial()`) | `oauth-oidc/oauth2.ts` | RFC 6749 §4.1.2.1 / RFC 9700 §4.11.2 | no — #580's body lists it |
+| `/oauth2/logout`'s pages (`logoutAnswer()`), the front-channel fan-out, `/oauth2/check_session` | `oauth-oidc/oauth2.ts` | specification endpoints (#577 narrowed) | no |
+| `samlError()` (SAML 2.0 and 1.1), `wsfedError()` | `saml/`, `ws-federation/` | a SAML Response or a WS-Federation fault | no — #580's body lists them |
+| Express's `Cannot GET /path` | Express | the 404 the root `CLAUDE.md` forbids replacing | no |
+| `/tls/*` and the SPNEGO diagnostics; the demonstration issuer and verifier; the mock relying parties; the endpoint description pages | `tls/`, `kerberos/`, `oid4vc/`, the RPs, every family | other tickets (#583, #582, #581, #584) | not here |
+
+So what #580 converts is all in this directory: three pages of
+`federation_sp.ts`'s own flows. The rest of the section says how.
+
+### Each is the shell, carrying its view (`federation_pages.ts`)
+
+**A page that only SAYS something has nothing to fetch**: the landing page's
+facts, a refusal and a sign-in's outcome exist only on the response that
+carries them. So each of the three answers the federation pages' shell
+(`common/shell_document.ts`) with its view in `data-sts-state` —
+`kerberos/spnego_authn.ts`'s arrangement (#575), which GNAP's refusals follow
+(#578) — and `/federation/pages.js` draws it. There is no API and no act: the
+one form on these pages is the language chooser, which posts to
+`/authn/language` and draws the page again from the same view.
+
+**What does not change**: each page's STATUS (404, 400, 403, 409, 500, 502,
+200), the error code marked on the response and the audit row, `fedLastError`
+on the relationship, and that nothing redirects. The one header that changes
+is the policy (`script-src 'self'`, `connect-src 'self'` plus the sign-in
+service's origin where it is on another listener, `style-src 'self'`), through
+`app.contentSecurityPolicy()`. `Cache-Control: no-store` is on every one,
+where the two 404s had none.
+
+**WHICH RESPONSE IS A PAGE OF THIS SURFACE IS DECIDED BY THE ENDPOINT, not by
+the helper that draws it.** `refuse()`, `refuseSubject()` and
+`startFederatedSession()`'s signed-in page are shared by the login and linking
+endpoints and the assertion consumer service, whose answers are a
+specification endpoint's and stay server-drawn. So `loginEndpoint()`,
+`linkEndpoint()` and `indexEndpoint()` call `FederationPages.mark(res)` first,
+and the shared helpers ask `FederationPages.onSurface(res)`. A new caller of
+`refuse()` from the ACS needs nothing; a new endpoint of this service's own
+marks its response.
+
+**`what` AND `why` ARE TEXT NOW.** A refusal's sentence is escaped by the
+browser's renderer, so the three that carried markup or escaped their own
+values (`<code>fedEnabled</code>`, the OpenID Federation resolution's reason,
+a thrown message) carry plain text — which is also what `fedLastError` always
+should have held. The ACS's refusal page escapes them as it always did.
+
+### The views, and who draws their words
+
+| `kind` | Page | Words |
+|---|---|---|
+| `index` | `GET /federation` | the `federationPages` catalogs, in seven languages |
+| `signedIn` | `/federation/link/{handle}`'s outcome where nothing asked to be returned to | the `handoff` catalogs' `federation.signedIn.*` — the same keys `signedInPage()` still draws for the ACS |
+| `refused` | every refusal of the two endpoints: `what`, `why`, the relationship | English, every word (#539's decision 6) |
+| `off`, `noRelationship` | the two 404s | English |
+
+The renderers are `web_federation_views.ts`, the table
+`web_federation_pages.ts` (every row `embedded`) and the runtime
+`web_federation_surface.ts`, which leaves every link to the browser — each of
+these paths is answered by the server, never drawn in place. **The refusals
+and the 404s go through `common/web_outcome.ts`, the one renderer of an error
+or outcome page** (#580's second step), which the emailed factor's `end` page
+(`authn/web_authn_email.ts`, #573) now uses too, to the same bytes.
+
+**NOT `web_federation.ts`**, which is the console's federation page (#446).
+The bundle is `federation/federation-pages-spa.js` and never
+`federation_pages.js`, which is `federation_pages.ts` compiled.
+
+### Tests
+
+`tests/federation_pages.js` asks each page for its status and headers and
+then its shell and state, the ACS's refusal of the same relationship for the
+page it always drew under `script-src 'none'`, the script, each renderer, and
+the runtime drawing the landing page from its shell in French while asking
+for catalogs and nothing else. `tests/web_surfaces.js` holds the renderers'
+bundle to this process's drawing for every kind of view (the row in
+`tests/tools/web_surfaces.js`). `tests/federation_subject_policy.js` and the
+`local: true` jobs `sts_federation_subject_policy.js` and
+`sts_federation_realms.js` read the linking step's and the login endpoint's
+pages from the state.
+
 ## NO CSP RELAXATION, AND THE SCRIPTED PAGE THAT IS NOT
 
 `app.js` sets `script-src 'none'` for the whole service, and seven pages relax
-it by naming one resource (the root `CLAUDE.md` lists them). **This feature adds
-none.** The one policy change it makes is on the front-channel logout page
+it by naming one resource (the root `CLAUDE.md` lists them). **This feature
+adds no such page.** Since #580 three of its pages are a STATIC SURFACE
+instead — the landing page and what the login and linking endpoints say —
+which run `/federation/pages.js` under `script-src 'self'` by the
+static-surface rule, not by an argument of their own (*THE ERROR AND OUTCOME
+PAGES OF THIS SERVICE'S OWN FLOWS*, above); the assertion consumer service
+and every protocol document stay under `script-src 'none'`. The one policy
+change it makes is on the front-channel logout page
 (#167), which is loaded in the PARTNER's iframe: `frame-ancestors` names the
 partner's origin there, through `app.framedContentSecurityPolicy()` —
 narrowed, never dropped — and that page carries no script either.
@@ -1339,6 +1493,25 @@ Logout Token from another realm's OpenID Provider among it);
 
 ## A PARTNER'S ENCRYPTED ASSERTION (#168, 2026-09-23)
 
+**AND A POST-QUANTUM KEY FOR AN OpenID Connect RELATIONSHIP (#82,
+2026-09-27).**
+* **The key types.** `fedEncryptionKeyType` may be `x-wing` (HPKE-10-KE,
+  ML-KEM-768 + X25519) or `ml-kem-768` (ML-KEM-768), each doing exactly the
+  one management algorithm its AKP key names.
+* **JOSE only.** A SAML 2.0 or WS-Federation relationship is refused them
+  (`STS-FED-0143`), because XML Encryption defines no post-quantum key
+  transport.
+* **Certificate-less rows.** Such a key has NO certificate: no X.509 profile
+  exists for X-Wing, and pki.js issues none. So its row carries `kem` (the
+  alg) and the AKP JWK, with its private half sealed as JSON where a
+  classical row seals a PEM. A partner reads the key from the relationship's
+  JWKS.
+* **Everything else is unchanged.** `rotate()` makes the key with
+  `crypto.generateJweKemKeyPair()` and hands it to the SAME `store()` a
+  classical key goes through: sealing, current and previous, the grace
+  period, retirement. The cryptography is `common/CLAUDE.md`'s
+  *crypto.js section 4a*.
+
 Until #168 an `<EncryptedAssertion>` was refused as "no assertion", a JWE ID
 Token was read as a JWS and failed on the key, and no key was published — so
 the only way to federate was for the partner to send the person's NameID, mail
@@ -1562,9 +1735,18 @@ cluster node could not read.
 funnel carries `create` and `autoCreateUser()` makes nobody without it, so a
 sign-in sent to an existing person can never create one because the entry
 went in between. Every entry a sign-in creates is namespaced — rcbj's
-"development's auto-create becomes this shape". Product still creates nobody
-(`mode.autoCreates()`), so in product `jit-namespaced` refuses an unlinked
-subject exactly as `STS-FED-0090` always did.
+"development's auto-create becomes this shape". **Product mode creates too,
+since 2026-09-29 (#325, rcbj)**, for a relationship whose `fedAutocreateUsers`
+is on: that switch is the operator's own, per partner, and until then
+`autoCreateUser()`'s `mode.autoCreates()` gate made product refuse every
+federated newcomer `STS-FED-0090` whatever the switch said. Nothing else
+creates in product mode, and an entry created there carries only the
+identity and what the partner sent — no invented value
+(`mode.inventsClaimValues()`). **It overrides `ldap.autocreateUsers` as
+well (rcbj, 2026-09-30)**: a relationship with the switch on creates its
+newcomers even in a realm whose `ldap.autocreateUsers` is off, in either
+mode; with the switch off it creates nobody, and every other door still
+reads the realm setting (`tests/federation_provisioning.js` 7c).
 
 **UNLINKING** — the console's *Federation links* panel, `POST /admin-api/users/
 federation-unlink`, SCIM, `ldapmodify` — goes through the directory's write
@@ -1618,3 +1800,112 @@ found it and validates every document this module emits — the SAML 2.0,
 SAML 1.1 and WS-Federation relationship metadata, the outbound AuthnRequest
 on both bindings and the outbound LogoutRequest — against the published
 OASIS schemas (`tests/CLAUDE.md`, *The published XML Schemas*).
+
+## IN A SERVICE DEPLOYED AS CELLS (#98 D10, 2026-09-28)
+
+**EVERY FLOW HANDLE NAMES ITS CELL.** `putContext()` stamps the handle
+(`'fed-' + cellLocator.stamp(randomId(18))`, 40 characters — inside the
+`^fed-[A-Za-z0-9_-]{1,64}$` pattern the three readers hold and SAML's 80-byte
+RelayState). So `/federation/link/{handle}` is an `artifact` row the edge
+places by its path segment, and the ACS (`consume()`) relays a partner's
+answer whose RelayState, fedctx, wctx or state names another cell, before the
+response is verified or anything in it spent. A browser pinned elsewhere was
+placed at the edge already.
+
+**A PARTNER'S SIGN-OUT REACHES EVERY CELL** (`federation_slo.ts`,
+`endAtPeers()`). The sessions a relationship started are held wherever the
+person signed in, one person may hold several in several cells, and a
+sign-out arrives at one cell naming WHAT to end and not where. The cell it
+arrives at verifies it and spends it — once, in the global used-assertion
+history — ends what it holds, and calls `federation-partner-signout` on every
+peer with the match as data; each side builds the one predicate from it
+(`FederationSlo.matcherOf()`), so a peer ends exactly what this cell would
+have. It applies to the Back-Channel Logout Token, the SAML LogoutRequest and
+the Front-Channel Logout (whose iframe carries no affinity cookie a browser
+blocking third-party cookies would send). A peer ends on the back channel:
+its sessions' Logout Tokens and CAEP events go from their end, and a browser
+fan-out it cannot draw counts as partial.
+
+**What the partner is told when a cell cannot be reached** (`STS-CELL-0122`):
+Back-Channel Logout section 2.8's 400, unless the token named one session by
+`sid` and that session ended; a LogoutResponse's PartialLogout; the
+front-channel page says it signed out nothing it could reach. **The sessions
+in that cell last until they end by themselves** — the durable, retried
+revocation push is the design's section 5, not built yet. WS-Federation's
+confirmed cleanup is bound to the session in THIS browser, which the edge has
+already placed, and needs nothing more.
+
+**A PARTNER ASSERTING A PERSON HOMED IN ANOTHER CELL RESTARTS THE FLOW
+THERE (D9)** — `completeSignIn()`, before `subjectDecision()`, which reads
+this cell's directory: residents, and projections of people homed elsewhere
+that are not residents. `homeOfSubject()` finds the home the way the
+decision would find the person: the person a local federationLink names (a
+projection's home from the routing index); with no local holder, a RESIDENT
+of another cell carrying the link (`federation-link-home`, asked of every
+peer, because the index keeps names and entryUUIDs and not links); then the
+names the policy would sign in or create (the mapped username under
+any-existing and link-at-first-sign-in, the namespaced name under every
+policy that creates one) from the index. A home elsewhere is answered by
+`authn.restartPendingAtHome()`: the browser is pinned home and sent back to
+where the flow started — the sign-in screen's pending record, whose id rides
+on the partner button (`&authn=`, multi-cell only), or a RESTART-ONLY record
+home realm discovery mints when it goes straight to the partner — so home
+re-runs the flow and the partner, holding its own sign-on session, answers
+again at home's consumer. The verified assertion is dropped unused; nothing
+about the person is written, carried or provisioned in the flow's cell, and
+a link-at-first-sign-in happens at home. A peer that cannot be asked about a
+link is skipped (`STS-CELL-0123`). Held in process by `tests/cell_saml_federation.js`.
+
+## A PARTNER'S SHARED SIGNALS, AND THE PARTNER THAT ONLY SENDS THEM (#373, #374, 2026-10-01)
+
+**rcbj's call on #373: a foreign Shared Signals transmitter is a federation
+partner in spirit**, so it is configured here rather than in a register of
+its own (#153's `ssf.foreignTransmitters`, dropped with no migration). The
+receiver — discovery, the stream, poll and push, verification, the policy's
+reactions — is `ssf/ssf_transmitters.ts`, and `ssf/CLAUDE.md` (*A PARTNER'S
+SHARED SIGNALS*) argues it. What lives here:
+
+* **The fields.** `fedSignalsEnabled` (off; written ON for an `ssf`
+  relationship), `fedSignalsIssuer` (empty = `fedPeer`; needed for a SAML or
+  WS-Federation partner, whose entityID is not its SSF issuer URL),
+  `fedSignalsDelivery` (poll | push), `fedSignalsEvents`, and the token
+  client — `fedSignalsTokenUrl`, `fedSignalsClientId`,
+  `fedSignalsClientSecret`, `fedSignalsScope`, or `fedSignalsBearer` — whose
+  first three fall back to `fedTokenUrl`, `fedClientId` and
+  `fedClientSecret`. **The two signals credentials are sealed** under the
+  key-encryption key wherever keys persist (`sealSignalsSecret()`,
+  `sealed:` on the entry); `fedClientSecret` is sealed since 2026-10-01
+  (`sealClientSecret()`, label `federation-client-secret`), but only under a
+  DURABLE key-encryption key, and read through `clientSecretOf()` — the
+  token request in `federation_sp.ts` and the signals fallback.
+  `signalsCredentialOf()`, `signalsIssuerOf()`, `signalsEnabled()`
+  and `signalsReadinessOf()` are the one reading of them.
+* **`ssf` is a sixth protocol, service-provider side only** (create refuses
+  the other role). `fieldsForRole(role, mode, protocol)` narrows it to
+  `SIGNAL_FIELDS` and `update()` refuses a sign-in field on it by name
+  (`STS-FED-0068`); `readinessOf()` asks `fedPeer` and the signals
+  credential. **`signsIn()` is the question every sign-in path asks besides
+  the role**: `signInOptions()`, `usableServiceProvider()`, the login and
+  linking endpoints (`STS-FED-0155` at login), the assertion consumer service
+  and the two sign-out paths all refuse an `ssf` relationship, which is
+  usable — enabled and ready — only as a transmitter.
+* **Its people.** It verifies no assertion, so `federationLink`s through it
+  are written by an administrator and name what its events carry:
+  `<id> <iss> <sub>` for an iss_sub subject (any `iss` —
+  `FederationLinks.resolveRequest()` drops the fedPeer check for `ssf`) and
+  `<id> opaque <id>` for an opaque one (`FederationLinks.OPAQUE`). A sign-in
+  relationship's links are the ones its sign-ins wrote, under `fedPeer`.
+* **The block** (`federation_blocks.ts`): a sign-in partner's verified
+  `account-disabled` refuses its sign-ins of that person and nobody else's
+  — their password, their key and every other partner keep working —
+  until its `account-enabled` or an administrator lifts it. Locking the
+  whole account would let any partner switch a person off everywhere, which
+  is more than its own statement covers.
+* **The console.** The relationship page draws a *Shared Signals from this
+  partner* section (`AdminConsole.federationSignalsSection()`) with the
+  fields, the stream and its acts, the blocks and the latest arrivals; an
+  identity-provider-side one draws, read only, the streams its application
+  owns on this service's transmitter (`federationOutboundSection()`). Every
+  act is `federationAction()`'s `signals-*`, handed to the receiver; a
+  delete forgets the relationship's stream there first. The map marks a
+  relationship receiving signals on its consuming arrow.

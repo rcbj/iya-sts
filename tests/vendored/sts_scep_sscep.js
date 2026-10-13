@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -190,13 +190,14 @@ async function test() {
   const portal = await K.portalSignIn(REALM, CAROL, password);
   const made = await portal.post({ action: "create-challenge",
                                    profile: "tls-client" });
-  const challenge = (made.text.match(
-    /Challenge password<\/th><td><code>([^<]+)<\/code>/) || [])[1];
-  const portalUrl = (made.text.match(
-    /Plain-HTTP SCEP URL<\/th><td><code>([^<]+)<\/code>/) || [])[1];
+  // What was made is the answer's `view.fresh`, shown once (#568).
+  const fresh = (made.json && made.json.view && made.json.view.fresh) || {};
+  const challenge = fresh.challenge;
+  const portalUrl = fresh.plainScepUrl;
   C.check("/portal/certificates makes a challenge and names the " +
           "plain-HTTP URL", function () {
-    assert.strictEqual(made.status, 200, made.text.slice(0, 400));
+    assert.strictEqual(made.status, 200,
+                       String(made.text || "").slice(0, 400));
     assert.ok(challenge, "no challenge on the page");
     assert.strictEqual(portalUrl, url);
   });

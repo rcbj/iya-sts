@@ -1,0 +1,23 @@
+{
+  "heading": "Dina senaste inloggningar",
+  "sub": "Varje inloggning på ditt konto kontrolleras för hur ovanlig den ser ut – var den kom ifrån och med vad – jämfört med hur du brukar logga in. Om någon här inte var du, säg det: alla sessioner på ditt konto avslutas direkt, och du bör byta lösenord.",
+  "none": "Ingen av dina inloggningar har bedömts {days, plural, one {det senaste dygnet} other {de senaste # dagarna}}.",
+  "when": "När",
+  "from": "Varifrån",
+  "with": "Med",
+  "through": "Via",
+  "risk": "Risk",
+  "wasItYou": "Var det du?",
+  "nowhere": "någonstans som datamängderna inte namnger",
+  "deviceOn": "{family} på {os}",
+  "noDevice": "en namnlös enhet",
+  "level": "{level, select, LOW {LÅG} MEDIUM {MEDEL} HIGH {HÖG} UNSCORED {EJ BEDÖMD} other {{level}}}",
+  "thisSession": "den här sessionen",
+  "saidYes": "Du sa att det var du.",
+  "saidNo": "<strong>Du sa att det inte var du.</strong>",
+  "yes": "Det var jag",
+  "no": "Det var inte jag",
+  "doneDenied": "Tack. Alla sessioner på ditt konto avslutas nu, även den här, och programmen du använder får besked. Logga in igen och byt lösenord på {path}.",
+  "doneConfirmed": "Tack – registrerat som du.",
+  "doneConfirmedLow": "Tack – registrerat som du. Ditt kontos risk är tillbaka på låg."
+}

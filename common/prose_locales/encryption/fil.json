@@ -1,0 +1,250 @@
+{
+  "encryption.classes.0.what": {
+    "en": "d399be3f14078933",
+    "text": "Ang mga data encryption key mismo (#391): isa bawat realm bawat data class sa ibaba, bawat isa ay winawrap at in-unwrap sa ilalim ng key-encryption key"
+  },
+  "encryption.classes.0.why": {
+    "en": "c64ba380863f421f",
+    "text": "Envelope encryption: bawat value ay naka-encrypt sa ilalim ng isang data encryption key, at ang mga data encryption key lang ang naka-encrypt sa ilalim ng key-encryption key. Ang isang wrap ay binibilang dito bilang encryption at ang unwrap bilang decryption; in-unwrap ng isang process ang bawat key nang isang beses at hinahawakan ito, kaya nananatiling maliit ang mga bilang na ito anuman ang naka-seal."
+  },
+  "encryption.classes.1.what": {
+    "en": "b2a1853e19175df3",
+    "text": "Ang sariling mga signing key ng serbisyong ito, isang row bawat trust realm — at, sa parehong row mula 2026-09-12, ang OpenID4VCI credential request-encryption key ng realm na iyon"
+  },
+  "encryption.classes.1.why": {
+    "en": "a96fe1e5eca13faa",
+    "text": "Isang private key na mas tumatagal kaysa sa process. Sa product mode, ginagawa ang mga ito nang ISANG BESES at binabasa pabalik sa bawat start, na siyang nagpapahintulot sa token na na-issue kahapon na ma-verify ngayon — at eksaktong kaya hindi puwedeng nasa clear ang row. Ang nakatira sa process na ito ay ang CIPHERTEXT: pinagpapasyahan ng `keys.plaintextRetention` kung gaano katagal itatago ang na-decrypt na key matapos itong magamit."
+  },
+  "encryption.classes.2.what": {
+    "en": "5dc1b06d84c0a8bb",
+    "text": "Ang certificate authority: ang service Root, bawat Intermediate, at bawat Issuing CA"
+  },
+  "encryption.classes.2.why": {
+    "en": "0b4e9e4389e15af0",
+    "text": "Mga CA private key, na hindi kailanman umaalis sa process na ito. Sadyang nasa PAREHONG row family at sa ilalim ng parehong key ang mga ito: ang sariling store ng `pki.js` ay magiging ikalawang sagot sa *saan itinatago ng serbisyong ito ang private key*, at ang ikalawang sagot ang walang nakakaalalang i-rotate."
+  },
+  "encryption.classes.3.what": {
+    "en": "5917a6ac9980dde0",
+    "text": "Ang mga assertion signing key pair na ini-issue ng `/admin/pki` sa mga application — `oauthAssertionPrivateKey` at `oauthSamlAssertionPrivateKey`"
+  },
+  "encryption.classes.3.why": {
+    "en": "47344247ad9ff787",
+    "text": "Ito ang HULING private key material sa serbisyong ito na naka-store sa clear, hanggang 2026-09-10. Naka-seal ito AT REST at binubuksan para sa reader na dumaan sa `applications.js` — kaya iniaabot pa rin ng `/admin/applications` sa operator ang PEM na pinunta niya, habang `$aesgcm$…` ang hawak ng isang `ldapsearch` sa TCP 389, ng LDIF file, ng database row at ng backup ng alinman."
+  },
+  "encryption.classes.4.what": {
+    "en": "bbcc91c001c3bfeb",
+    "text": "Ang mga OAuth client secret ng isang application — `oauthClientSecret`, isang naka-seal na record bawat secret (ang secret, ang id nito, expiry at description)"
+  },
+  "encryption.classes.4.why": {
+    "en": "e21bb0e650710ccc",
+    "text": "Sinumang may hawak nito ay nag-a-authenticate bilang client na iyon, at ito rin ang HMAC key ng `client_secret_jwt` at ng mga HS256 ID Token. Naka-seal at rest mula 2026-10-01 sa ilalim ng durable na key-encryption key, binubuksan para sa reader na dumaan sa `applications.js`, at itinatago sa mga LDAP reader sa product mode. Ang value na naisulat bago noon ay nananatili sa clear hanggang sa susunod na pagsulat ng secret."
+  },
+  "encryption.classes.5.what": {
+    "en": "559f7039f565c204",
+    "text": "Ang RFC 7592 registration access token ng isang application — `appRegistrationAccessToken`"
+  },
+  "encryption.classes.5.why": {
+    "en": "5d25ce57f65bf038",
+    "text": "Sinumang may hawak nito ay nakakabasa, nakakabago o nakakabura ng registration ng client, at ibinabalik ng read ang client secret. Naka-seal at rest mula 2026-10-01 sa ilalim ng durable na key-encryption key, binubuksan para sa mga RFC 7592 endpoint at para sa reader na dumaan sa `applications.js`."
+  },
+  "encryption.classes.6.what": {
+    "en": "acfdd9ca414f7095",
+    "text": "Ang client secret ng isang federation relationship — `fedClientSecret`, ang sariling credential ng serbisyong ito sa token endpoint ng partner"
+  },
+  "encryption.classes.6.why": {
+    "en": "29ed6d1af2973686",
+    "text": "IPINAPADALA ito sa serbisyo ng iba, kaya dapat itong mabawi — naka-seal, hindi naka-hash. Naka-seal at rest mula 2026-10-01 sa ilalim ng durable na key-encryption key; walang pahina at walang API reply na nagbabalik nito."
+  },
+  "encryption.classes.7.what": {
+    "en": "8aad62eb2111bd46",
+    "text": "Ang mga attribute ng bawat directory entry, buo — mga tao, group, application, device, federation relationship"
+  },
+  "encryption.classes.7.why": {
+    "en": "f76be51ab5de798c",
+    "text": "Desisyon ni rcbj sa #391 (phase 6): ang kopya ng directory table ay hindi listahan ng mga tao. Nananatiling nababasa ang DN, at pati ang mga PANGALAN ng attribute; ang mga value na ikinukumpara ng lookup ay itinatago bilang keyed digest katabi ng blob. Ang value na naka-seal nang mag-isa (isang TOTP secret, mga Kerberos key) ay muling naka-seal sa loob nito. Ang file (ldif) store ay naghahawak ng mga entry ayon sa proteksyon ng filesystem."
+  },
+  "encryption.classes.8.what": {
+    "en": "c42c65a1fdcd313f",
+    "text": "Ang PANGALAN kung saan nakahanay ang isang minted row — kadalasan ang credential mismo: isang session id, isang SAML artifact, isang token id"
+  },
+  "encryption.classes.8.why": {
+    "en": "dd193b55de743ced",
+    "text": "Ang session id ang cookie at nare-redeem ang artifact sa pagpapakita nito, kaya ang pangalang nasa clear ay isang magagamit na credential sa isang dump. Mula #222, hinahanap ang row ayon sa keyed digest ng pangalan at naka-seal ang pangalan, binubuksan lang ng isang restore o ng reader ng isang pagbabago."
+  },
+  "encryption.classes.9.what": {
+    "en": "abb557bd115925f0",
+    "text": "Ang issuer, assertion id, client at subject ng used-assertion history — kung sino ang nagpakita ng aling RFC 7523 o RFC 7522 na dokumento tungkol kanino"
+  },
+  "encryption.classes.9.why": {
+    "en": "3cc9cdb0826aa148",
+    "text": "Pinangangalanan nila ang mga tao at relationship sa isang table na pinaghahatian ng bawat node. Naka-seal mula #222; hinahanap pa rin ang row ayon sa digest key nito, at ginagawa sa memory ang text search ng console sa pinakabagong mga row. Hinahawakan sila ng file (ldif) store ayon sa proteksyon ng filesystem: binabasa nito sila pabalik bago magsimula ang keystore."
+  },
+  "encryption.classes.10.what": {
+    "en": "7b8b23e52ee52b44",
+    "text": "Isang secret setting na binago habang tumatakbo ang serbisyo — ngayon ay `scim.digestPassword`, ang HTTP Digest password na pinaghahatian ng bawat SCIM username"
+  },
+  "encryption.classes.10.why": {
+    "en": "924b96a39ab65db1",
+    "text": "Ang setting na minarkahang secret ay isang credential, at kung hindi ay plain JSON ang mga naka-save na setting. Naka-seal kung saan ito isinusulat mula #222 (`persistence/sealed_settings.js`); nakikita ito ng tumatakbong configuration, ng console at ng API gaya ng dati."
+  },
+  "encryption.classes.11.what": {
+    "en": "eebf5962dd8ef694",
+    "text": "Ang mga identity verification ng isang tao — `stsIdaVerification` (OpenID Connect for Identity Assurance), na ang evidence ay may dalang mga numero ng dokumento"
+  },
+  "encryption.classes.11.why": {
+    "en": "99fb2fa2cd725153",
+    "text": "Hindi credential, pero personal na data na hindi dapat dalhin nang nababasa ng anumang backup. Naka-seal at rest mula 2026-10-01 sa ilalim ng durable na key-encryption key — ang sa home cell kung mayroon — at itinatago sa bawat LDAP read."
+  },
+  "encryption.classes.12.what": {
+    "en": "2b2be31256607b69",
+    "text": "Ang shared secret ng isang GNAP client instance para sa isang key reference — `gnapSymmetricKey` (RFC 9635 section 7.1.1)"
+  },
+  "encryption.classes.12.why": {
+    "en": "98504fa1a9510296",
+    "text": "Sinumang may hawak nito ay makakapirma ng mga GNAP request BILANG client instance na iyon: ang HMAC key ay parehong kalahati ng credential. Naka-seal at rest sa ilalim ng process key-encryption key kapag nagpe-persist ang mga key, binubuksan para sa reader na dumaan sa `applications.js`, at itinatago sa mga LDAP reader sa product mode."
+  },
+  "encryption.classes.13.what": {
+    "en": "96524e903d1e171f",
+    "text": "Ang macaroon root key ng isang GNAP resource server — `gnapMacaroonKey` (RFC 9767 section 2.2)"
+  },
+  "encryption.classes.13.why": {
+    "en": "8a6121d6ef649bf6",
+    "text": "Vine-verify ang macaroon gamit ang ROOT key nito, at ang parehong key ay makakapag-mint ng isa: sinumang may hawak nito ay makakapag-issue ng mga token na tatanggapin ng resource server na iyon. Dine-derive ang key bawat resource server mula sa realm secret, at isinusulat sa entry — naka-seal — para lang may makuhanan nito ang operator ng resource server."
+  },
+  "encryption.classes.14.what": {
+    "en": "67237833f9db7d7d",
+    "text": "Ang write credential ng isang secret push destination — `secretDestCredential` (#221): ang key, token o service account na ginagamit ng serbisyong ito para isulat ang na-rotate na password ng isang service account sa isang secrets manager"
+  },
+  "encryption.classes.14.why": {
+    "en": "18016a10df899acb",
+    "text": "Sinumang may hawak nito ay makakasulat ng mga password na binabasa ng ibang system. Naka-seal at rest kapag nagpe-persist ang mga key, at — hindi tulad ng signing key ng isang application — ITINATAGO rin sa bawat reader: binubuksan lang ito para sa push na gumagamit nito, at hindi kailanman iginuguhit, ipinapakita o ibinabalik ng `/admin-api`."
+  },
+  "encryption.classes.15.what": {
+    "en": "73eda9e1ac32915e",
+    "text": "Ang mga credential ng isang outbound SCIM client (#552) — `scimClientPassword`, `scimClientOAuthClientSecret` at `scimClientTlsPrivateKey`: ang ginagamit ng serbisyong ito para mag-authenticate sa isang remote SCIM service provider, o sa token endpoint nito"
+  },
+  "encryption.classes.15.why": {
+    "en": "836f7447d4525fef",
+    "text": "Sinumang may hawak nito ay makakagawa, makakabago at makakabura ng mga account sa remote identity provider. Naka-seal at rest kapag nagpe-persist ang mga key at ITINATAGO sa bawat reader, gaya ng credential ng isang secret destination: binubuksan lang para sa request na gumagamit nito."
+  },
+  "encryption.classes.16.what": {
+    "en": "21f9b2a70d049b08",
+    "text": "Ang mga assertion signing key pair na ini-issue ng `/admin/pki` sa isang TAO — `stsAssertionPrivateKey` (2026-09-11) at, para sa RFC 7522, `stsSamlAssertionPrivateKey` (2026-09-13)"
+  },
+  "encryption.classes.16.why": {
+    "en": "bf3106460f293d79",
+    "text": "Parehong mekanismo ng sa application sa itaas at sadyang hindi bago, na may isang pagkakaiba na katotohanan tungkol sa dalawang may hawak: BINUBUKSAN ang private key ng application para sa reader na dumaan sa `applications.js`, at walang gumuguhit ng entry ng isang tao sa pamamagitan ng module na magbubukas ng kanya — kaya iniaabot ito nang ISANG BESES, ng kilos na gumagawa nito, at ciphertext saanman pagkatapos. Ang alternatibo ay isang console page na nagpi-print ng private key ng tao sa bawat pagbisita."
+  },
+  "encryption.classes.17.what": {
+    "en": "fb498dbfc77eeee5",
+    "text": "Ang encryption private key ng isang federation relationship (#168) — ang ginagamit para i-decrypt ang encrypted na assertion o ID Token ng isang partner, isang row bawat key sa `fedEncryptionKey`"
+  },
+  "encryption.classes.17.why": {
+    "en": "03fb569f6f619e76",
+    "text": "Sinumang may hawak nito ay nakakabasa ng bawat assertion na in-encrypt ng partner na iyon para sa serbisyong ito — ang identifier at mga attribute ng tao, ang mismong bagay na inilalayo ng encryption sa browser. Naka-seal at rest saanman nagpe-persist ang mga key, at itinatago — pati ciphertext — sa bawat LDAP search, pahina at `/admin-api` reply, na ang certificate at public key lang ang dala."
+  },
+  "encryption.classes.18.what": {
+    "en": "680819379ae6d968",
+    "text": "Mga naka-store na Kerberos long-term key — ang sa isang tao sa directory, dine-derive mula sa sarili niyang password (`stsKrb5Keys`), at ang mga random na key ng isang service principal (`krb5ServiceKeys`) (2026-09-12)"
+  },
+  "encryption.classes.18.why": {
+    "en": "f9d4bc06d2c651a9",
+    "text": "KATUMBAS NG PASSWORD: ang Kerberos long-term key ay ang pinagbagong-anyo ng password, at sinumang may hawak nito ay makakakuha ng mga ticket bilang principal na iyon nang hindi alam ang password. Kaya naka-seal ito saanman mas tumatagal ang key-encryption key kaysa sa process, naka-seal KASAMA nito ang pangalan at isang tatak ng password hash para hindi mailipat ang value sa ibang entry o maitago lampas sa pagpapalit ng password, at ITINATAGO ito — pati ciphertext — sa bawat pahina, bawat LDAP search at bawat `/admin-api` reply. Umaalis sa serbisyong ito ang key ng isang service principal nang isang beses, bilang keytab na iniaabot ng create o rotate nito."
+  },
+  "encryption.classes.19.what": {
+    "en": "e55e7d85efe6daee",
+    "text": "Ang RFC 6238 shared secret ng lahat ng nag-enrol ng authenticator app — `stsTotpCredential`"
+  },
+  "encryption.classes.19.why": {
+    "en": "802b93a062aa9979",
+    "text": "ANG NAG-IISANG CREDENTIAL SA DIRECTORY NA ITO NA NABABASA PABALIK. Ang pag-verify ng code ay nangangahulugang KOMPUTAHIN ito, kaya hindi ito mahahash gaya ng `userPassword` — at sadyang ipini-print ng `/admin/ldap/directory` ang bawat attribute ng bawat entry, kaya kung walang seal ay magpi-print ang directory dump ng gumaganang second factor."
+  },
+  "encryption.classes.20.what": {
+    "en": "a9a823b9d709ff2d",
+    "text": "Ang set ng single-use na recovery code na na-issue sa pag-enrol ng second factor"
+  },
+  "encryption.classes.20.why": {
+    "en": "964101791de4c908",
+    "text": "Naka-encrypt SA HALIP NA NAKA-HASH, at desisyon sa produkto ang dahilan sa halip na kriptograpiko: puwedeng basahin muli ng tao ang natitira niyang mga code sa `/portal/mfa`. **Nabaligtad iyon noong 2026-09-11 at itinatago ang row na ito para sa mga set na naisulat bago iyon** — ang bagong set ay NAKA-HASH gamit ang scrypt at hindi naka-seal kahit kaunti, dahil hindi secret ang hash. Nasa labas ng naka-seal na blob ang mga BILANG, kaya bawat pahinang nag-uulat ng *7 sa 10 hindi pa nagagamit* ay magagawa iyon nang hindi ito binubuksan — kasama ang set na hindi ma-decrypt ng process na ito."
+  },
+  "encryption.classes.21.what": {
+    "en": "6836bd875ee52cca",
+    "text": "Lahat ng MINI-MINT ng process na ito — mga session, token, authorization code, artifact, Kerberos principal, ang mga replay cache, ang mga counter at ang audit log"
+  },
+  "encryption.classes.21.why": {
+    "en": "25d6b8acb6d8b413",
+    "text": "Ang pinakabago at pinakamalaki sa dami. Product-and-postgres lang ito dahil iyon ang tanging configuration kung saan may nagpe-persist kahit kaunti: sa development mode, ginagawang muli ang signing key sa bawat start, kaya ang na-restore na token ay walang mave-verify-an, at ang `ldif` store ay sumusulat ng buong file bawat flush at wala itong hawak na alinman dito sa alinmang mode."
+  },
+  "encryption.classes.22.what": {
+    "en": "f0949ec788a0b1e0",
+    "text": "Mga password — `userPassword`, at ang mga activation token katabi nito"
+  },
+  "encryption.classes.22.why": {
+    "en": "c7400a8445e91887",
+    "text": "NAKA-HASH, hindi naka-encrypt, at mas malakas iyon sa halip na mas mahina. scrypt na ang N ay 2^15, at walang anuman sa serbisyong ito ang makakabasa ng isa pabalik — na siyang patakaran: ang secret na VINE-VERIFY ng serbisyong ito ay naka-hash, at ang secret na kailangan nitong IPAKITA ay naka-encrypt. Ang dalawang mekanismo sa itaas ay ang ikalawang uri at sinasabi nila iyon."
+  },
+  "encryption.classes.23.what": {
+    "en": "1944d354bdd3c34a",
+    "text": "Mga client secret, RFC 7592 registration access token at federation client secret, NANG WALANG durable na key-encryption key"
+  },
+  "encryption.classes.23.why": {
+    "en": "0f9a7b47936962f5",
+    "text": "Nasa clear lang kung saan walang hawak na durable na key-encryption key ang process — development mode, o isang product-mode realm sa development container — dahil ang pag-seal sa ilalim ng ephemeral na key ay mag-iiwan ng credential na walang mabubuksan pagkatapos ng restart. Kapag may durable na key, naka-seal ang tatlo: tingnan ang mga row nila sa itaas."
+  },
+  "encryption.classes.24.what": {
+    "en": "17eed1879e4edb92",
+    "text": "Ang labing-isang post-quantum key bawat realm, ang TLS server certificate, at ang mga SPIFFE authority"
+  },
+  "encryption.classes.24.why": {
+    "en": "3d4cea483bdd4763",
+    "text": "HINDI NAGPE-PERSIST KAHIT KAUNTI, sa alinmang mode, kaya walang anumang at rest na ise-seal. Pinangalanan ang tatlo sa `NOT_YET` ng `common/mode.js` sa halip na hayaang matuklasan, dahil pareho ang basa mula sa labas ng *hindi naka-store* at *hindi protektado* at hindi sila parehong bagay."
+  },
+  "encryption.notes.what": {
+    "en": "69ba4b884ae9c0f6",
+    "text": "Ang ine-encrypt ng serbisyong ito AT REST, gamit ang aling key, sa ilalim ng aling algorithm, at gaano karami na nito ang nangyari sa process na ito."
+  },
+  "encryption.notes.keyPersisted": {
+    "en": "94d90e26c576478c",
+    "text": "Binabasa ang key-encryption key mula sa provider sa itaas sa startup, bago mag-bind ang listener. Hindi ito kailanman ginagawa o isinusulat ng serbisyong ito, at HINDI nagsisimula ang serbisyong hindi ito mabasa — hindi ito gumagawa ng kapalit at nagpapatuloy, dahil pipigilan niyon ang pag-verify ng bawat token na na-issue nito kailanman, nang tahimik, sa relying party ng iba."
+  },
+  "encryption.notes.keyEphemeral": {
+    "en": "f133c6e93d2de1a0",
+    "text": "Nasa development mode ang serbisyong ito, kaya walang hawak itong anumang mas tumatagal kaysa sa process at EPHEMERAL ang key-encryption key: ginagawa bawat run, hindi kailanman isinusulat, at ginagamit lang para mapaghatian ng request-worker pool ang mga minted row sa loob ng isang run. Ang pag-seal ng directory attribute sa ilalim nito ay MAS MASAMA kaysa sa clear — nakaliligtas sa restart ang entry sa mga `ldif` at `postgres` store at hindi ang key, kaya babalik ang value bilang permanenteng basura. Iyan ang dahilan kung bakit `keystore.persists()` ang test sa bawat write site sa halip na `keystore.sealed()`."
+  },
+  "encryption.notes.algorithmNote": {
+    "en": "99f7c97dca3f634c",
+    "text": "AES-256-GCM at sadyang hindi CBC: AUTHENTICATED ang GCM, kaya ang ciphertext na binago ng isang tao ay nabibigong ma-decrypt sa halip na magbunga ng bahagyang ibang key. Ang signing key na na-decrypt sa maling bytes ay gagawa ng mga signature na walang makakapag-verify, at lalabas ang pagkabigo sa isang relying party bilang \"the signature is invalid\" — kasinlayo ng posible mula sa sanhi. HINDI KAILANMAN NAG-E-ENCRYPT NG VALUE ang key-encryption key (#391): bawat value ay naka-encrypt sa ilalim ng isang data encryption key — 256 na random bit, isa bawat realm bawat data class — at ang mga data encryption key ang winawrap ng key-encryption key. In-unwrap ng isang process ang bawat isa nang isang beses at hinahawakan ito, kaya ang key na hawak sa isang key management service ay tinatanong bawat data key, hindi kailanman bawat value, at ang pag-rotate ng key-encryption key ay muling nagwa-wrap ng ilang key sa halip na muling i-encrypt ang store."
+  },
+  "encryption.notes.realms": {
+    "en": "1294d82604ed7a46",
+    "text": "IISA ANG KEY-ENCRYPTION KEY PARA SA SERBISYONG ITO, HINDI ISA BAWAT TRUST REALM, AT MAY ISANG DATA ENCRYPTION KEY BAWAT REALM BAWAT DATA CLASS (#391). Walang data encryption key na pinaghahatian ng mga realm, kaya ang value ng isang realm ay hindi kailanman naka-seal sa ilalim ng key ng mga value ng ibang realm. Pero bawat data encryption key ay naka-wrap sa ilalim ng iisang key-encryption key, kaya HINDI independiyenteng hangganan ang realm at rest: sinumang makakabasa ng key na iyon ay makaka-unwrap ng mga data key ng bawat realm, at ang pag-rotate nito ay muling nagwa-wrap ng sa bawat realm nang sabay-sabay."
+  },
+  "encryption.notes.storage": {
+    "en": "18686e2b1d638124",
+    "text": "LAHAT NG WALA SA TABLE SA ITAAS AY PLAINTEXT SA STORE — ang mga directory entry, ang mga group, ang mga application, ang mga realm at ang mga setting, at sa development mode halos lahat ng ito. Credential at private key lang ang sine-seal ng serbisyong ito at wala nang iba, nang sadya: ang column-level encryption ay nag-iiwan ng plaintext sa write-ahead log, sa mga temporary file kapag umaapaw ang sort, sa isang pg_dump, sa mga replica at sa mga query log, kaya ang layer na sumasaklaw sa buong store ay nasa ILALIM ng database sa halip na sa loob nito. Ang layer na iyon ay sa operator — LUKS o isang encrypted na ZFS dataset sa ilalim ng PGDATA, isang cloud disk na may customer-managed key, o isa sa mga PostgreSQL fork na may TDE, dahil walang ganito ang community build. Ang docs/encryption-at-rest.md ang paliwanag ng repository na ito sa mga opsyon."
+  },
+  "encryption.notes.keyResidency": {
+    "en": "612d0883b63631fd",
+    "text": "AT HINDI DAPAT NAKATIRA ANG KEY SA DISK NA PINOPROTEKTAHAN NITO. Ang key file sa parehong hindi naka-encrypt na volume ng store ay nag-aabot ng dalawang kalahati sa sinumang kukuha ng volume; ayos iyon para sa development stack at iyan ang dahilan kung bakit default ang `file` provider, at hindi iyon isang deployment. Pumipili ng secret store ang keys.kekProvider sa halip."
+  },
+  "encryption.notes.accountingNote": {
+    "en": "4e3af979f8ed8bd7",
+    "text": "Binibilang sa IISANG funnel na dinadaanan ng dalawang operation — ang `encryptWithDek()` at `decryptWithDek()` ng `crypto.js`, kasama ang sariling mga wrap at unwrap ng mga data encryption key sa ilalim ng `data-keys` — sa halip na sa mga call site, dahil ang kabuuang binuo mula sa mga call site ay mali sa unang beses na may magdagdag ng isa pa at mali nang TAHIMIK. Ang breakdown sa ibaba ay ayon sa LABEL na ipinapasa ng bawat call site; ang caller na walang ipinapasa ay binibilang pa rin, sa ilalim ng `(unlabelled)`. PANG-BUONG PROCESS ANG MGA ITO AT HINDI BAWAT REALM — pag-aari ng process ang key-encryption key, kaya ang paghahati ng bilang ayon sa realm ay pagbibilang sa realm na nagkataong kinaroroonan ng request — at nasa memory ang mga ito, kaya restart ang paraan para makakuha ng walang laman."
+  },
+  "encryption.notes.failuresNote": {
+    "en": "b705f797ef83316c",
+    "text": "ANG PAGKABIGO AY HALOS PALAGING MALING KEY-ENCRYPTION KEY — isang na-rotate na secret, o isang store na dinala sa pagitan ng mga deployment — at sarili nitong bilang ito sa halip na isama sa mga decryption, dahil ibang-iba ang ulat ng siyamnaraang decryption at ng siyamnaraang decryption na may apatnaraang pagkabigo. Ang susunod na mangyayari ay depende sa binabasa: FATAL sa startup ang signing key na hindi mabuksan, tinatanggal ang session row, at ang second factor na hindi mabuksan ay nagiging dahilan para hindi makapag-sign in ang taong iyon hanggang i-clear ng operator ang enrolment — hindi kailanman tahimik na nawawala, na mag-aalis ng isang security control."
+  },
+  "encryption.notes.noSamples": {
+    "en": "ddd1754e8de4f6a7",
+    "text": "Ni naka-seal na value ni nabuksang value ay hindi lumalabas saanman sa pahinang ito o sa dokumentong ito. Ang naka-seal na value ay isang private key, isang shared secret o mga recovery code ng isang tao, at ang pag-print ng alinmang kalahati nito ay mag-aabot ng eksaktong pinoprotektahan ng pag-seal. Ang /admin/ldap/directory ang lugar kung saan makikita ang isang `$aesgcm$…` envelope, sa ilalim ng heading na nagsasabing ito ang store ayon sa pagkakita ng directory."
+  },
+  "encryption.notes.storeNote": {
+    "en": "41927a69521b626c",
+    "text": "Pinoprotektahan ng pag-seal ang NAISUSULAT, kaya ang hawak ng store ang nagpapasya kung gaano karami ng table sa itaas ang maaabot ng kahit sino. Walang isinusulat ang `memory` store, kaya walang anuman dito ang nakaliligtas sa process na ito para mabasa."
+  },
+  "encryption.notes.dataKeysNote": {
+    "en": "85bc1ebe46dff738",
+    "text": "Isang data encryption key bawat realm at data class ang nagse-seal ng bawat value ng class na iyon; winawrap lang ng key-encryption key ang mga data key. Napapalitan ang data key na NA-ROTATE: binubuksan pa rin nito ang na-seal nito, walang bagong naka-seal sa ilalim nito, at muling sine-seal ng re-encryption job ang na-seal nito at saka ito sinisira. Ang DERIVED key ay ginagawa mula sa key-encryption key bawat run kung saan walang mas tumatagal kaysa sa process, at hindi kailanman naka-store o nire-rotate."
+  }
+}

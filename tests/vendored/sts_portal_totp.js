@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -9,7 +9,15 @@
 // AN AUTHENTICATOR APP IS ENROLLED IN THE PORTAL, AND THE SIGN-IN SCREEN THEN
 // DEMANDS A CODE — ALL OF IT OVER HTTP, WITH THE CODE COMPUTED HERE.
 //
-// Five claims, driven through the real doors:
+// Five claims, driven through the real doors.
+//
+// **SINCE #568 THE PORTAL IS A STATIC APPLICATION** over `/account-api`, so
+// the doors are its operations: the sign-in is still walked by hand — that is
+// where a second factor is demanded — and the portal's own token is then
+// taken through the same sign-on session (`portal_signin.js`, single sign-on);
+// `/portal/mfa` is `GET` and `POST /account-api/mfa`, drawn by the portal's
+// own renderers where an assertion is about what the page SHOWS. A secret
+// shown, a code refused, a write attributed: the claims are unchanged.
 //
 //   1. a signed-in person enrols an authenticator at `/portal/mfa`: a secret
 //      is SHOWN, nothing is stored until a code confirms it, and a wrong code
@@ -58,9 +66,12 @@
 // for another person — is invisible to it and passes it perfectly.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { usernameFor } = require("./random_username.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -92,6 +103,11 @@ var api = base + "/admin-api";
 var OWNER = usernameFor("totp-owner");
 var INTRUDER = usernameFor("totp-intruder");
 var NEWCOMER = usernameFor("totp-newcomer");
+// SECTION 5'S OWN PERSON (#311): the owner has a TOTP replay on record from
+// section 2 by then, which a deployment's risk engine scores (`totp-replay`)
+// into a step-up the owner — their factor just cleared — cannot answer. A
+// local stack sets the MEDIUM threshold out of reach; a deployment does not.
+var CLEARED = usernameFor("totp-cleared");
 
 var checks = 0;
 function check(what, fn) {
@@ -155,17 +171,28 @@ function codeFor(secret, atMs, opts) {
 // assertion here is about WHICH screen came back — a fetch that followed the
 // redirects would answer the question by hiding it.
 // ---------------------------------------------------------------------------
-function form(o) {
-  log.debug("Entering form().");
-  log.debug("Leaving form().");
-  return new URLSearchParams(o).toString();
-}
-
 function absolute(location) {
   log.debug("Entering absolute().");
   log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
+}
+
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  b.cookie = b.cookieHeader();
+  log.debug("Leaving keepCookies().");
 }
 
 function browser(name) {
@@ -258,13 +285,6 @@ async function apiPost(path, body) {
   return { status: r.status, body: parsed, raw: raw };
 }
 
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
 // ---------------------------------------------------------------------------
 // EVERY PERSON THIS JOB SIGNS IN IS CREATED FIRST, WITH A PASSWORD AND THE
 // ATTRIBUTES A REAL ACCOUNT CARRIES (2026-09-12).
@@ -328,34 +348,66 @@ function qrShownOn(text) {
 }
 
 // ---------------------------------------------------------------------------
-// SIGN IN AT A DOOR. `/portal` is an OpenID Connect relying party of this
-// service's own authorization server, so this is a code flow: the browser goes
-// to `/oauth2/authorize`, meets the sign-in screen because the AUTHORIZATION
-// ENDPOINT decides it needs one, and comes back with a code.
+// SIGN IN, AS THE STATIC PORTAL DOES (#568). The portal is a public client of
+// this service's own authorization server, so a sign-in is a code flow: the
+// browser asks `/oauth2/authorize` as `sts-user-portal` with PKCE, meets the
+// sign-in screen because the AUTHORIZATION ENDPOINT decides it needs one, and
+// comes back to `/portal/callback` with a code. The walk is done here by hand
+// to the callback — the sign-in screen is where a second factor is demanded,
+// which is what this job is about — and the portal's DPoP-bound token is then
+// taken through the sign-on session it set (`portal_signin.js`, which signs
+// in again with nothing typed). `door` is kept for a reader: the page the
+// person came for.
 //
 // `onSecondFactor` is handed the 200 the password POST answered with when the
-// screen asks for something more, which is exactly what this job is about.
+// screen asks for something more.
 // ---------------------------------------------------------------------------
+function b64u(buffer) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(buffer).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// The authorization request the portal's runtime sends.
+function portalAuthorizeUrl() {
+  log.debug("Entering portalAuthorizeUrl().");
+  const verifier = b64u(nodeCrypto.randomBytes(32));
+  const url = base + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: base + "/portal/callback", scope: "openid account:manage",
+    state: b64u(nodeCrypto.randomBytes(16)),
+    code_challenge: b64u(nodeCrypto.createHash("sha256").update(verifier)
+      .digest()),
+    code_challenge_method: "S256", resource: base + "/account-api" })
+    .toString();
+  log.debug("Leaving portalAuthorizeUrl().");
+  return url;
+}
+
 async function signIn(door, who, onSecondFactor) {
   log.debug("Entering signIn(). door=" + door + " who=" + who);
   await ensurePerson(who);
   const b = browser(who);
-  let r = await b.go("GET", door);
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    door + " should send an unauthenticated browser to the authorization " +
-    "endpoint; it answered " + r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
+  let r = await b.go("GET", PORTAL_DOOR);
+  assert.strictEqual(r.status, 200,
+    "the portal's shell should answer " + PORTAL_DOOR + "; it answered " +
+    r.status + " -> " + r.location);
+  r = await b.go("GET", portalAuthorizeUrl());
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
     "the authorization endpoint should send a browser with no sign-on " +
     "session to the sign-in screen; it answered " + r.status + " -> " +
     r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login",
-                        csrf_token: csrfOf(r.text) }));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+  // answer read as the form's POST was — a second factor's page fetched
+  // from the address the answer names, as the browser fetches it.
+  const answer = await authnSignin.submit(base, r.location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: b.cookieHeader() });
+  keepCookies(b, answer);
+  r = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   if (r.status === 200) {
     assert.ok(onSecondFactor,
       "the sign-in screen asked for something more and this call was not " +
@@ -370,12 +422,61 @@ async function signIn(door, who, onSecondFactor) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
     String(r.text).slice(0, 300));
-  r = await b.go("GET",
-                 r.location);   // the authorization endpoint, with a code
-  r = await b.go("GET", r.location);   // the callback, which mints the session
+  r = await b.go("GET", r.location);   // the authorization endpoint
+  assert.ok(/\/portal\/callback\?/.test(r.location),
+    "the authorization endpoint should answer the portal's callback with a " +
+    "code; it answered " + r.status + " -> " + r.location);
   assert.ok(b.cookie, "completing the flow should establish a session cookie.");
+  b.portal = await portal.signInToThePortal(base, who, null,
+                                            { cookie: b.cookieHeader() });
   log.debug("Leaving signIn().");
   return b;
+}
+
+// THE PAGE AS THE PORTAL DRAWS IT for `b`'s person: `{ status, json, text }`,
+// `text` the cards the portal's own renderers draw from the operation's view.
+// The operation is the one the portal's page table names for the path — what
+// the runtime asks — rather than one found by `mirrors`, which `/portal` shares
+// between the Overview and `GET /account-api/me`.
+async function pageOf(b, path) {
+  log.debug("Entering pageOf(). " + path);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  assert.ok(row, "the portal draws no page at " + path);
+  if (!b.me) {
+    b.me = (await b.portal.api("GET", "/account-api/me")).json;
+  }
+  const answer = await b.portal.api("GET", row.operation);
+  const t = table.messages.WebTranslator.fromData(b.me && b.me.locale);
+  const text = answer.status === 200 && answer.json
+    ? row.render(answer.json, { t: t, query: {}, prefix: "", origin: base,
+                                me: b.me, locale: b.me && b.me.locale,
+                                version: b.me && b.me.version, here: path })
+    : "";
+  log.debug("Leaving pageOf().");
+  return { status: answer.status, json: answer.json, text: text };
+}
+
+// A PAGE FOR NOBODY — the activation link's — drawn from its view by the
+// portal's own renderers, in the language a browser with no preference gets.
+let nobodyLocale = null;
+async function drawForNobody(path, view) {
+  log.debug("Entering drawForNobody(). " + path);
+  if (!nobodyLocale) {
+    nobodyLocale = (await portal.nobody(base, "GET", "/account-api/locale"))
+      .json;
+  }
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  const t = table.messages.WebTranslator.fromData(nobodyLocale.locale);
+  log.debug("Leaving drawForNobody().");
+  return row.render(view, { t: t, query: {}, prefix: "", origin: base,
+                            me: null, locale: nobodyLocale.locale,
+                            version: nobodyLocale.version, here: path });
 }
 
 // ===========================================================================
@@ -446,7 +547,7 @@ async function enrolling() {
   log.info("=== 1. enrolling an authenticator app at /portal/mfa ===");
   const b = await signIn("/portal/mfa", OWNER);
 
-  let page = await b.go("GET", "/portal/mfa");
+  let page = await pageOf(b, "/portal/mfa");
   check("the portal offers to set one up, and reports none enrolled",
         function () {
     assert.strictEqual(page.status, 200,
@@ -467,23 +568,29 @@ async function enrolling() {
     });
   });
 
-  let r = await b.go("POST", "/portal/mfa",
-                     form({ action: "start", csrf_token: csrfOf(page.text) }));
-  check("starting the setup REDIRECTS rather than rendering — so a reload " +
-        "cannot mint a second secret and invalidate the one just scanned",
-        function () {
-    assert.ok(r.status === 303 || r.status === 302,
-      "POST start answered " + r.status);
+  let r = await b.portal.act("/portal/mfa", { action: "start" });
+  check("starting the setup answers NO SECRET OF ITS OWN — the page asks " +
+        "its view again, which re-derives the one pending, so a reload " +
+        "cannot mint a second secret and invalidate the one just scanned " +
+        "(it was a 303 until #568)", function () {
+    assert.ok(r.status === 200 && r.json && r.json.ok === true &&
+              !r.json.view,
+      "POST start answered " + r.status + " " + String(r.text).slice(0, 200));
   });
 
-  page = await b.go("GET", "/portal/mfa");
+  page = await pageOf(b, "/portal/mfa");
   const secret = secretShownOn(page.text);
+  const reread = secretShownOn((await pageOf(b, "/portal/mfa")).text);
+  check("and asking the page again shows the SAME secret", function () {
+    assert.strictEqual(reread, secret,
+      "a second read of /portal/mfa minted another secret.");
+  });
   check("the secret is shown BOTH ways: a QR code drawn on the server, and " +
         "the base32 in groups of four for a phone that cannot scan it",
         function () {
     assert.ok(qrShownOn(page.text),
-      "no QR code data: URI on the page. Every page of this portal is " +
-      "script-src 'none', so the image has to arrive rendered.");
+      "no QR code data: URI on the page: the image arrives rendered by the " +
+      "server, in the view.");
     assert.ok(secret.length >= 32,
       "no transcribable secret on the page; got '" + secret + "'");
   });
@@ -515,20 +622,20 @@ async function enrolling() {
       "and it is already being demanded of them.");
   });
 
-  r = await b.go("POST", "/portal/mfa",
-                 form({ action: "confirm", code: "000000",
-                        csrf_token: csrfOf(page.text) }));
+  r = await b.portal.act("/portal/mfa", { action: "confirm",
+                                          code: "000000" });
   check("a wrong code is refused and the SAME secret is redrawn — mistyping " +
         "six digits must not mean scanning again", function () {
     assert.strictEqual(r.status, 400, "a wrong code answered " + r.status);
-    assert.strictEqual(secretShownOn(r.text), secret,
-      "the page came back with a different secret, so a typo costs a rescan.");
+    const view = (r.json && r.json.view) || {};
+    assert.strictEqual(
+      String((view.setup || {}).grouped || "").replace(/\s+/g, ""), secret,
+      "the refusal's view carries a different secret, so a typo costs a " +
+      "rescan.");
   });
 
   const code = codeFor(secret);
-  r = await b.go("POST", "/portal/mfa",
-                 form({ action: "confirm", code: code,
-                        csrf_token: csrfOf(r.text) }));
+  r = await b.portal.act("/portal/mfa", { action: "confirm", code: code });
   check("A CODE THIS JOB COMPUTED FROM THE SECRET IS ACCEPTED — which is the " +
         "only thing an authenticator app ever does, and the claim tests/" +
         "totp.js cannot make", function () {
@@ -542,14 +649,10 @@ async function enrolling() {
     // answers say. `tests/vendored/sts_portal_backup_codes.js` is where the
     // recovery codes' own render is pinned, including that an enrolment
     // shows none.
-    assert.ok(r.status === 303 || r.status === 302 || r.status === 200,
+    // Since #568 the answer is `{ ok: true, message }`.
+    assert.ok(r.status === 200 && r.json && r.json.ok === true,
       "the confirmation answered " + r.status + " " +
       String(r.text).slice(0, 300));
-    if (r.status === 200) {
-      assert.ok(!/class="err"/.test(r.text),
-        "the confirmation answered 200 with an error on the page: " +
-        String(r.text).slice(0, 300));
-    }
   });
 
   seen = await apiGet("/mfa?q=" + encodeURIComponent(OWNER));
@@ -611,20 +714,25 @@ async function theSignInDemandsIt(enrolment) {
   let amr = "";
 
   const b = await signIn(PORTAL_DOOR, OWNER, async function (bb, r) {
-    sawTheCodeScreen = /One-time code|one-time code|authenticator app/i.test(
-        r.text) &&
-                       /name="mfa_id"/.test(r.text);
+    // THE CODE PAGE IS THE SIGN-IN SURFACE'S (#572): its view, opened at
+    // the address the screen's act named.
+    sawTheCodeScreen = !!(r.step && r.step.view &&
+                          r.step.view.page === "totp");
     assert.ok(sawTheCodeScreen,
       "the password alone got through, or some other screen was drawn: " +
       String(r.text).slice(0, 400));
-    const mfaId = (r.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1];
+    const send = async function (code) {
+      const a = await authnSignin.stepAct(r.step, "totp", { code: code },
+                                          { cookie: bb.cookieHeader() });
+      keepCookies(bb, a);
+      return { status: a.next === "redirect" ? 303 : a.status,
+               location: a.location, text: a.errors.join(" ") || a.text };
+    };
 
     // RFC 6238 SECTION 5.2, END TO END. The code that CONFIRMED the enrolment
     // is a code, and a code is accepted once.
-    let x = await bb.go("POST", "/authn/totp",
-                        form({ mfa_id: mfaId,
-                               code: enrolment.confirmationCode }));
-    replayRefused = x.status === 200 && /already been used/.test(x.text);
+    let x = await send(enrolment.confirmationCode);
+    replayRefused = x.status === 400 && /already been used/.test(x.text);
     assert.ok(replayRefused,
       "the code that confirmed the enrolment was accepted a second time, or " +
       "was refused with the wrong reason: " + x.status + " " +
@@ -635,7 +743,7 @@ async function theSignInDemandsIt(enrolment) {
     // accepted now — which is the whole point of the window and lets this run
     // in milliseconds instead of half a minute.
     const next = codeFor(enrolment.secret, Date.now() + 30000);
-    x = await bb.go("POST", "/authn/totp", form({ mfa_id: mfaId, code: next }));
+    x = await send(next);
     return x;
   });
 
@@ -647,7 +755,7 @@ async function theSignInDemandsIt(enrolment) {
         "a wrong code, because those are different things to be told",
         function () { assert.ok(replayRefused); });
 
-  const page = await b.go("GET", "/portal");
+  const page = await pageOf(b, "/portal");
   amr = (page.text.match(/<tr><th>How<\/th><td>([^<]*)/) || [])[1] || "";
   check("the session says two factors were presented: amr pwd and otp, acr " +
         "mfa — RFC 8176's value, whose registry entry names RFC 4226 and RFC " +
@@ -680,7 +788,7 @@ async function oneUserCannotEnrolForAnother() {
   log.debug("Entering oneUserCannotEnrolForAnother().");
   log.info("=== 3. A01: enrolling for somebody else ===");
   const b = await signIn("/portal/mfa", INTRUDER);
-  let page = await b.go("GET", "/portal/mfa");
+  let page = await pageOf(b, "/portal/mfa");
 
   const beforeRows = await apiGet("/mfa?q=" + encodeURIComponent(OWNER));
   const before = (beforeRows.body.people || []).filter(function (one) {
@@ -688,17 +796,31 @@ async function oneUserCannotEnrolForAnother() {
   })[0];
 
   // Every parameter a future author might plausibly have read.
-  const r = await b.go("POST", "/portal/mfa",
-                       form({ action: "start", user: OWNER, username: OWNER,
-                              subject: OWNER, uid: OWNER,
-                              csrf_token: csrfOf(page.text) }));
-  check("the POST is answered rather than erroring — the parameters are " +
-        "simply not read", function () {
-    assert.ok(r.status === 303 || r.status === 302 || r.status === 400,
-      "it answered " + r.status);
+  const r = await b.portal.act("/portal/mfa",
+                               { action: "start", user: OWNER,
+                                 username: OWNER, subject: OWNER,
+                                 uid: OWNER });
+  // Since 2026-10-12 the account API refuses a field an operation does not
+  // take, so this is a 400 naming them; before, they were dropped unread.
+  // Either way nothing of the owner's is touched, which is what the store
+  // check below holds.
+  check("the POST is refused rather than erroring — the parameters naming " +
+        "somebody are not fields the operation takes (the account is the " +
+        "token's, #568)", function () {
+    assert.ok(r.status === 400, "it answered " + r.status);
   });
 
-  page = await b.go("GET", "/portal/mfa");
+  // The same act with only the fields it takes: what a request naming
+  // somebody amounted to before the bodies were strict (the names were
+  // dropped and the enrolment began). It begins the INTRUDER'S OWN, which is
+  // what makes their name the one on the page below.
+  const own = await b.portal.act("/portal/mfa", { action: "start" });
+  check("the same act without the names begins the caller's own enrolment",
+        function () {
+    assert.strictEqual(own.status, 200, "it answered " + own.status);
+  });
+
+  page = await pageOf(b, "/portal/mfa");
   check("and the page that comes back is the INTRUDER'S OWN — their name on " +
         "it, and not the person they named", function () {
     assert.ok(page.text.indexOf(INTRUDER) >= 0,
@@ -726,15 +848,13 @@ async function oneUserCannotEnrolForAnother() {
 
   // And a hand-made confirm naming the owner cannot finish the OWNER's
   // enrolment either: the pending record is keyed by the session's person.
-  const confirm = await b.go("POST", "/portal/mfa",
-                             form({ action: "confirm", user: OWNER,
-                                    username: OWNER, code: "123456",
-                                    csrf_token: csrfOf(page.text) }));
+  const confirm = await b.portal.act("/portal/mfa",
+                                     { action: "confirm", user: OWNER,
+                                       username: OWNER, code: "123456" });
   check("and a confirmation naming somebody else confirms nothing of theirs " +
-        "— the pending enrolment is keyed by the SESSION'S person",
+        "— the pending enrolment is keyed by the TOKEN'S person",
         function () {
-    assert.ok(confirm.status === 400 || confirm.status === 303,
-      "it answered " + confirm.status);
+    assert.strictEqual(confirm.status, 400, "it answered " + confirm.status);
   });
   log.debug("Leaving oneUserCannotEnrolForAnother().");
 }
@@ -776,8 +896,18 @@ async function anActivationLinkCanSetOneUp() {
   assert.ok(url,
             "no activation URL came back: " + String(issued.raw).slice(0, 300));
 
-  const b = browser(NEWCOMER);
-  let page = await b.go("GET", url);
+  // THE LINK IS THE PORTAL'S PAGE; WHAT IT DRAWS IS `GET /account-api/
+  // activation` with the link's `user` and `token`, which takes no access
+  // token (#568). Opening the link is asking that.
+  const linked = new URL(url, base);
+  const linkQuery = "?user=" +
+    encodeURIComponent(linked.searchParams.get("user") || "") + "&token=" +
+    encodeURIComponent(linked.searchParams.get("token") || "");
+  const opened = await portal.nobody(base, "GET",
+                                     "/account-api/activation" + linkQuery);
+  let page = { status: opened.status,
+               text: opened.json
+                 ? await drawForNobody("/portal/activate", opened.json) : "" };
   const token = (page.text.match(/name="token" value="([^"]+)"/) || [])[1];
   check("the setup form offers an authenticator app as an independent " +
         "CHECKBOX beside the password — it is a second factor, not one of " +
@@ -790,24 +920,30 @@ async function anActivationLinkCanSetOneUp() {
       "the authenticator control is not a checkbox.");
   });
 
-  let r = await b.go("POST", "/portal/activate",
-                     form({ user: NEWCOMER, token: token,
-                            password: "First-Passw0rd!",
-                            confirm: "First-Passw0rd!",
-                            key_role: "none", totp: "1" }));
-  const secret = secretShownOn(r.text);
+  let r = await portal.nobody(base, "POST", "/account-api/activation",
+                              { user: NEWCOMER, token: token,
+                                password: "First-Passw0rd!",
+                                confirm: "First-Passw0rd!",
+                                key_role: "none", totp: "1" });
+  const enrolment = ((r.json && r.json.view) || {}).enrolment || {};
+  const secret = String(enrolment.grouped || "").replace(/\s+/g, "");
   check("setting a password with the box ticked shows the secret rather than " +
         "finishing", function () {
     assert.strictEqual(r.status, 200, "it answered " + r.status);
+    assert.strictEqual((r.json.view || {}).step, "totp",
+      "the answer is not the authenticator's step: " +
+      String(r.text).slice(0, 400));
     assert.ok(secret.length >= 32,
-      "no secret on the page: " + String(r.text).slice(0, 400));
-    assert.ok(qrShownOn(r.text), "no QR code on the page.");
+      "no secret in the step: " + String(r.text).slice(0, 400));
+    assert.ok(/^data:image\/svg\+xml;base64,/.test(String(enrolment.qr || "")),
+      "no QR code in the step.");
   });
 
   // **THE LINK IS NOT SPENT.** Asserted by USING it again rather than by
   // reading a flag: what somebody who abandons this step actually does is open
   // the link a second time.
-  const reopened = await browser(NEWCOMER).go("GET", url);
+  const reopened = await portal.nobody(base, "GET",
+                                      "/account-api/activation" + linkQuery);
   check("AND THE ACTIVATION LINK IS STILL LIVE — somebody who ticks the box " +
         "and then cannot find their phone is not stranded with a spent link " +
         "and half an account", function () {
@@ -816,18 +952,21 @@ async function anActivationLinkCanSetOneUp() {
       "before the setup finished.");
   });
 
-  r = await b.go("POST", "/portal/activate",
-                 form({ user: NEWCOMER, token: token, step: "totp",
-                        code: codeFor(secret) }));
+  r = await portal.nobody(base, "POST", "/account-api/activation",
+                          { user: NEWCOMER, token: token, step: "totp",
+                            code: codeFor(secret) });
+  const ready = r.json && r.json.view
+    ? await drawForNobody("/portal/activate", r.json.view) : "";
   check("a code from the secret finishes the setup", function () {
     assert.strictEqual(r.status, 200, "it answered " + r.status);
-    assert.ok(/Your account is ready/.test(r.text),
+    assert.ok(/Your account is ready/.test(ready),
       "the account-ready page was not drawn: " + String(r.text).slice(0, 400));
-    assert.ok(/authenticator app is set up/i.test(r.text),
+    assert.ok(/authenticator app is set up/i.test(ready),
       "and it does not say the authenticator was set up.");
   });
 
-  const spent = await browser(NEWCOMER).go("GET", url);
+  const spent = await portal.nobody(base, "GET",
+                                    "/account-api/activation" + linkQuery);
   check("and NOW the link is spent", function () {
     assert.strictEqual(spent.status, 400,
       "the link still works after the setup finished; it answered " +
@@ -860,10 +999,31 @@ async function anActivationLinkCanSetOneUp() {
 // signing in with a password ALONE. A read-back saying `totp: false` would pass
 // on a service that had stopped asking for the code for some other reason.
 // ===========================================================================
+// An authenticator app enrolled for `who` at /portal/mfa, with no wrong code
+// and no replay on their record. Section 1 argues each step; this only does
+// them.
+async function enrolledPerson(who) {
+  log.debug("Entering enrolledPerson(). who=" + who);
+  const b = await signIn("/portal/mfa", who);
+  let r = await b.portal.act("/portal/mfa", { action: "start" });
+  // The start answers no secret (section 1 says why); it is on the page.
+  assert.ok(r.status === 200, "starting " + who + "'s enrolment answered " +
+            r.status);
+  const page = await pageOf(b, "/portal/mfa");
+  const secret = secretShownOn(page.text);
+  assert.ok(secret, "no secret was shown when enrolling " + who);
+  r = await b.portal.act("/portal/mfa", { action: "confirm",
+                                          code: codeFor(secret) });
+  assert.ok(r.status < 400, "confirming " + who + "'s enrolment answered " +
+            r.status);
+  log.debug("Leaving enrolledPerson().");
+}
+
 async function anOperatorCanClearIt() {
   log.debug("Entering anOperatorCanClearIt().");
   log.info("=== 5. clearing an authenticator through /admin-api ===");
-  const cleared = await apiPost("/mfa/clear-totp", { username: OWNER });
+  await enrolledPerson(CLEARED);
+  const cleared = await apiPost("/mfa/clear-totp", { username: CLEARED });
   check("POST /admin-api/mfa/clear-totp accepts it", function () {
     assert.strictEqual(cleared.status, 200,
       "it answered " + cleared.status + " " +
@@ -872,7 +1032,7 @@ async function anOperatorCanClearIt() {
                        String(cleared.raw).slice(0, 200));
   });
 
-  const again = await apiPost("/mfa/clear-totp", { username: OWNER });
+  const again = await apiPost("/mfa/clear-totp", { username: CLEARED });
   check("and clearing one nobody holds is a 400 rather than a silent 200 — " +
         "the caller asked to clear a specific thing and it was not there",
         function () {
@@ -881,8 +1041,8 @@ async function anOperatorCanClearIt() {
 
   // THE TRANSITION. `signIn` with no handler ASSERTS that the password alone
   // was enough, so this one call is the whole claim.
-  const b = await signIn(PORTAL_DOOR, OWNER);
-  const page = await b.go("GET", "/portal");
+  const b = await signIn(PORTAL_DOOR, CLEARED);
+  const page = await pageOf(b, "/portal");
   check("AND THE PASSWORD ALONE SIGNS THEM IN AGAIN — the transition, which " +
         "is the only shape of assertion that can tell 'the factor was " +
         "cleared' from 'the factor was never being asked for'", function () {
@@ -900,8 +1060,8 @@ async function anOperatorCanClearIt() {
     const events = (rows.body.events || rows.body.rows || []);
     assert.ok(events.some(function (e) {
       return e.action === "admin.mfa.totp.cleared" &&
-             JSON.stringify(e.detail || {}).indexOf(OWNER) >= 0;
-    }), "no admin.mfa.totp.cleared row naming " + OWNER + ".");
+             JSON.stringify(e.detail || {}).indexOf(CLEARED) >= 0;
+    }), "no admin.mfa.totp.cleared row naming " + CLEARED + ".");
   });
   log.debug("Leaving anOperatorCanClearIt().");
 }

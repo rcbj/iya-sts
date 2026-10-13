@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -383,14 +383,16 @@ function theGate(t) {
           'and says it was a defect, so nobody reads it as a policy having ' +
           'permitted something', threw.why);
 
-  // THE NINE KINDS ARE A VOCABULARY POLICIES ARE WRITTEN AGAINST, so renaming
+  // THE TEN KINDS ARE A VOCABULARY POLICIES ARE WRITTEN AGAINST, so renaming
   // one silently stops every policy that named the old word from matching —
   // which is a policy that permits nothing rather than an error.
-  t.equal(gate.KINDS.length, 9, 'there are nine kinds of issuance');
+  t.equal(gate.KINDS.length, 10, 'there are ten kinds of issuance (a ' +
+          'certificate enrolled over ACME, EST or SCEP since 2026-10-01)');
   t.equal(gate.KINDS.join(','),
           'start-session,issue-access-token,issue-id-token,' +
           'issue-refresh-token,issue-authorization-code,issue-saml-assertion,' +
-          'issue-wsfed-token,issue-wstrust-token,issue-kerberos-ticket',
+          'issue-wsfed-token,issue-wstrust-token,issue-kerberos-ticket,' +
+          'issue-certificate',
           'and these are their spellings, which are XACML action-ids and ' +
           'therefore part of the contract with every policy anybody writes');
   log.debug("Leaving theGate().");

@@ -1,0 +1,214 @@
+{
+  "password.FIELDS.generatedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "本服務「自行產生」的密碼有多長——用於從主控台或 /admin-api 建立的新用戶、營運者的「產生」，以及產品模式的啟動帳戶。它必須至少等於最小長度，且至少為符號數的兩倍加二。從 90 個字元的字母表中取二十個字元約為 130 位元。"
+  },
+  "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "本服務「自行產生」的密碼有多長——用於從主控台或 /admin-api 建立的新用戶、營運者的「產生」，以及產品模式的啟動帳戶。它必須至少等於最小長度，且至少為符號數的兩倍加二。從 90 個字元的字母表中取二十個字元約為 130 位元。"
+  },
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "以電郵寄送的六位數代碼——作為第一因素"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "以電郵寄送的六位數代碼——作為第二因素"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "以電郵寄送的登入連結——作為第一因素"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "以電郵寄送的登入連結——作為第二因素"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.FIELDS.certificatePrimary.label": {
+    "en": "d304f2a565b7a9e3",
+    "text": "TLS 客戶端證書——作為第一因素"
+  },
+  "authn.FIELDS.certificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "以已驗證的客戶端證書存取 GET /tls/sign-in。"
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "以電郵寄送的代碼或連結有效期"
+  },
+  "authn.FIELDS.emailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "一個登入步驟在結束並要求該人重新開始之前，接受多少次錯誤代碼。每人及每網絡的速率限制也同樣適用。"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "關閉某人電郵因素前的連續失敗次數"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "預設關閉。開啟時，在自己選擇記住的瀏覽器上登入的人，若距上次在該瀏覽器上提供第二因素未超過下方期間，就不會再被要求提供。管理主控台、用戶入口網站或協定偵錯工具「絕不」適用；管理員絕不適用；登入風險為中等或更高時絕不適用；而且此時該登入對每個依賴方而言都只是「單一」因素——amr [\"pwd\"] 與 acr \"1\"，等同只憑密碼——因此要求 \"mfa\" 的應用程式會被拒絕。瀏覽器是以持有者 Cookie 辨識的：任何複製了該 Cookie 的人也能略過第二因素，直到複本被發現為止。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "以已驗證的客戶端證書存取 GET /tls/sign-in。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "一個登入步驟在結束並要求該人重新開始之前，接受多少次錯誤代碼。每人及每網絡的速率限制也同樣適用。"
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "預設關閉。開啟時，在自己選擇記住的瀏覽器上登入的人，若距上次在該瀏覽器上提供第二因素未超過下方期間，就不會再被要求提供。管理主控台、用戶入口網站或協定偵錯工具「絕不」適用；管理員絕不適用；登入風險為中等或更高時絕不適用；而且此時該登入對每個依賴方而言都只是「單一」因素——amr [\"pwd\"] 與 acr \"1\"，等同只憑密碼——因此要求 \"mfa\" 的應用程式會被拒絕。瀏覽器是以持有者 Cookie 辨識的：任何複製了該 Cookie 的人也能略過第二因素，直到複本被發現為止。"
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "此人選擇使用哪種以電郵寄送的第二因素：`code` 或 `link`。不存在：無。在 /portal/mfa 上設定，在 /admin/mfa 上或連續失敗過多次後清除。"
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "以電郵寄送之代碼或連結的連續失敗次數，成功一次即重設。由本服務維護。"
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "以電郵寄送的六位數代碼"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "寄到該人「已驗證」地址的六位數代碼。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "以電郵寄送的登入連結"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "寄到該人「已驗證」地址的單次使用連結，只在開始登入的那個瀏覽器中才能完成登入。NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.MECHANISMS.certificate.label": {
+    "en": "484883fec27a25ab",
+    "text": "TLS 客戶端證書"
+  },
+  "authn.MECHANISMS.certificate.what": {
+    "en": "458b5463993c8ba4",
+    "text": "以已驗證的客戶端證書存取 GET /tls/sign-in。"
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 第 3.1.3.1 節：「Email SHALL NOT be used for out-of-band authentication」，因為郵箱可能只憑密碼就能進入，郵件也可能在傳輸中被讀取或被轉送。因此預設關閉；只有在這是可接受的風險時才開啟。"
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "以電郵寄送的代碼或連結有效期為 {{n}} 秒"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "以電郵寄送的代碼或連結有效期為 {{n}} 秒——未啟用：此領域無法傳送郵件"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "預設關閉。關閉時，登入畫面、用戶入口網站與管理主控台都會拒絕服務帳戶，無論其出示何種第一因素；而將某人轉為服務帳戶會結束其瀏覽器工作階段。服務帳戶是由程式使用的，而程式沒有理由出現在登入畫面上。"
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "預設關閉。關閉時，登入畫面、用戶入口網站與管理主控台都會拒絕服務帳戶，無論其出示何種第一因素；而將某人轉為服務帳戶會結束其瀏覽器工作階段。服務帳戶是由程式使用的，而程式沒有理由出現在登入畫面上。"
+  },
+  "kinds.passkey.governs": {
+    "en": "31eeef667c347730",
+    "text": "密碼金鑰的行為方式——登入是否可以不指名用戶名稱，以及要求安全金鑰儲存什麼"
+  },
+  "passkey.FIELDS.allowUsernameless.label": {
+    "en": "188831dad6ee4817",
+    "text": "允許不需用戶名稱的密碼金鑰登入"
+  },
+  "passkey.FIELDS.allowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "預設開啟。開啟時，登入畫面會提供 *Sign in with a passkey* 與用戶名稱欄位的自動填入，它們會向瀏覽器要求此領域的任何可探索認證（WebAuthn Level 3 第 5.4 節，`allowCredentials` 為空），並登入其用戶控制代碼所指名的帳戶，且要求並檢查用戶驗證。關閉時兩者皆不提供，登入一律先指名該人。取代設定 webauthn.usernameless。"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.label": {
+    "en": "d2b810facc1c57f0",
+    "text": "無用戶名稱登入開啟時「Use a security key」所要求的內容"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "在無用戶名稱登入「開啟」期間，透過 *Use a security key*（或未指名種類的註冊）進行註冊時送出的 `residentKey`。關閉期間，該按鈕一律要求 `required`，因此它會像 *Create a passkey*（一律要求 `required`）一樣建立可探索認證。`discouraged` 或 `preferred` 可節省安全金鑰為數不多的常駐槽位，代價是金鑰登入時需要用戶名稱。取代設定 webauthn.residentKey。"
+  },
+  "passkey.FIELDS.signInHints.what": {
+    "en": "c748dd352b0e7351",
+    "text": "登入儀式——密碼金鑰步驟、無用戶名稱登入及其自動填入——依序送出的提示，或 none（預設：瀏覽器提供它所知道的每種方式）。"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "預設為空：不檢查任何序號。設定為某人項目上的屬性（例如可保存多個值的 `serialNumber`）時，安全金鑰只有在帶有「受信任」企業證明、且其證書所指名的裝置序號是該人的值之一時才能註冊。需要將 webauthn.attestation 設定為 enterprise，並設定廠商或平台向此 RP ID 釋出企業證明；否則瀏覽器會送出一般證明，每次註冊都會被拒絕。"
+  },
+  "passkey.FIELDS.userDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "預設為空：登入所知的名稱，否則為用戶名稱。否則為最多六個依序排列、以逗號分隔的目錄屬性；以空格分隔的一組屬性（givenName sn）會將其值連接起來。第一個其所有屬性皆有值者成為 user.displayName（WebAuthn Level 3 第 5.4.3 節），並移除控制字元與改變方向的字元，最多 64 個字元。用戶名稱一律是 user.name。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAllowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "預設開啟。開啟時，登入畫面會提供 *Sign in with a passkey* 與用戶名稱欄位的自動填入，它們會向瀏覽器要求此領域的任何可探索認證（WebAuthn Level 3 第 5.4 節，`allowCredentials` 為空），並登入其用戶控制代碼所指名的帳戶，且要求並檢查用戶驗證。關閉時兩者皆不提供，登入一律先指名該人。取代設定 webauthn.usernameless。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "在無用戶名稱登入「開啟」期間，透過 *Use a security key*（或未指名種類的註冊）進行註冊時送出的 `residentKey`。關閉期間，該按鈕一律要求 `required`，因此它會像 *Create a passkey*（一律要求 `required`）一樣建立可探索認證。`discouraged` 或 `preferred` 可節省安全金鑰為數不多的常駐槽位，代價是金鑰登入時需要用戶名稱。取代設定 webauthn.residentKey。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSignIn.what": {
+    "en": "c748dd352b0e7351",
+    "text": "登入儀式——密碼金鑰步驟、無用戶名稱登入及其自動填入——依序送出的提示，或 none（預設：瀏覽器提供它所知道的每種方式）。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "預設為空：不檢查任何序號。設定為某人項目上的屬性（例如可保存多個值的 `serialNumber`）時，安全金鑰只有在帶有「受信任」企業證明、且其證書所指名的裝置序號是該人的值之一時才能註冊。需要將 webauthn.attestation 設定為 enterprise，並設定廠商或平台向此 RP ID 釋出企業證明；否則瀏覽器會送出一般證明，每次註冊都會被拒絕。"
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyUserDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "預設為空：登入所知的名稱，否則為用戶名稱。否則為最多六個依序排列、以逗號分隔的目錄屬性；以空格分隔的一組屬性（givenName sn）會將其值連接起來。第一個其所有屬性皆有值者成為 user.displayName（WebAuthn Level 3 第 5.4.3 節），並移除控制字元與改變方向的字元，最多 64 個字元。用戶名稱一律是 user.name。"
+  },
+  "passkey.sentences.usernameless": {
+    "en": "e6aa1e26ce9d38a9",
+    "text": "密碼金鑰可不需用戶名稱讓人登入（要求用戶驗證）"
+  },
+  "passkey.sentences.noUsernameless": {
+    "en": "1152c46cd0b86b19",
+    "text": "每次登入都先指名該人：沒有不需用戶名稱的密碼金鑰登入"
+  },
+  "passkey.sentences.securityKeyOther": {
+    "en": "89e2cb66e39ae79a",
+    "text": "「Use a security key」要求 residentKey {{value}}，因此透過它註冊的金鑰登入時可能需要用戶名稱"
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "此領域無法傳送郵件，因此兩種電郵機制無法開啟，也從不提供。請在「伺服器設定 > 郵件」上設定傳輸方式。"
+  }
+}

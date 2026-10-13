@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -84,7 +84,12 @@ const check = h.check;
 const ok = h.ok;
 const setting = h.setting;
 const GRANT = h.GRANT;
-const DEMO = h.DEMO;
+// THE TYPE THE GRANTS ASK FOR (#586): one this job declares on a resource
+// server it registers in section 0, rather than the demonstration
+// resource server's, which is catalogued only while that server is on —
+// development only since #585. Nothing here presents a token at a resource
+// server, so no test peer is needed and this job runs on every target.
+const DEMO = "urn:test:gnap-mtls:resource";
 const FILE_PASSWORD = "correct horse battery staple";
 
 // ---------------------------------------------------------------------------
@@ -288,6 +293,16 @@ async function test() {
   // =========================================================================
   log.info("=== 0. the realm ===");
   await h.createRealm("GNAP mutual TLS");
+  const typeOwner = new gnap.Client({ key: gnap.newKey("ES256") });
+  await ok(h.realmApi + "/applications/create", {
+    identifier: "gnap-mtls-rs-" + REALM, kind: "gnap-resource-server",
+    protocols: ["gnap", "oauth2"],
+    fields: { gnapKey: JSON.stringify(typeOwner.keyObject()),
+              gnapResourceServerUri: "https://rs.gnap-mtls.test/api" } },
+           "registered the resource server that declares " + DEMO);
+  await ok(h.realmApi + "/applications/set-access-type", {
+    application: "gnap-mtls-rs-" + REALM, type: DEMO, actions: ["read"] },
+           "declared " + DEMO);
   await ok(h.realmApi + "/pki/build", { organisation: "Gnapmtls",
                                         country: "US" },
            "built the realm's certificate authority");

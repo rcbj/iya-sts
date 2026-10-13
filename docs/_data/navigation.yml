@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # The left-hand navigation of the documentation site, drawn by
 # _includes/sidebar.html on every page, in place of `header_pages` in
@@ -16,6 +16,9 @@
     - { title: Configuration, url: /configuration.html }
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
+    - { title: Listeners and hosted applications, url: /listeners.html }
+    - { title: Languages and regions, url: /languages.html }
+    - { title: User-facing pages, url: /user-facing-pages.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
     - { title: Conformance suites, url: /conformance.html }
     - { title: Departures from the specifications, url: /spec-departures.html }
@@ -28,6 +31,7 @@
   items:
     - { title: OAuth 2.0 and OpenID Connect, url: /oauth-oidc.html }
     - { title: "Security profiles: RFC 9700, OAuth 2.1, DPoP, mTLS", url: /oauth-security.html }
+    - { title: Post-quantum key establishment, url: /post-quantum-encryption.html }
     - { title: JWT assertions (RFC 7523), url: /jwt-assertions.html }
     - { title: SAML assertions (RFC 7522), url: /saml-assertions.html }
     - { title: GNAP, url: /gnap.html }
@@ -50,7 +54,10 @@
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
+    - { title: Service accounts, url: /service-accounts.html }
     - { title: "Mail: reset, verification, notices", url: /mail.html }
+    - { title: Attribute sources, url: /attribute-sources.html }
+    - { title: Secret push destinations, url: /secret-destinations.html }
 
 - section: Verifiable credentials
   items:
@@ -67,6 +74,7 @@
 - section: Authorization policy
   items:
     - { title: XACML 3.0 and ALFA, url: /xacml.html }
+    - { title: Delegation and impersonation, url: /delegation.html }
     - { title: Remote PEP, url: /remote-pep.html }
 
 - section: Shared Signals
@@ -88,17 +96,21 @@
     - { title: Admin console, url: /admin-console.html }
     - { title: Applications, url: /applications.html }
     - { title: Management API, url: /management-api.html }
+    - { title: Account API, url: /account-api.html }
     - { title: "Configuring OAuth 2.0 grants", url: /configure-oauth2-grants.html }
     - { title: "Configuring OpenID Connect flows", url: /configure-oidc-flows.html }
     - { title: "Configuring SAML 2.0 and 1.1", url: /configure-saml.html }
 
 - section: Operating it
   items:
+    - { title: The compose stack, url: /docker-compose.html }
     - { title: Persistence, url: /persistence.html }
     - { title: PostgreSQL schema, url: /postgres-schema.html }
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
+    - { title: Several regions (cells), url: /cells.html }
+    - { title: How cells work, url: /cells-concepts.html }
 
 - section: For contributors
   items:

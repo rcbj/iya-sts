@@ -88,12 +88,23 @@ their failInfo with them.
 4. **Signed attributes are verified over the bytes that arrived**, tag swapped
    to SET; the ones this service signs are DER-sorted.
 
-### Why the codec is in `scep/` and not `common/crypto.js`
+### The codec is in `scep/`; its cryptography is `common/crypto.js`'s (#453)
 
-Rule 3r is about primitives having one policy. This is an ENVELOPE only SCEP
-reads, over node's own primitives, with every algorithm it accepts in a table
-`admin-ui/crypto_metadata.ts` reads (`algorithms()`) — `gnap/gnap_httpsig.ts`'s
-arrangement.
+`scep_cms.ts` reads and writes the CMS envelope — the ASN.1, the attribute
+tables, the refusals — and every cryptographic operation inside it is a named
+function of `common/crypto.js`, group F's region of section 17: the content
+cipher (`scepContentEncrypt()` / `scepContentDecrypt()`, AES-CBC only, with
+`SCEP_CONTENT_CIPHERS` the closed list), the RSA key transport
+(`cmsKeyTransportDecrypt()` for PKCS#1 v1.5 or OAEP, `cmsKeyTransportEncrypt()`
+for the reply), the messageDigest attribute check
+(`cmsMessageDigestMatches()`), and the SignerInfo signature through
+`signBytes()` / `signatureValid()`. Until #453 the codec called node's
+primitives itself, an arrangement rule 3r tolerated for an envelope only SCEP
+reads; rcbj's rule of 2026-10-05 — every cryptographic operation, in every
+protocol, through the common module — ended it, and
+`tests/crypto_centralised.js` keeps it ended. The RA never signs with SHA-1:
+`certRep()` limits its digest to SHA-2, and a request naming SHA-1 or MD5 is
+refused `badAlg` before any signature is checked.
 
 ### The RA certificate
 
@@ -175,6 +186,15 @@ entry through `core.issueForDevice()` (`common/CLAUDE.md`, 3ag's *The
 as `attestations`. A RenewalReq is refused for it (`STS-DEVICE-0025`): the
 renewed certificate is on no person or application entry. The console lists
 it as a tenth profile row.
+
+**A TPM statement over SCEP is never FRESH (#257, rcbj's decision 3).**
+draft-ietf-lamps-attestation-freshness defines a nonce operation for CMP,
+EST and CMC, and nothing defines one for SCEP. The single-use challenge
+password is fresh and bound, but a nonce derived from it would be a
+transformation the statement type's own specification has to define
+(section 9), and none does. So the core records the statement's freshness
+`unproven`, and product refuses it (`STS-DEVICE-0050`): an attested device
+certificate in product is an EST one.
 
 ## Several nodes: the challenge and the transaction (2026-09-14, #46)
 
@@ -258,6 +278,42 @@ it as a tenth profile row.
   certificates and CRLs, refuses to ask GetNextCACert because it is not
   offered, and reads every FAILURE; every AES size with SHA-256 and SHA-512
   enrolls, and DES, DES-EDE3 and SHA-1 are `badAlg`.
+
+## Cells: where a PKIOperation is served (#98 D10, 2026-09-28)
+
+`Scep.placeMessage()` runs in `pkiOperation()` once the pkiMessage is parsed
+and before its signature is verified, its transaction claimed or its
+challenge spent. The RA key is in the realm's PKI row (global tier), so any
+cell can open the envelope far enough to read whose the message is:
+
+* **a signer this realm issued** (RenewalReq, GetCert, GetCRL, a PKCSReq in
+  the historical renewal form) — the person its `urn:sts:person:` names goes
+  to their home cell;
+* **a PKCSReq's challenge password** — the challenge id names its entry
+  (`common/cert_enrollment.ts`'s `credentialId()`, stamped with the minting
+  cell): a person's goes to their home, where the challenge and the
+  certificate live; an application's to the cell that minted it, which holds
+  its spend claim (`redeemScepChallengeOnce()`).
+
+The relay sends the bytes as they arrived (`cell_placement.ts`'s
+`serialisedBody()` prefers `req.rawBody`, which is what sscep's type-less
+POST reaches a handler as), or the GET binding's query untouched. A retried
+PKCSReq carries the same challenge and so reaches the cell holding the
+completed transaction.
+
+**The documented exception — CertPoll.** It carries neither a realm-issued
+signer nor a challenge, so it is answered by the cell it reaches, whose
+transaction store may not hold it (FAILURE `STS-SCEP-0038`, badCertId). Harmless
+here: nothing is ever answered PENDING, so a client following RFC 8894
+section 3.3.3 never polls.
+
+## The monitor counts (#352, 2026-09-29)
+
+`/admin/scep/monitor`'s *issued certificates* built the whole SCEP list to
+read its length; it is `certificateCountsInRealm('scep').held`. `/admin/scep`
+slices before `certificateRow()` and its listing reads holders in one walk,
+never parsing an ACME or EST record (`common/CLAUDE.md`, 3ag).
+`tests/certificate_listing_bounds.js` holds both.
 
 ## Documented exceptions
 

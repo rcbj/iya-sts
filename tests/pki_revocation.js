@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -196,6 +196,26 @@ async function run(t) {
           authorities.some(function (one) { return one.ca === 'jose'; }),
           'and all three tiers are among them, because all three sign ' +
           'something and therefore all three can be asked about it');
+
+  // A REMOVED REALM'S ROW IS NOT A KNOWN SCOPE (2026-10-02). A node can
+  // still hold one for a moment after another node removed the realm, and
+  // the revocation index then listed authorities whose certificates answered
+  // 404 (sts_pki_distribution_points in the cluster mode).
+  const ghost = 'ghost-removed-realm';
+  keystore.attachPki(ghost, { version: 2, scope: ghost,
+                              intermediate: { serialHex: '01' }, issuing: {},
+                              revoked: {}, crlNumbers: {},
+                              issuedKeyPairs: [] });
+  try {
+    const scopes = pki.knownScopes();
+    t.check(scopes.indexOf(ghost) < 0 && scopes.indexOf('default') >= 0 &&
+            scopes.indexOf(pki.PROCESS_SCOPE) >= 0,
+            'a certificate authority row held for a realm that does not ' +
+            'exist is not a known scope, while the default realm and the ' +
+            'process branch are', JSON.stringify(scopes));
+  } finally {
+    keystore.attachPki(ghost, null);
+  }
 
   // **THE ROOT IS LISTED ONCE.** `knownScopes()` already carries the process
   // branch — it filters out the SERVICE scope and nothing else — so a caller

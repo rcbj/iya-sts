@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -93,7 +93,7 @@ async function test() {
   });
   const bin = path.join(__dirname, "..", "vc-suites", "bin");
   log.info("=== 1. the suite ===");
-  const run = kit.runMocha(dir, ctx, { timeoutMs: 150000, env: {
+  const run = await kit.runMocha(dir, ctx, { timeoutMs: 150000, env: {
     PATH: bin + path.delimiter + process.env.PATH,
     VC_JOSE_COSE_SUITE_DIR: dir } });
   kit.judge(SUITE, run.tests, EXCEPTIONS, {});

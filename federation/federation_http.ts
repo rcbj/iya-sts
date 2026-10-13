@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -92,7 +92,8 @@
 //    these requests is a client secret and an authorization code, at somebody
 //    ELSE'S service — this is the one place in this repository where a
 //    credential leaves the process, and it is the one place this service is
-//    stricter than a mock would ordinarily be (RFC 6749 section 3.2, RFC 9700
+//    stricter than development mode ordinarily is (RFC 6749 section 3.2, RFC
+// 9700
 //    section 2, BCP 195). Since #171 the policy is `common/outbound_tls.ts`'s,
 //    shared with GNAP, SSF and XACML, and it is three settings where there was
 //    one: `federation.outboundAllowHttp` admits plain http, in development

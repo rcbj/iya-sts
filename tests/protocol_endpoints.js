@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -9,8 +9,8 @@
 // EVERY PROTOCOLS PAGE LISTS THE ENDPOINTS OF THE REALM IT IS READ IN.
 //
 // `admin-core/protocol_endpoints.ts` is a table from console page to route, and
-// `admin.respond()` and the management API's `sendJson()` add what it computes
-// to a page and to the operation mirroring it. Three things about that can go
+// the management API's `sendJson()` adds what it computes to the operation
+// mirroring a page, which the static console draws (#446). Three things about that can go
 // wrong with nothing on any page looking broken, and each is a check here:
 //
 //   A. A Protocols page with no row — added to `SECTIONS` tomorrow — gets no
@@ -64,25 +64,6 @@ function childMain() {
                       'endpoints.test' : undefined;
              } };
   }
-  function fakeRes() {
-    const res = { headers: {}, body: null, statusCode: 200, locals: {} };
-    res.set = function (k, v) {
-      res.headers[k] = v;
-      return res;
-    };
-    res.status = function (code) {
-      res.statusCode = code;
-      return res;
-    };
-    res.type = function () {
-      return res;
-    };
-    res.send = function (body) {
-      res.body = body;
-      return res;
-    };
-    return res;
-  }
   function fetchJson(port, urlPath) {
     return new Promise(function (resolve, reject) {
       http.get({ host: '127.0.0.1', port: port, path: urlPath },
@@ -134,8 +115,8 @@ function childMain() {
     table.pages().forEach(function (page) {
       const rows = table.forPage(fakeReq(page), page);
       const http = rows.filter(function (row) { return row.route; });
-      if (!rows.length && ['/admin/authorization-servers',
-                           '/admin/spiffe/entries'].indexOf(page) < 0) {
+      if (!rows.length &&
+          ['/admin/authorization-servers'].indexOf(page) < 0) {
         empty.push(page);
       }
       http.forEach(function (row) {
@@ -203,13 +184,16 @@ function childMain() {
            'under a realm every HTTP row carries that realm\'s prefix',
            outside.slice(0, 5).join(', ') || 'all prefixed');
 
-      const named = table.forPage(fakeReq('/admin/authorization-servers'),
-                                  '/admin/authorization-servers');
+      const named = table.forPage(fakeReq('/admin/oauth2'), '/admin/oauth2')
+        .filter(function (row) {
+          return /tenantpe/.test(row.url) && /tenantpe$/.test(row.name);
+        });
       // Eleven since 2026-09-13: RFC 9126's /:as/oauth2/par joined the ten;
       // twelve since #138, with /:as/oauth2/fapi.
       note(named.length === 12 && named.every(function (row) {
         return /tenantpe/.test(row.url) && /tenantpe$/.test(row.name);
-      }), 'a named authorization server is listed by its id, once per route',
+      }), 'the combined OAuth page lists each named authorization server ' +
+           'route once by its id',
            named.map(function (row) { return row.url; }).join(', '));
       note(named.some(function (row) {
         return row.url === prefix +
@@ -217,6 +201,84 @@ function childMain() {
       }) && named.some(function (row) {
         return row.url === prefix + 'tenantpe/.well-known/openid-configuration';
       }), 'and both of its discovery documents are at their own addresses');
+
+    const vc = table.forPage(fakeReq('/admin/vc'), '/admin/vc');
+    const vcRoutes = vc.filter(function (row) { return row.route; })
+      .map(function (row) { return row.route; });
+    note(table.pages().indexOf('/admin/vc') >= 0 &&
+         ['/admin/oid4vci', '/admin/vc-status', '/admin/oid4vp',
+          '/admin/vc-verifier-config'].every(function (page) {
+           return table.pages().indexOf(page) < 0;
+         }) &&
+         vcRoutes.indexOf('/oid4vci/credential-offer/:id') >= 0 &&
+         vcRoutes.indexOf('/oid4vp/response') >= 0 &&
+         vcRoutes.indexOf('/oid4vci/status-lists') >= 0,
+         'the single Verifiable Credentials page lists issuer, verifier and ' +
+         'status endpoints',
+         vcRoutes.join(', '));
+    const xacmlPages = table.pages().filter(function (page) {
+      return page === '/admin/xacml' ||
+        page.indexOf('/admin/xacml/') === 0;
+    });
+    const xacml = table.forPage(fakeReq('/admin/xacml'), '/admin/xacml')
+      .filter(function (row) { return row.route; })
+      .map(function (row) { return row.route; });
+    note(xacmlPages.indexOf('/admin/xacml') >= 0 &&
+         xacmlPages.indexOf('/admin/xacml/policies') < 0 &&
+         xacmlPages.indexOf('/admin/xacml/editor') < 0 &&
+         xacmlPages.indexOf('/admin/xacml/peps') < 0 &&
+         xacmlPages.indexOf('/admin/xacml/decide') < 0 &&
+         ['/xacml', '/xacml/pdp', '/xacml/policies',
+          '/xacml/pep/register', '/xacml/pep/policies',
+          '/xacml/pep/heartbeat', '/xacml/pip']
+           .every(function (route) { return xacml.indexOf(route) >= 0; }),
+         'the combined XACML page owns its protocol endpoints',
+         'pages=' + xacmlPages.join(', ') + '; routes=' + xacml.join(', '));
+
+      const kerberosPages = table.pages().filter(function (page) {
+        return page === '/admin/kerberos' ||
+          page.indexOf('/admin/kerberos/') === 0;
+      });
+      const kerberos = table.forPage(
+        fakeReq('/admin/kerberos'), '/admin/kerberos')
+        .filter(function (row) { return row.route; })
+        .map(function (row) { return row.route; });
+      note(kerberosPages.indexOf('/admin/kerberos') >= 0 &&
+           kerberosPages.indexOf('/admin/kerberos/claims') < 0 &&
+           kerberosPages.indexOf('/admin/kerberos/principals') < 0 &&
+           ['/KdcProxy', '/authn/spnego'].every(function (route) {
+             return kerberos.indexOf(route) >= 0;
+           }) &&
+           // #595: the demonstrations left, and so did their rows.
+           ['/krb5/principals', '/krb5/service', '/spnego',
+            '/spnego/protected'].every(function (route) {
+             return kerberos.indexOf(route) < 0;
+           }),
+           'the combined Kerberos page owns its protocol endpoints',
+           'pages=' + kerberosPages.join(', ') + '; routes=' +
+           kerberos.join(', '));
+
+      // PROTOCOLS → CERT ISSUANCE (2026-10-12): one page lists ACME's,
+      // EST's, SCEP's and SPIFFE's endpoints (the sockets too, where SPIFFE
+      // is on, which it is not here); its seven former pages list none.
+      const certFormer = ['/admin/acme', '/admin/est', '/admin/scep',
+                          '/admin/spiffe', '/admin/spiffe/entries',
+                          '/admin/spiffe/agents', '/admin/spiffe/brokers'];
+      const cert = table.forPage(
+        fakeReq('/admin/cert-issuance'), '/admin/cert-issuance');
+      const certRoutes = cert.filter(function (row) { return row.route; })
+        .map(function (row) { return row.route; });
+      note(table.pages().indexOf('/admin/cert-issuance') >= 0 &&
+           certFormer.every(function (page) {
+             return table.pages().indexOf(page) < 0;
+           }) &&
+           ['/enroll/acme/directory', '/.well-known/est/cacerts',
+            '/enroll/scep', '/spiffe', '/spiffe/bundle']
+             .every(function (route) {
+               return certRoutes.indexOf(route) >= 0;
+             }),
+           'the combined Cert issuance page owns its protocol endpoints',
+           'routes=' + certRoutes.join(', '));
 
       const ldap = table.forPage(fakeReq('/admin/ldap'), '/admin/ldap');
       note(ldap.length > 0 && ldap.every(function (row) {
@@ -240,24 +302,11 @@ function childMain() {
         return row.url;
       }).join(', '));
 
-      // --- D. respond() adds the member only for the page itself ------------
-      const res = fakeRes();
-      admin.respond(fakeReq('/admin/saml2', { format: 'json' }), res,
-                    { page: '/admin/saml2' }, 'SAML 2.0', '/admin/saml2', '');
-      const answered = JSON.parse(res.body);
-      note(Array.isArray(answered.protocolEndpoints) &&
-           answered.protocolEndpoints.length > 0 &&
-           answered.protocolEndpoints[0].url.indexOf(prefix) === 0,
-           'the console\'s JSON for a Protocols page carries ' +
-           'protocolEndpoints, in the realm it was read in',
-           (answered.protocolEndpoints || []).length + ' row(s)');
-      const other = fakeRes();
-      admin.respond(fakeReq('/admin/kerberos/keytab', { format: 'json' }),
-                    other, { page: 'keytab' }, 'Kerberos keytab',
-                    '/admin/kerberos/principals', '');
-      note(!('protocolEndpoints' in JSON.parse(other.body)),
-           'and not for a page drawn under that page\'s tab with a path of ' +
-           'its own');
+      // D AND D2 WENT WITH THE SERVER-DRAWN CONSOLE (#446): `respond()`
+      // added `protocolEndpoints` to a page's JSON and drew its Copy
+      // buttons with `/admin/copy.js`. The operation adds the member now
+      // (section E) and the console's renderer draws the buttons, which its
+      // runtime wires (section F).
     });
 
     // --- E. the management API's mirror answers the same --------------------
@@ -277,11 +326,57 @@ function childMain() {
          'GET /admin-api/saml2, which mirrors the page, answers the same ' +
          'protocolEndpoints', 'status ' + mirrored.status + ' ' +
          (mirrored.parseError || ''));
+    const vcMirror = await fetchJson(port, '/admin-api/credential-claims');
+    const vcExpected = table.forPage({ path: '/admin/vc', query: {},
+      protocol: 'http', headers: {}, get: function () {
+        return '127.0.0.1:' + port;
+      } }, '/admin/vc');
+    note(vcMirror.status === 200 && vcMirror.json &&
+         JSON.stringify(vcMirror.json.protocolEndpoints) ===
+         JSON.stringify(vcExpected),
+         'GET /admin-api/credential-claims mirrors the combined VC page and ' +
+         'answers its endpoint list', 'status ' + vcMirror.status + ' ' +
+         (vcMirror.parseError || ''));
     const plain = await fetchJson(port, '/admin-api/users');
     note(plain.status === 200 && plain.json &&
          !('protocolEndpoints' in plain.json),
          'and an operation mirroring a page outside Protocols does not',
          'status ' + plain.status);
+
+    // --- F. the document the console is in ---------------------------------
+    // THE SECTION AS THE STATIC CONSOLE DRAWS IT (#446): `WebPages.render()`
+    // adds it from the `protocolEndpoints` member of the page's answer,
+    // where the server-rendered console's `endpointsSection()` did — every
+    // URL with a hidden Copy button the runtime reveals, before the page's
+    // first heading.
+    const drawn = await require(ROOT_DIR + '/tests/tools/console_page.js')
+      .consolePage(ROOT_DIR).draw('/admin/saml2', {});
+    const endpointsAt = drawn.html.indexOf('<h2>Endpoints</h2>');
+    note(drawn.status === 200 && Array.isArray(drawn.json.protocolEndpoints) &&
+         drawn.json.protocolEndpoints.length > 0 && endpointsAt >= 0 &&
+         endpointsAt <= drawn.html.indexOf('<h2') &&
+         drawn.json.protocolEndpoints.every(function (row) {
+           return drawn.html.indexOf('data-copy="' + row.url
+             .replace(/&/g, '&amp;') + '"') >= 0;
+         }),
+         'E1. /admin/saml2 draws its Endpoints section first, each URL with ' +
+         'its Copy button', drawn.status + ' ' + endpointsAt);
+    // And the document the console's one script is served in.
+    const shell = await new Promise(function (resolve, reject) {
+      http.get({ host: '127.0.0.1', port: port, path: '/admin/saml2' },
+        function (r) {
+          r.resume();
+          r.on('end', function () {
+            resolve(r);
+          });
+        }).on('error', reject);
+    });
+    const csp = String(shell.headers['content-security-policy'] || '');
+    note(shell.statusCode === 200 && /script-src 'self'/.test(csp) &&
+         !/unsafe-inline/.test(csp.replace(/style-src[^;]*/, '')) &&
+         /frame-ancestors 'none'/.test(csp) && /base-uri 'none'/.test(csp),
+         'F1. the console\'s document is served script-src \'self\', never ' +
+         'unsafe-inline, with frame-ancestors and base-uri kept', csp);
     server.close();
 
     fs.writeFileSync(OUT, JSON.stringify(findings));

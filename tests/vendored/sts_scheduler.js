@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // File: sts_scheduler.js
 //
@@ -28,6 +28,10 @@
 //      every slot of the session-expiry job is one run however many nodes
 //      could have run it. In every other mode a step-down is refused
 //      (STS-SCHED-0010): there is nobody to hand to.
+//   7. A REMOVED REALM'S JOBS GO WITH IT (#338): a realm created for the
+//      purpose has its realm jobs listed, and once it is removed no answer —
+//      through the balancer, from every node — lists a job or a run in it,
+//      and the history job is a cluster job every ten minutes.
 //
 // No sleep waits for a job: each wait is a bounded poll on the condition, at
 // the tick the service runs at (`scheduler.tickS`).
@@ -131,12 +135,19 @@ async function report(prefix) {
   assert.strictEqual(r.status, 200, "GET /admin-api/scheduler answered " +
                      r.status + " " + r.text.slice(0, 300));
   const body = r.body;
+  // EVERY NODE THAT ANSWERED A PAGE (2026-10-05). Once the job list runs to
+  // two pages a report is two requests, and through a round-robin balancer
+  // the FIRST page then lands on one node every time — so counting only
+  // page one's `answeredBy` saw one node of two.
+  body.answeredNodes = [body.answeredBy && body.answeredBy.node];
   const pages = Number((body.jobsPaging || {}).pages) || 1;
   for (let page = 2; page <= pages; page++) {
     const more = await api("GET", path + "&jobsPage=" + page);
     assert.strictEqual(more.status, 200, "GET /admin-api/scheduler page " +
                        page + " answered " + more.status);
     body.jobs = (body.jobs || []).concat(more.body.jobs || []);
+    body.answeredNodes.push(more.body.answeredBy &&
+                            more.body.answeredBy.node);
   }
   log.debug("Leaving report().");
   return body;
@@ -238,26 +249,17 @@ function jobOf(json, id, realm) {
   })[0] || null;
 }
 
-// A console form post, with the CSRF token taken off the page it posts to.
-async function consolePost(cookie, path, form) {
+// A console form post: since the cutover (#446) the operation the form at
+// `path` is, sent as the console sends it (`console_signin.js`'s `act()`).
+async function consolePost(client, path, form) {
   log.debug("Entering consolePost(). " + path);
-  const drawn = await call("GET", base + path, { headers: { Cookie: cookie } });
-  const csrf = (drawn.text.match(/name="csrf_token" value="([^"]+)"/) ||
-                [])[1] || "";
-  assert.ok(csrf, "precondition: " + path + " drawn for this session should " +
-                  "carry a CSRF token; it answered " + drawn.status);
-  const reply = await call("POST", base + path, {
-    headers: { Cookie: cookie,
-               "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(Object.assign({ csrf_token: csrf }, form))
-      .toString()
-  });
+  const reply = await client.act(path, form);
   log.debug("Leaving consolePost().");
   return reply;
 }
 
 // ---------------------------------------------------------------------------
-async function thePageAndTheApiAgree(cookie) {
+async function thePageAndTheApiAgree(consoleClient) {
   log.debug("Entering thePageAndTheApiAgree().");
   log.info("=== 1. the page and the API list the same jobs ===");
   // THE TWO READINGS ARE TAKEN AGAIN UNTIL THEY AGREE (2026-09-27), at most
@@ -288,14 +290,15 @@ async function thePageAndTheApiAgree(cookie) {
   // How far apart the two reads the nextRunAt check compares were made, for
   // that check's allowance (below).
   let readGapMs = 0;
+  let readEndedMs = 0;
   // The `id@realm` rows set aside as a realm created mid-walk (below).
   let walkSetAside = [];
   for (let attempt = 1; attempt <= 5; attempt++) {
     const readStarted = Date.now();
     json = await report();
-    pageJson = await call("GET", base + "/admin/scheduler?format=json" +
-                                "&per=200", { headers: { Cookie: cookie } });
-    readGapMs = Date.now() - readStarted;
+    pageJson = await consoleClient.get("/admin/scheduler?format=json&per=200");
+    readEndedMs = Date.now();
+    readGapMs = readEndedMs - readStarted;
     // EVERY PAGE, as report() reads the API's (2026-09-23): a comparison of
     // all the API's jobs with one page of the console's would fail on a
     // service with more than 200 job rows, about pages drawing exactly what
@@ -303,9 +306,8 @@ async function thePageAndTheApiAgree(cookie) {
     const pagesOf = Number(((pageJson.body || {}).jobsPaging || {}).pages) ||
                     1;
     for (let page = 2; page <= pagesOf; page++) {
-      const more = await call("GET", base + "/admin/scheduler?format=json" +
-                              "&per=200&jobsPage=" + page,
-                              { headers: { Cookie: cookie } });
+      const more = await consoleClient.get("/admin/scheduler?format=json" +
+                                    "&per=200&jobsPage=" + page);
       pageJson.body.jobs = pageJson.body.jobs.concat((more.body || {}).jobs ||
                                                      []);
     }
@@ -317,12 +319,10 @@ async function thePageAndTheApiAgree(cookie) {
     // big enough to hold them: without this it failed on `signing.rotate`,
     // which sorts onto the second page, about a page that was drawing exactly
     // what it should. The JSON fetch above already asks the same way.
-    html = await call("GET", base + "/admin/scheduler?per=200",
-                            { headers: { Cookie: cookie } });
+    html = await consoleClient.get("/admin/scheduler?per=200");
     for (let page = 2; page <= pagesOf; page++) {
-      const more = await call("GET", base + "/admin/scheduler?per=200" +
-                              "&jobsPage=" + page,
-                              { headers: { Cookie: cookie } });
+      const more = await consoleClient.get("/admin/scheduler?per=200&jobsPage=" +
+                                    page);
       html.text += more.text;
     }
     ids = json.jobs.map(function (j) { return j.id + "@" + j.realm; })
@@ -403,7 +403,17 @@ async function thePageAndTheApiAgree(cookie) {
             const wholeSlots = every > 0 && every <= 60000 && slots >= 1 &&
               Math.abs(delta - slots * every) < 1000 &&
               delta <= readGapMs + every;
-            assert.ok(delta < 1000 || wholeSlots,
+            // A SLOT DUE BETWEEN THE READS (2026-09-28): a job whose slot
+            // had come due but not yet run answers that slot as its next
+            // run, and the other read, made after it ran, answers the one
+            // after. So one whole interval apart, the earlier of the two
+            // already past when the reads ended, is agreement at any
+            // interval (a 5-minute job met it at 17:50:00 in memory mode).
+            const earlier = Math.min(Date.parse(j.nextRunAt),
+                                     Date.parse(other.nextRunAt));
+            const ranBetween = every > 0 &&
+              Math.abs(delta - every) < 1000 && earlier <= readEndedMs;
+            assert.ok(delta < 1000 || wholeSlots || ranBetween,
                       j.id + ": " + j.nextRunAt + " and " +
                       other.nextRunAt + " (the reads took " + readGapMs +
                       " ms)");
@@ -432,7 +442,7 @@ async function aLeaderTicks() {
   return json;
 }
 
-async function runNow(cookie) {
+async function runNow(consoleClient) {
   log.debug("Entering runNow().");
   log.info("=== 3. Run now, through the API and the console ===");
   const before = await report();
@@ -461,16 +471,15 @@ async function runNow(cookie) {
           assert.strictEqual(done.trigger, "manual");
           assert.ok(done.nodeName || done.host, JSON.stringify(done));
         });
-  const viaConsole = await consolePost(cookie, "/admin/scheduler",
+  const viaConsole = await consolePost(consoleClient, "/admin/scheduler",
                                        { action: "run", job: target });
-  // A form is answered as a form is: 303, to the run's own page.
-  const consoleRunId = decodeURIComponent(
-    (viaConsole.location.match(/[?&]run=([^&]+)/) || [])[1] || "");
-  check("the console's Run now form queues one too, and lands on its run",
+  // The form is the operation since the cutover (#446): 202, with the run.
+  const consoleRunId = String((viaConsole.json || {}).runId || "");
+  check("the console's Run now form queues one too, and answers its run",
         function () {
-          assert.strictEqual(viaConsole.status, 303,
+          assert.strictEqual(viaConsole.status, 202,
                              viaConsole.text.slice(0, 300));
-          assert.ok(consoleRunId, "the redirect was " + viaConsole.location);
+          assert.ok(consoleRunId, viaConsole.text.slice(0, 300));
         });
   await until("the console's run to finish", async function () {
     const r = await api("GET", "/admin-api/scheduler?run=" +
@@ -490,15 +499,9 @@ async function adminReadRunsNothing() {
   log.debug("Entering adminReadRunsNothing().");
   log.info("=== 4. Admin Read runs nothing ===");
   const reader = "sched-read-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, reader, log,
-                                                 { grant: "read" });
-  if (cookie === null) {
-    log.info("  (the console gate is off in this stack; nothing to refuse)");
-    log.debug("Leaving adminReadRunsNothing(). Gate off.");
-    return;
-  }
-  const page = await call("GET", base + "/admin/scheduler",
-                          { headers: { Cookie: cookie } });
+  const consoleClient = await signin.signInToTheConsole(base, reader, log,
+                                                        { grant: "read" });
+  const page = await consoleClient.get("/admin/scheduler");
   check("an Admin Read session reads the page", function () {
     assert.strictEqual(page.status, 200, "it answered " + page.status);
   });
@@ -506,14 +509,12 @@ async function adminReadRunsNothing() {
     assert.ok(page.text.indexOf(">Run now</button>") < 0,
               "a Run now button is drawn for Admin Read");
   });
-  const refused = await consolePost(cookie, "/admin/scheduler",
+  const refused = await consolePost(consoleClient, "/admin/scheduler",
                                     { action: "run",
                                       job: "scheduler.history" });
   check("and its form post is refused", function () {
-    assert.ok(refused.status === 403 ||
-              (refused.status === 303 && /[?&]error=/.test(refused.location)),
-              "it answered " + refused.status + " " + refused.location + " " +
-              refused.text.slice(0, 200));
+    assert.strictEqual(refused.status, 403, "it answered " + refused.status +
+                       " " + refused.text.slice(0, 200));
   });
   log.debug("Leaving adminReadRunsNothing().");
 }
@@ -581,16 +582,22 @@ async function theClusterAgrees() {
     log.debug("Leaving theClusterAgrees(). One node.");
     return;
   }
-  log.info("=== 6. two nodes agree, and hand over ===");
+  // EVERY node, not two (#311): the AWS environments run three, and
+  // STS_TEST_CLUSTER_NODES says how many; the local cluster mode sets 2.
+  log.info("=== 6. " + EXPECTED_NODES + " nodes agree, and hand over ===");
   const seen = {};
   const answers = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 8 * EXPECTED_NODES; i++) {
     const r = await report();
-    seen[r.answeredBy.node] = true;
+    r.answeredNodes.forEach(function (node) {
+      if (node) {
+        seen[node] = true;
+      }
+    });
     answers.push(r);
   }
-  check("both nodes answered through the balancer", function () {
-    assert.strictEqual(Object.keys(seen).length, 2,
+  check("every node answered through the balancer", function () {
+    assert.strictEqual(Object.keys(seen).length, EXPECTED_NODES,
                        JSON.stringify(Object.keys(seen)));
   });
   check("and every answer names the same leader", function () {
@@ -634,18 +641,79 @@ async function theClusterAgrees() {
   log.debug("Leaving theClusterAgrees().");
 }
 
+async function aRemovedRealmsJobsGo() {
+  log.debug("Entering aRemovedRealmsJobsGo().");
+  log.info("=== 7. a removed realm's jobs go with it (#338) ===");
+  const gone = "sched-gone-" + STAMP;
+  const made = await api("POST", "/admin-api/realms/create",
+                         { id: gone, domain: gone + ".example.net",
+                           name: "Scheduler removal test " + STAMP });
+  assert.ok(made.status === 200, "precondition: creating " + gone +
+            " answered " + made.status + " " + made.text.slice(0, 300));
+  await until("every node to list the new realm's jobs", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      if (!jobOf(r, "signing.rotate", gone)) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("the new realm's realm jobs are listed on every node", function () {
+    assert.ok(true);
+  });
+  const removed = await api("POST", "/admin-api/realms/remove", { id: gone });
+  check("the realm is removed (200)", function () {
+    assert.strictEqual(removed.status, 200, removed.text.slice(0, 300));
+  });
+  await until("no node to list a job in the removed realm", async function () {
+    for (let i = 0; i < 4 * EXPECTED_NODES; i++) {
+      const r = await report();
+      const left = (r.jobs || []).filter(function (j) {
+        return j.realm === gone;
+      });
+      if (left.length) {
+        return null;
+      }
+    }
+    return true;
+  });
+  check("no answer lists a job in the removed realm", function () {
+    assert.ok(true);
+  });
+  const runs = await api("GET", "/admin-api/scheduler?per=500&realm=" +
+                         encodeURIComponent(gone));
+  check("nor a run in it", function () {
+    const inGone = ((runs.body && runs.body.runs) || []).filter(function (r) {
+      return r.realm === gone;
+    });
+    assert.strictEqual(inGone.length, 0, JSON.stringify(inGone.slice(0, 3)));
+  });
+  const queued = await api("POST", "/admin-api/scheduler/run",
+                           { job: "signing.rotate-now", realm: gone });
+  check("and a Run now in it is refused", function () {
+    assert.strictEqual(queued.status, 400, queued.text.slice(0, 300));
+  });
+  const history = jobOf(await report(), "scheduler.history");
+  check("the history job is a cluster job every ten minutes", function () {
+    assert.ok(history && history.kind === "cluster" &&
+              history.schedule.everyMs === 600000, JSON.stringify(history));
+  });
+  log.debug("Leaving aRemovedRealmsJobsGo().");
+}
+
 async function main() {
   log.debug("Entering main().");
   const admin = "sched-admin-" + STAMP;
-  const cookie = await signin.signInToTheConsole(base, admin, log,
-                                                 { grant: "write" });
-  const jar = cookie || "";
+  const consoleClient = await signin.signInToTheConsole(base, admin, log,
+                                                        { grant: "write" });
   await aLeaderTicks();
-  await thePageAndTheApiAgree(jar);
-  await runNow(jar);
+  await thePageAndTheApiAgree(consoleClient);
+  await runNow(consoleClient);
   await adminReadRunsNothing();
   await aRealmTokenIsConfined();
   await theClusterAgrees();
+  await aRemovedRealmsJobsGo();
   log.info("sts_scheduler: " + checks + " check(s) passed.");
   log.debug("Leaving main().");
 }

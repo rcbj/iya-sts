@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -26,13 +26,10 @@
 //   GET  /oauth2/logout      end_session_endpoint (RP-Initiated Logout)
 //   GET  /oauth2/check_session  the OP iframe, and its script beside it
 //                            (Session Management, #121; off by default)
-//   *    /oauth2/step-up/resource/:application
-//                            NON-SPEC: RFC 9470's stand-in resource server
 //   GET  /oauth2/rfc9700     NON-SPEC: whether the RFC 9700 Security BCP mode
 //                            is on, and every requirement it does and does not
 //                            enforce (oauth2_bcp.js)
 //   GET  /oauth2/oauth21     NON-SPEC: the same for OAuth 2.1 mode (oauth21.js)
-//   *    /dpop/nonce-mode    NON-SPEC: a development test control
 //   *    /{id}/oauth2/...    every OAuth endpoint again, per named
 //                            authorization server (authorization_servers.ts)
 //   GET  /oauth2/jwks        the signing key (above, with the metadata)
@@ -100,19 +97,31 @@
 // default instance at load, as loading it always did.
 // ---------------------------------------------------------------------------
 
-import crypto = require('crypto');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle, and it registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
+// The listeners `oauth-oidc` is on, for RFC 8705's aliases (#472). A LEAF.
+import listenerMap = require('../common/listener_map');
 import forge = require('node-forge');
 import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
+// WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
+// this module mints and read where it is presented. A leaf library.
+import cellLocator = require('../common/cell_locator');
+// WHICH CELL SERVES A BACK-CHANNEL REQUEST (#98 D10). A library.
+import cellPlacement = require('../common/cell_placement');
+// HOME'S AUTHORITY OVER A PERSON WHOSE SESSION IS HELD HERE (#98 D6). A
+// library.
+import cellSessions = require('../common/cell_sessions');
 import app = require('../common/app');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('./dpop');
+// FAPI 2.0 HTTP Signatures at the resource servers (#178): only its key
+// prefetch is registered here; `dpop.ts` asks the rest.
+import httpSignatures = require('./http_signatures');
 // WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
 // `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
 import joseKid = require('../common/jose_kid');
@@ -141,6 +150,9 @@ import softwareStatement = require('./software_statement');
 // it requires nothing that requires it back, and it deliberately does not
 // require `assertion_grant.js` either. Its header argues both.
 import samlAssertionGrant = require('./saml_assertion_grant');
+// #114: RFC 7523 / RFC 7522 / SAML 1.1 assertions from declared issuers as
+// RFC 8693 subject and actor tokens. A library over the two above.
+import exchangeAssertions = require('./exchange_assertions');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config` (and
 // bunyan).
 import mode = require('../common/mode');
@@ -238,6 +250,10 @@ import refreshTokenCrypto = require('./refresh_token_crypto');
 // issuerOf() is its issuerFor() — shared with the resource-server check in
 // dpop.ts, which could not otherwise have asked the same question.
 import jwtAccessToken = require('./jwt_access_token');
+// The access-token status list (#432): the index every access token names in
+// `status.status_list`, and the aggregation this server's metadata
+// advertises. A route module and library that requires nothing here.
+import accessTokenStatus = require('./access_token_status');
 // RFC 9701, THE JWT RESPONSE FOR TOKEN INTROSPECTION (2026-09-13). A LIBRARY
 // that registers no route: introspectEndpoint() asks it whether a request wants
 // a JWT and has it build and protect one, the metadata publishes its algorithm
@@ -306,6 +322,10 @@ import consentScreen = require('./consent_screen');
 // because the slot answers "what did an administrator TICK" and this is the
 // other question: "what did the CLIENT ask for".
 import claimAttributes = require('../common/claim_attributes');
+// OIDC Core section 5.4's scope claims, the gate that releases one only when
+// its scope was granted, and how a resource server's declared claims combine
+// with the client's (#395). A library.
+import scopeClaims = require('../common/scope_claims');
 import identityAssurance = require('../common/identity_assurance');
 // THE DEVICE REGISTER (#130): Native SSO mints and checks its device_secret
 // against `ou=devices`. A library over `credentials.ts`; it requires nothing
@@ -386,6 +406,17 @@ import capabilities = require('../cluster/cluster_capabilities');
 import sessionManagement = require('./session_management');
 // A leaf: a client's registered `jwks_uri`, fetched and cached (#120).
 import clientJwks = require('./client_jwks');
+// A library: what "registered" means for an application (#494, #496). It
+// reaches the registry lazily, so this require closes no cycle.
+import IssuerNames = require('../common/issuer_names');
+// The catalogs (#539), for `ui_locales_supported`. A leaf.
+import i18n = require('../common/i18n');
+// The language of the pages drawn here for a browser (#539). A library.
+import PageLocale = require('../common/page_locale');
+// A library: what an RFC 8707 resource may name in product (#505). It reaches
+// the registry, the access-token profile and the management API lazily, at
+// request time, so this require closes no cycle.
+import RegisteredTargets = require('../common/registered_targets');
 
 // A loose JSON-shaped object: the tokens, records, requests and results this
 // file builds and passes on. Their shapes are the libraries' own, and those
@@ -402,7 +433,6 @@ type Res = any;
 // method takes what it reads with one destructuring line and its body reads
 // as it did.
 interface OAuth2ServerDeps {
-  crypto: typeof crypto;
   realms: typeof realms;
   forge: typeof forge;
   jwt: typeof jwt;
@@ -437,6 +467,7 @@ interface OAuth2ServerDeps {
   LEGACY_SUBJECT_PREFIX: typeof helpers.LEGACY_SUBJECT_PREFIX;
   requestObjectKeysFor: typeof helpers.requestObjectKeysFor;
   dpop: typeof dpop;
+  httpSignatures: typeof httpSignatures;
   joseKid: typeof joseKid;
   mtls: typeof mtls;
   clientAuth: typeof clientAuth;
@@ -473,6 +504,7 @@ interface OAuth2ServerDeps {
   errorCodes: typeof errorCodes;
   refreshTokenCrypto: typeof refreshTokenCrypto;
   jwtAccessToken: typeof jwtAccessToken;
+  accessTokenStatus: typeof accessTokenStatus;
   introspectionJwt: typeof introspectionJwt;
   idTokenEncryption: typeof idTokenEncryption;
   jarm: typeof jarm;
@@ -637,7 +669,9 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // tombstone in the store, so a node holding an older copy of the row cannot
 // write it back. `persistence/persistence_minted.js` carries the mechanism.
 const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
-                                tombstone: true });
+                                tombstone: true,
+                                // #333: the code's `expires`, ms.
+                                expiresAt: realms.expiryField('expires', 1) });
 
 // ---------------------------------------------------------------------------
 // NON-SPEC: what happens when the SAME authorization code arrives twice.
@@ -685,7 +719,10 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
 // this behaves as the plain Map it replaced. See common/realms.js.
 // code -> the token set it was redeemed for
 const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes',
-                                   retain: 'age' });
+                                   retain: 'age',
+                                   // #333: the sweep's `forget`, ms.
+                                   expiresAt: realms.expiryField('forget',
+                                                                 1) });
 
 // Described to `/admin/caches` (#74, rule 3ap). The key is an authorization
 // code and the value holds the tokens it produced, so a row is the code's
@@ -835,9 +872,18 @@ const EXCHANGE_TOKEN_TYPES = {
   'urn:ietf:params:oauth:token-type:access_token': 'access_token',
   'urn:ietf:params:oauth:token-type:refresh_token': 'refresh_token',
   'urn:ietf:params:oauth:token-type:id_token': 'id_token',
-  'urn:ietf:params:oauth:token-type:jwt': 'jwt'
+  'urn:ietf:params:oauth:token-type:jwt': 'jwt',
+  // #114: assertions from issuers this realm declared (RFC 8693 section 3).
+  'urn:ietf:params:oauth:token-type:saml2': 'saml2',
+  'urn:ietf:params:oauth:token-type:saml1': 'saml1'
 };
 const DEVICE_SECRET_TYPE = 'urn:openid:params:token-type:device-secret';
+// The `client_id` an access token carries when a wallet redeemed an OID4VCI
+// pre-authorized code without naming a client (section 6.1's anonymous
+// access), because RFC 9068 section 2.2 requires the claim (#158). A URN in
+// this service's namespace, so it can never be a client_id this service
+// assigned, and not `urn:sts:client:<id>`, which is a client's SUBJECT.
+const ANONYMOUS_WALLET_CLIENT_ID = 'urn:sts:oid4vci:anonymous-wallet';
 const ID_TOKEN_TYPE = 'urn:ietf:params:oauth:token-type:id_token';
 
 // A cap, for the reason every other cap in this file has one: the parsed object
@@ -1202,14 +1248,11 @@ const IDA_REGISTERED_CLAIMS = ['place_of_birth', 'nationalities',
                                'birth_middle_name', 'salutation', 'title',
                                'msisdn', 'also_known_as'];
 
-const USERINFO_SCOPE_CLAIMS = {
-  profile: ['name', 'family_name', 'given_name', 'middle_name', 'nickname',
-            'preferred_username', 'profile', 'picture', 'website', 'gender',
-            'birthdate', 'zoneinfo', 'locale', 'updated_at'],
-  email: ['email', 'email_verified'],
-  address: ['address'],
-  phone: ['phone_number', 'phone_number_verified']
-};
+// OIDC Core section 5.4's table, held in `common/scope_claims.ts` since #395
+// so the gate that keeps an ungranted claim out of every token reads the same
+// one this endpoint answers from.
+const USERINFO_SCOPE_CLAIMS: Record<string, string[]> =
+  scopeClaims.SCOPE_CLAIMS;
 
 // ---------------------------------------------------------------------------
 // NON-SPEC: A CLAIMS REQUEST SENT TO THE USERINFO ENDPOINT ITSELF.
@@ -1403,6 +1446,10 @@ const TOKEN_FORM = vz.looseObject({
   actor_token_type: vt.opt(vt.uri),
   requested_token_type: vt.opt(vt.uri),
   audience: vz.string().max(validation.CAP.URI).optional(),
+  // #186: this service's extension to RFC 8693 — the semantics the client
+  // asks for, `delegation` or `impersonation`. Checked in the branch, where
+  // a refusal can say why.
+  exchange_semantics: vz.string().max(32).optional(),
   // OpenID Connect Native SSO (#130): a device_secret the first app already
   // holds, presented with its authorization code so the same device is
   // bound to the new session (section 3.3).
@@ -1593,7 +1640,6 @@ class OAuth2Server {
     helpers.log.debug("Entering OAuth2Server.defaultDeps().");
     helpers.log.debug("Leaving OAuth2Server.defaultDeps().");
     return {
-      crypto: crypto,
       realms: realms,
       forge: forge,
       jwt: jwt,
@@ -1626,6 +1672,7 @@ class OAuth2Server {
       LEGACY_SUBJECT_PREFIX: helpers.LEGACY_SUBJECT_PREFIX,
       requestObjectKeysFor: helpers.requestObjectKeysFor,
       dpop: dpop,
+      httpSignatures: httpSignatures,
       joseKid: joseKid,
       mtls: mtls,
       clientAuth: clientAuth,
@@ -1660,6 +1707,7 @@ class OAuth2Server {
       errorCodes: errorCodes,
       refreshTokenCrypto: refreshTokenCrypto,
       jwtAccessToken: jwtAccessToken,
+      accessTokenStatus: accessTokenStatus,
       introspectionJwt: introspectionJwt,
       idTokenEncryption: idTokenEncryption,
       jarm: jarm,
@@ -1810,6 +1858,47 @@ class OAuth2Server {
     return jwtAccessToken.issuerFor(base);
   }
 
+  // ---------------------------------------------------------------------------
+  // THE mTLS ALIASES ON ANOTHER LISTENER (#472, rcbj's D4). An application
+  // may be on several listeners and is advertised on one; RFC 8705 section 5
+  // is the one place this authorization server's metadata can name another.
+  // Where `oauth-oidc` is also on a custom listener that asks for a client
+  // certificate (`clientAuth` optional or required) and is not the one it is
+  // advertised on, an endpoint's alias is the same path on THAT listener's
+  // base. Null where there is no such listener, and the aliases stay the
+  // endpoints themselves, as section 5 permits.
+  // ---------------------------------------------------------------------------
+  /**
+   * Answers the function that turns an endpoint into its mTLS alias on a
+   * second listener, or null where there is none.
+   *
+   * @param req - the request the metadata is built for
+   * @returns `(url) => alias`, or null
+   */
+  mtlsAliasOf(req: Req): ((url: string) => string) | null {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering OAuth2Server.mtlsAliasOf().");
+    if (listenerMap.isTrivial()) {
+      log.debug("Leaving OAuth2Server.mtlsAliasOf(). No custom listener.");
+      return null;
+    }
+    const other = listenerMap.alternatives('oauth-oidc')
+      .filter(function (one: Json): boolean {
+        return !!one.base && one.clientAuth !== 'none';
+      })[0];
+    if (!other) {
+      log.debug("Leaving OAuth2Server.mtlsAliasOf(). None asks.");
+      return null;
+    }
+    const own = baseUrlOf(req, 'oauth-oidc');
+    const there = other.base + realms.currentPrefix();
+    log.debug("Leaving OAuth2Server.mtlsAliasOf(). " + other.id);
+    return function (url: string): string {
+      const text = String(url || '');
+      return text.indexOf(own) === 0 ? there + text.slice(own.length) : text;
+    };
+  }
+
   // `raw` is set by capabilitiesFor() below and means "build the document this
   // service would publish, without applying a profile" — the DEFAULTS a profile
   // is merged onto. Without it, asking for the capabilities would apply the
@@ -1880,7 +1969,8 @@ class OAuth2Server {
       // policy — at the realm's own base, since keys are the realm's and not
       // a named authorization server's. A member no specification defines,
       // which RFC 8414 section 2 lets a client ignore.
-      crypto_metadata_uri: base + '/crypto/metadata.json',
+      crypto_metadata_uri: helpers.rebaseTo(base, 'pki') +
+                           '/crypto/metadata.json',
       registration_endpoint: at + '/oauth2/register',
       // `address` and `phone` were listed here and are gone: OIDC Core section
       // 5.4 makes each of these scopes a request for a NAMED set of claims, and
@@ -1937,7 +2027,8 @@ class OAuth2Server {
       // JARM section 4: what a JWT-secured authorization response may be
       // signed and encrypted with.
       authorization_signing_alg_values_supported: jarm.SIGNING_ALGS,
-      authorization_encryption_alg_values_supported: jarm.ENCRYPTION_ALGS,
+      authorization_encryption_alg_values_supported:
+        helpers.offeredJweAlgs(jarm.ENCRYPTION_ALGS),
       authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
       // Only what the token endpoint below actually implements — the metadata
       // should not promise a grant this server would refuse. The device_code
@@ -1976,6 +2067,15 @@ class OAuth2Server {
       // thing a client author needs to know about this grant before writing any
       // code is that the assertion is a JWT.
       'urn:ietf:params:oauth:client-assertion-type:jwt-bearer_supported': true,
+      // OPENID4VCI 1.0 SECTION 12.3 (2026-10-12): a wallet may redeem a
+      // pre-authorized code naming no client_id, which the token endpoint has
+      // allowed in every mode since 2026-10-05 (`clientlessPreAuthorized`).
+      // ABSENT, the member defaults to false, and a wallet that read the
+      // metadata then sends a client_id of its own — which product mode
+      // judges as any other client and refuses unless it is registered. So a
+      // real wallet redeeming an offer from the portal failed where this
+      // member was missing, and is told here that it need not name itself.
+      'pre-authorized_grant_anonymous_access_supported': true,
       // RFC 7522 section 2.2's spelling of the same member. Published
       // UNCONDITIONALLY like the one above, and for its reason: it says what a
       // client_assertion_type may be, and that is true of this server whether
@@ -1994,7 +2094,10 @@ class OAuth2Server {
       // described is a document arriving HERE, and the symmetric families are
       // usable because a client_secret is a shared key. See
       // `oauth-oidc/assertion_grant.js`'s `unwrapAssertion()`.
-      assertion_encryption_alg_values_supported: stsCrypto.JWE_DECRYPT_ALGS,
+      // The ML-KEM and HPKE algs only where the realm holds a key for them
+      // (#82): a client cannot encrypt to a key this realm does not have.
+      assertion_encryption_alg_values_supported:
+        helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS),
       assertion_encryption_enc_values_supported:
         Object.keys(stsCrypto.JWE_ENCS),
       // RFC 9396. OID4VCI's openid_credential — its other way of saying which
@@ -2019,16 +2122,19 @@ class OAuth2Server {
       // it did.
       token_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
-      service_documentation: base + '/docs',
-      // One locale, because there is one: the login screen is the only UI this
-      // server renders and it is written in English. A request's ui_locales
-      // is accepted and answered in English, which section 3.1.2.1 permits
-      // ("An error SHOULD NOT result if some or all of the requested locales
-      // are not supported"). The list used to name four, which a client is
-      // entitled to read as "ask for fr-CA and you will get it".
-      ui_locales_supported: ['en-US'],
-      op_policy_uri: base + '/policy',
-      op_tos_uri: base + '/tos',
+      service_documentation: helpers.rebaseTo(base, 'home') + '/docs',
+      // THE LOCALES THE LANGUAGE CHOOSER OFFERS (#539), each answered by a
+      // catalog: a request's ui_locales naming one gets the sign-in and
+      // consent screens in it (`common/page_locale.ts`). A tag no catalog
+      // answers is passed over without an error, which section 3.1.2.1
+      // permits ("An error SHOULD NOT result if some or all of the requested
+      // locales are not supported"). Until #539 the list was `en-US` alone,
+      // because every page was English.
+      ui_locales_supported: i18n.offered().map(function (one) {
+        return one.tag;
+      }),
+      op_policy_uri: helpers.rebaseTo(base, 'home') + '/policy',
+      op_tos_uri: helpers.rebaseTo(base, 'home') + '/tos',
       revocation_endpoint: at + '/oauth2/revoke',
       // THE METHODS THE REVOCATION ENDPOINT CAN VERIFY, which since #102
       // (2026-09-22) is introspection's list for introspection's reason: the
@@ -2043,6 +2149,13 @@ class OAuth2Server {
       revocation_endpoint_auth_signing_alg_values_supported:
         stsCrypto.JWS_SIGNING_ALGS,
       introspection_endpoint: at + '/oauth2/introspect',
+      // draft-ietf-oauth-status-list section 9.1 (#432): an issuer that is
+      // an OAuth authorization server is RECOMMENDED to name its Status List
+      // Aggregation here. The REALM's, under `base` rather than `at`: every
+      // authorization server in a realm names one list (rcbj's decision 4),
+      // so a named server points at the same aggregation as the default one.
+      status_list_aggregation_endpoint:
+        this.deps.accessTokenStatus.aggregationUri(base),
       // THE METHODS THE INTROSPECTION ENDPOINT CAN VERIFY, which since RFC 9701
       // (2026-09-13) is every method the token endpoint can, through the same
       // `bcp.observeClientAuthentication()`. It named three while nothing
@@ -2061,7 +2174,7 @@ class OAuth2Server {
       introspection_signing_alg_values_supported:
         introspectionJwt.SIGNING_ALGS,
       introspection_encryption_alg_values_supported:
-        introspectionJwt.ENCRYPTION_ALGS,
+        helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS),
       introspection_encryption_enc_values_supported:
         introspectionJwt.ENCRYPTION_ENCS,
       // RFC 9101 AND OPENID CONNECT DISCOVERY (2026-09-13). A request object by
@@ -2082,7 +2195,7 @@ class OAuth2Server {
           mode.acceptsUnsignedRequestObjects() &&
           !config.value('oauth2.requireSignedRequestObject') ? ['none'] : []),
       request_object_encryption_alg_values_supported:
-        applications.REQUEST_OBJECT_ENCRYPTION_ALGS,
+        helpers.decryptableJweAlgs(applications.REQUEST_OBJECT_ENCRYPTION_ALGS),
       request_object_encryption_enc_values_supported:
         applications.REQUEST_OBJECT_ENCRYPTION_ENCS,
       // RFC 9126 SECTION 5 (2026-09-13). The endpoint, and the global policy.
@@ -2154,12 +2267,20 @@ class OAuth2Server {
     // mTLS alias — this service has no second listener for them, and
     // publishing the same URLs is what the section permits. The OpenID
     // Provider Configuration adds UserInfo's.
-    if (mtls.available()) {
+    //
+    // AND WHERE IT IS ON A SECOND LISTENER THAT ASKS FOR ONE (#472, rcbj's
+    // D4: "advertise services on multiple listeners"), the aliases are THAT
+    // listener's addresses — the one place a specification gives the other
+    // listeners of an application a name in its metadata. The canonical
+    // endpoints stay on the advertised listener.
+    const aliasOf = self.mtlsAliasOf(req);
+    if (mtls.available() || aliasOf) {
       const aliases: Json = {};
       ['token_endpoint', 'revocation_endpoint', 'introspection_endpoint',
        'pushed_authorization_request_endpoint'].forEach(function (name) {
         if ((metadata as Json)[name]) {
-          aliases[name] = (metadata as Json)[name];
+          aliases[name] = aliasOf ? aliasOf((metadata as Json)[name])
+                                  : (metadata as Json)[name];
         }
       });
       (metadata as Json).mtls_endpoint_aliases = aliases;
@@ -2948,7 +3069,9 @@ class OAuth2Server {
       // response to the key the CLIENT registered — so a client could otherwise
       // register `userinfo_encrypted_response_alg="dir"` off this list and be
       // answered by a key derived from the JSON of its own public key.
-      userinfo_encryption_alg_values_supported: stsCrypto.JWE_ASYMMETRIC_ALGS,
+      // The ML-KEM and HPKE algorithms only where `keys.offerKemEncryption`
+      // is on (helpers.offeredJweAlgs(), 2026-09-28), for all four lists.
+      userinfo_encryption_alg_values_supported: helpers.offeredJweAlgs(),
       userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
       //
       // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
@@ -2962,7 +3085,8 @@ class OAuth2Server {
       // the client registered `id_token_encrypted_response_alg`. The lists
       // are the UserInfo response's, for its reason; `id_token_encryption.ts`
       // argues the rest. A Logout Token follows the same registration.
-      id_token_encryption_alg_values_supported: idTokenEncryption.ALGS,
+      id_token_encryption_alg_values_supported:
+        helpers.offeredJweAlgs(idTokenEncryption.ALGS),
       id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
@@ -3129,9 +3253,11 @@ class OAuth2Server {
       reapply();
     }
     if (metadata.mtls_endpoint_aliases && metadata.userinfo_endpoint) {
+      const aliasOf = self.mtlsAliasOf(req);
       metadata.mtls_endpoint_aliases = Object.assign({},
         metadata.mtls_endpoint_aliases,
-        { userinfo_endpoint: metadata.userinfo_endpoint });
+        { userinfo_endpoint: aliasOf ? aliasOf(metadata.userinfo_endpoint)
+                                     : metadata.userinfo_endpoint });
     }
     // OPENID CONNECT FOR IDENTITY ASSURANCE 1.0, section 7 (#127): which
     // frameworks, evidence and claims `verified_claims` may carry. Read per
@@ -3325,7 +3451,7 @@ class OAuth2Server {
             .filter(function (one: any): boolean {
               return one.role !== 'current';
             }).map(function (one: any): Json {
-              const jwk: any = crypto.createPublicKey(one.certPem)
+              const jwk: any = stsCrypto.publicKeyOf(one.certPem)
                 .export({ format: 'jwk' });
               return { kty: 'RSA', use: 'sig', kid: one.kid, n: jwk.n,
                        e: jwk.e,
@@ -3358,6 +3484,15 @@ class OAuth2Server {
             const encKeys = requestObjectKeysFor();
             return [encKeys.rsa.publicJwk, encKeys.ec.publicJwk];
           })())
+        // AND THE REALM'S ML-KEM / HPKE DECRYPTION KEYS (#82), after those,
+        // each with `use: "enc"` and the one `alg` it serves — only where
+        // an administrator named the alg in `keys.encryptionKemAlgs`, which
+        // is empty by default: an AKP key is a key type many clients'
+        // libraries do not parse, and a JWKS they cannot read is worse than
+        // one without the key.
+          .concat(helpers.kemEncryptionKeysFor().map(function (one) {
+            return stsCrypto.publicJweKemJwk(one.publicJwk);
+          }))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {
@@ -3689,12 +3824,20 @@ class OAuth2Server {
   // is presented back to this server and to nothing else, so a claim in one
   // reaches no relying party and would only make the two halves of a grant
   // disagree.
-  private customClaimContext(base: Json, payload: Json, user: Json): Json {
+  //
+  // A client_credentials token is about the CLIENT (#93): no username, so
+  // `admin_stats.js`'s claim layers resolve the client as an APPLICATION —
+  // its roles through `roleMemberApplication` — rather than looking up a
+  // person named after its client_id, which found nobody's roles.
+  private customClaimContext(base: Json, payload: Json, user: Json,
+                             grant?: string): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.customClaimContext().");
+    const aboutClient = grant === 'client_credentials';
     log.debug("Leaving OAuth2Server.customClaimContext().");
     return {
-      username: (user && user.username) || payload.username || '',
+      username: aboutClient ? ''
+        : ((user && user.username) || payload.username || ''),
       sub: payload.sub || '',
       email: (user && user.email) || '',
       name: (user && user.name) || '',
@@ -3750,7 +3893,68 @@ class OAuth2Server {
              // refresh token. `oauth-oidc/oauth_grant_signals.ts` reads both.
              grantId: String((opts && (opts.grant_id || opts.grant_family ||
                                        opts.set_id)) || ''),
-             grantRefresh: !!(opts && opts.grant_family) };
+             grantRefresh: !!(opts && opts.grant_family),
+             // THE KEY UNDER A BOUND CERTIFICATE (#432 follow-up): the
+             // SubjectPublicKeyInfo SHA-256 of the client certificate on the
+             // Token Request, which the register keeps beside `x5t` when the
+             // token is certificate-bound — so a compromised device's KEY
+             // finds a token bound to any certificate over it.
+             certSpki: opts && opts.request
+               ? this.deps.mtls.presentedKeyThumbprint(opts.request) : '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ACCESS TOKEN'S PLACE IN THE REALM'S STATUS LIST (#432, rcbj's decision
+  // 4), RESERVED BEFORE IT IS SIGNED. The index is claimed across the cluster,
+  // which is asynchronous, and `accessToken()` is not — four callers, the
+  // console's API explorer and the in-process tests among them, read its
+  // answer synchronously. So the `jti` is minted HERE, the index claimed for
+  // it, and both handed to `accessToken()` through `opts`; every caller that
+  // can wait goes through `accessTokenAsync()`, and one that cannot gets
+  // `allocateInProcess()` inside `accessToken()`, which refuses to answer
+  // where a shared claims table exists rather than mint on an index no other
+  // node was asked about. The row's expiry is the configured lifetime: FAPI's
+  // cap (#138) only ever shortens it, and a row outliving its token by a few
+  // minutes costs an index, never a wrong bit.
+  // ---------------------------------------------------------------------------
+  /**
+   * Reserves an access token's `jti` and its index in the realm's
+   * access-token status list, for `accessToken()`.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts; `client_id` decides the lifetime
+   * @returns `opts` with `access_jti` and `status_ref` added
+   */
+  async reserveAccessToken(base: Json, opts: Json): Promise<Json> {
+    const { log, nowSec, randomId, accessTokenStatus } = this.deps;
+    log.debug("Entering OAuth2Server.reserveAccessToken().");
+    if (opts.access_jti && opts.status_ref) {
+      log.debug("Leaving OAuth2Server.reserveAccessToken(). Already held.");
+      return opts;
+    }
+    const jti = cellLocator.stamp(randomId(16));
+    const ref = await accessTokenStatus.allocate({
+      jti: jti, kind: 'oauth', base: base,
+      expiresAt: (nowSec() + Number(this.accessTokenTtl(opts.client_id))) *
+        1000 });
+    log.debug("Leaving OAuth2Server.reserveAccessToken(). idx=" + ref.idx);
+    return Object.assign({}, opts, { access_jti: jti, status_ref: ref });
+  }
+
+  /**
+   * Reserves the token's status-list index, then mints it: `accessToken()`
+   * for every caller that can wait.
+   *
+   * @param base - the authorization server's base URL
+   * @param opts - the grant's facts, as for `accessToken()`
+   * @returns the signed token
+   */
+  async accessTokenAsync(base: Json, opts: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.accessTokenAsync().");
+    const reserved = await this.reserveAccessToken(base, opts);
+    log.debug("Leaving OAuth2Server.accessTokenAsync().");
+    return this.accessToken(base, reserved);
   }
 
   /**
@@ -3760,16 +3964,37 @@ class OAuth2Server {
    * @param base - the authorization server's base URL
    * @param opts - the grant's facts: `client_id`, `username` or `user`,
    *   `scope`, `audience`, `jkt`, `authorization_details`, `claims`, `acr`,
-   *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest
+   *   `amr`, `auth_time`, `act`, `grant`, `request` and the rest — and
+   *   `access_jti` / `status_ref` from `reserveAccessToken()`
    * @returns the signed token
+   * @throws Error marked STS-OAUTH-0820 when no status-list index was
+   *   reserved and none can be claimed synchronously
    */
   accessToken(base: Json, opts: Json): Json {
     const { log, nowSec, randomId, signJwt, userFor, mtls, stats,
-            jwtAccessToken } = this.deps;
+            jwtAccessToken, accessTokenStatus, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.accessToken().");
     const iat = nowSec();
     const user = opts.user || userFor(opts.username);
+    // The jti and the status-list index — see reserveAccessToken().
+    const accessJti = String(opts.access_jti || '') ||
+      cellLocator.stamp(randomId(16));
+    const statusRef = opts.status_ref ||
+      accessTokenStatus.allocateInProcess({
+        jti: accessJti, kind: 'oauth', base: base,
+        expiresAt: (iat + Number(self.accessTokenTtl(opts.client_id))) *
+          1000 });
+    if (!statusRef) {
+      log.error(errorCodes.tag('STS-OAUTH-0820') + 'oauth2: an access token ' +
+                'was asked for without a reserved status-list index, in a ' +
+                'process with a shared claims table; it is not minted. The ' +
+                'caller must use accessTokenAsync().');
+      log.debug("Leaving OAuth2Server.accessToken(). No status index.");
+      throw errorCodes.mark(new Error('the access token has no status-list ' +
+                                      'index: mint it with ' +
+                                      'accessTokenAsync()'), 'STS-OAUTH-0820');
+    }
     // RFC 9068 section 2.2's seven REQUIRED claims are the first seven below,
     // and `aud`'s default is the default resource indicator section 3 requires
     // — spelt by `jwt_access_token.ts`, which the resource-server check reads
@@ -3783,25 +4008,42 @@ class OAuth2Server {
     const payload: Json = {
       iss: self.issuerOf(base), sub: opts.sub || user.sub,
       aud: opts.audience || jwtAccessToken.defaultAudienceFor(base),
-      client_id: opts.client_id, typ: 'Bearer',
-      jti: randomId(16), iat: iat, nbf: iat,
+      // `token_client_id` where a grant has no client to name and RFC 9068
+      // still requires one — the anonymous wallet of OID4VCI's pre-authorized
+      // code (#158, ANONYMOUS_WALLET_CLIENT_ID).
+      client_id: opts.token_client_id || opts.client_id, typ: 'Bearer',
+      // Stamped with the minting cell (#98 D10): a resource that checks the
+      // token, or a UserInfo request, reaches the cell that holds its
+      // session through this.
+      jti: accessJti, iat: iat, nbf: iat,
       exp: iat + self.accessTokenTtl(opts.client_id),
-      username: user.username
+      // draft-ietf-oauth-status-list section 6.1 (#432): where a resource
+      // server that checks this token on its own learns it was revoked.
+      status: { status_list: { idx: statusRef.idx, uri: statusRef.uri } }
     };
+    // `username` names the PERSON the token is about, and a
+    // client_credentials token is about no person (#93, 2026-09-28): it
+    // carried the client_id here, so every reader that took `username` for a
+    // person's name — the claim context below among them, which built the
+    // roles claim for a person named after the client — was misled. The
+    // client is `sub` (the client_id, or `urn:sts:client:<id>` in RFC 9700
+    // mode) and `client_id`; the token registry files it under the client.
+    if (opts.grant !== 'client_credentials') {
+      payload.username = user.username;
+    }
     // Section 2.2.3: the scope claim describes what was granted, so a token
     // granted nothing carries no claim — not `scope: ""`, a member every reader
     // had to learn meant the same as its absence.
     if (opts.scope) {
       payload.scope = opts.scope;
     }
-    // Section 2.2.2: an identity attribute goes under its REGISTERED name where
-    // one exists, and `preferred_username` is OpenID Connect's for exactly what
-    // `username` holds. `username` stays — the token registry, SCIM's principal
-    // and the audit log read it. Not on a client_credentials token, where
-    // `username` is the client_id and there is no end user to have a name.
-    if (opts.grant !== 'client_credentials' && user.preferred_username) {
-      payload.preferred_username = user.preferred_username;
-    }
+    // Section 2.2.2's `preferred_username` is NOT added here any more (#395).
+    // It is a `profile` claim, and it went into every person's access token
+    // whatever was granted; it now arrives as any other section 5.4 claim
+    // does — declared by the resource server the token is for, and only when
+    // `profile` was granted (resourceServerClaims(), below). `username` stays:
+    // it is this service's own claim, and the token registry, SCIM's
+    // principal and the audit log read it.
     // Section 2.2.1: WHEN the resource owner authenticated, and HOW. Only where
     // an authentication event is behind the grant — a session, carried on the
     // code, the refresh token or the implicit response — and never invented,
@@ -3822,18 +4064,21 @@ class OAuth2Server {
     // second confirmation is added.
     const deviceId = self.deviceIdClaimFor(opts);
     if (deviceId) payload.device_id = deviceId;
-    // RFC 8693 SECTION 4.4's `may_act` (#108, 2026-09-23): the ONE party this
-    // person has named, on their own entry (`stsMayAct`), as authorized to act
-    // for them — from their explicit choice and never derived from an
-    // application's permissions. A token exchange presenting this token as its
-    // subject_token then honours it in every mode, and refuses any other
-    // actor. Not on a client_credentials token, which is about no person.
-    // Looked up by the `urn:uuid:` subject where the token has one — it names
-    // the entry exactly, and an exchanged WS-Trust JWT carries nothing else —
-    // and by the name otherwise.
-    const aboutWhom = /^urn:uuid:/i.test(String(payload.sub || ''))
-      ? String(payload.sub) : user.username;
-    if (opts.grant !== 'client_credentials' && aboutWhom) {
+    // RFC 8693 SECTION 4.4's `may_act` (#108; #186): the ONE party the
+    // subject has named, on their own entry (`stsMayAct` on a person,
+    // `appMayAct` on an application), as authorized to act for them — and
+    // the ISSUANCE POLICY says what the claim names (its built-in answer is
+    // that choice). A token exchange presenting this token as its
+    // subject_token then refuses any other actor, in every mode. Looked up
+    // by the `urn:uuid:` subject where the token has one — it names the
+    // entry exactly, and an exchanged WS-Trust JWT carries nothing else —
+    // by the client for a client_credentials token, which is about it, and
+    // by the name otherwise.
+    const aboutWhom = opts.grant === 'client_credentials'
+      ? String(payload.client_id || user.username || '')
+      : (/^urn:uuid:/i.test(String(payload.sub || ''))
+        ? String(payload.sub) : user.username);
+    if (aboutWhom) {
       const mayAct = this.deps.delegationPolicy.mayActClaimFor(aboutWhom);
       if (mayAct) payload.may_act = mayAct;
     }
@@ -3859,6 +4104,15 @@ class OAuth2Server {
     payload.exp = payload.iat +
       this.deps.fapi.accessTokenLifetime(payload.exp - payload.iat,
                                          !!payload.cnf);
+    // THE ACCESS-TYPE CATALOGUE'S `maxLifetimeS` (#432 phase 4): a token
+    // carrying a detail of a type that declares one lives no longer than the
+    // shortest of them. Here, beside FAPI's cap, so the token response's
+    // `expires_in` (read off the token) reports it.
+    const typeCap = opts.authorization_details
+      ? richAuthorization.maxLifetimeFor(opts.authorization_details) : null;
+    if (typeCap !== null && payload.exp - payload.iat > typeCap) {
+      payload.exp = payload.iat + typeCap;
+    }
     // OID4VCI section 6.2: when the authorization was expressed as
     // authorization_details, the token response grants credential_identifiers
     // and the Credential Request must use one of them. They ride in the access
@@ -3867,6 +4121,18 @@ class OAuth2Server {
     // identifier.
     if (opts.authorization_details) payload.authorization_details =
         opts.authorization_details;
+    // THE GRANT A DETAIL'S LIMITS ARE COUNTED AGAINST (#432 phase 5): RFC
+    // 9396 lets a detail carry `limits`, and the RESOURCE SERVER keeps the
+    // running totals (rcbj's decision 2) — which it can do only with one key
+    // that survives every refresh, or a client renewing its token would be
+    // renewing its budget. `tokenSet()` chooses it: the Grant Management
+    // grant (#142) where one is recorded, otherwise an identifier minted per
+    // authorization and carried forward inside the refresh token. GNAP's
+    // tokens and introspection use the same name.
+    if (opts.limits_grant && opts.authorization_details &&
+        richAuthorization.carriesLimits(opts.authorization_details)) {
+      payload.grant_id = String(opts.limits_grant);
+    }
     // OIDC Core section 5.5's claims request, as the authorization endpoint
     // understood it. It rides here for the reason authorization_details does:
     // the UserInfo endpoint sees this token and NOTHING ELSE — no code, no
@@ -3903,10 +4169,39 @@ class OAuth2Server {
     // the second of two defences rather than the only one, which is the same
     // arrangement the console's reserved-name refusal has.
     // ---------------------------------------------------------------------
-    const payloadWithCustom = Object.assign(
-      stats.jwtClaims('access_token',
-                      self.customClaimContext(base, payload, user)),
-      opts.assertionClaims || {}, payload);
+    // ---------------------------------------------------------------------
+    // AND THE RESOURCE SERVER'S OWN DECLARATION (#395), COMBINED WITH THE
+    // CLIENT'S CLAIMS AS IT CHOSE, AND THEN NOTHING THAT WAS NOT GRANTED.
+    //
+    // RFC 9068 section 2.2.2 leaves the identity claims of an access token
+    // to the authorization server, "based on the client, scope and
+    // resource". The client's are the set above (the realm's and the
+    // client's own, combined as the client chose). The resource's are
+    // resourceServerClaims(). The gate is last and covers both: a section
+    // 5.4 claim whose scope the GRANT did not include — `opts.granted_scope`,
+    // because RFC 9068's plan takes the OpenID Connect scopes off a token for
+    // an API while they stay granted — is not released, whichever layer
+    // offered it. The assertion's claims are not part of either set: they
+    // are a statement about THIS issuance, and stay above both.
+    // ---------------------------------------------------------------------
+    const granted = opts.granted_scope !== undefined ? opts.granted_scope
+                                                     : opts.scope;
+    const clientClaims = stats.jwtClaims('access_token',
+                                         self.customClaimContext(
+                                           base, payload, user, opts.grant));
+    const resourceLayer = opts.grant === 'client_credentials' ? null
+      : self.resourceServerClaims(payload.aud, user, granted);
+    const combined = resourceLayer
+      ? scopeClaims.combineResource(clientClaims, resourceLayer.claims,
+                                    resourceLayer.mode)
+      : clientClaims;
+    // A claim a GRANTED permission of the resource server maps is granted by
+    // that permission, a standard one included (rcbj, 2026-10-09).
+    scopeClaims.gate(combined, granted, 'access token',
+                     resourceLayer ? resourceLayer.grantedByPermission : []);
+    const payloadWithCustom = Object.assign(combined,
+                                            opts.assertionClaims || {},
+                                            payload);
     // A token granted no scope carries no scope claim, and the merge above is
     // the one way a layer beneath the protocol's could supply one: the protocol
     // layer wins by OVERWRITING, and a claim it deliberately left out has
@@ -3928,6 +4223,141 @@ class OAuth2Server {
     return token;
   }
 
+  // -------------------------------------------------------------------------
+  // WHAT THE RESOURCE SERVERS A TOKEN IS FOR WANT IN IT (#395, and the
+  // claims mapped to their own scopes, 2026-10-09).
+  //
+  // Each audience the token names is looked up as an application — by
+  // `oauthAudience`, then as a client_id or identifier, which is how a scope
+  // naming an API becomes its audience. It wants two kinds of claim:
+  //
+  //   * DECLARED (`oauthAccessTokenClaim`): OIDC Core 5.4 claims, each only
+  //     when the scope that covers it was granted;
+  //   * MAPPED TO ITS OWN SCOPES (`oauthPermissionClaims`): for each
+  //     permission it exposes that the grant includes — named by its whole
+  //     identifier, or by its bare name on a token for it alone — the
+  //     catalogue attributes mapped to it. GRANTING THE PERMISSION IS THE
+  //     GRANT of those claims (rcbj), so they are returned in
+  //     `grantedByPermission` for the gate to pass.
+  //
+  // NO AUDIENCE WANTING ANYTHING IS NO LAYER: the answer is null, and the
+  // client's claims go out as they are. Otherwise only what EVERY audience
+  // wants (rcbj, 2026-10-09) — an audience that wants nothing, this
+  // service's own resource server among them, leaves nothing — resolved for
+  // the person: the declared claims as UserInfo resolves them
+  // (claimsNamed()), the mapped ones from the directory through the
+  // catalogue. The mode is the wanting audiences'
+  // `oauthAccessTokenClaimsCombine`: theirs when they agree, `intersection`
+  // when they do not.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the identity claims the resource servers an access token is
+   * addressed to want — declared standard claims gated by the granted scope,
+   * and the claims mapped to their granted permissions — and how they
+   * combine with the client's, or null when no audience wants any.
+   *
+   * @param aud - the token's `aud`
+   * @param user - the person
+   * @param granted - the scope granted
+   * @returns `{ claims, mode, grantedByPermission }`, or null
+   */
+  resourceServerClaims(aud: Json, user: Json, granted: Json): Json {
+    const { log, applications, claimAttributes } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.resourceServerClaims().");
+    const audiences = self.audienceList(aud);
+    const grantedValues = String(granted || '').split(/\s+/).filter(Boolean);
+    const wantedPer: string[][] = [];
+    const mappedPer: Json[] = [];
+    const modes: string[] = [];
+    let anyWanted = false;
+    audiences.forEach(function (one: string) {
+      let app: Json = null;
+      try {
+        // The permission base too: a scope naming one of its permissions
+        // makes the base the token's `aud` (audienceScopes()).
+        app = applications.forAudience(one) ||
+          applications.forPermissionBase(one) ||
+          applications.forClientId(one) || applications.get(one);
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.resourceServerClaims(): " +
+                  ((e && e.message) || e));
+        // A registry that cannot answer is an audience that wants nothing:
+        // the intersection then releases nothing, which is the private
+        // answer.
+        app = null;
+      }
+      const declared = app && app.fields
+        ? [].concat(app.fields.oauthAccessTokenClaim || []).map(String)
+          .filter(function (name: string): boolean {
+            return scopeClaims.DECLARABLE_CLAIMS.indexOf(name) >= 0 &&
+              scopeClaims.grants(granted, scopeClaims.scopeOf(name));
+          })
+        : [];
+      // The catalogue attributes its GRANTED permissions map, by attribute.
+      const mapped: Json = {};
+      if (app) {
+        const permissions = applications.permissionsOf(app);
+        const byName = claimAttributes.permissionClaimsOf(app,
+          permissions.map(function (p: Json): string { return p.name; }));
+        permissions.forEach(function (p: Json) {
+          const asked = grantedValues.some(function (v: string): boolean {
+            return (p.id && v === p.id) ||
+              (audiences.length === 1 && v === p.name);
+          });
+          if (asked && byName[p.name]) {
+            byName[p.name].forEach(function (ldap: string) {
+              mapped[ldap.toLowerCase()] = ldap;
+            });
+          }
+        });
+      }
+      const mappedClaims = Object.keys(mapped).length && user &&
+        user.username
+        ? claimAttributes.claimsForAttributes(
+            Object.keys(mapped).map(function (k) { return mapped[k]; }),
+            user.username).claims
+        : {};
+      wantedPer.push(declared.concat(Object.keys(mappedClaims)));
+      mappedPer.push(mappedClaims);
+      if (declared.length || Object.keys(mapped).length) {
+        anyWanted = true;
+        modes.push(scopeClaims.modeOf(app.fields.oauthAccessTokenClaimsCombine,
+                                      scopeClaims.RESOURCE_MODES, 'union'));
+      }
+    });
+    if (!anyWanted) {
+      log.debug("Leaving OAuth2Server.resourceServerClaims(). No audience " +
+                "wants any.");
+      return null;
+    }
+    const wanted = scopeClaims.intersectDeclared(wantedPer);
+    const claims: Json = {};
+    const grantedByPermission: string[] = [];
+    // The mapped value first, from the first audience that maps it, then
+    // the declared claims resolved for any name no mapping answered.
+    wanted.forEach(function (name: string) {
+      for (let i = 0; i < mappedPer.length; i++) {
+        if (mappedPer[i][name] !== undefined) {
+          claims[name] = mappedPer[i][name];
+          grantedByPermission.push(name);
+          return;
+        }
+      }
+    });
+    const rest = wanted.filter(function (name: string): boolean {
+      return claims[name] === undefined;
+    });
+    if (rest.length) {
+      Object.assign(claims, self.claimsNamed(user, rest));
+    }
+    const mode = scopeClaims.agreedResourceMode(modes);
+    log.debug("Leaving OAuth2Server.resourceServerClaims(). " +
+              Object.keys(claims).length + " claim(s), " + mode + ".");
+    return { claims: claims, mode: mode,
+             grantedByPermission: grantedByPermission };
+  }
+
   private refreshToken(base: Json, opts: Json): Json {
     const { log, nowSec, randomId, signJwt, userFor, mtls, bcp,
             refreshTokenCrypto } = this.deps;
@@ -3943,7 +4373,8 @@ class OAuth2Server {
     // counted.
     // Minted by `tokenSet()` where it had to name the family before the
     // access token beside this one was signed (#239); here otherwise.
-    const refreshJti = String(opts.refresh_jti || '') || randomId(16);
+    const refreshJti = String(opts.refresh_jti || '') ||
+      cellLocator.stamp(randomId(16));
     const payload = {
       // username travels with the refresh token, so refreshing keeps describing
       // the person who actually signed in.
@@ -4037,6 +4468,9 @@ class OAuth2Server {
       // refuses it on every node.
       grant_id: opts.grant_id ? String(opts.grant_id) : undefined,
       grant_gen: opts.grant_id ? Number(opts.grant_gen) || 1 : undefined,
+      // THE GRANT LIMITS ARE COUNTED AGAINST (#432 phase 5), inside the JWE,
+      // carried unchanged through every refresh — see accessToken().
+      limits_grant: opts.limits_grant ? String(opts.limits_grant) : undefined,
       // THE CLIENT INSTANCE (#229, draft-ietf-oauth-attestation-based-
       // client-auth section 10.3): where the Token Request carried a verified
       // client attestation, the refresh token is bound to the attested key,
@@ -4283,9 +4717,8 @@ class OAuth2Server {
    * @returns the claims
    */
   scopeClaimsOf(user: Json, scope: Json): Json {
-    const { log, hasScope, claimAttributes, errorCodes } = this.deps;
+    const { log, hasScope } = this.deps;
     log.debug("Entering OAuth2Server.scopeClaimsOf().");
-    const out: Json = {};
     const wanted: string[] = [];
     Object.keys(USERINFO_SCOPE_CLAIMS).forEach(function (name) {
       if (hasScope(scope, name)) {
@@ -4294,6 +4727,30 @@ class OAuth2Server {
         });
       }
     });
+    const out = this.claimsNamed(user, wanted);
+    log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
+              Object.keys(out).length + " claim(s).");
+    return out;
+  }
+
+  // The section 5.4 claims NAMED, resolved as scopeClaimsOf() always resolved
+  // them: what the person object holds first, the directory entry through the
+  // catalogue for the rest. Lifted out of that function by #395, for its
+  // second caller — a resource server's declared access-token claims, which
+  // name claims rather than scopes.
+  /**
+   * Resolves named OpenID Connect section 5.4 claims for a person: the person
+   * object first, then the directory entry. A claim neither holds is absent.
+   *
+   * @param user - the person
+   * @param wanted - the claim names
+   * @returns the claims
+   */
+  claimsNamed(user: Json, wanted: string[]): Json {
+    const { log, claimAttributes, errorCodes } = this.deps;
+    log.debug("Entering OAuth2Server.claimsNamed(). " + wanted.length +
+              " wanted.");
+    const out: Json = {};
     const missing: string[] = [];
     wanted.forEach(function (claim) {
       if (user && user[claim] !== undefined && user[claim] !== null &&
@@ -4316,7 +4773,7 @@ class OAuth2Server {
       } catch (e) {
         // The rule personFromDirectory() follows: a directory that threw must
         // not fail an issuance, and the claims are simply absent.
-        log.error(errorCodes.tag('STS-OAUTH-0181') + 'scopeClaimsOf(): the ' +
+        log.error(errorCodes.tag('STS-OAUTH-0181') + 'claimsNamed(): the ' +
                   'directory threw while being read for ' + user.username +
                   '\'s scope claims and they are omitted: ' + e.message);
       }
@@ -4340,7 +4797,7 @@ class OAuth2Server {
         out.phone_number_verified === undefined) {
       out.phone_number_verified = false;
     }
-    log.debug("Leaving OAuth2Server.scopeClaimsOf(). " +
+    log.debug("Leaving OAuth2Server.claimsNamed(). " +
               Object.keys(out).length + " claim(s).");
     return out;
   }
@@ -4350,14 +4807,14 @@ class OAuth2Server {
   // chosen out of `id_token_signing_alg_values_supported`, which is the WHOLE
   // shared table — all eleven post-quantum and composite entries included — and
   // one of those signatures takes seconds on the thread that owns every
-  // listener this service has. See common/worker.js.
+  // listener this service has. See common/pq_native.js.
   //
   // The RS256 default below does not go near the pool and is not deferred: it
   // is microseconds, and it is the branch that records the token in the
   // console's count.
   /**
    * Mints an ID Token for a client, with the claims its scope and claims
-   * request ask for, signed by its registered algorithm (on the worker pool
+   * request ask for, signed by its registered algorithm (on libuv's thread pool
    * where slow) and encrypted where it registered that.
    *
    * @param base - the authorization server's base URL
@@ -4382,7 +4839,9 @@ class OAuth2Server {
     // hash of the algorithm this token is SIGNED with (OIDC Core 3.1.3.6 and
     // 3.3.2.11), so it has to be known before they are. The refusal of an
     // unsupported one stays where it was, below.
-    const registered = applications.registrationOf(opts.client_id) || {};
+    // FROM THE ATTRIBUTES (#290), so a client the console created with no
+    // registration behind it is signed — and encrypted — as it says.
+    const registered: Json = applications.clientConfigOf(opts.client_id);
     // PS256 under FAPI 1.0 Advanced when the client registered none (section
     // 8.6, #139); RS256 otherwise, as Core section 3.1.3.7 says.
     const idAlg = String(registered.id_token_signed_response_alg ||
@@ -4431,10 +4890,11 @@ class OAuth2Server {
     // must validate this value, and no observation this server can make tells a
     // client that checks from one that does not. Spoiling it on purpose does: a
     // client that accepts the result is a client that is not checking. It is
-    // the same device as /spnego's three knobs and the literal password
-    // `invalid` — a reachable negative, off by default, and loud every single
-    // time, because an ID Token that is wrong in a way nobody remembers turning
-    // on would be the most expensive hour in this repository.
+    // the same device as the literal password `invalid` (and the three knobs
+    // `/spnego` took until #595) — a reachable negative, off by default,
+    // and loud every single time, because an ID Token that is wrong in a way
+    // nobody remembers turning on would be the most expensive hour in this
+    // repository.
     //
     // DEVELOPMENT MODE ONLY (#104, `mode.spoilsOnPurpose()`): read through
     // `mode.valueInForce()`, which answers the default in a product realm
@@ -4543,8 +5003,16 @@ class OAuth2Server {
     // the two go to different readers (a client reads the ID Token, a resource
     // server reads the access token) and configuring them together would mean
     // never being able to test that a claim reached one and not the other.
+    // NOTHING THE GRANT DID NOT COVER (#395): a section 5.4 claim in the
+    // configured set — the realm's, or this client's own — goes in only when
+    // its scope was granted. The scope-driven layer above is gated by
+    // construction, and a claim the client NAMED in section 5.5's request,
+    // below, is its own grant and passes.
     const payloadWithCustom = Object.assign(
-      stats.jwtClaims('id_token', self.customClaimContext(base, payload, user)),
+      scopeClaims.gate(stats.jwtClaims('id_token',
+                                       self.customClaimContext(base, payload,
+                                                               user)),
+                       opts.scope, 'ID Token'),
       payload);
     // ---------------------------------------------------------------------
     // AND THE ONE LAYER ABOVE ALL OF THEM: a claim THIS CLIENT asked for by
@@ -4639,12 +5107,8 @@ class OAuth2Server {
                               { kind: 'id_token' }),
                 { certificateHeader: 'id-token', algorithm: idAlg,
                   header: boundTyp })
-      // `session` is the pool's routing hint — this person's `sub`, so that one
-      // session's signatures queue behind each other rather than across the
-      // pool.
       : await signJwtAsAsync(payloadWithCustom, idAlg, registered.client_secret,
-                             { session: opts.user && opts.user.sub,
-                               certificateHeader: 'id-token',
+                             { certificateHeader: 'id-token',
                                header: boundTyp });
     // OIDC Core section 10.2 (2026-09-17): SIGNED, THEN ENCRYPTED, when the
     // client registered `id_token_encrypted_response_alg` — a Nested JWT with
@@ -4946,7 +5410,10 @@ class OAuth2Server {
     // refused `invalid_scope` only when nothing is left (#88 decision 2) —
     // carried out as RFC 9068's refusal is, so the token endpoint's one
     // wrapper answers it. See `common/role_permissions.ts`.
-    if (rolePermissions.asksForGated(opts.scope)) {
+    // #551: and for an APPLICATION subject (client_credentials), every
+    // application permission — it comes from a role, never from a
+    // delegated grant, which needs a person.
+    if (rolePermissions.asksFor(opts.scope, self.issuanceSubjectOf(opts))) {
       const narrowed = rolePermissions.narrowScope(opts.scope,
         self.issuanceSubjectOf(opts),
         { clientId: opts.client_id, grant: opts.grant });
@@ -4991,6 +5458,54 @@ class OAuth2Server {
                 "audience.");
       throw new AccessTokenRefused(log, plan.refusal);
     }
+    // A TYPE THAT REFUSES A BEARER TOKEN (#432 phase 4): the access-type
+    // catalogue's `bearer: false`, which GNAP's issuance policy reads for an
+    // access right, read here for the RFC 9396 detail the same declaration
+    // describes. Here, the funnel every grant mints through, because whether
+    // the token will be bound — a DPoP key (`jkt`) or a client certificate
+    // on this connection (RFC 8705) — is known only now. In every mode: the
+    // resource server declared the type that way.
+    const unbound = !opts.jkt &&
+      !(opts.request && mtls.presentedThumbprint(opts.request));
+    const bearerRefused = unbound
+      ? richAuthorization.bearerRefusedBy(opts.authorization_details) : '';
+    if (bearerRefused) {
+      log.debug("Leaving OAuth2Server.tokenSet(). The type " +
+                bearerRefused + " refuses a bearer token.");
+      throw new AccessTokenRefused(log, errorCodes.mark({
+        error: 'invalid_authorization_details',
+        description: 'authorization_details of type "' + bearerRefused +
+          '" may be carried only by a sender-constrained access token, and ' +
+          'this request presented neither a DPoP proof (RFC 9449) nor a ' +
+          'client certificate (RFC 8705): the resource server that declares ' +
+          'the type does not accept a bearer token for it.' },
+        'STS-OAUTH-0878'));
+    }
+    // A TYPE THAT NEEDS AN AUTHENTICATION LEVEL (#432 phase 6): every acr
+    // the catalogue declares for a detail type the token carries, met by the
+    // authentication the grant rests on (`opts.acr`, `opts.amr`) — the code's
+    // session, the refresh token's original sign-in, a CIBA or device
+    // approval. A grant with no person behind it (client credentials) meets
+    // none. Here, the funnel every grant mints through, so no grant type can
+    // carry a right its type's resource server would not accept on that
+    // sign-in — GNAP's issue stage asks the same (STS-GNAP-0891).
+    const detailAcrs = richAuthorization.requiredAcrsOf(
+      opts.authorization_details);
+    const acrFacts = { acr: opts.acr || '', amr: opts.amr || [] };
+    const acrMissing = detailAcrs.filter(function (one: string): boolean {
+      return !self.deps.stepUp.meets(one, acrFacts);
+    });
+    if (acrMissing.length) {
+      log.debug("Leaving OAuth2Server.tokenSet(). A detail type's acr is " +
+                "not met: " + acrMissing.join(' '));
+      throw new AccessTokenRefused(log, errorCodes.mark({
+        error: 'invalid_authorization_details',
+        description: 'authorization_details of a type whose resource ' +
+          'server requires authentication level ' + acrMissing.join(' ') +
+          ' cannot be issued on this grant: the authentication it rests on (' +
+          (acrFacts.acr || 'none') + ') does not meet it (RFC 9470).' },
+        'STS-OAUTH-0937'));
+    }
     const derived = !explicit.length && plan.derived.length > 0;
     // THE GRANT BOTH HALVES BELONG TO, NAMED BEFORE EITHER IS SIGNED (#239):
     // the refresh token's jti and its family are chosen here rather than
@@ -4998,15 +5513,36 @@ class OAuth2Server {
     // same grant — which is what lets revoking the grant be reported once, as
     // the grant (`oauth_grant_signals.ts`), whichever of its tokens a door
     // names.
-    const refreshJti = opts.withRefresh !== false ? randomId(16) : '';
+    // Stamped with the minting cell (#98 D10): the refresh grant is relayed
+    // here from whichever cell the client reaches.
+    const refreshJti = opts.withRefresh !== false
+      ? cellLocator.stamp(randomId(16)) : '';
     const grantFamily = refreshJti
       ? bcp.familyForIssuance(refreshJti, opts.parent_refresh_jti,
                               opts.parent_refresh_family)
       : '';
+    // THE GRANT LIMITS ARE COUNTED AGAINST (#432 phase 5), chosen once per
+    // authorization: Grant Management's grant where there is one; else the
+    // one the refresh token being redeemed carries; else a new one — this
+    // is an authorization's first token set. Named whenever the details the
+    // GRANT authorized carry limits, so the refresh token keeps it even
+    // when this access token was narrowed to details that carry none.
+    const grantDetails = Object.prototype.hasOwnProperty.call(
+      opts, 'grantAuthorizationDetails')
+      ? opts.grantAuthorizationDetails : opts.authorization_details;
+    const limitsGrant = richAuthorization.carriesLimits(grantDetails) ||
+      richAuthorization.carriesLimits(opts.authorization_details)
+      ? String(opts.grant_id || opts.limits_grant ||
+               cellLocator.stamp(randomId(16)))
+      : '';
     const issuing = Object.assign({}, opts, {
       refresh_jti: refreshJti || undefined,
       grant_family: grantFamily || undefined,
+      limits_grant: limitsGrant || undefined,
       scope: plan.scope,
+      // What was GRANTED, before the plan took the OpenID Connect scopes off
+      // a token for an API: what the scope gate reads (#395).
+      granted_scope: opts.scope,
       audience: self.audienceClaim(plan.audiences),
       // Onto the refresh token as well, for the reason the RFC 8707 call sites
       // give: a grant cannot widen itself by being renewed, and the refresh
@@ -5018,7 +5554,7 @@ class OAuth2Server {
       resources: derived && !(opts.resources && opts.resources.length)
         ? plan.derived.slice(0) : opts.resources
     });
-    const access = self.accessToken(base, issuing);
+    const access = await self.accessTokenAsync(base, issuing);
     // RFC 9700 section 2.2, and it refuses nothing: whether a token is
     // sender-constrained is the CLIENT's decision, since it binds by sending a
     // DPoP proof or presenting a certificate (the settings that REQUIRE one are
@@ -5053,8 +5589,16 @@ class OAuth2Server {
       // issued, and this one no longer carries the value that became its
       // audience. It is therefore not identical to what was requested, which is
       // the case that section makes the member REQUIRED rather than optional —
-      // it is always sent here, so nothing changes about when.
-      scope: issuing.scope || ''
+      // it is sent whenever the token carries a scope.
+      //
+      // AND LEFT OUT WHEN IT CARRIES NONE (#156). Section 3.3 defines the
+      // value as one or more space-delimited tokens, so `"scope": ""` is not
+      // a value at all — and it was what came back whenever the audience plan
+      // above took every scope off, an exchange for another resource server
+      // carrying `openid profile` being the case found. No scope is said by
+      // no member, as the access token says it by no `scope` claim
+      // (accessToken()).
+      ...(issuing.scope ? { scope: String(issuing.scope) } : {})
     };
     if (opts.authorization_details) body.authorization_details =
         opts.authorization_details;
@@ -5169,7 +5713,23 @@ class OAuth2Server {
                   'of the token response stands.');
       }
     }
-    if (hasScope(opts.scope, 'openid')) {
+    // AN EXCHANGE'S ID TOKEN FOLLOWS THE TOKEN IT ISSUED (#156). Every other
+    // grant here is an OpenID Connect request when it asks for `openid`, and
+    // its ID Token stands even when the audience plan left `openid` off an
+    // access token for another resource server (RFC 9068 section 2.2.3) —
+    // the client asked to learn who signed in. An RFC 8693 exchange asks
+    // for one token, described by `issued_token_type`, and its scope is
+    // usually inherited from the subject_token rather than asked for; an ID
+    // Token beside an access token whose `scope` names no `openid` is a
+    // credential the response does not account for. So an exchange gets one
+    // only when the token it issued carries `openid`.
+    const exchangeWithoutOpenid = !!opts.idTokenFollowsIssuedScope &&
+      !hasScope(issuing.scope, 'openid');
+    if (exchangeWithoutOpenid) {
+      log.debug("tokenSet(): the exchanged token's scope carries no " +
+                "openid, so no ID Token.");
+    }
+    if (hasScope(opts.scope, 'openid') && !exchangeWithoutOpenid) {
       // From `opts` and not from `issuing`: an ID Token carries no scope claim
       // and its audience is the CLIENT, so neither of the two things above
       // applies to it. Passing the derived audience here would readdress it to
@@ -5621,8 +6181,7 @@ class OAuth2Server {
                  'must carry a DPoP proof (OpenID Connect Key Binding ' +
                  'section 2).' };
     }
-    const expected = crypto.createHash('sha256').update(code)
-      .digest('base64url');
+    const expected = stsCrypto.digest('sha256', code, 'base64url');
     if (String((proof.claims || {}).c_s256 || '') !== expected) {
       log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). c_s256.");
       return { code: 'STS-OAUTH-0703', error: 'invalid_dpop_proof',
@@ -5727,6 +6286,346 @@ class OAuth2Server {
     const asked = request && request[member];
     log.debug("Leaving OAuth2Server.requestedClaimNames().");
     return asked ? Object.keys(asked) : [];
+  }
+
+  // What the act on /admin/delegation says a token exchange CONSUMED: the
+  // input's type and, for an assertion (#114), its format, the declared
+  // issuer and whether it was FORWARDED.
+  /**
+   * Describes one input of a token exchange for the act's `consumed` list.
+   *
+   * @param which - `subject_token` or `actor_token`
+   * @param assertion - `exchange_assertions.ts`'s verified result, or null
+   * @param identifier - the token's `jti` or the assertion's ID
+   * @param verified - whether this realm verified it
+   * @returns `{ kind, identifier, note }`
+   */
+  static consumedInput(which: string, assertion: Json, identifier: string,
+                       verified: boolean): Json {
+    helpers.log.debug("Entering OAuth2Server.consumedInput().");
+    let out: Json;
+    if (assertion) {
+      const label = assertion.format === 'jwt' ? 'RFC 7523 JWT assertion'
+        : (assertion.format === 'saml11' ? 'SAML 1.1 assertion'
+                                         : 'RFC 7522 SAML 2.0 assertion');
+      out = { kind: which + ' (' + label + ')', identifier: identifier,
+              note: 'from the declared issuer "' + assertion.issuer +
+                    '", verified' + (assertion.forwarded
+                      ? '; FORWARDED — addressed to "' + assertion.audience +
+                        '", a relying party registered here, rather than to ' +
+                        'this authorization server'
+                      : '') };
+    } else {
+      out = { kind: which, identifier: identifier,
+              note: verified ? 'signed by this service and verified'
+                             : 'NOT signed by this service; read without ' +
+                               'verifying' };
+    }
+    helpers.log.debug("Leaving OAuth2Server.consumedInput().");
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ORIGINAL CLIENT AT THE BOTTOM OF AN `act` CHAIN (#443).
+  //
+  // RFC 8693 section 4.1 nests prior actors beneath the current one, and the
+  // exchange always kept a subject_token's own `act` beneath the new actor —
+  // but the FIRST exchange of a token had no prior `act` to keep, so the
+  // client the person signed in to (the one that obtained the first
+  // subject_token, by the authorization code flow or any other grant) was
+  // in no token of the chain. rcbj's example: issued to rcbj0004, exchanged
+  // by rcbj0005 and then rcbj0006, the last token should read
+  // `act: {sub: rcbj0006, act: {sub: rcbj0005, act: {sub: rcbj0004}}}`.
+  //
+  // THE RULE IS THE TOKEN-CHAINING PROFILE'S ("Token and Identity Chaining
+  // Between Protected Resources in a Single ICAM Ecosystem Using OAuth Token
+  // Exchange", MITRE PR 21-1421, the profile #443 cites as the ENA profile):
+  // the issued `act` names the exchanging party; "if an act claim is present
+  // in the access token to be exchanged, the AS MUST copy it into the new
+  // access token as a nested claim within the new access token's outer act
+  // claim. If an act claim is not present ..., the AS MUST add a nested act
+  // claim containing a sub claim with the identity of the client that
+  // presented the access token to be exchanged to PR1 (found in the access
+  // token's client_id claim)". So this is asked only when there is no prior
+  // `act`: a token that has one already carries its chain's beginning.
+  //
+  // WHO the original client is: the subject_token's `client_id` — the claim
+  // the profile names, and the one every token this realm issues carries —
+  // else `azp`, OpenID Connect's name for the same party on an ID Token. Only
+  // off a subject_token THIS REALM SIGNED AND VERIFIED: a `client_id` on a
+  // token from somewhere else (development's unverified read) names a client
+  // of another server, and an assertion's (#114) is filled in from the
+  // exchanging client, not read off anything a client was issued.
+  //
+  // ITS FORM is the one a client's own subject takes in the mode (RFC 9700
+  // section 4.13, `client-subject-separated`): `urn:sts:client:<id>` in RFC
+  // 9700 mode — implied by product — and the bare client_id otherwise, so the
+  // original client reads as the actors above it read when they act by their
+  // client_credentials tokens.
+  //
+  // NOTHING IS ADDED WHEN THE ORIGINAL CLIENT IS THE ACTOR. A client
+  // exchanging the token it was itself issued already begins the chain;
+  // nesting it beneath itself would record a hop between a party and itself
+  // that never happened.
+  //
+  // The entry is INFORMATIONAL, as every nested `act` is (section 4.1: "only
+  // the top-level claims and the party identified as the current actor ...
+  // are to be considered"): may_act, the delegation policy and the register
+  // all read the current actor, which stays outermost.
+  //
+  // AND IT CARRIES `iss` (#471): this authorization server's issuer, the
+  // token's own `iss`. PR 21-1422 section 3.1.1.1, the multi-ICAM companion
+  // of the profile above, says it in as many words for the token exchange —
+  // the nested entry holds "a sub claim with the identity of the client ...
+  // and an iss claim identifying the AS" — and the actor's entry the same
+  // pair, as PR 21-1421 section 2.4.1 has it. `actChainEntry()` below is
+  // where every entry this exchange writes is made.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the nested `act` entry naming the client a chain began with, or
+   * null where there is none to add.
+   *
+   * @param subject - the subject_token's claims
+   * @param ownVerified - whether this realm signed and verified it (and it
+   *   is not an assertion)
+   * @param actorName - the current actor's client_id or name, as the
+   *   delegation policy is asked about it
+   * @param namespaced - whether a client's subject is `urn:sts:client:<id>`
+   *   (RFC 9700 mode)
+   * @param issuer - this authorization server's issuer, the issued token's
+   *   `iss` (#471)
+   * @returns `{ sub, iss }`, or null
+   */
+  static originalClientAct(subject: Json, ownVerified: boolean,
+                           actorName: string, namespaced: boolean,
+                           issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.originalClientAct().");
+    if (!ownVerified || !subject ||
+        (subject.act && typeof subject.act === 'object')) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). Not " +
+                        "this realm's own, or the chain is already there.");
+      return null;
+    }
+    const clientId = String(subject.client_id || subject.azp || '').trim();
+    if (!clientId) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). The " +
+                        "subject_token names no client.");
+      return null;
+    }
+    if (clientId === String(actorName || '')) {
+      helpers.log.debug("Leaving OAuth2Server.originalClientAct(). The " +
+                        "original client is the actor.");
+      return null;
+    }
+    helpers.log.debug("Leaving OAuth2Server.originalClientAct(). " +
+                      clientId);
+    return OAuth2Server.actChainEntry(
+      OAuth2Server.clientActorSubject(clientId, namespaced), issuer);
+  }
+
+  // ---------------------------------------------------------------------------
+  // ONE SUBJECT FORM FOR A CLIENT NAMED AS AN ACTOR (#471).
+  //
+  // A client's own subject is `urn:sts:client:<id>` in RFC 9700 mode (section
+  // 4.13, `client-subject-separated`; product implies the mode) and the bare
+  // client_id otherwise — the `sub` its client_credentials token carries. An
+  // actor named by such an actor_token, and the original client (#443), took
+  // that form; but a DELEGATION THE ISSUANCE POLICY CHOSE WITHOUT AN
+  // actor_token named its actor — the exchanging client — by the bare
+  // client_id in every mode, so in product one token could read
+  // `act: {sub: "apigw", act: {sub: "urn:sts:client:webapp"}}`: two
+  // spellings of one kind of party, the second unable to collide with a
+  // person's name and the first able to. rcbj (#471): one form. This is it,
+  // and every place this exchange names a client as an actor asks it — the
+  // `act` entry, the original client, the register's intermediary and the
+  // `may_act` comparison (which accepts both spellings, so a claim written
+  // either way still names the client).
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the subject a client is named by as an actor: its own subject in
+   * the mode.
+   *
+   * @param clientId - the client_id
+   * @param namespaced - whether RFC 9700 mode is on (`bcp.enabled()`)
+   * @returns `urn:sts:client:<id>`, or the bare client_id
+   */
+  static clientActorSubject(clientId: string, namespaced: boolean): string {
+    helpers.log.debug("Entering OAuth2Server.clientActorSubject().");
+    const id = String(clientId || '');
+    helpers.log.debug("Leaving OAuth2Server.clientActorSubject().");
+    return namespaced ? 'urn:sts:client:' + id : id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `iss` IN EVERY `act` ENTRY (#471).
+  //
+  // The token-chaining profile #443 implemented (MITRE PR 21-1421, section
+  // 2.4.1; PR 21-1422 section 3.1.1.1 the same for several ICAMs) has the AS
+  // populate `act` with "a sub claim identifying PR1 and an iss claim
+  // identifying the AS", and the nested original client with the same pair;
+  // its examples (PR 21-1422 section 3.3) put an `iss` at every level. RFC
+  // 8693 section 4.1 allows it — `act` may carry other claims "to identify
+  // the actor", and a `sub` is only unique within its issuer. #443 left it
+  // out because it changes every delegated token; rcbj asked for it.
+  //
+  // SO EVERY ENTRY THIS EXCHANGE WRITES carries this authorization server's
+  // issuer, the same value as the issued token's own `iss`: the current
+  // actor and the original client. That is the profile's rule, followed
+  // where it is literal: the AS that issues the token is the one vouching
+  // for the party it names. An actor named by a foreign assertion (#114) or
+  // by development's unverified token gets this issuer too — the profile has
+  // no other case, and the entry records who wrote it into this token, not
+  // where the actor_token came from (its own `iss` is still compared by
+  // `may_act`, section 4.4).
+  //
+  // ENTRIES COPIED FROM THE subject_token's `act` keep the `iss` they carry,
+  // as the profile's copy rule says ("copy it into the new access token as a
+  // nested claim"). One with NONE is given THIS issuer only where the
+  // subject_token is one THIS REALM signed and verified, because only then
+  // does this service vouch for what it holds: it wrote that chain itself,
+  // under this realm's key (rcbj's rule in #471). A chain off an assertion
+  // or an unverified token is copied exactly as it came, since naming an
+  // issuer for it would be this service vouching for somebody else's claim.
+  // `iss` is informational in a nested entry as everything there is;
+  // nothing here reads it back.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns one `act` entry naming `sub`, written by `issuer`.
+   *
+   * @param sub - the party's subject
+   * @param issuer - the issuer of the token the entry goes into
+   * @returns `{ sub, iss }` (without `iss` when there is none to name)
+   */
+  static actChainEntry(sub: string, issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.actChainEntry().");
+    const entry: Json = { sub: sub };
+    if (issuer) {
+      entry.iss = String(issuer);
+    }
+    helpers.log.debug("Leaving OAuth2Server.actChainEntry().");
+    return entry;
+  }
+
+  /**
+   * Returns a subject_token's `act` chain to nest beneath a new actor: a
+   * copy in which an entry with no `iss` is given `issuer`, or the chain
+   * exactly as it came where `issuer` is empty (#471).
+   *
+   * @param chain - the subject_token's `act`
+   * @param issuer - this issuer, where this realm signed and verified the
+   *   subject_token, or '' to fill none
+   * @returns the chain, or null for none
+   */
+  static priorActChain(chain: Json, issuer: string): Json {
+    helpers.log.debug("Entering OAuth2Server.priorActChain().");
+    if (!chain || typeof chain !== 'object') {
+      helpers.log.debug("Leaving OAuth2Server.priorActChain(). None.");
+      return null;
+    }
+    if (!issuer) {
+      helpers.log.debug("Leaving OAuth2Server.priorActChain(). As it came.");
+      return chain;
+    }
+    // A recursion over the nesting, which RFC 8693 bounds by nothing: a
+    // chain deeper than any exchange here could build is copied as it came
+    // below that depth rather than walked for ever.
+    const copy = function (level: Json, depth: number): Json {
+      helpers.log.debug("Entering copy(). depth=" + depth);
+      if (!level || typeof level !== 'object' || Array.isArray(level) ||
+          depth > 64) {
+        helpers.log.debug("Leaving copy(). Not an entry to fill.");
+        return level;
+      }
+      const out: Json = Object.assign({}, level);
+      if (typeof out.iss !== 'string' || !out.iss) {
+        out.iss = issuer;
+      }
+      if (level.act && typeof level.act === 'object') {
+        out.act = copy(level.act, depth + 1);
+      }
+      helpers.log.debug("Leaving copy().");
+      return out;
+    };
+    helpers.log.debug("Leaving OAuth2Server.priorActChain(). Filled.");
+    return copy(chain, 0);
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN ASSERTION'S SUBJECT, AS THE TOKEN EXCHANGE READS A SUBJECT (#114).
+  //
+  // The person the verified assertion names, recorded and provisioned as the
+  // assertion grant records and provisions one (`provisionedPerson()`), in
+  // the shape the exchange reads a subject_token's claims in: `sub` and
+  // `username` from the directory; `iss` the declared issuer; and S — the
+  // application the token was issued FOR — as `aud` for a FORWARDED assertion
+  // (the relying party it was addressed to) and as `client_id` otherwise
+  // (an assertion addressed to this server was issued for whoever presents
+  // it). A JWT assertion's `scope`, `may_act` and `act` are read as a
+  // subject_token's are; a SAML one carries none of them.
+  // ---------------------------------------------------------------------------
+  /**
+   * Turns a verified exchange assertion into the subject (or actor) claims
+   * the token exchange reads, provisioning the person it names.
+   *
+   * @param checked - `exchange_assertions.ts`'s verified result
+   * @param client - the exchanging client
+   * @param which - `subject_token` or `actor_token`
+   * @returns the claims, or null where the directory holds nobody
+   */
+  assertionSubject(checked: Json, client: Json, which: string): Json {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.assertionSubject(). " + which);
+    const label = checked.format === 'jwt' ? 'an RFC 7523 JWT assertion'
+      : (checked.format === 'saml11' ? 'a SAML 1.1 assertion'
+                                     : 'an RFC 7522 SAML 2.0 assertion');
+    stats.recordAuthentication({
+      presented: checked.subject,
+      protocol: 'OAuth 2.0',
+      method: 'RFC 8693 token exchange of ' + label + ' (' + which + ')',
+      client_id: client.client_id,
+      note: (checked.issuerKind === 'person'
+              ? 'This person asserted THEMSELVES, with a key this service ' +
+                'issued to them. '
+              : 'A declared issuer, "' + checked.issuer + '", asserted this ' +
+                'person. ') +
+            'The assertion was verified for real — signature, chain, ' +
+            'issuer, audience, expiry, and an identifier spent once — and ' +
+            'presented as the ' + which + ' of a token exchange' +
+            (checked.forwarded ? ', FORWARDED: it was addressed to ' +
+              checked.audience + ', a relying party registered here' : '') +
+            '. No password was checked and no browser was involved.'
+    });
+    const person = this.provisionedPerson(checked.subject);
+    if (!person) {
+      log.debug("Leaving OAuth2Server.assertionSubject(). Nobody.");
+      return null;
+    }
+    const claims = checked.format === 'jwt' ? (checked.claims || {}) : {};
+    const out: Json = {
+      sub: person.sub || checked.subject,
+      username: person.username || checked.subject,
+      iss: checked.issuer,
+      // The audience the assertion was addressed to, as a subject_token's
+      // `aud` names S — and what a self exchange then issues for.
+      aud: checked.forwarded ? [checked.audience] : [],
+      client_id: checked.forwarded ? '' : String(client.client_id || ''),
+      jti: checked.id,
+      // What the act on /admin/delegation says came in.
+      assertion: { format: checked.format, issuer: checked.issuer,
+                   forwarded: !!checked.forwarded, audience: checked.audience,
+                   id: checked.id }
+    };
+    if (typeof claims.scope === 'string') {
+      out.scope = claims.scope;
+    }
+    if (claims.may_act && typeof claims.may_act === 'object') {
+      out.may_act = claims.may_act;
+    }
+    if (claims.act && typeof claims.act === 'object') {
+      out.act = claims.act;
+    }
+    log.debug("Leaving OAuth2Server.assertionSubject(). " + out.username);
+    return out;
   }
 
   // ---------------------------------------------------------------------------
@@ -6054,7 +6953,7 @@ class OAuth2Server {
                ' ' +
                'and this service holds ' +
                'others: ' + out.mismatched.join('; ') + '. The values held ' +
-               'are what is returned — a mock that echoed back whatever a ' +
+               'are what is returned — a service that echoed back whatever a ' +
                'client asked it to assert could not be used to test ' +
                'anything.');
     }
@@ -6127,6 +7026,21 @@ class OAuth2Server {
    * @returns `{ details }` (null when none were sent), or `{ error }` marked
    *   with its code
    */
+  // The acr values a request's authorization_details need (#432 phase 6):
+  // the catalogue's, for each type among them, every one required. Details
+  // that do not parse need nothing here — they are refused where they are
+  // issued (`issueAuthorizationResponse()`), not stepped up for.
+  private detailAcrsOf(q: Json, req: Req): string[] {
+    const { log, richAuthorization } = this.deps;
+    log.debug("Entering OAuth2Server.detailAcrsOf().");
+    const parsed = this.parseAuthorizationDetails(q.authorization_details,
+      { clientId: q.client_id, req: req });
+    const out = parsed.details
+      ? richAuthorization.requiredAcrsOf(parsed.details) : [];
+    log.debug("Leaving OAuth2Server.detailAcrsOf(). " + out.length);
+    return out;
+  }
+
   parseAuthorizationDetails(raw: Json, context?: Json): Json {
     const { log, applications, errorCodes, richAuthorization } = this.deps;
     const self = this;
@@ -6538,9 +7452,12 @@ class OAuth2Server {
    *
    * @param scope - the requested scope
    * @param clientId - the client
+   * @param grantType - the token request's grant_type, where there is one;
+   *   an RFC 8693 exchange's delegated permissions are decided at the
+   *   exchange stage, which drops rather than refuses (#549)
    * @returns '' to allow, or the refusal's description
    */
-  permissionRefusal(scope: Json, clientId: Json): Json {
+  permissionRefusal(scope: Json, clientId: Json, grantType?: Json): Json {
     const { log, config, gate, mode, scopeVerdicts } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.permissionRefusal().");
@@ -6566,6 +7483,7 @@ class OAuth2Server {
       settings: { 'oauth2.delegatedPermissionsEnforced':
                     !!config.value('oauth2.delegatedPermissionsEnforced') },
       stage: 'request',
+      grantType: grantType ? String(grantType) : undefined,
       requested: String(scope || '').split(/\s+/).filter(Boolean),
       facts: found.permissions.map(function (one: Json): Json {
         return { scope: one.scope, attributes: [
@@ -7107,6 +8025,215 @@ class OAuth2Server {
   // a code is minted and the token endpoint above the grant switch.
   // ---------------------------------------------------------------------------
 
+  // ---------------------------------------------------------------------------
+  // THE NAMES A CLIENT ANSWERS TO AS AN AUDIENCE (#550): its client_id, the
+  // registry identifier of its entry, and every `oauthAudience` it declares.
+  // Two readers: a `client_credentials` token's default audience, and the
+  // actor_token rule that a token presented as the actor is addressed to
+  // the exchanging client (or to this authorization server).
+  // ---------------------------------------------------------------------------
+  /**
+   * Lists the names a client answers to as an audience: the declared
+   * `oauthAudience` values first, then its client_id and registry identifier.
+   *
+   * @param clientId - the client_id
+   * @returns `{ declared, all }`: the declared audiences, and every name
+   */
+  clientAudienceNames(clientId: Json): Json {
+    const { log, applications } = this.deps;
+    log.debug("Entering OAuth2Server.clientAudienceNames().");
+    const id = String(clientId == null ? '' : clientId).trim();
+    const declared: string[] = [];
+    const all: string[] = [];
+    const add = function (list: string[], one: Json) {
+      const text = String(one == null ? '' : one).trim();
+      if (text && list.indexOf(text) < 0) {
+        list.push(text);
+      }
+    };
+    let entry: Json = null;
+    try {
+      entry = id ? (applications.forClientId(id) || applications.get(id))
+        : null;
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.clientAudienceNames(): " +
+                ((e && e.message) || e));
+      entry = null;
+    }
+    const fields = (entry && entry.fields) || {};
+    const audiences = fields.oauthAudience;
+    (Array.isArray(audiences) ? audiences
+      : (audiences ? [audiences] : [])).forEach(function (one: Json) {
+      add(declared, one);
+      add(all, one);
+    });
+    add(all, id);
+    if (entry) {
+      add(all, entry.identifier);
+    }
+    log.debug("Leaving OAuth2Server.clientAudienceNames(). " +
+              declared.length + " declared, " + all.length + " in all.");
+    return { declared: declared, all: all };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A client_credentials TOKEN IS ADDRESSED TO THE CLIENT ITSELF BY DEFAULT
+  // (#550, 2026-10-10).
+  //
+  // RFC 9068 section 3 requires a default resource indicator when a request
+  // names none, and every grant here used `<issuer>/resource`, a placeholder
+  // audience no resource server answers to. For a client's own token — no
+  // person, nothing
+  // asked for — that names nothing the token is for; the token most often
+  // goes back to this server as an RFC 8693 actor_token, which section 2.1
+  // defines as representing the acting party. So the default for this grant
+  // alone is the CLIENT: its declared `oauthAudience`, or its client_id.
+  //
+  // ONLY WHEN THE REQUEST ASKED FOR NOTHING ELSE. A `resource`, an
+  // `authorization_details`, a scope naming an application or a delegated
+  // permission (each derives its own audience in `accessTokenPlan()`), or a
+  // scope of THIS service's resource server (OpenID Connect's, SCIM's,
+  // OpenID4VCI's, the protected scopes) keeps today's default, so every
+  // resource server here still accepts what it accepted.
+  // ---------------------------------------------------------------------------
+  /**
+   * The audience a `client_credentials` token takes when the request named
+   * nothing: the client's own, or an empty list to keep the default.
+   *
+   * @param clientId - the client
+   * @param scope - the requested scope
+   * @param details - the requested authorization details
+   * @returns the audiences, or an empty list
+   */
+  clientCredentialsAudience(clientId: Json, scope: Json,
+                            details: Json): Json {
+    const { log, scopePolicy } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.clientCredentialsAudience().");
+    if (Array.isArray(details) ? details.length : !!details) {
+      log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
+                "authorization_details name their own resource.");
+      return [];
+    }
+    const asked = String(scope || '').split(/\s+/).filter(Boolean);
+    const reserved = self.protocolScopes();
+    const ownServer = asked.filter(function (one) {
+      return reserved.indexOf(one) >= 0 || scopePolicy.isProtected(one);
+    });
+    if (ownServer.length) {
+      log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
+                "A scope of this service's resource server: " +
+                ownServer.join(', ') + ".");
+      return [];
+    }
+    if (self.audienceScopes(scope, clientId).audiences.length) {
+      log.debug("Leaving OAuth2Server.clientCredentialsAudience(). The " +
+                "scope names an audience.");
+      return [];
+    }
+    const names = self.clientAudienceNames(clientId);
+    const id = String(clientId == null ? '' : clientId).trim();
+    const audience = names.declared.length ? names.declared
+      : (id ? [id] : []);
+    log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
+              (audience.join(', ') || '(none)') + ".");
+    return audience;
+  }
+
+  // ---------------------------------------------------------------------------
+  // AN actor_token IS THE EXCHANGING CLIENT'S OWN, AND ADDRESSED TO IT OR TO
+  // THIS SERVER (#550, 2026-10-10), IN EVERY MODE.
+  //
+  // RFC 8693 section 2.1: the actor_token is "a security token that
+  // represents the identity of the acting party", and its validation is the
+  // authorization server's. Until #550 it was checked for its signature, its
+  // declared type and its revocation, and the actor was then READ from it
+  // (`sub`, `client_id`) and never compared with the client that
+  // authenticated. So a resource server sent another client's access token
+  // could authenticate as itself, present that token as its actor_token, and
+  // be issued a token whose `act` named the other client — decided by the
+  // delegation policy with the OTHER client's settings. Any bearer token
+  // about a client was a key to its delegation rights.
+  //
+  // Two rules, both about who the actor IS rather than what it may do (the
+  // issuance policy decides the latter, after this):
+  //
+  //   1. BOUND TO THE CALLER (STS-OAUTH-0955). Issued to the exchanging
+  //      client: its `client_id`, else `azp`, is that client; a token with
+  //      neither (a WS-Trust JWT) must name the client in `aud`. A
+  //      client_credentials token's `sub` is that client, in either subject
+  //      form.
+  //   2. AUDIENCE-RESTRICTED (STS-OAUTH-0956). `aud` names this
+  //      authorization server (its issuer, its token endpoint) or the
+  //      exchanging client (`clientAudienceNames()`). A token minted for
+  //      another resource is one that resource holds and could replay.
+  //
+  // Not asked of an RFC 7523/7522 assertion (its own audience rule, #114) or
+  // a Native SSO device secret (#130), which take other paths.
+  // ---------------------------------------------------------------------------
+  /**
+   * Checks that an actor_token belongs to the exchanging client and is
+   * addressed to it or to this authorization server.
+   *
+   * @param claims - the actor_token's claims
+   * @param client - the authenticated client
+   * @param base - the authorization server's base URL
+   * @returns `{ code, description }` to refuse, or null
+   */
+  actorTokenProblem(claims: Json, client: Json, base: Json): Json {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.actorTokenProblem().");
+    const clientId = String((client && client.client_id) || '').trim();
+    const names = self.clientAudienceNames(clientId);
+    const aud = (Array.isArray(claims.aud) ? claims.aud
+      : (claims.aud ? [claims.aud] : [])).map(function (one: Json) {
+        return String(one);
+      });
+    const issuedTo = String(claims.client_id || claims.azp || '').trim();
+    const namesClient = aud.some(function (one: string) {
+      return names.all.indexOf(one) >= 0;
+    });
+    if (issuedTo ? issuedTo !== clientId : !namesClient) {
+      log.debug("Leaving OAuth2Server.actorTokenProblem(). Not the " +
+                "client's own.");
+      return { code: 'STS-OAUTH-0955', description: 'The actor_token was ' +
+        'not issued to this client: ' + (issuedTo
+          ? 'it was issued to "' + issuedTo + '"'
+          : 'it names no client, and its aud does not name this one') +
+        '. An actor_token must be the exchanging client\'s own (RFC 8693 ' +
+        'section 2.1: it represents the acting party).' };
+    }
+    const sub = String(claims.sub || '');
+    const subClient = /^urn:sts:client:/.test(sub)
+      ? sub.slice('urn:sts:client:'.length) : '';
+    if (subClient && subClient !== clientId) {
+      log.debug("Leaving OAuth2Server.actorTokenProblem(). About another " +
+                "client.");
+      return { code: 'STS-OAUTH-0955', description: 'The actor_token is a ' +
+        'client\'s token about "' + subClient + '", and the exchanging ' +
+        'client is "' + clientId + '".' };
+    }
+    const issuer = self.issuerOf(base);
+    const server = [issuer, issuer + '/oauth2/token',
+                    String(base || '') + '/oauth2/token'];
+    const addressed = aud.some(function (one: string) {
+      return server.indexOf(one) >= 0;
+    }) || namesClient;
+    if (!addressed) {
+      log.debug("Leaving OAuth2Server.actorTokenProblem(). Audience.");
+      return { code: 'STS-OAUTH-0956', description: 'The actor_token is ' +
+        'addressed to ' + (aud.length ? aud.map(function (one: string) {
+          return '"' + one + '"';
+        }).join(', ') : 'nobody') + ', which is neither this authorization ' +
+        'server nor the client "' + clientId + '". Use a token addressed to ' +
+        'the client itself (a client_credentials token asking for nothing ' +
+        'else is) or to this server.' };
+    }
+    log.debug("Leaving OAuth2Server.actorTokenProblem(). Accepted.");
+    return null;
+  }
+
   // An `aud`-shaped value — undefined, one string, or a list — as a list.
   /**
    * Reads an `aud`-shaped value as a list.
@@ -7373,6 +8500,18 @@ class OAuth2Server {
     // tokenSet() asks again, as the backstop. See
     // `common/role_permissions.ts`.
     if (rolePermissions.asksForGated(scope)) {
+      // THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#446), made here when the
+      // console's own client asks, because a console that is a static client
+      // of /admin-api has no callback of its own to make it from. Asked
+      // BEFORE the narrowing, which reads the roster the claim changes. A
+      // no-op for every other client and every other person; see
+      // `role_permissions.ts`'s `noteConsoleSignIn()`.
+      rolePermissions.noteConsoleSignIn(person, {
+        clientId: query.client_id,
+        amr: amr,
+        signInAuthority: self.deps.authn.latestAuthorityOf(
+          sessionId ? self.deps.authn.sessionById(String(sessionId)) : null)
+      });
       const narrowed = rolePermissions.narrowScope(scope, person,
         { clientId: query.client_id, grant: 'authorization_code' });
       if (narrowed.emptied) {
@@ -7394,8 +8533,36 @@ class OAuth2Server {
     // connect to this request. The same plan mints the implicit and hybrid
     // token below, and tokenSet() asks it again when the code is redeemed. In
     // every mode — see `jwt_access_token.ts`'s header.
-    const audiencePlan = self.accessTokenPlan(base, scope, query.client_id,
-                                         resources, authorizationDetails);
+    //
+    // **SEVERAL RESOURCES ON A CODE, AND THE TOKEN REQUEST PICKS ONE (#607,
+    // 2026-10-13).** RFC 8707 section 2 lets an authorization request name
+    // more than one resource, and section 2.2 lets each Token Request name
+    // the one its access token is for; RFC 9068 section 3's "MUST NOT
+    // issue" is about the token, not the grant. So where this endpoint
+    // mints no access token itself (no `token` in the response type) and
+    // the request names several resources, it is refused only when NO one of
+    // them could be issued a token unambiguously — the user portal's two,
+    // `/account-api` and `/admin-api`, are each fine alone and ambiguous
+    // together. The code's exchange, and every refresh, is planned against
+    // the resource it names, by `tokenSet()`, which still refuses a request
+    // naming none or several. Implicit and hybrid mint here, so they keep
+    // the whole request's plan.
+    let audiencePlan = self.accessTokenPlan(base, scope, query.client_id,
+                                            resources, authorizationDetails);
+    if (audiencePlan.refusal && types.indexOf('token') < 0 &&
+        resources.length > 1) {
+      const one = resources.map(function (resource: string) {
+        return self.accessTokenPlan(base, scope, query.client_id, [resource],
+                                    authorizationDetails);
+      }).filter(function (plan: Json) {
+        return !plan.refusal;
+      })[0];
+      if (one) {
+        log.debug("OAuth2Server.issueAuthorizationResponse(): several " +
+                  "resources, each issuable alone; the token request picks.");
+        audiencePlan = one;
+      }
+    }
     if (audiencePlan.refusal) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). RFC 9068 " +
                 "refused the audience.");
@@ -7451,6 +8618,46 @@ class OAuth2Server {
       session: authInfo || null
     });
     // -----------------------------------------------------------------------
+    // A SESSION ON A SIGN-IN MECHANISM THE CLIENT DOES NOT ALLOW (#457) IS A
+    // SIGN-IN, NOT AN ERROR — the risk step-up's road below: the person is
+    // here, in a browser, so they are sent to sign in again, and the screen
+    // offers only the mechanisms the application allows. A sign-in with any
+    // other is refused at the screen, so the request comes round with a
+    // session that satisfies one. `prompt=none` forbids the screen, so it is
+    // `login_required` (OIDC Core section 3.1.2.6) instead.
+    // -----------------------------------------------------------------------
+    if (!roleAnswer.allowed && roleAnswer.mechanism &&
+        (authInfo || {}).authenticated !== false) {
+      if (String(query.prompt || '').split(/\s+/).indexOf('none') >= 0) {
+        // A second factor the client does not allow (#475) is its own.
+        errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+          ? 'STS-OAUTH-0953' : 'STS-OAUTH-0946');
+        log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). The " +
+                  "sign-in mechanism, and prompt=none.");
+        return self.redirectBack(res, base, redirectUri, query.state,
+          { error: 'login_required', error_description: roleAnswer.why },
+          self.usesFragment(types, query.response_mode),
+          query.response_mode);
+      }
+      // A second factor the client does not allow (#475) is its own.
+      errorCodes.mark(res, roleAnswer.mechanism.secondFactor
+        ? 'STS-OAUTH-0952' : 'STS-OAUTH-0945');
+      log.info('oauth2: "' + String(query.client_id || '') + '" allows ' +
+               'signing in with ' + roleAnswer.mechanism.allowed.join(', ') +
+               ', and the session of "' + String(user.username || '') +
+               '" used none of them; sent to sign in again.');
+      log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). A " +
+                "re-prompt for an allowed sign-in mechanism.");
+      return res.redirect(302, this.deps.authn.beginAuthentication({
+        returnTo: self.asPathOf(req) + '/oauth2/authorize?' +
+                  self.authorizationReturnQuery(req, query),
+        hint: String(user.username || ''),
+        protocol: 'OAuth 2.0 / OIDC',
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
+      }));
+    }
+    // -----------------------------------------------------------------------
     // A STEP-UP ON RISK IS A SIGN-IN, NOT AN ERROR (#62 P3). The policy
     // denied on the risk of the session this response would rest on and
     // named a factor; the person is here, in a browser, so they are sent to
@@ -7476,7 +8683,8 @@ class OAuth2Server {
         forceMfa: roleAnswer.risk.factor === 'second-factor',
         forceKey: roleAnswer.risk.factor === 'security-key',
         protocol: 'OAuth 2.0 / OIDC',
-        application: String(query.client_id || '')
+        application: String(query.client_id || ''),
+        uiLocales: String(query.ui_locales || '')
       }));
     }
     if (!roleAnswer.allowed) {
@@ -7678,7 +8886,8 @@ class OAuth2Server {
         // this says where it has been.
         appAuthorizationServer: self.profileOf(req),
         appRedirectUriObserved: redirectUri,
-        oauthResponseType: types.join(' '),
+        // What it ASKED for, apart from what it DECLARED (#289).
+        oauthResponseTypeObserved: types.join(' '),
         oauthScope: scope.split(/\s+/).filter(Boolean)
       }
     });
@@ -7706,7 +8915,9 @@ class OAuth2Server {
                                                    user.sub, sessionId) });
 
     if (types.indexOf('code') >= 0) {
-      const code = randomId(24);
+      // Stamped with the minting cell (#98 D10): the client redeems it at
+      // the cell nearest ITS server, which relays the token request here.
+      const code = cellLocator.stamp(randomId(24));
       authzCodes.set(code, {
         client_id: String(query.client_id), redirect_uri: redirectUri,
         // A merged grant's whole scope (#142), the request's otherwise.
@@ -7813,10 +9024,12 @@ class OAuth2Server {
       // another's said `<base>/resource` for the same request. `resources`
       // still wins, for the reason given there. The plan is the one asked
       // above, before anything was minted.
-      out.access_token = self.accessToken(base, {
+      out.access_token = await self.accessTokenAsync(base, {
         user: user,
         client_id: String(query.client_id),
         scope: audiencePlan.scope,
+        // The scope granted, for the gate (#395) — see tokenSet().
+        granted_scope: scope,
         audience: self.audienceClaim(audiencePlan.audiences),
         session_id: sessionId, grant: flow,
         set_id: setId,
@@ -7834,8 +9047,11 @@ class OAuth2Server {
       // read through section 4.2.2 — and the code beside it in a hybrid
       // response is unaffected: `authzCodes` above holds the scope as
       // AUTHORIZED, so redeeming it derives the same audience again at the
-      // token endpoint.
-      out.scope = audiencePlan.scope;
+      // token endpoint. Left out when the token carries none, as tokenSet()
+      // leaves it out (#156): an empty string is not a scope (section 3.3).
+      if (audiencePlan.scope) {
+        out.scope = audiencePlan.scope;
+      }
     }
     if (types.indexOf('id_token') >= 0) {
       out.id_token = await self.idToken(base, {
@@ -7875,6 +9091,24 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.issueAuthorizationResponse().");
   }
 
+  // THE LANGUAGE OF A PAGE THIS MODULE DRAWS FOR A BROWSER (#539): the
+  // form_post handoff and the RP-initiated sign-out pages. `ui_locales` first
+  // (OpenID Connect Core 1.0 section 3.1.2.1, RP-Initiated Logout 1.0
+  // section 2), then the person, the chooser's cookie, the browser and the
+  // client's locale policy — `common/page_locale.ts`'s order. The error
+  // pages are not drawn with it: every refusal stays English.
+  private pageTranslator(req: Req, application: string, uiLocales: string,
+                         username: string):
+                         ReturnType<typeof PageLocale.forPage> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.pageTranslator().");
+    const out = PageLocale.translatorFor(req, { application: application,
+                                                uiLocales: uiLocales,
+                                                username: username });
+    log.debug("Leaving OAuth2Server.pageTranslator(). " + out.locale);
+    return out;
+  }
+
   /**
    * Sends a `response_mode=form_post` page: the fields as hidden inputs, a real
    * submit button, and the one script that submits it.
@@ -7884,7 +9118,8 @@ class OAuth2Server {
    * @param fields - the response fields
    */
   formPostResponse(res: Res, redirectUri: Json, fields: Json): Json {
-    const { app, log, xmlEscape } = this.deps;
+    const { app, log, xmlEscape, sessionOf } = this.deps;
+    const self = this;
     log.debug("Entering OAuth2Server.formPostResponse(). fields=" +
               Object.keys(fields).join(', '));
     const inputs = Object.keys(fields).map(function (name) {
@@ -7900,30 +9135,41 @@ class OAuth2Server {
              xmlEscape(String(fields[name])) +
              '</code></div>';
     }).join('');
-    const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8"><title>Returning to the client</title><style>' +
+    // THE LANGUAGE (#539): the authorization request's `ui_locales`, its
+    // client and the person signed in, as the sign-in and consent screens
+    // read them. NO LANGUAGE CHOOSER, unlike every other page converted: the
+    // page submits itself the moment it loads, and the only GET that would
+    // redraw it is the authorization request, which a second pass would
+    // answer with a second code (or refuse as a replay) rather than redraw.
+    const req: Req = res.req || {};
+    const held = (res.locals && res.locals.stsJarm) || {};
+    const session = sessionOf(req);
+    const t = self.pageTranslator(req,
+      String(held.clientId || (req.query || {}).client_id || ''),
+      String((req.query || {}).ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    const html = '<!doctype html><html' + PageLocale.htmlAttributes(t) +
+      '><head><meta ' +
+      'charset="utf-8"><title>' +
+      xmlEscape(t.text('oauthPages.formPost.title')) + '</title><style>' +
       'body{font-family:system-ui,sans-serif;margin:2rem;max-width:52rem;' +
       'color:#222}code{font-family:ui-monospace,Menlo,monospace;' +
       'font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
       'border-radius:3px;word-break:break-all}.sub{color:#666}' +
       '.meta{margin-top:1.5rem;font-size:.9rem;color:#444}' +
       'button{font:inherit;padding:.4rem .9rem}</style></head><body>' +
-      '<h1>Returning to the ' +
-      'client</h1><p class="sub">OAuth 2.0 Form Post Response Mode — the ' +
-      'authorization response travels in a form POST rather than in a ' +
-      'redirect, so it never appears in a URL, in browser history or in a ' +
-      '<code>Referer</code> header (RFC 9700 section 4.3).</p><form ' +
+      '<h1>' + t.html('oauthPages.formPost.heading') + '</h1>' +
+      '<p class="sub">' + t.html('oauthPages.formPost.sub') + '</p><form ' +
       'method="post" action="' + xmlEscape(redirectUri) + '" ' +
           'id="oauth2-form">' + inputs +
-      '<div><button type="submit">Continue to the client</button></div>' +
+      '<div><button type="submit">' + t.html('oauthPages.formPost.continue') +
+      '</button></div>' +
       '</form>' +
-      '<div class="meta"><div>posting to: <code>' + xmlEscape(redirectUri) +
-      '</code></div>' +
+      '<div class="meta"><div>' +
+      t.html('oauthPages.formPost.postingTo', { uri: redirectUri }) +
+      '</div>' +
       rows +
-      '<div>The form submits itself from <code>/oauth2/autopost.js</code>. ' +
-      'It is a separate resource because this service sets <code>script-src ' +
-      '\'none\'</code> on every response and this page relaxes it to ' +
-      '<code>\'self\'</code>; with scripting off the button IS the mechanism.' +
+      '<div>' + t.html('oauthPages.formPost.scriptNote') +
       '</div></div><script ' +
       'src="/oauth2/autopost.js"></script></body></html>';
     // The same shape of exception the WebAuthn and WS-Federation pages take,
@@ -7990,6 +9236,13 @@ class OAuth2Server {
   // and a button, and this one deliberately has neither — an interstitial that
   // submitted itself would be an automatic redirect with an extra page in front
   // of it.
+  //
+  // WHICH IS WHY THE TIMED CONTINUE IS AN OPERATOR'S CHOICE AND OFF (#317).
+  // rcbj asked for one after using the page from the idptools.com debugger;
+  // `oauth2.errorPageAutoRedirectS` above 0 adds a meta refresh to the link's
+  // own target — markup, so `script-src 'none'` still holds — and a sentence
+  // saying when. Its description carries the RFC 9700 warning. The form_post
+  // variant never gets one: a POST cannot be made by markup alone.
   // ---------------------------------------------------------------------------
   /**
    * Sends the page shown instead of a redirect a person must decide on: the
@@ -8000,11 +9253,18 @@ class OAuth2Server {
    *   `state`, `target` and `form`
    */
   sendRedirectInterstitial(res: Res, info: Json): Json {
-    const { log, xmlEscape } = this.deps;
+    const { log, xmlEscape, config } = this.deps;
     log.debug("Entering OAuth2Server.sendRedirectInterstitial(). error=" +
               info.error);
+    const after = info.form ? 0 :
+      Math.max(0, Number(config.value('oauth2.errorPageAutoRedirectS')) || 0);
     const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8"><title>This request could not be completed</title>' +
+      'charset="utf-8">' +
+      (after > 0
+        ? '<meta http-equiv="refresh" content="' + after + ';url=' +
+          xmlEscape(info.target) + '">'
+        : '') +
+      '<title>This request could not be completed</title>' +
       '<style>body{font-family:system-ui,sans-serif;margin:2rem;' +
       'max-width:46rem;color:#222}code{font-family:ui-monospace,Menlo,' +
       'monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
@@ -8038,6 +9298,10 @@ class OAuth2Server {
           xmlEscape(info.redirectUri) + '</button></form>'
         : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
           xmlEscape(info.redirectUri) + '</a></p>') +
+      (after > 0
+        ? '<p class="sub">You will be sent there automatically in ' + after +
+          ' second' + (after === 1 ? '' : 's') + '.</p>'
+        : '') +
       '<p class="sub">Nothing has been ' +
       'sent anywhere yet. Following that link delivers the error above to ' +
       'the application, which is what would have happened automatically if ' +
@@ -8248,7 +9512,8 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.jarmUrl(). " + mode);
     const held = (res.locals && res.locals.stsJarm) || {};
     const clientId = String(held.clientId || '');
-    const registered = applications.registrationOf(clientId) || {};
+    // From the attributes (#290), whether or not a registration made them.
+    const registered: Json = applications.clientConfigOf(clientId);
     log.debug("Leaving OAuth2Server.jarmUrl(). Signing.");
     return jarm.respond(fields, { clientId: clientId, issuer: issuer,
                                   registered: registered })
@@ -8443,10 +9708,13 @@ class OAuth2Server {
     const jwtSecured = (outer.request !== undefined && outer.request !== '') ||
                        (outer.request_uri !== undefined &&
                         outer.request_uri !== '');
-    if (!jwtSecured && !config.value('oauth2.requireSignedRequestObject') &&
-        !client.require_signed_request_object &&
-        !self.deps.fapi.requiresSignedRequestObject() &&
-        self.capabilitiesFor(req).require_signed_request_object !== true) {
+    // `signedRequired()` is the one reading of the requirement — the setting,
+    // the entry, the authorization server's metadata and FAPI — including
+    // the hosted public clients' exemption (#568).
+    if (!jwtSecured &&
+        !requestObject.signedRequired(client,
+                                      self.authorizationProfileOf(req),
+                                      String(outer.client_id || ''))) {
       log.debug("Leaving OAuth2Server.authorizeWithClient(). Not a " +
                 "JWT-secured request.");
       return self.withIdTokenHint(req, res);
@@ -8512,9 +9780,11 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.authorizationReturnQuery().");
     const jar = req.stsJar;
-    // With the client's registered defaults (#120).
+    // With the client's registered defaults (#120), from its attributes
+    // (#290).
     const stepping = stepUp.requirementOf(q,
-      this.deps.applications.registrationOf(q.client_id)).present;
+      this.deps.applications.clientConfigOf(q.client_id)).present ||
+      this.detailAcrsOf(q, req).length > 0;
     if (!jar) {
       log.debug("Leaving OAuth2Server.authorizationReturnQuery(). A plain " +
                 "request.");
@@ -8575,6 +9845,46 @@ class OAuth2Server {
         ? 'verified with this application\'s registered key (RFC 9101)'
         : 'NOT verified: anybody could have written these parameters'
     }];
+  }
+
+  // THE PRODUCT QUESTION FOR A CLIENT A REQUEST NAMES (#496): null where it
+  // may be served — development, or a REGISTERED application — and the
+  // refusal otherwise: `invalid_request` for a request naming no client,
+  // `invalid_client` for one nobody registered. The authorization endpoint
+  // and the token endpoint ask it; each answers in its own way.
+  private unregisteredClientRefusal(clientId: Json): Json {
+    const { log, mode } = this.deps;
+    log.debug("Entering OAuth2Server.unregisteredClientRefusal().");
+    if (mode.issuesToUnregisteredApplications()) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
+                "Development.");
+      return null;
+    }
+    const id = String(clientId == null ? '' : clientId).trim();
+    if (!id) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). No " +
+                "client_id.");
+      return { code: 'STS-OAUTH-0948', error: 'invalid_request',
+               description: 'The request names no client_id. In product ' +
+                 'mode this authorization server serves only a client ' +
+                 'registered ahead of time (the console, /admin-api, RFC ' +
+                 '7591, an LDAP add under ou=applications or an OpenID ' +
+                 'Federation).' };
+    }
+    if (IssuerNames.registeredApplication(id)) {
+      log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
+                "Registered.");
+      return null;
+    }
+    log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). Not " +
+              "registered.");
+    return { code: 'STS-OAUTH-0947', error: 'invalid_client',
+             description: 'The client "' + id + '" is not registered in ' +
+               'this realm. In product mode this authorization server ' +
+               'serves only a client registered ahead of time (the ' +
+               'console, /admin-api, RFC 7591, an LDAP add under ' +
+               'ou=applications or an OpenID Federation); ' +
+               'one that was only seen is not registered.' };
   }
 
   // ---------------------------------------------------------------------------
@@ -8648,6 +9958,30 @@ class OAuth2Server {
       return refuse('STS-OAUTH-0159', 'invalid_request', asked.detail);
     }
     const q = asked.value;
+
+    // --- AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496) ---
+    //
+    // rcbj, 2026-10-06: in product an application that is not registered
+    // gets nothing but its protocol's own "unknown application" error.
+    // Until #496 the authorization endpoint had no client check at all: an
+    // unknown client_id was refused only by the redirect URI rule (a 400,
+    // `STS-OAUTH-0121`), and ACCEPTED where an operator had set the
+    // service-wide `oauth2.redirectUris`. "Registered" is #494's word,
+    // `appRegisteredBy` on the entry (`IssuerNames.registeredApplication()`),
+    // so an entry a development sighting filed — redirect URIs observed and
+    // all — is refused like none. Answered HERE, as a 400 on this server and
+    // never redirected: RFC 6749 section 4.1.2.1 says a missing or invalid
+    // client identifier MUST NOT be redirected, and nothing about this
+    // client's addresses has been decided. A federation client registered
+    // automatically (OpenID Federation 12.1) was registered above, before
+    // this ran. Development is unchanged.
+    const unknownClient = self.unregisteredClientRefusal(q.client_id);
+    if (unknownClient) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). The " +
+                "client is not registered.");
+      return refuse(unknownClient.code, unknownClient.error,
+                    unknownClient.description);
+    }
 
     // --- OAUTH 2.1: THE CLIENT FIRST, AND A DEFAULT redirect_uri -------------
     //
@@ -9155,19 +10489,21 @@ class OAuth2Server {
     // Note where this sits: above the session check, so it is answered on the
     // first pass and the person is never sent to sign in for a request that was
     // going to be refused when they came back.
-    // RFC 7591 SECTION 2 (#120, in every mode): a client that REGISTERED its
-    // response_types is held to them — unauthorized_client, RFC 6749 section
-    // 4.1.2.1's word for a client not allowed this method.
-    const registeredFlows = applications.registeredFlowsOf(q.client_id);
+    // RFC 7591 SECTION 2 (#120, in every mode): a client that DECLARED its
+    // response_types — by registering them or, since #289, by an
+    // administrator writing `oauthResponseType` — is held to them:
+    // unauthorized_client, RFC 6749 section 4.1.2.1's word for a client not
+    // allowed this method. An empty list restricts nothing.
+    const declaredFlows = applications.declaredFlowsOf(q.client_id);
     const askedType = String(q.response_type || '').split(/\s+/)
       .filter(Boolean).sort().join(' ');
-    if (registeredFlows && registeredFlows.response_types &&
-        registeredFlows.response_types.indexOf(askedType) < 0) {
+    if (declaredFlows && declaredFlows.response_types &&
+        declaredFlows.response_types.indexOf(askedType) < 0) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A response " +
-                "type the client did not register.");
+                "type the client did not declare.");
       return redirectable('STS-OAUTH-0597', 'unauthorized_client',
-        'Client "' + q.client_id + '" registered response_types ' +
-        JSON.stringify(registeredFlows.response_types) + ', and this ' +
+        'Client "' + q.client_id + '" declares response_types ' +
+        JSON.stringify(declaredFlows.response_types) + ', and this ' +
         'request asks for "' + q.response_type + '" (RFC 7591 section 2).');
     }
     const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
@@ -9197,6 +10533,29 @@ class OAuth2Server {
         ? refuse(fapiCheck.errorCode, fapiCheck.error, fapiCheck.description)
         : redirectable(fapiCheck.errorCode, fapiCheck.error,
                        fapiCheck.description);
+    }
+    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505). An
+    // authorization request's or a pushed request's `resource` becomes the
+    // `aud` of every access token the grant yields, and until #505 product
+    // accepted any absolute URI there — #496's audit's remaining OAuth gap.
+    // `common/registered_targets.ts` is the one definition: this service's
+    // own resource servers, or an application registered ahead of time.
+    // RFC 8707 section 2's `invalid_target`, redirected — the client and its
+    // redirect_uri were vetted above — and asked here, ABOVE the session
+    // check, so nobody is sent to sign in for a request that was going to be
+    // refused. A malformed resource is left for the shape check after
+    // sign-in (STS-OAUTH-0154), which answers it as it always did. The token
+    // exchange's own targets are `resolveTarget()`'s. Development is
+    // unchanged.
+    const askedResources = self.parseResourceIndicators(q.resource);
+    const unregisteredResources = askedResources.error ? []
+      : RegisteredTargets.unregistered(askedResources.resources, req);
+    if (unregisteredResources.length) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A resource " +
+                "names no registered target.");
+      return redirectable('STS-OAUTH-0950', 'invalid_target',
+        'RFC 8707 section 2: the resource ' +
+        RegisteredTargets.describe(unregisteredResources));
     }
     log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). Vetted.");
     return { ok: true, q: q, types: types, registeredClient: registeredClient,
@@ -9259,7 +10618,8 @@ class OAuth2Server {
     }
     if (pushed && !jar.alg &&
         requestObject.signedRequired(client,
-                                     self.authorizationProfileOf(req))) {
+                                     self.authorizationProfileOf(req),
+                                     clientId)) {
       log.debug("Leaving OAuth2Server.pushedRequestPolicyRefusal(). Pushed " +
                 "plain, and a " +
                 "signed request object is now required.");
@@ -9371,16 +10731,33 @@ class OAuth2Server {
         // default, #139).
         verified = helpers.verifyOwnCompactJws(hint, { algorithms: [alg] });
       } else if (/^HS(256|384|512)$/.test(alg)) {
-        const registered = applications.registrationOf(clientId) || {};
-        if (!registered.client_secret) {
+        // EVERY SECRET THE CLIENT HOLDS (2026-10-01): this service signed
+        // the hint with whichever was the primary then, and a rotation since
+        // may have put another in front of it.
+        const clientConfig: Json = applications.clientConfigOf(clientId) ||
+          {};
+        const held: Json[] = clientConfig.client_secrets || [];
+        if (!held.length) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No secret.");
           return { ok: false, why: 'the id_token_hint is signed with ' + alg +
                    ' and client "' + clientId + '" has no client_secret to ' +
                    'verify it with.' };
         }
-        verified = stsCrypto.verifyCompactJws(hint,
-          Buffer.from(String(registered.client_secret), 'utf8'),
-          { algorithms: [alg] });
+        let lastError: Json = null;
+        for (const one of held) {
+          try {
+            verified = stsCrypto.verifyCompactJws(hint,
+              Buffer.from(String(one.secret), 'utf8'), { algorithms: [alg] });
+            break;
+          } catch (e) {
+            log.debug("Caught in OAuth2Server.verifyIdTokenHint(): " +
+                      ((e && e.message) || e));
+            lastError = e;
+          }
+        }
+        if (!verified) {
+          throw lastError;
+        }
       } else {
         const keys: Json[] = await allSigningKeysAsync();
         const entry = keys.filter(function (one: Json) {
@@ -9697,17 +11074,25 @@ class OAuth2Server {
     // and is answered `login_required`. `step_up.ts` decides all four.
     // -------------------------------------------------------------------------
     // OpenID Connect Registration section 2's default_max_age and
-    // default_acr_values apply where the request names neither (#120).
+    // default_acr_values apply where the request names neither (#120) — read
+    // from the client's attributes (#290), whoever set them.
     const stepUpNeed = stepUp.requirementOf(q,
-      applications.registrationOf(q.client_id));
+      applications.clientConfigOf(q.client_id));
+    // AND EVERY AUTHORIZATION DETAIL TYPE'S acr (#432 phase 6): the
+    // access-type catalogue GNAP shares declares the level a right of a type
+    // needs, and a grant of two types is a grant of both — so each is
+    // REQUIRED, beside (not instead of) `acr_values`' "any of".
+    const detailAcrs = self.detailAcrsOf(q, req);
     const stepUpHonoured = String(((req.stsJar && req.stsJar.outer) || q)
       .step_up_honoured || '') === '1';
     const promptNone = String(q.prompt || '').split(/\s+/).indexOf('none') >= 0;
     let stepUpAssessed = null;
-    if (session && !forcePrompt && stepUpNeed.present) {
+    if (session && !forcePrompt &&
+        (stepUpNeed.present || detailAcrs.length)) {
       stepUpAssessed = stepUp.assessSession(stepUpNeed, session, {
         honoured: stepUpHonoured,
-        windowS: Math.floor(authn.pendingTtlMs() / 1000)
+        windowS: Math.floor(authn.pendingTtlMs() / 1000),
+        required: detailAcrs
       });
       if (!stepUpAssessed.met && (promptNone || !stepUpAssessed.retry)) {
         const unmet = stepUp.unmetRefusal(stepUpNeed, stepUpAssessed,
@@ -9793,9 +11178,30 @@ class OAuth2Server {
       const detailsDigest = detailsPlannable &&
         richAuthorization.needsConsent(consentDetails.details)
         ? richAuthorization.digestOf(consentDetails.details) : '';
-      const detailsOutstanding = !!detailsDigest &&
-        !richAuthorization.consumeConsented((session.user || {}).username,
-                                            q.client_id, detailsDigest);
+      const detailsAllowed = detailsDigest
+        ? richAuthorization.consumeConsent((session.user || {}).username,
+                                           q.client_id, detailsDigest)
+        : null;
+      const detailsOutstanding = !!detailsDigest && !detailsAllowed;
+      // THE LIMITS THE PERSON LOWERED ON THE SCREEN (#432 phase 5) are what
+      // this authorization grants: the request's details are replaced by
+      // them for the rest of this pass, so the code — and every token and
+      // refresh minted from it — carries the lowered values.
+      // `consent_screen.ts` accepted only lower ones, and they are held to
+      // that again here against the details the client sent, because the
+      // Allow and this pass are two requests.
+      if (detailsAllowed && detailsAllowed.lowered) {
+        const raised = richAuthorization.limitsRaisedBy(
+          consentDetails.details, detailsAllowed.lowered);
+        if (raised) {
+          log.debug("Leaving the authorization endpoint. Lowered limits " +
+                    "would raise one.");
+          errorCodes.mark(res, 'STS-OAUTH-0917');
+          log.debug("Leaving OAuth2Server.authorizeEndpoint().");
+          return fail('invalid_authorization_details', raised);
+        }
+        q.authorization_details = JSON.stringify(detailsAllowed.lowered);
+      }
       if (decision.outstanding.length || detailsOutstanding) {
         // prompt=none FORBIDS ANY UI, and OIDC Core section 3.1.2.6 gives this
         // exact case its own error code. Answering `interaction_required` — the
@@ -9883,10 +11289,18 @@ class OAuth2Server {
           authorizationDetails: detailsOutstanding
             ? richAuthorization.describe(consentDetails.details) : [],
           detailsDigest: detailsOutstanding ? detailsDigest : '',
+          // The details themselves, for their limits' controls (#432 phase 5).
+          rawAuthorizationDetails: detailsOutstanding
+            ? consentDetails.details : [],
           already: decision.scopes.filter(function (one) {
             return decision.outstanding.indexOf(one) < 0;
           }),
           protocol: 'OAuth 2.0 / OIDC',
+          // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the consent
+          // screen is drawn in the languages the relying party asked for,
+          // as the sign-in screen is — from `q`, which for a request object
+          // is what was signed and not what is on the return path.
+          uiLocales: String(q.ui_locales || ''),
           details: [
             { label: 'client_id', value: q.client_id || '' },
             { label: 'scope', value: q.scope || '(none requested)' },
@@ -9897,15 +11311,25 @@ class OAuth2Server {
       log.debug("Leaving the authorization endpoint. The session stands, so " +
                 "the response goes out now.");
       // A CATCH RATHER THAN AN `async` HANDLER. That function became
-      // asynchronous when the ID Token's signature moved to the worker pool,
-      // and its return value was never used — but a promise nobody catches is a
-      // request that hangs where a throw used to be a 500, so the rejection is
-      // turned back into an answer here. Everything else in this handler still
-      // throws synchronously, which express still catches.
+      // asynchronous when the ID Token's signature moved to libuv's thread
+      // pool, and its return value was never used — but a promise nobody
+      // catches is a request that hangs where a throw used to be a 500, so the
+      // rejection is turned back into an answer here. Everything else in this
+      // handler still throws synchronously, which express still catches.
       if (stepUpAssessed) {
         stepUp.record(q.client_id, stepUpHonoured ? 'stepup.met_after_sign_in'
                                                   : 'stepup.met_by_session');
       }
+      // THE SCOPES A GLOBAL CONSENT ANSWERED FOR THIS PERSON (#537) are
+      // written down on their entry, the first time only, so
+      // `/portal/consents` can show them under Administrative consents. A
+      // scope they agreed to themselves is theirs and is not recorded here.
+      consent.noteApplied((session.user || {}).username, q.client_id,
+        (decision.scopes || []).filter(function (one: Json) {
+          return one.global && !one.consented;
+        }).map(function (one: Json) {
+          return one.scope;
+        }));
       return self.issueAuthorizationResponse(req, res, q, session.user,
                                              session.authTime, session,
                                              stepUpAssessed ? stepUpAssessed.acr
@@ -9958,7 +11382,7 @@ class OAuth2Server {
     // KEY TOO (2026-09-17): those are met by a password with a security key,
     // so the screen offers exactly that and not a one-time code, which would
     // only be refused on the way back. `step_up.screenDemandFor()`.
-    const screen = stepUp.screenDemandFor(stepUpNeed.acrValues);
+    const screen = stepUp.screenDemandWith(stepUpNeed.acrValues, detailAcrs);
     const forceMfa = !!screen.forceMfa;
     if (stepUpReauth) {
       stepUp.record(q.client_id, 'stepup.reauth_' + stepUpAssessed.reason);
@@ -9966,7 +11390,7 @@ class OAuth2Server {
                'from "' +
                (q.client_id || '') + '" (' + stepUpAssessed.reason + '), so ' +
                'the person is sent to sign in again.');
-    } else if (stepUpNeed.present) {
+    } else if (stepUpNeed.present || detailAcrs.length) {
       stepUp.record(q.client_id, 'stepup.sign_in');
     }
     // What the screen tells the person they are signing in FOR. Written here
@@ -9999,6 +11423,10 @@ class OAuth2Server {
       // identifier exactly as a protocol presented it, and one this service has
       // never heard of simply has no entry, which is not an error.
       application: q.client_id || '',
+      // OpenID Connect Core 1.0 section 3.1.2.1 (#539): the languages the
+      // relying party asks the sign-in screen to be drawn in. Honoured, where
+      // until #539 it was accepted and every page was English.
+      uiLocales: q.ui_locales || '',
       // Enterprise Extensions section 3.1 (#148): home-realm discovery.
       domainHint: q.domain_hint || ''
     }));
@@ -10014,14 +11442,22 @@ class OAuth2Server {
   // requiring that module from here would invert rule 5.
   // `head` is markup for the <head>, already escaped — the one caller that
   // passes it is the front-channel return's <meta> refresh (#122).
-  private logoutPage(inner: Json, head?: string): Json {
-    const { log } = this.deps;
+  // `t` is the page's translator (#539), and `title` the <title> as text; a
+  // refusal page passes neither and is drawn as it always was, in English.
+  private logoutPage(inner: Json, head?: string,
+                     t?: ReturnType<typeof PageLocale.forPage>,
+                     title?: string): Json {
+    const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutPage().");
     log.debug("Leaving OAuth2Server.logoutPage().");
-    return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta ' +
+    return '<!doctype html><html' +
+      (t ? PageLocale.htmlAttributes(t) : ' lang="en"') +
+      '><head><meta charset="utf-8"><meta ' +
       'name="viewport" content="width=device-width, ' +
-      'initial-scale=1"><title>Signed ' +
-      'out</title>' + (head || '') +
+      'initial-scale=1"><title>' +
+      xmlEscape(title ||
+                (t ? t.text('oauthPages.signedOut.title') : 'Signed out')) +
+      '</title>' + (head || '') +
       '<style>body{font-family:system-ui,-apple-system,"Segoe ' +
       'UI",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;' +
       'line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;' +
@@ -10068,14 +11504,18 @@ class OAuth2Server {
 
   // A sign-out answer that is a PAGE for the person (#124, gap 8): a refusal
   // was a JSON `oauthError` shown to a browser. `status` 400 for a refusal.
+  // A page that is not a refusal passes its translator and the language
+  // chooser (#539), drawn above the heading; a refusal passes neither and
+  // stays English.
   private logoutAnswer(res: Res, status: number, title: string,
-                       body: string): Json {
+                       body: string,
+                       t?: ReturnType<typeof PageLocale.forPage>,
+                       chooser?: string): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutAnswer(). " + status);
     res.status(status).type('text/html').set('Cache-Control', 'no-store')
-       .send(this.logoutPage('<h1>' + xmlEscape(title) + '</h1>' + body)
-         .replace('<title>Signed out</title>',
-                  '<title>' + xmlEscape(title) + '</title>'));
+       .send(this.logoutPage((chooser || '') + '<h1>' + xmlEscape(title) +
+                             '</h1>' + body, '', t, title));
     log.debug("Leaving OAuth2Server.logoutAnswer().");
     return undefined;
   }
@@ -10160,8 +11600,9 @@ class OAuth2Server {
   //      a cookie clear. The page has a real button and no script;
   //   5. only then the session ends, and the return carries `state`.
   //
-  // `ui_locales` is accepted and English is the only language this service
-  // has, so every page is `lang="en"`, which section 2 permits.
+  // `ui_locales` is honoured since #539 (section 2's "End-User's preferred
+  // languages and scripts for the user interface"): the confirmation and
+  // signed-out pages are drawn in it; a refusal stays English.
   // ---------------------------------------------------------------------------
   private logoutEndpoint(req: Req, res: Res): Json {
     const { log, validation, errorCodes, xmlEscape } = this.deps;
@@ -10282,12 +11723,26 @@ class OAuth2Server {
       String((req.headers || {}).cookie || ''));
     const confirmed = req.method === 'POST' && q.confirm === 'yes' &&
       String(q.confirm_for || '') === self.logoutConfirmFor(session);
+    // THE LANGUAGE (#539): RP-Initiated Logout 1.0 section 2's `ui_locales`,
+    // the client (named, or the id_token_hint's), and the person signed in.
+    // Built before the session ends, so the page after it still knows whose
+    // language it was.
+    const t = self.pageTranslator(req, clientId, String(q.ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    // The chooser on a page drawn once the request has been ACTED on returns
+    // to the front door: asking for the sign-out again would act again (a
+    // second pass of a declined one is a fresh confirmation, of a finished
+    // one a redirect to the client), not redraw the page.
+    const frontDoor = PageLocale.chooser(t, realms.currentPrefix(),
+                                         realms.currentPrefix() + '/');
     if (req.method === 'POST' && q.confirm === 'no') {
       log.debug("Leaving OAuth2Server.logoutRequest(). Declined.");
-      return self.logoutAnswer(res, 200, 'You are still signed in',
-        '<p>Nothing was ended.</p>' + (returnTo
-          ? '<p><a href="' + xmlEscape(returnTo) + '">Return to the ' +
-            'application</a></p>' : ''));
+      return self.logoutAnswer(res, 200,
+        t.text('oauthPages.logout.stillTitle'),
+        '<p>' + t.html('oauthPages.logout.nothingEnded') + '</p>' + (returnTo
+          ? '<p><a href="' + xmlEscape(returnTo) + '">' +
+            t.html('oauthPages.logout.returnToApp') + '</a></p>' : ''),
+        t, frontDoor);
     }
     const hintIsThisSession = !!(hinted && session && hinted.sid &&
                                  String(hinted.sid) === String(session.id));
@@ -10297,7 +11752,7 @@ class OAuth2Server {
       (!session && req.method === 'POST' && !cookiePresented));
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
-      return self.logoutConfirmPage(res, q, session, client);
+      return self.logoutConfirmPage(req, res, q, session, client, t);
     }
     // --- 5. the sign-out ---------------------------------------------------
     // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -10306,50 +11761,70 @@ class OAuth2Server {
     const backchannelMark = backchannel.mark();
     const ended = endSession(req, res);
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
-                             refusedNote);
+                             refusedNote, t, frontDoor);
   }
 
   // The page that asks (#124, #115). A real form that POSTs back here with
   // the request's own parameters and the value only this session's page can
   // carry; no script (the root CLAUDE.md: a form needs none).
-  private logoutConfirmPage(res: Res, q: Json, session: Json,
-                            client: Json): Json {
+  private logoutConfirmPage(req: Req, res: Res, q: Json, session: Json,
+                            client: Json,
+                            t: ReturnType<typeof PageLocale.forPage>): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
-    const carried = ['post_logout_redirect_uri', 'client_id',
-                     'id_token_hint', 'state', 'logout_hint', 'ui_locales']
+    const names = ['post_logout_redirect_uri', 'client_id',
+                   'id_token_hint', 'state', 'logout_hint', 'ui_locales']
       .filter(function (name: string): boolean {
         return q[name] !== undefined && q[name] !== '';
-      }).map(function (name: string): string {
+      });
+    const carried = names.map(function (name: string): string {
         return '<input type="hidden" name="' + name + '" value="' +
                xmlEscape(String(q[name])) + '">';
       }).join('');
     const who = session && session.user ? session.user.username : '';
     const app = client && client.known
       ? (client.client_name || client.client_id) : (q.client_id || '');
+    // THE CHOOSER'S RETURN (#539): a GET of the same request redraws this
+    // page, since nothing has been ended yet. A page drawn by a POST (a
+    // cross-site form without the cookie) names the GET with the same
+    // parameters, which section 2 allows as well.
+    const query = new URLSearchParams();
+    names.forEach(function (name: string): void {
+      query.set(name, String(q[name]));
+    });
+    const chooser = PageLocale.chooser(t, realms.currentPrefix(),
+      PageLocale.herePath(realms.currentPrefix() + this.asPathOf(req) +
+                          '/oauth2/logout' +
+                          (names.length ? '?' + query.toString() : '')));
+    // Four sentences rather than one assembled from pieces: word order
+    // differs between the languages.
+    const params = { app: String(app), who: who };
+    const ask = app
+      ? (who ? t.html('oauthPages.logout.askAppWho', params)
+             : t.html('oauthPages.logout.askApp', params))
+      : (who ? t.html('oauthPages.logout.askWho', params)
+             : t.html('oauthPages.logout.ask'));
     log.debug("Leaving OAuth2Server.logoutConfirmPage().");
-    return this.logoutAnswer(res, 200, 'Sign out?',
-      '<p>' + (app
-        ? 'The application <code>' + xmlEscape(String(app)) + '</code> '
-        : 'An application ') + 'asked to sign you out' +
-      (who ? ' of <strong>' + xmlEscape(who) + '</strong>' : '') +
-      '. This ends your session here, and every application signed in ' +
-      'through it is told.</p>' +
+    return this.logoutAnswer(res, 200, t.text('oauthPages.logout.confirmTitle'),
+      '<p>' + ask + '</p>' +
       '<form method="post" action="logout">' + carried +
       '<input type="hidden" name="confirm_for" value="' +
       xmlEscape(this.logoutConfirmFor(session)) + '">' +
-      '<button type="submit" name="confirm" value="yes">Sign out</button> ' +
-      '<button type="submit" name="confirm" value="no">Stay signed in' +
-      '</button></form><p class="sub">Asked because the request did not ' +
-      'prove it came from an application you are signed in to with this ' +
-      'session (RP-Initiated Logout 1.0 section 2).</p>');
+      '<button type="submit" name="confirm" value="yes">' +
+      t.html('oauthPages.logout.signOut') + '</button> ' +
+      '<button type="submit" name="confirm" value="no">' +
+      t.html('oauthPages.logout.stay') +
+      '</button></form><p class="sub">' + t.html('oauthPages.logout.why') +
+      '</p>', t, chooser);
   }
 
   // After the session has ended: the front-channel page, the return, or a
   // page saying it is done.
   private logoutFinish(req: Req, res: Res, session: Json,
                        backchannelMark: Json, returnTo: string,
-                       refusedNote: string): Json {
+                       refusedNote: string,
+                       t: ReturnType<typeof PageLocale.forPage>,
+                       chooser: string): Json {
     const { log, xmlEscape, frontchannel, backchannel, config } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.logoutFinish().");
@@ -10369,29 +11844,27 @@ class OAuth2Server {
       // unregistered URI and then printed it as a link on its own sign-out
       // page would be splitting a hair at the reader's expense.
       const checked = returnTo;
-      const inner = '<h1>Signed out</h1><p class="sub">OpenID Connect ' +
-        'RP-Initiated Logout 1.0, with Front-Channel Logout 1.0</p><div ' +
+      // The front- and back-channel tables are those modules' own markup,
+      // and English (#539).
+      const inner = chooser + '<h1>' +
+        t.html('oauthPages.signedOut.heading') + '</h1><p class="sub">' +
+        t.html('oauthPages.signedOut.frontSub') + '</p><div ' +
         'class="ok">' + (session
-          ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-            'ended. It is the session WS-Federation and SAML 2.0 share, so ' +
-            'those are signed out too.'
-          : 'There was no session to end. The cookie has been cleared ' +
-            'anyway.') +
+          ? t.html('oauthPages.signedOut.frontEnded',
+                   { username: session.user.username })
+          : t.html('oauthPages.signedOut.frontNone')) +
         '</div>' + refusedNote +
         frontchannel.render(notifications) +
         backchannel.render(backchannelRows) +
         (checked
-          ? '<h2>Return to the relying party</h2><p><a href="' +
+          ? '<h2>' + t.html('oauthPages.signedOut.returnHeading') +
+            '</h2><p><a href="' +
             xmlEscape(checked) + '">' +
             xmlEscape(checked) + '</a></p><p class="sub">' +
             (waitS > 0
-              ? 'This page returns there by itself after ' + waitS +
-                ' second' + (waitS === 1 ? '' : 's') + ', once the ' +
-                'notifications above have had time to load; the link is ' +
-                'for a browser that does not follow a refresh.'
-              : 'A link and not a redirect: the notifications above load ' +
-                'with this page, and a 302 would abandon them before they ' +
-                'were sent.') + '</p>'
+              ? t.html('oauthPages.signedOut.returnAuto',
+                       { seconds: waitS })
+              : t.html('oauthPages.signedOut.returnLink')) + '</p>'
           : '');
       // SECTION 4's RETURN (#122, 2026-09-22). The specification has the
       // provider send the browser on to post_logout_redirect_uri once the
@@ -10408,7 +11881,7 @@ class OAuth2Server {
       res.status(200)
          .type('text/html')
          .set('Cache-Control', 'no-store')
-         .send(self.logoutPage(inner, refresh));
+         .send(self.logoutPage(inner, refresh, t));
       log.debug("Leaving OAuth2Server.logoutFinish(). " + notifiable.length + " " +
                 "relying part" +
                 (notifiable.length === 1 ? 'y was' : 'ies were') +
@@ -10420,13 +11893,13 @@ class OAuth2Server {
       return res.redirect(302, returnTo);
     }
     log.debug("Leaving OAuth2Server.logoutFinish().");
-    return self.logoutAnswer(res, 200, 'Signed out',
+    return self.logoutAnswer(res, 200, t.text('oauthPages.signedOut.title'),
       '<div class="ok">' + (session
-        ? 'The session for ' + xmlEscape(session.user.username) + ' has ' +
-          'ended, and every application signed in through it is told.'
-        : 'There was no session to end.') + '</div>' + refusedNote +
+        ? t.html('oauthPages.signedOut.ended',
+                 { username: session.user.username })
+        : t.html('oauthPages.signedOut.none')) + '</div>' + refusedNote +
       backchannel.render(backchannel.deliveriesFor(
-        session ? [session.id] : [], backchannelMark)));
+        session ? [session.id] : [], backchannelMark)), t, chooser);
   }
 
   // ---------------------------------------------------------------------------
@@ -10628,7 +12101,7 @@ class OAuth2Server {
   // `userinfo_signing_alg_values_supported`, which advertises all eleven
   // post-quantum and composite algorithms — and an SLH-DSA-SHAKE-128s signature
   // took 14.6 and 15.4 seconds on 2026-08-29, during which this service
-  // answered nobody at all. See common/worker.js. Every other algorithm
+  // answered nobody at all. See common/pq_native.js. Every other algorithm
   // resolves without leaving this process; signJwtAsAsync() decides which is
   // which, not this endpoint.
   private async signUserinfo(body: Json, alg: Json, registered: Json,
@@ -10644,12 +12117,8 @@ class OAuth2Server {
     // WHICH KEY signs which algorithm is helpers.js's answer and not this
     // endpoint's — see signJwtAs(). It was written out here first and the ID
     // Token endpoint would have copied it.
-    //
-    // `session` is the pool's routing hint: this token's own `sub`, so that one
-    // person's signatures queue behind each other rather than across the pool.
     const signed = await signJwtAsAsync(payload, alg, registered.client_secret,
-                                        { session: claims.sub,
-                                          certificateHeader: 'userinfo' });
+                                        { certificateHeader: 'userinfo' });
     log.debug("Leaving OAuth2Server.signUserinfo().");
     return signed;
   }
@@ -10693,13 +12162,13 @@ class OAuth2Server {
         USERINFO_SIGNING_ALGS.join(', ') + ' (see ' +
         'userinfo_signing_alg_values_supported).');
     }
-    if (encAlg && stsCrypto.JWE_ASYMMETRIC_ALGS.indexOf(encAlg) === -1) {
+    if (encAlg && helpers.offeredJweAlgs().indexOf(encAlg) === -1) {
       log.debug("Leaving OAuth2Server.protectUserinfo(). Unsupported " +
                 "encryption alg.");
       throw new Error('This client registered ' +
         'userinfo_encrypted_response_alg="' +
         encAlg + '" and this service encrypts a UserInfo response with ' +
-        stsCrypto.JWE_ASYMMETRIC_ALGS.join(', ') + ' (see ' +
+        helpers.offeredJweAlgs().join(', ') + ' (see ' +
         'userinfo_encryption_alg_values_supported). The symmetric algorithms ' +
         'in this service\'s JWE table are for a document encrypted TO it, ' +
         'where both ends hold the key; there is no shared key here, only the ' +
@@ -10895,8 +12364,13 @@ class OAuth2Server {
     // -----------------------------------------------------------------------
     const body: Json = {};
 
-    const configured = stats.jwtClaims(
-      'userinfo', self.customClaimContext(base, claims, user));
+    // Gated by the token's scope (#395): a section 5.4 claim in the
+    // configured set is answered only when its scope was granted. A token
+    // UserInfo accepts is for this service's own resource server, which keeps
+    // the OpenID Connect scopes on its scope claim (RFC 9068's plan).
+    const configured = scopeClaims.gate(
+      stats.jwtClaims('userinfo', self.customClaimContext(base, claims, user)),
+      claims.scope, 'UserInfo response');
     Object.assign(body, configured);
     if (Object.keys(configured).length) {
       log.debug("userinfoResponse(): " + Object.keys(configured).length +
@@ -10948,7 +12422,9 @@ class OAuth2Server {
     // client already did here, so the two features meet where they should:
     // register asking for a signed or encrypted response and this endpoint
     // starts producing one for that client. See protectUserinfo() above.
-    const registered = applications.registrationOf(claims.client_id) || {};
+    // Read from the ATTRIBUTES since #290, so a client the console or the
+    // management API configured is answered the same way.
+    const registered: Json = applications.clientConfigOf(claims.client_id);
     // A PROMISE CHAIN RATHER THAN AN `async` HANDLER, deliberately. Everything
     // above this line throws synchronously on a defect and express catches a
     // synchronous throw out of a handler; an `async function` turns every one
@@ -11004,90 +12480,6 @@ class OAuth2Server {
       self.oauthError(res, 500, 'server_error', e.message);
     });
     log.debug("Leaving OAuth2Server.userinfoResponse(). Answering.");
-  }
-
-  // ---------------------------------------------------------------------------
-  // GET|POST /oauth2/step-up/resource/{application} — RFC 9470's STAND-IN
-  // RESOURCE (2026-09-13).
-  //
-  // NON-SPEC, AND IT IS THE RESOURCE SERVER HALF OF A SPECIFICATION WHOSE OTHER
-  // HALF IS HERE. A registered API declares what it requires of the
-  // authentication behind a token (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`)
-  // and this answers FOR it: the token must verify, be an `at+jwt` from an
-  // authorization server this service publishes, and be addressed to that
-  // application (RFC 9068 section 4, with step 4 asked of the application);
-  // then section 3's question, whose "no" is the 401 challenge a client turns
-  // into an authorization request. Its "yes" is 200 and what it decided on.
-  //
-  // It exists because the real API is somebody else's process: a client
-  // developer testing a step-up flow against this service needs a resource that
-  // challenges, and an operator configuring a requirement on an entry needs to
-  // see what that requirement does to a token without deploying the API. It
-  // holds no data and grants nothing — the body is the token's own claims about
-  // authentication, read back to the person who presented it.
-  //
-  // **THE APPLICATION IS NAMED BY ITS REGISTRY IDENTIFIER OR ITS client_id**,
-  // the two spellings `/admin/applications` shows. One that names no entry is
-  // 404; an entry requiring nothing answers every valid token 200, and says so.
-  // ---------------------------------------------------------------------------
-  private stepUpResource(req: Req, res: Res): Json {
-    const { log, STS, dpop, applications, errorCodes, stepUp } = this.deps;
-    const self = this;
-    log.debug("Entering OAuth2Server.stepUpResource().");
-    res.set('Cache-Control', 'no-store');
-    const id = String(req.params.application || '');
-    const entry = applications.get(id) || applications.forClientId(id);
-    if (!entry) {
-      log.debug("Leaving OAuth2Server.stepUpResource(). No such application.");
-      errorCodes.mark(res, 'STS-OAUTH-0505');
-      return self.oauthError(res, 404, 'invalid_request', 'No application "' +
-        id.slice(0, 200) + '" is registered in this realm, so there is no ' +
-        'resource here to answer for it. The path names an application by ' +
-        'its ' +
-        'identifier or client_id, as /admin/applications lists it.');
-    }
-    const requirement = applications.stepUpRequirementOf(entry);
-    const presented = dpop.presentedAccessToken(req, res, 'the step-up ' +
-      'resource for "' + entry.identifier + '"', {
-      requireVerified: true,
-      audience: {
-        label: 'the application "' + entry.identifier + '"',
-        names: function (audiences) {
-          log.debug("Entering names().");
-          log.debug("Leaving names().");
-          return applications.audienceNamesEntry(entry, audiences);
-        }
-      },
-      stepUp: requirement
-    });
-    if (!presented) {
-      log.debug("Leaving OAuth2Server.stepUpResource(). The token was " +
-                "refused or " +
-                "challenged.");
-      return undefined;
-    }
-    const claims = presented.claims || {};
-    const now = Math.floor(Date.now() / 1000);
-    res.status(200).type('application/json').send(JSON.stringify({
-      resource: entry.identifier,
-      requirement: {
-        acr_values: requirement.acrValues.join(' ') || null,
-        max_age: requirement.maxAge
-      },
-      met: true,
-      token: {
-        client_id: claims.client_id || null,
-        sub: claims.sub || null,
-        acr: claims.acr || null,
-        amr: claims.amr || null,
-        auth_time: claims.auth_time || null,
-        authenticated_seconds_ago: claims.auth_time
-          ? now - Number(claims.auth_time) : null,
-        scheme: presented.scheme
-      }
-    }, null, 2));
-    log.debug("Leaving OAuth2Server.stepUpResource(). Met.");
-    return undefined;
   }
 
   // --- what became of an authorization code
@@ -11150,6 +12542,11 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.rememberRedemption().");
     self.forgetStaleRedemptions();
+    // Presented again while this redemption was being answered (#424): what
+    // it issues is revoked as it is recorded — two holders, and this server
+    // cannot tell which is the client (RFC 6749 section 10.5).
+    const prior = redeemedCodes.get(code);
+    const presentedAgain = !!(prior && prior.presentedAgainAt);
     // The bound (oauth2.redeemedCodeCacheSize). What this remembers is a
     // courtesy — the same request answered with the same tokens — and not the
     // refusal, which the code's own removal at redemption already makes, so
@@ -11172,6 +12569,17 @@ class OAuth2Server {
       fingerprint: fingerprint,
       response: issued
     });
+    if (presentedAgain) {
+      self.issuedJtis(issued).forEach(function (jti) {
+        self.deps.stats.revoke(jti, 'RFC 9700 section 4.5: an authorization ' +
+                               'code was presented twice',
+                               { initiatingEntity: 'policy',
+                                 replay: 'authorization-code-replay' });
+      });
+      log.warn('oauth2: an authorization code was presented again while its ' +
+               'first presentation was being answered; the tokens that ' +
+               'presentation issued are revoked (RFC 6749 section 10.5).');
+    }
     log.debug("Leaving OAuth2Server.rememberRedemption(). The tokens for " +
               "this code are replayable until " +
               new Date(record.expires).toISOString() + ".");
@@ -11195,6 +12603,108 @@ class OAuth2Server {
     }
     log.debug("Leaving OAuth2Server.describeUptime().");
     return Math.round(seconds / 3600) + ' hour(s)';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE FIRST PRESENTATION SPENDS THE CODE (#424, 2026-10-02).
+  //
+  // rcbj: "The caller can only submit a request with that authorization code
+  // once. Then, they have to start the flow / grant over again." So a Token
+  // Request with grant_type=authorization_code takes its code out of the live
+  // map, and claims it across the cluster for good, BEFORE anything about the
+  // request is checked — the body's shape, client authentication (rcbj's
+  // answer: a request failing client authentication burns it too), every
+  // grant check, the issuance gate. A record is left in `redeemedCodes`
+  // saying it was presented, which the successful redemption replaces with
+  // the tokens it issued; a second presentation finds one or the other and is
+  // refused — revoking what the first bought, where it bought anything.
+  //
+  // Not where redemption is relaxed (`bcp.codeRedemptionRelaxed()`:
+  // `oauth2.codeReplayIdempotent`, outside RFC 9700 mode): there the code is
+  // spent only when tokens are issued, as before.
+  // ---------------------------------------------------------------------------
+  /**
+   * Spends the authorization code a Token Request carries, before anything
+   * about the request is checked.
+   *
+   * @param raw - the request body as parsed, before validation
+   * @returns `{ code, record, claim }` — the record null where no live code
+   *   was held — or null where nothing is spent here
+   */
+  private async spendPresentedCode(raw: Json): Promise<Json> {
+    const { log, bcp, clusterClaims } = this.deps;
+    const self = this;
+    log.debug("Entering OAuth2Server.spendPresentedCode().");
+    const code = typeof raw.code === 'string' ? raw.code : '';
+    if (String(raw.grant_type || '') !== 'authorization_code' || !code ||
+        bcp.codeRedemptionRelaxed()) {
+      log.debug("Leaving OAuth2Server.spendPresentedCode(). Nothing spent.");
+      return null;
+    }
+    const record = authzCodes.get(code) || null;
+    if (!record) {
+      log.debug("Leaving OAuth2Server.spendPresentedCode(). No live code.");
+      return { code: code, record: null, claim: null };
+    }
+    // The record of the presentation goes in WITH the removal, in the same
+    // tick, before the claim is awaited: a second request arriving while the
+    // claim is asked must find it, or it would see neither the code nor the
+    // presentation, and what the first goes on to issue would not be revoked.
+    authzCodes.delete(code);
+    if (!redeemedCodes.has(code)) {
+      self.forgetStaleRedemptions();
+      cacheRegistry.makeRoom(redeemedCodes,
+                             Number(self.deps.config.value(
+                               'oauth2.redeemedCodeCacheSize')),
+                             { counter: redeemedCodesCount });
+      redeemedCodes.set(code, {
+        when: Date.now(), expires: record.expires,
+        forget: record.expires + (record.ttlMs || AUTH_CODE_TTL_MS),
+        ttlMs: record.ttlMs || AUTH_CODE_TTL_MS,
+        client_id: record.client_id || '', fingerprint: null, response: null
+      });
+    }
+    const claim = await clusterClaims.claim({
+      scope: 'oauth.code', value: code, ttlMs: self.codeClaimTtlMs(record)
+    });
+    log.debug("Leaving OAuth2Server.spendPresentedCode(). Spent; claim " +
+              (claim.ok ? 'held' : 'refused (' + claim.reason + ')') + ".");
+    return { code: code, record: record, claim: claim };
+  }
+
+  // The jtis of a token set this service issued, to revoke it: `jwt.decode`
+  // rather than `jwt.verify`, because these are this service's own tokens read
+  // back out of its own store and the signature was made two lines after
+  // they were minted.
+  private issuedJtis(response: Json): string[] {
+    const { log, jwt, errorCodes, refreshTokenCrypto } = this.deps;
+    log.debug("Entering OAuth2Server.issuedJtis().");
+    log.debug("Leaving OAuth2Server.issuedJtis().");
+    const done = { response: response };
+    return ['access_token', 'refresh_token', 'id_token'].map(
+          function (name) {
+        const token = done.response && done.response[name];
+        if (!token) {
+          return '';
+        }
+        try {
+          // The refresh token in the set is ENCRYPTED; `claimsOfIssued()` opens
+          // it and reads a JWS unchanged.
+          const claims = refreshTokenCrypto.isEncrypted(token)
+            ? refreshTokenCrypto.claimsOfIssued(token)
+            : jwt.decode(token);
+          return (claims && claims.jti) || '';
+        } catch (e) {
+          // Not decodable, which cannot happen for a token this service minted
+          // — but a jti that cannot be read is a token that cannot be revoked,
+          // and silently revoking nothing would be worse than saying so.
+          log.error(errorCodes.tag('STS-OAUTH-0190') + 'could not read the ' +
+                                                       'jti of ' +
+                                                       'the ' + name + ' ' +
+              'issued for this code: ' + e.message);
+          return '';
+        }
+      });
   }
 
   // A code the live map does not hold. Either it was redeemed here — in which
@@ -11229,7 +12739,33 @@ class OAuth2Server {
         'different authorization server.');
     }
     const ago = Math.max(0, Math.round((Date.now() - done.when) / 1000));
-    const differs = self.redemptionDifference(done.fingerprint, fingerprint);
+    // PRESENTED, AND NOTHING ISSUED FOR IT (#424): the first presentation was
+    // refused — or is still being answered. A code is presented once, so this
+    // one is refused too, and the flow starts over.
+    if (!done.response) {
+      // A SECOND PRESENTATION WHILE THE FIRST IS STILL BEING ANSWERED: noted
+      // on the record, so that a first presentation which goes on to redeem
+      // the code revokes what it issued (RFC 6749 section 10.5), as a replay
+      // after a redemption does. See `rememberRedemption()`.
+      done.presentedAgainAt = Date.now();
+      redeemedCodes.set(code, done);
+      log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). The code " +
+                "was presented once already and redeemed nothing.");
+      errorCodes.mark(res, 'STS-OAUTH-0789');
+      return self.oauthError(res, 400, 'invalid_grant',
+        'This authorization code was already presented ' + ago + ' second(s) ' +
+        'ago' + (done.client_id ? ' for client "' + done.client_id + '"' : '') +
+        ', and that Token Request did not redeem it. An authorization code ' +
+        'may be presented once, whatever that request\'s outcome (RFC 6749 ' +
+        'section 4.1.2): start a new authorization request.');
+    }
+    // WHERE REDEMPTION IS NOT RELAXED (#424, the default) a second
+    // presentation of a redeemed code is refused and what it bought revoked,
+    // whatever the request looks like: the two sentences below are the
+    // relaxed redemption's, which tell a repeat from a different request.
+    const relaxed = bcp.codeRedemptionRelaxed();
+    const differs = relaxed
+      ? self.redemptionDifference(done.fingerprint, fingerprint) : '';
     if (differs) {
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). The " +
                 differs +
@@ -11244,7 +12780,7 @@ class OAuth2Server {
         'in ' + differs + ', so it is refused (RFC 6749 section 4.1.2: an ' +
         'authorization code is single use).');
     }
-    if (done.expires < Date.now()) {
+    if (relaxed && done.expires < Date.now()) {
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). The code " +
                 "was redeemed and " +
                 "its own lifetime has since run out.");
@@ -11273,30 +12809,7 @@ class OAuth2Server {
     // minted.
     const replay = bcp.checkCodeReplay({
       clientId: done.client_id, secondsAgo: ago,
-      issuedJtis: ['access_token', 'refresh_token', 'id_token'].map(
-          function (name) {
-        const token = done.response && done.response[name];
-        if (!token) {
-          return '';
-        }
-        try {
-          // The refresh token in the set is ENCRYPTED; `claimsOfIssued()` opens
-          // it and reads a JWS unchanged.
-          const claims = refreshTokenCrypto.isEncrypted(token)
-            ? refreshTokenCrypto.claimsOfIssued(token)
-            : jwt.decode(token);
-          return (claims && claims.jti) || '';
-        } catch (e) {
-          // Not decodable, which cannot happen for a token this service minted
-          // — but a jti that cannot be read is a token that cannot be revoked,
-          // and silently revoking nothing would be worse than saying so.
-          log.error(errorCodes.tag('STS-OAUTH-0190') + 'could not read the ' +
-                                                       'jti of ' +
-                                                       'the ' + name + ' ' +
-              'issued for this code: ' + e.message);
-          return '';
-        }
-      })
+      issuedJtis: self.issuedJtis(done.response)
     });
     if (!replay.ok) {
       (replay.revoke || []).forEach(function (jti) {
@@ -11377,13 +12890,19 @@ class OAuth2Server {
                 'code could not be spent because the claim store could not ' +
                 'be asked (' + (answer.why || 'no reason given') + '); the ' +
                 'Token Request is refused and the code is left unspent.');
-      errorCodes.mark(res, 'STS-OAUTH-0513');
       log.debug("Leaving OAuth2Server.refuseConcurrentRedemption(). The " +
                 "store failed.");
+      // Where the code was spent at its presentation (#424, the default) it
+      // is gone from this node whatever the store said, so the client is
+      // told to start over rather than to retry.
+      errorCodes.mark(res, 'STS-OAUTH-0513');
       return self.oauthError(res, 500, 'server_error',
         'This authorization server could not record that the authorization ' +
-        'code is being redeemed, so it has not redeemed it. The code has not ' +
-        'been spent; retry the Token Request.');
+        'code is being redeemed, so it has not redeemed it. ' +
+        (this.deps.bcp.codeRedemptionRelaxed()
+          ? 'The code has not been spent; retry the Token Request.'
+          : 'An authorization code may be presented once, so start a new ' +
+            'authorization request.'));
     }
     log.warn('oauth2: an authorization code is being redeemed by another ' +
              'request at the same moment' +
@@ -11424,7 +12943,7 @@ class OAuth2Server {
   // registered, and a `private_key_jwt` client assertion signed with one. Both
   // take SECONDS of pure computation, and until they were moved to the worker
   // pool this service answered nothing at all — not another caller, not the KDC
-  // on port 88 — for the length of each. See common/worker.js.
+  // on port 88 — for the length of each. See common/pq_native.js.
   //
   // It is registered through a wrapper that catches, at the foot of this
   // section: an `async` handler's throw is a rejected promise, which express 4
@@ -11444,6 +12963,100 @@ class OAuth2Server {
   // PEP's sentence — it names the application, the roles required and the roles
   // held — because a client that cannot see why is a client whose operator
   // files a bug against this service.
+  // ---------------------------------------------------------------------------
+  // WHAT A BACK-CHANNEL REQUEST NAMES, AND WHERE IT IS SERVED (#98 D10). Read
+  // from the parsed body and NEVER verified here: this decides only which
+  // cell verifies it. A refresh token is opened (the realm key is the global
+  // tier's, so every cell can) for its `jti`, and nothing else is read from
+  // it; a JWT's `jti` is read off its payload. Resolves true when the request
+  // was relayed and must not be served here.
+  // ---------------------------------------------------------------------------
+  /**
+   * Relays a token, introspection, revocation or CIBA request to the cell
+   * that holds what it names.
+   *
+   * @param req - the request, its body parsed
+   * @param res - the response
+   * @returns a promise of true when the request was relayed
+   */
+  async placeBackChannel(req: Req, res: Res): Promise<boolean> {
+    const { log, refreshTokenCrypto, parseBody } = this.deps;
+    log.debug("Entering OAuth2Server.placeBackChannel().");
+    // THE BODY IS PARSED HERE, as every handler behind this parses it:
+    // `app.js` leaves `req.body` the raw TEXT (common/helpers.js,
+    // `parseBody()`), so `req.body.grant_type` was undefined and nothing was
+    // ever placed — the second of the two reasons no code reached the cell
+    // that minted it (2026-09-28, the `cells` mode's first run).
+    const body = req.body && typeof req.body === 'object' &&
+      !Buffer.isBuffer(req.body) ? req.body : (parseBody(req) || {});
+    const jtiOf = function (token: string): string {
+      let text = String(token || '');
+      try {
+        if (text.split('.').length === 5 &&
+            refreshTokenCrypto.isEncrypted(text)) {
+          text = refreshTokenCrypto.open(text);
+        }
+        const parts = text.split('.');
+        if (parts.length !== 3) {
+          return text;
+        }
+        const claims = JSON.parse(Buffer.from(parts[1], 'base64url')
+          .toString('utf8'));
+        return String((claims && claims.jti) || '');
+      } catch (e) {
+        log.debug("Caught in OAuth2Server.placeBackChannel(): " +
+                  ((e && e.message) || e));
+        return '';
+      }
+    };
+    // THE MOUNT PATH IS PUT BACK. This runs under `app.use([...paths])`, and
+    // express takes the mount off `req.path` — `/oauth2/token` arrives as
+    // `/` with the path in `req.baseUrl` — so reading `req.path` alone
+    // matched none of the branches below, and no code, refresh token or
+    // CIBA id presented at another cell was ever relayed to the cell that
+    // minted it (found by the `cells` mode's first run, 2026-09-28,
+    // tests/vendored/sts_cells_traveller.js).
+    const path = (String(req.baseUrl || '') + String(req.path || ''))
+      .replace(/\/+$/, '');
+    let artifact = '';
+    let reason = '';
+    if (/\/token$/.test(path)) {
+      const grant = String(body.grant_type || '');
+      reason = 'token:' + grant;
+      artifact = grant === 'authorization_code' ? String(body.code || '')
+        : grant === 'urn:ietf:params:oauth:grant-type:device_code'
+          ? String(body.device_code || '')
+          : grant === 'urn:openid:params:grant-type:ciba'
+            ? String(body.auth_req_id || '')
+            : grant === 'urn:ietf:params:oauth:grant-type:pre-authorized_code'
+              ? String(body['pre-authorized_code'] || '')
+              : grant === 'refresh_token'
+                ? jtiOf(String(body.refresh_token || ''))
+                : grant === 'urn:ietf:params:oauth:grant-type:token-exchange'
+                  ? jtiOf(String(body.subject_token || ''))
+                  : '';
+      if (!artifact && grant === 'password' && body.username) {
+        log.debug("Leaving OAuth2Server.placeBackChannel(). A password.");
+        return cellPlacement.relayToHome(req, res, realms.currentId(), 'name',
+                                         String(body.username), reason);
+      }
+    } else if (/\/(introspect|revoke)$/.test(path)) {
+      reason = path.slice(path.lastIndexOf('/') + 1);
+      artifact = jtiOf(String(body.token || ''));
+    } else if (/\/bc-authorize$/.test(path)) {
+      const hint = String(body.login_hint || '');
+      log.debug("Leaving OAuth2Server.placeBackChannel(). A CIBA request.");
+      return hint ? cellPlacement.relayToHome(req, res, realms.currentId(),
+                                              'name', hint, 'ciba')
+                  : false;
+    }
+    const relayed = artifact
+      ? cellPlacement.relayIfElsewhere(req, res, artifact, reason) : false;
+    log.debug("Leaving OAuth2Server.placeBackChannel(). " +
+              (relayed ? 'Relayed.' : 'Here.'));
+    return relayed;
+  }
+
   private async tokenEndpoint(req: Req, res: Res): Promise<Json> {
     const { log, STS, errorCodes } = this.deps;
     const self = this;
@@ -11637,12 +13250,30 @@ class OAuth2Server {
   private secretPresented(presented: Json, registered: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.secretPresented().");
-    const method = String((registered &&
-                           registered.token_endpoint_auth_method) ||
-                          '');
+    // Any of the declared methods (2026-10-01): an assertion from a client
+    // that may use client_secret_jwt may be one signed with its secret.
+    const methods = [].concat((registered &&
+      (registered.token_endpoint_auth_methods ||
+       [registered.token_endpoint_auth_method])) || []).map(String);
     log.debug("Leaving OAuth2Server.secretPresented().");
     return !!(presented.basic || presented.bodySecret ||
-              (presented.assertion && method === 'client_secret_jwt'));
+              (presented.assertion &&
+               methods.indexOf('client_secret_jwt') >= 0));
+  }
+
+  // WHICH OF THE CLIENT'S DECLARED METHODS THIS REQUEST PRESENTED
+  // (2026-10-01): an entry may declare several, and the advertised-methods
+  // check is about the one in use, which `client_auth.methodFor()` reads off
+  // the wire. A client declaring one method gets that method, as before.
+  private presentedMethodOf(req: Req, client: Json, registered: Json): string {
+    const { log, clientAuth } = this.deps;
+    log.debug("Entering OAuth2Server.presentedMethodOf().");
+    const method = clientAuth.methodFor(registered || {}, {
+      request: req, clientSecret: client && client.client_secret,
+      assertion: client && client.assertion,
+      assertionType: client && client.assertionType });
+    log.debug("Leaving OAuth2Server.presentedMethodOf(). " + method);
+    return String(method || '');
   }
 
   // **COUNTED IN THE CLUSTER'S SHARED WINDOW SINCE 2026-09-14 (#46)**, and
@@ -11714,7 +13345,7 @@ class OAuth2Server {
   }
 
   private async tokenGrant(req: Req, res: Res): Promise<Json> {
-    const { crypto, stsCrypto, log, logArtifact, STS, b64u, jsonFromB64u,
+    const { stsCrypto, log, logArtifact, STS, b64u, jsonFromB64u,
             parseBody, bodyValues, userFor, dpop, mtls, assertionGrant,
             samlAssertionGrant, mode, authorizationServers, stats, VCI_SCOPE,
             deferredAccessTokens, preAuthorizedCodes, checkTxCode,
@@ -11727,6 +13358,11 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering the token endpoint.");
     const base = self.asBaseOf(req);
+    // AN AUTHORIZATION CODE IS SPENT AT ITS FIRST PRESENTATION (#424), before
+    // anything about the request is checked — its shape, the client's
+    // authentication, every grant check — so a request refused for any reason
+    // has used the code up. See `spendPresentedCode()`.
+    const spentCode = await self.spendPresentedCode(parseBody(req) || {});
     // `checkParsed()` and not `check(req, 'body', ...)`: this service parses
     // every body as raw text, so the parsed object is what a handler holds. See
     // that function's header.
@@ -11819,6 +13455,31 @@ class OAuth2Server {
                   ((e && e.message) || e));
       }
       registeredClient = applications.clientConfigOf(client.client_id);
+    }
+
+    // AN APPLICATION NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496): the
+    // client this request names, before anything about it is counted or
+    // recorded — the `seen()` below wrote an unregistered entry's grant type
+    // and scope onto it, and the failed-secret counter would count it. An
+    // unknown client was already refused by the client authentication
+    // below (`STS-OAUTH-0193`), and one a development sighting filed only
+    // because a sighting writes no credential (`STS-OAUTH-0553`); this says
+    // what is wrong in both cases, and holds for an entry that carries a
+    // credential nobody registered through the registry. A grant with no
+    // client (the clientless assertion and pre-authorized code grants) names
+    // none and is not asked. `invalid_client`, RFC 6749 section 5.2's code
+    // for an unknown client.
+    const unknownClient = client.client_id
+      ? self.unregisteredClientRefusal(client.client_id) : null;
+    if (unknownClient) {
+      if (presented.basic) {
+        res.set('WWW-Authenticate', self.basicChallenge());
+      }
+      log.debug("Leaving the token endpoint. The client is not registered.");
+      errorCodes.mark(res, 'STS-OAUTH-0949');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 401, 'invalid_client',
+                             unknownClient.description);
     }
 
     // FAPI (#138): one client, however many ways the request names it.
@@ -11953,10 +13614,16 @@ class OAuth2Server {
     // server's capabilities rather than about the credential.
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
-    const declaredMethod = (applications.clientConfigOf(client.client_id) || {})
-      .token_endpoint_auth_method;
+    const declaredMethod = self.presentedMethodOf(req, client,
+      applications.clientConfigOf(client.client_id) || {});
+    // THE TWO HOSTED PUBLIC CLIENTS (#446, #568) authenticate with `none`
+    // where a confidential-only profile advertises no such method: the
+    // profile's exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT) read for the
+    // metadata the profile writes, or the exemption would exempt nothing.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(String(declaredMethod)) < 0) {
+        advertisedAuth.indexOf(String(declaredMethod)) < 0 &&
+        !self.deps.fapi.publicClientExempt(client.client_id,
+                                           declaredMethod)) {
       log.debug("Leaving the token endpoint. " + self.profileOf(req) +
                 " does not advertise " + declaredMethod + ".");
       errorCodes.mark(res, 'STS-OAUTH-0198');
@@ -12101,7 +13768,11 @@ class OAuth2Server {
         counts: false,
         note: 'presented a Token Request',
         fields: Object.assign(
-          { oauthClientId: String(client.client_id), oauthGrantType: grant,
+          // The grant goes on as OBSERVED, never as oauthGrantType (#289):
+          // that list is what the client may use, and the check above
+          // reads it.
+          { oauthClientId: String(client.client_id),
+            oauthGrantTypeObserved: grant,
             appAuthorizationServer: self.profileOf(req) },
           // THE SCOPE, WHERE THIS REQUEST CARRIES ONE, and it is recorded here
           // as well as at the authorization endpoint because for three grants
@@ -12184,6 +13855,27 @@ class OAuth2Server {
       logArtifact('RFC 8707 resource indicators', 'on the Token Request',
                   requestedResources);
     }
+    // RFC 8707 IN PRODUCT: A RESOURCE NAMES A REGISTERED TARGET (#505), on
+    // every grant but the token exchange — whose `resource` and `audience`
+    // are RFC 8693's targets, resolved and refused (`unregistered-target`,
+    // STS-OAUTH-0793) by the delegation policy in its branch — and BEFORE
+    // anything a grant spends: a code redeemed, a refresh token rotated. The
+    // authorization endpoint asked the same of a code's resources; this is
+    // the door every direct grant comes through. `vetAuthorizationRequest()`
+    // above argues the rest. Development is unchanged.
+    if (grant !== 'urn:ietf:params:oauth:grant-type:token-exchange') {
+      const unregisteredResources = RegisteredTargets.unregistered(
+        requestedResources, req);
+      if (unregisteredResources.length) {
+        log.debug("Leaving the token endpoint. A resource names no " +
+                  "registered target.");
+        errorCodes.mark(res, 'STS-OAUTH-0951');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, 'invalid_target',
+          'RFC 8707 section 2: the resource ' +
+          RegisteredTargets.describe(unregisteredResources));
+      }
+    }
 
     // RFC 9396 SECTION 6, once above every grant for the reason the block above
     // is: every grant may carry `authorization_details` — to NARROW what a code
@@ -12229,7 +13921,7 @@ class OAuth2Server {
     if (body.scope !== undefined && body.scope !== null &&
         String(body.scope) !== '') {
       const permissionProblem = self.permissionRefusal(String(body.scope),
-        (client && client.client_id) || body.client_id);
+        (client && client.client_id) || body.client_id, body.grant_type);
       if (permissionProblem) {
         log.debug("Leaving the token endpoint. An ungranted permission was " +
                   "asked for.");
@@ -12361,8 +14053,10 @@ class OAuth2Server {
 
     // FAPI (#138): a confidential client authenticates with mTLS,
     // private_key_jwt or client_secret_jwt, never a plain secret.
+    // The admin console as a public client is the one exception (#446):
+    // `fapi.js` argues it, and is told which client this is.
     const fapiAuth = fapi.clientAuthenticationRefusal(
-      clientObservation.method);
+      clientObservation.method, client.client_id);
     if (fapiAuth) {
       if (presented.basic) {
         res.set('WWW-Authenticate', self.basicChallenge());
@@ -12374,20 +14068,21 @@ class OAuth2Server {
       return self.oauthError(res, 401, fapiAuth.error, fapiAuth.description);
     }
     // RFC 7591 SECTION 2 (#120, in every mode, rcbj's decision): a client
-    // that REGISTERED its grant_types is held to them. A client_id nobody
-    // registered, and a registration naming no list, are not.
-    const registeredFlows = client.client_id
-      ? applications.registeredFlowsOf(client.client_id) : null;
-    if (registeredFlows && registeredFlows.grant_types &&
-        registeredFlows.grant_types.indexOf(
+    // that DECLARED its grant_types is held to them — by registering them or,
+    // since #289, by an administrator writing `oauthGrantType`. A client_id
+    // that declares no list is not.
+    const declaredFlows = client.client_id
+      ? applications.declaredFlowsOf(client.client_id) : null;
+    if (declaredFlows && declaredFlows.grant_types &&
+        declaredFlows.grant_types.indexOf(
           String(body.grant_type || '')) < 0) {
       log.debug("Leaving the token endpoint. A grant type the client did " +
-                "not register.");
+                "not declare.");
       errorCodes.mark(res, 'STS-OAUTH-0598');
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return self.oauthError(res, 400, 'unauthorized_client',
-        'Client "' + client.client_id + '" registered grant_types ' +
-        JSON.stringify(registeredFlows.grant_types) + ', and this request ' +
+        'Client "' + client.client_id + '" declares grant_types ' +
+        JSON.stringify(declaredFlows.grant_types) + ', and this request ' +
         'is the ' + String(body.grant_type || '') + ' grant (RFC 7591 ' +
         'section 2).');
     }
@@ -12422,9 +14117,11 @@ class OAuth2Server {
     // FAPI 1.0 Advanced section 5.2.2 items 5-6 (#139): every access token is
     // sender-constrained — by the client certificate this connection
     // presented, or (unless oauth2.fapiRequireMtls) by the DPoP proof checked
-    // above. Refused before any grant is spent.
+    // above. Refused before any grant is spent. The console and the portal,
+    // public clients whose one binding is DPoP, are told apart by `fapi.js`.
     const fapiBound = fapi.senderConstraintRefusal({
-      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) });
+      dpop: !!dpopJkt, mtls: !!mtls.presentedThumbprint(req) },
+      client.client_id, clientObservation.method);
     if (fapiBound) {
       log.debug("Leaving the token endpoint. FAPI: the token would be " +
                 "unconstrained.");
@@ -12559,8 +14256,18 @@ class OAuth2Server {
     // here, known or not.
     const clientlessAssertion = !client.client_id &&
       oauth21.ASSERTION_GRANTS.indexOf(grant) >= 0;
+    // **NOR IS AN OPENID4VCI PRE-AUTHORIZED CODE REDEEMED BY A WALLET THAT
+    // NAMES NONE** (2026-10-05). OpenID4VCI section 6.1 makes `client_id`
+    // optional for this grant — anonymous access, the reason `oauth21.js`
+    // leaves the grant out of its registered-client rule — and the code (with
+    // its Transaction Code, where the offer has one) is the credential. This
+    // check read the missing client_id as an unknown client and refused every
+    // anonymous wallet in product: found by sts_oid4vci_preauth_subject.js
+    // (#158) in single-node. A wallet that NAMES a client is still judged.
+    const clientlessPreAuthorized = !client.client_id &&
+      grant === 'urn:ietf:params:oauth:grant-type:pre-authorized_code';
     if (mode.requiresConfidentialClientAuthentication() &&
-        !clientlessAssertion &&
+        !clientlessAssertion && !clientlessPreAuthorized &&
         bcp.declaredPublic(registeredClient) === false &&
         !clientObservation.authenticated) {
       log.info('oauth2: product mode refused the token request from "' +
@@ -12690,16 +14397,16 @@ class OAuth2Server {
                  'the client redeeming it.');
         opts.withRefresh = false;
       }
-      // RFC 7591 SECTION 2 (#120): a client that registered its grant_types
-      // without `refresh_token` gets no refresh token — RECORDED AND NOT
-      // REFUSED, for 0298's reason. Issuing one it could never redeem (the
-      // grant is refused above, 0598) is the half a token set #34 refuses to
-      // hand out.
-      if (opts.withRefresh !== false && registeredFlows &&
-          registeredFlows.grant_types &&
-          registeredFlows.grant_types.indexOf('refresh_token') < 0) {
+      // RFC 7591 SECTION 2 (#120): a client that declared its grant_types
+      // (registered, or since #289 written by an administrator) without
+      // `refresh_token` gets no refresh token — RECORDED AND NOT REFUSED, for
+      // 0298's reason. Issuing one it could never redeem (the grant is
+      // refused above, 0598) is the half a token set #34 refuses to hand out.
+      if (opts.withRefresh !== false && declaredFlows &&
+          declaredFlows.grant_types &&
+          declaredFlows.grant_types.indexOf('refresh_token') < 0) {
         log.info(errorCodes.tag('STS-OAUTH-0600') + 'oauth2: "' +
-                 client.client_id + '" registered no refresh_token grant, ' +
+                 client.client_id + '" declares no refresh_token grant, ' +
                  'so the ' + grant + ' grant is answered with no refresh ' +
                  'token.');
         opts.withRefresh = false;
@@ -12721,6 +14428,21 @@ class OAuth2Server {
       // is not sender-constrained. Here for the same reason, and reading
       // `withRefresh` — the grant's own answer to "is a refresh token about to
       // be minted" — rather than a list of grants kept beside it.
+      // #446: the admin console as a public client is issued nothing that
+      // is not bound to a key it proved — a rule about that one client and
+      // not a setting. Here, where every grant mints, for the reason the
+      // checks beside it are.
+      const consoleProblem = senderConstraints.publicClientIssuanceRefusal({
+        clientId: opts.client_id,
+        method: clientObservation.method,
+        dpopJkt: dpopJkt,
+        grant: grant
+      });
+      if (consoleProblem) {
+        log.debug("Leaving issue(). The admin console, as a public client, " +
+                  "sent no DPoP proof.");
+        throw new SenderConstraintRefused(log, consoleProblem);
+      }
       if (opts.withRefresh !== false) {
         const constraint = senderConstraints.refreshIssuanceRefusal({
           grant: grant,
@@ -12766,10 +14488,9 @@ class OAuth2Server {
           credential_configuration_id: d.credential_configuration_id,
           credential_identifiers: [
             d.credential_configuration_id + ':' +
-            b64u(crypto.createHash('sha256')
-              .update(String((user && user.sub) || 'anonymous') + ':' +
-                      d.credential_configuration_id)
-              .digest()).slice(0, 16)
+            b64u(stsCrypto.digest('sha256',
+              String((user && user.sub) || 'anonymous') + ':' +
+              d.credential_configuration_id)).slice(0, 16)
           ]
         };
         // Echoed back, and it has to be: this is what the credential endpoint
@@ -12785,7 +14506,17 @@ class OAuth2Server {
     if (grant === 'authorization_code') {
       const code = String(body.code || '');
       const fingerprint = self.redemptionFingerprint(client, body, dpopJkt);
-      const record = authzCodes.get(code);
+      // Already taken out of the live map where the code was spent at its
+      // presentation (#424); looked up here only where redemption is relaxed.
+      const record = spentCode && spentCode.code === code ? spentCode.record
+                                                          : authzCodes.get(code);
+      if (spentCode && spentCode.code === code && spentCode.claim &&
+          !spentCode.claim.ok) {
+        log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
+                  "refused at its presentation.");
+        return self.refuseConcurrentRedemption(res, code, fingerprint, respond,
+                                               spentCode.claim);
+      }
       if (!record) {
         // Not necessarily an error: this is also where a second, identical
         // Token Request for a code already redeemed is answered with the tokens
@@ -12802,9 +14533,14 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
           'The authorization code has expired.');
       }
-      // NOTHING below consumes the code: every check refuses and leaves it
-      // redeemable, so a client that gets one of them can fix what the message
-      // names and try the same code again. Burning it here is what used to turn
+      // BY DEFAULT THE CODE IS ALREADY SPENT (#424) — rcbj: "It doesn't matter
+      // why the request to the Token Endpoint failed. The caller can only
+      // submit a request with that authorization code once." What follows
+      // was written for the RELAXED redemption, which is now
+      // `oauth2.codeReplayIdempotent`'s (off by default, never in RFC 9700
+      // mode): there NOTHING below consumes the code: every check refuses and
+      // leaves it redeemable, so a client that gets one of them can fix what
+      // the message names and try the same code again. Burning it here is what used to turn
       // "your code_verifier does not match" into "already-used authorization
       // code" on the very next attempt — the wrong answer at exactly the moment
       // somebody was acting on the right one. The code is consumed at the
@@ -12881,7 +14617,8 @@ class OAuth2Server {
             'PKCE was used, so code_verifier is required.');
         }
         const computed = record.code_challenge_method === 'S256'
-          ? b64u(crypto.createHash('sha256').update(verifier, 'ascii').digest())
+          // The 'ascii' reading the hash was always fed, kept (#453).
+          ? b64u(stsCrypto.digest('sha256', Buffer.from(verifier, 'ascii')))
           : verifier;
         if (computed !== record.code_challenge) {
           log.debug("Leaving the token endpoint. The grant was refused.");
@@ -13004,18 +14741,25 @@ class OAuth2Server {
       // above `refuseConcurrentRedemption()` (#46). The in-memory lookup at the
       // top of this branch stays as the fast refusal; this is the one that
       // holds when two requests found the record at once, on one node or two.
-      const codeClaim = await clusterClaims.claim({
-        scope: 'oauth.code', value: code, ttlMs: self.codeClaimTtlMs(record)
-      });
-      if (!codeClaim.ok) {
-        log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
-                  "refused.");
-        return self.refuseConcurrentRedemption(res, code, fingerprint, respond,
-                                          codeClaim);
+      // Where the code was spent at its presentation (#424, the default), its
+      // claim is already held and is never given back.
+      if (!(spentCode && spentCode.code === code)) {
+        const codeClaim = await clusterClaims.claim({
+          scope: 'oauth.code', value: code, ttlMs: self.codeClaimTtlMs(record)
+        });
+        if (!codeClaim.ok) {
+          log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
+                    "refused.");
+          return self.refuseConcurrentRedemption(res, code, fingerprint,
+                                                 respond, codeClaim);
+        }
+        // Kept when the response is 2xx; given back otherwise, because under
+        // the relaxed redemption a code whose tokens were never issued has
+        // not been used.
+        clusterClaims.releaseUnlessSucceeded(res, codeClaim.handle);
+      } else {
+        authzCodes.delete(code);
       }
-      // Kept when the response is 2xx; given back otherwise, because a code
-      // whose tokens were never issued has not been used.
-      clusterClaims.releaseUnlessSucceeded(res, codeClaim.handle);
       const issued = await issue({
         jkt: dpopJkt,
         // The DPoP key a bound ID Token names (Key Binding section 4).
@@ -13030,6 +14774,20 @@ class OAuth2Server {
         // Onto the refresh token as well as into the access token's audience,
         // so that a refresh cannot widen what this grant authorized.
         resources: forResources,
+        // AND THE REFRESH TOKEN KEEPS EVERY RESOURCE THE AUTHORIZATION
+        // REQUEST NAMED (#607, rcbj 2026-10-13), as the refresh grant's
+        // `grantResources` always kept them: a Token Request naming one of
+        // them picks the AUDIENCE of the access token it mints, and the
+        // grant behind the refresh token is still the one the person
+        // approved. Until then a code redeemed for one resource left a
+        // refresh token for that one alone, so a client that asked for two
+        // could never be issued a token for the second — the user portal,
+        // which holds a token for `/account-api` and one for `/admin-api`
+        // off one sign-in. It still cannot widen: the refresh grant refuses
+        // a resource the grant does not carry (STS-OAUTH-0217). Only where
+        // the request named resources: a grant whose audience a scope
+        // derived keeps `tokenSet()`'s own reading.
+        ...(granted.length ? { grantResources: granted } : {}),
         user: record.user, client_id: record.client_id, scope: record.scope,
         nonce: record.nonce, auth_time: record.auth_time, amr: record.amr,
         acr: record.acr,
@@ -13171,6 +14929,15 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
                                preAuthSpent.description);
       }
+      // RFC 9068 section 2.2 makes `client_id` REQUIRED in the access token,
+      // and OID4VCI section 6.1 lets a wallet redeem this grant without naming
+      // one (#158). An empty string satisfies neither, so an unnamed wallet is
+      // named ANONYMOUS_WALLET_CLIENT_ID in the TOKEN and nowhere else: the
+      // scope policy, the lifetime and the token registry go on reading the
+      // unnamed client they always read, because a defined value there would
+      // be a client nobody registered being judged as one.
+      const tokenClientId = String(client.client_id || '') ||
+        ANONYMOUS_WALLET_CLIENT_ID;
       // The End-User was identified out of band, so there is a subject and no
       // sign-on session — and the users page has to be able to say that
       // difference rather than report a missing session as an unknown one.
@@ -13180,10 +14947,32 @@ class OAuth2Server {
         method: 'pre-authorized code' + (record.txCode ? ' ' +
             'with a Transaction Code' : ''),
         sub: (record.user && record.user.sub) || '',
-        client_id: client.client_id,
+        client_id: tokenClientId,
         note: 'Identified out of band when the Credential Offer was made; no ' +
               'browser session exists.'
       });
+      // THE PERSON, RESOLVED NOW AND NOT TAKEN FROM THE OFFER (#158). The
+      // offer records whom it is for when it is MINTED, and an offer made for
+      // `oid4vci.offerUsername` before that person had an entry recorded
+      // `sub: ''` — which went into the token as it stood, an anonymous token
+      // about a named person. The authentication recorded just above is what
+      // makes the directory create the entry, so the subject is asked for
+      // after it, as the password and assertion grants ask
+      // (`provisionedPerson()`). An offer made on a signed-in session carries
+      // the session's subject already, and that is the one kept: it named the
+      // entry when the person signed in, and a rename since must not move it.
+      const preAuthUser = record.user && record.user.sub
+        ? record.user
+        : self.provisionedPerson((record.user && record.user.username) || '');
+      if (!preAuthUser) {
+        errorCodes.mark(res, 'STS-OAUTH-0938');
+        log.debug("Leaving OAuth2Server.tokenGrant(). The offered person has " +
+                  "no entry.");
+        return self.oauthError(res, 400, 'invalid_grant',
+          'There is no directory entry for the person this Credential Offer ' +
+          'was made for, so there is no subject to issue a token about; the ' +
+          'person has to be provisioned first.');
+      }
       // OID4VCI section 6.1.1: the Wallet MAY send authorization_details in the
       // Token Request, in the Pre-Authorized Code Flow as well as the
       // Authorization Code one — and here it is the ONLY place it can, because
@@ -13221,7 +15010,8 @@ class OAuth2Server {
       }
       const issued = await issue({
         jkt: dpopJkt,
-        user: record.user, client_id: client.client_id, scope: VCI_SCOPE,
+        user: preAuthUser, client_id: client.client_id, scope: VCI_SCOPE,
+        token_client_id: tokenClientId,
         withRefresh: false,
         // RFC 8707 on an OpenID4VCI Token Request, which OID4VCI section 6.1
         // inherits from RFC 6749 along with everything else about this
@@ -13232,7 +15022,7 @@ class OAuth2Server {
         // the parameter and threw it away would be the bug this closes.
         audience: self.audienceClaim(requestedResources),
         grant: 'pre-authorized code',
-        authorization_details: grantIdentifiers(askedFor.details, record.user)
+        authorization_details: grantIdentifiers(askedFor.details, preAuthUser)
       });
       // Remember which access token belongs to a deferred issuance, so the
       // credential endpoint knows to answer 202 rather than a credential.
@@ -13265,6 +15055,17 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_grant',
                                'The refresh token is not ' +
                                'valid: ' + e.message);
+      }
+      // A PERSON HOMED IN ANOTHER CELL IS CONFIRMED THERE FIRST (#98 D6):
+      // their session was exported here, and a refresh is one of the acts
+      // home is always asked about — a disable or a password change made
+      // there must stop it here. Fail-closed by default.
+      const homeSays = await cellSessions.confirmSubject(
+        realms.currentId(), String(claims.username || ''), true);
+      if (!homeSays.ok) {
+        errorCodes.mark(res, 'STS-CELL-0056');
+        log.debug("Leaving OAuth2Server.tokenGrant(). Home refused.");
+        return self.oauthError(res, 400, 'invalid_grant', homeSays.why);
       }
       // RFC 9700 section 2.2.2, ABOVE the revocation check and deliberately so.
       // Rotation revokes the token it retires, so a replayed one is also a
@@ -13319,7 +15120,8 @@ class OAuth2Server {
         // SUPERSEDED for CAEP (#239): a revoked grant was reported when it
         // was revoked, and a merged or replaced one did not end.
         stats.revoke(String(claims.jti || ''), 'its grant is ' +
-                     'revoked or superseded', { superseded: true });
+                     'revoked or superseded', { superseded: true },
+                     claims.exp);
         log.debug("Leaving the token endpoint. Grant Management refused the " +
                   "refresh.");
         errorCodes.mark(res, grantProblem.code);
@@ -13674,7 +15476,10 @@ class OAuth2Server {
         // Still under the same grant and generation (#142), which the check
         // above established is the grant's current one.
         grant_id: claims.grant_id || undefined,
-        grant_gen: claims.grant_id ? claims.grant_gen : undefined
+        grant_gen: claims.grant_id ? claims.grant_gen : undefined,
+        // The grant its details' limits are counted against (#432 phase 5),
+        // so a renewed token is the same budget.
+        limits_grant: claims.limits_grant || undefined
       });
       // And the grant lives as long as what was just minted under it.
       if (claims.grant_id) {
@@ -13703,7 +15508,7 @@ class OAuth2Server {
         bcp.noteRefreshRotated(claims.jti);
         // Superseded, not ended: its successor carries the grant on (#239).
         stats.revoke(claims.jti, 'RFC 9700 section 2.2.2: rotated on use',
-                     { superseded: true });
+                     { superseded: true }, claims.exp);
       }
       log.debug("Leaving OAuth2Server.tokenGrant().");
       return respond(refreshed);
@@ -13776,7 +15581,12 @@ class OAuth2Server {
         // decision for a narrowing rule to be about. No `resources` beside it
         // because this grant issues no refresh token: that field exists so a
         // renewal cannot widen, and nothing here can be renewed.
-        audience: self.audienceClaim(requestedResources),
+        // #550: with nothing asked for, the client's own audience.
+        audience: self.audienceClaim(requestedResources.length
+          ? requestedResources
+          : self.clientCredentialsAudience(client.client_id,
+                                           String(body.scope || ''),
+                                           requestedDetails)),
         // RFC 9396: nothing preceded this request either, so the details asked
         // for are the details granted.
         authorization_details: grantIdentifiers(requestedDetails,
@@ -13853,9 +15663,12 @@ class OAuth2Server {
           return self.oauthError(res, 400, 'invalid_grant', allowed.detail);
         }
       }
+      // `door: 'ropc'` (#221): the door a service account's policy names.
+      // Not an app password's door (`app_passwords.ts`), so nothing about
+      // a person's credentials changes here.
       const credential = await credentials.verifyAsync(username,
         String(body.password),
-        { via: 'the OAuth 2.0 password grant' });
+        { via: 'the OAuth 2.0 password grant', door: 'ropc' });
       if (!credential.ok) {
         log.info('oauth2: the password grant for "' + username +
                  '" was refused (' +
@@ -14538,8 +16351,69 @@ class OAuth2Server {
       // is asked here, as the refresh grant asks it, because a verified token
       // this realm has revoked is not one it will exchange either.
       const strictExchange = !mode.exchangesUnverifiedTokens();
+      // -----------------------------------------------------------------------
+      // AN ASSERTION FROM A DECLARED ISSUER (#114). A `saml2` or `saml1`
+      // subject_token, and a `jwt` one this realm did not sign, is verified
+      // as the assertion grant verifies one (`exchange_assertions.ts`), and
+      // its subject is the PERSON it names, provisioned as that grant
+      // provisions one. Refused in product when it does not verify;
+      // development falls through to its unverified read, as it always has.
+      // -----------------------------------------------------------------------
+      const subjectType = String(body.subject_token_type || '').trim();
+      const subjectIsSaml = subjectType === exchangeAssertions.TYPES.saml2 ||
+        subjectType === exchangeAssertions.TYPES.saml1;
+      let subjectAssertion: Json = null;
+      let ownSubject = false;
+      if (!subjectIsSaml) {
+        try {
+          subject = helpers.verifyOwnJws(subjectJws);
+          ownSubject = true;
+        } catch (e) {
+          log.debug("Caught in tokenGrant(): the subject_token is not this " +
+                    "realm's own: " + ((e && e.message) || e));
+          ownSubject = false;
+        }
+      }
+      if (!ownSubject && exchangeAssertions.isAssertionType(subjectType)) {
+        const checked = await exchangeAssertions.verify({
+          token: subjectToken, type: subjectType, base: base,
+          issuer: self.issuerOf(base), clientId: client.client_id,
+          clientSecret: (applications.clientConfigOf(client.client_id) || {})
+            .client_secret,
+          request: req
+        });
+        if (checked.ok) {
+          const fromAssertion = self.assertionSubject(checked, client,
+                                                      'subject_token');
+          if (!fromAssertion) {
+            errorCodes.mark(res, 'STS-OAUTH-0798');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The assertion " +
+                      "names nobody.");
+            return self.oauthError(res, 400, 'invalid_request',
+              'The subject_token\'s assertion names "' + checked.subject +
+              '", who has no directory entry here, so there is nobody to ' +
+              'issue a token about; the person has to be provisioned first.');
+          }
+          subject = fromAssertion;
+          subjectAssertion = checked;
+          ownSubject = true;
+        } else if (strictExchange || subjectIsSaml) {
+          log.info('oauth2: a token exchange by "' + client.client_id +
+                   '" presented a ' + subjectType + ' subject_token that was ' +
+                   'refused: ' + checked.description);
+          errorCodes.mark(res, String(checked.errorCode || 'STS-OAUTH-0555'));
+          log.debug("Leaving OAuth2Server.tokenGrant(). The assertion was " +
+                    "refused.");
+          // error-code: none — the verifier's code was marked above
+          return self.oauthError(res, 400, 'invalid_request',
+                                 checked.description);
+        }
+      }
       try {
-        subject = helpers.verifyOwnJws(subjectJws);
+        if (!ownSubject) {
+          throw new Error('not a token this realm signed, nor an assertion ' +
+                          'from an issuer it declared');
+        }
       } catch (e) {
         log.debug("Caught in tokenGrant(): " + ((e && e.message) || e));
         if (strictExchange) {
@@ -14568,10 +16442,23 @@ class OAuth2Server {
           subject = {};
         }
       }
+      // WHO A VERIFIED TOKEN IS ABOUT, BY NAME (#186). A token this realm
+      // issued names a person by `sub` (`urn:uuid:<entryUUID>`) and does not
+      // always carry `username` — a WS-Trust JWT carries `name` instead — and
+      // with none the token issued below was about `mock-user`
+      // (`helpers.userFor()`'s default), and the policy judged a person
+      // nobody named. The name is read off the subject through the directory.
+      if (subjectVerified && subject && !subject.username &&
+          /^urn:uuid:/i.test(String(subject.sub || ''))) {
+        const named = String(self.deps.nameForSubject(subject.sub) || '');
+        if (named) {
+          subject = Object.assign({}, subject, { username: named });
+        }
+      }
       // A VERIFIED TOKEN MUST BE THE TYPE IT WAS DECLARED AS (#130). One this
       // realm cannot verify — development's token from anywhere — is held
       // only to the list of types, above: its shape is somebody else's.
-      const subjectKind = subjectVerified ?
+      const subjectKind = subjectVerified && !subjectAssertion ?
         self.ownTokenKind(subjectToken, subject) : '';
       const subjectMismatch = subjectKind &&
         self.kindProblem(String(body.subject_token_type).trim(), subjectKind,
@@ -14581,6 +16468,17 @@ class OAuth2Server {
         log.debug("Leaving OAuth2Server.tokenGrant(). The subject_token is " +
                   "not its declared type.");
         return self.oauthError(res, 400, 'invalid_request', subjectMismatch);
+      }
+      // A PERSON HOMED IN ANOTHER CELL IS CONFIRMED THERE FIRST (#98 D6),
+      // for the refresh grant's reason.
+      if (subjectVerified && subject && subject.username) {
+        const homeSays = await cellSessions.confirmSubject(
+          realms.currentId(), String(subject.username), true);
+        if (!homeSays.ok) {
+          errorCodes.mark(res, 'STS-CELL-0056');
+          log.debug("Leaving OAuth2Server.tokenGrant(). Home refused.");
+          return self.oauthError(res, 400, 'invalid_grant', homeSays.why);
+        }
       }
       // Key Binding section 7 (#150), whether or not it verified: a token
       // that names a key is held to it.
@@ -14605,7 +16503,54 @@ class OAuth2Server {
       // — kept whole rather than as `act.sub` alone, because `may_act` below
       // compares its `iss` as well (RFC 8693 section 4.4).
       let actorClaims: Json = null;
-      if (body.actor_token) {
+      // #114: an actor_token that is an assertion from a declared issuer is
+      // verified as the subject_token's is, and the actor is the person it
+      // names; `act.sub` is then taken from the verified assertion.
+      const actorType = String(body.actor_token_type || '').trim();
+      let actorAssertion: Json = null;
+      if (body.actor_token && exchangeAssertions.isAssertionType(actorType)) {
+        let actorOwn = false;
+        if (actorType === exchangeAssertions.TYPES.jwt) {
+          try {
+            helpers.verifyOwnJws(String(body.actor_token));
+            actorOwn = true;
+          } catch (e) {
+            log.debug("Caught in tokenGrant(): the actor_token is not this " +
+                      "realm's own: " + ((e && e.message) || e));
+            actorOwn = false;
+          }
+        }
+        if (!actorOwn) {
+          const checkedActor = await exchangeAssertions.verify({
+            token: String(body.actor_token), type: actorType, base: base,
+            issuer: self.issuerOf(base), clientId: client.client_id,
+            clientSecret: (applications.clientConfigOf(client.client_id) ||
+                           {}).client_secret,
+            request: req
+          });
+          const actorFrom = checkedActor.ok
+            ? self.assertionSubject(checkedActor, client, 'actor_token')
+            : null;
+          if (actorFrom) {
+            actorAssertion = checkedActor;
+            actorClaims = actorFrom;
+            act = { sub: actorClaims.sub };
+          } else if (strictExchange || actorType !==
+                     exchangeAssertions.TYPES.jwt) {
+            errorCodes.mark(res, String(checkedActor.errorCode ||
+                                        'STS-OAUTH-0798'));
+            log.debug("Leaving OAuth2Server.tokenGrant(). The actor's " +
+                      "assertion was refused.");
+            // error-code: none — the verifier's code was marked above
+            return self.oauthError(res, 400, 'invalid_request',
+              checkedActor.ok
+                ? 'The actor_token\'s assertion names "' +
+                  checkedActor.subject + '", who has no directory entry here.'
+                : checkedActor.description);
+          }
+        }
+      }
+      if (body.actor_token && !actorAssertion) {
         // THE ACTOR IS VERIFIED BY THE SAME RULE, for the same reason: `act`
         // is the record, inside the token that comes out, of who acted on the
         // subject's behalf, and a name read out of an unverified token puts a
@@ -14642,6 +16587,33 @@ class OAuth2Server {
                                    'The actor_token has been revoked.');
           }
         } else {
+          // #116: DEVELOPMENT HOLDS THIS REALM'S OWN actor_token TO ITS
+          // DECLARED TYPE TOO. A token from anywhere is still read unverified
+          // (`mode.exchangesUnverifiedTokens()`), but one that verifies under
+          // this realm's key is one whose kind is known, and an ID Token
+          // declared an access token is the same mistake in either mode — a
+          // TYPE check, not a trust check, which is how the subject_token has
+          // been held since #130.
+          let ownActor: Json = null;
+          try {
+            ownActor = helpers.verifyOwnJws(String(body.actor_token));
+          } catch (e) {
+            log.debug("Caught in OAuth2Server.tokenGrant(): the actor_token is " +
+                      "not this realm's own: " + ((e && e.message) || e));
+            ownActor = null;
+          }
+          const ownMismatch = ownActor ? self.kindProblem(
+            String(body.actor_token_type || '').trim(),
+            self.ownTokenKind(String(body.actor_token), ownActor),
+            'actor_token') : '';
+          if (ownMismatch) {
+            errorCodes.mark(res, 'STS-OAUTH-0628');
+            log.debug("Leaving OAuth2Server.tokenGrant(). The actor_token is " +
+                      "not its declared type.");
+            return self.oauthError(res, 400, 'invalid_request', ownMismatch);
+          }
+        }
+        if (!strictExchange) {
           try {
             actorClaims = jsonFromB64u(String(body.actor_token)
               .split('.')[1]) || {};
@@ -14654,6 +16626,20 @@ class OAuth2Server {
         }
         if (actorClaims) {
           act = { sub: actorClaims.sub };
+        }
+        // #550: who the actor IS, in every mode — the token must be the
+        // exchanging client's own and addressed to it or to this server.
+        const actorProblem = actorClaims
+          ? self.actorTokenProblem(actorClaims, client, base) : null;
+        if (actorProblem) {
+          log.info('oauth2: a token exchange by "' + client.client_id +
+                   '" was refused: ' + actorProblem.description);
+          errorCodes.mark(res, actorProblem.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " +
+                    actorProblem.code);
+          // error-code: none — marked above: 0955 or 0956, by the problem.
+          return self.oauthError(res, 400, 'invalid_request',
+                                 actorProblem.description);
         }
       }
       // -----------------------------------------------------------------------
@@ -14681,74 +16667,68 @@ class OAuth2Server {
       // WHO IS ASKING TO ACT, for `may_act` and the delegation policy: the
       // actor where an actor_token named one, and otherwise the client — the
       // party section 4.4 names in the same breath ("the client (or party
-      // identified in the actor_token)"). A client is spelled here the two
-      // ways a client_credentials token spells its own subject.
-      const clientAliases = [String(client.client_id || ''),
-        'urn:sts:client:' + String(client.client_id || '')];
-      const actorIdentity = actorClaims
-        ? { sub: String(actorClaims.sub || ''),
-            iss: String(actorClaims.iss || ''),
-            aliases: actorClaims.client_id &&
-                     String(actorClaims.sub || '') ===
-                       'urn:sts:client:' + actorClaims.client_id
-              ? [String(actorClaims.client_id)] : [] }
-        : { sub: clientAliases[0], iss: '', aliases: clientAliases.slice(1) };
+      // identified in the actor_token)").
+      //
+      // A CLIENT IS NAMED IN THE ONE FORM ITS SUBJECT TAKES IN THE MODE
+      // (#471, `clientActorSubject()`): the exchanging client where no
+      // actor_token was sent, and the client a client_credentials
+      // actor_token is about (its `sub` is the client's own subject, so it
+      // is in that form already). `may_act` is compared with BOTH spellings:
+      // the claim this service writes names an application by its bare
+      // client_id (`delegationPolicy.mayActClaimFor()`, from a DN), and a
+      // realm's policy or another issuer may name it by its subject, and
+      // either is the same client — a comparison that held only one would
+      // refuse the client its own subject names, in one mode or the other.
+      const namespacedClients = bcp.enabled();
+      // The client_id of the actor when the actor is a CLIENT: the
+      // exchanging one, or the one a client_credentials actor_token is
+      // about (`sub` its client_id or `urn:sts:client:` and its client_id).
+      const actorTokenSub = actorClaims ? String(actorClaims.sub || '') : '';
+      const actorClientId = !actorClaims ? String(client.client_id || '')
+        : (actorClaims.client_id &&
+           (actorTokenSub === String(actorClaims.client_id) ||
+            actorTokenSub === 'urn:sts:client:' + actorClaims.client_id)
+          ? String(actorClaims.client_id) : '');
+      const actorSubject = actorClaims ? actorTokenSub
+        : OAuth2Server.clientActorSubject(actorClientId, namespacedClients);
+      const actorIdentity = {
+        sub: actorSubject,
+        iss: actorClaims ? String(actorClaims.iss || '') : '',
+        aliases: actorClientId
+          ? [actorClientId, 'urn:sts:client:' + actorClientId]
+            .filter(function (one) { return one !== actorSubject; })
+          : [] as string[]
+      };
       // -----------------------------------------------------------------------
       // `may_act` IS READ IN EVERY MODE (RFC 8693 section 4.4, #108). The
       // claim is the SUBJECT's statement of who may act for them, carried in
       // a token this realm signed; when it names somebody else, the token
-      // itself is saying no, and that is not a question a mode changes.
-      // Section 2.2.2: a subject_token "unacceptable based on policy" is
-      // invalid_request. Read only off a VERIFIED subject_token — a claim in a
-      // token nobody verified is not the subject's word.
+      // itself is saying no — and since #186 that is a rule of the issuance
+      // policy, enforced in every mode, with the two facts below. Read only
+      // off a VERIFIED subject_token: a claim in a token nobody verified is
+      // not the subject's word.
       // -----------------------------------------------------------------------
       const mayAct = subjectVerified && subject.may_act &&
         typeof subject.may_act === 'object' ? subject.may_act : null;
-      if (mayAct && !delegationPolicy.mayActNames(mayAct, actorIdentity)) {
-        log.info('oauth2: a token exchange by "' + client.client_id + '" ' +
-                 'was refused: the subject_token\'s may_act names ' +
-                 JSON.stringify(mayAct) + ' and the actor is "' +
-                 actorIdentity.sub + '".');
-        delegation.record({
-          protocol: 'OAuth 2.0',
-          type: actorClaims ? 'oauth-delegation' : 'oauth-impersonation',
-          // error-code: none — STS-OAUTH-0620 is marked on the response below
-          outcome: 'refused',
-          initial: { presented: subject.username || subject.sub || '',
-                     what: 'the subject of the token presented, whose ' +
-                           'may_act names somebody else' },
-          intermediary: { presented: actorClaims ? actorIdentity.sub : '',
-                          application: client.client_id,
-                          what: 'the party asking to act' },
-          target: { application: '', what: 'not reached' },
-          authorizedBy: 'refused: the subject_token\'s may_act (RFC 8693 ' +
-                        'section 4.4) names ' + String(mayAct.sub || '') +
-                        ', not this actor.',
-          reason: 'may_act names ' + String(mayAct.sub || '') +
-                  ' and the actor is ' + actorIdentity.sub,
-          consumed: [{ kind: 'subject_token',
-                       identifier: String(subject.jti || ''),
-                       note: 'signed by this service and verified' }],
-          produced: [], sessionId: ''
+      const mayActNamesActor = !!mayAct &&
+        delegationPolicy.mayActNames(mayAct, actorIdentity);
+      // An assertion's subject was recorded where it was verified (#114,
+      // `assertionSubject()`), with what vouched for it.
+      if (!subjectAssertion) {
+        stats.recordAuthentication({
+          presented: subject.username || subject.sub || 'urn:sts:exchanged',
+          protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
+          sub: subject.sub || '', client_id: client.client_id,
+          note: subjectVerified
+            ? 'The subject_token was signed by this service and verified, ' +
+              'so this subject was authenticated here — earlier, by ' +
+              'whatever grant produced that token.'
+            : 'The subject_token was NOT signed by this service. The name ' +
+              'was read out of it without verifying anything, so this is a ' +
+              'subject this service has been TOLD about rather than one it ' +
+              'authenticated.'
         });
-        errorCodes.mark(res, 'STS-OAUTH-0620');
-        log.debug("Leaving OAuth2Server.tokenGrant().");
-        return self.oauthError(res, 400, 'invalid_request',
-                               'The subject_token\'s may_act does not name ' +
-                               'the party asking to act for it.');
       }
-      stats.recordAuthentication({
-        presented: subject.username || subject.sub || 'urn:sts:exchanged',
-        protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
-        sub: subject.sub || '', client_id: client.client_id,
-        note: subjectVerified
-          ? 'The subject_token was signed by this service and verified, so ' +
-            'this subject was authenticated here — earlier, by whatever ' +
-            'grant produced that token.'
-          : 'The subject_token was NOT signed by this service. The name was ' +
-            'read out of it without verifying anything, so this is a subject ' +
-            'this service has been TOLD about rather than one it authenticated.'
-      });
       // -----------------------------------------------------------------------
       // WHAT THIS EXCHANGE IS FOR, WHICH RFC 8693 SECTION 2.1 SPELLS TWO WAYS.
       //
@@ -14871,44 +16851,135 @@ class OAuth2Server {
                  'entry, to honour the ask.');
       }
       // -----------------------------------------------------------------------
-      // WHO MAY ACT FOR WHOM (#108, 2026-09-23) — `common/delegation_policy.ts`
-      // decides, from the attributes on the entries, whether this client (and
-      // the actor it names) may obtain a token about this subject for these
-      // targets. RFC 8693 section 5 leaves that policy to the authorization
-      // server and until this line there was none. Section 2.2.2 says how a
-      // refusal is spoken: a subject or actor "unacceptable based on policy"
-      // is invalid_request, a target the server will not issue for SHOULD be
-      // invalid_target.
+      // WHO MAY ACT FOR WHOM, AND AS WHAT (#186) — the issuance policy
+      // decides, through `common/delegation_policy.ts`, which gathers the
+      // facts: the subject, the actor (the actor_token's subject, else this
+      // client), S (the application the subject_token was issued for: its
+      // `aud`, else its `client_id` / `azp`) and R (the one target asked for).
+      // RFC 8693 section 5 leaves that policy to the authorization server.
+      // Section 2.2.2 says how a refusal is spoken: a subject or actor
+      // "unacceptable based on policy" is invalid_request, a target the server
+      // will not issue for SHOULD be invalid_target.
       //
-      // ENFORCED IN PRODUCT (`mode.authorizesDelegation()`); in development the
-      // same answer is written on the act's row as "would have been refused".
+      // THE SEMANTICS are the policy's choice too: this service's extension
+      // parameter `exchange_semantics` (delegation or impersonation), else the
+      // actor's default, else the subject's, else delegation.defaultSemantics.
+      // DELEGATION puts `act` on the token naming the actor; IMPERSONATION does
+      // not; a SELF exchange acts for nobody.
+      //
+      // ENFORCED IN PRODUCT — the policy's own answer says whether a refusal is
+      // enforced; in development it is written on the act's row as "would
+      // have been refused".
       // -----------------------------------------------------------------------
-      const subjectIsClient =
-        clientAliases.indexOf(String(subject.sub || '')) >= 0 &&
-        String(subject.client_id || client.client_id) === client.client_id;
-      const actorIsClient = !actorClaims ||
-        clientAliases.indexOf(String(actorClaims.sub || '')) >= 0;
-      const exchangeMode = actorClaims ? 'delegation' : 'impersonation';
+      const askedSemantics = bodyValues(req, body, 'exchange_semantics')
+        .map(function (one) { return String(one).trim().toLowerCase(); })
+        .filter(function (one) { return !!one; });
+      if (askedSemantics.length > 1 || (askedSemantics.length &&
+          ['delegation', 'impersonation'].indexOf(askedSemantics[0]) < 0)) {
+        errorCodes.mark(res, 'STS-OAUTH-0795');
+        log.debug("Leaving OAuth2Server.tokenGrant(). An unusable " +
+                  "exchange_semantics.");
+        return self.oauthError(res, 400, 'invalid_request',
+          'exchange_semantics is delegation or impersonation, sent once.');
+      }
+      // The subject as an entry names it: a client_credentials token is about
+      // its client, spelt the two ways such a token spells its own subject.
+      const subjectSub = String(subject.sub || '');
+      const subjectName = /^urn:sts:client:/.test(subjectSub)
+        ? subjectSub.slice('urn:sts:client:'.length)
+        : String(subject.username || subjectSub);
+      const subjectAudiences = (Array.isArray(subject.aud) ? subject.aud
+        : (subject.aud ? [subject.aud] : [])).map(String);
+      // The actor as the policy is asked about it: a client by its
+      // client_id however its subject is spelt — the policy's facts are the
+      // APPLICATION's (`partyFacts()` resolves the name to its entry, and
+      // the fact is the entry's identifier in either mode, so they carry no
+      // subject form to make consistent) — a person by name. Kept, so the
+      // act chain below compares the original client with the same name.
+      const actorName = actorClientId || (!actorClaims ? ''
+        : (/^urn:sts:client:/.test(actorTokenSub)
+          ? actorTokenSub.slice('urn:sts:client:'.length)
+          : String(actorClaims.username || actorTokenSub)));
       const decision = delegationPolicy.decide({
-        protocol: 'OAuth 2.0', mode: exchangeMode,
-        intermediary: client.client_id,
-        subject: String(subject.username || subject.sub || ''),
+        protocol: 'OAuth 2.0',
+        requested: (askedSemantics[0] || '') as any,
+        actor: actorName,
+        subject: subjectName,
+        source: subjectAudiences.concat([String(subject.client_id || ''),
+                                         String(subject.azp || '')]),
         targets: exchangeAudiences, targetKind: 'audience',
-        mayActHonoured: !!mayAct,
-        self: subjectIsClient && actorIsClient
+        mayActPresent: !!mayAct, mayActNamesActor: mayActNamesActor
       });
+      // What the token says about the actor, as the semantics require. A
+      // prior `act` is kept under any new one, and kept on its own where the
+      // new act names nobody — laundering a delegation into an ordinary
+      // sign-in is the one thing an exchange must not do.
+      const issuedSemantics = decision.semantics ||
+        (actorClaims ? 'delegation' : 'impersonation');
+      // EVERY ENTRY WRITTEN HERE CARRIES `iss` (#471, `actChainEntry()`):
+      // this authorization server's issuer, the issued token's own. A prior
+      // chain keeps the issuers it carries, and an entry without one is
+      // given this issuer only where this realm signed and verified that
+      // token (`priorActChain()`).
+      const actIssuer = self.issuerOf(base);
+      const ownSubjectChain = subjectVerified && !subjectAssertion;
+      const priorChain = OAuth2Server.priorActChain(priorAct,
+        ownSubjectChain ? actIssuer : '');
+      if (issuedSemantics === 'delegation') {
+        // The current actor — a client in its one subject form (#471), so a
+        // delegation the policy chose without an actor_token names the
+        // client as `urn:sts:client:<id>` in RFC 9700 mode, as its
+        // client_credentials token would.
+        act = OAuth2Server.actChainEntry(actorSubject, actIssuer);
+        // Beneath the new actor: the subject_token's own chain, or — on the
+        // first exchange of a token, which has none — the client the chain
+        // began with (#443, `originalClientAct()`). Only where this exchange
+        // adds an actor: an impersonation adds nobody, so it has no chain to
+        // begin (RFC 8693 section 1.1), and keeps a prior one as it is.
+        const original = priorAct ? null : OAuth2Server.originalClientAct(
+          subject, ownSubjectChain, actorName, namespacedClients, actIssuer);
+        if (priorChain) {
+          act.act = priorChain;
+        } else if (original) {
+          act.act = original;
+        }
+      } else {
+        act = priorChain;
+      }
+      // The actor as the register names it (#471): the party the issued
+      // `act` names — the actor_token's subject, or the exchanging client in
+      // its subject form where the policy chose a delegation without one. An
+      // impersonation names nobody, as before; `delegation.js` draws a
+      // client's subject as that application's box (#468).
+      const registerActor = actorClaims ? actorTokenSub
+        : (issuedSemantics === 'delegation' ? actorSubject : '');
+      // THE AUDIENCE: the one target asked for — or, for a self exchange
+      // that named none, the subject_token's own.
+      const issuedAudiences = decision.allowed && !exchangeAudiences.length &&
+        decision.semantics === 'self' ? subjectAudiences : exchangeAudiences;
+      const exchangeType = issuedSemantics === 'impersonation'
+        ? 'oauth-impersonation' : 'oauth-delegation';
       const firstTarget = decision.targets[0] || { asked: '', application: '' };
       if (!decision.allowed && decision.enforced) {
-        const refusalCode = decision.refusal === 'target' ? 'STS-OAUTH-0619'
-          : (decision.refusal === 'xacml' ? 'STS-OAUTH-0622'
-                                          : 'STS-OAUTH-0618');
+        const REFUSAL_CODES: Record<string, string[]> = {
+          'may-act': ['STS-OAUTH-0620', 'invalid_request'],
+          'targets': ['STS-OAUTH-0792', 'invalid_target'],
+          'unregistered-target': ['STS-OAUTH-0793', 'invalid_target'],
+          'no-target': ['STS-OAUTH-0794', 'invalid_target'],
+          'target': ['STS-OAUTH-0619', 'invalid_target'],
+          'semantics': ['STS-OAUTH-0790', 'invalid_request'],
+          'authority': ['STS-OAUTH-0791', 'invalid_request'],
+          'policy': ['STS-OAUTH-0622', 'invalid_request']
+        };
+        const spoken = REFUSAL_CODES[decision.refusal] ||
+          ['STS-OAUTH-0618', 'invalid_request'];
         delegation.record({
           protocol: 'OAuth 2.0',
-          type: actorClaims ? 'oauth-delegation' : 'oauth-impersonation',
+          type: exchangeType,
           outcome: 'refused',
           initial: { presented: subject.username || subject.sub || '',
                      what: 'the subject of the token presented' },
-          intermediary: { presented: actorClaims ? actorIdentity.sub : '',
+          intermediary: { presented: registerActor,
                           application: client.client_id,
                           what: actorClaims
                             ? 'the actor named in the actor_token, ' +
@@ -14922,19 +16993,17 @@ class OAuth2Server {
                       : 'unstated — neither audience nor resource was sent' },
           authorizedBy: delegationPolicy.rowText(decision),
           reason: decision.why,
-          consumed: [{ kind: 'subject_token',
-                       identifier: String(subject.jti || ''),
-                       note: 'signed by this service and verified' }],
+          consumed: [OAuth2Server.consumedInput('subject_token',
+                                                subjectAssertion,
+                                                String(subject.jti || ''),
+                                                subjectVerified)],
           produced: [], sessionId: ''
         });
-        errorCodes.mark(res, refusalCode);
-        log.debug("Leaving OAuth2Server.tokenGrant(). The delegation policy " +
+        errorCodes.mark(res, spoken[0]);
+        log.debug("Leaving OAuth2Server.tokenGrant(). The issuance policy " +
                   "refused the exchange.");
-        // error-code: none — refusalCode (0618, 0619 or 0622) was marked above
-        return self.oauthError(res, 400,
-                               decision.refusal === 'target'
-                                 ? 'invalid_target' : 'invalid_request',
-                               decision.why);
+        // error-code: none — spoken[0] was marked above
+        return self.oauthError(res, 400, spoken[1], decision.why);
       }
       // -----------------------------------------------------------------------
       // AN EXCHANGE MAY NOT WIDEN WHAT THE SUBJECT GRANTED (#108). The scope
@@ -14950,31 +17019,109 @@ class OAuth2Server {
       // no `scope` claim — an ID Token — carries no grant to compare against,
       // and the client's declaration is then the only limit, as before.
       // -----------------------------------------------------------------------
-      if (subjectVerified && body.scope && subject.scope !== undefined &&
-          subject.scope !== null) {
+      // The rule is the ISSUANCE POLICY's since #186 (`exchange-widens-
+      // scope`, stage `exchange`): this side sends each requested scope with
+      // two facts — whether the subject_token has a `scope` claim at all,
+      // and whether it carries this one — and the policy refuses in product.
+      //
+      // A DELEGATED PERMISSION IS DECIDED BY DELEGATION, NOT BY THE SUBJECT
+      // TOKEN (#549). A permission identifier (an `oauthPermissionBaseUri`
+      // plus a name) asked for here is sent with two more facts — that it is
+      // a delegated permission, and whether the CALLING client holds it
+      // (`oauthDelegatedPermission`) — and the policy's `exchange-permission-
+      // not-delegated` rule DROPS one the caller does not hold, in every
+      // mode, while `exchange-widens-scope` leaves permissions alone. So a
+      // caller may add to the exchanged token a permission the subject_token
+      // did not carry, when that permission was delegated to it, and never
+      // one that was not. The request-stage refusal (`permission-not-
+      // granted`) does not apply to an exchange for the same reason.
+      let exchangeScope: string | null = null;
+      if (body.scope) {
+        const hasScope = subjectVerified &&
+          subject.scope !== undefined && subject.scope !== null;
         const granted = String(subject.scope || '').split(/\s+/)
           .filter(function (one) { return !!one; });
-        const wider = String(body.scope).split(/\s+/).filter(function (one) {
-          return !!one && granted.indexOf(one) < 0;
+        const askedScopes = String(body.scope).split(/\s+/)
+          .filter(function (one) { return !!one; });
+        // The permissions among them, by the one translation every grant
+        // uses, so "is this a permission" and "does this client hold it"
+        // cannot be answered two ways.
+        const found = self.audienceScopes(String(body.scope),
+                                          client.client_id);
+        const permissionOf: Json = {};
+        (found.permissions || []).forEach(function (one: Json) {
+          permissionOf[one.scope] = one;
         });
-        if (wider.length) {
-          if (decision.enforced) {
-            log.info('oauth2: a token exchange by "' + client.client_id +
-                     '" asked for ' + wider.join(' ') + ', which the ' +
-                     'subject_token does not carry.');
-            errorCodes.mark(res, 'STS-OAUTH-0621');
-            log.debug("Leaving OAuth2Server.tokenGrant(). The exchange " +
-                      "would widen the subject's scope.");
-            return self.oauthError(res, 400, 'invalid_scope',
-                                   'The requested scope is wider than the ' +
-                                   'subject_token\'s (' + wider.join(' ') +
-                                   ' is not in it). An exchange may narrow ' +
-                                   'a scope, never widen it.');
-          }
+        const SA = scopeVerdicts.ATTRIBUTE;
+        const scopeAnswer = gate.checkScopes({
+          subject: { kind: 'application', name: client.client_id,
+                     authenticated: true },
+          client: client.client_id,
+          protocol: 'OAuth 2.0',
+          mode: mode.current(),
+          stage: 'exchange',
+          grantType: String(body.grant_type || ''),
+          requested: askedScopes,
+          facts: askedScopes.map(function (one: string): Json {
+            const permission = permissionOf[one];
+            // A subject_token's scope claim carries a permission by its
+            // BARE NAME (audienceScopes() wrote it that way), so a
+            // permission is in the subject_token when either spelling is.
+            const inSubject = granted.indexOf(one) >= 0 ||
+              (!!permission && granted.indexOf(permission.permission) >= 0);
+            const attributes = [
+              scopeVerdicts.resourceFact(SA.SUBJECT_TOKEN_HAS_SCOPE, hasScope),
+              scopeVerdicts.resourceFact(SA.SCOPE_IN_SUBJECT_TOKEN,
+                                         inSubject)];
+            if (permission) {
+              attributes.push(
+                scopeVerdicts.resourceFact(SA.SCOPE_DELEGATED, true),
+                scopeVerdicts.resourceFact(SA.SCOPE_GRANTED,
+                                           !!permission.granted));
+            }
+            return { scope: one, attributes: attributes };
+          })
+        });
+        const refusedScopes = (scopeAnswer.verdicts || [])
+          .filter(function (one: Json) { return one.verdict === 'refuse'; });
+        if (refusedScopes.length) {
+          const wider = refusedScopes.map(function (one: Json): string {
+            return String(one.scope);
+          });
+          log.info('oauth2: a token exchange by "' + client.client_id +
+                   '" asked for ' + wider.join(' ') + ', which the ' +
+                   'subject_token does not carry.');
+          errorCodes.mark(res, 'STS-OAUTH-0621');
+          log.debug("Leaving OAuth2Server.tokenGrant(). The exchange " +
+                    "would widen the subject's scope.");
+          return self.oauthError(res, 400, 'invalid_scope',
+                                 'The requested scope is wider than the ' +
+                                 'subject_token\'s (' + wider.join(' ') +
+                                 ' is not in it). An exchange may narrow ' +
+                                 'a scope, never widen it.');
+        }
+        const dropped = (scopeAnswer.verdicts || [])
+          .filter(function (one: Json) { return one.verdict === 'drop'; })
+          .map(function (one: Json): string { return String(one.scope); });
+        if (dropped.length) {
+          log.info(errorCodes.tag('STS-OAUTH-0954') + 'oauth2: a token ' +
+                   'exchange by "' + client.client_id + '" asked for ' +
+                   dropped.join(' ') + ', which ' +
+                   (dropped.length === 1 ? 'is a delegated permission'
+                     : 'are delegated permissions') + ' not delegated ' +
+                   'to it; left out of the issued token.');
+        }
+        exchangeScope = askedScopes.filter(function (one) {
+          return dropped.indexOf(one) < 0;
+        }).join(' ');
+        const widened = hasScope ? askedScopes.filter(function (one) {
+          return granted.indexOf(one) < 0 && !permissionOf[one];
+        }) : [];
+        if (widened.length) {
           log.info('oauth2: a token exchange by "' + client.client_id +
                    '" widened the subject_token\'s scope by ' +
-                   wider.join(' ') + '; development allows it, product ' +
-                   'refuses it (STS-OAUTH-0621).');
+                   widened.join(' ') + '; the issuance policy allowed it ' +
+                   '(development; product refuses it, STS-OAUTH-0621).');
         }
       }
       const exchanged = await issue({
@@ -14983,8 +17130,25 @@ class OAuth2Server {
         user: Object.assign(userFor(subject.username),
                             subject.sub ? { sub: subject.sub } : {}),
         client_id: client.client_id,
-        scope: String(body.scope || subject.scope || ''),
-        audience: self.audienceClaim(exchangeAudiences), act: act,
+        // AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD
+        // (#156). RFC 8693 section 2.1 leaves the scope of the new token to
+        // the server's policy, and this server's is the one rule for every
+        // exchange — an access, refresh or ID Token, a JWT or SAML assertion
+        // (#114): the `scope` asked for, which may narrow and never widen
+        // (above); else the subject_token's `scope` claim; else none. Either
+        // way it then goes through tokenSet()'s narrowing like every other
+        // grant — the client's declared scopes (#110), the roles (#302), and
+        // RFC 9068's audience plan, which takes the OpenID Connect scopes off
+        // a token for another resource server. What survives is the response's
+        // `scope` member, left out when nothing did, and an ID Token comes
+        // back only when `openid` survived (idTokenFollowsIssuedScope).
+        // A requested scope the policy narrowed (#549) is the list that
+        // survived — empty included, so a dropped permission never brings
+        // the subject's own scope back in its place.
+        scope: exchangeScope !== null ? exchangeScope
+          : String(subject.scope || ''),
+        idTokenFollowsIssuedScope: true,
+        audience: self.audienceClaim(issuedAudiences), act: act,
         // RFC 9396 on an exchange: the details asked for, as for a direct
         // grant. The audience rule is tokenSet()'s backstop, as the header
         // above says.
@@ -15012,7 +17176,7 @@ class OAuth2Server {
         // than `requestedResources` alone, because `aud` on the token being
         // minted is the union of both and the two must not come to describe
         // different resource servers.
-        resources: wantsRefresh ? exchangeAudiences : undefined,
+        resources: wantsRefresh ? issuedAudiences : undefined,
         grant: 'token exchange'
       });
       // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN THE
@@ -15082,7 +17246,7 @@ class OAuth2Server {
       // names one target; an exchange asking for several is drawn against the
       // one it named first, and the raw string is kept in the sentence beside
       // it either way.
-      const audience = String(exchangeAudiences[0] || '');
+      const audience = String(issuedAudiences[0] || '');
       // ---------------------------------------------------------------------
       // WHICH APPLICATION THAT AUDIENCE IS, when one has registered it.
       //
@@ -15116,7 +17280,7 @@ class OAuth2Server {
       }
       delegation.record({
         protocol: 'OAuth 2.0',
-        type: actorClaims ? 'oauth-delegation' : 'oauth-impersonation',
+        type: exchangeType,
         outcome: 'issued',
         initial: {
           presented: subject.username || subject.sub || 'urn:sts:exchanged',
@@ -15130,14 +17294,19 @@ class OAuth2Server {
               'authenticated'
         },
         intermediary: {
-          presented: actorClaims ? String(actorClaims.sub || '') : '',
+          presented: registerActor,
           application: client.client_id,
           what: actorClaims
             ? 'the actor named in the actor_token, exchanging through client ' +
               client.client_id
-            : 'the client performing the exchange. No actor_token was sent, ' +
-              'so no identity is named — the client is the whole of the ' +
-              'middle here'
+            : (registerActor
+              ? 'the client performing the exchange, named as the actor by ' +
+                'its own subject — no actor_token was sent, and the ' +
+                'issuance policy chose a delegation, so the client acts for ' +
+                'the subject'
+              : 'the client performing the exchange. No actor_token was ' +
+                'sent, so no identity is named — the client is the whole ' +
+                'of the middle here')
         },
         target: {
           application: audienceApplication ? audienceApplication.identifier :
@@ -15158,26 +17327,28 @@ class OAuth2Server {
         // Kerberos row names one — or, in development, what WOULD have
         // refused it. See `common/delegation_policy.ts`.
         authorizedBy: delegationPolicy.rowText(decision),
-        consumed: ([{
-          kind: 'subject_token',
-          identifier: String(subject.jti || ''),
-          note: subjectVerified
-            ? 'signed by this service and verified'
-            : 'NOT signed by this service; read without verifying'
-        }] as Json[]).concat(actorClaims ? [{
-          kind: 'actor_token',
-          identifier: String(actorClaims.jti || ''),
-          note: (strictExchange ? 'signed by this service and verified'
-                                : 'read without verifying') + ' — its ' +
-                '`sub` is what goes into the `act` claim'
-        }] : []),
+        consumed: ([OAuth2Server.consumedInput('subject_token',
+                                               subjectAssertion,
+                                               String(subject.jti || ''),
+                                               subjectVerified)] as Json[])
+          .concat(actorClaims ? [actorAssertion
+            ? OAuth2Server.consumedInput('actor_token', actorAssertion,
+                                         String(actorClaims.jti || ''), true)
+            : {
+              kind: 'actor_token',
+              identifier: String(actorClaims.jti || ''),
+              note: (strictExchange ? 'signed by this service and verified'
+                                    : 'read without verifying') + ' — its ' +
+                    '`sub` is what goes into the `act` claim'
+            }] : []),
         produced: [{
           kind: 'access_token',
           identifier: issuedJti,
           note: act
             ? 'carries an `act` claim naming ' + String(act.sub || '(nobody)') +
-              (act.act ? ', with the prior actors nested beneath it (RFC ' +
-                         '8693 section 4.1)' : '')
+              (act.act ? ', with the prior actors — back to the client the ' +
+                         'chain began with — nested beneath it (RFC 8693 ' +
+                         'section 4.1)' : '')
             : 'carries nothing about the client that exchanged it'
         }].concat(exchanged.id_token ? [{
           kind: 'id_token',
@@ -15525,9 +17696,11 @@ class OAuth2Server {
     // -------------------
     const advertisedAuth = self.capabilityFor(
       req, 'token_endpoint_auth_methods_supported');
-    const declaredMethod = String(registered.token_endpoint_auth_method || '');
+    const declaredMethod = self.presentedMethodOf(req, client, registered);
+    // The hosted public clients' exemption, as at the token endpoint.
     if (declaredMethod && advertisedAuth &&
-        advertisedAuth.indexOf(declaredMethod) < 0) {
+        advertisedAuth.indexOf(declaredMethod) < 0 &&
+        !self.deps.fapi.publicClientExempt(clientId, declaredMethod)) {
       log.debug("Leaving OAuth2Server.parRequest(). " + self.profileOf(req) +
                 " does not " +
                 "advertise " + declaredMethod + ".");
@@ -15593,8 +17766,10 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     const observation = await bcp.observeClientAuthentication(authentication);
-    // FAPI (#138): the confidential client authentication methods it allows.
-    const fapiAuth = fapi.clientAuthenticationRefusal(observation.method);
+    // FAPI (#138): the confidential client authentication methods it allows
+    // — and the admin console as a public client, its one exception (#446).
+    const fapiAuth = fapi.clientAuthenticationRefusal(observation.method,
+                                                      clientId);
     if (fapiAuth) {
       log.debug("Leaving OAuth2Server.parRequest(). FAPI refused the " +
                 "client's authentication method.");
@@ -15604,8 +17779,11 @@ class OAuth2Server {
                       { 'WWW-Authenticate': self.basicChallenge() } : null);
     }
     // FAPI 2.0 section 5.3.2.2 item 4 (#140): a push authenticates its client.
+    // The hosted public clients (#446, #568) push with nothing to
+    // authenticate with: the profile's exemption, read here too.
     const fapiPushed = fapi.parAuthenticationRefusal(
-      !!observation.authenticated);
+      !!observation.authenticated ||
+      fapi.publicClientExempt(clientId, declaredMethod));
     if (fapiPushed) {
       log.debug("Leaving OAuth2Server.parRequest(). FAPI 2.0: an " +
                 "unauthenticated push.");
@@ -15775,7 +17953,7 @@ class OAuth2Server {
       objectAlg = String(verified.alg || '');
       objectEncrypted = String(verified.encrypted || '');
     } else {
-      if (requestObject.signedRequired(registered, profile)) {
+      if (requestObject.signedRequired(registered, profile, clientId)) {
         log.debug("Leaving OAuth2Server.parRequest(). A signed request " +
                   "object is required.");
         return refuse(400, 'invalid_request', 'This push carries plain ' +
@@ -15862,8 +18040,24 @@ class OAuth2Server {
     // RFC 9396: details whose type belongs to one API beside a scope or
     // resource naming another are refused here, at the push, rather than when
     // the request_uri is used.
-    const plan = self.accessTokenPlan(base, scope, clientId,
-                                      resources.resources, details.details);
+    let plan = self.accessTokenPlan(base, scope, clientId,
+                                    resources.resources, details.details);
+    // SEVERAL RESOURCES ON A CODE (#607): the authorization endpoint's rule
+    // (`issueAuthorizationResponse()`) — refused only where no one of them
+    // could be issued a token alone, because the token request picks one.
+    const pushedTypes = String(q.response_type || '').split(/\s+/);
+    if (plan.refusal && pushedTypes.indexOf('token') < 0 &&
+        resources.resources.length > 1) {
+      const one = resources.resources.map(function (resource: string) {
+        return self.accessTokenPlan(base, scope, clientId, [resource],
+                                    details.details);
+      }).filter(function (each: Json) {
+        return !each.refusal;
+      })[0];
+      if (one) {
+        plan = one;
+      }
+    }
     if (plan.refusal) {
       log.debug("Leaving OAuth2Server.parRequest(). RFC 9068 refused the " +
                 "audience.");
@@ -16054,6 +18248,9 @@ class OAuth2Server {
       // RFC 9396 section 9.2: the resource server learns what the token
       // authorizes in detail the same way it learns its scope.
       authorization_details: claims.authorization_details,
+      // #432 phase 5: the grant those details' limits are counted against,
+      // the same across every refresh — the resource server's key.
+      grant_id: claims.typ === 'Refresh' ? undefined : claims.grant_id,
       // RFC 9470 section 6.2: WHEN the person behind the token authenticated
       // and to what level, so a resource server that introspects rather than
       // reading a JWT can make the same step-up decision. Absent where the
@@ -16064,6 +18261,19 @@ class OAuth2Server {
       // the token itself states it — so a resource server that introspects
       // learns what one reading the JWT does.
       device_id: claims.device_id,
+      // RFC 8693 section 7.2 registers `act` and `may_act` as introspection
+      // response members (#469). Without them a resource server that
+      // introspects — an opaque-token deployment, or one asking for RFC
+      // 9701's JWT — could not see who acted, which is the whole of a
+      // delegation at the far end: `act` as the token nests it, the current
+      // actor outermost and the chain beneath it back to the original client
+      // (#443), and `may_act` as the subject stated it. Only as the token
+      // carries them, and only in an answer the caller may see at all —
+      // `intendedFor()` below decides that for this member as for `sub`.
+      act: claims.act && typeof claims.act === 'object'
+        ? claims.act : undefined,
+      may_act: claims.may_act && typeof claims.may_act === 'object'
+        ? claims.may_act : undefined,
       exp: claims.exp, iat: claims.iat, nbf: claims.nbf,
       sub: claims.sub, aud: claims.aud, iss: claims.iss, jti: claims.jti
     }));
@@ -16143,8 +18353,7 @@ class OAuth2Server {
     // is about the server's capabilities rather than about the credential. A
     // removed member means the check does not run.
     const advertisedAuth = self.capabilityFor(req, opts.capability);
-    const declaredMethod = String(registered.token_endpoint_auth_method ||
-                                  '');
+    const declaredMethod = self.presentedMethodOf(req, client, registered);
     if (declaredMethod && advertisedAuth &&
         advertisedAuth.indexOf(declaredMethod) < 0) {
       log.debug("Leaving OAuth2Server.authenticateEndpointCaller(). " +
@@ -16332,6 +18541,25 @@ class OAuth2Server {
                'not intended for it (client_id ' + answer.client_id + ', aud ' +
                JSON.stringify(answer.aud) + '), answered as inactive.');
       answer = { active: false };
+    }
+    // WHAT THIS RESOURCE SERVER MAY SEE (#432 phase 4): an authenticated
+    // caller that OWNS a type among the token's details is shown the details
+    // of its own types only, and the person's claims those types declare in
+    // `introspectionClaims` (`authorization_details.ts`'s
+    // `introspectionView()`, GNAP's introspection reads the same). A caller
+    // that owns none sees the token as before.
+    if (authenticated && answer.active === true &&
+        Array.isArray(answer.authorization_details)) {
+      const view = richAuthorization.introspectionView(
+        answer.authorization_details, clientId, answer.username || '');
+      if (view.owned) {
+        answer.authorization_details = view.rights;
+        Object.keys(view.claims).forEach(function (name: string): void {
+          if (answer[name] === undefined) {
+            answer[name] = view.claims[name];
+          }
+        });
+      }
     }
     if (!wantsJwt) {
       res.status(200).type('application/json').send(JSON.stringify(answer));
@@ -16527,13 +18755,13 @@ class OAuth2Server {
       return undefined;
     }
     const clientId = String(caller.clientId);
-    const flows = applications.registeredFlowsOf(clientId);
+    const flows = applications.declaredFlowsOf(clientId);
     if (flows && flows.grant_types && flows.grant_types.length &&
         flows.grant_types.indexOf(deviceAuthorization.GRANT_TYPE) < 0) {
       log.debug("Leaving OAuth2Server.deviceAuthorizationRequest(). Not " +
-                "a registered grant.");
+                "a declared grant.");
       return refuse('STS-OAUTH-0692', 400, 'unauthorized_client', 'client "' +
-                    clientId + '" did not register the device_code grant ' +
+                    clientId + '" did not declare the device_code grant ' +
                     '(RFC 7591 section 2).');
     }
     const scope = String(body.scope || '').trim();
@@ -16560,7 +18788,7 @@ class OAuth2Server {
     const made = deviceAuthorization.create(clientId,
       String(registration.client_name || clientId), scope, dpopJkt);
     const base = self.asBaseOf(req);
-    const verification = base + '/portal/device';
+    const verification = helpers.rebaseTo(base, 'portal') + '/portal/device';
     log.debug("Leaving OAuth2Server.deviceAuthorizationRequest().");
     res.status(200).type('application/json').send(JSON.stringify({
       device_code: made.deviceCode,
@@ -17282,7 +19510,9 @@ class OAuth2Server {
     // uninstalled it, and no administrator or policy was involved.
     const how = { initiatingEntity: 'user' };
     const revoked: string[] = [];
-    if (claims.jti && stats.revoke(claims.jti, via, how)) {
+    // The token's own `exp` goes with it (#345): the revocation is kept
+    // until then and no longer.
+    if (claims.jti && stats.revoke(claims.jti, via, how, claims.exp)) {
       revoked.push(String(claims.jti));
     }
     if (kind === 'refresh') {
@@ -17377,10 +19607,10 @@ class OAuth2Server {
   private registeredSecretExpiry(issuedAt: Json): Json {
     const { log, config } = this.deps;
     log.debug("Entering OAuth2Server.registeredSecretExpiry().");
-    const seconds = Number(config.value('oauth2.registeredSecretLifetimeS'));
+    const days = Number(config.value('oauth2.clientSecretLifetimeDays'));
     log.debug("Leaving OAuth2Server.registeredSecretExpiry().");
-    return isFinite(seconds) && seconds > 0 ?
-      issuedAt + Math.floor(seconds) : 0;
+    return isFinite(days) && days > 0 ?
+      issuedAt + Math.floor(days) * 86400 : 0;
   }
 
   private clientRecord(base: Json, metadata: Json, clientId: Json,
@@ -17393,7 +19623,7 @@ class OAuth2Server {
       client_id: clientId,
       client_id_issued_at: issuedAt,
       client_secret: secret,
-      // `oauth2.registeredSecretLifetimeS`; 0 = never, the default.
+      // `oauth2.clientSecretLifetimeDays`; 0 = never, the default.
       client_secret_expires_at: self.registeredSecretExpiry(issuedAt),
       registration_access_token: token,
       registration_client_uri: base + '/oauth2/register/' + clientId
@@ -17711,6 +19941,7 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
       applications.jarmMetadataProblem(metadata) ||
       self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
@@ -17746,8 +19977,7 @@ class OAuth2Server {
                bcpCheck.description, code: bcpCheck.errorCode ||
                'STS-OAUTH-0158' };
     }
-    const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) ||
-                        24;
+    const secretBytes = Number(config.value('oauth2.registeredSecretBytes'));
     const record = self.clientRecord(self.asBaseOf(req), metadata, clientId,
                                      o.secret ? randomId(secretBytes)
                                               : undefined, undefined);
@@ -17895,6 +20125,7 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
       applications.jarmMetadataProblem(metadata) ||
       self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
@@ -17948,8 +20179,7 @@ class OAuth2Server {
     // the literals that were here. The secret and the registration access token
     // share a size because both ARE secrets and neither is weaker than the
     // other.
-    const secretBytes = Number(config.value('oauth2.registeredSecretBytes')) ||
-                        24;
+    const secretBytes = Number(config.value('oauth2.registeredSecretBytes'));
     const clientId = String(config.value('oauth2.registeredClientIdPrefix') ||
                             '') +
                      randomId(Number(
@@ -18113,6 +20343,11 @@ class OAuth2Server {
       applications.introspectionResponseProblem(metadata) ||
       applications.idTokenEncryptionMetadataProblem(metadata) ||
       idTokenEncryption.registrationKeyProblem(metadata) ||
+      applications.userinfoEncryptionMetadataProblem(metadata) ||
+      // JARM, as the POST checks it (#284): until then an update could
+      // store an authorization_*_response_alg a registration refuses.
+      applications.jarmMetadataProblem(metadata) ||
+      self.deps.jarm.registrationKeyProblem(metadata) ||
       applications.requestObjectMetadataProblem(metadata) ||
       applications.pushedAuthorizationMetadataProblem(metadata) ||
       applications.oidcSubjectMetadataProblem(metadata) ||
@@ -18232,13 +20467,14 @@ class OAuth2Server {
    */
   registerRoutes(app: any): void {
     const self = this;
-    const { crypto, realms, forge, jwt, stsCrypto, log, logArtifact, STS,
+    const { realms, forge, jwt, stsCrypto, log, logArtifact, STS,
             baseUrlOf, b64u, jsonFromB64u, nowSec, randomId, xmlEscape,
             parseBody, bodyValues, plainOauthError, signJwt, signJwtAs,
             allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,
             hasScope, signingKeyFor, certificateHeaderFor, publishedKidFor,
             nameForSubject, hasSubjectResolver, LEGACY_SUBJECT_PREFIX,
-            requestObjectKeysFor, dpop, joseKid, mtls, clientAuth,
+            requestObjectKeysFor, dpop, httpSignatures, joseKid, mtls,
+            clientAuth,
             assertionGrant, softwareStatement, samlAssertionGrant, mode,
             authorizationServers, stats, VCI_CONFIGS, VCI_CONFIG_ID, VCI_SCOPE,
             vciFormatOf, vcClaims, deferredAccessTokens, issuerStates,
@@ -18256,7 +20492,7 @@ class OAuth2Server {
     // #46). `dpop.ts` registers nothing (rule 3), so the middleware it builds
     // is registered HERE, above this module's first route — and so above every
     // route that verifies a proof: the token endpoint, the PAR endpoint,
-    // UserInfo and the step-up stand-in below, and the credential endpoints,
+    // UserInfo below, and the credential endpoints,
     // SCIM and Shared Signals, all registered after this module (rule 1:
     // middleware applies only to routes added after it). Nothing required above
     // this module reads a DPoP header. It does nothing for a request without
@@ -18264,6 +20500,10 @@ class OAuth2Server {
     // `verifyProof()` is argued above `PROOF_CLAIM` in `dpop.ts`.
     // -------------------------------------------------------------------------
     app.use(dpop.proofClaims());
+    // FAPI 2.0 HTTP Signatures (#178): a signing client's jwks_uri, fetched
+    // on arrival so the synchronous check at the resource servers finds its
+    // keys. It decides nothing (`oauth-oidc/http_signatures.ts`).
+    app.use(httpSignatures.keyPrefetch());
 
     // -------------------------------------------------------------------------
     // A CLIENT'S `jwks_uri`, FETCHED BEFORE AN ENDPOINT THAT MAY ENCRYPT TO IT
@@ -18276,6 +20516,38 @@ class OAuth2Server {
     // Never refuses: a failed fetch is refused, by name, where the key was
     // needed.
     // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // WHICH CELL ANSWERS A BACK-CHANNEL REQUEST (#98 D10), FIRST, before
+    // anything below authenticates the client or reads a proof. A code, a
+    // refresh token, a device code or a CIBA id is held by the cell that
+    // minted it and is presented at whichever cell the client's server
+    // reached, so this sends the request there WHOLE — and it has to be
+    // before client authentication, because a client assertion and a DPoP
+    // proof are spent where they are checked (once ever, #98's global
+    // replay sets), and the owning cell must be the one that spends them.
+    // A person named by a password grant or a CIBA hint is served at home.
+    // `common/cell_placement.ts` is the table; single-cell mode passes.
+    // -------------------------------------------------------------------------
+    app.use(['/oauth2/token', '/oauth2/introspect', '/oauth2/revoke',
+             '/oauth2/bc-authorize', '/:as/oauth2/token',
+             '/:as/oauth2/introspect', '/:as/oauth2/revoke'],
+            function (req: Req, res: Res, next: () => void): void {
+      log.debug("Entering the cell placement of a back-channel request.");
+      self.placeBackChannel(req, res).then(function (relayed: boolean) {
+        log.debug("Leaving the cell placement of a back-channel request. " +
+                  (relayed ? 'Relayed.' : 'Here.'));
+        if (!relayed) {
+          next();
+        }
+      }, function (e: any) {
+        log.debug("Caught in the cell placement: " + ((e && e.message) || e));
+        // A lookup that failed is served here, which is what an unknown
+        // person or artifact is: the owning cell, if there is one, answers
+        // for its own when it is asked.
+        next();
+      });
+    });
+
     app.use(['/oauth2/authorize', '/oauth2/token', '/oauth2/par',
              '/oauth2/userinfo', '/oauth2/introspect',
              '/:as/oauth2/authorize', '/:as/oauth2/token', '/:as/oauth2/par',
@@ -18300,25 +20572,24 @@ class OAuth2Server {
     // FAPI 1.0 Baseline section 6.2.1 items 11 and 13: a resource server
     // "shall set the response header x-fapi-interaction-id to the value
     // received from the corresponding FAPI client request header or to a
-    // RFC4122 UUID value if the request header was not provided". UserInfo,
-    // Grant Management's `/oauth2/grants/{id}` and the step-up stand-in are
-    // the resources this service serves, and the OpenID conformance suite's
-    // FAPI 1.0 plans read the header off UserInfo. In EVERY mode rather than
+    // RFC4122 UUID value if the request header was not provided". UserInfo
+    // and Grant Management's `/oauth2/grants/{id}` are the resources this
+    // service serves, and the OpenID conformance suite's FAPI 1.0 plans read
+    // the header off UserInfo. In EVERY mode rather than
     // under a FAPI profile: the header is a correlation id that carries
     // nothing, and asking a named server's profile here, before its route has
     // entered it, would be the one place that could get it wrong. A value the
     // client sent is echoed only when it has the UUID's shape, so this never
     // reflects arbitrary text into a header.
     // -------------------------------------------------------------------------
-    app.use(['/oauth2/userinfo', '/oauth2/grants', '/oauth2/step-up/resource',
-             '/:as/oauth2/userinfo', '/:as/oauth2/grants',
-             '/:as/oauth2/step-up/resource'],
+    app.use(['/oauth2/userinfo', '/oauth2/grants',
+             '/:as/oauth2/userinfo', '/:as/oauth2/grants'],
             function (req: Req, res: Res, next: () => void): void {
       log.debug("Entering the x-fapi-interaction-id middleware.");
       const sent = String(req.headers['x-fapi-interaction-id'] || '');
       res.set('x-fapi-interaction-id',
               /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-                .test(sent) ? sent : crypto.randomUUID());
+                .test(sent) ? sent : stsCrypto.randomUuid());
       log.debug("Leaving the x-fapi-interaction-id middleware.");
       next();
     });
@@ -18489,10 +20760,10 @@ class OAuth2Server {
     // oauth2.rfc9700 — so it is turned on at /admin/config or through POST
     // /admin-api/config like every other setting, which is what gives it a
     // console control, a management API operation and an audit row without a
-    // line being written for any of the three. /dpop/nonce-mode is a switch as
-    // well, and a test control: it writes the setting
-    // `oauth2.dpopNonceRequired` for the realm it is reached in (see its header
-    // below).
+    // line being written for any of the three. Whether DPoP proofs must carry
+    // a server nonce is the same kind of thing — the per-realm setting
+    // `oauth2.dpopNonceRequired` — and since #597 there is no other switch
+    // for it.
     //
     // Read-only, so there is no console control here and therefore nothing for
     // rule 7 in CLAUDE.md to require of the management API.
@@ -18530,104 +20801,8 @@ class OAuth2Server {
 
     app.post('/oauth2/userinfo', self.userinfoResponse.bind(self));
 
-    app.get('/oauth2/step-up/resource/:application',
-            self.stepUpResource.bind(self));
-
-    app.post('/oauth2/step-up/resource/:application',
-             self.stepUpResource.bind(self));
-
     // --- token endpoint
     // ---------------------------------------------------------
-    // -------------------------------------------------------------------------
-    // NON-SPEC: the DPoP nonce switch.
-    //
-    // RFC 9449 sections 8 and 9 let a server demand a server-supplied nonce in
-    // every proof, which turns the first request of a session into a 401/retry
-    // handshake. Whether to do that is a deployment's choice, and both answers
-    // are worth being able to try — a wallet that handles the happy path but
-    // not the handshake is a wallet that works until it meets a server that
-    // asks.
-    //
-    // So it is a runtime switch: a test, or somebody reading the page, can turn
-    // it on, watch the retry, and turn it off again without restarting the
-    // service. GET reports; POST {"required": true|false} sets — the runtime
-    // setting `oauth2.dpopNonceRequired` since 2026-09-12 (below). Listed on
-    // /admin/sts-metadata as non-spec, because it is.
-    // -------------------------------------------------------------------------
-    app.get('/dpop/nonce-mode', function (req, res) {
-      log.debug("Entering the DPoP nonce-mode endpoint (read).");
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-        .send(JSON.stringify(dpop.state(), null, 2));
-      log.debug("Leaving the DPoP nonce-mode endpoint (read).");
-    });
-
-    // -------------------------------------------------------------------------
-    // TWO THINGS CHANGED ABOUT THE WRITE ON 2026-09-12.
-    //
-    // **IT IS PER TRUST REALM.** It set one switch for the whole process, so a
-    // test turning nonces on at /realm/acme/dpop/nonce-mode demanded them of
-    // every client of every other realm. It writes `oauth2.dpopNonceRequired`
-    // now, which lands on the realm it is reached in — see
-    // `dpop.setNonceMode()`.
-    //
-    // **IT IS A TEST CONTROL AND PRODUCT MODE REFUSES IT.** Anybody who can
-    // reach the port could change a security policy of the authorization server
-    // and empty its replay cache in the same call. In product the setting is
-    // still changeable, through the two doors that already require a credential
-    // — /admin/oauth2 and POST /admin-api/config/set — and this endpoint says
-    // so. The READ above stays open in both modes: it reports a policy a client
-    // needs to know to talk to this server at all.
-    // -------------------------------------------------------------------------
-    app.post('/dpop/nonce-mode', function (req, res) {
-      log.debug("Entering the DPoP nonce-mode endpoint (write).");
-      if (!mode.opensTestControls()) {
-        log.warn('oauth2: POST /dpop/nonce-mode was refused — product mode ' +
-                 'does not open test controls.');
-        log.debug("Leaving the DPoP nonce-mode endpoint. Refused in product " +
-                  "mode.");
-        errorCodes.mark(res, 'STS-OAUTH-0178');
-        return self.oauthError(res, 403, 'access_denied',
-          'POST /dpop/nonce-mode is a test control and this realm is in ' +
-          'product mode, where test controls are closed. Set ' +
-          'oauth2.dpopNonceRequired instead — on /admin/oauth2 or with POST ' +
-          '/admin-api/config/set, both ' +
-          'of which require a credential.');
-      }
-      const body = parseBody(req);
-      // Only an explicit boolean, so a typo cannot silently leave the switch in
-      // a state nobody chose: a test that means to turn nonces OFF and leaves
-      // them on makes every later section in the run fail for an invisible
-      // reason.
-      const wanted = body.required;
-      if (wanted !== true && wanted !== false && wanted !== 'true' &&
-          wanted !== 'false') {
-        log.debug("Leaving the DPoP nonce-mode endpoint. Refused.");
-        errorCodes.mark(res, 'STS-OAUTH-0179');
-        return self.oauthError(res, 400, 'invalid_request',
-          'Send {"required": true} or {"required": false}.');
-      }
-      try {
-        dpop.setNonceMode(wanted === true || wanted === 'true');
-      } catch (e) {
-        log.error(errorCodes.tag('STS-OAUTH-0180') + 'oauth2: the DPoP nonce ' +
-                                                     'switch could not be ' +
-                                                     'written: ' +
-                  e.message);
-        log.debug("Leaving the DPoP nonce-mode endpoint. The setting " +
-                  "refused it.");
-        errorCodes.mark(res, 'STS-OAUTH-0180');
-        return self.oauthError(res, 500, 'server_error', e.message);
-      }
-      // A change of policy invalidates nothing already issued, but the replay
-      // cache holds this realm's proofs and a test that has just been refusing
-      // proofs on purpose wants a clean slate for the next section.
-      dpop.forgetProofs();
-      res.status(200).type('application/json').set('Cache-Control', 'no-store')
-        .send(JSON.stringify(dpop.state(), null, 2));
-      log.debug("Leaving the DPoP nonce-mode endpoint (write). required=" +
-                dpop.nonceModeOn());
-    });
-
     // -------------------------------------------------------------------------
     // THE WRAPPER, AND IT IS NOT CEREMONY.
     //
@@ -18740,7 +20915,7 @@ class OAuth2Server {
     app.get('/docs', function (req, res) {
       log.debug("Entering the service documentation endpoint.");
       res.type('text/plain').send(
-        'Mock authorization server (service_documentation).\n\n' +
+        'Authorization server (service_documentation).\n\n' +
         'Every endpoint in ' + baseUrlOf(req) +
         '/.well-known/oauth-authorization-server ' +
         'answers.\nTokens are RS256 JWTs signed with the key ' +
@@ -18752,14 +20927,14 @@ class OAuth2Server {
 
     app.get('/policy', function (req, res) {
       log.debug("Entering the policy document endpoint.");
-      res.type('text/plain').send('Mock authorization server policy ' +
+      res.type('text/plain').send('Authorization server policy ' +
                                   '(op_policy_uri). Test data only.\n');
       log.debug("Leaving the policy document endpoint.");
     });
 
     app.get('/tos', function (req, res) {
       log.debug("Entering the terms of service endpoint.");
-      res.type('text/plain').send('Mock authorization server terms of ' +
+      res.type('text/plain').send('Authorization server terms of ' +
                                   'service (op_tos_uri). Test data only.\n');
       log.debug("Leaving the terms of service endpoint.");
     });
@@ -18836,6 +21011,7 @@ export = {
   ID_TOKEN_SIGNING_ALGS: ID_TOKEN_SIGNING_ALGS,
   USERINFO_SIGNING_ALGS: USERINFO_SIGNING_ALGS,
   accessToken: slot.forward('accessToken'),
+  accessTokenAsync: slot.forward('accessTokenAsync'),
   tokenSet: slot.forward('tokenSet'),
   // THE TWO SCOPE POLICIES (#110), for `tests/scope_policy.js`: which scopes
   // a client may be issued, and whether it holds a delegated permission.
@@ -18889,6 +21065,7 @@ export = {
   ownTokenKind: slot.forward('ownTokenKind'),
   // Key Binding's two checks (#150), for tests/device_key_binding.js.
   boundKeyProofRefusal: slot.forward('boundKeyProofRefusal'),
+  sendRedirectInterstitial: slot.forward('sendRedirectInterstitial'),
   keyBindingOn: slot.forward('keyBindingOn'),
   boundIdTokenRefusal: slot.forward('boundIdTokenRefusal'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),

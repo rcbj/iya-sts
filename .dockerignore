@@ -174,3 +174,33 @@ spiffe/native/*.node
 # Fetched at image build by tests/tools/fetch-vectors.sh, never sent
 # from a host (a local copy would otherwise overwrite the checked one).
 tests/vectors
+
+# Cargo's build output for the Rust conversion (#444): gigabytes, and never
+# what an image is built from — an image builds its own.
+rust/target
+
+# THE PORTAL'S BUNDLES (#568), when a worktree holds a copy built by hand for
+# a protocol job's `draw()`: the image builds its own, and a hand-built one in
+# the source copy fails tests/typecheck.js's marker check.
+portal/portal.bundle.js
+portal/portal-spa.js*
+# And the front door's (#579), for the same reason.
+home/home.bundle.js
+home/home-spa.js*
+# And the sign-in screen's (#571), for the same reason.
+authn/authn.bundle.js
+authn/authn-spa.js*
+# And GNAP's interaction pages' (#578), for the same reason.
+gnap/gnap-interaction.bundle.js
+gnap/gnap-interaction-spa.js*
+# And the sign-out's (#577), for the same reason.
+logout/signout.bundle.js
+logout/signout-spa.js*
+# And the federation pages' (#580), for the same reason.
+federation/federation-pages.bundle.js
+federation/federation-pages-spa.js*
+# And the TLS and SPNEGO diagnostic pages' (#583), for the same reason.
+tls/tls-pages.bundle.js
+tls/tls-pages-spa.js*
+kerberos/spnego-pages.bundle.js
+kerberos/spnego-pages-spa.js*

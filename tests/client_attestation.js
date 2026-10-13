@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -118,7 +118,10 @@ function certificate(subject, publicKey, issuer, signingKey, ca) {
   log.debug("Entering certificate(). " + subject);
   const cert = forge.pki.createCertificate();
   cert.publicKey = publicKey;
-  cert.serialNumber = '0' + crypto.randomBytes(8).toString('hex');
+  // '01' and not '0': forge pads an odd-length hex serial to 00 xx..., a
+  // non-minimal DER INTEGER OpenSSL refuses as "illegal padding" whenever
+  // xx < 0x80 (an intermittent failure of this file and the job).
+  cert.serialNumber = '01' + crypto.randomBytes(8).toString('hex');
   cert.validity.notBefore = new Date(Date.now() - 3600 * 1000);
   cert.validity.notAfter = new Date(Date.now() + 86400 * 1000);
   cert.setSubject([{ name: 'commonName', value: subject }]);
@@ -297,7 +300,8 @@ async function trust(t, world) {
     ['OAuth-Client-Attestation-PoP', popFor(world.instance)]]));
   t.check(byPath.ok, 'an attestation whose x5c leaf the configured anchor ' +
           'issued authenticates the client (section 10.8, HAIP 4.4.1)',
-          byPath);
+          byPath.ok ? '' : (byPath.errorCode + ' ' + byPath.error + ': ' +
+                            byPath.description));
   const selfSigned = await ask(request([
     ['OAuth-Client-Attestation', attestationFor(world, world.instance,
       { x5c: [world.pki.caDer], signWith: world.pki.caKey })],

@@ -1,0 +1,22 @@
+{
+  "everySettingLives": "<strong>Varje inställning den här tjänsten har finns på sidan för det protokoll den konfigurerar.</strong> Den här sidan är registret över det — och formuläret för de {mine} rader som inte hör till något protokoll, eftersom de är fakta om processen snarare än om något den talar. Den innehöll alla {total} fram till 2026-08-27; det som flyttades är var de RITAS, och ingenting i vad de gör eller hur de läses.",
+  "fourPlaces": "Ett värde kan komma från fyra ställen, och kolumnen <em>Source</em> på var och en av de här sidorna säger vilket: en körtidsåsidosättning som satts på sidan, en miljövariabel, appconfig-filen som den här processen startades med (<code>{configFile}</code>), eller <code>{defaultsFile}</code> — standardfilen för appconfig som den förra läggs ovanpå. Högre slår lägre, så en miljövariabel som satts på containern vinner fortfarande över filen — det är det som gör att varje befintlig driftsättning fortsätter att fungera oförändrad.",
+  "noFifthPlace": "<strong>Det finns inget femte ställe.</strong> En inställning utan värde i någon av appconfig-filerna och utan miljövariabel hindrar den här tjänsten från att starta, med namn, i stället för att falla tillbaka på en konstant som är begravd i en modul. Så varje värde på de här sidorna är ett som någon kan hitta i en fil — det är det som gör kolumnen <em>Source</em> värd att läsa.",
+  "survives": "<strong>Ändringar ÖVERLEVER EN OMSTART.</strong>",
+  "fileLeftAlone": "Filen lämnas medvetet orörd: en tjänst som redigerade en fil som är incheckad i ett repo skulle lämna kvar ett tests bortglömda ändring för alltid.",
+  "inMemory": "<strong>Ändringar finns i minnet och försvinner vid omstart.</strong> Ingenting skriver till appconfig-filen, medvetet: en tjänst som redigerade en fil som är incheckad i ett repo skulle lämna kvar ett tests bortglömda ändring för alltid.",
+  "settingsHeading": "{total} inställningar, varav {editable} kan ändras medan tjänsten körs",
+  "overridesInForce": "{n} körtidsåsidosättning(ar) gäller, någonstans i tjänsten:",
+  "resetAll": "Återställ alla",
+  "noOverrides": "Inga körtidsåsidosättningar gäller någonstans i den här tjänsten: varje värde kommer från miljön eller från någon av de två appconfig-filerna.",
+  "resetAllHere": "<strong>Återställ alla finns här och på ingen protokollsida</strong>, eftersom den rensar varje åsidosättning i tjänsten och inte bara dem under den. En knapp som nådde så långt från Kerberos-sidan skulle vara den enda kontrollen i den här konsolen vars sprängradie inte syntes där den trycktes.",
+  "whereEdited": "Var varje inställning redigeras",
+  "wholeTable": "Hela tabellen, grupp för grupp, i den ordning <code>config.js</code> deklarerar dem. Kolumnen <em>Sida</em> är där gruppens formulär ritas; antalen gäller gruppen, och <em>Åsidosatta</em> är hur många av dem som har en gällande körtidsåsidosättning just nu.",
+  "thGroup": "Grupp",
+  "thSettings": "Inställningar",
+  "thRestartOnly": "Endast vid omstart",
+  "thOverridden": "Åsidosatta",
+  "thPage": "Sida",
+  "pagesAnd": " och ",
+  "overJson": "Hela tabellen som JSON — varje inställning, vilken sida som än redigerar den — finns på <code>/admin/config?format=json</code> och <code>GET /admin-api/config</code>; de fyra åtgärderna på de här sidorna är <code>POST /admin-api/config/set</code>, <code>/set-many</code>, <code>/reset</code> och <code>/reset-all</code>."
+}

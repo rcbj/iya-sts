@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -41,7 +41,7 @@
 // identity. That is SPIRE's plugin and it is stated, not improved on.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import dns = require('dns');
 import helpers = require('../common/helpers');
 const { log } = helpers;
@@ -60,7 +60,7 @@ const AGENT_NAME = /^[a-zA-Z][a-zA-Z0-9-]*$/;
 
 interface HttpChallengeDeps {
   log: typeof log;
-  crypto: typeof nodeCrypto;
+  crypto: typeof stsCrypto;
   lookup(host: string): Promise<string[]>;
   config: typeof config;
   errorCodes: typeof errorCodes;
@@ -109,7 +109,7 @@ class HttpChallengeAttestor {
     helpers.log.debug("Entering HttpChallengeAttestor.defaultDeps().");
     helpers.log.debug("Leaving HttpChallengeAttestor.defaultDeps().");
     return {
-      log: log, crypto: nodeCrypto, config: config, errorCodes: errorCodes,
+      log: log, crypto: stsCrypto, config: config, errorCodes: errorCodes,
       spiffeId: spiffeId, rpc: rpc, outbound: outbound,
       lookup: function (host) {
         return dns.promises.lookup(host, { all: true }).then(function (all) {
@@ -207,7 +207,7 @@ class HttpChallengeAttestor {
     const { log, crypto, spiffeId, rpc, outbound, lookup } = this.deps;
     log.debug("Entering HttpChallengeAttestor.attest().");
     const call = context.call;
-    const status = rpc.grpc.status;
+    const status = rpc.status;
     const s = this.settings();
     if (s.problem) {
       log.debug("Leaving HttpChallengeAttestor.attest(). Not configured.");

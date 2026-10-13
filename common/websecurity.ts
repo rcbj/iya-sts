@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -84,7 +84,6 @@
 // without the root builds a default when this module finishes loading.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import config = require('./config');
 import stsCrypto = require('./crypto');
@@ -215,7 +214,10 @@ interface LimitAnswer {
 // limiter is for.
 const buckets = realms.sharedMap({ persist: 'security.rateLimitBuckets',
                                    retain: 'age',
-                                   scope: 'shared' });
+                                   scope: 'shared',
+                                   // #333: the window's `until`, ms.
+                                   expiresAt: realms.expiryField('until',
+                                                                 1) });
 const MAX_BUCKETS = 20000;
 
 // The scope the shared windows are counted under — see the block above
@@ -289,9 +291,8 @@ class WebSecurity {
       return '';
     }
     log.debug("Leaving WebSecurity.tokenFor().");
-    return nodeCrypto.createHmac('sha256', clusterSecrets.get('csrf'))
-                     .update(id)
-                     .digest('base64url');
+    return stsCrypto.hmac('sha256', clusterSecrets.get('csrf'), id,
+                          'base64url');
   }
 
   // The hidden input a form carries. Returns '' when there is no session, so a

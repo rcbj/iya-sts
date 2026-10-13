@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -153,9 +153,12 @@ function settingRow(body, key) {
       rows.push(one);
     });
   });
-  ((body && body.settings) || []).forEach(function (one) {
-    rows.push(one);
-  });
+  // A top-level `settings` is the page's settings BLOCK since #446 (an
+  // object); it is read as rows only when it is a list.
+  (body && Array.isArray(body.settings) ? body.settings : []).forEach(
+    function (one) {
+      rows.push(one);
+    });
   const row = rows.filter(function (one) {
     return one.key === key;
   })[0] || null;
@@ -249,15 +252,19 @@ function presentationOf(format, credential, holder, ro) {
 }
 
 // The bar door in `realm`: a request by reference for `format`, and its
-// request object.
+// request object — started at POST /admin-api/verifications/start (#587),
+// the administrator's twin of the demonstration's /oid4vp/start (which
+// becomes development-only, #585), whose `walletUrl` is the address the
+// page redirects to.
 async function begin(realm, format) {
   log.debug("Entering begin(). " + realm + " " + format);
-  const started = await call("GET", realmBase(realm) +
-    "/oid4vp/start?by=reference&format=" + encodeURIComponent(format));
-  assert.strictEqual(started.status, 302,
-                     "the bar door should hand the wallet a request: " +
-                     started.status + " " + started.text.slice(0, 300));
-  const requestUri = new URL(started.location).searchParams
+  const started = await call("POST", realmBase(realm) +
+    "/admin-api/verifications/start", { by: "reference", format: format });
+  assert.ok(started.status === 200 && started.json &&
+            started.json.walletUrl,
+            "the bar door should hand the wallet a request: " +
+            started.status + " " + started.text.slice(0, 300));
+  const requestUri = new URL(started.json.walletUrl).searchParams
     .get("request_uri");
   const got = await call("GET", requestUri);
   assert.strictEqual(got.status, 200, "the request object: " +
@@ -294,8 +301,9 @@ function refusedForNoStatus(r) {
 function accepted(r) {
   log.debug("Entering accepted().");
   assert.strictEqual(r.status, 200, r.text.slice(0, 400));
-  assert.ok(/\/oid4vp\/done\?/.test((r.json || {}).redirect_uri || ""),
-            r.text.slice(0, 300));
+  // A start that named no completion page is answered with none (#594;
+  // the demonstration's /oid4vp/done was named until then).
+  assert.deepStrictEqual(r.json, {}, r.text.slice(0, 300));
   log.debug("Leaving accepted().");
 }
 

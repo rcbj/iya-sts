@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -25,10 +25,14 @@
 // WHERE A VALUE COMES FROM, highest wins:
 //
 //   1. a RUNTIME OVERRIDE          set through /admin/config or the management
-//                                  API; in memory only, gone on restart
+//                                  API; written to the persistence store and
+//                                  kept across restarts where one persists
+//                                  it (persistence.appconfig, or
+//                                  persistence.realms for a realm's own),
+//                                  gone on restart with persistence.mode=memory
 //   2. the setting's ENV VAR       STS_PORT, KRB5_REALM, ...
-//   3. its LEGACY env var, if any  STS_ISSUER still feeds the three issuers
-//                                  that were carved out of it
+//   3. its LEGACY env var, if any  none since #523, when STS_ISSUER went
+//                                  with the three issuers it fed
 //   4. the APPCONFIG file          the CONFIG_FILE module, e.g. env/local.js
 //   5. env/defaults.js             the DEFAULT appconfig file, which 4 is
 //                                  unioned on top of
@@ -161,9 +165,9 @@
 // SPIFFE made the same move for its authorities on 2026-09-12 — so for a realm
 // nothing was consumed at startup, and `krb5.realm` and the nine rows that
 // database is built from are `realmRuntime`. What is still consumed for the
-// process stays refused on a realm: the sockets (`krb5.kdcPort`,
-// `krb5.servicePort`) and the development-mode trust with
-// `krb5.trustedRealm`. The test is still the rule;
+// process stays refused on a realm: the KDC's socket (`krb5.kdcPort`; the
+// protected service's, `krb5.servicePort`, left with #595) and the
+// development-mode trust with `krb5.trustedRealm`. The test is still the rule;
 // a setting whose material stays process-wide is still a no.
 //
 // ---------------------------------------------------------------------------
@@ -175,9 +179,9 @@
 // "value is not a function".
 //
 // IT PUBLISHES THE KERBEROS PASSWORDS, and that is deliberate and not new:
-// `GET /krb5/principals` already prints them, for the reason written there — a
-// debugger whose accounts are unusable without reading the source is worse than
-// one that says what they are.
+// `GET /krb5/principals` printed them too until #595 deleted it, for the
+// reason written there — a debugger whose accounts are unusable without
+// reading the source is worse than one that says what they are.
 //
 // Where they are published now needs one distinction. `/admin/config` is behind
 // the console gate, which is unconditional, and `GET /admin-api/config` is
@@ -711,6 +715,29 @@ const DEVICE_ENROLLMENT_PROFILES = ENROLLMENT_PROFILES.concat(['device']);
 // oid4vc/vc_issuer.ts's IMPLEMENTED_ENC_VALUES, for both OID4VCI rows.
 const OID4VCI_ENC_VALUES = ['A128GCM', 'A256GCM'];
 
+// THE KEM AND HPKE JWE ALGS (#82): `common/crypto.js`'s section 4a table,
+// written out because this file requires nothing in this repository.
+// `tests/jwe_pq_kem.js` holds the two equal. The ML-KEM six are
+// draft-ietf-jose-pqc-kem-05's; HPKE-0 to HPKE-7 (and -KE, less 4-KE and
+// 6-KE) draft-ietf-jose-hpke-encrypt-22's; HPKE-8 to HPKE-16 (and -KE)
+// draft-reddy-cose-jose-pqc-hybrid-hpke-11's.
+const JWE_KEM_ALGS = ['ML-KEM-512', 'ML-KEM-768', 'ML-KEM-1024',
+  'ML-KEM-512+A128KW', 'ML-KEM-768+A192KW', 'ML-KEM-1024+A256KW'].concat(
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16].reduce(
+    function (all, n) {
+      return all.concat(n === 4 || n === 6 ? ['HPKE-' + n]
+        : ['HPKE-' + n, 'HPKE-' + n + '-KE']);
+    }, []));
+
+// The keys an OID4VP encrypted response may be encrypted to (#82): ECDH-ES,
+// and the Key Encryption forms of the KEM table — not HPKE Integrated
+// Encryption, which carries no `enc`, when the request names the `enc`
+// values it accepts (`encrypted_response_enc_values_supported`).
+const OID4VP_RESPONSE_KEY_ALGS = ['ECDH-ES'].concat(
+  JWE_KEM_ALGS.filter(function (alg) {
+    return !/^HPKE-\d+$/.test(alg);
+  }));
+
 // A list of short event-type names, and each again under its URI. The CAEP
 // and RISC readers strip ssf/ssf_events.js's CAEP_PREFIX / RISC_PREFIX before
 // they match, so a whole URI is a spelling they accept.
@@ -746,6 +773,90 @@ const SETTINGS = [
                  'and what it makes of one a client presents, are the tls.* ' +
                  'settings, which the console draws on its own TLS page.' },
 
+  // CUSTOM LISTENERS, AND WHICH HOSTED APPLICATION IS ON WHICH (#472,
+  // 2026-10-07; #99's realm listener folded in, rcbj's D1). Each value is
+  // JSON, kept as text the way `spiffe.brokers` keeps its list, and drawn on
+  // Server configuration -> Listeners, which shows what it means beside it;
+  // `common/listener_map.js` reads, validates and judges every write of them
+  // (STS-CORE-0153 to 0156), and `tls/listeners.js` binds what they say.
+  { key: 'listeners.custom', group: 'Custom listeners',
+    label: 'The service\'s custom listeners',
+    env: 'STS_LISTENERS_CUSTOM', type: 'string', dflt: '', runtime: true,
+    perProcess: true,
+    description: 'HTTPS listeners beside the main port, bound on every node, ' +
+                 'that answer every realm under its prefix: a JSON array of ' +
+                 '{ "id", "port", "publicBaseUrl", "hostnames", ' +
+                 '"certificateFile", "privateKeyFile", "clientAuth", "tls" }. ' +
+                 'id is lower-case letters, digits and hyphens; ' +
+                 'publicBaseUrl the https origin its load balancer answers ' +
+                 'under, which the URLs of every application advertised on ' +
+                 'it are built on; hostnames the DNS names an issued ' +
+                 'certificate carries (the host of publicBaseUrl when left ' +
+                 'out); certificateFile and privateKeyFile an operator\'s ' +
+                 'certificate (both or neither — without them the default ' +
+                 'realm\'s certificate authority issues one and renews it); ' +
+                 'clientAuth none, optional (the default) or required, which ' +
+                 'refuses a handshake without a client certificate chaining ' +
+                 'to the truststore; tls the per-listener TLS settings by ' +
+                 'their short names (minVersion, disableTls12, ' +
+                 'tls13CipherSuites, pqcOnly, sessionTimeoutS, ...), each ' +
+                 'inheriting the service-wide one where left out. Empty, the ' +
+                 'default, means none: the main port answers everything. A ' +
+                 'listener that listeners.applications names cannot be ' +
+                 'removed. Example: [{"id":"admin","port":9443,' +
+                 '"publicBaseUrl":"https://admin.example.com:9443",' +
+                 '"clientAuth":"required"}].' },
+  { key: 'listeners.realm', group: 'Custom listeners',
+    label: 'This realm\'s own listeners',
+    type: 'string', dflt: '', runtime: false, realmRuntime: true,
+    realmOnly: true,
+    restartReason: 'it is a property of one trust realm and is set on that ' +
+                   'realm, where its listeners are bound and closed at once',
+    description: 'HTTPS listeners that belong to this realm and answer its ' +
+                 'paths alone (another realm\'s path, or the default ' +
+                 'realm\'s, is a 404 there): the same JSON array as ' +
+                 'listeners.custom, with this realm\'s certificate authority ' +
+                 'issuing a certificate where no files are named. This is ' +
+                 'what a realm\'s own listener (#99) became: to serve the ' +
+                 'whole realm on one, map * to it in this realm\'s ' +
+                 'listeners.applications. The default realm\'s listeners are ' +
+                 'listeners.custom.' },
+  { key: 'listeners.applications', group: 'Custom listeners',
+    label: 'Which application is on which listener',
+    env: 'STS_LISTENERS_APPLICATIONS', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A JSON object from an application id — home, authn, ' +
+                 'portal, admin-console, management-api, oauth-oidc, saml2, ' +
+                 'saml11, ws-trust, ws-federation, federation, oidfed, ' +
+                 'oid4vc, scim, ssf, gnap, xacml, acme, est, scep, pki, ' +
+                 'kerberos, spiffe, tls, devices — or * for every one not ' +
+                 'named, to { "listeners": [...], "advertised": "..." }: the ' +
+                 'listeners that answer it (main is the main port), and the ' +
+                 'one its URLs are built on (the first, when left out). A ' +
+                 'path of an application is a 404 on a listener it is not ' +
+                 'on. An application not named is on main alone. A realm\'s ' +
+                 'own value is read entry by entry before the service\'s, so ' +
+                 'a realm says only what differs. CHANGING WHERE AN ' +
+                 'APPLICATION IS ADVERTISED CHANGES ITS URLS — for oauth-oidc ' +
+                 'its issuer, which every token and client names. A change ' +
+                 'that takes management-api off the listener it was sent on ' +
+                 'is refused unless PUT /admin-api/listeners/applications ' +
+                 'says "confirm": true. Example: {"admin-console":' +
+                 '{"listeners":["admin"]},"management-api":' +
+                 '{"listeners":["admin"]}}.' },
+  { key: 'listeners.adminOnMain', group: 'Custom listeners',
+    label: 'Rescue: the console and the API on the main port',
+    env: 'STS_LISTENERS_ADMIN_ON_MAIN', type: 'bool', dflt: false,
+    runtime: false, perProcess: true,
+    restartReason: 'it is the way back in when a mapping has shut the ' +
+                   'administrator out, so no write may turn it off; set it ' +
+                   'in the environment or the appconfig file and restart',
+    description: 'Puts the admin console and the management API back on ' +
+                 'the main port, and advertises them there, in every realm, ' +
+                 'whatever listeners.applications says. Off by default. For ' +
+                 'the day a mapping moved them to a listener nobody can ' +
+                 'reach.' },
+
   // ---------------------------------------------------------------------
   // The scheme the port above answers on, and it is DERIVED (`derived: true`,
   // so the shipped env/*.js files do not carry it): its default is whatever
@@ -764,13 +875,13 @@ const SETTINGS = [
   //
   // WHAT IT COSTS, because it is not free: there is then NO plain HTTP
   // listener in this process that serves anything but `/pki/`
-  // (`pki.httpPort`), and `POST /tls/trust` and `GET /tls/server-certificate`
-  // were on one deliberately — they are what a caller reaches BEFORE it trusts
-  // anything. The certificate is generated at every start (and certified under
+  // (`pki.httpPort`), and `GET /tls/server-certificate` (and `POST
+  // /tls/trust`, until #597 deleted it) were on one deliberately — they are
+  // what a caller reaches BEFORE it trusts anything. The certificate is generated at every start (and certified under
   // this service's Root, which a caller does not hold yet either), so the first
   // fetch has to be made without verification (`curl -k`), which is the
-  // ordinary bootstrap for a mock and is stated on /tls rather than left to be
-  // discovered.
+  // ordinary bootstrap for a mock and is stated in docs/tls.md rather than
+  // left to be discovered.
   { key: 'global.https', group: 'Global', label: 'HTTPS on the main port',
     env: 'STS_HTTPS', type: 'bool', derived: true,
     // processValue() and not value(): a realm may carry `oauth2.rfc9700`, and
@@ -858,7 +969,8 @@ const SETTINGS = [
                  'when nothing is: with no proxy, those are ordinary headers ' +
                  'any client can set, and believing them lets a caller ' +
                  'choose what this service thinks its own issuer and ' +
-                 'endpoints are. GET /tls/forwarded shows what a request ' +
+                 'endpoints are. Monitoring → TLS connection shows what a ' +
+                 'request ' +
                  'actually carried and what was believed of it. NOTE that ' +
                  'this service never reads a client certificate out of a ' +
                  'header (X-Client-Cert and its relatives) in either mode — ' +
@@ -895,6 +1007,53 @@ const SETTINGS = [
   // the balancer, and no forwarded header can exist below TLS.
   // `common/proxy_protocol.ts` argues the three kinds of peer and where the
   // address is put.
+  // HTTP CONNECTION POOLING (#406's keep-alive, made per listener and
+  // editable by #429, 2026-10-02: rcbj, "expose HTTP Connection Pooling
+  // settings on each HTTP/HTTPS listener tab"). The service-wide values every
+  // HTTP listener inherits — the main port, the protocol debugger's, a realm's
+  // own and the plain-HTTP revocation listener — each of which has its own
+  // `listener<Id>.<name>` row (and a realm's, `listener.<name>`). RUNTIME:
+  // they are properties of the server, which node reads at each new
+  // connection, so `tls/tls_server.js` re-applies them when one changes.
+  { key: 'http.keepAliveTimeoutS', group: 'HTTP connections',
+    label: 'Idle connection kept for (s)',
+    env: 'STS_HTTP_KEEP_ALIVE_TIMEOUT_S', type: 'int', dflt: 60,
+    min: 1, max: 3600, runtime: true, perProcess: true,
+    description: 'How long, in seconds, an HTTP listener keeps an idle ' +
+                 'HTTP/1.1 connection open for the client\'s next request ' +
+                 '(node\'s own default is 5). A connection kept is a TLS ' +
+                 'handshake — and a client-certificate prompt — not repeated. ' +
+                 'Requests a client pipelines on one connection are answered ' +
+                 'in order. Behind a balancer, keep its idle timeout above ' +
+                 'this.' },
+  { key: 'http.headersTimeoutS', group: 'HTTP connections',
+    label: 'Request header timeout (s)',
+    env: 'STS_HTTP_HEADERS_TIMEOUT_S', type: 'int', dflt: 0,
+    min: 0, max: 3600, runtime: true, perProcess: true,
+    description: 'How long, in seconds, a client may take to send a ' +
+                 'request\'s headers before the connection is closed. 0, the ' +
+                 'default, is a second above the keep-alive timeout, so a ' +
+                 'client (or a balancer) reusing a connection at the last ' +
+                 'moment never meets one this end is closing; a value at or ' +
+                 'below the keep-alive timeout is raised to that.' },
+  { key: 'http.maxRequestsPerSocket', group: 'HTTP connections',
+    label: 'Requests per connection',
+    env: 'STS_HTTP_MAX_REQUESTS_PER_SOCKET', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many requests one keep-alive connection may carry ' +
+                 'before it is closed after its last answer. 0, the ' +
+                 'default, is no limit (node\'s own). A limit spreads ' +
+                 'long-lived clients across the nodes behind a balancer, at ' +
+                 'the cost of a new connection — and a handshake — each ' +
+                 'time it is reached.' },
+  { key: 'http.maxConnections', group: 'HTTP connections',
+    label: 'Open connections at most',
+    env: 'STS_HTTP_MAX_CONNECTIONS', type: 'int', dflt: 0,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many connections an HTTP listener holds open at once; ' +
+                 'one more is closed as it arrives. 0, the default, is no ' +
+                 'limit (node\'s own).' },
+
   { key: 'global.proxyProtocol', group: 'Global',
     label: 'PROXY protocol on the TCP listeners',
     env: 'STS_PROXY_PROTOCOL', type: 'enum', enumValues: ['off', 'v2'],
@@ -1114,6 +1273,23 @@ const SETTINGS = [
     description: 'The expires_in of every access token, and the exp of the ' +
                  'formats that carry one. A client application may override ' +
                  'it with its own gnapAccessTokenLifetimeS.' },
+  // THE GRANT'S OWN LIFETIME (#432 phase 7, 2026-10-03), separate from any
+  // token's. A DAY by default, oauth2.refreshTokenTtlS's figure, for its
+  // reason: rotation renews a token without the resource owner, and this is
+  // the point at which they are asked again. gnap/gnap_grants.ts argues it.
+  { key: 'gnap.grantLifetimeS', group: 'GNAP', label: 'Grant lifetime ' +
+      '(seconds)',
+    path: 'gnap.grantLifetimeS', env: 'STS_GNAP_GRANT_LIFETIME_S',
+    type: 'int',
+    dflt: 86400, min: 60, max: 31536000, runtime: true,
+    description: 'How long a grant lives, counted from its request and ' +
+                 'separate from the access token lifetime. Past it the ' +
+                 'grant can no longer be continued or modified (RFC 9635 ' +
+                 'section 5) and none of its tokens can be rotated (section ' +
+                 '6.1); no token issued under it is given an expiry later ' +
+                 'than it; and it is finalized as expired. Fixed on each ' +
+                 'grant when it is made. A longer one lets a client keep ' +
+                 'access by rotation for longer on one approval.' },
   { key: 'gnap.interactionLifetimeS', group: 'GNAP', label: 'Interaction ' +
       'lifetime (seconds)',
     path: 'gnap.interactionLifetimeS', env: 'STS_GNAP_INTERACTION_LIFETIME_S',
@@ -1149,12 +1325,23 @@ const SETTINGS = [
   { key: 'gnap.replayCacheSize', group: 'GNAP',
     label: 'Signature replay history size (per realm)',
     path: 'gnap.replayCacheSize', env: 'STS_GNAP_REPLAY_CACHE_SIZE',
-    type: 'int', dflt: 100000, min: 100, max: 10000000, runtime: true,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the history is
+    // resident in every process of every node, per realm (#339). A full one
+    // refuses, so the lower number costs throughput and never the replay
+    // window.
+    type: 'int', dflt: 10000, min: 100, max: 10000000, runtime: true,
     description: 'How many live signed GNAP requests (JWS proofs and HTTP ' +
                  'message signature nonces) a trust realm remembers, each ' +
                  'for twice gnap.signatureMaxAgeS. **A FULL HISTORY REFUSES ' +
                  'THE NEXT REQUEST (STS-GNAP-0718) RATHER THAN FORGETTING A ' +
-                 'LIVE ONE**, since a forgotten signature can be replayed.' },
+                 'LIVE ONE**, since a forgotten signature can be replayed. ' +
+                 'The cost of the default is throughput: past about this ' +
+                 'many signed requests per twice gnap.signatureMaxAgeS ' +
+                 '(about 16 a second at the defaults) the realm refuses ' +
+                 'every signed request until entries age out, and anybody ' +
+                 'able to send signed requests can bring that on. Raise it ' +
+                 'for a realm that sees more; every process of every node ' +
+                 'holds the whole history.' },
   { key: 'gnap.interactionStartModes', group: 'GNAP', label: 'Interaction ' +
       'start modes',
     path: 'gnap.interactionStartModes', env: 'STS_GNAP_INTERACTION_START_MODES',
@@ -1194,7 +1381,8 @@ const SETTINGS = [
                  '7.3.2) is trusted. `pki` (section 11.4) requires the TLS ' +
                  'client certificate to chain to the client truststore — ' +
                  'this realm\'s TLS client authority, or an anchor installed ' +
-                 'at /tls/trust — and to be bound to the client\'s ' +
+                 'through /admin-api/tls/trust — and to be bound to the ' +
+                 'client\'s ' +
                  'application entry: issued to it by this realm, or carrying ' +
                  'the one RFC 8705 subject parameter the entry registers ' +
                  '(oauthTlsClientAuthSubjectDn or an oauthTlsClientAuthSan* ' +
@@ -1302,14 +1490,36 @@ const SETTINGS = [
     description: 'Write what a resource owner approved into the consent ' +
                  'register on their own entry (as gnap:<digest> values), so ' +
                  'the same rights are not asked for again.' },
-  { key: 'gnap.allowCrossUser', group: 'GNAP', label: 'Allow a different ' +
-                                                      'person to approve',
-    path: 'gnap.allowCrossUser', env: 'STS_GNAP_ALLOW_CROSS_USER', type: 'bool',
-    dflt: false,
-    runtime: true,
-    description: 'Section 2.4: when the request named a user and somebody ' +
-                 'else signs in, the AS SHOULD answer unknown_user. On lets ' +
-                 'whoever signs in approve.' },
+  // #432 PHASE 6: approval by an absent resource owner, which RETIRED
+  // `gnap.allowCrossUser` (whoever signed in could approve a grant naming
+  // somebody else) with no switch of that meaning left.
+  { key: 'gnap.ownerApproval', group: 'GNAP',
+    label: 'Approval by an absent resource owner',
+    path: 'gnap.ownerApproval', env: 'STS_GNAP_OWNER_APPROVAL', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'RFC 9635 sections 1.4 and 2.4: when a request names a ' +
+                 'person who is not the one at the approval page, or offers ' +
+                 'no interaction at all, the grant waits for that person on ' +
+                 '/portal/ciba (with a mail notice) while the client polls. ' +
+                 'OFF by default: a new way in is something a realm turns ' +
+                 'on. Off, a request naming somebody else is answered ' +
+                 'unknown_user and one offering no interaction is refused.' },
+  { key: 'gnap.ownerApprovalLifetimeS', group: 'GNAP',
+    label: 'Time an absent owner has to answer',
+    path: 'gnap.ownerApprovalLifetimeS',
+    env: 'STS_GNAP_OWNER_APPROVAL_LIFETIME_S', type: 'int', dflt: 600,
+    min: 60, max: 86400, runtime: true,
+    description: 'Seconds a grant waits on its resource owner\'s portal ' +
+                 'before it is finalized as rejected. The client\'s wait ' +
+                 'between polls is stretched so gnap.maxPolls covers it.' },
+  { key: 'gnap.ownerApprovalMaxPending', group: 'GNAP',
+    label: 'Requests one person may have waiting',
+    path: 'gnap.ownerApprovalMaxPending',
+    env: 'STS_GNAP_OWNER_APPROVAL_MAX_PENDING', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'The most grants that may wait for one person on their ' +
+                 'portal at once; more are refused request_denied, so a ' +
+                 'client cannot fill somebody\'s page.' },
   { key: 'gnap.userCodeLength', group: 'GNAP', label: 'User code length',
     path: 'gnap.userCodeLength', env: 'STS_GNAP_USER_CODE_LENGTH', type: 'int',
     dflt: 8, min: 6,
@@ -1344,6 +1554,23 @@ const SETTINGS = [
     description: 'RFC 9767 section 4: a resource server presents a token it ' +
                  'was given as existing_access_token and receives a token ' +
                  'for a downstream resource server.' },
+  // HOW FAR A TOKEN MAY TRAVEL FROM WHAT ITS PERSON APPROVED (#432 phase 1).
+  // Every derivation puts the deriving resource server on the token's actor
+  // chain (`act`, RFC 8693 section 4.1); this caps the chain. Two lets the
+  // resource server a client called reach one more, and that one a third —
+  // the common three-tier case — and stops there; 1 allows one hop only.
+  // A bound, in every mode (STS-GNAP-0782).
+  { key: 'gnap.maxDerivationDepth', group: 'GNAP', label: 'Deepest ' +
+                                                         'derivation chain',
+    path: 'gnap.maxDerivationDepth', env: 'STS_GNAP_MAX_DERIVATION_DEPTH',
+    type: 'int', dflt: 2, min: 1, max: 16,
+    runtime: true,
+    description: 'How many times a token may be derived: how many deriving ' +
+                 'resource servers its actor chain (act) may name, the ' +
+                 'original client at its foot not counted (#526). Each RFC ' +
+                 '9767 section 4 derivation adds the deriving resource ' +
+                 'server, and one past this depth is refused ' +
+                 '(request_denied) in every mode.' },
   { key: 'gnap.pushFinish', group: 'GNAP', label: 'Deliver push interaction ' +
                                                   'finishes',
     path: 'gnap.pushFinish', env: 'STS_GNAP_PUSH_FINISH', type: 'bool',
@@ -1418,14 +1645,17 @@ const SETTINGS = [
     'both, never on the JWE around jwt-encrypted, which is encrypted to a ' +
     'resource server\'s key or a secret. Macaroons, biscuits and ZCAP-LD ' +
     'capabilities are not JWSs and are not affected.'),
-  { key: 'gnap.demoResourceServer', group: 'GNAP', label: 'Run the ' +
-      'demonstration resource server',
-    path: 'gnap.demoResourceServer', env: 'STS_GNAP_DEMO_RESOURCE_SERVER',
-    type: 'bool', dflt: true,
-    runtime: true,
-    description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
-                 'any of the five formats and answers the RS-first challenge ' +
-                 'of section 9.1.' },
+  { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
+      'cache (seconds)',
+    path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',
+    type: 'int', dflt: 60, min: 0, max: 3600, runtime: true,
+    description: 'How long the owner a resource server\'s ' +
+                 'gnapOwnerLookupUri named for an identifier is held before ' +
+                 'it is asked again (#432 phase 5): a grant asks at its ' +
+                 'request, on its approval page and at issue. A failed ' +
+                 'lookup is never held. 0 asks every time; a longer one ' +
+                 'keeps a former owner able to approve for that long after ' +
+                 'the resource server says otherwise.' },
   { key: 'gnap.caepEvents', group: 'GNAP', label: 'Emit CAEP for grants and ' +
                                                   'tokens',
     path: 'gnap.caepEvents', env: 'STS_GNAP_CAEP_EVENTS', type: 'bool',
@@ -1440,8 +1670,11 @@ const SETTINGS = [
     runtime: true,
     description: 'A Shared Signals stream owned by a GNAP client application ' +
                  'with a finish URI carries events only about people who ' +
-                 'approved a grant to that application. gnapScopedSignals ' +
-                 'FALSE on the entry opts one application out.' },
+                 'approved a grant to that application; one owned by a GNAP ' +
+                 'resource server carries only session-revoked for the ' +
+                 'GNAP tokens and grants audienced to it (#432). ' +
+                 'gnapScopedSignals FALSE on the entry opts one application ' +
+                 'out.' },
 
   // --- XACML: the access policy (the rest of the group is further down) ----
   { key: 'xacml.enforceAccess', group: 'XACML',
@@ -1584,6 +1817,29 @@ const SETTINGS = [
                  'one that is never presented again. It was a fixed thirty ' +
                  'seconds in every process until 2026-09-22 (#49).' },
 
+  // THE SIGN-ON SESSION'S COOKIE DOMAIN (#472, rcbj's D3). The cookie is
+  // host-only until this is set, which is the stronger default: it goes to
+  // the one host that set it and nowhere else. A mapping that puts the
+  // applications reading it on listeners with different host names needs it
+  // — `common/listener_map.js` refuses one that does not (STS-CORE-0155) —
+  // and it is the price of that mapping, said in the description.
+  { key: 'authn.cookieDomain', group: 'Web security',
+    label: 'Sign-on session cookie domain',
+    env: 'STS_AUTHN_COOKIE_DOMAIN', type: 'string', dflt: '', runtime: true,
+    description: 'The Domain the sign-on session\'s cookies are written ' +
+                 'with — the session itself, the OP browser state, the ' +
+                 'device cookie and the sign-in steps\' cookies — so that ' +
+                 'applications on listeners with different host names under ' +
+                 'one domain (auth.example.com, portal.example.com) share ' +
+                 'one sign-on. Empty, the default, writes them host-only, ' +
+                 'which a mapping keeping those applications on one host ' +
+                 'name needs. WARNING: set, every host under the domain is ' +
+                 'sent the session cookie, including any this service does ' +
+                 'not run — set it to the narrowest domain your listeners ' +
+                 'share, never to a domain other parties host under. Set ' +
+                 'webauthn.rpId to the same domain, or a passkey registered ' +
+                 'on one host is not usable on another.' },
+
   { key: 'authn.sessionLifetimeS', group: 'Web security',
     label: 'Session lifetime (seconds)',
     env: 'STS_AUTHN_SESSION_LIFETIME_S',
@@ -1615,6 +1871,25 @@ const SETTINGS = [
                  'not presenting. It is live: it applies to sessions that ' +
                  'already exist, because it is checked where a session is ' +
                  'read rather than stamped where one is made.' },
+
+  // #345: the sign-on session store's size cap, per realm.
+  { key: 'authn.maxSessions', group: 'Web security',
+    label: 'Most sign-on sessions per realm',
+    env: 'STS_AUTHN_MAX_SESSIONS', type: 'int', dflt: 100000,
+    min: 1, max: 10000000, runtime: true,
+    description: 'The most sign-on sessions a trust realm holds — browser ' +
+                 'sign-ins, the arrival sessions a browser is given at a ' +
+                 'protocol\'s front door, the console\'s and the portal\'s ' +
+                 'own, and the sessions of API, SCIM and SPIRE clients. ' +
+                 'Checked when a session is CREATED: at the cap the least ' +
+                 'recently used session is ended to make room, exactly as ' +
+                 'an expiry ends one — an audit row carrying STS-AUTHN-0292, ' +
+                 'CAEP session-revoked and back-channel Logout Tokens — so ' +
+                 'its holder has to sign in again. Without it only the ' +
+                 'session expiry job bounded the store, and a burst of ' +
+                 'sign-ins grew every process until the job caught up. ' +
+                 'Lowering it takes effect at the next session created, ' +
+                 'which then ends every session over the new cap at once.' },
 
   { key: 'authn.pendingTtlS', group: 'Web security',
     label: 'How long a sign-in waits at the screen (seconds)',
@@ -2050,12 +2325,13 @@ const SETTINGS = [
   //     `attestation`, `userVerification`. These go to the BROWSER, in the
   //     options this service hands it, and what happens to them after that is
   //     the browser's and the authenticator's business.
-  //   * **CTAP2** — `authenticatorAttachment`, `residentKey`, `credProps`.
-  //     These are the ones a browser translates into what it asks the
-  //     AUTHENTICATOR for: which kind of authenticator may answer, whether the
-  //     credential is discoverable (a CTAP2 resident key, which is what makes
-  //     usernameless sign-in possible), and whether the browser is asked to
-  //     report back which it made.
+  //   * **CTAP2** — `authenticatorAttachment`, `credProps`. These are the
+  //     ones a browser translates into what it asks the AUTHENTICATOR for:
+  //     which kind of authenticator may answer, and whether the browser is
+  //     asked to report back whether the credential is discoverable. WHETHER
+  //     IT IS ASKED TO BE DISCOVERABLE (a CTAP2 resident key, which is what
+  //     makes usernameless sign-in possible) is the passkey policy's since
+  //     #527, not a row here.
   //   * **POLICY** — `enabled`, `primaryAllowed`, `mfaAllowed`,
   //     `maxKeysPerPerson`. These are not WebAuthn at all: they are what THIS
   //     service will do with a key once the ceremony is over, and they are
@@ -2065,8 +2341,8 @@ const SETTINGS = [
   // that distinction is the one to keep: `userVerification` is sent to the
   // browser AND checked in `authn/webauthn.js` when the ceremony comes back,
   // so `required` really does refuse an authenticator that did not verify the
-  // person. `attestation`, `residentKey` and `authenticatorAttachment` are
-  // REQUESTS — this service records what came back and refuses nothing on
+  // person. `attestation`, `authenticatorAttachment` and the passkey
+  // policy's resident key (#527) are REQUESTS — this service records what came back and refuses nothing on
   // them. What is done with the attestation STATEMENT that comes back is the
   // fourth kind, below the policy rows: `webauthn.attestationPolicy` and the
   // six settings beside it (#105), which do refuse.
@@ -2091,7 +2367,7 @@ const SETTINGS = [
   { key: 'webauthn.rpName', group: 'WebAuthn',
     label: 'Relying party name', path: 'webauthn.rpName',
     env: 'STS_WEBAUTHN_RP_NAME', type: 'string',
-    dflt: 'Mock authorization server', runtime: true,
+    dflt: 'IYA STS', runtime: true,
     description: 'The `rp.name` handed to `navigator.credentials.create()`. ' +
                  'It is what a browser and a password manager show the ' +
                  'person while they decide whether to create a credential, ' +
@@ -2140,37 +2416,116 @@ const SETTINGS = [
 
   { key: 'webauthn.algorithms', group: 'WebAuthn',
     label: 'Algorithms offered', path: 'webauthn.algorithms',
-    env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv', dflt: 'ES256,RS256',
+    env: 'STS_WEBAUTHN_ALGORITHMS', type: 'csv',
+    // EVERY ALGORITHM THE VERIFIER CHECKS, REQUESTED BY DEFAULT (2026-10-01,
+    // rcbj): the post-quantum ML-DSA three first, so an authenticator that
+    // can make an ML-DSA credential does, then the classical ones strongest
+    // and most specific first. It was `ES256,RS256` until that day.
+    dflt: 'ML-DSA-44,ML-DSA-65,ML-DSA-87,ESP256,ES256,Ed25519,EdDSA,' +
+          'ESP384,ES384,ESP512,ES512,Ed448,ES256K,PS256,PS384,PS512,' +
+          'RS256,RS384,RS512',
     runtime: true,
     // Mirrors authn/webauthn_policy.ts's ALG_IDS, the verifier's COSE_ALGS
     // inverted.
-    csvValues: ['ES256', 'ES384', 'ES512', 'EdDSA', 'RS256', 'RS384',
-                'RS512', 'PS256', 'PS384', 'PS512', 'ML-DSA-44',
-                'ML-DSA-65', 'ML-DSA-87'],
+    csvValues: ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'ESP256', 'ES256',
+                'Ed25519', 'EdDSA', 'ESP384', 'ES384', 'ESP512', 'ES512',
+                'Ed448', 'ES256K', 'PS256', 'PS384', 'PS512', 'RS256',
+                'RS384', 'RS512', 'RS1'],
+    // AN ORDERED CHOICE (2026-10-01, rcbj: "explicitly choose, by
+    // checkboxes, which algorithms are requested and an order of
+    // preference"): the console draws a checkbox and an order number per
+    // value rather than a text box, and folds them back into this list.
+    // `csvValueNotes` is the sentence drawn beside each value.
+    ordered: true,
+    csvValueNotes: {
+      'ML-DSA-44': 'COSE -48 · post-quantum, RFC 9964 (NIST category 2)',
+      'ML-DSA-65': 'COSE -49 · post-quantum, RFC 9964 (NIST category 3)',
+      'ML-DSA-87': 'COSE -50 · post-quantum, RFC 9964 (NIST category 5)',
+      ESP256: 'COSE -9 · ECDSA P-256 with SHA-256, curve checked (RFC 9864)',
+      ES256: 'COSE -7 · ECDSA with SHA-256 — what nearly every ' +
+             'authenticator supports',
+      Ed25519: 'COSE -19 · EdDSA on Ed25519, curve checked (RFC 9864)',
+      EdDSA: 'COSE -8 · EdDSA, any curve the key carries',
+      ESP384: 'COSE -51 · ECDSA P-384 with SHA-384, curve checked (RFC 9864)',
+      ES384: 'COSE -35 · ECDSA with SHA-384',
+      ESP512: 'COSE -52 · ECDSA P-521 with SHA-512, curve checked (RFC 9864)',
+      ES512: 'COSE -36 · ECDSA with SHA-512',
+      Ed448: 'COSE -53 · EdDSA on Ed448 (RFC 9864)',
+      ES256K: 'COSE -47 · ECDSA secp256k1 with SHA-256 (RFC 8812)',
+      PS256: 'COSE -37 · RSASSA-PSS with SHA-256 (RFC 8230)',
+      PS384: 'COSE -38 · RSASSA-PSS with SHA-384 (RFC 8230)',
+      PS512: 'COSE -39 · RSASSA-PSS with SHA-512 (RFC 8230)',
+      RS256: 'COSE -257 · RSASSA-PKCS1-v1_5 with SHA-256 (Windows Hello, ' +
+             'older TPMs)',
+      RS384: 'COSE -258 · RSASSA-PKCS1-v1_5 with SHA-384',
+      RS512: 'COSE -259 · RSASSA-PKCS1-v1_5 with SHA-512',
+      RS1: 'COSE -65535 · SHA-1, INSECURE — requested only while ' +
+           'webauthn.insecureAlgorithms is on (development only)'
+    },
     description: '`pubKeyCredParams`, in preference order — the COSE ' +
                  'algorithms this service will accept a credential in. The ' +
                  'names are JOSE spellings and are mapped to COSE ' +
                  'identifiers by `authn/webauthn.js`\'s own table, which is ' +
-                 'the module that verifies the signature: `ES256` (-7), ' +
-                 '`ES384` (-35), `ES512` (-36), `EdDSA` (-8), `RS256` ' +
-                 '(-257), `RS384` (-258), `RS512` (-259), `PS256` (-37), ' +
-                 '`PS384` (-38), `PS512` (-39), and RFC 9964\'s `ML-DSA-44` ' +
-                 '(-48), `ML-DSA-65` (-49) and `ML-DSA-87` (-50). A ' +
-                 'credential whose algorithm is not on this list is refused ' +
-                 '(WebAuthn Level 3 section 7.1). A name outside ' +
-                 'that table is dropped with a warning rather than sent, ' +
-                 'because offering an algorithm this service cannot verify ' +
-                 'produces a credential that enrols and then never works. ' +
-                 '**ES256 and RS256 are the two every authenticator ' +
-                 'implements** and are the default; the rest are here to ' +
-                 'find out what a client does when the list is unusual.' },
+                 'the module that verifies the signature: RFC 9964\'s ' +
+                 'post-quantum `ML-DSA-44` (-48), `ML-DSA-65` (-49) and ' +
+                 '`ML-DSA-87` (-50); RFC 9864\'s fully specified `ESP256` ' +
+                 '(-9), `ESP384` (-51), `ESP512` (-52), `Ed25519` (-19) and ' +
+                 '`Ed448` (-53), whose curve is checked against the key; ' +
+                 '`ES256` (-7), `ES384` (-35), `ES512` (-36), `EdDSA` (-8); ' +
+                 'RFC 8812\'s `ES256K` (-47, secp256k1); and `PS256` (-37), ' +
+                 '`PS384` (-38), `PS512` (-39), `RS256` (-257), `RS384` ' +
+                 '(-258) and `RS512` (-259). A credential whose algorithm is ' +
+                 'not on this list is refused (WebAuthn Level 3 section ' +
+                 '7.1). A name outside that table is dropped with a warning ' +
+                 'rather than sent, because offering an algorithm this ' +
+                 'service cannot verify produces a credential that enrols ' +
+                 'and then never works. **The default requests every one, ' +
+                 'ML-DSA first**; an authenticator takes the first it ' +
+                 'supports, so the order is a preference. SHA-1\'s `RS1` ' +
+                 '(-65535) may be named but is offered and accepted only ' +
+                 'while `webauthn.insecureAlgorithms` is on (development ' +
+                 'only); `webauthn.pqcOnly` narrows the list to ML-DSA.' },
+
+  // THE TWO ALGORITHM FLAGS (2026-10-01, rcbj). Per realm, like every
+  // runtime row. `authn/webauthn_policy.ts` reads both.
+  { key: 'webauthn.insecureAlgorithms', group: 'WebAuthn',
+    label: 'Use insecure algorithms (development only)',
+    path: 'webauthn.insecureAlgorithms',
+    env: 'STS_WEBAUTHN_INSECURE_ALGORITHMS', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'usesBrokenAlgorithms',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. On requests and accepts ' +
+                 'the broken passkey algorithms — SHA-1\'s `RS1` (-65535) — ' +
+                 'as well: offered last in `pubKeyCredParams`, so only an ' +
+                 'authenticator that supports nothing better uses it, and ' +
+                 'its signatures verified at sign-in. Off, `RS1` is neither ' +
+                 'requested nor accepted, even where `webauthn.algorithms` ' +
+                 'names it, and a key enrolled with it is refused at sign-in ' +
+                 '(STS-AUTHN-0294). In product mode it cannot be set and is ' +
+                 'ignored: product never uses a broken algorithm.' },
+  { key: 'webauthn.pqcOnly', group: 'WebAuthn',
+    label: 'Request post-quantum algorithms only',
+    path: 'webauthn.pqcOnly',
+    env: 'STS_WEBAUTHN_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'On requests ONLY the post-quantum passkey algorithms — RFC ' +
+                 '9964\'s `ML-DSA-44` (-48), `ML-DSA-65` (-49) and ' +
+                 '`ML-DSA-87` (-50) — whichever of them ' +
+                 '`webauthn.algorithms` names, and all three where it names ' +
+                 'none. A new passkey must then be ML-DSA: one made with ' +
+                 'another algorithm is refused at registration (WebAuthn ' +
+                 'section 7.1). It narrows what is REQUESTED: a classical ' +
+                 'key already enrolled goes on signing in. Most ' +
+                 'authenticators support no ML-DSA yet and cannot register ' +
+                 'while this is on.' },
 
   { key: 'webauthn.userVerification', group: 'WebAuthn',
     label: 'User verification', path: 'webauthn.userVerification',
     env: 'STS_WEBAUTHN_USER_VERIFICATION', type: 'enum',
     enumValues: ['discouraged', 'preferred', 'required'],
-    dflt: 'preferred', runtime: true,
-    description: 'Whether the authenticator must verify the PERSON — a PIN, ' +
+    dflt: 'required', runtime: true,
+    description: '`required` by default in every mode (rcbj, 2026-10-09; it ' +
+                 'was `preferred`). ' +
+                 'Whether the authenticator must verify the PERSON — a PIN, ' +
                  'a fingerprint, a face — as well as prove possession of the ' +
                  'key. **THIS IS THE ONE CEREMONY SETTING THIS SERVICE ALSO ' +
                  'ENFORCES**: `required` is sent to the browser and the UV ' +
@@ -2357,23 +2712,15 @@ const SETTINGS = [
                  'whose attachment turned out to be the other one. What it ' +
                  'does do is RECORD what came back, where the browser said.' },
 
-  { key: 'webauthn.residentKey', group: 'WebAuthn',
-    label: 'Discoverable credential (CTAP resident key)',
-    path: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
-    type: 'enum', enumValues: ['discouraged', 'preferred', 'required'],
-    dflt: 'discouraged', runtime: true,
-    description: 'Whether the credential is stored ON the authenticator — a ' +
-                 'CTAP2 *resident key* — so that it can be found without ' +
-                 'this service naming it first. That is what makes a ' +
-                 'usernameless sign-in possible, and it is what a passkey ' +
-                 'is. `discouraged` is the default because a resident key ' +
-                 'consumes one of the small number of slots a roaming ' +
-                 'authenticator has and CANNOT ALWAYS BE DELETED FROM IT — a ' +
-                 'debugging service should not fill somebody\'s security key ' +
-                 'without being asked. **This service does not offer a ' +
-                 'usernameless flow**, so `required` buys a slot on the key ' +
-                 'and nothing else here; it is worth setting to find out ' +
-                 'what a client does when the browser prompts differently.' },
+  // ---------------------------------------------------------------------
+  // `webauthn.residentKey` and `webauthn.usernameless` WERE HERE until #527
+  // (2026-10-08). The passkey policy decides both now, per realm and
+  // inherited from the default realm (`common/passkey_policy.ts`, Directory
+  // → Policies): `allowUsernameless`, off by default, and
+  // `securityKeyResidentKey`, which a security key is asked for — `required`
+  // while usernameless sign-in is off. No shim; REPLACED_SETTINGS refuses a
+  // start that still names either.
+  // ---------------------------------------------------------------------
 
   { key: 'webauthn.credProps', group: 'WebAuthn',
     label: 'Ask for the credProps extension',
@@ -2406,6 +2753,7 @@ const SETTINGS = [
                  'would be locked out of their own account by an operator ' +
                  'flipping a switch, which is not a thing a setting should ' +
                  'be able to do.' },
+
 
   { key: 'webauthn.mfaAllowed', group: 'WebAuthn',
     label: 'Allow a key as a SECOND factor',
@@ -2532,6 +2880,63 @@ const SETTINGS = [
                  'algorithm; an algorithm outside the set still signs with ' +
                  'the per-algorithm key. Every key is a key pair of its own; ' +
                  'what the hybrid certificate shares is the certificate.' },
+  // THE REALM'S POST-QUANTUM AND HPKE DECRYPTION KEYS (#82, 2026-09-27).
+  // EMPTY BY DEFAULT, deliberately (rcbj's decision on #82): see the
+  // description. `common/helpers.js`'s kemEncryptionKeysFor() makes them.
+  { key: 'keys.encryptionKemAlgs', group: 'Key material',
+    label: 'Post-quantum / hybrid decryption keys',
+    path: 'keys.encryptionKemAlgs', env: 'STS_KEYS_ENCRYPTION_KEM_ALGS',
+    type: 'csv', dflt: '', runtime: true, csvValues: JWE_KEM_ALGS,
+    description: 'The ML-KEM and HPKE JWE algorithms this realm holds a ' +
+                 'decryption key for — one key pair per algorithm, ' +
+                 'published in the realm\'s JWKS (`use: enc`, with `alg`) ' +
+                 'and advertised in `request_object_encryption_alg_values_' +
+                 'supported` and `assertion_encryption_alg_values_' +
+                 'supported`, ' +
+                 'so a client can encrypt a request object or an RFC 7523 / ' +
+                 '7522 assertion to this realm with post-quantum or PQ/T ' +
+                 'hybrid key establishment. HPKE-10-KE is X-Wing ' +
+                 '(ML-KEM-768 + X25519). Encrypting TO a client that ' +
+                 'registered one of these algorithms needs nothing here. ' +
+                 '**Empty by default, and an administrator\'s choice:** ' +
+                 'every one of these algorithms is from an Internet-Draft ' +
+                 '(draft-ietf-jose-pqc-kem-05, draft-ietf-jose-hpke-' +
+                 'encrypt-22, draft-reddy-cose-jose-pqc-hybrid-hpke-11), ' +
+                 'and an AKP key in a JWKS is a key type many clients\' JOSE ' +
+                 'libraries do not yet parse — some refuse the whole key ' +
+                 'set. ' +
+                 'Name an algorithm here only where the clients reading this ' +
+                 'realm\'s JWKS are known to cope. Removing one stops ' +
+                 'publishing and accepting it; naming it again brings back ' +
+                 'the same key.' },
+  // THE OTHER DIRECTION (2026-09-28, rcbj): encrypting TO a client's or a
+  // wallet's key. The row above is the realm's own decryption keys; this one
+  // says whether the ML-KEM and HPKE algorithms are OFFERED where this service
+  // encrypts to a key somebody else holds, and it is off by default for the
+  // same compatibility reason: a client that registers every advertised
+  // algorithm (the debugger's `sts_userinfo_protected`) or a conformance
+  // suite validating the lists (OpenID4VCI's metadata test) meets draft
+  // algorithms it does not know.
+  { key: 'keys.offerKemEncryption', group: 'Key material',
+    label: 'Offer post-quantum / hybrid encryption to clients',
+    path: 'keys.offerKemEncryption', env: 'STS_KEYS_OFFER_KEM_ENCRYPTION',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether the ML-KEM and HPKE JWE algorithms (#82 — drafts, ' +
+                 'see keys.encryptionKemAlgs) are offered where this realm ' +
+                 'encrypts TO a key a client or wallet holds: advertised in ' +
+                 '`userinfo_encryption_alg_values_supported`, ' +
+                 '`id_token_encryption_alg_values_supported`, ' +
+                 '`authorization_encryption_alg_values_supported` (JARM), ' +
+                 '`introspection_encryption_alg_values_supported` and an ' +
+                 'OpenID4VCI issuer\'s `credential_response_encryption`, and ' +
+                 'accepted when a client registers one or a wallet names ' +
+                 'one. **Off by default, and an administrator\'s choice:** ' +
+                 'these algorithms are from Internet-Drafts, and a client ' +
+                 'or a conformance suite that tries every advertised ' +
+                 'algorithm meets ones it does not know. A client already ' +
+                 'registered for one keeps its registration; with this off ' +
+                 'its next encrypted response is refused, as for any ' +
+                 'algorithm this realm does not offer.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -2558,21 +2963,34 @@ const SETTINGS = [
   { key: 'keys.kekProvider', group: 'Key material',
     label: 'Key-encryption key provider',
     path: 'keys.kekProvider', env: 'STS_KEYS_KEK_PROVIDER', type: 'enum',
-    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault'],
+    enumValues: ['file', 'aws', 'gcp', 'azure', 'vault', 'vault-transit',
+                 'aws-kms', 'gcp-kms', 'azure-keys'],
     dflt: 'file', runtime: false,
     restartReason: 'the key-encryption key is read once, at startup, before ' +
                    'the signing keys are decrypted',
-    description: 'Where the AES-256 key that protects the stored signing ' +
-                 'keys is READ FROM. This service never generates it and ' +
-                 'never writes it anywhere. `file` is the default because it ' +
-                 'needs nothing — Kubernetes and Docker both mount a secret ' +
-                 'as a file — and the other four are that same idea with a ' +
-                 'cloud provider\'s access control in front of it. Each of ' +
-                 'those lazily requires its official SDK, which is ' +
-                 'deliberately NOT a dependency of this service: it is a ' +
-                 'mock first, and four cloud SDKs nobody uses would be ' +
-                 'carried by every install. A missing one is reported with ' +
-                 'the package name to install.' },
+    description: 'Where the key-encryption key that wraps every data ' +
+                 'encryption key is. `file`, `aws`, `gcp`, `azure` and ' +
+                 '`vault` READ a 32-byte key into this process from a ' +
+                 'mounted file or a secret store; `file` is the default ' +
+                 'because it needs nothing. `vault-transit` (Vault or ' +
+                 'OpenBao Transit), `aws-kms`, `gcp-kms` (Cloud KMS) and ' +
+                 '`azure-keys` (a Key Vault or Managed HSM key; ' +
+                 'keys.kekVault is its vault) are key management ' +
+                 'services: the key NEVER leaves them, keys.kekRef names it, ' +
+                 'and the KMS wraps and unwraps each data key — one call per ' +
+                 'data key at start, none per value. Every provider but ' +
+                 '`file` lazily requires its official SDK, which is ' +
+                 'deliberately NOT a dependency of this service; a missing ' +
+                 'one is reported with the package name to install.' },
+
+  { key: 'keys.kekTransitMount', group: 'Key material',
+    label: 'Transit engine mount',
+    path: 'keys.kekTransitMount', env: 'STS_KEYS_KEK_TRANSIT_MOUNT',
+    type: 'string', dflt: 'transit', runtime: false, perProcess: true,
+    restartReason: 'the key-encryption key is reached once, at startup',
+    description: 'Where the Transit secrets engine is mounted, for ' +
+                 'keys.kekProvider (or keys.previousKekProvider) ' +
+                 '`vault-transit`. A plain path; anything else is refused.' },
 
   { key: 'keys.kekFile', group: 'Key material',
     label: 'Key-encryption key file',
@@ -2605,7 +3023,8 @@ const SETTINGS = [
     path: 'keys.kekVault', env: 'STS_KEYS_KEK_VAULT', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) ' +
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net, ' +
+                 'or a Managed HSM\'s, for `azure` and `azure-keys`) ' +
                  'or the HashiCorp Vault endpoint. Empty lets the Vault SDK ' +
                  'fall back to VAULT_ADDR, which is what an agent sidecar ' +
                  'sets.' },
@@ -2741,10 +3160,182 @@ const SETTINGS = [
     path: 'keys.kekRegion', env: 'STS_KEYS_KEK_REGION', type: 'string',
     dflt: '', runtime: false,
     restartReason: 'read once at startup',
-    description: 'The AWS region for Secrets Manager. Empty uses the SDK\'s ' +
+    description: 'The AWS region for Secrets Manager and AWS KMS. Empty uses the SDK\'s ' +
                  'own resolution (AWS_REGION, the shared config file, the ' +
                  'instance metadata service), which is what an in-cluster ' +
                  'deployment relies on.' },
+
+  // -------------------------------------------------------------------------
+  // THE CELL KEY-ENCRYPTION KEY (#98, 2026-09-28). What a cell stores of its
+  // own — the people homed here and everything it mints — is sealed under a
+  // key that lives only in the cell's region and is never replicated, so a
+  // copy of the cell's rows taken anywhere else opens nothing. The global
+  // tier stays under `keys.kek*`, which every cell holds. Unset, and always
+  // in single-cell mode, the cell tier is sealed under `keys.kek*` too — the
+  // same code path with one key.
+  // -------------------------------------------------------------------------
+  { key: 'keys.cellKekProvider', group: 'Key material',
+    label: 'Where the cell key-encryption key is read from',
+    env: 'STS_CELL_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'The provider of THIS CELL\'s key-encryption key, which ' +
+                 'seals what the cell stores of its own (#98). Five ' +
+                 'providers, as `keys.kekProvider`. `none` seals the cell ' +
+                 'tier under the service key-encryption key, which is ' +
+                 'correct for single-cell mode and for a test; a multi-cell ' +
+                 'deployment in product mode REFUSES to start with it, ' +
+                 'because then a copy of one cell\'s rows would open in ' +
+                 'every other.' },
+
+  { key: 'keys.cellKekRef', group: 'Key material',
+    label: 'The cell key-encryption key\'s location',
+    env: 'STS_CELL_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the cell key is, in the provider ' +
+                 '`keys.cellKekProvider` names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It must NOT be the service key\'s ' +
+                 'location; that is refused.' },
+
+  { key: 'keys.cellKekField', group: 'Key material',
+    label: 'The field the cell key is in',
+    env: 'STS_CELL_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the cell key. ' +
+                 'Empty takes the value whole, as `keys.kekField` does.' },
+
+  { key: 'keys.cellKekRegion', group: 'Key material',
+    label: 'AWS region of the cell key',
+    env: 'STS_CELL_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the cell key is read from — the cell\'s ' +
+                 'own. Empty uses the SDK\'s own resolution (AWS_REGION ' +
+                 'and the rest), NOT `keys.kekRegion`: the cell key has no ' +
+                 'fallback of any kind.' },
+
+  // THE CELL KEY'S KEY VAULT (#96, 2026-09-30). The `azure` provider needs a
+  // vault URL beside the secret's name, and the cell key had no row for one:
+  // it borrows nothing from the service key (above), so a cell on Azure had
+  // no vault to read its key from and could not start. An Azure cell keeps
+  // its key in its own region's vault (deploy/azure/), which this names.
+  { key: 'keys.cellKekVault', group: 'Key material',
+    label: 'Key Vault URL of the cell key',
+    env: 'STS_CELL_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL (https://<name>.vault.azure.net) ' +
+                 'or the HashiCorp Vault endpoint the cell key is read ' +
+                 'from — the cell\'s own. Empty uses NOTHING of ' +
+                 '`keys.kekVault`: the cell key has no fallback of any ' +
+                 'kind, so the `azure` provider refuses to read it without ' +
+                 'this.' },
+
+  // -------------------------------------------------------------------------
+  // THE DATA ENCRYPTION KEYS' LIFECYCLE AND A ROTATED KEY-ENCRYPTION KEY
+  // (#391 P2, 2026-10-01). Every value at rest is sealed under a data
+  // encryption key per realm per data class, wrapped under the
+  // key-encryption key; these say how often the data keys are replaced, how
+  // long a new one waits before values are sealed under it, how long a
+  // replaced one is kept, and where the PREVIOUS key-encryption key is read
+  // from while the data keys are re-wrapped after a rotation.
+  // -------------------------------------------------------------------------
+  { key: 'keys.dataKeyRotationDays', group: 'Key material',
+    label: 'Rotate every data encryption key after (days)',
+    env: 'STS_KEYS_DATA_KEY_ROTATION_DAYS', type: 'int', min: 0, max: 3650,
+    dflt: 365, runtime: true, perProcess: true,
+    description: 'How long a data encryption key seals new values before ' +
+                 'the keys.data-key-rotate job replaces it with a new one; ' +
+                 'the re-encryption job then re-seals what the old one ' +
+                 'sealed. 0 turns the scheduled rotation off (a rotation by ' +
+                 'hand still works). Data keys are rotated only where they ' +
+                 'are stored — where keys persist.' },
+
+  { key: 'keys.directoryCipher', group: 'Key material',
+    label: 'Cipher for data stored in the directory',
+    env: 'STS_KEYS_DIRECTORY_CIPHER', type: 'enum',
+    enumValues: ['aes-256-gcm', 'aes-256-siv'], dflt: 'aes-256-gcm',
+    runtime: true, perProcess: true,
+    description: 'The cipher of the data encryption keys that seal values ' +
+                 'stored on directory entries (private keys, client ' +
+                 'secrets, authenticator secrets, recovery codes and the ' +
+                 'rest). `aes-256-gcm`, the default, is AES-256 in GCM. ' +
+                 '`aes-256-siv` is AES-SIV (RFC 5297) with a 512-bit key — ' +
+                 'two AES-256 keys — which is misuse resistant: a repeated ' +
+                 'nonce leaks only that two values are equal. Both are ' +
+                 '256-bit AES; there is no AES-512. A data key keeps its ' +
+                 'cipher for life: a change here makes each directory class ' +
+                 'due a rotation, and the re-encryption job moves what the ' +
+                 'old key sealed.' },
+
+  { key: 'keys.dataKeyActivationLeadSeconds', group: 'Key material',
+    label: 'A new data encryption key is used after (seconds)',
+    env: 'STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS', type: 'int', min: 0,
+    max: 86400, dflt: 300, runtime: true, perProcess: true,
+    description: 'How long a rotated data encryption key is published ' +
+                 'before values are sealed under it, so every process and ' +
+                 'every node holds it before anything sealed under it is ' +
+                 'read. Lower it only where the store\'s change log reaches ' +
+                 'every process faster.' },
+
+  { key: 'keys.dataKeyRetireAfterDays', group: 'Key material',
+    label: 'Keep a replaced data encryption key at least (days)',
+    env: 'STS_KEYS_DATA_KEY_RETIRE_AFTER_DAYS', type: 'int', min: 1,
+    max: 3650, dflt: 7, runtime: true, perProcess: true,
+    description: 'How long a replaced data encryption key is kept after its ' +
+                 'successor became current. It is destroyed only after this ' +
+                 'AND once nothing in the store is sealed under it; ' +
+                 'destruction cannot be undone.' },
+
+  { key: 'keys.previousKekProvider', group: 'Key material',
+    label: 'Where the previous key-encryption key is read from',
+    env: 'STS_PREVIOUS_KEK_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault',
+                 'vault-transit', 'aws-kms', 'gcp-kms', 'azure-keys'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the key is read once, before the store is restored',
+    description: 'To rotate the key-encryption key: point keys.kek* at the ' +
+                 'NEW key and this at the OLD one, and start. Every data ' +
+                 'encryption key still wrapped under the old key is ' +
+                 're-wrapped under the new one and written back; once every ' +
+                 'node has started that way, set this back to none. The ' +
+                 'store is not re-encrypted.' },
+
+  { key: 'keys.previousKekRef', group: 'Key material',
+    label: 'The previous key-encryption key\'s location',
+    env: 'STS_PREVIOUS_KEK_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'Where the previous key is, in the provider ' +
+                 'keys.previousKekProvider names: a path, an ARN, a resource ' +
+                 'or a Vault read path. It has no fallback.' },
+
+  { key: 'keys.previousKekField', group: 'Key material',
+    label: 'The field the previous key is in',
+    env: 'STS_PREVIOUS_KEK_FIELD', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The member of a JSON secret that holds the previous key. ' +
+                 'Empty takes the value whole.' },
+
+  { key: 'keys.previousKekRegion', group: 'Key material',
+    label: 'AWS region of the previous key',
+    env: 'STS_PREVIOUS_KEK_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the previous key is read from. Empty uses ' +
+                 'the SDK\'s own resolution.' },
+
+  { key: 'keys.previousKekVault', group: 'Key material',
+    label: 'Key Vault URL of the previous key',
+    env: 'STS_PREVIOUS_KEK_VAULT', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The Azure Key Vault URL or the HashiCorp Vault endpoint ' +
+                 'the previous key is read from. It has no fallback.' },
 
   // -------------------------------------------------------------------------
   // THE MODE. What this service IS, rather than what any one surface requires.
@@ -2793,8 +3384,8 @@ const SETTINGS = [
     // that `realmRuntime` has exactly the holders it names, which is how each
     // one stays a decision rather than a copied line.
     dflt: 'development', runtime: true,
-    description: 'What this service is. `development` is the mock every ' +
-                 'release before 2026-09-06 was: no password is checked in ' +
+    description: 'What this service is. `development` is what every release ' +
+                 'before 2026-09-06 was: no password is checked in ' +
                  'any protocol, an unknown user, application, service ' +
                  'principal or authorization server is created the first ' +
                  'time it is named, an OAuth client needs no secret, and — ' +
@@ -2829,7 +3420,8 @@ const SETTINGS = [
     path: 'logLevel', env: 'STS_LOG_LEVEL', type: 'enum',
     enumValues: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
     dflt: 'info', runtime: true,
-    description: 'debug is the useful level for a mock whose job is to show ' +
+    description: 'debug is the useful level for a service whose job is to ' +
+                 'show ' +
                  'what it did: every endpoint call, and every token and ' +
                  'assertion both before and after it was signed. Changing it ' +
                  'here takes effect on the next line written, EXCEPT in the ' +
@@ -2840,132 +3432,133 @@ const SETTINGS = [
                  'with. That is ASN.1 and crypto tracing rather than this ' +
                  'service\'s account of what it did.' },
 
-  // --- The worker pool -----------------------------------------------------
+  // --- The request pool ----------------------------------------------------
   //
-  // THE ONLY SETTING HERE THAT CHANGES HOW MANY PROCESSES THIS SERVICE IS.
-  //
-  // Node runs every listener this service owns on one thread, so a
-  // synchronous computation does not slow it down, it STOPS it — and
-  // post-quantum signing is that computation. Stalls of 14.6, 15.4, 17.8 and
-  // 23.3 seconds were measured on 2026-08-29, during which this service
-  // answered nobody at all: not another HTTP caller, not the KDC on port 88.
-  // See common/worker.js.
-  //
-  // TWO, and not the core count — which is what this paragraph argued when the
-  // default was two; it is FIVE since 2026-09-06, and the note at the row says
-  // why. The property being bought is that the front
-  // process's event loop stays FREE, and one worker buys all of it; the second
-  // is what stops a caller's SLH-DSA signature queueing behind a stranger's.
-  // Beyond that the return falls off quickly and the cost does not — each
-  // worker is a node process — and this is a mock that commonly runs several
-  // to a machine under a test suite. Raising it is one setting, and the pool
-  // resizes on the next signature rather than at the next restart.
-  //
-  // NOTHING IS FORKED UNTIL THE FIRST POST-QUANTUM JOB, whatever this says, so
-  // a process that never signs one never pays for a pool. That is what keeps
-  // the parent project's in-process Kerberos jobs, this repository's own tests
-  // and `node env/generate_defaults.js` free of child processes they would
-  // never use and would have to wait for.
-  { key: 'workers.count', group: 'Global', label: 'Worker processes',
-    // FIVE SINCE 2026-09-06, where it was two. The pool is what keeps a
-    // post-quantum signature off the thread holding every listener —
-    // an SLH-DSA sign measured at 15 SECONDS on this hardware — and two
-    // workers means the third concurrent one waits behind them. Five is a
-    // working default for a machine with more than four cores and still costs
-    // nothing until the first post-quantum job, because the pool is lazy and
-    // forks nothing before then.
-    env: 'STS_WORKERS_COUNT', type: 'int', dflt: 5, min: 0, max: 32,
-    runtime: true, perProcess: true,
-    description: 'How many child processes the post-quantum signing, ' +
-                 'verification and key generation are handed to, so that the ' +
-                 'process holding the sockets is never the one computing an ' +
-                 'SLH-DSA signature — which takes SECONDS, during which node ' +
-                 'answers nothing at all. 0 means compute in this process, ' +
-                 'which is what this service did before the pool existed: ' +
-                 'correct, identical byte for byte, and blocking for as long ' +
-                 'as each signature takes. The pool is forked lazily, so a ' +
-                 'process that never signs post-quantum never forks anything ' +
-                 'whatever this is set to, and it is re-read per job, so ' +
-                 'changing it here takes effect on the next signature. A ' +
-                 'REALM MAY NOT CARRY THIS: a pool belongs to the process, ' +
-                 'and a realm resizing it would be resizing every other ' +
-                 'realm\'s too.' },
-
+  // (Until #363 this section began with `workers.count`,
+  // `workers.countInRequestWorkers` and `workers.jobTimeoutS`, the pool of
+  // forked processes that computed post-quantum signatures and scrypt. Those
+  // run on libuv's thread pool now — `common/pq_native.js` — and the three
+  // settings are gone.)
   // ---------------------------------------------------------------------
-  // HOW LONG A POST-QUANTUM JOB MAY TAKE BEFORE THE POOL GIVES UP ON IT
-  // (2026-09-11).
+  // THE REQUEST POOL. These configure workers that run THE SERVICE: each
+  // loads the whole protocol stack in the same order, binds no protocol port,
+  // and answers HTTP on a unix socket the front process proxies to. Since
+  // #364 a worker is a THREAD of the front process (`worker_threads`), not a
+  // forked process. `common/request_pool.js` argues it.
   //
-  // **`worker_pool.js` HAD NO BOUND AT ALL, AND ITS OWN HEADER SAYS WHY THAT
-  // IS THE WORST AVAILABLE FAILURE.** It rejects every job on a worker that
-  // DIES — "a promise nobody settles is a request that hangs" — and covers
-  // nothing for a worker that stays alive and simply never answers. One was
-  // observed doing exactly that: five idle children, no CPU anywhere, the
-  // service answering everything else in eleven milliseconds, and one HTTP
-  // request parked for ever. The suite's own 300s watchdog was the only thing
-  // that ended it, which is five minutes per occurrence and says nothing about
-  // what happened.
+  // **THREE DEFAULTS CHANGED WITH IT (rcbj, #364)**: one request worker,
+  // `workers.dispatch` `*` and `workers.readYourWrite` on. A worker needs a
+  // store that coordinates (postgres), so when the store cannot and those
+  // values are still the DEFAULTS, the pool quietly runs none — a
+  // development service on the memory store is one thread, as it always
+  // was. An operator's explicit value without coordination is still refused
+  // at startup (`STS-WORKER-0024`); `request_pool.js`'s `autoOff` is the
+  // rule.
   //
-  // **IT IS A BACKSTOP AND NOT A DIAGNOSIS.** Why a reply goes missing is not
-  // known; what this does is turn an unbounded hang into a named failure the
-  // caller can report, which is the same trade `reap()` already makes for the
-  // death case.
-  //
-  // **THE DEFAULT IS GENEROUS ON PURPOSE.** The stalls this pool was built to
-  // move off the event loop were measured at 15 to 23 seconds — a composite
-  // verify, an SLH-DSA-SHAKE-128s signature — and a machine running the whole
-  // suite under docker is slower than the one they were measured on. Two
-  // minutes is far beyond any of them and far short of a watchdog. Zero turns
-  // the bound off and restores the old behaviour exactly.
-  { key: 'workers.jobTimeoutS', group: 'Global',
-    label: 'Worker job timeout (seconds)',
-    path: 'workers.jobTimeoutS', env: 'STS_WORKERS_JOB_TIMEOUT_S',
-    type: 'int', dflt: 120, runtime: true, min: 0, max: 3600,
-    description: 'How long the post-quantum worker pool waits for a job it ' +
-                 'has sent to a child before failing it. **It exists because ' +
-                 'there was no bound**: a worker that dies has its jobs ' +
-                 'rejected, and a worker that stays alive and never answers ' +
-                 'left the request hanging for ever — observed, with an idle ' +
-                 'pool and a service answering everything else normally. A ' +
-                 'failed job is reported to the caller and the request fails ' +
-                 'with a reason; nothing is retried, because a worker holds ' +
-                 'no state and the caller can simply ask again.\n\n' +
-                 '**Generous on purpose.** The stalls this pool exists to ' +
-                 'move off the event loop were 15 to 23 seconds, so two ' +
-                 'minutes is far beyond any real job and far short of a test ' +
-                 'runner\'s watchdog. `0` turns the bound off.' },
-
-  // ---------------------------------------------------------------------
-  // THE SECOND POOL, AND IT IS A DIFFERENT KIND OF WORKER FROM THE ONE ABOVE.
-  //
-  // `workers.count` forks children that run a JOB TABLE — four leaf
-  // computations handed everything they need. These three configure children
-  // that run THE SERVICE: each loads the whole protocol stack in the same
-  // order, binds no protocol port, and answers HTTP on a unix socket the front
-  // process proxies to. `common/request_pool.js` argues it.
-  //
-  // All three are `perProcess` for `workers.count`'s reason, and
+  // All are `perProcess` — a pool belongs to the process, and a realm
+  // resizing it would be resizing every other realm's too — and
   // restart-only rather than runtime: a request worker takes seconds to start
   // because it loads the service, and the pool is brought up BEFORE the
   // listener binds so that cost is paid where nobody is waiting. A table that
   // said `runtime: true` and meant "on restart" is the lie this file refuses
   // to tell about a bound port.
   // ---------------------------------------------------------------------
+  { key: 'workers.startTimeoutMs', group: 'Global',
+    label: 'Request worker start limit (ms)',
+    env: 'STS_WORKERS_START_TIMEOUT_MS', type: 'int', dflt: 60000,
+    min: 5000, max: 900000, runtime: false, perProcess: true,
+    restartReason: 'a worker reads it once, when it starts',
+    description: 'How long a request or surface worker may take to bring its ' +
+                 'state up (the store, the keys, the minted rows and ' +
+                 'coordination) before it reports that it could not start. ' +
+                 'Three failures in a row and the pool stops forking and ' +
+                 'answers everything in the process that holds the sockets. ' +
+                 'Raise it where a worker\'s start is slow — a large realm ' +
+                 'key set that every start re-certifies, a cold database ' +
+                 '(#311).' },
   { key: 'workers.requestCount', group: 'Global',
-    label: 'Request worker processes',
-    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 0, min: 0, max: 32,
+    label: 'Request worker threads',
+    env: 'STS_WORKERS_REQUEST_COUNT', type: 'int', dflt: 1, min: 0, max: 32,
     runtime: false, perProcess: true,
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'check that refuses to dispatch without a coordinating ' +
                    'store runs once, there',
-    description: 'How many child processes REQUESTS are handled in, so that ' +
-                 'the process holding the sockets is doing request and ' +
-                 'response I/O and not running handlers. Each worker loads ' +
-                 'the whole protocol stack in the same order and binds no ' +
-                 'protocol port. 0 — the default — means every request is ' +
-                 'handled in the process that holds the sockets, which is ' +
-                 'what this service has always done. Nothing is dispatched ' +
+    description: 'How many worker THREADS requests are handled in, so that ' +
+                 'the thread holding the sockets is doing request and ' +
+                 'response I/O and not running handlers. Each worker is a ' +
+                 'thread of this process with its own V8 heap: it loads the ' +
+                 'whole protocol stack in the same order and binds no ' +
+                 'protocol port. 1 — the default — is one worker when the ' +
+                 'store coordinates (postgres); with the memory or ldif ' +
+                 'store and this left at its default the pool runs none, ' +
+                 'and every request is handled in the thread that holds the ' +
+                 'sockets. 0 is that everywhere. Every worker costs a whole ' +
+                 'copy of the service\'s heap, so more than one is for a ' +
+                 'node with the cores to use them. Nothing is dispatched ' +
                  'whatever this is set to until workers.dispatch names a ' +
                  'path.' },
+
+  // ---------------------------------------------------------------------
+  // HOW MANY REQUEST WORKERS MAY BE STARTING AT ONCE (#342, 2026-09-29).
+  //
+  // Every worker restores the whole store into its own heap when it starts,
+  // and the pool used to fork them all at once. On testidp's node-a on
+  // 2026-09-28 the task's memory limit SIGKILLed all four within three
+  // seconds: five processes, each holding a directory plus the transient
+  // arrays of its restore. Starting them one at a time keeps the peak at
+  // one start above the steady state. `common/request_pool.js`'s start gate
+  // argues why the count covers BOTH pools rather than each one.
+  // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // EVERY PROCESS'S HEAP LIMIT (#341, 2026-09-29). Nothing set one, so V8
+  // sized each process's heap to the MACHINE, five processes could each grow
+  // towards it, and the kernel's OOM killer ended whichever was biggest with
+  // an anonymous SIGKILL. `common/process_memory.ts` argues the derivation
+  // and why the front process re-executes itself to take the flag.
+  // ---------------------------------------------------------------------
+  { key: 'workers.heapLimitMb', group: 'Global',
+    label: 'Heap limit per process (MiB)',
+    env: 'STS_WORKERS_HEAP_LIMIT_MB', type: 'int', dflt: 0, min: -1,
+    max: 1048576, runtime: false, perProcess: true,
+    restartReason: 'V8 reads the heap limit when a process starts: the front ' +
+                   'process restarts itself with it before it loads ' +
+                   'anything, and each request worker is forked with it',
+    description: 'The V8 heap limit of the front thread ' +
+                 '(--max-old-space-size) and of every request worker thread ' +
+                 '(its resourceLimits). -1 turns it OFF: no limit is ' +
+                 'applied, the front process is not restarted with one and ' +
+                 'no worker is started with one, while the memory report ' +
+                 'goes on. The default, 0, DERIVES it from the container: ' +
+                 '(the memory limit − 15 % headroom, at least 256 MiB) ÷ ' +
+                 '(1 + workers.requestCount + workers.surfaceCount) — every ' +
+                 'thread has a V8 heap of its own — less the 48 MiB young ' +
+                 'generation each isolate is also given, and never less ' +
+                 'than 192 MiB. The limit is read from ' +
+                 'cgroup v2, then cgroup v1, then the ECS task metadata ' +
+                 'endpoint. With no visible limit nothing is set. A worker ' +
+                 'thread whose heap reaches the limit is ended by V8 and ' +
+                 'reported as STS-WORKER-0046, and the process carries on; ' +
+                 'the front\'s own heap reaching it ends the process with ' +
+                 'a line that says so. A flag an operator set on the ' +
+                 'command line or in NODE_OPTIONS is left alone and used for ' +
+                 'every process. Read before the store is opened.' },
+
+  { key: 'workers.startConcurrency', group: 'Global',
+    label: 'Request workers starting at once',
+    env: 'STS_WORKERS_START_CONCURRENCY', type: 'int', dflt: 1, min: 1,
+    max: 64, runtime: false, perProcess: true,
+    restartReason: 'the pool forks its workers when the process starts; a ' +
+                   'replacement after a crash waits behind the same gate',
+    description: 'How many request workers may be starting at the same ' +
+                 'time, counting the protocol and hosted-surface pools ' +
+                 'together. The next worker is forked when one reports that ' +
+                 'it is ready or that it failed. The default, 1, starts them ' +
+                 'one after another. Each start restores the whole store ' +
+                 'into that worker\'s memory, and starting them together is ' +
+                 'what put a node over its memory limit (#342). The listener ' +
+                 'binds once the first worker of each pool has settled, and ' +
+                 'the rest come up behind it. A worker that replaces one ' +
+                 'that died waits its turn the same way.' },
 
   // ---------------------------------------------------------------------
   // WHAT IS HANDLED IN A WORKER, AND IT WAS TWO SETTINGS UNTIL 2026-09-12.
@@ -2984,7 +3577,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.dispatch', group: 'Global',
     label: 'Handled in a request worker',
-    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '',
+    env: 'STS_WORKERS_DISPATCH', type: 'string', dflt: '*',
     runtime: false, perProcess: true,
     restartReason: 'dispatching is REFUSED at startup unless this process is ' +
                    'coordinating, and that check runs once, before the ' +
@@ -3001,15 +3594,23 @@ const SETTINGS = [
                  'them. These are the work behind the sockets that do not ' +
                  'speak HTTP: the front process keeps the socket and the ' +
                  'framing (it accepts the connection, decodes the BER and ' +
-                 'writes the reply) and the worker does the work.\n- ' +
+                 'writes the reply) and the worker does the work. The ' +
+                 'families are "ldap" (the directory on 389 and 636), ' +
+                 '"spiffe" (the unary Workload and SPIRE Server API methods, ' +
+                 'and the Broker API\'s FetchJWTSVID once its reference is ' +
+                 'attested) and "krb5" (every message on the KDC\'s TCP and ' +
+                 'UDP 88).\n- ' +
                  '**"*"**, which is EVERYTHING of both kinds — how "run the ' +
                  'service in the pool" is said, and the only spelling that ' +
-                 'cannot go stale the next time a family is added.\n\nEMPTY ' +
-                 'IS THE DEFAULT AND MEANS NOTHING IS DISPATCHED, which is ' +
-                 'what makes the pool inert until it is asked for. /tls is ' +
-                 'never dispatched whatever this says, because its whole ' +
-                 'content is what the server saw of the connection the ' +
-                 'request arrived on.\n\n**Nothing is dispatched unless this ' +
+                 'cannot go stale the next time a family is added.\n\n"*" IS ' +
+                 'THE DEFAULT (#364): with a coordinating store every ' +
+                 'request goes to the request worker. With the memory or ' +
+                 'ldif store and workers.requestCount at its default there ' +
+                 'is no worker, and nothing is dispatched. Empty means ' +
+                 'nothing is dispatched anywhere. /tls and ' +
+                 '/admin-api/tls-connection are never dispatched whatever ' +
+                 'this says, because what they answer is what the server ' +
+                 'saw of the connection the request arrived on.\n\n**Nothing is dispatched unless this ' +
                  'process is coordinating**: an entry here with a store that ' +
                  'has no change log stops the service at startup, naming ' +
                  'this setting, rather than letting each worker hold a ' +
@@ -3034,13 +3635,13 @@ const SETTINGS = [
   { key: 'workers.fanout', group: 'Global',
     label: 'Dispatched paths with no session affinity',
     env: 'STS_WORKERS_FANOUT', type: 'string',
-    dflt: '/scim,/xacml,/admin-api',
+    dflt: '/scim,/xacml,/admin-api,/account-api',
     runtime: false, perProcess: true,
     restartReason: 'the workers this spreads requests across are forked ' +
                    'before the listener binds',
     description: 'A comma-separated list of path prefixes that go to the ' +
                  'least-loaded request worker instead of being stuck to the ' +
-                 'session or flow they belong to. These three carry their ' +
+                 'session or flow they belong to. These four carry their ' +
                  'own credential on every request and name their own target, ' +
                  'so nothing about one request has to be remembered to ' +
                  'answer the next. EVERYTHING ELSE DISPATCHED HOLDS AFFINITY ' +
@@ -3077,7 +3678,7 @@ const SETTINGS = [
     restartReason: 'the pool is forked before the listener binds, and the ' +
                    'checks that refuse it without coordination and without ' +
                    'read-your-write run once, there',
-    description: 'How many request workers are kept for this service\'s OWN ' +
+    description: 'How many worker threads are kept for this service\'s OWN ' +
                  'two hosted surfaces — the admin console and the user ' +
                  'portal, or whatever workers.surfaces names — separately ' +
                  'from the workers.requestCount workers that run the ' +
@@ -3085,11 +3686,11 @@ const SETTINGS = [
                  'queues behind protocol traffic on the same worker, and a ' +
                  'console page walking the directory never holds a protocol ' +
                  'worker. 0 — the default — means there is no second pool ' +
-                 'and those paths go wherever the rest of workers.dispatch ' +
-                 'goes. Nothing is sent to these workers unless ' +
-                 'workers.dispatch names the paths too. **It REQUIRES ' +
+                 'and those paths go to the request workers with the rest ' +
+                 'of workers.dispatch. Nothing is sent to these workers ' +
+                 'unless workers.dispatch names the paths too. **It REQUIRES ' +
                  'workers.readYourWrite**: signing in to the console now ' +
-                 'crosses two processes (the sign-in in a protocol worker, ' +
+                 'crosses two workers (the sign-in in a protocol worker, ' +
                  'the console session in one of these), and without the ' +
                  'barrier the second would intermittently read a store the ' +
                  'first had not yet written — so the service refuses to ' +
@@ -3218,7 +3819,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'workers.readYourWrite', group: 'Global',
     label: 'Read-your-write across request workers',
-    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: false,
+    env: 'STS_WORKERS_READ_YOUR_WRITE', type: 'bool', dflt: true,
     runtime: true, perProcess: true,
     description: 'Whether a request worker must catch up with what the other ' +
                  'workers have written before it serves. Coordination makes ' +
@@ -3231,10 +3832,12 @@ const SETTINGS = [
                  'there land anywhere. With it on, the pool counts writes ' +
                  'and a worker that is behind pulls before it answers — so ' +
                  'the cost falls on the first read after a write on each ' +
-                 'worker, and on nothing while nothing is being written. OFF ' +
-                 'BY DEFAULT because that is the behaviour that existed ' +
-                 'before it, and because whether the wait is worth it is a ' +
-                 'question about the callers rather than about the pool.' },
+                 'worker, and on nothing while nothing is being written. ON ' +
+                 'BY DEFAULT since #364, when a request worker became the ' +
+                 'default: the front thread still answers what is never ' +
+                 'dispatched, so a caller would otherwise see its own write ' +
+                 'go missing between two requests. It must be on for a ' +
+                 'surface pool (workers.surfaceCount).' },
 
   { key: 'workers.socketDir', group: 'Global',
     label: 'Request worker socket directory',
@@ -3662,7 +4265,10 @@ const SETTINGS = [
                  'it is an ordinary scope, granted as everything else here ' +
                  'is. It does NOT re-judge a grant already issued, so a ' +
                  'refresh of a code obtained before the setting was turned ' +
-                 'on still works.' },
+                 'on still works. Not asked on client_credentials (#551): ' +
+                 'with no person behind the token a delegated grant does ' +
+                 'not count, and a role the client holds decides, in every ' +
+                 'mode.' },
 
   // ---------------------------------------------------------------------------
   // RFC 8693 SECTION 2.2.1'S OPTIONAL `refresh_token`, AS A POLICY RATHER THAN
@@ -3706,6 +4312,27 @@ const SETTINGS = [
   // `runtime: true` and settable on a realm, for `consentRequired`'s reason:
   // there is no listener and no key involved, so nothing here is decided when a
   // socket is bound.
+  // #114: what an RFC 7523 / RFC 7522 assertion EXCHANGED (RFC 8693) may be
+  // addressed to. Strict by default (rcbj, #114).
+  { key: 'oauth2.tokenExchangeAudience', group: 'OAuth 2.0 / OIDC',
+    label: 'Audience of an assertion exchanged',
+    env: 'STS_OAUTH2_TOKEN_EXCHANGE_AUDIENCE', type: 'enum',
+    enumValues: ['authorization-server', 'any-declared-relying-party'],
+    dflt: 'authorization-server', runtime: true,
+    description: 'What an RFC 7523 JWT or RFC 7522 / SAML 1.1 assertion ' +
+                 'presented as an RFC 8693 subject_token or actor_token may ' +
+                 'be addressed to. AUTHORIZATION-SERVER (the default) is the ' +
+                 'assertion grant\'s own rule: its audience names this token ' +
+                 'endpoint or issuer, and a SAML Recipient the token ' +
+                 'endpoint. ANY-DECLARED-RELYING-PARTY also accepts an ' +
+                 'audience naming an application registered in this realm ' +
+                 '(and, for SAML, a Recipient that is an assertion consumer ' +
+                 'service registered on the exchanging client) — TOKEN ' +
+                 'FORWARDING: a token issued to one relying party is traded ' +
+                 'for another, which the act on /admin/delegation records as ' +
+                 'such. WARNING: anybody who holds such a token — every ' +
+                 'relying party it was issued to — can then exchange it; ' +
+                 'turn it on only where that is the design.' },
   { key: 'oauth2.tokenExchangeRefreshToken', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token from a token exchange',
     env: 'STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN', type: 'enum',
@@ -3761,8 +4388,8 @@ const SETTINGS = [
                  'validating it the CLIENT\'s job and this server cannot see ' +
                  'whether it happens — so this is how to find out: a client ' +
                  'that accepts the result is not checking, and one that ' +
-                 'refuses it is. The same device as /spnego\'s three knobs ' +
-                 'and the reserved password "invalid". OFF by default, ' +
+                 'refuses it is. The same device as the reserved password ' +
+                 '"invalid". OFF by default, ' +
                  'reported on GET /oauth2/rfc9700 whichever mode is in ' +
                  'force, and every spoiled token is logged as spoiled — an ' +
                  'ID Token that is wrong in a way nobody remembers turning ' +
@@ -4103,11 +4730,10 @@ const SETTINGS = [
                  'Require DPoP rows below are what make them mandatory). PER ' +
                  'TRUST REALM since 2026-09-12 — it was one switch for the ' +
                  'whole process, so a realm turning it on turned it on for ' +
-                 'every other. In development POST /dpop/nonce-mode writes ' +
-                 'this setting for the realm it is reached in; in product ' +
-                 'that endpoint refuses and this row — through /admin/oauth2 ' +
-                 'or POST /admin-api/config/set, both behind a credential — ' +
-                 'is the only way to change it.' },
+                 'every other. This row — on the OAuth 2.0 page\'s DPoP ' +
+                 'settings or through POST /admin-api/config/set, both ' +
+                 'behind a credential — is the only way to change it, in ' +
+                 'either mode.' },
 
   { key: 'oauth2.dpopIatSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP proof iat window (s)',
@@ -4136,15 +4762,25 @@ const SETTINGS = [
   // oldest and that client is simply asked again with a fresh nonce.
   { key: 'oauth2.dpopReplayCacheSize', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP proof replay history size (per realm)',
-    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 100000,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the history is
+    // resident in every process of every node, per realm (#339). A full one
+    // refuses, so the lower number costs throughput and never the replay
+    // window.
+    env: 'STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE', type: 'int', dflt: 10000,
     min: 100, max: 10000000, runtime: true,
     description: 'How many live DPoP proof IDs (jti) a trust realm ' +
                  'remembers, each for twice oauth2.dpopIatSkewS. **A FULL ' +
                  'HISTORY REFUSES THE NEXT PROOF (STS-OAUTH-0554) RATHER ' +
                  'THAN FORGETTING A LIVE ONE**, since a forgotten jti is a ' +
                  'proof that can be replayed. Expired IDs are dropped first. ' +
-                 'Raise it for a realm that sees more than this many ' +
-                 'DPoP-bound requests in the replay window.' },
+                 'The cost of the default is throughput: past about this ' +
+                 'many DPoP proofs per replay window (about 16 a second at ' +
+                 'the defaults) the realm refuses every DPoP proof until ' +
+                 'entries age out, and anybody able to send a proof the ' +
+                 'token endpoint accepts can bring that on. Raise it for a ' +
+                 'realm that sees more than this many DPoP-bound requests ' +
+                 'in the replay window; every process of every node holds ' +
+                 'the whole history.' },
 
   { key: 'oauth2.dpopNonceCacheSize', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP server nonces held (per realm)',
@@ -4227,6 +4863,61 @@ const SETTINGS = [
                  'over a loopback call from this process to itself, where ' +
                  'there is no certificate story to tell.' },
 
+  // FAPI 2.0 HTTP SIGNATURES AT THE RESOURCE SERVERS (#178, 2026-10-05).
+  // THE DRAFT OF 26 JUNE 2026 SAYS NOTHING ABOUT ADOPTION: requests and
+  // responses "can be signed". rcbj's decision on #178 is a setting of its
+  // own rather than a FAPI profile value, and a client flag beside it
+  // (`oauthHttpSignedRequests`). `oauth-oidc/http_signatures.ts` reads all
+  // three. A `fapi-2-request` signature a client SENDS is verified whatever
+  // this is set to: a signature this service ignored would be one a client
+  // believed protected its request.
+  { key: 'oauth2.httpSignatures', group: 'OAuth 2.0 / OIDC',
+    label: 'FAPI 2.0 HTTP Signatures at the resource servers',
+    env: 'STS_OAUTH2_HTTP_SIGNATURES', type: 'enum',
+    enumValues: ['off', 'sign-responses', 'require-requests'], dflt: 'off',
+    runtime: true,
+    description: 'The FAPI 2.0 HTTP Signatures profile (RFC 9421 with RFC ' +
+                 '9530) at every resource server that takes an OAuth access ' +
+                 'token: UserInfo, the RFC 9470 step-up resource, the ' +
+                 'OpenID4VCI endpoints, /scim/v2, the Shared Signals ' +
+                 'endpoints, Grant Management and the VC-API test ' +
+                 'endpoints. `off` signs no response; `sign-responses` ' +
+                 'signs every response to a request whose access token was ' +
+                 'accepted, with tag "fapi-2-response" and the realm\'s ' +
+                 'key named by oauth2.httpSignatureResponseAlg; ' +
+                 '`require-requests` does that and also refuses, with 401, ' +
+                 'a request carrying no valid "fapi-2-request" signature by ' +
+                 'a key in the client\'s registered jwks or jwks_uri. A ' +
+                 'signature a client sends is verified in every setting. A ' +
+                 'client can require signed requests of itself alone with ' +
+                 'oauthHttpSignedRequests on its entry.' },
+  { key: 'oauth2.httpSignatureMaxAgeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Signed request age limit (s)',
+    env: 'STS_OAUTH2_HTTP_SIGNATURE_MAX_AGE_S', type: 'int', dflt: 60,
+    min: 1, max: 600, runtime: true,
+    description: 'How far a signed resource request\'s `created` may be ' +
+                 'from this server\'s clock, in either direction, before ' +
+                 'the request is refused with 401. The FAPI 2.0 HTTP ' +
+                 'Signatures draft recommends 1 minute (section 5.3.1.2).' },
+  { key: 'oauth2.httpSignatureResponseAlg', group: 'OAuth 2.0 / OIDC',
+    label: 'Signed response algorithm',
+    env: 'STS_OAUTH2_HTTP_SIGNATURE_RESPONSE_ALG', type: 'enum',
+    // The algorithms whose realm key is published in the JWKS with exactly
+    // this `alg`, so a client that reads the key by its keyid also learns
+    // the algorithm (RFC 9421 section 3.3.7 forbids the `alg` signature
+    // parameter for a JWS name). The RSA key is published as RS256, which
+    // FAPI 2.0 does not allow, and SLH-DSA signs too slowly for a response.
+    enumValues: ['ES256', 'ES384', 'EdDSA', 'ML-DSA-44', 'ML-DSA-65',
+                 'ML-DSA-87'],
+    dflt: 'ES256', runtime: true,
+    description: 'Which of the realm\'s signing keys signs a resource ' +
+                 'response, by its JWS algorithm (RFC 9421 section 3.3.7). ' +
+                 'The signature names the key by its published kid, and ' +
+                 'the key is in /oauth2/jwks with this alg. ES256 is one of ' +
+                 'the three FAPI 2.0 allows; EdDSA is its Ed25519 variant ' +
+                 'only (oauth2.eddsaCurve must be Ed25519). The ML-DSA ' +
+                 'choices are post-quantum, and a client must support RFC ' +
+                 '9964 to verify them.' },
   { key: 'oauth2.accessTokenRequireDpop', group: 'OAuth 2.0 / OIDC',
     label: 'Require DPoP for every access token',
     env: 'STS_OAUTH2_ACCESS_TOKEN_REQUIRE_DPOP', type: 'bool', dflt: false,
@@ -4361,33 +5052,50 @@ const SETTINGS = [
     label: 'Keep a rotated client secret working for (seconds)',
     env: 'STS_OAUTH2_CLIENT_SECRET_OVERLAP_S', type: 'int', dflt: 604800,
     min: 0, max: 31536000, runtime: true,
-    description: 'How long the secret a ROTATION replaced (Rotate secret on ' +
-                 '/admin/applications, or rotate-secret on /admin-api) goes ' +
-                 'on authenticating at the token endpoint beside the new ' +
-                 'one, so a client can change over without an outage. A ' +
-                 'week by default; 0 makes a rotation a regeneration, which ' +
-                 'ends the old secret at once.' },
+    description: 'How long the secrets a ROTATION replaced (Rotate secret ' +
+                 'on /admin/applications, or rotate-secret on /admin-api) ' +
+                 'go on authenticating at the token endpoint beside the new ' +
+                 'one, so a client can change over without an outage: a ' +
+                 'rotation sets each live secret\'s expiry to now plus this, ' +
+                 'or leaves an earlier one. A week by default; 0 makes a ' +
+                 'rotation a regeneration, which removes the old secrets at ' +
+                 'once.' },
+  // SEVERAL CLIENT SECRETS PER APPLICATION (2026-10-01, rcbj).
+  { key: 'oauth2.clientSecretsMax', group: 'OAuth 2.0 / OIDC',
+    label: 'Client secrets an application may hold',
+    env: 'STS_OAUTH2_CLIENT_SECRETS_MAX', type: 'int', dflt: 5,
+    min: 1, max: 50, runtime: true,
+    description: 'How many client secrets one application may hold at ' +
+                 'once (each a record on oauthClientSecret with its own ' +
+                 'expiry). Adding or rotating in a secret past this is ' +
+                 'refused (STS-REG-0208); remove one first. Expired secrets ' +
+                 'count until the daily job oauth2.client-secret-expiry ' +
+                 'removes them.' },
   { key: 'oauth2.clientSecretExpiryWarningDays', group: 'OAuth 2.0 / OIDC',
     label: 'Warn about an expiring client secret this many days ahead',
     env: 'STS_OAUTH2_CLIENT_SECRET_EXPIRY_WARNING_DAYS', type: 'int',
     dflt: 14, min: 0, max: 365, runtime: true,
     description: 'The daily scheduler job oauth2.client-secret-expiry ' +
                  'writes an audit row and a warning for every application ' +
-                 'whose secret expires within this many days (its ' +
-                 'oauthClientSecretExpiresAt, or its registration\'s ' +
-                 'client_secret_expires_at), and /admin/applications marks ' +
-                 'it. 0 warns only once it has expired.' },
+                 'holding a secret that expires within this many days (the ' +
+                 'expiry on each oauthClientSecret record), and ' +
+                 '/admin/applications marks it. 0 warns only once it has ' +
+                 'expired.' },
 
-  { key: 'oauth2.registeredSecretLifetimeS', group: 'OAuth 2.0 / OIDC',
-    label: 'Dynamically registered secret lifetime (s)',
-    env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S', type: 'int', dflt: 0,
-    min: 0, max: 31536000, runtime: true,
-    description: 'The `client_secret_expires_at` RFC 7591 section 3.2.1 ' +
+  { key: 'oauth2.clientSecretLifetimeDays', group: 'OAuth 2.0 / OIDC',
+    label: 'Client secret lifetime (days)',
+    env: 'STS_OAUTH2_CLIENT_SECRET_LIFETIME_DAYS', type: 'int', dflt: 0,
+    min: 0, max: 730, runtime: true,
+    description: 'The lifetime, in days, of every client secret this ' +
+                 'service mints or is given, and so the ' +
+                 '`client_secret_expires_at` RFC 7591 section 3.2.1 ' +
                  'publishes for a client registered at POST ' +
-                 '/oauth2/register, as seconds after registration. ZERO, the ' +
-                 'default, is that section\'s own "never", which is what ' +
-                 'this service always said. It is stamped when the client ' +
-                 'registers and is not moved by a later change.' },
+                 '/oauth2/register — the default for every secret ' +
+                 'mints or is given (a regeneration, a rotation, an added ' +
+                 'secret, a value typed on the console), unless the add ' +
+                 'form names another. ZERO, the default, is that section\'s ' +
+                 'own "never". It is stamped on each secret when it is ' +
+                 'made and is not moved by a later change.' },
 
   { key: 'oauth2.registeredClientIdPrefix', group: 'OAuth 2.0 / OIDC',
     label: 'Dynamically registered client_id prefix',
@@ -4425,9 +5133,16 @@ const SETTINGS = [
   { key: 'oauth2.authorizationCodeTtlS', group: 'OAuth 2.0 / OIDC',
     label: 'Authorization code lifetime (s)',
     env: 'STS_OAUTH2_AUTHORIZATION_CODE_TTL_S', type: 'int', dflt: 300,
-    min: 30, max: 3600, runtime: true,
-    description: 'How long an authorization code may wait to be redeemed. ' +
-                 'RFC 6749 section 4.1.2 recommends at most ten minutes. It ' +
+    // AT MOST FIVE MINUTES (#424, rcbj: "an authorization code ... only be
+    // valid for five minutes"). It may be shorter; FAPI 2.0 caps it at 60.
+    min: 30, max: 300, runtime: true,
+    description: 'How long an authorization code may wait to be redeemed: ' +
+                 'at most five minutes (the default), and shorter if set. ' +
+                 'RFC 6749 section 4.1.2 recommends at most ten minutes; ' +
+                 'this service allows half that. FAPI 2.0 holds it to 60 ' +
+                 'seconds. A code is also presented ONCE: its first Token ' +
+                 'Request spends it, whatever that request\'s outcome ' +
+                 '(oauth2.codeReplayIdempotent relaxes that). It ' +
                  'is ALSO what RFC 9700 mode\'s transaction memory is ' +
                  'measured from — a PKCE challenge or nonce is remembered ' +
                  'for twice this — so the two cannot drift apart. A code ' +
@@ -4438,27 +5153,35 @@ const SETTINGS = [
     env: 'STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE', type: 'int', dflt: 10000,
     min: 10, max: 1000000, runtime: true,
     description: 'How many redeemed authorization codes a trust realm ' +
-                 'remembers, so that a repeat of the SAME token request is ' +
-                 'answered with the tokens it already got and a different ' +
-                 'one is refused naming what differs. Past it the OLDEST is ' +
-                 'forgotten, which costs only that courtesy: the code itself ' +
-                 'was removed when it was redeemed, so a replay of a ' +
-                 'forgotten one is still refused as an unknown code.' },
+                 'remembers. A repeat of a remembered code is refused in ' +
+                 'every mode, naming when and by which client it was ' +
+                 'redeemed (or the field that differs), and the tokens it ' +
+                 'bought are revoked (RFC 6749 section 10.5); only with ' +
+                 'oauth2.codeReplayIdempotent on is an identical repeat ' +
+                 'answered with the tokens it already got. Past the limit ' +
+                 'the OLDEST is forgotten: the code itself was removed when ' +
+                 'it was redeemed, so a replay of a forgotten one is still ' +
+                 'refused, as an unknown code, but what it bought is no ' +
+                 'longer revoked.' },
 
   { key: 'oauth2.codeReplayIdempotent', group: 'OAuth 2.0 / OIDC',
     label: 'Answer a repeated code redemption with the same tokens',
     env: 'STS_OAUTH2_CODE_REPLAY_IDEMPOTENT', type: 'bool', dflt: false,
     runtime: true,
-    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** With it ' +
-                 'on, an IDENTICAL repeat of a Token Request for a code ' +
-                 'already redeemed is answered with the tokens it already ' +
-                 'got, for the rest of the code\'s own lifetime. RFC 6749 ' +
-                 'section 4.1.2 says a code used twice MUST be refused, and ' +
-                 'off (the default) it is — and everything the first ' +
-                 'redemption bought is revoked (section 10.5). RFC 9700, ' +
-                 'OAuth 2.1 and FAPI mode ignore it. It exists for the ' +
-                 'parent project\'s development-mode job that still ' +
-                 'asserts the old courtesy (#187).' },
+    description: '**WEAKER THAN THE SPECIFICATION — leave it off.** Off ' +
+                 '(the default), an authorization code is presented ONCE: ' +
+                 'its first Token Request spends it whatever that ' +
+                 'request\'s outcome — a wrong code_verifier, a failed ' +
+                 'client authentication, anything — and a second ' +
+                 'presentation is refused, revoking whatever the first ' +
+                 'bought (RFC 6749 sections 4.1.2 and 10.5; #424). On, a ' +
+                 'refused request leaves the code redeemable so the client ' +
+                 'may fix it and try again, and an IDENTICAL repeat of a ' +
+                 'redemption is answered with the tokens it already got, for ' +
+                 'the rest of the code\'s lifetime. RFC 9700, OAuth 2.1, ' +
+                 'FAPI and product mode ignore it. It exists for the parent ' +
+                 'project\'s development-mode job that still asserts the ' +
+                 'old courtesy (#187).' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
@@ -4667,6 +5390,62 @@ const SETTINGS = [
                  'have: a TEE (`trusted-environment`) or a separate ' +
                  'secure element (`strongbox`). A SOFTWARE key is never ' +
                  'attested, whatever this says.' },
+  // GOOGLE'S ANDROID KEY ATTESTATION STATUS LIST (#256): which attestation
+  // certificates Google has revoked or suspended — a leaked batch key, a
+  // compromised intermediate. Downloaded by the
+  // `devices.android-status-refresh` job into the risk datasets
+  // (`android.attestation-status`) and consulted for every certificate of an
+  // Android chain, at a device's registration and at a WebAuthn `android-key`
+  // statement. `common/attestation_revocation.ts` argues it.
+  { key: 'devices.androidStatusUrl', group: 'Devices',
+    label: 'Android attestation status list address',
+    env: 'STS_DEVICES_ANDROID_STATUS_URL', type: 'string',
+    dflt: 'https://android.googleapis.com/attestation/status', runtime: true,
+    description: 'Where the `devices.android-status-refresh` job downloads ' +
+                 'Google\'s Android key attestation status list from (#256): ' +
+                 'Google\'s own address by default. Fetched through the ' +
+                 'outbound rules every published document is ' +
+                 '(`federation.outbound`, https, internal addresses refused ' +
+                 'in product), with no redirect and a cap of its own. Empty ' +
+                 'dials nobody; the list can still be uploaded on ' +
+                 'Monitoring → Risk.' },
+  { key: 'devices.androidStatusRefreshS', group: 'Devices',
+    label: 'Download the Android status list every (seconds)',
+    env: 'STS_DEVICES_ANDROID_STATUS_REFRESH_S', type: 'int', dflt: 86400,
+    min: 3600, max: 604800, runtime: true,
+    description: 'How often `devices.android-status-refresh` downloads the ' +
+                 'list from `devices.androidStatusUrl`: daily by default. A ' +
+                 'list identical to the active one is not loaded again.' },
+  { key: 'devices.androidStatusMaxBytes', group: 'Devices',
+    label: 'Largest Android status list (bytes)',
+    env: 'STS_DEVICES_ANDROID_STATUS_MAX_BYTES', type: 'int',
+    dflt: 16777216, min: 65536, max: 268435456, runtime: true,
+    description: 'The most the job reads of the list before it stops. ' +
+                 'Google\'s is a JSON document that grows as it revokes; it ' +
+                 'has a cap of its own rather than ' +
+                 '`federation.maxResponseBytes`, which is sized for a token ' +
+                 'response.' },
+  { key: 'devices.androidStatusStaleHours', group: 'Devices',
+    label: 'Android status list is stale after (hours)',
+    env: 'STS_DEVICES_ANDROID_STATUS_STALE_HOURS', type: 'int', dflt: 48,
+    min: 1, max: 8760, runtime: true,
+    description: 'How long after it was loaded the active list still says ' +
+                 'anything. Past it the list is stale, and an Android chain ' +
+                 'is recorded with its revocation UNCHECKED, as with no ' +
+                 'list at all — which `devices.androidRevocationRequired` ' +
+                 'decides the consequence of.' },
+  { key: 'devices.androidRevocationRequired', group: 'Devices',
+    label: 'An Android attestation needs a current status list',
+    env: 'STS_DEVICES_ANDROID_REVOCATION_REQUIRED', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'OFF BY DEFAULT. Off, an Android attestation whose ' +
+                 'revocation could not be checked — no list, a stale one — ' +
+                 'is still recorded as attested, with the reason. On, in ' +
+                 'PRODUCT mode, such a chain is recorded as self-asserted, ' +
+                 'which product refuses for a device key and which makes a ' +
+                 'WebAuthn statement untrusted. WEAKER OFF: a leaked batch ' +
+                 'key goes unnoticed while the list cannot be read; on, an ' +
+                 'install that cannot reach Google attests no Android key.' },
   { key: 'devices.appleAppAttestTrustAnchors', group: 'Devices',
     label: 'Apple App Attest root (PEM)',
     env: 'STS_DEVICES_APPLE_APP_ATTEST_TRUST_ANCHORS', type: 'string',
@@ -5834,6 +6613,26 @@ const SETTINGS = [
     min: 5, max: 86400, runtime: true,
     description: 'How long a Replay-Nonce may wait before it is presented. ' +
                  'Each is accepted once.' },
+  // A literal 100,000 in acme/acme_store.ts until #346 (2026-09-29). The
+  // history is resident in every process of every node, per realm (#339). A
+  // full one refuses, so the lower number costs throughput and never the
+  // replay window.
+  { key: 'acme.maxSpentNonces', group: 'ACME',
+    label: 'Spent nonce history size (per realm)',
+    env: 'STS_ACME_MAX_SPENT_NONCES', type: 'int', dflt: 10000,
+    min: 100, max: 10000000, runtime: true,
+    description: 'How many spent Replay-Nonce values a trust realm ' +
+                 'remembers, each until the nonce expires. Expired ones are ' +
+                 'cleared at the bound; **A HISTORY STILL FULL OF LIVE ' +
+                 'SPENDS REFUSES THE NEXT REQUEST (badNonce) RATHER THAN ' +
+                 'FORGETTING ONE**, since a forgotten nonce can be replayed. ' +
+                 'The cost of the default is throughput: past about this ' +
+                 'many requests per acme.nonceLifetimeS (about 33 a second ' +
+                 'at the defaults) the realm answers every ACME request ' +
+                 'badNonce until nonces expire, and anybody able to fetch a ' +
+                 'nonce and sign a request can bring that on. Raise it for ' +
+                 'a realm that sees more; every process of every node holds ' +
+                 'the whole history.' },
   { key: 'acme.orderLifetimeS', group: 'ACME',
     label: 'Order lifetime (seconds)',
     env: 'STS_ACME_ORDER_LIFETIME_S', type: 'int', dflt: 86400,
@@ -6101,6 +6900,45 @@ const SETTINGS = [
                  'at its expiry, since no verifier accepts it any more. A ' +
                  'day by default; 0 deletes a record as soon as it expires.' },
 
+  // #345: the revoked-jti register's size cap, per realm.
+  // --- the access-token status list (#432) -------------------------------
+  { key: 'oauth2.accessTokenStatusListTtlS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list time to live (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_TTL_S', type: 'int', dflt: 60,
+    min: 1, max: 86400, runtime: true,
+    description: 'The ttl the realm\'s access-token status list carries ' +
+                 '(draft-ietf-oauth-status-list section 5), and its HTTP ' +
+                 'max-age — and the revoked-biscuit list\'s: how long a ' +
+                 'resource server that checks OAuth RFC 9068 and GNAP JWT ' +
+                 'access tokens on its own may keep the list, and so how ' +
+                 'long a revocation can take to reach it.' },
+
+  { key: 'oauth2.accessTokenStatusListLifetimeS', group: 'OAuth 2.0 / OIDC',
+    label: 'Access-token status list lifetime (s)',
+    env: 'STS_OAUTH2_ACCESS_TOKEN_STATUS_LIST_LIFETIME_S', type: 'int',
+    dflt: 3600, min: 60, max: 86400, runtime: true,
+    description: 'How long after it is signed the access-token status list ' +
+                 'says it is valid (its exp). A resource server must not ' +
+                 'use a list past it.' },
+
+  { key: 'oauth2.maxRevokedJtis', group: 'OAuth 2.0 / OIDC',
+    label: 'Most revoked token ids kept per realm',
+    env: 'STS_OAUTH2_MAX_REVOKED_JTIS', type: 'int', dflt: 100000,
+    min: 1, max: 10000000, runtime: true,
+    description: 'The most revocations of tokens (by jti) a trust realm ' +
+                 'keeps, in every process. A revocation is dropped anyway ' +
+                 'once its token has expired (the hourly ' +
+                 'oauth2.expired-token-purge), so this bounds only the ' +
+                 'revocations of tokens still unexpired and of tokens whose ' +
+                 'expiry is not known. At the cap an expired revocation is ' +
+                 'dropped first; only when there is none is the revocation ' +
+                 'of the token that expires SOONEST forgotten — **and that ' +
+                 'token is then accepted again by every check that asks ' +
+                 'only this register** (introspection, UserInfo, the ' +
+                 'refresh grant), until it expires. Each such loss is ' +
+                 'logged as STS-OAUTH-0787. Raise it rather than lower it: ' +
+                 'a revocation is about a hundred bytes.' },
+
   { key: 'oauth2.clockSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'Token clock skew (s)',
     env: 'STS_OAUTH2_CLOCK_SKEW_S', type: 'int', dflt: 30,
@@ -6163,11 +7001,13 @@ const SETTINGS = [
   { key: 'oauth2.refreshTokenEncryptionAlg', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: key management (alg)',
     env: 'STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG', type: 'enum',
+    // The ML-KEM and HPKE algs (#82) between the asymmetric and symmetric
+    // families, in `common/crypto.js`'s `JWE_ALGS` order.
     enumValues: ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES', 'ECDH-ES+A128KW',
-                 'ECDH-ES+A192KW', 'ECDH-ES+A256KW', 'A128KW', 'A192KW',
-                 'A256KW',
+                 'ECDH-ES+A192KW', 'ECDH-ES+A256KW'].concat(JWE_KEM_ALGS, [
+                 'A128KW', 'A192KW', 'A256KW',
                  'A128GCMKW', 'A192GCMKW', 'A256GCMKW', 'PBES2-HS256+A128KW',
-                 'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir'],
+                 'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir']),
     dflt: 'RSA-OAEP-256', runtime: true,
     description: 'The JWE key management algorithm every refresh token is ' +
                  'encrypted under. A refresh token is a signed JWT sealed to ' +
@@ -6177,7 +7017,14 @@ const SETTINGS = [
                  'EC key, and the rest a secret of the realm\'s own. ' +
                  'Changing it affects tokens issued from then on; tokens ' +
                  'already issued still open, because the realm holds a key ' +
-                 'of every kind. RSA1_5 is not offered.' },
+                 'of every kind. RSA1_5 is not offered. The ML-KEM and HPKE ' +
+                 'algorithms (#82 — drafts, see keys.encryptionKemAlgs) ' +
+                 'seal to a key pair DERIVED from the realm\'s secret for ' +
+                 'that algorithm, never published, so choosing one here ' +
+                 'needs no key and changes nothing a client sees; ' +
+                 'HPKE-10-KE (X-Wing) makes a refresh token captured today ' +
+                 'safe against a future quantum adversary as well as a ' +
+                 'classical one.' },
 
   { key: 'oauth2.refreshTokenEncryptionEnc', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: content (enc)',
@@ -6548,6 +7395,25 @@ const SETTINGS = [
   // rcbj's decision: on, it sets a cookie script can read and a cross-site
   // iframe is sent (the OP browser state), which no deployment should acquire
   // without asking. `oauth-oidc/session_management.js` argues the rest.
+  { key: 'oauth2.errorPageAutoRedirectS', group: 'OAuth 2.0 / OIDC',
+    label: 'Error page: continue to the client after (seconds)',
+    env: 'STS_OAUTH2_ERROR_PAGE_AUTO_REDIRECT_S', type: 'int', dflt: 0,
+    min: 0, max: 60, runtime: true,
+    description: 'The page shown instead of redirecting an authorization ' +
+                 'error to the client, when the person has not signed in ' +
+                 'here (RFC 9700 section 4.11.2), has a link to continue. ' +
+                 '0 (the default) leaves it at that: the person decides. ' +
+                 'Above 0, the page ALSO continues by itself after this many ' +
+                 'seconds (a meta refresh, no script) and says so. ' +
+                 '**This weakens the protection the page exists for**: a ' +
+                 'timed redirect is still an automatic redirect of a browser ' +
+                 'that has not authenticated here, which RFC 9700 section ' +
+                 '4.11.2 warns lets this server be used as a hop to send ' +
+                 'somebody to a client\'s address without their say. The ' +
+                 'address has already been matched to the client\'s ' +
+                 'registration, which bounds the risk. A form_post error ' +
+                 'keeps its button: a POST cannot be made without a ' +
+                 'script. (#317)' },
   { key: 'oauth2.keyBinding', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Key Binding',
     env: 'STS_OAUTH2_KEY_BINDING', type: 'bool', dflt: true,
@@ -6796,7 +7662,8 @@ const SETTINGS = [
     // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
     description: 'The cn of the directory group whose members may READ the ' +
-                 'console — every page, and every ?format=json view of one. ' +
+                 'console — every page, and every /admin-api read it is ' +
+                 'drawn from. ' +
                  'It is an ordinary group under ou=groups, so an ldapmodify, ' +
                  'a SCIM PATCH and the /admin/rbac screen are three doors ' +
                  'onto the same membership. The group need not exist: while ' +
@@ -6833,15 +7700,23 @@ const SETTINGS = [
     // PROCESS-WIDE SINCE 2026-09-14 (#32): a realm may not carry it, because it
     // decides who administers the service — see admin-ui/admin_scope.ts.
     perProcess: true,
-    runtime: true,
-    description: 'Every call into /admin-api must present a Bearer access ' +
-                 'token this service issued, audienced to this API, carrying ' +
+    // DEVELOPMENT MODE ONLY SINCE #446 (2026-10-05): the `onlyWhile` marker.
+    // This API's gate is becoming the admin console's only gate, so product
+    // refuses `false` on write and ignores it where it is stored — see
+    // `common/mode.js`'s `opensManagementApi()`. It fell back to the
+    // console's session and roles until then (#411).
+    runtime: true, onlyWhile: 'opensManagementApi',
+    description: 'Every call into /admin-api must present an access token ' +
+                 'this service issued, audienced to this API, carrying ' +
                  '`admin:read` for a read and `admin:write` for anything ' +
                  'that changes state. OFF restores what this surface did ' +
                  'before the token was required — open to anybody who can ' +
                  'reach the port — which is the recovery path when nobody ' +
                  'can mint a token, and is exactly as dangerous as it ' +
-                 'sounds.' },
+                 'sounds. DEVELOPMENT MODE ONLY: product refuses OFF and ' +
+                 'ignores it where it is stored, because the admin console ' +
+                 'is gated by this API and by nothing else. A product ' +
+                 'deployment pins adminApi.clientSecret before it starts.' },
 
   { key: 'adminApi.clientSecret', group: 'Management API',
     label: 'The management API client\'s secret',
@@ -7158,7 +8033,7 @@ const SETTINGS = [
                  'supplies, so a federated `alice` and the local `alice` are ' +
                  'two entries. EMPTY by default, which means they are ONE ' +
                  'entry — and that is a real decision rather than a default ' +
-                 'nobody thought about. Empty is right for a mock being ' +
+                 'nobody thought about. Empty is right for a service being ' +
                  'pointed at a partner to see what comes back, because a ' +
                  'prefixed name makes every downstream token and assertion ' +
                  'look unfamiliar. Set it to something like `fed-` the ' +
@@ -7219,9 +8094,9 @@ const SETTINGS = [
                  'worked because this service USED TO BLOCK while it ' +
                  'answered: with the event loop stopped, the timer ' +
                  'enforcing that budget could not fire until the response ' +
-                 'was already made. The keys are ' +
-                 'generated in worker processes now (common/worker.js) and ' +
-                 'warmed when a realm is created, so the ordinary fetch is ' +
+                 'was already made. The keys are generated on libuv\'s ' +
+                 'thread pool now (common/pq_native.js) and warmed when a ' +
+                 'realm is created, so the ordinary fetch is ' +
                  'milliseconds — this is the budget for the one that arrives ' +
                  'while a realm is still being born.' },
 
@@ -7235,11 +8110,13 @@ const SETTINGS = [
     env: 'STS_FEDERATION_OUTBOUND_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
     description: 'OFF by default, which is the one place this service is ' +
-                 'stricter than a mock would ordinarily be: what travels on ' +
+                 'stricter than development mode ordinarily is: what travels ' +
+                 'on ' +
                  'these requests is a client secret and an authorization ' +
                  'code, at somebody else\'s service. ON accepts an http:// ' +
                  'endpoint in DEVELOPMENT mode, which is what federating ' +
-                 'against another mock on localhost needs, and every such ' +
+                 'against another instance on localhost needs, and every ' +
+                 'such ' +
                  'request is logged. In product mode plain http is refused ' +
                  'whatever this says (STS-FED-0112).' },
   { key: 'federation.outboundSkipTlsVerification', group: 'Federation',
@@ -7386,14 +8263,15 @@ const SETTINGS = [
                  'window drops the older one.' },
 
   // --- SAML ----------------------------------------------------------------
-  { key: 'saml.issuer', group: 'SAML', label: 'Assertion issuer',
-    env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: 'urn:wstrust:mock:sts', runtime: true,
-    description: 'The <saml:Issuer> of every SAML 2.0 assertion and the ' +
-                 'Issuer attribute of every SAML 1.1 one. WS-Federation\'s ' +
-                 'assertions are built by the same two functions, so this is ' +
-                 'their issuer too, and it is what /wsfed/rp checks a ' +
-                 'presented assertion against.' },
+  // ---------------------------------------------------------------------
+  // `saml.issuer`, `saml2.entityId`, `saml2.perApplicationEntityId`,
+  // `saml11.providerId`, `saml11.perApplicationProviderId`, `wstrust.issuer`
+  // and `wsfed.entityId` WERE HERE until #523 (2026-10-08). Every SAML
+  // Issuer, every identity provider entityID and providerID, and the WS-Trust
+  // STS's name are the realm's OAuth issuer, the `iss` of every JWT —
+  // `common/issuer_names.ts`. There is no override: the name follows
+  // `global.publicBaseUrl`. There is no shim: every install is rebuilt.
+  // ---------------------------------------------------------------------
 
   // The one setting on this page that changes what goes INTO an assertion's
   // validity window rather than how long that window is. It is deliberately
@@ -7522,12 +8400,12 @@ const SETTINGS = [
                  'requires a name, a display name and a URL together and an ' +
                  'organisation with no name is not one. A product deployment ' +
                  'sets its own or empties it; the default is the product ' +
-                 'name, `sts` (it was `mock-sts` until 2026-09-12).' },
+                 'name, `sts`.' },
 
   { key: 'saml.organizationDisplayName', group: 'SAML',
     label: 'Metadata OrganizationDisplayName',
     env: 'STS_SAML_ORGANIZATION_DISPLAY_NAME', type: 'string',
-    dflt: 'Mock security token service', runtime: true,
+    dflt: 'Security token service', runtime: true,
     description: 'The <md:OrganizationDisplayName> beside the name above. ' +
                  'Empty omits the element for the reason given there.' },
 
@@ -7540,38 +8418,12 @@ const SETTINGS = [
 
   // --- SAML 2.0 Web Browser SSO --------------------------------------------
   // The profile arrived on 2026-08-24 and brought its own group, which is a
-  // decision rather than a formality: `saml.issuer` above governs what SIGNED
-  // an assertion and is shared by WS-Trust and WS-Federation, and every row
+  // decision rather than a formality: the group SAML above governs the
+  // assertions WS-Trust and WS-Federation share, and every row
   // here governs how this service behaves as an IDENTITY PROVIDER in a browser
   // profile. Folding the two together would have made a change to one of these
   // look like a change to the assertions WS-Trust hands out, which it is not.
-  { key: 'saml2.entityId', group: 'SAML 2.0', label: 'Identity provider ' +
-                                                     'entityID',
-    env: 'STS_SAML2_ENTITY_ID', type: 'string', dflt: 'urn:sts:idp',
-    runtime: true,
-    description: 'The entityID this identity provider publishes in its SAML ' +
-                 '2.0 metadata, and the <saml:Issuer> of every Response and ' +
-                 'Assertion the Web Browser SSO profile issues. It is NOT ' +
-                 'the SAML issuer above: that one names whoever signed an ' +
-                 'assertion and is shared with WS-Trust and WS-Federation, ' +
-                 'and a service provider checks THIS one against the ' +
-                 'metadata it was configured from. They are separate for the ' +
-                 'reason wsfed.entityId is separate from it.' },
 
-  { key: 'saml2.perApplicationEntityId', group: 'SAML 2.0',
-    label: 'An entityID per service provider',
-    env: 'STS_SAML2_PER_APPLICATION_ENTITY_ID', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'ON by default, and it is what makes the metadata at ' +
-                 '/saml2/metadata/{sp} UNIQUE PER APPLICATION: the identity ' +
-                 'provider names itself <entityID>:{sp} in that document and ' +
-                 'in everything it issues to that service provider, the way ' +
-                 'Okta and Ping give each application its own identity ' +
-                 'provider. OFF makes every document carry the entityID ' +
-                 'above and differ only in its endpoint URLs, which is what ' +
-                 'a service provider library that keys its trust store off ' +
-                 'the entityID expects. Both are real deployments, which is ' +
-                 'why it is a setting and not a decision.' },
 
   { key: 'saml2.assertionLifetimeMin', group: 'SAML 2.0 assertions',
     label: 'Assertion lifetime (minutes)',
@@ -7667,7 +8519,8 @@ const SETTINGS = [
                  'given this service one cannot read what comes back. Where ' +
                  'no certificate can be found the assertion is sent in CLEAR ' +
                  'and the reason is logged and shown on /admin/saml2 — a ' +
-                 'refusal to issue would be a mock that stopped answering, ' +
+                 'refusal to issue would be a service that stopped ' +
+                 'answering, ' +
                  'and silently sending plaintext while a page said ' +
                  '"encrypted" would be worse than either. The certificate is ' +
                  'taken from samlEncryptionCertificate on its entry (which ' +
@@ -7692,7 +8545,8 @@ const SETTINGS = [
                  'ciphertext fails its tag and is refused. The two CBC ones ' +
                  'are NOT, and that is not a defect in this service — it is ' +
                  'the property CBC has, real service providers require it, ' +
-                 'and a mock that offered only the safe choice could not be ' +
+                 'and a service that offered only the safe choice could not ' +
+                 'be ' +
                  'used to show what the unsafe one does. What this service ' +
                  'does about it when READING is parse the result and refuse ' +
                  'anything that is not well-formed XML, which catches the ' +
@@ -7825,15 +8679,6 @@ const SETTINGS = [
                  'refused with a page naming this value. Was the constant ' +
                  'REQUEST_TTL_MS in saml2_sso.js.' },
 
-  { key: 'saml2.mockSpContextTtlMin', group: 'SAML 2.0',
-    label: 'Mock service provider RelayState lifetime (minutes)',
-    env: 'STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN', type: 'int', dflt: 30, min: 1,
-    max: 1440, runtime: true,
-    description: 'How long /saml2/sp — the NON-SPEC mock service provider — ' +
-                 'remembers a RelayState it minted so it can check the round ' +
-                 'trip. It is that page\'s own state and nothing to do with ' +
-                 'the identity provider\'s.' },
-
   { key: 'saml2.redirectWarnLength', group: 'SAML 2.0',
     label: 'Redirect-binding length warning (characters)',
     env: 'STS_SAML2_REDIRECT_WARN_LENGTH', type: 'int', dflt: 8000,
@@ -7962,8 +8807,8 @@ const SETTINGS = [
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for
-  // one more besides. The shared reason: `saml.issuer` (group SAML) governs who
-  // SIGNED an assertion and is read by WS-Trust and WS-Federation, and these
+  // one more besides. The shared reason: the group SAML governs the
+  // assertions WS-Trust and WS-Federation share, and these
   // rows govern how this service behaves as an identity provider in a BROWSER
   // profile. The reason peculiar to this group: SAML 1.1 and SAML 2.0 are
   // different specifications rather than two dialects, their profiles differ in
@@ -7971,37 +8816,7 @@ const SETTINGS = [
   // make `signResponse` mean two things — over there it is an XML signature or
   // a signed query string depending on the binding, and here there is no
   // redirect binding for a response at all.
-  { key: 'saml11.providerId', group: 'SAML 1.1', label: 'Identity provider ' +
-                                                        'providerID',
-    env: 'STS_SAML11_PROVIDER_ID', type: 'string', dflt: 'urn:sts:idp:saml11',
-    runtime: true,
-    description: 'What this identity provider calls itself in the SAML 1.1 ' +
-                 'browser profiles: the `Issuer` ATTRIBUTE of every ' +
-                 'assertion they issue, the `entityID` of the metadata ' +
-                 'document at /saml11/metadata, and the string whose SHA-1 ' +
-                 'becomes the SourceID inside every type 0x0001 artifact. ' +
-                 'SAML 1.1 calls it a providerID and SAML 2.0 metadata calls ' +
-                 'the same thing an entityID; they are one value and this ' +
-                 'row is it. It is deliberately NOT saml2.entityId — a ' +
-                 'relying party that trusts this service for 1.1 and not for ' +
-                 '2.0 is the ordinary case, and one value would make that ' +
-                 'unexpressible.' },
 
-  { key: 'saml11.perApplicationProviderId', group: 'SAML 1.1',
-    label: 'A providerID per relying party',
-    env: 'STS_SAML11_PER_APPLICATION_PROVIDER_ID', type: 'bool', dflt: true,
-    runtime: true,
-    description: 'Give every relying party its own providerID — ' +
-                 '`{providerID}:{slug}` — and its own endpoints under the ' +
-                 'same path segment, which is what /saml11/metadata/{rp} ' +
-                 'publishes. Turn it off for a relying party whose trust ' +
-                 'store is keyed off the providerID and which is surprised ' +
-                 'to meet a new one per application. THE ENDPOINTS STAY ' +
-                 'PER-APPLICATION either way, because that is what makes the ' +
-                 'documents worth having separately. It also changes every ' +
-                 'artifact this service mints: the SourceID is a hash of the ' +
-                 'providerID, so turning this off makes one SourceID where ' +
-                 'there were many.' },
 
   { key: 'saml11.assertionLifetimeMin', group: 'SAML 1.1 assertions',
     label: 'Assertion lifetime (minutes)',
@@ -8086,8 +8901,10 @@ const SETTINGS = [
                  'the assertion over SOAP. POST is the default because it ' +
                  'needs no server behind the relying party\'s assertion ' +
                  'consumer, so it is the one that works when somebody points ' +
-                 'this at a URL and watches. A request naming `profile` or ' +
-                 'carrying `SAMLart` overrides it.' },
+                 'this at a URL and watches. The non-spec `profile` ' +
+                 'parameter overrides it, and so does the binding a ' +
+                 'relying party registered for the `shire` it sends ' +
+                 '(samlAcsEndpoint, from consumed metadata).' },
 
   { key: 'saml11.doNotCacheCondition', group: 'SAML 1.1 assertions',
     label: 'Mark a Browser/POST assertion DoNotCache',
@@ -8149,18 +8966,6 @@ const SETTINGS = [
                  'ASSERTION_CACHE_MAX in saml11_sso.js.' },
 
   // --- WS-Trust ------------------------------------------------------------
-  { key: 'wstrust.issuer', group: 'WS-Trust', label: 'Token issuer',
-    env: 'STS_WSTRUST_ISSUER', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: 'urn:wstrust:mock:sts', runtime: true,
-    description: 'The `iss` of the JWT this STS returns in a ' +
-                 'RequestSecurityTokenResponse, and the issuer named on GET ' +
-                 '/sts. A SAML token requested through WS-Trust is built by ' +
-                 'the SAML modules and carries saml.issuer instead, which ' +
-                 'the console draws on its two SAML pages. When the two ' +
-                 'differ GET /sts says so and the process logs it at ' +
-                 'startup, because one STS naming itself two ways is ' +
-                 'something a relying party configured from one of them ' +
-                 'finds out about as a refused token.' },
 
   { key: 'wstrust.tokenLifetimeMin', group: 'WS-Trust',
     label: 'Token lifetime (minutes)',
@@ -8195,8 +9000,8 @@ const SETTINGS = [
                  '/oauth2/jwks under the kid in the header. Asymmetric and ' +
                  'classical only: an HMAC would need a secret this exchange ' +
                  'does not have, and a post-quantum signature is computed on ' +
-                 'the worker pool, which this synchronous endpoint does not ' +
-                 'reach.' },
+                 'libuv\'s thread pool, which this synchronous endpoint does ' +
+                 'not reach.' },
 
   certificateHeaderSetting('wstrust.jwtCertificateHeader', 'WS-Trust',
     'STS_WSTRUST_JWT_CERTIFICATE_HEADER', 'JWT certificate header',
@@ -8208,9 +9013,8 @@ const SETTINGS = [
   // --- WS-Federation assertions --------------------------------------------
   // A GROUP OF ONE, and it earns that the way the two SAML assertion groups do:
   // it is a DEFAULT an application may overrule, and the page it is drawn on is
-  // the page that says so. `wsfed.entityId` beside it is this service's own
-  // name and no application can have an opinion about it, which is the line
-  // between the two groups.
+  // the page that says so. `wsfed.entityId` beside it, this service's own
+  // name, was the other group until #523 retired it.
   //
   // IT IS DRAWN ON /admin/saml-assertions rather than on /admin/wsfed, and that
   // is not filing it under the wrong protocol: a WS-Federation sign-in response
@@ -8238,24 +9042,6 @@ const SETTINGS = [
                  'expire a WS-Federation session while somebody was reading ' +
                  'the page it signed them into. An application may overrule ' +
                  'it with wsfedAssertionLifetimeMin on its entry.' },
-
-  { key: 'wsfed.entityId', group: 'WS-Federation', label: 'Entity ID',
-    env: 'STS_WSFED_ENTITY_ID', legacyEnv: 'STS_ISSUER', type: 'string',
-    dflt: 'urn:wstrust:mock:sts', runtime: true,
-    description: 'The entityID in the federation metadata at ' +
-                 '/FederationMetadata/2007-06/FederationMetadata.xml. Split ' +
-                 'from the SAML issuer because the two are different things ' +
-                 'that happened to share a value: this names the IdP, that ' +
-                 'names whoever signed an assertion.' },
-
-  { key: 'wsfed.mockRpContextTtlMin', group: 'WS-Federation',
-    label: 'Mock relying party wctx lifetime (minutes)',
-    env: 'STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN', type: 'int', dflt: 30, min: 1,
-    max: 1440, runtime: true,
-    description: 'How long /wsfed/rp — the NON-SPEC mock relying party — ' +
-                 'remembers a wctx it minted so it can check the round trip. ' +
-                 'Its own state and nobody else\'s. Was the constant ' +
-                 'RP_CONTEXT_TTL_MS in wsfed.js.' },
 
   // --- TLS -----------------------------------------------------------------
   // -------------------------------------------------------------------------
@@ -8292,7 +9078,8 @@ const SETTINGS = [
                  'CA with clientAuth: every other key pair this service issues ' +
                  'chains to the same Root and is refused as one (see ' +
                  'common/tls_client_certificates.js). Off leaves the ' +
-                 'truststore to /tls/trust and tls.trustAnchorsFile, as it ' +
+                 'truststore to /admin/tls/trust and tls.trustAnchorsFile, ' +
+                 'as it ' +
                  'was before; the portal still issues, and says the ' +
                  'listeners will not accept what it issues.' },
 
@@ -8397,24 +9184,24 @@ const SETTINGS = [
   // every listener rather than a FAPI switch, because a cipher suite is a
   // property of the SOCKET and a profile is a property of a realm. A weaker
   // list stays settable; docs/tls.md says what that costs.
-  { key: 'tls.ciphers', group: 'TLS', label: 'TLS cipher list',
+  { key: 'tls.ciphers', group: 'TLS', label: 'TLS 1.2 cipher list',
     env: 'STS_TLS_CIPHERS', type: 'string',
-    dflt: 'TLS_AES_256_GCM_SHA384:TLS_AES_128_GCM_SHA256:' +
-          'TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:' +
+    dflt: 'ECDHE-ECDSA-AES128-GCM-SHA256:' +
           'ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:' +
           'ECDHE-RSA-AES256-GCM-SHA384',
     runtime: false,
     restartReason: 'the TLS contexts are built when the listeners are created',
-    description: 'An OpenSSL cipher list for the TLS 1.3 suites (TLS_ ' +
-                 'prefixed names) and the TLS 1.2 ones on the main port, ' +
-                 'LDAPS and the debugger\'s listener. The default is BCP ' +
-                 '195 (RFC 9325 section 4.2): the TLS 1.3 suites first, then ' +
-                 'only the four ECDHE AES-GCM suites for TLS 1.2 — what FAPI ' +
-                 '2.0 section 5.2.2 requires — and the server\'s order wins. ' +
-                 'Empty means node\'s own default list, which allows more ' +
-                 'than BCP 195 recommends. A list matching NO cipher stops ' +
-                 'the service at startup naming this setting, rather than ' +
-                 'leaving listeners that complete no handshake.' },
+    description: 'An OpenSSL cipher list for the TLS 1.2 suites on the main ' +
+                 'port, LDAPS and the debugger\'s listener (the TLS 1.3 ' +
+                 'suites are tls.tls13CipherSuites since #423, and a TLS_ ' +
+                 'name here is refused). The default is BCP 195 (RFC 9325 ' +
+                 'section 4.2): only the four ECDHE AES-GCM suites — what ' +
+                 'FAPI 2.0 section 5.2.2 requires — behind the TLS 1.3 ' +
+                 'suites, and the server\'s order wins. Empty means node\'s ' +
+                 'own default TLS 1.2 list, which allows more than BCP 195 ' +
+                 'recommends. Unused while tls.disableTls12 or tls.pqcOnly ' +
+                 'is on. A list matching NO cipher stops the service at ' +
+                 'startup naming this setting.' },
 
   // THE KEY-EXCHANGE GROUPS, POST-QUANTUM FIRST (#212, 2026-09-26). tlsfuzzer
   // found node's 'auto' — OpenSSL 3.5's own list — offering X25519MLKEM768
@@ -8488,6 +9275,171 @@ const SETTINGS = [
                  'handshake (STS-TLS-0035). A list that builds no TLS ' +
                  'context stops the service at startup.' },
 
+  // ---------------------------------------------------------------------
+  // THE LISTENERS' TLS POLICY AND CLIENT AUTHENTICATION (#423, 2026-10-02,
+  // rcbj: "For all TLS listeners, add a 'Disable TLS v1.2' flag ... choose
+  // exactly which TLS v1.3 cipher suites can be used ... a toggle to only
+  // allow PQC cipher suites ... Each TLS listener should have a toggle to
+  // disable optional client authentication ... another toggle to require
+  // client authentication at the TLS level").
+  //
+  // RUNTIME, unlike tls.minVersion and tls.ciphers beside them: an
+  // administrator chooses these on Server configuration -> Listeners, and
+  // `tls/tls_server.js` re-applies them to every listener it knows the moment
+  // one changes (`config.onOverridesChanged()`), at the next handshake. Per
+  // process, because the main port belongs to no realm; a custom listener
+  // (#472), a realm's own included, carries them in its definition's `tls`
+  // block. tls/CLAUDE.md, "THE LISTENERS' POLICY".
+  // ---------------------------------------------------------------------
+  { key: 'tls.disableTls12', group: 'Listeners',
+    label: 'Disable TLS 1.2',
+    // ON BY DEFAULT SINCE #429 (rcbj, 2026-10-02: "I want TLS v1.3 to be the
+    // default for all TLS listeners"). A listener turns TLS 1.2 back on with
+    // its own listener<Id>.disableTls12, or the service with this row.
+    env: 'STS_TLS_DISABLE_TLS12', type: 'bool', dflt: true,
+    runtime: true, perProcess: true,
+    description: 'Every TLS listener — the main port, LDAPS, the protocol ' +
+                 'debugger\'s, the SPIFFE gRPC listeners and the channel ' +
+                 'between cells — negotiates TLS 1.3 only, whatever ' +
+                 'tls.minVersion says. ON by default (#429): every listener ' +
+                 'is TLS 1.3 unless TLS 1.2 is turned back on, here for ' +
+                 'every listener or on one listener\'s own row. WARNING: ' +
+                 'off lets a client negotiate TLS 1.2, which FAPI 2.0 and ' +
+                 'BCP 195 still allow but which has no post-quantum key ' +
+                 'exchange. ' +
+                 'A custom listener follows this unless its definition\'s ' +
+                 'tls.disableTls12 says otherwise. Applied at the next ' +
+                 'handshake.' },
+
+  { key: 'tls.tls13CipherSuites', group: 'Listeners',
+    label: 'TLS 1.3 cipher suites',
+    env: 'STS_TLS_TLS13_CIPHER_SUITES', type: 'csv',
+    dflt: 'TLS_AES_256_GCM_SHA384,TLS_AES_128_GCM_SHA256,' +
+          'TLS_CHACHA20_POLY1305_SHA256',
+    runtime: true, perProcess: true,
+    // RFC 8446's five, in the order a list is drawn. A TLS 1.3 suite is the
+    // record protection alone — the AEAD and the hash — so what makes a
+    // suite safe against a quantum adversary is its KEY LENGTH (Grover's
+    // algorithm halves it): the two 256-bit suites keep 128 bits, the
+    // 128-bit ones 64. What stops a recorded session being decrypted later
+    // is the key exchange, which tls.pqcOnly restricts too.
+    csvValues: ['TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256',
+                'TLS_AES_128_GCM_SHA256', 'TLS_AES_128_CCM_SHA256',
+                'TLS_AES_128_CCM_8_SHA256'],
+    ordered: true,
+    csvValueNotes: {
+      TLS_AES_256_GCM_SHA384: 'AES-256-GCM · post-quantum safe (a 256-bit ' +
+        'key keeps 128 bits against Grover) · the only one CNSA 2.0 allows',
+      TLS_CHACHA20_POLY1305_SHA256: 'ChaCha20-Poly1305 · post-quantum safe ' +
+        '(256-bit key) · fast without AES hardware',
+      TLS_AES_128_GCM_SHA256: 'AES-128-GCM · NOT post-quantum safe (64 bits ' +
+        'against Grover) · the one suite every TLS 1.3 client must offer',
+      TLS_AES_128_CCM_SHA256: 'AES-128-CCM · NOT post-quantum safe · for ' +
+        'constrained devices; off in OpenSSL by default',
+      TLS_AES_128_CCM_8_SHA256: 'AES-128-CCM with an 8-byte tag · NOT ' +
+        'post-quantum safe and a short tag — RFC 8446 says not for general ' +
+        'use; only for a client that offers nothing else'
+    },
+    description: 'The TLS 1.3 cipher suites every TLS listener accepts, in ' +
+                 'order of preference (the server\'s order wins). Tick and ' +
+                 'number them on Server configuration -> Listeners. The ' +
+                 'default is OpenSSL\'s three: AES-256-GCM, AES-128-GCM and ' +
+                 'ChaCha20-Poly1305. AES-256-GCM and ChaCha20-Poly1305 are ' +
+                 'the post-quantum safe ones (256-bit keys); tls.pqcOnly ' +
+                 'keeps only those. At least one is required: a listener ' +
+                 'with none would complete no TLS 1.3 handshake. The TLS 1.2 ' +
+                 'suites are tls.ciphers. Applied at the next handshake.' },
+
+  { key: 'tls.pqcOnly', group: 'Listeners',
+    label: 'Post-quantum safe only',
+    env: 'STS_TLS_PQC_ONLY', type: 'bool', dflt: false,
+    runtime: true, perProcess: true,
+    description: 'Every TLS listener accepts only what a quantum adversary ' +
+                 'recording the session today could not decrypt later: TLS ' +
+                 '1.3 alone (no TLS 1.2 key exchange is post-quantum), only ' +
+                 'the 256-bit TLS 1.3 cipher suites chosen in ' +
+                 'tls.tls13CipherSuites, and only the ML-KEM key-exchange ' +
+                 'groups in tls.groups (the three hybrids — ' +
+                 'X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024 — ' +
+                 'and pure MLKEM512/768/1024). A client that offers none of ' +
+                 'them is refused at the handshake. It does not restrict ' +
+                 'the signature algorithms: a handshake recorded today ' +
+                 'cannot be forged later, and few clients accept an ML-DSA ' +
+                 'certificate yet. Turning it on while the chosen suites or ' +
+                 'groups hold nothing post-quantum is refused. Off by ' +
+                 'default.' },
+
+  // CLIENT AUTHENTICATION, TWO TOGGLES PER LISTENER. "Require" wins over
+  // "disable optional": a listener that requires a certificate asks for one
+  // by definition. Read by `tls_server.js`'s `clientAuthOf()`.
+  { key: 'tls.mainPortDisableOptionalClientCertificate',
+    group: 'Listener: Main port',
+    label: 'Main port: do not ask for a client certificate',
+    env: 'STS_TLS_MAIN_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The main HTTPS port sends no CertificateRequest, so no ' +
+                 'client certificate is ever presented there. Off by ' +
+                 'default: the port asks every connection for one and ' +
+                 'requires none, which is what RFC 8705 certificate-bound ' +
+                 'tokens and client authentication, GET /tls/sign-in, EST ' +
+                 'with a certificate and the remote XACML PEP need — on, ' +
+                 'all of those stop working here, and a browser holding a ' +
+                 'client certificate is no longer offered a choice of one.' },
+  { key: 'tls.mainPortRequireClientCertificate',
+    group: 'Listener: Main port',
+    label: 'Main port: require a client certificate',
+    env: 'STS_TLS_MAIN_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The main HTTPS port refuses, at the handshake, every ' +
+                 'connection that does not present a client certificate ' +
+                 'chaining to the client truststore (/admin/tls/trust, and ' +
+                 'the certificates this service issues to people and ' +
+                 'applications). Wins over the toggle above. Off by default: ' +
+                 'on, a browser without a certificate, discovery, JWKS and ' +
+                 'every public document on this port are refused, and so is ' +
+                 'a load balancer\'s or container\'s HTTPS health check.' },
+  { key: 'ldap.ldapsDisableOptionalClientCertificate',
+    group: 'Listener: LDAPS',
+    label: 'LDAPS: do not ask for a client certificate',
+    env: 'STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: true, runtime: true, perProcess: true,
+    description: 'LDAPS sends no CertificateRequest. ON by default, which is ' +
+                 'what LDAPS always did: a bind is how a directory client ' +
+                 'says who it is, and a certificate prompt in front of every ' +
+                 'client holding one is a surprise. Off asks every ' +
+                 'connection for a certificate and requires none; a ' +
+                 'certificate presented is verified against the client ' +
+                 'truststore but does not bind anybody (there is no SASL ' +
+                 'EXTERNAL here).' },
+  { key: 'ldap.ldapsRequireClientCertificate',
+    group: 'Listener: LDAPS',
+    label: 'LDAPS: require a client certificate',
+    env: 'STS_LDAPS_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'LDAPS refuses, at the handshake, every connection that ' +
+                 'does not present a client certificate chaining to the ' +
+                 'client truststore — a second gate in front of the bind, ' +
+                 'which still decides who the connection is. Wins over the ' +
+                 'toggle above. Off by default.' },
+  { key: 'debugger.disableOptionalClientCertificate',
+    group: 'Listener: Protocol debugger',
+    label: 'Debugger: do not ask for a client certificate',
+    env: 'STS_DEBUGGER_DISABLE_OPTIONAL_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The embedded protocol debugger\'s HTTPS listener sends no ' +
+                 'CertificateRequest. Off by default: it asks and requires ' +
+                 'none, as the main port does, so a certificate-bound ' +
+                 'access token can be presented there.' },
+  { key: 'debugger.requireClientCertificate',
+    group: 'Listener: Protocol debugger',
+    label: 'Debugger: require a client certificate',
+    env: 'STS_DEBUGGER_REQUIRE_CLIENT_CERT', type: 'bool',
+    dflt: false, runtime: true, perProcess: true,
+    description: 'The protocol debugger\'s listener refuses, at the ' +
+                 'handshake, every connection without a client certificate ' +
+                 'chaining to the client truststore. Wins over the toggle ' +
+                 'above. Off by default.' },
+
   // ONE SESSION-TICKET KEY FOR AN ACTIVE-ACTIVE CLUSTER (2026-09-27): a
   // ticket one node issued is sealed under a key the other node never saw,
   // so behind a balancer resumption worked about half the time.
@@ -8498,11 +9450,11 @@ const SETTINGS = [
     env: 'STS_TLS_SESSION_TICKET_ROTATION_S', type: 'int', dflt: 3600,
     min: 0, max: 604800, runtime: true, perProcess: true,
     description: 'In an active-active cluster, every node\'s LDAPS ' +
-                 'listener seals session tickets under one shared key, so a ' +
-                 'ticket one node issued resumes on another (the main port ' +
-                 'and the debugger\'s keep a key per node: they ask for a ' +
-                 'client certificate, and only the node that saw its chain ' +
-                 'can resume the session). This is how often, in seconds, ' +
+                 'listener and main port (unless tls.mainPortSharedTickets ' +
+                 'is off) seal session tickets under one shared key, so a ' +
+                 'ticket one node issued resumes on another (the ' +
+                 'debugger\'s listener keeps a key per node). This is how ' +
+                 'often, in seconds, ' +
                  'the tls.ticket-key-rotate job replaces it; the key it ' +
                  'replaces ' +
                  'is deleted, so a resumed session\'s secrets can be ' +
@@ -8514,6 +9466,75 @@ const SETTINGS = [
                  'resumes on OpenSSL\'s own per-listener keys, which never ' +
                  'leave the process.' },
 
+  // THE MAIN PORT'S CONNECTIONS, POOLED (#406, 2026-10-02). The main port
+  // asks every full handshake for a client certificate, and a browser holding
+  // one that matches asks its user each time: with node's 5-second keep-alive
+  // and a ticket key per node, that was nearly every page click behind a
+  // balancer. A resumed session carries no CertificateRequest, so these keep
+  // a connection, and then a session, alive and resumable on any node.
+  { key: 'tls.mainPortSharedTickets', group: 'TLS',
+    label: 'Main port shares the cluster session-ticket key',
+    env: 'STS_TLS_MAIN_PORT_SHARED_TICKETS', type: 'bool', dflt: true,
+    runtime: false, perProcess: true,
+    restartReason: 'the main listener is tracked when it binds',
+    description: 'Whether the main port seals its TLS session tickets under ' +
+                 'the key every node shares in an active-active cluster ' +
+                 '(tls.sessionTicketRotationS), so a session one node made ' +
+                 'resumes on whichever node the balancer picks next and the ' +
+                 'browser is not asked for a client certificate again. The ' +
+                 'verified client-certificate chain a resumed session needs ' +
+                 'for its revocation check is replicated with it ' +
+                 '(tls.resumedChainWaitMs). Off keeps a key per node. ' +
+                 'Outside active-active mode nothing is shared either way.' },
+
+  // THE TLS SESSION CACHE (#429, 2026-10-02: rcbj, "expose the size and
+  // timeout of the TLS Session Cache as a parameter on each TLS listener
+  // tab as editable fields"). The service-wide values every TLS listener
+  // inherits; each has its own `listener<Id>.<name>` row. It replaced
+  // `tls.mainSessionTimeoutS` (#406), which was the main port's alone.
+  { key: 'tls.sessionTimeoutS', group: 'Listeners',
+    label: 'TLS session lifetime (s)',
+    env: 'STS_TLS_SESSION_TIMEOUT_S', type: 'int', dflt: 300,
+    min: 1, max: 86400, runtime: true, perProcess: true,
+    description: 'How long, in seconds, a TLS session may be resumed: the ' +
+                 'lifetime of a session ticket (TLS 1.3 and 1.2) and of an ' +
+                 'entry in the session cache. A resumed session skips the ' +
+                 'full handshake, and with it the client-certificate request ' +
+                 'a browser holding a matching certificate asks its user ' +
+                 'about. A longer value means fewer full handshakes and ' +
+                 'session secrets that matter for longer; the shared ticket ' +
+                 'key\'s rotation (tls.sessionTicketRotationS) still bounds ' +
+                 'it. Applied at the next handshake.' },
+  { key: 'tls.sessionCacheSize', group: 'Listeners',
+    label: 'TLS session cache size (sessions)',
+    env: 'STS_TLS_SESSION_CACHE_SIZE', type: 'int', dflt: 2048,
+    min: 0, max: 1000000, runtime: true, perProcess: true,
+    description: 'How many TLS sessions a listener keeps in memory to ' +
+                 'resume by SESSION ID — a TLS 1.2 client resuming without ' +
+                 'a ticket; past it the oldest is forgotten. 2048 by ' +
+                 'default (rcbj, 2026-10-07), so a TLS 1.2 client that ' +
+                 'does not use tickets resumes too; 0 keeps none, and node ' +
+                 'keeps no session cache of its own, resuming by tickets ' +
+                 'only, which TLS 1.3 always uses and which need no server ' +
+                 'memory. The cache is per process, so ' +
+                 'behind a balancer a session ID resumes only on the node ' +
+                 'that made it (a ticket resumes anywhere, under the shared ' +
+                 'key). Not on the SPIFFE gRPC listeners, whose server ' +
+                 'grpc-js owns.' },
+
+  { key: 'tls.resumedChainWaitMs', group: 'TLS',
+    label: 'Wait for a resumed session\'s certificate chain (ms)',
+    env: 'STS_TLS_RESUMED_CHAIN_WAIT_MS', type: 'int', dflt: 2000,
+    min: 0, max: 30000, runtime: true, perProcess: true,
+    description: 'A resumed TLS session hands this service the client ' +
+                 'certificate alone; the chain its full handshake verified ' +
+                 'is replicated from the node that saw it. When a session ' +
+                 'resumes here before that chain has arrived, a request ' +
+                 'waits up to this many milliseconds for it, pulling the ' +
+                 'store meanwhile; after that it goes on without it, and a ' +
+                 'revocation check that needs the chain answers as it would ' +
+                 'for a chain it cannot build. 0 never waits.' },
+
   { key: 'tls.trustAnchorsFile', group: 'TLS',
     label: 'Client certificate trust anchors file',
     env: 'STS_TLS_TRUST_ANCHORS_FILE', type: 'string', dflt: '',
@@ -8521,11 +9542,12 @@ const SETTINGS = [
     restartReason: 'the anchors are read when the listeners are created',
     description: 'A PEM file of CA certificates that client certificates on ' +
                  'the main port are verified against, loaded ' +
-                 'at startup. It is the PRODUCT-MODE way to fill the ' +
-                 'truststore: POST /tls/trust and /tls/trust/clear answer ' +
-                 'anybody in development and are refused in product mode, ' +
-                 'because an anchor anybody can add is a client certificate ' +
-                 'anybody can make verify. Empty means the truststore starts ' +
+                 'at startup. It is the way to fill the truststore before ' +
+                 'anything listens; at runtime /admin/tls/trust and POST ' +
+                 '/admin-api/tls/trust/add do it behind a credential, in ' +
+                 'either mode — there is no open door, because an anchor ' +
+                 'anybody can add is a client certificate anybody can make ' +
+                 'verify. Empty means the truststore starts ' +
                  'empty, which is what it always did.' },
 
   // THE SELF-SIGNED FALLBACK CERTIFICATE'S THREE LITERALS. Used only when
@@ -8560,13 +9582,36 @@ const SETTINGS = [
                  'The CN is the first of tls.hostnames.' },
 
   // --- OID4VCI -------------------------------------------------------------
-  { key: 'oid4vci.walletUrl', group: 'OID4VCI', label: 'Wallet URL',
-    env: 'OID4VCI_WALLET_URL', type: 'string', dflt: 'http://localhost:3000',
+  // A WALLET IS INVOKED BY ITS SCHEME, NOT BY AN ADDRESS (2026-10-12, rcbj:
+  // "the goal is to actually have this button be usable"). Until then the
+  // default was `http://localhost:3000`, the embedded debugger's web wallet,
+  // which no person's wallet app is; a Credential Offer is handed to a
+  // wallet as `openid-credential-offer://` (OpenID4VCI 1.0 section 4.1) or
+  // HAIP's `haip-vci://`, which a wallet app registers for, and a WEB wallet
+  // is offered beside it only where one is configured here.
+  { key: 'oid4vci.walletUrl', group: 'OID4VCI', label: 'Web wallet URL',
+    env: 'OID4VCI_WALLET_URL', type: 'string', dflt: '',
     runtime: true,
-    description: 'Where the wallet lives, as a URL the BROWSER can use. The ' +
-                 'Credential Offer pages send the End-User here, so it is ' +
-                 'the debugger\'s own address rather than anything this ' +
-                 'service serves.' },
+    description: 'A WEB wallet\'s address, as a URL the BROWSER can use, for ' +
+                 'a deployment that runs one. Where it is set, a Credential ' +
+                 'Offer is also offered as a link to it (with ' +
+                 'oid4vci.walletIssuancePath and the offer on its query), ' +
+                 'beside the oid4vci.walletInvocation link a wallet app ' +
+                 'opens. EMPTY, the default: no web wallet is offered.' },
+
+  { key: 'oid4vci.walletInvocation', group: 'OID4VCI',
+    label: 'How a wallet app is handed an offer',
+    env: 'OID4VCI_WALLET_INVOCATION', type: 'enum',
+    enumValues: ['openid-credential-offer', 'haip-vci'],
+    dflt: 'openid-credential-offer', runtime: true,
+    description: 'The custom URL scheme of the link and QR code a Credential ' +
+                 'Offer is handed to a wallet app in. ' +
+                 'openid-credential-offer, the default: ' +
+                 'openid-credential-offer://, the scheme OpenID4VCI 1.0 ' +
+                 'section 4.1 defines and most wallets register. haip-vci: ' +
+                 'haip-vci://, which OpenID4VC HAIP 1.0 section 4.2 lets a ' +
+                 'HAIP wallet register instead. The offer is the same ' +
+                 'either way.' },
 
   { key: 'oid4vci.authorizationServer', group: 'OID4VCI',
     label: 'Authorization server', env: 'OID4VCI_AUTHORIZATION_SERVER',
@@ -8599,8 +9644,10 @@ const SETTINGS = [
   { key: 'oid4vci.offerUsername', group: 'OID4VCI', label: 'Offer username',
     env: 'OID4VCI_OFFER_USERNAME', type: 'string', dflt: 'diploma.student',
     runtime: true,
-    description: 'Whose credential the issuer-initiated offer pages build. ' +
-                 'The claims come from that person\'s directory entry.' },
+    description: 'Whom a pre-authorized offer names when whoever makes it ' +
+                 'names nobody. No door does since the demonstration ' +
+                 'issuer left the service (#594): the portal\'s offer names ' +
+                 'the person signed in.' },
 
   { key: 'oid4vci.requestEncryptionRequired', group: 'OID4VCI',
     label: 'Require encrypted credential requests',
@@ -8613,9 +9660,10 @@ const SETTINGS = [
 
   // -------------------------------------------------------------------------
   // THE 2026-09-12 SWEEP, OID4VCI HALF. Every `dflt` below is the literal it
-  // replaced. The two that are policy rather than a number —
-  // `oid4vci.txCodeMaxAttempts` and `oid4vci.allowedWalletUrls` — are READ
-  // ONLY IN PRODUCT MODE, and say so.
+  // replaced. The one that is policy rather than a number —
+  // `oid4vci.txCodeMaxAttempts` — is READ ONLY IN PRODUCT MODE, and says so
+  // (`oid4vci.allowedWalletUrls`, the other, went with the demonstration's
+  // offer page on #594).
   // -------------------------------------------------------------------------
   { key: 'oid4vci.txCodeLength', group: 'OID4VCI',
     label: 'Transaction Code length (digits)',
@@ -8647,22 +9695,13 @@ const SETTINGS = [
                  'pre-authorized code and a notification_id stay usable.' },
 
   { key: 'oid4vci.walletIssuancePath', group: 'OID4VCI',
-    label: 'Wallet issuance page',
+    label: 'Web wallet issuance page',
     env: 'OID4VCI_WALLET_ISSUANCE_PATH', type: 'string',
-    dflt: '/vc-issuance-1.html', runtime: true,
-    description: 'The page under the wallet URL that a Credential Offer is ' +
-                 'handed to. The default is the debugger\'s own wallet page.' },
-
-  { key: 'oid4vci.allowedWalletUrls', group: 'OID4VCI',
-    label: 'Other wallet URLs an offer link may name (product)',
-    env: 'OID4VCI_ALLOWED_WALLET_URLS', type: 'csv', dflt: '', runtime: true,
-    description: 'IN PRODUCT MODE, the wallet URLs besides oid4vci.walletUrl ' +
-                 'that the `wallet` query parameter on /issuer/offer may ' +
-                 'name. Any other is refused, because an offer link that ' +
-                 'sends the End-User wherever its query string says is an ' +
-                 'open redirect carrying a pre-authorized code. Development ' +
-                 'accepts any URL, which is how a wallet on a laptop is ' +
-                 'pointed at this service.' },
+    dflt: '', runtime: true,
+    description: 'The page under oid4vci.walletUrl that a Credential Offer ' +
+                 'is handed to, for a web wallet whose offer page is not its ' +
+                 'root. Empty, the default. (The embedded debugger\'s web ' +
+                 'wallet takes offers at /vc-issuance-1.html.)' },
 
   { key: 'oid4vci.requestEncryptionKeyBits', group: 'OID4VCI',
     label: 'Request encryption key size (bits)',
@@ -8720,7 +9759,7 @@ const SETTINGS = [
     env: 'OID4VCI_CREDENTIAL_SIGNING_ALGORITHM', type: 'enum',
     // THE POST-QUANTUM ALGORITHMS SINCE #38's FOLLOW-UPS: the credential
     // builders sign asynchronously now, so an ML-DSA, SLH-DSA or composite
-    // signature is made in the worker pool, and the Verifier accepts one as
+    // signature is made on libuv's thread pool, and the Verifier accepts one as
     // this realm's (vc_verifier.ts, verifyIssuerSignatureAsync()).
     enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
                  'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
@@ -8733,11 +9772,10 @@ const SETTINGS = [
                  'are signed with — post-quantum ones included — and the ' +
                  'one this realm\'s status lists are signed with, and the ' +
                  'one the DID Configuration\'s ' +
-                 'Domain Linkage Credential and /did/generate\'s did:web ' +
-                 'credential use. The metadata\'s ' +
+                 'Domain Linkage Credential uses. The metadata\'s ' +
                  'credential_signing_alg_values_supported names it, ' +
                  '/oauth2/jwks and /.well-known/did.json publish the key, ' +
-                 'and the mock Verifier checks against it. ldp_vc is ' +
+                 'and this service\'s Verifier checks against it. ldp_vc is ' +
                  'bbs-2023 and is not affected. A credential already issued ' +
                  'keeps the algorithm it was signed with.' },
 
@@ -8787,7 +9825,7 @@ const SETTINGS = [
   { key: 'oid4vci.issuerDisplayName', group: 'OID4VCI',
     label: 'Issuer display name',
     env: 'OID4VCI_ISSUER_DISPLAY_NAME', type: 'string',
-    dflt: 'IdP Tools Mock Credential Issuer', runtime: true,
+    dflt: 'IdP Tools Credential Issuer', runtime: true,
     description: 'The `display.name` of the credential issuer metadata — ' +
                  'what a wallet shows as who is offering the credential. The ' +
                  'credential configurations\' own display names and colours ' +
@@ -8802,13 +9840,6 @@ const SETTINGS = [
                  '/.well-known/did-configuration.json says it is valid. It ' +
                  'is signed per request, so this is the window a cached copy ' +
                  'may be believed for.' },
-
-  { key: 'oid4vci.generatedDidCredentialLifetimeS', group: 'OID4VCI',
-    label: '/did/generate credential lifetime (s)',
-    env: 'OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S', type: 'int',
-    dflt: 3600, min: 60, max: 31536000, runtime: true,
-    description: 'How long the SD-JWT VC that /did/generate signs with the ' +
-                 'DID it hands back is valid.' },
 
   // ---------------------------------------------------------------------
   // THE TWO DID FLAGS, which were the last two environment variables in this
@@ -8863,7 +9894,7 @@ const SETTINGS = [
   { key: 'oid4vp.clientId', group: 'OID4VP', label: 'Verifier client ID',
     env: 'OID4VP_CLIENT_ID', type: 'string', dflt: 'sts-verifier',
     runtime: true,
-    description: 'The client_id the mock Verifier presents in its ' +
+    description: 'The client_id this service\'s Verifier presents in its ' +
                  'Authorization Request, and the `aud` the Key Binding JWT ' +
                  'must name.' },
 
@@ -8875,14 +9906,32 @@ const SETTINGS = [
       return value('oid4vci.walletUrl');
     }, runtime: true,
     derived: true,
-    description: 'Where the Verifier sends the holder to present. Falls back ' +
-                 'to the OID4VCI wallet URL, since it is the same wallet in ' +
-                 'every arrangement this service is used in.' },
+    description: 'A WEB wallet\'s address, for a deployment that runs one: ' +
+                 'where it is set, a presentation request is also offered as ' +
+                 'a link to it (with oid4vp.walletPresentationPath and the ' +
+                 'request on its query), beside the oid4vp.walletInvocation ' +
+                 'link a wallet app opens. Falls back to the OID4VCI web ' +
+                 'wallet, which is empty by default: no web wallet is ' +
+                 'offered.' },
+
+  { key: 'oid4vp.walletInvocation', group: 'OID4VP',
+    label: 'How a wallet app is handed a request',
+    env: 'OID4VP_WALLET_INVOCATION', type: 'enum',
+    enumValues: ['openid4vp', 'haip-vp'], dflt: 'openid4vp', runtime: true,
+    description: 'The custom URL scheme of the "Open your wallet" link on ' +
+                 'the wallet sign-in page, of the QR code where one is ' +
+                 'offered, and of a verification start\'s requestUri: the ' +
+                 'request by reference (client_id and request_uri) under ' +
+                 'it. openid4vp, the default: openid4vp://, the scheme ' +
+                 'OpenID4VP 1.0 defines for a Verifier that does not know ' +
+                 'the wallet. haip-vp: haip-vp://, which OpenID4VC HAIP 1.0 ' +
+                 'section 5.1 lets a HAIP wallet register instead. A ' +
+                 'self-issued ID Token alone is always siopv2://.' },
 
   certificateHeaderSetting('oid4vp.requestObjectCertificateHeader', 'OID4VP',
     'OID4VP_REQUEST_OBJECT_CERTIFICATE_HEADER',
     'Request Object certificate header',
-    'Whether the mock Verifier\'s signed REQUEST OBJECT (RFC 9101, a request ' +
+    'Whether the Verifier\'s signed REQUEST OBJECT (RFC 9101, a request ' +
     'by reference) names the certificate chain of the key that signed it.'),
 
   { key: 'oid4vp.kbMaxAgeS', group: 'OID4VP', label: 'Key Binding max age (s)',
@@ -8935,8 +9984,8 @@ const SETTINGS = [
                  'in x5c. x509_hash: the SHA-256 of that certificate. Both ' +
                  'sign with oid4vp.x509SigningAlgorithm; ' +
                  '/oid4vp/verifier-certificate shows the certificate and ' +
-                 'both Client Identifiers. /oid4vp/start?client_id_prefix= ' +
-                 'chooses per request. ' +
+                 'both Client Identifiers. A verification start\'s ' +
+                 'client_id_prefix chooses per request. ' +
                  'An unsigned request always uses redirect_uri.' },
 
   { key: 'oid4vp.x509DnsName', group: 'OID4VP',
@@ -8965,8 +10014,8 @@ const SETTINGS = [
                  'ES256 by default, which OpenID4VC HAIP requires a wallet ' +
                  'to accept. A post-quantum algorithm is not offered yet: ' +
                  'the Request Object is signed on the request path, and ' +
-                 'this realm\'s post-quantum keys sign in the worker pool ' +
-                 '(oid4vc/CLAUDE.md, the x509 prefixes).' },
+                 'this realm\'s post-quantum keys sign on libuv\'s thread ' +
+                 'pool (oid4vc/CLAUDE.md, the x509 prefixes).' },
 
   { key: 'oid4vp.verifierAttestation', group: 'OID4VP',
     label: 'Verifier Attestation JWT',
@@ -9225,7 +10274,7 @@ const SETTINGS = [
   { key: 'oid4vp.claims', group: 'OID4VP', label: 'Requested claims',
     env: 'OID4VP_CLAIMS', type: 'csv', dflt: 'given_name,family_name',
     runtime: true,
-    description: 'The mock Verifier\'s STARTING request, and — this is the ' +
+    description: 'The Verifier\'s STARTING request, and — this is the ' +
                  'part worth knowing — the target its Reset returns to. It ' +
                  'is not the live list: /admin/vc-verifier-config owns that, ' +
                  'and copies this at startup. So changing it here changes ' +
@@ -9259,36 +10308,47 @@ const SETTINGS = [
 
   { key: 'oid4vp.signInRegisterMaxEntries', group: 'OID4VP',
     label: 'Wallet sign-in register size (per realm)',
-    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 100000,
+    // 10,000 since #346 (2026-09-29; it was 100,000): the register is
+    // resident in every process of every node, per realm (#339). Dropping a
+    // row fails closed, so the lower number costs a wallet its sign-in and
+    // never lets a credential in.
+    env: 'OID4VP_SIGN_IN_REGISTER_MAX_ENTRIES', type: 'int', dflt: 10000,
     min: 100, max: 10000000, runtime: true,
     description: 'How many rows the wallet sign-in register keeps per trust ' +
                  'realm — one per credential issued for a person on a ' +
                  'verified access token (per holder key for ldp_vc). Past it ' +
                  'the row ISSUED FIRST is dropped. That fails CLOSED: a ' +
                  'credential with no row signs nobody in, which is also what ' +
-                 'a disowned row does.' },
+                 'a disowned row does. The cost of the default: once a realm ' +
+                 'has issued this many sign-in credentials, each new one ' +
+                 'stops the oldest still-valid one signing its holder in, ' +
+                 'and the holder has to be issued another. Raise it for a ' +
+                 'realm that issues more; every process of every node holds ' +
+                 'the whole register.' },
 
 
   { key: 'oid4vp.walletPresentationPath', group: 'OID4VP',
-    label: 'Wallet presentation page',
+    label: 'Web wallet presentation page',
     env: 'OID4VP_WALLET_PRESENTATION_PATH', type: 'string',
-    dflt: '/vc-presentation-1.html', runtime: true,
-    description: 'The page under the wallet URL a presentation request is ' +
-                 'handed to. The default is the debugger\'s own wallet page.' },
+    dflt: '', runtime: true,
+    description: 'The page under oid4vp.walletUrl a presentation request is ' +
+                 'handed to, for a web wallet whose request page is not its ' +
+                 'root. Empty, the default. (The embedded debugger\'s web ' +
+                 'wallet takes requests at /vc-presentation-1.html.)' },
 
   { key: 'oid4vp.allowedWalletUrls', group: 'OID4VP',
     label: 'Other wallet URLs a request link may name (product)',
     env: 'OID4VP_ALLOWED_WALLET_URLS', type: 'csv', dflt: '', runtime: true,
     description: 'IN PRODUCT MODE, the wallet URLs besides oid4vp.walletUrl ' +
-                 'that the `wallet` query parameter on the Verifier\'s start ' +
-                 'page may name; any other is refused as an open redirect. ' +
+                 'that a verification start\'s `wallet` may name; any other ' +
+                 'is refused as an open redirect. ' +
                  'Development accepts any URL.' },
 
   { key: 'oid4vp.trustedIssuerCertificates', group: 'OID4VP',
     label: 'Other trusted credential issuers (PEM)',
     env: 'OID4VP_TRUSTED_ISSUER_CERTIFICATES', type: 'string', dflt: '',
     runtime: true,
-    description: 'PEM certificates, concatenated, whose keys the mock ' +
+    description: 'PEM certificates, concatenated, whose keys this service\'s ' +
                  'Verifier accepts an SD-JWT VC or jwt_vc_json credential ' +
                  'signature from IN ADDITION to this realm\'s own issuer. ' +
                  'Empty — the default — trusts this issuer alone, which is ' +
@@ -9340,7 +10400,50 @@ const SETTINGS = [
                  'credential from any other issuer, or one issued on an ' +
                  'access token this service did not issue, still verifies ' +
                  'and signs nobody in. Off removes the button and closes ' +
-                 'the door; the Verifier at /oid4vp/verifier is unaffected.' },
+                 'the door; a verification an administrator starts is ' +
+                 'unaffected.' },
+
+  // WHAT A REAL WALLET ACCEPTS (2026-10-12). A sign-in request went out
+  // signed under the `pre-registered` Client Identifier (`sts-verifier`),
+  // which only a wallet configured with this service out of band can check,
+  // and answered by plain `direct_post`. OpenID4VC HAIP 1.0 section 5 has a
+  // Verifier use `x509_hash` and an encrypted response (`direct_post.jwt`),
+  // and those are what a wallet that has never heard of this service can
+  // act on: it validates the certificate chain to an anchor it trusts.
+  { key: 'oid4vp.signInClientIdPrefix', group: 'OID4VP',
+    label: 'Wallet sign-in: Client Identifier prefix',
+    env: 'OID4VP_SIGN_IN_CLIENT_ID_PREFIX', type: 'enum',
+    enumValues: ['x509_hash', 'x509_san_dns', 'pre-registered',
+                 'decentralized_identifier', 'verifier_attestation',
+                 'openid_federation'],
+    dflt: 'x509_hash', runtime: true,
+    description: 'How a wallet authenticates the signed request a wallet ' +
+                 'sign-in sends (OpenID4VP 1.0 section 5.9), on the link, ' +
+                 'the QR code and the Digital Credentials API alike. ' +
+                 'x509_hash, the default and what OpenID4VC HAIP 1.0 ' +
+                 'requires: the SHA-256 of the Verifier\'s certificate, ' +
+                 'whose chain the request carries; the wallet must trust ' +
+                 'this service\'s Root (/oid4vp/verifier-certificate shows ' +
+                 'it). x509_san_dns: the certificate\'s DNS name ' +
+                 '(oid4vp.x509DnsName). The others are ' +
+                 'oid4vp.clientIdPrefix\'s, which governs a verification ' +
+                 'an administrator starts and not this; pre-registered ' +
+                 'works only with a wallet that has this Verifier\'s key ' +
+                 'out of band.' },
+
+  { key: 'oid4vp.signInResponseMode', group: 'OID4VP',
+    label: 'Wallet sign-in: response mode',
+    env: 'OID4VP_SIGN_IN_RESPONSE_MODE', type: 'enum',
+    enumValues: ['direct_post.jwt', 'direct_post'], dflt: 'direct_post.jwt',
+    runtime: true,
+    description: 'How a wallet on the same device, or one that scanned the ' +
+                 'QR code, answers a wallet sign-in. direct_post.jwt, the ' +
+                 'default and what OpenID4VC HAIP 1.0 section 5.1 requires: ' +
+                 'the answer is encrypted to a key only this sign-in holds ' +
+                 '(oid4vp.responseEncryptionKeyAlgs), and an unencrypted ' +
+                 'one is refused. direct_post: in the clear, for a wallet ' +
+                 'that cannot encrypt. The Digital Credentials API is ' +
+                 'oid4vp.signInDcApiResponseMode\'s.' },
 
   { key: 'oid4vp.signInTtlS', group: 'OID4VP',
     label: 'Wallet sign-in lifetime (s)',
@@ -9408,6 +10511,27 @@ const SETTINGS = [
                  'encrypted (ECDH-ES) to a key only this sign-in holds, so ' +
                  'the page\'s script carries a JWE — or dc_api, in the ' +
                  'clear, for a wallet that cannot encrypt.' },
+
+  // THE KEYS AN ENCRYPTED WALLET RESPONSE MAY BE ENCRYPTED TO (#82). The
+  // default is rcbj's decision on #82: the X-Wing hybrid first, the P-256
+  // ECDH-ES key HAIP requires second.
+  { key: 'oid4vp.responseEncryptionKeyAlgs', group: 'OID4VP',
+    label: 'Encrypted response: key algorithms offered',
+    env: 'OID4VP_RESPONSE_ENCRYPTION_KEY_ALGS', type: 'csv',
+    dflt: 'HPKE-10-KE,ECDH-ES', runtime: true,
+    csvValues: OID4VP_RESPONSE_KEY_ALGS,
+    description: 'The ephemeral keys a direct_post.jwt or dc_api.jwt ' +
+                 'request offers in `client_metadata.jwks`, in order — one ' +
+                 'key per algorithm, made for the one transaction and held ' +
+                 'sealed on it. The wallet encrypts to one it supports. The ' +
+                 'default offers the X-Wing hybrid (HPKE-10-KE, ML-KEM-768 + ' +
+                 'X25519, draft-reddy-cose-jose-pqc-hybrid-hpke-11) first, ' +
+                 'so a wallet that can protect the response against a ' +
+                 'future quantum adversary does, and the P-256 ECDH-ES key ' +
+                 'OpenID4VC HAIP requires second, so every HAIP wallet still ' +
+                 'can. Leaving ECDH-ES out refuses every wallet that has ' +
+                 'only ' +
+                 'it; an empty list is read as ECDH-ES alone.' },
 
   { key: 'oid4vp.statusListMaxCacheS', group: 'OID4VP',
     label: 'Longest a fetched status list is kept (s)',
@@ -9513,6 +10637,51 @@ const SETTINGS = [
                  'one of them issued. Empty trusts none, and a key ' +
                  'attestation is then refused.' },
 
+  // --- The W3C VC API (#598) ------------------------------------------------
+  //
+  // **A PRODUCT SURFACE SINCE #598, AND OFF UNTIL A REALM TURNS IT ON.** Until
+  // then `/vc-api` was a development-only test control (#194-#199, #585). It
+  // is an issuer that signs a document ITS CALLER WROTE, a holder that
+  // presents one, and a verifier — so it is off by default for the reason any
+  // signing service is: nothing should be signing on a realm's behalf until
+  // that realm's administrator decided it should. `oid4vc/vc_api.ts` argues
+  // the surface; the setting decides only whether it exists.
+  { key: 'vcApi.enabled', group: 'W3C VC API',
+    label: 'Serve the W3C VC API',
+    env: 'STS_VC_API_ENABLED', type: 'bool', dflt: false, runtime: true,
+    description: 'Serve the W3C CCG Verifiable Credentials API (VCALM) at ' +
+                 '/vc-api: an issuer that secures a credential it is handed ' +
+                 '(Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ' +
+                 'ecdsa-rdfc-2019, ecdsa-jcs-2019 and ecdsa-sd-2023, or a ' +
+                 'VC-JOSE-COSE envelope), a holder that proves a ' +
+                 'presentation and derives a selective disclosure, a ' +
+                 'verifier of credentials and presentations, a status ' +
+                 'service over this realm\'s Bitstring Status Lists, and DID ' +
+                 'resolution of did:key, did:jwk and this realm\'s own ' +
+                 'did:web. Every call needs an access token this realm ' +
+                 'issued carrying vc-api:issue or vc-api:verify — protected ' +
+                 'scopes, issued only to a client an administrator declared ' +
+                 'them on — in every mode. It signs with keys of its own, ' +
+                 'each named by its did:key, never with the keys that sign ' +
+                 'this realm\'s tokens. OFF BY DEFAULT, because it signs ' +
+                 'documents its caller wrote: off, every /vc-api path ' +
+                 'answers 501 — the feature is off, the URL is not wrong.' },
+
+  { key: 'vcApi.maxPerWindow', group: 'W3C VC API',
+    label: 'VC API calls one client may make per rate-limit window',
+    env: 'STS_VC_API_MAX_PER_WINDOW', type: 'int', dflt: 600,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many /vc-api calls one client — and one address — may ' +
+                 'make in a security.rateLimitWindowS window, counted per ' +
+                 'realm; past it a call is refused 429 with Retry-After. ITS ' +
+                 'OWN NUMBER, for xacml.pipMaxPerWindow\'s reason: ' +
+                 'security.rateLimitPerIdentity is five, because it guards a ' +
+                 'sign-in, and an issuer or verifier a coordinator calls ' +
+                 'once per credential would be switched off by it. What it ' +
+                 'bounds is cost: a call canonicalizes JSON-LD and signs or ' +
+                 'verifies, and an admitted client could otherwise spend ' +
+                 'this service\'s CPU in a loop.' },
+
   // --- Kerberos ------------------------------------------------------------
   //
   // **A TRUST REALM HAS A KERBEROS OF ITS OWN SINCE 2026-09-15**, on the same
@@ -9557,13 +10726,12 @@ const SETTINGS = [
     restartReason: 'the TCP and UDP sockets are bound when the process starts',
     description: 'The KDC listens on TCP and UDP alike. 88 is privileged, so ' +
                  'a host run that is not root fails to bind it — which is ' +
-                 'recorded rather than thrown, and reported by GET ' +
-                 '/krb5/principals. 0 asks for any free port.' },
+                 'recorded rather than thrown, and logged. 0 asks for any ' +
+                 'free port.' },
 
-  { key: 'krb5.servicePort', group: 'Kerberos', label: 'Test service port',
-    env: 'KRB5_SERVICE_PORT', type: 'port', dflt: 8888, runtime: false,
-    restartReason: 'the socket is bound when the process starts',
-    description: 'The Kerberized test service that accepts an AP-REQ.' },
+  // `krb5.servicePort`, the Kerberized test service's socket, was here
+  // until #595: that demonstration is the development companion's now
+  // (`companion/demo_kerberos.js`, COMPANION_KRB5_SERVICE_PORT).
 
   { key: 'krb5.servicePrincipal', group: 'Kerberos', label: 'Service principal',
     env: 'KRB5_SERVICE_PRINCIPAL', type: 'string',
@@ -9571,10 +10739,11 @@ const SETTINGS = [
     realmRuntime: true,
     restartReason: 'the account and its long-term keys are created at startup' +
                    REALM_BUILDS_ITS_OWN,
-    description: 'The SPN that test service holds, in the usual ' +
-                 'service/hostname form. The account the acceptor decrypts ' +
-                 'with is created FROM this name, with krb5.servicePassword ' +
-                 'and krb5.serviceSalt — until 2026-09-12 it was always ' +
+    description: 'The SPN the SPNEGO sign-in\'s acceptor holds, in the ' +
+                 'usual service/hostname form. The account the acceptor ' +
+                 'decrypts with is created FROM this name, with ' +
+                 'krb5.servicePassword and krb5.serviceSalt — until ' +
+                 '2026-09-12 it was always ' +
                  'HTTP/web.<realm domain> whatever this said. **A TRUST ' +
                  'REALM that sets none derives HTTP/web.<its own domain>** ' +
                  'where this is still the value shipped here, so a realm is ' +
@@ -9592,11 +10761,14 @@ const SETTINGS = [
                  'the equivalent of a keytab. In PRODUCT MODE the shipped ' +
                  'default is refused: that value is printed in this ' +
                  'repository, so a service key derived from it is a key ' +
-                 'anybody can forge a ticket to. With it unset the service ' +
-                 'account is not created, the acceptor on ' +
-                 'krb5.servicePort and /authn/spnego accept no ticket, and ' +
-                 'GET /krb5/service says why. Set it to the password of the ' +
-                 'SPN\'s account in the KDC that issues its tickets.' },
+                 'anybody can forge a ticket to. Product then keys the SPN ' +
+                 'at random instead, once, sealed on its application entry ' +
+                 '(Rotate at /admin/kerberos/principals hands over a ' +
+                 'keytab), and does the same for an empty password. Set it ' +
+                 'to the password of the SPN\'s account in the KDC that ' +
+                 'issues its tickets and it wins over that key. In ' +
+                 'development an empty password creates no account, and ' +
+                 'the acceptor accepts no ticket.' },
 
   { key: 'krb5.serviceSalt', group: 'Kerberos', label: 'Service principal salt',
     env: 'KRB5_SERVICE_SALT', type: 'string', dflt: '', runtime: false,
@@ -9684,6 +10856,30 @@ const SETTINGS = [
                  '([MS-PAC] 2.5): the NetBIOS name of the domain controller ' +
                  'that authenticated the user.' },
 
+  // PAC CLAIMS (#493). A PLAIN RUNTIME ROW, AND DELIBERATELY NOT
+  // `realmRuntime`, although the issue asked for "a realmRuntime row like the
+  // other per-realm Kerberos rows". That marker is for a row that is
+  // RESTART-ONLY for the process and settable on a realm (the test at the
+  // head of this file); this one is read by the KDC on every ticket it
+  // builds, consumes nothing at startup, and a runtime row is already
+  // settable per realm through the realm layer — `krb5.pkinit` beside it is
+  // the same shape. Adding it to the marker's list would be the "second one
+  // by analogy" the head of this file refuses.
+  { key: 'krb5.pacClaims', group: 'Kerberos',
+    label: 'PAC client claims (PAC_CLIENT_CLAIMS_INFO)',
+    env: 'KRB5_PAC_CLAIMS', type: 'bool', dflt: false, runtime: true,
+    description: 'Whether the KDC writes the client\'s claims into every ' +
+                 'ticket\'s PAC ([MS-PAC] 2.11, PAC_CLIENT_CLAIMS_INFO, ' +
+                 'buffer type 13), for a service doing claims-based access ' +
+                 'control. A TGT carries the realm\'s Kerberos PAC claims ' +
+                 '(Protocols → Kerberos → PAC claims) and the person\'s ' +
+                 'realm-wide roles; a service ticket carries its TGT\'s, ' +
+                 'with the claims of the application that registered the ' +
+                 'service principal name added. Never compressed. Off — the ' +
+                 'default — no ticket carries a claims buffer, and a claims ' +
+                 'buffer in a PAC from another realm is still carried and ' +
+                 're-signed unchanged.' },
+
   { key: 'krb5.maxRequestBytes', group: 'Kerberos',
     label: 'Largest KDC request over TCP (bytes)',
     env: 'KRB5_MAX_REQUEST_BYTES', type: 'int', dflt: 131072,
@@ -9704,8 +10900,8 @@ const SETTINGS = [
     label: 'Largest AP-REQ the acceptor reads (bytes)',
     env: 'KRB5_SERVICE_MAX_TOKEN_BYTES', type: 'int', dflt: 65536,
     min: 1024, max: 16777216, runtime: true,
-    description: 'The acceptor on krb5.servicePort, and SPNEGO over HTTP, ' +
-                 'refuse a token larger than this.' },
+    description: 'The SPNEGO sign-in\'s acceptor refuses a token larger ' +
+                 'than this.' },
 
   { key: 'krb5.replayCacheMaxEntries', group: 'Kerberos',
     label: 'Replay cache size', env: 'KRB5_REPLAY_CACHE_MAX_ENTRIES',
@@ -9754,7 +10950,7 @@ const SETTINGS = [
       'every user\'s long-term keys are derived from it at startup' +
                    REALM_BUILDS_ITS_OWN,
     description: 'The password every user account here has. It is PUBLISHED ' +
-                 'by GET /krb5/principals on purpose: a debugger whose ' +
+                 'as this setting on purpose: a debugger whose ' +
                  'accounts are unusable without reading the source is worse ' +
                  'than one that says what they are.' },
 
@@ -9792,7 +10988,8 @@ const SETTINGS = [
                    REALM_BUILDS_ITS_OWN,
     description: 'One password for every service created on demand, and it ' +
                  'is published for the same reason the user password is: it ' +
-                 'is what lets a reader decrypt a service ticket this mock ' +
+                 'is what lets a reader decrypt a service ticket this ' +
+                 'service ' +
                  'issued and read the PAC inside it. The CONFIGURED service ' +
                  'accounts keep their own separate passwords.' },
 
@@ -9883,10 +11080,8 @@ const SETTINGS = [
     description: 'Whether /authn/spnego turns a Kerberos ticket into a ' +
                  'browser session — integrated authentication, available to ' +
                  'every application and to none in particular. With it off ' +
-                 'that endpoint answers 403 saying which setting it was, and ' +
-                 '/spnego/protected still performs the whole handshake and ' +
-                 'shows you both halves of it; what it will not do is give ' +
-                 'you a session. An application or a federation relationship ' +
+                 'that endpoint answers 403 saying which setting it was. An ' +
+                 'application or a federation relationship ' +
                  'that names the `spnego` mechanism while this is off is ' +
                  'REPORTED on the sign-in screen rather than meeting a 403 ' +
                  'halfway through a flow.' },
@@ -9998,6 +11193,81 @@ const SETTINGS = [
                  'would sign every Kerberos user in the realm out ' +
                  'unannounced.' },
 
+  // ---------------------------------------------------------------------------
+  // PKINIT (#179, 2026-10-05): a certificate — a smart card's, a PIV token's —
+  // as the Kerberos pre-authentication, for a person whose second factor is a
+  // key (kerberos/krb5_pkinit.ts). ON by default, because the one thing it
+  // needs that an operator would otherwise supply — the KDC's certificate —
+  // this service issues itself from the realm's own `kdc` Issuing CA. The
+  // three rows after the switch are its security posture, each at the most
+  // secure value by default; the one weaker choice, RFC 4556's own key
+  // derivation, carries the warning in its description.
+  // ---------------------------------------------------------------------------
+  { key: 'krb5.pkinit', group: 'Kerberos',
+    label: 'PKINIT (certificate pre-authentication)',
+    env: 'KRB5_PKINIT', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the KDC takes PKINIT (RFC 4556): an AS-REQ signed ' +
+                 'with a certificate this realm issued to the person — ' +
+                 'smart-card logon over ACME, EST or SCEP, recorded on their ' +
+                 'entry, or one naming them in an id-pkinit-san — with the ' +
+                 'reply key agreed by Diffie-Hellman (MODP groups 14 to 18, ' +
+                 'or ECDH on P-256, P-384 and P-521). It is how a person ' +
+                 'whose only second factor is a security key gets a ticket ' +
+                 'in product mode, where a password alone is refused. The ' +
+                 'KDC signs with a certificate from the realm\'s own ' +
+                 'Kerberos KDC Issuing CA, made on first use; a client ' +
+                 'trusts the ' +
+                 'service Root (X509_anchors). Off, PA-PK-AS-REQ is neither ' +
+                 'offered nor read.' },
+
+  { key: 'krb5.pkinitRequireFreshness', group: 'Kerberos',
+    label: 'PKINIT requires a freshness token',
+    env: 'KRB5_PKINIT_REQUIRE_FRESHNESS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a PKINIT request must carry an RFC 8070 freshness ' +
+                 'token — one this KDC issued in KDC_ERR_PREAUTH_REQUIRED ' +
+                 'within the clock skew. It is what stops an AuthPack signed ' +
+                 'on a borrowed smart card in advance from being used later. ' +
+                 'MIT Kerberos 1.17 and later and Heimdal send one when ' +
+                 'asked. ' +
+                 'WARNING: off, a PKINIT request is held only to its own ' +
+                 'timestamp and the replay check.' },
+
+  { key: 'krb5.pkinitLegacyKdf', group: 'Kerberos',
+    label: 'PKINIT accepts RFC 4556\'s own key derivation',
+    env: 'KRB5_PKINIT_LEGACY_KDF', type: 'bool', dflt: false, runtime: true,
+    description: 'Whether a PKINIT client that offers no RFC 8636 KDF may ' +
+                 'have its reply key derived by RFC 4556\'s octetstring2key ' +
+                 'instead. Off — the default — such a client is refused ' +
+                 'KDC_ERR_NO_ACCEPTABLE_KDF. WARNING: the old derivation ' +
+                 'binds neither the AS-REQ nor the reply into the key, so on ' +
+                 'it the request\'s integrity rests on a SHA-1 paChecksum ' +
+                 '(RFC 8636 section 3). Turn it on only for a client too old ' +
+                 'to send supportedKDFs.' },
+
+  { key: 'krb5.pkinitKdcKeyAlgorithm', group: 'Kerberos',
+    label: 'PKINIT KDC key algorithm',
+    env: 'KRB5_PKINIT_KDC_KEY_ALGORITHM', type: 'enum',
+    enumValues: ['ec-p256', 'ec-p384', 'rsa-2048', 'rsa-3072'],
+    dflt: 'ec-p256', runtime: true,
+    description: 'The key the KDC signs its PKINIT replies with, certified ' +
+                 'by the realm\'s Kerberos KDC Issuing CA. A change takes ' +
+                 'effect ' +
+                 'when a process next makes its KDC certificate — on its ' +
+                 'next start, or a day before the current one expires. No ' +
+                 'post-quantum algorithm is offered: no PKINIT client ' +
+                 'verifies one yet.' },
+
+  { key: 'krb5.anonymousPkinit', group: 'Kerberos',
+    label: 'Anonymous PKINIT (FAST armor)',
+    env: 'KRB5_ANONYMOUS_PKINIT', type: 'bool', dflt: true, runtime: true,
+    description: 'Whether the KDC issues RFC 8062 anonymous tickets — `kinit ' +
+                 '-n` — to a client that authenticates nobody, so that a ' +
+                 'machine with no host keytab has FAST armor for `kinit -T`. ' +
+                 'An anonymous ticket is only a TGT for this realm, names ' +
+                 'nobody, and buys no other ticket: the TGS refuses it. ' +
+                 'Needs krb5.pkinit.' },
+
   { key: 'krb5.spnegoLoginButton', group: 'Kerberos',
     label: 'Offer Kerberos at the sign-in screen',
     env: 'KRB5_SPNEGO_LOGIN_BUTTON', type: 'bool', dflt: true,
@@ -10017,7 +11287,7 @@ const SETTINGS = [
     env: 'KRB5_S2KPARAMS', type: 'enum', enumValues: ['omit', 'send'],
     dflt: 'omit', runtime: true,
     description: 'Whether PA-ETYPE-INFO2 carries s2kparams. Windows Server ' +
-                 'omits it and this mock sent it, which is the one ' +
+                 'omits it and this service sent it, which is the one ' +
                  'difference the captured real-DC exchange found; omit is ' +
                  'therefore the default and send is kept so a client that ' +
                  'reads it can be exercised.' },
@@ -10066,7 +11336,60 @@ const SETTINGS = [
     env: 'LDAP_MAX_ENTRIES', type: 'int', dflt: 2000, runtime: true,
     description: 'How large the directory may grow. A ceiling rather than a ' +
                  'target: entries appear for anybody who authenticates ' +
-                 'through any protocol here.' },
+                 'through any protocol here. Counted over every realm this ' +
+                 'process holds; in a request worker with ' +
+                 'ldap.workerDirectory=postgres-lru, over the realm\'s rows ' +
+                 'in the store instead.' },
+
+  // THE DIRECTORY AS A WINDOW IN A REQUEST OR SURFACE WORKER (#349, rcbj's
+  // decisions of 2026-09-29): `memory` holds the whole directory in every
+  // process, as always; `postgres-lru` has each worker hold the people and
+  // devices as a bounded window and ask the store for the rest, through a
+  // synchronous bridge. The front process holds the whole directory either
+  // way. Restart-only: the store's shape is chosen when `ldap_server.js`
+  // loads. `persistence.start()` refuses postgres-lru without a postgres
+  // store or in a multi-cell deployment (STS-LDAP-0133).
+  { key: 'ldap.workerDirectory', group: 'LDAP',
+    label: 'Directory in request workers',
+    env: 'LDAP_WORKER_DIRECTORY', type: 'enum',
+    enumValues: ['memory', 'postgres-lru'], dflt: 'memory', runtime: false,
+    restartReason: 'the directory\'s store is chosen when the process loads ' +
+                   'it',
+    description: 'How a request or surface worker holds the directory. ' +
+                 'memory (the default): every entry, in every process. ' +
+                 'postgres-lru: the people and devices as a window of at ' +
+                 'most ldap.workerCacheEntries entries, the rest read from ' +
+                 'PostgreSQL when asked for — a worker\'s memory no longer ' +
+                 'grows with the directory, and a miss costs one database ' +
+                 'round trip. Requires persistence.mode=postgres and a ' +
+                 'single cell; the front process always holds the whole ' +
+                 'directory.' },
+
+  // THE WINDOW'S BOUND (#349): entries, about 2.5 KB each with the JSON it
+  // keeps for the merge. Read at every insert, so a change applies at once.
+  { key: 'ldap.workerCacheEntries', group: 'LDAP',
+    label: 'Directory window size (entries)',
+    env: 'LDAP_WORKER_CACHE_ENTRIES', type: 'int', dflt: 10000,
+    min: 100, max: 1000000, runtime: true,
+    description: 'With ldap.workerDirectory=postgres-lru, how many people ' +
+                 'and devices a request worker holds at once (about 2.5 KB ' +
+                 'each), the least recently read dropped first. An entry it ' +
+                 'changed and has not yet written is never dropped.' },
+
+  // THE BOUND ON ONE SYNCHRONOUS QUESTION TO THE STORE (#349), which is how
+  // long a windowed worker's whole event loop may wait for an entry it does
+  // not hold. Read per question, so a change applies at the next one; the
+  // bridge's thread takes it as the statement timeout when it starts.
+  { key: 'ldap.workerDirectoryTimeoutMs', group: 'LDAP',
+    label: 'Worker directory read timeout (ms)',
+    env: 'LDAP_WORKER_DIRECTORY_TIMEOUT_MS', type: 'int', dflt: 2000,
+    min: 10, max: 60000, runtime: true,
+    description: 'With ldap.workerDirectory=postgres-lru, how long a request ' +
+                 'worker waits for the database when it needs a directory ' +
+                 'entry it does not hold. The worker does nothing else while ' +
+                 'it waits, so this is also the longest a database outage ' +
+                 'can hold one of its requests; past it the request is ' +
+                 'refused (503, STS-LDAP-0130).' },
 
   { key: 'ldap.sizeLimit', group: 'LDAP', label: 'Search size limit',
     env: 'LDAP_SIZE_LIMIT', type: 'int', dflt: 500, runtime: true,
@@ -10238,13 +11561,14 @@ const SETTINGS = [
     env: 'SCIM_AUTH_DISCOVERY', type: 'bool', dflt: false, runtime: true,
     description: 'Whether /ServiceProviderConfig, /ResourceTypes and ' +
                  '/Schemas need a credential as well. OFF by default, which ' +
-                 'is the bootstrapping argument /tls/trust already makes: ' +
-                 'the ServiceProviderConfig is where a client READS which ' +
-                 'authentication schemes exist, so requiring a credential to ' +
-                 'fetch it means a client must already know the answer to ' +
-                 'the question it is asking. RFC 7644 section 4 says nothing ' +
-                 'either way, so both are conforming and both are worth ' +
-                 'being able to try.' },
+                 'is what the specification asks: RFC 7643 section 5 says a ' +
+                 'service provider SHOULD make authenticationSchemes ' +
+                 'readable without prior authentication, because the ' +
+                 'ServiceProviderConfig is where a client READS which ' +
+                 'schemes exist. WARNING: on departs from that SHOULD — a ' +
+                 'client must then already know the answer to the question ' +
+                 'it is asking, learning the schemes only from the 401\'s ' +
+                 'challenges. RFC 7644 section 4 permits either.' },
 
   { key: 'scim.inventOnCreate', group: 'SCIM',
     label: 'Fill a provisioned person in (development mode)',
@@ -10334,6 +11658,9 @@ const SETTINGS = [
                                                       'password',
     env: 'SCIM_DIGEST_PASSWORD', type: 'string', dflt: 'password!',
     runtime: true,
+    // A SECRET, and saved when changed: sealed where it is written down
+    // (#222, `persistence/sealed_settings.js`).
+    secret: true,
     description: 'The password every username shares for HTTP Digest — the ' +
                  'same value KRB5_USER_PASSWORD defaults to, so that there ' +
                  'is one fact to remember rather than two. It cannot be ' +
@@ -10441,11 +11768,123 @@ const SETTINGS = [
     description: 'Mutual TLS, the first scheme RFC 7644 section 2 names. It ' +
                  'applies only where the request arrived over TLS with a ' +
                  'certificate that VERIFIED against the client truststore ' +
-                 '(see /tls), so only when global.https is on. It was the ' +
+                 '(/admin/tls/trust), so only when global.https is on. It was the ' +
                  'first place in this service where a client certificate ' +
                  'was a CREDENTIAL rather than an observation; here it ' +
                  'authenticates somebody who may then write to the ' +
                  'directory.' },
+
+  // ---------------------------------------------------------------------
+  // THE OUTBOUND SCIM CLIENT (#552): how pushes to a remote SCIM service
+  // provider are delivered, retried and reconciled. Each client — its
+  // address, credentials, scope and groups — is an application entry
+  // (`scim-client`), configured on Protocols → SCIM → Clients; these rows
+  // are what every client in a realm shares. `scim/scim_client.ts` reads
+  // them. Both schedules are cluster scheduler jobs.
+  // ---------------------------------------------------------------------
+  { key: 'scimClient.attempts', group: 'SCIM client',
+    label: 'Delivery attempts',
+    env: 'STS_SCIM_CLIENT_ATTEMPTS', type: 'int', dflt: 8, min: 1, max: 50, runtime: true,
+    description: 'How many times one change is tried before it becomes a dead letter on ' +
+                 'its client\'s dead-letter queue. Only what is worth repeating ' +
+                 'is retried: a network failure, 429 and 500, 502, 503, 504.' },
+  { key: 'scimClient.timeoutMs', group: 'SCIM client',
+    label: 'Request timeout (ms)',
+    env: 'STS_SCIM_CLIENT_TIMEOUT_MS', type: 'int', dflt: 15000, min: 1000, max: 120000, runtime: true,
+    description: 'How long one SCIM or token request may take.' },
+  { key: 'scimClient.backoffMs', group: 'SCIM client',
+    label: 'Retry backoff (ms)',
+    env: 'STS_SCIM_CLIENT_BACKOFF_MS', type: 'int', dflt: 10000, min: 0, max: 3600000, runtime: true,
+    description: 'The first retry\'s delay, doubled each attempt after; a 429 ' +
+                 'Retry-After longer than it is honoured. A retry waits for the ' +
+                 'scimClient.sweepS sweep, which is when it is sent.' },
+  { key: 'scimClient.maxBackoffMs', group: 'SCIM client',
+    label: 'Longest backoff (ms)',
+    env: 'STS_SCIM_CLIENT_MAX_BACKOFF_MS', type: 'int', dflt: 3600000, min: 1000, max: 86400000, runtime: true,
+    description: 'The ceiling of the exponential backoff, for one ' +
+                 'delivery\'s retries and for a client\'s pause alike. A ' +
+                 'service provider that fails at the network, times out, or ' +
+                 'answers 429 or 5xx PAUSES its client: none of its ' +
+                 'deliveries is attempted until the pause ends, the pause ' +
+                 'doubles with each consecutive failure (scimClient.backoffMs ' +
+                 'first, with full jitter) up to this, and one delivery goes ' +
+                 'first when it ends. A success ends the pause.' },
+  { key: 'scimClient.leaseMs', group: 'SCIM client',
+    label: 'Delivery lease (ms)',
+    env: 'STS_SCIM_CLIENT_LEASE_MS', type: 'int', dflt: 300000, min: 5000, max: 3600000, runtime: true,
+    description: 'How long one node holds a delivery while it sends it — ' +
+                 'discovery, a token, a search, the write and its ETag ' +
+                 're-reads — before another node may take it over.' },
+  { key: 'scimClient.sweepS', group: 'SCIM client',
+    label: 'Delivery sweep (seconds)',
+    env: 'STS_SCIM_CLIENT_SWEEP_S', type: 'int', dflt: 15, min: 1, max: 3600, runtime: true,
+    description: 'How often the cluster scheduler job scim-client.deliver sends what ' +
+                 'is due: new changes and retries alike.' },
+  { key: 'scimClient.retentionS', group: 'SCIM client',
+    label: 'Retention (seconds)',
+    env: 'STS_SCIM_CLIENT_RETENTION_S', type: 'int', dflt: 604800, min: 60, max: 31536000, runtime: true,
+    description: 'How long a delivery is kept: a change still unsent this long after ' +
+                 'it was queued becomes a dead letter, and a sent or dead row is ' +
+                 'removed this long after it was queued.' },
+  { key: 'scimClient.maxRows', group: 'SCIM client',
+    label: 'Deliveries kept per realm',
+    env: 'STS_SCIM_CLIENT_MAX_ROWS', type: 'int', dflt: 200000, min: 100, max: 5000000, runtime: true,
+    description: 'The most delivery rows kept per realm, every client together; the ' +
+                 'oldest finished rows go first.' },
+  { key: 'scimClient.concurrency', group: 'SCIM client',
+    label: 'Concurrent deliveries',
+    env: 'STS_SCIM_CLIENT_CONCURRENCY', type: 'int', dflt: 4, min: 1, max: 64, runtime: true,
+    description: 'How many deliveries one sweep sends at once. Changes to one user or ' +
+                 'group are never sent concurrently: there is one row per ' +
+                 'client and resource.' },
+  { key: 'scimClient.summaryS', group: 'SCIM client',
+    label: 'Summary interval (seconds)',
+    env: 'STS_SCIM_CLIENT_SUMMARY_S', type: 'int', dflt: 300, min: 1, max: 86400, runtime: true,
+    description: 'At most one summary log line per realm per interval.' },
+  { key: 'scimClient.reconcileCheckS', group: 'SCIM client',
+    label: 'Reconciliation check (seconds)',
+    env: 'STS_SCIM_CLIENT_RECONCILE_CHECK_S', type: 'int', dflt: 60, min: 10, max: 3600, runtime: true,
+    description: 'How often the cluster scheduler job scim-client.reconcile asks ' +
+                 'which clients are due a scheduled reconciliation ' +
+                 '(scimClientReconcileMinutes on each).' },
+  { key: 'scimClient.pageSize', group: 'SCIM client',
+    label: 'Reconciliation page size',
+    env: 'STS_SCIM_CLIENT_PAGE_SIZE', type: 'int', dflt: 100, min: 1, max: 1000, runtime: true,
+    description: 'The count asked for per page when a reconciliation lists a ' +
+                 'service provider\'s resources (RFC 7644 section 3.4.2.4), ' +
+                 'lowered to its filter.maxResults.' },
+  { key: 'scimClient.etagRetries', group: 'SCIM client',
+    label: 'ETag re-reads',
+    env: 'STS_SCIM_CLIENT_ETAG_RETRIES', type: 'int', dflt: 3, min: 0, max: 10, runtime: true,
+    description: 'How many times a write answered 412 Precondition Failed (RFC 7644 ' +
+                 'section 3.14) re-reads the resource and tries again before ' +
+                 'it becomes a dead letter.' },
+  { key: 'scimClient.allowHttp', group: 'SCIM client',
+    label: 'Allow http:// to a service provider (development only)',
+    env: 'STS_SCIM_CLIENT_ALLOW_HTTP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'OFF by default. RFC 7644 section 7.2 requires TLS, and a ' +
+                 'SCIM request carries personal data and a credential. On, ' +
+                 'development mode dials an http:// base URL or token ' +
+                 'endpoint; product mode refuses it whatever this says.' },
+  { key: 'scimClient.skipTlsVerification', group: 'SCIM client',
+    label: 'Skip TLS verification to a service provider (development only)',
+    env: 'STS_SCIM_CLIENT_SKIP_TLS_VERIFICATION', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. Sends to an https ' +
+                 'service provider WITHOUT verifying its certificate, so ' +
+                 'personal data and the credential go to anybody who can ' +
+                 'intercept the connection (RFC 7644 section 7.2 requires ' +
+                 'the server identity check). In product mode it is ignored ' +
+                 'and cannot be set: give the client its CA certificates ' +
+                 'instead.' },
+  { key: 'scimClient.caFile', group: 'SCIM client',
+    label: 'CA certificates file',
+    env: 'STS_SCIM_CLIENT_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A file of PEM CA certificates trusted for every SCIM ' +
+                 'client\'s service provider and token endpoint, beside the ' +
+                 'public roots and the client\'s own scimClientCaCertificates.' },
 
 
   // ---------------------------------------------------------------------
@@ -10464,8 +11903,9 @@ const SETTINGS = [
   // is deliberate in a service whose every other surface is a turnstile. A
   // PDP's whole output is a decision; a flag that made it answer Permit when
   // it could not decide would not be a mock of anything, it would be a broken
-  // PDP. What IS configurable is what happens at the PEP — see
-  // `xacml.pepBias`, which is the PEP's decision and not the PDP's.
+  // PDP. What happens at a PEP is the PEP's own configuration: the remote
+  // PEP's `PEP_BIAS` (`xacml.pepBias`, the demonstration PEP's, went with it
+  // to the `xacml-pep` container in #596).
   { key: 'xacml.enabled', group: 'XACML', label: 'XACML enabled',
     env: 'STS_XACML_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'When on, the XACML 3.0 endpoints under /xacml answer. ' +
@@ -10484,21 +11924,6 @@ const SETTINGS = [
                  'the default persistence mode, and a caller that can create ' +
                  'entries without bound can exhaust it. Reaching the limit ' +
                  'refuses the CREATE and logs; it never evicts.' },
-
-  { key: 'xacml.pepBias', group: 'XACML',
-    label: 'What the embedded PEP does with a non-Permit',
-    env: 'STS_XACML_PEP_BIAS', type: 'enum',
-    enumValues: ['deny-biased', 'permit-biased'], dflt: 'deny-biased',
-    runtime: true,
-    description: 'THIS IS THE PEP\'S DECISION AND NOT THE PDP\'S, which is ' +
-                 'the whole reason it is a setting. XACML section 7.2 lets a ' +
-                 'PEP be deny-biased (anything that is not Permit is a ' +
-                 'refusal) or permit-biased (anything that is not Deny is ' +
-                 'allowed), and real deployments differ. Deny-biased is the ' +
-                 'default because it is what a PEP protecting anything ' +
-                 'should be; permit-biased exists so that a client can see ' +
-                 'what the other choice does to an Indeterminate, which is ' +
-                 'the case the two disagree about and the one nobody tests.' },
 
   { key: 'xacml.returnPolicyIdList', group: 'XACML',
     label: 'Always return the applicable policy identifiers',
@@ -10525,10 +11950,9 @@ const SETTINGS = [
   // is a surprise to anybody who has already read the first.
   //
   // WHAT IS NOT HERE IS A SETTING THAT CHANGES A REMOTE PEP'S BIAS. A remote
-  // PEP is a SEPARATE PROCESS with its own configuration, and `xacml.pepBias`
-  // governs the EMBEDDED one at /xacml/protected and nothing else. A row here
-  // that appeared to set a remote PEP's bias would be a control that silently
-  // did nothing, which is worse than no control: the remote one reports the
+  // PEP is a SEPARATE PROCESS with its own configuration (`PEP_BIAS`). A row
+  // here that appeared to set a remote PEP's bias would be a control that
+  // silently did nothing, which is worse than no control: the remote one reports the
   // bias it is actually running with on every heartbeat, and the console shows
   // that rather than what this service would have chosen for it.
   { key: 'xacml.remotePeps', group: 'XACML',
@@ -10770,7 +12194,7 @@ const SETTINGS = [
                  'a SET records that something happened and RFC 8417 ' +
                  'section 4.1.4 forbids it to expire, so it is read long ' +
                  'after it was written. Note an SLH-DSA signature takes ' +
-                 'seconds — it runs on the worker pool, so this service ' +
+                 'seconds — it runs on libuv\'s thread pool, so this service ' +
                  'answers throughout, but the receiver waits.' },
 
   certificateHeaderSetting('ssf.setCertificateHeader', 'SSF',
@@ -10798,14 +12222,35 @@ const SETTINGS = [
     label: 'What an empty subject list means',
     env: 'STS_SSF_DEFAULT_SUBJECTS', type: 'enum',
     enumValues: ['ALL', 'NONE'], dflt: 'ALL', runtime: true,
-    description: 'Published as default_subjects and it decides the OPPOSITE ' +
-                 'of what it sounds like it decides: with ALL, a stream ' +
-                 'that names no subjects is about EVERYBODY and adding one ' +
-                 'narrows nothing; with NONE it is about nobody until a ' +
+    description: 'Published as default_subjects, and it decides what an ' +
+                 'EMPTY subject list means: with ALL, a stream that names ' +
+                 'no subjects is about EVERYBODY, naming one narrows it to ' +
+                 'the named subjects, and removing the last one widens it ' +
+                 'back to everybody; with NONE it is about nobody until a ' +
                  'subject is added. A receiver that guesses wrong gets ' +
                  'every event in the estate or gets none, and both look ' +
                  'like a broken transmitter — which is why SSF makes it ' +
-                 'discoverable rather than leaving it to be inferred.' },
+                 'discoverable rather than leaving it to be inferred. A ' +
+                 'stream a person owns is about that person whatever this ' +
+                 'says (ssf.personStreamsSelfOnly).' },
+
+  { key: 'ssf.personStreamsSelfOnly', group: 'SSF',
+    label: 'A person\'s own stream carries only their events',
+    env: 'STS_SSF_PERSON_STREAMS_SELF_ONLY', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'A stream created with a PERSON\'S credential — an access ' +
+                 'token a client obtained for them, or their own name and ' +
+                 'password over Basic — is about that person alone: events ' +
+                 'about anybody else are not delivered to it, whatever its ' +
+                 'subject list and default_subjects say, and Add Subject ' +
+                 'refuses to name anybody else (403). SSF 1.0 section 10.1 ' +
+                 'requires that only authorized parties access the shared ' +
+                 'signals, and a person is one for their own. Off, a ' +
+                 'person\'s stream is treated like a client\'s and, under ' +
+                 'default_subjects ALL, is sent every event in the realm. ' +
+                 'A client\'s own stream (client credentials), a GNAP ' +
+                 'application\'s and this service\'s own receivers are not ' +
+                 'affected.' },
 
   { key: 'ssf.streamStatusOnCreate', group: 'SSF',
     label: 'Status a new stream is created in',
@@ -10898,8 +12343,9 @@ const SETTINGS = [
     env: 'STS_SSF_PUSH_ALLOWED_HOSTS', type: 'csv', dflt: '', runtime: true,
     description: 'Host names this service will push to. EMPTY MEANS ANY, ' +
                  'which is the default and the one deliberate looseness in ' +
-                 'the outbound path — it is what makes this usable as a ' +
-                 'mock. A deployment reachable by anybody it does not trust ' +
+                 'the outbound path — it is what makes this usable for ' +
+                 'testing. A deployment reachable by anybody it does not ' +
+                 'trust ' +
                  'sets the list, and every other host is refused BY NAME on ' +
                  'the stream\'s own log. Hosts rather than URLs on purpose: ' +
                  'a receiver legitimately moves its endpoint path and does ' +
@@ -11103,7 +12549,7 @@ const SETTINGS = [
                  '2026-09-22 (#144), which let one receiver use up every ' +
                  'other receiver\'s allowance. A create past it is refused ' +
                  'NAMING THIS SETTING, which is the point of having a limit ' +
-                 'on a mock at all: every ceiling here is a reachable ' +
+                 'here at all: every ceiling here is a reachable ' +
                  'negative a receiver cannot otherwise exercise. This ' +
                  'service\'s own two receiver streams are not counted.' },
 
@@ -11184,10 +12630,9 @@ const SETTINGS = [
   { key: 'ssf.maxReceivedEvents', group: 'SSF', label: 'Received events kept',
     env: 'STS_SSF_MAX_RECEIVED_EVENTS', type: 'int', dflt: 200, min: 1,
     max: 10000, runtime: true,
-    description: 'How many SETs POST /ssf/receive keeps for /admin/ssf to ' +
-                 'show. That endpoint is this service acting as a RECEIVER, ' +
-                 'which is what the debugger pushes to when the roles are ' +
-                 'the other way round; the oldest are dropped past this.' },
+    description: 'How many delivered SETs each of this service\'s own ' +
+                 'receivers (the console\'s and the portal\'s) keeps in its ' +
+                 'inbox, per realm; the oldest are dropped past this.' },
 
   { key: 'ssf.maxStreamLogEntries', group: 'SSF', label: 'Log lines per stream',
     env: 'STS_SSF_MAX_STREAM_LOG_ENTRIES', type: 'int', dflt: 200, min: 1,
@@ -11215,36 +12660,6 @@ const SETTINGS = [
                  'any of those, which is the first place in this service ' +
                  'besides SCIM where two scopes differ in what they permit.' },
 
-  { key: 'ssf.receiveEnabled', group: 'SSF', label: 'Accept pushed events',
-    env: 'STS_SSF_RECEIVE_ENABLED', type: 'bool', dflt: true, runtime: true,
-    description: 'Whether POST /ssf/receive accepts a Security Event Token ' +
-                 'pushed AT this service — the roles reversed, with the ' +
-                 'debugger as the transmitter. It verifies the signature ' +
-                 'when it can find a key and reports what it read either ' +
-                 'way, because a receiver that refused an unverifiable ' +
-                 'event would be unable to show a person WHY it was ' +
-                 'unverifiable. Off answers 501.' },
-
-  { key: 'ssf.receiveAudiences', group: 'SSF',
-    label: 'Audiences POST /ssf/receive answers to',
-    env: 'STS_SSF_RECEIVE_AUDIENCES', type: 'csv', dflt: '', runtime: true,
-    description: 'The `aud` values the debugger-facing receiver at ' +
-                 'POST /ssf/receive accepts. A SET addressed to none of ' +
-                 'them is recorded and refused with invalid_audience, as a ' +
-                 'real receiver refuses it. EMPTY means the endpoint\'s own ' +
-                 'URL in this realm, which is the name a transmitter can ' +
-                 'discover without being told one.' },
-
-  { key: 'ssf.receiveIssuers', group: 'SSF',
-    label: 'Issuers POST /ssf/receive accepts',
-    env: 'STS_SSF_RECEIVE_ISSUERS', type: 'csv', dflt: '', runtime: true,
-    description: 'The `iss` values POST /ssf/receive accepts (SSF 1.0 ' +
-                 'section 4.1.6: a receiver MUST check the issuer). A SET ' +
-                 'from any other issuer is recorded and refused with ' +
-                 'invalid_issuer. EMPTY means this realm\'s own transmitter ' +
-                 'issuer — the only issuer whose SETs this receiver can ' +
-                 'verify, since it holds no other key.' },
-
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',
     env: 'STS_SSF_RECEIVE_REQUIRE_SIGNATURE', type: 'bool', dflt: false,
@@ -11259,46 +12674,43 @@ const SETTINGS = [
                  'ONLY: product mode refuses an unverified SET at every ' +
                  'receiver whatever this says (#117).' },
 
-  // FOREIGN TRANSMITTERS (#153): `ssf/ssf_transmitters.ts`, this realm as
-  // the receiver of another identity service's Shared Signals.
+  // A FEDERATION PARTNER'S SHARED SIGNALS (#153, #373): `ssf/ssf_transmitters.ts`,
+  // this realm as the receiver of its partners' Shared Signals. Each stream
+  // is configured on its relationship (`fedSignals*`); these bound them all.
   { key: 'ssf.foreignPollS', group: 'SSF',
-    label: 'Foreign transmitter poll interval (s)',
+    label: 'Partner signals poll interval (s)',
     env: 'STS_SSF_FOREIGN_POLL_S', type: 'int', dflt: 30,
     min: 1, max: 86400, runtime: true,
     description: 'How often the ssf.foreign-poll scheduler job polls every ' +
-                 'foreign transmitter this realm registered with a poll ' +
-                 'stream (RFC 8936) (#153).' },
+                 'federation relationship whose partner\'s Shared Signals ' +
+                 'stream is a poll stream (RFC 8936) (#153, #373).' },
   { key: 'ssf.foreignPollMaxEvents', group: 'SSF',
-    label: 'Events asked per foreign poll',
+    label: 'Events asked per partner poll',
     env: 'STS_SSF_FOREIGN_POLL_MAX_EVENTS', type: 'int', dflt: 50,
     min: 1, max: 1000, runtime: true,
-    description: 'The maxEvents this realm asks a foreign transmitter for in ' +
+    description: 'The maxEvents this realm asks a federation partner for in ' +
                  'one RFC 8936 poll.' },
   { key: 'ssf.foreignPollMaxRounds', group: 'SSF',
-    label: 'Foreign poll rounds',
+    label: 'Partner poll rounds',
     env: 'STS_SSF_FOREIGN_POLL_MAX_ROUNDS', type: 'int', dflt: 5,
     min: 1, max: 100, runtime: true,
-    description: 'How many polls one run makes while the transmitter says ' +
+    description: 'How many polls one run makes while the partner says ' +
                  'moreAvailable, before leaving the rest to the next run; ' +
                  'one more acknowledges what the last received.' },
-  { key: 'ssf.foreignMaxTransmitters', group: 'SSF',
-    label: 'Foreign transmitters per realm',
-    env: 'STS_SSF_FOREIGN_MAX_TRANSMITTERS', type: 'int', dflt: 20,
-    min: 1, max: 1000, runtime: true,
-    description: 'The most foreign transmitters one realm may register.' },
   { key: 'ssf.foreignInboxMax', group: 'SSF',
-    label: 'Foreign SETs kept',
+    label: 'Partner SETs kept',
     env: 'STS_SSF_FOREIGN_INBOX_MAX', type: 'int', dflt: 500,
     min: 10, max: 100000, runtime: true,
-    description: 'The most Security Event Tokens from foreign transmitters ' +
+    description: 'The most Security Event Tokens from federation partners ' +
                  'kept per realm, the oldest dropped first. What is kept is ' +
                  'also what a replayed jti is recognised by.' },
   { key: 'ssf.foreignTimeoutMs', group: 'SSF',
-    label: 'Foreign transmitter timeout (ms)',
+    label: 'Partner signals timeout (ms)',
     env: 'STS_SSF_FOREIGN_TIMEOUT_MS', type: 'int', dflt: 10000,
     min: 500, max: 120000, runtime: true,
-    description: 'How long one request to a foreign transmitter — discovery, ' +
-                 'its token endpoint, stream management, a poll — may take.' },
+    description: 'How long one request to a federation partner\'s Shared ' +
+                 'Signals — discovery, its token endpoint, stream ' +
+                 'management, a poll — may take.' },
 
   { key: 'ssf.actOnSignalsInDevelopment', group: 'SSF',
     label: 'The console and portal act on received signals in development',
@@ -11307,9 +12719,31 @@ const SETTINGS = [
     description: 'Product mode always does what the signal-response policy ' +
                  'permits with a verified event this service\'s own console ' +
                  'or portal receives — ends that surface\'s own sessions for ' +
-                 'the person it names (#62). Development records what it ' +
-                 'would have done and ends nothing, unless this is on. An ' +
+                 'the person it names (#62) — or a federation partner ' +
+                 'sends (#373, #374). Development records what it would ' +
+                 'have done and does nothing, unless this is on. An ' +
                  'unverified event is never acted on, whatever this says.' },
+
+  // #432, rcbj's decision 1 and "provide a flag to disable this behavior".
+  { key: 'ssf.signalsRevokeGrants', group: 'SSF',
+    label: 'A federation partner\'s signals revoke the person\'s grants and ' +
+           'tokens',
+    env: 'STS_SSF_SIGNALS_REVOKE_GRANTS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'On by default. A verified CAEP or RISC event from a ' +
+                 'federation partner that the signal-response policy ' +
+                 'answers with signal-revoke-grants (by default a sign-in ' +
+                 'partner\'s session-revoked, account-disabled, ' +
+                 'account-purged and credential-compromise) revokes every ' +
+                 'GNAP grant the person approved and every OAuth grant, ' +
+                 'token and authorization code held for them — for a ' +
+                 'session-revoked, only what was issued on the sessions ' +
+                 'that partner started. Off, the reaction is recorded as ' +
+                 'skipped and nothing is revoked; the other reactions ' +
+                 '(ending the partner\'s sessions, blocking its sign-ins) ' +
+                 'are unaffected. Development records what it would do ' +
+                 'unless ssf.actOnSignalsInDevelopment is on, and an ' +
+                 'unverified event is never acted on.' },
 
   { key: 'ssf.legacySubClaim', group: 'SSF',
     label: 'Also emit the deprecated `sub` claim (development only)',
@@ -11805,12 +13239,19 @@ const SETTINGS = [
 
   { key: 'risk.mediumScorePercent', group: 'Risk',
     label: 'MEDIUM from (percent of a score of 1)',
-    env: 'STS_RISK_MEDIUM_SCORE_PERCENT', type: 'int', dflt: 100, min: 1,
+    env: 'STS_RISK_MEDIUM_SCORE_PERCENT', type: 'int', dflt: 300, min: 1,
     max: 1000000, runtime: true,
     description: 'The score, in hundredths, at which a sign-in is MEDIUM ' +
-                 'risk: 100 is a score of 1, where the Freeman et al. model ' +
-                 'says the sign-in is as likely an attacker\'s as the ' +
-                 'person\'s. Familiar sign-ins score far below it.' },
+                 'risk: 300 is a score of 3. It is Freeman et al.\'s ' +
+                 'threshold theta (Eq. (4)), which the paper sets for a ' +
+                 'chosen false-positive rate rather than at 1: the score ' +
+                 'includes a user term that is above 1 for anybody who signs ' +
+                 'in less than the realm\'s average, whatever their context, ' +
+                 'and where everybody shares one address and browser that ' +
+                 'term is most of the score (#499; the largest seen on a ' +
+                 'test stack was 1.98). Lowering it is stricter. Tune it per ' +
+                 'realm from Monitoring → Risk Scoring\'s calibration ' +
+                 '(risk.calibrationMediumPercent).' },
 
   { key: 'risk.highScorePercent', group: 'Risk',
     label: 'HIGH from (percent of a score of 1)',
@@ -12062,7 +13503,7 @@ const SETTINGS = [
           'account-credential-change-required,' +
           'recovery-information-changed,recovery-activated,' +
           'credential-compromise,opt-out-initiated,opt-out-cancelled,' +
-          'opt-out-effective,opt-in,sessions-revoked',
+          'opt-out-effective,opt-in',
     runtime: true,
     // Mirrors ssf/risc.ts's AUTO_ACTS, short and under RISC_PREFIX.
     csvValues: withEventTypeUris(
@@ -12092,13 +13533,14 @@ const SETTINGS = [
                  'opt-in, and opt-out-effective when risc.optOutDelayHours ' +
                  'has passed. From the device register (#164): a person\'s ' +
                  'device marked compromised emits credential-compromise ' +
-                 'for each credential it held, and a device compromised or ' +
-                 'removed emits the deprecated sessions-revoked — with the ' +
-                 'DEVICE beside the person in a complex subject, which is ' +
-                 'what makes "every session of the account" true of every ' +
-                 'session on that device. Each ended session also sends ' +
-                 'CAEP session-revoked, the event RISC 1.0 section 2.11 ' +
-                 'points at; drop sessions-revoked here to send only that.' },
+                 'for each credential it held. Each session a compromised ' +
+                 'or removed device ends sends CAEP session-revoked, the ' +
+                 'event RISC 1.0 section 2.11 points new implementations ' +
+                 'at, so the DEPRECATED sessions-revoked is not in the ' +
+                 'default (#269). Add it for a receiver that still needs ' +
+                 'it: it goes out with the DEVICE beside the person in a ' +
+                 'complex subject, meaning every session of the account ' +
+                 'on that device.' },
 
   { key: 'risc.recycleWindowDays', group: 'RISC',
     label: 'Recycled identifier window (days)',
@@ -12461,9 +13903,9 @@ const SETTINGS = [
     env: 'STS_ROLES_XACML_USER_GROUP', type: 'string', dflt: 'xacml-users',
     runtime: true,
     description: 'The directory group whose members hold the built-in ' +
-                 'XACML_USER role, which is what the four XACML endpoints ' +
-                 'proper require — GET /xacml, POST /xacml/pdp, GET ' +
-                 '/xacml/policies and GET /xacml/protected. A caller ' +
+                 'XACML_USER role, which is what the three XACML endpoints ' +
+                 'proper require — GET /xacml, POST /xacml/pdp and GET ' +
+                 '/xacml/policies. A caller ' +
                  'presenting a client certificate this service VERIFIED is ' +
                  'somebody it can name; membership of this group is what ' +
                  'makes them somebody it lets in, and the two are kept apart ' +
@@ -12473,9 +13915,9 @@ const SETTINGS = [
                  'REMOTE_PEPS reaches the three /xacml/pep endpoints, which ' +
                  'hand out the documents this service enforces its own ' +
                  'access with, and one group granting both would make ' +
-                 'admitting a caller to the demonstration surface silently ' +
+                 'admitting a caller to the XACML surface proper silently ' +
                  'admit it to those. Setting it to the empty string means ' +
-                 'NOBODY holds the role, which closes those four endpoints ' +
+                 'NOBODY holds the role, which closes those three endpoints ' +
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
@@ -12517,7 +13959,7 @@ const SETTINGS = [
                  'questions about somebody else\'s boundary — that is what a ' +
                  'PDP is for and what /xacml/pdp and every remote PEP ask it ' +
                  '— and this one answers a question about THIS service. Two ' +
-                 'questions, two documents, so that editing the demo policy ' +
+                 'questions, two documents, so that editing the root policy ' +
                  'cannot change who may sign in and narrowing a role cannot ' +
                  'change what /xacml/pdp answers. The `role-issuance` ' +
                  'policy is BUILT IN and is never seeded into ou=policies: ' +
@@ -12573,6 +14015,45 @@ const SETTINGS = [
                  'says so rather than implying the cap is all there ever ' +
                  'was. Lowering it takes effect on the next act and discards ' +
                  'the excess immediately.' },
+  // WHO MAY ACT FOR WHOM (#186): the three settings the exchange policy reads
+  // as facts, common to RFC 8693 token exchange, WS-Trust OnBehalfOf / ActAs
+  // and Kerberos S4U. The rules themselves are the issuance policy's
+  // (`xacml_templates.ts`, EXCHANGE_ATTRIBUTE); these only say what they read.
+  { key: 'delegation.defaultSemantics', group: 'Delegation',
+    label: 'Default semantics of an act',
+    env: 'STS_DELEGATION_DEFAULT_SEMANTICS', type: 'enum',
+    enumValues: ['delegation', 'impersonation'],
+    dflt: 'delegation', runtime: true,
+    description: 'What an act is when nothing else says: the request names ' +
+                 'no semantics (a token exchange without exchange_semantics), ' +
+                 'and neither the actor\'s entry nor the subject\'s carries a ' +
+                 'default. DELEGATION issues a token that names the actor ' +
+                 '(`act` in a JWT, the delegate in a SAML 2.0 assertion); ' +
+                 'IMPERSONATION issues one indistinguishable from the ' +
+                 'subject\'s own, and is allowed only to an actor whose ' +
+                 'entry allows it. WS-Trust and Kerberos always say which ' +
+                 'they ask for, so this reaches the token exchange alone.' },
+  { key: 'delegation.protectedGroups', group: 'Delegation',
+    label: 'Groups never acted for',
+    env: 'STS_DELEGATION_PROTECTED_GROUPS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Directory groups, by cn or DN, whose members are never ' +
+                 'delegated or impersonated, in any protocol — the common ' +
+                 'form of Active Directory\'s Protected Users. The console\'s ' +
+                 'Admin Read and Admin Write rosters are always protected ' +
+                 'besides. A person or application can also be protected on ' +
+                 'its own entry (stsNotDelegated, appNotDelegated).' },
+  { key: 'delegation.actorRole', group: 'Delegation',
+    label: 'Role a person needs to act for somebody',
+    env: 'STS_DELEGATION_ACTOR_ROLE', type: 'string',
+    dflt: 'DELEGATION_ACTOR', runtime: true,
+    description: 'The configured role a PERSON must hold to be the actor of ' +
+                 'a delegation or an impersonation — the actor_token\'s ' +
+                 'subject at a token exchange, the requester of a WS-Trust ' +
+                 'OnBehalfOf / ActAs. An application acts through its entry\'s ' +
+                 'delegation attributes instead. Create the role on ' +
+                 'Directory > Roles and give it to the people or groups who ' +
+                 'may act.' },
 
   // --- Logout --------------------------------------------------------------
   //
@@ -12747,7 +14228,8 @@ const SETTINGS = [
                  'authorities claiming one name and every SVID either mints ' +
                  'is then ambiguous. Set it on a realm to name that realm\'s ' +
                  'trust domain outright; a realm deliberately sharing ' +
-                 'another\'s is a thing worth being able to build on a mock.' },
+                 'another\'s is a thing worth being able to build for ' +
+                 'testing.' },
 
   { key: 'spiffe.x509KeyType', group: 'SPIFFE', label: 'X.509 authority key',
     env: 'STS_SPIFFE_X509_KEY_TYPE', type: 'enum',
@@ -13630,14 +15112,16 @@ const SETTINGS = [
     label: 'Invent a registration entry on first sight',
     env: 'STS_SPIFFE_AUTOCREATE_ENTRIES', type: 'bool', dflt: true,
     runtime: true,
-    description: 'THIS IS THE SETTING THAT MAKES THIS A MOCK. On, a workload ' +
+    description: 'THIS IS THE SETTING THAT MAKES SPIFFE PERMISSIVE. On, a ' +
+                 'workload ' +
                  'that asks the Workload API for an SVID and matches no ' +
                  'registration entry gets one created for it and is issued ' +
                  'an SVID anyway — no attestation, no selectors, nothing ' +
                  'checked — which is the same permissive posture every other ' +
-                 'family here has. Off, an unregistered workload is answered ' +
-                 'with an empty SVID list, which is what a real SPIRE agent ' +
-                 'does and is the ONLY way to exercise a client\'s "I have ' +
+                 'family here has. Off, an unregistered workload is refused ' +
+                 'PERMISSION_DENIED, which is what the Workload API says and ' +
+                 'a real SPIRE agent does, and is the ONLY way to exercise a ' +
+                 'client\'s "I have ' +
                  'no identity" path. Both answers are worth having; neither ' +
                  'is the safe one.' },
 
@@ -14075,7 +15559,11 @@ const SETTINGS = [
     dflt: 'postgres://sts:sts@localhost:5432/sts', runtime: false,
     restartReason: 'the connection pool is opened before the listener binds',
     description: 'The PostgreSQL connection string persistence.mode=postgres ' +
-                 'dials — postgres://user:password@host:5432/database. The ' +
+                 'dials — postgres://user:password@host:5432/database — ' +
+                 'ALWAYS over TLS (#273): a string with no sslmode is ' +
+                 'sslmode=require, and sslmode=disable or allow, or a ' +
+                 'string that is not a postgres:// URL, stops the service ' +
+                 'starting (STS-STORE-0078). The ' +
                  'default is a LOCAL DEVELOPMENT one matching the Postgres ' +
                  'service in this repository\'s docker-compose.yml (user, ' +
                  'password and database all "sts"), so turning persistence ' +
@@ -14222,10 +15710,10 @@ const SETTINGS = [
   // TLS TO THE DATABASE, and the one knob that is about TRUST rather than
   // about encryption.
   //
-  // The connection string carries `sslmode`, which is postgres's own spelling
-  // and is where the ENCRYPTION decision belongs — `?sslmode=require` is in
-  // the compose default and the database refuses a plaintext connection
-  // anyway, because every `host` rule in its pg_hba.conf is `hostssl`.
+  // ENCRYPTION is not a decision at all since #273: every connection is TLS,
+  // and a string whose `sslmode` says otherwise is refused at start. The
+  // compose stack's database refuses a plaintext connection as well, because
+  // every `host` rule in its pg_hba.conf is `hostssl`.
   //
   // What a connection string cannot say is whether to BELIEVE the certificate,
   // because node's `pg` takes that as a TLS option rather than as a URL
@@ -14233,26 +15721,143 @@ const SETTINGS = [
   // and authentication are two decisions, a self-signed pair gives the first
   // and not the second, and a service that conflated them would be one where
   // turning verification off looked like turning TLS off.
+  //
+  // **ON BY DEFAULT, IN EVERY MODE (rcbj, 2026-10-12).** It was off, on the
+  // argument that the compose stack's certificate is self-signed and there
+  // was nothing to verify it against. That argued from the stack to the
+  // default, and the default is what every deployment gets: an
+  // unauthenticated database is one anything at its address can impersonate,
+  // reading and writing every row. The stack now hands its certificate to
+  // the service read-only (`persistence.databaseTlsCaFile`, below) and dials
+  // `sslmode=verify-full`, so nothing it runs needs this off.
   // ---------------------------------------------------------------------
   { key: 'persistence.databaseTlsRejectUnauthorized', group: 'Persistence',
     label: 'Verify the database certificate',
-    env: 'STS_DATABASE_TLS_REJECT_UNAUTHORIZED', type: 'bool', dflt: false,
+    env: 'STS_DATABASE_TLS_REJECT_UNAUTHORIZED', type: 'bool', dflt: true,
     runtime: false,
     restartReason: 'the connection pool is opened before the listener binds',
     description: 'Whether the PostgreSQL server\'s certificate must verify ' +
-                 'against a trust anchor this process holds. OFF by default, ' +
-                 'and that is a statement about the STACK rather than a ' +
-                 'weakened default: the certificate is generated inside the ' +
-                 'postgres container on its first start and is signed by ' +
-                 'nobody, so there is nothing for a client to verify it ' +
-                 'against and turning this on would refuse every connection ' +
-                 'with a message about a self-signed certificate. THE ' +
-                 'CONNECTION IS STILL ENCRYPTED either way — `sslmode` in ' +
-                 'persistence.databaseUrl decides that, the database\'s own ' +
-                 'pg_hba.conf requires it, and this decides only whether the ' +
-                 'server is AUTHENTICATED. Turn it on when you point this at ' +
-                 'a real database whose certificate chains to something ' +
-                 'NODE_EXTRA_CA_CERTS names.' },
+                 'against a trust anchor this process holds, chain and host ' +
+                 'name. ON by default, in every mode. The trust anchors are ' +
+                 'persistence.databaseTlsCaFile when that is set, and this ' +
+                 'process\'s default trust store (with NODE_EXTRA_CA_CERTS) ' +
+                 'otherwise. WARNING: turning this off leaves the database ' +
+                 'server UNAUTHENTICATED — the connection is still ' +
+                 'encrypted (this service never dials its database in the ' +
+                 'clear, #273), but anything that can answer at the ' +
+                 'database\'s address can impersonate it and read and write ' +
+                 'every row this service keeps, the sealed keys and the ' +
+                 'directory included. Turn it off only for a throwaway ' +
+                 'database you would hand to anyone. ' +
+                 'It decides only for a connection string whose sslmode is ' +
+                 'unset, require or prefer: sslmode=verify-full verifies the ' +
+                 'chain and the host name, and sslmode=verify-ca the chain ' +
+                 'alone (as libpq reads them), whatever this says.' },
+
+  // ---------------------------------------------------------------------
+  // THE DATABASE'S OWN TRUST ANCHOR (2026-10-12). A certificate that chains
+  // to nothing node already trusts — the compose stack's, made self-signed
+  // inside the postgres container — could be verified only by adding it to
+  // NODE_EXTRA_CA_CERTS, which trusts it for EVERY outbound connection this
+  // process makes: a federation partner, a JWKS, a mail relay. This names a
+  // PEM file (or a directory of them, for the cells stack's two databases)
+  // trusted for the database connections ONLY, in place of the default
+  // trust store for them; `persistence.databaseTlsCa()` reads it,
+  // and a file named and unreadable, or holding no certificate, stops the
+  // service at start (STS-STORE-0079) rather than dialling with a trust
+  // anchor nobody chose.
+  // ---------------------------------------------------------------------
+  { key: 'persistence.databaseTlsCaFile', group: 'Persistence',
+    label: 'Database CA certificate file',
+    env: 'STS_DATABASE_TLS_CA_FILE', type: 'string', dflt: '',
+    runtime: false,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: 'A PEM file of CA certificates trusted for the connections ' +
+                 'to the database ONLY, in place of this process\'s default ' +
+                 'trust store for them; nothing else this service dials ' +
+                 'trusts them. It may name a directory instead, and then ' +
+                 'every .crt and .pem file in it is read. Empty uses the ' +
+                 'default trust store (with NODE_EXTRA_CA_CERTS). A file ' +
+                 'that is named and cannot be read, or holds no certificate, ' +
+                 'stops the service at start. The compose stack sets it to ' +
+                 'the certificate its postgres container generates, shared ' +
+                 'read-only without the key.' },
+
+  // -------------------------------------------------------------------------
+  // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the
+  // store is TWO databases: `persistence.databaseUrl` is this cell's own
+  // (the people homed here, and what this cell mints) and these name the
+  // GLOBAL one — realms, settings, applications, policies, keys and the
+  // routing index — with one writer for the whole service and a read replica
+  // in every cell (#98 D3). `persistence/CLAUDE.md`, *Tiers*, argues it.
+  // Empty with `cells.id` set is refused at startup: a cell that kept its
+  // global rows in its own database would be a second service.
+  // -------------------------------------------------------------------------
+  { key: 'persistence.globalDatabaseUrl', group: 'Persistence',
+    label: 'Global tier database (writer)',
+    env: 'STS_GLOBAL_DATABASE_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the global tier is opened and restored before the ' +
+                   'listener binds',
+    description: 'The connection string of the GLOBAL tier\'s one writable ' +
+                 'database, used for every global write (a realm, a ' +
+                 'setting, an application, a key) from every cell. Only ' +
+                 'read when `cells.id` is set; single-cell mode keeps all ' +
+                 'three tiers in `persistence.databaseUrl`. Carries ' +
+                 '`sslmode=require` exactly as that one does.' },
+
+  { key: 'persistence.globalDatabaseReadUrl', group: 'Persistence',
+    label: 'Global tier database (this cell\'s replica)',
+    env: 'STS_GLOBAL_DATABASE_READ_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the global tier is opened and restored before the ' +
+                   'listener binds',
+    description: 'The global database\'s read replica in THIS cell\'s ' +
+                 'region, which every read of the global tier uses — the ' +
+                 'restore at start and every pull of the global change log. ' +
+                 'Empty means the writer. A replica lags its writer, so a ' +
+                 'global change made in another cell reaches this one after ' +
+                 'that lag (shown on /admin/cells).' },
+
+  { key: 'persistence.globalDatabasePasswordProvider', group: 'Persistence',
+    label: 'Where the global database password is read from',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_PROVIDER', type: 'enum',
+    enumValues: ['none', 'file', 'aws', 'gcp', 'azure', 'vault'],
+    dflt: 'none', runtime: false, perProcess: true,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: '`persistence.databasePasswordProvider`, for the global ' +
+                 'tier\'s two connection strings. The password is put into ' +
+                 'both. `none` dials them as written.' },
+
+  { key: 'persistence.globalDatabasePasswordRef', group: 'Persistence',
+    label: 'The global database password\'s location',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_REF', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup, before the pool is opened',
+    description: 'Where the global database password is, in whichever ' +
+                 'provider `persistence.globalDatabasePasswordProvider` ' +
+                 'names. Empty means the key-encryption key\'s location, ' +
+                 'with `persistence.globalDatabasePasswordField` telling the ' +
+                 'two apart.' },
+
+  { key: 'persistence.globalDatabasePasswordField', group: 'Persistence',
+    label: 'The field the global database password is in',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_FIELD', type: 'string',
+    dflt: 'globalDatabasePassword', runtime: false, perProcess: true,
+    restartReason: 'read once at startup, before the pool is opened',
+    description: 'The member of a JSON secret that holds the global ' +
+                 'database password; `password` for the shape AWS Secrets ' +
+                 'Manager writes for a database credential. Empty takes the ' +
+                 'value whole.' },
+
+  { key: 'persistence.globalDatabasePasswordRegion', group: 'Persistence',
+    label: 'AWS region of the global database password',
+    env: 'STS_GLOBAL_DATABASE_PASSWORD_REGION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'read once at startup',
+    description: 'The AWS region the global database password is read from ' +
+                 '— this cell\'s region, where its Secrets Manager replica ' +
+                 'is. Empty means the key-encryption key\'s region.' },
 
   { key: 'persistence.writeDelay', group: 'Persistence',
     label: 'Write delay (ms)',
@@ -14330,10 +15935,13 @@ const SETTINGS = [
     dflt: 7 * 24 * 60 * 60 * 1000, runtime: true,
     description: 'How long a row of a SHORT-LIVED persisted store — a ' +
                  'nonce, a code, a pending flow, an in-flight transaction ' +
-                 '(`retain: \'age\'`) — is kept. Such a row older than this ' +
-                 'was left behind by a process that stopped before sweeping ' +
-                 'it; it is neither restored nor kept, and is deleted on the ' +
-                 'start that skipped it. Every other persisted store — ' +
+                 '(`retain: \'age\'`) — that carries NO expiry of its own ' +
+                 'is kept. A row whose store says when it expires is kept ' +
+                 'until then and no longer, whatever this says (#333). Such ' +
+                 'a row older than this was left behind by a process that ' +
+                 'stopped before sweeping it; no start reads it, and the ' +
+                 'persistence.minted-expiry-purge job deletes it. Every ' +
+                 'other persisted store — ' +
                  'configuration, accounts, sessions, tokens, the audit log ' +
                  'and the counters — is KEPT until the store itself deletes ' +
                  'a row, however old it is (2026-09-18: until then this ' +
@@ -14441,9 +16049,25 @@ const SETTINGS = [
     restartReason: 'the name is written on the membership row when the node ' +
                    'joins',
     description: 'What /admin/cluster calls this node. Empty means the host ' +
-                 'name, which in a container is the container id. It ' +
-                 'identifies nothing: membership is a UUID made at every ' +
-                 'start, so two nodes given one name are still two nodes.' },
+                 'name, which in a container is the container id. ' +
+                 'Membership is a UUID made at every start, so two nodes ' +
+                 'given one name are still two members — but the name is ' +
+                 'what this node\'s TLS listener key is kept under where ' +
+                 'minted state persists (tls.listenerKeys), so two nodes ' +
+                 'given one name would share that key, and a renamed node ' +
+                 'makes a new one.' },
+
+  { key: 'cluster.nodeSnapshotRetentionHours', group: 'Cluster',
+    label: 'Keep a gone node\'s snapshot (hours)',
+    env: 'STS_CLUSTER_NODE_SNAPSHOT_RETENTION_HOURS', type: 'int', dflt: 24,
+    min: 1, max: 8760, runtime: true, perProcess: true,
+    description: 'How long Monitoring → Worker Pools and → Node Health keep ' +
+                 'showing a node that is no longer a live cluster member, ' +
+                 'from its last snapshot (#332). The hourly ' +
+                 'cluster.node-snapshot-purge job deletes its row once the ' +
+                 'snapshot is older than this; a live member\'s row is ' +
+                 'never deleted, however old, and nothing is deleted while ' +
+                 'membership cannot be read. rcbj chose a day.' },
 
   { key: 'cluster.heartbeatMs', group: 'Cluster',
     label: 'Heartbeat interval (ms)',
@@ -14496,6 +16120,253 @@ const SETTINGS = [
                  'and nothing else; the node starts, and says at every start ' +
                  'which ones it is running without. There is no "accept all": ' +
                  'a list somebody has to write is a list somebody has read.' },
+
+  // -------------------------------------------------------------------------
+  // CELLS (#98, 2026-09-28): one logical service deployed as several CELLS,
+  // each a copy of the whole stack with its own postgres, in one legal
+  // JURISDICTION. `common/cells.ts` and `persistence/CLAUDE.md` (*Tiers*)
+  // argue it. Every process setting here is restart-only and none may be
+  // carried by a realm: a cell is a fact about where a container runs, and
+  // a realm cannot move one. What a REALM decides — where its people may be
+  // homed and which transfers it permits — is the runtime group below.
+  //
+  // **EMPTY `cells.id` IS SINGLE-CELL MODE, WHICH IS EVERY DEPLOYMENT THAT
+  // HAS NOT ASKED FOR THIS**: all three tiers live in the one database, no
+  // locator is added to anything, and nothing below is read.
+  // -------------------------------------------------------------------------
+  { key: 'cells.id', group: 'Cells', label: 'This cell',
+    env: 'STS_CELL_ID', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'which cell a process belongs to decides which database ' +
+                   'it restores from and which people are resident here',
+    description: 'The id of the cell this container belongs to — a short ' +
+                 'lower-case name such as `usw2` (`[a-z0-9]{1,16}`). EMPTY, ' +
+                 'the default, is SINGLE-CELL MODE: the whole service is one ' +
+                 'deployment and every store is in one database, exactly as ' +
+                 'before cells existed. A cell id is never published: no ' +
+                 'token, cookie, certificate or metadata document names one. ' +
+                 'Every node of one cell must carry the same id, and every ' +
+                 'cell of one service a different one.' },
+
+  { key: 'cells.jurisdiction', group: 'Cells',
+    label: 'This cell\'s jurisdiction',
+    env: 'STS_CELL_JURISDICTION', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the jurisdiction is part of every transfer decision ' +
+                   'this process makes',
+    description: 'The legal boundary this cell sits in: a lower-case code ' +
+                 '(`us`, `ca`, `eu`, `sg`, `id`). Personal data homed here is ' +
+                 'never replicated outside it, and every question of ' +
+                 'whether a session or an attribute may be held somewhere ' +
+                 'else is asked of the issuance policy in terms of it. ' +
+                 'Required when `cells.id` is set.' },
+
+  { key: 'cells.peers', group: 'Cells', label: 'The other cells',
+    env: 'STS_CELL_PEERS', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell channel dials these addresses and trusts ' +
+                   'these ids from the moment the process starts',
+    description: 'Every OTHER cell of this service, as a JSON array of ' +
+                 '`{"id", "jurisdiction", "url"}` — `url` being that cell\'s ' +
+                 'inter-cell address, `https://<internal address>:8446`. It ' +
+                 'is an address on a private network between cells and is ' +
+                 'never published anywhere. Empty with `cells.id` set is a ' +
+                 'service of ONE cell that still runs the tiered stores, ' +
+                 'which is how the tiers are tested alone. An entry may ' +
+                 'also carry `consoleUrl`, that cell\'s own ' +
+                 '`cells.consoleUrl` (#361), which Server configuration → ' +
+                 'Cells links to.' },
+
+  { key: 'cells.port', group: 'Cells', label: 'Inter-cell port',
+    env: 'STS_CELL_PORT', type: 'port', dflt: 8446,
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell listener binds once, from listen()',
+    description: 'The port the inter-cell channel listens on — mutual TLS, ' +
+                 'a leaf from the process\'s `cell` Issuing CA, and a peer ' +
+                 'accepted only when its certificate names a cell in ' +
+                 '`cells.peers`. Bound only when `cells.id` is set. It must ' +
+                 'never be reachable from the internet: it is reachable ' +
+                 'from the other cells\' networks and nothing else.' },
+
+  { key: 'cells.hostname', group: 'Cells',
+    label: 'This cell\'s inter-cell host name',
+    env: 'STS_CELL_HOSTNAME', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the inter-cell certificate is issued with this name ' +
+                   'when the listener binds',
+    description: 'The private DNS name the OTHER cells dial this one at — ' +
+                 'the host of this cell\'s entry in their `cells.peers`. ' +
+                 'Each node\'s inter-cell certificate carries it, so a peer ' +
+                 'that dialled the name can check it. It resolves only on ' +
+                 'the private network between cells, to one address per ' +
+                 'node, and is never published. Empty means the node\'s own ' +
+                 'host name.' },
+
+  // THE ONE PLACE A CELL IS PUBLISHED (#361, 2026-09-30, rcbj): its own
+  // administrators' door, on Server configuration → Cells. #98's rule — no
+  // page names a cell — holds everywhere else.
+  { key: 'cells.consoleUrl', group: 'Cells',
+    label: 'This cell\'s own console address',
+    env: 'STS_CELL_CONSOLE_URL', type: 'string', dflt: '',
+    runtime: false, perProcess: true,
+    restartReason: 'the console client\'s redirect addresses are ' +
+                   'registered for it when the service starts',
+    description: 'The public origin that reaches THIS cell\'s load ' +
+                 'balancer and no other — `https://<cell>.<public name>` ' +
+                 'on an AWS deployment — so an administrator can open this ' +
+                 'cell\'s own console from another cell\'s. Server ' +
+                 'configuration → Cells links every cell\'s, and the ' +
+                 'console signs in AT that address (its callback is ' +
+                 'registered for the console\'s client) rather than being ' +
+                 'sent back to the shared public name. It is drawn on that ' +
+                 'page and nowhere else: no token, metadata document or ' +
+                 'error names a cell. Empty — the default, and single-cell ' +
+                 'mode — draws no link.' },
+
+  { key: 'cells.relayTimeoutMs', group: 'Cells',
+    label: 'Inter-cell request timeout (ms)',
+    env: 'STS_CELL_RELAY_TIMEOUT_MS', type: 'int', dflt: 10000,
+    min: 1000, max: 120000, runtime: true, perProcess: true,
+    description: 'How long a request relayed to another cell, or a call on ' +
+                 'the inter-cell channel, may take before it is answered ' +
+                 'as the other cell being unreachable (and handled as ' +
+                 '`cells.homeUnreachable` says).' },
+
+  // THE DURABLE DELIVERIES BETWEEN CELLS (`common/cell_deliveries.ts`):
+  // the shared outbound queue's numbers, for its inter-cell kind.
+  { key: 'cells.deliveryAttempts', group: 'Cells',
+    label: 'Inter-cell delivery attempts',
+    env: 'STS_CELL_DELIVERY_ATTEMPTS', type: 'int', dflt: 12,
+    min: 1, max: 50, runtime: true, perProcess: true,
+    description: 'How many times a revocation or a changed projection owed ' +
+                 'to another cell is tried before it is dead-lettered (it ' +
+                 'is retried by hand from /admin/deliveries). The backoff ' +
+                 'doubles, so twelve attempts from two seconds cover about ' +
+                 'two hours of another cell being down.' },
+
+  { key: 'cells.deliveryBackoffMs', group: 'Cells',
+    label: 'Inter-cell delivery backoff (ms)',
+    env: 'STS_CELL_DELIVERY_BACKOFF_MS', type: 'int', dflt: 2000,
+    min: 0, max: 600000, runtime: true, perProcess: true,
+    description: 'The wait before the second attempt of an inter-cell ' +
+                 'delivery; it doubles for each attempt after.' },
+
+  { key: 'cells.deliveryRetentionS', group: 'Cells',
+    label: 'Inter-cell delivery retention (s)',
+    env: 'STS_CELL_DELIVERY_RETENTION_S', type: 'int', dflt: 86400,
+    min: 60, max: 2592000, runtime: true, perProcess: true,
+    description: 'How long an inter-cell delivery may stay pending before ' +
+                 'it is dead-lettered whatever its attempt count.' },
+
+  { key: 'cells.deliveryMaxRows', group: 'Cells',
+    label: 'Inter-cell deliveries held',
+    env: 'STS_CELL_DELIVERY_MAX_ROWS', type: 'int', dflt: 100000,
+    min: 100, max: 10000000, runtime: true, perProcess: true,
+    description: 'The most inter-cell deliveries a realm holds; the oldest ' +
+                 'finished ones make room first.' },
+
+  { key: 'cells.deliveryConcurrency', group: 'Cells',
+    label: 'Inter-cell deliveries at once',
+    env: 'STS_CELL_DELIVERY_CONCURRENCY', type: 'int', dflt: 8,
+    min: 1, max: 64, runtime: true, perProcess: true,
+    description: 'How many inter-cell deliveries a sweep attempts at once.' },
+
+  { key: 'cells.deliverySummaryS', group: 'Cells',
+    label: 'Inter-cell delivery summary interval (s)',
+    env: 'STS_CELL_DELIVERY_SUMMARY_S', type: 'int', dflt: 300,
+    min: 10, max: 86400, runtime: true, perProcess: true,
+    description: 'At most one summary line per realm per this many ' +
+                 'seconds, rather than a line per delivery.' },
+
+  { key: 'cells.deliverySweepS', group: 'Cells',
+    label: 'Inter-cell delivery sweep interval (s)',
+    env: 'STS_CELL_DELIVERY_SWEEP_S', type: 'int', dflt: 30,
+    min: 5, max: 3600, runtime: true, perProcess: true,
+    description: 'How often the sweep job attempts every inter-cell ' +
+                 'delivery that is due.' },
+
+  { key: 'cells.homeUnreachable', group: 'Cells',
+    label: 'When a person\'s home cell cannot be reached',
+    env: 'STS_CELL_HOME_UNREACHABLE', type: 'enum',
+    enumValues: ['fail-closed', 'fail-open'], dflt: 'fail-closed',
+    runtime: true,
+    description: '`fail-closed`, the default (#98 D6): a person homed in a ' +
+                 'cell this one cannot reach cannot sign in, refresh a ' +
+                 'token or step up until it answers; a session already held ' +
+                 'here goes on until its next check against home. ' +
+                 '`fail-open` lets a session held here be refreshed without ' +
+                 'home\'s confirmation for up to ' +
+                 '`cells.failOpenGraceS`. **WARNING: in `fail-open` a ' +
+                 'disable, a password change or a revocation made at home ' +
+                 'during the outage is not seen here until home answers ' +
+                 'again, so a person who should have been stopped is not.**' },
+
+  { key: 'cells.failOpenGraceS', group: 'Cells',
+    label: 'Fail-open grace (s)',
+    env: 'STS_CELL_FAIL_OPEN_GRACE_S', type: 'int', dflt: 900,
+    min: 0, max: 86400, runtime: true,
+    description: 'With `cells.homeUnreachable=fail-open`, how long after ' +
+                 'home last confirmed a subject a session held here may ' +
+                 'still be refreshed without it. Ignored in `fail-closed`.' },
+
+  { key: 'cells.subjectCheckS', group: 'Cells',
+    label: 'Subject state check interval (s)',
+    env: 'STS_CELL_SUBJECT_CHECK_S', type: 'int', dflt: 60,
+    min: 0, max: 3600, runtime: true,
+    description: 'A session held away from its subject\'s home asks home ' +
+                 'for the subject\'s state (disabled, password or factor ' +
+                 'changed, revoked) on every refresh, token exchange and ' +
+                 'step-up, and ALSO whenever it is used after this many ' +
+                 'seconds without an answer. Home pushes a revocation to ' +
+                 'every cell holding a session as well, so this is the ' +
+                 'bound when a push is lost. 0 asks on every use.' },
+
+  { key: 'cells.homeCell', group: 'Cells',
+    label: 'Default home cell for new people',
+    env: 'STS_CELL_HOME_CELL', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The cell a person created in this realm is homed in when ' +
+                 'nothing says otherwise (#98 D1: the home is per PERSON, ' +
+                 'and this is the realm\'s default). Empty means the cell ' +
+                 'that creates them. A creation naming a home — the console ' +
+                 'field, the SCIM extension attribute — wins, and must be a ' +
+                 'cell in a jurisdiction `cells.jurisdictions` allows.' },
+
+  { key: 'cells.jurisdictions', group: 'Cells',
+    label: 'Jurisdictions people may be homed in',
+    env: 'STS_CELL_JURISDICTIONS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Which jurisdictions this realm may place a person in. ' +
+                 'Empty means any jurisdiction the service has a cell in. ' +
+                 'A realm pinned to one jurisdiction lists one.' },
+
+  { key: 'cells.permittedTransfers', group: 'Cells',
+    label: 'Transfers this realm permits',
+    env: 'STS_CELL_PERMITTED_TRANSFERS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The loosenings of the strict default (#98 D4): each ' +
+                 'entry is `<home>><serving>` — `us>ca` means a session of a ' +
+                 'person homed in `us` may be HELD in a `ca` cell, with the ' +
+                 'person\'s attributes (never a credential) projected there ' +
+                 'for as long as it lasts. `*` on either side means any. ' +
+                 'EMPTY, the default, permits nothing: a person served away ' +
+                 'from their home jurisdiction is relayed to their home cell ' +
+                 'for every request, which is slower and keeps every ' +
+                 'personal value at home. **WARNING: each entry is a ' +
+                 'decision that personal data may be processed in the ' +
+                 'serving jurisdiction; make it only where the law of both ' +
+                 'allows it.** These are facts handed to the issuance ' +
+                 'policy, which decides (`hold-session`).' },
+
+  { key: 'cells.hardGeofence', group: 'Cells',
+    label: 'Refuse rather than relay',
+    env: 'STS_CELL_HARD_GEOFENCE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default: a person reaching a cell outside their ' +
+                 'home jurisdiction is served by relaying to home. On: they ' +
+                 'are REFUSED there with a page saying the service cannot ' +
+                 'be used from this location, for a realm whose law forbids ' +
+                 'even carrying the traffic.' },
 
   // -------------------------------------------------------------------------
   // SIGNER ROTATION (2026-09-22, #42/#48). A REALM carries these: each realm's
@@ -14582,25 +16453,33 @@ const SETTINGS = [
                  'is late by, and the most a Run now waits before it starts. ' +
                  'Read at every tick.' },
 
-  { key: 'scheduler.historyDays', group: 'Scheduler',
-    label: 'How long a finished run is kept (days)',
-    env: 'STS_SCHEDULER_HISTORY_DAYS', type: 'int', dflt: 30, min: 1,
-    max: 3650, runtime: true, perProcess: true,
-    description: 'A run that succeeded, failed or was abandoned is kept this ' +
-                 'long and then removed by the scheduler\'s own history job. ' +
-                 'The last run of every job is kept whatever its age, so a ' +
-                 'job that runs every 90 days still shows when it last ran. ' +
-                 'Queued and running rows are never removed by age.' },
+  // THE RUN HISTORY'S BOUND IS PER JOB (#338). It was thirty days and 5000
+  // runs PER REALM, and testidp held 126,160 run rows — a per-minute job in
+  // each of 135 realms is 194,000 runs a day — which every process restored
+  // at every start. `cluster/scheduler.ts`'s `purgeHistory()` argues the rule.
+  { key: 'scheduler.runHistoryCount', group: 'Scheduler',
+    label: 'Runs kept per job',
+    env: 'STS_SCHEDULER_RUN_HISTORY_COUNT', type: 'int', dflt: 100, min: 1,
+    max: 100000, runtime: true, perProcess: true,
+    description: 'How many of each job\'s most recent finished runs are ' +
+                 'kept, in each trust realm it runs in, whatever their age. ' +
+                 'A run is kept if it is one of these OR it ended within ' +
+                 'scheduler.runHistoryHours, so whichever of the two keeps ' +
+                 'more applies; the latest run of every job is always kept, ' +
+                 'and a queued or running one is never removed. The ' +
+                 'scheduler.history job deletes the rest, in batches, every ' +
+                 'ten minutes, and a start does not read back a run past ' +
+                 'the bound.' },
 
-  { key: 'scheduler.maxRuns', group: 'Scheduler',
-    label: 'Most runs kept per realm',
-    env: 'STS_SCHEDULER_MAX_RUNS', type: 'int', dflt: 5000, min: 100,
-    max: 1000000, runtime: true, perProcess: true,
-    description: 'The bound on the run history of one trust realm (the ' +
-                 'service-wide jobs\' runs are the default realm\'s). Past ' +
-                 'it the oldest FINISHED run goes first; a queued or running ' +
-                 'one, and the last run of each job, are never dropped to ' +
-                 'make room.' },
+  { key: 'scheduler.runHistoryHours', group: 'Scheduler',
+    label: 'Runs kept for (hours)',
+    env: 'STS_SCHEDULER_RUN_HISTORY_HOURS', type: 'int', dflt: 24, min: 0,
+    max: 8760, runtime: true, perProcess: true,
+    description: 'Every run that ended within this many hours is kept — a ' +
+                 'failed one included — beside each job\'s last ' +
+                 'scheduler.runHistoryCount runs, whichever keeps more. A ' +
+                 'job that runs every minute therefore keeps a day of runs ' +
+                 'in each realm it runs in. 0 keeps the count alone.' },
 
   { key: 'scheduler.disabledJobs', group: 'Scheduler',
     label: 'Jobs switched off',
@@ -14638,6 +16517,32 @@ const SETTINGS = [
                  'to, so the scheduler cannot take every connection from ' +
                  'the requests.' },
 
+  // ATTRIBUTE SOURCES (#94): the operators' SQL databases a realm reads
+  // people's attributes from. The sources themselves are a register
+  // (`ou=attributesources`, /admin/attribute-sources); these two bound them.
+  { key: 'attributeSources.hostPatterns', group: 'Attribute sources',
+    label: 'Hosts an attribute source may name',
+    env: 'STS_ATTRIBUTE_SOURCES_HOST_PATTERNS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'The database hosts this realm\'s attribute sources may ' +
+                 'connect to, comma-separated, * matching any run of ' +
+                 'characters (db.example.com, *.hr.example.com). EMPTY, the ' +
+                 'default, allows ANY HOST — and a realm administrator ' +
+                 'manages their realm\'s sources, so an empty list lets a ' +
+                 'realm administrator make this service connect to any host ' +
+                 'its network reaches, internal ones included. Set it for ' +
+                 'every realm whose administrators you do not trust with ' +
+                 'that. Only a service administrator may change it; a ' +
+                 'source already stored is checked again when it is next ' +
+                 'changed.' },
+  { key: 'attributeSources.refreshBatch', group: 'Attribute sources',
+    label: 'People per scheduled refresh',
+    env: 'STS_ATTRIBUTE_SOURCES_REFRESH_BATCH', type: 'int', dflt: 200,
+    min: 1, max: 5000, runtime: true,
+    description: 'How many people each attribute source reads per run of ' +
+                 'the scheduled refresh (attribute-sources.refresh, every ' +
+                 'minute), picking up after the last one next time. Larger ' +
+                 'finishes a pass sooner and holds a node longer per run.' },
   // -------------------------------------------------------------------------
   // MAIL (#63, 2026-09-22): the one outbound mail channel, `common/mail.ts`.
   //
@@ -14683,13 +16588,10 @@ const SETTINGS = [
     env: 'STS_MAIL_FROM_NAME', type: 'string', dflt: '', runtime: true,
     description: 'The display name beside the From address. Empty means ' +
                  'none.' },
-  { key: 'mail.defaultLanguage', group: 'Mail',
-    label: 'Default message language',
-    env: 'STS_MAIL_DEFAULT_LANGUAGE', type: 'string', dflt: 'en',
-    runtime: true,
-    description: 'The language a message is written in when the recipient\'s ' +
-                 'entry names no preferredLanguage this realm has a template ' +
-                 'for. A BCP 47 tag; every built-in template exists in `en`.' },
+  // `mail.defaultLanguage` WAS HERE until #539 (2026-10-09): the locale
+  // policy's `defaultLocale` (`common/locale_policy.ts`, Directory →
+  // Policies) is the one default language now, read by the pages and the
+  // mail alike. No shim; REPLACED_SETTINGS refuses a start that names it.
 
   { key: 'mail.smtpPreset', group: 'Mail', label: 'SMTP preset',
     env: 'STS_MAIL_SMTP_PRESET', type: 'enum',
@@ -15049,6 +16951,156 @@ const SETTINGS = [
                  'has an address.' }
 ];
 
+// ---------------------------------------------------------------------------
+// EVERY TLS SETTING PER LISTENER (#429, 2026-10-02, rcbj: "I want all of the
+// settings available on each tab ... on the Server Configuration->Listeners
+// page to be per listener").
+//
+// A row per (listener, setting), `listener<Id>.<name>`, GENERATED from the
+// two tables below rather than written out a hundred times: the same type and
+// bounds as the service-wide row it overrides, plus a way to say INHERIT —
+// `inherit` in an enum (a bool row becomes inherit/on/off), and the empty
+// string in a string or list row. An inherited value is the service-wide
+// row's, read at the moment it is asked (`tls_server.js`'s `policyFor()`), so
+// changing that row moves every listener that has not been told otherwise.
+// Per process, and restart-only exactly where the service-wide row is.
+//
+// What a listener does NOT get, and why: the cell channel is TLS 1.3 always,
+// so no floor, TLS 1.2 switch or TLS 1.2 cipher list; the SPIFFE listeners and
+// the cell channel verify clients against their own trust bundles (SPIFFE's,
+// the cells' Root), so no client truststore. A custom listener (#472) carries
+// the main port's names in its definition's `tls` block
+// (`common/listener_map.js`), with these rows' inherit values. The one TLS
+// setting no listener has is `tls.sessionTicketRotationS`: the rotation of
+// the cluster's shared ticket key is a scheduled job, not a property of a
+// listener.
+// ---------------------------------------------------------------------------
+const TLS_LISTENERS = [
+  { id: 'main', label: 'Main port' },
+  { id: 'ldaps', label: 'LDAPS' },
+  { id: 'debugger', label: 'Protocol debugger' },
+  { id: 'spiffeServer', label: 'SPIRE Server API' },
+  { id: 'spiffeBroker', label: 'SPIFFE Broker API' },
+  { id: 'cell', label: 'Channel between cells' },
+  // Plain HTTP: no TLS row is generated for it, only its connection pooling.
+  { id: 'revocation', label: 'Revocation (plain HTTP)' }
+];
+
+// name → the service-wide row, and the listeners that carry it.
+const PER_LISTENER_SETTINGS = [
+  { name: 'minVersion', base: 'tls.minVersion',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'disableTls12', base: 'tls.disableTls12',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'ciphers', base: 'tls.ciphers',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker'] },
+  { name: 'tls13CipherSuites', base: 'tls.tls13CipherSuites',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'pqcOnly', base: 'tls.pqcOnly',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'groups', base: 'tls.groups',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'signatureAlgorithms', base: 'tls.signatureAlgorithms',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'trustAnchorsFile', base: 'tls.trustAnchorsFile',
+    listeners: ['main', 'ldaps', 'debugger'] },
+  { name: 'trustIssuedClientCertificates',
+    base: 'tls.trustIssuedClientCertificates',
+    listeners: ['main', 'ldaps', 'debugger'] },
+  // The TLS session cache: the lifetime on every TLS listener, the size
+  // where this service holds the server object to attach the cache to.
+  { name: 'sessionTimeoutS', base: 'tls.sessionTimeoutS',
+    listeners: ['main', 'ldaps', 'debugger', 'spiffeServer', 'spiffeBroker',
+                'cell'] },
+  { name: 'sessionCacheSize', base: 'tls.sessionCacheSize',
+    listeners: ['main', 'ldaps', 'debugger', 'cell'] },
+  // HTTP connection pooling, on every HTTP listener.
+  { name: 'keepAliveTimeoutS', base: 'http.keepAliveTimeoutS',
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'headersTimeoutS', base: 'http.headersTimeoutS',
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'maxRequestsPerSocket', base: 'http.maxRequestsPerSocket',
+    listeners: ['main', 'debugger', 'revocation'] },
+  { name: 'maxConnections', base: 'http.maxConnections',
+    listeners: ['main', 'debugger', 'revocation'] }
+];
+
+// One generated row. `owner` is a TLS_LISTENERS entry.
+function perListenerRow(spec, owner) {
+  const base = SETTINGS.filter(function (row) {
+    return row.key === spec.base;
+  })[0];
+  if (!base) {
+    throw new Error('config.js: per-listener row names no setting ' +
+                    spec.base);
+  }
+  // `listener<Id>.<name>`: two segments, as every key here has (the
+  // appconfig files nest one level), so `listenerMain.minVersion`.
+  const key = 'listener' + owner.id.charAt(0).toUpperCase() +
+              owner.id.slice(1) + '.' + spec.name;
+  const label = owner.label + ': ' +
+    String(base.label || spec.name).replace(/^./, function (c) {
+      return c.toLowerCase();
+    });
+  /** @type {any} */
+  const row = { key: key, group: 'Listener: ' + owner.label,
+                label: label, runtime: base.runtime };
+  if (base.type === 'bool') {
+    row.type = 'enum';
+    row.enumValues = ['inherit', 'on', 'off'];
+    row.dflt = 'inherit';
+  } else if (base.type === 'enum') {
+    row.type = 'enum';
+    row.enumValues = ['inherit'].concat(base.enumValues);
+    row.dflt = 'inherit';
+  } else if (base.type === 'int') {
+    // A number has no empty value, so INHERIT is -1, below every real
+    // value of these rows (whose least is 0).
+    row.type = 'int';
+    row.dflt = -1;
+    row.min = -1;
+    row.max = base.max;
+  } else {
+    row.type = base.type;
+    row.dflt = '';
+    ['csvValues', 'ordered', 'csvValueNotes'].forEach(function (name) {
+      if (base[name] !== undefined) {
+        row[name] = base[name];
+      }
+    });
+  }
+  row.perProcess = true;
+  row.env = 'STS_LISTENER_' +
+    owner.id.replace(/[A-Z]/g, function (c) { return '_' + c; })
+      .toUpperCase() + '_' +
+    spec.name.replace(/[A-Z]/g, function (c) { return '_' + c; })
+      .toUpperCase();
+  if (!base.runtime) {
+    row.restartReason = base.restartReason ||
+      'the TLS contexts are built when the listeners are created';
+  }
+  row.description = 'For the ' + owner.label + ' listener alone: ' +
+    base.key + '. ' +
+    (row.type === 'enum' ? 'inherit, the default, follows ' + base.key
+      : row.type === 'int' ? '-1, the default, follows ' + base.key
+                           : 'Empty, the default, follows ' + base.key) +
+    '; anything else decides for this listener only. ' +
+    String(base.description || '');
+  return row;
+}
+
+PER_LISTENER_SETTINGS.forEach(function (spec) {
+  TLS_LISTENERS.forEach(function (owner) {
+    if (spec.listeners.indexOf(owner.id) >= 0) {
+      SETTINGS.push(perListenerRow(spec, owner));
+    }
+  });
+});
+
 // Indexed once. A linear scan per read would be invisible on a mock and the
 // index is one line, but `byKey` is also what makes an unknown key an error at
 // the point it is asked for rather than an undefined that travels.
@@ -15077,11 +17129,102 @@ SETTINGS.forEach(function (setting) {
 // unknown key is (STS-CORE-0008), with the replacement named, and left in
 // the store.
 // ---------------------------------------------------------------------------
+// What every one of #99's `listener.*` rows says when it is still named.
+const REALM_LISTENER_REPLACED = ' It was removed on 2026-10-07 (#472): a ' +
+  'realm\'s own listener is a definition in the realm\'s listeners.realm ' +
+  '(port, publicBaseUrl, hostnames, the certificate files, clientAuth and a ' +
+  'tls block of the per-listener settings), and the realm is served on it ' +
+  'where its listeners.applications maps * (or an application) to it.';
+
+// What #527's two rows say when either is still named.
+// Each row's sentence names the row that replaced the setting first, as
+// every other refusal names its replacement (`tests/outbound_tls.js` holds
+// each to `now[0]`), and then says this.
+const PASSKEY = ' decides it now — the passkey policy on Directory → ' +
+  'Policies, per realm and inherited from the default realm — POST ' +
+  '/admin-api/policies/save-passkey-policy, or the console. Usernameless ' +
+  'sign-in is off by default, and while it is off a security key is asked ' +
+  'for a discoverable credential.';
+
+// What #539's row says when it is still named.
+const LOCALE = ' decides it now — the locale policy on Directory → ' +
+  'Policies, per realm and inherited from the default realm, with named ' +
+  'profiles chosen by application — POST ' +
+  '/admin-api/policies/save-locale-policy, or the console. It is the one ' +
+  'default language: a page falls back to it and mail to a person who ' +
+  'names none is written in it.';
+
+// What every one of #523's rows says when it is still named.
+const ONE_ISSUER = ' It was removed on 2026-10-08 (#523): every SAML Issuer, ' +
+  'identity provider entityID and providerID, and the WS-Trust STS\'s name ' +
+  'are the realm\'s OAuth issuer, the iss of every JWT, which follows ' +
+  'global.publicBaseUrl. There is no per-protocol or per-application name.';
+
 /**
  * The settings that were replaced, and what replaced them; one still named
  * anywhere stops the service starting.
  */
 const REPLACED_SETTINGS = [
+  // #472 (2026-10-07): a realm's own listener (#99) is a listener in the
+  // realm's listeners.realm now, its settings members of that definition,
+  // and what it serves is the realm's listeners.applications.
+  { key: 'listener.port', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.publicBaseUrl', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.hostnames', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.certificateFile', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.privateKeyFile', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.disableTls12', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.tls13CipherSuites', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.pqcOnly', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.disableOptionalClientCertificate', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.requireClientCertificate', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.minVersion', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.ciphers', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.groups', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.signatureAlgorithms', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.trustAnchorsFile', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.trustIssuedClientCertificates', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.sessionTimeoutS', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.sessionCacheSize', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.keepAliveTimeoutS', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.headersTimeoutS', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.maxRequestsPerSocket', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  { key: 'listener.maxConnections', now: ['listeners.realm', 'listeners.applications'],
+    why: REALM_LISTENER_REPLACED },
+  // #429 (2026-10-02): the main port's two pooling rows became service-wide
+  // defaults every listener inherits, and editable. The keep-alive kept its
+  // environment variable, so only the old KEY is refused for it.
+  { key: 'tls.mainSessionTimeoutS', env: 'STS_TLS_MAIN_SESSION_TIMEOUT_S',
+    now: ['tls.sessionTimeoutS', 'listenerMain.sessionTimeoutS'],
+    why: ' It was removed on 2026-10-02 (#429): the TLS session lifetime is ' +
+         'tls.sessionTimeoutS (STS_TLS_SESSION_TIMEOUT_S) for every TLS ' +
+         'listener, and listenerMain.sessionTimeoutS for the main port alone.' },
+  { key: 'global.httpKeepAliveTimeoutS',
+    now: ['http.keepAliveTimeoutS', 'listenerMain.keepAliveTimeoutS'],
+    why: ' It was removed on 2026-10-02 (#429): the keep-alive is ' +
+         'http.keepAliveTimeoutS for every HTTP listener, and ' +
+         'listenerMain.keepAliveTimeoutS for the main port alone.' },
   { key: 'gnap.pushAllowInsecure', env: 'STS_GNAP_PUSH_ALLOW_INSECURE',
     now: ['gnap.pushAllowHttp', 'gnap.pushSkipTlsVerification',
           'gnap.pushCaFile'] },
@@ -15097,12 +17240,56 @@ const REPLACED_SETTINGS = [
     env: 'STS_XACML_PEP_NOTIFY_ALLOW_INSECURE',
     now: ['xacml.pepNotifyAllowHttp', 'xacml.pepNotifySkipTlsVerification',
           'xacml.pepNotifyCaFile'] },
+  { key: 'oauth2.registeredSecretLifetimeS',
+    env: 'STS_OAUTH2_REGISTERED_SECRET_LIFETIME_S',
+    now: ['oauth2.clientSecretLifetimeDays'],
+    why: ' It was removed on 2026-10-01 and replaced by ' +
+         'oauth2.clientSecretLifetimeDays: a client secret\'s lifetime is ' +
+         'measured in days.' },
   { key: 'oid4vp.federationAuthorityHints',
     env: 'OID4VP_FEDERATION_AUTHORITY_HINTS',
     now: ['oidfed.authorityHints'],
     why: ' It was removed on 2026-09-23 (#132) and replaced by ' +
          'oidfed.authorityHints: the realm is an OpenID Federation entity in ' +
-         'every role now, not only as a verifier.' }
+         'every role now, not only as a verifier.' },
+  // #523 (2026-10-08): ONE ISSUER PER REALM. Every SAML Issuer, identity
+  // provider entityID and providerID, and the WS-Trust STS's name are the
+  // realm's OAuth issuer (`common/issuer_names.ts`), which follows the public
+  // base URL; the seven names that set them apart are gone, and so is the
+  // one legacy environment variable, `STS_ISSUER`, that fed three of them.
+  // #527 (2026-10-08): two WebAuthn settings became rows of the passkey
+  // policy, a directory entry per realm rather than a setting, so `now`
+  // names the policy and its row rather than a setting key.
+  // #539 (2026-10-09): the mail's default language became the locale
+  // policy's, a directory entry per realm rather than a setting.
+  { key: 'mail.defaultLanguage', env: 'STS_MAIL_DEFAULT_LANGUAGE',
+    now: ['the locale policy\'s defaultLocale'],
+    why: ' It was removed on 2026-10-09 (#539): the locale policy\'s ' +
+         'defaultLocale' + LOCALE },
+  { key: 'webauthn.residentKey', env: 'STS_WEBAUTHN_RESIDENT_KEY',
+    now: ['the passkey policy\'s securityKeyResidentKey'],
+    why: ' It was removed on 2026-10-08 (#527): the passkey policy\'s ' +
+         'securityKeyResidentKey' + PASSKEY },
+  { key: 'webauthn.usernameless', env: 'STS_WEBAUTHN_USERNAMELESS',
+    now: ['the passkey policy\'s allowUsernameless'],
+    why: ' It was removed on 2026-10-08 (#527): the passkey policy\'s ' +
+         'allowUsernameless' + PASSKEY },
+  { key: 'saml.issuer', env: 'STS_SAML_ISSUER', legacyEnv: 'STS_ISSUER',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml2.entityId', env: 'STS_SAML2_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml2.perApplicationEntityId',
+    env: 'STS_SAML2_PER_APPLICATION_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml11.providerId', env: 'STS_SAML11_PROVIDER_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'saml11.perApplicationProviderId',
+    env: 'STS_SAML11_PER_APPLICATION_PROVIDER_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'wstrust.issuer', env: 'STS_WSTRUST_ISSUER',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER },
+  { key: 'wsfed.entityId', env: 'STS_WSFED_ENTITY_ID',
+    now: ['global.publicBaseUrl'], why: ONE_ISSUER }
 ];
 
 // The sentence for a replaced key, or '' for any other.
@@ -15367,6 +17554,37 @@ function valueWithout(where, key) {
 const overrides = {};
 
 // ---------------------------------------------------------------------------
+// THE VALUES DELIVERED AS FILES AT START (#254, 2026-10-06), by key, raw.
+//
+// `common/delivered_secrets.ts` fills this once, in the front process, before
+// anything reads a setting it carries: a secret named by `<ENV>_FILE` is read
+// from that file, the file is deleted, and the value lives here — never in
+// `process.env`, because a variable set there is inherited by every child a
+// process spawns and shows in its `/proc/<pid>/environ`. It is the
+// environment layer in every respect a reader can see (`sourceOf()` answers
+// `env`, and a request worker is handed it as an ordinary variable of its own
+// thread), and it sits just above it, so a file and a variable naming the
+// same setting resolve to the file, which is the one the deployment chose to
+// make unreadable.
+// ---------------------------------------------------------------------------
+const delivered = {};
+
+/**
+ * Holds a setting's value delivered as a file at start (#254), at the
+ * environment layer; `common/delivered_secrets.ts` is the one caller.
+ *
+ * @param key - the setting's key
+ * @param raw - the value, as the file held it, trimmed
+ * @throws an Error when the key names no setting
+ */
+function setDelivered(key, raw) {
+  log.debug("Entering setDelivered(). key=" + key);
+  settingFor(key);
+  delivered[key] = String(raw);
+  log.debug("Leaving setDelivered().");
+}
+
+// ---------------------------------------------------------------------------
 // AND WHERE THAT MAP IS WRITTEN DOWN, SINCE 2026-08-27. Rule 3q.
 //
 // `persistence/persistence.js` fills this at ITS require time, and it is an
@@ -15494,9 +17712,9 @@ function setRealmContext(fn) {
 //     the day somebody remembers this function.
 //   * `perProcess` on the row — a setting that is a property of the OS PROCESS
 //     rather than of the service's behaviour, so that one realm's value would
-//     silently be every realm's. `workers.count` is the first: a pool of child
-//     processes is forked once, by this process, and a realm resizing it would
-//     be resizing every other realm's too.
+//     silently be every realm's. The request pool's settings are the
+//     example: a pool is started once, by this process, and a realm resizing
+//     it would be resizing every other realm's too.
 //
 // The flag is read off the table rather than matched by name, which is what
 // makes the second rule as forgettable as the first. `byKey` rather than
@@ -15616,9 +17834,26 @@ function resolve(key) {
     log.debug("Leaving resolve().");
     return { raw: fromRealm, source: 'realm' };
   }
+  // A `realmOnly` row (#99) is the realm's own or its default: a value the
+  // process was given — an override, the environment, the operator's
+  // appconfig — would otherwise be every realm's. The generated defaults file
+  // is still its base layer, which is what the startup check asks for.
+  if (setting.realmOnly) {
+    const fromDefaults = dig(defaults, setting.path || setting.key);
+    log.debug("Leaving resolve(). Realm-only.");
+    return fromDefaults !== undefined
+      ? { raw: fromDefaults, source: 'defaults' }
+      : { raw: defaultOf(setting), source: 'default' };
+  }
   if (Object.prototype.hasOwnProperty.call(overrides, key)) {
     log.debug("Leaving resolve().");
     return { raw: overrides[key], source: 'override' };
+  }
+  // A SECRET DELIVERED AS A FILE (#254) is the environment layer, above the
+  // variable itself — see `delivered`.
+  if (Object.prototype.hasOwnProperty.call(delivered, key)) {
+    log.debug("Leaving resolve(). Delivered as a file.");
+    return { raw: delivered[key], source: 'env' };
   }
   if (setting.env && process.env[setting.env] !== undefined) {
     log.debug("Leaving resolve().");
@@ -15733,7 +17968,19 @@ function processValue(key) {
  */
 function managementApiBaseUrl() {
   log.debug("Entering managementApiBaseUrl().");
-  const pinned = String(processValue('global.publicBaseUrl') || '').trim()
+  // WHERE THE MANAGEMENT API IS ADVERTISED (#472): a custom listener's
+  // `publicBaseUrl` when one is, `global.publicBaseUrl` otherwise. Required
+  // lazily — `listener_map.js` requires this file — and by the time the
+  // audience is asked for, both are loaded.
+  let advertised = '';
+  try {
+    advertised = String(require('./listener_map')
+      .advertisedBase('management-api') || '');
+  } catch (e) {
+    log.debug("Caught in managementApiBaseUrl(): " + ((e && e.message) || e));
+  }
+  const pinned = (advertised ||
+                  String(processValue('global.publicBaseUrl') || '')).trim()
     .replace(/\/+$/, '');
   if (pinned) {
     log.debug("Leaving managementApiBaseUrl().");
@@ -15902,8 +18149,66 @@ function checkOverride(key, raw, forRealm) {
       (setting.env || 'its environment variable') + ' and restart.';
   }
   const problem = TYPES[setting.type].check(raw, setting);
+  if (problem) {
+    log.debug("Leaving checkOverride().");
+    return '"' + key + '" ' + problem + '.';
+  }
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting),
+                                 inRealm);
   log.debug("Leaving checkOverride().");
-  return problem ? '"' + key + '" ' + problem + '.' : null;
+  return ruled ? ruled.problem : null;
+}
+
+// ---------------------------------------------------------------------------
+// A RULE BETWEEN SETTINGS, OWNED BY THE MODULE THAT READS THEM (#423).
+//
+// A row's type checks one value. Some values are wrong only beside another
+// setting's — `tls.pqcOnly` turned on while `tls.tls13CipherSuites` holds no
+// post-quantum suite would leave every listener completing no TLS 1.3
+// handshake — and the module that knows why owns the rule, so it is handed
+// in rather than written here. A rule answers `{ problem, code }` for a write
+// it refuses and null otherwise; it is asked by `checkOverride()` (so every
+// door, the console's, the API's and a restored value's) after the type
+// check has passed, with the parsed value.
+// ---------------------------------------------------------------------------
+/** @type {Array<Function>} */
+const writeRules = [];
+
+/**
+ * Adds a rule every override is checked against.
+ *
+ * @param fn - `(key, parsed, inRealm)` answering `{ problem, code }` or
+ *   null; `inRealm` is true for a write that lands in a realm's overrides
+ *   (#472: a rule over the process's settings leaves those to realms.js)
+ */
+function addWriteRule(fn) {
+  log.debug("Entering addWriteRule().");
+  if (typeof fn === 'function') {
+    writeRules.push(fn);
+  }
+  log.debug("Leaving addWriteRule(). " + writeRules.length);
+}
+
+// The first rule's refusal, or null. A rule that throws refuses nothing.
+function writeRuleProblem(key, parsed, inRealm) {
+  log.debug("Entering writeRuleProblem(). key=" + key);
+  for (const rule of writeRules) {
+    let answer = null;
+    try {
+      answer = rule(key, parsed, !!inRealm);
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a rule between ' +
+               'settings failed on ' + key + ' (' +
+               ((e && e.message) || e) + '); the write is not refused by ' +
+               'it.');
+    }
+    if (answer && answer.problem) {
+      log.debug("Leaving writeRuleProblem(). Refused.");
+      return answer;
+    }
+  }
+  log.debug("Leaving writeRuleProblem().");
+  return null;
 }
 
 // WHICH CONDITION checkOverride() REFUSED FOR, as an error code, or '' where it
@@ -15931,8 +18236,14 @@ function checkOverrideCode(key, raw, forRealm) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0005';
   }
+  if (TYPES[setting.type].check(raw, setting)) {
+    log.debug("Leaving checkOverrideCode().");
+    return 'STS-CORE-0006';
+  }
+  const ruled = writeRuleProblem(key, TYPES[setting.type].parse(raw, setting),
+                                 inRealm);
   log.debug("Leaving checkOverrideCode().");
-  return TYPES[setting.type].check(raw, setting) ? 'STS-CORE-0006' : '';
+  return ruled ? ruled.code : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -16006,6 +18317,52 @@ function announceClaimShape(key, before) {
  * @returns `{ ok: true, errors: [], key, realm }`, or `{ ok: false, errors }`
  *   carrying its code
  */
+// ---------------------------------------------------------------------------
+// WHO IS TOLD THAT AN OVERRIDE MOVED (#423, 2026-10-02).
+//
+// Most runtime settings are read where they are used, so a change needs
+// nobody told. A TLS listener cannot read its policy at every handshake: the
+// floor, the cipher suites and the groups are baked into its secure context,
+// and whether it asks for a client certificate is a property of the server.
+// So `tls/tls_server.js` asks to be told, and re-applies. The four doors an
+// override changes through — set, clear, clear-all and the replicated or
+// restored apply — each call this once, after the change is in force. A
+// listener that throws is logged and costs nobody else their call; it never
+// reaches the write it follows. A realm row's change is `realms.onChange()`'s.
+// ---------------------------------------------------------------------------
+/** @type {Array<Function>} */
+const overrideObservers = [];
+
+/**
+ * Asks to be called after any override is set, cleared or applied.
+ *
+ * @param fn - called with the keys that changed
+ */
+function onOverridesChanged(fn) {
+  log.debug("Entering onOverridesChanged().");
+  if (typeof fn === 'function') {
+    overrideObservers.push(fn);
+  }
+  log.debug("Leaving onOverridesChanged(). " + overrideObservers.length);
+}
+
+// Tells every observer; a throw is logged and goes no further. (Not
+// `overridesChanged()`, which is the store's notification, above.)
+function tellOverrideObservers(keys) {
+  log.debug("Entering tellOverrideObservers(). " + keys.length);
+  overrideObservers.forEach(function (fn) {
+    try {
+      fn(keys);
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-CORE-0149') + 'config: a listener ' +
+               'for changed settings failed (' +
+               ((e && e.message) || e) + '); the change itself is in ' +
+               'force.');
+    }
+  });
+  log.debug("Leaving tellOverrideObservers().");
+}
+
 function setOverride(key, raw) {
   log.debug("Entering setOverride(). key=" + key);
   // WHICH REALM THIS WRITE LANDS IN IS DECIDED FIRST, BECAUSE THE CHECK
@@ -16072,6 +18429,7 @@ function setOverride(key, raw) {
   // value back reads the new one. See setOverrideStore() above.
   overridesChanged(realm ? realm.id : null);
   announceClaimShape(key, shape);
+  tellOverrideObservers([key]);
   log.debug("Leaving setOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
@@ -16127,6 +18485,7 @@ function clearOverride(key) {
   // start. A reset that does not survive a restart is worse than no reset.
   overridesChanged(realm ? realm.id : null);
   announceClaimShape(key, shape);
+  tellOverrideObservers([key]);
   log.debug("Leaving clearOverride().");
   return { ok: true, errors: [], key: key, realm: realm ? realm.id : null };
 }
@@ -16168,6 +18527,7 @@ function clearAllOverrides() {
   // being brought into line, and "nothing was cleared here" is not evidence
   // that nothing is written down over there.
   overridesChanged(realm ? realm.id : null);
+  tellOverrideObservers(keys);
   log.debug("Leaving clearAllOverrides(). " + keys.length + " cleared.");
   return { ok: true, errors: [], cleared: keys,
            realm: realm ? realm.id : null };
@@ -16287,6 +18647,9 @@ function applyPersistedOverrides(saved) {
   // every registered logger, and doing that per key would be n times the work
   // for the same answer.
   applyLogLevel();
+  tellOverrideObservers(applied.map(function (one) {
+    return typeof one === 'string' ? one : String((one && one.key) || '');
+  }));
   log.debug("Leaving applyPersistedOverrides(). " + applied.length +
             " applied.");
   return applied;
@@ -16321,6 +18684,10 @@ function describe(setting) {
     // only where the row declares one — the same absent-unless-meaningful
     // rule as `enumValues` beside it, so every open list describes as before.
     csvValues: setting.csvValues || undefined,
+    // A `csv` row whose ORDER is a preference (2026-10-01), and the sentence
+    // drawn beside each of its values — absent on every other row.
+    ordered: setting.ordered ? true : undefined,
+    csvValueNotes: setting.csvValueNotes || undefined,
     // The int bounds, where a row narrows them. `undefined` is dropped by
     // JSON.stringify, so a row that carries none of them describes exactly as
     // it did before they existed — which is what keeps the management API's
@@ -16353,9 +18720,10 @@ function describe(setting) {
     // and then refuses it under a realm prefix is telling half the truth, and
     // it is the half a caller acts on: `tests/vendored/
     // sts_admin_api_operations.js` walks this table for a runtime integer to
-    // drive a realm override with, and picked `workers.count` the day it was
-    // added — a setting a realm may not carry, so the write landed on the
-    // process and the row it read back said so.
+    // drive a realm override with, and picked `workers.count` (a setting
+    // removed by #363) the day it was added — a setting a realm may not
+    // carry, so the write landed on the process and the row it read back
+    // said so.
     //
     // `perProcess` and the `realms.*` prefix are the two reasons, and both are
     // config.js's own to state — see realmFor() and realms.js's
@@ -16580,14 +18948,21 @@ function refuseReplacedSettings() {
   REPLACED_SETTINGS.forEach(function (row) {
     if (dig(operatorConfig, row.key) !== undefined) {
       named.push('  ' + row.key + ' (in ' + (process.env.CONFIG_FILE ||
-                 'the appconfig file') + ') is now ' + row.now.join(', '));
+                 'the appconfig file') + ') is now ' + row.now.join(', ') +
+                 '.' + replacedBy(row.key));
     }
-    if (process.env[row.env] !== undefined) {
-      named.push('  ' + row.env + ' (in the environment) is now ' +
-                 row.now.map(function (key) {
-                   return byKey[key].env;
-                 }).join(', '));
-    }
+    // `legacyEnv` (#523): the one legacy variable, `STS_ISSUER`, went with
+    // the settings it fed.
+    [row.env, row.legacyEnv].forEach(function (name) {
+      if (name && process.env[name] !== undefined) {
+        // A replacement that is a setting is named by its variable; one
+        // that is not (#527: a policy row) is named as it is written.
+        named.push('  ' + name + ' (in the environment) is now ' +
+                   row.now.map(function (key) {
+                     return byKey[key] ? byKey[key].env : key;
+                   }).join(', ') + '.' + replacedBy(row.key));
+      }
+    });
   });
   if (!named.length) {
     log.debug("Leaving refuseReplacedSettings(). None named.");
@@ -16595,12 +18970,10 @@ function refuseReplacedSettings() {
   }
   process.stderr.write(
     '\n' + errorCodes.tag('STS-CORE-0105') + 'config: FATAL — ' +
-    named.length + ' setting(s) that were removed on 2026-09-23 (#171) are ' +
-    'still named:\n\n' + named.join('\n') + '\n\nEach allowed plain http ' +
-    'AND turned certificate verification off. They are three settings now — ' +
-    'plain http, certificate verification (off in development mode only) ' +
-    'and a CA file — and which of them was meant is for the operator to ' +
-    'say. Remove the old name and set the ones intended.\n\n');
+    named.length + ' setting(s) that were removed are still named:\n\n' +
+    named.join('\n') + '\n\nThere is no mapping from an old name to a ' +
+    'new one: what the old value meant is for the operator to say. Remove ' +
+    'the old name and set the ones intended.\n\n');
   log.debug("Leaving refuseReplacedSettings(). Refusing to start.");
   process.exit(1);
   log.debug("Leaving refuseReplacedSettings().");
@@ -16837,7 +19210,11 @@ module.exports = {
   modeWriteProblem: modeWriteProblem,
   REPLACED_SETTINGS: REPLACED_SETTINGS,
   setOverride: setOverride,
+  setDelivered: setDelivered,
   clearOverride: clearOverride,
+  // What a setting is for the PROCESS, the realm layer set aside (#99, #472:
+  // a custom listener's port is checked against the process's own listeners).
+  processValue: processValue,
   clearAllOverrides: clearAllOverrides,
   setOverrideStore: setOverrideStore,
   persistableOverrides: persistableOverrides,
@@ -16846,5 +19223,9 @@ module.exports = {
   groups: groups,
   snapshot: snapshot,
   auditAppconfig: auditAppconfig,
-  isPerProcess: isPerProcess
+  isPerProcess: isPerProcess,
+  onOverridesChanged: onOverridesChanged,
+  TLS_LISTENERS: TLS_LISTENERS,
+  PER_LISTENER_SETTINGS: PER_LISTENER_SETTINGS,
+  addWriteRule: addWriteRule
 };

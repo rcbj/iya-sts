@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // ===========================================================================
 // WHAT A SAML SERVICE PROVIDER NOBODY REGISTERED CAN CAUSE, OVER HTTP (#112).
@@ -244,12 +244,17 @@ async function responder() {
   };
 }
 
-function authnRequestUrl(realm, issuer) {
+// `acs`, where given, is a stand-in address nothing answers at: a service
+// provider with no metadata yet and no registered address must name one, or
+// the request is refused (#592 deleted the mock SP it once fell back to).
+function authnRequestUrl(realm, issuer, acs) {
   log.debug("Entering authnRequestUrl().");
   const xml = '<samlp:AuthnRequest xmlns:samlp="' + NS_SAMLP + '" ' +
     'xmlns:saml="' + NS_SAML + '" ID="_' + STAMP.replace(/[^a-z0-9]/gi, "") +
     Date.now() + '" Version="2.0" IssueInstant="' +
-    new Date().toISOString() + '"><saml:Issuer>' + issuer +
+    new Date().toISOString() + '"' +
+    (acs ? ' AssertionConsumerServiceURL="' + acs + '"' : '') +
+    '><saml:Issuer>' + issuer +
     '</saml:Issuer></samlp:AuthnRequest>';
   const encoded = zlib.deflateRawSync(Buffer.from(xml, "utf8"))
     .toString("base64");
@@ -352,7 +357,8 @@ async function requestStartedLookup(mdq) {
   log.debug("Entering requestStartedLookup().");
   log.info("=== 2. a Metadata Query lookup an AuthnRequest starts ===");
   const devName = nameFor("dev-lookup");
-  const devAnswer = await anonymous("GET", authnRequestUrl(DEV, devName));
+  const devAnswer = await anonymous("GET", authnRequestUrl(DEV, devName,
+    "https://dev-lookup.example.test/acs"));
   let registered = false;
   for (let i = 0; i < 40 && !registered; i++) {
     await sleep(250);

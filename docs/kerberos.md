@@ -7,13 +7,12 @@ title: Kerberos
 iya-sts runs a **Kerberos v5 KDC**
 ([RFC 4120](https://www.rfc-editor.org/rfc/rfc4120)) on raw TCP and UDP port
 88 and over [MS-KKDCP](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kkdcp/),
-a **Kerberos-protected service** that accepts an
-[RFC 4121](https://www.rfc-editor.org/rfc/rfc4121) GSS token, and the same
-acceptor over HTTP as **SPNEGO**
+and an acceptor for its tickets over HTTP as **SPNEGO**
 ([RFC 4178](https://www.rfc-editor.org/rfc/rfc4178) carried by
-[RFC 4559](https://www.rfc-editor.org/rfc/rfc4559)). A verified ticket can also
-**sign a person in**: `/authn/spnego` turns it into the browser session every
-other protocol reads. Every trust realm that turns Kerberos on gets **a KDC, a
+[RFC 4559](https://www.rfc-editor.org/rfc/rfc4559)) that **signs a person
+in**: `/authn/spnego` turns a verified ticket into the browser session every
+other protocol reads. A Kerberos-protected web page and TCP service to point a
+client at are the development companion's ([below](#the-demonstration-the-companions-kerberos-protected-page-and-service)). Every trust realm that turns Kerberos on gets **a KDC, a
 Kerberos realm and keys of its own**, on the shared port 88.
 
 Kerberos is the one protocol here that cannot be permissive about a password:
@@ -44,7 +43,8 @@ client cannot guess.
   or subkey in a TGS-REQ, an AP-REQ or FAST armor is refused (`STS-KRB-0157`,
   `0158`, `0159`), and a write naming 23 is refused (`STS-CORE-0103`).
 * **A signed [MS-PAC]** in every ticket, built under `krb5.domainSid`, with
-  `krb5.logonServer` as the LogonServer.
+  `krb5.logonServer` as the LogonServer — and, while `krb5.pacClaims` is on,
+  the client's **claims** (#493, [PAC claims](#pac-claims) below).
 * **Renewable tickets**, bounded by `krb5.ticketLifetimeSeconds` and
   `krb5.renewLifetimeSeconds` (Active Directory's ten hours and seven days).
 * **Cross-realm referrals**, in development mode, to a second realm
@@ -54,57 +54,66 @@ client cannot guess.
   on the machine's clock whatever is stored (#181) — and **names that stay unknown**
   (`krb5.unknownUsers`), so `KDC_ERR_C_PRINCIPAL_UNKNOWN` stays reachable.
 
-`GET /krb5/principals` lists the principal database, what each account is for,
-whether each socket bound, and what is not implemented.
+`GET /admin-api/kerberos/principals` lists the principal database (its
+`database`: every principal with its salt, enctypes, kvno and flags, never a
+password), and Directory → Kerberos principals draws it. The KDC's own
+demonstration document `GET /krb5/principals` was deleted (#595).
 
 ### Delegation
 
 All four ways Kerberos can act on somebody's behalf:
 [MS-SFU](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-sfu/)
-**S4U2Self** (protocol transition), **S4U2Proxy** under classic constrained
-delegation (`msDS-AllowedToDelegateTo` on the front end) and resource-based
-constrained delegation (`msDS-AllowedToActOnBehalfOfOtherIdentity` on the back
-end, which also needs `PA-PAC-OPTIONS`), and a **forwarded ticket-granting
-ticket**. The account flags `NOT_DELEGATED` and
-`TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` are honoured; `ok-as-delegate` is
-advice to the client, not a control.
+**S4U2Self** (protocol transition, by PA-FOR-USER or **PA-S4U-X509-USER**,
+which names the user by name or by certificate), **S4U2Proxy** under classic
+constrained delegation and resource-based constrained delegation (which also
+needs `PA-PAC-OPTIONS`), and a **forwarded ticket-granting ticket**.
 
-**Kerberos is the only family here that polices delegation.** A refusal names
-the attribute and its current value in the error's `e-text`. Every act —
-issued or refused — is recorded on `/admin/delegation`, which also publishes the
-policy: every permitted pair from both attributes in one list, and a warning for
-a front end with `msDS-AllowedToDelegateTo` but no
-`TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION`, whose S4U2Self ticket is not
-forwardable. In development mode fixture accounts (including one,
-`HTTP/notrusted`, that produces exactly that failure) make both the refusals
-and the successes reachable; in product mode there are no rules until an
-operator writes one.
+**Who may do what is the one delegation policy (#186)** that also decides
+WS-Trust's `OnBehalfOf` / `ActAs` and the OAuth 2.0 token exchange, from the
+same controls on the same directory entries — see
+[Delegation and impersonation](delegation.md). A Kerberos service is the
+application entry whose identifier is its `SPN@REALM` — not a
+[service account](service-accounts.md#a-service-account-is-not-a-kerberos-service-principal),
+which in iya-sts is a person entry that can only be a Kerberos client:
 
-### The protected service
+| Active Directory | Here, on the entry |
+|---|---|
+| `msDS-AllowedToDelegateTo` (front end) | `appAllowedToDelegateTo` |
+| `msDS-AllowedToActOnBehalfOfOtherIdentity` (back end) | `appAllowedToActOnBehalfOf` |
+| `TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION` | `impersonation` in `appDelegationSemantics` |
+| `NOT_DELEGATED`, Protected Users | `stsNotDelegated` / `appNotDelegated`, `delegation.protectedGroups` |
+| `TRUSTED_FOR_DELEGATION` (unconstrained) | `krb5TrustedForDelegation`, off by default: `ok-as-delegate` on its tickets |
 
-An acceptor on `krb5.servicePort` (8888) that decrypts an AP-REQ under the
-long-term key of `krb5.servicePrincipal`, checks the ticket, refuses a
-**replayed Authenticator**, and proves itself back with an AP-REP.
-`GET /krb5/service` describes it and, when the account could not be created,
-says why. Its replay cache is shared across a cluster, so an AP-REQ replayed to
-another node is refused too.
+A refusal names the attribute and its current value in the error's `e-text`,
+and **is enforced in both modes**. The KDC verifies an evidence ticket's PAC
+signatures with the krbtgt key before it believes the ticket's forwardable
+flag (CVE-2020-17049) or whom it names. Every act — issued or refused — is
+recorded on `/admin/delegation`, which also publishes the policy: every
+permitted pair in one list, and a warning for a front end allowed to delegate
+but not to impersonate, whose S4U2Self ticket is not forwardable. In
+development mode the fixture accounts' rules are seeded onto their entries
+(including `HTTP/notrusted`, which produces exactly that failure) so both the
+refusals and the successes are reachable; in product mode there are no rules
+until an operator writes one.
 
 ### SPNEGO over HTTP
 
-* **`/spnego`** describes the negotiation: the SPN, the realm, the mechanisms,
-  the hosts it will answer for, and three knobs.
-* **`/spnego/protected`** answers `401 WWW-Authenticate: Negotiate` to an
-  unauthenticated request and `200` with an AP-REP in that header to a valid
-  one. The 401 also carries `X-Krb5-Service-Principal` and
-  `X-Krb5-Accepts-Spn-Hosts` — nobody's standard, and there because SPNEGO
-  carries no SPN: a client has to guess `HTTP/<url host>`, and a wrong guess is
-  the commonest SPNEGO failure there is.
+The negotiation `/authn/spnego` performs, before it signs anybody in:
+
+* **`401 WWW-Authenticate: Negotiate`** to an unauthenticated request and the
+  AP-REP in that header to a valid one. The 401 also carries
+  `X-Krb5-Service-Principal` and `X-Krb5-Accepts-Spn-Hosts` — nobody's
+  standard, and there because SPNEGO carries no SPN: a client has to guess
+  `HTTP/<url host>`, and a wrong guess is the commonest SPNEGO failure there
+  is.
 * **NegTokenInit** with the optimistic mechToken, **NegTokenResp** in all four
   negStates, and the **mechListMIC** in both directions. Only Kerberos is
   offered; NTLM is recognised in a client's list and never selected.
-* The three knobs on `/spnego/protected` only: `mic=require` (force the
-  mechListMIC round trip), `mech=none` (reject the negotiation) and
-  `mutual=off` (accept the ticket, send no AP-REP).
+* The acceptor decrypts the AP-REQ under the long-term key of
+  `krb5.servicePrincipal`, checks the ticket, refuses a **replayed
+  Authenticator**, and proves itself back with an AP-REP. Its replay cache is
+  shared across a cluster, so an AP-REQ replayed to another node is refused
+  too.
 
 A `request-mic` exchange takes two HTTP requests; between them it is held for
 `krb5.spnegoPendingTtlSeconds` and matched by a cookie
@@ -130,13 +139,15 @@ the service's own key, and only in a ticket from this realm's KDC.
 The local realm is stripped from the principal (`alice@EXAMPLE.COM` signs in
 `alice`, the same entry a typed sign-in finds); a foreign realm is kept whole.
 
-It is available to every application and registered for none, three ways:
+It is available to every application that does not restrict its sign-in
+mechanisms (`appAuthnMechanism`, [Applications](applications.md)), and
+registered for none, three ways:
 
 1. **"Sign in with Kerberos"** on `/authn/login` (`krb5.spnegoLoginButton`),
    for whatever flow is in progress — OAuth 2.0, WS-Federation, SAML, the
    console;
-2. **`appAuthnMechanism: spnego`** on an application entry — its people never
-   see the screen;
+2. **`spnego` alone in `appAuthnMechanism`** on an application entry — its
+   people never see the screen;
 3. **`fedAuthnMechanism: spnego`** on an identity-provider-side
    [federation](federation.md) relationship.
 
@@ -145,8 +156,33 @@ Every refusal draws a page linking back to the sign-in screen, because a bare
 `401 Negotiate` is a dead end in a browser not configured for this host
 (Chrome's `--auth-server-allowlist`, Firefox's
 `network.negotiate-auth.trusted-uris`, plus a credential cache in the realm).
-With `krb5.spnegoAuthentication` off the door answers 403 naming the setting,
-and `/spnego/protected` still performs the whole handshake.
+With `krb5.spnegoAuthentication` off the door answers 403 naming the setting.
+
+### The demonstration: the companion's Kerberos-protected page and service
+
+Until #595 the service also ran a demonstration: `/spnego` and
+`/spnego/protected` (a page protected with Negotiate, with three knobs that
+made the negotiation fail on purpose), `/krb5/service` and a raw TCP acceptor
+on `krb5.servicePort` (8888). They are the **development companion's** now
+([docker-compose](docker-compose.md#the-companion)), and the companion is a
+Kerberos service the way a customer's web application is:
+
+* **Its own principal and keytab.** It asks the KDC for `HTTP/<its host>`
+  (`COMPANION_KRB5_SPN`) through `POST
+  /admin-api/kerberos/principals/create-service` — a random key, its keytab
+  handed over once — and rotates the key after a restart.
+* **MIT Kerberos's acceptor.** `gss_accept_sec_context()` with that keytab, so
+  the KDC is exercised by a Kerberos service it did not write.
+* **`/spnego`** (and `?format=json`) says what is protected and what a client
+  needs; **`/spnego/protected`** is the RFC 4559 exchange; **`/krb5/service`**
+  describes the TCP service on `COMPANION_KRB5_SERVICE_PORT` (8888), which
+  takes a length-prefixed GSS-wrapped AP-REQ and answers the AP-REP, a
+  KRB-ERROR, or a clean close.
+
+```bash
+kinit alice@EXAMPLE.COM          # against the service's KDC
+curl --negotiate -u : http://companion:9700/spnego/protected
+```
 
 ### Signing out
 
@@ -200,6 +236,18 @@ it on is refused until it has a `krb5.realm` no other realm answers to
   key in both modes, and the acceptor prefers a stored key for its own SPN over
   `krb5.servicePassword` — which is how the acceptor in product mode gets a key
   without a password printed anywhere.
+* **The acceptor's own SPN is keyed this way by itself in product mode**
+  (2026-10-12). Where `krb5.servicePassword` is empty or the published
+  default, the service makes a random key for `krb5.servicePrincipal` at the
+  start (or when the acceptor first asks, for a realm that turned Kerberos on
+  later), once for the cluster, and hands no keytab to anybody: Rotate on
+  `/admin/kerberos/principals` hands one over if another service needs the
+  key. The entry is marked as made for the acceptor, and **a
+  `krb5.servicePassword` of your own wins over it**: the account it builds
+  answers, and the generated key is left unread. Failures are
+  `STS-KRB-0210`–`0212`. A service principal is an application,
+  not a [service account](service-accounts.md#a-service-account-is-not-a-kerberos-service-principal),
+  which is a person entry keyed from its password.
 * **A password change or a Rotate keeps the previous key version** —
   `krb5.retainedKeyVersions` of them, each for `krb5.retainedKeyTtlS` — so a
   ticket issued under it is still accepted, while pre-authentication and
@@ -294,6 +342,13 @@ and is refused `KRB_AP_ERR_BADKEYVER` after that.
   versions** (`drop-previous-service-keys`, `drop-previous-person-keys`) ends
   the window at once — after a compromise, say — leaving the current key
   untouched.
+* `GET /admin-api/kerberos/principals` also answers the KDC's
+  `accountPolicy` (#587): `anyUsernameAuthenticates` (whether a name nobody
+  registered is created on first sight — development only),
+  `neverCreated` (the names that stay unknown on purpose) and `serviceHosts`
+  (the hosts a service principal is created for), read from the same places
+  `/krb5/principals` read them before #595 deleted it, without either shared
+  password — and `database`, every principal the KDC holds.
 
 ### A second factor over Kerberos: FAST and OTP
 
@@ -340,8 +395,90 @@ The KRB-FX-CF2 and the Kerberos PRF FAST needs are section 9 of
 `common/crypto.js`, held to RFC 3961's and MIT's test vectors.
 
 `/admin/kerberos` and `GET /admin-api/kerberos` (`status`) say what the KDC
-does in the realm. A person whose only second factor is a security key cannot
-use Kerberos yet: PKINIT is [#179](https://github.com/rcbj/iya-sts/issues/179).
+does in the realm. A person whose second factor is a security key uses PKINIT,
+below.
+
+### A certificate as the pre-authentication: PKINIT (#179)
+
+PKINIT (RFC 4556) signs the AS-REQ with a certificate's key — a smart card's,
+a PIV token's, or a key file — and agrees the reply key by Diffie-Hellman, so
+no password is involved. It is on in every realm (`krb5.pkinit`) and is how a
+person whose second factor is a security key gets a ticket in product mode,
+where a password alone is refused them. Implemented with RFC 8070's freshness
+token, RFC 8636's key-derivation agility and RFC 5349's elliptic curves.
+
+**The certificate** is one this realm issued to the person, with
+`id-pkinit-KPClientAuth` or smart-card logon in its extended key usage:
+
+* a **smart-card logon** certificate enrolled on their entry over ACME, EST or
+  SCEP (the `smartcard-logon` profile, e.g. `/.well-known/est/smartcard-logon/
+  simpleenroll`), or
+* any certificate from the realm's identity Issuing CAs whose `id-pkinit-san`
+  names them exactly.
+
+It is validated to the service Root through this realm's own hierarchy, and
+its revocation is consulted under `pki.revocationCheck`. A certificate naming
+somebody else in an `id-pkinit-san` is refused, whatever else it says. The
+portal's TLS client certificates carry no PKINIT purpose and are refused.
+
+**The KDC's certificate** comes from the realm's own *Kerberos KDC* Issuing
+CA (`/admin/pki`), with `id-pkinit-KPKdc` and an `id-pkinit-san` of
+`krbtgt/REALM@REALM`. It is made the first time PKINIT is used, so a client
+needs only the service Root as its anchor.
+
+With MIT Kerberos (the `krb5-pkinit` package):
+
+```bash
+# krb5.conf: [realms] EXAMPLE.COM = { pkinit_anchors = FILE:/etc/sts/root.pem
+#                                      pkinit_pool = FILE:/etc/sts/chain.pem }
+kinit -X X509_user_identity=FILE:alice.pem,alice.key alice@EXAMPLE.COM
+kinit -X X509_user_identity=PKCS11:/usr/lib/opensc-pkcs11.so alice@EXAMPLE.COM
+```
+
+`root.pem` is the service Root and `chain.pem` the Issuing CA and Intermediate
+the certificate was issued under (the enrollment response carries both).
+
+**What the ticket says.** Every PKINIT ticket carries the RFC 8129 indicator
+`pkinit`, and `/authn/spnego` reads it as `amr ["swk"]`, never `pwd`. A
+smart-card logon certificate over a key this service did not generate (that
+is, not EST `/serverkeygen`) is the one case the KDC treats as a hardware
+key: the ticket also carries `pkinit-hardware` and the hw-authent flag, read
+as `amr ["hwk"]`. Either way it is one factor, `acr "1"`. The ticket ends no
+later than the certificate does, and carries `AD-INITIAL-VERIFIED-CAS`.
+
+**Refused, by design:**
+
+* RSA key transport of the reply key (section 3.2.3.2), because it has no
+  forward secrecy;
+* MODP group 2;
+* SHA-1 in a signature or a certificate;
+* a request without a freshness token (`krb5.pkinitRequireFreshness`);
+* a client that offers no RFC 8636 KDF, unless `krb5.pkinitLegacyKdf` is set.
+
+> **Warning.** Turning `krb5.pkinitRequireFreshness` off, or
+> `krb5.pkinitLegacyKdf` on, weakens PKINIT. Do it only for a client that
+> needs it.
+
+**A person with no Kerberos keys** — who has never signed in with a password —
+can still use PKINIT. Their password gets the usual "sign in once" refusal.
+
+**Anonymous PKINIT (RFC 8062)** gives a machine with no host keytab FAST
+armor:
+
+```bash
+kinit -n -c FILE:/tmp/armor @EXAMPLE.COM
+kinit -T FILE:/tmp/armor alice@EXAMPLE.COM
+```
+
+The anonymous ticket names nobody (`WELLKNOWN/ANONYMOUS@WELLKNOWN:ANONYMOUS`)
+and its session key includes the KDC's contribution (PA-PKINIT-KX). It is
+only a TGT for the realm, and the TGS refuses it: it armors and buys nothing.
+`krb5.anonymousPkinit` switches it off.
+
+**Post-quantum.** No post-quantum PKINIT is standardised. The key agreement is
+the quantum-exposed part. An ML-KEM encapsulation would replace it, and ML-DSA
+would replace the CMS signatures, once a client sends either
+(`common/crypto.js` section 16).
 
 ### The `krbtgt` key, and its rotation
 
@@ -396,8 +533,8 @@ ticket"). Since #169:
   strongest registered ones — aes256-cts-hmac-sha384-192 (20, RFC 8009) and
   aes256-cts-hmac-sha1-96 (18) — are symmetric, and Grover's algorithm leaves
   AES-256 at about 128-bit strength, so rotation needs no new enctype. The
-  quantum-exposed part of Kerberos is PKINIT's public-key key agreement, which
-  this service does not implement (#179).
+  quantum-exposed part of Kerberos is PKINIT's Diffie-Hellman key agreement
+  (#179), for which nothing post-quantum is standardised either.
 
 ### What Samba's and Heimdal's clients found (#204, #205)
 
@@ -433,16 +570,150 @@ tools now run against this KDC in the suite (`sts_kerberos_samba.js`,
 What stays different from Active Directory, and why, is listed with each
 exception in `tests/vendored/sts_kerberos_samba.js` and on #204.
 
+### PAC claims
+
+**`PAC_CLIENT_CLAIMS_INFO`** ([MS-PAC] 2.11, buffer type 13) is what a service
+doing claims-based access control — Windows' Dynamic Access Control — reads
+beside the SIDs. While **`krb5.pacClaims`** is on in a realm (off by default;
+a runtime setting, per realm), every ticket this KDC builds carries one
+(#493):
+
+* **Where the claims come from** is the sixth claim set, `kerberos-pac`,
+  configured on **Protocols → Kerberos → PAC claims** (`/admin/kerberos/claims`,
+  `GET` and `POST /admin-api/kerberos/claims/{action}`). A row is a fixed value
+  (with `${placeholders}`) or a directory attribute of the person, and every
+  row has a **type**: `string`, `int64`, `uint64` or `boolean`, the four
+  [MS-ADTS] 2.2.18 claim types. The person's realm-wide **roles** go in as a
+  string claim under the rows (named by `roles.claimName`); nothing is added
+  to the logon information's extra SIDs.
+* **Directory attributes, ticked** (#498): the same page has the table of
+  standard attributes with checkboxes that `/admin/claims`,
+  `/admin/userinfo-claims` and `/admin/saml-attributes` have — one catalogue
+  for all of them, and nothing ticked until somebody ticks it (`POST
+  /admin-api/kerberos/claims/attributes`, `attributes-all`,
+  `attributes-clear`). Each ticked attribute **present on the person's
+  entry** becomes a `string` claim carrying **every value** of it, with the
+  id a row of the attribute's name would have (`ad://ext/ou:<hex>`); an
+  entry without it carries no claim, and nothing is invented. A row of the
+  set, or the roles claim, with the same claim id wins over a ticked
+  attribute. They go in a TGT, reach a service ticket as the rest of its
+  TGT's claims do, and count toward the 64 KiB cap. The `?user=` preview
+  shows what each would carry.
+* **The claim id** is `ad://ext/<name>:<hex>`, Active Directory's form, with
+  the hex the first 16 hexadecimal digits of SHA-256 over the UTF-8 name — the
+  same id on every node, after every restart and in every realm. A row whose
+  name is already a whole `ad://ext/<name>:<hex>` id keeps it, for a claim
+  type an existing forest defines. The page and the API show each row's id.
+* **A TGT** carries the realm's set. **A service ticket carries what its TGT
+  carried** — read out of the TGT's PAC, not re-evaluated — **with the rows of
+  the application that registered the service's SPN** (`krb5ClaimsPac`, on its
+  Configuration tab, Kerberos v5, *PAC claims*) **added and winning by name**.
+  **S4U2Self** carries the impersonated person's claims, evaluated for them;
+  **S4U2Proxy** and a **cross-realm** re-sign carry the claims buffer they
+  arrived with byte for byte, unless the target service's application has rows
+  of its own, which are merged in the same way.
+* **Never compressed** on output. A claims set from another realm compressed
+  with XPRESS Huffman is decoded; LZNT1 and plain XPRESS, which no KDC uses
+  for claims, are reported rather than decoded.
+* A value that is not its type at issuance leaves that claim out
+  (`STS-KRB-0200`); a set over 64 KiB, or one that will not encode, leaves the
+  buffer out (`STS-KRB-0201`, `0202`). Neither refuses the ticket. A change to
+  the set reaches holders of live tickets as CAEP `token-claims-change`.
+* Device claims (type 15) are decoded when they arrive and never produced:
+  they need compound identity (FAST armor naming a computer).
+
 ### Not implemented
 
-PKINIT (#179), anonymous PKINIT armor, OTP PIN change and hashed OTP
-values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), claims and device info in the
-PAC, and rotation of an inter-realm trust key. DES is decoded and never
+PKINIT's RSA key transport and DH key reuse, anonymous tickets in the TGS
+exchange, OTP PIN change and hashed OTP values, kpasswd, request signatures, SID filtering (see [the PAC](#the-pac) below), device info and device
+claims in the PAC (a device claims buffer from another realm is decoded and
+carried), compression of a claims set this KDC writes, and rotation of an inter-realm trust key. DES is decoded and never
 produced: Windows Server 2025 removed it and it is not coming back. The **AP
 exchange** is not missing from the KDC — it belongs to a service rather than to
-a KDC, and it lives in the [protected service](#the-protected-service).
-`GET /krb5/principals` carries the current list. The UDP socket cannot carry a
+a KDC, and it lives in the [SPNEGO acceptor](#spnego-over-http). The UDP
+socket cannot carry a
 PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
+
+## Signing in from a browser on the base installation
+
+`docker-compose.yml` (and the published-image file in
+[Getting started](getting-started.md)) give you a working Kerberos sign-in
+with nothing to configure on the server:
+
+* the KDC is published on **88**, TCP and UDP (`STS_KDC_HOST_PORT` moves it;
+  `KDC_PORT` in the published-image file);
+* the acceptor holds **`HTTP/localhost`** (`KRB5_SERVICE_PRINCIPAL`), the SPN
+  a browser asks for when it opens `https://localhost:8081`. A browser always
+  asks for `HTTP/<the host in the URL>`, so reach the service by another name
+  and you set `KRB5_SERVICE_PRINCIPAL=HTTP/<that name>` too;
+* in product mode that SPN gets a **random key** the service makes and keeps
+  sealed (above), so no password is set anywhere.
+
+What you do on the client:
+
+1. **Give the person a Kerberos key.** In product mode a person's keys are
+   derived from their own password, so set one (Directory → Users, or the
+   activation link) or sign in once with it at `/authn/login`. Until then the
+   KDC answers *no Kerberos keys yet*.
+2. **Write a `krb5.conf`** for the realm (`krb5.realm`, `EXAMPLE.COM` by
+   default) and point the tools at it:
+
+   ```ini
+   # /tmp/sts-krb5.conf
+   [libdefaults]
+     default_realm = EXAMPLE.COM
+     dns_lookup_kdc = false
+     dns_lookup_realm = false
+     rdns = false
+     dns_canonicalize_hostname = false
+   [realms]
+     EXAMPLE.COM = {
+       kdc = localhost:88
+     }
+   [domain_realm]
+     localhost = EXAMPLE.COM
+   ```
+
+   ```bash
+   export KRB5_CONFIG=/tmp/sts-krb5.conf KRB5CCNAME=FILE:/tmp/sts-krb5cc
+   kinit alice@EXAMPLE.COM          # alice's directory password
+   kvno HTTP/localhost@EXAMPLE.COM  # a service ticket for the acceptor
+   klist
+   ```
+
+   `rdns = false` and `dns_canonicalize_hostname = false` stop MIT Kerberos
+   turning `localhost` into another name before it asks for the ticket. With
+   MIT's `k5tls` plugin installed (`krb5-k5tls`) the KDC is also reachable
+   through the main port: `kdc = https://localhost:8081/KdcProxy`, with the
+   service's certificate in `http_anchors = FILE:/tmp/sts.pem`.
+3. **Let the browser use the ticket for this host.**
+   * **Chrome / Chromium**: start it from the same shell, so it reads
+     `KRB5_CONFIG` and `KRB5CCNAME`, with the host allowed and a profile of its
+     own:
+
+     ```bash
+     google-chrome --auth-server-allowlist=localhost \
+                   --user-data-dir=/tmp/chrome-kerberos https://localhost:8081/
+     ```
+
+     On a managed machine the same setting is the `AuthServerAllowlist` policy.
+   * **Firefox**: in `about:config` set `network.negotiate-auth.trusted-uris`
+     to `https://localhost:8081`, and start it from the same shell.
+4. **Sign in.** "Sign in with Kerberos" on `/authn/login`
+   (`krb5.spnegoLoginButton`) completes whatever flow is in progress — the
+   console, the portal, an OAuth client — without a password.
+
+From a terminal, `curl --negotiate -u : --cacert /tmp/sts.pem
+https://localhost:8081/authn/spnego` performs the same exchange. In product
+mode the sign-in is scored like any other, and curl's own User-Agent is read
+as an automated client and refused (`STS-RISK-0016`); give it a browser's
+(`-A 'Mozilla/5.0 …'`) to see the sign-in.
+
+If the browser answers with nothing, the usual causes are, in order: the host
+is not in the allowlist; the browser was not started from the shell holding
+`KRB5CCNAME`; the ticket is for another SPN (`klist` names it; the 401 from
+`/authn/spnego` carries `X-Krb5-Service-Principal` with the one the acceptor
+holds); the person has no key yet (step 1).
 
 ## Development and product mode
 
@@ -452,16 +723,16 @@ PROXY protocol header, so behind a load balancer Kerberos clients use TCP.
 | Service accounts | a service-shaped name is created on demand for a host in `krb5.serviceDomains`, with `krb5.autoServicePassword` | nothing is created on demand; service principals are made at `/admin/kerberos/principals` |
 | Fixtures | alice, bob, misconfigured users, a computer account, delegation services with `msDS-*` rules, and the trusted second realm | none; `PARTNER.COM` is `KDC_ERR_WRONG_REALM` |
 | `krbtgt` | derived from the published `krb5.krbtgtPassword`, until rotated by hand | a **random** key, stored sealed on the directory and rotated every `krb5.krbtgtRotationIntervalDays` (#169); `krb5.krbtgtPassword` is ignored |
-| The acceptor's account | built from the published password | built only when `krb5.servicePassword` is **not** the published default; otherwise refused, and `/krb5/service` and `/krb5/principals` say why |
-| Passwords on `/krb5/principals` | published, so a reader can decrypt a ticket and read its PAC | withheld |
+| The acceptor's account | built from the published password | built from `krb5.servicePassword` when it is set to something of your own; otherwise the SPN gets a **random** stored key, made once (see [Stored long-term keys](#stored-long-term-keys-product-mode)) |
+| The shared passwords | published as settings, so a reader can decrypt a ticket and read its PAC | not used |
 | The PAC | invents `passwordLastSet` and `logonCount` | the zero FILETIME and 0 |
 | Delegation | fixture rules make every refusal and success reachable | no rule until an operator writes one |
 | A password alone, for a person who holds or must hold a second factor | a ticket | `KDC_ERR_POLICY`, after the password verified; FAST with OTP gets one |
 
 In product mode every Kerberos listener binds `global.host`. The only principals a product realm starts with are
-`krbtgt/<realm>` and the account `krb5.servicePrincipal` names — the latter
-only where `krb5.servicePassword` is set to something other than its published
-default.
+`krbtgt/<realm>` and the account `krb5.servicePrincipal` names — keyed from
+`krb5.servicePassword` where that is set to something of your own, and at
+random otherwise.
 
 What stays a refusal in development: a service-shaped name for a host this
 service is not willing to be (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in
@@ -477,24 +748,24 @@ modes**, and a replay is refused in both. See
 | `krb5.enabled` | `KRB5_ENABLED` | `true` | yes | Whether this realm's KDC answers; on a trust realm, whether the realm has a Kerberos realm at all (created off). |
 | `krb5.realm` | `KRB5_REALM` | `EXAMPLE.COM` | no | The Kerberos realm; its lower-cased form is the domain, and port 88 routes by it. |
 | `krb5.kdcPort` | `KRB5_KDC_PORT` | `88` | no | The KDC's TCP and UDP port; `0` asks for any free port. A failure to bind is recorded, not fatal. |
-| `krb5.servicePort` | `KRB5_SERVICE_PORT` | `8888` | no | The Kerberized test service that accepts an AP-REQ. |
-| `krb5.servicePrincipal` | `KRB5_SERVICE_PRINCIPAL` | `HTTP/web.example.com` | no | The acceptor's SPN; a trust realm left at this default derives `HTTP/web.<its domain>`. |
-| `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | no | The acceptor account's password (the keytab equivalent); the default is refused in product mode. |
+| `krb5.servicePrincipal` | `KRB5_SERVICE_PRINCIPAL` | `HTTP/web.example.com` | no | The acceptor's SPN; a trust realm left at this default derives `HTTP/web.<its domain>`. `docker-compose.yml` sets `HTTP/localhost`. |
+| `krb5.servicePassword` | `KRB5_SERVICE_PASSWORD` | `service-account-password` | no | The acceptor account's password (the keytab equivalent); the default is refused in product mode, which keys the SPN at random instead. |
 | `krb5.serviceSalt` | `KRB5_SERVICE_SALT` | *(empty)* | no | The string-to-key salt for that account; set it to accept tickets from a real Active Directory KDC. |
 | `krb5.enctypes` | `KRB5_ENCTYPES` | `18,17,20,19,23` | no | The RFC 3961 encryption types used, strongest first; an unimplemented number stops startup. **Warning:** 23 (rc4-hmac) is deprecated by RFC 8429 and is used in development mode only — product reads the list without it and refuses a write naming it. |
 | `krb5.kvno` | `KRB5_KVNO` | `3` | no | The kvno of every account built from a configured password, and the starting kvno of stored keys. |
 | `krb5.ticketLifetimeSeconds` | `KRB5_TICKET_LIFETIME_S` | `36000` | yes | The longest a ticket is valid. |
 | `krb5.renewLifetimeSeconds` | `KRB5_RENEW_LIFETIME_S` | `604800` | yes | How far `renew-till` reaches for a renewable ticket. |
 | `krb5.logonServer` | `KRB5_LOGON_SERVER` | `DC01` | yes | The LogonServer name in every PAC. |
+| `krb5.pacClaims` | `KRB5_PAC_CLAIMS` | `false` | yes | Whether every ticket's PAC carries the client's claims (PAC_CLIENT_CLAIMS_INFO, [MS-PAC] 2.11): the realm's Kerberos PAC claims and the person's realm-wide roles in a TGT, and a service ticket's TGT claims with the claims of the application that registered its SPN added. Never compressed. See `docs/kerberos.md`, *PAC claims*. |
 | `krb5.maxRequestBytes` | `KRB5_MAX_REQUEST_BYTES` | `131072` | yes | The most a client may send on one TCP connection before it is closed. |
 | `krb5.udpMaxReplyBytes` | `KRB5_UDP_MAX_REPLY_BYTES` | `1465` | yes | A larger UDP reply is answered `KRB_ERR_RESPONSE_TOO_BIG`. |
-| `krb5.serviceMaxTokenBytes` | `KRB5_SERVICE_MAX_TOKEN_BYTES` | `65536` | yes | The largest token the acceptor and SPNEGO accept. |
+| `krb5.serviceMaxTokenBytes` | `KRB5_SERVICE_MAX_TOKEN_BYTES` | `65536` | yes | The largest token the SPNEGO sign-in's acceptor accepts. |
 | `krb5.replayCacheMaxEntries` | `KRB5_REPLAY_CACHE_MAX_ENTRIES` | `10000` | yes | How many Authenticators the acceptor remembers; when full, a new one is refused rather than an old one forgotten. |
 | `krb5.spnegoPendingTtlSeconds` | `KRB5_SPNEGO_PENDING_TTL_S` | `120` | yes | How long a `request-mic` exchange may sit between its two requests. |
 | `krb5.spnegoMaxPending` | `KRB5_SPNEGO_MAX_PENDING` | `64` | yes | How many of those are held at once; the oldest is dropped. |
 | `krb5.clockSkew` | `KRB5_CLOCK_SKEW` | `300` | yes | How far the KDC's and a client's clocks may differ before `KRB_AP_ERR_SKEW`. |
 | `krb5.clockOffset` | `KRB5_CLOCK_OFFSET` | `0` | yes | Moves the KDC's clock deliberately, to produce a skew failure on purpose. Development mode only: anything but 0 is ignored in product (the KDC runs on the machine's clock), and setting it is refused (#181). |
-| `krb5.userPassword` | `KRB5_USER_PASSWORD` | `password!` | no | The one password every development user account has, published on `/krb5/principals`. |
+| `krb5.userPassword` | `KRB5_USER_PASSWORD` | `password!` | no | The one password every development user account has, published as this setting. |
 | `krb5.unknownUsers` | `KRB5_UNKNOWN_USERS` | `nosuchuser,nobody` | yes | Names never created on demand, so `KDC_ERR_C_PRINCIPAL_UNKNOWN` stays reachable. |
 | `krb5.serviceDomains` | `KRB5_SERVICE_DOMAINS` | the realm's domain, `localhost`, `sts`, `127.0.0.1` | no | The host domains a service principal is created on demand for; empty creates none. |
 | `krb5.autoServicePassword` | `KRB5_AUTO_SERVICE_PASSWORD` | `auto-service-password` | no | The published password of every on-demand service account. |
@@ -549,9 +820,10 @@ appconfig file.
 * **The session's `amr` and `acr` come from the ticket's flags.** It is the one
   place here where they are read off something a credential actually says; a
   ticket claiming neither flag gets an empty `amr`, not an assumed password.
-* **`/authn/spnego` and `/spnego/protected` are the same negotiation.** One
-  documents the other, so they share one acceptor and one verdict, and the
-  diagnostic knobs are kept off the door that mints sessions.
+* **`/authn/spnego` was one of two doors over one negotiation** until #595
+  moved the other, `/spnego/protected`, to the development companion, where
+  MIT Kerberos's acceptor plays it with a keytab of its own. The diagnostic
+  knobs were kept off the door that mints sessions, and left with the page.
 * **A sign-out is enforced at the TGS exchange.** Kerberos has no logout and no
   revocation; the TGS exchange is the one moment a KDC is back in the loop,
   which is also where disabling an Active Directory account bites.
@@ -661,19 +933,20 @@ key sealed which ticket would pass for the wrong reason.
 
 ### The misconfigured principals are the point
 
-`GET /krb5/principals` lists the whole database — names, salts, offered
-etypes, kvno, the pre-auth/revoked/expired/ok-as-delegate flags, which entries
-were created at runtime, and a sentence on what each account is *for*. It
-publishes no keys and no *service* passwords; the one user password it does
-publish, in `accountPolicy`, is a policy of this mock rather than a secret —
-every account holds it, and a debugger whose accounts cannot be used without
-reading the source is worse than one that says so on the page.
+`GET /admin-api/kerberos/principals` lists the whole database as `database` —
+names, salts, offered etypes, kvno, the pre-auth/revoked/expired/ok-as-delegate
+flags, which entries were created at runtime, and a sentence on what each
+account is *for* — and Directory → Kerberos principals draws it. It publishes
+no keys and no passwords; the one user password development shares is a
+policy rather than a secret, and is published as the setting
+`krb5.userPassword` — a debugger whose accounts cannot be used without reading
+the source is worse than one that says so.
 
 Among the configured accounts: `locked` (a disabled account), `expired` (a
 stale password), `aesonly` and `rc4only` (whose etype sets are chosen so that a
 negotiation can be made to fail on purpose, which is what RC4 being switched
-off looks like), `sensitive` (NOT_DELEGATED, the one control that stops
-unconstrained delegation), a computer account, and a set of service accounts
+off looks like), `sensitive` (NOT_DELEGATED — `stsNotDelegated` on its entry — the one control
+that stops unconstrained delegation), a computer account, and a set of service accounts
 wired for the delegation cases below. A debugger is judged on how it renders
 failure, and these are the failures a real deployment produces. So is the
 clock: `krb5.clockOffset` makes the KDC lie about its own time, because
@@ -699,7 +972,8 @@ inside `AD-IF-RELEVANT`, so a reader that looks for ad-type 128 at the top
 level finds nothing. A TGT gets two signatures and a service ticket four
 (sections 2.8.2 and 2.8.3).
 
-Claims and device info are not produced, and **SID filtering across a trust is
+Client claims are produced while `krb5.pacClaims` is on ([PAC
+claims](#pac-claims)); device info is not, and **SID filtering across a trust is
 not implemented** — a re-signed PAC keeps every SID it arrived with, which is
 the one place this KDC is more permissive than a real one in a way that
 matters.
@@ -721,32 +995,48 @@ asked for.
 
 The asymmetry between the two S4U2Proxy routes is the entire security story of
 resource-based constrained delegation, so both kinds of account exist here
-rather than one. Classic delegation is authorized by `msDS-AllowedToDelegateTo`
-on the **front-end** account, which only a domain admin can set; RBCD is
-authorized by `msDS-AllowedToActOnBehalfOfOtherIdentity` on the **back-end**
-account (`HTTP/rbcd.example.com`, naming `HTTP/frontend.example.com` as
-permitted to act on its behalf) — so whoever controls that object can turn "I
-can write to this computer account" into "I can reach this service as anybody".
-Same messages, same KDC options, opposite direction of trust.
+rather than one. Classic delegation is authorized by `appAllowedToDelegateTo`
+on the **front-end** entry (Active Directory's `msDS-AllowedToDelegateTo`,
+which only a domain admin can set); RBCD is authorized by
+`appAllowedToActOnBehalfOf` on the **back-end** entry
+(`HTTP/rbcd.example.com@EXAMPLE.COM`, naming `HTTP/frontend.example.com` as
+permitted to act on its behalf) — so whoever controls that entry can turn "I
+can write to this account" into "I can reach this service as anybody". Same
+messages, same KDC options, opposite direction of trust.
 
-Classic delegation additionally requires the evidence ticket to be forwardable,
-which S4U2Self grants only to an account holding
-TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION. So `HTTP/frontend.example.com` and
-`HTTP/notrusted.example.com` differ in exactly that one attribute and nothing
-else, because the flag's absence is invisible where it is set: S4U2Self still
-succeeds and returns a ticket that simply is not forwardable, and classic
-S4U2Proxy then fails a step later complaining about the evidence. RBCD needs
-neither, but does need `PA-PAC-OPTIONS` with the RBCD bit, without which
-[MS-SFU] says a KDC MUST answer `KDC_ERR_BADOPTION` — an error mentioning
-nothing about padata, so it is refused here with an explanation.
+Both routes require the evidence ticket to be forwardable — classic by
+[MS-SFU] 3.2.5.2.1, resource-based by 3.2.5.2.3 since the CVE-2020-16996
+update, as Windows, Samba and MIT all refuse it — which S4U2Self grants only
+where the issuance policy allows the impersonation:
+the service allows it (`appDelegationSemantics`) and the user is not
+protected. So `HTTP/frontend.example.com` and `HTTP/notrusted.example.com`
+differ in exactly that one attribute and nothing else, because its absence is
+invisible where it is set: S4U2Self still succeeds and returns a ticket that
+simply is not forwardable, and classic S4U2Proxy then fails a step later
+complaining about the evidence (`STS-KRB-0012` classic, `STS-KRB-0199`
+resource-based). RBCD also needs `PA-PAC-OPTIONS` with the RBCD bit, without
+which [MS-SFU] says a KDC MUST answer `KDC_ERR_BADOPTION` — an error
+mentioning nothing about padata, so it is refused here with an explanation.
+A protected user's tickets are never forwardable, so neither route reaches a
+back end as them; the issuance policy refuses the rest (`KDC_ERR_POLICY`).
+
+The S4U2Proxy ticket is forwardable when the request asked for it, the front
+end's TGT is forwardable and the user is not protected (RFC 4120 section
+3.3.3; [MS-SFU] 3.2.5.2.4 says nothing of it). Its PAC's
+`S4U_DELEGATION_INFO` ([MS-PAC] 2.9) names the target without its realm and
+every service delegated through with it — `HTTP/frontend.example.com@EXAMPLE.COM`
+— the form Windows, Samba and MIT write. On `/admin/delegation`, S4U2Self is
+an impersonation and every S4U2Proxy a delegation, by mechanism ([MS-SFU]),
+so a protocol-transition chain has one impersonation row followed by
+delegation rows.
 
 ### A service that will not talk to you without a ticket
 
 Until something decrypts a ticket and proves its own identity back, "the ticket
-looks right" is the strongest claim available. `krb5_service.js` is a raw TCP
-acceptor — deliberately, because that is the shape of the Windows services
-people actually debug — and `GET /krb5/service` describes it and the ordered
-checks it applies:
+looks right" is the strongest claim available. `krb5_service.js` is the
+acceptor `/authn/spnego` uses (its raw TCP socket and `GET /krb5/service` were
+a demonstration until #595 moved them to the development companion), and these
+are the ordered checks it applies:
 
 1. the GSS wrapper;
 2. the ticket decrypting under *its own* key at the kvno named;
@@ -755,7 +1045,7 @@ checks it applies:
 4. the Authenticator under the ticket's session key;
 5. the Authenticator's `cname` matching the ticket's;
 6. the clock;
-7. **the replay cache** — the check a mock is most tempted to skip, and the
+7. **the replay cache** — the check a test service is most tempted to skip, and the
    only thing between a captured AP-REQ and a free impersonation;
 8. the 0x8003 checksum.
 
@@ -806,8 +1096,9 @@ decoded and never produced.
   rotation and when the next is due.
 * **`/admin/delegation`**: every delegation act, refusals included, and the
   published policy.
-* **Live descriptions**: `GET /krb5/principals` (the database, the sockets and
-  what is not implemented), `GET /krb5/service` (the acceptor), `GET /spnego`.
+* **The development companion**: `/spnego`, `/spnego/protected` and
+  `/krb5/service`, a Kerberos-protected page and TCP service of its own
+  ([above](#the-demonstration-the-companions-kerberos-protected-page-and-service)).
 * **Management API**: `GET /admin-api/kerberos`,
   `GET /admin-api/kerberos/principals` and
   `POST /admin-api/kerberos/principals/{create-service, rotate-service,

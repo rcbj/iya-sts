@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -73,7 +73,8 @@
 // `stsIdaVerification` already chose, for this reason. Each value is:
 //
 //   { id, kind, thumbprint, label, added, addedBy, proof,
-//     attestation: { level, format, summary, verifiedAt },
+//     attestation: { level, format, summary, verifiedAt, chainSerials?,
+//                    revocation?, freshness? },
 //     material: { … } }
 //
 //   * `kind` is `x509`, `jwk` or `webauthn` (decision 1). The Native SSO
@@ -193,7 +194,6 @@
 // other per-person store in `common/` is.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -301,6 +301,14 @@ interface Attestation {
   format: string;
   summary: string;
   verifiedAt: string;
+  // #256: an Android chain's serials, kept so a later status list can be
+  // asked about it, and what the list said (`attestation_revocation.ts`).
+  chainSerials?: string[];
+  revocation?: Json;
+  // #257: a TPM key attestation's freshness — `fresh` (its extraData was a
+  // nonce EST /nonce issued to the same client and cookie, now spent) or
+  // `unproven`, with the reason (`cert_enrollment.ts`).
+  freshness?: { status: string; detail: string };
 }
 
 interface DeviceKey {
@@ -397,6 +405,13 @@ interface DevicesDeps {
   findAuthn: () => Json;
   // `common/cert_enrollment`, required at the moment of use (header).
   loadEnrollment: () => Json;
+  // `gnap/gnap_revocation` as it is loaded in this process, or null (#432):
+  // a compromise ends the GNAP grants whose client key is the device's.
+  findGnapRevocation: () => Json;
+  // The token register, required at the moment of use (#432): a compromise
+  // revokes the OAuth tokens bound to the device's keys (DPoP's jkt, mutual
+  // TLS's x5t#S256).
+  loadStats: () => Json;
 }
 
 // ---------------------------------------------------------------------------
@@ -509,7 +524,38 @@ class Devices {
              findAuthn: Devices.loadedAuthn,
              loadEnrollment: function (): Json {
                return require('./cert_enrollment');
+             },
+             findGnapRevocation: Devices.loadedGnapRevocation,
+             loadStats: function (): Json {
+               return require('./admin_stats');
              } };
+  }
+
+  // `gnap/gnap_revocation` as it is loaded in THIS process, or null — never
+  // required (#432), for `loadedAuthn()`'s reason: this file is loaded long
+  // before the GNAP family, and a process without it holds no grant.
+  /**
+   * Returns `gnap/gnap_revocation` as it is loaded in this process, found in
+   * `require.cache`; it is never required from here.
+   *
+   * @returns the module, or null when it is not loaded
+   */
+  static loadedGnapRevocation(): Json {
+    helpers.log.debug("Entering Devices.loadedGnapRevocation().");
+    let id = '';
+    try {
+      id = require.resolve('../gnap/gnap_revocation');
+    } catch (e) {
+      helpers.log.debug("Caught in Devices.loadedGnapRevocation(): " +
+                        ((e && e.message) || e));
+      helpers.log.debug("Leaving Devices.loadedGnapRevocation(). Not " +
+                        "resolvable.");
+      return null;
+    }
+    const cached = require.cache[id];
+    helpers.log.debug("Leaving Devices.loadedGnapRevocation(). " +
+                      (cached ? 'Loaded.' : 'Not loaded.'));
+    return cached && cached.exports ? cached.exports : null;
   }
 
   // `authn/authn` as it is loaded in THIS process, found in `require.cache`,
@@ -548,8 +594,7 @@ class Devices {
   static hashOf(secret: unknown): string {
     helpers.log.debug("Entering Devices.hashOf().");
     helpers.log.debug("Leaving Devices.hashOf().");
-    return nodeCrypto.createHash('sha256').update(String(secret || ''), 'utf8')
-      .digest('base64url');
+    return stsCrypto.digest('sha256', String(secret || ''), 'base64url');
   }
 
   private store(operation: string, ...args: any[]): any {
@@ -758,7 +803,7 @@ class Devices {
                            { name: 'devices.events',
                              counter: eventsCounter,
                              setting: 'devices.eventsKept' });
-    events.set(nodeCrypto.randomUUID(), Object.assign({
+    events.set(stsCrypto.randomUuid(), Object.assign({
       at: this.deps.now(), kind: kind, device: device.id,
       ownerKind: device.ownerKind, method: device.enrolment.method,
       reason: String(reason || '')
@@ -871,6 +916,26 @@ class Devices {
       .map(Devices.fromEntry);
     log.debug("Leaving Devices.all(). " + out.length + ".");
     return out;
+  }
+
+  // How many devices the realm holds, counted by the store without a copy of
+  // any (#352) — `all().length` where the store offers no count.
+  /**
+   * Returns how many devices the realm holds, without reading them.
+   *
+   * @returns the count
+   */
+  count(): number {
+    const { log } = this.deps;
+    log.debug("Entering Devices.count().");
+    if (this.store('hasHook', 'countDeviceEntries')) {
+      const n = Number(this.store('countDeviceEntries')) || 0;
+      log.debug("Leaving Devices.count(). " + n + ", counted.");
+      return n;
+    }
+    const n = this.all().length;
+    log.debug("Leaving Devices.count(). " + n + ", read.");
+    return n;
   }
 
   /**
@@ -1347,6 +1412,20 @@ class Devices {
     return owner && owner.kind === 'person' ? String(owner.name || '') : '';
   }
 
+  // The owner's identifier where the owner is an APPLICATION, else '' — the
+  // `application` member of the device's Shared Signals subject (#221, the
+  // gap P5 left: until then an application's device was sent with no owner
+  // at all).
+  private applicationOf(device: Device): string {
+    const { log } = this.deps;
+    log.debug("Entering Devices.applicationOf().");
+    const owner = device.ownerKind === 'application'
+      ? this.ownerOf(device.owner) : null;
+    log.debug("Leaving Devices.applicationOf().");
+    return owner && owner.kind === 'application' ? String(owner.name || '')
+                                                 : '';
+  }
+
   // One call to `ssf/account_signals.ts`, fired and forgotten: it never
   // throws and never rejects by contract, and this is belt and braces so a
   // defect there cannot undo a change already written here.
@@ -1375,6 +1454,7 @@ class Devices {
     this.deps.log.debug("Entering Devices.deviceNotice().");
     this.deps.log.debug("Leaving Devices.deviceNotice().");
     return Object.assign({ deviceId: device.id, username: this.personOf(device),
+                           application: this.applicationOf(device),
                            ownerKind: device.ownerKind,
                            deviceLabel: device.label }, extra);
   }
@@ -1404,6 +1484,103 @@ class Devices {
     }
     helpers.log.debug("Leaving Devices.credentialOf().");
     return out;
+  }
+
+  // =========================================================================
+  // ANDROID ATTESTATION REVOKED AFTER THE FACT (#256). `attestation_revocation
+  // .ts`'s recheck asks for every key that is attested by an Android chain
+  // whose serials were kept, and downgrades one a newer status list revokes
+  // or suspends: rcbj's decision 2 — the key is self-asserted with the
+  // reason, the device's level follows its keys, an audit row, and a CAEP
+  // credential-change (`update`) about the key. The device's STATUS is not
+  // touched: a leaked batch key says the attestation proves nothing, not
+  // that this device was compromised.
+  // =========================================================================
+  /**
+   * Lists every key in the realm attested by an Android chain whose serials
+   * were kept, for the status list's recheck.
+   *
+   * @returns `[{ deviceId, keyId, chainSerials }]`
+   */
+  androidAttestedKeys(): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering Devices.androidAttestedKeys().");
+    const out: Json[] = [];
+    this.all().forEach(function (device: Device): void {
+      device.keys.forEach(function (key: DeviceKey): void {
+        const att = key.attestation;
+        if (att && att.level === 'attested' &&
+            att.format === 'android-key-attestation' &&
+            Array.isArray(att.chainSerials) && att.chainSerials.length) {
+          out.push({ deviceId: device.id, keyId: key.id,
+                     chainSerials: att.chainSerials.slice() });
+        }
+      });
+    });
+    log.debug("Leaving Devices.androidAttestedKeys(). " + out.length + ".");
+    return out;
+  }
+
+  /**
+   * Downgrades one key's Android attestation to self-asserted because
+   * Google's status list revokes or suspends a certificate of its chain,
+   * recomputes the device's level, audits it and sends CAEP
+   * credential-change.
+   *
+   * @param deviceId - the device
+   * @param keyId - the key
+   * @param revocation - `attestation_revocation.consult()`'s answer
+   * @returns `{ ok, changed, level }`, or a refusal
+   */
+  downgradeKeyAttestation(deviceId: unknown, keyId: unknown,
+                          revocation: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering Devices.downgradeKeyAttestation().");
+    const device = this.byId(deviceId);
+    const key = device ? device.keys.filter(function (one: DeviceKey) {
+      return one.id === String(keyId || '');
+    })[0] : null;
+    if (!device || !key) {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Gone.");
+      return this.refuse('STS-DEVICE-0007', 'There is no device "' +
+        String(deviceId || '') + '" with the key "' + String(keyId || '') +
+        '".');
+    }
+    if (!key.attestation || key.attestation.level !== 'attested') {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Not attested.");
+      return { ok: true, changed: false, level: device.attestation };
+    }
+    const r = revocation || {};
+    const why = 'Google\'s Android attestation status list ' +
+      String(r.listVersion || '') + ' marks certificate ' +
+      String(r.serial || '?') + ' of its chain ' +
+      String(r.status || 'revoked').toUpperCase() +
+      (r.reason ? ' (' + String(r.reason) + ')' : '');
+    key.attestation = Object.assign({}, key.attestation, {
+      level: 'self-asserted', verifiedAt: '',
+      summary: (String(key.attestation.summary || '') + ' DOWNGRADED: ' +
+                why + '.').slice(0, 500),
+      revocation: r });
+    const before = device.attestation;
+    device.attestation = Devices.levelOf(device.keys);
+    if (!this.write(device)) {
+      log.debug("Leaving Devices.downgradeKeyAttestation(). Not written.");
+      return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
+                         'device ' + device.id + '.');
+    }
+    log.warn(this.deps.errorCodes.tag('STS-DEVICE-0047') + 'devices: the ' +
+             'key ' + key.id + ' of device ' + device.id + ' is no longer ' +
+             'attested: ' + why + '.');
+    this.recordAudit('device.attestation-revoked', 'system', device,
+      'the key ' + key.id + ' of device ' + device.id + ' is self-asserted ' +
+      'now: ' + why, { keyId: key.id, levelBefore: before,
+                       level: device.attestation,
+                       errorCode: 'STS-DEVICE-0047' });
+    this.credentialChanged(device, 'update', key, undefined, 'system',
+                           'Its attestation was revoked: ' + why + '.');
+    log.debug("Leaving Devices.downgradeKeyAttestation(). " +
+              device.attestation + ".");
+    return { ok: true, changed: true, level: device.attestation };
   }
 
   // CAEP credential-change about one of a device's credentials — a key
@@ -1720,7 +1897,7 @@ class Devices {
                ', last used ' + victim.lastUsed + ', was removed to make ' +
                'room for a new one.');
     }
-    const secret = nodeCrypto.randomBytes(32).toString('base64url');
+    const secret = stsCrypto.randomBytes(32).toString('base64url');
     const device = Devices.blank(ownerDn, 'person',
       String(spec.label || '').slice(0, MAX_LABEL) || 'a device',
       { method: 'native-sso', at: now, actor: String(spec.username || '') });
@@ -1746,7 +1923,7 @@ class Devices {
     helpers.log.debug("Entering Devices.blank().");
     helpers.log.debug("Leaving Devices.blank().");
     return {
-      id: nodeCrypto.randomUUID(), dn: '', owner: ownerDn,
+      id: stsCrypto.randomUuid(), dn: '', owner: ownerDn,
       ownerKind: ownerKind, label: label, applications: [], keys: [],
       attestation: 'self-asserted', compliance: 'unknown',
       complianceChange: null, status: 'active', statusChange: null,
@@ -1984,7 +2161,7 @@ class Devices {
     const ids = stsCrypto.certificateIdentifiers(pem);
     let notAfter = '';
     try {
-      notAfter = new Date(new nodeCrypto.X509Certificate(pem).validTo)
+      notAfter = new Date(stsCrypto.parseCertificate(pem).validTo)
         .toISOString();
     } catch (e) {
       // A post-quantum certificate node cannot load: its key and its names
@@ -2114,14 +2291,28 @@ class Devices {
     }
     const now = this.nowIso();
     const key: DeviceKey = {
-      id: 'k-' + nodeCrypto.randomBytes(9).toString('base64url'),
+      id: 'k-' + stsCrypto.randomBytes(9).toString('base64url'),
       kind: kind, thumbprint: read.thumbprint,
       label: label.value || kind + ' key', added: now,
       addedBy: String(actor || ''), proof: proof,
-      attestation: { level: level, format: format,
+      attestation: Object.assign({ level: level, format: format,
                      summary: String(att.summary || '').slice(0, 500),
                      verifiedAt: level === 'attested'
                        ? String(att.verifiedAt || now) : '' },
+                     // #256: an Android chain's serials and what Google's
+                     // status list said of them, as the verifier recorded.
+                     Array.isArray(att.chainSerials)
+                       ? { chainSerials: att.chainSerials.map(String)
+                             .slice(0, 10) } : {},
+                     att.revocation && typeof att.revocation === 'object'
+                       ? { revocation: att.revocation } : {},
+                     // #257: a TPM statement's freshness, as the enrolment
+                     // core decided it.
+                     att.freshness && typeof att.freshness === 'object'
+                       ? { freshness: {
+                             status: String(att.freshness.status || ''),
+                             detail: String(att.freshness.detail || '')
+                               .slice(0, 300) } } : {}),
       material: read.material
     };
     log.debug("Leaving Devices.prepareKey(). " + kind);
@@ -2530,8 +2721,9 @@ class Devices {
   // COMPLIANCE (decision 2, phase 3). The doors that call this: the console
   // and `/admin-api` (`admin`), the MDM feed under `device:compliance`
   // (`mdm`), development's test control (`test-control`); a received CAEP
-  // event (`caep`) from a registered foreign transmitter
-  // (`ssf/ssf_transmitters.ts`, #153). The register records the change and
+  // event (`caep`) from a federation partner's Shared Signals, as the
+  // signal-response policy permits (`ssf/ssf_transmitters.ts`, #373, #374 —
+  // an MDM being an `ssf` relationship). The register records the change and
   // its previous value, and a change counts in Monitoring → Devices by its
   // source.
   //
@@ -2746,6 +2938,7 @@ class Devices {
     const ended = this.endSessionsFrom(device, entity === 'admin'
       ? 'an administrator marking device ' + device.id + ' compromised'
       : 'device ' + device.id + ' being marked compromised', entity);
+    const grants = this.endGrantsBoundTo(device, entity, actor, reasonAdmin);
     this.setRiskLevel(device.id, 'HIGH', 'DEVICE_COMPROMISED',
                       { source: 'compromise', actor: actor,
                         initiatingEntity: entity,
@@ -2773,11 +2966,122 @@ class Devices {
     }
     log.warn('devices: device ' + device.id + ' was marked COMPROMISED by ' +
              (actor || 'an administrator') + '; ' + ended + ' session(s) ' +
-             'ended, ' + revoked.length + ' certificate(s) revoked' +
+             'ended, ' + grants.gnap + ' GNAP grant(s) and ' + grants.tokens +
+             ' key-bound OAuth token(s) ended, ' + revoked.length +
+             ' certificate(s) revoked' +
              (hadSecret ? ', its Native SSO secret revoked' : '') + '.');
     log.debug("Leaving Devices.compromised().");
     return { sessionsEnded: ended, certificatesRevoked: revoked.length,
-             secretRevoked: hadSecret };
+             secretRevoked: hadSecret, gnapGrantsEnded: grants.gnap,
+             oauthTokensRevoked: grants.tokens };
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT A COMPROMISED DEVICE'S KEYS WERE TRUSTED WITH BEYOND A SESSION
+  // (#432, phase 2). The register knows a device by its keys — a `jwk` key's
+  // RFC 7638 thumbprint, an `x509` key's SubjectPublicKeyInfo digest and the
+  // certificate it holds (`material.certificate`, which is also where a
+  // certificate this service's EST or SCEP CA issued the device is kept) —
+  // and three things here are bound to a key by those same digests:
+  //
+  //   * a GNAP grant whose CLIENT KEY is one of them (a device acting as a
+  //     client instance, by a JWK or by mutual TLS with its certificate):
+  //     ended as the client's own section 5.4 revocation, through
+  //     `gnap_revocation.ts`;
+  //   * an OAuth access or refresh token DPoP-bound (RFC 9449) to one of the
+  //     JWK thumbprints — the `jkt` the token register keeps;
+  //   * an OAuth token bound by mutual TLS (RFC 8705) to one of the device's
+  //     certificates — the `x5t#S256` the register keeps, compared with each
+  //     certificate's own thumbprint — or to ANY certificate over one of its
+  //     keys: the register also keeps the bound certificate's
+  //     SubjectPublicKeyInfo SHA-256 (`x5tSpki`), compared with the keys', so
+  //     a certificate another CA issued, or a re-issue the register never
+  //     held, is found by the key. A mutual-TLS GNAP client is matched the
+  //     same way, by the key under the certificate it proved with
+  //     (`client.certSpki`).
+  //
+  // Both kinds of token are revoked in the one revocation set, whose observer
+  // reports the grant each ends (#239). A WebAuthn key binds no token. The
+  // Native SSO secret, the certificates and the sessions are ended above.
+  // -------------------------------------------------------------------------
+  private endGrantsBoundTo(device: Device, entity: string, actor: string,
+                           why: string): { gnap: number; tokens: number } {
+    const { log, errorCodes, findGnapRevocation, loadStats } = this.deps;
+    log.debug("Entering Devices.endGrantsBoundTo(). " + device.id);
+    const thumbprints = device.keys.filter(function (key) {
+      return key.kind === 'jwk' || key.kind === 'x509';
+    }).map(function (key) {
+      return String(key.thumbprint || '');
+    }).filter(Boolean);
+    const jwkThumbprints = device.keys.filter(function (key) {
+      return key.kind === 'jwk';
+    }).map(function (key) {
+      return String(key.thumbprint || '');
+    }).filter(Boolean);
+    // The x5t#S256 of every certificate the device's x509 keys hold.
+    const certThumbprints: string[] = [];
+    device.keys.forEach((key) => {
+      const pem = key.kind === 'x509' && key.material
+        ? String(key.material.certificate || '') : '';
+      if (!pem) {
+        return;
+      }
+      try {
+        certThumbprints.push(this.deps.stsCrypto.certificateThumbprint(pem));
+      } catch (e) {
+        // A certificate that will not parse binds nothing that can be found.
+        log.debug("Caught in Devices.endGrantsBoundTo(): " +
+                  ((e && e.message) || e));
+      }
+    });
+    // The SubjectPublicKeyInfo SHA-256 of every key the device holds — an
+    // `x509` key's own thumbprint, and a `jwk` key's computed here — which a
+    // certificate-bound token's `x5tSpki` and a mutual-TLS GNAP client's
+    // `certSpki` are compared with: a certificate over the device's KEY that
+    // the register never held (another CA's, a re-issue) is found by it.
+    const spkiThumbprints: string[] = [];
+    device.keys.forEach((key) => {
+      if (key.kind === 'x509' && key.thumbprint) {
+        spkiThumbprints.push(String(key.thumbprint));
+      } else if (key.kind === 'jwk' && key.material && key.material.jwk) {
+        try {
+          spkiThumbprints.push(this.deps.stsCrypto.publicKeySpkiThumbprint(
+            stsCrypto.publicKeyFromJwk(key.material.jwk)));
+        } catch (e) {
+          // A JWK node cannot import is matched by its RFC 7638 thumbprint
+          // alone.
+          log.debug("Caught in Devices.endGrantsBoundTo(): " +
+                    ((e && e.message) || e));
+        }
+      }
+    });
+    const out = { gnap: 0, tokens: 0 };
+    try {
+      const gnap = findGnapRevocation();
+      if (gnap && (thumbprints.length || certThumbprints.length)) {
+        out.gnap = gnap.endForDeviceKeys(
+          thumbprints.concat(certThumbprints, spkiThumbprints), {
+          why: 'its client key belongs to device ' + device.id + ', marked ' +
+               'compromised', actor: actor, via: 'the device register',
+          initiatingEntity: entity });
+      }
+      if (jwkThumbprints.length || certThumbprints.length ||
+          spkiThumbprints.length) {
+        out.tokens = loadStats().revokeWhere(function (record: Json) {
+          return (!!record.jkt && jwkThumbprints.indexOf(record.jkt) >= 0) ||
+                 (!!record.x5t && certThumbprints.indexOf(record.x5t) >= 0) ||
+                 (!!record.x5tSpki &&
+                  spkiThumbprints.indexOf(record.x5tSpki) >= 0);
+        }, why, { initiatingEntity: entity });
+      }
+    } catch (e) {
+      log.error(errorCodes.tag('STS-DEVICE-0046') + 'devices: what the keys ' +
+                'of device ' + device.id + ' were trusted with could not all ' +
+                'be ended: ' + ((e && e.message) || e));
+    }
+    log.debug("Leaving Devices.endGrantsBoundTo(). " + out.gnap +
+              " grant(s), " + out.tokens + " token(s).");
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -2983,6 +3287,32 @@ class Devices {
         what: 'When it was last used, ISO 8601.' }
     ]
   };
+
+  /**
+   * The `/admin-api` route whose answer carries this module's prose (#543
+   * phase 2b): `/admin/ldap/devices`, which publishes SCHEMA. No other
+   * answer carries it.
+   */
+  static readonly PROSE_ROUTES: readonly string[] =
+    Object.freeze(['/admin-api/ldap/devices']);
+
+  /**
+   * Extracts this module's console prose (#543 phase 2b): each object
+   * class's and attribute's `what` in SCHEMA.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering Devices.prose().");
+    // Lazily, which is safe wherever this module sits in the require order;
+    // the extractor is the only caller.
+    const serverProse: typeof import('./server_prose') =
+      require('./server_prose');
+    const out = serverProse.harvest('devices.schema', Devices.SCHEMA,
+                                    ['what']);
+    helpers.log.debug("Leaving Devices.prose(). " + Object.keys(out).length);
+    return out;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -3024,6 +3354,10 @@ export = {
   keyKindsOf: Devices.keyKindsOf,
   sentence: Devices.sentence,
   SCHEMA: Devices.SCHEMA,
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: Devices.PROSE_ROUTES,
+  prose: Devices.prose,
   OWNER_KINDS: OWNER_KINDS,
   KEY_KINDS: KEY_KINDS,
   KEY_KIND_FILTERS: KEY_KIND_FILTERS,
@@ -3042,11 +3376,14 @@ export = {
   DEVICE_SECRET_CREDENTIAL_TYPE: DEVICE_SECRET_CREDENTIAL_TYPE,
   credentialOf: Devices.credentialOf,
   all: slot.forward('all'),
+  count: slot.forward('count'),
   list: slot.forward('list'),
   page: slot.forward('page'),
   listFor: slot.forward('listFor'),
   listForOwner: slot.forward('listForOwner'),
   byId: slot.forward('byId'),
+  androidAttestedKeys: slot.forward('androidAttestedKeys'),
+  downgradeKeyAttestation: slot.forward('downgradeKeyAttestation'),
   bySecret: slot.forward('bySecret'),
   byCredentialId: slot.forward('byCredentialId'),
   holdsAny: slot.forward('holdsAny'),

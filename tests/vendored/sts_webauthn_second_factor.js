@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -52,6 +52,8 @@
 // point rather than a cost.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -333,21 +335,6 @@ async function post(path, payload) {
   return { status: r.status, body: body, raw: raw };
 }
 
-function attr(html, name) {
-  log.debug("Entering attr().");
-  const m = String(html).match(new RegExp(name + '="([^"]*)"'));
-  log.debug("Leaving attr().");
-  return m ? m[1] : "";
-}
-
-function hidden(html, name) {
-  log.debug("Entering hidden().");
-  const m = String(html)
-    .match(new RegExp('name="' + name + '"[^>]*value="([^"]*)"'));
-  log.debug("Leaving hidden().");
-  return m ? m[1] : "";
-}
-
 // Start an authorization request and get as far as the sign-in screen, which is
 // where a pending record exists. `/authn/login` cannot be reached directly —
 // it draws a form for a PENDING RECORD and answers 400 to a request naming
@@ -374,22 +361,60 @@ async function reachTheSignInScreen(b) {
   return started.location.replace(/.*authn=/, "").replace(/&.*/, "");
 }
 
-// Complete whichever ceremony the security-key page is drawing. Returns the
-// page's own answer, so a caller can assert what came back.
+// THE SIGN-IN SCREEN'S ACT OVER `/authn-api` (#571), through the one helper,
+// for the pending sign-in `authnId` names. Where it names the security-key
+// step, that page is opened as the sign-in surface opens it (#572): its
+// shell, then `GET /authn-api/mfa/{id}?page=webauthn` — `{ status: 200,
+// step, view }`; a redirect is `{ status: 303, location }`, and a refusal
+// its own status and text.
+async function signInAt(b, authnId, fields) {
+  log.debug("Entering signInAt().");
+  const answer = await authnSignin.submit(base, authnId, fields,
+                                          { cookie: b.cookie });
+  b.cookie = answer.cookie;
+  if (answer.next === "mfa") {
+    const opened = await authnSignin.step(answer.location,
+                                          { cookie: b.cookie });
+    b.cookie = opened.cookie;
+    log.debug("Leaving signInAt(). The step.");
+    return { status: opened.status, step: opened, view: opened.view || {},
+             text: opened.text, location: "" };
+  }
+  log.debug("Leaving signInAt(). " + answer.next);
+  return { status: answer.next === "redirect" ? 303 : answer.status,
+           location: answer.location, text: JSON.stringify(answer.json),
+           view: {} };
+}
+
+// The passkey step's facts, off its view.
+function ceremonyOf(page) {
+  log.debug("Entering ceremonyOf().");
+  log.debug("Leaving ceremonyOf().");
+  return (page.view && page.view.webauthn) || {};
+}
+
+// Complete whichever ceremony the security-key step is armed for (#572:
+// `POST /authn-api/mfa/{id}/webauthn/options`, then `…/webauthn`). Answers
+// `{ status, location, text, mode, allow }` — the act's answer read as the
+// form's was.
 async function completeCeremony(b, page, authenticator) {
   log.debug("Entering completeCeremony().");
-  const mode = attr(page, "data-mode");
-  const challenge = attr(page, "data-challenge");
-  const mfaId = hidden(page, "mfa_id");
-  assert.ok(mfaId, "the security-key page carried no mfa_id: " +
-    String(page).slice(0, 300));
-  assert.ok(challenge, "the security-key page carried no challenge.");
-  const credential = mode === "create"
-    ? authenticator.register(challenge) : authenticator.assert(challenge);
-  log.debug("Leaving completeCeremony().");
-  return b.go("POST", "/authn/webauthn",
-              form({ mfa_id: mfaId, mode: mode,
-                     credential: JSON.stringify(credential) }));
+  assert.ok(page.step, "the security-key step was not opened: " +
+    String(page.text).slice(0, 300));
+  let armed = null;
+  const answer = await authnSignin.passkeyStep(page.step, function (c) {
+    armed = c;
+    assert.ok(c.challenge, "the ceremony carried no challenge.");
+    return c.mode === "create" ? authenticator.register(c.challenge)
+                               : authenticator.assert(c.challenge);
+  });
+  if (answer.cookie) {
+    b.cookie = answer.cookie;
+  }
+  log.debug("Leaving completeCeremony(). " + answer.next);
+  return { status: answer.next === "redirect" ? 303 : answer.status,
+           location: answer.location, text: JSON.stringify(answer.json),
+           mode: armed ? armed.mode : "", allow: armed ? armed.allow : [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -437,21 +462,39 @@ async function enrollingAKeyAtTheSignInScreen(authenticator) {
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
 
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           use_webauthn: "1", action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      use_webauthn: "1", action: "login" });
   check("a person holding no key is offered the ENROLMENT ceremony — which " +
         "is this service's enrol-on-first-use behaviour and is unchanged",
     function () {
       assert.strictEqual(page.status, 200,
         "the sign-in answered " + page.status + " " +
         String(page.text).slice(0, 300));
-      assert.strictEqual(attr(page.text, "data-mode"), "create",
+      assert.strictEqual(ceremonyOf(page).mode, "create",
         "the page is not drawing a registration: " +
         String(page.text).slice(0, 400));
     });
 
-  const done = await completeCeremony(b, page.text, authenticator);
+  check("THE PAGE IS THE SIGN-IN SURFACE'S (#572): its view is facts — the " +
+        "ceremony's mode, the RP ID, the challenge and what the ceremony " +
+        "asks for, for the technical fold — and no markup", function () {
+    const w = ceremonyOf(page);
+    assert.ok(w.rpId && w.challenge && w.userVerification,
+      "the view lacks the fold's facts: " + String(page.text).slice(0, 400));
+    assert.ok(!/<[a-z]/.test(String(page.text)),
+      "the view carries markup: " + String(page.text).slice(0, 400));
+  });
+  const noCeremony = await authnSignin.stepAct(page.step, "webauthn", {});
+  check("a result with no ceremony in it is answered that the browser ran " +
+        "no ceremony, and the step survives", function () {
+      assert.strictEqual(noCeremony.status, 400,
+        "it answered " + noCeremony.status);
+      assert.ok(/did not run the ceremony/.test(noCeremony.errors.join(" ")),
+        String(noCeremony.text).slice(0, 400));
+    });
+
+  const done = await completeCeremony(b, page, authenticator);
   check("AND THE CEREMONY IS ACCEPTED BY THE REAL VERIFIER — a real P-256 " +
         "signature over the real authenticatorData || " +
         "SHA-256(clientDataJSON), from an implementation that shares no code " +
@@ -508,6 +551,18 @@ async function theKeyIsInTheStoreEverythingElseReads(authenticator) {
         "the stored credential id is not the one enrolled.");
     });
 
+  check("A KEY REGISTERED AT THE SIGN-IN SCREEN IS NAMED BY ITS GROUP " +
+        "(#470), where it was called \"security key\" whatever it was: this " +
+        "one cannot be backed up and is cross-platform, so it is a security " +
+        "key, listed under passkeys on security keys", function () {
+      assert.strictEqual(factors.keys[0].label, "Security key",
+        JSON.stringify(factors.keys[0]));
+      assert.strictEqual(factors.keys[0].group, "security-key",
+        JSON.stringify(factors.keys[0]));
+      assert.strictEqual(factors.keys[0].backupEligible, false,
+        JSON.stringify(factors.keys[0]));
+    });
+
   check("AND `mfaRequired` IS TRUE NOW, which is the flag the sign-in screen " +
         "reads and which no security key could ever set before", function () {
     assert.strictEqual(factors.mfaRequired, true,
@@ -532,9 +587,9 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
 
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
   check("A PASSWORD ALONE NO LONGER SIGNS THEM IN. The checkbox is untouched " +
         "and the security-key step is demanded anyway, because the account " +
         "is CONFIGURED for two factors — which is what `mfaRequired` means " +
@@ -543,7 +598,7 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
       "the sign-in answered " + page.status + " — a redirect here is a " +
       "session minted on one factor, which is the bypass this asserts is " +
       "closed: " + page.location);
-    assert.ok(/wa-data/.test(page.text),
+    assert.ok(page.step && page.view.page === "webauthn",
       "the security-key page was not drawn: " +
       String(page.text).slice(0, 400));
   });
@@ -553,14 +608,16 @@ async function theSecondSignInDemandsItWithoutBeingAsked(authenticator) {
         "knows the password register an authenticator of their own and be " +
         "signed in claiming two factors, which is not a weaker second factor " +
         "but none at all", function () {
-    assert.strictEqual(attr(page.text, "data-mode"), "get",
-      "the page is drawing a " + attr(page.text, "data-mode") + " ceremony.");
-    assert.ok(attr(page.text, "data-allow").indexOf(authenticator.idB64) >= 0,
-      "allowCredentials does not name the enrolled key: " +
-      attr(page.text, "data-allow"));
+    assert.strictEqual(ceremonyOf(page).mode, "get",
+      "the page is drawing a " + ceremonyOf(page).mode + " ceremony.");
   });
 
-  const done = await completeCeremony(b, page.text, authenticator);
+  const done = await completeCeremony(b, page, authenticator);
+  check("and the ceremony it arms allows the key they hold", function () {
+    assert.ok((done.allow || []).indexOf(authenticator.idB64) >= 0,
+      "allowCredentials does not name the enrolled key: " +
+      JSON.stringify(done.allow));
+  });
   check("and the key they actually hold completes it", function () {
     assert.ok(done.status === 302 || done.status === 303,
       "the assertion was refused: " + done.status + " " +
@@ -591,18 +648,18 @@ async function somebodyElsesAuthenticatorIsRefused() {
   const stranger = makeAuthenticator();
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
-  assert.ok(/wa-data/.test(page.text),
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
+  assert.ok(page.step && page.view.page === "webauthn",
     "the security-key page was not drawn for the refusal case.");
 
-  const done = await completeCeremony(b, page.text, stranger);
+  const done = await completeCeremony(b, page, stranger);
   check("A VALID CEREMONY FROM THE WRONG KEY IS REFUSED. The signature is " +
         "real and the challenge is right; what is wrong is that the " +
         "credential is not one of this person's — which is the check that " +
         "makes several keys per person safe", function () {
-    assert.strictEqual(done.status, 200,
+    assert.strictEqual(done.status, 400,
       "the stranger's authenticator was ACCEPTED (" + done.status + " " +
       done.location + ").");
     assert.ok(/could not be checked|did not verify|not one of/.test(done.text),
@@ -628,19 +685,20 @@ async function theUseYourKeyInsteadLinkWorks() {
   log.info("=== the use-your-key-instead link is reachable ===");
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
-  const mfaId = hidden(page.text, "mfa_id");
-  const drawn = await b.go("GET", "/authn/webauthn?mfa=" +
-                           encodeURIComponent(mfaId));
-  check("GET /authn/webauthn draws the ceremony for somebody who HOLDS a key " +
-        "— its own gate asks the credential store, which answered `nobody " +
-        "holds one` for everybody until the two stores became one",
-        function () {
-    assert.strictEqual(drawn.status, 200,
-      "it answered " + drawn.status + " " + String(drawn.text).slice(0, 300));
-    assert.strictEqual(attr(drawn.text, "data-mode"), "get",
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
+  const mfaId = page.step ? page.step.id : "";
+  const drawn = await authnSignin.step(base + "/authn/webauthn?mfa=" +
+                                       encodeURIComponent(mfaId),
+                                       { cookie: b.cookie });
+  check("the passkey page is drawn for somebody who HOLDS a key — its own " +
+        "gate asks the credential store, which answered `nobody holds one` " +
+        "for everybody until the two stores became one", function () {
+    assert.ok(drawn.shellStatus === 200 && drawn.status === 200,
+      "it answered " + drawn.shellStatus + "/" + drawn.status + " " +
+      String(drawn.text).slice(0, 300));
+    assert.strictEqual(ceremonyOf(drawn).mode, "get",
       "and it is not drawing an assertion.");
   });
   log.debug("Leaving theUseYourKeyInsteadLinkWorks().");
@@ -676,9 +734,9 @@ async function anOperatorCanClearItAndTheDemandStops(authenticator) {
 
   const b = browser();
   const authnId = await reachTheSignInScreen(b);
-  const page = await b.go("POST", "/authn/login",
-    form({ authn_id: authnId, username: PERSON, password: PASSWORD,
-           action: "login" }));
+  const page = await signInAt(b, authnId,
+    { username: PERSON, password: PASSWORD,
+      action: "login" });
   check("SO A PASSWORD ALONE SIGNS THEM IN AGAIN, which is what makes the " +
         "clear the way back for somebody who lost their key rather than a " +
         "button that reports success and changes nothing", function () {

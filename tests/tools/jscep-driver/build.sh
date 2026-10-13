@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # tests/tools/jscep-driver/build.sh — THE jscep CLIENT, BUILT FOR THE TESTS
 # IMAGE (#250, 2026-09-26). Run by the `enroll-java` stage of tests/Dockerfile

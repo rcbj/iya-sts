@@ -32,6 +32,19 @@ GET /logout?username=alice        somebody else's list (development mode only)
 GET /logout?format=json           the same thing, for a test
 ```
 
+**The page is drawn in your browser** (since 2026-10-12): `/logout` answers a
+small document whose script, `/logout/signout.js`, reads the list from
+`GET /authn-api/logout` and sends what you press to `POST /authn-api/logout`.
+It needs JavaScript; with scripts blocked it says so and shows nothing else.
+The Global logout is at the top, the checkboxes are beside each row, and
+**pressing "End the ticked items" with nothing ticked ends nothing.**
+
+When the sign-out leaves your browser something to do — loading an
+application's Front-Channel Logout page, a WS-Federation cleanup image, a
+SAML `LogoutRequest` link or a partner's sign-out — the page you land on is
+`/logout/signed-out`, drawn by the service with those in it, exactly as the
+sign-out page always drew them. Otherwise the result is drawn in place.
+
 Signing out may mean signing in first. This service has no other way to know who
 is asking, and the session that creates is listed with everything else. **No
 console role is needed, and that is not an oversight**: signing yourself out
@@ -46,19 +59,27 @@ yourself is fine) and anything else is a 403 pointing at `/admin/logout` and
 
 ## `POST /logout`
 
-Ends what was ticked. **A POST that ticks nothing ends everything** — that is the
-default and the point of the endpoint:
+Ends what was named, and answers JSON. **A POST that names nothing ends
+everything** — that is the default and the point of the endpoint. The body is
+JSON (or the request asks for JSON with `Accept: application/json`); a form
+posted here ends nothing and is sent to the page with a `303`, because the
+page's own sign-out is `POST /authn-api/logout`, bound to your browser's
+session.
 
 ```bash
 # global logout for whoever holds this cookie
-curl -k -b cookies.txt -X POST https://localhost:8081/logout
+curl -k -b cookies.txt -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' -d '{}'
 
-# global logout for somebody named, no cookie needed
-curl -k -X POST https://localhost:8081/logout -d 'username=alice&scope=global'
+# global logout for somebody named, no cookie needed (development mode)
+curl -k -X POST https://localhost:8081/logout \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","scope":"global"}'
 
 # just two things
 curl -k -X POST https://localhost:8081/logout \
-     -d 'username=alice&select=session:8Qk3…&select=token:abc…'
+     -H 'Content-Type: application/json' \
+     -d '{"username":"alice","select":["session:8Qk3…","token:abc…"]}'
 ```
 
 Row ids come from the GET. They look like `session:<id>`, `token:<jti>`,
@@ -134,7 +155,7 @@ Three more limits, all honest rather than missing:
 * **SPIFFE is not in the list at all.** A SPIFFE identity is a workload, attested
   per call, holding no session. The registry can end an identity's ability to
   obtain *another* SVID, which is a ban rather than a logout; that lives at
-  `/admin/spiffe`.
+  `/admin/cert-issuance#cert-spiffe-overview`.
 
 ## Front-channel logout
 
@@ -249,30 +270,34 @@ What to expect:
 
 ## The Sign out button on the console and the portal
 
-This service's own two web surfaces each have a **Sign out** button of their
-own — at the top of every page of `/admin`, and at the top of every page of
-`/portal`. On the console it is in the **account menu**, the drop-down in the
-head row labelled with the name you are signed in as; the menu's other row is a
-link to your own account in the user portal. (It is a `<details>` element, so it
-opens with no JavaScript — this console ships none — and closes when you click
-its label again rather than when you click elsewhere on the page.)
+This service's own two web surfaces each have a **Sign out** button — at the
+top of every page of `/admin`, and at the top of every page of `/portal`. On
+the console it is in the **account menu**, the drop-down in the head row
+labelled with the name you are signed in as; the menu's other row is a link to
+your own account in the user portal.
 
-| Endpoint | What it ends |
+| Button | What it ends |
 |---|---|
-| `POST /admin/signout` | the console's session **and the sign-on session behind it** |
+| the console's **Sign out** | it goes to `/logout` below: the sign-on session, and with it everything issued on it — the console's own tokens among them |
 | `POST /portal/signout` | the portal's session **and the sign-on session behind it** |
 
-**Each ends two sessions, and it has to.** Both surfaces are ordinary OpenID
-Connect clients of this service (`sts-admin-console` and `sts-user-portal`), so
-they hold a session of their own on top of the sign-on session you have with
-the identity provider. A button that ended only the application's session would
-sign nobody out: the next page runs the authorization code flow, meets the
-sign-on session that is still live, and lets you back in with nothing typed.
+**The portal's ends two sessions, and it has to.** The portal is an ordinary
+OpenID Connect client of this service (`sts-user-portal`), so it holds a
+session of its own on top of the sign-on session you have with the identity
+provider. A button that ended only the application's session would sign nobody
+out: the next page runs the authorization code flow, meets the sign-on session
+that is still live, and lets you back in with nothing typed.
 
-**They are the NARROW sign-out.** What they do not touch is anything already
-issued to other applications — access and refresh tokens, Kerberos tickets,
-credential offers, LDAP binds. `/logout` below is the one that ends those, and
-the portal draws a button for it at the foot of its **Overview** page.
+**The console holds no session of its own** (since 2026-10-05): it is a static
+page holding a DPoP-bound access token in the browser's memory, so its Sign
+out is the global one, and its refresh token is refused once the sign-on
+session it was issued on has ended.
+
+**The portal's is the NARROW sign-out.** What it does not touch is anything
+already issued to other applications — access and refresh tokens, Kerberos
+tickets, credential offers, LDAP binds. `/logout` below is the one that ends
+those, and the portal draws a button for it at the foot of its **Overview**
+page.
 
 ## The other two doors
 

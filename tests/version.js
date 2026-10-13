@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -280,7 +280,9 @@ function run(t) {
   //    agree perfectly right up until the moment they stop.
   // -----------------------------------------------------------------------
   t.log.info('=== one source for every surface ===');
-  const drawers = ['home/home.ts', 'admin-ui/admin.ts', 'portal/portal.ts',
+  // The portal's version is `/account-api`'s to answer since #568.
+  const drawers = ['home/home.ts', 'admin-ui/admin.ts',
+                   'account-api/account_api.ts',
                    'mgmt-api/admin_api.ts', 'sts_metadata.ts'];
   drawers.forEach(function (rel) {
     const src = codeOf(rel);

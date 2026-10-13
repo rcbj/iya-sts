@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -135,6 +135,27 @@ interface GraphFilter {
 // ---------------------------------------------------------------------------
 const STS_ID = 'sts';
 
+// ---------------------------------------------------------------------------
+// WHAT THE PICTURE'S MODEL SAYS IN WORDS (#543 phase 2b): the box this realm
+// is drawn as, and what a relationship's mechanism column reads when it
+// names no mechanism or one this service does not have. The second is a
+// TEMPLATE — the unknown name is data and stays as typed — filled with
+// `ServerProse.fill()` where the row is made, so the sentence and the
+// template the server matches it against cannot differ. A known
+// mechanism's label is `federation.js`'s, in the same namespace.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  thisService: 'This service',
+  // No claim about checking the password: product mode verifies it and
+  // development does not, and this label is drawn in both (#543 follow-up).
+  noMechanism: 'The sign-in screen (username and password)',
+  unknownMechanism: '{{mechanism}} — not a mechanism this service has'
+});
+
+// The `/admin-api` route whose answer carries them: the picture's own,
+// which has no management twin.
+const PROSE_ROUTES = ['/admin-api/console/federation/map'];
+
 /**
  * The federation register of one trust realm as a graph: this realm, its
  * applications, and the foreign service and identity providers it has
@@ -147,6 +168,49 @@ class FederationGraph {
    * The node id of this realm, which is always present.
    */
   static readonly STS_ID = STS_ID;
+  /**
+   * What the model says in words, templates among them (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
+  /**
+   * The routes whose answers carry this module's prose.
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's share of the `federation` namespace (#543 phase
+   * 2b): the box this realm is drawn as and the mechanism column's two
+   * sentences.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering FederationGraph.prose().");
+    const out: Record<string, string> = {};
+    Object.keys(SENTENCES).forEach(function (key) {
+      out['fedgraph.sentences.' + key] = SENTENCES[key];
+    });
+    helpers.log.debug("Leaving FederationGraph.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
+  /**
+   * Fills a template of `SENTENCES` through `ServerProse.fill()`, required
+   * LAZILY: that module requires `config.js` at its load, and nothing here
+   * needs it until a row is described.
+   *
+   * @param template - the template
+   * @param params - name → value
+   * @returns the sentence
+   */
+  private static fill(template: string,
+                      params: Record<string, unknown>): string {
+    helpers.log.debug("Entering FederationGraph.fill().");
+    const serverProse = require('../common/server_prose');
+    helpers.log.debug("Leaving FederationGraph.fill().");
+    return serverProse.fill(template, params);
+  }
 
   /**
    * Builds the graph model over the given dependencies.
@@ -240,6 +304,11 @@ class FederationGraph {
       ready: readiness.ready,
       missing: readiness.missing,
       usable: federation.isEnabled(record) && readiness.ready,
+      // Whether it signs anybody in, and whether its partner's Shared
+      // Signals are received (#373, #374): the picture marks both on the
+      // consuming arrow.
+      signsIn: federation.signsIn(record),
+      signalsEnabled: federation.signalsEnabled(record),
       authentications: parseInt(record.fedAuthentications, 10) || 0,
       users: parseInt(record.fedUsers, 10) || 0,
       lastUser: record.fedLastUser || '',
@@ -280,8 +349,9 @@ class FederationGraph {
       mechanism: mechanismId,
       mechanismLabel: mechanismRow ? mechanismRow.label
         : (mechanismId
-             ? mechanismId + ' — not a mechanism this service has'
-             : 'The sign-in screen, which checks no password'),
+             ? FederationGraph.fill(SENTENCES.unknownMechanism,
+                                    { mechanism: mechanismId })
+             : SENTENCES.noMechanism),
       mechanismKnown: !!mechanismRow || !mechanismId,
       mechanismConfigured: !!mechanismId,
       brokersTo: '',
@@ -510,7 +580,7 @@ class FederationGraph {
     // the same reason.
     addNode({
       id: STS_ID, kind: 'sts',
-      label: 'This service',
+      label: SENTENCES.thisService,
       realm: realm.id,
       realmName: realm.name || realm.id
     });
@@ -683,6 +753,14 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   STS_ID: FederationGraph.STS_ID,
+  // The `federation` namespace's route and English (#543).
+  PROSE_ROUTES: FederationGraph.PROSE_ROUTES,
+  /**
+   * Forwards to `FederationGraph.prose()`.
+   *
+   * @returns key → English
+   */
+  prose: (): Record<string, string> => FederationGraph.prose(),
   /**
    * Forwards to `FederationGraph.graph()` on the installed instance.
    */

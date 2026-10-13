@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -610,10 +610,17 @@ const DOCUMENTS = [
       }
       if (!/entityID="[^"]+"/.test(text)) { bad.push("no entityID"); }
       if (!/<md:IDPSSODescriptor[\s>]/.test(text)) {
-        bad.push("no IDPSSODescriptor — which is the element CLAUDE.md says " +
-                 "lives here and not in the WS-Federation document");
+        bad.push("no IDPSSODescriptor");
       }
-      if (!/protocolSupportEnumeration="urn:oasis:names:tc:SAML:2\.0:protocol"/
+      // #524: the SAML view carries no WS-Federation role, whose xsi:type a
+      // SAML-only consumer that validates strictly cannot resolve.
+      if (/fed:SecurityTokenServiceType/.test(text)) {
+        bad.push("a fed:SecurityTokenServiceType RoleDescriptor — that is " +
+                 "the WS-Federation view's (#524)");
+      }
+      // #523: one document for both SAML versions, so the enumeration is a
+      // list that names 2.0 among others.
+      if (!/protocolSupportEnumeration="[^"]*urn:oasis:names:tc:SAML:2\.0:protocol[\s"]/
           .test(text)) {
         bad.push("the IDPSSODescriptor does not claim SAML 2.0");
       }
@@ -633,10 +640,10 @@ const DOCUMENTS = [
       if (!/<md:EntityDescriptor[\s>]/.test(text)) {
         bad.push("no EntityDescriptor");
       }
-      if (!/protocolSupportEnumeration="urn:oasis:names:tc:SAML:1\.1:protocol"/
+      if (!/protocolSupportEnumeration="[^"]*urn:oasis:names:tc:SAML:1\.1:protocol[\s"]/
           .test(text)) {
-        bad.push("the IDPSSODescriptor does not claim SAML 1.1, which is the " +
-                 "one member that tells this document from /saml2/metadata");
+        bad.push("the IDPSSODescriptor does not claim SAML 1.1 — since #523 " +
+                 "the one document describes both versions");
       }
       if (!/<ds:Signature[\s>]/.test(text)) { bad.push("UNSIGNED"); }
       log.debug("Leaving must().");
@@ -650,17 +657,22 @@ const DOCUMENTS = [
     must: function (text) {
       log.debug("Entering must().");
       const bad = [];
-      if (!/<EntityDescriptor[\s>]/.test(text)) {
+      if (!/<(?:md:)?EntityDescriptor[\s>]/.test(text)) {
         bad.push("no EntityDescriptor");
       }
       if (!/fed:SecurityTokenServiceType/.test(text)) {
         bad.push("no RoleDescriptor of type fed:SecurityTokenServiceType, " +
-                 "which is what makes this a WS-Federation document rather " +
-                 "than a SAML one");
+                 "which is what a WS-Federation relying party reads");
       }
       if (!/PassiveRequestorEndpoint/.test(text)) {
         bad.push("no PassiveRequestorEndpoint, so a relying party reading " +
                  "this has nowhere to send anybody");
+      }
+      // ONE ENTITY, TWO VIEWS (iya-sts #524): the WS-Federation view is
+      // the SAML document with this role added, under the same entityID.
+      if (!/<md:IDPSSODescriptor[\s>]/.test(text)) {
+        bad.push("no IDPSSODescriptor — since #524 this view carries the " +
+                 "realm's SAML roles too");
       }
       if (!/<ds:Signature[\s>]/.test(text)) { bad.push("UNSIGNED"); }
       log.debug("Leaving must().");
@@ -875,6 +887,43 @@ const DOCUMENTS = [
       return bad;
     } },
 
+  // -- The user portal's API, `/account-api` (#568) ------------------------
+  // The portal became a static application over `/account-api`, which
+  // publishes its OpenAPI document to anybody: it describes every operation
+  // and carries no secret and no key. Before #568 the portal published no
+  // document at all and was in NO_PUBLIC_METADATA below.
+  { family: "User portal", spec: "OpenAPI 3.1",
+    path: "/account-api/openapi.json",
+    type: JSON_TYPE, json: true, badCredential: "ignored",
+    must: function (d) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/^3\.1\./.test(String(d.openapi || ""))) {
+        bad.push("openapi is " + JSON.stringify(d.openapi) + ", not 3.1");
+      }
+      const servers = Array.isArray(d.servers) ? d.servers : [];
+      if (!servers.length || servers[0].url !== base) {
+        bad.push("servers[0].url is " +
+                 JSON.stringify(servers.length ? servers[0].url : null) +
+                 " and the document was fetched from " + base);
+      }
+      const paths = d.paths || {};
+      ["/account-api/me", "/account-api/password"].forEach(function (p) {
+        if (!paths[p]) {
+          bad.push("the document does not describe " + p);
+        }
+      });
+      const scheme = ((d.components || {}).securitySchemes || {}).portal;
+      if (!scheme || scheme.type !== "oauth2") {
+        bad.push("there is no oauth2 security scheme named portal");
+      }
+      if (/PRIVATE KEY|"d":"/.test(JSON.stringify(d))) {
+        bad.push("the account API's document CONTAINS KEY MATERIAL");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+
   // -- The service's own directory of realms -------------------------------
   // NOT a protocol family (`sts_metadata.ts` files it under `Service`), and it
   // is here because it is the document a client reads to discover the OTHER
@@ -946,11 +995,18 @@ const CONTROLS = [
     why: "the XACML surface requires the built-in XACML_USER role, and the " +
          "refusal comes from the access policy rather than from a middleware " +
          "— which is why it is a 403 and not a 401" },
-  { path: "/admin/sts-metadata", expect: [302, 303],
-    why: "the console is an OIDC relying party and sends a stranger to " +
-         "/oauth2/authorize. THIS is the one that catches a " +
-         "redirect-following fetch: follow it and the sign-in screen answers " +
-         "200" }
+  // THE CONSOLE'S PAGE IS ITS SHELL SINCE #446: every `/admin/*` path
+  // answers the same static document, which signs in in the browser and
+  // carries none of this service's data — what the page draws comes from
+  // `/admin-api/sts-metadata`, behind the token. So the page answers a
+  // stranger 200 and the operation behind it refuses one.
+  { path: "/admin/sts-metadata", expect: [200],
+    why: "the static console's shell, which carries no data of this " +
+         "service's" },
+  { path: "/admin-api/sts-metadata", expect: [401],
+    headers: { Authorization: "none" },
+    why: "the operation the console's metadata page is drawn from is " +
+         "behind the management API's token, as every operation is" }
 ];
 
 // ---------------------------------------------------------------------------
@@ -1005,9 +1061,7 @@ const NO_PUBLIC_METADATA = {
   "Federation":
     "there is no service-wide document — /federation/metadata/:id is one per " +
     "CONFIGURED relationship, and section 5 asserts the surface is ungated " +
-    "by asking for a relationship that does not exist.",
-  "User portal":
-    "not a protocol. Its own card on /admin/sts-metadata says so in a field."
+    "by asking for a relationship that does not exist."
 };
 
 // ---------------------------------------------------------------------------
@@ -1413,7 +1467,23 @@ async function thePerPartnerDocuments() {
       "spread to the document a partner reads while being configured.");
   });
 
-  log.info("[per partner] OK — two minted documents and one honest 404.");
+  // WS-FEDERATION'S PER-RELYING-PARTY DOCUMENT (#494) answers only for a
+  // REGISTERED relying party, in both modes: an unregistered wtrealm is
+  // issued under the shared entityID, which the shared document already
+  // publishes. Its refusal has federation's shape — a 404 from a handler,
+  // text/plain and no-store, saying why — never a gate on the reader.
+  const wsfed = await fetchDocument("/wsfed/metadata/anon-probe-rp");
+  check("WS-Federation metadata for an unregistered relying party is an " +
+        "honest 404", function () {
+    assert.strictEqual(wsfed.status, 404, "/wsfed/metadata/<unregistered> " +
+      "answered " + wsfed.status +
+      (wsfed.location ? " -> " + wsfed.location : ""));
+    assert.ok(/text\/plain/.test(wsfed.type), wsfed.type);
+    assert.ok(/no-store/.test(wsfed.cache), wsfed.cache);
+    assert.ok(/registered/.test(wsfed.text), wsfed.text.slice(0, 200));
+  });
+
+  log.info("[per partner] OK — two minted documents and two honest 404s.");
   log.debug("Leaving thePerPartnerDocuments().");
 }
 

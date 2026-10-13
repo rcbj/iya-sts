@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 
@@ -85,19 +85,23 @@ module.exports = {
     monitor.resetForTests();
 
     // -------------------------------------------------------------------
-    // 1. THE CATALOGUE. Four askers, and only three of them enforce.
+    // 1. THE CATALOGUE. Three askers, and only two of them enforce (the
+    //    demonstration PEP, `protected`, moved to the remote PEP in #596).
     // -------------------------------------------------------------------
-    t.log.info('=== the four askers of the PDP in this process ===');
+    t.log.info('=== the three askers of the PDP in this process ===');
 
     const first = shot();
-    t.equal(first.rows.length, 4,
-            'four things ask the PDP in this process and all four are ' +
-            'listed — the three embedded PEPs and the PDP endpoint');
-    t.equal(first.rows.filter(function (r) { return r.enforces; }).length, 3,
-            'THREE of them enforce; the fourth is POST /xacml/pdp, which ' +
+    t.equal(first.rows.length, 3,
+            'three things ask the PDP in this process and all three are ' +
+            'listed — the two embedded PEPs and the PDP endpoint');
+    t.equal(first.rows.filter(function (r) { return r.enforces; }).length, 2,
+            'TWO of them enforce; the third is POST /xacml/pdp, which ' +
             'answers somebody else\'s PEP');
-    t.equal(first.peps.embedded, 3,
-            'and the enforcement-point count is THREE rather than four: the ' +
+    t.check(!first.rows.some(function (r) { return r.id === 'protected'; }),
+            'and the demonstration PEP is not among them: it is the remote ' +
+            'PEP\'s GET /protected since #596');
+    t.equal(first.peps.embedded, 2,
+            'and the enforcement-point count is TWO rather than three: the ' +
             'PDP endpoint is not a PEP, and counting it would answer one too ' +
             'many on a service with no PEPs at all');
     t.equal(first.peps.total, first.peps.embedded + first.peps.remote,
@@ -133,20 +137,11 @@ module.exports = {
             'different reasons, and a page that carried only one column ' +
             'would be wrong for whichever question the reader had');
 
-    // The other half of the same distinction: a Permit that was REFUSED,
-    // which is section 7.2 working rather than a bug.
-    monitor.record('protected', { decision: 'Permit', allowed: false,
-                                  undischargeable: true });
-    const protectedRow = rowOf('protected');
-    t.equal(protectedRow.permit, 1, 'the PDP said Permit');
-    t.equal(protectedRow.allowed, 0,
-            'AND THE PEP REFUSED IT, which is what an obligation it cannot ' +
-            'discharge does (section 7.2) — the one enforcement outcome that ' +
-            'looks like a bug from the client side and is the specification ' +
-            'working');
-    t.equal(protectedRow.undischargeable, 1,
-            'and it is counted separately, so the page can say WHY that ' +
-            'Permit was refused rather than leaving it as a contradiction');
+    // The other half of the same distinction — a Permit REFUSED for an
+    // obligation it could not discharge (section 7.2) — was asserted on the
+    // demonstration PEP's row until #596. The remote PEP reports it on its
+    // heartbeat now (`xacmlPepUndischargeable`), and
+    // `tests/vendored/sts_xacml_remote_pep.js` drives it end to end.
 
     // -------------------------------------------------------------------
     // 3. A DECISION NOBODY HERE ENFORCED IS NOT A REFUSAL, AND THE FOUR
@@ -168,10 +163,10 @@ module.exports = {
             'not present for');
 
     const here = shot().decisions.here;
-    t.equal(here.decisions, 3,
-            'three decisions have been recorded in this realm');
+    t.equal(here.decisions, 2,
+            'two decisions have been recorded in this realm');
     t.equal(here.allowed, 0, 'none allowed');
-    t.equal(here.refused, 2, 'two refused');
+    t.equal(here.refused, 1, 'one refused');
     t.equal(here.unenforced, 1,
             'and ONE not enforced here, which is the PDP endpoint\'s');
     t.equal(here.allowed + here.refused + here.unenforced, here.decisions,
@@ -203,7 +198,7 @@ module.exports = {
             'heard of is NOT counted — that page claims to list every asker ' +
             'of the PDP in this process, and a row nothing describes would ' +
             'break the claim rather than extend it');
-    t.equal(shot().rows.length, 4,
+    t.equal(shot().rows.length, 3,
             'and it does not appear as a row');
 
     monitor.record('access', { decision: 'SomethingNew', allowed: true });
@@ -278,9 +273,9 @@ module.exports = {
         t.equal(monitor.snapshot(REPOSITORY).decisions.here.decisions, 1,
                 'counting inside it works');
       });
-      t.equal(shot().decisions.here.decisions, 4,
-              'AND THE DEFAULT REALM IS UNCHANGED BY IT — the four it had, ' +
-              'not five. This is the assertion realm_isolation.js exists ' +
+      t.equal(shot().decisions.here.decisions, 3,
+              'AND THE DEFAULT REALM IS UNCHANGED BY IT — the three it had, ' +
+              'not four. This is the assertion realm_isolation.js exists ' +
               'for, made where the store is declared');
       if (realms.remove) {
         realms.remove('moncheck');

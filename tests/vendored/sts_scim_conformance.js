@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -128,8 +128,41 @@ const LINK_APPEND = "scim2-tester builds the resource it ADDS to with every " +
   "holds a link, the add appends a second as RFC 7644 section 3.5.2.1 says " +
   "an add to a multi-valued attribute does, and the harness compares the " +
   "two links to the one it sent";
+const HOME_CELL = "scim2-tester patches the whole iya-sts extension object " +
+  "and compares every sub-attribute it sent, write-only ones included: its " +
+  "own write_only skip applies only to an attribute patched on its own. " +
+  "homeCell (#98) is write-only and returned never, as RFC 7643 section 7 " +
+  "requires of a write-only attribute, so it reads back absent. Excused " +
+  "only when homeCell and the schemas list are the ONLY differences " +
+  "(onlyHomeCellDiffers(), below)";
+// THE HOME_CELL EXCEPTION'S GUARD: the tester prints the value it patched
+// and the value it read back, each as `name=value` pairs. Everything but
+// home_cell and schemas must agree, or the exception does not apply — a
+// whole-object exception would otherwise hide any other extension defect.
+function onlyHomeCellDiffers(message) {
+  log.debug("Entering onlyHomeCellDiffers().");
+  const text = String(message || "");
+  const sent = /Patched value: (.*)/.exec(text);
+  const back = /Returned value: (.*)/.exec(text);
+  if (!sent || !back) {
+    log.debug("Leaving onlyHomeCellDiffers(). Not the expected shape.");
+    return false;
+  }
+  const strip = function (line) {
+    return line.replace(/\bschemas=\[[^\]]*\]\s*/, "")
+      .replace(/\bhome_cell=('[^']*'|None)\s*/, "").trim();
+  };
+  const same = strip(sent[1]) === strip(back[1]);
+  log.debug("Leaving onlyHomeCellDiffers(). " + same);
+  return same;
+}
+
 const EXCEPTIONS = {
   "scim2-tester check_remove_attribute [User] active": ACTIVE,
+  ["scim2-tester check_add_attribute [User] urn:ietf:params:scim:schemas:" +
+    "extension:iya-sts:2.0:User"]: HOME_CELL,
+  ["scim2-tester check_replace_attribute [User] urn:ietf:params:scim:" +
+    "schemas:extension:iya-sts:2.0:User"]: HOME_CELL,
   ["scim2-tester check_add_attribute [User] urn:ietf:params:scim:schemas:" +
     "extension:iya-sts:2.0:User:federationLinks"]: LINK_APPEND,
   "test-suite RFC7643-2.1-L366/schemas_present/Group": FUZZED_REF,
@@ -400,14 +433,15 @@ async function test() {
     const named = row.harness === "scim2-tester"
       ? (/'([^']+)'/.exec(row.message) || [])[1] : "";
     const key = row.harness + " " + row.id + (named ? " " + named : "");
-    if (EXCEPTIONS[key]) {
+    if (EXCEPTIONS[key] && (EXCEPTIONS[key] !== HOME_CELL ||
+                            onlyHomeCellDiffers(row.message))) {
       excepted[key] = true;
       log.info("  [exception] " + key + " (" + row.outcome + "): " +
                EXCEPTIONS[key]);
       return;
     }
     unexplained.push(key + " " + row.outcome + ": " +
-                     row.message.slice(0, 500));
+                     row.message.slice(0, 4000));
   });
   Object.keys(EXCEPTIONS).forEach(function (key) {
     if (!excepted[key]) {

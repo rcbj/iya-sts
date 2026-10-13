@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -143,9 +143,10 @@
 //     (`Krb5PersonKeysDeps`): the logger, the settings, the realm registry,
 //     the key store, the credential store, the application registry, the
 //     audit log, the error codes, the Kerberos codec and principal database
-//     (both locked, JavaScript, and required as they were), the keytab writer
-//     and node's `crypto`. The principal database is typed by what this file
-//     reads of it, because several of those members are getters its
+//     (both JavaScript in the parent's COPY set, and required as they were),
+//     the keytab writer
+//     and `common/crypto.js`. The principal database is typed by what this
+//     file reads of it, because several of those members are getters its
 //     `module.exports` gains after the object literal.
 //   * **THE DIRECTORY SLOT IS STATE OF THE INSTANCE**; the in-flight
 //     derivations stay a module-level `Map`, declared as it was.
@@ -160,7 +161,7 @@
 //     resolves to the same files.
 // ---------------------------------------------------------------------------
 
-import nodeCrypto = require('crypto');
+import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -170,6 +171,7 @@ import credentials = require('../common/credentials');
 import applications = require('../common/applications');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
+import mode = require('../common/mode');
 import kcrypto = require('./krb5_crypto');
 import prim = require('./krb5_primitives');
 import principals = require('./krb5_principals');
@@ -179,6 +181,7 @@ import keytab = require('./krb5_keytab');
 // it through the slot it already reads and gains no require (see
 // `installSlots()`).
 import Krb5Fast = require('./krb5_fast');
+import Krb5Pkinit = require('./krb5_pkinit');
 
 // A stored record, an info value, a directory row: JSON this file wrote.
 type Json = any;
@@ -195,7 +198,7 @@ interface DirectoryHooks {
   serviceKeyInfos(): Json[];
 }
 
-// What this file reads of the (locked, JavaScript) principal database.
+// What this file reads of the (JavaScript) principal database.
 interface PrincipalDatabase {
   readonly REALM: string;
   readonly KDC_ETYPES: number[];
@@ -206,15 +209,20 @@ interface PrincipalDatabase {
   userSalt(realm: string, name: string): string;
   enabledIn(realmId: string): boolean;
   kerberosRealmOf(realmId?: string): Json;
+  // The acceptor's configured account, without the key source (2026-10-12).
+  acceptorAccount?(): Json;
   find(name: string[], realm?: string): Json;
   longTermKey(principal: Json, etype: number): Promise<Uint8Array>;
   setKeySource?(source: {
     personKeys(name: string): Json;
     serviceKeys(spn: string): Json;
     krbtgtKeys?(): Json;
+    acceptorKeyMissing?(spn: string): boolean;
     personDisabled?(name: string): boolean;
     personSecondFactor?(name: string): Json;
+    decideSignIn?(name: string, detail: Json): Promise<Json>;
     fast?: Krb5Fast;
+    pkinit?: Krb5Pkinit;
   }): unknown;
 }
 
@@ -223,6 +231,7 @@ interface CredentialStore {
   setPasswordObserver?(fn: (name: string, password: string,
                             info?: Json) => void): unknown;
   secondFactorDemand?(name: string): Json;
+  serviceAccountRefusesDoor?(name: string, door: string): boolean;
 }
 
 // What `openRecord()` answers.
@@ -247,12 +256,14 @@ interface Krb5PersonKeysDeps {
   applications: typeof applications;
   audit: typeof audit;
   errorCodes: typeof errorCodes;
+  mode: typeof mode;
   kcrypto: Json;
   prim: Json;
   principals: PrincipalDatabase;
   keytab: typeof keytab;
-  nodeCrypto: typeof nodeCrypto;
+  stsCrypto: typeof stsCrypto;
   fast: Krb5Fast;
+  pkinit: Krb5Pkinit;
   // LAZILY, each (#169): the claim a cluster's first krbtgt key is made
   // under, and the store it is made against. Both load after this module in
   // the composition root, and neither is wanted by a process with no store.
@@ -297,6 +308,17 @@ const krbtgtUnreadableSaid: Set<string> = new Set();
 
 // How long a node holds the right to make a realm's first krbtgt key.
 const KRBTGT_CREATE_CLAIM_MS = 60000;
+
+// THE ACCEPTOR KEYS IN FLIGHT, per trust realm (2026-10-12) — see
+// `ensureAcceptorKey()` — and the realms whose failure to make one has been
+// said, so an acceptor asking on every request reports it ONCE per process.
+// Both bounded by the realms.
+const acceptorInFlight: Map<string, Promise<Json>> = new Map();
+const acceptorFailureSaid: Set<string> = new Set();
+
+// What `info.generated` says on the application entry of a key this service
+// made for its own acceptor, so that an operator's password still wins over it.
+const ACCEPTOR_GENERATED = 'acceptor';
 
 /**
  * The Kerberos keys this service stores on directory entries: a person's,
@@ -373,12 +395,14 @@ class Krb5PersonKeys {
       applications: applications,
       audit: audit,
       errorCodes: errorCodes,
+      mode: mode,
       kcrypto: kcrypto,
       prim: prim,
       principals: principals as unknown as PrincipalDatabase,
       keytab: keytab,
-      nodeCrypto: nodeCrypto,
+      stsCrypto: stsCrypto,
       fast: new Krb5Fast(Krb5Fast.defaultDeps()),
+      pkinit: new Krb5Pkinit(Krb5Pkinit.defaultDeps()),
       claims: function (): Json {
         return require('../cluster/cluster_claims');
       },
@@ -511,11 +535,11 @@ class Krb5PersonKeys {
    * @returns the stamp
    */
   stampOf(storedHash: unknown): string {
-    const { log, nodeCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering Krb5PersonKeys.stampOf().");
     log.debug("Leaving Krb5PersonKeys.stampOf().");
-    return nodeCrypto.createHash('sha256').update(String(storedHash || ''))
-      .digest('hex').slice(0, 32);
+    return stsCrypto.digest('sha256', String(storedHash || ''), 'hex')
+      .slice(0, 32);
   }
 
   private saltFor(name: string): string {
@@ -750,8 +774,15 @@ class Krb5PersonKeys {
     const byNow = retired + (ttlS === undefined ? this.retainedTtlSeconds()
                                                 : ttlS) * 1000;
     const stamped = Date.parse(String(entry.expiresAt || ''));
+    const bounded = Number.isFinite(stamped) ? Math.min(stamped, byNow)
+                                             : byNow;
+    // A SERVICE ACCOUNT'S ROTATION (#221) may hold the retired version for
+    // its overlap where that is longer than the bound above: the previous
+    // password is accepted that long, and a ticket issued under its key must
+    // be too. Stamped once, at the retirement, and never moved later.
+    const held = Date.parse(String(entry.holdUntil || ''));
     log.debug("Leaving Krb5PersonKeys.retainedUntilMs().");
-    return Number.isFinite(stamped) ? Math.min(stamped, byNow) : byNow;
+    return Number.isFinite(held) ? Math.max(bounded, held) : bounded;
   }
 
   // The entries of a `previous` list (sealed, with keys) or a `retained` list
@@ -780,7 +811,7 @@ class Krb5PersonKeys {
   // one replacing it is not retired (the same password adding enctypes is the
   // same version), so only the pruning happens.
   private retire(outgoing: Json, newKvno: number, nowMs: number,
-                 ttlS?: number): Json[] {
+                 ttlS?: number, holdMs?: number): Json[] {
     const { log } = this.deps;
     log.debug("Entering Krb5PersonKeys.retire().");
     const kept = this.withinBounds(outgoing && outgoing.previous, nowMs, ttlS);
@@ -796,6 +827,9 @@ class Krb5PersonKeys {
       retiredAt: new Date(nowMs).toISOString(),
       expiresAt: new Date(nowMs + (ttlS === undefined
         ? this.retainedTtlSeconds() : ttlS) * 1000).toISOString(),
+      // #221: a rotation's overlap, where one was asked for.
+      holdUntil: holdMs && holdMs > 0
+        ? new Date(nowMs + holdMs).toISOString() : undefined,
       keys: outgoing.keys
     };
     log.debug("Leaving Krb5PersonKeys.retire().");
@@ -972,9 +1006,27 @@ class Krb5PersonKeys {
       return false;
     }
     const current = directory.readPerson(name);
-    log.debug('Leaving Krb5PersonKeys.personDisabled(). ' +
-              !!(current && current.disabled));
-    return !!(current && current.disabled);
+    if (current && current.disabled) {
+      log.debug('Leaving Krb5PersonKeys.personDisabled(). Disabled.');
+      return true;
+    }
+    // A SERVICE ACCOUNT WHOSE POLICY CLOSES THE KERBEROS DOOR (#221) is
+    // refused here too, in every mode and with the same KDC_ERR_CLIENT_REVOKED:
+    // the KDC (kerberos/krb5_kdc.js) asks this one question about
+    // whether a client may have a ticket at all, and "this account may not
+    // use Kerberos" is that question's answer. The log says which it was.
+    const { credentials } = this.deps;
+    const closed = typeof credentials.serviceAccountRefusesDoor ===
+                     'function' &&
+                   !!credentials.serviceAccountRefusesDoor(name, 'kerberos');
+    if (closed) {
+      log.info(this.deps.errorCodes.tag('STS-SVCACCT-0012') + 'krb5: ' + name + ' is ' +
+               'a service account and this realm\'s service-account policy ' +
+               'does not open the Kerberos door to it; refused as a revoked ' +
+               'client.');
+    }
+    log.debug('Leaving Krb5PersonKeys.personDisabled(). ' + closed);
+    return closed;
   }
 
   // -------------------------------------------------------------------------
@@ -1012,19 +1064,110 @@ class Krb5PersonKeys {
     return answer;
   }
 
+  // -------------------------------------------------------------------------
+  // THE AS-REQ'S RISK, AT THE DOOR (#499; rcbj's decision 2 on the ticket).
+  // Asked by the KDC through `principals.decideSignIn()` once a person's
+  // pre-authentication verified. The sign-in is assessed with
+  // `authn.assessSignIn()` — the call every door makes between the credential
+  // and the decision; the client's address is the KDC's ambient audit source
+  // — which RECORDS it, so the person's standing is now this sign-in's and
+  // the TGS-REQs after it are decided on it. The issuance policy is then
+  // asked about the ticket-granting ticket with those facts: no application
+  // (the krbtgt is nobody's to put a requirement on), so only a Deny ABOUT
+  // RISK can refuse, and a Kerberos client has no way to be asked for a
+  // step-up, so a step-up is a refusal (STS-RISK-0017) unless the
+  // pre-authentication already met it — an OTP is a second factor, a
+  // hardware PKINIT key a security key.
+  //
+  // Answers `{ refused, errorCode, eText }`, or null: not refused, nobody to
+  // assess, development observing, or the engine not loaded (each a module
+  // required LAZILY — this file is built long before the risk modules and
+  // must never pull them into the parent project's COPY closure, which it is
+  // outside of anyway).
+  // -------------------------------------------------------------------------
+  /**
+   * Assesses an AS-REQ's sign-in for risk and asks the issuance policy, once
+   * pre-authentication verified.
+   *
+   * @param name - the username
+   * @param detail - `{ indicators, pkinit, hardware, method }`
+   * @returns `{ refused, errorCode, eText }` when refused on risk, or null
+   */
+  async decideSignIn(name: string, detail: Json): Promise<Json> {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.decideSignIn(). name=' + name);
+    const d = detail || {};
+    const indicators = Array.isArray(d.indicators) ? d.indicators.map(String)
+                                                   : [];
+    const otp = indicators.indexOf('otp') >= 0;
+    const amr = d.pkinit ? (d.hardware ? ['hwk'] : ['swk'])
+                         : (otp ? ['pwd', 'otp'] : ['pwd']);
+    const acr = otp ? 'mfa' : '1';
+    let assessment: Json = null;
+    let engine: Json = null;
+    let gate: Json = null;
+    try {
+      assessment = await require('../authn/authn').assessSignIn(null, name,
+        'Kerberos AS-REQ', { credential: { kind: d.pkinit ? 'certificate'
+                                                          : 'kerberos-key' } });
+      engine = assessment ? require('../risk/risk_engine') : null;
+      gate = engine ? require('../common/issuance_gate') : null;
+    } catch (e) {
+      log.debug('Caught in Krb5PersonKeys.decideSignIn(): ' +
+                ((e && e.message) || e));
+      // No authn or risk modules in this process: nothing to decide on, and
+      // the ticket is issued as before #499.
+      assessment = null;
+    }
+    if (!assessment || !engine || !gate) {
+      log.debug('Leaving Krb5PersonKeys.decideSignIn(). Not assessed.');
+      return null;
+    }
+    const answer = gate.check({
+      application: '',
+      kind: gate.ISSUANCE.KERBEROS_TICKET,
+      subject: { kind: 'user', name: name, authenticated: true },
+      claims: null,
+      risk: engine.factsOf(engine.riskOf(assessment), amr, acr)
+    });
+    const risk = answer && answer.risk ? answer.risk : null;
+    const refused = !!(answer && !answer.allowed && risk && !risk.observed);
+    const code = risk && risk.action === 'step-up' ? 'STS-RISK-0017'
+                                                   : 'STS-RISK-0016';
+    engine.settle(this.deps.realms.currentId(), String(assessment.id || ''),
+      Object.assign({ decision: risk
+        ? (risk.observed ? 'observe:' : '') + String(risk.action) : 'permit',
+                      policy: (answer && answer.policy) || '' },
+                    refused ? { errorCode: code } : {}));
+    if (!refused) {
+      log.debug('Leaving Krb5PersonKeys.decideSignIn(). ' + assessment.level +
+                ', not refused.');
+      return null;
+    }
+    log.debug('Leaving Krb5PersonKeys.decideSignIn(). Refused on risk.');
+    // ASCII only, for the reason every eText from the KDC is; it names
+    // neither the level nor the signals, as no refusal on risk does.
+    return { refused: true, errorCode: code,
+             eText: risk.action === 'step-up'
+               ? 'a stronger authentication is required: use FAST with OTP ' +
+                 'pre-authentication or PKINIT'
+               : 'authentication failed' };
+  }
+
   // What the KDC does about pre-authentication in the AMBIENT realm, for the
   // console and the management API (rule 7). See `Krb5Fast.policy()`.
   /**
    * Describes what the KDC does about pre-authentication in the ambient realm,
    * for the console and the management API.
    *
-   * @returns `Krb5Fast.policy()`'s description
+   * @returns `Krb5Fast.policy()`'s description, with PKINIT's (#179) as
+   *   `pkinit`
    */
   preauthPolicy(): Json {
-    const { log, fast } = this.deps;
+    const { log, fast, pkinit } = this.deps;
     log.debug('Entering Krb5PersonKeys.preauthPolicy().');
     log.debug('Leaving Krb5PersonKeys.preauthPolicy().');
-    return fast.policy();
+    return Object.assign({}, fast.policy(), { pkinit: pkinit.policy() });
   }
 
   /**
@@ -1047,6 +1190,15 @@ class Krb5PersonKeys {
                                           principals.REALM);
     if (!current || !current.keys) {
       log.debug('Leaving Krb5PersonKeys.serviceKeys(). None stored.');
+      return null;
+    }
+    if (this.acceptorPasswordWins(String(spn), current.info)) {
+      // AN OPERATOR'S OWN krb5.servicePassword WINS over the key this service
+      // made for its acceptor while there was none (2026-10-12): the account
+      // it builds answers, as it did before any key was stored. A key an
+      // operator created is not one of these and still wins over the password.
+      log.debug('Leaving Krb5PersonKeys.serviceKeys(). The configured ' +
+                'password keys the acceptor.');
       return null;
     }
     const opened = this.openRecord(current.keys);
@@ -1124,7 +1276,9 @@ class Krb5PersonKeys {
     const next = previous.then(function () {
       return self.derive(name, password, event,
                          (info && typeof info.hash === 'string' &&
-                          info.hash) || null);
+                          info.hash) || null,
+                         // #221: a service account's rotation overlap.
+                         Number(info && info.retainPreviousMs) || 0);
     }).catch(function (e) {
       log.error(errorCodes.tag('STS-KRB-0107') + 'krb5-keys: deriving the ' +
                 'Kerberos keys for ' + name + ' failed: ' +
@@ -1165,7 +1319,8 @@ class Krb5PersonKeys {
   }
 
   private async derive(name: string, password: string,
-                       event: string, hash: string | null): Promise<Json> {
+                       event: string, hash: string | null,
+                       holdMs?: number): Promise<Json> {
     const { log, principals, config, errorCodes, audit,
             kcrypto } = this.deps;
     const directory = this.directory;
@@ -1256,7 +1411,7 @@ class Krb5PersonKeys {
                                            : { ok: false };
     const outgoing = againOpened.ok && againOpened.record.name === name
       ? againOpened.record : null;
-    const previous = this.retire(outgoing, kvno, nowMs);
+    const previous = this.retire(outgoing, kvno, nowMs, undefined, holdMs);
     const sealed = this.sealRecord({ v: RECORD_VERSION, name: name,
                                      realm: principals.REALM, kvno: kvno,
                                      salt: salt, stamp: stamp,
@@ -1479,7 +1634,7 @@ class Krb5PersonKeys {
   // installed.
   private mintServiceKeys(spn: Json, kvno: number, act: string,
                           context: ActContext | null | undefined,
-                          outgoing?: Json): Json {
+                          outgoing?: Json, generated?: string): Json {
     const self = this;
     const { log, principals, kcrypto, keytab, errorCodes, audit } = this.deps;
     const directory = this.directory;
@@ -1525,11 +1680,19 @@ class Krb5PersonKeys {
                           'key, so nothing was stored and no keytab was ' +
                           'made.');
     }
-    const info = { kvno: kvno, etypes: etypes, sealed: sealed.sealed,
-                   createdAt: previous && previous.createdAt
-                     ? previous.createdAt : now.toISOString(),
-                   rotatedAt: act === 'rotated' ? now.toISOString() : '',
-                   retained: this.retainedInfo(kept, now.getTime()) };
+    // A KEY THIS SERVICE MADE FOR ITS OWN ACCEPTOR stays one across a
+    // rotation (2026-10-12): `generated` is read where the KDC asks for the
+    // key, and an operator's own krb5.servicePassword wins over it.
+    const generatedAs = String(generated ||
+                               (previous && previous.generated) || '');
+    const info: Json = { kvno: kvno, etypes: etypes, sealed: sealed.sealed,
+                         createdAt: previous && previous.createdAt
+                           ? previous.createdAt : now.toISOString(),
+                         rotatedAt: act === 'rotated' ? now.toISOString() : '',
+                         retained: this.retainedInfo(kept, now.getTime()) };
+    if (generatedAs) {
+      info.generated = generatedAs;
+    }
     if (!directory.writeService(spn.identifier, sealed.value,
                                 JSON.stringify(info))) {
       log.debug('Leaving Krb5PersonKeys.mintServiceKeys(). Not written.');
@@ -1557,7 +1720,10 @@ class Krb5PersonKeys {
                kept.map(function (one) {
                  return one.kvno;
                }).join(', ') : '') +
-             '; its keytab was handed to the caller and is not kept.');
+             (generated
+               ? ' for this service\'s own acceptor; no keytab was handed ' +
+                 'out (rotate it at /admin/kerberos/principals for one).'
+               : '; its keytab was handed to the caller and is not kept.'));
     log.debug('Leaving Krb5PersonKeys.mintServiceKeys().');
     const retained = this.retainedRows(this.retainedInfo(kept,
                                                          now.getTime()),
@@ -1601,23 +1767,35 @@ class Krb5PersonKeys {
    *   keytabFilename, message, ... }`, or a refusal with its code marked
    */
   createServicePrincipal(raw: unknown, context?: ActContext): Json {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.createServicePrincipal().');
+    const result = this.createService(raw, context, '');
+    log.debug('Leaving Krb5PersonKeys.createServicePrincipal().');
+    return result;
+  }
+
+  // The create an operator asks for and the one this service makes for its
+  // own acceptor (`generated` = ACCEPTOR_GENERATED): one path, so they cannot
+  // disagree about what a stored service key is.
+  private createService(raw: unknown, context: ActContext | null | undefined,
+                        generated: string): Json {
     const { log, applications, config } = this.deps;
     const directory = this.directory;
-    log.debug('Entering Krb5PersonKeys.createServicePrincipal().');
+    log.debug('Entering Krb5PersonKeys.createService().');
     const noKdc = this.noKdcHere();
     if (noKdc) {
-      log.debug('Leaving Krb5PersonKeys.createServicePrincipal(). No KDC in ' +
+      log.debug('Leaving Krb5PersonKeys.createService(). No KDC in ' +
                 'this trust realm.');
       return noKdc;
     }
     const spn = this.normaliseSpn(raw);
     if (!spn.ok) {
-      log.debug('Leaving Krb5PersonKeys.createServicePrincipal(). Not an ' +
+      log.debug('Leaving Krb5PersonKeys.createService(). Not an ' +
                 'SPN.');
       return this.refusal('STS-ADMIN-0603', spn.error);
     }
     if (!directory) {
-      log.debug('Leaving Krb5PersonKeys.createServicePrincipal(). No ' +
+      log.debug('Leaving Krb5PersonKeys.createService(). No ' +
                 'directory.');
       return this.refusal('STS-ADMIN-0609', 'There is no directory in this ' +
                           'process, so there is nowhere to store a service ' +
@@ -1625,7 +1803,7 @@ class Krb5PersonKeys {
     }
     const existing = directory.readService(spn.identifier);
     if (existing && existing.keys) {
-      log.debug('Leaving Krb5PersonKeys.createServicePrincipal(). Already ' +
+      log.debug('Leaving Krb5PersonKeys.createService(). Already ' +
                 'keyed.');
       return this.refusal('STS-ADMIN-0604', spn.identifier + ' already ' +
                           'holds a stored key. Rotate it to get a new ' +
@@ -1644,7 +1822,7 @@ class Krb5PersonKeys {
         actor: String((context || {}).actor || '')
       });
       if (!created.ok || !directory.readService(spn.identifier)) {
-        log.debug('Leaving Krb5PersonKeys.createServicePrincipal(). No ' +
+        log.debug('Leaving Krb5PersonKeys.createService(). No ' +
                   'application entry.');
         return this.refusal('STS-ADMIN-0606',
                             'No application entry could be made for ' +
@@ -1656,8 +1834,8 @@ class Krb5PersonKeys {
     }
     const result = this.mintServiceKeys(spn,
                                         Number(config.value('krb5.kvno')),
-                                        'created', context);
-    log.debug('Leaving Krb5PersonKeys.createServicePrincipal().');
+                                        'created', context, null, generated);
+    log.debug('Leaving Krb5PersonKeys.createService().');
     return result;
   }
 
@@ -2184,6 +2362,256 @@ class Krb5PersonKeys {
       // No persistence module in this process: nothing is shared.
       return false;
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // THE ACCEPTOR'S OWN KEY IN PRODUCT (2026-10-12).
+  //
+  // The acceptor's account is built from `krb5.servicePassword`, and product
+  // refuses that password while it is empty or the value printed in this
+  // repository (STS-KRB-0060, STS-KRB-0061) — which left a base installation
+  // with an acceptor that accepted nothing until an operator invented a
+  // password for an SPN no other KDC issues. So where the SPN is usable and
+  // only the PASSWORD was refused, product keys the SPN here, exactly as an
+  // operator's create-service does — a random key per enctype, sealed on the
+  // application entry `<spn>@<REALM>` — marked `generated: acceptor` and with
+  // no keytab handed to anybody (a rotation at /admin/kerberos/principals
+  // hands one over). It is made once for the cluster, at startup
+  // (`ensureAcceptorKeys()`) or when the acceptor first asks
+  // (`acceptorKeyMissing()`), the krbtgt key's arrangement (#169).
+  //
+  // **AN OPERATOR'S OWN PASSWORD STILL WINS**: set krb5.servicePassword to
+  // something of their own and the account it builds answers, the generated
+  // key left on its entry unread (`acceptorPasswordWins()`). Development is
+  // unchanged: `mode.generatesAcceptorKey()` is product's.
+  // -------------------------------------------------------------------------
+  // The acceptor's SPN where this process should key it, or ''.
+  private acceptorKeyWanted(): string {
+    const { log, mode, principals } = this.deps;
+    log.debug("Entering Krb5PersonKeys.acceptorKeyWanted().");
+    if (!mode.generatesAcceptorKey() || !this.directory ||
+        typeof principals.acceptorAccount !== 'function') {
+      log.debug("Leaving Krb5PersonKeys.acceptorKeyWanted(). Not here.");
+      return '';
+    }
+    const state = principals.kerberosRealmOf();
+    const account = principals.acceptorAccount() || {};
+    if (!state.enabled || !state.active || account.configured ||
+        !account.passwordRefused || !account.spn) {
+      log.debug("Leaving Krb5PersonKeys.acceptorKeyWanted(). Not wanted.");
+      return '';
+    }
+    log.debug("Leaving Krb5PersonKeys.acceptorKeyWanted(). " + account.spn);
+    return String(account.spn);
+  }
+
+  // Whether a stored key for `spn` is one this service made for its acceptor
+  // AND the configured password now builds the acceptor's account itself.
+  private acceptorPasswordWins(spn: string, infoValue: unknown): boolean {
+    const { log, principals } = this.deps;
+    log.debug("Entering Krb5PersonKeys.acceptorPasswordWins().");
+    const info = this.parseInfo(infoValue);
+    if (!info || info.generated !== ACCEPTOR_GENERATED ||
+        typeof principals.acceptorAccount !== 'function') {
+      log.debug("Leaving Krb5PersonKeys.acceptorPasswordWins(). No.");
+      return false;
+    }
+    const account = principals.acceptorAccount() || {};
+    log.debug("Leaving Krb5PersonKeys.acceptorPasswordWins().");
+    return !!account.configured && String(account.spn) === spn;
+  }
+
+  // Makes the acceptor's key in the ambient realm now, if it is wanted and
+  // there is none (readable or not: a stored record is never replaced here).
+  private createAcceptorKey(context: ActContext): Json {
+    const { log, principals, realms, errorCodes } = this.deps;
+    log.debug("Entering Krb5PersonKeys.createAcceptorKey().");
+    const spn = this.acceptorKeyWanted();
+    if (!spn) {
+      log.debug("Leaving Krb5PersonKeys.createAcceptorKey(). Not wanted.");
+      return { ok: true, made: false, why: 'not wanted here' };
+    }
+    const existing = this.directory.readService(spn + '@' + principals.REALM);
+    if (existing && existing.keys) {
+      log.debug("Leaving Krb5PersonKeys.createAcceptorKey(). One is there.");
+      return { ok: true, made: false, existing: true, spn: spn };
+    }
+    const result = this.createService(spn, context, ACCEPTOR_GENERATED);
+    const realmId = realms.currentId();
+    if (!result.ok) {
+      if (!acceptorFailureSaid.has(realmId)) {
+        acceptorFailureSaid.add(realmId);
+        log.error(errorCodes.tag('STS-KRB-0210') + 'krb5-keys: no key could ' +
+                  'be made for the acceptor\'s SPN ' + spn + '@' +
+                  principals.REALM + ' (' + (result.errors || []).join(' ') +
+                  '), so the acceptor accepts no ticket; set ' +
+                  'krb5.servicePassword, or create the SPN at ' +
+                  '/admin/kerberos/principals. Said once per process.');
+      }
+      log.debug("Leaving Krb5PersonKeys.createAcceptorKey(). Not made.");
+      return { ok: false, made: false, spn: spn,
+               why: (result.errors || []).join(' ') };
+    }
+    acceptorFailureSaid.delete(realmId);
+    log.debug("Leaving Krb5PersonKeys.createAcceptorKey(). Made.");
+    // The keytab in `result` is dropped here: nobody asked for one.
+    return { ok: true, made: true, spn: spn, kvno: result.kvno };
+  }
+
+  /**
+   * Called by the principal database when the acceptor's account was refused
+   * only for its password: keys the SPN at random in product, at once when
+   * this process is the store's only writer, under a claim otherwise.
+   *
+   * @param spn - the acceptor's SPN, without the realm
+   * @returns whether a key was made now (false while a claim is making one)
+   */
+  acceptorKeyMissing(spn: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Krb5PersonKeys.acceptorKeyMissing().");
+    if (this.acceptorKeyWanted() !== String(spn || '')) {
+      log.debug("Leaving Krb5PersonKeys.acceptorKeyMissing(). Not wanted.");
+      return false;
+    }
+    if (this.sharedStore()) {
+      // The promise is the claim's business; a failure is logged there.
+      this.ensureAcceptorKey().catch(function (e: Json): void {
+        log.debug("Caught in a callback in " +
+                  "Krb5PersonKeys.acceptorKeyMissing(): " +
+                  ((e && e.message) || e));
+      });
+      log.debug("Leaving Krb5PersonKeys.acceptorKeyMissing(). Being made " +
+                "under a claim.");
+      return false;
+    }
+    const made = this.createAcceptorKey({ via: 'first use' });
+    log.debug("Leaving Krb5PersonKeys.acceptorKeyMissing().");
+    return !!(made.ok && made.made);
+  }
+
+  /**
+   * Makes a product realm's acceptor key once for the cluster, under a claim,
+   * one in flight per realm. Never rejects.
+   *
+   * @param realmId - the trust realm id; the ambient realm when omitted
+   * @returns a promise of `{ ok, made, ... }`
+   */
+  ensureAcceptorKey(realmId?: string): Promise<Json> {
+    const self = this;
+    const { log, realms, principals, claims, persistence,
+            errorCodes } = this.deps;
+    const id = realmId === undefined ? realms.currentId() : String(realmId);
+    log.debug("Entering Krb5PersonKeys.ensureAcceptorKey(). realm=" + id);
+    const held = acceptorInFlight.get(id);
+    if (held) {
+      log.debug("Leaving Krb5PersonKeys.ensureAcceptorKey(). In flight.");
+      return held;
+    }
+    const realm = realms.get(id);
+    if (!realm) {
+      log.debug("Leaving Krb5PersonKeys.ensureAcceptorKey(). No such realm.");
+      return Promise.resolve({ ok: false, made: false,
+                               why: 'no such realm' });
+    }
+    const work = Promise.resolve(realms.run(realm, async function ():
+        Promise<Json> {
+      const spn = self.acceptorKeyWanted();
+      if (!spn) {
+        return { ok: true, made: false, why: 'not wanted here' };
+      }
+      const identifier = spn + '@' + principals.REALM;
+      const before = self.directory.readService(identifier);
+      if (before && before.keys) {
+        return { ok: true, made: false, existing: true, spn: spn };
+      }
+      if (!self.sharedStore()) {
+        return self.createAcceptorKey({ via: 'startup' });
+      }
+      const store = persistence();
+      const claimed = await claims().claim({ scope: 'krb5.acceptor-create',
+        value: identifier, ttlMs: KRBTGT_CREATE_CLAIM_MS, realm: id });
+      if (!claimed.ok && claimed.reason === 'used') {
+        await Promise.resolve(typeof store.syncNow === 'function'
+          ? store.syncNow() : null).catch(function (e: Json): void {
+          log.debug("Caught in a callback in " +
+                    "Krb5PersonKeys.ensureAcceptorKey(): " +
+                    ((e && e.message) || e));
+        });
+        const after = self.directory.readService(identifier);
+        if (!(after && after.keys)) {
+          log.warn(errorCodes.tag('STS-KRB-0211') + 'krb5-keys: another ' +
+                   'node is making the acceptor key of ' + identifier +
+                   ' and it has not reached this one yet; the acceptor ' +
+                   'refuses here until it does.');
+        }
+        return { ok: !!(after && after.keys), made: false, lost: true,
+                 spn: spn };
+      }
+      if (!claimed.ok) {
+        log.error(errorCodes.tag('STS-KRB-0212') + 'krb5-keys: the acceptor ' +
+                  'key of ' + identifier + ' was NOT made: the store could ' +
+                  'not be asked whether another node is making it (' +
+                  (claimed.why || claimed.reason) + ').');
+        return { ok: false, made: false, spn: spn,
+                 why: 'the store could not be asked' };
+      }
+      await Promise.resolve(typeof store.syncNow === 'function'
+        ? store.syncNow() : null).catch(function (e: Json): void {
+        log.debug("Caught in a callback in " +
+                  "Krb5PersonKeys.ensureAcceptorKey(): " +
+                  ((e && e.message) || e));
+      });
+      const made = self.createAcceptorKey({ via: 'startup' });
+      await Promise.resolve(typeof store.flush === 'function'
+        ? store.flush() : null).catch(function (e: Json): void {
+        log.debug("Caught in a callback in " +
+                  "Krb5PersonKeys.ensureAcceptorKey(): " +
+                  ((e && e.message) || e));
+      });
+      await Promise.resolve(claims().release(claimed.handle))
+        .catch(function (e: Json): void {
+          log.debug("Caught in a callback in " +
+                    "Krb5PersonKeys.ensureAcceptorKey(): " +
+                    ((e && e.message) || e));
+        });
+      return made;
+    })).catch(function (e: Json): Json {
+      log.error(errorCodes.tag('STS-KRB-0210') + 'krb5-keys: making the ' +
+                'acceptor key of trust realm "' + id + '" failed: ' +
+                ((e && e.message) || e));
+      return { ok: false, made: false, why: String((e && e.message) || e) };
+    }).then(function (answer: Json): Json {
+      acceptorInFlight.delete(id);
+      return answer;
+    });
+    acceptorInFlight.set(id, work);
+    log.debug("Leaving Krb5PersonKeys.ensureAcceptorKey(). Started.");
+    return work;
+  }
+
+  /**
+   * Gives every product realm with a KDC whose acceptor was refused only for
+   * its password a random acceptor key, one realm at a time; awaited at
+   * startup before any listener binds. Never rejects.
+   *
+   * @returns a promise of one result per realm that has a KDC
+   */
+  async ensureAcceptorKeys(): Promise<Json[]> {
+    const { log, realms, principals } = this.deps;
+    log.debug("Entering Krb5PersonKeys.ensureAcceptorKeys().");
+    const out: Json[] = [];
+    const list = realms.list();
+    for (let i = 0; i < list.length; i++) {
+      const realm = list[i];
+      if (!principals.enabledIn(realm.id)) {
+        continue;
+      }
+      out.push(Object.assign({ realm: realm.id },
+                             await this.ensureAcceptorKey(realm.id)));
+    }
+    log.debug("Leaving Krb5PersonKeys.ensureAcceptorKeys(). " + out.length +
+              " realm(s).");
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -2788,8 +3216,8 @@ class Krb5PersonKeys {
   // which no directory person is). A keytab
   // from the password the caller typed would not open a single AS-REP there,
   // so a development keytab is derived from the password THAT KDC uses for
-  // the principal — which the service publishes on `/krb5/principals` anyway
-  // — and the answer says so. The typed password is then not what the keytab
+  // the principal — a development setting the service publishes anyway —
+  // and the answer says so. The typed password is then not what the keytab
   // is made from, and nothing pretends otherwise.
   // -------------------------------------------------------------------------
   /**
@@ -2805,7 +3233,7 @@ class Krb5PersonKeys {
    */
   async personKeytab(name: unknown, password: unknown,
                      context?: ActContext): Promise<Json> {
-    const { log, principals, kcrypto, keytab, audit, nodeCrypto,
+    const { log, principals, kcrypto, keytab, audit, stsCrypto,
             realms } = this.deps;
     log.debug('Entering Krb5PersonKeys.personKeytab(). name=' + name);
     const refused = this.personKeytabRefusal(name);
@@ -2851,8 +3279,8 @@ class Krb5PersonKeys {
       // The kvno, the enctypes and where it came from. Never a key, a salt
       // beyond what ETYPE-INFO2 publishes, the keytab or the password.
       detail: { kvno: made.kvno, etypes: etypes, source: made.source,
-                via: via, fingerprint: nodeCrypto.createHash('sha256')
-                  .update(bytes).digest('hex').slice(0, 16) }
+                via: via, fingerprint: stsCrypto.digest('sha256', bytes, 'hex')
+                  .slice(0, 16) }
     });
     log.info('krb5-keys: a keytab for ' + principal + ' at kvno ' +
              made.kvno + ' was made through the ' + via + ' and handed to ' +
@@ -2889,7 +3317,7 @@ class Krb5PersonKeys {
   private async productPersonKeys(who: string, password: unknown):
       Promise<Json> {
     const self = this;
-    const { log, principals, nodeCrypto } = this.deps;
+    const { log, principals, stsCrypto } = this.deps;
     const directory = this.directory;
     log.debug('Entering Krb5PersonKeys.productPersonKeys(). name=' + who);
     if (typeof password !== 'string' || !password) {
@@ -2934,7 +3362,7 @@ class Krb5PersonKeys {
                                            null);
       const a = Buffer.from(derived);
       const b = Buffer.from(pair[1]);
-      if (a.length !== b.length || !nodeCrypto.timingSafeEqual(a, b)) {
+      if (a.length !== b.length || !stsCrypto.bytesEqualConstantTime(a, b)) {
         log.debug('Leaving Krb5PersonKeys.productPersonKeys(). The password ' +
                   'does not give the stored key.');
         return this.refusal('STS-KRB-0132', 'That password does not give ' +
@@ -3043,22 +3471,52 @@ class Krb5PersonKeys {
   // its operation. Built from the PUBLIC info attributes only; nothing is
   // opened.
   // -------------------------------------------------------------------------
+  // PAGED BEFORE IT IS DESCRIBED (#352, 2026-09-29). `listPeople()` parsed
+  // every person's info attribute, hashed their stored password for the
+  // `current` stamp and built their retained versions, then sorted — for a
+  // page that shows twenty-five. The work is split so the console can page
+  // between the halves: `listPeopleKeys()` is the population, sorted by
+  // username exactly as the described rows were (the sort reads nothing the
+  // description adds), and `describePeople()` is the per-row half, for the
+  // rows shown. `listPeople()` is the two together and answers as it did.
   /**
-   * Lists the people holding Kerberos keys, from the public info attributes
-   * only.
+   * Lists the people holding Kerberos keys as undescribed rows, sorted by
+   * username; nothing is parsed or hashed.
    *
    * @returns the rows, by username
    */
-  listPeople(): Json[] {
-    const self = this;
-    const { log, principals, kcrypto } = this.deps;
-    log.debug('Entering Krb5PersonKeys.listPeople().');
+  listPeopleKeys(): Json[] {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.listPeopleKeys().');
     if (!this.directory) {
-      log.debug('Leaving Krb5PersonKeys.listPeople(). No directory.');
+      log.debug('Leaving Krb5PersonKeys.listPeopleKeys(). No directory.');
       return [];
     }
+    const collator = new Intl.Collator();
+    const rows = this.directory.personKeyInfos().slice(0);
+    // `a.username.localeCompare(b.username)`, which this collator's compare
+    // is by definition, built once rather than per comparison.
+    rows.sort(function (a, b) {
+      return collator.compare(String(a.username), String(b.username));
+    });
+    log.debug('Leaving Krb5PersonKeys.listPeopleKeys(). ' + rows.length +
+              ' person(s).');
+    return rows;
+  }
+
+  /**
+   * Describes rows `listPeopleKeys()` answered, from the public info
+   * attributes only; nothing is opened.
+   *
+   * @param keyRows - the rows to describe
+   * @returns the described rows, in the same order
+   */
+  describePeople(keyRows: Json[]): Json[] {
+    const self = this;
+    const { log, principals, kcrypto } = this.deps;
+    log.debug('Entering Krb5PersonKeys.describePeople().');
     const nowMs = Date.now();
-    const rows = this.directory.personKeyInfos().map(function (one) {
+    const rows = (keyRows || []).map(function (one) {
       const info = self.parseInfo(one.info) || {};
       return {
         // THE PREVIOUS VERSIONS STILL ACCEPTED for tickets issued under them —
@@ -3082,9 +3540,21 @@ class Krb5PersonKeys {
                  info.stamp === self.stampOf(one.passwordHash)
       };
     });
-    rows.sort(function (a, b) {
-      return a.username.localeCompare(b.username);
-    });
+    log.debug('Leaving Krb5PersonKeys.describePeople(). ' + rows.length +
+              ' person(s).');
+    return rows;
+  }
+
+  /**
+   * Lists the people holding Kerberos keys, from the public info attributes
+   * only.
+   *
+   * @returns the rows, by username
+   */
+  listPeople(): Json[] {
+    const { log } = this.deps;
+    log.debug('Entering Krb5PersonKeys.listPeople().');
+    const rows = this.describePeople(this.listPeopleKeys());
     log.debug('Leaving Krb5PersonKeys.listPeople(). ' + rows.length +
               ' person(s).');
     return rows;
@@ -3191,16 +3661,24 @@ class Krb5PersonKeys {
       // would be rule 3e's "a slot by analogy". One object, validated whole
       // by `setKeySource()` as before; the two new members are optional
       // there, so a source without them (the parent project's jobs have
-      // none) leaves the KDC exactly as it was.
+      // none) leaves the KDC exactly as it was. PKINIT (#179) rides beside
+      // FAST for the same reason, and is as optional.
       principals.setKeySource({ personKeys: this.personKeys.bind(this),
                                 serviceKeys: this.serviceKeys.bind(this),
                                 // #169: this realm's random krbtgt key.
                                 krbtgtKeys: this.krbtgtKeys.bind(this),
+                                // The acceptor's random key in product,
+                                // asked for when its password was refused.
+                                acceptorKeyMissing:
+                                  this.acceptorKeyMissing.bind(this),
                                 personDisabled:
                                   this.personDisabled.bind(this),
                                 personSecondFactor:
                                   this.personSecondFactor.bind(this),
-                                fast: this.deps.fast });
+                                // #499: the AS-REQ's risk, at the door.
+                                decideSignIn: this.decideSignIn.bind(this),
+                                fast: this.deps.fast,
+                                pkinit: this.deps.pkinit });
     } else {
       log.warn('krb5-keys: kerberos/krb5_principals.js offers no ' +
                'setKeySource(), so stored Kerberos keys are never read. That ' +
@@ -3285,6 +3763,8 @@ export = {
   retainedVersionsLimit: slot.forward('retainedVersionsLimit'),
   retainedTtlSeconds: slot.forward('retainedTtlSeconds'),
   listPeople: slot.forward('listPeople'),
+  listPeopleKeys: slot.forward('listPeopleKeys'),
+  describePeople: slot.forward('describePeople'),
   listServices: slot.forward('listServices'),
   withheldValues: slot.forward('withheldValues'),
   // THE KRBTGT KEY (#169).
@@ -3294,6 +3774,10 @@ export = {
   krbtgtState: slot.forward('krbtgtState'),
   createKrbtgtKey: slot.forward('createKrbtgtKey'),
   ensureKrbtgtKey: slot.forward('ensureKrbtgtKey'),
+  // THE ACCEPTOR'S KEY IN PRODUCT (2026-10-12).
+  acceptorKeyMissing: slot.forward('acceptorKeyMissing'),
+  ensureAcceptorKey: slot.forward('ensureAcceptorKey'),
+  ensureAcceptorKeys: slot.forward('ensureAcceptorKeys'),
   rotateKrbtgt: slot.forward('rotateKrbtgt'),
   dropPreviousKrbtgtKeys: slot.forward('dropPreviousKrbtgtKeys')
 };

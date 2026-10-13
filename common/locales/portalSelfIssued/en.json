@@ -1,0 +1,14 @@
+{
+  "heading": "Your self-issued IDs",
+  "sub": "A wallet can sign you in with an ID Token it signs with its own key (Self-Issued OpenID Provider v2). Nobody vouches for that key, so it signs in only the person who enrolled it here.",
+  "subject": "Subject",
+  "label": "Label",
+  "enrolled": "Enrolled",
+  "remove": "Remove",
+  "none": "You have enrolled none.",
+  "enrol": "Enrol a wallet",
+  "enrolNote": "Your wallet is asked for a self-issued ID Token, and the key that signed it is enrolled for you — you prove you hold it; nothing is typed.",
+  "off": "Signing in with a self-issued ID is turned off here, so no wallet can be enrolled from this page. The keys above stay enrolled.",
+  "doneEnrolled": "Your wallet's key is enrolled. It signs you in from now on.",
+  "doneRemoved": "That key no longer signs you in."
+}

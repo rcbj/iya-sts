@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -102,9 +102,11 @@ const ACTION_SCHEMAS = {
     profile: vt.opt(PROFILE_TEXT),
     lifetimeS: vt.opt(vt.integer(60, 2592000))
   })),
+  // The random part may carry the minting cell's twelve-character tag (#98,
+  // `cert_enrollment.ts`'s `credentialId()`).
   'delete-challenge': vz.object({
     id: vz.string().min(1).max(600)
-      .regex(/^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}$/,
+      .regex(/^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}(?:[A-Za-z0-9_-]{12})?$/,
              'must be a SCEP challenge id')
   }),
   'reissue-ra': vz.object({}),
@@ -260,14 +262,14 @@ class ScepConsole {
    *
    * @returns the settings
    */
-  settingsJson() {
-    const { log, config } = this.deps;
+  settingsJson(): any {
+    const { log, adminViews } = this.deps;
     log.debug("Entering ScepConsole.settingsJson().");
-    const group = config.groups().filter(function (one) {
-      return one.group === 'SCEP';
-    })[0];
     log.debug("Leaving ScepConsole.settingsJson().");
-    return group ? group.settings : [];
+    // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
+    // answers it — the page is drawn from this view alone. It was the SCEP
+    // group's bare rows until then.
+    return adminViews.settingsBlockOf('/admin/cert-issuance', ['SCEP']);
   }
 
   /**
@@ -331,7 +333,7 @@ class ScepConsole {
   endpointsOf(req) {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering ScepConsole.endpointsOf().");
-    const base = baseUrlOf(req) + '/enroll/scep';
+    const base = baseUrlOf(req, 'scep') + '/enroll/scep';
     log.debug("Leaving ScepConsole.endpointsOf().");
     return {
       scep: base,
@@ -352,7 +354,7 @@ class ScepConsole {
   profileRows(req) {
     const { log, baseUrlOf, core } = this.deps;
     log.debug("Entering ScepConsole.profileRows().");
-    const base = baseUrlOf(req) + '/enroll/scep/';
+    const base = baseUrlOf(req, 'scep') + '/enroll/scep/';
     const allowed = core.allowedProfiles('scep');
     log.debug("Leaving ScepConsole.profileRows().");
     // The device profile (#164 phase 2) beside /admin/pki's nine.
@@ -434,7 +436,7 @@ class ScepConsole {
     const certificates = core.certificatesInRealm('scep');
     const certificatePaging = adminViews.pagingOf(query, certificates.length,
       { name: 'certificates', noun: 'certificates' });
-    const scepBase = baseUrlOf(req) + '/enroll/scep';
+    const scepBase = baseUrlOf(req, 'scep') + '/enroll/scep';
     const json = {
       page: '/admin/scep',
       title: 'SCEP',
@@ -529,7 +531,9 @@ class ScepConsole {
       errorCodes: snap.codes || {},
       statuses: snap.statuses || {},
       failInfo: snap.failInfos || {},
-      issuedCertificates: core.certificatesInRealm('scep').length,
+      // COUNTED, not listed (#352): the tile wants a number, and the list
+      // built a row per certificate to have its length read.
+      issuedCertificates: core.certificateCountsInRealm('scep').held,
       lastAt: snap.lastAt || null,
       paging: adminViews.pagingJson(paging),
       recent: recent.slice(paging.offset, paging.offset + paging.perPage)
@@ -635,7 +639,7 @@ class ScepConsole {
         return this.refused(errorCodes.codeOf(made) || 'STS-SCEP-0061',
                             made.errors);
       }
-      const url = baseUrlOf(ctx.req) + '/enroll/scep/' + made.profile;
+      const url = baseUrlOf(ctx.req, 'scep') + '/enroll/scep/' + made.profile;
       const plainUrl = this.plainUrlOf(made.profile);
       monitor.record('scep', { operation: 'create-challenge',
                                outcome: 'credential', status: 200,

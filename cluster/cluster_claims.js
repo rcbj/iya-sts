@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -50,8 +50,10 @@
 // ===========================================================================
 
 const bunyan = require('bunyan');
-const nodeCrypto = require('crypto');
 const config = require('../common/config');
+// The one place this service hashes and draws random values (#453). A leaf
+// over `config`, so this require cannot close a cycle.
+const stsCrypto = require('../common/crypto');
 const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 const capabilities = require('./cluster_capabilities');
@@ -88,12 +90,21 @@ function store() {
  *
  * @param scope - the kind of value
  * @param value - the value itself
- * @returns the SHA-256 digest, base64url
+ * @returns the keyed digest (HMAC-SHA256 under the keystore's digest key),
+ *   or the SHA-256 digest where no key is held; base64url
  */
 function digestOf(scope, value) {
   log.debug("Entering digestOf().");
-  const out = nodeCrypto.createHash('sha256')
-    .update(String(scope) + '\n' + String(value)).digest('base64url');
+  // KEYED SINCE #222: what is digested here is often guessable — a username,
+  // an address, a short code — and an unkeyed SHA-256 of it in the store is
+  // recovered by hashing the guesses. Under the keystore's digest key (the
+  // same key on every node and process) it is not. Where there is no key —
+  // development with no request pool, or a moment before the keystore has
+  // started — it is the plain digest, which is what every process without a
+  // key computes alike.
+  const text = String(scope) + '\n' + String(value);
+  const keyed = require('../common/keystore').keyedDigest('cluster-claim', text);
+  const out = keyed || stsCrypto.digest('sha256', text, 'base64url');
   log.debug("Leaving digestOf().");
   return out;
 }
@@ -229,7 +240,7 @@ function claim(opts) {
   const ttlMs = Math.min(MAX_TTL_MS,
                          Math.max(1000, Math.floor(Number(o.ttlMs) || 0)));
   const digest = digestOf(scope, o.value);
-  const reservation = nodeCrypto.randomBytes(12).toString('base64url');
+  const reservation = stsCrypto.randomBytes(12).toString('base64url');
   const handle = { scope: scope, realm: realmId, key: digest,
                    reservation: reservation };
   const theStore = store();
@@ -501,7 +512,7 @@ function claimInProcess(opts) {
                          expiresAt: existing.expiresAt,
                          origin: 'this process' } };
   }
-  const reservation = nodeCrypto.randomBytes(12).toString('base64url');
+  const reservation = stsCrypto.randomBytes(12).toString('base64url');
   memory.set(key, { reservation: reservation, claimedAt: now,
                     expiresAt: now + ttlMs });
   log.debug("Leaving claimInProcess(). Claimed, in memory.");

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # docker-compose-run-tests.yml — THE WHOLE SUITE, IN CONTAINERS.
 #
@@ -7,9 +7,11 @@
 # from its own Dockerfile; `tests`, this repository's suite built from
 # tests/Dockerfile with a Chrome in it; `postgres`, the store the two
 # persisting modes of tests/tools/modes.sh run on; `openbao` and its two
-# one-shot helpers, the secret store; and `xacml-pep`, the remote enforcement
-# point one job drives the seam to. The tests container drives the
-# service by its compose DNS name and exits with the suite's status;
+# one-shot helpers, the secret store; `xacml-pep`, the remote enforcement
+# point one job drives the seam to; and `test-peer` (#586), the far party of
+# the protocols the service's own demo endpoints used to play. The tests
+# container drives the service by its compose DNS name and exits with the
+# suite's status;
 # ./run-tests.sh brings the pair up with --exit-code-from tests and takes
 # them down again.
 #
@@ -30,7 +32,7 @@
 #                                 runs its `tests` service alone.
 #
 # There was a third use until 2026-09-16: ./local-run-tests.sh brought
-# docker-compose.yml up on a free port as project mock-sts-tests and drove it
+# docker-compose.yml up on a free port as project iya-sts-tests and drove it
 # from host processes. That launcher is gone.
 #
 # They never collide, and that is by construction rather than by luck:
@@ -120,7 +122,8 @@ x-mirror-contexts: &mirror-contexts
   ubuntu: docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/ubuntu:latest
   "node:24.16.0-bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm-slim
   "node:24.16.0-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:24.16.0-bookworm
-  "node:22-alpine": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/node:22-alpine
+  "rust:1.97-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/rust:1.97-bookworm
+  "debian:bookworm-slim": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/debian:bookworm-slim
   "golang:1.26.8-bookworm": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26.8-bookworm
   "golang:1.26": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/golang:1.26
   "maven:3.9.16-eclipse-temurin-21-noble": docker-image://${IMAGE_MIRROR:-ghcr.io/rcbj/iya-sts/mirror}/maven:3.9.16-eclipse-temurin-21-noble
@@ -183,8 +186,16 @@ services:
       # tests/postgres_schema.js is what notices if only one of them moves.
       - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      # WHERE generate-tls.sh SHARES ITS CERTIFICATE — the certificate and
+      # never the key — as `<CN>.crt` (2026-10-12): `sts` verifies the
+      # database by default and trusts this directory for it
+      # (STS_DATABASE_TLS_CA_FILE below). The cells layer's two databases
+      # `extends` this service and write their own file into the same one.
+      - POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca
     volumes:
-      # THE SCRIPTS ONLY. See the header: no data volume, deliberately.
+      # THE SCRIPTS, and the shared certificate directory. See the header: no
+      # data volume, deliberately.
+      - sts-db-ca:/run/sts-db-ca
       - ./postgres/generate-tls.sh:/usr/local/bin/generate-tls.sh:ro
       # Turns every `host` rule in pg_hba.conf into `hostssl`, so a plaintext
       # dial is refused rather than merely discouraged.
@@ -250,6 +261,10 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     environment:
       - STS_BAO_TLS_DIR=/openbao/file/tls
       - STS_BAO_TLS_NAMES=${STS_BAO_TLS_NAMES:-openbao,localhost}
@@ -276,7 +291,7 @@ services:
       - sts-bao-file:/openbao/file
     command: ["server", "-config=/openbao/config/bao.hcl"]
     healthcheck:
-      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/root.token"]
+      test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/seeder.token"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -290,6 +305,10 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     depends_on:
       openbao:
         condition: service_started
@@ -299,10 +318,29 @@ services:
       - STS_BAO_POLICY_FILE=/usr/src/sts/openbao/read-only.hcl
       - STS_BAO_CLIENT_CN=${STS_BAO_CLIENT_CN:-sts}
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      # THE START-UP SECRETS (#254), which the launcher pins per run and which
+      # reached the `sts` container's environment until then: the management
+      # API secret, and in the product modes the two Kerberos passwords. The
+      # seeder writes them to `secret/sts-admin`, and each node reads them
+      # once at start through its own single-use token (docker-compose.yml's
+      # `sts` service argues the arrangement). Empty is "not pinned".
+      #
+      # A NODE LIST, because a cluster or cells run has two nodes and each
+      # takes its own token: the layered files add `sts2`. Nothing is printed
+      # — the store lives for one run, and its log goes into the report.
+      - STS_ADMIN_API_CLIENT_SECRET=${ADMIN_API_CLIENT_SECRET:-}
+      - STS_KRB5_KRBTGT_PASSWORD=${KRB5_KRBTGT_PASSWORD:-}
+      - STS_KRB5_SERVICE_PASSWORD=${KRB5_SERVICE_PASSWORD:-}
+      - STS_BAO_STARTUP_NODES=${STS_BAO_STARTUP_NODES:-sts}
+      - STS_BAO_STARTUP_DIR=/openbao/startup
+      - STS_BAO_PRINT_CREDENTIALS=false
     volumes:
       - sts-bao-file:/openbao/file
       - sts-bao-client:/openbao/client
+      - sts-bao-startup:/openbao/startup
       - ./openbao/seed.js:/usr/src/sts/openbao/seed.js:ro
+      - ./openbao/admin-secret.hcl:/usr/src/sts/openbao/admin-secret.hcl:ro
+      - ./openbao/seeder.hcl:/usr/src/sts/openbao/seeder.hcl:ro
       - ./openbao/read-only.hcl:/usr/src/sts/openbao/read-only.hcl:ro
     command: ["node", "openbao/seed.js"]
 
@@ -328,6 +366,10 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     environment:
       - STS_BAO_TLS_DIR=/run/sts-test/mailpit
       - STS_BAO_TLS_NAMES=mailpit,localhost
@@ -380,6 +422,11 @@ services:
     # printed and the service starts anyway, for the reason every listener here
     # follows.
     # ---------------------------------------------------------------------
+    # ROOT FOR THE START COMMAND ONLY, AND uid 10001 FOR NODE (#254):
+    # docker-compose.yml's `sts` service argues each step.
+    user: "0"
+    sysctls:
+      - net.ipv4.ip_unprivileged_port_start=0
     cap_add:
       - NET_ADMIN
     networks:
@@ -393,7 +440,13 @@ services:
       else
       echo "sts: COULD NOT add $$CIDR to $$IFACE — a realm configured to bind
       it will report that its listener did not come up."; fi; done;
-      exec node server.js'
+      find /usr/src/sts/data ! -user 10001 -exec chown 10001:10001 {} +;
+      STARTUP="$$(node openbao/startup-secrets.js)" || {
+      echo "sts: the start-up secrets could not be taken; not starting.";
+      exit 1; };
+      eval "$$STARTUP";
+      exec setpriv --reuid=10001 --regid=10001 --clear-groups --inh-caps=-all
+      --bounding-set=-all --no-new-privs node server.js'
     build:
       # The repository root, and the root .dockerignore applies. The tests
       # image is built from the same context with the same ignore file, so the
@@ -460,20 +513,12 @@ services:
       # reports a healthcheck timeout rather than anything naming a log level.
       # `docker compose config` tells the two apart: bare renders null.
       - STS_LOG_LEVEL
-      # THE MANAGEMENT API'S CLIENT SECRET, PINNED BY THE LAUNCHER (2026-09-09).
-      #
-      # `/admin-api` requires an access token minted by the seeded
-      # `sts-management-api` client, whose secret is otherwise generated at
-      # every start and readable only THROUGH the API it unlocks. The launcher
-      # generates one per run and passes it here; `./run-tests.sh` then
-      # mints a token against this container once per mode.
-      #
-      # BARE, for the reason STS_LOG_LEVEL above is bare — though the stakes
-      # are the opposite way round here. An empty value is harmless (it means
-      # "mint one per start", which is the default), so what the bare form
-      # buys is that `docker compose -f this up` by hand behaves exactly as it
-      # did before this line existed.
-      - ADMIN_API_CLIENT_SECRET
+      # THE MANAGEMENT API'S CLIENT SECRET, PINNED BY THE LAUNCHER (2026-09-09),
+      # IS NOT IN THIS ENVIRONMENT SINCE #254: the launcher's
+      # ADMIN_API_CLIENT_SECRET goes to the SEEDER, and this container is
+      # delivered it as a file at start (ADMIN_API_CLIENT_SECRET_FILE, from
+      # the command above). `docker inspect` no longer shows it. The runner
+      # still gets it below, because jobs mint tokens with it.
       # NOT A TUNING CHOICE. A suite that persisted would be a suite whose
       # second run started from the first run's leavings, which is the failure
       # that looks like a flaky test and is not one.
@@ -512,11 +557,11 @@ services:
       # WHAT A PRODUCT-MODE STACK IS GIVEN AND A DEVELOPMENT ONE IS NOT
       # (2026-09-21) — set by ./run-tests.sh for the `product` mode only; see
       # its "THE `product` MODE" block. The base URL is empty (learnt from
-      # requests) unless set; the two Kerberos passwords are BARE, so a mode
-      # that does not set them passes nothing and keeps the fixture defaults.
+      # requests) unless set. The two Kerberos passwords went to the SEEDER
+      # in #254 and arrive here as files (ADMIN_API_CLIENT_SECRET's
+      # arrangement, above); a mode that does not set them keeps the fixture
+      # defaults.
       - STS_PUBLIC_BASE_URL=${STS_PUBLIC_BASE_URL:-}
-      - KRB5_KRBTGT_PASSWORD
-      - KRB5_SERVICE_PASSWORD
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-memory}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-false}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-0}
@@ -530,6 +575,11 @@ services:
       # refused. The screen is held in process with the API stubbed
       # (tests/breached_passwords.js).
       - STS_RISK_BREACH_CHECK=${STS_RISK_BREACH_CHECK:-off}
+      # Nor Google's Android attestation status list (#256): the suite dials
+      # nothing outside its own network, and the list is held in process and
+      # by an upload (tests/attestation_revocation.js,
+      # tests/vendored/sts_android_attestation_status.js).
+      - STS_DEVICES_ANDROID_STATUS_URL=${STS_DEVICES_ANDROID_STATUS_URL:-}
       # Every job here comes from ONE /24, and many refuse a password on
       # purpose, so the default network threshold (20 an hour) put the
       # network-failures signal on every first sign-in after the first few
@@ -556,24 +606,30 @@ services:
       # gives — a connection string is one string and compose cannot build it
       # from the parts.
       #
-      # `sslmode=require` IS NOT DECORATION. postgres/require-tls.sh rewrites
-      # every `host` rule in pg_hba.conf to `hostssl`, so a plaintext dial is
-      # REFUSED by that container — and the service says so at startup when the
-      # string does not ask for TLS, which is a warning printed just before a
-      # connection failure that reads as something else.
+      # `sslmode=verify-full` (2026-10-12; `require` until then): the
+      # connection is TLS — postgres/require-tls.sh rewrites every `host`
+      # rule in pg_hba.conf to `hostssl`, and this service never dials in the
+      # clear (#273) — and the server is AUTHENTICATED, chain and host name,
+      # against the certificate the `postgres` service shares in
+      # `sts-db-ca`, which STS_DATABASE_TLS_CA_FILE names. A directory, so
+      # the cells layer's cells trust their global tier from the same one.
       #
       # Ignored entirely in `memory` mode, where nothing opens a store.
       # NO PASSWORD IN THIS STRING (2026-09-12): it comes from the secret
       # store above, like docker-compose.yml's. The service dials the same
       # database as the same role either way.
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=require}
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=verify-full}
+      - STS_DATABASE_TLS_CA_FILE=${STS_DATABASE_TLS_CA_FILE:-/run/secrets/database-ca}
       - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault}
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
       - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
       - STS_KEYS_KEK_FIELD=${STS_KEYS_KEK_FIELD:-kek}
-      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/bao/client.crt}
-      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/bao/client.key}
-      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/bao/bao-ca.crt}
+      - STS_KEYS_VAULT_CLIENT_CERT=${STS_KEYS_VAULT_CLIENT_CERT:-/run/secrets/openbao/client.crt}
+      - STS_KEYS_VAULT_CLIENT_KEY=${STS_KEYS_VAULT_CLIENT_KEY:-/run/secrets/openbao/client.key}
+      - STS_KEYS_VAULT_CA_CERT=${STS_KEYS_VAULT_CA_CERT:-/run/secrets/openbao/bao-ca.crt}
+      # WHICH START-UP TOKEN IS THIS NODE'S (#254); the layered files' `sts2`
+      # sets its own.
+      - STS_BAO_STARTUP_NODE=sts
       - STS_DATABASE_PASSWORD_PROVIDER=${STS_DATABASE_PASSWORD_PROVIDER:-vault}
       - STS_DATABASE_PASSWORD_FIELD=${STS_DATABASE_PASSWORD_FIELD:-databasePassword}
       # Per mode, from tests/tools/modes.sh: `persisted` in `dispatch`, which
@@ -641,8 +697,14 @@ services:
       # WHAT THE STORE ISSUED THIS SERVICE: the client certificate it
       # authenticates with, its key, and the CA that signs the store's own
       # listener. Read-only, and the identity they carry can read two values
-      # and change nothing.
-      - sts-bao-client:/run/secrets/bao:ro
+      # and change nothing. /run/secrets/openbao since #254, the key 0600 and
+      # uid 10001's.
+      - sts-bao-client:/run/secrets/openbao:ro
+      # THIS NODE'S START-UP TOKEN (#254), taken by the command above as root.
+      - sts-bao-startup:/run/secrets/openbao-startup
+      # THE DATABASES' CERTIFICATES, read-only, without their keys
+      # (2026-10-12): what STS_DATABASE_TLS_CA_FILE names.
+      - sts-db-ca:/run/secrets/database-ca:ro
       # A DIRECTORY SHARED WITH THE RUNNER (#171). A job that runs a push
       # listener of its own makes a CA at run time and writes the CA's
       # CERTIFICATE here, then names it in a `…CaFile` setting so the service
@@ -653,10 +715,19 @@ services:
       # same volume below. The cluster file's `sts2` inherits it through
       # `extends`. Read-only on this side.
       - sts-test-shared:/run/sts-test:ro
+      # A FILE SECRET PUSH DESTINATION'S DIRECTORY (#221 P3), the one volume
+      # here the service WRITES to: the runner makes the files, and the
+      # service writes a pushed password into one (it never creates a file).
+      # Development mode only — product refuses a file destination — so
+      # `tests/vendored/sts_secret_destinations.js` uses it in `memory` mode.
+      - sts-test-secret-push:/run/sts-test-secret-push
       # WHERE AN UPLOADED RISK DATASET IS WRITTEN WHILE IT IS IMPORTED (#215),
       # at `risk.uploadDirectory`'s default: docker-compose.yml's volume and
       # its reason. The cluster file gives node B one of its own.
       - sts-risk-uploads:/usr/src/sts/data/risk-uploads
+    # The start-up secrets' hand-over, in memory (#254): docker-compose.yml.
+    tmpfs:
+      - /run/sts-startup:mode=0700,uid=10001,gid=10001
     healthcheck:
       # The scheme follows the mode in this service — oauth2.rfc9700 derives
       # global.https — so the probe decides which module to use the same way
@@ -691,7 +762,7 @@ services:
   # into the run, and removed by it at the end — which is how the job gets a
   # repository whose whole contents it wrote without disturbing the realm every
   # other job is using. So this container comes up, fails to register, fails to
-  # pull, says so, and goes on trying: `xacml-pep/sync.js` retries its
+  # pull, says so, and goes on trying: the PEP's sync (`rust/bins/xacml-pep`) retries its
   # registration on the poll timer, so it converges on a console row the same
   # way it converges on policy. That retry exists BECAUSE of this ordering and
   # its own header argues why it is right independently of this file.
@@ -736,7 +807,7 @@ services:
       # service up and starting this container — see ./run-tests.sh,
       # which does it with `docker run` against the service image so that the
       # host still needs docker and nothing else.
-      - ${XACML_PEP_CERT_DIR:-./xacml-pep/common}:/certs:ro
+      - ${XACML_PEP_CERT_DIR:-./xacml-pep/certs}:/certs:ro
     environment:
       # BY COMPOSE DNS AND THE INTERNAL PORT, never a published one — nothing
       # in this stack publishes anything. `sts` is in the certificate's SANs.
@@ -886,6 +957,10 @@ services:
     image: ${STS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts:${IMAGE_TAG:-latest}}
     profiles: ["conformance"]
     restart: "no"
+    # ROOT, ON PURPOSE (#254): the image runs as uid 10001, and this one-shot
+    # writes files other containers' users must own — docker-compose.yml's
+    # one-shots and their reason.
+    user: "0"
     # Pinned with the suite's three (.40 to .42), for their reason: a
     # dynamically addressed container could land on an address the sts
     # service adds to its own interface. `.47`, above the SAML peers'
@@ -1022,9 +1097,62 @@ services:
       default:
         ipv4_address: ${SAML_KEYCLOAK_ADDRESS:-172.30.0.46}
 
+  # ===========================================================================
+  # THE TEST PEER (#586): the far party of the protocols — a SAML 2.0 service
+  # provider, a SAML 1.1 and a WS-Federation relying party, an RFC 9470 and a
+  # GNAP resource server, an SSF receiver — that the jobs used the service's
+  # own demo endpoints for until those became development only (#585). One
+  # image, one port (9600, plain http and TLS told apart by the first byte),
+  # one JSON readback; built from tests/peer. tests/CLAUDE.md, *THE TEST
+  # PEER*, argues it.
+  #
+  # IN EVERY MODE, with no profile: it is small, starts in a second, and every
+  # mode's jobs drive it. The runner is told where it is by STS_TEST_PEER_URL
+  # (set by ./run-tests.sh for every local mode); an AWS target sets nothing,
+  # and the jobs that need it skip, saying so.
+  #
+  # NOTHING IS A KEY: it makes its CA and TLS certificate when it starts, and
+  # writes the CA CERTIFICATE alone to the shared volume, where a product
+  # realm is told to trust it (`ssf.pushCaFile`) — the volume is mounted in
+  # `sts` at the same path, so the file name the peer reports is the one the
+  # service reads.
+  #
+  # STARTED, NOT HEALTHY, IN THE RUNNER'S depends_on, for xacml-pep's reason:
+  # a peer that will not start fails the jobs that need it — the helper waits
+  # for it and says so — and nothing else. PINNED at `.48`, above the
+  # conformance TLS writer's `.47`, for the conformance suite's reason: the
+  # service adds `.11` to `.13` to its own interface, which docker's
+  # allocator cannot see.
+  # ===========================================================================
+  test-peer:
+    container_name: ${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-test-peer}
+    hostname: test-peer
+    image: ${TEST_PEER_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-test-peer:${IMAGE_TAG:-latest}}
+    build:
+      context: tests/peer
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
+    environment:
+      - TEST_PEER_PORT=9600
+      - TEST_PEER_PUBLIC_HOST=test-peer
+      - TEST_PEER_NAMES=test-peer,localhost,127.0.0.1
+      - TEST_PEER_CA_DIR=/run/sts-test/test-peer
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - sts-test-shared:/run/sts-test
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9600/health').then(function (r) { process.exit(r.status === 200 ? 0 : 1); }, function () { process.exit(1); })"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    networks:
+      default:
+        ipv4_address: ${TEST_PEER_ADDRESS:-172.30.0.48}
+
   tests:
-    container_name: ${STS_TESTS_CONTAINER_NAME:-mock-sts-test-runner}
-    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/mock-sts-tests:${IMAGE_TAG:-latest}}
+    container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
+    image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
     build:
       # The same context as the service, with the root .dockerignore deciding
       # what is in it — see tests/Dockerfile's header for why the two images
@@ -1068,6 +1196,10 @@ services:
       # "--only=crypto --no-browser" ./run-tests.sh` is the way to
       # narrow a containerized run; unset, the whole suite runs.
       - STS_TEST_ARGS=${STS_TEST_ARGS:-}
+      # TOKEN LOGGING for the token-exchange chain job: set, every token
+      # request and its answer is logged in that job's log (`[token-log]`).
+      # Off unless the host sets it.
+      - STS_TOKEN_LOG=${STS_TOKEN_LOG:-}
       # ONE REPORT TREE PER MODE, so three runs do not overwrite each other. The
       # mode matrix sets it; unset, run-report.js's own default applies.
       - STS_TEST_REPORT_DIR=${STS_TEST_REPORT_DIR:-}
@@ -1121,6 +1253,13 @@ services:
       # volume, mounted into `sts` at the same place.
       - OUTBOUND_TEST_CA_DIR=${OUTBOUND_TEST_CA_DIR:-/run/sts-test}
       - OUTBOUND_TEST_CA_FILE=${OUTBOUND_TEST_CA_FILE:-/run/sts-test/outbound-test-ca.crt}
+      # THE DATABASE AN ATTRIBUTE SOURCE IS TESTED AGAINST (#94): the
+      # stack's own postgres, as its superuser, which
+      # `tests/vendored/sts_attribute_sources.js` creates a database, a
+      # read-only role and a table of its own in — never the service's
+      # schema. `-` rather than `:-`, so an EMPTY value (./run-coverage.sh,
+      # which has no postgres) skips the job instead of dialling nothing.
+      - STS_TEST_ATTRIBUTE_DB_URL=${STS_TEST_ATTRIBUTE_DB_URL-postgres://sts:sts@postgres:5432/sts}
       # THE MAIL CATCHER (#63): where `tests/vendored/sts_mail.js` reads what
       # arrived, and where it tells the service to deliver — the host, the
       # port and the catcher's certificate AS THE SERVICE SEES IT.
@@ -1143,7 +1282,7 @@ services:
       # CI runs and works in the one a developer runs.
       #
       # What it is for: the truststore is a Map in the service's process and
-      # `POST /tls/trust/clear` needs no credential, so any job may empty it.
+      # any job holding an admin:write token may remove an anchor from it.
       # The job that DEPENDS on this anchor re-establishes it, and it travels
       # as text because the runner container cannot see the directory the PEP
       # mounts its certificate from.
@@ -1175,9 +1314,9 @@ services:
       # rather than the job's. run-report.js forwards it to the jobs under the
       # `STS_`-prefixed name.
       #
-      # BARE, for the reason ADMIN_API_CLIENT_SECRET on the `sts` service is
-      # bare: an empty value is what a hand-run of this file has, and that must
-      # go on behaving as it did.
+      # BARE: an empty value is what a hand-run of this file has, and that
+      # must go on behaving as it did. (The `sts` service had the same bare
+      # line until #254, which moved it to the seeder.)
       - ADMIN_API_CLIENT_SECRET
       # The conformance suite, when the mode brought it up (#176). Empty
       # otherwise, which the job reads as "skipped, and why".
@@ -1196,6 +1335,17 @@ services:
       - SAML_PEER_PYSAML2_URL=${SAML_PEER_PYSAML2_URL:-}
       - SAML_PEER_KEYCLOAK_URL=${SAML_PEER_KEYCLOAK_URL:-}
       - SAML_PEERS_LOG_DIR=${SAML_PEERS_LOG_DIR:-/run/sts-test/saml-peers}
+      # The test peer (#586). ./run-tests.sh names it in every local mode;
+      # EMPTY is what the jobs read as "there is no peer", which is an AWS
+      # target's case — so a hand run of this file, which has the container,
+      # gets the default address.
+      - STS_TEST_PEER_URL=${STS_TEST_PEER_URL-http://test-peer:9600}
+      # The CA certificate the peer writes, at the path the SERVICE reads it
+      # (the same volume, mounted at the same place in `sts`).
+      - TEST_PEER_CA_FILE=${TEST_PEER_CA_FILE:-/run/sts-test/test-peer/ca.crt}
+      # A file secret push destination's directory (#221 P3): the same
+      # volume, at the same path, in `sts`. Empty skips the job's file half.
+      - SECRET_PUSH_TEST_DIR=${SECRET_PUSH_TEST_DIR-/run/sts-test-secret-push}
     # Chrome crashes tabs on heavy pages when limited to Docker's default 64MB
     # /dev/shm. The console job also passes --disable-dev-shm-usage; this raises
     # the cap as well, because the two mitigations fail differently and the
@@ -1210,10 +1360,16 @@ services:
       - ./tests/report:/usr/src/sts/tests/report
       # The directory shared with the service (#171) — see `sts` above.
       - sts-test-shared:/run/sts-test
+      # A file secret push destination's directory (#221 P3) — see `sts`.
+      - sts-test-secret-push:/run/sts-test-secret-push
     depends_on:
       # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
       # catcher that will not come up fails sts_mail.js and nothing else.
       mailpit:
+        condition: service_started
+      # The test peer (#586): STARTED, for the catcher's reason — the jobs
+      # that need it wait for it themselves (tests/vendored/test_peer.js).
+      test-peer:
         condition: service_started
       sts:
         # The whole ordering of this file. `up` reports success for a container
@@ -1249,10 +1405,16 @@ services:
 volumes:
   sts-bao-file:
   sts-bao-client:
+  # The start-up tokens, one per node (#254).
+  sts-bao-startup:
   # The run-time CA certificates a job hands the service (#171).
   sts-test-shared:
+  # A file secret push destination's directory (#221 P3).
+  sts-test-secret-push:
   # An uploaded risk dataset while it is imported (#215).
   sts-risk-uploads:
+  # The databases' certificates, shared with `sts` without their keys.
+  sts-db-ca:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

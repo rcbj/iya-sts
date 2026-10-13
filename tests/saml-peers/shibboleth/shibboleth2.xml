@@ -82,12 +82,10 @@
             helpLocation="/about.html"
             styleSheet="/shibboleth-sp/main.css"/>
 
-        <MetadataProvider type="Chaining">
-            <MetadataProvider type="XML" validate="true"
-                path="/etc/shibboleth/peer/idp-saml2.xml"/>
-            <MetadataProvider type="XML" validate="true"
-                path="/etc/shibboleth/peer/idp-saml11.xml"/>
-        </MetadataProvider>
+        <!-- ONE document: the identity provider is one entity for SAML 2.0
+             and SAML 1.1 (iya-sts #523). -->
+        <MetadataProvider type="XML" validate="true"
+            path="/etc/shibboleth/peer/idp.xml"/>
 
         <TrustEngine type="ExplicitKey"/>
 

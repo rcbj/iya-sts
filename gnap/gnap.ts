@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -32,7 +32,13 @@
 //   POST    /gnap/resource            resource set registration (RFC 9767 3.4)
 //   GET     /gnap/keys                token-format verification material
 //   GET     /gnap/zcap/controller     the ZCAP-LD controller document
-//   GET|POST /gnap/rs/resource        the demonstration resource server
+//   GET     /gnap/biscuit/revocations the revocation identifiers of revoked
+//                                     biscuits (#432; this service's own)
+//
+// The demonstration resource server (`GET|POST /gnap/rs/resource`, `POST
+// /gnap/rs/spend`) was deleted by #593 (2026-10-12): the test peer plays a
+// GNAP resource server, and a token whose access names no resource server
+// is refused rather than audienced to it (`gnap_grants.ts`).
 //
 // **A NAMED AUTHORIZATION SERVER IS THE OAUTH SUBSYSTEM'S, NOT A SECOND ONE.**
 // `/:as/gnap` selects the same profile `/:as/oauth2/*` does
@@ -78,10 +84,9 @@
 // without the root builds a default when this module loads. Loading it still
 // requires the resource-owner pages and the console pages (which register
 // nothing when required either); installing the SSF scope is the `wire`
-// step, run once for whichever instance is installed. `gnap_access` and
-// `gnap_monitor` stay LAZY, as they were, through
-// the two loaders in `GnapRoutesDeps`. The module still exports `DEMO_TYPE`,
-// `DEMO_REFERENCE` and `gnapError`.
+// step, run once for whichever instance is installed. `gnap_store` and the
+// access-token status list stay LAZY, through the loaders in
+// `GnapRoutesDeps`. The module still exports `gnapError`.
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
@@ -96,20 +101,12 @@ import rs = require('./gnap_rs');
 import tokens = require('./gnap_tokens');
 import zcap = require('./token_zcap');
 import signals = require('./gnap_signals');
+import gnapCells = require('./gnap_cells');
 
 type Req = import('express').Request;
 type Res = import('express').Response;
 type Next = import('express').NextFunction;
 type Handler = (req: Req, res: Res, next?: Next) => unknown;
-
-// The two parts of other GNAP modules this one reaches for only when a
-// demonstration request needs them.
-interface AccessCovers {
-  accessCovers(held: unknown, required: unknown): boolean;
-}
-interface EventCounter {
-  record(identifier: unknown, event: string, detail?: object): void;
-}
 
 interface GnapRoutesDeps {
   config: typeof config;
@@ -122,8 +119,8 @@ interface GnapRoutesDeps {
   tokens: typeof tokens;
   zcap: typeof zcap;
   // Required at the moment they are needed, never at load.
-  loadAccess(): AccessCovers;
-  loadMonitor(): EventCounter;
+  loadStore(): { biscuitRevocationIds(): string[] };
+  loadStatusList(): { aggregationUri(base: string): string };
 }
 
 // The routes' own table of what an express app offers.
@@ -157,30 +154,16 @@ const STATUS_FOR: Record<string, number> = {
   unknown_user: 403
 };
 
-// ---------------------------------------------------------------------------
-// THE DEMONSTRATION RESOURCE SERVER'S NAMES — see `demoResource()`.
-// ---------------------------------------------------------------------------
-const DEMO_TYPE = 'urn:mock-sts:gnap:demo';
-const DEMO_REFERENCE = 'mock-sts-gnap-demo';
+// The revoked biscuits' identifiers (#432).
+const BISCUIT_REVOCATIONS_PATH = '/gnap/biscuit/revocations';
 
 /**
- * GNAP's HTTP surface: the grant, continuation, token management, discovery,
- * RS-facing and demonstration resource server routes (RFC 9635, RFC 9767).
+ * GNAP's HTTP surface: the grant, continuation, token management, discovery
+ * and RS-facing routes (RFC 9635, RFC 9767).
  *
  * Transport only: every decision is `gnap_grants.ts`'s and `gnap_rs.ts`'s.
  */
 class GnapRoutes {
-  /**
-   * The access type the demonstration resource server at `/gnap/rs/resource`
-   * protects.
-   */
-  static readonly DEMO_TYPE = DEMO_TYPE;
-  /**
-   * The registered reference the demonstration resource server's RS-first
-   * challenge hands out for its access.
-   */
-  static readonly DEMO_REFERENCE = DEMO_REFERENCE;
-
   /**
    * Builds the routes from the modules they read.
    *
@@ -342,6 +325,14 @@ class GnapRoutes {
         log.debug("Leaving the grant endpoint. Off.");
         return undefined;
       }
+      // WHICH CELL (#98): before the caller's key proof is verified or its
+      // nonce spent — the owning cell does both (`gnap_cells.ts`). A named
+      // authorization server was `ensure()`d above, which every cell does
+      // alike and which is configuration, not the request's.
+      if (await gnapCells.placeGrantRequest(req, res)) {
+        log.debug("Leaving the grant endpoint. Relayed to its cell.");
+        return undefined;
+      }
       const result: any = await grants.createGrant(req, asId);
       if (!result.ok) {
         log.debug("Leaving the grant endpoint. Refused: " + result.why);
@@ -429,102 +420,23 @@ class GnapRoutes {
       if (caps.key_proofs_supported) {
         document.key_proofs_supported = caps.key_proofs_supported;
       }
+      // WHERE A RESOURCE SERVER THAT CHECKS TOKENS ON ITS OWN LEARNS OF A
+      // REVOCATION (#432; RFC 9767 section 6.3 offers it nothing but
+      // introspection). Neither member is in RFC 9767 section 10's registry;
+      // both are this service's own, and an RS that does not know them
+      // ignores them. `status_list_aggregation_endpoint` is the name
+      // draft-ietf-oauth-status-list section 9.1 gives the same document in
+      // an OAuth authorization server's metadata — the realm's ONE
+      // access-token list, which GNAP's two JWT formats share with OAuth.
+      document.status_list_aggregation_endpoint =
+        self.deps.loadStatusList().aggregationUri(base);
+      document.biscuit_revocation_endpoint = base + BISCUIT_REVOCATIONS_PATH;
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify(document, null, 2));
       log.debug("Leaving RS-facing discovery.");
       return undefined;
     };
-  }
-
-  // -------------------------------------------------------------------------
-  // THE DEMONSTRATION RESOURCE SERVER (RFC 9635 sections 7.2 and 9.1).
-  //
-  // A GET needs `read` and a POST needs `write` on the type
-  // `urn:mock-sts:gnap:demo` — or the registered reference its RS-first
-  // challenge hands out. With no token it answers 401 with the RS-FIRST
-  // challenge of section 9.1: `WWW-Authenticate: GNAP
-  // as_uri=…;access=…;referrer=…`, which is how a client that knows only a
-  // resource URL discovers where to ask.
-  // -------------------------------------------------------------------------
-  private demoResource(req: Req, res: Res): void {
-    const self = this;
-    const { log, config, errorCodes, grants, rs, loadAccess,
-            loadMonitor } = this.deps;
-    log.debug("Entering GnapRoutes.demoResource().");
-    log.debug("Leaving GnapRoutes.demoResource().");
-    this.guarded('the demonstration resource server', async function () {
-      log.debug("Entering the demonstration RS. method=" + req.method);
-      if (self.offCheck(res)) {
-        log.debug("Leaving the demonstration RS. Off.");
-        return;
-      }
-      if (config.value('gnap.demoResourceServer') === false) {
-        errorCodes.mark(res, 'STS-GNAP-0550');
-        self.gnapError(res, 404, 'invalid_request', 'The demonstration ' +
-                       'resource server is turned off ' +
-                       '(gnap.demoResourceServer).');
-        log.debug("Leaving the demonstration RS. Turned off.");
-        return;
-      }
-      const base = grants.realmBase(req);
-      const selfUri = base + '/gnap/rs/resource';
-      const action = req.method === 'GET' ? 'read' : 'write';
-      const challenge = 'GNAP as_uri="' + grants.grantEndpointOf(req, null) +
-          '", ' +
-          'access="' +
-        DEMO_REFERENCE + '", referrer="' + selfUri + '"';
-      if (!req.headers.authorization) {
-        errorCodes.mark(res, 'STS-GNAP-0551');
-        res.status(401)
-           .set('WWW-Authenticate', challenge)
-           .set('Cache-Control', 'no-store')
-           .type('application/json')
-           .send(JSON.stringify({ error: 'invalid_token',
-             error_description: 'This resource needs a GNAP access token; ' +
-             'ask the authorization server named in WWW-Authenticate.' }));
-        log.debug("Leaving the demonstration RS. RS-first challenge.");
-        return;
-      }
-      const required = [{ type: DEMO_TYPE, actions: [action] }];
-      const judged: any = await rs.authenticate(req, { audience: selfUri,
-                                                       base: base });
-      if (!judged.ok) {
-        errorCodes.mark(res, errorCodes.codeOf(judged) || 'STS-GNAP-0552');
-        res.status(judged.status || 401)
-           .set('WWW-Authenticate', challenge + ', ' +
-            'error="' +
-          judged.gnapError + '"').set('Cache-Control', 'no-store').type(
-              'application/json')
-           .send(JSON.stringify({ error: judged.gnapError,
-                                  error_description: judged.why }));
-        log.debug("Leaving the demonstration RS. Refused: " + judged.why);
-        return;
-      }
-      const covers = loadAccess().accessCovers(judged.model.access,
-                                               required) ||
-        (judged.model.access || []).indexOf(DEMO_REFERENCE) >= 0;
-      if (!covers) {
-        errorCodes.mark(res, 'STS-GNAP-0553');
-        res.status(403).set('WWW-Authenticate', challenge + ', ' +
-            'error="insufficient_scope"')
-           .set('Cache-Control', 'no-store').type('application/json')
-           .send(JSON.stringify({ error: 'insufficient_scope',
-                                  error_description: 'The ' +
-             'token does not grant ' + action + ' on ' + DEMO_TYPE + '.' }));
-        log.debug("Leaving the demonstration RS. Access not covered.");
-        return;
-      }
-      loadMonitor().record(judged.record.instanceId, 'rs.presented',
-                           {});
-      res.status(200).type('application/json')
-         .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ ok: true, action: action,
-                                format: judged.format,
-                                method: judged.method,
-                                token: judged.model }, null, 2));
-      log.debug("Leaving the demonstration RS. Allowed.");
-    })(req, res);
   }
 
   // Every route, in the order this file has always registered them.
@@ -564,6 +476,12 @@ class GnapRoutes {
         errorCodes.mark(res, 'STS-GNAP-0164');
         self.gnapError(res, 401, 'invalid_continuation', 'The continuation ' +
                        'URI does not identify a grant request.');
+        return;
+      }
+      // WHICH CELL (#98): the grant's, before the continuation token or the
+      // key proof is checked there.
+      if (await gnapCells.placeContinuation(req, res, params.value.grant)) {
+        log.debug("Leaving the continuation endpoint. Relayed to its cell.");
         return;
       }
       const result: any = await grants.continueGrant(req,
@@ -629,6 +547,12 @@ class GnapRoutes {
         log.debug("Leaving the introspection endpoint. Off.");
         return;
       }
+      // WHICH CELL (#98): the one holding the token, before the resource
+      // server's proof is verified.
+      if (await gnapCells.placeIntrospection(req, res)) {
+        log.debug("Leaving the introspection endpoint. Relayed to its cell.");
+        return;
+      }
       const result = await rs.introspect(req);
       if (!result.ok) {
         log.debug("Leaving the introspection endpoint. Refused: " +
@@ -646,6 +570,13 @@ class GnapRoutes {
       log.debug("Entering the resource registration endpoint.");
       if (self.offCheck(res)) {
         log.debug("Leaving the resource registration endpoint. Off.");
+        return;
+      }
+      // WHICH CELL (#98): the one holding the resource server's instance,
+      // when it names itself by one.
+      if (gnapCells.placeResourceServer(req, res)) {
+        log.debug("Leaving the resource registration endpoint. Relayed to " +
+                  "its cell.");
         return;
       }
       const result = await rs.register(req);
@@ -694,11 +625,46 @@ class GnapRoutes {
       log.debug("Leaving GET /gnap/zcap/controller.");
     }));
 
-    app.get('/gnap/rs/resource', function (req, res) {
-      return self.demoResource(req, res);
-    });
-    app.post('/gnap/rs/resource', function (req, res) {
-      return self.demoResource(req, res);
+    // -----------------------------------------------------------------------
+    // THE REVOKED BISCUITS (#432). A biscuit carries its own revocation
+    // identifiers — one per block, the signature that sealed it — and the
+    // format's own answer to revocation is a list of revoked identifiers its
+    // verifier checks a token's against. No GNAP or biscuit document says
+    // where such a list is published, so this is THIS SERVICE'S OWN, named
+    // in the RS-facing discovery document and on /gnap/keys. JSON, unsigned
+    // (it is fetched over the same TLS as the keys that verify the
+    // biscuits), and an identifier stays on it until its token's own `exp`.
+    // Cache-Control is max-age = `oauth2.accessTokenStatusListTtlS`, the
+    // access-token list's ttl: the same promise about the same tokens.
+    // -----------------------------------------------------------------------
+    app.get(BISCUIT_REVOCATIONS_PATH, function (req, res) {
+      log.debug("Entering GET " + BISCUIT_REVOCATIONS_PATH + ".");
+      if (self.offCheck(res)) {
+        log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". Off.");
+        return;
+      }
+      let ids: string[] = [];
+      try {
+        ids = self.deps.loadStore().biscuitRevocationIds();
+      } catch (e) {
+        log.debug("Caught in GET " + BISCUIT_REVOCATIONS_PATH + ": " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-GNAP-0751') + 'gnap: the revoked ' +
+                  'biscuits could not be listed: ' + ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-GNAP-0751');
+        res.status(500).type('text/plain')
+           .send('The revocation list could not be built.\n');
+        log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". Failed.");
+        return;
+      }
+      const ttl =
+        Number(self.deps.config.value('oauth2.accessTokenStatusListTtlS')) ||
+        60;
+      res.status(200).type('application/json')
+         .set('Cache-Control', 'max-age=' + ttl)
+         .send(JSON.stringify({ revocation_ids: ids, ttl: ttl }, null, 2));
+      log.debug("Leaving GET " + BISCUIT_REVOCATIONS_PATH + ". " +
+                ids.length + ".");
     });
 
     log.debug("Leaving GnapRoutes.registerRoutes().");
@@ -725,11 +691,11 @@ class GnapRoutes {
       rs: rs,
       tokens: tokens,
       zcap: zcap,
-      loadAccess: function () {
-        return require('./gnap_access');
+      loadStore: function () {
+        return require('./gnap_store');
       },
-      loadMonitor: function () {
-        return require('./gnap_monitor');
+      loadStatusList: function () {
+        return require('../oauth-oidc/access_token_status');
       }
     };
   }
@@ -803,7 +769,5 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   registerRoutes: slot.forward('registerRoutes'),
   GnapRoutes: GnapRoutes,
-  DEMO_TYPE: GnapRoutes.DEMO_TYPE,
-  DEMO_REFERENCE: GnapRoutes.DEMO_REFERENCE,
   gnapError: slot.forward('gnapError')
 };

@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # HEIMDAL'S CLIENT TOOLS, AND A curl ON HEIMDAL'S GSSAPI (#205).
 #

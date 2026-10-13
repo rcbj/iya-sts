@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -26,6 +26,7 @@ interface ClaimsProvidersApiDeps {
   baseUrlOf: typeof helpers.baseUrlOf;
   errorCodes: typeof errorCodes;
   loadProviders(): Json;
+  loadViews(): Json;
 }
 
 const BASE = '/admin-api';
@@ -88,6 +89,10 @@ class ClaimsProvidersApi {
       errorCodes: errorCodes,
       loadProviders: function (): Json {
         return require('./claims_providers');
+      },
+      // The console's paging, required lazily for the register's reason.
+      loadViews: function (): Json {
+        return require('../admin-core/admin_views');
       }
     };
   }
@@ -119,6 +124,54 @@ class ClaimsProvidersApi {
     log.debug("Leaving ClaimsProvidersApi.sendJson().");
   }
 
+  // ---------------------------------------------------------------------------
+  // THE REGISTER AND THE LINKS, PAGED (#313's sweep, 2026-10-12).
+  //
+  // A link is one per (person, provider), so the links grow with the realm;
+  // the providers are an operator's register with no cap. Both are paged, on
+  // `providersPage` and `linksPage` with one `per`, and
+  // `/admin/claim-providers` is drawn from this answer, so the page and a
+  // caller read one slice.
+  // `linkq` narrows the links before they are paged.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds the register's answer with each list paged.
+   *
+   * @param query - the request's query
+   * @returns the view, its two lists one page each
+   */
+  pagedView(query: Json): Json {
+    const { log, loadProviders, loadViews } = this.deps;
+    log.debug("Entering ClaimsProvidersApi.pagedView().");
+    const views = loadViews();
+    const json = loadProviders().view();
+    const wanted = String(views.queryOne(query, 'linkq') || '').trim()
+      .slice(0, 256);
+    const needle = wanted.toLowerCase();
+    const links = (json.links || []).filter(function (l: Json): boolean {
+      return !needle ||
+        [l.username, l.provider, l.sub].some(function (v: Json): boolean {
+          return String(v || '').toLowerCase().indexOf(needle) >= 0;
+        });
+    });
+    const providerPage = views.pagedRows(query, json.providers || [],
+      { name: 'providers', noun: 'providers' });
+    const linkPage = views.pagedRows(query, links,
+      { name: 'links', noun: 'links' });
+    log.debug("Leaving ClaimsProvidersApi.pagedView(). " +
+              linkPage.shown.length + " of " + links.length + " link(s).");
+    return Object.assign({}, json, {
+      providers: providerPage.shown,
+      links: linkPage.shown,
+      counts: { providers: (json.providers || []).length,
+                links: (json.links || []).length },
+      matched: { links: links.length },
+      filter: { links: wanted || null },
+      paging: { providers: views.pagingJson(providerPage.paging),
+                links: views.pagingJson(linkPage.paging) }
+    });
+  }
+
   /**
    * Builds the operations' route table, each row carrying its OpenAPI
    * description and its handler.
@@ -142,13 +195,33 @@ class ClaimsProvidersApi {
           'person made (their subject there, when, the token\'s expiry, ' +
           'whether it is stale). Never a secret or a token.',
         mirrors: 'GET /admin/claim-providers',
+        parameters: [
+          { name: 'providersPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the providers. Clamped, like every ' +
+                         'page parameter here.' },
+          { name: 'linkq', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'Narrows the links to those whose person, ' +
+                         'provider or subject there contains this.' },
+          { name: 'linksPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the matched links. It shares ' +
+                         '`per` with the providers.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page of each list, capped.' }
+        ],
         responseDescription: 'The register and the links.',
         responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`providers`, `links`, ' +
-                                       '`redirectUri`.' },
+                          description: '`providers` and `links`, one page ' +
+                            'of each (`paging.providers`, `paging.links`); ' +
+                            '`counts`, both lists whole; `matched.links`, ' +
+                            'the links `linkq` matched; `filter`; ' +
+                            '`redirectUri`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API claim providers endpoint.");
-          const json = loadProviders().view();
+          const json = self.pagedView(req.query || {});
           self.sendJson(res, 200, Object.assign({
             redirectUri: baseUrlOf(req) + json.callbackPath }, json));
           log.debug("Leaving the management API claim providers endpoint.");

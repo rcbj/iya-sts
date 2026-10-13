@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -26,12 +26,17 @@
 //   3. THE PERSON'S OWN DOOR, `/portal/kerberos`, signed in as them: the page
 //      names their principal; their password on the form gives a keytab on a
 //      no-store 200, and `kinit -k -t` signs in with it; in product a wrong
-//      password is refused with no keytab on the page.
-//   4. THE CONSOLE'S FORM on the person's `/admin/users` page, posted by an
+//      password is refused with no keytab on the page. Since #568 the portal
+//      is a static application: the page is `GET /account-api/kerberos`
+//      drawn by the portal's own renderers, and the keytab arrives in the
+//      VIEW the form's operation answers, drawn in place.
+//   4. THE CONSOLE'S FORM on the person's `/admin/users` page, sent by an
 //      administrator signed in to `/admin` with Admin Write: the section
-//      names the principal, the form answers the shown-once keytab page
-//      (no-store, saying the password was changed), and `kinit -k -t` signs in
-//      with the keytab on it.
+//      names the principal, and the form — since the #446 cutover the
+//      static console's token sending it to its operation — answers the
+//      shown-once keytab (no-store, for the person whose password it
+//      changed), which the console draws in place; `kinit -k -t` signs in
+//      with it.
 //   5. THE REFUSALS THAT CHANGE NOTHING: neither or both of `password` and
 //      `random`, and a person who does not exist — 400 with no keytab.
 //
@@ -54,6 +59,7 @@ const facts = require("./service_facts.js");
 const registry = require("./sts_applications.js");
 const wire = require("./krb5_wire.js");
 const consoleSignIn = require("./console_signin.js");
+const portal = require("./portal_signin.js");
 const { declineToRun } = require("./expectation.js");
 
 var appconfig;
@@ -321,89 +327,51 @@ function refusalCode(result) {
 }
 
 // ---------------------------------------------------------------------------
-// A BROWSER SIGNED IN TO THE PORTAL — sts_portal_certificates.js's.
+// THE PERSON SIGNED IN TO THE PORTAL, as the static portal signs in (#568):
+// the code flow with PKCE as `sts-user-portal`, a DPoP-bound token for
+// `/account-api` (`portal_signin.js`). A page is its operation's view drawn by
+// the portal's own renderers; a form is the operation that mirrors it.
 // ---------------------------------------------------------------------------
-function formBody(o) {
-  log.debug("Entering formBody().");
-  log.debug("Leaving formBody().");
-  return new URLSearchParams(o).toString();
-}
-
-function absolute(location) {
-  log.debug("Entering absolute().");
-  log.debug("Leaving absolute().");
-  return /^https?:\/\//i.test(String(location || ""))
-    ? String(location) : base + String(location || "");
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
-function browser() {
-  log.debug("Entering browser().");
-  const self = {
-    jar: {},
-    async go(method, where, body) {
-      log.debug("Entering go().");
-      const headers = {};
-      const cookie = Object.keys(self.jar).map(function (k) {
-        return k + "=" + self.jar[k];
-      }).join("; ");
-      if (cookie) {
-        headers.cookie = cookie;
-      }
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const r = await fetch(absolute(where), { method: method,
-                                               redirect: "manual",
-                                               headers: headers, body: body });
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const key = pair.split("=")[0];
-        const value = pair.slice(key.length + 1);
-        if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(one))) {
-          delete self.jar[key];
-        } else {
-          self.jar[key] = value;
-        }
-      });
-      log.debug("Leaving go(). HTTP " + r.status);
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: await r.text(), headers: r.headers };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
 async function signIn(password) {
   log.debug("Entering signIn().");
-  const b = browser();
-  let r = await b.go("GET", "/portal/kerberos");
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    "an unauthenticated browser should be sent to the authorization " +
-    "endpoint; it answered " + r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  r = await b.go("POST", "/authn/login",
-                 formBody({ authn_id: authnId, username: USER,
-                            password: password, action: "login",
-                            csrf_token: csrfOf(r.text) }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in should end in a redirect; got " + r.status);
-  r = await b.go("GET", r.location);
-  r = await b.go("GET", r.location);
-  assert.ok(Object.keys(b.jar).length, "no session was established.");
+  const b = { portal: await portal.signInToThePortal(base, USER, null,
+                                                     { password: password }) };
+  b.me = (await b.portal.api("GET", "/account-api/me")).json;
   log.debug("Leaving signIn().");
   return b;
+}
+
+function drawView(b, path, view) {
+  log.debug("Entering drawView(). " + path);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  assert.ok(row, "the portal draws no page at " + path);
+  const t = table.messages.WebTranslator.fromData(b.me && b.me.locale);
+  log.debug("Leaving drawView().");
+  return row.render(view, { t: t, query: {}, prefix: "", origin: base,
+                            me: b.me, locale: b.me && b.me.locale,
+                            version: b.me && b.me.version, here: path });
+}
+
+async function pageOf(b, path) {
+  log.debug("Entering pageOf(). " + path);
+  const answer = await b.portal.page(path);
+  log.debug("Leaving pageOf().");
+  return { status: answer.status, json: answer.json, headers: answer.headers,
+           text: answer.status === 200 && answer.json
+             ? drawView(b, path, answer.json) : "" };
+}
+
+async function act(b, path, fields) {
+  log.debug("Entering act(). " + path);
+  const r = await b.portal.act(path, fields);
+  const json = r.json || {};
+  log.debug("Leaving act().");
+  return { status: r.status, json: r.json, headers: r.headers,
+           text: json.view ? drawView(b, path, json.view)
+                           : String(r.text || "") };
 }
 
 function keytabOnPage(text) {
@@ -566,7 +534,7 @@ async function thePersonsDoor(password) {
   log.debug("Entering thePersonsDoor().");
   log.info("=== 3. the person's own keytab, on /portal/kerberos ===");
   const b = await signIn(password);
-  const page = await b.go("GET", "/portal/kerberos");
+  const page = await pageOf(b, "/portal/kerberos");
   check("the page names their principal and carries a real form",
         function () {
     assert.strictEqual(page.status, 200, "answered " + page.status);
@@ -579,9 +547,8 @@ async function thePersonsDoor(password) {
               "a form on this page names a person");
   });
   if (K.product) {
-    const wrong = await b.go("POST", "/portal/kerberos",
-      formBody({ action: "keytab", current: "Not-Their-Passw0rd!-1",
-                 csrf_token: csrfOf(page.text) }));
+    const wrong = await act(b, "/portal/kerberos",
+      { action: "keytab", current: "Not-Their-Passw0rd!-1" });
     check("PRODUCT: a wrong password is refused, with no keytab on the page",
           function () {
       assert.strictEqual(wrong.status, 400, "answered " + wrong.status);
@@ -589,10 +556,8 @@ async function thePersonsDoor(password) {
                          "a keytab is on the refusal");
     });
   }
-  const fresh = await b.go("GET", "/portal/kerberos");
-  const made = await b.go("POST", "/portal/kerberos",
-    formBody({ action: "keytab", current: password,
-               csrf_token: csrfOf(fresh.text) }));
+  const made = await act(b, "/portal/kerberos",
+                         { action: "keytab", current: password });
   const b64 = keytabOnPage(made.text);
   check("their password gives a keytab on a no-store 200", function () {
     assert.strictEqual(made.status, 200, "answered " + made.status);
@@ -606,7 +571,7 @@ async function thePersonsDoor(password) {
               "no download link");
   });
   await mitSignsIn("the portal's keytab", b64, "portal");
-  const again = await b.go("GET", "/portal/kerberos");
+  const again = await pageOf(b, "/portal/kerberos");
   check("and it is not on the page again", function () {
     assert.strictEqual(keytabOnPage(again.text), "",
                        "the keytab is shown a second time");
@@ -629,12 +594,10 @@ async function theConsolesForm() {
                          JSON.stringify(grant.body).slice(0, 200));
       granted = true;
     }
-    const cookie = await consoleSignIn.signInToTheConsole(base, ADMIN, log);
-    const userPage = await fetch(base + "/admin/users?user=" +
-                                 encodeURIComponent(USER),
-                                 { headers: { Cookie: cookie },
-                                   redirect: "manual" });
-    const drawn = await userPage.text();
+    const consoleClient = await consoleSignIn.signInToTheConsole(base, ADMIN,
+                                                                 log);
+    const userPage = await consoleClient.draw("/admin/users", { user: USER });
+    const drawn = userPage.html;
     check("the person's page has a Kerberos section naming their principal " +
           "and the reset form", function () {
       assert.strictEqual(userPage.status, 200, "answered " + userPage.status);
@@ -646,28 +609,23 @@ async function theConsolesForm() {
                 /Reset password and download keytab<\/button>/.test(drawn),
                 "no reset form with a real submit button");
     });
-    const csrf = (drawn.match(/name="csrf_token" value="([^"]+)"/) ||
-                  [])[1] || "";
-    const posted = await fetch(base + "/admin/kerberos/principals", {
-      method: "POST", redirect: "manual",
-      headers: { Cookie: cookie,
-                 "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ csrf_token: csrf,
-                                  action: "reset-person-keytab",
-                                  username: USER, from: "user",
-                                  password: RESET_PASSWORD + "-console" })
-        .toString() });
-    const shown = await posted.text();
-    const b64 = keytabOnPage(shown);
-    check("the form answers the shown-once keytab page, no-store, saying " +
-          "the password was changed", function () {
+    // THE FORM IS ITS OPERATION SINCE THE #446 CUTOVER: the keytab comes
+    // back in the answer, once, and the console draws it in place rather
+    // than the server drawing a page around it.
+    const posted = await consoleClient.act("/admin/kerberos/principals", {
+      action: "reset-person-keytab", username: USER,
+      password: RESET_PASSWORD + "-console" });
+    const b64 = String((posted.json && posted.json.keytab) || "");
+    check("the form answers the shown-once keytab, no-store, for the person " +
+          "whose password it changed", function () {
       assert.strictEqual(posted.status, 200, "answered " + posted.status +
-                         " " + shown.replace(/<[^>]+>/g, " ").slice(0, 300));
+                         " " + posted.text.slice(0, 300));
       assert.ok(/no-store/.test(posted.headers.get("cache-control") || ""),
-                "the keytab page is cacheable");
-      assert.ok(b64, "no keytab on the page");
-      assert.ok(/password was changed/.test(shown),
-                "the page does not say the password was changed");
+                "the keytab answer is cacheable");
+      assert.ok(b64, "no keytab in the answer");
+      assert.strictEqual(posted.json.username, USER,
+                         "the answer does not name the person whose " +
+                         "password was changed");
       readKeytab(b64).forEach(function (one) {
         assert.strictEqual(one.name, USER, "an entry names " + one.name);
       });

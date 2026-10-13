@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: BUSL-1.1
 #
 # ---------------------------------------------------------------------------
-# THE LONG-LIVED HALF (issue #51).
+# THE LONG-LIVED HALF (issue #51), IN EVERY PERMITTED REGION (#98).
 #
 # What an environment needs and must not re-create on every run: the project's
 # deployer identity, the KMS key everything is encrypted with, the image
@@ -25,6 +25,8 @@ terraform {
 
   # The bucket is created by ../bootstrap-state.sh, not by Terraform. The key is
   # this stack's alone; `environment/` keys its state by environment name.
+  # `region` is THE STATE BUCKET'S region, the home region, and stays so when
+  # an environment's cells are elsewhere (#98): one bucket holds every state.
   backend "s3" {
     key          = "foundation/terraform.tfstate"
     region       = "us-west-2"

@@ -77,7 +77,8 @@ header to `x5c`, because HAIP's verifier holds only the anchor.
 
 A credential carries claims chosen from a catalogue of **LDAP attribute
 types**, and each value is read from the person's own directory entry. What
-`/admin/vc` selects applies to all five configurations. An `ldp_vc` credential
+the Credential claims tab at `/admin/vc#vc-tab-claims` selects applies to all
+five configurations. An `ldp_vc` credential
 can carry only the terms its JSON-LD context defines, and the page names the
 claims it cannot express.
 
@@ -94,21 +95,72 @@ means the whole configured set.
   configuration's scope or for `authorization_details` of type
   `openid_credential`. This is the flow described on
   [OAuth 2.0 and OpenID Connect](oauth-oidc.md).
-* **Credential Offers** (section 4, Appendix H). `GET /issuer` is a mock
-  issuer web page. `GET /issuer/offer` builds an offer and sends the browser to
-  the wallet (`oid4vci.walletUrl` plus `oid4vci.walletIssuancePath`):
-  * `mode=same-device` (the default, H.1): an `authorization_code` grant
-    carrying an `issuer_state`, by value, or by reference with `by=reference`,
-    served at `/oid4vci/credential-offer/{id}`;
-  * `mode=cross-device` (H.2): a QR code and a **pre-authorized code** with a
-    **Transaction Code** (`tx_code`) shown on the issuer's screen;
-  * `mode=deferred` (H.3): the same, for a credential that takes time to
-    produce.
+* **Credential Offers** (section 4, Appendix H). The service draws no issuer
+  page of its own; an issuer's web site makes the offer and hands it to the
+  wallet:
+  * same-device (H.1): an `authorization_code` grant; the wallet signs the
+    person in at this service's authorization server;
+  * cross-device (H.2): a **pre-authorized code** with a **Transaction Code**
+    (`tx_code`), which a person makes for their own wallet on `/portal/wallet`
+    (below). The offer is passed by value or by reference, served at
+    `/oid4vci/credential-offer/{id}`;
+  * deferred (H.3): the same, for a credential that takes time to produce.
+
+  In development, the
+  [companion](docker-compose.md#the-companion-development-only) is a
+  click-through issuer page: it reads `/.well-known/openid-credential-issuer`,
+  makes a same-device offer itself (no `issuer_state`), and links the person to
+  `/portal/wallet` for a pre-authorized one. Until #594 the service drew that
+  page at `/issuer` and `/issuer/offer`.
+* **A credential about yourself, into your own wallet** (`/portal/wallet`,
+  #589). A person signed in to the [user portal](user-facing-pages.md#the-user-portal)
+  chooses a credential configuration and *now* (H.2) or *later* (H.3,
+  deferred), and the page shows the offer as a QR code, the Transaction Code
+  beside it, and a link that opens it in a wallet on the same device. It is
+  the [account API](account-api.md)'s two operations, in both modes:
+  * `GET /account-api/credentials/offerable`: the configurations this realm's
+    issuer offers, named as its metadata names them, the two modes, and how
+    long an offer lives;
+  * `POST /account-api/credentials/offers` with `{ "configuration": "…",
+    "mode": "cross-device" | "deferred" }`: a pre-authorized offer **for the
+    token's person** (nobody else can be named), answered once — the
+    Credential Offer, the offer by value (`openid-credential-offer://?credential_offer=…`)
+    and by reference (`credential_offer_uri`), the configured web wallet's
+    link where `oid4vci.walletUrl` is set, `expiresAt`, and `txCode`.
+
+  **The offer is handed to a wallet APP** under `openid-credential-offer://`
+  (OpenID4VCI 1.0 section 4.1), or HAIP's `haip-vci://` where
+  `oid4vci.walletInvocation` says so: the QR code carries it by reference, and
+  **Open in a wallet on this device** by value. No web wallet is offered
+  unless `oid4vci.walletUrl` names one. If nothing opens, the page says to
+  scan the QR code with the wallet on a phone, or to install a wallet that
+  supports OpenID4VCI. With a third-party wallet: sign in to the portal, open
+  **Add to your wallet**, choose a credential (*Identity Credential*, `dc+sd-jwt`,
+  is the one most wallets hold), scan the QR code with the wallet, and type
+  the Transaction Code it asks for. The wallet redeems the pre-authorized code
+  at the token endpoint without naming a client — the authorization server's
+  metadata says `pre-authorized_grant_anonymous_access_supported: true`
+  (section 12.3) — fetches a nonce from `/oid4vci/nonce`, and asks for the
+  credential with a `jwt` key proof. A wallet that names a client of its own
+  is judged as that client, which product mode refuses unless it is
+  registered.
+
+  The offer is made on the sign-on session the portal's token was issued on,
+  and is reported over CAEP as `session-presented` naming OpenID4VCI. A token
+  whose session is no longer known, or a session that continued without
+  signing in, is refused (`STS-PORTAL-0590`); a configuration the issuer
+  does not offer is refused (`STS-PORTAL-0589`).
 * **Pre-authorized code grant.** The token endpoint redeems a pre-authorized
   code once. The Transaction Code has `oid4vci.txCodeLength` digits, drawn from
   a CSPRNG and compared in constant time. The token request may carry
   `authorization_details`, because the pre-authorized flow has no authorization
-  request to send them in.
+  request to send them in. The access token's `sub` is the offered person's
+  `urn:uuid:` subject, resolved at redemption. A wallet may redeem the code
+  without a `client_id` (section 6.1). Because RFC 9068 section 2.2 requires
+  the claim, the token then carries `client_id`
+  `urn:sts:oid4vci:anonymous-wallet`, never an empty string. If the directory
+  holds no entry for the offered person, the grant is refused with
+  `invalid_grant` (`STS-OAUTH-0938`).
 
 ### The Credential Request
 
@@ -145,9 +197,13 @@ means the whole configured set.
   `oid4vci.deferredReadyMs` have passed, with the `interval` set by
   `oid4vci.deferredIntervalS`.
 * **Notifications.** `POST /oid4vci/notification` takes the wallet's
-  `notification_id` events. `GET /oid4vci/notification/{id}` and
-  `GET /oid4vci/last_request` are non-standard read-backs for tests: what the
-  issuer was told, and how the last credential request arrived.
+  `notification_id` events. Two Admin Read operations read them back:
+  `GET /admin-api/oid4vci/notifications?id=<notification_id>` answers the
+  `event`, `event_description` and `notified_at` the wallet sent (404 for an
+  unknown id), and `GET /admin-api/oid4vci/last-request` how the last
+  credential request arrived — its media type, and for an encrypted one the
+  JWE's `kid`, `alg` and `enc`, never the request itself (`seen: false` before
+  any).
 
 ### Status lists
 
@@ -169,7 +225,8 @@ random and freed when the credential expires.
 A credential's status is VALID, INVALID or SUSPENDED. It is **computed** from
 the credential's own status and from whether an administrator revoked it, so
 every page that shows it agrees. Four things change it: a suspension,
-reinstatement or revocation on `/admin/vc-status`, a revocation or restore on
+reinstatement or revocation on the Credential status tab at
+`/admin/vc#vc-tab-status`, a revocation or restore on
 `/admin/tokens`, a global sign-out, and a disabled account.
 
 `oid4vci.statusListTtlS` is how long a verifier may keep a list (it is also the
@@ -195,8 +252,8 @@ issued on any other token is still issued, but it signs nobody in.
 
 ### The issuer named by a DID
 
-Two configurations name the issuer by `did:web`. The DID document, the DIF
-domain linkage and `/did/generate` are on the [OpenID4VP](oid4vp.md#did-core-and-domain-linkage)
+Two configurations name the issuer by `did:web`. The DID document and the DIF
+domain linkage are on the [OpenID4VP](oid4vp.md#did-core-and-domain-linkage)
 page. `oid4vci.sdJwtIssuerDid` and `oid4vci.ldpVcIssuerDid` move the **plain**
 configurations to the DID as well — what a deployment that had gone to DIDs
 throughout would look like. Both are off: SD-JWT VC defines no DID-based
@@ -266,9 +323,8 @@ unverifiable, not invalid: it is somebody else's conforming document.
 |---|---|---|
 | Access token at the credential, deferred and notification endpoints | Any token is accepted and its claims read unverified, because OpenID4VCI lets the authorization server be somebody else | A token that does not verify against this realm's key, or that this realm revoked, is refused `invalid_token` (401) |
 | Claim values | What the entry lacks is invented from the username, deterministically, in fictional ranges | Nothing is invented; an attribute the entry does not hold is absent |
-| `/issuer/offer` for a cross-device or deferred offer | Mints a pre-authorized code for `oid4vci.offerUsername`, for anybody | Mints for the **signed-in person** only; an unsigned-in browser goes through the sign-in screen. A same-device offer grants nothing and is not gated |
+| `/portal/wallet` (`POST /account-api/credentials/offers`) | A pre-authorized offer for the signed-in person, on their sign-on session | The same |
 | Wrong Transaction Codes | Not counted | Counted across the cluster; the `oid4vci.txCodeMaxAttempts`th spends the code |
-| The `wallet` query parameter | Any URL | Only `oid4vci.walletUrl` or one in `oid4vci.allowedWalletUrls`; anything else is an open redirect and refused |
 | The credential signing keys | Regenerated on every start; nothing is rotated | Kept in the store and rotated on a schedule — the BBS key and a credential-only JWS key on `signing.credentialRotationIntervalDays` |
 
 A credential issued in development on an unverified token cannot sign anybody
@@ -278,11 +334,11 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
-| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | `http://localhost:3000` | yes | Where the wallet lives, as a URL the browser can use; the offer pages send the End-User there. |
-| `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | `/vc-issuance-1.html` | yes | The page under the wallet URL an offer is handed to. |
-| `oid4vci.allowedWalletUrls` | `OID4VCI_ALLOWED_WALLET_URLS` | *(empty)* | yes | In product mode, the other wallet URLs the `wallet` parameter on `/issuer/offer` may name. |
+| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | *(empty)* | yes | A web wallet offered beside the wallet app link, where one is configured. |
+| `oid4vci.walletInvocation` | `OID4VCI_WALLET_INVOCATION` | `openid-credential-offer` | yes | The scheme an offer is handed to a wallet app under: `openid-credential-offer` or `haip-vci`. |
+| `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | *(empty)* | yes | The page under the web wallet's URL an offer is handed to (`/vc-issuance-1.html` for the embedded debugger's). |
 | `oid4vci.authorizationServer` | `OID4VCI_AUTHORIZATION_SERVER` | *(empty)* | yes | A separate authorization server to advertise; empty means this service. |
-| `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whose credential the issuer-initiated offer pages build (development). |
+| `oid4vci.offerUsername` | `OID4VCI_OFFER_USERNAME` | `diploma.student` | yes | Whom a pre-authorized offer is for when none is named (development). |
 | `oid4vci.offerTtlS` | `OID4VCI_OFFER_TTL_S` | `600` | yes | How long an offer, its `issuer_state`, its pre-authorized code and a `notification_id` stay usable. |
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | Digits in the Transaction Code. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | In product mode, how many wrong Transaction Codes a pre-authorized code survives. |
@@ -295,7 +351,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | Content encryption algorithms offered for responses. |
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a request that does not ask for an encrypted response. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every minted credential is valid (thirty days). |
-| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists, the Domain Linkage Credential and `/did/generate`. |
+| `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential. |
 | `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5u` | yes | Whether a credential names its signing key's chain: `x5u`, `x5c`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
 | `oid4vci.proofIatWindowS` | `OID4VCI_PROOF_IAT_WINDOW_S` | `600` | yes | How far a proof's `iat` may be from now, either way. |
@@ -305,16 +361,16 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.keyAttestationTrustedCertificates` | `OID4VCI_KEY_ATTESTATION_TRUSTED_CERTIFICATES` | *(empty)* | yes | PEM certificates of the Wallet Providers whose key attestations are believed; empty trusts none. |
 | `oid4vci.statusListTtlS` | `OID4VCI_STATUS_LIST_TTL_S` | `300` | yes | The `ttl` (and HTTP `max-age`) of this realm's status lists. |
 | `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long a status list token, or a Bitstring Status List credential, says it is valid. |
-| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Mock Credential Issuer` | yes | The metadata's `display.name`. |
+| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Credential Issuer` | yes | The metadata's `display.name`. |
 | `oid4vci.domainLinkageLifetimeS` | `OID4VCI_DOMAIN_LINKAGE_LIFETIME_S` | `31536000` | yes | How long the Domain Linkage Credential says it is valid. |
-| `oid4vci.generatedDidCredentialLifetimeS` | `OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S` | `3600` | yes | How long the SD-JWT VC `/did/generate` signs is valid. |
 | `oid4vci.sdJwtIssuerDid` | `OID4VCI_SD_JWT_ISSUER_DID` | `false` | restart | Name the plain `dc+sd-jwt` configuration's issuer by `did:web`. |
 | `oid4vci.ldpVcIssuerDid` | `OID4VCI_LDP_VC_ISSUER_DID` | `false` | restart | The same for the plain `ldp_vc` configuration. |
 | `signing.credentialRotationIntervalDays` | `STS_SIGNING_CREDENTIAL_ROTATION_INTERVAL_DAYS` | `365` | yes | In product mode, how long the credential signing key works before its successor is promoted, when that key signs no tokens; `0` turns rotation off. |
 
 See [Configuration](configuration.md) for how a value is resolved. Every
-`oid4vci.*` setting is on `/admin/oid4vci` in the realm it applies to, and can
-be changed with `POST /admin-api/config/set`.
+`oid4vci.*` setting is on the OpenID4VCI settings tab at
+`/admin/vc#vc-tab-oid4vci` in the realm it applies to, and can be changed with
+`POST /admin-api/config/set`.
 
 ## Design decisions
 
@@ -346,7 +402,8 @@ be changed with `POST /admin-api/config/set`.
   control.
 * **One status index per credential, and the bit is computed.** The same index
   in every list, and a status derived from the credential's own entry and its
-  revocation mark, means `/admin/tokens`, `/admin/vc-status`, a global sign-out
+  revocation mark, means `/admin/tokens`, the Credential status tab at
+  `/admin/vc#vc-tab-status`, a global sign-out
   and the sign-in door cannot disagree.
 * **The sign-in register is written at issuance, where the facts are known.**
   In development the credential endpoint accepts tokens it did not issue, so a
@@ -366,20 +423,20 @@ be changed with `POST /admin-api/config/set`.
 
 ## In the running service
 
-* **Protocols → Verifiable Credentials → OpenID4VCI** (`/admin/oid4vci`): the
-  issuer's settings, including which wallet the offer pages use, which
-  authorization server is advertised, the batch size, deferred timings,
+* **Protocols → Verifiable Credentials** (`/admin/vc`) is one tabbed page.
+  The **Metadata** tab lists the issuer and verifier endpoints. The
+  **OpenID4VCI** tab holds the issuer's settings, including which wallet an offer links to,
+  which authorization server is advertised, the batch size, deferred timings,
   encryption, and the DID choices. API: `GET /admin-api/oid4vci-settings`.
-* **Protocols → Verifiable Credentials → Credential claims** (`/admin/vc`):
-  which claims a credential issued from now on carries, chosen from the LDAP
-  attribute catalogue, for all five configurations at once. Saving also
-  populates the directory. API: `GET /admin-api/credential-claims` and
+* Its **Credential claims** tab selects which claims an issued credential
+  carries, from the LDAP attribute catalogue, for all five configurations at
+  once. Saving also populates the directory. API:
+  `GET /admin-api/credential-claims` and
   `POST /admin-api/credential-claims/select`.
-* **Protocols → Verifiable Credentials → Credential status**
-  (`/admin/vc-status`): this realm's status lists, where they are served, and
-  every issued credential's index and status, with **Suspend**, **Reinstate**
-  and **Revoke**. API: `GET /admin-api/vc-status` and
-  `POST /admin-api/vc-status/{suspend,reinstate,revoke}`.
+* Its **Credential status** tab shows this realm's status lists, where they
+  are served, and every issued credential's index and status, with
+  **Suspend**, **Reinstate** and **Revoke**. API: `GET /admin-api/vc-status`
+  and `POST /admin-api/vc-status/{suspend,reinstate,revoke}`.
 * **Tokens** (`/admin/tokens`): issued credentials among everything else this
   realm issued, with the revocation that disowns one.
 * **The live metadata** at `/.well-known/openid-credential-issuer` is the

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -48,18 +48,20 @@
 // side, and the page says which is which.
 //
 // ---------------------------------------------------------------------------
-// FOUR THINGS ASK THE PDP IN THIS PROCESS, AND ONLY THREE OF THEM ENFORCE.
+// THREE THINGS ASK THE PDP IN THIS PROCESS, AND ONLY TWO OF THEM ENFORCE.
 //
 // The catalogue below is the whole list and it is DATA rather than prose,
 // because `/admin/xacml/monitor` renders it and `GET
-// /admin-api/xacml/monitor` publishes it: a fifth caller added without a row
-// here would be decisions nobody could see, and the count on the page would be
-// quietly short.
+// /admin-api/xacml/monitor` publishes it: a fourth caller added without a
+// row here would be decisions nobody could see, and the count on the page
+// would be quietly short.
 //
-//   `protected`  the DEMONSTRATION PEP at `/xacml/protected`. The only one
-//                whose bias is settable (`xacml.pepBias`) and the only one that
-//                discharges obligations, which is why it is the one the bias
-//                and the section 7.2 rule are demonstrated on.
+// A fourth row, `protected`, was the DEMONSTRATION PEP at `/xacml/protected`
+// — the one whose bias was settable (`xacml.pepBias`) and the one that
+// discharged obligations. It moved to the remote PEP container in #596
+// (`GET /protected` there, `PEP_BIAS`), whose decisions, refusals and
+// undischargeable obligations arrive on its heartbeat as the remote half.
+//
 //   `issuance`   `xacml_role_pep.ts`. Nine issuance sites ask it before this
 //                service mints anything, through `common/issuance_gate.js`.
 //   `access`     `xacml_access_pep.ts`. Every surface `common/access_gate.ts`
@@ -322,10 +324,10 @@ class XacmlMonitor {
   // the page — is identical to a PEP's, and two lists would have meant two
   // renderers that could disagree about how a decision is displayed.
   //
-  // `bias` is a FUNCTION rather than a value because `xacml.pepBias` is
-  // runtime-settable and per realm: a value read at require time would be the
-  // bias this process started with, printed beside counters that were produced
-  // under a different one.
+  // `bias` is a FUNCTION rather than a value because it was runtime-settable
+  // and per realm while the demonstration PEP was here (`xacml.pepBias`,
+  // #596): a value read at require time would have been the bias this
+  // process started with. Every row left answers a constant.
   // -------------------------------------------------------------------------
   /**
    * Builds the catalogue of every asker of the PDP in this process, in the
@@ -340,29 +342,6 @@ class XacmlMonitor {
                    settings: { value(key: string): any }): PepDefinition[] {
     log.debug("Entering XacmlMonitor.catalogue().");
     const rows: PepDefinition[] = [
-      { id: 'protected',
-        label: 'The demonstration PEP',
-        kind: 'embedded',
-        where: 'GET /xacml/protected',
-        module: 'xacml/xacml.ts',
-        guards: 'One endpoint that exists to be asked. It guards nothing ' +
-                'real — it is the PEP you point a client at to watch a bias ' +
-                'and an obligation do their work.',
-        enforces: true,
-        // THE ONLY ONE WHOSE BIAS IS SETTABLE, and the page says so beside
-        // every other row: `xacml.pepBias` governs THIS PEP. The issuance and
-        // access PEPs are deny-biased by construction — an issuance or an
-        // access that is not permitted does not happen — and a setting that
-        // appeared to change that would silently do nothing.
-        bias: function () {
-          log.debug("Entering bias().");
-          log.debug("Leaving bias().");
-          return settings.value('xacml.pepBias') === 'permit-biased'
-            ? 'permit-biased' : 'deny-biased';
-        },
-        // The one PEP here that discharges obligations at all.
-        obligations: true },
-
       { id: 'issuance',
         label: 'The issuance PEP',
         kind: 'embedded',

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -294,8 +294,13 @@ function childMain() {
             'and GET /spiffe says it is served, on the declaration',
             tcpOf(doc));
       const page = await spiffeDocument(true);
-      check(/served \(product, source declared authenticated\)/.test(
-              page.html || ''),
+      // The page is drawn in the browser since #584, from the view its
+      // shell carries: the state is read there.
+      const shellState = /data-sts-state="([^"]*)"/.exec(page.html || '');
+      check(!!shellState &&
+            /served \(product, source declared authenticated\)/.test(
+              shellState[1]) &&
+            /\/spiffe\/description\.js/.test(page.html || ''),
             'and so does the page a person reads');
       let answer = await fetchJwt(id('/probe/from-loopback'));
       check(answer.ok && answer.ids.length === 1 &&
@@ -303,10 +308,10 @@ function childMain() {
             'a TCP caller from 127.0.0.1 is issued a JWT-SVID for the entry ' +
             'selecting its peer: address', answer);
       answer = await fetchJwt(id('/probe/any-tcp'));
-      check(answer.ok && answer.ids.length === 0,
-            'and nothing for the transport-only entry written in ' +
+      check(!answer.ok && answer.code === rpc.grpc.status.PERMISSION_DENIED,
+            'and PERMISSION_DENIED for the transport-only entry written in ' +
             'development, which answers nobody in product ' +
-            '(STS-SPIFFE-0123)', answer);
+            '(STS-SPIFFE-0123, then STS-SPIFFE-0146 — #274)', answer);
 
       // The declaration withdrawn with the port still bound: the read is
       // the guard.

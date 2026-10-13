@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -31,6 +31,12 @@
 // It carries its own AUTHENTICATOR (the CBOR, the authenticator data, the
 // signatures) for `sts_dpop.js`'s reason; the certificates are minted with the
 // vendored X.509 engine, which verifies nothing here.
+//
+// SINCE #568 THE PORTAL IS A STATIC APPLICATION: the person signs in as it
+// does (`portal_signin.js`: PKCE, a DPoP-bound token for the realm's
+// `/account-api`), and `/portal/keys` is that operation's answer drawn by the
+// portal's own renderers, its forms the operations that mirror them
+// (`portalPages()`). An enrolment answers 200 where it answered 303.
 // ===========================================================================
 
 const assert = require("assert");
@@ -361,26 +367,150 @@ function csrfOf(text) {
           [])[1] || "";
 }
 
-async function portalSignIn(who, path) {
-  log.debug("Entering portalSignIn(). " + who);
-  const b = browser();
-  let r = await b.go("GET", path);
-  for (let hop = 0; hop < 12 && r.status !== 200; hop++) {
-    assert.ok(r.status === 302 || r.status === 303,
-      "signing in to " + path + " stopped at " + r.status + " " +
-      r.text.slice(0, 300));
-    r = await b.go("GET", r.location);
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = who;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
+// ---------------------------------------------------------------------------
+// THE PORTAL'S PAGES SINCE #568, BEHIND THE VERB THIS JOB ALWAYS USED.
+//
+// The portal is a static application since #568: `/portal/*` answers one
+// shell document, every page is drawn in the browser from an `/account-api`
+// operation and every form is sent there as JSON, with a DPoP-bound token
+// and no CSRF field. `portalPages()` keeps this job's `go(method, path,
+// body)` and does what the portal's runtime does instead of what the server
+// used to: a GET asks the operation that MIRRORS the page and draws its
+// answer with the portal's own renderers (`portal/portal.bundle.js`); a POST
+// sends the form's fields to the operation that mirrors the form. What comes
+// back is the page as the browser would show it — `text` the drawn markup
+// with any refusal or message above it, `location` an answer's `go`, `csp`
+// the shell's policy — so an assertion about what the page SAYS still reads
+// the page. A signed-in page takes `client`, the portal's client
+// (`portal_signin.js`); a page drawn for nobody (an activation link) takes
+// none.
+// ---------------------------------------------------------------------------
+const portalSignin = require("./portal_signin.js");
+
+// The forms that post to a path with no page of its own, and the page whose
+// view their answer carries.
+const DRAWN_ON = { "/portal/remove-key": "/portal/keys",
+                   "/portal/rename-key": "/portal/keys" };
+
+function portalPages(root, client) {
+  log.debug("Entering portalPages().");
+  const rootPath = new URL(root + "/").pathname.replace(/\/+$/, "");
+  let translator = null;
+  const translate = async function () {
+    log.debug("Entering translate().");
+    if (!translator) {
+      const table = portalSignin.portalBundle();
+      let locale = null;
+      if (client) {
+        const me = await client.api("GET", "/account-api/me");
+        locale = me.json && me.json.locale;
+      } else {
+        const said = await portalSignin.nobody(root, "GET",
+                                               "/account-api/locale");
+        locale = said.json && said.json.locale;
+      }
+      translator = table.messages.WebTranslator.fromData(locale);
     }
-  }
-  assert.strictEqual(r.status, 200, "the signed-in page: " + r.status);
+    log.debug("Leaving translate().");
+    return translator;
+  };
+  const operation = async function (method, page) {
+    log.debug("Entering operation().");
+    const ops = await portalSignin.operationsOf(root);
+    log.debug("Leaving operation().");
+    return ops.filter(function (op) {
+      return op.mirrors === method + " " + page;
+    })[0] || null;
+  };
+  const call = async function (op, method, target, body) {
+    log.debug("Entering call().");
+    log.debug("Leaving call().");
+    return op.access === "person" ? client.api(method, target, body)
+                                  : portalSignin.nobody(root, method, target,
+                                                        body);
+  };
+  const draw = async function (page, view, query) {
+    log.debug("Entering draw().");
+    const row = portalSignin.portalBundle().PAGES.filter(function (one) {
+      return one.path === page;
+    })[0];
+    if (!row || !view) {
+      log.debug("Leaving draw(). Nothing to draw.");
+      return "";
+    }
+    const t = await translate();
+    log.debug("Leaving draw().");
+    return row.render(view, { t: t, query: query || {}, prefix: "",
+                              origin: new URL(root).origin, me: null,
+                              locale: null, version: null, here: page });
+  };
+  const said = function (json) {
+    log.debug("Entering said().");
+    log.debug("Leaving said().");
+    return (json && Array.isArray(json.errors) ? json.errors.join(" ") + " "
+                                               : "") +
+           (json && json.message ? String(json.message) + " " : "");
+  };
+  log.debug("Leaving portalPages().");
+  return {
+    client: client,
+    go: async function (method, path, body) {
+      log.debug("Entering go().");
+      // A root-relative path is under `root`, the realm's prefix added
+      // where the caller left it off, as this job's browser read one.
+      const raw = String(path);
+      const url = /^https?:\/\//i.test(raw) ? new URL(raw)
+        : new URL(new URL(root).origin +
+                  (rootPath && raw.indexOf(rootPath + "/") === 0 ? raw
+                                                                 : rootPath +
+                                                                   raw));
+      const page = url.pathname.slice(rootPath.length) || "/portal";
+      const query = {};
+      url.searchParams.forEach(function (value, name) {
+        if (name !== "realm") {
+          query[name] = value;
+        }
+      });
+      const op = await operation(method, page);
+      assert.ok(op, "no /account-api operation mirrors " + method + " " +
+                page);
+      if (method === "GET") {
+        const qs = new URLSearchParams(query).toString();
+        const r = await call(op, "GET", op.path + (qs ? "?" + qs : ""));
+        const view = r.json && r.json.view ? r.json.view : r.json;
+        const shell = await fetch(root + page + url.search);
+        log.debug("Leaving go(). GET " + page);
+        return { status: r.status, json: r.json,
+                 text: said(r.json) + await draw(page, view, query),
+                 location: "",
+                 csp: shell.headers.get("content-security-policy") || "" };
+      }
+      const fields = {};
+      new URLSearchParams(String(body || "")).forEach(function (value, name) {
+        if (name === "csrf_token") {
+          return;
+        }
+        fields[name] = Object.prototype.hasOwnProperty.call(fields, name)
+          ? [].concat(fields[name], value) : value;
+      });
+      const r = await call(op, "POST", op.path, fields);
+      log.debug("Leaving go(). POST " + page);
+      return { status: r.status, json: r.json,
+               text: said(r.json) + await draw(DRAWN_ON[page] || page,
+                                               r.json && r.json.view, {}),
+               location: (r.json && r.json.go) || "", csp: "" };
+    }
+  };
+}
+
+// Signs `who` in to the realm's portal as the static portal does, and
+// answers its pages (`path` is the page the job goes on to read).
+async function portalSignIn(who, path) {
+  log.debug("Entering portalSignIn(). " + who + " " + path);
+  const client = await portalSignin.signInToThePortal(realmBase, who, null,
+                                                       { password: PASSWORD });
   log.debug("Leaving portalSignIn().");
-  return b;
+  return portalPages(realmBase, client);
 }
 
 // `/portal/keys`'s two steps, with one attestation. Answers the finish.
@@ -388,9 +518,9 @@ async function enrol(b, key, how, label) {
   log.debug("Entering enrol(). " + how);
   let page = await b.go("GET", R + "/portal/keys");
   const begun = await b.go("POST", R + "/portal/keys",
-    form({ action: "begin", role: "mfa", label: label,
+    form({ action: "begin", role: "mfa", kind: "security-key",
            csrf_token: csrfOf(page.text) }));
-  assert.strictEqual(begun.status, 303, "beginning the enrolment answered " +
+  assert.strictEqual(begun.status, 200, "beginning the enrolment answered " +
     begun.status + " " + begun.text.slice(0, 300));
   page = await b.go("GET", R + "/portal/keys");
   const challenge = attr(page.text, "data-challenge");
@@ -400,7 +530,20 @@ async function enrol(b, key, how, label) {
              .enrolment_id || "",
            credential: JSON.stringify(key.register(challenge, how)),
            csrf_token: csrfOf(page.text) }));
-  if (done.status !== 303) {
+  if (done.status === 200 && label) {
+    // THE NICKNAME (#470): there is no name before the ceremony; the
+    // answer names the new passkey and the page renames it.
+    const named = decodeURIComponent((String(done.location)
+      .match(/[?&]named=([^&]*)/) || [])[1] || "");
+    const prompt = await b.go("GET", R + "/portal/keys?named=" +
+                              encodeURIComponent(named));
+    const renamed = await b.go("POST", R + "/portal/rename-key",
+      form({ credentialId: named, label: label,
+             csrf_token: csrfOf(prompt.text) }));
+    assert.strictEqual(renamed.status, 200, "naming the passkey answered " +
+      renamed.status + " " + String(renamed.text).slice(0, 300));
+  }
+  if (done.status !== 200) {
     // A refused enrolment keeps the ceremony armed; cancel it so the next
     // one starts clean.
     const again = await b.go("GET", R + "/portal/keys");
@@ -448,7 +591,7 @@ async function test() {
   const accepted = await enrol(b, trusted, "packed", "anchored key");
   check("an x5c statement chaining to the realm's anchor is accepted",
     function () {
-      assert.strictEqual(accepted.status, 303, accepted.text.slice(0, 500));
+      assert.strictEqual(accepted.status, 200, accepted.text.slice(0, 500));
     });
   const self = await enrol(b, await authenticator(model, AAGUID), "self",
                            "self key");
@@ -480,7 +623,7 @@ async function test() {
   const none = await enrol(b, await authenticator(model, AAGUID), "none",
                            "passkey");
   check("`none` is accepted — what a synced passkey sends", function () {
-    assert.strictEqual(none.status, 303, none.text.slice(0, 500));
+    assert.strictEqual(none.status, 200, none.text.slice(0, 500));
   });
 
   // -------------------------------------------------------------------------
@@ -511,19 +654,20 @@ async function test() {
       assert.ok(/no attestation sent/.test(portal.text),
                 portal.text.slice(0, 800));
     });
-  const cookie = await consoleSignIn.signInToTheConsole(realmBase,
+  // THE CONSOLE, AS IT IS SINCE THE #446 CUTOVER: signed in at the realm
+  // as the static console (PKCE, a DPoP-bound token for the realm's
+  // `/admin-api`), each page its operation's answer drawn by the console's
+  // own renderers (`console_signin.js`).
+  //
+  // The realm's console is OPENED first, as a browser opening it does: the
+  // shell's answer is what registers the realm's console callback
+  // (`oidc_rp.ensureConsoleCallback()`), and an authorization request naming
+  // it before then is refused as an unregistered redirect_uri.
+  await fetch(realmBase + "/admin", { redirect: "manual" });
+  const consoleClient = await consoleSignIn.signInToTheConsole(realmBase,
     CONSOLE_USER, log, { grant: "read" });
-  const consoleGet = async function (path) {
-    log.debug("Entering consoleGet(). " + path);
-    const r = await fetch(base + path,
-                          { redirect: "manual",
-                            headers: cookie ? { cookie: cookie } : {} });
-    const text = await r.text();
-    log.debug("Leaving consoleGet().");
-    return { status: r.status, text: text };
-  };
-  const row = await consoleGet(R + "/admin/users?user=" +
-                               encodeURIComponent(PERSON));
+  const row = await consoleClient.get("/admin/users?user=" +
+                                      encodeURIComponent(PERSON));
   check("the console's /admin/users row draws an Attestation column: " +
         "verified and trusted for one key, untrusted for the other",
     function () {
@@ -534,7 +678,7 @@ async function test() {
       assert.ok(/verified, untrusted/.test(row.text), "no untrusted key");
     });
   await reset("webauthn.attestationPolicy");
-  const page = await consoleGet(R + "/admin/webauthn");
+  const page = await consoleClient.get("/admin/webauthn");
   const api = await send(realmApi + "/webauthn");
   const status = (api.body && api.body.status) || {};
   check("/admin/webauthn and GET /admin-api/webauthn report the policy in " +

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -109,21 +109,10 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
-
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const applications = require(ROOT + '/common/applications');
     const config = require(ROOT + '/common/config');
     const audit = require(ROOT + '/common/audit');
@@ -160,11 +149,12 @@ function childMain() {
         client_id: CLIENT, response_type: 'code', redirect_uri: REDIRECT,
         scope: 'openid', state: 's', nonce: 'n-' + Date.now() }).toString());
     };
-    const submit = function (b, screenPath, form, username) {
-      const sent = Object.assign({}, form, { username: username,
-                                             password: 'anything',
-                                             action: 'login' });
-      return b.go('POST', screenPath, { form: sent });
+    // THE SCREEN OVER `/authn-api` (#571): the shell, the view and the
+    // act, with this browser's jar and User-Agent.
+    const submit = function (b, screenAt, username) {
+      return authnScreen.submit({ port: port, jar: b.jar, userAgent: UA,
+        at: screenAt, fields: { action: 'login', username: username,
+                                password: 'anything' } });
     };
     const redeem = function (b, location) {
       const code = new URL(location).searchParams.get('code');
@@ -181,25 +171,22 @@ function childMain() {
     const b = browser(port, UA);
     const start = await authorize(b);
     const screenAt = String(start.headers.location || '');
-    const page = await b.go('GET', screenAt);
-    const form = hiddenFields(page.text);
-    const screenPath = screenAt.split('?')[0]
-      .replace(/^https?:\/\/[^/]+/, '');
-    const refused = await submit(b, screenPath, form, GHOST);
-    note(refused.status === 200 &&
-         /Authentication failed for sr-ghost/.test(refused.text),
+    const refused = await submit(b, screenAt, GHOST);
+    note(refused.apiStatus === 400 && refused.next === 'refused' &&
+         /Authentication failed for sr-ghost/.test(refused.errors.join(' ')),
          'A1. a session refused at the password door (no directory entry, ' +
-         'STS-AUTHN-0180) is answered with the sign-in screen, not a ' +
-         'redirect back to the caller', refused.status + ' ' +
-         String(refused.headers.location || '') + ' ' +
-         refused.text.slice(0, 160));
+         'STS-AUTHN-0180) is answered with the sign-in screen again ' +
+         '(next: refused), not a redirect back to the caller',
+         refused.apiStatus + ' ' + refused.text.slice(0, 160));
     note(!authn.sessionsOf(GHOST).length,
          'A2. and no session exists for them');
-    const redrawn = hiddenFields(refused.text);
-    note(redrawn.authn_id && redrawn.authn_id === form.authn_id,
+    const redrawn = await authnScreen.open({ port: port, jar: b.jar,
+                                            userAgent: UA, at: screenAt });
+    note(redrawn.status === 200 && redrawn.view &&
+         redrawn.view.id === refused.opened.id,
          'A3. the screen is drawn for the SAME pending sign-in',
-         JSON.stringify(redrawn));
-    const after = await submit(b, screenPath, redrawn, BOB);
+         JSON.stringify(redrawn.json).slice(0, 200));
+    const after = await submit(b, screenAt, BOB);
     // Back to the caller (a 303 to the authorization endpoint), which now
     // finds the session and answers the relying party.
     let finished = after;

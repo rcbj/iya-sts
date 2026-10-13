@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -64,6 +64,9 @@
 
 import os = require('os');
 import helpers = require('../common/helpers');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
 
 type Json = any;
 
@@ -77,7 +80,7 @@ const STATES = ['pending', 'sent', 'dead'];
 /**
  * This process's name, written on a row it is sending.
  */
-const HOLDER = os.hostname() + ':' + process.pid;
+const HOLDER = os.hostname() + ':' + WorkerChannel.processTag();
 
 // The configuration keys a kind's numbers are read from.
 interface DeliverySettings {
@@ -142,7 +145,23 @@ interface DeliveryKind {
   // Where dead letters are listed, for the summary line.
   deadLetterHint: string;
   prepare(row: Json): Promise<Prepared>;
+  // HOW IT IS SENT, when it is not an HTTP POST to a registered address
+  // through the outbound policy (#98): the inter-cell kind sends over the
+  // mutual-TLS channel between cells, which is not a public address and must
+  // not be held to the internal-address refusal. Answers what
+  // `federation_http` would — `{ ok, status, kind, why }`.
+  send?(row: Json, prepared: Prepared,
+        options: { timeoutMs: number }): Promise<Json>;
   judge?(result: Json, row: Json): Judgement | null;
+  // THE WAIT BEFORE A RETRY, when the kind's is not the plain doubling of
+  // `backoffMs`: the outbound SCIM client's is jittered, capped and honours a
+  // Retry-After (#552). `n` is the attempt that failed; `row` carries the
+  // judgement's patch.
+  backoff?(n: number, row: Json): number;
+  // A PENDING ROW THE SWEEP MUST NOT ATTEMPT YET although it is due: a time
+  // after `at` holds it. The outbound SCIM client holds a paused client's
+  // rows (#552). An operator's retry is not held.
+  holdUntil?(row: Json, at: number): number;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
   onRetry?(row: Json): { problem?: string; patch?: Json };
@@ -531,7 +550,27 @@ class OutboundDelivery {
     const realm = realms.get(realmId);
     later(function () {
       realms.run(realm, function () {
-        return self.attempt(realmId, id).catch(function (e) {
+        return self.attempt(realmId, id).then(function (result) {
+          // A TIMER CAN FIRE A MOMENT BEFORE THE ROW IS DUE: setTimeout runs
+          // on node's monotonic clock and `now()` is the wall clock, which
+          // may read a millisecond short of `nextAttemptAt`. `attempt()` then
+          // answers `not-due` and does nothing — and until this re-armed the
+          // timer, the retry waited for the kind's sweep job instead, up to
+          // its interval later (an OpenID Provider Commands retry seen to
+          // land half a minute late). Armed again for the row's due time, at
+          // least a millisecond on, so it never spins.
+          if (result !== 'not-due') {
+            return;
+          }
+          const row = self.liveRow(realmId, id);
+          if (row && row.state === 'pending') {
+            log.debug("OutboundDelivery.scheduleRetry(): " + id + " fired " +
+                      "before it was due; armed again.");
+            self.scheduleRetry(realmId, id,
+                               Math.max(Number(row.nextAttemptAt),
+                                        now() + 1));
+          }
+        }).catch(function (e) {
           log.debug("Caught in OutboundDelivery.scheduleRetry(): " +
                     ((e && e.message) || e));
         });
@@ -644,11 +683,13 @@ class OutboundDelivery {
                       keepBody: !!kind.keepBody };
     let result: Json = null;
     try {
-      result = kind.body === 'json'
-        ? await fedHttp.deliverJson(record, kind.attribute, prepared.body,
-                                    prepared.headers || {}, options)
-        : await fedHttp.deliverForm(record, kind.attribute, prepared.body,
-                                    options);
+      result = kind.send
+        ? await kind.send(row, prepared, options)
+        : kind.body === 'json'
+          ? await fedHttp.deliverJson(record, kind.attribute, prepared.body,
+                                      prepared.headers || {}, options)
+          : await fedHttp.deliverForm(record, kind.attribute, prepared.body,
+                                      options);
     } catch (e) {
       log.debug("Caught in OutboundDelivery.attempt(): " +
                 ((e && e.message) || e));
@@ -688,8 +729,10 @@ class OutboundDelivery {
       log.debug("Leaving OutboundDelivery.attempt(). Dead.");
       return 'dead';
     }
-    const backoff = Math.max(0, this.setting(kind.settings.backoffMs)) *
-      Math.pow(2, n - 1);
+    const backoff = kind.backoff
+      ? Math.max(0, Number(kind.backoff(n, current)) || 0)
+      : Math.max(0, this.setting(kind.settings.backoffMs)) *
+        Math.pow(2, n - 1);
     current.errorCode = judged.code || '';
     current.why = why + ' (attempt ' + n + '; trying again)';
     current.nextAttemptAt = now() + backoff;
@@ -851,7 +894,8 @@ class OutboundDelivery {
       if (row.state === 'pending') {
         if (at - Number(row.queuedAt) > keepMs) {
           stale.push(Object.assign({}, row));
-        } else if (!(Number(row.nextAttemptAt) > at)) {
+        } else if (!(Number(row.nextAttemptAt) > at) &&
+                   !(kind.holdUntil && kind.holdUntil(row, at) > at)) {
           due.push(id);
         }
         return;
@@ -1096,6 +1140,20 @@ const KINDS = [
     retry: function (m: Json, id: string, actor: string): Json {
       return m.retryDelivery(id, actor);
     } },
+  // #98: what one cell must tell another and may not lose — a revocation
+  // pushed from a person's home, a changed projection. Its rows name a
+  // cell, never an address.
+  { id: 'cell-ops', title: 'Inter-cell deliveries',
+    module: '../common/cell_deliveries', page: '/admin/cells',
+    rows: function (m: Json, o: Json): Json[] {
+      return m.rows(o);
+    },
+    counts: function (m: Json): Json {
+      return m.counts();
+    },
+    retry: function (m: Json, id: string, actor: string): Json {
+      return m.retry(id, actor);
+    } },
   { id: 'provider-commands', title: 'OpenID Provider Commands',
     module: './provider_commands', page: '/admin/commands',
     rows: function (m: Json, o: Json): Json[] {
@@ -1111,7 +1169,7 @@ const KINDS = [
 
 /**
  * Reports every kind's counts and rows, newest first, for `/admin/deliveries`
- * and `GET /admin-api/deliveries`.
+ * and `GET /admin-api/deliveries` — every row, or the first `limit`.
  *
  * @param options - `kind`, `state`, `q` and `limit`
  * @returns `{ kinds, states }`
@@ -1119,7 +1177,10 @@ const KINDS = [
 function kindReport(options?: Json): Json {
   helpers.log.debug("Entering kindReport().");
   const o = options || {};
-  const limit = Number(o.limit) > 0 ? Number(o.limit) : 200;
+  // WHOLE unless a caller asks for a `limit` (#313's sweep): every kind was
+  // cut at 200 rows, silently, so a delivery past the cut could not be
+  // reached. `GET /admin-api/deliveries` pages each kind instead.
+  const limit = Number(o.limit) > 0 ? Number(o.limit) : undefined;
   const out = KINDS.filter(function (k) {
     return !o.kind || k.id === String(o.kind);
   }).map(function (k) {

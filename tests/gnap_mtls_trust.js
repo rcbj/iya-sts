@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -150,7 +150,11 @@ function childMain() {
     note(added.added === 1, 'setup: the foreign CA is a client trust anchor',
          JSON.stringify(added));
 
-    const DEMO = 'urn:mock-sts:gnap:demo';
+    // THE RESOURCE SERVER EVERY GRANT HERE NAMES. It was the demonstration
+    // type, audienced to the demonstration resource server by default; #593
+    // deleted both and refuses a token naming no resource server
+    // (STS-GNAP-0904), so a registered one is named by a location.
+    const RS_URI = 'https://rs.mtls.example/api';
     const request = function (method, urlPath, opts) {
       const o = opts || {};
       return new Promise(function (resolve) {
@@ -224,7 +228,9 @@ function childMain() {
     };
     const grant = function (client, tlsOpts) {
       return request('POST', '/gnap', { tls: tlsOpts, json: {
-        access_token: { access: [{ type: DEMO, actions: ['read'] }] },
+        access_token: { access: [{ type: 'https://mtls.example/photos',
+                                   actions: ['read'],
+                                   locations: [RS_URI] }] },
         client: client } });
     };
     const issued = function (r) {
@@ -271,6 +277,12 @@ function childMain() {
     const self2Tls = { cert: read(M.self2Cert), key: read(M.self2Key) };
     const extTls = { cert: read(M.extCert) + read(M.caCert),
                      key: read(M.extKey) };
+
+    const rsMade = applications.createApplication({ identifier: 'g-rs',
+      kind: 'gnap-resource-server', protocols: ['gnap'],
+      fields: { gnapResourceServerUri: RS_URI } });
+    note(!!rsMade.ok, 'setup: the resource server the grants name',
+         JSON.stringify(rsMade.errors || []));
 
     // --- a. pinned ---------------------------------------------------------
     setting('gnap.mtlsTrust', 'pinned');

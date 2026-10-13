@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -117,9 +117,9 @@ const SUMMARY = 'return { demo: p.seedsDemoPrincipals, served: ' +
   'p.realmsServed(), service: p.serviceAccount(), krbtgt: ' +
   'p.krbtgtUnavailableReason(), etypes: p.KDC_ETYPES, all: ' +
   'p.all().map(function (x) { return { name: x.name.join("/") + "@" + ' +
-  'x.realm, password: x.password, salt: x.salt, okAsDelegate: ' +
-  'x.okAsDelegate, kvno: x.kvno, etypes: p.supportedEtypes(x), delegateTo: ' +
-  'x.allowedToDelegateTo, actOnBehalf: x.allowedToActOnBehalfOf }; }) };';
+  'x.realm, password: x.password, salt: x.salt, kvno: x.kvno, etypes: ' +
+  'p.supportedEtypes(x) }; }), seeds: p.delegationSeeds(), ' +
+  'advertised: p.ADVERTISED_SERVICE_HOSTS, domains: p.SERVICE_DOMAINS };';
 
 function names(report) {
   log.debug("Entering names().");
@@ -184,6 +184,16 @@ function productModeHoldsNoFixtures(t) {
           'with both set it holds krbtgt and the configured service account, ' +
           'and nothing else',
           JSON.stringify(names(configured.report)));
+  // THE HOSTS A PAGE OR HEADER ADVERTISES (2026-10-12): none in product,
+  // where the KDC registers no `HTTP/<host>` on first sight, although the
+  // configured list is still there to be advertised in development.
+  t.check(Array.isArray(configured.report.advertised) &&
+          configured.report.advertised.length === 0 &&
+          (configured.report.domains || []).length > 0,
+          'product mode advertises no host whose SPN the KDC would not ' +
+          'issue (ADVERTISED_SERVICE_HOSTS is empty, SERVICE_DOMAINS is not)',
+          JSON.stringify({ advertised: configured.report.advertised,
+                           domains: configured.report.domains }));
   t.check((configured.report.all[0] || {}).password === null,
           'and a KRB5_KRBTGT_PASSWORD set in product is IGNORED: the krbtgt ' +
           'still carries no password (#169, the onlyWhile marker)',
@@ -193,13 +203,13 @@ function productModeHoldsNoFixtures(t) {
           web.salt === 'EXAMPLE.COMsvc-web',
           'the service account takes krb5.servicePassword and krb5.serviceSalt',
           JSON.stringify(web));
-  t.check(web.okAsDelegate === false,
-          'and is NOT flagged ok-as-delegate — that is advice to forward ' +
-          'TGTs, and a product deployment says so in its own KDC',
-          JSON.stringify(web));
-  t.check(configured.report.all.every(function (one) {
-    return !one.delegateTo.length && !one.actOnBehalf.length;
-  }), 'no delegation rule exists that nobody configured');
+  // DELEGATION IS THE ENTRIES' SINCE #186, and product seeds none of it: no
+  // ok-as-delegate (advice to forward TGTs, which a product deployment says
+  // on its own service's entry) and no rule nobody configured.
+  t.check(Array.isArray(configured.report.seeds) &&
+          configured.report.seeds.length === 0,
+          'and product seeds NO delegation: not ok-as-delegate, and no rule ' +
+          'nobody configured', JSON.stringify(configured.report.seeds));
   t.check(configured.report.all.every(function (one) {
     return !/-service-password$|machine-account-password/.test(one.password);
   }), 'and no literal fixture password is anywhere in the database');
@@ -231,6 +241,12 @@ function theServiceAccountFollowsTheSetting(t) {
           'the account the acceptor looks for EXISTS under the configured ' +
           'name — it was always HTTP/web.<domain> whatever the setting said',
           JSON.stringify(account || null));
+  t.check(JSON.stringify(moved.report.advertised) ===
+          JSON.stringify(moved.report.domains) &&
+          (moved.report.advertised || []).length > 0,
+          'development mode advertises every host it registers an SPN for',
+          JSON.stringify({ advertised: moved.report.advertised,
+                           domains: moved.report.domains }));
   t.check(names(moved.report).indexOf('HTTP/web.example.com@' +
                                       principals.REALM) >= 0,
           'and the fixture HTTP/web account is still there in development, ' +
@@ -238,15 +254,18 @@ function theServiceAccountFollowsTheSetting(t) {
 
   // At the defaults the configured account IS the fixture, field for field.
   const web = principals.find(['HTTP', 'web.example.com']);
+  const webSeed = principals.delegationSeeds().filter(function (one) {
+    return one.identifier === 'HTTP/web.example.com@' + principals.REALM;
+  })[0];
   t.check(!!web && web.password === 'service-account-password' &&
           web.salt === principals.REALM + 'HTTPweb' &&
-          web.okAsDelegate === true &&
+          !!webSeed && webSeed.fields.krb5TrustedForDelegation === 'TRUE' &&
           web.description === 'an HTTP service principal, flagged ' +
                               'ok-as-delegate',
           'at the default settings the account is exactly the fixture it ' +
-          'replaced',
+          'replaced, its ok-as-delegate a seed for its entry (#186)',
           JSON.stringify(web && { password: web.password, salt: web.salt,
-                                  okAsDelegate: web.okAsDelegate }));
+                                  seed: webSeed }));
   t.check(principals.serviceAccount().available === true,
           'and in development the acceptor has its key');
   log.debug("Leaving theServiceAccountFollowsTheSetting().");

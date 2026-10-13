@@ -1,0 +1,3 @@
+{
+  "noDialOut": "<strong>Aucun défi n’appelle vers l’extérieur.</strong> Une autorisation est créée valide, avec un défi <code>{challenge}</code>, pour un identifiant que possède l’entrée liée — un nom d’hôte enregistré, le courriel de la personne, l’entrée elle-même — et un identifiant qu’elle ne possède pas est refusé à newOrder avec rejectedIdentifier. Les MAC EAB sont vérifiés dans tous les modes."
+}

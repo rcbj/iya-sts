@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -83,9 +83,10 @@
 // answers it as JSON.
 // ===========================================================================
 
-import nodeCrypto = require('crypto');
 import os = require('os');
 import helpers = require('../common/helpers');
+// The one place this service hashes and draws random values (#453).
+import stsCrypto = require('../common/crypto');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -98,6 +99,10 @@ import clusterClaims = require('./cluster_claims');
 // process list the same jobs. See the block at the foot of this file.
 import clusterCounters = require('./cluster_counters');
 import usedAssertions = require('../common/used_assertions');
+// This thread's identity (#364): a request worker is a thread of this
+// process, so the pid alone no longer tells two of them apart.
+import WorkerChannel = require('../common/worker_channel');
+import WebKit = require('../admin-ui/web_kit');
 
 type Json = any;
 
@@ -123,6 +128,11 @@ const COMMAND_PREFIX = 'command|';
 const STATES = ['queued', 'running', 'succeeded', 'failed', 'abandoned'];
 const FINAL = ['succeeded', 'failed', 'abandoned'];
 
+// How many (job, realm) pairs `tickOnce()` asks about before it lets the
+// event loop run (2026-09-29): each costs the job's own `off()`, a hash and a
+// store read, so fifty is a few milliseconds.
+const TICK_YIELD_EVERY = 50;
+
 // A job id: lower-case words joined by dots and hyphens, as the ones in the
 // plan are (`authn.session-expiry`, `signing.rotate`).
 const JOB_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
@@ -130,6 +140,77 @@ const JOB_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 // How long past its slot a due job may wait before the page calls it overdue:
 // never less than this, and never less than three ticks.
 const OVERDUE_FLOOR_MS = 60 * 1000;
+
+// ---------------------------------------------------------------------------
+// THE SENTENCES THE REPORT MAKES (#543 phase 2c), as templates, so that
+// `common/server_prose.ts` can match one in an answer to `GET
+// /admin-api/scheduler` and refill it in the reader's language. Each is
+// filled where it is made, and the English that comes out is the English
+// that was concatenated there before — byte for byte, since tests and the
+// run rows compare it. A `{{span}}` is `WebKit.span()`'s figure, a
+// `{{setting}}` a setting's name and a `{{cron}}` an expression: data, so
+// carried over as they are. `since` is an ISO time, or `PARAMS.sinceStart`.
+//
+// **A TEMPLATE MATCHES ANY WHOLE STRING OF ITS SHAPE** on these routes,
+// a run's result, a job's own off reason and an error among them, so each
+// carries enough literal text to be nobody else's (#543 follow-up): it was
+// 'every {{span}}' and '{{setting}} is 0', which refilled any string that
+// began "every " or ended " is 0". The schedule's two interval sentences
+// carry a parenthesis, as the cron one does, and the off reason says what
+// a 0 does.
+//
+// NOT HERE, ON PURPOSE: a run's `why` (an abandoned attempt, a time limit, a
+// job's own error) is failure text beside an STS-SCHED code, and errors stay
+// English (#539); `requestRun()`'s and `requestStepDown()`'s refusals for
+// the same reason; and a job's own `off()` reason, which each owner writes.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  // `scheduleText()`.
+  onDemand: 'on demand only',
+  cron: 'cron {{cron}} (UTC)',
+  every: 'every {{span}} (a fixed interval)',
+  everyFrom: 'every {{span}} (from {{setting}})',
+  noInterval: 'no interval (0)',
+  noIntervalFrom: 'no interval (0), from {{setting}}',
+  // `nextRunOf()`'s `overdueWhy`.
+  overdueTicking: 'the leader is ticking; a previous run may still be ' +
+    'going, or its claim has not lapsed',
+  overdueSilent: 'no leader has ticked since {{since}}',
+  // `serviceOffReason()`: the scheduler's own three reasons a job is off.
+  offScheduler: 'scheduler.enabled is off',
+  offListed: 'named in scheduler.disabledJobs',
+  offZero: '{{setting}} is 0, so the job is off',
+  offZeroFixed: 'its interval is 0, so the job is off',
+  // `clockSource()`: whose clock the report's figures are on.
+  clockProcess: 'this process',
+  clockDatabase: 'the database'
+});
+
+// The phrases that only ever appear INSIDE one of the sentences above.
+const PARAMS = Object.freeze({
+  sinceStart: 'this service started'
+});
+
+// The routes whose answers carry the scheduler namespace's prose (#543):
+// the report, and a queued run's view in an action's answer.
+const PROSE_ROUTES = ['/admin-api/scheduler', '/admin-api/scheduler/:action'];
+
+/**
+ * Fills one of the report's templates (#543).
+ *
+ * @param template - one of `SENTENCES`
+ * @param params - name → value
+ * @returns the sentence, in English
+ */
+function sentence(template: string, params?: Record<string, unknown>): string {
+  helpers.log.debug("Entering sentence().");
+  // Lazily: `server_prose` requires `config`, `crypto` and `i18n`, and this
+  // module is reached from modules those load early.
+  const serverProse = require('../common/server_prose');
+  const out = serverProse.fill(template, params || {});
+  helpers.log.debug("Leaving sentence().");
+  return out;
+}
 
 // The shape of a registered job. `cluster/CLAUDE.md` describes each member.
 interface JobSpec {
@@ -207,6 +288,10 @@ interface SchedulerDeps {
   // How many connections the store's pool holds, or 0 where there is no
   // pool (the memory store); the runs are kept to fewer than this.
   storeConnections?: () => number;
+  // Resolves once what this process has journalled is written down: the
+  // history purge waits on it between batches, so one flush never carries
+  // more than one batch of deletes (#338). Optional; a test has no store.
+  settle?: () => Promise<Json>;
   host: string;
   pid: number;
   isRequestWorker: () => boolean;
@@ -261,11 +346,47 @@ const runStore = realms.map({
     helpers.log.debug("Entering mergeRow().");
     helpers.log.debug("Leaving mergeRow().");
     return compareRows(mine, theirs) > 0 ? mine : theirs;
+  },
+  // WHEN A ROW IS PAST EVERY BOUND THE HISTORY PURGE KEEPS (#338), so a
+  // start does not read it back (#333's hook). The process's own scheduler
+  // answers, because the bound depends on the job's interval; it is reached
+  // at FLUSH time, long after the declaration, so the forward reference is
+  // safe. See `Scheduler.expiryOf()`.
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (row: Json): number | null {
+    return scheduler ? scheduler.expiryOf(row) : null;
   }
 });
 
 // A quiet job's run is recorded at most this often while its outcome holds.
 const QUIET_RECORD_MS = 60000;
+
+// ---------------------------------------------------------------------------
+// THE RUN HISTORY'S BOUND (#338). Measured on testidp on 2026-09-29: 126,160
+// run rows and a thousand more every few minutes, restored into every
+// process at every start, because the only bound was 5000 runs PER REALM and
+// thirty days — and a per-minute job in each of 135 realms is 194,000 runs
+// a day. The bound is per JOB now: its last `scheduler.runHistoryCount` runs
+// or its last `scheduler.runHistoryHours`, whichever keeps more, and always
+// its latest run. `purgeHistory()` enforces it in bounded batches; the
+// constants below are its bounds and the margins of the restore's expiry.
+// ---------------------------------------------------------------------------
+// The history job's interval.
+const HISTORY_PURGE_MS = 10 * 60 * 1000;
+// Deletes per batch, and batches per run: a backlog larger than a run is the
+// next run's, and a start skips most of it meanwhile (the expiry below).
+const HISTORY_BATCH = 2000;
+const HISTORY_MAX_BATCHES = 25;
+// The expiry a row is written with is this far past the instant the purge
+// would first be free to delete it, so a job that runs on every slot never
+// has a kept row near its expiry — see `expiryOf()`.
+const EXPIRY_SLACK_MS = 2 * 60 * 60 * 1000;
+// A KEPT row whose expiry is closer than this is PINNED: rewritten with
+// `keepUntil` PIN_FOR_MS ahead, so a start does not skip a row the purge
+// would keep — the latest run of a job that stopped running, a setting
+// raised after the row was written.
+const PIN_AHEAD_MS = 60 * 60 * 1000;
+const PIN_FOR_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The one scheduler for every periodic job (#49): a cluster job runs once for
@@ -290,6 +411,52 @@ class Scheduler {
    * Orders two copies of a run row by rank; the higher one wins a merge.
    */
   static readonly compareRows = compareRows;
+  /**
+   * The report's sentences, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the scheduler namespace (#543 phase 2c): every registered
+   * job's `title` and `describe`, read from the REGISTRY of the process's
+   * scheduler, and the report's templates.
+   *
+   * - The extractor loads the whole protocol stack first, whose build and
+   *   wire steps register every job they own; a job registered only once
+   *   the process STARTS (a change-log pull, the event-loop report, the SAML
+   *   metadata refresher, the LDAP mirror's maintenance, the CRL directory
+   *   refresh) is not in the registry then, so it is not in the catalog and
+   *   is drawn in English.
+   * - Each job's members are the literals its owner registered — a few of
+   *   them concatenated with a module constant (a batch size, a lifetime),
+   *   which is the same in every process. The change-log jobs' titles carry
+   *   the tier the process was configured with, fixed for its life.
+   * - A job's `owner` is a path and its `id` an identifier: neither is
+   *   prose.
+   *
+   * @param registry - the scheduler to read; the process's when omitted
+   * @returns key → English
+   */
+  static prose(registry?: Scheduler): Record<string, string> {
+    helpers.log.debug("Entering Scheduler.prose().");
+    const harvest = require('../common/server_prose').harvest;
+    const from = registry || scheduler;
+    const jobs = from.jobIds().map(function (id: string): Json {
+      const job = from.job(id);
+      return { id: id, title: job.title, describe: job.describe };
+    });
+    const out: Record<string, string> = Object.assign({},
+      harvest('sched.jobs', jobs, ['title', 'describe']),
+      harvest('sched.sentence', SENTENCES, Object.keys(SENTENCES)),
+      harvest('sched.param', PARAMS, Object.keys(PARAMS)));
+    helpers.log.debug("Leaving Scheduler.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   private readonly jobs = new Map<string, JobSpec>();
   private started = '';            // '' | 'front' | 'per-process'
@@ -343,6 +510,15 @@ class Scheduler {
       claims: clusterClaims,
       store: runStore,
       dbNow: Scheduler.databaseNow,
+      settle: function (): Promise<Json> {
+        // LAZILY, for storeConnections()'s reason. With nothing persisted
+        // there is nothing to wait for.
+        const minted = require('../persistence/persistence_minted');
+        if (!minted.enabled()) {
+          return Promise.resolve(null);
+        }
+        return minted.flushThrough(minted.generation());
+      },
       storeConnections: function (): number {
         if (config.value('persistence.mode') !== 'postgres') {
           return 0;
@@ -350,7 +526,7 @@ class Scheduler {
         // LAZILY: the driver is persistence's to load, and a require here
         // at load time would put it ahead of that module.
         const workers =
-          Math.max(0, Number(config.value('workers.requestCount')) || 0) +
+          require('../common/process_memory').requestWorkers() +
           Math.max(0, Number(config.value('workers.surfaceCount')) || 0);
         return Number(require('../persistence/persistence_postgres')
           .poolMax(workers)) || 0;
@@ -767,21 +943,27 @@ class Scheduler {
     log.debug("Entering Scheduler.scheduleText().");
     let text: string;
     if (job.manualOnly) {
-      text = 'on demand only';
+      text = sentence(SENTENCES.onDemand);
     } else if (job.cron) {
-      text = 'cron ' + job.cron + ' (UTC)';
+      text = sentence(SENTENCES.cron, { cron: job.cron });
     } else {
+      // Four templates rather than a sentence and a suffix: a translation
+      // may not put the setting at the end.
       const every = this.intervalMs(job);
-      text = every > 0 ? 'every ' + Scheduler.span(every) : 'no interval (0)';
-      if (job.everySetting) {
-        text += ', from ' + job.everySetting;
-      }
+      const from = !!job.everySetting;
+      text = every > 0
+        ? sentence(from ? SENTENCES.everyFrom : SENTENCES.every,
+                   { span: Scheduler.span(every),
+                     setting: job.everySetting })
+        : sentence(from ? SENTENCES.noIntervalFrom : SENTENCES.noInterval,
+                   { setting: job.everySetting });
     }
     log.debug("Leaving Scheduler.scheduleText().");
     return text;
   }
 
-  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most.
+  // "4 min 12 s", "2 h 5 min", "90 d" — two units at most. The kit's since
+  // #446, so the Scheduler page drawn in a browser says it the same way.
   /**
    * Formats a duration in at most two units, such as "4 min 12 s".
    *
@@ -790,21 +972,8 @@ class Scheduler {
    */
   static span(ms: number): string {
     helpers.log.debug("Entering Scheduler.span().");
-    const s = Math.max(0, Math.round(ms / 1000));
-    const units: Array<[number, string]> = [[86400, 'd'], [3600, 'h'],
-                                             [60, 'min'], [1, 's']];
-    const parts: string[] = [];
-    let left = s;
-    units.forEach(function (unit: [number, string]): void {
-      if (parts.length < 2 && (left >= unit[0] ||
-                               (unit[0] === 1 && !parts.length))) {
-        const n = Math.floor(left / unit[0]);
-        left -= n * unit[0];
-        parts.push(n + ' ' + unit[1]);
-      }
-    });
     helpers.log.debug("Leaving Scheduler.span().");
-    return parts.join(' ');
+    return WebKit.span(ms);
   }
 
   // -------------------------------------------------------------------------
@@ -821,31 +990,68 @@ class Scheduler {
    * @returns the reason, or '' when the job is on
    */
   offReason(job: JobSpec, realmId?: string): string {
-    const { log, config } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering Scheduler.offReason(). " + job.id);
+    const whole = this.serviceOffReason(job);
+    if (whole) {
+      log.debug("Leaving Scheduler.offReason(). " + whole);
+      return whole;
+    }
+    const own = this.ownOffReason(job, realmId);
+    log.debug("Leaving Scheduler.offReason(). " + (own || 'on'));
+    return own;
+  }
+
+  // The first three of `offReason()`'s reasons, which are the same in every
+  // realm — so `tickOnce()` asks them once per job rather than once per job
+  // AND realm. With four hundred realms that was a quarter of a minute of
+  // setting resolution on the thread at every slot boundary (2026-09-29).
+  /**
+   * Says why a job is off in every realm: the scheduler disabled, the job
+   * named in `scheduler.disabledJobs`, or an interval of 0.
+   *
+   * @param job - the job
+   * @returns the reason, or '' when none of the three holds
+   */
+  serviceOffReason(job: JobSpec): string {
+    const { log, config } = this.deps;
+    log.debug("Entering Scheduler.serviceOffReason(). " + job.id);
     if (!config.value('scheduler.enabled')) {
-      log.debug("Leaving Scheduler.offReason(). The scheduler is off.");
-      return 'scheduler.enabled is off';
+      log.debug("Leaving Scheduler.serviceOffReason(). The scheduler is off.");
+      return sentence(SENTENCES.offScheduler);
     }
     if (this.disabledIds().indexOf(job.id) >= 0) {
-      log.debug("Leaving Scheduler.offReason(). Listed.");
-      return 'named in scheduler.disabledJobs';
+      log.debug("Leaving Scheduler.serviceOffReason(). Listed.");
+      return sentence(SENTENCES.offListed);
     }
     if (!job.manualOnly && !job.cron && !(this.intervalMs(job) > 0)) {
-      log.debug("Leaving Scheduler.offReason(). No interval.");
-      return (job.everySetting || 'its interval') + ' is 0';
+      log.debug("Leaving Scheduler.serviceOffReason(). No interval.");
+      // A job with no setting has a sentence of its own, not 'its interval'
+      // put where a setting's name goes.
+      return job.everySetting
+        ? sentence(SENTENCES.offZero, { setting: job.everySetting })
+        : sentence(SENTENCES.offZeroFixed);
     }
+    log.debug("Leaving Scheduler.serviceOffReason(). None.");
+    return '';
+  }
+
+  // The job's own `off()` for one realm — the only reason that can differ
+  // from one realm to the next.
+  private ownOffReason(job: JobSpec, realmId?: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.ownOffReason(). " + job.id);
     let own = '';
     if (typeof job.off === 'function') {
       try {
         own = String(job.off(String(realmId || realms.DEFAULT_ID)) || '');
       } catch (e) {
-        log.debug("Caught in Scheduler.offReason(): " +
+        log.debug("Caught in Scheduler.ownOffReason(): " +
                   ((e && e.message) || e));
         own = 'its own check failed: ' + ((e && e.message) || e);
       }
     }
-    log.debug("Leaving Scheduler.offReason(). " + (own || 'on'));
+    log.debug("Leaving Scheduler.ownOffReason(). " + (own || 'on'));
     return own;
   }
 
@@ -900,6 +1106,14 @@ class Scheduler {
   private writeRow(realmId: string, row: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Scheduler.writeRow(). " + row.runId + " " + row.state);
+    // NEVER INTO A REALM THAT IS GONE (#338): `realmMap()` of a removed id
+    // makes a fresh partition, so a run that ended after its realm was
+    // removed would put the realm's history back, with nothing left to ever
+    // delete it.
+    if (!this.realmDefined(realmId)) {
+      log.debug("Leaving Scheduler.writeRow(). The realm is gone.");
+      return Object.assign({}, row);
+    }
     const map = this.storeOf(realmId);
     const held = map.get(row.runId);
     row.updatedAt = Math.max(this.nowMs(),
@@ -913,12 +1127,62 @@ class Scheduler {
     return row;
   }
 
+  // Whether a realm is defined in this process: the default one always.
+  private realmDefined(realmId: string): boolean {
+    const { log, realms } = this.deps;
+    log.debug("Entering Scheduler.realmDefined().");
+    const id = String(realmId || realms.DEFAULT_ID);
+    log.debug("Leaving Scheduler.realmDefined().");
+    return id === realms.DEFAULT_ID || !!realms.get(id);
+  }
+
+  // -------------------------------------------------------------------------
+  // A REALM WAS REMOVED (#338). A realm job is not registered per realm — it
+  // is registered once and runs in every realm `realms.list()` names — so a
+  // removed realm stops having scheduled runs the moment it leaves the list,
+  // in every process that applies the removal (`realms.remove()`, called
+  // here for a removal made on another node by `persistence.js`). Its run
+  // history is its own partition of the run store, which the removal purges
+  // with every other store's. What is left is this process's own memory of
+  // the realm, and a run of it still going here: forgotten and fenced out
+  // respectively, so the run's outcome cannot write the realm back.
+  // -------------------------------------------------------------------------
+  /**
+   * Forgets a removed realm: its per-process slots and quiet records, and
+   * fences out any run of it still going in this process.
+   *
+   * @param realmId - the removed realm's id
+   * @returns how many runs in flight were fenced out
+   */
+  forgetRealm(realmId: string): number {
+    const { log } = this.deps;
+    const id = String(realmId || '');
+    log.debug("Entering Scheduler.forgetRealm(). " + id);
+    let fenced = 0;
+    this.inFlight.forEach(function (flight: Json): void {
+      if (flight.realm === id) {
+        flight.realmGone = true;
+        fenced += 1;
+      }
+    });
+    const suffix = '|' + id;
+    [this.processSlots, this.quietRecorded].forEach(function (m) {
+      Array.from(m.keys()).forEach(function (key: string): void {
+        if (key.endsWith(suffix)) {
+          m.delete(key);
+        }
+      });
+    });
+    log.debug("Leaving Scheduler.forgetRealm(). " + fenced + " fenced.");
+    return fenced;
+  }
+
   private runIdFor(job: JobSpec, realmId: string, slot: number): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.runIdFor().");
-    const digest = nodeCrypto.createHash('sha256')
-      .update(job.id + '\n' + realmId + '\n' + String(slot))
-      .digest('base64url').slice(0, 22);
+    const digest = stsCrypto.digest('sha256',
+      job.id + '\n' + realmId + '\n' + String(slot), 'base64url')
+      .slice(0, 22);
     log.debug("Leaving Scheduler.runIdFor().");
     return 's-' + digest;
   }
@@ -965,9 +1229,9 @@ class Scheduler {
     this.scheduleProcessTick(0);
     if (perProcessOnly) {
       log.info('scheduler: running ' + this.perProcessJobs().length +
-               ' per-process job(s) in this process (' + process.pid +
-               '). Cluster jobs run on the scheduler\'s leader, which a ' +
-               'request worker never is.');
+               ' per-process job(s) in this process (' +
+               WorkerChannel.processTag() + '). Cluster jobs run on the ' +
+               'scheduler\'s leader, which a request worker never is.');
       log.debug("Leaving Scheduler.start(). Per-process only.");
       return true;
     }
@@ -1202,20 +1466,40 @@ class Scheduler {
         line.push({ job: job, realm: pair.realm, row: pair.row });
       }
     });
+    // WHAT IS DUE, ASKED WITHOUT HOLDING THE THREAD (2026-09-29). Every
+    // realm job is asked about in every realm, so this loop is jobs × realms
+    // long; with four hundred realms it held the event loop for 16–36 s at
+    // each minute's boundary, and a request that arrived then failed as
+    // "fetch failed" once the server's keep-alive timer fired late. So what
+    // is the same in every realm — the three service-wide reasons and the
+    // slot — is asked once per job, and the loop yields to the event loop
+    // every TICK_YIELD_EVERY realms. `at` is fixed above, so a yield changes
+    // no slot; a claim is still fenced, so a leadership lost meanwhile
+    // changes nothing either.
     const scheduled: Json[] = [];
-    this.clusterJobs().forEach(function (job: JobSpec): void {
-      self.realmIdsFor(job).forEach(function (realmId: string): void {
-        if (self.offReason(job, realmId)) {
-          return;
+    let since = 0;
+    for (const job of this.clusterJobs()) {
+      if (this.serviceOffReason(job)) {
+        continue;
+      }
+      const slot = this.slotAt(job, at);
+      if (!slot || slot.slot === null) {
+        continue;
+      }
+      for (const realmId of this.realmIdsFor(job)) {
+        if (++since >= TICK_YIELD_EVERY) {
+          since = 0;
+          await new Promise(function (resolve: (v?: unknown) => void): void {
+            setImmediate(resolve);
+          });
         }
-        const slot = self.slotAt(job, at);
-        if (!slot || slot.slot === null) {
-          return;
+        if (this.ownOffReason(job, realmId)) {
+          continue;
         }
-        const runId = self.runIdFor(job, realmId, slot.slot);
-        const row = self.storeOf(realmId).get(runId);
+        const runId = this.runIdFor(job, realmId, slot.slot);
+        const row = this.storeOf(realmId).get(runId);
         if (row && FINAL.indexOf(row.state) >= 0) {
-          return;
+          continue;
         }
         scheduled.push({ job: job, realm: realmId, row: row || {
           runId: runId, kind: 'run', jobId: job.id, realm: realmId,
@@ -1223,8 +1507,8 @@ class Scheduler {
           params: null, requestedBy: '', state: 'queued', attempt: 0,
           fenceAt: 0, queuedAt: at
         } });
-      });
-    });
+      }
+    }
     scheduled.sort(function (a: Json, b: Json): number {
       return (Number(a.row.dueAt) || 0) - (Number(b.row.dueAt) || 0);
     });
@@ -1265,6 +1549,33 @@ class Scheduler {
   }
 
   // -------------------------------------------------------------------------
+  // THE SCOPE A RUN IS CLAIMED UNDER (#98). A cluster job claims its run in
+  // its own cell's database; a job whose work is the GLOBAL tier's
+  // (`persistence/tiers.js`, GLOBAL_JOBS) claims it under the global run
+  // scope when the service is deployed as cells, which the tiered driver
+  // keeps in the global database — so one cell runs each slot rather than
+  // every cell rotating the same key. Required lazily: the scheduler is a
+  // library loaded before the cells are.
+  // -------------------------------------------------------------------------
+  private runScopeOf(job: JobSpec): string {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.runScopeOf().");
+    const tiers = require('../persistence/tiers');
+    let multi = false;
+    try {
+      multi = require('../common/cells').isMulti();
+    } catch (e) {
+      log.debug("Caught in Scheduler.runScopeOf(): " +
+                (((e as Json) && (e as Json).message) || e));
+    }
+    const scope = multi && tiers.isGlobalJob(job.id) ?
+      tiers.GLOBAL_RUN_SCOPE :
+      RUN_SCOPE;
+    log.debug("Leaving Scheduler.runScopeOf(). " + scope);
+    return scope;
+  }
+
+  // -------------------------------------------------------------------------
   // ONE ATTEMPT AT ONE RUN: claim it, write it running with the claim's time
   // as its fence, run it with a time limit, and write the outcome only if
   // the fence still stands. Not awaited by the tick: a slow job does not
@@ -1282,7 +1593,8 @@ class Scheduler {
     // Held while the claim is being asked, so the next tick does not ask too.
     this.inFlight.set(row.runId, { fence: 0, realm: realmId,
                                    timedOut: false, asking: true });
-    claims.claim({ scope: RUN_SCOPE, value: row.runId, realm: realmId,
+    claims.claim({ scope: this.runScopeOf(job), value: row.runId,
+                   realm: realmId,
                    ttlMs: timeoutMs + 1000 }).then(function (answer: Json) {
       if (!answer.ok) {
         self.inFlight.delete(row.runId);
@@ -1309,6 +1621,19 @@ class Scheduler {
     const { log, audit, realms, setTimer, clearTimer, claims } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.runClaimed(). " + row.runId);
+    // A REALM REMOVED BETWEEN THE TICK AND THE CLAIM (#338): nothing is run
+    // for it. It used to run in the DEFAULT realm instead (`realms.get()`
+    // answering null fell back to it), so a removed realm's krbtgt rotation
+    // would have rotated the default realm's.
+    if (!this.realmDefined(realmId)) {
+      this.inFlight.delete(row.runId);
+      claims.release(answer.handle);
+      log.info(errorCodes.tag('STS-SCHED-0018') + 'scheduler: run ' +
+               row.runId + ' of ' + job.id + ' was not started: the realm "' +
+               realmId + '" has been removed.');
+      log.debug("Leaving Scheduler.runClaimed(). The realm is gone.");
+      return Promise.resolve();
+    }
     const fence = Number(answer.claimedAt) || this.nowMs();
     const stored = this.storeOf(realmId).get(row.runId) || row;
     const me = this.who();
@@ -1353,8 +1678,8 @@ class Scheduler {
       params: running.params || null,
       stillOwner: function (): boolean {
         const live = self.storeOf(realmId).get(row.runId);
-        return self.leading && !flight.timedOut && !!live &&
-               Number(live.fenceAt) === fence;
+        return self.leading && !flight.timedOut && !flight.realmGone &&
+               !!live && Number(live.fenceAt) === fence;
       },
       nowMs: function (): number {
         return self.nowMs();
@@ -1389,6 +1714,13 @@ class Scheduler {
         self.tick();
       }
       const endedAt = self.nowMs();
+      if (flight.realmGone || !self.realmDefined(realmId)) {
+        log.info(errorCodes.tag('STS-SCHED-0018') + 'scheduler: the ' +
+                 'outcome of run ' + row.runId + ' of ' + job.id + ' is not ' +
+                 'written: the realm "' + realmId + '" was removed while it ' +
+                 'ran.');
+        return;
+      }
       const live = self.storeOf(realmId).get(row.runId);
       if (!live || Number(live.fenceAt) !== fence) {
         log.warn(errorCodes.tag('STS-SCHED-0003') + 'scheduler: the ' +
@@ -1535,7 +1867,10 @@ class Scheduler {
     log.debug("Entering Scheduler.runInThisProcess(). " + job.id);
     const me = this.who();
     const key = PROCESS_PREFIX + job.id + '|' + realmId + '|' +
-                (me.node || me.host) + '|' + me.pid;
+                (me.node || me.host) + '|' + me.pid +
+                // A worker THREAD shares the pid (#364): its thread id too.
+                (WorkerChannel.inWorkerThread() ? '.' + WorkerChannel.id()
+                                                : '');
     const startedAt = this.nowMs();
     const startedLocal = this.deps.now();
     const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
@@ -1652,7 +1987,7 @@ class Scheduler {
                run: this.runView(existing) };
     }
     const row = this.writeRow(realmId, {
-      runId: 'm-' + nodeCrypto.randomBytes(12).toString('base64url'),
+      runId: 'm-' + stsCrypto.randomBytes(12).toString('base64url'),
       kind: 'run', jobId: job.id, realm: realmId, slot: null,
       dueAt: this.nowMs(), trigger: 'manual', params: params,
       requestedBy: String(o.requestedBy || ''),
@@ -1695,7 +2030,7 @@ class Scheduler {
     }
     const leader = this.storeOf(realms.DEFAULT_ID).get(LEADER_KEY) || null;
     const row = this.writeRow(realms.DEFAULT_ID, {
-      runId: COMMAND_PREFIX + nodeCrypto.randomBytes(9).toString('base64url'),
+      runId: COMMAND_PREFIX + stsCrypto.randomBytes(9).toString('base64url'),
       kind: 'command', command: 'step-down', state: 'queued',
       requestedBy: String(o.requestedBy || ''),
       requestedVia: String(o.via || ''), queuedAt: this.nowMs(),
@@ -1752,69 +2087,266 @@ class Scheduler {
   }
 
   // -------------------------------------------------------------------------
-  // HISTORY. Finished runs older than `scheduler.historyDays` go, and past
-  // `scheduler.maxRuns` per realm the oldest finished ones go first — never a
-  // queued or running row, and never a job's latest run.
+  // THE RUN HISTORY, BOUNDED PER JOB (#338).
+  //
+  // A run row is KEPT while any of these holds, and deleted otherwise:
+  //
+  //   * it is one of its job's last `scheduler.runHistoryCount` finished
+  //     runs in its realm, or the LATEST of them whatever the setting says
+  //     (a job that runs every ninety days still shows when it last ran);
+  //   * it ended within `scheduler.runHistoryHours` — which is what keeps a
+  //     FAILED run inside the window: nothing in the window is ever dropped
+  //     to make room;
+  //   * it is not finished: a queued or running row is never touched.
+  //
+  // Whichever of the first two keeps more, per job — the owner's rule on
+  // #338. A run of a job no process here registers (a build that dropped
+  // it) keeps only the time rule: there is no job to show a latest run for.
+  // A command row goes once finished and past the window; a per-process
+  // row once it has not been written for the window or three of its
+  // intervals, whichever is longer (a process that stopped leaves its row
+  // behind, keyed by its pid); the leader's row never. And a row in the
+  // default realm's partition that names a realm no longer defined — a
+  // per-process realm job's row — goes whatever its age: that is the
+  // orphan half of the sweep.
+  //
+  // It is a CLUSTER job, `scheduler.history`, every HISTORY_PURGE_MS. The
+  // deletes are journalled like any other write, so every process drops the
+  // rows from memory as it applies them; they go in batches of
+  // HISTORY_BATCH, the job waiting for each to be written down before the
+  // next, and at most HISTORY_MAX_BATCHES a run. What a run leaves is the
+  // next run's.
+  //
+  // THE START READS LESS THAN THE STORE HOLDS: each row carries an expiry
+  // (`expiryOf()`, #333's hook) past the instant this purge could first
+  // drop it, so a start skips a row the purge has not got to yet. The one
+  // thing that could make a start skip a row the purge would KEEP is a job
+  // that stopped running (its rows age by time and no newer run pushes them
+  // out of the count) or a bound raised after the row was written; the
+  // purge PINS such a row — rewrites it with `keepUntil` a day ahead —
+  // before its expiry is within PIN_AHEAD_MS.
   // -------------------------------------------------------------------------
+  private historyBounds(): Json {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.historyBounds().");
+    const count = this.setting('scheduler.runHistoryCount');
+    const hours = this.setting('scheduler.runHistoryHours');
+    log.debug("Leaving Scheduler.historyBounds().");
+    return { count: count >= 1 ? Math.floor(count) : 1,
+             keepMs: hours > 0 ? hours * 3600000 : 0 };
+  }
+
+  // The interval a per-process row is rewritten at, at the least.
+  private processEveryMs(job: JobSpec): number {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.processEveryMs().");
+    log.debug("Leaving Scheduler.processEveryMs().");
+    return job.quiet ? Math.max(QUIET_RECORD_MS, this.intervalMs(job))
+      : (this.intervalMs(job) || this.tickMs());
+  }
+
+  // The instant a row ended, for every rule here. A HOT PATH — once per row
+  // of every flush and every purge — so no Entering/Leaving pair.
+  private static endedOf(row: Json): number {
+    return Number(row.endedAt) || Number(row.queuedAt) ||
+           Number(row.updatedAt) || 0;
+  }
+
   /**
-   * Removes finished runs older than `scheduler.historyDays`, then the oldest
-   * past `scheduler.maxRuns` per realm; never a queued or running row, and
-   * never a job's latest run.
+   * The instant after which a run-store row is past every bound the history
+   * purge keeps, for the store's `expiresAt` hook (#333): a start does not
+   * read it back. Never earlier than the purge would delete it, give or take
+   * the pinning `purgeHistory()` does for a job that stopped running.
    *
-   * @param at - the time to prune at; now by default
-   * @returns how many rows were removed
+   * @param row - the stored row
+   * @returns epoch milliseconds, or null for a row that does not expire —
+   *   the leader's, a queued or running one, one of a job not registered
+   *   here, one of a job with no interval
    */
-  prune(at?: number): number {
+  expiryOf(row: Json): number | null {
+    // A HOT PATH: every row a flush writes. No Entering/Leaving pair.
+    if (!row || typeof row !== 'object') {
+      return null;
+    }
+    const pinned = Number(row.keepUntil) || 0;
+    const ended = Scheduler.endedOf(row);
+    const bounds = this.historyBounds();
+    let at: number | null = null;
+    if (row.kind === 'command') {
+      at = row.state === 'queued' || !ended ? null
+        : ended + bounds.keepMs + EXPIRY_SLACK_MS;
+    } else if (row.kind === 'process') {
+      const job = this.jobs.get(String(row.jobId));
+      at = job && ended ? ended + Math.max(bounds.keepMs,
+                                           3 * this.processEveryMs(job)) +
+                          EXPIRY_SLACK_MS : null;
+    } else if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
+               ended) {
+      const job = this.jobs.get(String(row.jobId));
+      const every = job && !job.manualOnly && !job.cron
+        ? this.intervalMs(job) : 0;
+      // The count rule lets the row go once `count` newer runs have ended,
+      // which a job on its schedule does in (count + 1) intervals at the
+      // soonest; a manual run only makes that sooner, which keeps longer.
+      at = every > 0 ? ended + Math.max(bounds.keepMs,
+                                        (bounds.count + 1) * every) +
+                       EXPIRY_SLACK_MS : null;
+    }
+    if (at === null) {
+      return null;
+    }
+    return Math.max(at, pinned);
+  }
+
+  // What the purge would do now, without doing it: `{ deletes, pins }`, each
+  // a list of `{ realm, key, row }`.
+  private historyPlan(now: number): Json {
     const { log, realms } = this.deps;
     const self = this;
-    log.debug("Entering Scheduler.prune().");
-    const now = at || this.nowMs();
-    const keepMs = Math.max(1, this.setting('scheduler.historyDays')) *
-                   86400000;
-    const cap = Math.max(100, this.setting('scheduler.maxRuns'));
-    let removed = 0;
-    realms.list().forEach(function (realm: Json): void {
-      const map = self.storeOf(String(realm.id));
-      const latest = new Map<string, Json>();
-      const finished: Json[] = [];
-      map.forEach(function (row: Json, key: string): void {
-        if (!row || (row.kind !== 'run' && row.kind !== 'command' &&
-                     row.kind !== 'process')) {
+    log.debug("Entering Scheduler.historyPlan().");
+    const bounds = this.historyBounds();
+    const deletes: Json[] = [];
+    const pins: Json[] = [];
+    const defined = new Set<string>(realms.list().map(function (r: Json) {
+      return String(r.id);
+    }));
+    // A HOT PATH, once per kept row: no Entering/Leaving pair.
+    const keep = function (realmId: string, key: string, row: Json): void {
+      const expiry = self.expiryOf(row);
+      if (expiry !== null && expiry < now + PIN_AHEAD_MS) {
+        pins.push({ realm: realmId, key: key, row: row });
+      }
+    };
+    defined.forEach(function (realmId: string): void {
+      const byJob = new Map<string, Json[]>();
+      self.storeOf(realmId).forEach(function (row: Json, key: string): void {
+        if (!row || row.kind === 'leader' || key === LEADER_KEY) {
           return;
         }
-        const job = row.jobId || row.command || '';
-        const ended = Number(row.endedAt) || 0;
-        const held = latest.get(job + '|' + row.realm);
-        if (row.kind === 'run' && FINAL.indexOf(row.state) >= 0 &&
-            (!held || ended > (Number(held.endedAt) || 0))) {
-          latest.set(job + '|' + row.realm, row);
-        }
-        if (FINAL.indexOf(row.state) >= 0 || row.kind === 'process') {
-          finished.push({ key: key, row: row, ended: ended ||
-                          Number(row.updatedAt) || 0 });
-        }
-      });
-      const protectedKeys = new Set<string>();
-      latest.forEach(function (row: Json): void {
-        protectedKeys.add(row.runId);
-      });
-      finished.sort(function (a: Json, b: Json): number {
-        return a.ended - b.ended;
-      });
-      let over = map.size - cap;
-      finished.forEach(function (one: Json): void {
-        if (protectedKeys.has(one.key)) {
+        const ended = Scheduler.endedOf(row);
+        // THE ORPHANS: a row naming a realm that is gone.
+        if (row.realm && !defined.has(String(row.realm)) &&
+            (row.kind === 'process' || FINAL.indexOf(row.state) >= 0)) {
+          deletes.push({ realm: realmId, key: key, row: row });
           return;
         }
-        if (now - one.ended > keepMs || over > 0) {
-          map.delete(one.key);
-          removed += 1;
-          over -= 1;
+        if (row.kind === 'command') {
+          if (row.state !== 'queued' && now - ended > bounds.keepMs) {
+            deletes.push({ realm: realmId, key: key, row: row });
+          } else {
+            keep(realmId, key, row);
+          }
+          return;
         }
+        if (row.kind === 'process') {
+          const job = self.jobs.get(String(row.jobId));
+          const window = job ? Math.max(bounds.keepMs,
+                                        3 * self.processEveryMs(job))
+            : bounds.keepMs;
+          if (now - ended > window) {
+            deletes.push({ realm: realmId, key: key, row: row });
+          } else {
+            keep(realmId, key, row);
+          }
+          return;
+        }
+        if (row.kind !== 'run' || FINAL.indexOf(row.state) < 0) {
+          return;
+        }
+        const group = String(row.jobId) + '|' + String(row.realm || realmId);
+        if (!byJob.has(group)) {
+          byJob.set(group, []);
+        }
+        byJob.get(group).push({ key: key, row: row, ended: ended });
+      });
+      byJob.forEach(function (rows: Json[]): void {
+        rows.sort(function (a: Json, b: Json): number {
+          return (b.ended - a.ended) ||
+                 ((Number(b.row.updatedAt) || 0) -
+                  (Number(a.row.updatedAt) || 0));
+        });
+        const registered = self.jobs.has(String(rows[0].row.jobId));
+        rows.forEach(function (one: Json, i: number): void {
+          const byCount = registered && i < bounds.count;
+          const byTime = now - one.ended <= bounds.keepMs;
+          if (byCount || byTime) {
+            keep(realmId, one.key, one.row);
+          } else {
+            deletes.push({ realm: realmId, key: one.key, row: one.row });
+          }
+        });
       });
     });
-    log.debug("Leaving Scheduler.prune(). " + removed + " removed.");
-    return removed;
+    log.debug("Leaving Scheduler.historyPlan(). " + deletes.length +
+              " to delete, " + pins.length + " to pin.");
+    return { deletes: deletes, pins: pins };
+  }
+
+  /**
+   * Deletes the run history past its bound — per job, the last
+   * `scheduler.runHistoryCount` runs or the last `scheduler.runHistoryHours`,
+   * whichever keeps more, and always the latest — with the rows that name a
+   * removed realm, in batches written down one at a time; and pins a kept
+   * row whose expiry is near. The body of the `scheduler.history` job.
+   *
+   * @param opts - `at`, the instant (now by default); `stillOwner()`, asked
+   *   between batches; `batch` and `maxBatches`, for a test
+   * @returns a promise of `{ removed, orphaned, pinned, more, batches }`
+   */
+  async purgeHistory(opts?: Json): Promise<Json> {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.purgeHistory().");
+    const o = opts || {};
+    const now = Number(o.at) || this.nowMs();
+    const batch = Number(o.batch) > 0 ? Number(o.batch) : HISTORY_BATCH;
+    const maxBatches = Number(o.maxBatches) > 0 ? Number(o.maxBatches)
+      : HISTORY_MAX_BATCHES;
+    const stillOwner = typeof o.stillOwner === 'function' ? o.stillOwner
+      : function (): boolean { return true; };
+    const settle = this.deps.settle || function (): Promise<Json> {
+      return Promise.resolve(null);
+    };
+    const plan = this.historyPlan(now);
+    const defined = new Set<string>(this.deps.realms.list().map(
+      function (r: Json): string { return String(r.id); }));
+    const out = { removed: 0, orphaned: 0, pinned: 0, more: false,
+                  batches: 0 };
+    let next = 0;
+    while (next < plan.deletes.length) {
+      if (out.batches >= maxBatches || !stillOwner()) {
+        out.more = true;
+        break;
+      }
+      const slice = plan.deletes.slice(next, next + batch);
+      next += slice.length;
+      out.batches += 1;
+      slice.forEach(function (one: Json): void {
+        self.storeOf(one.realm).delete(one.key);
+        out.removed += 1;
+        if (one.row.realm && !defined.has(String(one.row.realm))) {
+          out.orphaned += 1;
+        }
+      });
+      // ONE BATCH PER FLUSH: what was journalled is written down before the
+      // next batch is, so no transaction carries the whole backlog.
+      await settle();
+    }
+    // THE PINS, bounded like a batch: rare by construction (see above).
+    plan.pins.slice(0, batch).forEach(function (one: Json): void {
+      if (!stillOwner()) {
+        return;
+      }
+      self.writeRow(one.realm, Object.assign({}, one.row, {
+        keepUntil: now + PIN_FOR_MS }));
+      out.pinned += 1;
+    });
+    if (out.pinned) {
+      await settle();
+    }
+    log.debug("Leaving Scheduler.purgeHistory(). " + out.removed +
+              " removed, " + out.pinned + " pinned.");
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -1878,12 +2410,12 @@ class Scheduler {
   private clockSource(): string {
     const { log } = this.deps;
     log.debug("Entering Scheduler.clockSource().");
-    let source = 'this process';
+    let source = sentence(SENTENCES.clockProcess);
     try {
       const persistence = require('../persistence/persistence');
       const store = persistence.clusterStore && persistence.clusterStore();
       if (store && typeof store.clusterClock === 'function') {
-        source = 'the database';
+        source = sentence(SENTENCES.clockDatabase);
       }
     } catch (e) {
       log.debug("Caught in Scheduler.clockSource(): " + ((e && e.message) ||
@@ -2020,7 +2552,10 @@ class Scheduler {
     log.debug("Entering Scheduler.nextRunOf().");
     view.nextRunAt = null;
     view.nextRunInMs = null;
+    // The pair is set together and cleared together: a reason without the
+    // time it explains would be a stale sentence on a job that is not late.
     view.overdueSince = null;
+    view.overdueWhy = null;
     if (off) {
       view.nextRunState = 'off';
       log.debug("Leaving Scheduler.nextRunOf(). Off.");
@@ -2061,10 +2596,10 @@ class Scheduler {
       view.nextRunState = 'overdue';
       view.overdueSince = new Date(slot.startsAt).toISOString();
       view.overdueWhy = leader && leader.live
-        ? 'the leader is ticking; a previous run may still be going, or ' +
-          'its claim has not lapsed'
-        : 'no leader has ticked since ' + (leader && leader.lastTickAt ||
-                                           'this service started');
+        ? sentence(SENTENCES.overdueTicking)
+        : sentence(SENTENCES.overdueSilent,
+                   { since: leader && leader.lastTickAt ||
+                            PARAMS.sinceStart });
     } else {
       view.nextRunState = 'due';
     }
@@ -2254,20 +2789,48 @@ class Scheduler {
  */
 const scheduler = new Scheduler(Scheduler.defaultDeps());
 
-// The scheduler's own housekeeping is a job like any other.
+// The scheduler's own housekeeping is a job like any other: the run
+// history's bound, and the rows of removed realms (#338).
 scheduler.register({
   id: 'scheduler.history',
   title: 'Scheduler run history',
-  describe: 'Removes finished runs older than scheduler.historyDays, and ' +
-            'the oldest past scheduler.maxRuns per realm; the latest run of ' +
-            'each job is always kept.',
+  describe: 'Keeps, per job, its last scheduler.runHistoryCount runs or its ' +
+            'last scheduler.runHistoryHours, whichever is more, and always ' +
+            'its latest run; deletes the rest — and every row naming a ' +
+            'realm that was removed — in batches of ' + HISTORY_BATCH +
+            ', at most ' + HISTORY_MAX_BATCHES + ' a run.',
   owner: 'cluster/scheduler.ts',
   everyMs: function (): number {
-    return 60 * 60 * 1000;
+    return HISTORY_PURGE_MS;
   },
-  run: function (): Json {
-    return { removed: scheduler.prune() };
+  run: function (ctx: RunContext): Promise<Json> {
+    return scheduler.purgeHistory({ stillOwner: ctx.stillOwner })
+      .then(function (result: Json): Json {
+        if (result.removed || result.pinned) {
+          helpers.log.info('scheduler: ' + result.removed + ' run row(s) ' +
+                           'past the history bound deleted (' +
+                           result.orphaned + ' of removed realms), ' +
+                           result.pinned + ' kept row(s) pinned' +
+                           (result.more ? '; more remain for the next run'
+                             : '') + '.');
+        }
+        return result;
+      }, function (e: Json): Json {
+        helpers.log.warn(errorCodes.tag('STS-SCHED-0017') + 'scheduler: ' +
+                         'purging the run history failed: ' +
+                         ((e && e.message) || e) + '. The next run tries ' +
+                         'again.');
+        throw e;
+      });
   }
+});
+
+// A REALM THAT GOES TAKES ITS RUNS WITH IT (#338): its partition of the run
+// store is purged with every other store's; what this process remembers of
+// it, and a run of it going here, are `forgetRealm()`'s. Fired in every
+// process that applies the removal, the one that made it and every other.
+realms.onRemove(function (id: string): void {
+  scheduler.forgetRealm(id);
 });
 
 // ---------------------------------------------------------------------------
@@ -2302,6 +2865,15 @@ export = {
   LEADER_LEASE: LEADER_LEASE,
   RUN_SCOPE: RUN_SCOPE,
   runStore: runStore,
+  /**
+   * The routes whose answers carry the scheduler namespace's prose (#543).
+   */
+  PROSE_ROUTES: PROSE_ROUTES,
+  /**
+   * The scheduler namespace's English, by key (#543): every registered
+   * job's title and description, and the report's templates.
+   */
+  prose: (): Record<string, string> => Scheduler.prose(),
   register: scheduler.register.bind(scheduler) as Scheduler['register'],
   start: scheduler.start.bind(scheduler) as Scheduler['start'],
   stop: scheduler.stop.bind(scheduler) as Scheduler['stop'],

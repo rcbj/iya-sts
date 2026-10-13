@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -69,8 +69,9 @@
 //      and that is a total authentication bypass which cannot survive into a
 //      product. Since 2026-09-09 an OAuth 2.0 access token is required in BOTH
 //      modes (`adminApi.authRequired`, on by default); what this file decides
-//      is what happens with that setting OFF — open in development, the
-//      console's session and roles in product. See `gatesManagementApi()`.
+//      is whether that setting may be turned OFF — in development it may, and
+//      the API is then open; in product it is ignored and the token is
+//      required (#446). See `opensManagementApi()`.
 //
 // ---------------------------------------------------------------------------
 // IT IS PER TRUST REALM, and that is worth stating because it is unusual.
@@ -603,6 +604,25 @@ function seedsDemoData() {
   return !isProduct();
 }
 
+// Does this service DESCRIBE ITSELF as a test double? (#543's review.) The
+// service metadata document (`GET /admin-api/sts-metadata`) carries a
+// `testDouble` member so that a reader of an endpoint list cannot take it for
+// a claim that every one of those endpoints checks what it is handed. It was
+// the literal `true` and said so in product mode too, where passwords are
+// verified and access tokens validated — the one place the document was
+// wrong about the service that served it.
+/**
+ * Tells whether the service metadata document describes this service as a
+ * test double: one that checks no password and validates no access token.
+ *
+ * @returns true in development mode
+ */
+function describesItselfAsTestDouble() {
+  log.debug("Entering describesItselfAsTestDouble().");
+  log.debug("Leaving describesItselfAsTestDouble().");
+  return !isProduct();
+}
+
 // Does this service ROTATE its signing keys on a schedule? (2026-09-22, #42.)
 // Product keeps a key set for as long as the store does, so a key that is
 // never replaced is a key whose compromise never ends; each unit gets a
@@ -663,10 +683,31 @@ function derivesKrbtgtFromPassword() {
   return !isProduct();
 }
 
+// Does the KDC key its own ACCEPTOR'S SPN at random when krb5.servicePassword
+// is empty or the published default? (2026-10-12.) Product refuses both
+// passwords (STS-KRB-0060, STS-KRB-0061), and until this a base installation's
+// acceptor therefore accepted no ticket until an operator invented a password
+// for an SPN no other KDC issues. Product now makes a random key for the SPN,
+// sealed on its application entry as an operator's create-service would, once
+// for the cluster — and a password an operator sets wins over it. Development
+// keeps building the account from the published password, so a reader can
+// derive the key; its empty password still means no account.
+/**
+ * Tells whether the acceptor's SPN is keyed at random when its configured
+ * password is empty or the published default.
+ *
+ * @returns true in product mode
+ */
+function generatesAcceptorKey() {
+  log.debug("Entering generatesAcceptorKey().");
+  log.debug("Leaving generatesAcceptorKey().");
+  return isProduct();
+}
+
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
-// oauth2.registeredSecretLifetimeS must not stop working half-way through a
+// oauth2.clientSecretLifetimeDays must not stop working half-way through a
 // run nobody meant to be about secrets.
 /**
  * Tells whether an expired client secret is refused at the token endpoint.
@@ -735,9 +776,9 @@ function acceptsUnregisteredAddresses() {
   return !isProduct();
 }
 
-// Are the TEST CONTROLS open to anybody who can reach the port? Adding a trust
-// anchor at POST /tls/trust, switching DPoP nonces, reading the Kerberos
-// fixture passwords off /krb5/principals, signing somebody ELSE out with
+// Are the TEST CONTROLS open to anybody who can reach the port? Reading the
+// Kerberos fixture passwords off /krb5/principals (until #595 deleted it),
+// signing somebody ELSE out with
 // ?username=, registering an OAuth client with no initial credential, asking a
 // SAML 1.1 attribute authority about any named person. Each exists so a test
 // can drive a state; in product each is either refused or behind the credential
@@ -753,6 +794,25 @@ function opensTestControls() {
   log.debug("Entering opensTestControls().");
   log.debug("Leaving opensTestControls().");
   return !isProduct();
+}
+
+// Must a CELL hold a key-encryption key of its own (#98, 2026-09-28)? What a
+// cell stores of its own — the people homed there and what it mints — is
+// sealed under a key that lives only in the cell, so a copy of its rows
+// opens in no other. Product answers yes and a cell without one does not
+// start (STS-CELL-0003). Development answers no: a test of cells on one
+// machine is allowed one key for everything, which is also what single-cell
+// mode always does.
+/**
+ * Tells whether a service deployed as cells must hold a cell
+ * key-encryption key in each cell.
+ *
+ * @returns true in product mode
+ */
+function requiresCellKek() {
+  log.debug("Entering requiresCellKek().");
+  log.debug("Leaving requiresCellKek().");
+  return isProduct();
 }
 
 // Does the console's BOOTSTRAP WINDOW open the console to anybody who signs in
@@ -1196,6 +1256,53 @@ function grantsUndeclaredScopes() {
   return !isProduct();
 }
 
+// Is something issued to an application through a protocol family it is not
+// declared for (2026-10-01)? Development says yes: a client is exercised by
+// whatever protocol a tester points at it, and `appAllowedProtocol` is a
+// description there. Product says no: the declaration is the administrator's
+// statement of which protocols the application speaks, and the issuance
+// policy's `protocol-not-declared` rule refuses the rest. An application
+// declared for nothing is not refused in either mode. `issuance_gate.js`
+// asks it, to decide whether the policy must be asked where the role
+// question is switched off.
+/**
+ * Tells whether an issuance through a protocol family the application is not
+ * declared for goes ahead.
+ *
+ * @returns true in development mode
+ */
+function issuesThroughUndeclaredProtocols() {
+  log.debug("Entering issuesThroughUndeclaredProtocols().");
+  log.debug("Leaving issuesThroughUndeclaredProtocols().");
+  return !isProduct();
+}
+
+// Is a GNAP access right of a type NO resource server declares granted
+// (#432 phase 4, 2026-10-03)? Development says yes: a client is exercised with
+// whatever right a tester types, and a type nobody catalogued is still a
+// right RFC 9635 section 8 lets an API define for itself. Product says no:
+// the access-type catalogue (`oauthAuthorizationDetailsType` on the resource
+// application) is the administrator's statement of which kinds of access
+// exist, and the issuance policy's `gnap-type-not-catalogued` rule refuses
+// the rest at the grant endpoint (STS-GNAP-0810). RFC 9396 is NOT behind this
+// predicate: section 5 makes an unknown authorization_details type a refusal
+// in every mode, and `authorization_details.ts` refuses it so. A reference
+// string (section 8.1) is a different question:
+// `gnap.unknownAccessReferences`.
+// The policy reads the realm's mode itself; this is the same question asked
+// for the pages that SAY which answer applies (the console's Access types tab).
+/**
+ * Tells whether a GNAP access right of a type no resource server declares in
+ * the access-type catalogue is granted.
+ *
+ * @returns true in development mode
+ */
+function grantsUncataloguedAccess() {
+  log.debug("Entering grantsUncataloguedAccess().");
+  log.debug("Leaving grantsUncataloguedAccess().");
+  return !isProduct();
+}
+
 // Is a delegated permission the client has NOT been granted honoured anyway
 // (#110, 2026-09-22)? Development says yes unless
 // `oauth2.delegatedPermissionsEnforced` is set, because a client is exercised
@@ -1284,6 +1391,53 @@ function acceptsUnattestedDeviceKeys() {
   log.debug("Entering acceptsUnattestedDeviceKeys().");
   log.debug("Leaving acceptsUnattestedDeviceKeys().");
   return !isProduct();
+}
+
+// Must a TPM key attestation in a device certificate request be FRESH (#257,
+// 2026-10-06)? draft-ietf-lamps-csr-attestation section 6.2 lets the CA
+// "ignore attestations that are stale, or whose freshness cannot be
+// determined", and draft-ietf-lamps-attestation-freshness gives EST a /nonce
+// for the TPM to sign as TPM2_Certify's qualifyingData, which comes back as
+// TPMS_ATTEST's extraData. Without it a captured statement — which says
+// nothing more than that SOME TPM certified this key once — could be sent
+// again, in a new request for the same key, by whoever holds the key now.
+// Development records such a statement's freshness UNPROVEN and keeps its
+// level, because a client under test may have no nonce exchange (and SCEP
+// has none at all). Product REFUSES it (STS-DEVICE-0050).
+// `common/cert_enrollment.ts` asks it.
+/**
+ * Tells whether a TPM key attestation must carry a live nonce this realm
+ * issued (EST /nonce) for a device certificate to be issued.
+ *
+ * @returns true in product mode
+ */
+function requiresFreshKeyAttestation() {
+  log.debug("Entering requiresFreshKeyAttestation().");
+  log.debug("Leaving requiresFreshKeyAttestation().");
+  return isProduct();
+}
+
+// Is an Android attestation whose REVOCATION could not be checked — no
+// current Android attestation status list (#256), never fetched, failing, or
+// stale — refused as unattested? Development records it attested with the
+// reason, whatever the setting, because a client under test reaches no
+// Google. Product does the same unless `devices.androidRevocationRequired`
+// is on (off by default, so an install that cannot reach Google still
+// attests), and then records the chain self-asserted — which
+// `acceptsUnattestedDeviceKeys()` then refuses for a device key, and which
+// makes a WebAuthn `android-key` statement untrusted.
+// `common/attestation_revocation.ts` asks it.
+/**
+ * Tells whether an Android attestation whose revocation status could not be
+ * checked is treated as unattested.
+ *
+ * @returns true in product mode with devices.androidRevocationRequired on
+ */
+function refusesUncheckedAttestationRevocation() {
+  log.debug("Entering refusesUncheckedAttestationRevocation().");
+  log.debug("Leaving refusesUncheckedAttestationRevocation().");
+  return isProduct() &&
+         config.value('devices.androidRevocationRequired') === true;
 }
 
 // May a password alone open a PASSWORD-ONLY DOOR for a person who holds, or
@@ -1559,6 +1713,40 @@ function publishesMetadataForUnregisteredProviders() {
   return !isProduct();
 }
 
+// Does this service ISSUE a token to an application nobody registered
+// (#496, rcbj 2026-10-06)? A WS-Trust AppliesTo and a WS-Federation wtrealm
+// name the relying party a token is FOR. Development answers yes: a token is
+// issued for any of them under the shared entityID, and the protocol's
+// `seen()` files the application, which is how a relying party can be pointed
+// here before anything is provisioned. Product answers no: an application
+// nobody registered (no `appRegisteredBy` — an entry `seen()` filed in
+// development is not a registration) is refused before anything is issued or
+// recorded, in that protocol's own vocabulary, and an RST naming no AppliesTo
+// at all is refused with it, because a token with no audience is one every
+// relying party would be entitled to accept. The rule is rcbj's on #496: in
+// product an unregistered application gets nothing but a 404 or its
+// protocol's own "unknown application" error.
+// The same question is asked of every door where a request names an
+// application (#496, widened by rcbj the same day): an OAuth 2.0 client and
+// an RFC 8693 target, a SAML service provider or relying party, a GNAP
+// client — each refusing in its own protocol's words, each with its own row
+// in REQUIREMENTS below. And (#505) of the two doors that name the party a
+// token is FOR by an address rather than a client: an RFC 8707 resource and
+// a GNAP access right's locations, through `common/registered_targets.ts`.
+/**
+ * Tells whether a token may be issued for an application nobody registered
+ * (a WS-Trust AppliesTo, a WS-Federation wtrealm, an OAuth client, a SAML
+ * service provider, a GNAP client, the target an RFC 8707 resource or a GNAP
+ * location names), or for no application.
+ *
+ * @returns true in development mode
+ */
+function issuesToUnregisteredApplications() {
+  log.debug("Entering issuesToUnregisteredApplications().");
+  log.debug("Leaving issuesToUnregisteredApplications().");
+  return !isProduct();
+}
+
 // Does this process embed the identity protocol debugger (2026-09-13)?
 // `debugger.enabled` decides where it says `on` or `off`; its default, `auto`,
 // is this predicate's own answer: yes in development, where the debugger is
@@ -1690,6 +1878,25 @@ function capturesMail() {
   return !isProduct();
 }
 
+// May a secret push destination be a FILE on this container's disk (#221 P3)?
+// rcbj's answer 5 on #221: the file destination is for development mode only.
+// Development answers yes — it is how the test suite exercises a rotation
+// without a secrets manager. Product answers no: a destination naming
+// `file` is reported unusable, and a push to it is refused
+// (STS-SECDEST-0006), because a password written to the service's own disk
+// is not in a secrets manager.
+/**
+ * Tells whether a secret push destination may write a file on this
+ * container's disk rather than to a secrets manager.
+ *
+ * @returns true in development mode
+ */
+function acceptsFileSecretDestinations() {
+  log.debug("Entering acceptsFileSecretDestinations().");
+  log.debug("Leaving acceptsFileSecretDestinations().");
+  return !isProduct();
+}
+
 // May a link this service MAILS be built on the listener's configured address
 // when `global.publicBaseUrl` is empty (#63)? Never on the request's — a link
 // in a message is not answered to whoever asked, so a `Host` header it came
@@ -1728,22 +1935,30 @@ function acceptsNonconformingResourceMetadata() {
   return !isProduct();
 }
 
-// Is the management API gated by the console's session and roles WHEN
-// `adminApi.authRequired` IS OFF? Since 2026-09-09 that setting — on by
-// default, in both modes — puts an access token in front of `/admin-api`
-// first, and `mgmt-api/admin_api.ts` asks this only below it. See the note
-// above on why it is open in development. **THIS IS THE ONLY GATE THE MODE
-// TURNS ON**, because it is the only one that was ever off.
+// May `adminApi.authRequired` be turned OFF, opening the management API to
+// anybody who can reach the port (#446, 2026-10-05)? Since 2026-09-09 that
+// setting — on by default, in both modes — puts an access token in front of
+// `/admin-api`. Development may turn it off: it is what a test drives and the
+// way back in when nobody can mint a token. **Product may not.** Until #446
+// product fell back to the console's session and roles with the setting off
+// (`gatesManagementApi()`, #411); the console is becoming a static
+// application whose only gate IS this API's, so a setting that opened the
+// API would open the console with it, and a console session is no longer a
+// thing to fall back on. The row carries the `onlyWhile` marker on this
+// predicate: `false` is refused on write in product (STS-CORE-0103) and
+// ignored where it is read (`valueInForce()`, STS-CORE-0106). The way back
+// in for a product deployment is `adminApi.clientSecret`, pinned before the
+// start.
 /**
- * Tells whether the management API is gated by the console's session and roles
- * when `adminApi.authRequired` is off.
+ * Tells whether `adminApi.authRequired` may be turned off, which opens the
+ * management API to anybody who can reach the port.
  *
- * @returns true in product mode
+ * @returns true in development mode
  */
-function gatesManagementApi() {
-  log.debug("Entering gatesManagementApi().");
-  log.debug("Leaving gatesManagementApi().");
-  return isProduct();
+function opensManagementApi() {
+  log.debug("Entering opensManagementApi().");
+  log.debug("Leaving opensManagementApi().");
+  return !isProduct();
 }
 
 // ---------------------------------------------------------------------------
@@ -1859,7 +2074,8 @@ function observesRiskOnly() {
 // product inbox should not hold forgeries either). Development keeps the
 // debugger's posture — accept it and say why it did not verify, which is the
 // question a person testing a transmitter is asking — unless the setting
-// turns the refusal on. `/ssf/receive` and `ssf/ssf_receivers.ts` ask it.
+// turns the refusal on. `ssf/ssf_receivers.ts` and `ssf/ssf_transmitters.ts`
+// ask it.
 /**
  * Tells whether a receiver here refuses a Security Event Token whose signature
  * does not verify.
@@ -1905,6 +2121,17 @@ function observesSignalsOnly() {
  * `/admin/mode` and the management API render it.
  */
 const REQUIREMENTS = [
+  { id: 'cell-key',
+    what: 'Each cell of a service deployed as cells seals what it stores ' +
+          'under a key of its own',
+    development: 'A cell with no keys.cellKekProvider seals its rows under ' +
+                 'the service key-encryption key, so its rows would open in ' +
+                 'any cell — acceptable for cells tested on one machine.',
+    product: 'A cell with no cell key does not start (STS-CELL-0003). The ' +
+             'people homed in a cell and what it mints are sealed under a ' +
+             'key that lives only in its region, and opens in no other ' +
+             'cell (#98). Single-cell mode is unaffected.',
+    where: 'persistence/persistence.js, common/keystore.js' },
   { id: 'credentials',
     what: 'A presented password is verified',
     development: 'No password is checked in any protocol. The sign-in screen ' +
@@ -1936,15 +2163,24 @@ const REQUIREMENTS = [
   { id: 'unverified-signals',
     what: 'A received Security Event Token whose signature does not verify ' +
           'is refused',
-    development: 'POST /ssf/receive and the console\'s and portal\'s own ' +
+    development: 'The console\'s and portal\'s own ' +
                  'receivers accept it, record it and say why it did not ' +
                  'verify — the debugger\'s posture — unless ' +
-                 'ssf.receiveRequireSignature is on. Nothing acts on it.',
-    product: 'Every receiver answers 400 invalid_key, whatever ' +
-             'ssf.receiveRequireSignature says (#117): /ssf/receive, which ' +
-             'authenticates nobody, records nothing; the console\'s and ' +
-             'portal\'s receivers, behind their stream\'s own secret, keep ' +
-             'it on their inbox marked refused.' },
+                 'ssf.receiveRequireSignature is on. Nothing acts on it. A ' +
+                 'federation partner\'s Shared Signals, pushed to ' +
+                 '/federation/signals/{id} or polled, are treated the same: ' +
+                 'an unverified SET is recorded on the relationship\'s ' +
+                 'inbox as unverified and acted on in no way, unless ' +
+                 'ssf.receiveRequireSignature is on.',
+    product: 'The console\'s and portal\'s receivers answer 400 ' +
+             'invalid_key, whatever ssf.receiveRequireSignature says ' +
+             '(#117), and keep it on their inbox marked refused. ' +
+             'A federation partner\'s unverified SET is refused ' +
+             'invalid_key too — HTTP 400 to a push to ' +
+             '/federation/signals/{id}, and in setErrs on the next poll ' +
+             'request for a polled one — kept on the relationship\'s inbox ' +
+             'marked refused, and never acted on.',
+    where: 'ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -1956,7 +2192,11 @@ const REQUIREMENTS = [
              'session-revoked, credential-change, a RISC account or ' +
              'credential event, a risk-level-change to HIGH, by default — ' +
              'ends the receiving surface\'s own sessions for the person it ' +
-             'names. An unverified event is never acted on in either mode.' },
+             'names. An unverified event is never acted on in either mode.',
+    // The policy is xacml_signal_pep.ts's; ssf_transmitters.ts asks the
+    // same predicate before a federation partner's signal is acted on.
+    where: 'ssf/ssf_receivers.ts, xacml/xacml_signal_pep.ts, ' +
+           'ssf/ssf_transmitters.ts' },
   { id: 'risk-decisions',
     what: 'The issuance policy\'s decisions on the RISK of an ' +
           'authentication are enforced',
@@ -1993,14 +2233,15 @@ const REQUIREMENTS = [
                  'its answer is recorded on the act on /admin/delegation as ' +
                  '"would have been refused: ...", and an exchange may ask ' +
                  'for a scope wider than its subject_token\'s.',
-    product: 'The delegation attributes decide (appAllowedToDelegateTo, ' +
-             'appAllowedToActOnBehalfOf, appDelegationSubjectGroup, ' +
-             'appTrustedToImpersonate on application entries; ' +
-             'stsNotDelegated and the console roster on people), then the ' +
-             'issuance policy may Deny action-id `delegate`. A refusal is ' +
+    product: 'The issuance policy decides (#186), from the delegation ' +
+             'attributes (appAllowedToDelegateTo, appAllowedToActOnBehalfOf, ' +
+             'appDelegationSubjectGroup, appDelegationSemantics, ' +
+             'appNotDelegated on application entries; stsNotDelegated, ' +
+             'stsDelegationSemantics, delegation.protectedGroups and the ' +
+             'console roster for people). A refusal is ' +
              'invalid_request or invalid_target (RFC 8693 section 2.2.2) or ' +
-             'a wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). Only ' +
-             'an application entry may delegate as a WS-Trust requester, and ' +
+             'a wst:RequestFailed SOAP Fault (WS-Trust 1.4 section 11). A ' +
+             'person acts only holding delegation.actorRole, and ' +
              'an exchange may not widen its subject_token\'s scope ' +
              '(invalid_scope).',
     where: 'common/delegation_policy.ts, oauth-oidc/oauth2.ts, ' +
@@ -2024,6 +2265,31 @@ const REQUIREMENTS = [
              'rules.',
     where: 'common/scope_policy.ts, oauth-oidc/oauth2.ts, ' +
            'gnap/gnap_grants.ts' },
+  { id: 'declared-protocols',
+    what: 'An application is issued nothing through a protocol it is not ' +
+          'declared for',
+    development: 'appAllowedProtocol is a description: a token, assertion ' +
+                 'or ticket is issued whichever protocol asked.',
+    product: 'The issuance policy\'s protocol-not-declared rule refuses an ' +
+             'issuance through a protocol family the application is not ' +
+             'declared for (STS-XACML-0084): an ID Token to an application ' +
+             'declared for OAuth 2.0 alone, a SAML assertion to one ' +
+             'declared for OpenID Connect. An application declared for ' +
+             'nothing is not refused.',
+    where: 'common/issuance_gate.js, xacml/xacml_role_pep.ts, ' +
+           'xacml/xacml_templates.ts' },
+  { id: 'uncatalogued-access',
+    what: 'A GNAP access right is granted only of a type the access-type ' +
+          'catalogue declares',
+    development: 'A right of a type no resource application declares ' +
+                 '(oauthAuthorizationDetailsType) is granted as the client ' +
+                 'asked for it.',
+    product: 'The issuance policy\'s gnap-type-not-catalogued rule refuses ' +
+             'it at the grant endpoint (request_denied, STS-GNAP-0810). RFC ' +
+             '9396 authorization_details refuse an undeclared type in both ' +
+             'modes, as section 5 requires.',
+    where: 'gnap/gnap_rights.ts, xacml/xacml_templates.ts, ' +
+           'oauth-oidc/authorization_details.ts' },
   { id: 'delegated-permissions',
     what: 'A delegated permission is issued only to a client granted it',
     development: 'An ungranted permission is honoured and recorded as ' +
@@ -2167,6 +2433,19 @@ const REQUIREMENTS = [
              'link is mailed only when global.publicBaseUrl is set ' +
              '(STS-MAIL-0015).',
     where: 'common/mail.ts' },
+  { id: 'secret-destinations',
+    what: 'A service account\'s rotated password is pushed to a secrets ' +
+          'manager, never to this container\'s disk',
+    development: 'A secret push destination may be a FILE: a push writes ' +
+                 'the password into an existing file under the ' +
+                 'destination\'s directory, which is how the test suite ' +
+                 'exercises a rotation without a secrets manager.',
+    product: 'A destination naming `file` is reported unusable and a push ' +
+             'to it is refused (STS-SECDEST-0006). AWS Secrets Manager, ' +
+             'Google Cloud Secret Manager, Azure Key Vault and a Vault or ' +
+             'OpenBao KV version 2 engine remain, each over verified TLS ' +
+             'with the destination\'s own write credential (#221).',
+    where: 'common/secrets.js, common/secret_destinations.ts' },
   { id: 'outbound-tls',
     what: 'An outbound request verifies the certificate of whoever answers, ' +
           'and does not go out over plain http',
@@ -2475,19 +2754,22 @@ const REQUIREMENTS = [
              'request_uri is fetched only when the client registered it.',
     where: 'oauth-oidc/request_object.ts' },
   // 2026-09-09: `adminApi.authRequired` (on by default, both modes) put an
-  // access token in front of this surface, so the two columns below are what
-  // happens with that setting OFF. Both columns say so.
+  // access token in front of this surface. Since #446 (2026-10-05) product
+  // ignores the setting turned off, where it fell back to the console's
+  // session and roles until then.
   { id: 'management-api',
-    what: '/admin-api requires a sign-in and a role',
+    what: '/admin-api requires an access token and a role',
     development: 'An OAuth 2.0 access token carrying admin:read or ' +
                  'admin:write, while adminApi.authRequired is on (the ' +
                  'default). With it off: open. It is what the tests drive ' +
                  'and the way back in when nobody holds a role — which also ' +
                  'means anybody who can reach this port can grant themselves ' +
                  'both roles through it.',
-    product: 'The same access token while adminApi.authRequired is on. With ' +
-             'it off: gated exactly as /admin is — the same session, the ' +
-             'same two roles.',
+    product: 'The same access token, always. adminApi.authRequired=false ' +
+             'is refused on write and ignored where it is stored: this ' +
+             'API\'s gate is the console\'s only gate, so nothing may open ' +
+             'it. The way back in is adminApi.clientSecret, pinned before ' +
+             'the start.',
     where: 'mgmt-api/admin_api.ts' },
   { id: 'console',
     what: '/admin requires a sign-in and a role',
@@ -2570,6 +2852,15 @@ const REQUIREMENTS = [
              'passwords published in this repository.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'spiffe/spiffe_registry.ts' },
+  { id: 'test-double',
+    what: 'The service metadata document says this service is a test double',
+    development: '`testDouble` is true in GET /admin-api/sts-metadata: this ' +
+                 'service checks no password and validates no access ' +
+                 'token, and an endpoint list must not read as a claim that ' +
+                 'it does.',
+    product: '`testDouble` is false: passwords are verified and access ' +
+             'tokens validated, and the document says so.',
+    where: 'sts_metadata.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +
@@ -2582,8 +2873,11 @@ const REQUIREMENTS = [
     product: 'A value comes from the person\'s directory entry or is ' +
              'omitted; `verified_claims` are released only from a ' +
              'verification recorded on the entry, and email_verified is ' +
-             'true only for an address the person verified through a ' +
-             'mailed link (#63).',
+             'true only for a verified address: one the person proved ' +
+             'through a mailed link (#63), or one a trusted source wrote — ' +
+             'an administrator (the console, /admin-api, or an LDAP write ' +
+             'holding Admin Write), SCIM, or a federation partner that did ' +
+             'not say email_verified false (#64).',
     where: 'common/helpers.js, oauth-oidc/oauth2.ts, oid4vc/vc_claims.ts, ' +
            'ssf/ssf_subjects.js, ssf/risc.ts, ' +
            'common/identity_assurance.js' },
@@ -2636,6 +2930,101 @@ const REQUIREMENTS = [
              '1.1 relying party (STS-SAML-0083). The unscoped documents are ' +
              'unchanged.',
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts' },
+  { id: 'unregistered-applications',
+    what: 'A token is issued only for a registered application (#496)',
+    development: 'A WS-Trust RST is answered for any AppliesTo, and for none ' +
+                 '(a token with no audience restriction); a WS-Federation ' +
+                 'wsignin1.0 for any wtrealm. Each is issued under the ' +
+                 'shared entityID, and the application is filed in the ' +
+                 'register by its first sighting.',
+    product: 'An RST whose AppliesTo resolves to no registered application ' +
+             '(appRegisteredBy unset — a sighting is not a registration) is ' +
+             'refused with wst:InvalidScope (STS-WSTRUST-0030), and one with ' +
+             'no AppliesTo with wst:InvalidRequest (STS-WSTRUST-0031), for ' +
+             'every token type and OnBehalfOf / ActAs, before the requester ' +
+             'is authenticated or anything is recorded. A wsignin1.0 whose ' +
+             'wtrealm names no registered relying party is refused with a ' +
+             '404 page (STS-WSFED-0021) before the sign-in screen.',
+    where: 'ws-trust/wstrust.ts, ws-federation/wsfed.ts' },
+  { id: 'unregistered-oauth-clients',
+    what: 'An OAuth 2.0 client is served only when registered (#496)',
+    development: 'The authorization endpoint asks nothing about the ' +
+                 'client_id beyond its redirect URIs, and the token ' +
+                 'endpoint files a client it has seen before refusing it. ' +
+                 'An RFC 8693 audience a sighting filed is a target, and an ' +
+                 'assertion\'s audience naming one is a relying party.',
+    product: 'An authorization request or PAR naming a client_id nobody ' +
+             'registered (appRegisteredBy unset — a sighting is not a ' +
+             'registration) is a 400 on this server, never redirected ' +
+             '(STS-OAUTH-0947; none named: STS-OAUTH-0948); a token request ' +
+             'naming one is 401 invalid_client (STS-OAUTH-0949) before it ' +
+             'is counted or recorded. An RFC 8693 audience or resource ' +
+             'naming an unregistered application is the policy\'s ' +
+             'unregistered-target (invalid_target, STS-OAUTH-0793), and an ' +
+             'exchanged assertion\'s audience must be a registered ' +
+             'application under any-declared-relying-party.',
+    where: 'oauth-oidc/oauth2.ts, common/delegation_policy.ts, ' +
+           'oauth-oidc/exchange_assertions.ts' },
+  { id: 'unregistered-saml-providers',
+    what: 'A SAML service provider or relying party is answered only when ' +
+          'registered (#496)',
+    development: 'An AuthnRequest, a LogoutRequest and a SAML 1.1 browser ' +
+                 'flow are answered for any Issuer; the signature check ' +
+                 'records it, and an entry a sighting filed counts as a ' +
+                 'service provider on the per-SP paths.',
+    product: 'An AuthnRequest whose Issuer is no registered SAML 2.0 ' +
+             'service provider (appRegisteredBy unset — a sighting is not ' +
+             'a registration) is a 403 page before its signature is ' +
+             'checked (STS-SAML-0103; only a Metadata Query lookup for an ' +
+             'unknown entityID is still queued, under the trust-anchor ' +
+             'rule); a LogoutRequest from one ends nothing (STS-SAML-0104); ' +
+             'a SAML 1.1 flow for an unregistered relying party is a 403 ' +
+             'page (STS-SAML-0105). The per-SP paths, the attribute ' +
+             'authority and the SAML 1.1 responder count only a registered ' +
+             'entry, and an MDQ lookup treats an unregistered entry as ' +
+             'unknown.',
+    where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, saml/sp_metadata.ts' },
+  { id: 'unregistered-gnap-clients',
+    what: 'A GNAP client or resource server is served only when ' +
+          'registered (#496)',
+    development: 'An unknown proved key is made an application entry on ' +
+                 'first sight, and that entry\'s key and instance ' +
+                 'identifier are accepted from then on.',
+    product: 'An unknown key is refused (STS-GNAP-0082), and so is a key or ' +
+             'an instance identifier belonging to an entry nobody ' +
+             'registered (appRegisteredBy unset — one created on first ' +
+             'sight is not a registration): 401 invalid_client or ' +
+             'invalid_resource_server (STS-GNAP-0902), before the entry is ' +
+             'sighted again or anything is issued.',
+    where: 'gnap/gnap_grants.ts' },
+  { id: 'unregistered-resource-targets',
+    what: 'An RFC 8707 resource and a GNAP right\'s locations name a ' +
+          'registered target (#505)',
+    development: 'Any absolute URI is accepted as a resource at the ' +
+                 'authorization, PAR and token endpoints and becomes the ' +
+                 'token\'s aud; a GNAP location that names no resource ' +
+                 'server is left out of the token\'s audience and the ' +
+                 'right is granted, while something else in the token ' +
+                 'names one — a token whose access names none is refused ' +
+                 'invalid_request in every mode (STS-GNAP-0904).',
+    product: 'A resource (outside a token exchange, whose targets are the ' +
+             'policy\'s unregistered-target) and every location of a GNAP ' +
+             'access right must name a registered target: one of this ' +
+             'service\'s own resource servers (the default resource ' +
+             'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
+             'accept; /admin-api; /account-api) ' +
+             'or an application registered ahead of time (appRegisteredBy ' +
+             'set — a sighting is not a registration), by its ' +
+             'oauthAudience, permission base URI, client_id or identifier ' +
+             '— the embedded debugger\'s api is one, seeded registered. A ' +
+             'GNAP location at or under a registered resource server\'s ' +
+             'gnapResourceServerUri names it too. Otherwise invalid_target: ' +
+             'redirected from the authorization endpoint and 400 at PAR ' +
+             '(STS-OAUTH-0950), 400 at the token endpoint before anything ' +
+             'is spent (STS-OAUTH-0951); for GNAP the request is refused ' +
+             'invalid_request (STS-GNAP-0903), not the right dropped.',
+    where: 'common/registered_targets.ts, oauth-oidc/oauth2.ts, ' +
+           'gnap/gnap_grants.ts' },
   { id: 'return-addresses',
     what: 'A response goes where the request says',
     development: 'Any absolute URL a SAML AuthnRequest, a SAML 1.1 shire, a ' +
@@ -2660,11 +3049,7 @@ const REQUIREMENTS = [
            'common/applications.js, common/oidc_rp.ts, authn/authn.ts' },
   { id: 'test-controls',
     what: 'Test controls are open',
-    development: 'POST /tls/trust and /tls/trust/clear, POST ' +
-                 '/dpop/nonce-mode, POST /devices/test/compliance (a ' +
-                 'device\'s compliance, without the device:compliance ' +
-                 'scope, #164), the passwords on ' +
-                 '/krb5/principals, signing another person out with ' +
+    development: 'Signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
                  'answer anybody, a refused SCIM Digest challenge prints ' +
@@ -2683,9 +3068,8 @@ const REQUIREMENTS = [
              'oauth2.softwareStatementOpensRegistration is on, which is the ' +
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
-    where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
-           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
-           'admin-core/admin_actions.ts, admin-ui/devices_admin.ts' },
+    where: 'oauth-oidc/oauth2.ts, logout/logout.ts, saml/saml11_sso.ts, ' +
+           'scim/scim_auth.ts, admin-core/admin_actions.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -2937,10 +3321,11 @@ const REQUIREMENTS = [
     development: 'ACCEPTED where a secret is checked, with an audit row ' +
                  'saying it had expired.',
     product: 'REFUSED at the token endpoint (invalid_client, ' +
-             'STS-OAUTH-0558) once oauthClientSecretExpiresAt — or the ' +
-             'registration\'s client_secret_expires_at — has passed. A ' +
-             'rotated secret\'s predecessor is accepted in both modes until ' +
-             'oauth2.clientSecretOverlapS has passed.',
+             'STS-OAUTH-0558), and as a client_secret_jwt key, once the ' +
+             'expiry on that secret\'s record on oauthClientSecret has ' +
+             'passed. An application may hold several secrets, each with ' +
+             'its own expiry; a rotation moves the live ones to expire after ' +
+             'oauth2.clientSecretOverlapS.',
     where: 'oauth-oidc/client_auth.js, common/applications.js' },
   // 2026-09-22 (#42). It was NOT_YET's `key-overlap` — "a rotation has NO
   // OVERLAP" — until key GENERATIONS gave every unit a next key published
@@ -2980,6 +3365,20 @@ const REQUIREMENTS = [
              'realm is refused KRB_AP_ERR_BADKEYVER.',
     where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_krbtgt_rotation.ts, ' +
            'kerberos/krb5_principals.js' },
+  // 2026-10-12: a base installation's acceptor keyed without a password.
+  { id: 'kerberos-acceptor-key',
+    what: 'The key the Kerberos acceptor decrypts tickets with when ' +
+          'krb5.servicePassword is empty or the published default',
+    development: 'DERIVED from the published krb5.servicePassword, so a ' +
+                 'reader can derive it; an empty password creates no ' +
+                 'account and the acceptor accepts no ticket.',
+    product: 'RANDOM — a key per enctype in krb5.enctypes for the SPN ' +
+             'krb5.servicePrincipal names, made once per realm at the start ' +
+             '(or when the acceptor first asks), sealed on the application ' +
+             'entry <spn>@<REALM> and never shown. Rotate it at ' +
+             '/admin/kerberos/principals for a keytab. A ' +
+             'krb5.servicePassword of the operator\'s own wins over it.',
+    where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_principals.js' },
   // 2026-09-26 (#164 decision 9, phase 2).
   { id: 'unattested-device-keys',
     what: 'A device key presented without a verifiable attestation is ' +
@@ -2995,7 +3394,39 @@ const REQUIREMENTS = [
              'chained to an anchor registers a key. An administrator ' +
              'entering a key by value is an administrator\'s act and is ' +
              'accepted in both modes, recorded proof admin, self-asserted.',
-    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' }
+    where: 'common/device_enrolment.ts, common/cert_enrollment.ts' },
+  // 2026-10-06 (#256).
+  { id: 'android-attestation-revocation',
+    what: 'An Android attestation whose revocation could not be checked is ' +
+          'not trusted, where the realm says so',
+    development: 'With no current Android attestation status list (never ' +
+                 'downloaded, the download failing, or stale) an Android ' +
+                 'chain is recorded attested, its revocation UNCHECKED, ' +
+                 'whatever devices.androidRevocationRequired says. A chain ' +
+                 'the list revokes or suspends is self-asserted in both ' +
+                 'modes.',
+    product: 'The same by default. With devices.androidRevocationRequired ' +
+             'on, an unchecked chain is recorded self-asserted: a device key ' +
+             'is then refused (STS-DEVICE-0024) and a WebAuthn android-key ' +
+             'statement untrusted.',
+    where: 'common/attestation_revocation.ts' },
+  // 2026-10-06 (#257).
+  { id: 'fresh-key-attestation',
+    what: 'A TPM key attestation in a device certificate request must be ' +
+          'fresh',
+    development: 'A TPM2_Certify statement whose extraData is not a live ' +
+                 'nonce issued at EST /nonce to the same client and cookie ' +
+                 '(none fetched, expired, already spent, another client\'s, ' +
+                 'or a request over SCEP, which has no nonce operation) ' +
+                 'keeps its level and is recorded with freshness UNPROVEN ' +
+                 'and the reason. A nonce that matches is spent.',
+    product: 'Such a statement is refused (STS-DEVICE-0050): a captured ' +
+             'attestation replayed in a new request for the same key is ' +
+             'not a key made and held in a TPM now. A device certificate ' +
+             'with a TPM attestation is therefore issued over EST only, ' +
+             'after /nonce (draft-ietf-lamps-attestation-freshness section ' +
+             '5.1).',
+    where: 'common/cert_enrollment.ts, common/device_enrolment.ts, est/est.ts' }
 ];
 
 // WHAT PRODUCT MODE STILL DOES NOT DO. Named here rather than left to be
@@ -3388,8 +3819,15 @@ const WRITE_REFUSALS = {
     'without the workload.spiffe.io header MUST be refused.',
   derivesKrbtgtFromPassword:
     'the krbtgt key is random there, made once per realm and kept sealed ' +
-    'on the directory, so no password is read for it.'
+    'on the directory, so no password is read for it.',
+  opensManagementApi:
+    'the management API always requires an access token there, because ' +
+    'its gate is the admin console\'s only gate; pin adminApi.clientSecret ' +
+    'before the start to be able to mint one.'
 };
+
+// What a marked row whose predicate has no sentence above ends with.
+const DEFAULT_WRITE_REFUSAL = 'the setting is for development mode only.';
 
 /**
  * Explains why a development-only value is not allowed in product, by the
@@ -3402,8 +3840,7 @@ const WRITE_REFUSALS = {
 function writeRefusalReason(predicate) {
   log.debug("Entering writeRefusalReason(). " + predicate);
   log.debug("Leaving writeRefusalReason().");
-  return WRITE_REFUSALS[predicate] ||
-    'the setting is for development mode only.';
+  return WRITE_REFUSALS[predicate] || DEFAULT_WRITE_REFUSAL;
 }
 
 // Every row carrying the `onlyWhile` marker, with the value the ambient realm
@@ -3456,6 +3893,45 @@ function report() {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE MODE NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b). `GET
+// /admin-api/mode` answers `report()`, and what it carries that is prose is
+// this file's: each requirement's `what`, `development` and `product` (and
+// `inForce`, which is one of the two copied, so the exact match finds it), each
+// NOT_YET row's `what`, and each development-only setting's `why` — a
+// WRITE_REFUSALS sentence, which is also the end of the write REFUSAL and the
+// ignored-value warning. Those two stay English: the refusal is answered on
+// other routes and the warning is written to the log, and a phrase is matched
+// only on the routes listed here. `where` is file paths, every `id` a code.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/mode'];
+
+/**
+ * Extracts the mode namespace (#543 phase 2b): the requirements, NOT_YET and
+ * the sentence a development-only setting's `why` carries.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const out = {};
+  Object.assign(out, harvest('mode.requirements', REQUIREMENTS,
+                             ['what', 'development', 'product']));
+  Object.assign(out, harvest('mode.notYet', NOT_YET, ['what']));
+  Object.assign(out, harvest('mode.why', WRITE_REFUSALS,
+                             Object.keys(WRITE_REFUSALS)));
+  out['mode.why.default'] = DEFAULT_WRITE_REFUSAL;
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The one place development and product mode are told apart: a predicate per
  * policy question, named for the question.
@@ -3484,15 +3960,18 @@ module.exports = {
   requiresConfidentialClientAuthentication:
     requiresConfidentialClientAuthentication,
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
-  gatesManagementApi: gatesManagementApi,
+  opensManagementApi: opensManagementApi,
   seedsDemoData: seedsDemoData,
+  describesItselfAsTestDouble: describesItselfAsTestDouble,
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
+  generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
+  requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
   opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,
@@ -3513,10 +3992,14 @@ module.exports = {
   exchangesUnverifiedTokens: exchangesUnverifiedTokens,
   authorizesDelegation: authorizesDelegation,
   grantsUndeclaredScopes: grantsUndeclaredScopes,
+  issuesThroughUndeclaredProtocols: issuesThroughUndeclaredProtocols,
+  grantsUncataloguedAccess: grantsUncataloguedAccess,
   honoursUngrantedPermissions: honoursUngrantedPermissions,
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
+  refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,
+  requiresFreshKeyAttestation: requiresFreshKeyAttestation,
   acceptsPasswordAloneFromSecondFactorAccounts:
     acceptsPasswordAloneFromSecondFactorAccounts,
   issuesTicketsOnPasswordAlone: issuesTicketsOnPasswordAlone,
@@ -3531,12 +4014,14 @@ module.exports = {
   registersFromMetadataQuery: registersFromMetadataQuery,
   publishesMetadataForUnregisteredProviders:
     publishesMetadataForUnregisteredProviders,
+  issuesToUnregisteredApplications: issuesToUnregisteredApplications,
   embedsProtocolDebugger: embedsProtocolDebugger,
   limitsDebuggerDestinations: limitsDebuggerDestinations,
   dialsInternalAddresses: dialsInternalAddresses,
   skipsOutboundTlsVerification: skipsOutboundTlsVerification,
   dialsPlainHttpOutbound: dialsPlainHttpOutbound,
   capturesMail: capturesMail,
+  acceptsFileSecretDestinations: acceptsFileSecretDestinations,
   mailsLinksFromListenerAddress: mailsLinksFromListenerAddress,
   acceptsNonconformingResourceMetadata: acceptsNonconformingResourceMetadata,
   gatesConsole: gatesConsole,
@@ -3555,5 +4040,7 @@ module.exports = {
   writeRefusalReason: writeRefusalReason,
   REQUIREMENTS: REQUIREMENTS,
   NOT_YET: NOT_YET,
-  report: report
+  report: report,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

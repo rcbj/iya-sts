@@ -16,6 +16,7 @@ page and endpoint named below is a view of it rather than a separate model.
 | **Browser sign-on session** | the cookie every browser protocol here shares | a map in `authn/authn.ts`, in memory | absolute expiry, or a sign-out |
 | **Kerberos TGT** | the ticket-granting ticket *is* the Kerberos session | nowhere — a blob in somebody's cache | its own `endtime`, sealed in by the KDC |
 | **LDAP connection** | the Bind is a state of the connection (RFC 4511 §4.2) | the socket | Unbind, a re-Bind, or the socket closing |
+| **GNAP grant** | a delegated session between a client instance and the person who approved it (RFC 9635) | GNAP's grant store, per realm | its client revokes it, an administrator does, or a sign-out of the person — or of the session it was approved on — ends it; it has no expiry of its own |
 
 Only the first is a **record this service keeps**. The LDAP one is the live
 socket itself — there is no session object beside it, and when the socket dies
@@ -110,7 +111,7 @@ that can start a session without being counted, audited and reported:
 | The same screen reached from a SAML 2.0 `AuthnRequest` | `SAML 2.0` |
 | The same screen reached from a SAML 1.1 inter-site transfer | `SAML 1.1` |
 | A Kerberos ticket spent at `/authn/spnego` — no screen | `Kerberos v5 (SPNEGO)` |
-| A wallet's presentation of a credential this service issued — collected at `/authn/wallet/wait` by the browser that started it, or answered to that page through the Digital Credentials API at `/authn/wallet/dc-api` | `OpenID4VP (a wallet)` |
+| A wallet's presentation of a credential this service issued — collected by the wait page at `/authn/wallet/wait` in the browser that started it, or answered to that page through the Digital Credentials API (`/authn-api/wallet/{state}/dc-api`) | `OpenID4VP (a wallet)` |
 | A federated assertion accepted at `/federation/acs/{id}` — the person authenticated somewhere else entirely | `Federation (SAML 2.0)`, and the same for the other federation protocols |
 
 **No password is checked at any of them** in development mode. The Kerberos
@@ -129,7 +130,7 @@ demand, and a WS-Federation `wfresh` too old all end at the screen.
 
 | Activity | What it reaches |
 |---|---|
-| `GET /oauth2/logout` | OpenID Connect RP-Initiated Logout |
+| `GET\|POST /oauth2/logout` | OpenID Connect RP-Initiated Logout |
 | `GET\|POST /wsfed?wa=wsignout1.0` | WS-Federation 1.2 §13.2.4 |
 | `GET\|POST /saml2/slo` | SAML 2.0 Single Logout |
 | `GET\|POST /logout` | the protocol-independent sign-out — everything, across every family |
@@ -146,7 +147,9 @@ written, so a sign-out that revoked nothing and logged nothing is not reachable.
 SAML assertions and Kerberos tickets issued on it stay valid — that is what
 `/admin/tokens` lists, and it is the state an OIDC client is in when its ID Token
 still verifies and the browser would be asked to sign in again. Refresh tokens
-are the exception in RFC 9700 mode.
+issued on the session without `offline_access` are the exception, in every
+mode: a sign-out revokes them (OpenID Connect Back-Channel Logout section 2.7,
+`oauth2.revokeRefreshOnLogout`, on by default and settable per client).
 
 ### One session per sign-in, several per person
 
@@ -232,6 +235,20 @@ they are shown as untouched rather than hidden.
 
 ---
 
+## 4. The GNAP grant
+
+A grant a person approved to a GNAP client instance is listed as a **GNAP
+grant** row ([#432](https://github.com/rcbj/iya-sts/issues/432)): RFC 9635
+makes it the state between that client and that person, its end is already
+reported as CAEP `session-revoked`, and its access tokens are renewed through
+it. It has **no expiry of its own**. Revoking the row revokes every token the
+grant issued and finalizes it, as the client's own revocation would. A global
+sign-out, a disabled account and a Revoke of the session it was approved on end
+it too; an ordinary sign-out of one application and a session expiring do not.
+See [GNAP](gnap.md#what-ends-a-grant-besides-its-client).
+
+---
+
 ## What is *not* a session
 
 Five things are easy to mistake for one:
@@ -260,7 +277,7 @@ people mix up.
 
 ### `/admin/sessions` — what is live, right now
 
-Every session this service is holding, across all three kinds, with who is
+Every session this service is holding, across all four kinds, with who is
 signed in, the protocol it was started through, what it carries, when it expires
 and **how that expiry is worked out** — and a Revoke button on each row that goes
 through the same termination `/logout` performs.

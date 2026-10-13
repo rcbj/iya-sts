@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -414,7 +414,8 @@ class DeviceRecognition {
   }
 
   // A statement in `format` that did not verify, or a key product refused
-  // for having none (`format` 'unattested').
+  // for having none (`format` 'unattested') or for a TPM statement not shown
+  // fresh (`format` 'stale', #257).
   /**
    * Counts an attestation statement that did not verify, or a key refused for
    * having none.

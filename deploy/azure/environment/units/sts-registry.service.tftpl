@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# iya-sts: Docker's credentials for the foundation's registry, from the
+# VM's managed identity (/etc/sts/registry-login.sh). Run again before every
+# start of the node, because the registry's token lasts about three hours.
+[Unit]
+Description=iya-sts: registry credentials
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=HOME=/var/lib/sts
+ExecStartPre=/bin/mkdir -p /var/lib/sts
+ExecStart=/bin/bash /etc/sts/registry-login.sh

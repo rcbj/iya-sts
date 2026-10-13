@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -29,12 +29,14 @@
 //      an acr value, a negative age) with the stored values read back
 //      unchanged;
 //   c. a password sign-in with `resource=<API>` gives a token with acr "1",
-//      the stand-in resource answers it 401 with section 3's challenge and
-//      both auth-params, and client-authenticated introspection carries acr
-//      and auth_time (section 6.2);
-//   d. what the stand-in resource refuses BEFORE any step-up question: a
-//      token for the default audience, no token (both 401 invalid_token),
-//      an application the realm has no entry for (404);
+//      the API's resource server answers it 401 with section 3's challenge
+//      and both auth-params, and client-authenticated introspection carries
+//      acr and auth_time (section 6.2);
+//   d. what the resource server refuses BEFORE any step-up question: a
+//      token for the default audience, no token (both 401 invalid_token), a
+//      resource it does not serve (404), and the API's token at the same
+//      API as the DEFAULT realm's resource server sees it (401: another
+//      issuer);
 //   e. STEP-UP TO mfa END TO END — an authenticator enrolled at
 //      `/portal/mfa`, `acr_values=mfa` on the one-factor session sent to
 //      the sign-in screen rather than answered, the screen demanding the
@@ -53,7 +55,24 @@
 //   i. the monitor — `GET <realm>/admin-api/oauth2/monitor`'s `stepup`
 //      section with this client's counters moved, `clientsParam` and
 //      `ownResourceRequirement` following the setting — and the console's
-//      `?format=json` of the same page carrying the same row.
+//      token asking the same page's operation for the same row.
+//
+// ---------------------------------------------------------------------------
+// THE RESOURCE SERVER IS THE TEST PEER'S (#586).
+//
+// It was the service's own stand-in,
+// `/oauth2/step-up/resource/{application}`, development only since #585
+// and deleted by #593 — and a resource server that is part
+// of the authorization server proved less than it seemed: it read the
+// requirement off the entry the AS also reads. The API is now
+// `tests/peer/peer_stepup.js`, a separate container that knows the
+// requirement the way a real API does (the job configures it there, as it
+// writes it on the entry), verifies the RFC 9068 token against the realm's
+// published key set, and answers the challenge the job asserts in exactly
+// the stand-in's shape. A run with no peer — an AWS target — reports this
+// job SKIPPED (`testPeer` in MANIFEST.js). The monitor's `stepUpChallenged`
+// counter therefore moves only for UserInfo's challenge now: the peer's
+// challenges happen in another process, which is the point.
 //
 // ---------------------------------------------------------------------------
 // WHY IT IS THIS REPOSITORY'S OWN (`local: true`).
@@ -64,19 +83,20 @@
 // requirement is a setting written through `/admin-api/config`, and the
 // counters are read on `/admin-api/oauth2/monitor` and `/admin/oauth2/monitor`
 // — while every assertion that matters is made at `/oauth2/authorize`,
-// `/oauth2/token`, `/oauth2/introspect`, `/oauth2/userinfo` and the stand-in
-// resource. A repository holding one of those two doors could not make it.
+// `/oauth2/token`, `/oauth2/introspect`, `/oauth2/userinfo` and the API's
+// resource server. A repository holding one of those two doors could not
+// make it.
 //
 // ---------------------------------------------------------------------------
 // THE CONSOLE HALF, AND WHY IT IS DRIVEN THE WAY IT IS.
 //
-// The console's session lives in the DEFAULT realm's partition wherever it is
-// reached (`common/CLAUDE.md`, the realm split), and a session signed in
-// through the default realm is asked the service roster, which reads every
-// realm (`admin-ui/CLAUDE.md`, 8d) — so the operator signs in to the console
-// at the default realm through `console_signin.js` and reads the realm's page
-// under its prefix with that cookie. No browser: the page is JSON under
-// `?format=json`.
+// A session signed in through the default realm is asked the service
+// roster, which reads every realm (`admin-ui/CLAUDE.md`, 8d) — so the
+// operator signs in to the console at the default realm through
+// `console_signin.js` and asks the realm's page under its prefix. Since the
+// #446 cutover the console is a static page drawn from its `/admin-api`
+// operation's answer, so what is asked is that operation, with the
+// console's own DPoP-bound token — what `?format=json` used to answer.
 //
 // ---------------------------------------------------------------------------
 // WHAT IT LEAVES BEHIND.
@@ -91,11 +111,15 @@
 // the client is given a global consent for the one scope it asks for.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
+const portalSignin = require("./portal_signin.js");
+const testPeer = require("./test_peer.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -138,6 +162,10 @@ const ALICE = names.usernameFor("su-alice");
 const BOB = names.usernameFor("su-bob");
 const OPERATOR = names.usernameFor("su-operator");
 const UNMEETABLE = "urn:example:stepup:gold";
+// The test peer's two tenants (#586): the API in this realm, and the same
+// API as the DEFAULT realm's resource server would see it.
+let peerView = null;
+let peerDefaultView = null;
 
 // A section that stops being called takes its assertions with it and the run
 // still says "passed"; this is the floor that notices.
@@ -276,8 +304,36 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
-// One browser: a cookie jar kept BY NAME, because a browser signed in to the
-// portal holds the sign-on cookie and the portal's own.
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
+// One browser: a cookie jar kept BY NAME — the sign-on cookie, which the
+// static portal (#568) is signed in out of.
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
@@ -320,21 +376,6 @@ function browser(name) {
   };
   log.debug("Leaving browser().");
   return self;
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 function claimsOf(jwt) {
@@ -408,25 +449,32 @@ function atClient(r) {
 // step. Answers every hop, so a section can look at each screen.
 async function signInScreen(b, location, who, code) {
   log.debug("Entering signInScreen(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200,
-    "the sign-in screen should be drawn; it answered " + page.status + " " +
-    page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  assert.ok(fields.authn_id,
-    "the sign-in screen carries no authn_id: " + page.text.slice(0, 300));
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  let posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper: `page`
+  // is its VIEW now (what the screen offers, as facts), and the act's
+  // answer is read as the form's POST was — the code page fetched from the
+  // address it names.
+  const answer = await authnSignin.submit(base + R, location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: jarHeader(b) });
+  assert.ok(answer.view,
+    "the sign-in screen should be drawn; it answered " + answer.status +
+    " " + JSON.stringify(answer.errors));
+  const page = { view: answer.view };
+  keepCookies(b, answer);
+  let posted = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   let totpPage = null;
-  if (posted.status === 200 && /name="mfa_id"/.test(posted.text)) {
+  // THE CODE PAGE IS THE SIGN-IN SURFACE'S (#572): its view, and the code
+  // sent to its act.
+  if (posted.step && posted.step.view && posted.step.view.page === "totp") {
     totpPage = posted;
     if (code) {
-      const mfaId = (posted.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                     [])[1];
-      posted = await b.go("POST", R + "/authn/totp",
-                          form({ mfa_id: mfaId, code: code }));
+      const a = await authnSignin.stepAct(posted.step, "totp",
+        { code: code }, { cookie: jarHeader(b) });
+      keepCookies(b, a);
+      posted = { status: a.next === "redirect" ? 303 : a.status,
+                 location: a.location, text: a.text };
     }
   }
   log.debug("Leaving signInScreen(). " + posted.status + " " +
@@ -463,10 +511,11 @@ async function tokenFromSession(b, extra) {
   return tokens;
 }
 
-function stepUpResource(token, application) {
+// The API, at the test peer's RFC 9470 resource server (#586).
+function stepUpResource(token, application, view) {
   log.debug("Entering stepUpResource().");
   log.debug("Leaving stepUpResource().");
-  return send(base + R + "/oauth2/step-up/resource/" +
+  return send((view || peerView).stepUp.base +
               encodeURIComponent(application || RESOURCE),
               { headers: token ? { Authorization: "Bearer " + token } : {} });
 }
@@ -546,9 +595,13 @@ function settingRow(body, key) {
       rows.push(one);
     });
   });
-  ((body && body.settings) || []).forEach(function (one) {
-    rows.push(one);
-  });
+  // A flat `settings` LIST, where an answer carries one. `/admin-api/config`
+  // carries an object of that name since #446 — the page's own settings
+  // block — and its rows are in `groups`, read above.
+  (Array.isArray(body && body.settings) ? body.settings : [])
+    .forEach(function (one) {
+      rows.push(one);
+    });
   const row = rows.filter(function (one) {
     return one.key === key;
   })[0] || null;
@@ -713,6 +766,24 @@ async function theApplications() {
     assert.strictEqual(attributeOf(entry, "oauthStepUpAcrValues"), "mfa");
     assert.strictEqual(attributeOf(entry, "oauthStepUpMaxAge"), "600");
   });
+
+  // THE API ITSELF, at the test peer (#586): the same requirement, known to
+  // the resource server the way a real API knows its own — configured
+  // there, as it was written on the entry above — and a second tenant that
+  // is the same API as the DEFAULT realm's resource server sees it.
+  const resources = {};
+  resources[RESOURCE] = { audience: API, acr_values: "mfa", max_age: 600 };
+  peerView = await testPeer.tenant(testPeer.tenantId("stepup-" + STAMP),
+                                   base + R, base,
+                                   { stepUp: { resources: resources } });
+  peerDefaultView = await testPeer.tenant(
+    testPeer.tenantId("stepup-default-" + STAMP), base, base,
+    { stepUp: { resources: resources } });
+  check("the test peer serves the API, with the requirement the entry " +
+        "declares", function () {
+    assert.deepStrictEqual(peerView.stepUp.resources[RESOURCE],
+                           resources[RESOURCE]);
+  });
   log.debug("Leaving theApplications().");
 }
 
@@ -753,7 +824,8 @@ async function aOneFactorTokenIsChallenged() {
   });
 
   r = await stepUpResource(tokens.access_token);
-  check("SECTION 3: the stand-in resource answers the one-factor token 401 " +
+  check("SECTION 3: the API's resource server answers the one-factor token " +
+        "401 " +
         "with error=\"insufficient_user_authentication\" under Bearer",
         function () {
     assert.strictEqual(r.status, 401, r.status + " " + r.raw.slice(0, 300));
@@ -818,15 +890,27 @@ async function theResourceRefusesFirst(held) {
     assert.ok(!/acr_values=/.test(r.challenge), r.challenge);
   });
   r = await stepUpResource(held.oneFactor, "su-nobody-" + STAMP);
-  check("an application the realm has no entry for is 404", function () {
+  check("a resource the resource server does not serve is 404", function () {
     assert.strictEqual(r.status, 404, r.raw.slice(0, 300));
   });
-  r = await send(base + "/oauth2/step-up/resource/" +
-                 encodeURIComponent(RESOURCE),
-                 { headers: { Authorization: "Bearer " + held.oneFactor } });
-  check("and the application is the REALM's: the default realm has no " +
-        "such entry and answers 404", function () {
-    assert.strictEqual(r.status, 404, r.status + " " + r.raw.slice(0, 300));
+  r = await stepUpResource(held.oneFactor, RESOURCE, peerDefaultView);
+  check("and the token is the REALM's: the same API as the default " +
+        "realm's resource server sees it refuses it, 401 invalid_token — " +
+        "another issuer's token, not a step-up question", function () {
+    assert.strictEqual(r.status, 401, r.status + " " + r.raw.slice(0, 300));
+    assert.strictEqual(r.body.error, "invalid_token", r.raw.slice(0, 300));
+    assert.ok(!/insufficient_user_authentication/.test(r.challenge),
+              r.challenge);
+  });
+  const arrived = await testPeer.received(peerView.tenant, "step-up", 0);
+  check("THE PEER RECORDS WHAT IT DECIDED: a challenge and refusals for this " +
+        "realm's API, read back from the far end", function () {
+    const decisions = arrived.events.map(function (one) {
+      return one.decision;
+    });
+    assert.ok(decisions.indexOf("challenged") >= 0, JSON.stringify(decisions));
+    assert.ok(decisions.indexOf("refused") >= 0, JSON.stringify(decisions));
+    assert.ok(decisions.indexOf("unknown") >= 0, JSON.stringify(decisions));
   });
   log.debug("Leaving theResourceRefusesFirst().");
 }
@@ -836,38 +920,33 @@ async function theResourceRefusesFirst(held) {
 // ===========================================================================
 async function enrolAnAuthenticator(alice) {
   log.debug("Entering enrolAnAuthenticator().");
-  // `/portal` is a relying party of the realm's own authorization server,
-  // so a browser holding a sign-on session goes round the code flow with no
-  // sign-in screen and lands on the page.
-  let r = await alice.go("GET", R + "/portal/mfa");
-  for (let i = 0; i < 6 && (r.status === 302 || r.status === 303); i++) {
-    assert.ok(!/\/authn\/login/.test(r.location),
-      "the portal should be answered out of the sign-on session; it sent " +
-      "the browser to sign in: " + r.location);
-    r = await alice.go("GET", r.location);
-  }
+  // THE PORTAL IS A STATIC APPLICATION SINCE #568: it signs in as its
+  // public client with PKCE and a DPoP-bound token, and a browser holding a
+  // sign-on session is answered by the authorization endpoint with no
+  // sign-in screen — the helper refuses to type a password when it was given
+  // a session only, so reaching the page IS that assertion.
+  const portal = await portalSignin.signInToThePortal(absolute(R),
+    ALICE, null, { cookie: Object.keys(alice.jar).map(function (k) {
+      return k + "=" + alice.jar[k];
+    }).join("; ") });
+  let r = await portal.page("/portal/mfa");
   assert.strictEqual(r.status, 200,
     "/portal/mfa should be drawn; it answered " + r.status + " " +
     r.text.slice(0, 300));
-  const csrf = (r.text.match(/name="csrf_token" value="([^"]+)"/) || [])[1];
-  r = await alice.go("POST", R + "/portal/mfa",
-                     form({ action: "start", csrf_token: csrf }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "starting the setup answered " + r.status);
-  const page = await alice.go("GET", R + "/portal/mfa");
-  const cell = page.text.match(/<th>Secret<\/th><td><code>([^<]+)<\/code>/);
-  const secret = cell ? cell[1].replace(/\s+/g, "") : "";
+  r = await portal.act("/portal/mfa", { action: "start" });
+  assert.ok(r.status === 200 && r.json && r.json.ok,
+    "starting the setup answered " + r.status + " " + r.text.slice(0, 300));
+  const page = await portal.page("/portal/mfa");
+  const setup = (page.json && page.json.setup) || {};
+  const secret = String(setup.grouped || "").replace(/\s+/g, "");
   assert.ok(secret.length >= 32,
     "no secret on the setup page: " + page.text.slice(0, 400));
-  r = await alice.go("POST", R + "/portal/mfa",
-    form({ action: "confirm", code: codeFor(secret),
-           csrf_token: (page.text.match(
-             /name="csrf_token" value="([^"]+)"/) || [])[1] }));
+  r = await portal.act("/portal/mfa", { action: "confirm",
+                                        code: codeFor(secret) });
   check("(" + ALICE + " enrols an authenticator app at the realm's " +
         "/portal/mfa, confirmed with a code this job computed)", function () {
-    assert.ok(r.status === 200 || r.status === 302 || r.status === 303,
+    assert.ok(r.status === 200 && r.json && r.json.ok,
       r.status + " " + r.text.slice(0, 300));
-    assert.ok(!/class="err"/.test(r.text), r.text.slice(0, 300));
   });
   log.debug("Leaving enrolAnAuthenticator().");
   return secret;
@@ -901,10 +980,11 @@ async function stepUpToMfa(held) {
   // step the enrolment's confirmation code spent is refused as a replay.
   const done = await signInScreen(alice, first.location, ALICE,
                                   codeFor(secret, Date.now() + 30000));
-  check("the sign-in screen DEMANDS the second factor: the checkbox drawn " +
-        "checked and disabled", function () {
-    assert.ok(/id="use_webauthn"[^>]*checked disabled/.test(done.page.text),
-      done.page.text.slice(0, 600));
+  check("the sign-in screen DEMANDS the second factor: its view says the " +
+        "request demands one, which the page draws as the checkbox checked " +
+        "and disabled", function () {
+    assert.ok(done.page.view.demands && done.page.view.demands.mfa === true,
+      JSON.stringify(done.page.view).slice(0, 600));
   });
   check("and the password is answered with the one-time code screen, not " +
         "a redirect", function () {
@@ -935,7 +1015,8 @@ async function stepUpToMfa(held) {
       JSON.stringify([at.amr, idt.amr]));
   });
   const r = await stepUpResource(tokens.access_token);
-  check("THE RESOURCE THAT CHALLENGED ANSWERS THE STEPPED-UP TOKEN 200, " +
+  check("THE RESOURCE SERVER THAT CHALLENGED ANSWERS THE STEPPED-UP TOKEN " +
+        "200, " +
         "met:true, naming the requirement and the token's acr", function () {
     assert.strictEqual(r.status, 200, r.status + " " + r.raw.slice(0, 300));
     assert.strictEqual(r.body.met, true);
@@ -944,8 +1025,7 @@ async function stepUpToMfa(held) {
                            { acr_values: "mfa", max_age: 600 });
     assert.strictEqual(r.body.token.acr, "mfa");
     assert.strictEqual(r.body.token.client_id, CLIENT);
-    // An auth-scheme is case-insensitive (RFC 9110 section 11.1), and the
-    // resource reports it the way `presentedAccessToken()` normalised it.
+    // An auth-scheme is case-insensitive (RFC 9110 section 11.1).
     assert.ok(/^bearer$/i.test(r.body.token.scheme), r.body.token.scheme);
     assert.ok(r.body.token.authenticated_seconds_ago <= 600,
               String(r.body.token.authenticated_seconds_ago));
@@ -1152,7 +1232,8 @@ async function theMonitor() {
   check("THIS CLIENT'S ROW MOVED FOR EVERY EVENT THIS JOB CAUSED: sent to " +
         "sign in again for acr, met after signing in, met by the session, " +
         "unmet, login_required, sent to sign in with no session, and the " +
-        "challenges its tokens met", function () {
+        "challenge its token met at UserInfo — the API's are the test " +
+        "peer's, in another process (#586)", function () {
     assert.ok(row, "no row for " + CLIENT);
     assert.ok(c.stepUpReauthAcr >= 2, JSON.stringify(c));
     assert.ok(c.stepUpMetAfterSignIn >= 1, JSON.stringify(c));
@@ -1160,7 +1241,7 @@ async function theMonitor() {
     assert.ok(c.stepUpUnmet >= 1, JSON.stringify(c));
     assert.ok(c.stepUpLoginRequired >= 1, JSON.stringify(c));
     assert.ok(c.stepUpSignIn >= 1, JSON.stringify(c));
-    assert.ok(c.stepUpChallenged >= 2, JSON.stringify(c));
+    assert.ok(c.stepUpChallenged >= 1, JSON.stringify(c));
     assert.strictEqual(c.stepUpReauthMaxAge, 0, JSON.stringify(c));
   });
   check("the section's totals are at least this client's", function () {
@@ -1170,17 +1251,23 @@ async function theMonitor() {
     });
   });
 
+  // THE PAGE IS THE STATIC CONSOLE (#446): its document holds nothing of
+  // this service's state, and the page is drawn from the operation the
+  // console's token asks.
   const anonymous = await send(base + R + "/admin/oauth2/monitor");
-  check("the console page is behind the console's gate", function () {
-    assert.ok(anonymous.status === 302 || anonymous.status === 303,
-              "status " + anonymous.status);
+  check("the console page, asked with no token, carries no counter",
+        function () {
+    assert.strictEqual(anonymous.status, 200, "status " + anonymous.status);
+    assert.ok(anonymous.raw.indexOf(CLIENT) < 0, anonymous.raw.slice(0, 200));
   });
-  const cookie = await consoleSignIn.signInToTheConsole(base, OPERATOR, log,
-                                                        { grant: "read" });
-  const page = await send(base + R + "/admin/oauth2/monitor?format=json", {
-    headers: cookie ? { cookie: cookie } : {} });
-  check("?format=json of the realm's console page carries the same step-up " +
-        "row the API does (rule 7)", function () {
+  const consoleClient = await consoleSignIn.signInToTheConsole(base,
+    OPERATOR, log, { grant: "read" });
+  const asked = await consoleClient.api("GET",
+                                        R + "/admin-api/oauth2/monitor");
+  const page = { status: asked.status, body: asked.json || {},
+                 raw: asked.text };
+  check("the realm's console page's operation, asked with the console's " +
+        "token, carries the same step-up row (rule 7)", function () {
     assert.strictEqual(page.status, 200,
                        page.status + " " + page.raw.slice(0, 300));
     const s = (page.body.sections || []).filter(function (one) {
@@ -1191,7 +1278,7 @@ async function theMonitor() {
     const mine = s.clients.filter(function (one) {
       return one.client_id === CLIENT;
     })[0];
-    assert.ok(mine, "the console's JSON has no row for " + CLIENT);
+    assert.ok(mine, "the console's answer has no row for " + CLIENT);
     assert.deepStrictEqual(mine.counters, c);
   });
   log.debug("Leaving theMonitor().");
@@ -1225,9 +1312,9 @@ program
   .name("sts_step_up")
   .description("RFC 9470 step-up authentication over HTTP in a throwaway " +
       "realm: acr_values_supported, a resource application's requirement " +
-      "and its two refusals, the stand-in resource's challenge and what it " +
-      "refuses first, acr and auth_time in introspection, a one-factor " +
-      "session sent to sign in again and stepped up to mfa with a TOTP " +
+      "and its two refusals, the test peer's resource server's challenge " +
+      "and what it refuses first, acr and auth_time in introspection, a " +
+      "one-factor session sent to sign in again and stepped up to mfa with a TOTP " +
       "code, the hierarchy, login_required, " +
       "unmet_authentication_requirements and invalid_request, UserInfo " +
       "under oauth2.stepUpAcrValues, and the monitor's step-up section.")

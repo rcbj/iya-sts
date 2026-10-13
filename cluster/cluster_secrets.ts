@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -70,8 +70,10 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
-import nodeCrypto = require('crypto');
 import config = require('../common/config');
+// The one place this service draws random values (#453). A leaf over
+// `config`, so this require cannot close a cycle.
+import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import capabilities = require('./cluster_capabilities');
 import InstanceSlot = require('../common/instance_slot');
@@ -101,6 +103,7 @@ interface SecretsKeystore {
   hasEphemeralKek?: () => boolean;
   seal(text: string, purpose: string): unknown;
   open(material: unknown, purpose: string): unknown;
+  settleDeks?: () => Promise<unknown>;
 }
 
 // The parts of the persistence store `start()` uses.
@@ -155,7 +158,12 @@ const DECLARED: Record<string, DeclaredSecret> = {
   // pointer its `next` carries must verify on every node.
   'oidfed-page': { bytes: 32, env: 'STS_OIDFED_PAGE_SECRET',
     what: 'The key an OpenID Federation listing\'s or collection\'s page ' +
-          'pointer is MACed with (oidfed/page_pointer.ts).' }
+          'pointer is MACed with (oidfed/page_pointer.ts).' },
+  // #577: the sign-out is answered by one request and its signed-out
+  // document drawn by the next, which may be another node's.
+  'logout-result': { bytes: 32, env: 'STS_LOGOUT_RESULT_SECRET',
+    what: 'The key a sign-out\'s result is MACed with on its way to the ' +
+          'signed-out document (logout/logout.ts).' }
 };
 
 // name -> { text, source: 'process'|'store'|'environment'|'node' }. The TEXT is
@@ -205,7 +213,7 @@ class ClusterSecrets {
       log: log,
       errorCodes: errorCodes,
       env: process.env,
-      randomBytes: nodeCrypto.randomBytes,
+      randomBytes: stsCrypto.randomBytes,
       clusterStore: ClusterSecrets.persistenceClusterStore,
       isActiveActive: ClusterSecrets.clusterIsActiveActive
     };
@@ -459,7 +467,12 @@ class ClusterSecrets {
             'secrets: the "' + name + '" secret could not be sealed, and a ' +
             'shared secret is never written to the store in the clear.');
         }
-        return theStore.ensureSharedSecret(name, sealed).then(function (row) {
+        // THE DATA-KEY ROW LANDS FIRST (#391): another node opening this
+        // secret must find the data encryption key it was sealed under.
+        return Promise.resolve(typeof keystore.settleDeks === 'function'
+          ? keystore.settleDeks() : null).then(function () {
+          return theStore.ensureSharedSecret(name, sealed);
+        }).then(function (row) {
           if (!row) {
             throw new Error(errorCodes.tag('STS-CLUSTER-0016') + 'cluster ' +
               'secrets: the "' + name + '" secret was not in the store ' +

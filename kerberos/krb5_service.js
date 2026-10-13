@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -14,12 +14,15 @@
 // and proves its own identity back. Until something does that, "the ticket
 // looks right" is the strongest claim available.
 //
-// It is a **raw TCP acceptor**, deliberately, because that is the shape of the
+// It was a **raw TCP acceptor** first, because that is the shape of the
 // Windows services people actually debug — CIFS, LDAP, SQL Server. An HTTP
 // service wrapping the same token in a `Negotiate` header is SPNEGO, which was
 // the next phase; the acceptor logic here was written as its own function so
 // that phase would add a transport and no protocol code — and it did:
 // `spnego_exchange.js` calls accept() for every Kerberos check and adds none.
+// Since #595 the raw TCP socket and its view are gone (the development
+// companion hosts a protected service of its own, below the file's foot),
+// and the one transport left is SPNEGO, at the sign-in door `/authn/spnego`.
 //
 // ---------------------------------------------------------------------------
 // WHAT A SERVICE ACTUALLY CHECKS, in order, and why each one matters.
@@ -52,14 +55,11 @@
 // have learned the session key to produce it.
 // ---------------------------------------------------------------------------
 
-const net = require('net');
-const app = require('../common/app');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
-// `listenHost()` and the mode, both from modules this file's closure already
-// holds: `helpers.js` is required on the line above and requires `mode.js`
-// itself, so neither adds a file to the parent project's copy set.
-const { listenHost } = require('../common/helpers');
+// The mode, from a module this file's closure already holds: `helpers.js` is
+// required on the line above and requires `mode.js` itself, so it adds no
+// file to the parent project's copy set.
 const mode = require('../common/mode');
 const msgs = require('./krb5_messages.js');
 const kcrypto = require('./krb5_crypto.js');
@@ -77,12 +77,11 @@ const stats = require('../common/admin_stats');
 // beside them), none of which requires this directory, so nothing about
 // requiring it here closes a cycle or moves an endpoint in the router.
 const applications = require('../common/applications');
-// ERROR CODES and the audit log, both already in this closure through
-// applications.js. accept() names the condition on its result as `errorCode`
-// — never on the reply bytes — and whichever TRANSPORT sent the refusal records
-// it: audit.failure() for the raw socket below, a mark on the response for the
-// two SPNEGO doors (spnego_exchange.js carries it onto the verdict).
-const audit = require('../common/audit');
+// ERROR CODES, already in this closure through applications.js. accept()
+// names the condition on its result as `errorCode` — never on the reply bytes
+// — and the TRANSPORT that sent the refusal records it: a mark on the
+// response at the SPNEGO door (spnego_exchange.js carries it onto the
+// verdict). The raw socket's audit.failure() left with the socket (#595).
 const errorCodes = require('../common/error_codes');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an Authenticator is
 // spent through after the replay cache below accepts it — see accept(), step
@@ -95,7 +94,6 @@ const errorCodes = require('../common/error_codes');
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 
-const SERVICE_PORT = config.value('krb5.servicePort');
 // THE SPN THIS ACCEPTOR HOLDS, in the AMBIENT trust realm. It was read once
 // here, from `krb5.servicePrincipal`; since 2026-09-15 that setting is one a
 // trust realm may carry, so it is asked of the realm's principal database —
@@ -159,7 +157,18 @@ function maxReplayEntries() {
 // already refused became replayable again for as long as the clock skew
 // window allows. A mock is allowed to be permissive about passwords and is
 // not allowed to be accidentally permissive about replay.
-const replayCache = realms.map({ persist: 'krb5.replayCache', retain: 'age' });
+// `expiresAt` (#333): the value is when the Authenticator was SEEN, ms; the
+// prune keeps it for replayWindowSeconds().
+const replayCache = realms.map({
+  persist: 'krb5.replayCache',
+  retain: 'age',
+  // A hot path (every row a flush writes): no Entering/Leaving pair.
+  expiresAt: function (seenMs) {
+    const at = Number(seenMs);
+    const window = Number(replayWindowSeconds());
+    return at > 0 && window > 0 ? at + window * 1000 : null;
+  }
+});
 
 // How much longer than the replay window an Authenticator's cluster claim
 // lives: two nodes' clocks may disagree about when the window ends (#46).
@@ -222,8 +231,9 @@ function errorReply(code, eText) {
 // back, plus a per-check verdict a test (or a human) can read.
 //
 // `opts.via` names the transport the AP-REQ arrived over, and it exists because
-// this function is the ONE place a ticket is accepted: the raw socket below and
-// SPNEGO over HTTP both come through here, which was the point of the split.
+// this function is the ONE place a ticket is accepted: the raw socket (until
+// #595) and SPNEGO over HTTP both came through here, which was the point of
+// the split.
 // The authentication is recorded here for the same reason — recording it in the
 // two callers instead would be two call sites and, before long, a third that
 // forgot.
@@ -293,9 +303,9 @@ async function acceptInRealm(tokenBytes, opts) {
   //   * REACHED IN A TRUST REALM (a `/realm/<id>/…` SPNEGO request): pinned.
   //     A ticket from another realm is refused KRB_AP_ERR_NOT_US rather than
   //     opened with a key from the realm the path named.
-  //   * REACHED IN NO REALM (the raw socket on krb5.servicePort, or an
-  //     unprefixed SPNEGO request): routed by the name, so one socket accepts
-  //     every realm's tickets.
+  //   * REACHED IN NO REALM (an unprefixed SPNEGO request, and the raw socket
+  //     on krb5.servicePort until #595): routed by the name, so one door
+  //     accepts every realm's tickets.
   //
   // The re-entry is what puts the rest of accept() — the account lookup, the
   // keys, the replay cache, the statistics and the audit row — in that realm.
@@ -731,8 +741,8 @@ async function acceptInRealm(tokenBytes, opts) {
   // federated arrival twice. See authn.js, where that is argued at length.
   //
   // A caller that passes nothing gets what every caller has always got. The
-  // raw socket, /spnego/protected and the parent project's real-DC jobs are
-  // all still recorded here.
+  // parent project's real-DC jobs are still recorded here (and the raw socket
+  // and /spnego/protected were, until #595).
   // ---------------------------------------------------------------------
   if (!opts || opts.record !== false) {
     stats.recordAuthentication({
@@ -884,7 +894,7 @@ async function acceptInRealm(tokenBytes, opts) {
 //
 // `acceptInRealm()` may enter another realm at step 2a, and by the time it
 // returns that realm is out of scope again — so a caller recording anything
-// about the acceptance (the raw socket's audit row below) that asked the
+// about the acceptance (the raw socket's audit row, until #595) that asked the
 // AMBIENT realm would name the wrong one, and file the row in the wrong
 // realm's audit log. This wrapper stamps the realm the answer was made in, and
 // leaves one already stamped alone — which is what makes the inner call of a
@@ -901,186 +911,28 @@ async function accept(tokenBytes, opts) {
 }
 
 // ---------------------------------------------------------------------------
-// The transport: the same length-prefixed framing the KDC uses, so a client
-// that can talk to one can talk to the other.
+// NO TRANSPORT OF ITS OWN SINCE #595. This file was also a raw TCP service on
+// `krb5.servicePort` — the same length-prefixed framing the KDC uses — with a
+// JSON view of its last exchange at `GET /krb5/service`. Both were a
+// demonstration (development only since #585), and rcbj's decision 1 on #591
+// moved them out of the runtime: the development companion hosts a
+// Kerberos-protected TCP service of its own (`companion/demo_kerberos.js`),
+// with its own principal and keytab and MIT Kerberos as its acceptor. What
+// stays is the acceptor `accept()` — every Kerberos check, for the two SPNEGO
+// doors' `spnego_exchange.js` — and its replay cache.
 // ---------------------------------------------------------------------------
-function startTcp(port) {
-  log.debug('Entering startTcp().');
-  const server = net.createServer(function (socket) {
-    let buffer = Buffer.alloc(0);
-    socket.on('error', function (err) {
-      log.debug('krb5-service: socket error: ' + err.message);
-    });
-    socket.on('data', function (chunk) {
-      buffer = Buffer.concat([buffer, chunk]);
-      if (buffer.length > maxTokenBytes()) {
-        log.warn('krb5-service: a client sent more than ' + maxTokenBytes() +
-                 ' bytes (krb5.serviceMaxTokenBytes); closing');
-        audit.failure('STS-KRB-0078', {
-          protocol: 'Kerberos', channel: 'kerberos',
-          target: 'Kerberos service TCP ' + port,
-          summary: 'a request to the Kerberos service exceeded ' +
-                   'krb5.serviceMaxTokenBytes and the connection was closed',
-          outcome: 'refused'
-        });
-        socket.destroy();
-        return;
-      }
-      if (buffer.length < 4) return;
-      const declared = buffer.readUInt32BE(0);
-      if (declared & 0x80000000) {
-        log.warn('krb5-service: a length prefix with the reserved top bit ' +
-                 'set; closing');
-        audit.failure('STS-KRB-0079', {
-          protocol: 'Kerberos', channel: 'kerberos',
-          target: 'Kerberos service TCP ' + port,
-          summary: 'a request to the Kerberos service carried a length ' +
-                   'prefix with the reserved top bit set and the connection ' +
-                   'was closed',
-          outcome: 'refused'
-        });
-        socket.destroy();
-        return;
-      }
-      if (buffer.length < 4 + declared) return;
-      const message = buffer.subarray(4, 4 + declared);
-      buffer = buffer.subarray(4 + declared);
-      module.exports.accept(message).then(function (result) {
-        // A refusal is an ERROR TOKEN, not a closed socket: a client that gets
-        // silence learns nothing, and the whole point of this service is to say
-        // why.
-        const reply = result.reply;
-        if (!result.ok && result.errorCode) {
-          // The raw socket is the one transport with no HTTP funnel, so the
-          // acceptor's refusal is recorded here. The SPNEGO doors mark theirs.
-          // IN THE REALM THAT ANSWERED, which for a routed AP-REQ is not the
-          // one this socket handler is in — see accept()'s wrapper.
-          realms.run(realms.get(result.trustRealm) || realms.DEFAULT_REALM,
-                     function () {
-            audit.failure(result.errorCode, {
-              protocol: 'Kerberos', channel: 'kerberos',
-              target: servicePrincipal().join('/') + '@' + principals.REALM,
-              summary: 'the Kerberos service refused an AP-REQ over raw TCP',
-              // error-code: none — the code is the one accept() named at the refusal site
-              outcome: 'refused'
-            });
-          });
-        }
-        if (!reply) {
-          // Accepted with no mutual authentication requested. Nothing to send,
-          // so close cleanly rather than leaving the client waiting for a reply
-          // the protocol does not require.
-          socket.end();
-          return;
-        }
-        const framed = Buffer.alloc(4 + reply.length);
-        framed.writeUInt32BE(reply.length, 0);
-        Buffer.from(reply).copy(framed, 4);
-        socket.write(framed);
-      }).catch(function (e) {
-        log.error(errorCodes.tag('STS-KRB-0080') + 'krb5-service: failed to ' +
-                                                   'build a reply: ' +
-                  (e.stack || e.message));
-        socket.destroy();
-      });
-    });
-  });
-  server.on('error', function (err) {
-    log.error(errorCodes.tag('STS-KRB-0081') + 'krb5-service: the listener ' +
-                                               'on port ' + port +
-              ' failed: ' + err.message);
-  });
-  // `global.host`, which it ignored for the literal '0.0.0.0' until 2026-09-12
-  // — so a service confined to 127.0.0.1 still offered this acceptor on every
-  // interface. Brackets are URL syntax and are stripped for the socket.
-  server.listen(port, listenHost().replace(/^\[|\]$/g, ''), function () {
-    log.info('krb5-service: ' + servicePrincipal().join('/') + ' listening ' +
-        'on ' +
-        'TCP ' +
-      (/** @type {any} */ (server.address())).port +
-      ' — present a GSS-wrapped AP-REQ');
-  });
-  log.debug('Leaving startTcp().');
-  return server;
-}
-
-// A non-spec HTTP view of the last exchange, so a test and a human can read the
-// per-check verdict without a packet capture. It publishes no keys.
-//
-// The listener above calls module.exports.accept rather than the local accept()
-// on purpose: the recording wrapper is defined further down, so a direct call
-// would bind the bare acceptor and this view would never fill — the kind of
-// silent no-op that makes a diagnostic page lie about what happened.
-let lastExchange = null;
-
-app.get('/krb5/service', function (req, res) {
-  log.debug('Entering GET /krb5/service.');
-  res.status(200).json({
-    principal: servicePrincipal().join('/') + '@' + principals.REALM,
-    // Every SPN this service will answer for, not just the canonical one: a
-    // real service account carries several and one keytab holds a key for each.
-    // See the identity check in accept().
-    acceptsAnySpnForHosts: mode.autoCreates() ? principals.SERVICE_DOMAINS : [],
-    // Whether the account this acceptor decrypts with exists, and why not.
-    serviceAccount: principals.serviceAccount(),
-    port: SERVICE_PORT,
-    maxTokenBytes: maxTokenBytes(),
-    replayCacheMaxEntries: maxReplayEntries(),
-    clockSkewSeconds: clockSkewSeconds(),
-    replayCacheEntries: replayCache.size,
-    checksThisServicePerforms: [
-      'the GSS InitialContextToken wrapper and its mechanism OID',
-      'the ticket decrypts with this service\'s own key at key usage 2',
-      'the ticket names a principal this service holds a key for (its own ' +
-        'name, or any SPN whose host matches acceptsAnySpnForHosts)',
-      'the key version the ticket names matches the one held',
-      'the Authenticator decrypts with the ticket session key at key usage 11',
-      'the Authenticator and the ticket name the same client',
-      'the clock, against a ' + clockSkewSeconds() + '-second tolerance',
-      'the replay cache (client, ctime, cusec)',
-      'the 0x8003 checksum and the GSS flags in it'
-    ],
-    lastExchange: lastExchange
-  });
-  log.debug('Leaving GET /krb5/service.');
-});
-
-function listen(port) {
-  log.debug("Entering listen().");
-  const p = port === undefined || port === null ? SERVICE_PORT : port;
-  log.debug("Leaving listen().");
-  return startTcp(p);
-}
-
-// Record the last exchange for the HTTP view. Wrapped rather than inlined so
-// the acceptor itself stays free of presentation concerns.
-const acceptAndRecord = async function (bytes, opts) {
-  log.debug('Entering acceptAndRecord().');
-  const result = await accept(bytes, opts);
-  lastExchange = {
-    at: new Date().toISOString(),
-    ok: result.ok,
-    client: result.client || null,
-    mutual: !!result.mutual,
-    ticketFlags: result.ticketFlags || null,
-    authIndicators: result.authIndicators || null,
-    gssFlags: result.gss ? result.gss.flagNames : null,
-    checks: result.checks
-  };
-  log.debug('Leaving acceptAndRecord().');
-  return result;
-};
 
 // #46: an AP-REQ Authenticator is accepted once across the cluster — the claim
-// in accept(), step 7, which every transport (the raw socket and both SPNEGO
-// doors) goes through.
+// in accept(), step 7, which every transport (the SPNEGO sign-in, and an
+// in-process caller) goes through.
 capabilities.provide('kerberos.replay-cache');
 
 module.exports = {
-  listen: listen,
-  accept: acceptAndRecord,
+  accept: accept,
+  // The same function. `acceptRaw` was the acceptor WITHOUT the demonstration
+  // view's recording wrapper, which left with the view (#595); the name
+  // stays for its in-process callers.
   acceptRaw: accept,
-  SERVICE_PORT: SERVICE_PORT,
   // The SPN this acceptor holds in the AMBIENT realm. A getter since
   // 2026-09-15, for `krb5_principals.js`'s reason: a trust realm may carry
   // `krb5.servicePrincipal`.

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -44,6 +44,10 @@ const { log, headersOf, bodyOf } = helpers;
 // realm. It requires config.js and the error-code table and nothing else here,
 // so it cannot join a cycle; helpers.js above has already pulled it in anyway.
 const realms = require('./realms');
+// WHICH HOSTED APPLICATION A PATH IS, AND WHICH LISTENERS ANSWER IT (#472):
+// `enterListener()`, below the realm. Two LEAVES.
+const hostedApplications = require('./hosted_applications');
+const listenerMap = require('./listener_map');
 // The service's own record of what it has done. Required HERE, and the position
 // is load-bearing twice over: the call log below is where the per-endpoint
 // statistics are collected, so this is a real dependency — and because every
@@ -157,6 +161,23 @@ function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
+  // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
+  // 2026-10-02; a realm's `listeners.realm` since #472). `tls/listeners.js`
+  // marks every socket a realm's listener accepts with its realm; a path that
+  // is not under that realm's prefix — another realm's, or the default
+  // realm's unprefixed one — is not served there, so a realm's host and load
+  // balancer front that realm alone. The main port and the service's own
+  // custom listeners carry no realm mark and serve every realm; WHICH
+  // APPLICATIONS each serves is `enterListener()`, below.
+  const own = req.socket && req.socket.stsRealmListener;
+  if (own && !(match && match.realm && match.realm.id === own)) {
+    require('./error_codes').mark(res, 'STS-TLS-0041');
+    res.status(404).type('text/plain')
+      .send('Not found: this listener serves realm "' + own + '" only, ' +
+            'under ' + realms.prefixOf(realms.get(own) || undefined) + '.');
+    log.debug("Leaving enterRealm(). Off this realm's listener.");
+    return;
+  }
 
   // Not in a realm — including a path that opens with the realm SEGMENT and an
   // id nobody defined. That case deliberately falls through to Express's own
@@ -286,6 +307,114 @@ function enterMatchedRealm(req, res, next, match) {
 app.use(enterRealm);
 
 // ---------------------------------------------------------------------------
+// WHICH HOSTED APPLICATION A LISTENER ANSWERS (#472, 2026-10-07).
+//
+// An administrator maps each hosted application — the console, the
+// management API, the portal, the sign-in service, each protocol — to the
+// listeners that answer it (`common/listener_map.js`). A path of an
+// application that is not mapped to the listener the request arrived on is
+// refused here, with a 404 that names where the application is (STS-TLS-0047)
+// — in the front process, before anything is dispatched, and again in a
+// request worker, which is told the listener (`request_pool.js`). Placed
+// BELOW the realm, because the mapping is per realm and the path is matched
+// without its prefix; nothing else is above it.
+//
+// AND A LINK THAT CROSSES TO ANOTHER LISTENER IS MADE ABSOLUTE. Six modules
+// send a browser to `/authn/login` with a root-relative redirect, the console
+// to `/oauth2/authorize`, and pages link `/portal/...` and `/logout`: on one
+// listener those stay where they are, and once the application they name is
+// not on the listener the browser is on, they would land on this very
+// refusal. So, on the way out, a root-relative `Location`, and a root-relative
+// `href`, `action`, `formaction` or `src` in an HTML page, whose application
+// is not on THIS listener, is rewritten to that application's advertised
+// base (`helpers.urlOf()`); one whose application is here is left alone, for
+// the realm middleware above to prefix as it always did. JSON, JWTs and XML
+// are never rewritten: a URL inside a signed document is built on the right
+// base where it is built. A service with no custom listener skips all of it.
+// ---------------------------------------------------------------------------
+function enterListener(req, res, next) {
+  log.debug("Entering enterListener().");
+  if (listenerMap.isTrivial()) {
+    log.debug("Leaving enterListener(). No custom listener.");
+    next();
+    return;
+  }
+  const at = listenerMap.listenerOf(req);
+  const path = String(req.url || '').split('?')[0];
+  const application = hostedApplications.classify(path);
+  if (!listenerMap.admits(at, application)) {
+    let where = '';
+    try {
+      where = helpers.urlOf(req, path);
+    } catch (e) {
+      log.debug("Caught in enterListener(): " + ((e && e.message) || e));
+    }
+    require('./error_codes').mark(res, 'STS-TLS-0047');
+    res.status(404).type('text/plain')
+      .send('Not found: ' + hostedApplications.labelOf(application) +
+            ' is not served on this listener ("' + at + '").' +
+            (where ? ' It is at ' + where + '.' : ''));
+    log.debug("Leaving enterListener(). Not on this listener.");
+    return;
+  }
+  // Whether this listener answers an application, asked once per application
+  // per response: a console page carries hundreds of links to a handful.
+  // `answers()` and `away()` are a HOT PATH — called for every link of every
+  // page — so neither has an Entering/Leaving pair, which would drown the
+  // log around a table lookup; `enterListener()` brackets them.
+  const here = {};
+  const answers = function (target) {
+    if (!Object.prototype.hasOwnProperty.call(here, target)) {
+      here[target] = listenerMap.admits(at, target);
+    }
+    return here[target];
+  };
+  // The absolute address of a root-relative URL whose application is not on
+  // this listener; the URL unchanged otherwise.
+  const away = function (url) {
+    if (typeof url !== 'string' || url.charAt(0) !== '/' ||
+        url.charAt(1) === '/') {
+      return url;
+    }
+    const cut = url.search(/[?#]/);
+    const own = cut < 0 ? url : url.slice(0, cut);
+    const rest = cut < 0 ? '' : url.slice(cut);
+    const matched = realms.matchPath(own);
+    const bare = matched ? matched.rest : own;
+    const target = hostedApplications.classify(bare);
+    if (!target || target === hostedApplications.EVERYWHERE ||
+        answers(target)) {
+      return url;
+    }
+    return helpers.urlOf(req, bare) + rest;
+  };
+  const location = res.location;
+  res.location = function (url) {
+    log.debug("Entering location(). (listener)");
+    log.debug("Leaving location(). (listener)");
+    return location.call(res, away(url));
+  };
+  const send = res.send;
+  res.send = function (body) {
+    log.debug("Entering send(). (listener)");
+    const type = String(res.get('Content-Type') || '');
+    if (typeof body === 'string' && /html/i.test(type)) {
+      arguments[0] = body.replace(
+        /\b(href|action|formaction|src)="(\/(?!\/)[^"]*)"/g,
+        function (whole, attribute, url) {
+          return attribute + '="' + away(url) + '"';
+        });
+    }
+    log.debug("Leaving send(). (listener)");
+    return send.apply(res, arguments);
+  };
+  log.debug("Leaving enterListener().");
+  next();
+}
+
+app.use(enterListener);
+
+// ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and
 // cannot be handed one: the ORIGIN of the `x5u` address a signed token carries
 // (common/jose_certificate_header.js, 2026-09-13). Entered for the life of the
@@ -395,6 +524,43 @@ realms.reserve(function () {
 // With `workers.dispatch` empty — the default — this calls next() for
 // everything and the service behaves exactly as it did.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// AND JUST ABOVE IT, WHICH CELL SERVES THE REQUEST (#98, 2026-09-28).
+//
+// In a service deployed as cells a request that belongs to another cell — a
+// browser pinned to its home, an artifact another cell minted, a token its
+// minting cell must check — is relayed there WHOLE, before this process reads
+// its body or hands it to a worker, which is why this is the one position
+// that works: below the realm middleware (the placement is per realm) and
+// above the pool and the body parsers (a relay pipes the request untouched).
+// `common/cell_placement.ts` argues the table; single-cell mode calls next()
+// for everything. Required HERE rather than at the top of this file for the
+// reason the pool is: it is a library of the front process's edge.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').middleware());
+
+// ---------------------------------------------------------------------------
+// AND BETWEEN THE TWO, THE CHAIN OF A SESSION RESUMED FROM ANOTHER NODE
+// (#406, 2026-10-02). The main port shares the cluster's session-ticket key,
+// so a TLS session made on one node resumes on another — and a resumed
+// session hands over the client certificate without its chain, which is
+// replicated from the node that saw it. This waits for it, bounded by
+// `tls.resumedChainWaitMs`, before the request is answered here or handed to
+// a worker (whose copy of the chain the pool builds from this process's).
+// `common/revocation_status.js` argues it; it calls next() at once for every
+// connection that is not a resumed one holding a verified certificate, which
+// is every browser that declined to send one. Required at the first request,
+// so this file's own load order does not change.
+// ---------------------------------------------------------------------------
+let resumedChainWait = null;
+// A HOT PATH: every request passes it, so no Entering/Leaving pair.
+app.use(function awaitResumedChainLazily(req, res, next) {
+  if (!resumedChainWait) {
+    resumedChainWait = require('./revocation_status').resumedChainMiddleware();
+  }
+  resumedChainWait(req, res, next);
+});
+
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -404,10 +570,28 @@ app.use(requestPool.middleware({ enterRealm: enterRealm }));
 // request — a worker, or this process for a request it keeps — and never in a
 // front process that only proxies. Above everything else, because every
 // middleware below here may read a store: the arrival session, the CSRF check,
-// the rate limiter. It does nothing unless the node is active-active.
-// cluster/cluster_barrier.js argues both of its rules.
+// the rate limiter. Its first rule (catch up with other nodes) runs only
+// when the node is active-active; its second (answer a write after its
+// commit, 503 when the commit fails) wherever the store is a database, one
+// node or many (#351). cluster/cluster_barrier.js argues both rules.
+//
+// **WHY A WRAPPED `res.end()` AND NOT A HOOK IN EVERY HANDLER**: it is
+// installed here, above every route, so every route is covered, including
+// the ones written after it — the only way nobody can forget it. Express's
+// `res.send()`, `res.json()` and `res.redirect()` all finish through
+// `res.end()`, so a redirect is held (and its `Location` discarded on a
+// refusal) like any other answer.
 // ---------------------------------------------------------------------------
 app.use(clusterBarrier.middleware());
+
+// ---------------------------------------------------------------------------
+// A SESSION EXPORTED TO THE CELL A TRAVELLER IS REACHING (#98 D4), where the
+// transfer policy permits holding it there. Below the barrier, in the process
+// that serves the request, because it reads the session store; a no-op for
+// everything but a request another cell relayed here.
+// `common/cell_sessions.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_sessions').middleware());
 
 // ---------------------------------------------------------------------------
 // AND THE REQUEST'S REALM'S KEY SET, MADE OFF THE EVENT LOOP BEFORE A HANDLER
@@ -874,7 +1058,8 @@ app.use(function (err, req, res, next) {
   }
   audit.failure(code, {
     protocol: 'HTTP', channel: 'http',
-    target: String(req.originalUrl || req.url || '').split('?')[0],
+    target: audit.redactedPath(String(req.originalUrl || req.url || '')
+      .split('?')[0]),
     summary: 'The request body of ' + req.method + ' was refused before any ' +
              'endpoint saw it (' + (type || 'unclassified') + ', HTTP ' +
              ((err && (err.status || err.statusCode)) || 500) + ').',
@@ -899,15 +1084,18 @@ app.use(function (err, req, res, next) {
 app.use(function (req, res, next) {
   log.debug("Entering the call-log middleware.");
   const started = Date.now();
+  // A capability in the path (#571's `/authn-api` ids) is not logged.
   const request = {
-    path: req.originalUrl,
+    path: audit.redactedPath(String(req.originalUrl || '')),
     method: req.method,
-    query: req.query,
+    // And the capabilities in its query (#574): the pending sign-in, the
+    // step, the wallet's transaction.
+    query: audit.redactedQuery(req.query),
     headers: headersOf(req.headers),
     body: bodyOf(req.body)
   };
   log.debug({ request: request },
-            'Request: ' + req.method + ' ' + req.originalUrl);
+            'Request: ' + req.method + ' ' + request.path);
 
   let responseBody = '';
   const send = res.send;
@@ -964,7 +1152,8 @@ app.use(function (req, res, next) {
     const matchedPath = (req.route && req.route.path) || '';
     stats.recordCall({
       method: req.method,
-      path: matchedPath || String(req.originalUrl || '/').split('?')[0],
+      path: matchedPath ||
+            audit.redactedPath(String(req.originalUrl || '/').split('?')[0]),
       matched: !!matchedPath,
       status: res.statusCode,
       durationMs: Date.now() - started
@@ -983,6 +1172,20 @@ app.use(function (req, res, next) {
       durationMs: Date.now() - started
     });
   });
+
+  // A RESPONSE WHOSE COMMIT FAILED IS RECORDED AGAIN, AS WHAT WAS SENT (#351).
+  // The row above is written before the barrier decides, with the handler's
+  // status; when the commit then fails the client is answered 503 instead
+  // (cluster/cluster_barrier.js, rule 2), and this second row — the 503 and
+  // STS-STORE-0066 — is the one an operator needs beside it.
+  clusterBarrier.onCommitRefused(res, realms.bind(req.realm, function () {
+    const matchedPath = (req.route && req.route.path) || '';
+    audit.recordHttp(req, res, {
+      route: matchedPath,
+      matched: !!matchedPath,
+      durationMs: Date.now() - started
+    });
+  }));
 
   res.end = function (chunk) {
     log.debug("Entering end().");
@@ -1013,14 +1216,14 @@ app.use(function (req, res, next) {
   // ---------------------------------------------------------------------
   res.on('finish', realms.bind(req.realm, function () {
     recordTheCall();
-    log.debug({ response: { path: req.originalUrl,
+    log.debug({ response: { path: request.path,
                             method: req.method,
                             status: res.statusCode,
                             durationMs: Date.now() - started,
                             headers: headersOf(res.getHeaders()),
                             body: responseBody } },
               'Response: ' + res.statusCode + ' ' + req.method + ' ' +
-              req.originalUrl +
+              request.path +
               ' in ' + (Date.now() - started) + 'ms');
   }));
   log.debug("Leaving the call-log middleware. The call will be recorded " +
@@ -1049,6 +1252,17 @@ app.use(function (req, res, next) {
 // the CSP and `X-Content-Type-Options` every other response does.
 // ---------------------------------------------------------------------------
 app.use(validation.guard());
+
+// ---------------------------------------------------------------------------
+// A PERSON CREATED IN A SERVICE DEPLOYED AS CELLS (#98 D1): the console's
+// new-user form and `POST /admin-api/users/create` claim the login name in the
+// global routing index before anything is created, and a creation naming a
+// home cell other than this one is relayed there. Here, below the body
+// parsers and above every route, because both doors' handlers are
+// synchronous past this point. SCIM claims in its own ingress. A no-op in
+// single-cell mode. `common/cell_placement.ts` argues it.
+// ---------------------------------------------------------------------------
+app.use(require('./cell_placement').creationClaim());
 
 // ---------------------------------------------------------------------------
 // THE REVOCATION STATUS OF A PRESENTED CLIENT CERTIFICATE (2026-09-12).

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -59,7 +59,11 @@ const EXTENSION_METADATA = [
   // draft-ietf-oauth-attestation-based-client-auth-11 section 15.2 registers
   // it (#229); the suite's RFC 8414 schema (v5.3.1) predates it, and knows
   // the other three members that section registers.
-  "client_attestation_pop_methods_supported"];
+  "client_attestation_pop_methods_supported",
+  // OpenID4VCI 1.0 section 12.3 (2026-10-12): published on the
+  // authorization server's metadata so a wallet redeems a pre-authorized
+  // code without naming a client.
+  "pre-authorized_grant_anonymous_access_supported"];
 
 function waitMs(ms) {
   log.debug("Entering waitMs().");
@@ -71,10 +75,41 @@ function waitMs(ms) {
 
 // A request to THIS service, through `fetch`, verified against the stack's
 // trust as in every other job.
+// A CONNECTION THE SERVICE DROPPED BEFORE ANSWERING is tried again, twice.
+// The memory mode's service has stalls of five to seven seconds a run
+// (STS-STORE-0068), and a request sent on a kept-alive connection the service
+// closes as it comes out of one fails with nothing answered — which ended a
+// whole plan as "could not run: fetch failed" (2026-10-09). Only those codes:
+// a request the service answered, however badly, is the caller's to judge.
+const DROPPED = ["ECONNRESET", "EPIPE", "UND_ERR_SOCKET",
+                 "UND_ERR_CONNECT_TIMEOUT", "ECONNREFUSED"];
+
+async function fetchAnswered(url, options) {
+  log.debug("Entering fetchAnswered(). " + url);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const r = await fetch(url, options);
+      log.debug("Leaving fetchAnswered(). " + r.status);
+      return r;
+    } catch (e) {
+      const code = (e && e.cause && (e.cause.code || e.cause.name)) || "";
+      log.debug("Caught in fetchAnswered(): " + ((e && e.message) || e) +
+                " (" + code + ")");
+      if (attempt >= 3 || DROPPED.indexOf(code) < 0) {
+        log.debug("Leaving fetchAnswered(). Giving up.");
+        throw e;
+      }
+      log.info("The service dropped the connection to " + url + " (" +
+               code + ") with nothing answered; sending it again.");
+      await waitMs(1000 * attempt);
+    }
+  }
+}
+
 async function send(url, options) {
   log.debug("Entering send(). " + url);
-  let r = await fetch(url, Object.assign({ redirect: "manual" },
-                                         options || {}));
+  let r = await fetchAnswered(url, Object.assign({ redirect: "manual" },
+                                                 options || {}));
   // A PLAN RUN OUTLIVES ITS /admin-api TOKEN. The runner hands each job a
   // token good for an hour, and the OpenID Connect plans take longer: a
   // management call that is refused 401 mints a fresh one through the
@@ -84,8 +119,8 @@ async function send(url, options) {
       typeof globalThis.stsAdminApiToken.refresh === "function") {
     log.info("The /admin-api token was refused; minting a fresh one.");
     await globalThis.stsAdminApiToken.refresh();
-    r = await fetch(url, Object.assign({ redirect: "manual" },
-                                       options || {}));
+    r = await fetchAnswered(url, Object.assign({ redirect: "manual" },
+                                               options || {}));
   }
   const raw = await r.text();
   let body = null;
@@ -173,13 +208,16 @@ const SUITE_AGENT = new https.Agent(suiteCa
   ? { ca: suiteCa, keepAlive: true }
   : { rejectUnauthorized: false, keepAlive: true });
 
-function suite(method, path, body) {
+// `contentType`, when given, sends `body` as it is under that type (an image
+// uploaded as a data: URL is text/plain); otherwise a body is JSON.
+function suite(method, path, body, contentType) {
   log.debug("Entering suite(). " + method + " " + path);
-  const payload = body ? JSON.stringify(body) : "";
+  const payload = !body ? "" : contentType ? String(body)
+                                           : JSON.stringify(body);
   return new Promise(function (resolve, reject) {
     const req = https.request(new URL(SUITE + path), {
       method: method, agent: SUITE_AGENT,
-      headers: body ? { "Content-Type": "application/json",
+      headers: body ? { "Content-Type": contentType || "application/json",
                         "Content-Length": Buffer.byteLength(payload) } : {}
     }, function (res) {
       let raw = "";

@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
 // File: tests/sts_saml_encryption.js
 //
 // ===========================================================================
-// THE MOCK STS'S SAML 2.0 ENCRYPTION, END TO END, OVER HTTP, WITH NO BROWSER.
+// IYA STS'S SAML 2.0 ENCRYPTION, END TO END, OVER HTTP, WITH NO BROWSER.
 //
 // It sits beside `sts_saml11.js`, `sts_dpop.js` and `vc_did.js` — the tests
 // that drive that service DIRECTLY —
@@ -72,6 +72,8 @@
 // Needs the STS mock and nothing else — no browser, no Keycloak.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require('./authn_signin');
 const assert = require('assert');
 const http = require('http');
 const https = require('https');
@@ -451,15 +453,16 @@ async function signInTo(sp, user) {
     return { error: 'the SSO endpoint answered ' + r.status + ' rather than a redirect: ' +
                     String(r.body || '').replace(/\s+/g, ' ').slice(0, 300) };
   }
-  r = await request('GET', r.headers.location);
-  const id = (r.body.match(/name="authn_id"\s+value="([^"]+)"/) || [])[1];
-  if (!id) return { error: 'no authn_id on the sign-in screen' };
-  const csrf = (r.body.match(/name="csrf_token"\s+value="([^"]+)"/) || [])[1] || '';
-  r = await request('POST', '/authn/login',
-                    form({ authn_id: id, username: user, password: PASSWORD,
-                           action: 'login', csrf_token: csrf }), FORM);
-  if (!r.headers.location) return { error: 'no redirect back after signing in' };
-  r = await request('GET', r.headers.location);
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper.
+  const signed = await authnSignin.submit(BASE, r.headers.location,
+    { action: 'login', username: user, password: PASSWORD },
+    { cookie: cookie });
+  if (signed.next !== 'redirect') {
+    return { error: 'no redirect back after signing in: ' + signed.status +
+                    ' ' + signed.next + ' ' + JSON.stringify(signed.errors) };
+  }
+  cookie = signed.cookie;
+  r = await request('GET', signed.location);
   const b64 = (r.body.match(/name="SAMLResponse"\s+value="([^"]+)"/) || [])[1];
   if (!b64) return { error: 'no SAMLResponse in the posted form' };
   return { xml: Buffer.from(b64, 'base64').toString('utf8') };
@@ -513,7 +516,7 @@ function setField(identifier, attribute, value) {
 }
 
 async function main() {
-  log.info('The mock STS is at ' + BASE + '.');
+  log.info('IYA STS is at ' + BASE + '.');
   const reachable = await request('GET', '/saml2/metadata').catch(function () { return null; });
   if (!reachable || reachable.status !== 200) {
     // Skips rather than fails, the way sts_dpop.js and sts_saml11.js do: an

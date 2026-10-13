@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -18,286 +18,117 @@
 // service for a claim the provider supplies is given it as an aggregated or
 // distributed claim — never a claim the person's own entry answers.
 //
-// The callback asks for the portal's own sign-in like every other page, and
-// the setup flow is bound to the person who started it: a state started by
-// somebody else, or expired, is refused (STS-OAUTH-0679). No script; every
-// act is a real form, and each answer a 303 back here.
+// **SINCE #568 THE PAGE IS TWO `/account-api` OPERATIONS AND ONE SERVER
+// ROUTE.** The view and the link/unlink act are operations, drawn by
+// `web_claim_sources.ts`; Link answers the provider's address and the
+// runtime sends the window there. **THE CALLBACK STAYS A ROUTE OF THIS
+// SERVER**, because a foreign provider redirects a browser to it, and it
+// ends in a 303 back to the page with `done` or `problem`, which the view's
+// operation reads.
+//
+// **THE CALLBACK IS BOUND TO THE BROWSER THAT STARTED THE LINK.** It asked
+// for the portal's own sign-in until #568, which bound the flow to the person
+// who started it: a state started by somebody else, or expired, was refused
+// (STS-OAUTH-0679). The static portal holds no cookie, so Link's answer SETS
+// one — `sts_claim_link`, a random secret, HttpOnly, SameSite=Lax, its Path
+// the realm's callback alone — and the flow keeps the secret's SHA-256 and
+// the sign-on session the token was issued on. The callback asks the
+// browser for that cookie (STS-PORTAL-0300) and the session to be live
+// still (STS-PORTAL-0303). Without the binding the classic account-linking
+// CSRF would be open: somebody starts a link on their own account, sends the
+// provider's address to a victim, and the victim's provider account lands
+// on the attacker's entry.
+//
+// **NOT THE BROWSER'S SIGN-ON COOKIE, WHICH IS WHAT IT ASKED FIRST.**
+// `sts_session` is written at `Path=/`, one per origin whatever realm minted
+// it (`authn/CLAUDE.md`, `consoleSession()`), so when the provider is
+// another trust realm of this service on the same origin, signing in THERE
+// overwrites the person's cookie for this realm, and the callback met a
+// browser with no session here: every such link was refused STS-PORTAL-0300
+// (`tests/vendored/sts_claims_aggregation.js` found it). A cookie scoped to
+// this realm's callback path is overwritten by nothing the provider does.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import validation = require('../common/validation');
+import errorCodes = require('../common/error_codes');
+import audit = require('../common/audit');
 import claimsProviders = require('../oauth-oidc/claims_providers');
 
-type Req = import('express').Request;
-type Res = import('express').Response;
 type Json = any;
+type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountContext = import('../types/account-api').AccountContext;
+type AccountCaller = import('../types/account-api').AccountCaller;
 
-interface PortalContext {
-  app: {
-    get(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-    post(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-  };
-  BASE: string;
-  log: {
-    debug(message: string): void;
-    info(message: string): void;
-  };
-  esc(value: unknown): string;
-  shell(path: string, session: Json, message: unknown, error: unknown,
-        body: string): string;
-  send(res: Res, status: number, body: string): unknown;
-  requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
-  // error-code: none — a declaration of the portal's helper, not a call
-  refuseShape(res: Res, result: Json): unknown;
-  innerCode(result: Json): string;
-  baseUrlOf(req: Req): string;
-  parseBody(req: Req): Json;
-  validation: Json;
-  websecurity: Json;
-  accessGate: Json;
-  audit: Json;
-  errorCodes: Json;
-  config: { value(key: string): any };
-}
-
-interface PortalClaimSourcesDeps {
-  log: { debug(message: string): void };
-  claimsProviders: Json;
-}
-
-class PortalClaimSourcesPage {
-  readonly PATH: string;
-  readonly CALLBACK: string;
-  private readonly FORM: Json;
-  private readonly QUERY: Json;
-  private readonly RETURN: Json;
-
-  constructor(private readonly deps: PortalClaimSourcesDeps,
-              private readonly ctx: PortalContext) {
-    ctx.log.debug("Entering PortalClaimSourcesPage.constructor().");
-    const vz = ctx.validation.z;
-    const vt = ctx.validation.types;
-    this.PATH = ctx.BASE + '/claim-sources';
-    this.CALLBACK = ctx.BASE + '/claim-sources/callback';
-    this.FORM = vz.object({
-      action: vt.oneOf(['link', 'unlink']),
-      id: vz.string().max(64),
-      csrf_token: vt.opt(vt.token)
-    });
-    this.QUERY = vz.object({
-      done: vz.string().max(200).optional(),
-      problem: vz.string().max(400).optional()
-    });
-    this.RETURN = vz.object({
-      code: vz.string().max(4096).optional(),
-      state: vz.string().max(256).optional(),
-      error: vz.string().max(256).optional(),
-      error_description: vz.string().max(1024).optional(),
-      iss: vz.string().max(1024).optional()
-    }).passthrough();
-    ctx.log.debug("Leaving PortalClaimSourcesPage.constructor().");
-  }
-
-  private page(session: Json, message: unknown, error: unknown): string {
-    const { log, shell, esc, websecurity } = this.ctx;
-    const { claimsProviders } = this.deps;
-    log.debug("Entering PortalClaimSourcesPage.page().");
-    const who = String(session.user.username);
-    const linked: Json = {};
-    claimsProviders.linksOf(who).forEach(function (one: Json): void {
-      linked[one.provider] = one;
-    });
-    const csrf = websecurity.field(session.id);
-    const PATH = this.PATH;
-    const form = function (action: string, id: string, label: string,
-                           danger: boolean): string {
-      return '<form method="post" action="' + esc(PATH) + '" ' +
-        'style="display:inline">' + csrf +
-        '<input type="hidden" name="action" value="' + action + '">' +
-        '<input type="hidden" name="id" value="' + esc(id) + '">' +
-        '<button type="submit"' + (danger ? ' class="danger"' : '') +
-        ' id="claim-source-' + action + '-' + esc(id) + '">' + label +
-        '</button></form> ';
-    };
-    const rows = claimsProviders.list().map(function (p: Json): string {
-      const link = linked[p.id];
-      return '<div class="card claim-source" id="claim-source-' +
-        esc(p.id) + '"><p><strong>' + esc(p.name) + '</strong> <code>' +
-        esc(p.issuer) + '</code></p><p class="sub">Supplies ' +
-        p.claims.map(function (c: string): string {
-          return '<code>' + esc(c) + '</code>';
-        }).join(', ') + ', ' + (p.delivery === 'distributed'
-          ? 'by handing an application your token at this provider, to ' +
-            'fetch them itself'
-          : 'fetched by this service and passed on as the provider ' +
-            'signed them') + '.</p>' +
-        (link
-          ? '<p class="claim-source-linked">Linked ' +
-            esc(new Date(link.linkedAt).toISOString()) +
-            (link.stale ? ' — <strong>no longer usable</strong>; link it ' +
-              'again' : '') + '.</p>' +
-            (link.stale ? form('link', p.id, 'Link again', false) : '') +
-            form('unlink', p.id, 'Unlink', true)
-          : form('link', p.id, 'Link', false)) + '</div>';
-    });
-    const body = '<div class="card"><h2>Connected claim sources</h2>' +
-      '<p class="sub">Another identity provider can vouch for facts about ' +
-      'you that this service does not hold. Once you link one, an ' +
-      'application that asks for those facts receives them as that ' +
-      'provider signed them (OpenID Connect aggregated and distributed ' +
-      'claims). Linking takes you to the provider to sign in and agree.' +
-      '</p></div>' + (rows.length ? rows.join('') :
-      '<div class="card"><p id="claim-sources-none">This service has no ' +
-      'claim sources to offer.</p></div>');
-    log.debug("Leaving PortalClaimSourcesPage.page().");
-    return shell(this.PATH, session, message, error, body);
-  }
-
-  private getPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.READ);
-    if (!session) {
-      log.debug('Leaving GET ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.QUERY);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    log.debug('Leaving GET ' + PATH + '.');
-    return ctx.send(res, 200, this.page(session, asked.value.done || null,
-                                        asked.value.problem || null));
-  }
-
-  private postPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const { claimsProviders } = this.deps;
-    const PATH = this.PATH;
-    log.debug('Entering POST ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving POST ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const who = String(session.user.username);
-    const posted = ctx.validation.checkParsed(ctx.parseBody(req), 'body',
-                                              this.FORM);
-    if (!posted.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
-      log.debug('Leaving POST ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, posted);
-    }
-    const body = posted.value;
-    const csrf = ctx.websecurity.checkCsrf(session.id, body);
-    if (!csrf.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(csrf) || 'STS-PORTAL-0017');
-      log.debug('Leaving POST ' + PATH + '. CSRF.');
-      return ctx.send(res, 403, this.page(session, null, csrf.detail));
-    }
-    if (body.action === 'unlink') {
-      const gone = claimsProviders.unlink(who, String(body.id), 'user');
-      if (!gone) {
-        ctx.errorCodes.mark(res, 'STS-PORTAL-0094');
-        log.debug('Leaving POST ' + PATH + '. Not linked.');
-        return ctx.send(res, 400, this.page(session, null, 'You have no ' +
-                                            'link to that provider.'));
-      }
-      log.debug('Leaving POST ' + PATH + '. Unlinked.');
-      res.status(303).set('Location', ctx.baseUrlOf(req) + PATH + '?done=' +
-                          encodeURIComponent('Unlinked.')).end();
-      return undefined;
-    }
-    const started = claimsProviders.beginLink(who, String(body.id),
-                                              ctx.baseUrlOf(req));
-    if (!started.ok) {
-      ctx.errorCodes.mark(res, started.code || 'STS-OAUTH-0678');
-      log.debug('Leaving POST ' + PATH + '. ' + started.why);
-      return ctx.send(res, 400, this.page(session, null, started.why));
-    }
-    log.debug('Leaving POST ' + PATH + '. To the provider.');
-    res.status(303).set('Location', started.location).end();
-    return undefined;
-  }
-
-  private async callback(req: Req, res: Res): Promise<unknown> {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const { claimsProviders } = this.deps;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + this.CALLBACK + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving GET ' + this.CALLBACK + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.RETURN);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + this.CALLBACK + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    const finished = await claimsProviders.finishLink(
-      String(session.user.username), asked.value);
-    if (!finished.ok) {
-      ctx.errorCodes.mark(res, finished.code || 'STS-PORTAL-0093');
-      log.debug('Leaving GET ' + this.CALLBACK + '. ' + finished.why);
-      return ctx.send(res, 400, this.page(session, null,
-        'The provider could not be linked: ' + finished.why + '.'));
-    }
-    ctx.audit.record({ category: 'portal',
-      action: 'oauth2.claim-source-linked',
-      actor: String(session.user.username), target: finished.provider,
-      outcome: 'success', summary: '"' + session.user.username +
-      '" linked Claims Provider "' + finished.provider + '" (#147).' });
-    log.debug('Leaving GET ' + this.CALLBACK + '. Linked.');
-    // ABSOLUTE, ON THE REALM'S OWN BASE: a bare `/portal/...` Location is
-    // answered by the default realm, which is not where this person linked.
-    res.status(303).set('Location', ctx.baseUrlOf(req) + PATH + '?done=' +
-      encodeURIComponent('Linked "' + finished.provider + '".')).end();
-    return undefined;
-  }
-
-  registerRoutes(app: PortalContext['app']): void {
-    const self = this;
-    const { log } = this.ctx;
-    log.debug("Entering PortalClaimSourcesPage.registerRoutes().");
-    app.get(this.PATH, function (req, res) {
-      return self.getPage(req, res);
-    });
-    app.post(this.PATH, function (req, res) {
-      return self.postPage(req, res);
-    });
-    app.get(this.CALLBACK, function (req, res) {
-      return self.callback(req, res).catch(function (e) {
-        log.debug("Caught in GET " + self.CALLBACK + ": " +
-                  ((e && e.message) || e));
-        self.ctx.errorCodes.mark(res, 'STS-PORTAL-0093');
-        return self.ctx.send(res, 500, 'The provider could not be linked.');
-      });
-    });
-    log.debug("Leaving PortalClaimSourcesPage.registerRoutes().");
-  }
-}
+const vz = validation.z;
+const vt = validation.types;
 
 /**
- * The portal page at /portal/claim-sources: where a person links the claims
- * providers that answer claims their entry does not (#147).
- *
- * Its routes are registered by `register()`, which `portal.ts` calls at the one
- * point in its body where the route order is right.
+ * The page's path, and the provider's way back.
+ */
+const PATH = '/portal/claim-sources';
+const CALLBACK = PATH + '/callback';
+// THE PROVIDERS ARE PAGED (#313's sweep): `ou=claimproviders` is a register
+// an operator adds to without a bound, so the page draws a page of it on
+// `?page=`, twenty at a time — the portal's other lists' size.
+const PER_PAGE = 20;
+
+/**
+ * The cookie that binds a link to the browser that started it, and how long
+ * it lives: the flow's own lifetime (`claims_providers.ts`'s FLOW_TTL_MS).
+ */
+const BINDING_COOKIE = 'sts_claim_link';
+const BINDING_MAX_AGE_S = 600;
+
+interface PortalClaimSourcesDeps {
+  log: { debug(message: string): void; info(message: string): void };
+  claimsProviders: Json;
+  validation: Json;
+  errorCodes: Json;
+  audit: Json;
+  baseUrlOf(req: Json): string;
+  stsCrypto: Json;
+  // Whether cookies are sent with `Secure`: the main port is https.
+  https(): boolean;
+  // The sign-on session the callback's browser holds, the access policy
+  // and the person's translator, each asked for when a request arrives.
+  authn: () => Json;
+  accessGate: () => Json;
+  pageLocale: () => Json;
+}
+
+const LINK_FORM = vz.object({
+  action: vt.oneOf(['link', 'unlink'])
+    .describe('`link` starts the provider\'s sign-in; `unlink` removes ' +
+              'the link.'),
+  id: vz.string().max(64).describe('The Claims Provider\'s id.')
+});
+
+const PAGE_QUERY = vz.object({
+  page: vt.opt(vt.integer(1, 100000))
+    .describe('Which page of `providers`. Clamped to the last.'),
+  done: vz.string().max(200).optional()
+    .describe('What a finished link said, from the callback.'),
+  problem: vz.string().max(400).optional()
+    .describe('Why a link could not be finished, from the callback.')
+});
+
+const RETURN = vz.object({
+  code: vz.string().max(4096).optional(),
+  state: vz.string().max(256).optional(),
+  error: vz.string().max(256).optional(),
+  error_description: vz.string().max(1024).optional(),
+  iss: vz.string().max(1024).optional()
+}).passthrough();
+
+/**
+ * `/portal/claim-sources`' account API operations and the provider's
+ * callback (#147).
  */
 class PortalClaimSources {
   /**
-   * Builds the page's module over its dependencies.
+   * Builds the module over its dependencies.
    *
    * @param deps - the modules the page reads and writes through
    */
@@ -314,27 +145,374 @@ class PortalClaimSources {
   static defaultDeps(): PortalClaimSourcesDeps {
     helpers.log.debug("Entering PortalClaimSources.defaultDeps().");
     helpers.log.debug("Leaving PortalClaimSources.defaultDeps().");
-    return { log: helpers.log, claimsProviders: claimsProviders };
+    return {
+      log: helpers.log, claimsProviders: claimsProviders,
+      validation: validation, errorCodes: errorCodes, audit: audit,
+      baseUrlOf: helpers.baseUrlOf,
+      stsCrypto: require('../common/crypto'),
+      https: function https(): boolean {
+        helpers.log.debug("Entering https().");
+        helpers.log.debug("Leaving https().");
+        return !!require('../common/config').value('global.https');
+      },
+      authn: function authn(): Json {
+        helpers.log.debug("Entering authn().");
+        helpers.log.debug("Leaving authn().");
+        return require('../authn/authn');
+      },
+      accessGate: function accessGate(): Json {
+        helpers.log.debug("Entering accessGate().");
+        helpers.log.debug("Leaving accessGate().");
+        return require('../common/access_gate');
+      },
+      pageLocale: function pageLocale(): Json {
+        helpers.log.debug("Entering pageLocale().");
+        helpers.log.debug("Leaving pageLocale().");
+        return require('../common/page_locale');
+      }
+    };
   }
 
   /**
-   * Registers the page's routes on the portal's app.
+   * The page's view: one page of the realm's Claims Providers, and the
+   * person's link to each.
    *
-   * @param context - what the portal shares with its pages: the app, `BASE`,
-   *   the logger, the page shell, the sign-in check and the refusal helpers
-   * @returns the page's path
+   * @param username - the signed-in person
+   * @param wanted - the page asked for; the first when left out
+   * @returns `{ providers, paging, linked }`
    */
-  register(context: PortalContext): { path: string } {
-    context.log.debug("Entering PortalClaimSources.register().");
-    const page = new PortalClaimSourcesPage(this.deps, context);
-    page.registerRoutes(context.app);
-    context.log.debug("Leaving PortalClaimSources.register().");
-    return { path: page.PATH };
+  view(username: string, wanted?: number): Json {
+    const { log, claimsProviders } = this.deps;
+    log.debug("Entering PortalClaimSources.view().");
+    const linked: Json = {};
+    claimsProviders.linksOf(username).forEach(function (one: Json): void {
+      linked[one.provider] = one;
+    });
+    const all: Json[] = claimsProviders.list() || [];
+    // Paged on the register, decorated on the page: only the rows shown
+    // are turned into the answer's shape.
+    const pages = Math.max(1, Math.ceil(all.length / PER_PAGE));
+    const at = Math.min(Math.max(1, Number(wanted) || 1), pages);
+    const providers = all.slice((at - 1) * PER_PAGE, at * PER_PAGE)
+      .map(function (p: Json): Json {
+        const link = linked[p.id];
+        return { id: p.id, name: p.name, issuer: p.issuer,
+                 claims: (p.claims || []).slice(0), delivery: p.delivery,
+                 link: link ? { linkedAt: link.linkedAt,
+                                stale: !!link.stale }
+                            : null };
+      });
+    log.debug("Leaving PortalClaimSources.view(). Page " + at + " of " +
+              pages + ", " + providers.length + " of " + all.length + ".");
+    return { providers: providers,
+             paging: { page: at, pages: pages, per: PER_PAGE,
+                       total: all.length },
+             // How many of the realm's providers this person has linked,
+             // over the whole register rather than the page.
+             linked: all.filter(function (p: Json): boolean {
+               return !!linked[p.id];
+             }).length };
+  }
+
+  /**
+   * Links or unlinks a provider for the caller.
+   *
+   * @param ctx - the account API's helpers
+   * @param req - the request, for its base
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+      body: Json): unknown {
+    const { log, claimsProviders } = this.deps;
+    log.debug("Entering PortalClaimSources.act().");
+    const who = caller.username;
+    if (body.action === 'unlink') {
+      const gone = claimsProviders.unlink(who, String(body.id), 'user');
+      if (!gone) {
+        log.debug("Leaving PortalClaimSources.act(). No such link.");
+        return ctx.refuse(res, 400, 'STS-PORTAL-0094',
+                          'You have no link to that provider.',
+                          { view: this.view(who) });
+      }
+      log.debug("Leaving PortalClaimSources.act(). Unlinked.");
+      return ctx.json(res, 200, { ok: true,
+        message: ctx.translatorFor(who)
+          .text('portalClaimSources.doneUnlinked') });
+    }
+    // THE CALLBACK WILL ASK FOR THIS SIGN-ON SESSION (the file's header): a
+    // token the registry no longer places on one cannot start a link that
+    // can be finished.
+    if (!caller.sessionId) {
+      log.debug("Leaving PortalClaimSources.act(). No sign-on session.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0301',
+        'This service no longer knows which sign-in this page is part of, ' +
+        'so a link started from it could not be finished. Sign in again ' +
+        'and link from there.', { view: this.view(who) });
+    }
+    // THE BROWSER'S BINDING (the file's header): a secret the browser
+    // holds in a cookie only this realm's callback is sent, and its digest
+    // on the flow.
+    const secret = this.deps.stsCrypto.randomBytes(24).toString('base64url');
+    const started = claimsProviders.beginLink(who, String(body.id),
+                                              ctx.baseUrlOf(req),
+                                              caller.sessionId,
+                                              this.bindingOf(secret));
+    if (!started.ok) {
+      log.debug("Leaving PortalClaimSources.act(). Not started.");
+      return ctx.refuse(res, 400, started.code || 'STS-OAUTH-0678',
+                        started.why, { view: this.view(who) });
+    }
+    res.append('Set-Cookie', this.bindingCookie(req, secret, false));
+    log.debug("Leaving PortalClaimSources.act(). To the provider.");
+    return ctx.json(res, 200, { ok: true, location: started.location });
+  }
+
+  /**
+   * The digest of a binding secret, as the flow keeps it.
+   *
+   * @param secret - the secret the browser holds
+   * @returns its SHA-256, base64url
+   */
+  bindingOf(secret: string): string {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering PortalClaimSources.bindingOf().");
+    log.debug("Leaving PortalClaimSources.bindingOf().");
+    return stsCrypto.digest('sha256', String(secret), 'base64url');
+  }
+
+  /**
+   * The binding cookie's `Set-Cookie` line: scoped to this realm's callback,
+   * HttpOnly, SameSite=Lax (the provider's redirect is a top-level GET), and
+   * `Secure` on an https port; `clear` expires it.
+   *
+   * @param req - the request, for the realm's base
+   * @param secret - the secret, or '' to clear
+   * @param clear - whether to expire the cookie
+   * @returns the header line
+   */
+  bindingCookie(req: Json, secret: string, clear: boolean): string {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering PortalClaimSources.bindingCookie(). clear=" + clear);
+    const path = new URL(baseUrlOf(req)).pathname.replace(/\/+$/, '') +
+                 CALLBACK;
+    log.debug("Leaving PortalClaimSources.bindingCookie().");
+    return BINDING_COOKIE + '=' + (clear ? '' : secret) + '; Path=' + path +
+      '; Max-Age=' + (clear ? 0 : BINDING_MAX_AGE_S) +
+      '; HttpOnly; SameSite=Lax' + (this.deps.https() ? '; Secure' : '');
+  }
+
+  // ABSOLUTE, ON THE REALM'S OWN BASE: a bare `/portal/...` Location is
+  // answered by the default realm, which is not where this person linked
+  // (portal/CLAUDE.md, the `Location` header).
+  /**
+   * Sends the browser back to the page, saying what happened.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param name - `done` or `problem`
+   * @param text - what to say
+   * @returns nothing
+   */
+  back(req: Json, res: Json, name: string, text: string): void {
+    const { log, baseUrlOf } = this.deps;
+    log.debug("Entering PortalClaimSources.back(). " + name);
+    res.status(303).set('Cache-Control', 'no-store')
+       .set('Location', baseUrlOf(req) + PATH + '?' + name + '=' +
+            encodeURIComponent(String(text).slice(0, name === 'done'
+                                                  ? 200 : 400))).end();
+    log.debug("Leaving PortalClaimSources.back().");
+  }
+
+  /**
+   * The provider's callback: finishes the link for the person and the
+   * sign-on session that started it.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @returns nothing
+   */
+  async callback(req: Json, res: Json): Promise<unknown> {
+    const { log, claimsProviders, validation, errorCodes, audit } = this.deps;
+    log.debug("Entering PortalClaimSources.callback().");
+    const asked = validation.check(req, 'query', RETURN);
+    if (!asked.ok) {
+      errorCodes.mark(res, errorCodes.codeOf(asked) || 'STS-PORTAL-0001');
+      log.debug("Leaving PortalClaimSources.callback(). Malformed.");
+      this.back(req, res, 'problem', 'The provider could not be linked: ' +
+                asked.detail);
+      return undefined;
+    }
+    // WHOSE LINK, AND FROM WHICH BROWSER (the file's header). The binding
+    // cookie is spent whatever the answer: a link is finished or refused
+    // once.
+    const flow = claimsProviders.flowFor(String(asked.value.state || ''));
+    const authn = this.deps.authn();
+    const held = String(authn.cookiesOf(req)[BINDING_COOKIE] || '');
+    res.append('Set-Cookie', this.bindingCookie(req, '', true));
+    if (!flow || !flow.binding || !held ||
+        !this.deps.stsCrypto.constantTimeEquals(this.bindingOf(held),
+                                                flow.binding)) {
+      errorCodes.mark(res, flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679');
+      audit.record({ category: 'authentication',
+        action: 'oauth2.claim-source-link-refused',
+        errorCode: flow ? 'STS-PORTAL-0300' : 'STS-OAUTH-0679',
+        actor: flow ? flow.username : '', outcome: 'failure',
+        summary: 'a Claims Provider callback was refused: ' +
+          (flow ? 'it arrived in a browser that does not hold the binding ' +
+                  'cookie the link was started with'
+                : 'the link request is unknown or expired') + ' (#147).' });
+      log.debug("Leaving PortalClaimSources.callback(). Not this browser's.");
+      this.back(req, res, 'problem', 'The provider could not be linked: ' +
+        'this link request is unknown, expired, or was started in another ' +
+        'browser — start it again from this page.');
+      return undefined;
+    }
+    // AND THE SIGN-ON SESSION IT WAS STARTED FROM, STILL LIVE AND STILL
+    // THE PERSON'S: a sign-out between Link and the provider's answer ends
+    // the link with it. Asked by its id, not the cookie, which may name
+    // another realm's session (the file's header).
+    const signOn = flow.session ? authn.sessionById(flow.session) : null;
+    if (!signOn || authn.sessionEnded(signOn) ||
+        signOn.authenticated === false ||
+        String((signOn.user || {}).username || '').toLowerCase() !==
+          String(flow.username).toLowerCase()) {
+      errorCodes.mark(res, 'STS-PORTAL-0303');
+      audit.record({ category: 'authentication',
+        action: 'oauth2.claim-source-link-refused',
+        errorCode: 'STS-PORTAL-0303', actor: flow.username,
+        outcome: 'failure',
+        summary: 'a Claims Provider callback was refused: the sign-on ' +
+          'session the link was started from has ended (#147, #568).' });
+      log.debug("Leaving PortalClaimSources.callback(). Session ended.");
+      this.back(req, res, 'problem', 'The provider could not be linked: ' +
+        'the sign-in it was started from has ended. Sign in again and ' +
+        'link from there.');
+      return undefined;
+    }
+    // AND THE POLICY, as the page's own sign-in asked it: `manage-own`, the
+    // owner the person.
+    const accessGate = this.deps.accessGate();
+    const allowed = accessGate.check({
+      resource: accessGate.RESOURCE.PORTAL,
+      action: accessGate.ACTION.MANAGE_OWN,
+      subject: { name: flow.username, authenticated: true,
+                 sessionId: flow.session },
+      owner: flow.username,
+      context: { method: req.method, path: req.originalUrl || req.url } });
+    if (!allowed.allowed) {
+      errorCodes.mark(res, 'STS-PORTAL-0302');
+      log.debug("Leaving PortalClaimSources.callback(). Policy refused.");
+      this.back(req, res, 'problem', 'The provider could not be linked: ' +
+                'the access policy refused it. ' + allowed.why);
+      return undefined;
+    }
+    const finished = await claimsProviders.finishLink(flow.username,
+                                                      asked.value);
+    if (!finished.ok) {
+      errorCodes.mark(res, finished.code || 'STS-PORTAL-0093');
+      log.debug("Leaving PortalClaimSources.callback(). " + finished.why);
+      this.back(req, res, 'problem', 'The provider could not be linked: ' +
+                finished.why + '.');
+      return undefined;
+    }
+    audit.record({ category: 'portal',
+      action: 'oauth2.claim-source-linked',
+      actor: flow.username, target: finished.provider,
+      outcome: 'success', summary: '"' + flow.username +
+      '" linked Claims Provider "' + finished.provider + '" (#147).' });
+    // In the person's language (#539); the provider is data, a parameter.
+    const t = this.deps.pageLocale().forPage({
+      application: 'sts-user-portal', username: flow.username });
+    log.debug("Leaving PortalClaimSources.callback(). Linked.");
+    this.back(req, res, 'done', t.text('portalClaimSources.doneLinked',
+                                       { provider: finished.provider }));
+    return undefined;
+  }
+
+  /**
+   * Registers the provider's callback; `portal.ts` calls it before the
+   * shell answers everything under `/portal`.
+   *
+   * @param app - the shared express app
+   * @returns nothing
+   */
+  registerRoutes(app: Json): void {
+    const { log, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering PortalClaimSources.registerRoutes().");
+    app.get(CALLBACK, function (req: Json, res: Json) {
+      return self.callback(req, res).catch(function (e: Json) {
+        log.debug("Caught in the claim-source callback: " +
+                  ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-PORTAL-0093');
+        if (!res.headersSent) {
+          self.back(req, res, 'problem', 'The provider could not be ' +
+                    'linked.');
+        }
+      });
+    });
+    log.debug("Leaving PortalClaimSources.registerRoutes().");
+  }
+
+  /**
+   * The operations, for `account-api/account_api.ts`.
+   *
+   * @param ctx - the account API's helpers
+   * @returns the operations
+   */
+  accountOperations(ctx: AccountContext): AccountOperation[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalClaimSources.accountOperations().");
+    const rows: AccountOperation[] = [
+      { method: 'GET', path: ctx.BASE + '/claim-sources',
+        operationId: 'getClaimSources', tag: 'Claim sources',
+        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/claim-sources',
+        summary: 'The Claims Providers you can link, and your links',
+        description: '`providers`: one page (`paging`, moved by ' +
+          '`page`) of the Claims Providers this realm registered — each ' +
+          'one\'s id, name, issuer, the claims it supplies and whether ' +
+          'they are aggregated or distributed — with your `link` (when, ' +
+          'and whether it has gone `stale`) or null. `linked` counts your ' +
+          'links over every page. `done` and `problem`, which the ' +
+          'provider\'s callback sends back, come back as `notice` and ' +
+          '`problem`.',
+        query: PAGE_QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          const view = self.view(caller.username, input.query.page || 1);
+          if (input.query.done) {
+            view.notice = String(input.query.done);
+          }
+          if (input.query.problem) {
+            view.problem = String(input.query.problem);
+          }
+          return ctx.json(res, 200, view);
+        } },
+      { method: 'POST', path: ctx.BASE + '/claim-sources',
+        operationId: 'linkClaimSource', tag: 'Claim sources',
+        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/claim-sources',
+        summary: 'Links or unlinks a Claims Provider',
+        description: '`link` answers `location`, the provider\'s ' +
+          'authorization endpoint (code flow with PKCE): send the browser ' +
+          'there. The answer sets the `sts_claim_link` cookie, scoped to ' +
+          '/portal/claim-sources/callback, which finishes the link only in ' +
+          'the browser holding it, while the sign-on session this token ' +
+          'was issued on is live. `unlink` removes the link.',
+        body: LINK_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.act(ctx, req, res, caller, input.body);
+        } }
+    ];
+    log.debug("Leaving PortalClaimSources.accountOperations().");
+    return rows;
   }
 }
 
-// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2) — see
-// `portal_certificates.ts`.
 const slot = new InstanceSlot<PortalClaimSources>(
   'portal/portal_claim_sources',
   () => new PortalClaimSources(PortalClaimSources.defaultDeps()),
@@ -344,7 +522,8 @@ const slot = new InstanceSlot<PortalClaimSources>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The portal page at /portal/claim-sources, registered by `portal.ts`.
+ * `/portal/claim-sources`' account API operations and the provider's
+ * callback (#147, #568).
  * @namespace
  */
 export = {
@@ -352,5 +531,6 @@ export = {
   installInstance: (instance: PortalClaimSources): void =>
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  register: slot.forward('register')
+  accountOperations: slot.forward('accountOperations'),
+  registerRoutes: slot.forward('registerRoutes')
 };

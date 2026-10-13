@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -194,16 +194,34 @@ function userFor(plan, prepared) {
       return;
     }
     started[id] = true;
-    const r = await oidf.send(prepared.realm.base + "/oid4vp/start?" +
-      new URLSearchParams(Object.assign(
-        { mode: "same-device", format: "dc+sd-jwt",
-          response_mode: plan.responseMode },
-        plan.prefix ? { client_id_prefix: plan.prefix } : {})).toString());
-    const to = r.headers.get("location") || "";
-    assert.ok(to.indexOf(oidf.SUITE) === 0, "the start page sent nobody to " +
-              "the suite: " + r.status + " " + r.raw.slice(0, 300));
-    const got = await oidf.suite("GET", to.slice(oidf.SUITE.length));
-    log.info("  sent the End-User to the wallet: " + got.status);
+    // A STEP THAT FAILED IS TRIED AGAIN ON THE NEXT POLL (2026-10-01). The
+    // mark was set before the request and kept when it failed, so one
+    // `fetch failed` left the module waiting for an End-User who never came
+    // and it timed out five minutes later (vp-hash request-uri-method-post,
+    // 2026-09-30). runModule() calls this on every poll while the module
+    // waits, so clearing the mark is the retry.
+    // STARTED THROUGH `/admin-api` (#587): the demonstration's
+    // /oid4vp/start becomes development-only (#585), and the operation
+    // builds the request with the page's own function, answering as
+    // `walletUrl` the address the page redirects to.
+    try {
+      const r = await oidf.ok(prepared.realm.base +
+        "/admin-api/verifications/start", Object.assign(
+          { mode: "same-device", format: "dc+sd-jwt",
+            response_mode: plan.responseMode },
+          plan.prefix ? { client_id_prefix: plan.prefix } : {}),
+        "started a verification");
+      const to = String(r.walletUrl || "");
+      assert.ok(to.indexOf(oidf.SUITE) === 0, "the start sent nobody to " +
+                "the suite: " + JSON.stringify(r).slice(0, 300));
+      const got = await oidf.suite("GET", to.slice(oidf.SUITE.length));
+      log.info("  sent the End-User to the wallet: " + got.status);
+    } catch (e) {
+      log.debug("Caught in the End-User: " + ((e && e.message) || e));
+      delete started[id];
+      log.debug("Leaving the End-User. Failed; the next poll tries again.");
+      throw e;
+    }
     log.debug("Leaving the End-User.");
   };
 }

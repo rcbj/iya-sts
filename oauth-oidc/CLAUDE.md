@@ -22,6 +22,7 @@ libraries that decide things on its behalf.
 | `oauth2_monitor.ts` | **The counters behind `/admin/oauth2/monitor` (2026-09-13)**, in sections; pushed authorization requests are the first. |
 | `oauth2_monitor_console.ts` | **The view and action model of that page (2026-09-13)** — `monitorView()` and `monitorAction()` (`delete-pushed-request`), no route, no `res`, no markup; both doors render the same call (rule 7). `gnap/gnap_console.ts`'s arrangement, and one of the files `tests/admin_actions_layer.js` allows to require `admin-core/admin_views.ts`. |
 | `oauth2_monitor_admin.ts` | **THE ONE FILE HERE BESIDE `oauth2.ts` THAT REGISTERS ROUTES**: `GET` and `POST /admin/oauth2/monitor`, in the console's shell. Required at 18f in `common/protocol_stack.ts`, never from `oauth2.ts`, which would drag the console in front of the authorization server. |
+| `web_oauth2_monitor.ts`, `web_grants.ts` | **The renderers of `/admin/oauth2/monitor` and `/admin/grants` since #446**: `web_` modules a browser can load, each drawing its page from the management API's answer alone (`admin-ui/CLAUDE.md`, *The static console's renderers*). `web_oauth2_monitor.ts` owns the page's path, the filter's `STATES` and the `BACK_PARAMS` a Withdraw carries back, which `oauth2_monitor_console.ts` and `oauth2_monitor_admin.ts` read from it — a `web_` module may require no server module, so the table a page is drawn from lives with the renderer. |
 | `oauth2_monitor_api.ts` | `GET /admin-api/oauth2/monitor` and `POST /admin-api/oauth2/monitor/{action}`, `ROUTES` spread into `mgmt-api/admin_api.ts` beside ACME's; requires its model lazily. Codes `STS-ADMIN-0700..0705` and `STS-API-0100..0102`; `tests/vendored/sts_oauth2_monitor.js` drives both doors. |
 | `protected_resource_metadata.ts` | **RFC 9728, CONSUMED (2026-09-13).** Reads a protected resource's metadata document — pasted, uploaded or fetched from an administrator's URL — checks every section 2 member and section 3.3, compares `authorization_servers` with the realm's issuers, and proposes the application `/admin/applications/new` creates. The fetch takes `federation_http.ts`'s policy and, in product mode, resolves once, refuses an internal address and pins the connection (`mode.dialsInternalAddresses()`) — the check and the resolution moved INTO `federation_http.ts` on 2026-09-17, when the back-channel delivery needed them too, and this module keeps its own refusal codes; section 3.3 and a non-https `resource` are refused in product and warned in development (`mode.acceptsNonconformingResourceMetadata()`); malformed is refused in both. `signed_metadata` is decoded, never verified or applied. Its file header argues each decision. |
 | `jwt_access_token.ts` | **RFC 9068, both halves (2026-09-13).** The `at+jwt` header, the issuer and default audience the minter uses and every resource server here checks, and the audience-and-scope plan behind section 3's refusals. In every mode — see 3ah. |
@@ -32,10 +33,12 @@ libraries that decide things on its behalf.
 | `client_jwks.js` | **A client's registered `jwks_uri`, fetched and cached (#120, 2026-09-22).** Under `federation_http.ts`'s outbound policy; per realm; refetched for an unknown `kid`. A leaf. See *OpenID Connect Registration*. |
 | `session_management.js` | **OpenID Connect Session Management 1.0 (#121, 2026-09-23), off by default.** The OP browser state, `session_state`, the OP iframe's page, script and framing origins. A leaf. See 3ax. |
 | `jarm.ts` | **JARM, the JWT-secured authorization response (#143, built in #139).** The four response modes, the signed (and optionally encrypted) response JWT, the section 2.3.1 refusal, and the registration key check. `redirectBack()` in `oauth2.ts` is the one place that sends one. See 3aw. |
+| `access_token_status.ts` | **The access-token Token Status List (#432 phase 2, rcbj's decision 4, 2026-10-03)** — one list per realm for every RFC 9068 access token AND GNAP's two JWT formats, at `/status-lists/access-tokens` with its aggregation at `/status-lists`; random indexes claimed across the cluster; the bit computed from the revocation register. A ROUTE MODULE AND A LIBRARY (`oid4vc/vc_status.ts`'s shape), built and registered just after `oauth2` and `grant_management`. See *The access-token status list*, below. |
 | `oauth_grant_signals.ts` | **An OAuth grant revoked is CAEP's `session-revoked` about the grant (#239, 2026-09-26).** Fills `common/admin_stats.js`'s `setRevocationObserver()` slot: one event per grant, subject `oauth-grant:<id>` beside the person, the door's own `initiating_entity`, and a replay also a `risk-level-change`. Built at 23b-vi; registers nothing. See *OAuth grants on CAEP*, below. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
-`oauth2_monitor_admin.ts`, required at 18f rather than from here — registers
+`oauth2_monitor_admin.ts`, required at 18f rather than from here, and since
+#432 `access_token_status.ts`'s two status-list routes — registers
 nothing.** They are libraries in the sense
 rule 3 of the root `CLAUDE.md` means: they require only `../common` and each
 other, so they cannot join a cycle and their position in the require order is not
@@ -140,6 +143,19 @@ so must `admin-ui/admin.ts`.
    not carry is `invalid_target`. The same shape as the scope check one field
    over.
 
+   **AND IT CARRIES ALL OF THEM, WHICHEVER ONE A TOKEN REQUEST NAMED (#607,
+   2026-10-13).** A Token Request naming one of the grant's resources picks
+   the AUDIENCE of the access token it mints (RFC 8707 section 2.2); the
+   refresh token keeps every resource the authorization request named — the
+   refresh grant's `grantResources` always did, and the code exchange now
+   passes the code's too. Until then a code redeemed for one resource left a
+   refresh token for that one alone, so a client that asked for two could
+   never be issued a token for the second: the user portal, which holds one
+   for `/account-api` and one for `/admin-api` off one sign-in. Nothing
+   widens — a resource the grant does not carry is still `invalid_target`
+   (STS-OAUTH-0206, 0217) — and a grant whose audience a scope derived keeps
+   `tokenSet()`'s own reading.
+
    **THE IDLE TIMEOUT IS ON THE FAMILY AND REFUSES RATHER THAN REVOKING.**
    `lastUsedAt` lives on the family and is touched at `noteRefreshRotated()` —
    at the SUCCESSFUL redemption, so a run of refused attempts cannot keep a
@@ -194,7 +210,7 @@ so must `admin-ui/admin.ts`.
    let a third function make this decision a third way.
 
    **NO CLIENT CERTIFICATE IS EVER READ FROM A HEADER.** `X-Client-Cert` and its
-   dozen vendor spellings are listed on `/tls/forwarded` and read by nothing:
+   dozen vendor spellings are listed on Monitoring → TLS connection and read by nothing:
    a certificate in a header is one anybody can forge, so RFC 8705 binding and
    mTLS client authentication both take it off the TLS handshake. The cost —
    a proxy terminating mTLS cannot pass the certificate through — is stated
@@ -322,7 +338,8 @@ so must `admin-ui/admin.ts`.
    it can do instead is `oauth2.breakIdTokenNonce` — a deliberately wrong nonce,
    off by default, NOT part of this mode (it is useful in either), reported on
    `GET /oauth2/rfc9700` and logged on every token it spoils. That is the same
-   device as `/spnego`'s three knobs and the reserved password `invalid`: a
+   device as the reserved password `invalid` (and `/spnego`'s three knobs,
+   until #595 moved the page to the companion): a
    reachable negative. Do not fold it into the mode — a compliance flag that
    also breaks tokens is a flag nobody will turn on.
 
@@ -679,10 +696,11 @@ so must `admin-ui/admin.ts`.
    `authorization_signed_response_alg` — RS256 by default, PS256 under
    Advanced, an HMAC keyed by the client secret — and encrypted where the
    client registered `authorization_encrypted_response_alg` / `_enc`, to its
-   inline `jwks`, exactly as an ID Token is. The three members live in
-   `appRegistrationJson`; `applications.jarmMetadataProblem()` owns the
-   grammar (`STS-REG-0179`) and `jarm.registrationKeyProblem()` the key
-   (`STS-REG-0180`). Discovery lists the four modes and the three
+   inline `jwks`, exactly as an ID Token is. The three members are
+   attributes since #290 (`oauthAuthorization*`, read through
+   `clientConfigOf()` — common/CLAUDE.md);
+   `applications.jarmMetadataProblem()` owns the grammar (`STS-REG-0179`)
+   and `jarm.registrationKeyProblem()` the key (`STS-REG-0180`). Discovery lists the four modes and the three
    `authorization_*_values_supported` members.
 
    **NOT DONE**: JARM for the device and CIBA flows (not built here). The
@@ -707,6 +725,25 @@ so must `admin-ui/admin.ts`.
    nominating `HS256` for `private_key_jwt` is refused rather than verified —
    verifying it would use the client's PUBLIC key as an HMAC secret, which is
    the classic JWT forgery and one anybody can perform.
+
+   **AN ENTRY MAY DECLARE SEVERAL METHODS (2026-10-01, rcbj)** —
+   `oauthTokenEndpointAuthMethod` is a list, a checkbox per method on the
+   application's page, and `none` is refused beside any other
+   (`applications.authMethodsProblem()`, `STS-REG-0207`) because it is what
+   makes a client public. `clientConfigOf()` carries them as
+   `token_endpoint_auth_methods`, its single `token_endpoint_auth_method`
+   being the first (all a "public or confidential" reader needs, and what RFC
+   7591's single-valued member reports). **`methodFor()` picks the one this
+   request PRESENTED** — the assertion type, a Basic header or a body secret,
+   the attestation headers, a client certificate — and `verify()` is still
+   told exactly one method; nothing tries methods in turn, which would spend a
+   single-use assertion on a method the client did not use. Where a client
+   declares both JWT methods the assertion's `alg` chooses between them, and
+   that does not reopen the forgery above: an HMAC `alg` selects
+   `client_secret_jwt`, verified with the client's SECRET, never with its
+   public key. `oauth2_bcp.js`'s two verification sites, the advertised-method
+   checks in `oauth2.ts`, `mtls.declaredRefusal()` and the attestation's
+   `requestRefusal()` all ask about the presented method.
 
    **THE UNVERIFIED `sub` SELECTS, IT DOES NOT ESTABLISH.** OIDC Core section 9
    lets a `private_key_jwt` request omit `client_id`, so `clientFrom()` reads
@@ -774,7 +811,7 @@ so must `admin-ui/admin.ts`.
    8705 section 3 binds to the CERTIFICATE and permits a self-signed one
    explicitly — the proof is that the same key completed this handshake, not
    that a CA vouched for it. Requiring verification would make the feature
-   unreachable, since `/tls/trust` starts empty by design.
+   unreachable, since the client truststore starts empty by design.
 
    **A REVOKED certificate is NOT verified, since 2026-09-12**, and it still
    binds. `peerVerified()` reads `req.certificateRevocation` — which
@@ -1271,6 +1308,14 @@ so must `admin-ui/admin.ts`.
    is the answer for a service reached under several names. A token minted
    before `at+jwt` is refused once presented; access tokens live an hour.
 
+   **WHICH IDENTITY CLAIMS A TOKEN CARRIES (#395, `common/CLAUDE.md` 3cj).**
+   Section 2.2.2 leaves them to the authorization server; here they are
+   what the RESOURCE SERVER declares (`oauthAccessTokenClaim`,
+   `resourceServerClaims()`), combined with the client's set as it chose,
+   and only what the GRANT covered (`scopeClaims.gate()` over
+   `opts.granted_scope`). `preferred_username` is no longer added to every
+   person's token; `username` is.
+
    **WHAT A TOKEN MAY BE ADDRESSED TO — `audiencePlan()`, one decision behind
    `accessTokenPlan()` in `oauth2.ts`**, which classifies each scope value
    (an application's client_id, a delegated permission, an OIDC scope, or
@@ -1373,6 +1418,15 @@ so must `admin-ui/admin.ts`.
    enters the token registry — `/admin/tokens` lists credentials. An inactive
    token's claim is `{ "active": false }` REBUILT by `claimsFor()`, so a member
    that leaked into the caller's object cannot become a signed statement.
+
+   **`act` AND `may_act` ARE MEMBERS OF BOTH ANSWERS (#469, 2026-10-06)** —
+   RFC 8693 section 7.2 registers them for introspection. `introspectionOf()`
+   copies them as the token carries them, `act` nested exactly as signed (the
+   current actor outermost, the chain beneath it back to the original client,
+   #443), so a resource server that introspects rather than reading the JWT
+   sees who acted. They are in the one object both shapes are built from, so
+   section 5's `intendedFor()` hides them with everything else from a caller
+   the token is not for. `tests/rfc9701_introspection.js` 4m–4p.
 
    **A JWT ONLY WHERE THE MEDIA TYPE IS NAMED.** `wantsJwt()` parses the Accept
    header with q-values rather than using `req.accepts()`, which answers "which
@@ -1793,6 +1847,74 @@ so must `admin-ui/admin.ts`.
    declared type's details. `tests/rfc9396_authorization_details.js` holds the
    rest.
 
+   **THE DECLARATION IS THE ACCESS-TYPE CATALOGUE SINCE #432 (phase 4,
+   2026-10-03)**, shared with GNAP, which reads it for access rights
+   (`gnap/CLAUDE.md`, *Each right a policy question*). A definition may now
+   carry `actions`, `datatypes`, `privileges`, `required`, `limits` (a JSON
+   Schema subset), `bearer`, `maxLifetimeS`, `derivableFrom`,
+   `introspectionClaims`, `interaction`, `consentActions` and `acr`;
+   `applications.js` owns the grammar. What RAR does with each:
+
+   * the values, `required` and the schema: `conformance()`, the one reading
+     both protocols ask, refusing 0456 (0457 for a location, unchanged);
+     `limits` refused on a type that declares no limits schema
+     (`STS-OAUTH-0876`) or failing it (`0877`);
+   * `bearer: false`: `tokenSet()` refuses an access token carrying the type
+     that is bound neither by DPoP nor a client certificate
+     (`invalid_authorization_details`, `STS-OAUTH-0878`) — there, because the
+     funnel is the first place the binding is known;
+   * `maxLifetimeS`: `accessToken()` caps `exp` beside FAPI's cap, so
+     `expires_in` reports it;
+   * `introspectionClaims`: `/oauth2/introspect` asks `introspectionView()`
+     for an AUTHENTICATED caller — one owning a type among the token's
+     details sees only its own types' details and the person's claims they
+     declare, added as top-level members never over one already there; a
+     caller owning none sees the token as before;
+   * `derivableFrom` is GNAP's (RFC 9767); `interaction`, `consentActions`
+     and `acr` are ENFORCED BY PHASE 6 of #432 (the next lane).
+   * `limits` MEAN THE SAME TO BOTH PROTOCOLS, AND ARE ENFORCEABLE IN BOTH
+     (#432 phase 5). Beyond the type's schema, `conformance()` asks
+     `common/access_limits.ts` whether the amount with its currency, the
+     count, the receivers, the repeating interval and the window are ones
+     it can read (`STS-OAUTH-0916`). Then the two halves GNAP has:
+     - **A STABLE GRANT IDENTIFIER.** The resource server keeps the running
+       totals (rcbj's decision 2), and a key that changed on every refresh
+       would make each renewed token a renewed budget — limits stated and
+       unenforceable. So `tokenSet()` names one whenever the details the
+       GRANT authorized carry limits: Grant Management's `grant_id` (3bf)
+       where the grant is recorded, otherwise an identifier minted for the
+       authorization's first token set and carried forward inside the
+       refresh token's JWE (`limits_grant`), so every refresh hands on the
+       same one. The RFC 9068 token carries it as `grant_id` (beside the
+       details that carry limits; a token without such details carries
+       none) and `/oauth2/introspect` returns it — the name GNAP's tokens
+       and introspection use. The token response's `grant_id` member stays
+       Grant Management's alone: a client that did not ask for a managed
+       grant is not handed a handle to manage.
+     - **LOWERING ON THE CONSENT SCREEN.** `consent_screen.ts` draws each
+       detail's limits with GNAP's controls (`common/limits_form.ts`) inside
+       its form, and Allow accepts only a lower value (`STS-OAUTH-0918`) that
+       still meets the type (`0919`). The screen cannot change the request —
+       the authorization endpoint's second pass re-reads it from the query —
+       so the lowered details are RECORDED WITH THE ALLOW
+       (`noteConsented(…, lowered)`) and the second pass, spending it
+       (`consumeConsent()`), replaces the request's details with them after
+       holding them to "the same details, limits no higher" once more
+       (`limitsRaisedBy()`, `STS-OAUTH-0917`): the Allow and the pass are two
+       requests. The code, its tokens and every refresh carry the lowered
+       values.
+     GNAP's reference for a resource server's totals (`gnap/gnap_spend.ts`,
+     whose route went with the demonstration resource server in #593) takes
+     GNAP tokens only, so an RS counting RAR limits keys its totals on the
+     token's `grant_id` the same way.
+
+   **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
+   development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5
+   says MUST, and spec compliance is above development's convenience. The
+   console's Access types tab and `set-access-type` / `remove-access-type`
+   (`admin-core/admin_actions.ts`) write the attribute through
+   `updateApplication()`, the one door.
+
 3an. **`step_up.ts` IS RFC 9470, AND A SESSION IS NO LONGER AN ANSWER TO A
    REQUEST IT DOES NOT MEET (2026-09-13).** Asked for as *a couple of new query
    parameters on the authorization endpoint*; `acr_values` and `max_age` were
@@ -1807,7 +1929,7 @@ so must `admin-ui/admin.ts`.
 
    | Asked | Chosen |
    |---|---|
-   | Who sends section 3's challenge | Both: a resource APPLICATION's `oauthStepUpAcrValues` / `oauthStepUpMaxAge`, enforced by the stand-in resource `/oauth2/step-up/resource/{application}`, and this service's own resource server through `dpop.presentedAccessToken()` |
+   | Who sends section 3's challenge | Both: a resource APPLICATION's `oauthStepUpAcrValues` / `oauthStepUpMaxAge`, enforced by the stand-in resource `/oauth2/step-up/resource/{application}` (**deleted by #593, 2026-10-12** — the API itself enforces it, and the test peer plays one), and this service's own resource server through `dpop.presentedAccessToken()` |
    | An `acr_values` nothing can meet | Refused `unmet_authentication_requirements` in EVERY mode |
    | Ordering, and the token's `acr` | `0` < `1` < `mfa`; the most preferred REQUESTED value met |
    | Monitoring and tests | A second section on `/admin/oauth2/monitor`, in-process tests |
@@ -1816,12 +1938,22 @@ so must `admin-ui/admin.ts`.
    described the application requirement as enforced in `presentedAccessToken()`.
    It cannot be reached there: those endpoints are this service's resource server
    and RFC 9068 section 4 refuses a token addressed to an API before any step-up
-   question. So an application's requirement is enforced by the stand-in
+   question. So an application's requirement was enforced by the stand-in
    resource (which passes `presentedAccessToken()` an `audience` predicate —
    `jwt_access_token.resourceServerRefusal()`'s new fourth argument replaces step
    4 and nothing else — `requireVerified`, and the requirement), and the own
    resource server's requirement is two settings, `oauth2.stepUpAcrValues` and
    `oauth2.stepUpMaxAgeS` (`-1` is off, because `0` is a real requirement).
+
+   **THE STAND-IN WAS DELETED BY #593 (2026-10-12)**, the last step of #585's
+   making it development only: an application's requirement is the
+   application's to enforce, as RFC 9470 section 3 has a resource server send
+   the challenge, and the test peer (`tests/peer/peer_stepup.js`) plays one
+   for `tests/vendored/sts_step_up.js`. The entry's two attributes stay —
+   written by an operator, read by the console — and so do `dpop.ts`'s three
+   options, the library half of such a resource server:
+   `tests/rfc9470_step_up.js` serves a stub on them. `STS-OAUTH-0505` (an
+   unknown application at the stand-in) is retired.
 
    **THE AUTHORIZATION ENDPOINT, IN ORDER** (`authorizeRequest()`, above the
    session branch): with a session and a requirement, `assessSession()`; met →
@@ -2018,6 +2150,14 @@ so must `admin-ui/admin.ts`.
 
 ## EVERY REFRESH TOKEN IS ENCRYPTED TO ITS OWN REALM (2026-09-12)
 
+**AND ANY ML-KEM OR HPKE ALG MAY SEAL IT (#82, 2026-09-27)**: `kindOf()`
+answers `kem`, and `kemKeyFor()` DERIVES that alg's key pair from the realm's
+refresh-token secret, so nothing new is stored, published or rotated
+separately. The kid is the secret's kid with the alg appended. The argument
+is `common/CLAUDE.md`'s *crypto.js section 4a*, which is also where the
+outward encryptions' post-quantum algs are argued: `recipientKey()` here asks
+`crypto.jweRecipientKeyFits()`.
+
 `refresh_token_crypto.ts` is a library (rule 3) and `refreshToken()` is the one
 place it seals. A refresh token is a **nested JWT**: the JWS this file always
 minted, encrypted as a compact JWE with `cty: "JWT"` to the realm's own keys.
@@ -2152,8 +2292,9 @@ re-authentication in between voids it. `SameSite=Lax` keeps the sign-on cookie
 off a cross-site POST, so such a POST is ASKED rather than answered — answering
 it would clear a cookie it never saw. No script: a button needs none.
 
-**NOT DONE**: `ui_locales` is accepted and every page is English, the only
-language here (section 2 permits that). `tests/rp_initiated_logout.js` holds
+**`ui_locales` is honoured on the sign-out pages since #539**: the
+confirmation and signed-out pages are drawn in it (namespace `oauthPages`),
+and a refusal stays English. `tests/rp_initiated_logout.js` holds
 it in a child process; `tests/vendored/sts_rp_initiated_logout.js` over HTTP.
 
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)
@@ -2164,7 +2305,7 @@ metadata and honoured little of it. rcbj's answers:
 | Asked | Chosen |
 |---|---|
 | A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
-| `grant_types` / `response_types` | Enforced in every mode, for a registered client |
+| `grant_types` / `response_types` | Enforced in every mode, for a registered client — and since #289 for every client that declares them |
 | `initiate_login_uri` | Validated, and launched from the user portal |
 
 **`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
@@ -2181,19 +2322,29 @@ required for the redirect grants (`0184`), the two signing algorithms
 an https `initiate_login_uri` (`0188`). `withRegistrationDefaults()` applies
 section 2's defaults, which are stored and returned (RFC 7591 section 3.2.1).
 
-**ENFORCEMENT READS `appRegistrationJson` ONLY** (`registeredFlowsOf()`),
-because `oauthGrantType` and `oauthResponseType` also record what a client
-was OBSERVED doing — a sighting is not a registration, and a client created
-by hand declares nothing and is not restricted. A response type not
-registered is a redirected `unauthorized_client` (`STS-OAUTH-0597`, in
+**ENFORCEMENT READS THE DECLARED LISTS, `oauthGrantType` AND
+`oauthResponseType`** (`declaredFlowsOf()`), for every client however they
+were written — a registration, the console, `/admin-api` (#289, rcbj
+2026-10-07). Until #289 it read `appRegistrationJson` only, because those two
+attributes also recorded what a client was OBSERVED doing, so a client created
+by hand was restricted by nothing it declared. The sightings moved to
+`oauthGrantTypeObserved` and `oauthResponseTypeObserved`, as
+`appRedirectUriObserved` sits beside `oauthRedirectUri`, and a registration or
+RFC 7592 update REPLACES the two declared lists (a `multi` field otherwise
+only adds), so an update that narrows `grant_types` narrows the client. **An
+empty list restricts nothing** (rcbj's answer). A response type not declared
+is a redirected `unauthorized_client` (`STS-OAUTH-0597`, in
 `vetAuthorizationRequest()`, so PAR asks it too); a grant is 400
-`unauthorized_client` (`0598`) above the grant switch — and a client that
-registered no `refresh_token` grant is issued no refresh token (`0600`,
-recorded in `issue()`, for #34's half-a-token-set reason).
+`unauthorized_client` (`0598`) above the grant switch, and the device
+authorization endpoint asks the same of `device_code` (`0692`) — and a client
+that declares grants without `refresh_token` is issued no refresh token
+(`0600`, recorded in `issue()`, for #34's half-a-token-set reason).
 
 **`default_acr_values` and `default_max_age`** are `step_up.ts`'s
-`requirementOf(query, registered)`, each overridden by the request's own —
-`acr_values` or an essential `acr` for the first, `max_age` for the second
+`requirementOf(query, clientConfigOf(...))` — attributes since #290
+(`oauthDefaultAcrValues`, `oauthDefaultMaxAge`) — each overridden by the
+request's own — `acr_values` or an essential `acr` for the first, `max_age`
+for the second
 (OpenID Connect Registration section 2). `require_auth_time` needs
 nothing new — `auth_time` is carried whenever a sign-in is behind the token.
 
@@ -2484,7 +2635,8 @@ pages that relax `script-src`. The argument for it is made in `oauth2.ts`, above
   flow into an RFC 9700-conforming one (see rule 3f and `oauth2_bcp.js`) and, with
   it, **turns the main port into an HTTPS listener** on the certificate LDAPS 636
   and the debugger's listener already share — so there is then no plain listener
-  in this process and `/tls/trust` has to be bootstrapped with verification off. The flag is OFF by
+  in this process and the truststore's first add has to be made with
+  verification off. The flag is OFF by
   default, changes nothing until it is set, and is RESTART-ONLY because of that
   socket. What it does and does not enforce is published at `GET /oauth2/rfc9700`
   rather than left to be read out of the code. Nothing else here has such a mode.
@@ -2581,42 +2733,119 @@ about the request and must not be lost to a resolution. **Nothing is refused:**
 an audience nobody has registered resolves to null and is recorded verbatim,
 exactly as it was before this existed.
 
-**WHO MAY ACT FOR WHOM IS DECIDED SINCE #108 (2026-09-23)** — it read *nothing
-authorizes either of them here* until then. `../common/delegation_policy.ts`
-(rule 3az, `../common/CLAUDE.md`) is asked after the actor is verified and the
-audiences are known, and before `issue()`: the client is the intermediary, its
-`appAllowedToDelegateTo` or the target's `appAllowedToActOnBehalfOf` must
-allow every audience, an exchange with no `actor_token` needs
-`appTrustedToImpersonate`, the subject must pass `appDelegationSubjectGroup`
-and not be protected, and then the issuance policy may Deny action-id
-`delegate`. A client exchanging ITS OWN token acts for nobody and needs
-nothing (the self case — a client_credentials token's `sub` is the client_id,
-or `urn:sts:client:<id>` in RFC 9700 mode). **Product refuses** —
-`invalid_request` (`STS-OAUTH-0618`, `0622` for the XACML Deny) or, for a
-target, `invalid_target` (`0619`), RFC 8693 section 2.2.2 — and the refusal is a
-refused act; **development issues** and the act's `authorizedBy` says what would
-have refused it (`mode.authorizesDelegation()`). The act row names what allowed
-it, the way a Kerberos row names an attribute.
+**WHO MAY ACT FOR WHOM, AND AS WHAT, IS THE ISSUANCE POLICY'S (#108; #186,
+2026-10-03).** `../common/delegation_policy.ts` (rule 3az, `../common/CLAUDE.md`)
+is asked after the actor is verified and the audiences are known, and before
+`issue()`. The ACTOR is the `actor_token`'s subject, else the client; S is the
+subject_token's `aud`, else its `client_id` / `azp`; R the one `audience` or
+`resource`. The policy chooses the semantics — this service's extension
+parameter **`exchange_semantics`** (`delegation` or `impersonation`, sent at
+most once, else `invalid_request`, `STS-OAUTH-0795`, in every mode), else the
+actor's default, the subject's, `delegation.defaultSemantics` — and the issued
+token follows it: DELEGATION puts `act` naming the actor on it, IMPERSONATION
+does not, a SELF exchange (the client is the subject, or is S keeping the
+token for S) acts for nobody and, with no audience asked, is for the
+subject_token's own audience. **Product refuses**, in RFC 8693 section
+2.2.2's words — `invalid_target` for `target` (`STS-OAUTH-0619`), `targets`
+(`0792`), `unregistered-target` (`0793`), `no-target` (`0794`);
+`invalid_request` for `semantics` (`0790`), `authority` (`0791`), a realm
+policy's `policy` (`0622`) and the rest (`0618`) — and the refusal is a
+refused act; **development issues** and the act's `authorizedBy` says what
+would have refused it. Two audiences are refused in development too, by RFC
+9068 section 3's ambiguity rule rather than the policy.
 
 **`may_act` IS READ IN EVERY MODE** (section 4.4), off a VERIFIED subject_token
 only: when it names a party other than the actor — the `actor_token`'s `sub`
 (and `iss` if the claim has one), or the client when there is no actor — the
-exchange is `invalid_request` (`STS-OAUTH-0620`), because the token itself says
-no. A match stands in for `appTrustedToImpersonate` and the subject groups,
-never for the target. **It is ISSUED by `accessToken()`**, the one place an
-access token's claims are assembled, from the person's own `stsMayAct` and
-nothing else (`delegationPolicy.mayActClaimFor()`, looked up by the
-`urn:uuid:` subject where the token has one).
+policy's first rule refuses it, ENFORCED in every mode (`invalid_request`,
+`STS-OAUTH-0620`), because the token itself says no. A match stands in for the
+actor's subject groups, never for the relationship. **It is ISSUED by
+`accessToken()`**, the one place an access token's claims are assembled, from
+the person's own `stsMayAct` (`delegationPolicy.mayActClaimFor()`).
 
 **`act` NESTS** (section 4.1): the subject_token's own `act` goes beneath the new
 actor, and an impersonation of a token that already carried `act` keeps it —
-dropping it would launder a delegated token into an ordinary one. **AND THE
+dropping it would launder a delegated token into an ordinary one.
+
+**AND THE CHAIN BEGINS WITH THE ORIGINAL CLIENT (#443, 2026-10-06).** The first
+exchange of a token had no prior `act` to keep, so the client the person signed
+in to was in no token of the chain: two hops read `{sub: esb1, act: {sub:
+apigw1}}`, with webapp1 nowhere. The token-chaining profile #443 cites (MITRE PR
+21-1421, *Token and Identity Chaining Between Protected Resources in a Single
+ICAM Ecosystem Using OAuth Token Exchange*, the "ENA" profile) says what to put
+there: where the subject_token carries no `act`, "add a nested act claim
+containing a sub claim with the identity of the client that presented the access
+token ... (found in the access token's client_id claim)". So a DELEGATION whose
+subject_token has no `act` nests `{sub: <its client_id>}` (else `azp`) beneath
+the new actor — `OAuth2Server.originalClientAct()` — and every later hop carries
+it down by the rule above: `{sub: esb1, act: {sub: apigw1, act: {sub:
+webapp1}}}`. Four limits, each argued there: only off a subject_token this realm
+signed and verified (a foreign `client_id` names another server's client, an
+assertion's is the exchanging client's); in the form a client's own subject
+takes in the mode (`urn:sts:client:<id>` in RFC 9700 mode, so product — the
+form the actors above it have when they act by client_credentials tokens);
+nothing when the original client IS the actor; and **delegation only** — the
+profile has no impersonation (its exchanging party is always named), and RFC
+8693 section 1.1's impersonation names nobody, so it starts no chain. The
+profile's `iss` in each entry came with #471, below. The entry is
+informational, as every nested `act` is: `may_act`, the delegation policy and
+the register read the current actor, which stays outermost.
+
+**EVERY `act` ENTRY CARRIES `iss`, AND A CLIENT HAS ONE FORM AS AN ACTOR (#471,
+2026-10-06).** The same profile has the AS put "a sub claim identifying PR1 and
+an iss claim identifying the AS" in `act`, and the same pair in the nested
+original client (PR 21-1421 section 2.4.1; PR 21-1422 section 3.1.1.1 says it
+verbatim for the token exchange, and its section 3.3 examples carry `iss` at
+every level). So every entry a delegated exchange WRITES — the current actor
+and the original client — is `OAuth2Server.actChainEntry()`'s `{sub, iss}`,
+`iss` this authorization server's issuer, the token's own. Entries COPIED from
+the subject_token's `act` keep the `iss` they carry; one with none is given
+this issuer only when this realm signed and verified the subject_token, the
+one case in which this service vouches for it (`priorActChain()`); a chain off
+an assertion or development's unverified token is copied as it came. An
+impersonation's kept chain is filled by the same rule. An actor named by a
+foreign assertion still gets this issuer, the profile having no other case:
+the entry records who wrote it into this token. And **one subject form for a
+client named as an actor** (`clientActorSubject()`): `urn:sts:client:<id>` in
+RFC 9700 mode (product implies it), the bare client_id otherwise — the form a
+client_credentials actor_token and the original client already had, and now
+also the actor of a delegation the issuance policy chose WITHOUT an
+actor_token, which had been the bare client_id in every mode, so a product
+token could carry both spellings. The register's intermediary names that actor
+the same way (`delegation.js` draws it as its application's box, #468); the
+policy's actor FACT is the application's identifier in either mode
+(`partyFacts()`, and `applicationFor()` now also resolves `urn:sts:client:<id>`);
+and the `may_act` comparison accepts a client in both spellings, because the
+claim this service writes names an application by its bare client_id (from a
+DN). Introspection returns the chain as carried (#469). WS-Trust's own JWT
+`act` (`wstrust.ts`) is not a token exchange and is unchanged.
+`tests/token_exchange_product.js` 7a, 7b, 7n, 7n2 and 9.
+
+**AND THE
 SCOPE MAY NOT WIDEN**: `body.scope || subject.scope` was never compared with
 what the subject granted, and #110's `scopeRefusal()` and `tokenSet()`'s
 narrowing hold a scope to the CLIENT's declaration, not to the subject's grant.
 In product a requested scope outside a verified subject_token's `scope` claim is
 `invalid_scope` (`STS-OAUTH-0621`); a subject_token with no `scope` claim (an ID
 Token, a WS-Trust JWT) has no grant to compare against.
+
+**AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD, AND THE
+RESPONSE ACCOUNTS FOR WHAT SURVIVED (#156, 2026-10-05).** RFC 8693 section 2.1
+leaves the new token's scope to policy, and this one is stated once, at the
+`issue()` call: the `scope` asked for, else the subject_token's `scope` claim,
+else none — then `tokenSet()`'s narrowing as for every grant (#110, #302, and
+RFC 9068's plan, which takes `openid` and the other OpenID Connect scopes off a
+token for another resource server). Until then an exchange of an `openid
+profile` access token for `audience=https://api.example.org` answered
+`"scope": ""` — not a value under RFC 6749 section 3.3 — and an `id_token`
+beside an access token whose scope named no `openid`. **`tokenSet()` now
+leaves `scope` out when the token carries none, for every grant** (and the
+implicit and hybrid response does the same), and **an exchange gets an ID
+Token only when the token it issued carries `openid`**
+(`idTokenFollowsIssuedScope`). The other grants keep their ID Token when the
+plan strips `openid` from the access token: they are OpenID Connect requests,
+and the client asked who signed in. Native SSO is not affected — its ID Token
+is the point of it. `tests/vendored/sts_token_exchange_response.js` holds it.
 
 **IN PRODUCT MODE BOTH TOKENS MUST VERIFY (2026-09-21), AND UNTIL THEN NEITHER
 HAD TO.** The branch tried `verifyJws()` on the `subject_token` and, on failure,
@@ -3010,9 +3239,9 @@ produced is one good for a day and renewable.
    encapsulation — the signature inside may be ML-DSA or SLH-DSA, the JWE
    around it is what this service can encrypt with, and adding an ML-KEM family
    would be a change to every encrypted surface at once rather than to this
-   one. `applications.js` owns the grammar (`idTokenEncryptionMetadataProblem()`,
-   the members live in `appRegistrationJson` beside
-   `id_token_signed_response_alg`, which has no attribute either); this file
+   one. `applications.js` owns the grammar (`idTokenEncryptionMetadataProblem()`;
+   the members, and `id_token_signed_response_alg`, are attributes since
+   #290 — common/CLAUDE.md); this file
    owns the key and the envelope, taking `recipientKey()` from
    `introspection_jwt.ts` so all three encrypted responses pick a key the same
    way.
@@ -3104,7 +3333,10 @@ scope is a key to this service's own API.
 functions here gather facts: `scopeRefusal()` through `scope_policy.judge()`,
 `permissionRefusal()` (a delegated permission not granted —
 `permission-not-granted`, product always, development with
-`oauth2.delegatedPermissionsEnforced`, both as request attributes), and the two
+`oauth2.delegatedPermissionsEnforced`, both as request attributes; NOT for an
+RFC 8693 exchange since #549, whose delegated permissions the exchange stage
+keeps when the caller holds them and drops when it does not, in every mode —
+`xacml/CLAUDE.md`), and the two
 RFC 9396 type questions in `authorization_details.ts` (`STS-OAUTH-0454` the
 client's registered types, `0455` the server's published ones). RFC 9396
 well-formedness stays in `parse()`. `xacml/CLAUDE.md` has the per-scope
@@ -3230,14 +3462,61 @@ answer would be filed against whoever happened to be signed in.
 
 Every one of those refusals leaves the pending record ALONE. A screen that spent
 itself on a refusal would turn each of them into a denial of service against the
-person it was asked of.
+person it was asked of. The three are `askedOf()`, asked by the shell, the view
+and the answer alike, with the codes the form's refusals were recorded under
+(`STS-OAUTH-0149`, `0150`, `0151`; a malformed id or body `0148`).
 
-### Two things it deliberately is not
+### A page of the sign-in surface since #576 (2026-10-12)
 
-**IT IS NOT A SIXTH SCRIPTED PAGE.** `app.js` sets `script-src 'none'` for the
-whole service and this repository's rule is that a page wanting a script must
-argue it CANNOT work without one. This one plainly can: it is two buttons in a
-form. There is no `contentSecurityPolicy()` override anywhere in the file.
+**What changed is the page and the door; nothing the screen decides.** #569
+converts every human-facing page to a static application, and the consent
+screen is a page of the SIGN-IN SURFACE (`authn/CLAUDE.md`, *The consent
+screen*), on #571's pattern:
+
+* **`GET /oauth2/consent?consent=<id>` answers the SHELL** (`shell()`,
+  `ShellDocument`) once the three checks pass, and refuses as it always did
+  (400, `invalid_request`) when they do not — so a stale or borrowed link
+  says why without a script. **Script is required** (rcbj on #569): the
+  `<noscript>` says so and no form is drawn.
+* **The page is drawn in the browser** by the sign-in surface's bundle,
+  served here as `/oauth2/consent.js` (the same file as `/authn/signin.js`),
+  from `GET /authn-api/consent/{id}` — `consentView()`, everything
+  `consentPage()` drew as facts and no words, the limits with
+  `AccessLimits.rows()` of them — by `web_consent_screen.ts`, in the
+  `consent` catalogs' words, with the ids the page always had
+  (`consent-allow`, `consent-deny`, which the conformance suite's person and
+  `tests/vendored/consent_screen.js`'s browser surface press).
+* **`POST /oauth2/consent` IS DELETED.** Its body is `consentAct()`, moved
+  whole: the limits read back (`loweredDetails()`), the record spent either
+  way, the audit rows, `consent.record()` and the RFC 9396 Allow. It is
+  `POST /authn-api/consent/{id}` (rcbj's decision on #576: under
+  `/authn-api`, which owns the session), bound by `authn/authn_api.ts` as
+  every act there — JSON, an `Origin` of this service, and the
+  `X-CSRF-Token` of the browser's `sts_session` cookie — with `action` and
+  the limit controls by the names the page draws (`lim_t0r<n>_<member>`).
+* **THE ANSWER NAMES THE ADDRESS** the 303 sent a browser to
+  (`next: redirect`, `location`, made by `authn.locationOf()` so the realm's
+  prefix and the listener are a redirect's), with `consent_error` on it for
+  a Deny. The authorization endpoint's second pass is exactly what it was:
+  its redirects, `form_post`, JARM, PAR and the code issued are untouched.
+* **WHERE IT IS ANSWERED (#472)**: `/authn-api/consent` belongs to the OAuth
+  2.0 / OpenID Connect application in `common/hosted_applications.js`, not
+  to the sign-in service's, and the script is served at this page's own
+  address: the page, its script and its API are answered on one listener
+  whichever listener `/authn` is mapped to — no answer here is credentialed
+  to another origin (`common/cors.js`). In a service deployed as cells
+  `/authn-api/consent` is placed by affinity, as `/oauth2` is.
+
+**Tests**: `tests/authn_consent_api.js` (the shell and its three checks, the
+script, the index and the OpenAPI document, the view, every binding refusal,
+a raised and a lowered limit, Allow, a replay, Deny, the id never in an audit
+row, the form POST gone); `tests/web_surfaces.js`'s round trip over four
+consent cases; in process `tests/tools/authn_screen.js`'s `openConsent()` and
+`answerConsent()`, over HTTP `tests/vendored/authn_signin.js`'s
+`consentPage()`, `answerConsent()`, `consentFor()` and `consentWithJar()`,
+and `tests/vendored/consent_screen.js` (localised by #576).
+
+### What it deliberately is not
 
 **IT IS NOT A REFUSAL, WHICH IS WHY THE SETTING IS ON BY DEFAULT.** Every other
 policy here is off because a refusal that cannot be turned off removes a test
@@ -3250,6 +3529,11 @@ It is not a refusal and that is why: it is the screen every real authorization
 server draws on a first sign-in, and a client that has never met one has never
 run the code that survives it. It still checks nothing — the person has already
 been let in under any name they typed.
+
+**It was not a scripted page until #576**, and argued so here: two buttons
+in a form, no `contentSecurityPolicy()` override. #569's decision made every
+human-facing page a static surface, and the argument a static surface needs
+is the root `CLAUDE.md`'s rule rather than one of its own.
 
 **THE REFRESH GRANT RE-CHECKS CONSENT SINCE #172 (2026-09-23)**, and it said
 the opposite until then: *the token endpoint asks nobody anything, a grant
@@ -3398,6 +3682,16 @@ test that relied on the old looseness and registers the URI now.
 
 `STS-OAUTH-0194` — a public client presenting no credential — is an
 OBSERVATION and never a refusal since this change; it was product mode's 401.
+
+**A request that names NO client is not a client to refuse, for two grants**
+(`tokenGrant()`, beside the gate): the RFC 7523 and RFC 7522 assertion grants
+(2026-09-18, the assertion is the credential) and, since 2026-10-05, the
+OpenID4VCI pre-authorized code — section 6.1's anonymous access, where the
+code and its Transaction Code are the credential. The gate read a missing
+`client_id` as an unknown client and refused every anonymous wallet in
+product; `tests/vendored/sts_oid4vci_preauth_subject.js` (#158) found it in
+single-node, and `tests/oauth_oid4vc_hardcoded.js` 6j-ii holds it in process.
+A wallet that NAMES a client is still judged.
 
 ### An application created by hand declares its method (2026-09-18)
 
@@ -3551,6 +3845,15 @@ through `/admin/oauth2` and `/admin-api/config/set` behind a credential — the
 endpoint writes it in development and `mode.opensTestControls()` refuses it in
 product. Writing the value the setting would have anyway CLEARS the override,
 so a test that turns nonces on and off leaves no `source: override` row behind.
+**AND SINCE #597 (2026-10-12) THE ENDPOINT IS GONE**, both methods, with
+`dpop.setNonceMode()` and `dpop.forgetProofs()` that only it called
+(`STS-OAUTH-0179` and `0180` retired). The setting is the one door in both
+modes — its home is `/admin/oauth2` (the `OAuth 2.0 / OIDC` group in
+`SETTING_HOMES`) and `POST /admin-api/config/set`; a test restores it with
+`clearOverride()`. The replay-cache flush the POST did is not replaced: a
+change of nonce policy leaves remembered proofs alone, which is what every
+other setting change does. `tests/oauth_oid4vc_hardcoded.js` section 3 writes
+it through the management API in a realm and reads it back per realm.
 
 **RFC 7591 REGISTRATION IS CLOSED IN PRODUCT** unless `oauth2.openRegistration`
 is on, and `registrationOpen()` is read by the endpoint AND the metadata so that
@@ -3677,26 +3980,47 @@ all of it in process — including a control store that answers every claim "yes
 which two concurrent redemptions of one code are both issued, and which fails six of its
 assertions.
 
-## CLIENT SECRETS EXPIRE AND ROTATE WITH AN OVERLAP (2026-09-22, #49 P5, rcbj's answer)
+## CLIENT SECRETS: SEVERAL PER APPLICATION, EACH WITH ITS EXPIRY (2026-09-22, #49 P5; several since 2026-10-01)
 
-**Expiry is enforced**: `client_auth.verify()` refuses a secret past its
-expiry — `oauthClientSecretExpiresAt` (seconds; RFC 7591's
-`client_secret_expires_at`), or the registration document's own — with
-`invalid_client` and `STS-OAUTH-0558`, in product mode
-(`mode.refusesExpiredClientSecrets()`); development accepts it and logs
-`STS-OAUTH-0559`. **A rotation keeps the old secret working**:
-`rotate-secret` on `/admin/applications` and `/admin-api/applications` mints
-a new one as `regenerate-secret` does and keeps the old as
-`oauthClientSecretPrevious` until `oauthClientSecretPreviousUntil`
-(`oauth2.clientSecretOverlapS`, a week), which `verify()` accepts until then
-and no later — the time alone ends it, before any sweep. `regenerate-secret`
-still ends the old secret at once. **Administrators are told**: the daily
-scheduler job `oauth2.client-secret-expiry` writes
-`application.secret-expiring` and `application.secret-expired` audit rows
-and a warning (`STS-REG-0166`), clears rotated-out secrets past their
-overlap, and `/admin/applications` marks each such entry. `verify()` reads
-these off the client's entry itself (the registry required lazily), so no
-caller threads them through. `tests/client_secret_rotation.js`.
+**An application holds up to `oauth2.clientSecretsMax` (5) secrets**, each a
+RECORD on the multi-valued `oauthClientSecret` — `{id, secret, created,
+expires, description}`, Entra ID's shape — read by
+`applications.clientSecretRecordsOf()`, newest first; a bare value (an
+`ldapmodify`, an older entry) is a record with no expiry. The three
+attributes the single secret needed (`oauthClientSecretExpiresAt`,
+`oauthClientSecretPrevious`, `…PreviousUntil`) are gone, with no migration
+(rcbj's decision). `common/CLAUDE.md` and `applications.js`'s header at
+`digestSecretId()` argue the record.
+
+* **Verification accepts ANY unexpired secret**: `client_auth.verify()`
+  matches the presented secret against every record (`secretsOf()`, off the
+  client's own entry, the registry required lazily), `client_secret_jwt`
+  tries each, and `request_object.ts` and `oauth2.ts`'s `id_token_hint`
+  check try each as an HMAC key. The answer carries `secretId` and
+  `previousSecret` (a match that is not the newest).
+* **Expiry is per record**: a secret past its `expires` is refused with
+  `invalid_client` and `STS-OAUTH-0558` in product
+  (`mode.refusesExpiredClientSecrets()`); in development only the NEWEST
+  secret is accepted expired (logged `STS-OAUTH-0559`) — a superseded one
+  past its expiry is a rotation's overlap ending and is refused in both.
+* **The PRIMARY is the newest unexpired** (`primaryClientSecretOf()`), and
+  it is `clientConfigOf().client_secret` — what this service signs an HS256
+  ID Token, a JARM response and a Logout Token with, and what RFC 7591/7592
+  publish — so no outbound signer changed.
+* **Add, remove, rotate, regenerate**: `add-secret` (`lifetimeDays`, 0 to
+  730, default `oauth2.clientSecretLifetimeDays`; `description`),
+  `remove-secret` (by
+  id), `rotate-secret` (a new secret, and every live one's expiry moved to
+  the end of `oauth2.clientSecretOverlapS`), `regenerate-secret` (replaces
+  all), on the Credentials tab and `/admin-api/applications/{action}`.
+  Refusals: the cap `STS-REG-0208`, an unknown id `0209`, the pinned
+  `adminApi.clientSecret` `0210`, a bad lifetime or description `0211`.
+* **Administrators are told**: the daily `oauth2.client-secret-expiry` job
+  writes `application.secret-expiring` for an application holding a secret
+  that expires within `oauth2.clientSecretExpiryWarningDays`,
+  `application.secret-expired` (`STS-REG-0166`) for one whose every secret
+  has expired, and REMOVES expired secrets an application holds a live one
+  beside — never the last. `tests/client_secret_rotation.js`.
 
 
 ## 3bb. OPENID CONNECT NATIVE SSO, AND RFC 8693's TOKEN TYPES READ (2026-09-23, #130)
@@ -3887,11 +4211,55 @@ a job — which is #176's, where it lives.
   was an older draft). `request_context` is kept on the row and shown on
   `/portal/ciba`.
 
+**A SIGN-OUT OF EVERYTHING REVOKES THE PERSON'S GRANTS TOO (#432,
+2026-10-03).** The register outlived the tokens in it: a global sign-out, an
+account disable and a partner's `signal-revoke-grants` revoked every token and
+left the grant CURRENT, a `grant_id` a client could still name to merge onto.
+`logout/logout.ts` now has an `oauth-grant` family that calls `revoke()` — the
+client's DELETE, performed for the person — filed by the grant's `sub`.
+`revoke()` takes the door's CAEP initiating entity where it states one
+(`policy` for a signal), and keeps `user` / `admin` otherwise.
+
 `tests/grant_management.js` and `tests/vendored/sts_grant_management.js`,
 `sts_fapi_ciba.js` (local) hold it. **Not built**: Grant Management through
 the device flow (there is none here), `grant_management_action_required`,
 sharing a grant between client ids, and FAPI-CIBA's two OPTIONAL
 `login_hint_token` type members.
+
+## AN AUTHORIZATION CODE IS PRESENTED ONCE, WHATEVER THE OUTCOME (2026-10-02, #424)
+
+rcbj: *"I want an OAuth2 / OIDC authorization code to only be valid for five
+minutes and to only be allowed to be presented once. It doesn't matter why the
+request to the Token Endpoint failed."*
+
+* **Spent at its first presentation.** `spendPresentedCode()` runs before
+  anything about a Token Request is checked: the body's validation, client
+  authentication (rcbj: a failed one burns the code too), every grant check.
+  It takes the code out of `authzCodes`, records the presentation in
+  `redeemedCodes` in the same tick, and claims the code across the cluster for
+  good. The code is therefore spent once on every node.
+* **A second presentation is refused `invalid_grant`, whatever it looks like.**
+  - If the first redeemed nothing: `STS-OAUTH-0789`, "start a new
+    authorization request".
+  - If it redeemed something: `STS-OAUTH-0143`, and what it bought is revoked
+    (RFC 6749 section 10.5).
+  - If it arrives while the first is still being answered: the presentation is
+    noted on the record, and `rememberRedemption()` revokes what the first
+    goes on to issue.
+* **This reverses a deliberate leniency.** A refused request used to leave its
+  code redeemable, so a client could fix a wrong `code_verifier` and retry.
+  That, and the identical-repeat replay, are now
+  `bcp.codeRedemptionRelaxed()`: `oauth2.codeReplayIdempotent` (off by
+  default), ignored in RFC 9700 mode and therefore in OAuth 2.1, FAPI and
+  product. The test stacks still turn it on, for the parent project's
+  `oauth2_sts_endpoints.js`, which asserts the leniency.
+* **At most five minutes.** `oauth2.authorizationCodeTtlS` has `max: 300` (the
+  default, as before); FAPI 2.0 still caps it at 60.
+* **Tests.** `tests/authorization_code_once.js` covers each kind of failed first
+  presentation, the replay, the differing replay, a concurrent pair, expiry,
+  the cap and the relaxed control. `oauth_cluster_once.js` and `par.js` were
+  adjusted: the first's control now runs relaxed, the second redeems a fresh
+  code.
 
 ## 3bg. WHAT THE OPENID CONFORMANCE SUITE FOUND (2026-09-24, #176)
 
@@ -3936,7 +4304,8 @@ specification, and each fix is in EVERY mode, because none is FAPI's own rule:
   UNVERIFIED, which is safe for a refusal; development mode still only
   OBSERVES an assertion that fails its signature.
 * **`x-fapi-interaction-id`** (FAPI 1.0 Baseline section 6.2.1 items 11 and
-  13) on UserInfo, `/oauth2/grants/{id}` and the step-up stand-in: echoed
+  13) on UserInfo and `/oauth2/grants/{id}` (and the step-up stand-in until
+  #593 deleted it): echoed
   when the client sent a UUID, minted otherwise. Every mode, as a middleware
   before the routes — a named server's profile is not entered yet there, and
   the header carries nothing. A value that is not a UUID is replaced rather
@@ -4236,16 +4605,74 @@ rcbj's answers were every recommendation:
   * It takes an `_async` result, or a relying party's
     `command_requested: metadata | audit_tenant`.
   * It answers RFC 6750's errors.
-* **The mock relying party**, `/oauth2/commands/mock-rp` (development only):
-  * It checks a Command Token as section 9 asks.
+* **The relying party a test needs is the TEST PEER's** since #596
+  (2026-10-12; #591 P5): `tests/peer/peer_commands.js`, at
+  `/t/{tenant}/commands` on the peer's TLS listener. The runtime's mock,
+  `/oauth2/commands/mock-rp` (`command_mock_rp.ts`), was deleted, and its
+  code `STS-OAUTH-0782` is retired.
+  * It checks a Command Token as section 9 asks — from the OUTSIDE now:
+    the signature against the `jwks_uri` of the realm's OpenID
+    configuration, and `iss` against that configuration's `issuer`.
   * It keeps section 6's state machine per account, and invents an `aud_sub`
     for the provider to learn.
   * It streams tenant commands.
-  * It answers `_async` through the callback IN PROCESS.
+  * It answers `_async` through the callback OVER HTTP, at the
+    `callback_endpoint` the provider's `metadata` named (the mock handed the
+    result over in process), trying a 401 again a few times while another
+    process of the provider catches up with the callback token.
   * The registered URL's query carries the knobs `fail`, `drop` and `audsub`.
+  * A realm reaches it with the peer's CA as `federation.outboundCaFile`, and
+    in development mode, since the peer is on the stack's private network.
 
-Tests: `tests/provider_commands.js` and
-`tests/vendored/sts_provider_commands.js`.
+Tests: `tests/provider_commands.js`, `tests/test_peer.js` (section G, the
+relying party's own correctness) and
+`tests/vendored/sts_provider_commands.js` (`testPeer: true`).
+
+## 3by. ASSERTIONS FROM DECLARED ISSUERS AS RFC 8693 SUBJECT AND ACTOR TOKENS (2026-10-03, #114)
+
+`exchange_assertions.ts` is a library (rule 3) over `assertion_grant.js` (3x)
+and `saml_assertion_grant.js` (3z); its header is the design. What a
+maintainer changing anything near it needs to know:
+
+* **ONE VERIFIER PER FORMAT, NOT A THIRD.** A `jwt` subject or actor token
+  this realm did not sign, and every `saml2` / `saml1` one, goes through the
+  grant's own `verify()` with `use: 'token-exchange'`. That option changes
+  exactly what the exchange decides differently: the grant's on/off switch is
+  skipped (an exchange is not the grant), the audience is
+  `options.audienceCheck` (`oauth2.tokenExchangeAudience`, `STS-OAUTH-0796`),
+  SAML's version is the declared type's (`samlVersion`, `0797`) and a SAML
+  `Recipient` may also be one of `options.recipients`. Everything else — the
+  declaration, the signature, the chain and revocation, the person-as-issuer
+  rule, the lifetime ceiling — is the grant's, unchanged.
+* **ONE HISTORY (rcbj).** The spend is the grant's `usedAssertions.claim()`,
+  keyed as the grant keys it, `use: 'token-exchange'` only labelling the row.
+  So an assertion spent at either door is refused at the other, and it is
+  spent only when tokens are issued (`request`). SAML 1.1 is its own format,
+  `saml11`, keyed by `AssertionID`.
+* **SAML 1.1 IS READ INTO SAML 2.0's SHAPE** (`readSaml11()`), so `verify()`
+  decides on one set of facts: the subject the same in every statement or
+  none, the 1.1 bearer method, `AudienceRestrictionCondition` and
+  `DoNotCacheCondition` as known conditions, no confirmation data (so the
+  expiry is the `<Conditions>`'). It is reachable ONLY through the exchange:
+  the grant still refuses a non-2.0 `Version` by name, as RFC 7522 says.
+* **STRICT BY DEFAULT (rcbj).** `authorization-server` is the grant's
+  audience rule, and S — the application the subject's token was issued for,
+  which #186's policy needs — is then the exchanging client.
+  `any-declared-relying-party` is TOKEN FORWARDING: S is the relying party the
+  audience names, the subject's `aud` is that audience (so a self exchange is
+  issued for it), and `consumedInput()` writes FORWARDED on the act. The
+  setting's description carries the warning.
+* **WHO MAY EXCHANGE IS #186's POLICY, NOTHING ELSE (rcbj).** No rule here
+  ties an issuer to a client.
+* **THE SUBJECT IS A PERSON WITH AN ENTRY.** `assertionSubject()` records the
+  authentication as the grant does and asks `provisionedPerson()`; nobody is
+  `STS-OAUTH-0798`. As the actor, the person is the actor and `act.sub` theirs.
+* **DEVELOPMENT** keeps its unverified read of a `jwt` token that does not
+  verify; a SAML token that does not verify is refused in both modes, as
+  there is nothing to read unverified.
+
+Tests: `tests/token_exchange_assertions.js` (in process, both modes) and
+`tests/vendored/sts_token_exchange_assertions.js` (over HTTP).
 
 ## 3bp. WHAT THE REST OF THE CONFORMANCE SUITE FOUND (2026-09-24, #187)
 
@@ -4712,3 +5139,365 @@ Left for their own tickets:
   device register (#164 phase 4) and are not a grant's end here.
 
 `tests/vendored/sts_caep_oauth_grants.js` drives the whole of it over HTTP.
+
+## THE ACCESS-TOKEN STATUS LIST (#432 phase 2, lane p2b, 2026-10-03)
+
+A resource server that checks an access token ON ITS OWN could not see a
+revocation: RFC 9068 and RFC 9767 section 6.3 leave it introspection. Every
+RFC 9068 access token now carries draft-ietf-oauth-status-list section 6.1's
+`status: { status_list: { idx, uri } }`, and so do GNAP's `jwt-signed` and
+`jwt-encrypted` tokens — ONE list per realm for both protocols (rcbj's
+decision 4). `access_token_status.ts`'s header argues the list; what a reader
+of THIS directory needs:
+
+* **`accessToken()` stays synchronous; the index is reserved before it.**
+  Claiming an index is a cluster claim, and four callers read
+  `accessToken()`'s answer synchronously (the API explorer and the in-process
+  tests among them). So `reserveAccessToken()` mints the `jti`, claims the
+  index for it and hands both in `opts` (`access_jti`, `status_ref`), and
+  `accessTokenAsync()` is reserve-then-mint. `tokenSet()` and the
+  authorization endpoint's implicit and hybrid responses use it, and the API
+  explorer became asynchronous for it. A caller that still calls
+  `accessToken()` bare gets `allocateInProcess()` — answered only where no
+  shared claims table exists — and otherwise a refusal (`STS-OAUTH-0820`)
+  rather than a token on an index no other node was asked about. A token that
+  cannot get an index is not minted (`STS-OAUTH-0816` store, `0817` full).
+* **The row's expiry is the configured lifetime**, not the FAPI-capped one
+  (#138 only shortens it): a row outliving its token costs an index for a few
+  minutes, never a wrong bit.
+* **The bit is computed** from `admin_stats.isRevoked()`, which every OAuth
+  door that revokes already writes, and is never written by a door. A
+  revocation the register forgets at `oauth2.maxRevokedJtis` reads VALID
+  again here exactly as it does at introspection — one answer.
+* **One list per realm means one URI per realm**: a named authorization
+  server's token names the realm's list (`realmBaseOf()` strips nothing; it
+  rebuilds the realm base from the pinned public base or the base's origin and
+  the AMBIENT prefix, so a CIBA push from the scheduler needs no request).
+  `status_list_aggregation_endpoint` in every authorization server's metadata
+  (section 9.1) is therefore the realm's aggregation, under `base` and not
+  `at`.
+* **`status` is a reserved claim** (`admin_stats.js`'s `RESERVED_JWT_CLAIMS`):
+  a configured one would point every token at a list somebody chose.
+* **The path is neutral**, `/status-lists/access-tokens`, because half of
+  what it describes is GNAP's. Signed with the realm's RS256 `access-token`
+  key (section 11.3: the key the tokens are signed with by default); `ttl`
+  `oauth2.accessTokenStatusListTtlS` (60 s — a revoked access token is in use
+  now, where the credential lists say 300), `exp`
+  `oauth2.accessTokenStatusListLifetimeS`.
+
+Tests: `tests/access_token_status.js` (in process) and
+`tests/vendored/sts_access_token_status.js` (the OAuth half over HTTP, the
+list verified and read by the job's own code); GNAP's half is
+`tests/vendored/sts_gnap_rs.js` section 8.
+
+## 3ca. FAPI 2.0 HTTP SIGNATURES AT THE RESOURCE SERVERS (2026-10-05, #178)
+
+`http_signatures.ts` holds the policy and `common/crypto.js` section 14 the
+mechanism: RFC 9421 and RFC 9530, moved there out of `gnap/` in the same
+change. The specification of record is the OpenID Foundation's *FAPI 2.0 Http
+Signatures*, **draft of 26 June 2026**, cited by date.
+
+**rcbj's four decisions (2026-10-05):**
+
+1. **The switch is a setting of its own**, `oauth2.httpSignatures`
+   (`off` | `sign-responses` | `require-requests`, default `off`), plus a
+   client flag, `oauthHttpSignedRequests`. It is not a value of `oauth2.fapi`,
+   because the draft says nothing about adoption.
+2. **Responses are signed with the realm's current signer**, the key the JWKS
+   publishes under the `alg` that `oauth2.httpSignatureResponseAlg` names
+   (`ES256` by default; ML-DSA offered). RSA is not offered: its JWK says
+   RS256, and RFC 9421 section 3.3.7 sends no `alg` parameter for a JWS name,
+   so the JWK's `alg` is the only way a client learns the algorithm.
+3. **The code lives in `common/`**: `crypto.js` section 14, and
+   `structured_fields.ts` for RFC 8941.
+4. **It applies at every resource server**, because they share one door,
+   `dpop.presentedAccessToken()`, and it is asked last there.
+
+**What is not obvious from the code:**
+
+* **A present `fapi-2-request` signature is verified whatever the setting
+  says.** The setting decides only whether an unsigned request is refused and
+  whether responses are signed. A response is signed when the setting is not
+  `off`, when the client set the flag, or when the request carried a verified
+  signature.
+* **The signer is armed on `req.res`, not on the response the check was
+  handed.** SCIM and Shared Signals hand `presentedAccessToken()` a
+  recording stand-in, so a refusal goes there and is translated, while the
+  real response is still signed. `tests/fapi_http_signatures.js` holds that.
+* **The target URI is `baseUrlOf()`'s origin plus `req.originalUrl`**, never
+  `req.url`. The realm middleware and SCIM's mounted router both rewrite
+  `req.url`, and the client signed the whole URI.
+* **The keys come from the token's client.** The key is read from the
+  `client_id` (or `azp`) of the access token that was accepted, through
+  `assertion_grant.keysForParty()`. A `jwks_uri` client's keys are fetched on
+  arrival by `keyPrefetch()`, which `oauth2.ts` registers beside
+  `dpop.proofClaims()`, because the check itself is synchronous. The prefetch
+  reads the token unverified and decides nothing.
+* **Where the draft and RFC 9421 differ.** Covering a request's Signature
+  and Signature-Input by `;req;key` is RFC 9421's NOT RECOMMENDED and the
+  draft's "shall". Both are done: the members, AND every component the
+  request signature covered, which is what section 2.4 recommends instead.
+* **A response that cannot be signed goes out unsigned**, under
+  STS-OAUTH-0942. That happens when no key exists for the algorithm, or when
+  the response began writing before it ended. A client that requires a
+  signature refuses the response, which is the draft's own answer.
+* **No registration metadata.** The draft defines none, so the client flag
+  is written through the console, `/admin-api` or LDAP, never by RFC 7591.
+
+Tests: `tests/http_signatures.js` (the mechanism, RFC 9421's vectors including
+section 2.4's), `tests/fapi_http_signatures.js` (this policy, section by
+section), `tests/vendored/sts_fapi_http_signatures.js` (`local: true`, over
+HTTP with its own RFC 9421 signer and verifier).
+
+## 3cb. THE ADMIN CONSOLE AS A PUBLIC CLIENT (#446, 2026-10-05)
+
+The console is becoming a static application in the browser that calls
+`/admin-api` with the signed-in person's own token: a PUBLIC client, where it
+was a confidential relying party run by this process (`common/oidc_rp.ts`).
+rcbj reversed #444's D9 for the console on the condition that its tokens are
+bound to a key the browser cannot export. Two rules follow. Both are about
+that ONE client and neither is a setting.
+
+**UNTIL THE CUTOVER NEITHER APPLIES.** The seeded `sts-admin-console` entry
+still declares `private_key_jwt`. Each rule tests the client's id AND its
+declared method (`none`), so the confidential console, the portal and every
+other client are untouched, and the API explorer's unbound token still works.
+
+* **DPoP IS MANDATORY FOR IT** (`sender_constraints.js`:
+  `DPOP_BOUND_PUBLIC_CLIENTS`, `dpopBoundPublicClient()`).
+  * The token endpoint refuses a request from it with no DPoP proof
+    (`publicClientIssuanceRefusal()`, `STS-OAUTH-0943`, `invalid_dpop_proof`).
+    The check is in `tokenGrant()`'s `issue()` closure, which every grant
+    mints through, beside the role gate and #34's two settings.
+  * Its refresh token needs no new rule: RFC 9449 section 5 already binds a
+    public client's refresh token to the proof's key.
+  * A resource refuses an UNBOUND access token issued to it
+    (`accessTokenRefusal({ clientBound })`, `STS-OAUTH-0944`). `/admin-api`'s
+    gate passes `clientBound`, reading the client's entry in the realm that
+    issued the token, and only for a client the list names. A BOUND token
+    presented without its proof was already refused by every resource.
+  * `oauth2.accessTokenRequireDpop` and `oauth2.refreshTokenRequireDpop` stay
+    the realm's own question for everybody else (rule 3ao).
+* **IT IS THE ONE PUBLIC CLIENT A CONFIDENTIAL-ONLY FAPI PROFILE ALLOWS**
+  (`fapi.js`: `PUBLIC_CLIENT_EXEMPT`, `publicClientExempt()`).
+  `clientAuthenticationRefusal(method, clientId)` lets it past at the token
+  and PAR endpoints; the CIBA endpoint passes no client and so exempts
+  nobody. FAPI 1.0 Advanced and FAPI 2.0 support no public client, and
+  refusing it would leave such a realm with no console. **The console does
+  not conform to the profile there**: the two requirement rows
+  (`no-public-clients`, `confidential-only`) say so, and so do
+  `docs/oauth-security.md` and `docs/spec-departures.md`. This qualifies 3av's
+  *the hosted surfaces conforming*: the portal still does.
+
+**THE PORTAL JOINED BOTH LISTS ON #568 (2026-10-12)**: rcbj's decision made
+it the console's pattern — a static application, the public client
+`sts-user-portal`, every token DPoP-bound and audienced to `/account-api` —
+where it had kept #444's backend-for-frontend. Same two rules, same
+condition (its id AND its declared method `none`), and the same honesty: in a
+realm with a confidential-only FAPI profile the portal does not conform
+either, and the requirement rows say so. `tests/sender_constraints.js` and
+`tests/fapi2_units.js` hold both lists to "the console and the portal,
+nothing else".
+
+**AND UNDER A FAPI PROFILE THEY SIGN IN AT ALL (#568)**, which needed seven
+more pieces, each found by running the FAPI jobs with the static portal (the
+last three on 2026-10-12, `9ee610e7`):
+
+* **PAR (RFC 9126)** where the metadata requires it (FAPI 2.0): the runtimes
+  push from the browser (`common/web_spa_client.ts`,
+  `authorizationRequestUrl()`), with NO DPoP proof on the push — one there
+  binds the code to a key the callback's page load does not hold — and
+  FAPI 2.0's *a push authenticates its client* (`parAuthenticationRefusal`)
+  exempts the two clients, which have nothing to authenticate with.
+* **The advertised-method check** at the token and PAR endpoints
+  (`token_endpoint_auth_methods_supported`, STS-OAUTH-0198) exempts them:
+  the profile advertises no `none`, so without it the confidential-only
+  exemption exempted nothing.
+* **The signed request object** a profile requires (FAPI 1.0 Advanced, 2.0
+  Message Signing) is not required of them — `request_object.ts`'s
+  `signedRequired(client, profile, clientId)`, the one reading every path
+  asks: they hold no key to sign one with. An operator's
+  `oauth2.requireSignedRequestObject` or the entry's own flag still binds
+  them. The requirement rows say so.
+* **JARM** where the realm offers only JWT-secured response modes (2.0
+  Message Signing): requested, and verified in the browser
+  (`openAuthorizationResponse()`: the signature against the realm's JWKS with
+  WebCrypto, `iss`, `aud`, `exp`) before its code is believed.
+* **A `nonce` on every OpenID request.** FAPI 1.0 refuses an `openid`
+  request without one (STS-OAUTH-0575), and neither runtime sent one. Both
+  now send `nonce = base64url(SHA-256('nonce:' + PKCE verifier))`
+  (`SpaClient.nonceFor()` in `common/web_spa_client.ts`), so nothing extra
+  has to cross the redirect, and refuse an ID Token that does not carry it
+  (`nonceMatches()`) — the console's re-sign-in popup included. The two test
+  helpers (`tests/vendored/console_signin.js`, `portal_signin.js`) derive
+  the same value.
+* **No `query` response mode under FAPI 1.0 Advanced.** An Advanced realm
+  still advertised `query`, so a runtime reading discovery asked for plain
+  `code` without JARM and was refused (STS-OAUTH-0783).
+  `fapi.applyToMetadata()` drops `query` from `response_modes_supported`
+  whenever the profile is `1-advanced`, which leaves the JWT-secured modes.
+* **`oauth2.fapiRequireMtls` exempts them, DPoP-bound.** The setting makes
+  the sender constraint mTLS only (FAPI 1.0's wording), and a browser has no
+  client certificate to present, so the portal's sign-in was refused
+  (STS-OAUTH-0583). `fapi.senderConstraintRefusal(binding, clientId,
+  method)` lets `publicClientExempt()`'s two clients through when — and only
+  when — the token is DPoP-bound and they authenticated with `none`; an
+  unbound token is still refused and no other client is affected
+  (`tests/fapi_advanced_units.js`). The `sender-constrained` requirement row
+  (FAPI 1.0 Advanced 5.2.2 items 5-6) says so: under the setting these two
+  clients do not conform either.
+
+**THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#103) IS MADE AT ISSUANCE**, by
+`issueAuthorizationResponse()` calling `rolePermissions.noteConsoleSignIn()`
+before it narrows the gated scopes, with the session's `amr` and
+`authn.latestAuthorityOf()`. `common/CLAUDE.md` (beside *A role authorizes
+permissions*) argues it. It changes nothing today: the server-rendered
+console's flow asks for no admin scope.
+
+**NOT DONE YET, AND OWED BEFORE THE CUTOVER**: the seed itself (the entry
+becoming `none`), the sign-in the browser runs (authorization code, PKCE, a
+WebCrypto key), and the registration-time check for the seeded row.
+
+`tests/console_public_client.js` holds the rule end to end, with the entry
+declared public in a child process.
+
+## A CLIENT NOBODY REGISTERED GETS NOTHING, IN PRODUCT (#496, 2026-10-06)
+
+rcbj, widening #496: in product an application that is not registered gets
+nothing but a 404 or its protocol's own "unknown application" error, and
+nothing is learnt from it. "Registered" is #494's word, `appRegisteredBy`
+(`IssuerNames.registeredApplication()`): the console, `/admin-api`, RFC 7591,
+an OpenID Federation (automatic registration runs BEFORE the authorization
+endpoint reads the client, so a federation client is registered by then)
+and the seeds. An entry a development sighting filed is a sighting. Behind
+`mode.issuesToUnregisteredApplications()`, the `unregistered-oauth-clients`
+row on `/admin/mode`. Development is unchanged.
+
+* **The authorization endpoint** (and PAR, through the same
+  `vetAuthorizationRequest()`) asked nothing about the client until #496:
+  an unknown `client_id` was refused only by the redirect URI rule
+  (`STS-OAUTH-0121`), and ACCEPTED where `oauth2.redirectUris` was set.
+  `unregisteredClientRefusal()` is asked right after the shape check, as a
+  400 on this server and never redirected (RFC 6749 section 4.1.2.1):
+  `invalid_client`, `STS-OAUTH-0947`; no `client_id`, `invalid_request`,
+  `STS-OAUTH-0948`.
+* **The token endpoint** asks the same question before the failed-secret
+  counter and the `seen()` that wrote an unregistered entry's grant type and
+  scope onto it: 401 `invalid_client`, `STS-OAUTH-0949`. An unknown client
+  was refused anyway (`STS-OAUTH-0193`), and a seen-only one only because a
+  sighting writes no credential (`STS-OAUTH-0553`). A clientless grant names
+  no client and is not asked.
+* **RFC 8693's target**: `DelegationPolicy.resolveTarget()` resolves an
+  entry with no `appRegisteredBy` to nothing in product, so an exchange to
+  an audience development merely saw is the policy's `unregistered-target`
+  (`invalid_target`, `STS-OAUTH-0793`); and
+  `ExchangeAssertions.applicationNamed()` holds an exchanged assertion's
+  audience to a registered application under `any-declared-relying-party`.
+* **RFC 8707 `resource` outside an exchange** was left open here and is
+  #505's, below.
+
+`tests/unregistered_applications.js` (O1–O3) holds it in both modes.
+
+## AN RFC 8707 RESOURCE NAMES A REGISTERED TARGET, IN PRODUCT (#505, 2026-10-06)
+
+rcbj's follow-up to #496, a ticket of its own: a `resource` value became the
+access token's `aud` whatever it named, so in product a client could address
+a token to any URI at all — the OAuth gap #496's audit left. Now, in product,
+every `resource` at the authorization endpoint, PAR and the token endpoint
+must name a **registered target**, and `common/registered_targets.ts` is the
+one definition of that phrase, shared with GNAP's locations
+(`gnap/CLAUDE.md`):
+
+* **one of this service's own resource servers**, read from the checks a
+  token meets rather than listed: the default resource indicator of an
+  authorization server published at the request's base (`<base>/resource`,
+  or a named one's — `jwt_access_token.ts`'s `isOwnResourceAudience()`,
+  which UserInfo, SCIM, Shared Signals, OpenID4VCI, Grant Management and the
+  VC-API endpoints all read through `dpop.presentedAccessToken()`); the
+  management API, by what `mgmt-api/admin_api.ts` accepts as an audience
+  (its new `namesThisApi()` facade over `audienceAccepted()` and
+  `realmAudienceAccepted()`); and the account API (#568) — the GNAP
+  demonstration resource server was one until #593 deleted it;
+* **or a registered application** (`appRegisteredBy`), found by its
+  `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
+  permission base URI (normalised), the four names
+  `applications.audienceNamesEntry()` reads. The embedded debugger's api is
+  one: `sts-debugger-api`, seeded registered in every install (#541),
+  under `urn:sts:debugger-api:`.
+
+Every target is compared whole, because it becomes an `aud` and every
+resource server here compares an `aud` whole (RFC 9068 section 4).
+
+* **The authorization endpoint and PAR**: in `vetAuthorizationRequest()`,
+  after the client and its redirect_uri are vetted and above the session
+  check, so nobody signs in for a request that was going to be refused —
+  `invalid_target` (RFC 8707 section 2), REDIRECTED from the authorization
+  endpoint and a 400 at PAR, `STS-OAUTH-0950`. A malformed resource is left
+  to the shape check that answers it after sign-in (`STS-OAUTH-0154`).
+* **The token endpoint**: once above every grant but the token exchange, and
+  before anything a grant spends — 400 `invalid_target`, `STS-OAUTH-0951`.
+* **The token exchange is not asked**: its `resource` and `audience` are RFC
+  8693's targets, which the delegation policy resolves and refuses
+  (`unregistered-target`, `STS-OAUTH-0793`) as #496 left it. **The
+  definition is not shared with `resolveTarget()`**, deliberately: that
+  lookup must answer an APPLICATION to read relationships from, and an own
+  resource server has none, so folding the two would change the exchange's
+  decisions, which #505 does not ask for.
+
+Behind #496's `mode.issuesToUnregisteredApplications()` — the question is the
+same, whether a token is issued FOR something nobody registered — with a row
+of its own, `unregistered-resource-targets`, on `/admin/mode`. Development is
+unchanged. `tests/registered_targets.js` (T1–T4) holds it in both modes.
+
+## THE ACTOR IS THE CALLER'S OWN, AND A CLIENT'S OWN TOKEN IS ADDRESSED TO IT (#550, 2026-10-10)
+
+rcbj's two findings on the #549 chain, decided "both modes, one ticket":
+
+* **`actorTokenProblem()` (in `tokenGrant()`'s token-exchange branch)**,
+  asked after the actor_token's signature, type and revocation checks and
+  before the delegation policy, in EVERY mode (development applies it to
+  the claims it reads unverified). Rule 1, `STS-OAUTH-0955`: the token was
+  issued to the exchanging client (`client_id`, else `azp`; with neither,
+  `aud` names the client), and a `urn:sts:client:` subject names that
+  client. Rule 2, `STS-OAUTH-0956`: `aud` names this authorization server
+  (issuer, token endpoint) or the client (`clientAudienceNames()`: its
+  client_id, identifier, `oauthAudience`). Before #550 the actor was READ
+  from the token and never compared with the caller, so a resource server
+  sent another client's access token could act with that client's
+  delegation rights. Not asked of an assertion actor (#114) or a Native SSO
+  device secret (#130). These are validation of who the actor IS; what it
+  may do is still the issuance policy's.
+* **`clientCredentialsAudience()`**: a `client_credentials` request naming
+  no `resource`, no `authorization_details`, no scope that names an
+  application or permission, and no scope of this service's own resource
+  server (`protocolScopes()`, `scopePolicy.isProtected()`) gets `aud` = the
+  client's `oauthAudience` values, or its client_id — not RFC 9068's
+  `<issuer>/resource`. A request naming any of those keeps the old default,
+  so every resource server here accepts what it accepted. One consequence:
+  another resource server's introspection no longer reports such a token
+  active (`introspection_jwt.ts`'s `intendedFor()`), which is right — the
+  token is the client's.
+
+## A DELEGATED PERMISSION NEEDS A PERSON; AN APPLICATION'S COMES FROM A ROLE (#551, 2026-10-10)
+
+rcbj's decisions: every mode; role membership (#303/#310), no new attribute;
+no `roles` claim and no `.default`. `oauthDelegatedPermission` authorizes a
+permission only on a token whose subject is a person. On `client_credentials`
+(`issuanceSubjectOf()` answers `application`) every application permission
+— not only the ones a resource lists in `oauthRoleGatedPermission` — goes
+through `role_permissions.narrowScope()` with the fact
+`scope-application-permission`, and the issuance policy's
+`application-permission-not-authorized` drops one no held role authorizes
+(STS-OAUTH-0957; `invalid_scope` when nothing is left). `tokenSet()` asks
+`rolePermissions.asksFor(scope, subject)` rather than `asksForGated()`. The
+request-stage `permission-not-granted` no longer applies to
+`client_credentials`. An exchange of a client's own token is still judged
+as a person's at mint (the subject kind is read off the grant), and the
+#549 exchange rule still asks the caller's delegated grant.
+
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+**None is left.** The RFC 9470 stand-in, `/oauth2/step-up/resource/:application`, was on this list until #593 (2026-10-12) deleted it — see 3an. So was the Provider Commands mock relying party, `/oauth2/commands/mock-rp`, until #596 moved it to the test peer — see 3bl.
+
+**`/dpop/nonce-mode` left the runtime with #597 (2026-10-12)**: deleted, both halves, and `oauth2.dpopNonceRequired` is set the same way in either mode (see *`POST /dpop/nonce-mode` IS PER REALM AND A TEST CONTROL*, above).

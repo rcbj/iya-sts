@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -515,32 +515,20 @@ function childMain() {
                 oauthTokenEndpointAuthMethod: 'client_secret_basic' } });
     const basic = 'Basic ' + Buffer.from('once-a:' + SECRET).toString('base64');
 
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const signIn = async function (first) {
       if (!(first.status === 302 &&
             /\/authn\/login/.test(String(first.headers.location || '')))) {
         return first;
       }
-      const page = await request(port, 'GET', first.headers.location,
-                                 { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = 'once-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      const screen = String(first.headers.location).split('?')[0]
-        .replace(/^https?:\/\/[^/]+/, '');
-      const posted = await request(port, 'POST', screen,
-                                   { form: form, cookies: true });
-      const back = String(posted.headers.location || '')
-        .replace(/^https?:\/\/[^/]+/, '');
-      return back ? request(port, 'GET', back, { cookies: true }) : posted;
+      // THE SCREEN OVER `/authn-api` (#571), in this flow's jar.
+      const sent = await authnScreen.submit({ port: port, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: 'once-alice',
+                  password: 'anything' } });
+      const back = sent.next === 'redirect'
+        ? String(sent.location || '').replace(/^https?:\/\/[^/]+/, '') : '';
+      return back ? request(port, 'GET', back, { cookies: true }) : sent;
     };
     const codeFrom = function (r) {
       const loc = String((r && r.headers && r.headers.location) || '');
@@ -584,6 +572,12 @@ function childMain() {
     };
 
     // --- a. the control, then the claim, in development mode -----------------
+    // THE CONTROL RUNS WITH REDEMPTION RELAXED (#424): by default a code is
+    // taken out of the map at its first presentation, so a second request on
+    // the same node never finds it and the double issuance cannot be shown
+    // there; the relaxed redemption still reaches the claim with the record
+    // in hand, which is the shape two NODES have.
+    process.env.STS_OAUTH2_CODE_REPLAY_IDEMPOTENT = 'true';
     control = true;
     let got = await newCode();
     note(!!got.code, '3a0. a code is issued',
@@ -596,6 +590,7 @@ function childMain() {
          'sets: the double issuance #46 describes, reproduced',
          pair.map(function (r) { return r.status; }).join(','));
     control = false;
+    delete process.env.STS_OAUTH2_CODE_REPLAY_IDEMPOTENT;
     got = await newCode();
     pair = await Promise.all([redeem(got.code), redeem(got.code)]);
     // Since #187 a code used twice is refused in every mode (RFC 6749
@@ -613,10 +608,13 @@ function childMain() {
          pair.map(function (r) { return r.status + ' ' +
            String(r.json.access_token || r.text).slice(-12); }).join(' | '));
     const codeAsks = heldBy('oauth.code', got.code);
-    note(codeAsks.length === 2 && codeAsks.filter(function (one) {
+    // Since #424 the first presentation takes the code out of this node's
+    // map before it asks the store, so the second request finds nothing to
+    // claim: the store is asked at least once and spends the code once.
+    note(codeAsks.length >= 1 && codeAsks.filter(function (one) {
       return one.claimed;
     }).length === 1,
-         '3a3. and both requests reached the store, which spent the code once',
+         '3a3. and the store spent the code exactly once',
          JSON.stringify(codeAsks));
 
     // --- d. PAR, before RFC 9700 mode is on ---------------------------------

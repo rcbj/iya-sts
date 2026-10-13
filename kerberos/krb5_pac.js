@@ -150,9 +150,9 @@ var TYPE_NAMES = {
   10: "Client name and ticket information (PAC_CLIENT_INFO)",
   11: "Constrained delegation information (S4U_DELEGATION_INFO)",
   12: "UPN and DNS information (UPN_DNS_INFO)",
-  13: "Client claims information",
+  13: "Client claims information (PAC_CLIENT_CLAIMS_INFO)",
   14: "Device information (PAC_DEVICE_INFO)",
-  15: "Device claims information",
+  15: "Device claims information (PAC_DEVICE_CLAIMS_INFO)",
   16: "Ticket checksum",
   17: "PAC attributes (PAC_ATTRIBUTES_INFO)",
   18: "PAC requestor SID (PAC_REQUESTOR_SID)",
@@ -662,6 +662,10 @@ function parseBuffer(type, bytes) {
     case TYPE.DELEGATION_INFO:
       log.debug("Leaving parseBuffer().");
       return parseDelegationInfo(bytes);
+    case TYPE.CLIENT_CLAIMS:
+    case TYPE.DEVICE_CLAIMS:
+      log.debug("Leaving parseBuffer().");
+      return parseClaimsInfo(bytes);
     case TYPE.SERVER_CHECKSUM:
     case TYPE.KDC_CHECKSUM:
     case TYPE.TICKET_CHECKSUM:
@@ -669,10 +673,10 @@ function parseBuffer(type, bytes) {
       log.debug("Leaving parseBuffer().");
       return parseSignature(bytes);
     default:
-      // Claims, device info, credentials and delegation information are not
-      // decoded here. Returning null rather than throwing keeps them listed
-      // with their sizes, which is honest: "present, not decoded" is different
-      // from "absent".
+      // Device info and credentials are not decoded here. Returning null
+      // rather than throwing keeps them listed with their sizes, which is
+      // honest: "present, not decoded" is different from "absent". The two
+      // claims buffers ARE decoded, since 2026-10-06 (iya-sts #493).
       log.debug("Leaving parseBuffer().");
       return null;
   }
@@ -967,6 +971,718 @@ function encodeDelegationInfo(spec) {
   w.align(8);
   log.debug("Leaving encodeDelegationInfo().");
   return w.patchU32(lengthOffset, w.offset - bodyStart).build();
+}
+
+// ---------------------------------------------------------------------------
+// CLAIMS — PAC_CLIENT_CLAIMS_INFO (type 13) and PAC_DEVICE_CLAIMS_INFO (type
+// 15), [MS-PAC] section 2.11, whose bytes are [MS-ADTS] section 2.2.18's
+// CLAIMS_SET_METADATA wrapping a CLAIMS_SET.
+//
+// TWO NDR STREAMS, ONE INSIDE THE OTHER, and that is the first thing to get
+// right. The buffer is a type-serialized CLAIMS_SET_METADATA (the same
+// `01 10 08 00 cc cc cc cc` header the logon information starts with). Its
+// `ClaimsSet` member is a conformant BYTE array — opaque bytes, as far as the
+// outer stream is concerned — and THOSE bytes are a second, complete,
+// type-serialized stream: a CLAIMS_SET with a header of its own, possibly
+// compressed. A reader that walks straight from the metadata into the claims
+// arrays reads the inner header as a claims-array count.
+//
+// THE SHAPE OF ONE CLAIMS_SET, as the IDL gives it:
+//
+//   CLAIMS_SET          { ULONG ulClaimsArrayCount; CLAIMS_ARRAY *ClaimsArrays;
+//                         USHORT usReservedType; ULONG ulReservedFieldSize;
+//                         BYTE *ReservedField; }
+//   CLAIMS_ARRAY        { CLAIMS_SOURCE_TYPE usClaimsSourceType;
+//                         ULONG ulClaimsCount; CLAIM_ENTRY *ClaimEntries; }
+//   CLAIM_ENTRY         { LPWSTR Id; CLAIM_TYPE Type;
+//                         [switch_is(Type)] union { ULONG ValueCount;
+//                                                   <type> *Values; } }
+//
+// FOUR THINGS ABOUT IT ARE SILENT WHEN WRONG, in the krb5_ndr.js sense — each
+// produces a structure that parses and says something false:
+//
+//  1. **Every enum is SIXTEEN bits.** CLAIM_TYPE, CLAIMS_SOURCE_TYPE and the
+//     compression format are MIDL enums without `v1_enum`, which NDR marshals
+//     as a short. Reading one as a ULONG swallows the two bytes after it.
+//  2. **The union's discriminant is marshalled AGAIN**, as a second 16-bit copy
+//     of `Type` straight after the first, before the arm. A reader that takes
+//     the struct's `Type` as the switch and goes on to the arm reads the
+//     discriminant as the low half of ValueCount. In NDR32 there is no 8-byte
+//     alignment in front of it, whatever the IDL's NDR64 flag says.
+//  3. **An id is a `[string]` LPWSTR**: a conformant VARYING array whose counts
+//     INCLUDE the terminating NUL. The RPC_UNICODE_STRING writer in
+//     krb5_ndr.js counts no terminator, so it cannot be reused for this.
+//  4. **The 64-bit values are 8-aligned in the deferred array**, after its
+//     4-byte conformant count, so there are four bytes of padding between the
+//     count and the first value whenever the count lands on an offset that is
+//     4 mod 8. They are also full 64-bit integers, which a JavaScript Number
+//     cannot hold; they are read and written through BigInt and reported as
+//     DECIMAL STRINGS, so a value survives JSON and a round trip exactly.
+//
+// The deferred order is the NDR rule krb5_ndr.js states as rule 4, applied
+// twice: all of an array's fixed parts first, then each element's referents in
+// order — and a referent that itself holds pointers (a string claim's array of
+// LPWSTR pointers) has its own referents immediately after it, before the
+// next element's id.
+//
+// COMPRESSION is READ and never WRITTEN. [MS-ADTS] lets a KDC compress the
+// inner stream; the only format a Windows KDC uses and [MS-PAC] interop needs
+// is COMPRESSION_FORMAT_XPRESS_HUFF ([MS-XCA] section 2.1, LZ77+Huffman), which
+// `decompressXpressHuffman()` below decodes. LZNT1 and plain XPRESS are
+// declared by the enum and used by nobody for claims, so a set in either is
+// REPORTED, by name, rather than decoded. Nothing here compresses: an
+// uncompressed set is always valid, and a compressor is code whose only effect
+// would be to make this KDC's output harder to read.
+// ---------------------------------------------------------------------------
+
+var CLAIM_TYPE = {
+  INT64: 1,
+  UINT64: 2,
+  STRING: 3,
+  BOOLEAN: 6
+};
+
+var CLAIM_TYPE_NAMES = {
+  1: "INT64",
+  2: "UINT64",
+  3: "STRING",
+  6: "BOOLEAN"
+};
+
+var CLAIMS_SOURCE_TYPE = {
+  AD: 1,
+  CERTIFICATE: 2
+};
+
+var CLAIMS_SOURCE_TYPE_NAMES = {
+  1: "AD",
+  2: "CERTIFICATE"
+};
+
+var CLAIMS_COMPRESSION = {
+  NONE: 0,
+  LZNT1: 2,
+  XPRESS: 3,
+  XPRESS_HUFF: 4
+};
+
+var CLAIMS_COMPRESSION_NAMES = {
+  0: "COMPRESSION_FORMAT_NONE",
+  2: "COMPRESSION_FORMAT_LZNT1",
+  3: "COMPRESSION_FORMAT_XPRESS",
+  4: "COMPRESSION_FORMAT_XPRESS_HUFF"
+};
+
+// The IDL's own `[range(0, 10*1024*1024)]` on every count and size here. The
+// NDR reader's MAX_NDR_BYTES (1 MiB) is lower and is what actually bounds a
+// read; this is what a DECOMPRESSED size is checked against before anything is
+// allocated, because that number is chosen by whoever compressed the set.
+var CLAIMS_MAX_SIZE = 10 * 1024 * 1024;
+
+function claimTypeName(t) {
+  return CLAIM_TYPE_NAMES[t] || ("claim type " + t);
+}
+
+// A 64-bit value from the two halves NDR leaves it in, as a decimal string.
+function u64Text(r, signed) {
+  var lo = BigInt(r.u32());
+  var hi = BigInt(r.u32());
+  var v = (hi << BigInt(32)) | lo;
+  if (signed && hi >= BigInt(0x80000000)) {
+    v -= BigInt(1) << BigInt(64);
+  }
+  return v.toString();
+}
+
+// A value as a BigInt, from a Number, a BigInt or a decimal string, held to the
+// type's range. Throws a sentence naming the claim, because the caller is a KDC
+// that has to say which configured claim it could not put in a ticket.
+function claimBigInt(value, type, id) {
+  log.debug("Entering claimBigInt().");
+  var v;
+  try {
+    if (typeof value === "bigint") {
+      v = value;
+    } else if (typeof value === "number") {
+      if (!Number.isInteger(value)) {
+        throw new Error("not an integer");
+      }
+      v = BigInt(value);
+    } else {
+      var text = String(value).trim();
+      if (!/^-?\d+$/.test(text)) {
+        throw new Error("not a decimal integer");
+      }
+      v = BigInt(text);
+    }
+  } catch (e) {
+    log.debug("Leaving claimBigInt().");
+    throw new Error("krb5: the claim " + id + " has the value '" + value +
+        "', which is not a " + claimTypeName(type) + ": " + e.message);
+  }
+  var min = type === CLAIM_TYPE.INT64 ? -(BigInt(1) << BigInt(63)) :
+      BigInt(0);
+  var max = type === CLAIM_TYPE.INT64 ? (BigInt(1) << BigInt(63)) - BigInt(1) :
+      (BigInt(1) << BigInt(64)) - BigInt(1);
+  if (v < min || v > max) {
+    log.debug("Leaving claimBigInt().");
+    throw new Error("krb5: the claim " + id + " has the value " + v +
+        ", which is outside the range of a " + claimTypeName(type));
+  }
+  log.debug("Leaving claimBigInt().");
+  return v;
+}
+
+function writeU64(w, big) {
+  var u = big < BigInt(0) ? big + (BigInt(1) << BigInt(64)) : big;
+  w.align(8);
+  w.u32(Number(u & BigInt(0xffffffff)));
+  w.u32(Number(u >> BigInt(32)));
+}
+
+// A `[string]` LPWSTR's deferred half: maximum count, offset, actual count —
+// all three counting the terminating NUL — then the code units and the NUL.
+function writeTerminatedString(w, text) {
+  var s = String(text);
+  w.u32(s.length + 1);
+  w.u32(0);
+  w.u32(s.length + 1);
+  for (var i = 0; i < s.length; i++) w.u16(s.charCodeAt(i));
+  w.u16(0);
+}
+
+function readTerminatedString(r, what) {
+  log.debug("Entering readTerminatedString().");
+  var header = ndr.readUnicodeStringValue(r, { present: true });
+  if (header.value === null) {
+    log.debug("Leaving readTerminatedString().");
+    throw new Error("krb5: " + what + " is missing");
+  }
+  log.debug("Leaving readTerminatedString().");
+  return header.value;
+}
+
+// Every value of one claim, normalised to what the encoder writes: strings for
+// STRING, decimal strings for the integers, true/false for BOOLEAN. Throws
+// naming the claim when a value cannot be encoded.
+function claimValuesFor(claim) {
+  log.debug("Entering claimValuesFor().");
+  var values = Array.isArray(claim.values) ? claim.values : [claim.values];
+  if (!values.length) {
+    log.debug("Leaving claimValuesFor().");
+    throw new Error("krb5: the claim " + claim.id + " has no values; " +
+        "[MS-ADTS] 2.2.18.4 requires at least one");
+  }
+  var out = values.map(function (value) {
+    if (claim.type === CLAIM_TYPE.STRING) {
+      if (value === null || value === undefined) {
+        throw new Error("krb5: the claim " + claim.id + " has an empty " +
+            "string value");
+      }
+      var s = String(value);
+      if (s.indexOf("\u0000") >= 0) {
+        throw new Error("krb5: the claim " + claim.id + " has a value " +
+            "containing NUL, which a [string] LPWSTR cannot carry");
+      }
+      return s;
+    }
+    if (claim.type === CLAIM_TYPE.BOOLEAN) {
+      if (value === true || value === "true" || value === 1 ||
+          value === "1") {
+        return true;
+      }
+      if (value === false || value === "false" || value === 0 ||
+          value === "0") {
+        return false;
+      }
+      throw new Error("krb5: the claim " + claim.id + " has the value '" +
+          value + "', which is not a BOOLEAN");
+    }
+    return claimBigInt(value, claim.type, claim.id);
+  });
+  log.debug("Leaving claimValuesFor().");
+  return out;
+}
+
+// CLAIMS_SET, type-serialized. spec: { arrays: [{ sourceType, claims: [{ id,
+// type, values }] }] } — `sourceType` defaults to AD, `type` is a CLAIM_TYPE
+// number. An array with no claims is written as one with a NULL entries
+// pointer, which is legal; a set with no arrays is written with a count of
+// zero, which [MS-ADTS]'s range(1, …) forbids, so the KDC writes no buffer at
+// all in that case rather than calling this.
+function encodeClaimsSet(spec) {
+  log.debug("Entering encodeClaimsSet().");
+  var arrays = (spec && spec.arrays) || [];
+  // Validated and normalised up front, so a value that cannot be encoded is
+  // refused before a byte is written rather than half way through.
+  var prepared = arrays.map(function (array) {
+    return {
+      sourceType: array.sourceType === undefined ? CLAIMS_SOURCE_TYPE.AD :
+          array.sourceType,
+      claims: (array.claims || []).map(function (claim) {
+        if (!claim || typeof claim.id !== "string" || !claim.id) {
+          throw new Error("krb5: a claim with no id");
+        }
+        if (!CLAIM_TYPE_NAMES[claim.type]) {
+          throw new Error("krb5: the claim " + claim.id + " has the type " +
+              claim.type + ", which is not one of INT64 (1), UINT64 (2), " +
+              "STRING (3) or BOOLEAN (6)");
+        }
+        return { id: claim.id, type: claim.type,
+                 values: claimValuesFor(claim) };
+      })
+    };
+  });
+
+  var w = ndr.createWriter();
+  var lengthOffset = ndr.writeTypeMarshallingHeaders(w);
+  var bodyStart = w.offset;
+  w.pointer(true);                                  // the top-level referent
+  w.u32(prepared.length);
+  w.pointer(prepared.length > 0);
+  w.u16(0);                                         // usReservedType
+  w.u32(0);                                         // ulReservedFieldSize
+  w.pointer(false);                                 // ReservedField
+
+  if (prepared.length) {
+    w.u32(prepared.length);
+    prepared.forEach(function (array) {
+      w.u16(array.sourceType);
+      w.u32(array.claims.length);
+      w.pointer(array.claims.length > 0);
+    });
+    prepared.forEach(function (array) {
+      if (!array.claims.length) {
+        return;
+      }
+      w.u32(array.claims.length);
+      // Every entry's fixed part first — rule 4.
+      array.claims.forEach(function (claim) {
+        w.pointer(true);                            // Id
+        w.u16(claim.type);                          // Type
+        w.u16(claim.type);                          // the union's discriminant
+        w.u32(claim.values.length);
+        w.pointer(true);                            // the values
+      });
+      // Then each entry's referents, in field order.
+      array.claims.forEach(function (claim) {
+        writeTerminatedString(w, claim.id);
+        w.u32(claim.values.length);
+        if (claim.type === CLAIM_TYPE.STRING) {
+          claim.values.forEach(function () { w.pointer(true); });
+          claim.values.forEach(function (s) { writeTerminatedString(w, s); });
+        } else if (claim.type === CLAIM_TYPE.BOOLEAN) {
+          claim.values.forEach(function (b) {
+            writeU64(w, b ? BigInt(1) : BigInt(0));
+          });
+        } else {
+          claim.values.forEach(function (v) { writeU64(w, v); });
+        }
+      });
+    });
+  }
+
+  w.align(8);
+  var built = w.patchU32(lengthOffset, w.offset - bodyStart).build();
+  log.debug("Leaving encodeClaimsSet(). " + built.length + " bytes.");
+  return built;
+}
+
+// CLAIMS_SET_METADATA around an UNCOMPRESSED claims set — the buffer a KDC puts
+// in a PAC as type 13. `spec` is encodeClaimsSet()'s.
+function encodeClaimsSetMetadata(spec) {
+  log.debug("Entering encodeClaimsSetMetadata().");
+  var inner = encodeClaimsSet(spec);
+  var w = ndr.createWriter();
+  var lengthOffset = ndr.writeTypeMarshallingHeaders(w);
+  var bodyStart = w.offset;
+  w.pointer(true);                                  // the top-level referent
+  w.u32(inner.length);                              // ulClaimsSetSize
+  w.pointer(true);                                  // ClaimsSet
+  w.u16(CLAIMS_COMPRESSION.NONE);                   // never compressed here
+  w.u32(inner.length);                              // ulUncompressedClaimsSetSize
+  w.u16(0);                                         // usReservedType
+  w.u32(0);                                         // ulReservedFieldSize
+  w.pointer(false);                                 // ReservedField
+  w.u32(inner.length);                              // the conformant count
+  w.bytes(inner);
+  w.align(8);
+  var built = w.patchU32(lengthOffset, w.offset - bodyStart).build();
+  log.debug("Leaving encodeClaimsSetMetadata(). " + built.length + " bytes.");
+  return built;
+}
+
+function parseClaimsSet(bytes) {
+  log.debug("Entering parseClaimsSet().");
+  var r = ndr.createReader(bytes);
+  var headers = ndr.readTypeMarshallingHeaders(r);
+  if (!r.pointer()) {
+    log.debug("Leaving parseClaimsSet().");
+    throw new Error("krb5: the claims set's top-level pointer is NULL");
+  }
+  var arrayCount = r.u32();
+  var arraysPresent = r.pointer();
+  var reservedType = r.u16();
+  var reservedFieldSize = r.u32();
+  var reservedPresent = r.pointer();
+
+  var arrays = [];
+  if (arraysPresent) {
+    var declared = r.arrayCount("claims array(s)");
+    if (declared !== arrayCount) {
+      log.debug("Leaving parseClaimsSet().");
+      throw new Error("krb5: ulClaimsArrayCount is " + arrayCount +
+          " but the array's own conformant count is " + declared);
+    }
+    for (var i = 0; i < declared; i++) {
+      var sourceType = r.u16();
+      var claimsCount = r.u32();
+      arrays.push({
+        sourceType: sourceType,
+        sourceTypeName: CLAIMS_SOURCE_TYPE_NAMES[sourceType] ||
+            ("source type " + sourceType),
+        claimsCount: claimsCount,
+        present: r.pointer(),
+        claims: []
+      });
+    }
+    arrays.forEach(function (array) {
+      if (!array.present) {
+        if (array.claimsCount !== 0) {
+          throw new Error("krb5: a claims array declares " +
+              array.claimsCount + " claim(s) and a NULL entries pointer");
+        }
+        return;
+      }
+      var n = r.arrayCount("claim entr(ies)");
+      if (n !== array.claimsCount) {
+        throw new Error("krb5: ulClaimsCount is " + array.claimsCount +
+            " but the entries' own conformant count is " + n);
+      }
+      var fixed = [];
+      for (var j = 0; j < n; j++) {
+        var idPresent = r.pointer();
+        var type = r.u16();
+        var discriminant = r.u16();
+        if (discriminant !== type) {
+          throw new Error("krb5: a claim entry's Type is " + type +
+              " and its union's discriminant is " + discriminant);
+        }
+        var valueCount = r.u32();
+        fixed.push({ idPresent: idPresent, type: type,
+                     valueCount: valueCount, valuesPresent: r.pointer() });
+      }
+      fixed.forEach(function (f) {
+        var id = f.idPresent ? readTerminatedString(r, "a claim id") : null;
+        var values = [];
+        if (f.valuesPresent) {
+          var vn = r.arrayCount("claim value(s)");
+          if (vn !== f.valueCount) {
+            throw new Error("krb5: the claim " + id + " declares " +
+                f.valueCount + " value(s) and its array holds " + vn);
+          }
+          if (f.type === CLAIM_TYPE.STRING) {
+            var present = [];
+            for (var k = 0; k < vn; k++) present.push(r.pointer());
+            present.forEach(function (p) {
+              values.push(p ? readTerminatedString(r, "a claim value") :
+                  null);
+            });
+          } else if (f.type === CLAIM_TYPE.INT64 ||
+                     f.type === CLAIM_TYPE.UINT64 ||
+                     f.type === CLAIM_TYPE.BOOLEAN) {
+            for (var m = 0; m < vn; m++) {
+              r.align(8);
+              var text = u64Text(r, f.type === CLAIM_TYPE.INT64);
+              values.push(f.type === CLAIM_TYPE.BOOLEAN ? text !== "0" : text);
+            }
+          } else {
+            throw new Error("krb5: the claim " + id + " has the type " +
+                f.type + ", which [MS-ADTS] 2.2.18.2 does not define");
+          }
+        }
+        array.claims.push({
+          id: id,
+          type: f.type,
+          typeName: claimTypeName(f.type),
+          values: values
+        });
+      });
+    });
+  }
+  var reserved = null;
+  if (reservedPresent) {
+    var rn = r.arrayCount("reserved byte(s)");
+    reserved = prim.toHex(r.bytes(rn));
+  }
+  arrays.forEach(function (array) { delete array.present; });
+  // The stream is padded to a multiple of 8 (as encodeClaimsSet() pads it);
+  // that padding is not unread content.
+  if ((8 - (r.offset % 8)) % 8 <= r.remaining) {
+    r.align(8);
+  }
+  log.debug("Leaving parseClaimsSet().");
+  return {
+    ndr: headers,
+    arrays: arrays,
+    reservedType: reservedType,
+    reservedFieldSize: reservedFieldSize,
+    reservedField: reserved,
+    bytesUnread: r.remaining
+  };
+}
+
+// PAC_CLIENT_CLAIMS_INFO / PAC_DEVICE_CLAIMS_INFO. An EMPTY buffer is legal and
+// means "no claims" — a Windows KDC sends one rather than the header around
+// nothing — so it is answered as such rather than as truncated NDR.
+function parseClaimsInfo(bytes) {
+  log.debug("Entering parseClaimsInfo().");
+  var b = prim.toBytes(bytes);
+  if (!b.length) {
+    log.debug("Leaving parseClaimsInfo(). Empty.");
+    return { empty: true, compressionFormat: null, claimsSet: null,
+             claims: [] };
+  }
+  var r = ndr.createReader(b);
+  var headers = ndr.readTypeMarshallingHeaders(r);
+  if (!r.pointer()) {
+    log.debug("Leaving parseClaimsInfo().");
+    throw new Error("krb5: the claims metadata's top-level pointer is NULL");
+  }
+  var claimsSetSize = r.u32();
+  var setPresent = r.pointer();
+  var compression = r.u16();
+  var uncompressedSize = r.u32();
+  var reservedType = r.u16();
+  var reservedFieldSize = r.u32();
+  var reservedPresent = r.pointer();
+  var raw = null;
+  if (setPresent) {
+    var declared = r.u32();
+    if (declared !== claimsSetSize) {
+      log.debug("Leaving parseClaimsInfo().");
+      throw new Error("krb5: ulClaimsSetSize is " + claimsSetSize +
+          " but the array's own conformant count is " + declared);
+    }
+    raw = r.bytes(declared);
+  }
+  if (reservedPresent) {
+    r.bytes(r.u32());
+  }
+  var out = {
+    empty: false,
+    ndr: headers,
+    claimsSetSize: claimsSetSize,
+    compressionFormat: compression,
+    compressionName: CLAIMS_COMPRESSION_NAMES[compression] ||
+        ("compression format " + compression),
+    uncompressedClaimsSetSize: uncompressedSize,
+    reservedType: reservedType,
+    reservedFieldSize: reservedFieldSize,
+    claimsSet: null,
+    claims: []
+  };
+  if (!raw) {
+    log.debug("Leaving parseClaimsInfo(). No claims set.");
+    return out;
+  }
+  var inner;
+  if (compression === CLAIMS_COMPRESSION.NONE) {
+    inner = raw;
+  } else if (compression === CLAIMS_COMPRESSION.XPRESS_HUFF) {
+    inner = decompressXpressHuffman(raw, uncompressedSize);
+  } else {
+    log.debug("Leaving parseClaimsInfo().");
+    throw new Error("krb5: this claims set is compressed with " +
+        out.compressionName + ", which no KDC uses for claims and this " +
+        "codec does not decode; only COMPRESSION_FORMAT_XPRESS_HUFF is read");
+  }
+  out.claimsSet = parseClaimsSet(inner);
+  out.claims = claimsOf(out.claimsSet);
+  log.debug("Leaving parseClaimsInfo(). " + out.claims.length + " claim(s).");
+  return out;
+}
+
+// Every claim of a parsed set, flattened, each carrying its source type — the
+// shape a reader usually wants ("what does this ticket claim?").
+function claimsOf(claimsSet) {
+  var out = [];
+  ((claimsSet && claimsSet.arrays) || []).forEach(function (array) {
+    array.claims.forEach(function (claim) {
+      out.push({ sourceType: array.sourceType, id: claim.id,
+                 type: claim.type, typeName: claim.typeName,
+                 values: claim.values.slice() });
+    });
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// [MS-XCA] section 2.2: LZ77+Huffman ("XPRESS Huffman") DECOMPRESSION, the one
+// compression a claims set arrives in.
+//
+// The input is a run of chunks, each producing up to 65536 bytes of output.
+// A chunk starts with 256 bytes holding 512 four-bit code LENGTHS — the low
+// nibble of byte i is symbol 2i, the high nibble symbol 2i+1, a zero meaning
+// the symbol does not occur — from which a CANONICAL Huffman code is built:
+// symbols sorted by (length, value), codes handed out in that order. Symbols
+// 0–255 are literal bytes; 256–511 are matches, whose low four bits are a
+// length code and whose high four the number of offset bits that follow.
+//
+// THE BITSTREAM IS READ AS LITTLE-ENDIAN SIXTEEN-BIT WORDS, MOST SIGNIFICANT
+// BIT FIRST, and an extended match length is a BYTE read from the input at the
+// current position — between words, not out of the bitstream. That
+// interleaving is the trap: a decoder that takes the length byte from the bit
+// buffer reads the right first match and garbage after it.
+//
+// BOUNDED: the output size is the one the metadata declared, checked against
+// CLAIMS_MAX_SIZE before anything is allocated; a match may not reach before
+// the start of the output or past its end; and a Huffman table that is not a
+// complete code is refused, because one with holes decodes some bit patterns
+// to nothing at all.
+// ---------------------------------------------------------------------------
+function buildXpressHuffmanTable(tableBytes) {
+  log.debug("Entering buildXpressHuffmanTable().");
+  var lengths = new Uint8Array(512);
+  var symbols = [];
+  for (var i = 0; i < 256; i++) {
+    lengths[2 * i] = tableBytes[i] & 0x0f;
+    lengths[2 * i + 1] = tableBytes[i] >> 4;
+  }
+  for (var s = 0; s < 512; s++) {
+    if (lengths[s]) symbols.push(s);
+  }
+  if (!symbols.length) {
+    log.debug("Leaving buildXpressHuffmanTable().");
+    throw new Error("krb5: an XPRESS Huffman chunk whose table declares no " +
+        "symbol");
+  }
+  symbols.sort(function (a, b) {
+    return (lengths[a] - lengths[b]) || (a - b);
+  });
+  var decode = new Uint16Array(1 << 15);
+  var code = 0;
+  var length = lengths[symbols[0]];
+  var filled = 0;
+  symbols.forEach(function (sym) {
+    if (lengths[sym] > length) {
+      code <<= (lengths[sym] - length);
+      length = lengths[sym];
+    }
+    var span = 1 << (15 - length);
+    var start = code * span;
+    if (start + span > decode.length) {
+      throw new Error("krb5: an XPRESS Huffman table that oversubscribes " +
+          "its code space");
+    }
+    decode.fill(sym, start, start + span);
+    filled += span;
+    code++;
+  });
+  if (filled !== decode.length) {
+    log.debug("Leaving buildXpressHuffmanTable().");
+    throw new Error("krb5: an XPRESS Huffman table that is not a complete " +
+        "code (" + filled + " of " + decode.length + " patterns decode)");
+  }
+  log.debug("Leaving buildXpressHuffmanTable().");
+  return { decode: decode, lengths: lengths };
+}
+
+function decompressXpressHuffman(input, outputSize) {
+  log.debug("Entering decompressXpressHuffman(). out=" + outputSize);
+  var src = prim.toBytes(input);
+  if (!(outputSize > 0) || outputSize > CLAIMS_MAX_SIZE) {
+    log.debug("Leaving decompressXpressHuffman().");
+    throw new Error("krb5: a compressed claims set declares an uncompressed " +
+        "size of " + outputSize + " (it must be 1 to " + CLAIMS_MAX_SIZE +
+        ")");
+  }
+  var out = new Uint8Array(outputSize);
+  var outPos = 0;
+  var inPos = 0;
+  // Reads past the end are zero: the stream's last word may be padding, and
+  // every read is bounded by the output size rather than by trusting the
+  // input to end where it says.
+  function byteAt(p) {
+    return p < src.length ? src[p] : 0;
+  }
+  function u16At(p) {
+    return byteAt(p) | (byteAt(p + 1) << 8);
+  }
+  while (outPos < outputSize) {
+    if (inPos + 260 > src.length) {
+      log.debug("Leaving decompressXpressHuffman().");
+      throw new Error("krb5: a compressed claims set ends at byte " + inPos +
+          " with " + (outputSize - outPos) + " byte(s) still to produce");
+    }
+    var table = buildXpressHuffmanTable(src.subarray(inPos, inPos + 256));
+    inPos += 256;
+    var bits = ((u16At(inPos) << 16) | u16At(inPos + 2)) >>> 0;
+    inPos += 4;
+    var extra = 16;
+    var chunkEnd = Math.min(outPos + 65536, outputSize);
+    while (outPos < chunkEnd) {
+      var symbol = table.decode[bits >>> 17];
+      var used = table.lengths[symbol];
+      bits = (bits << used) >>> 0;
+      extra -= used;
+      if (extra < 0) {
+        bits = (bits | (u16At(inPos) << (-extra))) >>> 0;
+        inPos += 2;
+        extra += 16;
+      }
+      if (symbol < 256) {
+        out[outPos++] = symbol;
+        continue;
+      }
+      symbol -= 256;
+      var matchLength = symbol & 15;
+      var offsetBits = symbol >> 4;
+      if (matchLength === 15) {
+        matchLength = byteAt(inPos);
+        inPos += 1;
+        if (matchLength === 255) {
+          matchLength = u16At(inPos);
+          inPos += 2;
+          if (matchLength === 0) {
+            matchLength = (u16At(inPos) | (u16At(inPos + 2) << 16)) >>> 0;
+            inPos += 4;
+          }
+          if (matchLength < 15) {
+            log.debug("Leaving decompressXpressHuffman().");
+            throw new Error("krb5: an XPRESS Huffman match length that " +
+                "underflows");
+          }
+          matchLength -= 15;
+        }
+        matchLength += 15;
+      }
+      matchLength += 3;
+      var offset = (1 << offsetBits) +
+          (offsetBits ? (bits >>> (32 - offsetBits)) : 0);
+      if (offsetBits) {
+        bits = (bits << offsetBits) >>> 0;
+        extra -= offsetBits;
+        if (extra < 0) {
+          bits = (bits | (u16At(inPos) << (-extra))) >>> 0;
+          inPos += 2;
+          extra += 16;
+        }
+      }
+      if (offset > outPos || outPos + matchLength > outputSize) {
+        log.debug("Leaving decompressXpressHuffman().");
+        throw new Error("krb5: an XPRESS Huffman match of " + matchLength +
+            " byte(s) at distance " + offset + " from output position " +
+            outPos + " reaches outside the " + outputSize + "-byte output");
+      }
+      for (var c = 0; c < matchLength; c++) {
+        out[outPos] = out[outPos - offset];
+        outPos++;
+      }
+    }
+  }
+  log.debug("Leaving decompressXpressHuffman(). " + outPos + " byte(s).");
+  return out;
 }
 
 // KERB_VALIDATION_INFO, [MS-PAC] section 2.5 — the one that is NDR, and the one
@@ -1746,9 +2462,12 @@ function assemblePac(entries) {
 
 // Builds a signed PAC.
 //
-// spec: { logonInfo, clientInfo, upnDns, attributes, requestorSid,
-//         serverKey, kdcKey, ticketBytes, includeTicketSignature,
-//         includeExtendedKdcSignature, rodcIdentifier }
+// spec: { logonInfo, clientInfo, upnDns, clientClaims, attributes,
+//         requestorSid, serverKey, kdcKey, ticketBytes,
+//         includeTicketSignature, includeExtendedKdcSignature,
+//         rodcIdentifier }
+//
+// `clientClaims` is encodeClaimsSet()'s spec, written uncompressed as type 13.
 //
 // The four signatures are filled in the order [MS-PAC] requires — ticket, extended
 // KDC, server, KDC — because each covers bytes the later ones have not written yet.
@@ -1773,6 +2492,13 @@ async function buildPac(spec) {
   if (spec.upnDns) entries.push({
     type: TYPE.UPN_DNS_INFO,
     bytes: encodeUpnDnsInfo(spec.upnDns)
+  });
+  // PAC_CLIENT_CLAIMS_INFO, when the caller has claims to state. A caller with
+  // none passes nothing and gets no buffer — never an empty set, which
+  // [MS-ADTS]'s range(1, …) on ulClaimsArrayCount forbids.
+  if (spec.clientClaims) entries.push({
+    type: TYPE.CLIENT_CLAIMS,
+    bytes: encodeClaimsSetMetadata(spec.clientClaims)
   });
   if (spec.attributes !== undefined) {
     entries.push({
@@ -1901,9 +2627,20 @@ async function signAssembled(assembled, spec) {
 //
 // Rebuilding instead of re-signing would look identical in a mock where both
 // realms happen to share one principal table, and would be wrong everywhere
-// else. It also quietly discards anything the issuing realm put in that this
-// codec does not decode — claims, device info — which is the sort of loss
-// nobody notices.
+// else. It would also quietly discard anything the issuing realm put in that a
+// rebuild does not know how to state — device info, and claims the target
+// realm has no register for — which is the sort of loss nobody notices.
+//
+// **THE CLAIMS BUFFERS ARE CARRIED AND RE-SIGNED, BYTE FOR BYTE** (types 13
+// and 15), compressed or not: like every other content buffer they keep their
+// bytes and are covered by the new signatures. This comment used to read as
+// though a re-sign dropped them; it never did, and the claims codec added on
+// 2026-10-06 (iya-sts #493) is what lets a reader now SEE that they arrived.
+// A caller that must change the client's claims on the way — a KDC adding a
+// service's own claims to a service ticket — passes `clientClaims` (a
+// encodeClaimsSet() spec, written uncompressed in place of the old buffer) or
+// `clientClaims: null` (the buffer is removed). Absent, the buffer is carried
+// as it came. The device claims are always carried as they came.
 //
 // **SID filtering is NOT applied here.** Windows strips SIDs belonging to
 // domains the trust is not authorized to assert, and that control is what stops
@@ -1926,6 +2663,31 @@ async function resignPac(pacBytes, spec) {
   // An S4U2proxy hop ADDS or REPLACES the delegation information while carrying
   // everything else across, so re-signing has to be able to do that rather than
   // only preserve.
+  if (Object.prototype.hasOwnProperty.call(spec, "clientClaims")) {
+    var at = -1;
+    entries.forEach(function (e, i) {
+      if (e.type === TYPE.CLIENT_CLAIMS && at < 0) at = i;
+    });
+    entries = entries.filter(function (e) {
+      return e.type !== TYPE.CLIENT_CLAIMS;
+    });
+    if (spec.clientClaims) {
+      var claimsEntry = {
+        type: TYPE.CLIENT_CLAIMS,
+        bytes: encodeClaimsSetMetadata(spec.clientClaims)
+      };
+      // Where the old one was, or after the UPN_DNS_INFO where there was none
+      // — the place buildPac() puts it.
+      if (at < 0) {
+        entries.forEach(function (e, i) {
+          if (e.type === TYPE.UPN_DNS_INFO) at = i + 1;
+        });
+      }
+      if (at < 0 || at > entries.length) at = entries.length;
+      entries.splice(at, 0, claimsEntry);
+    }
+  }
+
   if (spec.delegationInfo) {
     entries = entries.filter(function (e) { return e.type !== TYPE.DELEGATION_INFO; });
     entries.push({
@@ -2025,6 +2787,17 @@ module.exports = {
   encodeAttributesInfo: encodeAttributesInfo,
   encodeRequestorSid: encodeRequestorSid,
   encodeDelegationInfo: encodeDelegationInfo,
+  CLAIM_TYPE: CLAIM_TYPE,
+  CLAIMS_SOURCE_TYPE: CLAIMS_SOURCE_TYPE,
+  CLAIMS_COMPRESSION: CLAIMS_COMPRESSION,
+  CLAIMS_MAX_SIZE: CLAIMS_MAX_SIZE,
+  claimTypeName: claimTypeName,
+  encodeClaimsSet: encodeClaimsSet,
+  encodeClaimsSetMetadata: encodeClaimsSetMetadata,
+  parseClaimsSet: parseClaimsSet,
+  parseClaimsInfo: parseClaimsInfo,
+  claimsOf: claimsOf,
+  decompressXpressHuffman: decompressXpressHuffman,
   parseDelegationInfo: parseDelegationInfo,
   wrapPacAsAuthorizationData: wrapPacAsAuthorizationData
 };

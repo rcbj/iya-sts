@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 //
 // Configuration the test launchers select for a run below debug level
 // (run-tests.sh's and run-coverage.sh's THE SERVICE'S LOG LEVEL
@@ -31,10 +31,10 @@ var config = {
     //
     // WHAT IT COSTS is what config.js's own row says it costs: there is then NO
     // plain listener left in this process, and `GET /tls/server-certificate`
-    // and `POST /tls/trust` are the two endpoints a caller reaches BEFORE it
-    // trusts anything — so the first fetch of the certificate has to be made
-    // with verification off (`curl -k`). That is the ordinary bootstrap for a
-    // service that regenerates its key every start, and /tls says so.
+    // is the endpoint a caller reaches BEFORE it trusts anything — so the
+    // first fetch of the certificate has to be made with verification off
+    // (`curl -k`). That is the ordinary bootstrap for a service that
+    // regenerates its key every start, and docs/tls.md says so.
     //
     // STS_HTTPS still wins over this file, so `STS_HTTPS=false` is the way back
     // to a plain port without editing anything.
@@ -46,7 +46,8 @@ var config = {
     // front of this service they are headers any client can set, and believing
     // them lets a caller choose what this service thinks its own issuer,
     // endpoints and DPoP htu are. Turn it ON behind a reverse proxy — see
-    // GET /tls/forwarded, which shows what arrived and what was believed.
+    // Monitoring → TLS connection, which shows what arrived and what was
+    // believed.
     trustProxy: false
   },
 
@@ -181,20 +182,10 @@ var config = {
     seedInternal: true
   },
 
-  // --- SAML --------------------------------------------------------------
-  saml: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Trust ----------------------------------------------------------
-  wstrust: {
-    issuer: "urn:wstrust:mock:sts"
-  },
-
-  // --- WS-Federation -----------------------------------------------------
-  wsfed: {
-    entityId: "urn:wstrust:mock:sts"
-  },
+  // --- SAML, WS-Trust, WS-Federation: ONE NAME, NOT A SETTING (#523) ----
+  // Every SAML Issuer, identity provider entityID and the WS-Trust STS's name
+  // are the realm's OAuth issuer, which follows global.publicBaseUrl
+  // (`common/issuer_names.ts`). The settings that named them are retired.
 
   // --- TLS ---------------------------------------------------------------
   tls: {
@@ -204,7 +195,10 @@ var config = {
 
   // --- OID4VCI -----------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",
+    // No walletUrl (2026-10-12): an offer is handed to a wallet APP by its
+    // scheme (oid4vci.walletInvocation). Set walletUrl and
+    // walletIssuancePath ("/vc-issuance-1.html" for the embedded
+    // debugger's web wallet) to offer a web wallet beside it.
     authorizationServer: "",
     batchSize: 4,
     deferredReadyMs: 4000,
@@ -226,8 +220,9 @@ var config = {
   // --- OID4VP ------------------------------------------------------------
   oid4vp: {
     clientId: "sts-verifier",
-    // walletUrl: falls back to oid4vci.walletUrl. Uncomment to point the mock
-    //   Verifier at a different wallet from the issuer's.
+    // walletUrl: falls back to oid4vci.walletUrl, a web wallet offered
+    //   beside the oid4vp.walletInvocation link; walletPresentationPath is
+    //   "/vc-presentation-1.html" for the embedded debugger's.
     kbMaxAgeS: 600,
     claims: "given_name,family_name"
   },
@@ -238,8 +233,6 @@ var config = {
     realm: "EXAMPLE.COM",
     kdcPort:
       88,                                                   // restart to apply
-    servicePort:
-      8888,                                             // restart to apply
     servicePrincipal:
       "HTTP/web.example.com",                      // restart to apply
     clockSkew: 300,

@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -84,7 +84,6 @@
 // harvest-now-decrypt-later argument is actually about.
 // ---------------------------------------------------------------------------
 
-const nodeCrypto = require('crypto');
 const { log, signJwtAs, signJwtAsAsync, randomId, nowSec, allSigningKeys,
   STS, kidNamesKey } = require('../common/helpers');
 const config = require('../common/config');
@@ -480,7 +479,7 @@ const CAEP_EVENTS = [
               'between themselves — so a value not on it is carried with a ' +
               'warning rather than refused. Refusing would make this ' +
               'service unable to carry a vendor\'s own type, which is ' +
-              'precisely what a mock is for.' },
+              'precisely what testing needs.' },
       { name: 'change_type', required: true, type: 'enum',
         values: ['create', 'revoke', 'update', 'delete'],
         what: 'What happened to it. CLOSED, unlike the type above: these ' +
@@ -1847,8 +1846,9 @@ function signingAlgorithm() {
 // **IT IS ASYNCHRONOUS AND MUST STAY THAT WAY.** `ssf.signingAlgorithm` can
 // name SLH-DSA, and an SLH-DSA-SHAKE-128s signature measured 14.6 seconds on
 // this service's own thread — during which it answers nobody. `signJwtAsAsync`
-// routes a post-quantum signature to the worker pool and resolves an RS256 one
-// in place, so the cost is paid only where it is real. See common/worker.js.
+// routes a post-quantum signature to libuv's thread pool and resolves an RS256
+// one in place, so the cost is paid only where it is real. See
+// common/pq_native.js.
 //
 // `ssf.breakSetSignature` is the deliberate defect for this family, the same
 // device as `oauth2.breakIdTokenNonce`: it flips one byte of the signature
@@ -1861,13 +1861,13 @@ function signingAlgorithm() {
 // ---------------------------------------------------------------------------
 /**
  * Signs a SET with `typ: secevent+jwt`, asynchronously so that a post-quantum
- * signature runs on the worker pool.
+ * signature runs on libuv's thread pool.
  *
  * In development mode `ssf.breakSetSignature` flips a byte of the signature
  * after signing.
  *
  * @param claims - the SET's claims
- * @param options - `algorithm` (default `signingAlgorithm()`) and `session`
+ * @param options - `algorithm` (default `signingAlgorithm()`)
  * @returns a promise of the compact JWS
  */
 function signSet(claims, options) {
@@ -1875,7 +1875,7 @@ function signSet(claims, options) {
   const settings = options || {};
   const alg = settings.algorithm || signingAlgorithm();
   log.debug("Leaving signSet().");
-  return signJwtAsAsync(claims, alg, null, { session: settings.session,
+  return signJwtAsAsync(claims, alg, null, {
     // RFC 8417 section 2.2's media type, and it is a SHOULD that behaves
     // like a MUST: a receiver that dispatches on `typ` — and several do —
     // drops a token without it with no error anybody sees. It is asked for
@@ -2056,7 +2056,7 @@ function publicKeyForHeader(header) {
     // the certificate this service publishes for it.
     try {
       log.debug('Leaving publicKeyForHeader(). The service RSA key.');
-      return { key: nodeCrypto.createPublicKey(ownRsa.certPem), pq: false };
+      return { key: stsCrypto.publicKeyOf(ownRsa.certPem), pq: false };
     } catch (e) {
       log.debug('Leaving publicKeyForHeader(). The certificate would not ' +
                 'load: ' + e.message);
@@ -2080,8 +2080,7 @@ function publicKeyForHeader(header) {
   }
   try {
     log.debug('Leaving publicKeyForHeader(). ' + found.alg + '.');
-    return { key: nodeCrypto.createPublicKey({ key: found.publicJwk,
-      format: 'jwk' }), pq: false };
+    return { key: stsCrypto.publicKeyFromJwk(found.publicJwk), pq: false };
   } catch (e) {
     log.debug('Leaving publicKeyForHeader(). The JWK would not load: ' +
               e.message);

@@ -91,11 +91,12 @@ The same registration behaves differently in the two modes (`global.mode`):
   phone offline_access`, plus the realm's OpenID4VCI scopes. This service's
   own protected scopes (`admin:*`, `scim:*`, the Shared Signals and debugger
   scopes) must be listed in **both** modes.
-* **`oauthGrantType` does not restrict an application an administrator
-  created.** The token endpoint holds a client to its `grant_types` only when
-  the client registered itself dynamically (RFC 7591). The recipes still set
-  `oauthGrantType`, because it records what the client is for and shows on
-  its page.
+* **`oauthGrantType` restricts the client, in both modes.** The token
+  endpoint refuses any grant the list does not name with `unauthorized_client`,
+  whether the list came from a dynamic registration (RFC 7591 `grant_types`) or
+  an administrator. A client whose list omits `refresh_token` is issued no
+  refresh token. An empty list restricts nothing. What a client has actually
+  used is recorded separately, in `oauthGrantTypeObserved`.
 * **Consent is on by default** (`oauth2.consentRequired`). A person approves
   each client on `/oauth2/consent` the first time. Test realms often turn it
   off with `"oauth2.consentRequired": false`. In production, leave it on.
@@ -138,7 +139,7 @@ Taken from `oauth_fixtures.js` and `oauth2_sts_endpoints.js`.
 4. In **Where responses go back to**, enter `com.example.oauth2stsendpoints:/callback`, one URI per line.
 5. Click **Create the application**.
 6. On the application's page, in **Change what it is allowed to do**:
-   - **Set** `oauthTokenEndpointAuthMethod` to `none`.
+   - **Tick** `none` under `oauthTokenEndpointAuthMethod`, and nothing else.
    - **Set** `oauthConfidential` to `FALSE`.
    - **Add to** `oauthGrantType` the values `authorization_code` and `refresh_token`.
    - **Add to** `oauthAllowedScope` the values `openid`, `profile` and `email`.
@@ -169,7 +170,7 @@ Taken from `sts_token_revocation.js`.
 **Identifier** `rv-a` and redirect URI `https://rp.revoke.example.test/cb`. In
 **The client secret**, click **Generate Secret**, and copy the value before
 you create the application. Then, on the application's page:
-- **Set** `oauthTokenEndpointAuthMethod` to `client_secret_basic`.
+- **Tick** `client_secret_basic` under `oauthTokenEndpointAuthMethod`, and nothing else.
 - **Add to** `oauthAllowedScope` the value `openid`.
 
 An application that already exists gets a secret from the **Credentials →
@@ -234,7 +235,7 @@ Taken from `sts_scope_policy.js` and `oauth2_sts_endpoints.js`.
 1. Create the application: **Identifier** `svc`, tick **OAuth 2.0**, and
    generate a secret in **The client secret**. No redirect URI is needed.
 2. On its page:
-   - **Set** `oauthTokenEndpointAuthMethod` to `client_secret_post`.
+   - **Tick** `client_secret_post` under `oauthTokenEndpointAuthMethod`, and nothing else.
    - **Add to** `oauthGrantType` the value `client_credentials`.
    - **Add to** `oauthAllowedScope` each scope it may be issued, for example `api`.
 
@@ -261,7 +262,25 @@ POST /oauth2/token
 
 In product mode, a scope not listed in `oauthAllowedScope` is refused with
 `invalid_scope`, and a public client (auth method `none`) is refused this
-grant with `unauthorized_client`. The seeded `sts-management-api` client is a
+grant with `unauthorized_client`.
+
+**The audience.** A request that names a `resource`, `authorization_details`,
+a scope naming another application or a delegated permission, or a scope of
+this service's own resource server (`openid` and the other OpenID Connect
+scopes, the SCIM, Shared Signals, management API and grant management scopes)
+gets the audience those name. A request that names none of these gets a token
+addressed to the client itself: its `oauthAudience` values, or its `client_id`
+when it declares none (#550). That is the token to send as an RFC 8693
+`actor_token`.
+
+**Permissions on another application come from a role** (#551). A delegated
+grant (`oauthDelegatedPermission`) authorizes a permission only on a person's
+behalf, so it does not count here. To let the client use a permission itself,
+make it a member of a role whose `rolePermission` names the permission — an
+app role of the resource (`<role>@<resource>`) or a realm role. Without one the
+permission is left off the token, and a request asking for nothing else is
+refused with `invalid_scope`. See
+[Permissions on another application](oauth-oidc.md#permissions-on-another-application-delegated-or-the-applications-own). The seeded `sts-management-api` client is a
 working example of this grant.
 
 ## Refresh token
@@ -362,8 +381,12 @@ POST /oauth2/register
 A dynamically registered client whose `grant_types` does not include
 `device_code` is refused with `unauthorized_client`. For a client you register
 in the console or through `/admin-api`, add
-`urn:ietf:params:oauth:grant-type:device_code` to `oauthGrantType`. No test job
-covers that path yet.
+`urn:ietf:params:oauth:grant-type:device_code` to `oauthGrantType`. The job
+`sts_admin_client_policies.js` covers that path: a public client created
+through `/admin-api` with the grant is issued tokens once the person approves
+on `/portal/device`, and a client whose `oauthGrantType` leaves the grant out
+is refused at `/oauth2/device_authorization` with `unauthorized_client`
+(`STS-OAUTH-0692`).
 
 **Requests:**
 ```
@@ -486,11 +509,12 @@ The settings are `oauth2.saml2BearerGrant`, `…RequireRegisteredIssuer` and
 
 ## Token exchange (RFC 8693)
 
-A client exchanges a token it holds for a token for another audience. With no
-`actor_token` the exchange is **impersonation**. With one it is
-**delegation**, and the result carries a nested `act` claim. Who may do either
-is decided by the **delegation policy** on the application entries. See
-[OAuth 2.0 and OpenID Connect → Token exchange](oauth-oidc.md) for the model.
+A client exchanges a token it holds for a token for another audience. The
+exchange is a **delegation** (the result carries a nested `act` claim naming
+the actor) or an **impersonation** (it does not), as the issuance policy
+chooses — the request may ask with `exchange_semantics`. Who may do either is
+decided by the same controls as WS-Trust and Kerberos: see
+[Delegation and impersonation](delegation.md) for the model.
 
 Taken from `sts_delegation_policy.js`.
 
@@ -513,16 +537,18 @@ api applications/create '{"identifier":"dp-mid","name":"dp-mid","protocols":["oa
 
 **The policy:**
 ```bash
-# dp-mid may obtain tokens for dp-back …
+# a token issued for dp-mid may be handed on to dp-back …
 api applications/add '{"application":"dp-mid","attribute":"appAllowedToDelegateTo","value":"dp-back"}'
-# … and may do so with no actor token (impersonation)
-api applications/set '{"application":"dp-mid","attribute":"appTrustedToImpersonate","value":"TRUE"}'
+# … and dp-mid may also impersonate, when the request asks for it
+api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"delegation"}'
+api applications/add '{"application":"dp-mid","attribute":"appDelegationSemantics","value":"impersonation"}'
 ```
 
-Three more attributes can take part:
-* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications that may act toward it.
-* `appDelegationSubjectGroup`, on the intermediary, holds group DNs that limit whose tokens it may exchange.
-* The person's own flags: `POST /admin-api/users/set-not-delegated {"user","value":true}` and `POST /admin-api/users/set-may-act {"user","delegate":"<application DN>"}`.
+More controls can take part:
+* `appAllowedToActOnBehalfOf`, on the **target**, lists the applications (and people) that may act toward it.
+* `appDelegationSubjectGroup`, on the actor, holds group DNs that limit whose tokens it may exchange.
+* `appDefaultDelegationSemantics` and `appNotDelegated` on an application.
+* The person's own settings: `POST /admin-api/users/set-not-delegated {"user","value":true}`, `POST /admin-api/users/set-may-act {"user","delegate":"<application DN>"}` and `POST /admin-api/users/set-delegation-semantics {"user","semantics":["delegation"],"default":"delegation"}`.
 
 To read the whole policy back, use `GET /admin-api/delegation/policy`; in the
 console it is `/admin/delegation`.
@@ -534,9 +560,20 @@ POST /oauth2/token
   &client_id=dp-mid&client_secret=<secret>
   &subject_token=<token>&subject_token_type=urn:ietf:params:oauth:token-type:access_token
   &audience=https://dp-back.example&scope=api
-  [&actor_token=<dp-mid's client-credentials token>
+  [&exchange_semantics=delegation|impersonation]
+  [&actor_token=<a token about the actor>
    &actor_token_type=urn:ietf:params:oauth:token-type:access_token]
 ```
+
+**The actor_token must be the client's own, in both modes (#550).** It must
+have been issued to the exchanging client: its `client_id` (or `azp`) is that
+client, and a token carrying neither names the client in `aud`. Its `aud` must
+also name this authorization server (its issuer or token endpoint) or the
+exchanging client (its `client_id`, identifier or `oauthAudience`). A client's
+own `client_credentials` token that asked for nothing else meets both. Anything
+else is refused with `invalid_request`: another client's token, or a token
+minted for some other resource, which that resource could replay as its own
+actor.
 
 **Modes.** Product mode enforces the policy, refusing with `invalid_request`
 or `invalid_target`. It also verifies both tokens and refuses a scope wider
@@ -614,7 +651,19 @@ settings are `oid4vci.txCodeLength` (default 5) and `oid4vci.txCodeMaxAttempts`
 
 ## Client authentication methods
 
-`oauthTokenEndpointAuthMethod` names the method. Each method needs something
+`oauthTokenEndpointAuthMethod` names the methods: a checkbox per method on the
+application's page, and a list in the API (`applications/add` and
+`applications/remove`, or an array in `create`). **A client may hold several**
+— a secret and a key pair, say — and the token endpoint accepts whichever one
+a request presents: a `client_assertion` is `private_key_jwt` or
+`client_secret_jwt` (by its `alg` where both are held), an `Authorization:
+Basic` header is `client_secret_basic`, a `client_secret` in the body is
+`client_secret_post`, the attestation headers are the attestation methods and
+a client certificate is `tls_client_auth` or `self_signed_tls_client_auth`.
+**`none` cannot be held with any other method**, because it is what makes a
+client public; a save that ticks it beside another is refused
+(`STS-REG-0207`). Registration (RFC 7591) reports the first method held, since
+its `token_endpoint_auth_method` is a single value. Each method needs something
 more on the application:
 
 | Method | What the application needs | How the client presents it | Job |
@@ -622,12 +671,19 @@ more on the application:
 | `none` | nothing more (a public client) | `client_id` only; PKCE `S256` in product mode | `oauth_fixtures.js` |
 | `client_secret_basic` | `oauthClientSecret` | `Authorization: Basic` | `sts_token_revocation.js` |
 | `client_secret_post` | `oauthClientSecret` | `client_id` and `client_secret` in the body | `sts_scope_policy.js` |
-| `client_secret_jwt` | `oauthClientSecret`; optionally `oauthTokenEndpointAuthSigningAlg` (`HS256`/`HS384`/`HS512`) | a client assertion with an HMAC signature | `sts_oidc_core.js` |
+| `client_secret_jwt` | `oauthClientSecret`; optionally `oauthTokenEndpointAuthSigningAlg` (`HS256`/`HS384`/`HS512`) | a client assertion with an HMAC signature, addressed to the issuer or the token endpoint. An `HS512` key must be at least 512 bits (RFC 7518 section 3.2). | `sts_client_authentication.js` |
 | `private_key_jwt` | a key: `pki/issue` as in [JWT bearer](#jwt-bearer-rfc-7523), or `oauthJwks` or `oauthJwksUri` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer`, with `iss` = `sub` = the client_id and `aud` = the token endpoint | `sts_jwt_bearer_grant.js` |
 | `saml2_bearer` | `pki/issue` with `"purpose":"saml"` | `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:saml2-bearer`, with `Issuer` = `Subject` = the client_id | `sts_saml2_bearer_grant.js` |
-| `tls_client_auth` | a certificate issued on its page (**Credentials → Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake | `tests/rfc8705_mtls.js` |
-| `self_signed_tls_client_auth` | `oauthJwks` with `x5c`, or `oauthTlsClientCertificateThumbprint` | the certificate in the TLS handshake | `tests/rfc8705_mtls.js` |
+| `tls_client_auth` | a certificate issued on its page (**Credentials → Mutual TLS (RFC 8705) → Issue a TLS client certificate from this realm's CA**; API: `applications/issue-tls-client-certificate`), or exactly one of `oauthTlsClientAuthSubjectDn`, `…SanDns`, `…SanUri`, `…SanIp`, `…SanEmail` | the certificate in the TLS handshake; the token is bound to it (`cnf.x5t#S256`) | `sts_client_authentication.js` (a certificate from this realm's CA), `tests/rfc8705_mtls.js` (the subject parameters) |
+| `self_signed_tls_client_auth` | `oauthJwks` with `x5c`, or `oauthTlsClientCertificateThumbprint` | the certificate in the TLS handshake | `sts_client_authentication.js` (`x5c`), `tests/rfc8705_mtls.js` (thumbprint) |
 | `attest_jwt_client_auth` | the realm setting `oauth2.clientAttestationTrustAnchors` or `…TrustedKeys` | the `OAuth-Client-Attestation` and `…-PoP` headers | `sts_client_attestation.js` |
+
+**What development mode checks.** Outside RFC 9700 mode, development mode
+observes a `client_secret_jwt` assertion without verifying its HMAC or its
+`jti`, so a wrong secret or a replay is still issued a token there; product
+mode refuses both. A registered `oauthTokenEndpointAuthSigningAlg` and both
+RFC 8705 methods are checked in every mode. `sts_client_authentication.js`
+asserts each of these in a development and a product realm.
 
 Two more ways to manage secrets:
 * **Rotate the client secret** (API: `applications/rotate-secret`) keeps the

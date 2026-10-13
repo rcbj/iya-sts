@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -204,6 +204,14 @@ interface ConsentDirectory {
     { ok?: boolean; dn?: string; reason?: string } | null | undefined;
   removeWithdrawal(key: string, values: string[]):
     { dn?: string } | null | undefined;
+  // THE GLOBAL CONSENTS APPLIED FOR A PERSON (#537), `oauthConsentApplied`.
+  // Optional: a directory without them records nothing and the portal lists
+  // nothing, which is all they are for.
+  appliedConsentsOf?(key: string): { values?: string[] } | null | undefined;
+  addAppliedConsent?(key: string, values: string[]):
+    { ok?: boolean; dn?: string; reason?: string } | null | undefined;
+  removeAppliedConsent?(key: string, values: string[]):
+    { dn?: string } | null | undefined;
 }
 
 // What revoking a grant's tokens needs from `oauth-oidc/oauth2_bcp.js` — the
@@ -247,6 +255,18 @@ const WITHDRAWN_ATTRIBUTE = 'oauthConsentWithdrawn';
  * global consent.
  */
 const GLOBAL_WITHDRAWN_ATTRIBUTE = 'oauthGlobalConsentWithdrawn';
+
+// THE GLOBAL CONSENTS APPLIED FOR A PERSON (#537). A global consent writes
+// nothing about anybody — that is the whole of what makes it an override
+// rather than a record — so `/portal/consents` had nothing to list for an
+// application whose scopes an administrator agreed to for everyone. The
+// authorization endpoint now writes, the first time a sign-in passes consent
+// because the application's `oauthGlobalConsent` covered a scope, one value
+// per (application, scope) in `oauthConsent`'s grammar. It records what
+// HAPPENED and decides nothing: `outstanding()` never reads it, and taking
+// the global consent away makes it stop being shown rather than deleting it.
+/** The attribute on a person's entry that records global consents applied. */
+const APPLIED_ATTRIBUTE = 'oauthConsentApplied';
 
 // The token kinds a withdrawal revokes: what a grant under consent issued
 // and a client can present again. An ID Token is presented to nobody here.
@@ -618,7 +638,21 @@ class Consent {
       log.debug("Leaving Consent.globalConsentsOf(). No entry for it.");
       return [];
     }
-    const raw = (entry.fields || {})[GLOBAL_ATTRIBUTE];
+    log.debug("Leaving Consent.globalConsentsOf().");
+    return this.globalConsentsFrom(entry);
+  }
+
+  // The same, read off an application view already in hand (#352).
+  /**
+   * Lists the scopes an application view carries as global consents.
+   *
+   * @param entry - the application's view
+   * @returns the scopes, without repeats
+   */
+  globalConsentsFrom(entry) {
+    const { log } = this.deps;
+    log.debug("Entering Consent.globalConsentsFrom().");
+    const raw = ((entry && entry.fields) || {})[GLOBAL_ATTRIBUTE];
     const out = [];
     (Array.isArray(raw) ? raw :
      (raw === undefined || raw === null || raw === '' ? [] : [raw]))
@@ -628,7 +662,7 @@ class Consent {
           out.push(text);
         }
       });
-    log.debug("Leaving Consent.globalConsentsOf(). " + out.length +
+    log.debug("Leaving Consent.globalConsentsFrom(). " + out.length +
               " scope(s).");
     return out;
   }
@@ -834,6 +868,138 @@ class Consent {
       return !!one.scope;
     });
     log.debug("Leaving Consent.consentsOf(). " + rows.length + " consent(s).");
+    return rows;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE GLOBAL CONSENTS APPLIED FOR A PERSON (#537). `noteApplied()` is called
+  // by the authorization endpoint once consent has passed, with the scopes a
+  // global consent answered; `appliedConsentsOf()` is what `/portal/consents`
+  // draws. See APPLIED_ATTRIBUTE.
+  // ---------------------------------------------------------------------------
+  /**
+   * Records that an application's global consent answered for a person, once
+   * per (application, scope): a scope already recorded is not written again,
+   * so a sign-in costs a directory write only the first time.
+   *
+   * Never throws: a record that cannot be written is logged and the sign-in
+   * goes on, because nothing reads it to decide anything.
+   * @param username - the person
+   * @param clientId - the application's client_id
+   * @param scopes - the scopes the global consent answered
+   * @returns `{ ok, stored, scopes }`, `scopes` being those written now
+   */
+  noteApplied(username, clientId, scopes) {
+    const { log, errorCodes, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.noteApplied().");
+    const who = String(clientId || '').trim();
+    const list = (Array.isArray(scopes) ? scopes : self.scopesOf(scopes))
+      .filter(Boolean);
+    const hooks = this.directory;
+    if (!hooks || typeof hooks.appliedConsentsOf !== 'function' ||
+        typeof hooks.addAppliedConsent !== 'function') {
+      log.debug("Leaving Consent.noteApplied(). No directory hooks.");
+      return { ok: true, stored: false, scopes: [] };
+    }
+    try {
+      const key = stats.identityKeyOf(username);
+      if (!key || !who || !list.length) {
+        log.debug("Leaving Consent.noteApplied(). Nothing to record.");
+        return { ok: true, stored: false, scopes: [] };
+      }
+      const held = ((hooks.appliedConsentsOf(key) || {}).values || [])
+        .map(function (value) {
+          return self.parseConsentValue(value);
+        })
+        .filter(function (one) {
+          return one.client === who;
+        })
+        .map(function (one) {
+          return one.scope;
+        });
+      const fresh = list.filter(function (scope) {
+        return held.indexOf(scope) < 0;
+      });
+      if (!fresh.length) {
+        log.debug("Leaving Consent.noteApplied(). Already recorded.");
+        return { ok: true, stored: false, scopes: [] };
+      }
+      const when = new Date();
+      const written = hooks.addAppliedConsent(key, fresh.map(function (scope) {
+        return self.consentValueOf(scope, who, when);
+      })) || {};
+      if (!written.ok) {
+        log.warn(errorCodes.tag('STS-REG-0342') + 'consent: the global ' +
+                 'consent "' + who + '" carries for ' + fresh.join(', ') +
+                 ' answered for "' + key + '", and it could not be ' +
+                 'recorded on their entry (' + (written.reason || 'not ' +
+                 'written') + '), so /portal/consents will not list it.');
+        log.debug("Leaving Consent.noteApplied(). Not written.");
+        return { ok: true, stored: false, scopes: [] };
+      }
+      log.info('consent: the global consent of "' + who + '" answered for "' +
+               key + '" (' + fresh.join(', ') + '); recorded on ' +
+               (written.dn || 'their entry') + ' as ' + APPLIED_ATTRIBUTE +
+               '.');
+      log.debug("Leaving Consent.noteApplied(). " + fresh.length +
+                " written.");
+      return { ok: true, stored: true, scopes: fresh };
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-REG-0342') + 'consent: recording the ' +
+               'global consent "' + who + '" applied for "' +
+               String(username || '') + '" threw: ' +
+               ((e && e.message) || e));
+      log.debug("Leaving Consent.noteApplied(). Threw.");
+      return { ok: true, stored: false, scopes: [] };
+    }
+  }
+
+  /**
+   * Returns the global consents that answered for a person and still stand:
+   * the application still carries the global consent, and the person has not
+   * also agreed to the scope themselves (that is listed as theirs).
+   *
+   * @param username - any spelling of the person's identity
+   * @returns `{ at, scope, client }` per consent
+   */
+  appliedConsentsOf(username) {
+    const { log, stats } = this.deps;
+    const self = this;
+    log.debug("Entering Consent.appliedConsentsOf().");
+    const hooks = this.directory;
+    if (!hooks || typeof hooks.appliedConsentsOf !== 'function') {
+      log.debug("Leaving Consent.appliedConsentsOf(). No directory hooks.");
+      return [];
+    }
+    const key = stats.identityKeyOf(username);
+    if (!key) {
+      log.debug("Leaving Consent.appliedConsentsOf(). No identity.");
+      return [];
+    }
+    const own = self.consentsOf(username).map(function (one) {
+      return one.client + ' ' + one.scope;
+    });
+    const globals: Record<string, string[]> = {};
+    const rows = ((hooks.appliedConsentsOf(key) || {}).values || [])
+      .map(function (value) {
+        return self.parseConsentValue(value);
+      })
+      .filter(function (one) {
+        if (!one.scope || !one.client ||
+            own.indexOf(one.client + ' ' + one.scope) >= 0) {
+          return false;
+        }
+        if (!globals[one.client]) {
+          globals[one.client] = self.globalConsentsOf(one.client);
+        }
+        return globals[one.client].indexOf(one.scope) >= 0;
+      })
+      .map(function (one) {
+        return { at: one.at, scope: one.scope, client: one.client };
+      });
+    log.debug("Leaving Consent.appliedConsentsOf(). " + rows.length +
+              " standing.");
     return rows;
   }
 
@@ -1719,8 +1885,12 @@ class Consent {
     const self = this;
     log.debug("Entering Consent.register().");
     const globals = [];
+    // The scopes read off the row the list already holds (#352), where
+    // `globalConsentsOf()` read each application out of the directory again;
+    // `forPermission()` and `holdsPermission()` below are Map lookups in the
+    // registry's kept listing, not a `list()` each.
     applications.list().forEach(function (row) {
-      self.globalConsentsOf(row.identifier).forEach(function (scope) {
+      self.globalConsentsFrom(row).forEach(function (scope) {
         const permission = applications.forPermission(scope);
         globals.push({
           client: row.identifier,
@@ -1881,6 +2051,8 @@ export = {
   identityOf: slot.forward('identityOf'),
   scopeProblem: slot.forward('scopeProblem'),
   globalConsentsOf: slot.forward('globalConsentsOf'),
+  noteApplied: slot.forward('noteApplied'),
+  appliedConsentsOf: slot.forward('appliedConsentsOf'),
   grantGlobal: slot.forward('grantGlobal'),
   revokeGlobal: slot.forward('revokeGlobal'),
   consentsOf: slot.forward('consentsOf'),

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -43,7 +43,8 @@
 //      is not, the
 //      gate recognises only its path, and a batch by thumbprint, by
 //      certificate and by id applies with an unknown device refused alone.
-//   I. THE TEST CONTROL: answers in development, 403 in product.
+//   I. THE FEED IS THE ONE DOOR: the compliance test control was deleted
+//      (#597); the feed sets compliance in product as in development.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -100,6 +101,12 @@ function childMain() {
      'risc.autoEmit'].forEach(function (key) {
       config.setOverride(key, 'true');
     });
+    // The deprecated RISC sessions-revoked left risc.autoEmitTypes' default
+    // in #269 (CAEP session-revoked carries the news); E and F test that it
+    // still goes out, with the device in the subject, where it is NAMED.
+    config.setOverride('risc.autoEmitTypes',
+                       config.value('risc.autoEmitTypes') +
+                       ',sessions-revoked');
     if (!pki.hasRoot()) {
       await pki.start({});
     }
@@ -548,7 +555,7 @@ function childMain() {
           reason: 'jailbroken' },
         { certificate: certPem, status: 'compliant' },
         { id: 'no-such-device-' + RUN, status: 'compliant' },
-        { id: otherDevice.device.id, status: 'sideways' }] }, MDM, 'mdm');
+        { id: otherDevice.device.id, status: 'sideways' }] }, MDM);
       note(feed.ok && feed.applied === 2 && feed.refused === 2 &&
            feed.results[0].id === id && feed.results[1].id === phoneId &&
            errorCodes.codeOf(feed.results[2]) === 'STS-DEVICE-0007' &&
@@ -565,37 +572,24 @@ function childMain() {
            'STS-DEVICE-0034',
            'H6. an empty batch is refused whole');
 
-      // --- I. the test control -----------------------------------------------
-      const routes = {};
-      const fakeApp = { get: function () {}, post: function (p, fn) {
-        routes[p] = fn;
-      } };
-      new devicesAdmin.DevicesAdmin(devicesAdmin.DevicesAdmin.defaultDeps
-        ? devicesAdmin.DevicesAdmin.defaultDeps() : {})
-        .registerRoutes(fakeApp);
-      function call(body) {
-        const res = { statusCode: 200, body: null, headers: {},
-          set: function (k, v) { this.headers[k] = v; return this; },
-          status: function (c) { this.statusCode = c; return this; },
-          json: function (b) { this.body = b; return this; },
-          locals: {} };
-        routes['/devices/test/compliance']({ body: JSON.stringify(body),
-          headers: { 'content-type': 'application/json' }, method: 'POST',
-          query: {} }, res);
-        return res;
-      }
-      const dev = call({ id: id, status: 'compliant' });
-      note(dev.statusCode === 200 && dev.body.applied === 1 &&
-           devices.byId(id).complianceChange.source === 'test-control',
-           'I1. in development the test control sets compliance with no ' +
-           'credential, source test-control', JSON.stringify(dev.body));
+      // --- I. the feed is the one door (#597) ---------------------------------
+      // Development's compliance test control, `POST /devices/test/compliance`
+      // (a demonstration since #585), was deleted: the module registers no
+      // route at all, and the MDM feed under `device:compliance` sets
+      // compliance in both modes.
+      note(typeof devicesAdmin.registerRoutes !== 'function' &&
+           !('TEST_CONTROL' in devicesAdmin),
+           'I1. devices_admin registers no route: the test control is gone',
+           typeof devicesAdmin.registerRoutes);
       config.setOverride('global.mode', 'product');
-      const prod = call({ id: id, status: 'not-compliant' });
+      const inProduct = devicesAdmin.mdmFeed({ id: id, status: 'compliant',
+        reason: 'back in policy' }, MDM);
       config.clearOverride('global.mode');
-      note(prod.statusCode === 403 &&
-           devices.byId(id).compliance === 'compliant',
-           'I2. in product it is refused 403 and nothing changes',
-           JSON.stringify(prod.body));
+      note(inProduct.ok && inProduct.applied === 1 &&
+           devices.byId(id).compliance === 'compliant' &&
+           devices.byId(id).complianceChange.source === 'mdm',
+           'I2. in product the MDM feed sets compliance, source mdm',
+           JSON.stringify(inProduct));
     });
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
@@ -651,7 +645,7 @@ function run(t) {
 module.exports = {
   name: 'device_signals',
   describe: '#164 phases 3 and 4: device compliance and the MDM feed under ' +
-            'device:compliance, the test control\'s mode split, CAEP ' +
+            'device:compliance, the one door in both modes, CAEP ' +
             'device-compliance-change, risk-level-change (DEVICE) and ' +
             'credential-change, a compromise ending sessions and revoking ' +
             'certificates with RISC credential-compromise and ' +

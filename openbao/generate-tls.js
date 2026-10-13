@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -90,7 +90,7 @@ async function main() {
   const pair = await keyMaterial.generateKeyPair('rsa-2048');
   const issued = await x509.issueCertificate({
     subject: [{ name: 'CN', value: NAMES[0] || 'openbao' },
-              { name: 'O', value: 'mock-sts' }],
+              { name: 'O', value: 'iya-sts' }],
     subjectPublicKey: pair.publicPem,
     issuerPrivateKey: pair.privatePem,
     signatureAlg: 'sha256-rsa',

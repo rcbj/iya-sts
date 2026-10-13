@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 // File: webauthn_policy.ts
@@ -96,6 +96,12 @@ import mode = require('../common/mode');
 // THE AUTHENTICATION POLICY (#64): its passkey and security-key rows are
 // asked in `roleAllowed()`. A LEAF, so no cycle.
 import authnPolicy = require('../common/authn_policy');
+// #527: the passkey policy, a leaf, which since 2026-10-08 decides the
+// usernameless sign-in and a security key's resident key.
+import passkeyPolicy = require('../common/passkey_policy');
+// The ambient realm's name, which the passkey policy may append to rp.name
+// (#533). A leaf here: `config` and `helpers` already require it.
+import realms = require('../common/realms');
 
 // JOSE spelling -> COSE identifier, INVERTED from the verifier's own table
 // rather than written out. That table is what decides whether a signature can
@@ -116,6 +122,28 @@ Object.keys(webauthn.COSE_ALGS).forEach(function (id) {
 // implements and the two `pubKeyCredParams` was hardcoded to before any of this
 // was settable.
 const FALLBACK_ALGS = ['ES256', 'RS256'];
+
+// THE POST-QUANTUM ALGORITHMS (2026-10-01): RFC 9964's ML-DSA, what
+// `webauthn.pqcOnly` narrows the request to — and what it asks for when the
+// list names none of them, because an empty request is refused by the
+// browser and a classical one is what the setting says not to send.
+/**
+ * The post-quantum WebAuthn algorithms, RFC 9964's ML-DSA, in the order
+ * `webauthn.pqcOnly` requests them when the list names none.
+ */
+const PQC_ALGS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87'];
+
+// THE INSECURE ONES (2026-10-01), by name: the verifier's
+// `INSECURE_COSE_ALGS` read through its own table, so the two cannot list
+// different algorithms. Offered and accepted only where
+// `insecureAlgorithmsAllowed()` says.
+/**
+ * The broken WebAuthn algorithms (SHA-1's RS1), offered and accepted only
+ * where `webauthn.insecureAlgorithms` allows them.
+ */
+const INSECURE_ALGS = webauthn.INSECURE_COSE_ALGS.map(function (id) {
+  return webauthn.COSE_ALGS[String(id)];
+});
 
 // The attestation statement formats `authn/webauthn_attestation.ts` verifies
 // (#105): all eight of WebAuthn Level 3 section 8. Written here rather than
@@ -159,7 +187,10 @@ const FAILED_CHECK_CODES = {
   // WebAuthn Level 3 section 7.1's remaining registration checks (#105).
   'credential algorithm was offered': 'STS-AUTHN-0228',
   'credential ID is at most 1023 bytes': 'STS-AUTHN-0229',
-  'backup state only where backup eligible': 'STS-AUTHN-0230'
+  'backup state only where backup eligible': 'STS-AUTHN-0230',
+  // An assertion by a key whose algorithm is insecure, with
+  // `webauthn.insecureAlgorithms` off (2026-10-01).
+  'algorithm is allowed': 'STS-AUTHN-0294'
 };
 
 // The `authenticatorSelection` member of the creation options. Its
@@ -251,15 +282,22 @@ class WebauthnPolicy {
     const attachment =
       String(config.value('webauthn.authenticatorAttachment') ||
                               'any');
+    // ONE READ OF THE PASSKEY POLICY (#527) for the two values it decides.
+    const passkeys = passkeyPolicy.read();
     const out = {
       enabled: config.value('webauthn.enabled') !== false,
-      rpName: String(config.value('webauthn.rpName') || 'Mock authorization ' +
-                                                        'server'),
+      // THE SERVICE'S NAME A PROMPT SHOWS, with the realm's name and/or the
+      // organisation's where the passkey policy appends them (#533).
+      rpName: passkeyPolicy.rpNameFor(
+        String(config.value('webauthn.rpName') || 'Authorization ' +
+                                                  'server'),
+        String((realms.current() || {}).name || realms.currentId() || ''),
+        String(config.value('saml.organizationName') || ''), passkeys),
       rpId: String(config.value('webauthn.rpId') || '').trim(),
       algorithms: this.algorithmsOffered(),
       userVerification: this.oneOf(config.value('webauthn.userVerification'),
                                    ['discouraged', 'preferred', 'required'],
-                                   'preferred'),
+                                   'required'),
       attestation: this.oneOf(config.value('webauthn.attestation'),
                          ['none', 'indirect', 'direct', 'enterprise'],
                          'direct'),
@@ -271,12 +309,24 @@ class WebauthnPolicy {
       authenticatorAttachment: this.oneOf(attachment,
                                           ['any', 'platform', 'cross-platform'],
                                           'any'),
-      residentKey: this.oneOf(config.value('webauthn.residentKey'),
-                         ['discouraged', 'preferred', 'required'],
-                         'discouraged'),
+      // What a security key (or an enrolment naming no kind) is asked to
+      // store: `required` while usernameless sign-in is off, the policy's
+      // `securityKeyResidentKey` while it is on (#527, rcbj's answers 1 and
+      // 2). It was the setting `webauthn.residentKey`, default discouraged.
+      residentKey: passkeyPolicy.securityKeyResidentKey(passkeys),
       credProps: config.value('webauthn.credProps') !== false,
       primaryAllowed: config.value('webauthn.primaryAllowed') !== false,
+      // A SIGN-IN WITH NO USERNAME (#474): off unless the realm's passkey
+      // policy allows it (#527; it was the setting webauthn.usernameless).
+      usernameless: passkeyPolicy.allowsUsernameless(passkeys),
+      // WHETHER A REGISTRATION ASKS FOR THE KEY'S MINIMUM PIN LENGTH (#529):
+      // only while the passkey policy enforces one, so a realm that does not
+      // sends exactly the options it always did.
+      minPinLength: passkeyPolicy.pinLengthRule(passkeys).enforce,
       mfaAllowed: config.value('webauthn.mfaAllowed') !== false,
+      // The two algorithm flags (2026-10-01).
+      insecureAlgorithms: this.insecureAlgorithmsAllowed(),
+      pqcOnly: this.pqcOnly(),
       maxKeysPerPerson: this.clamp(config.value('webauthn.maxKeysPerPerson'), 1,
                                    50,
                                    10)
@@ -331,6 +381,11 @@ class WebauthnPolicy {
       ['none', 'L1', 'L1plus', 'L2', 'L2plus', 'L3', 'L3plus'], 'none');
     const requireFips = config.value('webauthn.attestationRequireFips') ===
                         true;
+    // A SERIAL BOUND TO THE PERSON (#532) is only worth what the certificate
+    // naming it is worth, so the passkey policy's attribute demands a
+    // trusted statement as an AAGUID list does.
+    const enterpriseSerialAttribute =
+      passkeyPolicy.enterpriseSerialAttribute();
     const out = {
       configured: configured,
       policy: policy,
@@ -343,9 +398,11 @@ class WebauthnPolicy {
                       true,
       androidSoftwareKeys:
         config.value('webauthn.attestationAndroidSoftwareKeys') === true,
+      enterpriseSerialAttribute: enterpriseSerialAttribute,
       demandsTrust: policy === 'require-trusted' ||
                     allowedAaguids.length > 0 ||
-                    minCertificationLevel !== 'none' || requireFips
+                    minCertificationLevel !== 'none' || requireFips ||
+                    !!enterpriseSerialAttribute
     };
     log.debug('Leaving WebauthnPolicy.attestationSettings(). policy=' +
               out.policy + ', demandsTrust=' + out.demandsTrust);
@@ -394,7 +451,9 @@ class WebauthnPolicy {
     const list = (Array.isArray(asked) ? asked : String(asked || '').split(','))
       .map(function (name) { return String(name || '').trim(); })
       .filter(Boolean);
-    const kept = [];
+    const insecureAllowed = this.insecureAlgorithmsAllowed();
+    const pqcOnly = this.pqcOnly();
+    let kept = [];
     list.forEach(function (name) {
       if (ALG_IDS[name] === undefined) {
         log.warn('webauthn: "' + name + '" is not an algorithm this service ' +
@@ -405,10 +464,43 @@ class WebauthnPolicy {
                  'works again.');
         return;
       }
+      // AN INSECURE ONE ONLY WHERE THE REALM ALLOWS IT (2026-10-01): named in
+      // the list or not, it is dropped while `webauthn.insecureAlgorithms`
+      // is off (or the service is in product mode, which ignores it).
+      if (INSECURE_ALGS.indexOf(name) >= 0 && !insecureAllowed) {
+        log.debug('webauthn: ' + name + ' is insecure and ' +
+                  'webauthn.insecureAlgorithms is off; not offered.');
+        return;
+      }
       if (kept.indexOf(name) < 0) {
         kept.push(name);
       }
     });
+    // ON, THE INSECURE ONES ARE REQUESTED TOO, last: the flag says to use
+    // them, and an authenticator takes the first algorithm it supports, so
+    // at the end they are asked for only from one that supports nothing
+    // better.
+    if (insecureAllowed) {
+      INSECURE_ALGS.forEach(function (name) {
+        if (kept.indexOf(name) < 0) {
+          kept.push(name);
+        }
+      });
+    }
+    // POST-QUANTUM ONLY (2026-10-01): the request narrowed to ML-DSA, and
+    // all three where the list names none. It narrows what is REQUESTED,
+    // and so what may be registered (section 7.1's offered-algorithm
+    // check); a classical key already enrolled goes on signing in.
+    if (pqcOnly) {
+      kept = kept.filter(function (name) {
+        return PQC_ALGS.indexOf(name) >= 0;
+      });
+      if (!kept.length) {
+        log.debug('Leaving WebauthnPolicy.algorithmsOffered(). PQC only, ' +
+                  'and the list names no ML-DSA: all three.');
+        return PQC_ALGS.slice();
+      }
+    }
     if (!kept.length) {
       // NOT an empty list. `pubKeyCredParams: []` is a registration the browser
       // refuses outright, with an error the ceremony reports as one of its
@@ -426,6 +518,49 @@ class WebauthnPolicy {
     log.debug('Leaving WebauthnPolicy.algorithmsOffered(). ' + kept.length +
               ' offered.');
     return kept;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE TWO ALGORITHM FLAGS (2026-10-01, rcbj), PER REALM like every runtime
+  // setting (`config.value()` reads the ambient realm's override first).
+  //
+  // `webauthn.insecureAlgorithms`, off by default: the broken algorithms
+  // (SHA-1's RS1) are offered and accepted. DEVELOPMENT ONLY, the row's
+  // `onlyWhile: 'usesBrokenAlgorithms'` — product cannot set it, and a value
+  // that reached it anyway is ignored here, because product never uses a
+  // broken algorithm (`mode.usesBrokenAlgorithms()`).
+  //
+  // `webauthn.pqcOnly`, off by default: only ML-DSA is requested.
+  // ---------------------------------------------------------------------------
+  /**
+   * Tells whether this realm offers and accepts the insecure WebAuthn
+   * algorithms (RS1): `webauthn.insecureAlgorithms`, in development mode
+   * only.
+   *
+   * @returns true when they are allowed
+   */
+  insecureAlgorithmsAllowed(): boolean {
+    const { config, log, mode } = this.deps;
+    log.debug('Entering WebauthnPolicy.insecureAlgorithmsAllowed().');
+    const allowed = config.value('webauthn.insecureAlgorithms') === true &&
+                    mode.usesBrokenAlgorithms();
+    log.debug('Leaving WebauthnPolicy.insecureAlgorithmsAllowed(). ' +
+              allowed);
+    return allowed;
+  }
+
+  /**
+   * Tells whether this realm requests only the post-quantum algorithms
+   * (ML-DSA): `webauthn.pqcOnly`.
+   *
+   * @returns true when it does
+   */
+  pqcOnly(): boolean {
+    const { config, log } = this.deps;
+    log.debug('Entering WebauthnPolicy.pqcOnly().');
+    const only = config.value('webauthn.pqcOnly') === true;
+    log.debug('Leaving WebauthnPolicy.pqcOnly(). ' + only);
+    return only;
   }
 
   // The COSE identifiers for `pubKeyCredParams`, in the order the names were
@@ -588,39 +723,55 @@ class WebauthnPolicy {
   // edits this attribute in the developer tools changes what their own browser
   // is asked for and nothing about what this service will accept.
   // ---------------------------------------------------------------------------
-  // `kind` (2026-09-26) is what the PERSON chose on `/portal/keys`: a
-  // `platform` authenticator built into the device, or a `roaming` one they
-  // carry — the two `authenticatorKinds()` offers. It narrows the request
-  // only while `webauthn.authenticatorAttachment` is `any`; a setting that
-  // names one wins, because it is the realm's filter and the choice is only a
-  // preference inside it. A `platform` ceremony also asks for a discoverable
-  // credential — `preferred` unless the setting says `required` — because a
-  // key kept on the device IS a passkey, and `discouraged` is what made Chrome
-  // and Edge offer a security key or a phone and never the device itself.
-  // `webauthn.residentKey`'s reason (the few slots a ROAMING authenticator
-  // has) does not reach an authenticator built in. No `kind`, and the sign-in
-  // screen's ceremony, is the request as it always was.
+  // `kind` is which of `/portal/keys`' two calls to action the PERSON pressed
+  // (#470, 2026-10-06; it was a three-way radio from 2026-09-26): `passkey`
+  // ("Create a passkey") or `security-key` ("Use a security key"), the two
+  // `authenticatorKinds()` offers.
+  //
+  //   * `passkey` REQUIRES a discoverable credential (#474, rcbj's decision:
+  //     a passkey is one that can be found without a username, so one that
+  //     cannot is not made under that name) and HINTS `client-device` then
+  //     `hybrid`
+  //     (WebAuthn Level 3 section 5.4.8) — and sends NO attachment, which is
+  //     the lesson of 2026-09-26: a hard `platform` refused outright on a
+  //     browser with nothing built in (Linux Firefox), where a hint lets the
+  //     browser offer a phone instead. `discouraged` is what made Chrome and
+  //     Edge offer a security key or a phone and never the device itself.
+  //   * `security-key` asks for `cross-platform` and hints `security-key`;
+  //     its resident key is the passkey policy's (#527): `required` while
+  //     usernameless sign-in is off, so both buttons make a discoverable
+  //     credential (a tester found one key giving two results by button),
+  //     and `securityKeyResidentKey` (default `required`) while it is on.
+  //
+  // A kind narrows nothing beyond the hint while
+  // `webauthn.authenticatorAttachment` names one: that setting is the realm's
+  // filter, and `authenticatorKinds()` then offers only the button it allows.
+  // No `kind`, and the sign-in screen's ceremony, is the request as it always
+  // was, with no hint.
   /**
    * Builds the registration options the browser receives.
    *
-   * A `kind` narrows the authenticator attachment only while the setting is
-   * `any`, and a platform ceremony prefers a discoverable credential. A
-   * policy that demands a trusted statement asks for `direct` attestation.
+   * A `kind` adds hints, prefers a discoverable credential for a passkey and
+   * asks a security key for `cross-platform`, the last only while the
+   * attachment setting is `any`. A policy that demands a trusted statement
+   * asks for `direct` attestation.
    * @param rpId - the relying party id
-   * @param kind - `platform` or `roaming`, as the person chose, if any
+   * @param kind - `passkey` or `security-key`, as the person chose, if any
    * @returns the options: RP, algorithms, attestation, timeout,
-   * authenticator selection and credProps
+   * authenticator selection, hints and credProps
    */
   creationOptions(rpId, kind?) {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.creationOptions(). rpId=' + rpId);
     const live = this.settings();
-    const asked = live.authenticatorAttachment === 'any'
-      ? { platform: 'platform', roaming: 'cross-platform' }[String(kind || '')]
-      : '';
-    const residentKey = asked === 'platform' &&
-                        live.residentKey !== 'required'
-      ? 'preferred' : live.residentKey;
+    const wanted = String(kind || '');
+    const asked = live.authenticatorAttachment === 'any' &&
+                  wanted === 'security-key' ? 'cross-platform' : '';
+    const residentKey = wanted === 'passkey' ? 'required' : live.residentKey;
+    // THE HINTS ARE THE PASSKEY POLICY'S ROWS (#531), whose defaults are what
+    // this line sent before: client-device then hybrid for a passkey,
+    // security-key for a security key, none for an enrolment naming no kind.
+    const hints = passkeyPolicy.hintsFor(wanted);
     // A POLICY THAT NEEDS A STATEMENT ASKS FOR ONE (#105). `none` and
     // `indirect` let the browser strip or anonymise the statement, and a
     // realm that requires a trusted one would then refuse every enrolment
@@ -643,7 +794,12 @@ class WebauthnPolicy {
         // ones that would otherwise ignore the modern member entirely.
         requireResidentKey: residentKey === 'required'
       },
-      credProps: live.credProps
+      credProps: live.credProps,
+      // CTAP 2.1 section 12.4's extension, asked for only while the passkey
+      // policy enforces a PIN length (#529); absent otherwise, so the options
+      // a realm that does not are byte for byte what they were.
+      minPinLength: live.minPinLength === true ? true : undefined,
+      hints: hints
     };
     // ABSENT AND NOT `"any"`. The options dictionary has no value meaning "no
     // preference" — the member is simply not there — and sending the string
@@ -659,23 +815,24 @@ class WebauthnPolicy {
     return out;
   }
 
-  // WHICH KINDS OF AUTHENTICATOR A PERSON MAY CHOOSE BETWEEN when enrolling
-  // on `/portal/keys` (2026-09-26): both while
-  // `webauthn.authenticatorAttachment` is `any`, and only the one it names
-  // otherwise — so the page offers no choice the ceremony would ignore.
+  // WHICH OF THE TWO CALLS TO ACTION `/portal/keys` DRAWS (#470): "Create a
+  // passkey" and "Use a security key" while `webauthn.authenticatorAttachment`
+  // is `any`; only the passkey button while it is `platform`, and only the
+  // security key's while it is `cross-platform` — so the page offers no
+  // button the ceremony would contradict.
   /**
-   * Lists the kinds of authenticator a person may choose between on
-   * `/portal/keys`, as the attachment setting allows.
+   * Lists the kinds of passkey a person may create on `/portal/keys`, as the
+   * attachment setting allows.
    *
-   * @returns `platform`, `roaming` or both
+   * @returns `passkey`, `security-key` or both
    */
   authenticatorKinds() {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.authenticatorKinds().');
     const attachment = this.settings().authenticatorAttachment;
-    const out = attachment === 'platform' ? ['platform']
-      : (attachment === 'cross-platform' ? ['roaming']
-                                         : ['platform', 'roaming']);
+    const out = attachment === 'platform' ? ['passkey']
+      : (attachment === 'cross-platform' ? ['security-key']
+                                         : ['passkey', 'security-key']);
     log.debug('Leaving WebauthnPolicy.authenticatorKinds(). ' +
               out.join(','));
     return out;
@@ -691,13 +848,85 @@ class WebauthnPolicy {
     const { log } = this.deps;
     log.debug('Entering WebauthnPolicy.requestOptions(). rpId=' + rpId);
     const live = this.settings();
-    const out = {
+    const out: { rpId: string; userVerification: string; timeout: number;
+                 hints?: string[] } = {
       rpId: rpId,
       userVerification: live.userVerification,
       timeout: live.timeoutMs
     };
+    // A SIGN-IN'S HINTS (#531), the passkey policy's `signInHints`; absent
+    // where it names none, so the default request is what it always was.
+    const hints = passkeyPolicy.hintsFor('sign-in');
+    if (hints.length) {
+      out.hints = hints;
+    }
     log.debug('Leaving WebauthnPolicy.requestOptions(). uv=' +
               out.userVerification);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE USERNAMELESS SIGN-IN (#474): a passkey the browser finds by itself —
+  // a discoverable credential, `allowCredentials` empty — from the button on
+  // the sign-in screen or the username field's autofill.
+  //
+  // **OFFERED ONLY WHERE A PRIMARY KEY IS**: `webauthn.enabled`,
+  // `webauthn.primaryAllowed` and the passkey policy's `allowUsernameless`
+  // (#527; it was `webauthn.usernameless`), which is OFF by default.
+  // **USER VERIFICATION IS REQUIRED AND CHECKED**, whatever
+  // `webauthn.userVerification` says (rcbj's decision): the sign-in is then
+  // a key the person possesses and a PIN or biometric that verified them on
+  // it, two factors on one device, recorded `amr ["hwk","user"]` and `acr
+  // "mfa"`. Without the flag it would be possession alone of a credential
+  // that names its own account, which no setting should be able to allow.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a usernameless passkey sign-in is offered in this realm.
+   *
+   * @returns `{ ok: true }`, or `{ ok: false, why }` naming the setting
+   */
+  usernamelessOffered() {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering WebauthnPolicy.usernamelessOffered().");
+    const live = this.settings();
+    const why = !live.enabled
+      ? 'Passkeys are switched off in this realm (webauthn.enabled).'
+      : (!live.primaryAllowed
+        ? 'A passkey may not sign anybody in on its own in this realm ' +
+          '(webauthn.primaryAllowed).'
+        : (!live.usernameless
+          ? 'Signing in with a passkey and no username is switched off in ' +
+            'this realm (the passkey policy\'s allowUsernameless, on ' +
+            'Directory → Policies).'
+          : ''));
+    log.debug("Leaving WebauthnPolicy.usernamelessOffered(). " +
+              (why ? 'No.' : 'Yes.'));
+    return why ? errorCodes.mark({ ok: false, why: why }, 'STS-AUTHN-0301')
+               : { ok: true };
+  }
+
+  /**
+   * Builds the authentication options of a usernameless ceremony: no
+   * `allowCredentials`, and user verification required.
+   *
+   * @param rpId - the relying party id
+   * @returns the RP id, `userVerification: required` and the timeout
+   */
+  discoverableRequestOptions(rpId) {
+    const { log } = this.deps;
+    log.debug('Entering WebauthnPolicy.discoverableRequestOptions().');
+    const out: { rpId: string; userVerification: string; timeout: number;
+                 hints?: string[] } = {
+      rpId: rpId,
+      userVerification: 'required',
+      timeout: this.settings().timeoutMs
+    };
+    // The sign-in's hints (#531), as `requestOptions()` sends them.
+    const hints = passkeyPolicy.hintsFor('sign-in');
+    if (hints.length) {
+      out.hints = hints;
+    }
+    log.debug('Leaving WebauthnPolicy.discoverableRequestOptions().');
     return out;
   }
 
@@ -750,8 +979,12 @@ class WebauthnPolicy {
       algorithms: Object.keys(webauthn.COSE_ALGS).map(function (id) {
         const name = webauthn.COSE_ALGS[id];
         return { name: name, coseAlg: Number(id),
-                 offered: live.algorithms.indexOf(name) >= 0 };
+                 offered: live.algorithms.indexOf(name) >= 0,
+                 postQuantum: PQC_ALGS.indexOf(name) >= 0,
+                 insecure: INSECURE_ALGS.indexOf(name) >= 0 };
       }),
+      insecureAlgorithms: live.insecureAlgorithms,
+      pqcOnly: live.pqcOnly,
       curves: Object.keys(webauthn.COSE_CURVES).map(function (id) {
         return { name: webauthn.COSE_CURVES[id], coseCurve: Number(id) };
       }),
@@ -783,6 +1016,7 @@ class WebauthnPolicy {
       credProps: live.credProps,
       primaryAllowed: live.primaryAllowed,
       mfaAllowed: live.mfaAllowed,
+      usernameless: live.usernameless,
       maxKeysPerPerson: live.maxKeysPerPerson,
       signatureCounter: 'checked — an authenticator\'s counter only ever ' +
                         'goes up, so one that went backwards is a cloned key.',
@@ -829,9 +1063,15 @@ export = {
   roleAllowed: slot.forward('roleAllowed'),
   algorithmsOffered: slot.forward('algorithmsOffered'),
   algorithmIds: slot.forward('algorithmIds'),
+  insecureAlgorithmsAllowed: slot.forward('insecureAlgorithmsAllowed'),
+  pqcOnly: slot.forward('pqcOnly'),
+  PQC_ALGS: PQC_ALGS,
+  INSECURE_ALGS: INSECURE_ALGS,
   creationOptions: slot.forward('creationOptions'),
   authenticatorKinds: slot.forward('authenticatorKinds'),
   requestOptions: slot.forward('requestOptions'),
+  usernamelessOffered: slot.forward('usernamelessOffered'),
+  discoverableRequestOptions: slot.forward('discoverableRequestOptions'),
   requireUserVerification: slot.forward('requireUserVerification'),
   attestationSettings: slot.forward('attestationSettings'),
   ATTESTATION_FORMATS: ATTESTATION_FORMATS,

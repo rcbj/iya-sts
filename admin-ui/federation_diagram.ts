@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -93,6 +93,9 @@
 import helpers = require('../common/helpers');
 // The error codes (common/error_codes.js), a leaf: requiring it moves nothing.
 import errorCodes = require('../common/error_codes');
+// The mode (common/mode.js), a leaf over config: which sentence about
+// passwords is true in this realm (#543 round 2).
+import mode = require('../common/mode');
 import dagre = require('@dagrejs/dagre');
 import delegationMap = require('./delegation_map');
 import InstanceSlot = require('../common/instance_slot');
@@ -534,7 +537,11 @@ class FederationDiagram {
       // table of relationships has never been able to show, because it is a
       // fact about two registers rather than about one entry.
       lines.push(self.trim(row.id, 24));
+      // A PARTNER'S SHARED SIGNALS ride the same arrow (#373): they come
+      // from the same partner, about the same people.
       lines.push(self.trim(row.protocolLabel, 20) +
+                 (row.signsIn !== false && row.signalsEnabled
+                    ? ' · signals' : '') +
                  (row.applicationCount
                     ? ' · ' + row.applicationCount + ' app' +
                       (row.applicationCount === 1 ? '' : 's')
@@ -585,11 +592,15 @@ class FederationDiagram {
           'partner: it consumes somebody else\'s assertion and issues its own.'
         : 'How somebody is authenticated for it: ' + row.mechanismLabel + '.');
       if (row.brokerProblem) {
+        // Per mode (#543 round 2): the screen checks a password in product.
         parts.push('AND IT CANNOT: ' + row.brokerProblem + ' Until that is ' +
-                   'fixed the person meets the sign-in screen instead, which ' +
-                   'checks no password — a federated application ' +
-                   'authenticating people locally looks exactly like a ' +
-                   'federated application working.');
+                   'fixed the person meets the sign-in screen instead, ' +
+                   (mode.verifiesCredentials()
+                     ? 'and signs in with a credential held here'
+                     : 'which checks no password in development mode') +
+                   ' — a federated application authenticating people ' +
+                   'locally looks exactly like a federated application ' +
+                   'working.');
       }
       if (edge.use && edge.use.authentications) {
         parts.push(edge.use.users + ' person(s) and ' +
@@ -604,6 +615,14 @@ class FederationDiagram {
         parts.push('Attributes released to it: ' + row.releases.join(', ') +
                    '.');
       }
+    } else if (row.signsIn === false) {
+      // A PARTNER THAT SIGNS NOBODY IN (#374): the arrow is its events.
+      parts.push('This service receives Shared Signals from "' +
+                 (row.peer || row.id) + '" through the federation ' +
+                 'relationship "' + row.id + '". It signs nobody in: its ' +
+                 'CAEP and RISC events are verified against the keys its SSF ' +
+                 'configuration names and acted on as the signal-response ' +
+                 'policy permits — by default, recorded.');
     } else {
       parts.push('This service consumes assertions from "' +
                  (row.peer || row.id) +
@@ -611,6 +630,12 @@ class FederationDiagram {
                  row.protocolLabel + '). An assertion is refused unless it ' +
                  'verifies against the certificate configured on this ' +
                  'relationship.');
+      if (row.signalsEnabled) {
+        parts.push('Its Shared Signals are received as well (#373): a ' +
+                   'verified event ends the sessions it started for the ' +
+                   'person, and an account-disabled blocks its sign-ins of ' +
+                   'them.');
+      }
       parts.push(row.applicationCount
         ? row.applicationCount + ' application(s) here are configured to ' +
           'authenticate through it.'

@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -25,10 +25,16 @@
 //      risc.optOutDelayHours (set to 0 here) has passed, and opt-in;
 //   e. a move the state diagram does not allow is refused (409).
 //
+// SINCE #568 the portal is a static application over `/account-api`: eve
+// signs in as it does (`portal_signin.js`), the moves are
+// `POST /account-api/signals`, and the page is the portal's own renderer
+// drawing that operation's view.
+//
 // OWNED HERE (local: true): this repository's own transmitter and portal.
 // ---------------------------------------------------------------------------
 
 const assert = require("assert");
+const portal = require("./portal_signin.js");
 const names = require("./random_username.js");
 
 var appconfig;
@@ -68,14 +74,6 @@ const BOB = names.usernameFor("r146-bob");
 const DAVE = names.usernameFor("r146-dave");
 const EVE = names.usernameFor("r146-eve");
 const SHARED = "recycled-" + STAMP.toLowerCase() + "@risc146.test";
-// A desktop Chrome string, with this job's own name on the end so the
-// fingerprint it hashes is still its own: isbot reads the bare name as
-// an automated client, and product mode refuses a first sign-in from
-// one on risk (#62).
-const AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-  "(KHTML, like " +
-  "Gecko) Chrome/140.0.0.0 Safari/537.36 sts_risc_acts/1.0";
-
 let checks = 0;
 function check(what, fn) {
   log.debug("Entering check().");
@@ -89,13 +87,6 @@ function form(o) {
   log.debug("Entering form().");
   log.debug("Leaving form().");
   return new URLSearchParams(o).toString();
-}
-
-function absolute(location) {
-  log.debug("Entering absolute().");
-  log.debug("Leaving absolute().");
-  return /^https?:\/\//i.test(String(location || ""))
-    ? String(location) : base + String(location || "");
 }
 
 async function send(url, options) {
@@ -132,64 +123,6 @@ async function ok(url, payload, what) {
     " " + String(r.raw).slice(0, 400));
   log.debug("Leaving ok().");
   return r.body;
-}
-
-// One browser, with a cookie jar.
-function browser(name) {
-  log.debug("Entering browser(). " + name);
-  const jar = {};
-  const self = {
-    async go(method, path, body) {
-      log.debug("Entering go(). " + method + " " + path);
-      const headers = { "User-Agent": AGENT };
-      const cookie = Object.keys(jar).map(function (k) {
-        return k + "=" + jar[k];
-      }).join("; ");
-      if (cookie) {
-        headers.cookie = cookie;
-      }
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const r = await fetch(absolute(path), { method: method,
-        redirect: "manual", headers: headers, body: body });
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const at = pair.indexOf("=");
-        if (at <= 0) {
-          return;
-        }
-        const value = pair.slice(at + 1);
-        if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(one))) {
-          delete jar[pair.slice(0, at)];
-        } else {
-          jar[pair.slice(0, at)] = value;
-        }
-      });
-      const text = await r.text();
-      log.debug("Leaving go(). status=" + r.status);
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: text, headers: r.headers };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 function decode(token) {
@@ -271,36 +204,22 @@ function userOf(set) {
   return sub && sub.format === "complex" ? sub.user : sub;
 }
 
+// SIGNED IN AS THE STATIC PORTAL SIGNS IN (#568): PKCE as `sts-user-portal`,
+// a DPoP-bound token for the realm's `/account-api`.
 async function signInToPortal(who) {
   log.debug("Entering signInToPortal().");
-  const b = browser(who);
-  let r = await b.go("GET", R + "/portal");
-  for (let i = 0; i < 8 && (r.status === 302 || r.status === 303); i++) {
-    if (/\/authn\/login\?authn=/.test(r.location)) {
-      const page = await b.go("GET", r.location);
-      const fields = hiddenFields(page.text);
-      fields.username = who;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
-      continue;
-    }
-    r = await b.go("GET", r.location);
-  }
-  assert.strictEqual(r.status, 200, "the portal after sign-in: " + r.status +
-                     " " + r.location + " " + String(r.text).slice(0, 300));
+  const c = await portal.signInToThePortal(base + R, who, null,
+                                           { password: PASSWORD });
+  assert.ok(c.token, "no portal token for " + who);
   log.debug("Leaving signInToPortal().");
-  return b;
+  return c;
 }
 
-// POST one opt-out move from the page's own form (and its CSRF token).
-async function move(b, which) {
+// One opt-out move, sent to the operation the page's form posts to (#568:
+// `POST /account-api/signals`).
+async function move(c, which) {
   log.debug("Entering move(). " + which);
-  const page = await b.go("GET", R + "/portal/signals");
-  const csrf = (String(page.text)
-    .match(/name="csrf_token" value="([^"]+)"/) || [])[1] || "";
-  const r = await b.go("POST", R + "/portal/signals",
-                       form({ move: which, csrf_token: csrf }));
+  const r = await c.act("/portal/signals", { move: which });
   log.debug("Leaving move(). " + r.status);
   return r;
 }
@@ -428,10 +347,14 @@ async function test() {
 
   log.info("=== d. the account holder's opt-out on the portal ===");
   const b = await signInToPortal(EVE);
-  const page = await b.go("GET", R + "/portal/signals");
+  // The page as the portal draws it from its view (#568).
+  const page = await b.draw("/portal/signals");
   check("the portal offers eve the choice", function () {
-    assert.ok(/Stop sharing security events/.test(page.text),
-              page.text.slice(0, 600));
+    assert.ok(/Stop sharing security events/.test(page.html),
+              page.html.slice(0, 600));
+    assert.ok(page.json.participation &&
+              page.json.participation.moves.indexOf("optOutInitiated") >= 0,
+              JSON.stringify(page.json.participation));
   });
   let r = await move(b, "optOutInitiated");
   found = await waitFor(token, streamId, "initiated", function (set) {

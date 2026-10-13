@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -19,6 +19,11 @@
 //      and phone scopes and their claims.
 //   b. at_hash AND c_hash WITH THE HASH OF THE ID TOKEN'S alg — RS256, RS384,
 //      PS512, ES512, EdDSA and ML-DSA-44 — computed here independently.
+//  b2. THE SAME METADATA ON A CLIENT /admin-api CREATED (#290): an ES256 ID
+//      Token and an ES256-signed UserInfo response for a client no
+//      registration made, from `oauthIdTokenSignedResponseAlg` and
+//      `oauthUserinfoSignedResponseAlg`; an unsigned ID Token refused at the
+//      write, naming the attribute.
 //   c. ERRORS IN THE FRAGMENT for a hybrid request, in the query for code.
 //   d. POST AT THE AUTHORIZATION ENDPOINT.
 //   e. THE REQUEST RULES: openid for an ID Token, prompt=none alone, nonce for
@@ -42,6 +47,8 @@
 // OWNED HERE (local: true): this repository's own authorization server.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -173,10 +180,39 @@ async function signOut(b, url) {
               new URLSearchParams(fields).toString());
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -213,21 +249,6 @@ function browser(name) {
   };
   log.debug("Leaving browser().");
   return self;
-}
-
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
 }
 
 function decode(jwt) {
@@ -277,14 +298,17 @@ function atClient(r, redirect) {
 
 async function signIn(b, location, who) {
   log.debug("Entering signIn(). who=" + who);
-  const page = await b.go("GET", location);
-  assert.strictEqual(page.status, 200, "the sign-in screen: " + page.status +
-                     " " + page.text.slice(0, 300));
-  const fields = hiddenFields(page.text);
-  fields.username = who;
-  fields.password = PASSWORD;
-  fields.action = "login";
-  const posted = await b.go("POST", R + "/authn/login", form(fields));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+  // answer read as the form's POST was.
+  const answer = await authnSignin.submit(base + R, location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: jarHeader(b) });
+  assert.ok(answer.view, "the sign-in screen: " + answer.status + " " +
+            JSON.stringify(answer.errors));
+  keepCookies(b, answer);
+  const posted = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   log.debug("Leaving signIn().");
   return posted;
 }
@@ -466,6 +490,56 @@ async function test() {
                          "an ID Token carries no typ claim");
     });
   }
+
+  log.info("=== b2. the response algorithms on a client /admin-api made " +
+           "(#290) ===");
+  const made = { client_id: "oidccore-api-" + STAMP.toLowerCase()
+                   .replace(/[^a-z0-9-]/g, ""),
+                 client_secret: nodeCrypto.randomBytes(24).toString("hex") };
+  await ok(realmApi + "/applications/create", { identifier: made.client_id,
+    kind: "oauth2-client", name: made.client_id,
+    protocols: ["oauth2", "oidc"],
+    fields: { oauthClientId: [made.client_id],
+              oauthClientSecret: made.client_secret,
+              oauthTokenEndpointAuthMethod: "client_secret_basic",
+              oauthRedirectUri: [REDIRECT],
+              oauthGrantType: ["authorization_code"],
+              oauthResponseType: ["code"],
+              oauthAllowedScope: ["openid"],
+              oauthIdTokenSignedResponseAlg: "ES256",
+              oauthUserinfoSignedResponseAlg: "ES256" } },
+    "created a client with an ES256 ID Token and UserInfo response");
+  await ok(realmApi + "/consent/grant-global-consent",
+           { client: made.client_id, scope: "openid" },
+           "consented openid for everybody on " + made.client_id);
+  const madeTokens = await codeTokens(alice, made, {}, ALICE);
+  check("AN ID TOKEN FOR A CLIENT NO REGISTRATION MADE IS SIGNED WITH ITS " +
+        "oauthIdTokenSignedResponseAlg (ES256)", function () {
+    assert.strictEqual(decode(madeTokens.id_token).header.alg, "ES256",
+                       JSON.stringify(decode(madeTokens.id_token).header));
+  });
+  r = await send(base + R + "/oauth2/userinfo",
+                 { headers: { Authorization: "Bearer " +
+                              madeTokens.access_token } });
+  check("and its UserInfo response is a JWT signed with its " +
+        "oauthUserinfoSignedResponseAlg (ES256)", function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 300));
+    const signed = decode(r.raw.trim());
+    assert.strictEqual(signed.header.alg, "ES256",
+                       JSON.stringify(signed.header));
+    assert.strictEqual(signed.claims.aud, made.client_id,
+                       JSON.stringify(signed.claims));
+  });
+  r = await postJson(realmApi + "/applications/set", {
+    application: made.client_id, attribute: "oauthIdTokenSignedResponseAlg",
+    value: "none" });
+  check("an unsigned ID Token is refused at the write, as a registration " +
+        "refuses it, naming the attribute", function () {
+    assert.ok(r.status !== 200 || (r.body && r.body.ok === false),
+              r.status + " " + r.raw.slice(0, 300));
+    assert.ok(/oauthIdTokenSignedResponseAlg/.test(r.raw),
+              r.raw.slice(0, 300));
+  });
 
   log.info("=== c. errors where the response would have gone ===");
   r = await authorize(alice, { response_type: "code id_token",

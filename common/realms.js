@@ -1,6 +1,6 @@
 // @ts-check
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -972,31 +972,18 @@ function validateId(id) {
 // process's value with the id stuck on. The rule the list exists for is
 // unchanged — two realms may not share an identifier — and a unique domain
 // now carries it: `urn:iyasec.io:idp` and `urn:dev.iyasec.io:idp` are
-// distinct because the domains are. rcbj chose URNs over `https://` URLs,
-// because an entityID built from a domain would otherwise read as an ADDRESS
-// the service may not answer at (see the domain's note above). The three that
-// shared `urn:wstrust:mock:sts` by default share `urn:<domain>:sts`, so the
-// relationship between them is kept. `oid4vp.clientId` is a client id rather
+// distinct because the domains are. `oid4vp.clientId` is a client id rather
 // than a name in a domain, and keeps the id suffix it always had.
+//
+// THE FIVE SAML, WS-TRUST AND WS-FEDERATION NAMES WERE SEEDED HERE until #523
+// (2026-10-08) — `urn:<domain>:idp`, `urn:<domain>:idp:saml11` and
+// `urn:<domain>:sts`. Every one of them is the realm's OAuth issuer now
+// (`common/issuer_names.ts`), which is already distinct per realm by its
+// prefix, so there is nothing left to seed.
 //
 // `from(domain, id, base)` answers the seeded value; `base` is the process's
 // own value, read outside any realm.
 const NAMED_BY_REALM = [
-  { key: 'saml2.entityId', from: function (domain) {
-    return 'urn:' + domain + ':idp';
-  } },
-  { key: 'saml11.providerId', from: function (domain) {
-    return 'urn:' + domain + ':idp:saml11';
-  } },
-  { key: 'wsfed.entityId', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
-  { key: 'wstrust.issuer', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
-  { key: 'saml.issuer', from: function (domain) {
-    return 'urn:' + domain + ':sts';
-  } },
   { key: 'oid4vp.clientId', from: function (domain, id, base) {
     return base ? String(base) + '-' + id : '';
   } },
@@ -1400,8 +1387,8 @@ function update(id, changes) {
 //
 // THE SECOND REFUSAL IS `perProcess`, AND IT IS A DIFFERENT RULE. A setting
 // carrying that flag is a property of the OS PROCESS rather than of the
-// service's behaviour — `workers.count`, the size of the child-process pool the
-// post-quantum signing is handed to, is the first — so one realm's value would
+// service's behaviour — `workers.requestCount`, the size of the request pool,
+// is one — so one realm's value would
 // silently be every realm's. The predicate is config.js's own
 // `isPerProcess()` and not a copy of it, for the reason this whole function
 // exists: the reading end and the writing end of one rule, written separately,
@@ -1757,9 +1744,34 @@ function kerberosOverrideProblem(id, after, before) {
 
 // The same, as the `{ ok:false, errors }` answer every door here returns, or
 // null when there is nothing to refuse.
+// ---------------------------------------------------------------------------
+// A REALM'S OWN LISTENERS, ITS MAPPING AND ITS COOKIE DOMAIN (#99 2026-10-02,
+// #472 2026-10-07): the rules `listeners.realm`, `listeners.applications` and
+// `authn.cookieDomain` must meet together, with every other realm's and the
+// process's as they are. `common/listener_map.js` owns them, and is required
+// LAZILY: it requires this file, and by the time a realm is written both are
+// loaded.
+// ---------------------------------------------------------------------------
+/**
+ * The rules a realm's listener overrides must meet, taken together.
+ *
+ * @param id - the realm id
+ * @param after - the realm's overrides as they would be
+ * @returns `{ code, message }`, or null when they are acceptable
+ */
+function listenerOverrideProblem(id, after) {
+  log.debug("Entering listenerOverrideProblem(). id=" + id);
+  const found = require('./listener_map').realmOverridesProblem(id, after);
+  log.debug("Leaving listenerOverrideProblem().");
+  return found;
+}
+
 function refusedForKerberos(id, after, before) {
   log.debug("Entering refusedForKerberos().");
-  const problem = kerberosOverrideProblem(id, after, before);
+  // AND THE LISTENERS' RULES (#99, #472), asked at the same four doors for
+  // the same reason: a set of overrides is accepted or refused WHOLE.
+  const problem = kerberosOverrideProblem(id, after, before) ||
+    listenerOverrideProblem(id, after);
   log.debug("Leaving refusedForKerberos().");
   return problem
     ? errorCodes.mark({ ok: false, errors: [problem.message] }, problem.code)
@@ -2595,6 +2607,28 @@ function declareHandle(options, shape, accessors) {
     // ---------------------------------------------------------------------
     retain: retainOf(options, handle),
     // ---------------------------------------------------------------------
+    // WHEN ONE ROW STOPS BEING WORTH ANYTHING (2026-09-28, #333).
+    //
+    // `expiresAt(value, key)` answers the instant, in epoch milliseconds on
+    // this process's clock, after which the record under `key` is dead — a
+    // code past its expiry, a nonce past its window, a pending flow past its
+    // lifetime — or null for a record that does not expire.
+    // `persistence_minted.js` calls it when it writes the row and stores the
+    // answer in `sts_minted.expires_at`; a restore then never reads a row
+    // whose instant has passed, and the `persistence.minted-expiry-purge`
+    // job deletes it from the table. Without it the only bound on what a
+    // start reads back was `retain: 'age'`'s seven days of WRITE age — and
+    // testidp restored 127,131 rows in 31 s, in every process.
+    //
+    // **IT MUST BE THE RECORD'S OWN EXPIRY AND NEVER EARLIER**: a row it
+    // declares dead is gone from every node's next start. A record whose
+    // life is extended on use answers the latest instant it could still be
+    // live, which the write that extended it recomputes. Pure and cheap — it
+    // runs in the flush, for every row written.
+    // ---------------------------------------------------------------------
+    expiresAt: typeof options.expiresAt === 'function' ? options.expiresAt
+      : null,
+    // ---------------------------------------------------------------------
     // THE ACCESSORS LIVE ON THE REGISTRY ROW AND NOT ON THE STORE, and that is
     // the whole reason this is a registry at all. Two of the three shapes are
     // Proxies over a real Array and a real Object, and a `persistRead` member
@@ -2613,6 +2647,34 @@ function declareHandle(options, shape, accessors) {
             '.');
   log.debug("Leaving declareHandle().");
   return handle;
+}
+
+// ---------------------------------------------------------------------------
+// THE COMMON SHAPE OF AN `expiresAt` HOOK (#333): the record's own expiry is
+// one field of it — or the value itself, when the value is a bare number —
+// in milliseconds (`scale` 1) or seconds (`scale` 1000). Anything that is not
+// a positive number is "does not expire".
+// ---------------------------------------------------------------------------
+/**
+ * Builds an `expiresAt` hook that reads one field of the record.
+ *
+ * @param field - the field holding the expiry; null for the value itself
+ * @param scale - what one unit of it is in milliseconds (1000 for seconds)
+ * @returns the hook, `(value) => epoch milliseconds | null`
+ */
+function expiryField(field, scale) {
+  log.debug("Entering expiryField().");
+  const factor = Number(scale) > 0 ? Number(scale) : 1;
+  log.debug("Leaving expiryField().");
+  // A HOT PATH: it runs for every row a minted flush writes, so no
+  // Entering/Leaving pair — one would drown the log.
+  return function expiryOfField(value) {
+    const raw = field === null || field === undefined ? value
+      : (value && typeof value === 'object' ? value[field] : null);
+    const n = typeof raw === 'string' && isNaN(Number(raw))
+      ? Date.parse(raw) / factor : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n * factor : null;
+  };
 }
 
 // What a store calls when something in it moved. `key` is null for a
@@ -4150,6 +4212,43 @@ function realmSupport() {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// THE REALMS NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b): each support
+// row's `family` and `note`, which `GET /admin-api/realms` carries as
+// `support`. `by` and `state` are codes, `cards` names `sts_metadata.ts`'s
+// cards, and a retiring realm's `why`, `refusing` and `finish` are the
+// refusal's own text, which stays English. A row is keyed by its family made
+// a slug rather than by its place, so a row added in the middle moves no
+// other row's key.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/realms'];
+
+/**
+ * Extracts the realms namespace (#543 phase 2b): every support row's family
+ * and note.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const rows = {};
+  realmSupport().forEach(function (row) {
+    const slug = String(row.family).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    rows[slug] = { family: row.family, note: row.note };
+  });
+  const out = harvest('realms.support', rows, ['family', 'note']);
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * Trust realms: several logical copies of this service in one process,
  * told apart by a path prefix.
@@ -4205,9 +4304,12 @@ module.exports = {
   arr: arr,
   obj: obj,
   sharedMap: sharedMap,
+  expiryField: expiryField,
   setPersistObserver: setPersistObserver,
   unknownRealmPath: unknownRealmPath,
   handles: handles,
   handleFor: handleFor,
-  realmSupport: realmSupport
+  realmSupport: realmSupport,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

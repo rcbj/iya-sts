@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -215,7 +215,7 @@ async function run(t) {
                                                 'oauth2.ts'), 'utf8');
   const tokenSetBody = oauthSource.slice(oauthSource.indexOf(
     'async tokenSet('), oauthSource.indexOf(
-    'async tokenSet(') + 6000);
+    'async tokenSet(') + 16000);
   t.check(/debuggerAccess\.narrowScope\(\s*opts\.scope/.test(tokenSetBody) &&
           tokenSetBody.indexOf('debuggerAccess.narrowScope') <
             tokenSetBody.indexOf('accessTokenPlan('),

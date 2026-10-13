@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -25,7 +25,8 @@
 //     `run()` is spawnSync with a bound, the arguments logged with every
 //     secret masked;
 //   * the portal's sign-in, for the one scenario in which the credential is
-//     one the PERSON made (#210: a SCEP challenge from /portal/certificates);
+//     one the PERSON made (#210: a SCEP challenge from /portal/certificates,
+//     made through `/account-api` since #568);
 //   * a reader for the CRL, to see a client's revocation land.
 //
 // Nothing from acme/, est/, scep/ or common/cert_enrollment.ts is loaded:
@@ -194,8 +195,25 @@ async function trustBundle(dir) {
       extra = "";
     }
   }
+  // AND THE SYSTEM'S PUBLIC ROOTS, where the image has them (#311): a
+  // deployment with a public name presents a publicly issued certificate on
+  // the main port (testidp's ACM leaf, under Amazon's roots), and a client
+  // given the leaf alone as an anchor refuses it — OpenSSL anchors a chain at
+  // a root, not at a leaf. A local stack's listener is under the service Root
+  // above, so adding these changes nothing there.
+  let system = "";
+  for (const one of ["/etc/ssl/certs/ca-certificates.crt",
+                     "/etc/pki/tls/certs/ca-bundle.crt"]) {
+    try {
+      system = fs.readFileSync(one, "utf8");
+      break;
+    } catch (e) {
+      log.debug("Caught in trustBundle(): " + ((e && e.message) || e));
+      // Not this distribution's path; the next, or none.
+    }
+  }
   const file = path.join(dir, "trust-bundle.pem");
-  fs.writeFileSync(file, root.toString() + "\n" + extra);
+  fs.writeFileSync(file, root.toString() + "\n" + extra + "\n" + system);
   log.debug("Leaving trustBundle().");
   return { file: file, root: root };
 }
@@ -286,12 +304,21 @@ function run(command, args, options) {
 // The lines of a client's output or log that are warnings or errors, less
 // the ones a job has recorded as a documented exception (`allowed`, a list
 // of regular expressions, each argued where the job passes it).
+//
+// A LINE OF BASE64 IS NEVER A PROBLEM, whatever letters it happens to hold.
+// certmonger logs every PKCS#7 reply it receives, and a PEM body is random
+// text: on 2026-10-06 one line read `+PfAIl5Q…`, which a case-insensitive
+// `fail` matched, and the job reported a refusal that went exactly as it
+// should as a failure. A log message has a space in it; a base64 line has
+// none, so a line made only of the base64 alphabet is skipped.
+const BASE64_LINE = /^\s*[A-Za-z0-9+/]{16,}={0,2}\s*$/;
 function problemLines(text, pattern, allowed) {
   log.debug("Entering problemLines().");
   const lines = String(text).split(/\r?\n/).filter(function (line) {
-    return pattern.test(line) && !(allowed || []).some(function (re) {
-      return re.test(line);
-    });
+    return !BASE64_LINE.test(line) && pattern.test(line) &&
+      !(allowed || []).some(function (re) {
+        return re.test(line);
+      });
   });
   log.debug("Leaving problemLines(). count=" + lines.length);
   return lines;
@@ -392,96 +419,25 @@ async function opensslRequest(dir, name, spec) {
 // ---------------------------------------------------------------------------
 // THE PORTAL, SIGNED IN AS A PERSON OF A REALM.
 //
-// `sts_portal_certificates.js`'s browser, under a realm's prefix: the portal
-// is an OpenID Connect relying party of the realm's own authorization
-// server, so the sign-in is the code flow followed by hand.
+// SINCE #568 THE PORTAL IS A STATIC APPLICATION over `/account-api`, so a
+// person signs in as it does — the code flow with PKCE as the public client
+// `sts-user-portal`, a DPoP-bound token for the REALM's `/account-api`
+// (`portal_signin.js`) — and the certificates form is
+// `POST /realm/<id>/account-api/certificates`. A challenge or key made is
+// the answer's `view.fresh`, shown once.
 // ---------------------------------------------------------------------------
-function formBody(o) {
-  log.debug("Entering formBody().");
-  log.debug("Leaving formBody().");
-  return new URLSearchParams(o).toString();
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
-}
-
-function browser() {
-  log.debug("Entering browser().");
-  const self = {
-    jar: {},
-    async go(method, where, body) {
-      log.debug("Entering go().");
-      const headers = {};
-      const cookie = Object.keys(self.jar).map(function (k) {
-        return k + "=" + self.jar[k];
-      }).join("; ");
-      if (cookie) {
-        headers.cookie = cookie;
-      }
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const url = /^https?:\/\//i.test(String(where)) ? String(where)
-                                                     : base + String(where);
-      const r = await fetch(url, { method: method, redirect: "manual",
-                                   headers: headers, body: body });
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const key = pair.split("=")[0];
-        const value = pair.slice(key.length + 1);
-        if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(one))) {
-          delete self.jar[key];
-        } else {
-          self.jar[key] = value;
-        }
-      });
-      log.debug("Leaving go().");
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: await r.text() };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
 async function portalSignIn(realm, who, password) {
   log.debug("Entering portalSignIn(). who=" + who);
-  const page = "/realm/" + realm + "/portal/certificates";
-  const b = browser();
-  let r = await b.go("GET", page);
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    "an unauthenticated browser should be sent to the authorization " +
-    "endpoint; it answered " + r.status + " -> " + r.location);
-  for (let hops = 0; hops < 4 && r.location &&
-       !/name="authn_id"/.test(r.text); hops += 1) {
-    r = await b.go("GET", r.location);
-  }
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id.");
-  r = await b.go("POST", "/realm/" + realm + "/authn/login",
-                 formBody({ authn_id: authnId, username: who,
-                            password: password, action: "login",
-                            csrf_token: csrfOf(r.text) }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in should end in a redirect; got " + r.status + " " +
-    r.text.slice(0, 300));
-  for (let hops = 0; hops < 6 && r.location; hops += 1) {
-    r = await b.go("GET", r.location);
-  }
-  assert.strictEqual(r.status, 200, "the portal page after sign-in: " +
-                     r.status);
+  const client = await require("./portal_signin.js").signInToThePortal(
+    base + "/realm/" + realm, who, null, { password: password });
+  assert.ok(client.token, "signing in to the realm's portal issued no token");
   log.debug("Leaving portalSignIn().");
   return {
+    // The form on /portal/certificates: `{ status, json }`, the made
+    // credential at `json.view.fresh`.
     async post(fields) {
       log.debug("Entering portal post().");
-      const form = await b.go("GET", page);
-      const answer = await b.go("POST", page,
-        formBody(Object.assign({ csrf_token: csrfOf(form.text) }, fields)));
+      const answer = await client.act("/portal/certificates", fields);
       log.debug("Leaving portal post().");
       return answer;
     }

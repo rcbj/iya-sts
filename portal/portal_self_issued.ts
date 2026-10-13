@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -14,219 +14,54 @@
 // Token, and the subject it verified is enrolled for that session's person —
 // never a DID or thumbprint typed into a box, which a person could be talked
 // into pasting on somebody else's behalf. An administrator may enrol by value
-// from /admin/users and POST /admin-api/users/enrol-self-issued-subject.
+// from /admin/users and POST /admin-api/users/enrol-self-issued-subject. The
+// wallet sign-in comes back to `/portal/self-issued?enrolled=1`, which the
+// view's operation turns into the page's notice.
 //
-// **THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT** — the
-// portal's rule (portal/CLAUDE.md): the removal form names the SUBJECT, never
-// whose it is. **A REAL SUBMIT BUTTON AND NO SCRIPT**, under the
-// service-wide `script-src 'none'`.
-//
-// **IT IS A FILE BESIDE `portal.ts`**, registered through `register(context)`
-// exactly as `portal_delegate.ts` is, and for its reason.
+// **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS**, and the page is
+// drawn in the browser by `web_self_issued.ts`. **THE IDENTITY IS THE
+// TOKEN'S AND THERE IS NO PARAMETER FOR IT** — the portal's rule
+// (portal/CLAUDE.md): the removal names the SUBJECT, never whose it is.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import config = require('../common/config');
+import validation = require('../common/validation');
 import siop = require('../oid4vc/siop');
 
-type Req = import('express').Request;
-type Res = import('express').Response;
 type Json = any;
+type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountContext = import('../types/account-api').AccountContext;
+type AccountCaller = import('../types/account-api').AccountCaller;
 
-// What the portal hands over — `portal_delegate.ts`'s context.
-interface PortalContext {
-  app: {
-    get(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-    post(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-  };
-  BASE: string;
-  log: {
-    debug(message: string): void;
-    info(message: string): void;
-  };
-  esc(value: unknown): string;
-  shell(path: string, session: Json, message: unknown, error: unknown,
-        body: string): string;
-  send(res: Res, status: number, body: string): unknown;
-  requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
-  // error-code: none — the portal helper's type, not a call to it.
-  refuseShape(res: Res, result: Json): unknown;
-  innerCode(result: Json): string;
-  baseUrlOf(req: Req): string;
-  parseBody(req: Req): Json;
-  validation: Json;
-  websecurity: Json;
-  accessGate: Json;
-  audit: Json;
-  errorCodes: Json;
+const vz = validation.z;
+const vt = validation.types;
+
+interface PortalSelfIssuedDeps {
+  log: { debug(message: string): void };
+  siop: Json;
   config: { value(key: string): any };
 }
 
-interface PortalSelfIssuedDeps {
-  // For the constructor only: a page logs through the portal's context.
-  log: { debug(message: string): void };
-  siop: Json;
-}
+const REMOVE_FORM = vz.object({
+  action: vt.opt(vt.oneOf(['remove'])).describe('`remove`, the one act.'),
+  subject: vz.string().max(2048)
+    .describe('The enrolled subject to remove, from the list.')
+});
 
-class PortalSelfIssuedPage {
-  readonly PATH: string;
-  private readonly FORM: Json;
-  private readonly QUERY: Json;
-
-  constructor(private readonly deps: PortalSelfIssuedDeps,
-              private readonly ctx: PortalContext) {
-    ctx.log.debug("Entering PortalSelfIssuedPage.constructor().");
-    const vz = ctx.validation.z;
-    const vt = ctx.validation.types;
-    this.PATH = ctx.BASE + '/self-issued';
-    this.FORM = vz.object({
-      action: vt.opt(vt.oneOf(['remove'])),
-      subject: vz.string().max(2048),
-      csrf_token: vt.opt(vt.token)
-    });
-    this.QUERY = vz.object({
-      enrolled: vt.opt(vt.oneOf(['1'])),
-      done: vz.string().max(200).optional()
-    });
-    ctx.log.debug("Leaving PortalSelfIssuedPage.constructor().");
-  }
-
-  private page(session: Json, message: unknown, error: unknown): string {
-    const { log, shell, esc, websecurity, config } = this.ctx;
-    const { siop } = this.deps;
-    log.debug("Entering PortalSelfIssuedPage.page().");
-    const who = String(session.user.username);
-    const held = siop.list(who) || [];
-    const csrf = websecurity.field(session.id);
-    const on = !!config.value('oid4vp.signInSelfIssued');
-    const PATH = this.PATH;
-    const rows = held.map(function (one: Json) {
-      return '<tr><td><code>' + esc(one.subject) + '</code></td><td>' +
-        esc(one.label || '') + '</td><td>' + esc(one.enrolledAt || '') +
-        (one.by ? ' (' + esc(one.by) + ')' : '') + '</td><td>' +
-        '<form method="post" action="' + esc(PATH) + '">' + csrf +
-        '<input type="hidden" name="action" value="remove">' +
-        '<input type="hidden" name="subject" value="' + esc(one.subject) +
-        '"><button class="danger" type="submit">Remove</button></form>' +
-        '</td></tr>';
-    });
-    const body = '<div class="card"><h2>Your self-issued IDs</h2>' +
-      '<p class="sub">A wallet can sign you in with an ID Token it signs ' +
-      'with its own key (Self-Issued OpenID Provider v2). Nobody vouches for ' +
-      'that key, so it signs in only the person who enrolled it here.</p>' +
-      (held.length
-        ? '<table><tr><th>Subject</th><th>Label</th><th>Enrolled</th>' +
-          '<th></th></tr>' + rows.join('') + '</table>'
-        : '<p id="siop-none">You have enrolled none.</p>') +
-      (on
-        ? '<p><a class="button" id="siop-enrol" href="/authn/wallet?siop=1' +
-          '&amp;enrol=1">Enrol a wallet</a></p><p class="sub">Your wallet ' +
-          'is asked for a self-issued ID Token, and the key that signed it ' +
-          'is enrolled for you — you prove you hold it; nothing is typed.' +
-          '</p>'
-        : '<p class="sub" id="siop-off">Signing in with a self-issued ID is ' +
-          'turned off here, so no wallet can be enrolled from this page. ' +
-          'The keys above stay enrolled.</p>') + '</div>';
-    log.debug("Leaving PortalSelfIssuedPage.page().");
-    return shell(this.PATH, session, message, error, body);
-  }
-
-  private getPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.READ);
-    if (!session) {
-      log.debug('Leaving GET ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.QUERY);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    const message = asked.value.enrolled === '1'
-      ? 'Your wallet\'s key is enrolled. It signs you in from now on.'
-      : (asked.value.done || null);
-    log.debug('Leaving GET ' + PATH + '.');
-    return ctx.send(res, 200, this.page(session, message, null));
-  }
-
-  private postPage(req: Req, res: Res): unknown {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const { siop } = this.deps;
-    const PATH = this.PATH;
-    log.debug('Entering POST ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving POST ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const who = String(session.user.username);
-    const posted = ctx.validation.checkParsed(ctx.parseBody(req), 'body',
-                                              this.FORM);
-    if (!posted.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
-      log.debug('Leaving POST ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, posted);
-    }
-    const body = posted.value;
-    const csrf = ctx.websecurity.checkCsrf(session.id, body);
-    if (!csrf.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(csrf) || 'STS-PORTAL-0017');
-      log.debug('Leaving POST ' + PATH + '. CSRF.');
-      return ctx.send(res, 403, this.page(session, null, csrf.detail));
-    }
-    const result = siop.remove(who, body.subject, who);
-    ctx.audit.record({
-      category: 'authentication', action: 'portal.siop.remove',
-      errorCode: result.ok ? undefined : 'STS-PORTAL-0087',
-      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
-      summary: (result.ok ? '' : 'could not ') + 'removed the self-issued ' +
-               'subject ' + body.subject + ' on /portal/self-issued',
-      detail: { subject: body.subject,
-                errors: result.ok ? undefined : [result.error] }
-    });
-    if (!result.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0087');
-      log.debug('Leaving POST ' + PATH + '. Refused.');
-      return ctx.send(res, 400, this.page(session, null, result.error));
-    }
-    log.debug('Leaving POST ' + PATH + '. Removed.');
-    res.status(303).set('Location', PATH + '?done=' + encodeURIComponent(
-      'That key no longer signs you in.')).end();
-    return undefined;
-  }
-
-  registerRoutes(app: PortalContext['app']): void {
-    const self = this;
-    const { log } = this.ctx;
-    log.debug("Entering PortalSelfIssuedPage.registerRoutes().");
-    app.get(this.PATH, function (req, res) {
-      return self.getPage(req, res);
-    });
-    app.post(this.PATH, function (req, res) {
-      return self.postPage(req, res);
-    });
-    log.debug("Leaving PortalSelfIssuedPage.registerRoutes().");
-  }
-}
+const SELF_ISSUED_QUERY = vz.object({
+  enrolled: vt.opt(vt.oneOf(['1']))
+    .describe('`1` when the wallet sign-in has just enrolled a subject.')
+});
 
 /**
- * The portal page at /portal/self-issued: where a person enrols the wallet keys
- * that sign them in with SIOPv2 (#129).
- *
- * Its routes are registered by `register()`, which `portal.ts` calls at the one
- * point in its body where the route order is right.
+ * `/portal/self-issued`'s account API operations: the wallet keys that sign
+ * the person in with SIOPv2 (#129).
  */
 class PortalSelfIssued {
   /**
-   * Builds the page's module over its dependencies.
+   * Builds the module over its dependencies.
    *
    * @param deps - the modules the page reads and writes through
    */
@@ -243,27 +78,111 @@ class PortalSelfIssued {
   static defaultDeps(): PortalSelfIssuedDeps {
     helpers.log.debug("Entering PortalSelfIssued.defaultDeps().");
     helpers.log.debug("Leaving PortalSelfIssued.defaultDeps().");
-    return { log: helpers.log, siop: siop };
+    return { log: helpers.log, siop: siop, config: config };
   }
 
   /**
-   * Registers the page's routes on the portal's app.
+   * The page's view: the subjects enrolled for the person, and whether the
+   * self-issued sign-in is on.
    *
-   * @param context - what the portal shares with its pages: the app, `BASE`,
-   *   the logger, the page shell, the sign-in check and the refusal helpers
-   * @returns the page's path
+   * @param username - the signed-in person
+   * @returns `{ enabled, subjects }`
    */
-  register(context: PortalContext): { path: string } {
-    context.log.debug("Entering PortalSelfIssued.register().");
-    const page = new PortalSelfIssuedPage(this.deps, context);
-    page.registerRoutes(context.app);
-    context.log.debug("Leaving PortalSelfIssued.register().");
-    return { path: page.PATH };
+  view(username: string): Json {
+    const { log, siop, config } = this.deps;
+    log.debug("Entering PortalSelfIssued.view().");
+    const held = siop.list(username) || [];
+    log.debug("Leaving PortalSelfIssued.view(). " + held.length);
+    return { enabled: !!config.value('oid4vp.signInSelfIssued'),
+             subjects: held.map(function (one: Json): Json {
+               return { subject: String(one.subject),
+                        label: String(one.label || ''),
+                        enrolledAt: one.enrolledAt || null,
+                        by: String(one.by || '') };
+             }) };
+  }
+
+  /**
+   * Removes one of the caller's enrolled subjects.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  remove(ctx: AccountContext, res: Json, caller: AccountCaller,
+         body: Json): unknown {
+    const { log, siop } = this.deps;
+    log.debug("Entering PortalSelfIssued.remove().");
+    const who = caller.username;
+    const result = siop.remove(who, body.subject, who);
+    ctx.audit.record({
+      category: 'authentication', action: 'portal.siop.remove',
+      errorCode: result.ok ? undefined : 'STS-PORTAL-0087',
+      actor: who, target: who, outcome: result.ok ? 'success' : 'failure',
+      summary: (result.ok ? '' : 'could not ') + 'removed the self-issued ' +
+               'subject ' + body.subject + ' on /portal/self-issued',
+      detail: { subject: body.subject,
+                errors: result.ok ? undefined : [result.error] }
+    });
+    if (!result.ok) {
+      log.debug("Leaving PortalSelfIssued.remove(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0087', result.error,
+                        { view: this.view(who) });
+    }
+    log.debug("Leaving PortalSelfIssued.remove(). Removed.");
+    return ctx.json(res, 200, { ok: true,
+      message: ctx.translatorFor(who).text('portalSelfIssued.doneRemoved') });
+  }
+
+  /**
+   * The operations, for `account-api/account_api.ts`.
+   *
+   * @param ctx - the account API's helpers
+   * @returns the operations
+   */
+  accountOperations(ctx: AccountContext): AccountOperation[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalSelfIssued.accountOperations().");
+    const rows: AccountOperation[] = [
+      { method: 'GET', path: ctx.BASE + '/self-issued',
+        operationId: 'getSelfIssued', tag: 'Self-issued IDs',
+        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/self-issued',
+        summary: 'The wallet keys that sign you in with SIOPv2',
+        description: '`subjects`: each enrolled self-issued subject (a DID ' +
+          'or a JWK thumbprint), its label, when and by whom it was ' +
+          'enrolled. `enabled`: whether the self-issued sign-in is on. A ' +
+          'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
+          'which comes back with `enrolled=1`; `notice` then says so.',
+        query: SELF_ISSUED_QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          const view = self.view(caller.username);
+          if (input.query.enrolled === '1') {
+            view.notice = ctx.translatorFor(caller.username)
+              .text('portalSelfIssued.doneEnrolled');
+          }
+          return ctx.json(res, 200, view);
+        } },
+      { method: 'POST', path: ctx.BASE + '/self-issued',
+        operationId: 'removeSelfIssued', tag: 'Self-issued IDs',
+        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/self-issued',
+        summary: 'Removes a self-issued subject of yours',
+        description: 'The subject no longer signs you in. One that is not ' +
+          'enrolled for you is refused.',
+        body: REMOVE_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.remove(ctx, res, caller, input.body);
+        } }
+    ];
+    log.debug("Leaving PortalSelfIssued.accountOperations().");
+    return rows;
   }
 }
 
-// THE INSTANCE, BUILT BY THE COMPOSITION ROOT (#50, R2) — see
-// `portal_certificates.ts`.
 const slot = new InstanceSlot<PortalSelfIssued>(
   'portal/portal_self_issued',
   () => new PortalSelfIssued(PortalSelfIssued.defaultDeps()),
@@ -273,7 +192,7 @@ const slot = new InstanceSlot<PortalSelfIssued>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The portal page at /portal/self-issued, registered by `portal.ts`.
+ * `/portal/self-issued`'s account API operations (#129, #568).
  * @namespace
  */
 export = {
@@ -281,5 +200,5 @@ export = {
   installInstance: (instance: PortalSelfIssued): void =>
     slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  register: slot.forward('register')
+  accountOperations: slot.forward('accountOperations')
 };

@@ -1,0 +1,1442 @@
+{
+  "kinds.password.label": {
+    "en": "21b86a0e7f34e88d",
+    "text": "Password policy"
+  },
+  "kinds.password.appliesTo": {
+    "en": "e33b031ac2855712",
+    "text": "ang SUSUNOD na password na itatakda sa realm na ito at hindi sa anumang nakatago na"
+  },
+  "kinds.password.fallsBackTo": {
+    "en": "e1a34c11cd145d88",
+    "text": "ang mga built-in na default"
+  },
+  "kinds.password.param.noun": {
+    "en": "3df37c27d5224b9e",
+    "text": "password policy profile"
+  },
+  "password.FIELDS.minLength.label": {
+    "en": "54fda5553dbf64a5",
+    "text": "Minimum na haba"
+  },
+  "password.FIELDS.minLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "character"
+  },
+  "password.FIELDS.minLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "Ang pinakamaikling password na itatakda ng serbisyong ito, binibilang sa character (mga Unicode code point, kaya isa ang isang emoji). Ang attribute ay sa draft-behera-ldap-password-policy. Labindalawa ang default; humihingi ang NIST SP 800-63B ng hindi bababa sa 8, at 15 kapag ang password lang ang factor."
+  },
+  "password.FIELDS.history.label": {
+    "en": "58e5a89d48d65a94",
+    "text": "Mga dating password na hindi puwedeng gamitin muli"
+  },
+  "password.FIELDS.history.unit": {
+    "en": "3049a1f8327e0215",
+    "text": "password"
+  },
+  "password.FIELDS.history.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "Ilan sa mga DATING password ng isang tao ang tinatandaan at tinatanggihan. Palaging tinatanggihan din ang kasalukuyang password habang higit sa 0 ito, kaya ang 5 ay nangangahulugang hindi puwedeng maging alinman sa huling anim ang bagong password. Pinapatay ng 0 ang patakaran. Attribute ito ng draft, na may kahulugan ng draft. Bawat tinatandaang password ay itinatago bilang scrypt hash na kung saan ito nakatago na, sa pwdHistory sa sariling entry ng tao, at ang pagsuri sa bagong password ay nagkakahalaga ng isang paghahambing ng hash sa bawat isang tinatandaan."
+  },
+  "password.FIELDS.minSymbols.label": {
+    "en": "95033032ad043277",
+    "text": "Minimum na bilang ng simbolo"
+  },
+  "password.FIELDS.minSymbols.unit": {
+    "en": "1ea50a8caf608504",
+    "text": "simbolo"
+  },
+  "password.FIELDS.minSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "Ilang character na hindi titik, hindi digit at hindi whitespace ang dapat laman ng password. Pinapatay ng 0 ang patakaran."
+  },
+  "password.FIELDS.requireUppercase.label": {
+    "en": "41d8365a4b5a8473",
+    "text": "Kailangan ng malaking titik"
+  },
+  "password.FIELDS.requireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "Kung dapat may kahit isang malaking titik ang password, sa anumang script."
+  },
+  "password.FIELDS.requireDigit.label": {
+    "en": "eaa0c73c3cc00f02",
+    "text": "Kailangan ng numero"
+  },
+  "password.FIELDS.requireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "Kung dapat may kahit isang decimal digit ang password."
+  },
+  "password.FIELDS.generatedLength.label": {
+    "en": "9a6d2215cc16392c",
+    "text": "Haba ng ginawang password"
+  },
+  "password.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "character"
+  },
+  "password.FIELDS.generatedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "Gaano kahaba ang password na GINAGAWA ng serbisyong ito — para sa bagong user na ginawa mula sa console o /admin-api, sa Generate ng isang operator, at sa product-mode na bootstrap account. Dapat itong hindi bababa sa minimum na haba at hindi bababa sa dalawang beses ng bilang ng simbolo dagdag ang dalawa. Ang dalawampung character mula sa alphabet na may 90 character ay mga 130 bit."
+  },
+  "password.SCHEMA.objectClasses.pwdPolicy.what": {
+    "en": "ab642ea5cb282745",
+    "text": "Ang class ng draft-behera-ldap-password-policy para sa entry ng password policy. Pinangangalanan ng `pwdAttribute` ang attribute na pinamamahalaan ng policy, at dito ay palaging `userPassword` iyon."
+  },
+  "password.SCHEMA.objectClasses.stsPasswordPolicy.what": {
+    "en": "4daf3a60dd76691a",
+    "text": "Ang sariling class ng serbisyong ito, na may dalang mga patakaran sa komposisyon at ang haba ng ginawang password na walang attribute sa draft. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
+  },
+  "password.SCHEMA.attributes.pwdAttribute.what": {
+    "en": "603a95b316f4b6f5",
+    "text": "Ang attribute na pinamamahalaan ng policy na ito: `userPassword`."
+  },
+  "password.SCHEMA.attributes.pwdMinLength.what": {
+    "en": "53845d92c5f6ea44",
+    "text": "Ang pinakamaikling password na itatakda ng serbisyong ito, binibilang sa character (mga Unicode code point, kaya isa ang isang emoji). Ang attribute ay sa draft-behera-ldap-password-policy. Labindalawa ang default; humihingi ang NIST SP 800-63B ng hindi bababa sa 8, at 15 kapag ang password lang ang factor."
+  },
+  "password.SCHEMA.attributes.pwdInHistory.what": {
+    "en": "3d9f899c6a28ad30",
+    "text": "Ilan sa mga DATING password ng isang tao ang tinatandaan at tinatanggihan. Palaging tinatanggihan din ang kasalukuyang password habang higit sa 0 ito, kaya ang 5 ay nangangahulugang hindi puwedeng maging alinman sa huling anim ang bagong password. Pinapatay ng 0 ang patakaran. Attribute ito ng draft, na may kahulugan ng draft. Bawat tinatandaang password ay itinatago bilang scrypt hash na kung saan ito nakatago na, sa pwdHistory sa sariling entry ng tao, at ang pagsuri sa bagong password ay nagkakahalaga ng isang paghahambing ng hash sa bawat isang tinatandaan."
+  },
+  "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
+    "en": "f9154c103bc3422d",
+    "text": "Ilang character na hindi titik, hindi digit at hindi whitespace ang dapat laman ng password. Pinapatay ng 0 ang patakaran."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
+    "en": "70ccd590e00b4a7e",
+    "text": "Kung dapat may kahit isang malaking titik ang password, sa anumang script."
+  },
+  "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
+    "en": "d81cc8aab04ad1c9",
+    "text": "Kung dapat may kahit isang decimal digit ang password."
+  },
+  "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
+    "en": "9abc8e368dbfdf05",
+    "text": "Gaano kahaba ang password na GINAGAWA ng serbisyong ito — para sa bagong user na ginawa mula sa console o /admin-api, sa Generate ng isang operator, at sa product-mode na bootstrap account. Dapat itong hindi bababa sa minimum na haba at hindi bababa sa dalawang beses ng bilang ng simbolo dagdag ang dalawa. Ang dalawampung character mula sa alphabet na may 90 character ay mga 130 bit."
+  },
+  "password.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Para saan ang profile, para sa susunod na tao."
+  },
+  "password.SCHEMA.personAttributes.pwdHistory.what": {
+    "en": "a057113a3f0da3b5",
+    "text": "Isang value sa bawat tinatandaang dating password, sa anyo ng draft na `time#syntaxOID#length#data` — ang data ay ang scrypt hash kung saan nakatago ang password na iyon, hindi kailanman ang password. Pinapanatili ng serbisyong ito at tinatanggihan sa LDAP add o modify, dahil ang history na kayang i-edit ng kahit sino ay history na kayang burahin ng kahit sino."
+  },
+  "password.SCHEMA.personAttributes.pwdChangedTime.what": {
+    "en": "3c870b2e0c097f36",
+    "text": "Kung kailan huling itinakda ang password, bilang GeneralizedTime. Pinapanatili ng serbisyong ito."
+  },
+  "password.sentences.minLength": {
+    "en": "68a35ccf19e404fb",
+    "text": "hindi bababa sa {{n}} character"
+  },
+  "password.sentences.minSymbolsOne": {
+    "en": "bcd5d7597e2d9c28",
+    "text": "hindi bababa sa {{n}} simbolo (character na hindi titik, numero o espasyo)"
+  },
+  "password.sentences.minSymbolsMany": {
+    "en": "59951161d553809a",
+    "text": "hindi bababa sa {{n}} simbolo (character na hindi titik, numero o espasyo)"
+  },
+  "password.sentences.uppercase": {
+    "en": "4a27754133d00695",
+    "text": "isang malaking titik"
+  },
+  "password.sentences.digit": {
+    "en": "d24f1fa16d122006",
+    "text": "isang numero"
+  },
+  "password.sentences.history": {
+    "en": "524e6c7233b4e109",
+    "text": "hindi ang kasalukuyan mong password o alinman sa {{n}} bago nito"
+  },
+  "kinds.authn.label": {
+    "en": "07e21daf38c77b35",
+    "text": "Authentication policy"
+  },
+  "kinds.authn.governs": {
+    "en": "2a4cfd66f045124b",
+    "text": "kung aling mga mechanism ang tinatanggap bilang unang factor at bilang pangalawang factor"
+  },
+  "kinds.authn.appliesTo": {
+    "en": "3e20938990b921a7",
+    "text": "ang SUSUNOD na pag-sign in sa realm na ito; ang session na nasimulan na ay nagpapanatili ng mga factor na ginamit sa pagsimula nito"
+  },
+  "kinds.authn.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ang profile ng default na realm kung mayroon ito, at ang mga built-in na default kung wala"
+  },
+  "kinds.authn.param.noun": {
+    "en": "d3123a2955133922",
+    "text": "authentication policy profile"
+  },
+  "authn.FIELDS.requireSecondFactor.label": {
+    "en": "fac9928873cc8d82",
+    "text": "Kailangan ang pangalawang factor"
+  },
+  "authn.FIELDS.requireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`: hinihingan ng pangalawang factor ang isang tao kapag may hawak siya nito (o kapag sinasabi ng entry niya ang stsMfaRequired). `always`: lahat sa realm na ito ay hinihingan, at ang walang hawak ay pinapupunta para mag-enroll ng isa sa susunod niyang pag-sign in. Pinalitan nito ang authn.mfaRequired. Walang \"never\": palaging hinihingi ang hawak na factor."
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.label": {
+    "en": "1bc5adb51edf4c2b",
+    "text": "Pangalawang factor para sa mga administrator"
+  },
+  "authn.FIELDS.requireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "Para sa sinumang may hawak na console role (Admin Read o Admin Write) na walang hawak na pangalawang factor. `offer`: ipinapakita sa kanila ang hakbang para mag-set up ng isa, na may Ignore button, sa bawat pag-sign in. `always`: dapat silang mag-set up ng isa bago sila ma-sign in — maliban sa built-in na administrator ng default na realm (admin.bootstrapUsername), na inaalukan lang palagi ng isa, para hindi kailanman maiwan ang isang serbisyo nang walang sinumang makakapag-sign in. `if-held`: gaya ng lahat, ayon sa field sa itaas. MAS MAHINA KAYSA SA `always`: ang administrator na password lang ang gamit ay administrator na kahit sinong may hawak ng password."
+  },
+  "authn.FIELDS.passwordPrimary.label": {
+    "en": "8459feba5558b2cd",
+    "text": "Password — bilang unang factor"
+  },
+  "authn.FIELDS.passwordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
+  },
+  "authn.FIELDS.passwordSecondFactor.label": {
+    "en": "12355f2b5a9fbbc8",
+    "text": "Password — bilang pangalawang factor"
+  },
+  "authn.FIELDS.passwordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
+  },
+  "authn.FIELDS.passkeyPrimary.label": {
+    "en": "2f59d674bec89e1d",
+    "text": "Security key o passkey (passwordless) — bilang unang factor"
+  },
+  "authn.FIELDS.passkeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "Isang WebAuthn credential na naka-enroll sa primary role, na nagsa-sign in nang walang password."
+  },
+  "authn.FIELDS.securityKeySecondFactor.label": {
+    "en": "62611e734d22b2fe",
+    "text": "Security key (pangalawang factor) — bilang pangalawang factor"
+  },
+  "authn.FIELDS.securityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "Isang WebAuthn credential na naka-enroll sa mfa role, na hinihingi pagkatapos ng unang factor."
+  },
+  "authn.FIELDS.totpSecondFactor.label": {
+    "en": "4dbb7fdae02261a7",
+    "text": "Authenticator app (TOTP) — bilang pangalawang factor"
+  },
+  "authn.FIELDS.totpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "Isang RFC 6238 one-time code. Hindi kailanman unang factor: hawak ng serbisyong ito ang parehong shared secret na hawak ng app. Kapag naka-off dito, walang sinumang puwedeng MAG-ENROLL ng isa; ang taong may hawak na nito ay hinihingan pa rin nito, dahil ang off switch na magbababa sa bawat naka-enroll na account sa password lang ay gagawa ng iba sa sinasabi nito (pinalitan ng row na ito ang totp.enabled, at pinapanatili ang kontrata nito)."
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.label": {
+    "en": "ee9982b48a9c6a90",
+    "text": "Recovery code — bilang pangalawang factor"
+  },
+  "authn.FIELDS.recoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "Isang single-use na code mula sa set na ginawa ng tao. Kapag naka-off dito, walang bagong set na puwedeng gawin; gumagana pa rin ang set na hawak na (pinalitan ng row na ito ang backupCodes.enabled, at pinapanatili ang kontrata nito)."
+  },
+  "authn.FIELDS.emailCodePrimary.label": {
+    "en": "76c9a682be0fce8d",
+    "text": "Anim na digit na code sa email — bilang unang factor"
+  },
+  "authn.FIELDS.emailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.FIELDS.emailCodeSecondFactor.label": {
+    "en": "3ae4544eaf519a66",
+    "text": "Anim na digit na code sa email — bilang pangalawang factor"
+  },
+  "authn.FIELDS.emailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.FIELDS.emailLinkPrimary.label": {
+    "en": "d52000176173475b",
+    "text": "Sign-in link sa email — bilang unang factor"
+  },
+  "authn.FIELDS.emailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Isang single-use na link na ipinapadala sa VERIFIED na address ng tao, na kumukumpleto lang ng pag-sign in sa browser na nagsimula nito. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.FIELDS.emailLinkSecondFactor.label": {
+    "en": "29aaae045271f243",
+    "text": "Sign-in link sa email — bilang pangalawang factor"
+  },
+  "authn.FIELDS.emailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Isang single-use na link na ipinapadala sa VERIFIED na address ng tao, na kumukumpleto lang ng pag-sign in sa browser na nagsimula nito. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.FIELDS.certificatePrimary.label": {
+    "en": "d304f2a565b7a9e3",
+    "text": "TLS client certificate — bilang unang factor"
+  },
+  "authn.FIELDS.certificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "GET /tls/sign-in na may verified na client certificate."
+  },
+  "authn.FIELDS.kerberosPrimary.label": {
+    "en": "f2f6ed9dd0454fdc",
+    "text": "Kerberos (SPNEGO) — bilang unang factor"
+  },
+  "authn.FIELDS.kerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego na may Kerberos ticket."
+  },
+  "authn.FIELDS.walletPrimary.label": {
+    "en": "f215dfc0a7d74e7f",
+    "text": "Wallet presentation — bilang unang factor"
+  },
+  "authn.FIELDS.walletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet na may credential na in-issue ng realm na ito, o isang SIOPv2 self-issued ID Token mula sa naka-enroll na key. Bilang PANGALAWANG factor, ang wallet na ipinakita pagkatapos ng password."
+  },
+  "authn.FIELDS.walletSecondFactor.label": {
+    "en": "d77b29a6f118e61d",
+    "text": "Wallet presentation — bilang pangalawang factor"
+  },
+  "authn.FIELDS.walletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet na may credential na in-issue ng realm na ito, o isang SIOPv2 self-issued ID Token mula sa naka-enroll na key. Bilang PANGALAWANG factor, ang wallet na ipinakita pagkatapos ng password."
+  },
+  "authn.FIELDS.federationPrimary.label": {
+    "en": "60fa1bebb39d244f",
+    "text": "Federation partner — bilang unang factor"
+  },
+  "authn.FIELDS.federationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "Isang pag-sign in na ina-assert ng naka-configure na federation partner."
+  },
+  "authn.FIELDS.emailCodeTtlS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "segundo"
+  },
+  "authn.FIELDS.emailCodeTtlS.label": {
+    "en": "a0d3df11fd93619b",
+    "text": "Gaano katagal valid ang code o link sa email"
+  },
+  "authn.FIELDS.emailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "Mula sa sandaling ipinadala ito. Hanggang sampung minuto lang, ang hangganan ng NIST SP 800-63B-4 section 3.1.3.2 para sa out-of-band secret."
+  },
+  "authn.FIELDS.emailCodeAttempts.unit": {
+    "en": "1ac7d61d1d29fc2e",
+    "text": "pagsubok"
+  },
+  "authn.FIELDS.emailCodeAttempts.label": {
+    "en": "c0cb3753ee818f64",
+    "text": "Mga maling code bago matapos ang hakbang ng pag-sign in"
+  },
+  "authn.FIELDS.emailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "Ilang maling code ang tinatanggap ng isang hakbang ng pag-sign in bago ito tapusin at magsimulang muli ang tao. Nalalapat din ang mga rate limit kada tao at kada network."
+  },
+  "authn.FIELDS.emailResendS.unit": {
+    "en": "59f006d63bd009b7",
+    "text": "segundo"
+  },
+  "authn.FIELDS.emailResendS.label": {
+    "en": "0780d5107e58e3e7",
+    "text": "Pinakamaikling paghihintay bago magpadala ng isa pang code o link"
+  },
+  "authn.FIELDS.emailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "Pinapalitan ng bagong code o link ang huli, na hihinto sa paggana. Hanggang tatlo lang ang ipinapadala para sa isang hakbang ng pag-sign in."
+  },
+  "authn.FIELDS.emailFailureLimit.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "pagkabigo"
+  },
+  "authn.FIELDS.emailFailureLimit.label": {
+    "en": "4f9a2ee120f0918b",
+    "text": "Sunud-sunod na pagkabigo bago i-off ang email factor ng isang tao"
+  },
+  "authn.FIELDS.emailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "Humihingi ang NIST SP 800-63B-4 section 3.2.2 ng hindi hihigit sa 100. Sinasabihan ang tao, at ang mga administrator niya, at ang tao mismo ang mag-o-on ulit nito mula sa portal."
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.label": {
+    "en": "3810571654974307",
+    "text": "Puwedeng laktawan ng tinandaang browser ang pangalawang factor"
+  },
+  "authn.FIELDS.rememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang taong nagsa-sign in sa browser na pinili niyang tandaan ay hindi na muling hinihingan ng pangalawang factor sa loob ng panahon sa ibaba mula nang huli niya itong ibigay sa browser na iyon. HINDI KAILANMAN sa admin console, sa user portal o sa protocol debugger; hindi kailanman para sa administrator; hindi kailanman habang medium o mas mataas ang risk ng pag-sign in; at ang pag-sign in ay ISANG factor lang para sa bawat relying party — amr [\"pwd\"] at acr \"1\", gaya ng password lang — kaya ang application na humihingi ng \"mfa\" ay tinatanggihan nito. Kinikilala ang browser sa pamamagitan ng bearer cookie: ang sinumang kumopya ng cookie ay nakakalaktaw rin sa pangalawang factor, hanggang mahuli ang kopya."
+  },
+  "authn.FIELDS.rememberedBrowserDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "authn.FIELDS.rememberedBrowserDays.label": {
+    "en": "dcd7c57a1e61d82f",
+    "text": "Gaano katagal nilalaktawan ng tinandaang browser ang pangalawang factor"
+  },
+  "authn.FIELDS.rememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "Binibilang mula sa huling beses na ibinigay ng tao ang pangalawang factor niya sa browser na iyon. Pagkatapos nito, hinihingan siya ulit, at ang pagbibigay nito ay muling nagsisimula ng panahon."
+  },
+  "authn.SCHEMA.objectClasses.stsAuthnPolicy.what": {
+    "en": "f5f9a5956c21100f",
+    "text": "Ang class ng serbisyong ito para sa authentication policy: kung aling mga mechanism ang tinatanggap bilang unang factor at bilang pangalawang factor, at kung kailan kailangan ang pangalawang factor. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactor.what": {
+    "en": "781e80e1c746ea34",
+    "text": "`if-held`: hinihingan ng pangalawang factor ang isang tao kapag may hawak siya nito (o kapag sinasabi ng entry niya ang stsMfaRequired). `always`: lahat sa realm na ito ay hinihingan, at ang walang hawak ay pinapupunta para mag-enroll ng isa sa susunod niyang pag-sign in. Pinalitan nito ang authn.mfaRequired. Walang \"never\": palaging hinihingi ang hawak na factor."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRequireSecondFactorForAdministrators.what": {
+    "en": "b66258c1b032dec3",
+    "text": "Para sa sinumang may hawak na console role (Admin Read o Admin Write) na walang hawak na pangalawang factor. `offer`: ipinapakita sa kanila ang hakbang para mag-set up ng isa, na may Ignore button, sa bawat pag-sign in. `always`: dapat silang mag-set up ng isa bago sila ma-sign in — maliban sa built-in na administrator ng default na realm (admin.bootstrapUsername), na inaalukan lang palagi ng isa, para hindi kailanman maiwan ang isang serbisyo nang walang sinumang makakapag-sign in. `if-held`: gaya ng lahat, ayon sa field sa itaas. MAS MAHINA KAYSA SA `always`: ang administrator na password lang ang gamit ay administrator na kahit sinong may hawak ng password."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordPrimary.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasswordSecondFactor.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
+  },
+  "authn.SCHEMA.attributes.stsAuthnPasskeyPrimary.what": {
+    "en": "fa5464ced243d64c",
+    "text": "Isang WebAuthn credential na naka-enroll sa primary role, na nagsa-sign in nang walang password."
+  },
+  "authn.SCHEMA.attributes.stsAuthnSecurityKeySecondFactor.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "Isang WebAuthn credential na naka-enroll sa mfa role, na hinihingi pagkatapos ng unang factor."
+  },
+  "authn.SCHEMA.attributes.stsAuthnTotpSecondFactor.what": {
+    "en": "ea01b0588ad42047",
+    "text": "Isang RFC 6238 one-time code. Hindi kailanman unang factor: hawak ng serbisyong ito ang parehong shared secret na hawak ng app. Kapag naka-off dito, walang sinumang puwedeng MAG-ENROLL ng isa; ang taong may hawak na nito ay hinihingan pa rin nito, dahil ang off switch na magbababa sa bawat naka-enroll na account sa password lang ay gagawa ng iba sa sinasabi nito (pinalitan ng row na ito ang totp.enabled, at pinapanatili ang kontrata nito)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRecoveryCodeSecondFactor.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "Isang single-use na code mula sa set na ginawa ng tao. Kapag naka-off dito, walang bagong set na puwedeng gawin; gumagana pa rin ang set na hawak na (pinalitan ng row na ito ang backupCodes.enabled, at pinapanatili ang kontrata nito)."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodePrimary.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeSecondFactor.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkPrimary.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Isang single-use na link na ipinapadala sa VERIFIED na address ng tao, na kumukumpleto lang ng pag-sign in sa browser na nagsimula nito. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailLinkSecondFactor.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Isang single-use na link na ipinapadala sa VERIFIED na address ng tao, na kumukumpleto lang ng pag-sign in sa browser na nagsimula nito. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.SCHEMA.attributes.stsAuthnCertificatePrimary.what": {
+    "en": "458b5463993c8ba4",
+    "text": "GET /tls/sign-in na may verified na client certificate."
+  },
+  "authn.SCHEMA.attributes.stsAuthnKerberosPrimary.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego na may Kerberos ticket."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletPrimary.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet na may credential na in-issue ng realm na ito, o isang SIOPv2 self-issued ID Token mula sa naka-enroll na key. Bilang PANGALAWANG factor, ang wallet na ipinakita pagkatapos ng password."
+  },
+  "authn.SCHEMA.attributes.stsAuthnWalletSecondFactor.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet na may credential na in-issue ng realm na ito, o isang SIOPv2 self-issued ID Token mula sa naka-enroll na key. Bilang PANGALAWANG factor, ang wallet na ipinakita pagkatapos ng password."
+  },
+  "authn.SCHEMA.attributes.stsAuthnFederationPrimary.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "Isang pag-sign in na ina-assert ng naka-configure na federation partner."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeTtlS.what": {
+    "en": "8d18087c20d55ec4",
+    "text": "Mula sa sandaling ipinadala ito. Hanggang sampung minuto lang, ang hangganan ng NIST SP 800-63B-4 section 3.1.3.2 para sa out-of-band secret."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailCodeAttempts.what": {
+    "en": "f01dd1453c1c4690",
+    "text": "Ilang maling code ang tinatanggap ng isang hakbang ng pag-sign in bago ito tapusin at magsimulang muli ang tao. Nalalapat din ang mga rate limit kada tao at kada network."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailResendS.what": {
+    "en": "8f53b3aeb7702554",
+    "text": "Pinapalitan ng bagong code o link ang huli, na hihinto sa paggana. Hanggang tatlo lang ang ipinapadala para sa isang hakbang ng pag-sign in."
+  },
+  "authn.SCHEMA.attributes.stsAuthnEmailFailureLimit.what": {
+    "en": "b5c28617f88284a5",
+    "text": "Humihingi ang NIST SP 800-63B-4 section 3.2.2 ng hindi hihigit sa 100. Sinasabihan ang tao, at ang mga administrator niya, at ang tao mismo ang mag-o-on ulit nito mula sa portal."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserSkipsSecondFactor.what": {
+    "en": "dc03d1b953cb0b33",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang taong nagsa-sign in sa browser na pinili niyang tandaan ay hindi na muling hinihingan ng pangalawang factor sa loob ng panahon sa ibaba mula nang huli niya itong ibigay sa browser na iyon. HINDI KAILANMAN sa admin console, sa user portal o sa protocol debugger; hindi kailanman para sa administrator; hindi kailanman habang medium o mas mataas ang risk ng pag-sign in; at ang pag-sign in ay ISANG factor lang para sa bawat relying party — amr [\"pwd\"] at acr \"1\", gaya ng password lang — kaya ang application na humihingi ng \"mfa\" ay tinatanggihan nito. Kinikilala ang browser sa pamamagitan ng bearer cookie: ang sinumang kumopya ng cookie ay nakakalaktaw rin sa pangalawang factor, hanggang mahuli ang kopya."
+  },
+  "authn.SCHEMA.attributes.stsAuthnRememberedBrowserDays.what": {
+    "en": "c5aa4b7f04ffeb9b",
+    "text": "Binibilang mula sa huling beses na ibinigay ng tao ang pangalawang factor niya sa browser na iyon. Pagkatapos nito, hinihingan siya ulit, at ang pagbibigay nito ay muling nagsisimula ng panahon."
+  },
+  "authn.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Para saan ang profile, para sa susunod na tao."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactor.what": {
+    "en": "7498b88833038685",
+    "text": "Kung aling pangalawang factor sa email ang pinili ng taong ito: `code` o `link`. Kapag wala: wala. Itinatakda sa /portal/mfa, binubura sa /admin/mfa at pagkatapos ng sobrang daming sunud-sunod na pagkabigo."
+  },
+  "authn.SCHEMA.personAttributes.stsMailFactorFailures.what": {
+    "en": "b9c5e547fd47d350",
+    "text": "Mga sunud-sunod na bigong code o link sa email, nire-reset ng isang tagumpay. Pinapanatili ng serbisyong ito."
+  },
+  "authn.MECHANISMS.password.label": {
+    "en": "e7cf3ef4f17c3999",
+    "text": "Password"
+  },
+  "authn.MECHANISMS.password.what": {
+    "en": "3b32854915d0d6d0",
+    "text": "Isang password sa sign-in screen. Bilang PANGALAWANG factor, ito ang password na hinihingi pagkatapos ng wallet o ibang passwordless na unang factor."
+  },
+  "authn.MECHANISMS.passkey.label": {
+    "en": "84a03e8c438f4cfa",
+    "text": "Security key o passkey (passwordless)"
+  },
+  "authn.MECHANISMS.passkey.what": {
+    "en": "fa5464ced243d64c",
+    "text": "Isang WebAuthn credential na naka-enroll sa primary role, na nagsa-sign in nang walang password."
+  },
+  "authn.MECHANISMS.securityKey.label": {
+    "en": "f7b41914800bf87a",
+    "text": "Security key (pangalawang factor)"
+  },
+  "authn.MECHANISMS.securityKey.what": {
+    "en": "5ec5a41005f56eb6",
+    "text": "Isang WebAuthn credential na naka-enroll sa mfa role, na hinihingi pagkatapos ng unang factor."
+  },
+  "authn.MECHANISMS.totp.label": {
+    "en": "6e6d78e296bae6dd",
+    "text": "Authenticator app (TOTP)"
+  },
+  "authn.MECHANISMS.totp.what": {
+    "en": "ea01b0588ad42047",
+    "text": "Isang RFC 6238 one-time code. Hindi kailanman unang factor: hawak ng serbisyong ito ang parehong shared secret na hawak ng app. Kapag naka-off dito, walang sinumang puwedeng MAG-ENROLL ng isa; ang taong may hawak na nito ay hinihingan pa rin nito, dahil ang off switch na magbababa sa bawat naka-enroll na account sa password lang ay gagawa ng iba sa sinasabi nito (pinalitan ng row na ito ang totp.enabled, at pinapanatili ang kontrata nito)."
+  },
+  "authn.MECHANISMS.recoveryCode.label": {
+    "en": "5bda8302b5ecf4d3",
+    "text": "Recovery code"
+  },
+  "authn.MECHANISMS.recoveryCode.what": {
+    "en": "e93ab2adc3e581bd",
+    "text": "Isang single-use na code mula sa set na ginawa ng tao. Kapag naka-off dito, walang bagong set na puwedeng gawin; gumagana pa rin ang set na hawak na (pinalitan ng row na ito ang backupCodes.enabled, at pinapanatili ang kontrata nito)."
+  },
+  "authn.MECHANISMS.emailCode.label": {
+    "en": "24c48c4f0edb8fc6",
+    "text": "Anim na digit na code sa email"
+  },
+  "authn.MECHANISMS.emailCode.what": {
+    "en": "7e2e9c139d23367e",
+    "text": "Isang anim na digit na code na ipinapadala sa VERIFIED na address ng tao. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.MECHANISMS.emailLink.label": {
+    "en": "ebd3a120849f9c13",
+    "text": "Sign-in link sa email"
+  },
+  "authn.MECHANISMS.emailLink.what": {
+    "en": "afbeb6ff44f6e721",
+    "text": "Isang single-use na link na ipinapadala sa VERIFIED na address ng tao, na kumukumpleto lang ng pag-sign in sa browser na nagsimula nito. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.MECHANISMS.certificate.label": {
+    "en": "484883fec27a25ab",
+    "text": "TLS client certificate"
+  },
+  "authn.MECHANISMS.certificate.what": {
+    "en": "458b5463993c8ba4",
+    "text": "GET /tls/sign-in na may verified na client certificate."
+  },
+  "authn.MECHANISMS.kerberos.label": {
+    "en": "a8316dcb1a42420f",
+    "text": "Kerberos (SPNEGO)"
+  },
+  "authn.MECHANISMS.kerberos.what": {
+    "en": "da71a0338fe2a8df",
+    "text": "GET /authn/spnego na may Kerberos ticket."
+  },
+  "authn.MECHANISMS.wallet.label": {
+    "en": "696e7476221a3382",
+    "text": "Wallet presentation"
+  },
+  "authn.MECHANISMS.wallet.what": {
+    "en": "c6b81177c7b7d944",
+    "text": "/authn/wallet na may credential na in-issue ng realm na ito, o isang SIOPv2 self-issued ID Token mula sa naka-enroll na key. Bilang PANGALAWANG factor, ang wallet na ipinakita pagkatapos ng password."
+  },
+  "authn.MECHANISMS.federation.label": {
+    "en": "a96ac2d1dc7dff02",
+    "text": "Federation partner"
+  },
+  "authn.MECHANISMS.federation.what": {
+    "en": "31fc7fc7f271920b",
+    "text": "Isang pag-sign in na ina-assert ng naka-configure na federation partner."
+  },
+  "authn.nistWarning": {
+    "en": "a84b99742bf880e2",
+    "text": "NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", dahil maaaring maabot ang mailbox gamit ang password lang, at maaaring mabasa ang mail habang ipinapadala o mailihis. Naka-off bilang default dahil doon; i-on lang ito kung tinatanggap ang panganib na iyon."
+  },
+  "authn.sentences.firstFactors": {
+    "en": "1d98bbbf6bae810b",
+    "text": "mga unang factor: {{list}}"
+  },
+  "authn.sentences.secondFactors": {
+    "en": "0e43f24fd8e81289",
+    "text": "mga pangalawang factor: {{list}}"
+  },
+  "authn.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "wala"
+  },
+  "authn.sentences.secondAlways": {
+    "en": "b1727eb39a8cf698",
+    "text": "kailangan ng lahat ang pangalawang factor"
+  },
+  "authn.sentences.secondIfHeld": {
+    "en": "644fee6946608afb",
+    "text": "kailangan ang pangalawang factor ng mga may hawak nito"
+  },
+  "authn.sentences.adminAlways": {
+    "en": "f38bf66a5f6f79eb",
+    "text": "dapat mag-set up ng isa ang mga administrator (inaalukan ng isa ang built-in na administrator)"
+  },
+  "authn.sentences.adminOffer": {
+    "en": "64f9643cf453bfee",
+    "text": "ang mga administrator na walang hawak ay inaalukan ng isa sa bawat pag-sign in"
+  },
+  "authn.sentences.adminAsked": {
+    "en": "69fccba563079867",
+    "text": "hinihingan ang mga administrator gaya ng lahat"
+  },
+  "authn.sentences.emailTtl": {
+    "en": "1a9208bd2d59b54d",
+    "text": "valid ang code o link sa email nang {{n}} segundo"
+  },
+  "authn.sentences.emailTtlInactive": {
+    "en": "20f80fea7980a662",
+    "text": "valid ang code o link sa email nang {{n}} segundo — HINDI AKTIBO: hindi makapagpadala ng mail ang realm na ito"
+  },
+  "kinds.serviceAccount.label": {
+    "en": "029b1070484594c2",
+    "text": "Service-account policy"
+  },
+  "kinds.serviceAccount.governs": {
+    "en": "dc2f42e8f87a7bcd",
+    "text": "kung ano ang puwedeng gawin ng service account — ang pangalawang factor, ang browser, ang mga password door — at kung paano nagro-rotate ang password nito"
+  },
+  "kinds.serviceAccount.appliesTo": {
+    "en": "7529888c07b7db03",
+    "text": "bawat service account sa realm na ito simula sa susunod na pagkakataong mag-sign in, mag-bind o ma-rotate ito"
+  },
+  "kinds.serviceAccount.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ang profile ng default na realm kung mayroon ito, at ang mga built-in na default kung wala"
+  },
+  "kinds.serviceAccount.param.noun": {
+    "en": "35eeb58fca1d2edf",
+    "text": "service-account policy profile"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.label": {
+    "en": "5c60d609e3a83940",
+    "text": "Exempt ang mga service account sa pangalawang factor"
+  },
+  "serviceAccount.FIELDS.exemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, hindi nalalapat sa service account sa realm na ito ang mga kinakailangang pangalawang factor ng authentication policy, at gayundin ang pagtanggi sa password lang sa mga password door (#101). Pwd pa rin lang ang sinasabi ng amr ng account, kaya tinatanggihan ang relying party na humihingi ng higit pa. MAS MAHINA: ang account na password lang ang gamit ay account na kahit sinong may hawak ng password."
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.label": {
+    "en": "4ed97ae3678854cb",
+    "text": "Puwedeng mag-sign in sa browser ang mga service account"
+  },
+  "serviceAccount.FIELDS.allowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-off, tinatanggihan ng sign-in screen, ng user portal at ng admin console ang service account, anumang unang factor ang ipakita nito, at ang paggawa sa isang tao bilang service account ay nagtatapos sa mga browser session niya. Ginagamit ng isang program ang service account, at walang dahilan ang isang program na nasa sign-in screen."
+  },
+  "serviceAccount.FIELDS.allowLdapBind.label": {
+    "en": "6990793c25a0ff94",
+    "text": "Pinto: LDAP simple bind"
+  },
+  "serviceAccount.FIELDS.allowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "Isang bind sa 389 o 636 (RFC 4513). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.FIELDS.allowWsTrust.label": {
+    "en": "66d43931f786043d",
+    "text": "Pinto: WS-Trust UsernameToken"
+  },
+  "serviceAccount.FIELDS.allowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "Isang WS-Security UsernameToken na ipinadala sa security token service. Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.FIELDS.allowScim.label": {
+    "en": "069d413789335b8c",
+    "text": "Pinto: SCIM HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic sa /scim/v2 (RFC 7617). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.FIELDS.allowSsf.label": {
+    "en": "bc59f0c260a825d0",
+    "text": "Pinto: Shared Signals HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic sa mga /ssf endpoint (RFC 7617). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.FIELDS.allowEst.label": {
+    "en": "259d4d38a4e9d8cc",
+    "text": "Pinto: EST HTTP Basic"
+  },
+  "serviceAccount.FIELDS.allowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic sa /.well-known/est (RFC 7030 section 3.2.3). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.FIELDS.allowKerberos.label": {
+    "en": "d9a91a667be2b5f9",
+    "text": "Pinto: Kerberos AS exchange"
+  },
+  "serviceAccount.FIELDS.allowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "Isang AS-REQ na ang pre-authentication ay nagpapatunay ng key ng password (RFC 4120), at MS-KKDCP. Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.label": {
+    "en": "fce855bdcd0e1ba9",
+    "text": "Pinto: OAuth 2.0 password grant"
+  },
+  "serviceAccount.FIELDS.allowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password sa token endpoint (RFC 6749 section 4.3), kung saan pinapayagan ng realm ang grant. Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.FIELDS.rotationEnabled.label": {
+    "en": "365f31e83a78cc6c",
+    "text": "Awtomatikong i-rotate ang mga password ng service account"
+  },
+  "serviceAccount.FIELDS.rotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, binibigyan ng job na service-accounts.rotate ang bawat service account na may pinangalanang push destination ng bagong ginawang password sa bawat interval: ipinu-push muna sa destination, at kinokomit lang ang hash nito pagkatapos magtagumpay ang push, habang pinapanatili ang dating password para sa overlap sa ibaba. Walang binabago ang bigong push. Hindi ito mao-on habang walang push destination ang realm na ito."
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.unit": {
+    "en": "ab51004e9d71a485",
+    "text": "araw"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.label": {
+    "en": "bb5664abd72273db",
+    "text": "Interval ng rotation"
+  },
+  "serviceAccount.FIELDS.rotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "Gaano katagal pinapanatili ang password ng service account bago ito palitan ng job, binibilang mula sa huling rotation (o sa huling pagpapalit ng password ng account)."
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.unit": {
+    "en": "90e63d85fa1ab2c8",
+    "text": "minuto"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.label": {
+    "en": "146af6815514852b",
+    "text": "Gaano katagal gumagana pa ang dating password"
+  },
+  "serviceAccount.FIELDS.rotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "Pagkatapos ng rotation, tinatanggap pa ang dating password nang ganito katagal, para hindi tanggihan ang consumer na mabagal magbasa ng bago — ni bilangin ito ng risk scoring bilang panghuhula (#226). Ganoon din katagal pinapanatili ang mga dating Kerberos key. 0: agad na humihinto ang lumang password."
+  },
+  "serviceAccount.FIELDS.generatedLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "character"
+  },
+  "serviceAccount.FIELDS.generatedLength.label": {
+    "en": "f2c4928b6c7393e9",
+    "text": "Haba ng na-rotate na password"
+  },
+  "serviceAccount.FIELDS.generatedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "Ginagawa ng generator ng password policy, kaya pumapasa ito sa policy na iyon, at hindi kailanman mas maikli sa minimum na haba nito."
+  },
+  "serviceAccount.FIELDS.requireOwner.label": {
+    "en": "1c075e89b0a877a8",
+    "text": "Dapat may pinangalanang owner ang service account"
+  },
+  "serviceAccount.FIELDS.requireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "NAKA-ON BILANG DEFAULT. Ang owner — isang tao o group sa realm na ito — ang mananagot para sa account; hindi mase-save ang service account nang walang owner habang naka-on ito."
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.unit": {
+    "en": "3d2200f2d590cf33",
+    "text": "pagkabigo"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.label": {
+    "en": "74f32eb1fa2cb6f2",
+    "text": "Sunud-sunod na bigong rotation bago ang alarm"
+  },
+  "serviceAccount.FIELDS.rotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "Inuulit ang bigong rotation sa susunod na takbo ng job. Pagkatapos ng ganito karaming sunud-sunod, iniuulat ang account sa Monitoring → Service accounts at nilo-log bilang alarm (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.objectClasses.stsServiceAccountPolicy.what": {
+    "en": "0ff4e4aa3597259f",
+    "text": "Ang class ng serbisyong ito para sa service-account policy: kung ano ang puwedeng gawin ng service account sa realm na ito at kung paano nagro-rotate ang password nito. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctExemptFromSecondFactor.what": {
+    "en": "f86f6d62a8cfc303",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, hindi nalalapat sa service account sa realm na ito ang mga kinakailangang pangalawang factor ng authentication policy, at gayundin ang pagtanggi sa password lang sa mga password door (#101). Pwd pa rin lang ang sinasabi ng amr ng account, kaya tinatanggihan ang relying party na humihingi ng higit pa. MAS MAHINA: ang account na password lang ang gamit ay account na kahit sinong may hawak ng password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowBrowserSignIn.what": {
+    "en": "ea2f29b5622a8b61",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-off, tinatanggihan ng sign-in screen, ng user portal at ng admin console ang service account, anumang unang factor ang ipakita nito, at ang paggawa sa isang tao bilang service account ay nagtatapos sa mga browser session niya. Ginagamit ng isang program ang service account, at walang dahilan ang isang program na nasa sign-in screen."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowLdapBind.what": {
+    "en": "fbe0036b12ee4f1a",
+    "text": "Isang bind sa 389 o 636 (RFC 4513). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowWsTrust.what": {
+    "en": "84fcb1e5876c5fab",
+    "text": "Isang WS-Security UsernameToken na ipinadala sa security token service. Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowScim.what": {
+    "en": "499781bd5539c4db",
+    "text": "HTTP Basic sa /scim/v2 (RFC 7617). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowSsf.what": {
+    "en": "645bec420f84bb62",
+    "text": "HTTP Basic sa mga /ssf endpoint (RFC 7617). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowEst.what": {
+    "en": "4c31da0052671f61",
+    "text": "HTTP Basic sa /.well-known/est (RFC 7030 section 3.2.3). Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowKerberos.what": {
+    "en": "18013168c7504972",
+    "text": "Isang AS-REQ na ang pre-authentication ay nagpapatunay ng key ng password (RFC 4120), at MS-KKDCP. Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctAllowPasswordGrant.what": {
+    "en": "3a460ad384d322e3",
+    "text": "grant_type=password sa token endpoint (RFC 6749 section 4.3), kung saan pinapayagan ng realm ang grant. Kapag naka-off, ang tamang password ng service account ay tinatanggihan doon gaya ng maling password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationEnabled.what": {
+    "en": "a6bb42bcd609d4c9",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, binibigyan ng job na service-accounts.rotate ang bawat service account na may pinangalanang push destination ng bagong ginawang password sa bawat interval: ipinu-push muna sa destination, at kinokomit lang ang hash nito pagkatapos magtagumpay ang push, habang pinapanatili ang dating password para sa overlap sa ibaba. Walang binabago ang bigong push. Hindi ito mao-on habang walang push destination ang realm na ito."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationIntervalDays.what": {
+    "en": "11902b0df4f4b877",
+    "text": "Gaano katagal pinapanatili ang password ng service account bago ito palitan ng job, binibilang mula sa huling rotation (o sa huling pagpapalit ng password ng account)."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationOverlapMinutes.what": {
+    "en": "0786be138e3ef0d7",
+    "text": "Pagkatapos ng rotation, tinatanggap pa ang dating password nang ganito katagal, para hindi tanggihan ang consumer na mabagal magbasa ng bago — ni bilangin ito ng risk scoring bilang panghuhula (#226). Ganoon din katagal pinapanatili ang mga dating Kerberos key. 0: agad na humihinto ang lumang password."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctGeneratedLength.what": {
+    "en": "c29c222454a19a8a",
+    "text": "Ginagawa ng generator ng password policy, kaya pumapasa ito sa policy na iyon, at hindi kailanman mas maikli sa minimum na haba nito."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRequireOwner.what": {
+    "en": "e1a95c9ce8d16909",
+    "text": "NAKA-ON BILANG DEFAULT. Ang owner — isang tao o group sa realm na ito — ang mananagot para sa account; hindi mase-save ang service account nang walang owner habang naka-on ito."
+  },
+  "serviceAccount.SCHEMA.attributes.stsSvcAcctRotationAlarmFailures.what": {
+    "en": "604c6f36ecb4ac58",
+    "text": "Inuulit ang bigong rotation sa susunod na takbo ng job. Pagkatapos ng ganito karaming sunud-sunod, iniuulat ang account sa Monitoring → Service accounts at nilo-log bilang alarm (STS-SVCACCT-0042)."
+  },
+  "serviceAccount.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Para saan ang profile, para sa susunod na tao."
+  },
+  "serviceAccount.DOORS.allowLdapBind.label": {
+    "en": "02f30171dcced882",
+    "text": "LDAP simple bind"
+  },
+  "serviceAccount.DOORS.allowLdapBind.what": {
+    "en": "3a8c8bfe4923e585",
+    "text": "Isang bind sa 389 o 636 (RFC 4513)."
+  },
+  "serviceAccount.DOORS.allowWsTrust.label": {
+    "en": "a1d8fa9805648e7d",
+    "text": "WS-Trust UsernameToken"
+  },
+  "serviceAccount.DOORS.allowWsTrust.what": {
+    "en": "4d920a20f96a19a1",
+    "text": "Isang WS-Security UsernameToken na ipinadala sa security token service."
+  },
+  "serviceAccount.DOORS.allowScim.label": {
+    "en": "13441836ceee258a",
+    "text": "SCIM HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowScim.what": {
+    "en": "506c021bbd796caa",
+    "text": "HTTP Basic sa /scim/v2 (RFC 7617)."
+  },
+  "serviceAccount.DOORS.allowSsf.label": {
+    "en": "5f0a37c29c6be8ab",
+    "text": "Shared Signals HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowSsf.what": {
+    "en": "41e56e2806f5f363",
+    "text": "HTTP Basic sa mga /ssf endpoint (RFC 7617)."
+  },
+  "serviceAccount.DOORS.allowEst.label": {
+    "en": "90892c78280ab239",
+    "text": "EST HTTP Basic"
+  },
+  "serviceAccount.DOORS.allowEst.what": {
+    "en": "a40e0a702c1600f6",
+    "text": "HTTP Basic sa /.well-known/est (RFC 7030 section 3.2.3)."
+  },
+  "serviceAccount.DOORS.allowKerberos.label": {
+    "en": "b707a90f8fd22d69",
+    "text": "Kerberos AS exchange"
+  },
+  "serviceAccount.DOORS.allowKerberos.what": {
+    "en": "22fac9e9e9e7d0a8",
+    "text": "Isang AS-REQ na ang pre-authentication ay nagpapatunay ng key ng password (RFC 4120), at MS-KKDCP."
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.label": {
+    "en": "a55abf2085020a8c",
+    "text": "OAuth 2.0 password grant"
+  },
+  "serviceAccount.DOORS.allowPasswordGrant.what": {
+    "en": "7fe8d96fec703361",
+    "text": "grant_type=password sa token endpoint (RFC 6749 section 4.3), kung saan pinapayagan ng realm ang grant."
+  },
+  "serviceAccount.sentences.exempt": {
+    "en": "b26ecbca5a57dc48",
+    "text": "EXEMPT ang mga service account sa pangalawang factor"
+  },
+  "serviceAccount.sentences.notExempt": {
+    "en": "b02c592e6db99be5",
+    "text": "sinusunod ng mga service account ang parehong patakaran sa pangalawang factor na sinusunod ng lahat"
+  },
+  "serviceAccount.sentences.browser": {
+    "en": "93b1e12955e68cb6",
+    "text": "puwedeng mag-sign in sa browser ang mga service account"
+  },
+  "serviceAccount.sentences.noBrowser": {
+    "en": "63d0aee214048278",
+    "text": "tinatanggihan ang mga service account sa bawat pag-sign in sa browser"
+  },
+  "serviceAccount.sentences.doors": {
+    "en": "c501e87ae7952f69",
+    "text": "mga password door: {{list}}"
+  },
+  "serviceAccount.sentences.param.none": {
+    "en": "140bedbf9c3f6d56",
+    "text": "wala"
+  },
+  "serviceAccount.sentences.rotation": {
+    "en": "12695290fe4a7d33",
+    "text": "nagro-rotate ang mga password tuwing {{days}} araw, at gumagana pa ang dati nang {{minutes}} minuto"
+  },
+  "serviceAccount.sentences.noRotation": {
+    "en": "4ff442ba6a6ee158",
+    "text": "hindi awtomatikong nagro-rotate ang mga password"
+  },
+  "serviceAccount.sentences.owner": {
+    "en": "d9eff26803e4db69",
+    "text": "bawat service account ay may pinangalanang owner"
+  },
+  "serviceAccount.sentences.noOwner": {
+    "en": "6ad1c61ec9cf3e86",
+    "text": "puwedeng walang owner ang service account"
+  },
+  "kinds.passkey.label": {
+    "en": "dc0e1f0076ac175f",
+    "text": "Passkey policy"
+  },
+  "kinds.passkey.governs": {
+    "en": "31eeef667c347730",
+    "text": "kung paano kumikilos ang mga passkey — kung puwedeng walang username ang pag-sign in, at kung ano ang hinihinging itago ng security key"
+  },
+  "kinds.passkey.appliesTo": {
+    "en": "1e3aef415c5feb43",
+    "text": "ang SUSUNOD na pag-sign in at ang SUSUNOD na passkey na i-enroll sa realm na ito; ang passkey na naka-enroll na ay nagpapanatili ng itinago ng authenticator nito"
+  },
+  "kinds.passkey.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ang profile ng default na realm kung mayroon ito, at ang mga built-in na default kung wala"
+  },
+  "kinds.passkey.param.noun": {
+    "en": "eb904193445442cf",
+    "text": "passkey policy profile"
+  },
+  "passkey.FIELDS.allowUsernameless.label": {
+    "en": "188831dad6ee4817",
+    "text": "Payagan ang pag-sign in gamit ang passkey nang walang username"
+  },
+  "passkey.FIELDS.allowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "NAKA-ON BILANG DEFAULT. Kapag naka-on, iniaalok ng sign-in screen ang *Sign in with a passkey* at ang autofill ng username field, na humihingi sa browser ng anumang discoverable credential ng realm na ito (WebAuthn Level 3 section 5.4, walang laman ang `allowCredentials`) at nagsa-sign in sa account na pinangangalanan ng user handle nito, na kailangan at sinusuri ang user verification. Kapag naka-off, wala sa dalawa ang iniaalok at palaging pinangangalanan muna ng pag-sign in ang tao. Pinapalitan ang setting na webauthn.usernameless."
+  },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "Hingin ang pag-sign in gamit ang passkey nang walang username"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (appAuthnMechanism `webauthn` lamang) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
+  },
+  "passkey.FIELDS.securityKeyResidentKey.label": {
+    "en": "d2b810facc1c57f0",
+    "text": "Ang hinihingi ng \"Use a security key\" habang naka-on ang usernameless na pag-sign in"
+  },
+  "passkey.FIELDS.securityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "Ang `residentKey` na ipinapadala ng pag-enroll sa pamamagitan ng *Use a security key* (o ng pag-enroll na walang pinangalanang uri) HABANG NAKA-ON ang usernameless na pag-sign in. Habang naka-off ito, palaging `required` ang hinihingi ng button, kaya gumagawa ito ng discoverable credential gaya ng *Create a passkey* (na palaging `required` ang hinihingi). Ang `discouraged` o `preferred` ay nagtitipid sa kakaunting resident slot ng security key, kapalit ng key na kailangan ang username para mag-sign in. Pinapalitan ang setting na webauthn.residentKey."
+  },
+  "passkey.FIELDS.backupEligibility.label": {
+    "en": "ddcad787bb43ec66",
+    "text": "Mga synced passkey (backup eligible)"
+  },
+  "passkey.FIELDS.backupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "Tinatanggap ng `allow` (ang default) ang anumang passkey. Tinatanggap lang ng `disallow` ang mga DEVICE-BOUND: ang passkey na sinasabi ng authenticator nito na puwedeng i-back up o i-sync (ang BE flag, WebAuthn Level 3 section 6.1) ay tinatanggihan kapag nirerehistro ito at kapag nagsa-sign in ito ng isang tao, kaya humihinto ring gumana ang synced passkey na na-enroll bago tumanggi ang realm. Hindi kailanman nagbabago ang BE para sa isang credential."
+  },
+  "passkey.FIELDS.enforcePinLength.label": {
+    "en": "31eb482ccf4b3fd1",
+    "text": "Kailangan ng minimum na haba ng PIN ng security key"
+  },
+  "passkey.FIELDS.enforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, hinihingi ng registration sa authenticator ang minimum na haba ng PIN nito (CTAP 2.1 section 12.4, ang minPinLength extension), itinatala ito sa key, at tinatanggihan ang key na ang minimum ay mas mababa sa susunod na row, sa registration at sa bawat pag-sign in. Sumasagot lang ang key para sa mga relying party na na-configure itong sabihan (CTAP 2.1 setMinPINLength gamit ang RP ID na ito); ang bawat ibang key, at bawat platform o synced passkey, ay hindi nag-uulat, at tinatanggihan maliban kung naka-on ang row pagkatapos ng susunod."
+  },
+  "passkey.FIELDS.minPinLength.unit": {
+    "en": "25d939ffd0d79b73",
+    "text": "character"
+  },
+  "passkey.FIELDS.minPinLength.label": {
+    "en": "bd44e050db3c8cd9",
+    "text": "Minimum na haba ng PIN ng security key"
+  },
+  "passkey.FIELDS.minPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "Ang pinakamaikling PIN na puwedeng itakdang tanggapin ng security key, ayon sa iniuulat mismo ng key, habang naka-on ang row sa itaas. Mula 4 (ang sariling floor ng CTAP 2.1) hanggang 63."
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.label": {
+    "en": "ac66a26b34cdd414",
+    "text": "Tanggapin ang key na hindi nag-uulat ng haba ng PIN nito"
+  },
+  "passkey.FIELDS.pinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "NAKA-OFF BILANG DEFAULT, na siyang mahigpit na pagbasa: habang ipinapatupad ang haba ng PIN, tinatanggihan ang key na hindi nag-uulat nito. Kapag naka-on, tinatanggap ang ganitong key at ang iniulat na minimum lang ang sinusukat sa patakaran — kaya ang patakaran ay sumasaklaw lang noon sa mga key na naka-configure na mag-ulat sa relying party na ito."
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.label": {
+    "en": "659120b1356b126b",
+    "text": "Sukatin ang bawat pag-sign in sa mga umiiral na patakaran sa attestation"
+  },
+  "passkey.FIELDS.enforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "NAKA-OFF BILANG DEFAULT. Sinusuri ang mga patakaran sa attestation (ang mga setting na webauthn.attestation*: ang policy, ang listahan ng AAGUID, ang certification level at FIPS) kapag nirerehistro ang passkey. Kapag naka-on, sinusuri ulit ang mga ito sa bawat pag-sign in laban sa itinala noon at sa FIDO Metadata Service sa kasalukuyan, kaya ang key na nirehistro bago hinigpitan ang isang patakaran, o na ang model ay iniulat nang compromised mula noon, ay humihinto sa pag-sign in ng sinuman. Ang key na walang pinagkakatiwalaang attestation ay bumabagsak sa bawat patakarang humihingi nito."
+  },
+  "passkey.FIELDS.passkeyHints.label": {
+    "en": "7445bda72b06c415",
+    "text": "Mga hint na ipinapadala ng \"Create a passkey\""
+  },
+  "passkey.FIELDS.passkeyHints.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "Ang mga WebAuthn hint (Level 3 section 5.4.8) na ipinapadala ng *Create a passkey* ng portal, ayon sa pagkakasunod, mula sa security-key, client-device at hybrid, o wala. Sinasabi nito sa browser kung aling paraan ng paggawa ng passkey ang uunahin. Hindi puwedeng sumalungat ang hint sa webauthn.authenticatorAttachment: ang client-device ay nangangahulugang platform, ang security-key at hybrid ay cross-platform."
+  },
+  "passkey.FIELDS.securityKeyHints.label": {
+    "en": "3fc22a70aa3a1e64",
+    "text": "Mga hint na ipinapadala ng \"Use a security key\""
+  },
+  "passkey.FIELDS.securityKeyHints.what": {
+    "en": "6046d3d271c529e3",
+    "text": "Ang mga hint na ipinapadala ng *Use a security key*, ayon sa pagkakasunod, o wala. Humihingi ang button ng cross-platform na authenticator, kaya sumasalungat dito ang client-device at tinatanggihan ito."
+  },
+  "passkey.FIELDS.signInHints.label": {
+    "en": "8b1e49c893942fb6",
+    "text": "Mga hint na ipinapadala ng pag-sign in gamit ang passkey"
+  },
+  "passkey.FIELDS.signInHints.what": {
+    "en": "c748dd352b0e7351",
+    "text": "Ang mga hint na ipinapadala ng sign-in ceremony — ang hakbang ng passkey, ang pag-sign in nang walang username at ang autofill nito — ayon sa pagkakasunod, o wala (ang default: iniaalok ng browser ang bawat paraang alam nito)."
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.label": {
+    "en": "ca9457e38cd942c9",
+    "text": "Directory attribute na may hawak ng mga serial ng security key ng tao"
+  },
+  "passkey.FIELDS.enterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "WALANG LAMAN BILANG DEFAULT: walang serial na sinusuri. Kapag itinakda sa isang attribute ng entry ng tao (halimbawa `serialNumber`, na maaaring may ilang value), nagrerehistro lang ang security key kung may PINAGKAKATIWALAANG enterprise attestation na ang certificate ay nagpapangalan ng device serial na isa sa mga value ng taong iyon. Kailangang naka-set ang webauthn.attestation sa enterprise, at naka-configure ang vendor o platform na maglabas ng enterprise attestation sa RP ID na ito; kung wala iyon, ordinaryong attestation ang ipinapadala ng browser at tinatanggihan ang bawat registration."
+  },
+  "passkey.FIELDS.userDisplayName.label": {
+    "en": "357a8bc7ceaa1129",
+    "text": "Ang pangalang ipinapakita ng passkey prompt para sa tao"
+  },
+  "passkey.FIELDS.userDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "WALANG LAMAN BILANG DEFAULT: ang pangalang alam ng pag-sign in, kung hindi ay ang username. Kung hindi, hanggang anim na directory attribute ayon sa pagkakasunod, pinaghihiwalay ng kuwit; ang grupo ng mga attribute na pinaghihiwalay ng espasyo (givenName sn) ay pinagsasama ang mga value nila. Ang una na may value ang bawat attribute ang nagiging user.displayName (WebAuthn Level 3 section 5.4.3), na inaalis ang mga control character at character na nagbabago ng direksyon at hanggang 64 na character lang. Palaging user.name ang username."
+  },
+  "passkey.FIELDS.rpNameExtras.label": {
+    "en": "0b47e644dc75f546",
+    "text": "Ang idinadagdag ng passkey prompt sa pangalan ng serbisyo"
+  },
+  "passkey.FIELDS.rpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "Ipinapakita ng `none` (ang default) ang webauthn.rpName lang. Idinadagdag ng `realm`, `organisation` o `realm-and-organisation` ang pangalan ng realm at/o ang saml.organizationName, para makilala ng taong may account sa ilang realm ang pagkakaiba ng mga prompt."
+  },
+  "passkey.FIELDS.credentialLabel.label": {
+    "en": "b9fb7cb97e11075a",
+    "text": "Ang pangalang ibinibigay sa bagong passkey"
+  },
+  "passkey.FIELDS.credentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "WALANG LAMAN BILANG DEFAULT: ang pangalan ng provider, kung hindi ay \"Passkey\" o \"Security key\". Kung hindi, ang tekstong ito, na pinupunan ang {provider} at {kind}, hanggang 60 character. Puwede itong palitan ng pangalan ng tao pagkatapos, gaya ng dati."
+  },
+  "passkey.FIELDS.aggregateDevices.label": {
+    "en": "f019bccb105e42cd",
+    "text": "Ialok ang mga passkey ng tao bilang iisang pagpipilian sa pag-sign in"
+  },
+  "passkey.FIELDS.aggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "NAKA-ON BILANG DEFAULT: iisang hakbang na \"Use passkey\" na ang request ay naglilista ng bawat passkey ng tao, at iniaalok ng browser kung alin ang naroroon. Kapag naka-off, ang taong may higit sa isa ay pinapakitaan ng pagpipilian sa bawat passkey, ayon sa pangalan nito, at iyon lang ang pinangangalanan ng request."
+  },
+  "passkey.SCHEMA.objectClasses.stsPasskeyPolicy.what": {
+    "en": "44bab556bd6240cc",
+    "text": "Ang class ng serbisyong ito para sa passkey policy: kung paano kumikilos ang mga passkey sa realm na ito. Ang entry ay pinangangalanan ayon sa PROFILE (`cn=default`)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAllowUsernameless.what": {
+    "en": "474a843b37cbf2dc",
+    "text": "NAKA-ON BILANG DEFAULT. Kapag naka-on, iniaalok ng sign-in screen ang *Sign in with a passkey* at ang autofill ng username field, na humihingi sa browser ng anumang discoverable credential ng realm na ito (WebAuthn Level 3 section 5.4, walang laman ang `allowCredentials`) at nagsa-sign in sa account na pinangangalanan ng user handle nito, na kailangan at sinusuri ang user verification. Kapag naka-off, wala sa dalawa ang iniaalok at palaging pinangangalanan muna ng pag-sign in ang tao. Pinapalitan ang setting na webauthn.usernameless."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, ang application na ang authentication mechanism ay passkey at wala nang iba (appAuthnMechanism `webauthn` lamang) ay binibigyan ng sign-in screen na walang username field: *Sign in with a passkey* ang paraan ng pagpasok, at tinatanggihan ang pag-sign in na nagpapangalan ng tao. Kailangan nito ang row sa itaas. Hindi ito inilalapat ng `default` profile ng realm sa admin console, sa debugger o sa user portal; inilalapat ito ng named profile na pumipili sa application na iyon."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
+    "en": "cccca16315fbaa97",
+    "text": "Ang `residentKey` na ipinapadala ng pag-enroll sa pamamagitan ng *Use a security key* (o ng pag-enroll na walang pinangalanang uri) HABANG NAKA-ON ang usernameless na pag-sign in. Habang naka-off ito, palaging `required` ang hinihingi ng button, kaya gumagawa ito ng discoverable credential gaya ng *Create a passkey* (na palaging `required` ang hinihingi). Ang `discouraged` o `preferred` ay nagtitipid sa kakaunting resident slot ng security key, kapalit ng key na kailangan ang username para mag-sign in. Pinapalitan ang setting na webauthn.residentKey."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyBackupEligibility.what": {
+    "en": "f2d962cb4cf0696a",
+    "text": "Tinatanggap ng `allow` (ang default) ang anumang passkey. Tinatanggap lang ng `disallow` ang mga DEVICE-BOUND: ang passkey na sinasabi ng authenticator nito na puwedeng i-back up o i-sync (ang BE flag, WebAuthn Level 3 section 6.1) ay tinatanggihan kapag nirerehistro ito at kapag nagsa-sign in ito ng isang tao, kaya humihinto ring gumana ang synced passkey na na-enroll bago tumanggi ang realm. Hindi kailanman nagbabago ang BE para sa isang credential."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforcePinLength.what": {
+    "en": "31c7ae2d055f6bb6",
+    "text": "NAKA-OFF BILANG DEFAULT. Kapag naka-on, hinihingi ng registration sa authenticator ang minimum na haba ng PIN nito (CTAP 2.1 section 12.4, ang minPinLength extension), itinatala ito sa key, at tinatanggihan ang key na ang minimum ay mas mababa sa susunod na row, sa registration at sa bawat pag-sign in. Sumasagot lang ang key para sa mga relying party na na-configure itong sabihan (CTAP 2.1 setMinPINLength gamit ang RP ID na ito); ang bawat ibang key, at bawat platform o synced passkey, ay hindi nag-uulat, at tinatanggihan maliban kung naka-on ang row pagkatapos ng susunod."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyMinPinLength.what": {
+    "en": "a636cf708ad6bf10",
+    "text": "Ang pinakamaikling PIN na puwedeng itakdang tanggapin ng security key, ayon sa iniuulat mismo ng key, habang naka-on ang row sa itaas. Mula 4 (ang sariling floor ng CTAP 2.1) hanggang 63."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPinLengthOnlyIfSupported.what": {
+    "en": "40c28fef42d19166",
+    "text": "NAKA-OFF BILANG DEFAULT, na siyang mahigpit na pagbasa: habang ipinapatupad ang haba ng PIN, tinatanggihan ang key na hindi nag-uulat nito. Kapag naka-on, tinatanggap ang ganitong key at ang iniulat na minimum lang ang sinusukat sa patakaran — kaya ang patakaran ay sumasaklaw lang noon sa mga key na naka-configure na mag-ulat sa relying party na ito."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnforceAttestationAtSignIn.what": {
+    "en": "dcf08d219b55b2ed",
+    "text": "NAKA-OFF BILANG DEFAULT. Sinusuri ang mga patakaran sa attestation (ang mga setting na webauthn.attestation*: ang policy, ang listahan ng AAGUID, ang certification level at FIPS) kapag nirerehistro ang passkey. Kapag naka-on, sinusuri ulit ang mga ito sa bawat pag-sign in laban sa itinala noon at sa FIDO Metadata Service sa kasalukuyan, kaya ang key na nirehistro bago hinigpitan ang isang patakaran, o na ang model ay iniulat nang compromised mula noon, ay humihinto sa pag-sign in ng sinuman. Ang key na walang pinagkakatiwalaang attestation ay bumabagsak sa bawat patakarang humihingi nito."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsPasskey.what": {
+    "en": "2ffa66aabab7a053",
+    "text": "Ang mga WebAuthn hint (Level 3 section 5.4.8) na ipinapadala ng *Create a passkey* ng portal, ayon sa pagkakasunod, mula sa security-key, client-device at hybrid, o wala. Sinasabi nito sa browser kung aling paraan ng paggawa ng passkey ang uunahin. Hindi puwedeng sumalungat ang hint sa webauthn.authenticatorAttachment: ang client-device ay nangangahulugang platform, ang security-key at hybrid ay cross-platform."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSecurityKey.what": {
+    "en": "6046d3d271c529e3",
+    "text": "Ang mga hint na ipinapadala ng *Use a security key*, ayon sa pagkakasunod, o wala. Humihingi ang button ng cross-platform na authenticator, kaya sumasalungat dito ang client-device at tinatanggihan ito."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyHintsSignIn.what": {
+    "en": "c748dd352b0e7351",
+    "text": "Ang mga hint na ipinapadala ng sign-in ceremony — ang hakbang ng passkey, ang pag-sign in nang walang username at ang autofill nito — ayon sa pagkakasunod, o wala (ang default: iniaalok ng browser ang bawat paraang alam nito)."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyEnterpriseSerialAttribute.what": {
+    "en": "8d6a1de9c96bcb9e",
+    "text": "WALANG LAMAN BILANG DEFAULT: walang serial na sinusuri. Kapag itinakda sa isang attribute ng entry ng tao (halimbawa `serialNumber`, na maaaring may ilang value), nagrerehistro lang ang security key kung may PINAGKAKATIWALAANG enterprise attestation na ang certificate ay nagpapangalan ng device serial na isa sa mga value ng taong iyon. Kailangang naka-set ang webauthn.attestation sa enterprise, at naka-configure ang vendor o platform na maglabas ng enterprise attestation sa RP ID na ito; kung wala iyon, ordinaryong attestation ang ipinapadala ng browser at tinatanggihan ang bawat registration."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyUserDisplayName.what": {
+    "en": "651c5aad674eb937",
+    "text": "WALANG LAMAN BILANG DEFAULT: ang pangalang alam ng pag-sign in, kung hindi ay ang username. Kung hindi, hanggang anim na directory attribute ayon sa pagkakasunod, pinaghihiwalay ng kuwit; ang grupo ng mga attribute na pinaghihiwalay ng espasyo (givenName sn) ay pinagsasama ang mga value nila. Ang una na may value ang bawat attribute ang nagiging user.displayName (WebAuthn Level 3 section 5.4.3), na inaalis ang mga control character at character na nagbabago ng direksyon at hanggang 64 na character lang. Palaging user.name ang username."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyRpNameExtras.what": {
+    "en": "2a3d634aa9fad92e",
+    "text": "Ipinapakita ng `none` (ang default) ang webauthn.rpName lang. Idinadagdag ng `realm`, `organisation` o `realm-and-organisation` ang pangalan ng realm at/o ang saml.organizationName, para makilala ng taong may account sa ilang realm ang pagkakaiba ng mga prompt."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyCredentialLabel.what": {
+    "en": "38c780430a415a35",
+    "text": "WALANG LAMAN BILANG DEFAULT: ang pangalan ng provider, kung hindi ay \"Passkey\" o \"Security key\". Kung hindi, ang tekstong ito, na pinupunan ang {provider} at {kind}, hanggang 60 character. Puwede itong palitan ng pangalan ng tao pagkatapos, gaya ng dati."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyAggregateDevices.what": {
+    "en": "128deae048d6edbf",
+    "text": "NAKA-ON BILANG DEFAULT: iisang hakbang na \"Use passkey\" na ang request ay naglilista ng bawat passkey ng tao, at iniaalok ng browser kung alin ang naroroon. Kapag naka-off, ang taong may higit sa isa ay pinapakitaan ng pagpipilian sa bawat passkey, ayon sa pangalan nito, at iyon lang ang pinangangalanan ng request."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectApplication.what": {
+    "en": "03ba679923c40b45",
+    "text": "Ang mga application (identifier o client_id) na sakop ng isang named passkey policy, sa pag-sign in para sa isa sa mga ito."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeySelectGroup.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "Ang mga group (cn o DN) na ang mga miyembro ay sakop ng isang named passkey policy."
+  },
+  "passkey.SCHEMA.attributes.stsPasskeyPrecedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "Kung aling named passkey policy ang mananaig kapag ilan ang tumugma: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "passkey.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Para saan ang profile, para sa susunod na tao."
+  },
+  "passkey.SELECTORS.selectApplications.what": {
+    "en": "03ba679923c40b45",
+    "text": "Ang mga application (identifier o client_id) na sakop ng isang named passkey policy, sa pag-sign in para sa isa sa mga ito."
+  },
+  "passkey.SELECTORS.selectGroups.what": {
+    "en": "8c6adaafe4e8fbc4",
+    "text": "Ang mga group (cn o DN) na ang mga miyembro ay sakop ng isang named passkey policy."
+  },
+  "passkey.SELECTORS.precedence.what": {
+    "en": "cd02467de702ad24",
+    "text": "Kung aling named passkey policy ang mananaig kapag ilan ang tumugma: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "passkey.sentences.usernameless": {
+    "en": "e6aa1e26ce9d38a9",
+    "text": "puwedeng mag-sign in ng tao ang passkey nang walang username (kailangan ang user verification)"
+  },
+  "passkey.sentences.noUsernameless": {
+    "en": "1152c46cd0b86b19",
+    "text": "pinangangalanan muna ng bawat pag-sign in ang tao: walang pag-sign in gamit ang passkey nang walang username"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "ang application na nagsa-sign in gamit lamang ang passkey ay hindi humihingi ng username: ang pag-sign in gamit ang passkey nang walang username ang tanging paraan ng pagpasok"
+  },
+  "passkey.sentences.createPasskey": {
+    "en": "69c8c2e4b8f32675",
+    "text": "humihingi ang \"Create a passkey\" ng discoverable credential (residentKey required)"
+  },
+  "passkey.sentences.securityKeyRequired": {
+    "en": "c839fcbdde6e65d6",
+    "text": "residentKey {{value}} ang hinihingi ng \"Use a security key\", kaya gumagawa rin ito ng discoverable credential"
+  },
+  "passkey.sentences.securityKeyOther": {
+    "en": "89e2cb66e39ae79a",
+    "text": "residentKey {{value}} ang hinihingi ng \"Use a security key\", kaya maaaring kailanganin ng key na na-enroll sa pamamagitan nito ang username para mag-sign in"
+  },
+  "passkey.sentences.deviceBound": {
+    "en": "a427e63844dd9c4c",
+    "text": "mga device-bound na passkey lang: tinatanggihan ang synced (backup-eligible) na passkey sa registration at sa pag-sign in"
+  },
+  "passkey.sentences.synced": {
+    "en": "eaf735600d87b945",
+    "text": "tinatanggap ang mga synced (backup-eligible) na passkey"
+  },
+  "passkey.sentences.noPinLength": {
+    "en": "8164ad4cf915e055",
+    "text": "walang minimum na haba ng PIN na hinihingi sa security key"
+  },
+  "passkey.sentences.pinLengthAccepted": {
+    "en": "02246cda94f0a345",
+    "text": "dapat mag-ulat ang security key ng minimum na PIN na hindi bababa sa {{n}} character, sa registration at sa pag-sign in; tinatanggap ang key na hindi nag-uulat"
+  },
+  "passkey.sentences.pinLengthRefused": {
+    "en": "0c6d08464be7bf6b",
+    "text": "dapat mag-ulat ang security key ng minimum na PIN na hindi bababa sa {{n}} character, sa registration at sa pag-sign in; tinatanggihan ang key na hindi nag-uulat"
+  },
+  "passkey.sentences.attestationAtSignIn": {
+    "en": "af2ddecba8c5bae6",
+    "text": "sinusukat ang bawat pag-sign in gamit ang passkey sa mga umiiral na patakaran sa attestation"
+  },
+  "passkey.sentences.attestationAtRegistration": {
+    "en": "9a09dd3ab4e05b1e",
+    "text": "sinusuri ang mga patakaran sa attestation kapag nirerehistro ang passkey"
+  },
+  "passkey.sentences.hints": {
+    "en": "261fe70414f521a7",
+    "text": "mga hint ng \"Create a passkey\": {{passkey}}; ng \"Use a security key\": {{securityKey}}; ng pag-sign in: {{signIn}}"
+  },
+  "passkey.sentences.param.nothing": {
+    "en": "1785cfc3bc6ac773",
+    "text": "wala"
+  },
+  "passkey.sentences.enterpriseSerial": {
+    "en": "983521bbcf6dc708",
+    "text": "nagrerehistro lang ang security key kung may pinagkakatiwalaang enterprise attestation na nagpapangalan ng serial na nasa {{attribute}} ng tao"
+  },
+  "passkey.sentences.noEnterpriseSerial": {
+    "en": "445b66c4d3c95e44",
+    "text": "walang serial ng security key na sinusuri"
+  },
+  "passkey.sentences.promptAttribute": {
+    "en": "32513ed5a676c725",
+    "text": "ipinapakita ng passkey prompt ang {{attribute}} ng tao"
+  },
+  "passkey.sentences.promptAttributeExtras": {
+    "en": "f1fb4090f02acc0b",
+    "text": "ipinapakita ng passkey prompt ang {{attribute}} ng tao, at ang pangalan ng serbisyo kasama ang {{extras}} nito"
+  },
+  "passkey.sentences.promptName": {
+    "en": "22388086c95f252f",
+    "text": "ipinapakita ng passkey prompt ang pangalan ng tao ayon sa alam ng pag-sign in"
+  },
+  "passkey.sentences.promptNameExtras": {
+    "en": "09f9434240ad3432",
+    "text": "ipinapakita ng passkey prompt ang pangalan ng tao ayon sa alam ng pag-sign in, at ang pangalan ng serbisyo kasama ang {{extras}} nito"
+  },
+  "passkey.sentences.chooseOne": {
+    "en": "da1b6a76a9549c9d",
+    "text": "pumipili ng isa sa pag-sign in ang taong may ilang passkey"
+  },
+  "passkey.sentences.aggregate": {
+    "en": "fa8fc40822659fe4",
+    "text": "iniaalok ang mga passkey ng tao bilang iisang pagpipilian sa pag-sign in"
+  },
+  "kinds.locale.label": {
+    "en": "1219a9dcfb9aa19f",
+    "text": "Locale policy"
+  },
+  "kinds.locale.governs": {
+    "en": "2e133e6f61161db9",
+    "text": "ang wikang binabalikan ng page, ang wikang ginagamit sa mail kapag walang pinangalanan ang tao, at ang preferredLanguage na ibinibigay sa bagong tao"
+  },
+  "kinds.locale.appliesTo": {
+    "en": "b98c6ab7f1daa0a4",
+    "text": "ang SUSUNOD na page na iguguhit at ang SUSUNOD na taong gagawin sa realm na ito; ang taong ginawa bago nito ay nagpapanatili ng preferredLanguage niya, o wala"
+  },
+  "kinds.locale.fallsBackTo": {
+    "en": "c56187f00ea11347",
+    "text": "ang profile ng default na realm kung mayroon ito, at ang mga built-in na default kung wala"
+  },
+  "kinds.locale.param.noun": {
+    "en": "373333108748fdd2",
+    "text": "locale policy profile"
+  },
+  "locale.FIELDS.defaultLocale.label": {
+    "en": "07c569d962377b98",
+    "text": "Default na wika at rehiyon"
+  },
+  "locale.FIELDS.defaultLocale.what": {
+    "en": "7b103155bd0c34db",
+    "text": "Isang BCP 47 language tag (RFC 5646), gaya ng en, fr-CA o zh-TW. Iginuguhit ang mga page dito kapag ang request, ang preferredLanguage ng tao, ang language chooser at ang browser ay walang pinangalanang sinasagot ng isang catalog; ipino-format para dito ang mga petsa at numero kahit walang catalog na sumasagot. Isinusulat dito ang mail sa taong walang pinangalanang wika ang entry. Pinapalitan ang setting na mail.defaultLanguage."
+  },
+  "locale.FIELDS.populatePreferredLanguage.label": {
+    "en": "7b464462632db810",
+    "text": "Ibigay ang wikang ito sa bagong tao"
+  },
+  "locale.FIELDS.populatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "NAKA-ON BILANG DEFAULT. Ang person entry na ginawa sa realm na ito nang walang preferredLanguage (RFC 2798 section 2.7) ay binibigyan ng default na wika sa itaas bilang preferredLanguage — ng console, ng management API, ng SCIM, ng federated o self-service na sign-up, o ng bulk load. Nalalapat ang isang named profile kapag ang application na nagdulot ng paggawa ay isa sa mga application nito. Hindi kailanman isinusulat muli ang mga kasalukuyang entry."
+  },
+  "locale.SCHEMA.objectClasses.stsLocalePolicy.what": {
+    "en": "2c86d88e73ffc794",
+    "text": "Ang class ng serbisyong ito para sa locale policy: ang wikang binabalikan ng mga page ng realm at ibinibigay sa bagong tao. Pinangangalanan ayon sa PROFILE (`cn=default`, o isang named profile na pinipili ayon sa application)."
+  },
+  "locale.SCHEMA.attributes.stsLocaleDefault.what": {
+    "en": "7b103155bd0c34db",
+    "text": "Isang BCP 47 language tag (RFC 5646), gaya ng en, fr-CA o zh-TW. Iginuguhit ang mga page dito kapag ang request, ang preferredLanguage ng tao, ang language chooser at ang browser ay walang pinangalanang sinasagot ng isang catalog; ipino-format para dito ang mga petsa at numero kahit walang catalog na sumasagot. Isinusulat dito ang mail sa taong walang pinangalanang wika ang entry. Pinapalitan ang setting na mail.defaultLanguage."
+  },
+  "locale.SCHEMA.attributes.stsLocalePopulatePreferredLanguage.what": {
+    "en": "6685ff4a00c8a43b",
+    "text": "NAKA-ON BILANG DEFAULT. Ang person entry na ginawa sa realm na ito nang walang preferredLanguage (RFC 2798 section 2.7) ay binibigyan ng default na wika sa itaas bilang preferredLanguage — ng console, ng management API, ng SCIM, ng federated o self-service na sign-up, o ng bulk load. Nalalapat ang isang named profile kapag ang application na nagdulot ng paggawa ay isa sa mga application nito. Hindi kailanman isinusulat muli ang mga kasalukuyang entry."
+  },
+  "locale.SCHEMA.attributes.stsLocaleSelectApplication.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "Ang mga application (identifier o client_id) na sakop ng isang named locale policy. Ang isang application ay nasa iisang named profile lang, sa pinakamarami."
+  },
+  "locale.SCHEMA.attributes.description.what": {
+    "en": "93538e6b201100c5",
+    "text": "Para saan ang profile, para sa susunod na tao."
+  },
+  "locale.SCHEMA.personAttributes.stsPreferredLanguagePopulated.what": {
+    "en": "839242d6ed29c817",
+    "text": "Ang preferredLanguage na ibinigay ng locale policy sa taong ito noong ginawa ang entry niya. Habang katumbas pa rin nito ang preferredLanguage, pinili ito ng POLICY at mas mababa ang ranggo nito sa page kaysa sa wika ng browser; kapag may nagtakda ng iba, sa tao na ito. Isinusulat lang ng serbisyong ito."
+  },
+  "locale.SELECTORS.selectApplications.what": {
+    "en": "54e34db4c7e1b556",
+    "text": "Ang mga application (identifier o client_id) na sakop ng isang named locale policy. Ang isang application ay nasa iisang named profile lang, sa pinakamarami."
+  },
+  "locale.sentences.drawnIn": {
+    "en": "def5bb364db8e407",
+    "text": "ang page na ang mambabasa ay walang pinangalanang wikang sinasagot ng catalog ay iginuguhit sa {{tag}}"
+  },
+  "locale.sentences.drawnInUncatalogued": {
+    "en": "86507629ace6469e",
+    "text": "ang page na ang mambabasa ay walang pinangalanang wikang sinasagot ng catalog ay iginuguhit sa {{tag}} — na walang catalog na sumasagot, kaya Ingles ang mga salita nito at ipino-format ang mga petsa at numero nito para sa {{tag}}"
+  },
+  "locale.sentences.populated": {
+    "en": "357f756fb2f30745",
+    "text": "ang taong ginawa nang walang preferredLanguage ay binibigyan ng {{tag}}"
+  },
+  "locale.sentences.notPopulated": {
+    "en": "bacca940fb64dcc5",
+    "text": "ang taong ginawa nang walang preferredLanguage ay hindi binibigyan ng anuman"
+  },
+  "locale.sentences.mail": {
+    "en": "ab1ab635d8ef149d",
+    "text": "ang mail sa taong walang pinangalanang wika ang entry ay isinusulat sa {{tag}}"
+  },
+  "locale.sentences.appliesTo": {
+    "en": "098d842668109368",
+    "text": "nalalapat sa {{list}}"
+  },
+  "locale.sentences.param.noApplication": {
+    "en": "cb8bd4fa96dda063",
+    "text": "walang application"
+  },
+  "messages.saved": {
+    "en": "aff7d1fa6042bebd",
+    "text": "Naka-save ang {{noun}} na \"{{name}}\" sa {{dn}}. Nalalapat ito sa {{appliesTo}}."
+  },
+  "messages.savedNotEnforced": {
+    "en": "0e2ffb6b206220b6",
+    "text": "Naka-save ang {{noun}} na \"{{name}}\" sa {{dn}}. Nalalapat ito sa {{appliesTo}} — at hindi ito ipinapatupad dito hangga't hindi naka-product mode ang realm na ito."
+  },
+  "messages.removed": {
+    "en": "07e9be78127c21d9",
+    "text": "Wala na ang nakatagong profile, at sinusunod ng realm na ito ang {{fallsBackTo}}: {{rules}}."
+  },
+  "messages.nothingStored": {
+    "en": "6e3d9c2876ac0650",
+    "text": "Walang nakatago sa realm na ito, kaya sinusunod na nito ang {{fallsBackTo}}."
+  },
+  "page.enforced": {
+    "en": "f7172b346c62f1ca",
+    "text": "IPINAPATUPAD. Naka-product mode ang realm na ito, kaya ang bawat password na itinatakda rito — sa bawat pinto sa ibaba — ay dapat pumasa sa profile, at hindi puwedeng ulitin ng bagong password ang isang tinatandaan."
+  },
+  "page.notEnforced": {
+    "en": "d48ea6d943af779a",
+    "text": "HINDI IPINAPATUPAD. Naka-development mode ang realm na ito, kung saan walang password na sinusuri sa anumang pinto, kaya ang patakaran tungkol dito ay magiging patakaran tungkol sa credential na walang bumabasa. ITINATALA pa rin ang history, kaya ang realm na inilipat sa product mode ay nagsisimulang may history. Pumapasa sa profile ang GINAWANG password sa parehong mode."
+  },
+  "page.source": {
+    "en": "3f584f451203473d",
+    "text": "ang crypto.randomInt ng node, na may rejection sampling para walang character sa pool na mas malamang kaysa sa iba"
+  },
+  "page.drawsUntil": {
+    "en": "c06275d67751acb9",
+    "text": "pumasa ang password sa profile, kaya pantay ang distribusyon ng bawat ginawang password sa lahat ng password na tinatanggap ng profile"
+  },
+  "page.notDoors": {
+    "en": "8bb9eaa9dc06e164",
+    "text": "Walang dalang password ang SCIM (ina-advertise ng serbisyong ito ang changePassword: false), at hindi kailanman itinatakda ang password sa pag-sign in. Hindi sinusuri ulit ang mga password na itinago BAGO nagbago ang isang patakaran: walang anumang dito ang may hawak ng password sa anyong masusuri, at nalalapat ang patakaran mula sa susunod na pagpapalit."
+  },
+  "page.mailWhy": {
+    "en": "c7aa023cc0d9c95a",
+    "text": "Hindi makapagpadala ng mail ang realm na ito, kaya hindi mao-on ang dalawang email mechanism at hindi kailanman iniaalok. Mag-configure ng transport sa Server configuration > Mail."
+  },
+  "page.doors.0.door": {
+    "en": "8327644f61eb973a",
+    "text": "/admin/users/new at /admin/users (Set password)"
+  },
+  "page.doors.1.door": {
+    "en": "87ea56f7e0e44acd",
+    "text": "POST /admin-api/users/create at /admin-api/users/set-password"
+  },
+  "page.doors.3.door": {
+    "en": "bf7698db188665b7",
+    "text": "/portal/activate (ang unang password na itinatakda ng tao)"
+  },
+  "page.doors.4.door": {
+    "en": "68ddb58dcaaf956f",
+    "text": "isang LDAP add o modify ng userPassword sa 389 o 636"
+  },
+  "page.pools.0": {
+    "en": "66175c2ffcf81f48",
+    "text": "maliliit na titik"
+  },
+  "page.pools.1": {
+    "en": "d4622acef3c349eb",
+    "text": "malalaking titik"
+  },
+  "page.pools.2": {
+    "en": "cc6b6bad31a0ff4d",
+    "text": "mga digit"
+  },
+  "page.pools.3": {
+    "en": "1ea50a8caf608504",
+    "text": "simbolo"
+  }
+}

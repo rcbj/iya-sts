@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 'use strict';
 //
@@ -10,8 +10,16 @@
 // V2 BINARY SERIALISATION (2026-09-12).
 //
 // A route-free library: it registers nothing and requires `common/helpers.js`,
-// `common/error_codes.js`, `gnap/gnap_access.ts` and the npm `macaroon`
-// package, none of which requires anything back.
+// `common/error_codes.js`, `common/crypto.js` and `gnap/gnap_access.ts`, none
+// of which requires anything back.
+//
+// **IT NEVER HOLDS THE `macaroon` LIBRARY (#453, rcbj's decision of
+// 2026-10-05).** `common/crypto.js` is the only module that requires it: it
+// mints, imports, verifies and attenuates (`macaroonMint()`,
+// `macaroonImport()`, `macaroonVerify()`, `macaroonAttenuate()`), decides the
+// root key's minimum size (`MACAROON_MIN_ROOT_KEY_BYTES`) and hands back a
+// macaroon as plain data. What stays here is the caveat grammar, the access
+// model and the v2 serialiser (below) — nothing here computes the HMAC.
 //
 // ---------------------------------------------------------------------------
 // WHAT A MACAROON IS, AND THE ONE THING IT BUYS GNAP.
@@ -54,7 +62,24 @@
 //   gnap:exp<<integer seconds>              valid while now < value
 //   gnap:nbf>=<integer seconds>             optional; valid while now >= value
 //   gnap:aud=<id>[ <id>]*                   optional; single spaces
+//   gnap:grant=<string>                     optional; the grant a right's
+//                                           limits are counted against
+//   gnap:act=<b64url JSON object>           optional; the actor chain
 //   gnap:access=<b64url JSON array>         RFC 9635 section 8 rights
+//
+// `gnap:act=` (#432) is RFC 8693 section 4.1's `act` — `{ sub, act? }`, the
+// resource server that DERIVED this token (RFC 9767 section 4) outermost —
+// as the JWT formats carry it. It is a caveat because a caveat is how a
+// macaroon says anything, and it is an AUTHORITY caveat and never an
+// attenuating one: anybody can append a caveat, so a chain read from the
+// attenuation section would be a chain any holder wrote, naming whoever it
+// liked. Only the authorization server, which holds the root key, writes the
+// section before the boundary, so only there is the chain its statement.
+//
+// `gnap:grant=` (#432 phase 5) names the grant a resource server keeps a
+// right's running totals against (the limits themselves are in each right
+// of `gnap:access=`), an AUTHORITY caveat for `gnap:act=`'s reason: a grant a
+// holder could append would be a fresh budget for the asking.
 //
 // A string value is one or more characters with no control character. An
 // integer is decimal with no sign and no leading zero. `gnap:aud=` and
@@ -95,9 +120,9 @@
 // The library calls a caveat checker for each caveat WHILE it walks the chain
 // and compares the signature only at the end, so a checker that refused an
 // unknown caveat would report "unknown caveat" for a token whose real problem
-// is that it was forged. The checker here accepts every caveat and records it;
-// the grammar runs once the chain has verified. A tampered token is reported
-// as tampered.
+// is that it was forged. The checker `crypto.macaroonVerify()` gives it
+// accepts every caveat; the grammar runs here once the chain has verified.
+// A tampered token is reported as tampered.
 //
 // ---------------------------------------------------------------------------
 // THE SERIALISER IS HERE AND NOT IN THE LIBRARY, AND THAT IS A LIBRARY DEFECT
@@ -124,15 +149,16 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `TokenMacaroon` takes the logger, the error-code table, the access
-// model (`gnap_access`) and the `macaroon` library through its constructor.
+// model (`gnap_access`) and `common/crypto.js` (which holds the `macaroon`
+// library, #453) through its constructor.
 // The module still exports its old names as FACADES forwarding to the instance
 // the composition root builds (#50, R2), for the unconverted modules and the
 // tests that require it. A process that loads this module without the root
 // builds a default instance when the module loads.
 // ---------------------------------------------------------------------------
 
-import macaroonLib = require('macaroon');
 import helpers = require('../common/helpers');
+import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import gnapAccess = require('./gnap_access');
@@ -145,8 +171,15 @@ interface TokenMacaroonDeps {
   errorCodes: { tag(code: string): string };
   // `gnap_access`: the model, its refusals and its presentation checks.
   access: any;
-  // The npm `macaroon` package.
-  macaroon: any;
+  // `common/crypto.js`: the only holder of the npm `macaroon` package.
+  stsCrypto: {
+    macaroonRootKeyUsable(rootKey: unknown): boolean;
+    macaroonMint(rootKey: Uint8Array, identifier: string, location: string,
+                 caveats: string[]): any;
+    macaroonImport(bytes: Uint8Array): any;
+    macaroonVerify(bytes: Uint8Array, rootKey: Uint8Array): boolean;
+    macaroonAttenuate(bytes: Uint8Array, caveats: string[]): any;
+  };
 }
 
 // A caveat, read.
@@ -157,7 +190,9 @@ interface Caveat {
 
 const FORMAT = 'macaroon';
 const IDENTIFIER_PREFIX = 'gnap:v1:';
-const MIN_ROOT_KEY_BYTES = 32;
+// Decided by `common/crypto.js` (#453); read here for the refusals' text and
+// `describe()`.
+const MIN_ROOT_KEY_BYTES = stsCrypto.MACAROON_MIN_ROOT_KEY_BYTES;
 
 const INTEGER = '(0|[1-9][0-9]{0,15})';
 const STRING = '([^\\x00-\\x1f\\x7f]+)';
@@ -173,6 +208,8 @@ const CAVEATS = [
   { kind: 'exp', re: new RegExp('^gnap:exp<' + INTEGER + '$') },
   { kind: 'nbf', re: new RegExp('^gnap:nbf>=' + INTEGER + '$') },
   { kind: 'aud', re: /^gnap:aud=([^\s]+(?: [^\s]+)*)$/ },
+  { kind: 'grant', re: new RegExp('^gnap:grant=' + STRING + '$') },
+  { kind: 'act', re: /^gnap:act=([A-Za-z0-9_-]+)$/ },
   { kind: 'access', re: /^gnap:access=([A-Za-z0-9_-]+)$/ }
 ];
 
@@ -181,7 +218,8 @@ const ATTENUATING = ['exp', 'nbf', 'aud', 'access'];
 // Exactly once in the authority section.
 const REQUIRED_ONCE = ['iss', 'iat', 'client', 'exp'];
 // At most once in the authority section.
-const OPTIONAL_ONCE = ['sub', 'nbf', 'aud', 'flags', 'label'];
+const OPTIONAL_ONCE = ['sub', 'nbf', 'aud', 'flags', 'label', 'grant',
+                       'act'];
 
 const VALUE_RE = /^[A-Za-z0-9_-]+$/;
 
@@ -235,7 +273,9 @@ class TokenMacaroon {
   /**
    * Encodes a macaroon in libmacaroons' v2 binary serialisation.
    *
-   * @param mac - the macaroon
+   * @param mac - the macaroon: `{ location, identifier, caveats, signature }`,
+   *   as `common/crypto.js` hands one back (a library macaroon's getters read
+   *   the same)
    * @returns the serialised bytes
    */
   encodeBinaryV2(mac: any): Buffer {
@@ -347,6 +387,24 @@ class TokenMacaroon {
         }
       } else if (kind === 'flags' || kind === 'aud') {
         value = value.split(kind === 'flags' ? ',' : ' ');
+      } else if (kind === 'act') {
+        const bytes = this.b64uBytes(value);
+        let parsed;
+        try {
+          parsed = bytes ? JSON.parse(bytes.toString('utf8')) : null;
+        } catch (e) {
+          log.debug("Caught in TokenMacaroon.parseCaveat(): " +
+                    ((e && e.message) || e));
+          // Not JSON; null is the refusal, and the caller names the caveat.
+          parsed = null;
+        }
+        const chain = parsed === null ? null : access.actorChain(parsed);
+        if (!chain || !chain.length) {
+          log.debug("Leaving TokenMacaroon.parseCaveat(). The actor chain " +
+                    "is not a chain.");
+          return null;
+        }
+        value = access.nestActors(chain);
       } else if (kind === 'access') {
         const bytes = this.b64uBytes(value);
         let parsed;
@@ -410,6 +468,12 @@ class TokenMacaroon {
     if (model.aud.length) {
       out.push('gnap:aud=' + model.aud.join(' '));
     }
+    if (model.grant) {
+      out.push('gnap:grant=' + model.grant);
+    }
+    if (model.act) {
+      out.push('gnap:act=' + this.b64uJson(model.act));
+    }
     out.push('gnap:access=' + this.b64uJson(model.access));
     // The caveats must READ BACK as the model that was meant — through the
     // same reader verify() uses. Merely parsing is not enough: an audience of
@@ -432,10 +496,10 @@ class TokenMacaroon {
   }
 
   private rootKeyOf(keys: any): Uint8Array | null {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering TokenMacaroon.rootKeyOf().");
     const key = keys && keys.rootKey;
-    if (!(key instanceof Uint8Array) || key.length < MIN_ROOT_KEY_BYTES) {
+    if (!stsCrypto.macaroonRootKeyUsable(key)) {
       log.debug("Leaving TokenMacaroon.rootKeyOf().");
       return null;
     }
@@ -454,7 +518,7 @@ class TokenMacaroon {
    * @returns `{ value, format, jti }`, or a refusal
    */
   async mint(model: any, keys: any): Promise<any> {
-    const { log, errorCodes, access, macaroon } = this.deps;
+    const { log, errorCodes, access, stsCrypto } = this.deps;
     log.debug("Entering TokenMacaroon.mint().");
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -476,16 +540,10 @@ class TokenMacaroon {
     }
     let value;
     try {
-      const mac = macaroon.newMacaroon({
-        identifier: IDENTIFIER_PREFIX + valid.model.jti,
-        location: typeof keys.location === 'string' ? keys.location :
-                  valid.model.iss,
-        rootKey: rootKey,
-        version: 2
-      });
-      written.caveats.forEach(function (c) {
-        mac.addFirstPartyCaveat(c);
-      });
+      const mac = stsCrypto.macaroonMint(
+          rootKey, IDENTIFIER_PREFIX + valid.model.jti,
+          typeof keys.location === 'string' ? keys.location : valid.model.iss,
+          written.caveats);
       value = this.encodeBinaryV2(mac).toString('base64url');
     } catch (e) {
       log.debug("Caught in TokenMacaroon.mint(): " +
@@ -501,9 +559,10 @@ class TokenMacaroon {
     return { value: value, format: FORMAT, jti: valid.model.jti };
   }
 
-  // Import without verifying; shared by verify() and attenuate().
+  // Import without verifying; shared by verify() and attenuate(). The bytes
+  // go back with the macaroon, for `crypto.js` to verify or attenuate.
   private importValue(value: unknown): any {
-    const { log, macaroon } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering TokenMacaroon.importValue().");
     const bytes = this.b64uBytes(value);
     if (!bytes) {
@@ -513,7 +572,7 @@ class TokenMacaroon {
     }
     let mac;
     try {
-      mac = macaroon.importMacaroon(new Uint8Array(bytes));
+      mac = stsCrypto.macaroonImport(new Uint8Array(bytes));
     } catch (e) {
       log.debug("Caught in TokenMacaroon.importValue(): " +
                 ((e && e.message) || e));
@@ -533,7 +592,7 @@ class TokenMacaroon {
                           'macaroon this token format does not carry.');
     }
     log.debug("Leaving TokenMacaroon.importValue(). Imported.");
-    return { ok: true, mac: mac };
+    return { ok: true, mac: mac, bytes: new Uint8Array(bytes) };
   }
 
   private decodeUtf8(bytes: Uint8Array): string | null {
@@ -628,7 +687,9 @@ class TokenMacaroon {
       iat: authority.iat,
       nbf: authority.nbf === undefined ? null : authority.nbf,
       exp: authority.exp,
-      label: authority.label === undefined ? null : authority.label
+      label: authority.label === undefined ? null : authority.label,
+      act: authority.act === undefined ? null : authority.act,
+      grant: authority.grant === undefined ? null : authority.grant
     };
     const valid = access.validateModel(model);
     if (!valid.ok) {
@@ -664,7 +725,7 @@ class TokenMacaroon {
    * @returns `{ ok: true, model, attenuated }`, or a refusal
    */
   async verify(value: unknown, keys: any, context?: any): Promise<any> {
-    const { log, access } = this.deps;
+    const { log, access, stsCrypto } = this.deps;
     log.debug("Entering TokenMacaroon.verify().");
     const rootKey = this.rootKeyOf(keys);
     if (!rootKey) {
@@ -689,17 +750,11 @@ class TokenMacaroon {
                           IDENTIFIER_PREFIX + '<jti>", so this is not a ' +
                           'GNAP macaroon this service minted.');
     }
-    try {
-      // Accept every caveat while the chain is walked: the grammar runs after
-      // the signature is known to be good (see the header).
-      mac.verify(rootKey, function () {
-        return null;
-      }, []);
-    } catch (e) {
-      log.debug("Caught in TokenMacaroon.verify(): " +
-                ((e && e.message) || e));
-      log.debug("Leaving TokenMacaroon.verify(). HMAC chain failed: " +
-                e.message);
+    // Every caveat is accepted while the chain is walked: the grammar runs
+    // after the signature is known to be good (see the header). Why the
+    // chain failed is in `crypto.js`'s debug log.
+    if (!stsCrypto.macaroonVerify(imported.bytes, rootKey)) {
+      log.debug("Leaving TokenMacaroon.verify(). HMAC chain failed.");
       return this.refusal('STS-GNAP-0314', 'the macaroon\'s HMAC chain ' +
                           'does not verify under this authorization ' +
                           'server\'s root key — it was altered, a caveat ' +
@@ -745,7 +800,7 @@ class TokenMacaroon {
    * @returns `{ ok: true, value, format }`, or a refusal
    */
   async attenuate(value: unknown, caveats: any[]): Promise<any> {
-    const { log, errorCodes } = this.deps;
+    const { log, errorCodes, stsCrypto } = this.deps;
     log.debug("Entering TokenMacaroon.attenuate().");
     if (!Array.isArray(caveats) || caveats.length === 0) {
       log.debug("Leaving TokenMacaroon.attenuate(). No caveats.");
@@ -786,10 +841,7 @@ class TokenMacaroon {
     }
     let out;
     try {
-      const mac = imported.mac.clone();
-      texts.forEach(function (t) {
-        mac.addFirstPartyCaveat(t);
-      });
+      const mac = stsCrypto.macaroonAttenuate(imported.bytes, texts);
       out = this.encodeBinaryV2(mac).toString('base64url');
     } catch (e) {
       log.debug("Caught in TokenMacaroon.attenuate(): " +
@@ -829,7 +881,7 @@ class TokenMacaroon {
       ],
       carries: ['jti', 'iss', 'sub', 'aud', 'instanceId', 'access', 'flags',
                 'cnf',
-                'iat', 'nbf', 'exp', 'label'],
+                'iat', 'nbf', 'exp', 'label', 'act', 'grant'],
       cannot: []
     };
     log.debug("Leaving TokenMacaroon.describe().");
@@ -851,7 +903,7 @@ class TokenMacaroon {
       log: helpers.log,
       errorCodes: errorCodes,
       access: gnapAccess,
-      macaroon: macaroonLib
+      stsCrypto: stsCrypto
     };
   }
 }

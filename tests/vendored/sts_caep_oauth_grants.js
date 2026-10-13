@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -21,21 +21,26 @@
 //      the same grant;
 //   c. /admin-api/tokens revoking everything a person holds sends
 //      session-revoked `admin` for the grant still live;
-//   d. a CIBA approval on /portal/ciba is a session-presented naming CIBA,
+//   d. a CIBA approval on /portal/ciba (its operation since #568, the portal
+//      signed in by single sign-on) is a session-presented naming CIBA,
 //      and its tokens are issued ON the approving sign-on session — listed
 //      under it, and their refresh token inactive once that session ends;
-//   e. in product mode, a pre-authorized (cross-device) OpenID4VCI offer
-//      made for the signed-in person is a session-presented naming
-//      OpenID4VCI (development mints that offer for a fixed test person and
-//      reads no session, so there is nothing to present).
+//   e. a pre-authorized (cross-device) OpenID4VCI offer the person makes
+//      for their own wallet on /portal/wallet (`POST
+//      /account-api/credentials/offers`, #589) is a session-presented naming
+//      OpenID4VCI, in both modes — it is made on the sign-on session the
+//      portal's token was issued on.
 //
 // OWNED HERE (local: true): this repository's own transmitter.
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -138,11 +143,49 @@ async function ok(url, payload, what) {
   return r.body;
 }
 
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
+}
+
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // One browser, with a cookie jar.
 function browser() {
   log.debug("Entering browser().");
   const jar = {};
   const self = {
+    jar: jar,
+    // The cookies held, as a Cookie header: the sign-on session the static
+    // portal's sign-in is answered from (#568).
+    cookieHeader() {
+      log.debug("Entering cookieHeader().");
+      log.debug("Leaving cookieHeader().");
+      return Object.keys(jar).map(function (k) {
+        return k + "=" + jar[k];
+      }).join("; ");
+    },
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = { "User-Agent": AGENT };
@@ -184,42 +227,33 @@ function browser() {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
-}
-
 // Follows redirects from `path`, signing in with the password where the
 // sign-in screen appears, until a page answers 200 or a redirect leaves for
 // `stopAt`.
 async function follow(b, path, stopAt) {
   log.debug("Entering follow(). " + path);
+  let at = path;
   let r = await b.go("GET", path);
   for (let n = 0; n < 16; n += 1) {
     if (stopAt && r.location.indexOf(stopAt) === 0) {
       break;
     }
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = ALICE;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
+    // THE SIGN-IN SCREEN'S SHELL (#571): signed in over `/authn-api`
+    // through the one helper, its answer read as the form's POST was.
+    if (r.status === 200 && /\/authn\/signin\.js/.test(r.text)) {
+      const answer = await authnSignin.submit(base, at,
+        { action: "login", username: ALICE, password: PASSWORD },
+        { cookie: b.cookieHeader(), headers: { "User-Agent": AGENT } });
+      keepCookies(b, answer);
+      r = await authnSignin.asFormAnswer(answer, function (m, u) {
+        return b.go(m, u);
+      });
       continue;
     }
     if (r.status !== 302 && r.status !== 303) {
       break;
     }
+    at = r.location;
     r = await b.go("GET", r.location);
   }
   log.debug("Leaving follow(). " + r.status);
@@ -505,14 +539,19 @@ async function test() {
   check("the backchannel request is acknowledged", function () {
     assert.strictEqual(asked.status, 200, asked.raw.slice(0, 300));
   });
-  const page = await follow(b, R + "/portal/ciba");
-  const csrf = (/name="csrf_token" value="([^"]+)"/.exec(page.text) ||
-                [])[1] || "";
+  // THE PORTAL IS A STATIC APPLICATION SINCE #568: the person's browser
+  // signs in to it through single sign-on — the sign-on session `b` holds
+  // answers the portal's code flow with no screen — and the Approve button
+  // is `POST /account-api/ciba`, deciding on the sign-on session the
+  // portal's token was issued on, which is `b`'s.
+  const portalClient = await portal.signInToThePortal(root + R, ALICE, null,
+    { cookie: b.cookieHeader() });
   mark = SEEN.length;
-  const approved = await b.go("POST", R + "/portal/ciba", form({
-    action: "approve", id: reqId, csrf_token: csrf }));
+  const approved = await portalClient.act("/portal/ciba",
+                                          { action: "approve", id: reqId });
   check("the person approves on /portal/ciba", function () {
-    assert.strictEqual(approved.status, 303, approved.text.slice(0, 300));
+    assert.ok(approved.status === 200 && approved.json && approved.json.ok,
+              approved.status + " " + approved.text.slice(0, 300));
   });
   hits = await waitFor(token, streamId, "the CIBA presentation",
                        [presentedVia("CIBA")], mark);
@@ -545,23 +584,27 @@ async function test() {
     assert.ok(/ciba/i.test(under.raw), under.raw.slice(0, 1200));
   });
 
-  if (product) {
-    log.info("=== e. a pre-authorized OpenID4VCI offer (product) ===");
-    mark = SEEN.length;
-    const offered = await b.go("GET", R + "/issuer/offer?mode=cross-device");
-    check("the cross-device offer is made for the signed-in person",
-          function () {
-      assert.strictEqual(offered.status, 200, offered.text.slice(0, 300));
-    });
-    hits = await waitFor(token, streamId, "the offer's presentation",
-                         [presentedVia("OpenID4VCI")], mark);
-    check("the offer is session-presented, naming OpenID4VCI", function () {
-      assert.ok(hits[0], JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
-    });
-  } else {
-    log.info("=== e. skipped: development mints the pre-authorized offer " +
-             "for a fixed test person and reads no session ===");
-  }
+  // THE PRE-AUTHORIZED OFFER IS THE PORTAL'S SINCE #589, in both modes: a
+  // person asks `POST /account-api/credentials/offers` for a credential
+  // about themselves, and the offer is made on the sign-on session the
+  // portal's token was issued on — `b`'s — which CAEP reports as presented,
+  // naming OpenID4VCI. (`/issuer/offer` made it until then, in product only:
+  // development's mints for a fixed test person and reads no session.)
+  log.info("=== e. a pre-authorized OpenID4VCI offer, on /portal/wallet ===");
+  mark = SEEN.length;
+  const offered = await portalClient.act("/portal/wallet",
+    { configuration: "IdentityCredential", mode: "cross-device" });
+  check("the cross-device offer is made for the signed-in person",
+        function () {
+    assert.ok(offered.status === 200 && offered.json && offered.json.ok &&
+              offered.json.offer && offered.json.offer.txCode,
+              offered.status + " " + offered.text.slice(0, 300));
+  });
+  hits = await waitFor(token, streamId, "the offer's presentation",
+                       [presentedVia("OpenID4VCI")], mark);
+  check("the offer is session-presented, naming OpenID4VCI", function () {
+    assert.ok(hits[0], JSON.stringify(SEEN.slice(mark)).slice(0, 1500));
+  });
 
   log.info("=== d, continued. the approving session ends ===");
   await ok(api + "/sessions/revoke", { key: rows[0].key,

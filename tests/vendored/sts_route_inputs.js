@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 
 "use strict";
 //
@@ -421,7 +421,12 @@ async function test() {
                                    one.body ? one.body.data : null,
                                    one.body ? one.body.type : null);
       probes = probes + 1;
-      if (answer.status >= 500 || answer.status === -1) {
+      // A 501 IS A DECISION, NOT A THROW: it is what a surface switched off
+      // in this realm answers on purpose — scim, ssf and xacml.enabled, and
+      // vcApi.enabled since #598 — and nothing here produces it by accident
+      // (an uncaught throw is express's 500).
+      if ((answer.status >= 500 && answer.status !== 501) ||
+          answer.status === -1) {
         failures.push(one.route.method + " " + one.route.path + " <- " +
                       one.label + " => " +
                       (answer.status === -1 ? "TIMED OUT" : answer.status));
@@ -446,8 +451,9 @@ async function test() {
   // 3. THE ONE ASSERTION.
   // -----------------------------------------------------------------------
   assert.deepStrictEqual(failures, [],
-    "these answered 5xx or timed out. A 400, a 403, a 404 or a redirect are " +
-    "all fine — they mean a handler looked at the input and decided. A 5xx " +
+    "these answered 5xx or timed out. A 400, a 403, a 404, a redirect or " +
+    "a 501 from a surface switched off are all fine — they mean a handler " +
+    "looked at the input and decided. Any other 5xx " +
     "is an uncaught throw, and a timeout on this service means the event " +
     "loop stopped, which takes the KDC, the directory and every TLS and " +
     "SPIFFE socket with it:\n  " + failures.join("\n  "));
