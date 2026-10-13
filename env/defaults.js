@@ -467,6 +467,7 @@ var config = {
     stepUpAcrValues: "",                           // Step-up: acr values this service's resource server requires
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
     errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
+    keyBinding: true,                              // OpenID Connect Key Binding
     sessionManagement: false,                      // OpenID Connect Session Management
     frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
     frontchannelLogoutWaitS: 3,                    // Front-channel logout: seconds before returning

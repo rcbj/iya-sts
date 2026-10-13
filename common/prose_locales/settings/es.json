@@ -3687,6 +3687,14 @@
     "en": "37d7c47a629e2f87",
     "text": "La página que se muestra en lugar de redirigir un error de autorización al cliente, cuando la persona no ha iniciado sesión aquí (RFC 9700 sección 4.11.2), tiene un enlace para continuar. 0 (el predeterminado) lo deja así: decide la persona. Por encima de 0, la página TAMBIÉN continúa por sí sola tras esta cantidad de segundos (un meta refresh, sin script) y lo indica. **Esto debilita la protección para la que existe la página**: una redirección temporizada sigue siendo una redirección automática de un navegador que no se ha autenticado aquí, lo que según advierte RFC 9700 sección 4.11.2 permite usar este servidor como salto para enviar a alguien a la dirección de un cliente sin su consentimiento. La dirección ya se ha comparado con el registro del cliente, lo que acota el riesgo. Un error form_post conserva su botón: no se puede hacer un POST sin script. (#317)"
   },
+  "oauth2.keyBinding|label": {
+    "en": "a7dcb6104de02166",
+    "text": "Vinculación de claves de OpenID Connect"
+  },
+  "oauth2.keyBinding|description": {
+    "en": "2394ee67a689920d",
+    "text": "Aplica OpenID Connect Key Binding 1.0 (#150). Activado: el documento de descubrimiento incluye el ámbito `bound_key`, un cliente que no declara ámbitos puede pedirlo, y una solicitud que lo pida debe indicar `dpop_jkt` y usar el flujo de código (si no, se rechaza, STS-OAUTH-0704 y 0705); el ID Token nombra entonces la clave DPoP (`cnf.jwk`, `typ: dpop+id_token`), la solicitud de token debe probarla con `c_s256`, y cada actualización debe venir de la misma clave. **Desactivado, no existe, y el servicio es solo OpenID Connect Core**: `bound_key` no se anuncia, una solicitud que lo incluya no se rechaza — el ámbito se ignora y no se concede, como Core trata un ámbito sobre el que un OP no actúa — y ningún ID Token queda vinculado. Desactívelo donde las partes de confianza pidan todos los ámbitos anunciados y no sepan nada de Key Binding (#315). Una concesión ya vinculada antes de desactivarlo conserva la comprobación de su clave al actualizarse."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"

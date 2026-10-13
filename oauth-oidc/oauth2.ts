@@ -1993,9 +1993,10 @@ class OAuth2Server {
       scopes_supported: ['openid', 'profile', 'email', 'address', 'phone',
                          'offline_access',
                          // Native SSO section 5 (#130).
-                         'device_sso',
-                         // OpenID Connect Key Binding (#150).
-                         'bound_key'].concat(
+                         'device_sso'].concat(
+        // OpenID Connect Key Binding (#150), unless `oauth2.keyBinding` is
+        // off (#315).
+        self.keyBindingOn() ? ['bound_key'] : []).concat(
         config.value('scim.enabled') !== false
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
@@ -4483,7 +4484,8 @@ class OAuth2Server {
       // because RFC 9449 section 5 leaves a confidential client's refresh
       // token unbound (#176), and a bound ID Token must stay with ONE key.
       kb_jkt: opts.kb_jkt ? String(opts.kb_jkt) :
-        (this.deps.hasScope(opts.scope, 'bound_key') && opts.dpopJwk
+        (this.keyBindingOn() &&
+         this.deps.hasScope(opts.scope, 'bound_key') && opts.dpopJwk
           ? this.deps.stsCrypto.jwkThumbprint(opts.dpopJwk) : undefined)
     };
     if (opts.request) {
@@ -4956,8 +4958,10 @@ class OAuth2Server {
     // OPENID CONNECT KEY BINDING SECTION 4 (#150): with `bound_key` granted
     // and a DPoP key proved, the ID Token names that key in `cnf.jwk`, and
     // its JOSE header says so (`typ: dpop+id_token`, below).
-    const boundKey = String(opts.scope || '').split(/\s+/)
-      .indexOf('bound_key') >= 0 && opts.dpopJwk ? opts.dpopJwk : null;
+    // Not with `oauth2.keyBinding` off (#315).
+    const boundKey = this.keyBindingOn() && String(opts.scope || '')
+      .split(/\s+/).indexOf('bound_key') >= 0 && opts.dpopJwk
+      ? opts.dpopJwk : null;
     if (boundKey) {
       payload.cnf = { jwk: boundKey };
     }
@@ -5385,6 +5389,18 @@ class OAuth2Server {
       { grant: opts.grant, defaults: self.credentialScopes() });
     if (allowedScope !== String(opts.scope == null ? '' : opts.scope)) {
       opts.scope = allowedScope;
+    }
+    // `bound_key` IS NOT GRANTED WHILE KEY BINDING IS OFF (#315), whatever
+    // the grant. The authorization endpoint drops it from the request
+    // (vetAuthorizationRequest()); this is the backstop for every other door
+    // — the device flow, CIBA, a token exchange, and a refresh of a grant
+    // made while it was on — so the `scope` member never reports a binding
+    // nothing performed. A grant already bound keeps its key check on
+    // refresh: that reads `kb_jkt`, not the scope.
+    if (!self.keyBindingOn() && hasScope(opts.scope, 'bound_key')) {
+      opts.scope = String(opts.scope).split(/\s+/).filter(function (one) {
+        return one && one !== 'bound_key';
+      }).join(' ');
     }
     // THE EMBEDDED DEBUGGER'S PERMISSION IS A CONSOLE ADMINISTRATOR'S AND
     // NOBODY ELSE'S (2026-09-13). Here, the one function every grant mints
@@ -6130,6 +6146,22 @@ class OAuth2Server {
     return { claims: out, ignored: ignored };
   }
 
+  // WHETHER OPENID CONNECT KEY BINDING IS PERFORMED in the ambient realm
+  // (#315): `oauth2.keyBinding`, on by default. Every place that advertises,
+  // refuses for, binds to or checks `bound_key` asks this.
+  /**
+   * Whether OpenID Connect Key Binding is performed (`oauth2.keyBinding`).
+   *
+   * @returns true unless the setting is off
+   */
+  keyBindingOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering OAuth2Server.keyBindingOn().");
+    const on = config.value('oauth2.keyBinding') !== false;
+    log.debug("Leaving OAuth2Server.keyBindingOn(). " + on);
+    return on;
+  }
+
   // The names one member of a parsed claims request asks for, in the order the
   // client wrote them. A helper rather than an inline Object.keys() because
   // three call sites need it and one of them is the console.
@@ -6149,7 +6181,8 @@ class OAuth2Server {
   boundKeyProofRefusal(scope: Json, code: string, proof: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.boundKeyProofRefusal().");
-    if (String(scope || '').split(/\s+/).indexOf('bound_key') < 0) {
+    if (!this.keyBindingOn() ||
+        String(scope || '').split(/\s+/).indexOf('bound_key') < 0) {
       log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). Not bound.");
       return null;
     }
@@ -10279,6 +10312,21 @@ class OAuth2Server {
     // ID Token bound to the client's DPoP key, which the authorization
     // request must name up front (`dpop_jkt`), and which only the code flow
     // can carry — a front-channel ID Token has no proof to bind to.
+    //
+    // WITH `oauth2.keyBinding` OFF (#315) THE SCOPE IS IGNORED, NOT REFUSED.
+    // It was advertised and refused, so an OpenID Connect Core relying party
+    // that asks for every advertised scope (the idptools.com debugger, on
+    // testidp) could not sign in at all. Off, it is neither advertised nor
+    // granted: it is dropped from the request here, before anything is
+    // issued from `q`, as Core treats a scope the OP does not act on.
+    if (!self.keyBindingOn() &&
+        String(q.scope || '').split(/\s+/).indexOf('bound_key') >= 0) {
+      q.scope = String(q.scope).split(/\s+/).filter(function (one) {
+        return one && one !== 'bound_key';
+      }).join(' ');
+      log.debug("OAuth2Server.vetAuthorizationRequest(): bound_key ignored, " +
+                "oauth2.keyBinding is off.");
+    }
     if (String(q.scope || '').split(/\s+/).indexOf('bound_key') >= 0) {
       if (!q.dpop_jkt) {
         log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). bound_key " +
@@ -21030,6 +21078,7 @@ export = {
   // Key Binding's two checks (#150), for tests/device_key_binding.js.
   boundKeyProofRefusal: slot.forward('boundKeyProofRefusal'),
   sendRedirectInterstitial: slot.forward('sendRedirectInterstitial'),
+  keyBindingOn: slot.forward('keyBindingOn'),
   boundIdTokenRefusal: slot.forward('boundIdTokenRefusal'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),
