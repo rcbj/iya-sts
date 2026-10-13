@@ -436,7 +436,7 @@ var rogue = null;     // verified, and in no group
 // DOOR**, which is the property section 0 below asserts in both directions. A
 // single identity put in both groups would have been fewer lines and would
 // have made that assertion unwritable — and the whole reason there are two
-// roles is that admitting a caller to the demonstration surface must not
+// roles is that admitting a caller to the XACML surface proper must not
 // silently admit it to the endpoints publishing the documents this service
 // enforces its own access with.
 // ---------------------------------------------------------------------------
@@ -741,7 +741,7 @@ async function theSurfaceDescribesItself() {
     assert.notStrictEqual(doc.body.access.xacmlUserGroup,
                           doc.body.access.remotePepGroup,
       "THE TWO GROUPS MUST NOT BE THE SAME ONE. If they ever are, admitting " +
-      "a caller to the demonstration surface silently admits it to the " +
+      "a caller to the XACML surface proper silently admits it to the " +
       "endpoints publishing the documents this service enforces its own " +
       "access with. Both are \"" + doc.body.access.xacmlUserGroup + "\".");
   });

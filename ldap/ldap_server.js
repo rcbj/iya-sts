@@ -3985,7 +3985,7 @@ function seed() {
   // require `XACML_USER`; `/xacml/pep/*` requires
   // `REMOTE_PEPS`, and those endpoints hand out the documents this service
   // enforces its own access with. One group granting both would make admitting
-  // a caller to the demonstration surface silently admit it to those, which is
+  // a caller to the XACML surface proper silently admit it to those, which is
   // exactly the case `common/roles.js` keeps the two roles apart to prevent —
   // and it is the case somebody tidying this file will be tempted to collapse.
   //

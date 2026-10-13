@@ -6,40 +6,36 @@
 // File: demo_endpoints.js
 //
 // ===========================================================================
-// A DEMONSTRATION IS SERVED AND LISTED ONLY IN DEVELOPMENT (#585, rcbj
+// THE RUNTIME SHIPS NO DEMONSTRATION ENDPOINT (#591, #599 — rcbj
 // 2026-10-12).
 //
-// Every demonstration, mock and test-control endpoint carries
-// `common/app.js`'s mark — `demoOnly`, or `processDemoOnly` for a door to
-// something the whole process shares — and in a product realm it answers
-// EXACTLY as a path nothing is registered on: Express's own `Cannot GET …`
-// 404. The lists read the same mark off the router. So:
+// #585 made every demonstration, mock and test-control endpoint
+// development-only, behind a mark on its route (`common/app.js`), a
+// predicate in `common/mode.js` and a flag on its `sts_metadata.ts` row.
+// #591 then moved each one out of the runtime — into the test peer
+// (`tests/peer/`), the development companion (`companion/`), the remote PEP,
+// a console page, a setting or an `/admin-api` operation — or deleted it,
+// and #599 removed the mechanism with nothing left to mark. This file is the
+// GUARD that keeps it so:
 //
-//   A. The mark and the description agree: every marked route's
-//      `sts_metadata.ts` row is flagged `demo`, every flagged row's route is
-//      marked, and the inventory below is what is marked — a new
-//      demonstration, or one that lost its mark, fails here by name.
-//   B. In a PRODUCT realm every marked path, by every method it has,
-//      answers Express's own 404; in the DEVELOPMENT default realm none
-//      does (each reaches its handler).
-//   C. With the PROCESS in product, a development realm keeps `demoOnly`'s
-//      routes (no route carries `processDemoOnly` since #597, which deleted
-//      the truststore's two open doors).
-//   D. The lists in a product realm: `/admin/sts-metadata` has no demo row,
-//      no drift and no mismatch; the Protocols pages list no demonstration;
-//      the hosted-applications catalogue offers no demo prefix or
-//      application; and the four checks hold in development too.
+//   A. The mechanism is gone: the app carries no mark and no reader of one,
+//      the mode has no demonstration predicate, no `demo-endpoints`
+//      requirement and no refusal sentence for one.
+//   B. No route carries a demonstration mark of any shape (a handler with
+//      `stsDemo`, or one named after the old marks), and no path a
+//      demonstration was registered on is registered again.
+//   C. `/admin/sts-metadata` describes no demonstration: no `ENDPOINTS` row
+//      carries `demo`, no card a `whatWithoutDemos`, the report no
+//      demonstration member, and the drift checks hold.
+//   D. The hosted-applications catalogue holds no demonstration
+//      application or prefix.
+//   E. No service source names one of the mechanism's symbols, so a
+//      demonstration route cannot come back by copying a pattern from an old
+//      branch without this failing by name.
 //
-// **THE INVENTORY IS EMPTY SINCE #595**, which took the last
-// demonstrations — the Kerberos and SPNEGO ones — out of the runtime and into
-// the development companion. So A holds that nothing is marked, and the
-// mechanism the mark still is (until #591's P8 removes it) is exercised in
-// B, C and D on ONE PROBE ROUTE this file registers on the app after A's
-// checks, `/demo-endpoints-probe`, marked `demoOnly` and described nowhere.
-//
-// IN A CHILD, `protocol_endpoints.js`'s arrangement: it loads the whole
-// stack, and one loaded into the runner would be shared with every later
-// file.
+// A, B, C and D IN A CHILD, `protocol_endpoints.js`'s arrangement: they load
+// the whole stack, and one loaded into the runner would be shared with every
+// later file. E reads files and runs here.
 // ===========================================================================
 
 const path = require('path');
@@ -51,6 +47,21 @@ const log = require('bunyan').createLogger({ name: 'demo_endpoints',
 
 const ROOT = path.join(__dirname, '..');
 
+// THE MECHANISM'S SYMBOLS (#585), every one removed by #599. A source that
+// names one is either a demonstration coming back or a reader of a mark that
+// no longer exists.
+const SYMBOLS = ['demoOnly', 'processDemoOnly', 'demoMarkOf',
+                 'demoPathHidden', 'servesDemoEndpoints', 'servesRealmDemos',
+                 'servesProcessDemos', 'demoPrefixes', 'whatWithoutDemos',
+                 'withoutDemos', 'demoMarkMismatches', 'stsDemo'];
+
+// What E does not read: not the service's source (tests, tooling, the
+// companion and the test peer, which are not in the runtime), a copy this
+// repository may not edit, or a build output.
+const SKIP_DIRECTORIES = ['node_modules', 'node-ldapjs', 'tests', 'docs',
+                          'companion', 'embedded', 'vendored', 'rust',
+                          'deploy', 'apidocs', 'coverage', '.git', 'types'];
+
 // ---------------------------------------------------------------------------
 // The child. Everything it needs is required inside, so the function can be
 // shipped as source with `node -e`; it has no logger, so its reasons travel
@@ -60,315 +71,168 @@ function childMain() {
   /* eslint-disable no-console */
   const ROOT_DIR = process.env.DE_ROOT;
   const OUT = process.env.DE_OUT;
-  const http = require('http');
   const findings = [];
   function note(ok, what, detail) {
     findings.push({ ok: !!ok, what: what,
                     detail: detail === undefined ? '' : String(detail) });
   }
-  // THE INVENTORY (#585's table, and what its build found beside it): every
-  // path a demonstration mark is on, with which mark.
-  // The two that carried `processDemoOnly`, `POST /tls/trust` and `POST
-  // /tls/trust/clear`, were deleted by #597; the mark stays for the
-  // process's sockets (the protected Kerberos service's), which no route
-  // carries.
-  const PROCESS_MARKED = [];
-  const REALM_MARKED = [
-    // The SAML and WS-Federation mock relying parties were deleted (#592),
-    // and the commands mock relying party moved to the test peer and
-    // /xacml/protected to the remote PEP (#596). The OpenID4VC
-    // demonstration (its pages, `/issuer/demo.js`, `/vc-demo-api`,
-    // `/oid4vp/result/:state`), the issuer's two readbacks and
-    // `/did/generate` left with #594. `/spnego`, `/spnego/protected`,
-    // `/spnego/pages.js` (#583's script) and `/krb5/service` left for the
-    // development companion with #595, which deleted `/krb5/principals`.
-    // The W3C VC API left this list with #598: a product surface, off by
-    // default behind vcApi.enabled; its status-list publish hook is
-    // `POST /admin-api/vc-status/publish` now.
-    // `/dpop/nonce-mode` (a setting now), `/devices/test/compliance` (the
-    // MDM feed is the door), `/tls`, `/tls/forwarded` and `/tls/pages.js`
-    // (Monitoring → TLS connection) left with #597.
+  // EVERY PATH A DEMONSTRATION WAS REGISTERED ON (#585's inventory, and the
+  // scripts the static demonstration pages carried), with where each went.
+  // None may be registered again: a path is the one thing a returning
+  // demonstration cannot change and still be the same demonstration.
+  const RETIRED = [
+    // #592: the SAML and WS-Federation relying parties (the test peer's).
+    '/wsfed/rp', '/saml2/sp', '/saml11/rp',
+    // #593: the step-up stand-in resource and the GNAP demonstration
+    // resource server (the test peer's), the Shared Signals receiver.
+    '/oauth2/step-up/resource/:application', '/gnap/rs/resource',
+    '/gnap/rs/spend', '/ssf/receive', '/ssf/received',
+    // #594: the OpenID4VC demonstration (the companion's), the issuer's
+    // readbacks (`/admin-api` now) and `/did/generate` (deleted).
+    '/issuer', '/issuer/offer', '/issuer/demo.js', '/oid4vp/verifier',
+    '/oid4vp/start', '/oid4vp/done', '/oid4vp/result/:state',
+    '/oid4vci/last_request', '/oid4vci/notification/:id', '/did/generate',
+    // #595: Kerberos and SPNEGO (the companion's); `/krb5/principals` is
+    // `GET /admin-api/kerberos/principals`.
+    '/spnego', '/spnego/protected', '/spnego/pages.js', '/krb5/service',
+    '/krb5/principals',
+    // #596: the commands relying party (the test peer's) and
+    // `/xacml/protected` (the remote PEP's).
+    '/oauth2/commands/mock-rp', '/xacml/protected',
+    // #597: the test controls, now a setting, the MDM feed, a console page
+    // and `/admin-api`.
+    '/dpop/nonce-mode', '/devices/test/compliance', '/tls', '/tls/forwarded',
+    '/tls/pages.js', '/tls/trust', '/tls/trust/clear',
+    // #598: the VC API's status-list publish hook
+    // (`POST /admin-api/vc-status/publish`); the VC API itself stays, a
+    // product surface.
+    '/oid4vci/status-lists/bitstring/:purpose/publish'
   ];
-  // The probe B, C and D ask about, registered after A (#595).
-  const PROBE = '/demo-endpoints-probe';
-  // A concrete path for a pattern.
-  function concrete(p) {
-    return p.replace(/:([A-Za-z_]+)/g, 'probe');
-  }
-  function ask(port, method, urlPath) {
-    return new Promise(function (resolve) {
-      const req = http.request({ host: '127.0.0.1', port: port,
-                                 method: method, path: urlPath,
-                                 headers: { accept: 'application/json' } },
-        function (res) {
-          const chunks = [];
-          res.on('data', function (c) {
-            chunks.push(c);
-          });
-          res.on('end', function () {
-            resolve({ status: res.statusCode,
-                      body: Buffer.concat(chunks).toString('utf8') });
-          });
-        });
-      // A handler that never answers is a finding, not a hang.
-      req.setTimeout(20000, function () {
-        req.destroy(new Error('timed out'));
-      });
-      req.on('error', function (e) {
-        resolve({ status: 0, body: 'error: ' + e.message });
-      });
-      req.end();
-    });
-  }
-  function unrouted(answer, method) {
-    return answer.status === 404 &&
-      new RegExp('Cannot ' + method + ' ').test(
-        answer.body.replace(/<[^>]*>/g, ''));
-  }
+  const OLD_MARKS = ['demoOnly', 'processDemoOnly'];
 
   (async function () {
     require(ROOT_DIR + '/common/protocol_stack');
     const app = require(ROOT_DIR + '/common/app');
     await require(ROOT_DIR + '/common/service_state').start();
-    const realms = require(ROOT_DIR + '/common/realms');
-    const config = require(ROOT_DIR + '/common/config');
     const mode = require(ROOT_DIR + '/common/mode');
     const metadata = require(ROOT_DIR + '/sts_metadata');
-    const table = require(ROOT_DIR + '/admin-core/protocol_endpoints');
     const hosted = require(ROOT_DIR + '/common/hosted_applications');
 
-    // --- A. the mark and the description agree ------------------------------
+    // --- A. the mechanism is gone -------------------------------------------
+    const leftOnApp = OLD_MARKS.concat(['demoMarkOf', 'demoPathHidden'])
+      .filter(function (name) {
+        return app[name] !== undefined;
+      });
+    note(leftOnApp.length === 0, 'A1. the app carries no demonstration ' +
+         'mark and no reader of one', leftOnApp.join(', ') || 'none');
+    note(mode.servesDemoEndpoints === undefined,
+         'A2. the mode has no demonstration predicate',
+         typeof mode.servesDemoEndpoints);
+    const rows = (mode.REQUIREMENTS || []).filter(function (row) {
+      return /demo-endpoints/.test(row.id) ||
+        /demonstration and test-control endpoints/i.test(row.what || '');
+    });
+    note(Array.isArray(mode.REQUIREMENTS) && rows.length === 0,
+         'A3. no requirement on /admin/mode describes demonstration ' +
+         'endpoints', rows.map(function (row) {
+           return row.id;
+         }).join(', ') || 'none');
+    note(mode.writeRefusalReason('servesDemoEndpoints') ===
+         mode.writeRefusalReason('noSuchPredicateAnywhere'),
+         'A4. no setting\'s refusal names the demonstration predicate',
+         mode.writeRefusalReason('servesDemoEndpoints'));
+
+    // --- B. no route is a demonstration -------------------------------------
     const router = app._router || app.router;
-    const marks = {};
-    const methods = {};
+    const marked = [];
+    const back = [];
     router.stack.forEach(function (layer) {
       if (!layer.route) {
         return;
       }
       const p = String(layer.route.path);
-      const mark = app.demoMarkOf(layer.route);
-      if (mark) {
-        marks[p] = mark.stsDemo;
-        methods[p] = (methods[p] || []).concat(
-          Object.keys(layer.route.methods).filter(function (m) {
-            return m !== '_all';
-          }).map(function (m) {
-            return m.toUpperCase();
-          }));
-      }
-    });
-    const expected = {};
-    REALM_MARKED.forEach(function (p) {
-      expected[p] = 'realm';
-    });
-    PROCESS_MARKED.forEach(function (p) {
-      expected[p] = 'process';
-    });
-    const wrong = Object.keys(expected).filter(function (p) {
-      return marks[p] !== expected[p];
-    }).concat(Object.keys(marks).filter(function (p) {
-      return !expected[p];
-    }));
-    note(wrong.length === 0, 'A1. the routes marked are the inventory, ' +
-         'each with its mark', wrong.map(function (p) {
-           return p + ' ' + (marks[p] || 'unmarked') + ' want ' +
-             (expected[p] || 'unmarked');
-         }).join(', ') || Object.keys(marks).length + ' marked');
-    const flagged = {};
-    metadata.ENDPOINTS.forEach(function (row) {
-      if (row.demo) {
-        flagged[row.path] = true;
-      }
-    });
-    const disagree = Object.keys(flagged).filter(function (p) {
-      return !marks[p];
-    }).concat(Object.keys(marks).filter(function (p) {
-      return !flagged[p];
-    }));
-    note(disagree.length === 0, 'A2. every marked route\'s row is flagged ' +
-         'demo, and every flagged row\'s route is marked',
-         disagree.join(', ') || 'agree');
-    const developmentReport = metadata.describeEndpoints();
-    note((developmentReport.demoMismatch || []).length === 0 &&
-         developmentReport.undocumented.length === 0 &&
-         developmentReport.stale.length === 0 &&
-         (developmentReport.hiddenSpecs || []).length === 0,
-         'A3. in development the page lists every demonstration, with no ' +
-         'drift', JSON.stringify({
-           mismatch: developmentReport.demoMismatch,
-           undocumented: developmentReport.undocumented,
-           stale: developmentReport.stale }));
-
-    // THE PROBE: a demonstration route as a phase of #591 left one, so the
-    // mark's behaviour is still held now that the inventory above is empty.
-    app.get(PROBE, app.demoOnly, function (req, res) {
-      res.status(200).json({ probe: true });
-    });
-    marks[PROBE] = 'realm';
-    methods[PROBE] = ['GET'];
-
-    const server = http.createServer(app);
-    await new Promise(function (resolve) {
-      server.listen(0, '127.0.0.1', resolve);
-    });
-    const port = server.address().port;
-
-    // --- B. a product realm answers as unrouted; development answers --------
-    const PRODUCT = 'demoproduct';
-    realms.create({ id: PRODUCT, name: PRODUCT,
-                    overrides: { 'global.mode': 'product' } });
-    const answeredInProduct = [];
-    const missingInDevelopment = [];
-    for (const p of Object.keys(marks)) {
-      for (const m of methods[p]) {
-        const inProduct = await ask(port, m,
-                                    '/realm/' + PRODUCT + concrete(p));
-        if (!unrouted(inProduct, m)) {
-          answeredInProduct.push(m + ' ' + p + ' ' + inProduct.status);
-        }
-        const inDevelopment = await ask(port, m, concrete(p));
-        if (unrouted(inDevelopment, m) || inDevelopment.status === 0) {
-          missingInDevelopment.push(m + ' ' + p + ' ' + inDevelopment.status +
-                                    ' ' + inDevelopment.body.slice(0, 60));
-        }
-      }
-    }
-    note(answeredInProduct.length === 0, 'B1. in a product realm every ' +
-         'demonstration, by every method, answers Express\'s own 404',
-         answeredInProduct.join(', ') || 'all unrouted');
-    note(missingInDevelopment.length === 0, 'B2. in the development ' +
-         'default realm every demonstration reaches its handler',
-         missingInDevelopment.join(', ') || 'all served');
-    const unregistered = await ask(port, 'GET',
-                                   '/realm/' + PRODUCT + PROBE);
-    const nothing = await ask(port, 'GET', '/realm/' + PRODUCT +
-                              '/no-such-path-anywhere');
-    note(unregistered.body.replace(PROBE, '/X') ===
-         nothing.body.replace(/\/no-such-path-anywhere/, '/X'),
-         'B3. and the 404 is the unrouted one, body for body',
-         unregistered.body.slice(0, 80));
-
-    // --- C. the process's doors ---------------------------------------------
-    const DEVELOPMENT = 'demodevelopment';
-    realms.create({ id: DEVELOPMENT, name: DEVELOPMENT,
-                    overrides: { 'global.mode': 'development' } });
-    config.setOverride('global.mode', 'product');
-    try {
-      const realmDemo = await ask(port, 'GET', '/realm/' + DEVELOPMENT +
-                                  PROBE);
-      const defaultRealm = await ask(port, 'GET', PROBE);
-      note(!unrouted(realmDemo, 'GET') && unrouted(defaultRealm, 'GET'),
-           'C1. with the process in product, a development realm keeps ' +
-           'demoOnly\'s routes and the default realm does not (no route ' +
-           'carries processDemoOnly since #597)',
-           realmDemo.status + ' ' + defaultRealm.status);
-    } finally {
-      config.clearOverride('global.mode');
-    }
-
-    // --- D. the lists in a product realm ------------------------------------
-    // How many prefixes the catalogue offers a product realm, for D6.
-    let productPrefixes = 0;
-    realms.run(realms.get(PRODUCT), function () {
-      note(mode.servesDemoEndpoints() === false,
-           'D0. the product realm says it serves no demonstration');
-      const report = metadata.describeEndpoints();
-      const listed = report.rows.filter(function (row) {
-        return row.demo || marks[row.path];
-      }).map(function (row) {
-        return row.path;
-      });
-      // The probe is marked and described nowhere: in a product realm the
-      // page must not see it at all, so it is NOT excused from the drift.
-      note(listed.length === 0 && report.undocumented.length === 0 &&
-           report.stale.length === 0 &&
-           (report.demoMismatch || []).length === 0 &&
-           report.unknownProtocolGroups.length === 0 &&
-           report.unclaimedGroups.length === 0,
-           'D1. /admin/sts-metadata lists no demonstration in a product ' +
-           'realm, with no drift either way',
-           JSON.stringify({ listed: listed, undocumented: report.undocumented,
-                            stale: report.stale,
-                            groups: report.unknownProtocolGroups }));
-      const cited = new Set();
-      report.rows.forEach(function (row) {
-        (row.specs || []).forEach(function (id) {
-          cited.add(id);
-        });
-      });
-      const hidden = report.hiddenSpecs || [];
-      const idle = metadata.SPECS.filter(function (spec) {
-        return hidden.indexOf(spec.id) < 0 && !cited.has(spec.id);
-      }).map(function (spec) {
-        return spec.id;
-      });
-      const cardIdle = [];
-      report.protocols.forEach(function (card) {
-        card.specs.forEach(function (id) {
-          if (hidden.indexOf(id) >= 0) {
-            cardIdle.push(card.name + ' ' + id);
-          }
-        });
-        if (!card.groups.length && !card.sockets) {
-          cardIdle.push(card.name + ' (no group, no socket)');
+      (layer.route.stack || []).forEach(function (one) {
+        const handle = one && one.handle;
+        if (handle && (handle.stsDemo ||
+                       OLD_MARKS.indexOf(handle.name) >= 0)) {
+          marked.push(p);
         }
       });
-      note(idle.length === 0 && cardIdle.length === 0 &&
-           hidden.indexOf('vc-api') < 0,
-           'D2. a specification only a demonstration cited leaves the page ' +
-           'and the cards, and no other is idle — and the VC API, a ' +
-           'product surface since #598, is not among them',
-           JSON.stringify({ hidden: hidden, idle: idle, cards: cardIdle }));
-      const shown = [];
-      table.pages().forEach(function (page) {
-        const req = { path: page, originalUrl: page, query: {},
-                      protocol: 'https', headers: { host: 'demo.test' },
-                      get: function (name) {
-                        return String(name).toLowerCase() === 'host' ?
-                          'demo.test' : undefined;
-                      } };
-        (table.forPage(req, page) || []).forEach(function (row) {
-          if ((row.route && marks[row.route]) ||
-              /protected Kerberos service/.test(row.name || '')) {
-            shown.push(page + ' ' + (row.route || row.url));
-          }
-        });
-      });
-      note(shown.length === 0, 'D3. no Protocols page lists a ' +
-           'demonstration in a product realm', shown.join(', ') || 'none');
-      const catalogue = hosted.list();
-      productPrefixes = catalogue.reduce(function (n, one) {
-        return n + one.prefixes.length;
-      }, 0);
-      const offered = [];
-      catalogue.forEach(function (one) {
-        one.prefixes.forEach(function (prefix) {
-          if (['/issuer', '/did', '/spnego', '/vc-demo-api', '/krb5']
-              .indexOf(prefix) >= 0) {
-            offered.push(prefix);
-          }
-        });
-      });
-      note(offered.length === 0, 'D4. the hosted-applications catalogue ' +
-           'offers no demonstration prefix or application in a product realm',
-           offered.join(', ') || 'none');
-      note(app.demoPathHidden(PROBE) &&
-           !app.demoPathHidden('/saml2/sso') &&
-           !app.demoPathHidden('/no-such-path'),
-           'D5. a link to a demonstration is hidden, and to anything else ' +
-           'not');
+      if (RETIRED.indexOf(p) >= 0) {
+        back.push(Object.keys(layer.route.methods).join(',')
+                    .toUpperCase() + ' ' + p);
+      }
     });
-    // No application in the catalogue holds a demonstration prefix since
-    // #595 (the Kerberos one held `/spnego`), so development offers the
-    // same prefixes a product realm does.
-    note(hosted.list().reduce(function (n, one) {
-      return n + one.prefixes.length;
-    }, 0) === productPrefixes && !app.demoPathHidden(PROBE),
-         'D6. and in development the probe\'s link is kept, and the ' +
-         'catalogue offers what a product realm is offered: no ' +
-         'demonstration prefix is left');
+    note(marked.length === 0, 'B1. no route carries a demonstration mark',
+         marked.join(', ') || 'none');
+    note(back.length === 0, 'B2. no path a demonstration was registered on ' +
+         'is registered again', back.join(', ') || 'none');
 
-    server.close();
+    // --- C. /admin/sts-metadata describes none ------------------------------
+    const flagged = metadata.ENDPOINTS.filter(function (row) {
+      return Object.prototype.hasOwnProperty.call(row, 'demo');
+    }).map(function (row) {
+      return row.path;
+    });
+    note(flagged.length === 0, 'C1. no ENDPOINTS row carries a ' +
+         'demonstration flag', flagged.join(', ') || 'none');
+    const cards = metadata.PROTOCOLS.filter(function (card) {
+      return Object.prototype.hasOwnProperty.call(card, 'whatWithoutDemos');
+    }).map(function (card) {
+      return card.name;
+    });
+    note(cards.length === 0, 'C2. no protocol card says anything ' +
+         'different where demonstrations are not served',
+         cards.join(', ') || 'none');
+    const report = metadata.describeEndpoints();
+    const members = ['demoMismatch', 'hiddenSpecs'].filter(function (name) {
+      return Object.prototype.hasOwnProperty.call(report, name);
+    });
+    const routeMembers = metadata.registeredRoutes().filter(function (row) {
+      return Object.prototype.hasOwnProperty.call(row, 'demo') ||
+        Object.prototype.hasOwnProperty.call(row, 'served');
+    }).map(function (row) {
+      return row.path;
+    });
+    note(members.length === 0 && routeMembers.length === 0,
+         'C3. neither the report nor the router\'s list carries a ' +
+         'demonstration member', members.concat(routeMembers).join(', ') ||
+         'none');
+    note(report.undocumented.length === 0 && report.stale.length === 0 &&
+         report.unknownProtocolGroups.length === 0 &&
+         report.unclaimedGroups.length === 0,
+         'C4. and the page has no drift either way',
+         JSON.stringify({ undocumented: report.undocumented,
+                          stale: report.stale,
+                          groups: report.unknownProtocolGroups,
+                          unclaimed: report.unclaimedGroups }));
+
+    // --- D. the hosted applications -----------------------------------------
+    const offered = [];
+    hosted.list().forEach(function (one) {
+      if (one.demo || one.demoPrefixes) {
+        offered.push(one.id);
+      }
+      // A prefix covers more than the path it names (`/tls` is still the
+      // TLS sign-in's), so a prefix is asked against the ones that held
+      // nothing but a demonstration; an exact path against every retired
+      // one.
+      one.prefixes.forEach(function (prefix) {
+        if (['/issuer', '/vc-demo-api', '/spnego', '/krb5', '/did']
+            .indexOf(prefix) >= 0) {
+          offered.push(one.id + ' ' + prefix);
+        }
+      });
+      one.exact.forEach(function (exact) {
+        if (RETIRED.indexOf(exact) >= 0) {
+          offered.push(one.id + ' ' + exact);
+        }
+      });
+    });
+    note(offered.length === 0, 'D1. the hosted-applications catalogue ' +
+         'holds no demonstration application or prefix',
+         offered.join(', ') || 'none');
+
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
   })().catch(function (e) {
@@ -380,12 +244,64 @@ function childMain() {
 }
 
 /**
- * Runs the child and reports its findings.
+ * Lists the service's own `.js` and `.ts` files, for E.
+ *
+ * @param directory - where to start
+ * @param out - the list being built
+ * @returns the list
+ */
+function sourcesUnder(directory, out) {
+  log.debug("Entering sourcesUnder().");
+  fs.readdirSync(directory, { withFileTypes: true }).forEach(function (one) {
+    const full = path.join(directory, one.name);
+    if (one.isDirectory()) {
+      if (SKIP_DIRECTORIES.indexOf(one.name) < 0) {
+        sourcesUnder(full, out);
+      }
+      return;
+    }
+    if (/\.(js|ts)$/.test(one.name) && !/\.bundle\.js$/.test(one.name) &&
+        !/-spa\.js$/.test(one.name) && !/\.d\.ts$/.test(one.name)) {
+      out.push(full);
+    }
+  });
+  log.debug("Leaving sourcesUnder().");
+  return out;
+}
+
+/**
+ * E: no service source names one of the mechanism's symbols.
+ *
+ * @param t - the runner's check object
+ */
+function checkSources(t) {
+  log.debug("Entering checkSources().");
+  const pattern = new RegExp('\\b(' + SYMBOLS.join('|') + ')\\b');
+  const found = [];
+  sourcesUnder(ROOT, []).forEach(function (file) {
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    lines.forEach(function (line, i) {
+      const match = pattern.exec(line);
+      if (match) {
+        found.push(path.relative(ROOT, file) + ':' + (i + 1) + ' ' +
+                   match[1]);
+      }
+    });
+  });
+  t.check(found.length === 0, 'E1. no service source names one of the ' +
+          'demonstration mechanism\'s symbols', found.slice(0, 20)
+            .join(', ') || 'none');
+  log.debug("Leaving checkSources().");
+}
+
+/**
+ * Reads the sources, then runs the child and reports its findings.
  *
  * @param t - the runner's check object
  */
 function run(t) {
   log.debug("Entering run().");
+  checkSources(t);
   const out = path.join(os.tmpdir(), 'de-' + process.pid + '-' +
                         require('crypto').randomBytes(8).toString('hex') +
                         '.json');
@@ -430,9 +346,9 @@ function run(t) {
 
 module.exports = {
   name: 'demo_endpoints',
-  describe: 'every demonstration, mock and test-control endpoint carries ' +
-            'the mark, is answered as an unrouted path in a product realm ' +
-            'and by its handler in development, and is listed nowhere in a ' +
-            'product realm (#585)',
+  describe: 'the runtime ships no demonstration endpoint: the mark, the ' +
+            'predicate and the metadata flag are gone, no route carries a ' +
+            'mark or a retired demonstration path, and no source names the ' +
+            'mechanism (#591, #599)',
   run: run
 };

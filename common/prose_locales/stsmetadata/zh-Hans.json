@@ -472,8 +472,8 @@
     "text": "full（#147），在每种模式下，双向。作为 OP：按领域的声明提供方登记册（控制台和 /admin-api），个人在 /portal/claim-sources 上通过带 PKCE 的授权码流程关联提供方，其令牌密封保存在本人自己的条目上，并由调度器作业刷新；声明请求所指明而条目无法回答的声明，按提供方以聚合声明（提供方的已签名 UserInfo JWT，先针对其密钥验证并核对是否为所关联的主体）或分布式声明（端点和访问令牌）发送；claim_types_supported 列出全部三种。作为联合 RP：来自上游 OP 的 _claim_sources 会被解析，并且只认可来自本领域注册的提供方、针对其密钥验证通过的来源。缺失：聚合的 verified_claims（Identity Assurance 第 6 节），以及声明提供方角色（本服务的已签名 UserInfo 可供其他聚合方使用，这是草案中的 CP 一侧）。"
   },
   "stsmetadata.specs.oidc-provider-commands.coverage": {
-    "en": "32b1aab50678ec8c",
-    "text": "full（#151），作为 OpenID 提供方，在 oauth2.providerCommands 开启时（默认关闭）：注册 command_endpoint（DCR、控制台、API；https，不带片段）；命令令牌类型为 command+jwt，签名方式与客户端的 ID 令牌相同，有效期最长两分钟，每个命令带第 5 节的声明（sub 仅出现在账户命令中，metadata 仅出现在 metadata 中，authentication_provider 仅出现在 migrate 中，从不带 nonce；tenant 为领域 id；aud_sub 会发送并学习）；全部十个账户命令及其 _async 变体，经由共享的持久出站队列发送，读取第 3 节的应答和错误；metadata 记录每个依赖方所支持的内容；五个流式租户命令以 Server-Sent Events 形式读取，并用 Last-Event-ID 恢复；用于异步结果、metadata 和 audit_tenant 请求的回调端点；按依赖方的账户状态登记册；在目录变更和全局注销时自动发送 suspend、reactivate、delete、maintain 和 invalidate，只发往列出了该命令的依赖方。在开发模式下，演示依赖方会应答每个命令。缺失：作为其他 OP 的依赖方。"
+    "en": "9521d7b5e2c47f3c",
+    "text": "full（#151），作为 OpenID 提供方，在 oauth2.providerCommands 开启时（默认关闭）：注册 command_endpoint（DCR、控制台、API；https，不带片段）；命令令牌类型为 command+jwt，签名方式与客户端的 ID 令牌相同，有效期最长两分钟，每个命令带第 5 节的声明（sub 仅出现在账户命令中，metadata 仅出现在 metadata 中，authentication_provider 仅出现在 migrate 中，从不带 nonce；tenant 为领域 id；aud_sub 会发送并学习）；全部十个账户命令及其 _async 变体，经由共享的持久出站队列发送，读取第 3 节的应答和错误；metadata 记录每个依赖方所支持的内容；五个流式租户命令以 Server-Sent Events 形式读取，并用 Last-Event-ID 恢复；用于异步结果、metadata 和 audit_tenant 请求的回调端点；按依赖方的账户状态登记册；在目录变更和全局注销时自动发送 suspend、reactivate、delete、maintain 和 invalidate，只发往列出了该命令的依赖方。测试对端（tests/peer/）扮演一个应答每个命令的依赖方。缺失：作为其他 OP 的依赖方。"
   },
   "stsmetadata.specs.oidc-enterprise.coverage": {
     "en": "a9d422b9ede39dbe",

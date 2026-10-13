@@ -1021,7 +1021,6 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   the request — so product mode had shipped every one. The predicates are named
   for the QUESTION (`seedsDemoData()`, `inventsClaimValues()`,
   `acceptsUnregisteredAddresses()`, `opensTestControls()`,
-  `servesDemoEndpoints()`,
   `sendsWeakerThanAsked()` beside the older four), and `mode.js`'s
   `REQUIREMENTS` is where each is described to `/admin/mode` and the API. A new
   tunable is a `config.js` row whose default is the old literal, read where it
@@ -1211,7 +1210,7 @@ the file the row names.
 | ~~Persist anything it MINTS~~ — **reversed 2026-09-06, in product mode on postgres only** | `persistence/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | Deliver a response to an address nobody registered, **in product mode** — an address development merely observed is marked and refused until confirmed | `common/applications.js`, `saml/CLAUDE.md`, `common/oidc_rp.ts` |
 | Start with demonstration data, invent a claim value, or open a test control to anybody, **in product mode** | `common/mode.js`, `common/CLAUDE.md` |
-| Serve or list a demonstration, mock or test-control ENDPOINT, **in a product realm** (#585) — each carries `common/app.js`'s `demoOnly` mark and answers as an unrouted path (Express's own 404); the truststore door and the protected Kerberos service's socket are the process's | `common/CLAUDE.md` (`mode.js`, `app.js`), `tests/demo_endpoints.js` |
+| Ship a demonstration endpoint at all, **in any mode** (#591): #585 made them development-only, #592–#598 moved each to the test peer, the development companion, the remote PEP, a console page, a setting or `/admin-api`, or deleted it, and #599 removed the mark that kept them out of product realms | `companion/CLAUDE.md`, `tests/peer/`, `tests/demo_endpoints.js` (the guard) |
 | Dial its database in the clear, in any mode — a connection string that would (`sslmode=disable` or `allow`, or not a URL) stops it starting since #273 — ~~or authenticate that server by default~~ **reversed 2026-10-12**: the server's certificate and host name are verified by default in every mode, against `persistence.databaseTlsCaFile` where set | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) — every recipient is a directory entry, the only address dialled is the operator's configured relay or provider endpoint, a mailed link is built on `global.publicBaseUrl` and never on the request, and SMTP is STARTTLS-required or implicit TLS with the relay verified in both modes | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — **reversed 2026-09-06**: the change log is the contract; it shares state and not sockets | `persistence/CLAUDE.md`, `common/CLAUDE.md` |

@@ -5584,8 +5584,8 @@
     "text": "服务主体密码"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "krb5.servicePrincipal 所指账户的密码——相当于 keytab。在产品模式下，随附的默认值会被拒绝：该值印在本代码库中，由它派生的服务密钥是任何人都可以为之伪造票据的密钥。未设置时不会创建服务账户，/authn/spnego 不接受任何票据，GET /admin-api/kerberos/principals 会说明原因。请将其设置为签发其票据的 KDC 中该 SPN 账户的密码。"
+    "en": "203b6ef1fa4a5cfa",
+    "text": "krb5.servicePrincipal 所命名帐户的密码 —— 相当于一个 keytab。在产品模式下，随附的默认值会被拒绝：该值印在本仓库中，因此由它派生的服务密钥是任何人都能用来伪造票据的密钥。此时产品模式改为给该 SPN 一个随机密钥，只生成一次，密封在其应用条目上（在 /admin/kerberos/principals 上执行 Rotate 会交出 keytab），空密码也同样处理。将它设置为签发其票据的 KDC 中该 SPN 帐户的密码，它就会优先于那个密钥。在开发模式下，空密码不会创建帐户，接受方也不接受任何票据。"
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -7528,8 +7528,8 @@
     "text": "授予 XACML_USER 角色的组"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "6256e6a60d3799e6",
-    "text": "其成员拥有内置 XACML_USER 角色的目录组，这是三个 XACML 端点本身所要求的角色——GET /xacml、POST /xacml/pdp 和 GET /xacml/policies。出示了经本服务验证的客户端证书的调用方，是本服务能够指明身份的一方；而该组的成员身份才使其成为本服务允许进入的一方，两者被分开的理由与上面的 roles.remotePepGroup 相同：证书证明身份，组授予权限。这是第二个组，而不是同一个组：REMOTE_PEPS 可访问三个 /xacml/pep 端点，它们分发本服务用于执行其自身访问控制的文档，若由一个组同时授予两者，那么允许调用方访问演示界面就会悄无声息地允许其访问那些端点。设置为空字符串表示没有人拥有该角色，这会对每个调用方关闭这三个端点；这是在不关闭 xacml.enabled、从而不连带失去嵌入式签发和访问 PEP 的情况下移除 XACML 界面的方法。"
+    "en": "d19a9234253beccc",
+    "text": "其成员拥有内置 XACML_USER 角色的目录组，这是三个 XACML 端点本身所要求的角色——GET /xacml、POST /xacml/pdp 和 GET /xacml/policies。出示了经本服务验证的客户端证书的调用方，是本服务能够指明身份的一方；而该组的成员身份才使其成为本服务允许进入的一方，两者被分开的理由与上面的 roles.remotePepGroup 相同：证书证明身份，组授予权限。这是第二个组，而不是同一个组：REMOTE_PEPS 可访问三个 /xacml/pep 端点，它们分发本服务用于执行其自身访问控制的文档，若由一个组同时授予两者，那么允许调用方访问XACML 界面本身就会悄无声息地允许其访问那些端点。设置为空字符串表示没有人拥有该角色，这会对每个调用方关闭这三个端点；这是在不关闭 xacml.enabled、从而不连带失去嵌入式签发和访问 PEP 的情况下移除 XACML 界面的方法。"
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",
@@ -7552,8 +7552,8 @@
     "text": "作出签发决策所用的策略"
   },
   "xacml.issuancePolicy|description": {
-    "en": "b7864ae423459362",
-    "text": "嵌入式 PEP 为本服务自身的签发决策所评估的策略的目录条目名称。它有意不是策略库的根：根回答关于他人边界的问题——这是 PDP 的用途，也是 /xacml/pdp 和每个远程 PEP 向它询问的内容——而这一个回答关于本服务自身的问题。两个问题，两份文档，这样编辑演示策略就无法改变谁可以登录，缩小某个角色也无法改变 /xacml/pdp 的答案。`role-issuance` 策略是内置的，从不预置到 ou=policies 中：写入某个领域自己的 ou=policies 中的同名策略库条目只会为该领域覆盖它，删除该条目即可恢复内置策略。"
+    "en": "7e89107ac8335d95",
+    "text": "嵌入式 PEP 为本服务自身的签发决策所评估的策略的目录条目名称。它有意不是策略库的根：根回答关于他人边界的问题——这是 PDP 的用途，也是 /xacml/pdp 和每个远程 PEP 向它询问的内容——而这一个回答关于本服务自身的问题。两个问题，两份文档，这样编辑根策略就无法改变谁可以登录，缩小某个角色也无法改变 /xacml/pdp 的答案。`role-issuance` 策略是内置的，从不预置到 ou=policies 中：写入某个领域自己的 ou=policies 中的同名策略库条目只会为该领域覆盖它，删除该条目即可恢复内置策略。"
   },
   "audit.maxEvents|label": {
     "en": "e12ddec225bffa6c",

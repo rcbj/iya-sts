@@ -10741,11 +10741,14 @@ const SETTINGS = [
                  'the equivalent of a keytab. In PRODUCT MODE the shipped ' +
                  'default is refused: that value is printed in this ' +
                  'repository, so a service key derived from it is a key ' +
-                 'anybody can forge a ticket to. With it unset the service ' +
-                 'account is not created, /authn/spnego accepts no ticket, ' +
-                 'and GET /admin-api/kerberos/principals says why. Set it ' +
+                 'anybody can forge a ticket to. Product then keys the SPN ' +
+                 'at random instead, once, sealed on its application entry ' +
+                 '(Rotate at /admin/kerberos/principals hands over a ' +
+                 'keytab), and does the same for an empty password. Set it ' +
                  'to the password of the SPN\'s account in the KDC that ' +
-                 'issues its tickets.' },
+                 'issues its tickets and it wins over that key. In ' +
+                 'development an empty password creates no account, and ' +
+                 'the acceptor accepts no ticket.' },
 
   { key: 'krb5.serviceSalt', group: 'Kerberos', label: 'Service principal salt',
     env: 'KRB5_SERVICE_SALT', type: 'string', dflt: '', runtime: false,
@@ -13892,7 +13895,7 @@ const SETTINGS = [
                  'REMOTE_PEPS reaches the three /xacml/pep endpoints, which ' +
                  'hand out the documents this service enforces its own ' +
                  'access with, and one group granting both would make ' +
-                 'admitting a caller to the demonstration surface silently ' +
+                 'admitting a caller to the XACML surface proper silently ' +
                  'admit it to those. Setting it to the empty string means ' +
                  'NOBODY holds the role, which closes those three endpoints ' +
                  'to every caller; that is the way to take the XACML surface ' +
@@ -13936,7 +13939,7 @@ const SETTINGS = [
                  'questions about somebody else\'s boundary — that is what a ' +
                  'PDP is for and what /xacml/pdp and every remote PEP ask it ' +
                  '— and this one answers a question about THIS service. Two ' +
-                 'questions, two documents, so that editing the demo policy ' +
+                 'questions, two documents, so that editing the root policy ' +
                  'cannot change who may sign in and narrowing a role cannot ' +
                  'change what /xacml/pdp answers. The `role-issuance` ' +
                  'policy is BUILT IN and is never seeded into ou=policies: ' +

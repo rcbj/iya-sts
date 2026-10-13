@@ -2309,8 +2309,9 @@ two TLS listeners were deleted on 2026-09-16, and LDAPS asks for no client
 certificate — with its subject, issuer, serial, validity, SHA-256
 fingerprint and SOURCE (`file` from `tls.trustAnchorsFile`, `runtime` otherwise), paged,
 with an add form (a textarea of PEM blocks) and a Remove button on every row. It is the
-runtime door product mode did not have — `POST /tls/trust` needs no credential, so product
-mode refuses it — and `GET /admin-api/tls/trust` / `POST /admin-api/tls/trust/{add,remove}`
+runtime door product mode did not have — the open `POST /tls/trust` needed no credential,
+so product mode refused it, and #597 deleted it — and `GET /admin-api/tls/trust` /
+`POST /admin-api/tls/trust/{add,remove}`
 mirror it (rule 7). `tls/CLAUDE.md` argues what the truststore does; four things are this
 file's.
 
@@ -7719,6 +7720,6 @@ and `messagesOf` (which belong to the shell). `pageNavPair`, `clipped` and
 the settings block are done. **A page that draws a settings block has it as
 `view.settings`** and calls `SettingsForms.forms(view.settings, PAGE)`.
 
-## Development only: this family's demonstrations (#585, 2026-10-12)
+## This family's demonstrations (#585, #591)
 
-From the console's side: `POST /devices/test/compliance` (its 403 `STS-DEVICE-0035` retired; deleted outright by #597 — the device registration page lists the MDM feed and a partner's CAEP as the doors), and **every protocol settings page's `links`** go through `app.demoPathHidden()`, so a link to a demonstration a realm is not served is not drawn. The view members the renderers read for this are `mockServiceProvider`, `mockRelyingParty`, `verifierPage`, `principalsDocument`, `standInResource` and `testControl` (null in a product realm). Each carries `common/app.js`'s `demoOnly` mark, so a product realm answers it as a path nothing is registered on (Express's own 404) and no page, document or log line names it; a development realm in a product process keeps it. `common/CLAUDE.md` (`mode.js`) argues the rule and `tests/demo_endpoints.js` holds it.
+None is left. `POST /devices/test/compliance` (its 403 `STS-DEVICE-0035` retired) was deleted outright by #597 — the device registration page lists the MDM feed and a partner's CAEP as the doors — and the view members that named a demonstration (the SAML stand-ins, the verifier page, the principals document, the step-up stand-in resource, the test controls) went with their endpoints in #592–#597. **A protocol settings page's `links` are drawn as written** since #599 removed `app.demoPathHidden()` with the mark it read: nothing a link can name is a demonstration now. `common/CLAUDE.md` (`mode.js`) has the history, and `tests/demo_endpoints.js` guards that none comes back.

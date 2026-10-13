@@ -67,14 +67,8 @@ const EVERYWHERE = '*everywhere*';
 // applications that read the sign-on session's cookie, which is what the
 // cookie-domain rule in `listener_map.js` is about.
 //
-// THE DEMONSTRATIONS (#585): `demoPrefixes` are the prefixes under which
-// nothing but a demonstration, mock or test-control endpoint is registered,
-// and `demo: true` an application that is nothing else. A product realm is
-// served none of them (`common/app.js`'s `demoOnly`), so `list()` offers
-// neither there — a listener page must not invite an operator to map a
-// prefix to a socket when nothing answers under it. `classify()` is not
-// changed: it is about where a path WOULD be answered, and a demonstration's
-// request still has to reach the router to be passed on to its 404.
+// No application here is a demonstration (#591): the runtime ships none, so
+// every prefix is offered in every mode.
 const APPLICATIONS = [
   { id: 'home', label: 'Front door',
     what: 'GET /, its image, the documentation, terms and policy pages and ' +
@@ -136,10 +130,7 @@ const APPLICATIONS = [
   { id: 'oidfed', label: 'OpenID Federation',
     what: 'The Entity Configuration and the federation endpoints.',
     prefixes: ['/oidfed', '/.well-known/openid-federation'], exact: [] },
-  // THE DEMONSTRATION ISSUER AND VERIFIER (`/issuer`, `/vc-demo-api`) AND
-  // `/did/generate` LEFT ON #594, for the development companion and the
-  // test tooling; `/vc-api` became a product surface on #598, so no
-  // demonstration prefix is left here.
+  // `/vc-api` has been a product surface since #598.
   { id: 'oid4vc', label: 'Verifiable credentials',
     what: 'OpenID4VCI, OpenID4VP, DIDs and the status lists.',
     prefixes: ['/oid4vci', '/oid4vp', '/applications',
@@ -272,22 +263,9 @@ function classify(path) {
  */
 function list() {
   log.debug("Entering list().");
-  // Required HERE, lazily: this file is a leaf `helpers.js` requires at load,
-  // and the mode is read in the ambient realm, so per call (#585). A call
-  // made while `mode.js` is still loading (a settings check at startup names
-  // the applications in a refusal) finds no predicate yet and lists them
-  // all, which is the development answer and only ever a message's text.
-  const modeModule = require('./mode');
-  const demos = typeof modeModule.servesDemoEndpoints === 'function'
-    ? modeModule.servesDemoEndpoints() : true;
-  const out = APPLICATIONS.filter(function (one) {
-    return demos || !one.demo;
-  }).map(function (one) {
-    const hidden = demos ? [] : (one.demoPrefixes || []);
+  const out = APPLICATIONS.map(function (one) {
     return { id: one.id, label: one.label, what: one.what,
-             prefixes: one.prefixes.filter(function (prefix) {
-               return hidden.indexOf(prefix) < 0;
-             }), exact: one.exact.slice(),
+             prefixes: one.prefixes.slice(), exact: one.exact.slice(),
              session: !!one.session, rescued: !!one.rescued };
   });
   log.debug("Leaving list(). " + out.length);

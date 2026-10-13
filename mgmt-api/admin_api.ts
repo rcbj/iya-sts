@@ -2230,12 +2230,13 @@ class AdminApi {
                      '/saml-attributes`.' },
       { path: '/wsfed', console: '/admin/wsfed', tag: 'WS-Federation',
         operationId: 'getWsFedSettings',
-        summary: 'The passive requestor profile\'s own setting',
-        description: 'One setting — how long the demonstration relying party ' +
-                     'keeps ' +
-                     'a wctx. The entity ID this service names itself by ' +
-                     'in the metadata and a sign-in response is the ' +
-                     'realm\'s OAuth issuer, not a setting (#523).\n\nThe ' +
+        summary: 'The passive requestor profile\'s page',
+        description: 'No setting of its own. The entity ID this service ' +
+                     'names itself by in the metadata and a sign-in ' +
+                     'response is the realm\'s OAuth issuer, not a setting ' +
+                     '(#523), and the assertion\'s lifetime is ' +
+                     '`wsfed.assertionLifetimeMin`, homed with the other ' +
+                     'assertion lifetimes on `/admin/saml2`.\n\nThe ' +
                      'assertion it carries is a SAML 1.1 one, whose ' +
                      'contents are `GET /saml-attributes`. A `wauth` the session cannot meet ' +
                      'is a step-up through the sign-in screen, and ' +
@@ -11116,7 +11117,7 @@ class AdminApi {
       { method: 'GET', path: BASE + '/verifier-request',
         tag: 'Verifier request',
         operationId: 'getVerifierRequest',
-        summary: 'What the demonstration OID4VP Verifier asks a wallet for',
+        summary: 'What this realm\'s OID4VP Verifier asks a wallet for',
         description: 'The claims, the credential format, and the ' +
                      '`dcql_query` they build — from the function that ' +
                      'builds the real one, so this is the next Authorization ' +
@@ -11440,7 +11441,7 @@ class AdminApi {
                          '(STS-VC-0092), an x509 Client Identifier with ' +
                          'nothing to certify (STS-VC-0110 to STS-VC-0113). ' +
                          'Answered in every mode: this is an administrator ' +
-                         'asking, not the demonstration.',
+                         'asking.',
             requestBodyRequired: false,
             requestBody: {
               type: 'object',

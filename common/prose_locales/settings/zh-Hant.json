@@ -5584,8 +5584,8 @@
     "text": "服務主體密碼"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "krb5.servicePrincipal 所指名之帳戶的密碼——相當於 keytab。在「產品模式」下，隨附的預設值會被拒絕：該值印在此存放庫中，因此由它衍生的服務金鑰是任何人都能為其偽造票證的金鑰。未設定時不會建立服務帳戶，/authn/spnego 不接受任何票證，GET /admin-api/kerberos/principals 會說明原因。請將它設為簽發其票證之 KDC 中該 SPN 帳戶的密碼。"
+    "en": "203b6ef1fa4a5cfa",
+    "text": "krb5.servicePrincipal 所命名帳戶的密碼 —— 相當於一個 keytab。在產品模式下，隨附的預設值會被拒絕：該值印在本儲存庫中，因此由它推導的服務金鑰是任何人都能用來偽造票證的金鑰。此時產品模式改為給該 SPN 一把隨機金鑰，只產生一次，密封在其應用程式項目上（在 /admin/kerberos/principals 上執行 Rotate 會交出 keytab），空密碼也同樣處理。將它設為簽發其票證的 KDC 中該 SPN 帳戶的密碼，它就會優先於那把金鑰。在開發模式下，空密碼不會建立帳戶，接受端也不接受任何票證。"
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -7528,8 +7528,8 @@
     "text": "授予 XACML_USER 角色的群組"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "6256e6a60d3799e6",
-    "text": "其成員擁有內建 XACML_USER 角色的目錄群組，這是三個 XACML 端點本身所要求的角色——GET /xacml、POST /xacml/pdp 與 GET /xacml/policies。出示經本服務驗證之用戶端憑證的呼叫方，是本服務能夠指明身分的一方；而該群組的成員資格才使其成為本服務允許進入的一方，兩者分開的理由與上方 roles.remotePepGroup 相同：憑證證明身分，群組授予權限。這是第二個群組，而非同一個：REMOTE_PEPS 可存取三個 /xacml/pep 端點，它們分發本服務用以執行自身存取控制的文件，若由一個群組同時授予兩者，那麼允許呼叫方存取示範介面就會悄悄地允許其存取那些端點。設為空字串表示沒有人擁有該角色，這會對每個呼叫方關閉這三個端點；這是在不關閉 xacml.enabled、從而不連帶失去內嵌簽發與存取 PEP 的情況下移除 XACML 介面的方法。"
+    "en": "d19a9234253beccc",
+    "text": "其成員擁有內建 XACML_USER 角色的目錄群組，這是三個 XACML 端點本身所要求的角色——GET /xacml、POST /xacml/pdp 與 GET /xacml/policies。出示經本服務驗證之用戶端憑證的呼叫方，是本服務能夠指明身分的一方；而該群組的成員資格才使其成為本服務允許進入的一方，兩者分開的理由與上方 roles.remotePepGroup 相同：憑證證明身分，群組授予權限。這是第二個群組，而非同一個：REMOTE_PEPS 可存取三個 /xacml/pep 端點，它們分發本服務用以執行自身存取控制的文件，若由一個群組同時授予兩者，那麼允許呼叫方存取XACML 介面本身就會悄悄地允許其存取那些端點。設為空字串表示沒有人擁有該角色，這會對每個呼叫方關閉這三個端點；這是在不關閉 xacml.enabled、從而不連帶失去內嵌簽發與存取 PEP 的情況下移除 XACML 介面的方法。"
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",
@@ -7552,8 +7552,8 @@
     "text": "做出簽發決定所用的原則"
   },
   "xacml.issuancePolicy|description": {
-    "en": "b7864ae423459362",
-    "text": "「嵌入式」PEP 為此服務自身簽發決定所評估之原則的目錄項目名稱。它刻意「不是」存放庫的根：根回答的是關於別人邊界的問題——那正是 PDP 的用途，也是 /xacml/pdp 與每個遠端 PEP 向它詢問的——而這一個回答的是關於「此服務」的問題。兩個問題，兩份文件，使得編輯示範原則無法改變誰可以登入，而縮減角色也無法改變 /xacml/pdp 的回答。`role-issuance` 原則是「內建」的，從不植入 ou=policies：寫入某領域自己的 ou=policies 中、具有此名稱的存放庫項目只會在該領域覆寫它，刪除該項目則會恢復內建原則。"
+    "en": "7e89107ac8335d95",
+    "text": "「嵌入式」PEP 為此服務自身簽發決定所評估之原則的目錄項目名稱。它刻意「不是」存放庫的根：根回答的是關於別人邊界的問題——那正是 PDP 的用途，也是 /xacml/pdp 與每個遠端 PEP 向它詢問的——而這一個回答的是關於「此服務」的問題。兩個問題，兩份文件，使得編輯根原則無法改變誰可以登入，而縮減角色也無法改變 /xacml/pdp 的回答。`role-issuance` 原則是「內建」的，從不植入 ou=policies：寫入某領域自己的 ou=policies 中、具有此名稱的存放庫項目只會在該領域覆寫它，刪除該項目則會恢復內建原則。"
   },
   "audit.maxEvents|label": {
     "en": "e12ddec225bffa6c",

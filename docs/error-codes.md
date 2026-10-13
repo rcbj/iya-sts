@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4286** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4289** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -70,7 +70,7 @@ is an ordinary outcome.
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 209
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 91
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
@@ -2809,6 +2809,9 @@ Raised from: kerberos/.
 | `STS-KRB-0207` | A Kerberos message on TCP or UDP 88 whose client is homed in another cell could not be answered there (the cell unreachable, or no reply); the client is told the KDC is unavailable, fail-closed (#588, 2026-10-12). | KDC_ERR_SVC_UNAVAILABLE (29); RFC 4120 7.5.9; #98 D6 |
 | `STS-KRB-0208` | Another cell relayed a Kerberos message here with no message in it; the inter-cell operation kdc-message failed (#588, 2026-10-12). | none — #98 |
 | `STS-KRB-0209` *(retired)* | kerberos/spnego_pages.ts is present and did not load, so GET /spnego or /spnego/protected drew its page on the server, as a copy without that module does (#583). The negotiation itself is unaffected. Retired by #595: the demonstration that raised it moved to the development companion. | logged; the page is drawn server-side |
+| `STS-KRB-0210` | No random key could be made for the Kerberos acceptor's SPN, whose configured krb5.servicePassword product refused (empty or the published default), so the acceptor accepts no ticket. | — |
+| `STS-KRB-0211` | A node lost the race to make the Kerberos acceptor's random key and, re-reading the directory, did not find the winner's key yet; its acceptor refuses until it arrives. | — |
+| `STS-KRB-0212` | The Kerberos acceptor's random key was not made: this node could not ask the shared store whether another node was making it. | — |
 
 ## STS-LDAP
 
@@ -3255,9 +3258,9 @@ Raised from: tls/.
 | `STS-TLS-0009` | The TLS listener certificate could not be re-issued under the certificate authority this service now holds. | — |
 | `STS-TLS-0010` | The client truststore could not be extended to a listener because it was given something that is not a TLS server. | — |
 | `STS-TLS-0011` | The client truststore could not be applied to a TLS listener, which keeps its previous context. | — |
-| `STS-TLS-0012` | A truststore add found no PEM certificate in what it was sent. | HTTP 400 (POST /tls/trust) |
+| `STS-TLS-0012` | A truststore add found no PEM certificate in what it was sent. | HTTP 400 (POST /admin-api/tls/trust/add) |
 | `STS-TLS-0013` | A strict truststore add was refused whole because a certificate in it could not be read by OpenSSL. | — |
-| `STS-TLS-0014` | A truststore add stopped because the truststore holds its maximum number of anchors. | HTTP 400 (POST /tls/trust) when nothing was added |
+| `STS-TLS-0014` | A truststore add stopped because the truststore holds its maximum number of anchors. | HTTP 400 (POST /admin-api/tls/trust/add) when nothing was added |
 | `STS-TLS-0015` | A truststore remove named something that is not a SHA-256 fingerprint. | — |
 | `STS-TLS-0016` | A truststore remove named an anchor the truststore does not hold. | — |
 | `STS-TLS-0017` | Starting a sign-on session for a verified client certificate threw; the connection was unaffected. | — |
@@ -3871,42 +3874,42 @@ Raised from: gnap/.
 | `STS-GNAP-0290` | Under the PKI trust model, a GNAP client's TLS client certificate does not carry the RFC 8705 certificate subject its application entry registers (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0291` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to a different person or application (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
 | `STS-GNAP-0292` | Under the PKI trust model, a GNAP client presented a TLS client certificate this realm issued to its entry that the entry's record no longer lists (#107). | HTTP 401 GNAP invalid_client (400 invalid_resource_server at the RS-facing endpoints) |
-| `STS-GNAP-0300` | A GNAP token model's access is not a non-empty array of access rights. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0301` | A GNAP token model's access element is an empty reference, or neither a reference string nor a typed object. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0302` | A GNAP token model's access element has an array dimension or an identifier of the wrong type. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0303` | A GNAP token model is not valid under RFC 9767 section 2.1 (a missing or malformed member, or a bearer flag and cnf that disagree), when minted or read back. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0304` | A presented GNAP access token has expired. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0305` | A presented GNAP access token is not yet valid (nbf). | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0306` | A presented GNAP access token is not intended for the audience it was presented to. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0307` | A key-bound GNAP access token was presented without that key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0300` | A GNAP token model's access is not a non-empty array of access rights. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0301` | A GNAP token model's access element is an empty reference, or neither a reference string nor a typed object. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0302` | A GNAP token model's access element has an array dimension or an identifier of the wrong type. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0303` | A GNAP token model is not valid under RFC 9767 section 2.1 (a missing or malformed member, or a bearer flag and cnf that disagree), when minted or read back. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0304` | A presented GNAP access token has expired. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0305` | A presented GNAP access token is not yet valid (nbf). | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0306` | A presented GNAP access token is not intended for the audience it was presented to. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0307` | A key-bound GNAP access token was presented without that key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0308` | A presented GNAP access token does not grant the access the request needs, possibly because an attenuation narrowed it. | HTTP 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0310` | A GNAP macaroon could not be minted or checked: the model does not round-trip as caveats, the root key is too short, or the macaroon library refused. | — |
-| `STS-GNAP-0311` | A presented macaroon is not unpadded base64url, or not a libmacaroons v2 binary macaroon. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0312` | A presented macaroon's identifier is not this service's GNAP prefix and a jti, so this service did not mint it. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0313` | A presented macaroon carries a third-party caveat, which needs a discharge macaroon this format does not carry. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0314` | A presented macaroon's HMAC chain does not verify under the resource server's root key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0315` | A presented macaroon carries a caveat outside this service's caveat grammar. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0316` | A presented macaroon's authority section is malformed: a caveat out of place or repeated, a required one missing, or not a valid token model. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0311` | A presented macaroon is not unpadded base64url, or not a libmacaroons v2 binary macaroon. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0312` | A presented macaroon's identifier is not this service's GNAP prefix and a jti, so this service did not mint it. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0313` | A presented macaroon carries a third-party caveat, which needs a discharge macaroon this format does not carry. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0314` | A presented macaroon's HMAC chain does not verify under the resource server's root key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0315` | A presented macaroon carries a caveat outside this service's caveat grammar. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0316` | A presented macaroon's authority section is malformed: a caveat out of place or repeated, a required one missing, or not a valid token model. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0317` | A macaroon attenuation was refused: empty, outside the exp/nbf/aud/access grammar, or refused by the library. | — |
 | `STS-GNAP-0320` | A biscuit could not be minted or verified with the keys given (not Ed25519), or the biscuit library refused to mint or emitted a value that is not token68. | — |
 | `STS-GNAP-0321` | The biscuit WASM library could not be loaded. | HTTP 401 invalid_token at a resource server; at issuance the token is left out |
-| `STS-GNAP-0322` | A presented biscuit is not URL-safe base64, does not parse, or its signature chain does not verify under this authorization server's public key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0323` | A presented biscuit's authority block is not a GNAP token model (misnumbered or non-JSON access facts, a singular fact repeated, or not exactly one key binding). | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0324` | A biscuit authorization check failed, or the authorizer could not be built for the presentation. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0325` | Biscuit authorization exceeded its run limits (facts, iterations or time), which is a refusal and never a pass. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0322` | A presented biscuit is not URL-safe base64, does not parse, or its signature chain does not verify under this authorization server's public key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0323` | A presented biscuit's authority block is not a GNAP token model (misnumbered or non-JSON access facts, a singular fact repeated, or not exactly one key binding). | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0324` | A biscuit authorization check failed, or the authorizer could not be built for the presentation. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0325` | Biscuit authorization exceeded its run limits (facts, iterations or time), which is a refusal and never a pass. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0326` | A biscuit attenuation block was refused: empty, a parameter of an unsupported type, or rejected by the library. | — |
 | `STS-GNAP-0330` | ZCAP keys are unusable (no absolute controller URL, a keyId not under it, not a key of the kind gnap.zcapCryptosuite signs with, or a suite that is none of the four), or a capability's invocationTarget is not an absolute URI. | — |
 | `STS-GNAP-0331` | The ZCAP libraries could not be loaded. | HTTP 401 invalid_token at a resource server; at issuance the token is left out |
-| `STS-GNAP-0332` | A presented ZCAP is not base64url JSON with exactly the members and @context this format writes. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0333` | A presented ZCAP's delegation proof does not verify under this authorization server's key. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0334` | A presented ZCAP's GNAP terms are inconsistent, or it names no invocationTarget. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0332` | A presented ZCAP is not base64url JSON with exactly the members and @context this format writes. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0333` | A presented ZCAP's delegation proof does not verify under this authorization server's key. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0334` | A presented ZCAP's GNAP terms are inconsistent, or it names no invocationTarget. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0335` | The ZCAP libraries refused to sign a capability. | — |
-| `STS-GNAP-0336` | A presented ZCAP carries a proof of a suite other than the one this realm's gnap.zcapCryptosuite names, or not exactly one proof. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0340` | A presented jwt-encrypted GNAP access token is encrypted to a resource server's key, which this authorization server does not hold. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0341` | A presented jwt-encrypted GNAP access token does not decrypt. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0342` | A presented JWT GNAP access token's signature does not verify. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0343` | A presented JWT is not a GNAP access token: its header typ is not gnap-at+jwt, or its payload typ is not GNAP. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
-| `STS-GNAP-0344` | A GNAP token names an access token format that does not exist. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0336` | A presented ZCAP carries a proof of a suite other than the one this realm's gnap.zcapCryptosuite names, or not exactly one proof. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0340` | A presented jwt-encrypted GNAP access token is encrypted to a resource server's key, which this authorization server does not hold. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0341` | A presented jwt-encrypted GNAP access token does not decrypt. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0342` | A presented JWT GNAP access token's signature does not verify. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0343` | A presented JWT is not a GNAP access token: its header typ is not gnap-at+jwt, or its payload typ is not GNAP. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0344` | A GNAP token names an access token format that does not exist. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0400` | A GNAP interaction start link (redirect or app) names no request still waiting for approval. | HTTP 400 page |
 | `STS-GNAP-0401` | A GNAP interaction start link had already been used. | HTTP 400 page |
 | `STS-GNAP-0402` | The GNAP user code page, or the GNAP interaction API (/gnap-api), was reached while GNAP is turned off (gnap.enabled). | HTTP 400 page, or { ok: false, errors } on /gnap-api |
@@ -3938,7 +3941,7 @@ Raised from: gnap/.
 | `STS-GNAP-0543` | A key-bound GNAP access token was presented under the Bearer scheme rather than GNAP with a key proof. | HTTP 401 invalid_request (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
 | `STS-GNAP-0544` | The key of a presented key-bound GNAP access token, or the request content, could not be read. | HTTP 401 invalid_request (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
 | `STS-GNAP-0545` | The key proof with a presented GNAP access token did not verify and the verifier named no more specific code. | HTTP 401 invalid_token (WWW-Authenticate: GNAP) at a resource server; HTTP 401 with WWW-Authenticate at the SSF transmitter |
-| `STS-GNAP-0546` | A presented GNAP access token failed its format's verification and the format named no more specific code. | HTTP 401 invalid_token or 403 insufficient_scope at the demonstration resource server (WWW-Authenticate: GNAP) |
+| `STS-GNAP-0546` | A presented GNAP access token failed its format's verification and the format named no more specific code. | HTTP 401 invalid_token or 403 insufficient_scope at a resource server (WWW-Authenticate: GNAP) |
 | `STS-GNAP-0550` *(retired)* | The GNAP demonstration resource server was reached while it is turned off (gnap.demoResourceServer). Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 404 GNAP invalid_request |
 | `STS-GNAP-0551` *(retired)* | The GNAP demonstration resource server was called with no access token; it answered with the RS-first challenge of RFC 9635 section 9.1. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 401 invalid_token with WWW-Authenticate: GNAP as_uri, access, referrer |
 | `STS-GNAP-0552` *(retired)* | The GNAP demonstration resource server refused a presented token whose refusal carried no more specific code. Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 401 invalid_token (WWW-Authenticate: GNAP) |
@@ -3978,7 +3981,7 @@ Raised from: gnap/.
 | `STS-GNAP-0731` | A GNAP grant was refused at use — its continuation, or introspected inactive — because its client's application entry no longer exists, or no longer names the key the grant is bound to (gnapKey, gnapKeyIdentity or gnapKeyReference removed or replaced, #432). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
 | `STS-GNAP-0732` | A GNAP access token was not rotated because its resource owner's account is disabled, or its client's application entry is gone or no longer names the grant's key (#432). Revoking it is still allowed. | RFC 9635 section 6.1 (invalid_rotation) |
 | `STS-GNAP-0733` | A resource server asked to derive from a GNAP access token whose resource owner's account is disabled, or whose client's application entry is gone or no longer names the grant's key (#432). | RFC 9767 section 4 (invalid_request) |
-| `STS-GNAP-0734` | A GNAP access token was presented (the demonstration resource server, a Shared Signals endpoint) whose resource owner's account is disabled (#432). | RFC 9635 section 7.2 (invalid_token) |
+| `STS-GNAP-0734` | A GNAP access token was presented (at a Shared Signals endpoint) whose resource owner's account is disabled (#432). | RFC 9635 section 7.2 (invalid_token) |
 | `STS-GNAP-0735` | A GNAP access token was presented whose client's application entry no longer exists or no longer names the key the grant is bound to (#432). | RFC 9635 section 7.2 (invalid_token) |
 | `STS-GNAP-0736` | A GNAP grant could not be ended by an act from outside the protocol — a sign-out, a deleted client, a compromised device, a received signal (#432). The others it was asked to end were. | none — a warning in the log |
 | `STS-GNAP-0737` | An application entry was deleted, or its GNAP key removed or replaced, and its GNAP grants could not be ended with it (#432). Each is still refused at its next use (STS-GNAP-0731). | none — a warning in the log |
@@ -4020,14 +4023,14 @@ Raised from: gnap/.
 | `STS-GNAP-0867` | Limits lowered on the GNAP approval page no longer meet the limits schema of the right's type (#432 phase 5). | RFC 9635 section 4 (the page answers 400) |
 | `STS-GNAP-0868` | A derived GNAP token would drop or raise a limit the original token's right carries (#432 phase 5). | RFC 9767 section 4 (request_denied, HTTP 403) |
 | `STS-GNAP-0869` | A resource server's owner lookup (gnapOwnerLookupUri) could not be answered: refused by the outbound policy, unreachable, or not {"owner": "<DN>"} (#432 phase 5). | — |
-| `STS-GNAP-0870` | A demonstration spend would pass the limits of the token's right for its grant and period (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
-| `STS-GNAP-0871` | A demonstration spend is outside the window or the repeating interval the token's limits allow (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
-| `STS-GNAP-0872` | A demonstration spend names a receiver the token's limits do not (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
-| `STS-GNAP-0873` | A demonstration spend states no amount, or one in another currency, where the token's limits count an amount (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
-| `STS-GNAP-0874` | A demonstration spend's body is not readable (#432 phase 5). | RFC 6750 section 3.1 (invalid_request, HTTP 400) |
-| `STS-GNAP-0875` | The running totals of a token's limits could not be read from the store every node shares; the demonstration spend was refused (#432 phase 5). | HTTP 503 |
+| `STS-GNAP-0870` | A spend would pass the limits of the token's right for its grant and period (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0871` | A spend is outside the window or the repeating interval the token's limits allow (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0872` | A spend names a receiver the token's limits do not (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0873` | A spend states no amount, or one in another currency, where the token's limits count an amount (#432 phase 5). | RFC 6750 section 3.1 (insufficient_scope, HTTP 403) |
+| `STS-GNAP-0874` | A spend's body is not readable (#432 phase 5). | RFC 6750 section 3.1 (invalid_request, HTTP 400) |
+| `STS-GNAP-0875` | The running totals of a token's limits could not be read from the store every node shares; the spend was refused (#432 phase 5). | HTTP 503 |
 | `STS-GNAP-0876` *(retired)* | The demonstration operation failed after its spend was counted (asked to, with simulateFailure); the spend was refunded (#432 phase 5). Retired 2026-10-12 (#593): the demonstration resource server was deleted; the test peer plays a GNAP resource server | HTTP 502 |
-| `STS-GNAP-0877` | A demonstration spend could not be refunded: a new period had begun, or the store could not be asked (#432 phase 5). | — |
+| `STS-GNAP-0877` | A spend could not be refunded: a new period had begun, or the store could not be asked (#432 phase 5). | — |
 | `STS-GNAP-0890` | A GNAP access right whose type requires its resource owner on the approval page (interaction: always, or a consent action) was approved by skipping the page or by a remembered approval, and was left out of its token at issuance (#432 phase 6). | audit only; the token is issued without the right |
 | `STS-GNAP-0891` | A GNAP access right whose type requires an authentication level the approving session did not meet was left out of its token at issuance (#432 phase 6, RFC 9470). | audit only; the token is issued without the right |
 | `STS-GNAP-0892` | A client trusted to skip interaction (gnapSkipInteraction) asked for a right whose type requires its resource owner on the approval page, and offered no way to interact (#432 phase 6). | RFC 9635 section 2.5 (invalid_interaction, HTTP 400) |
@@ -4148,7 +4151,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 |---|---|---|
 | `STS-XACML-0001` | A request reached an XACML endpoint while the family is switched off (xacml.enabled). | HTTP 501 not_implemented |
 | `STS-XACML-0002` | A request reached a remote-PEP endpoint or POST /xacml/pip while remote enforcement points are switched off (xacml.remotePeps). | HTTP 501 not_implemented |
-| `STS-XACML-0003` | The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies, /xacml/protected) was refused to a caller that presented no client certificate. | HTTP 403 access_denied |
+| `STS-XACML-0003` | The XACML surface (GET /xacml, /xacml/pdp, /xacml/policies) was refused to a caller that presented no client certificate. | HTTP 403 access_denied |
 | `STS-XACML-0004` | The XACML surface was refused to a caller whose client certificate did not verify against this service's truststore. | HTTP 403 access_denied |
 | `STS-XACML-0005` | The XACML surface was refused to a verified certificate whose subject resolves to no directory entry holding XACML_USER (not in roles.xacmlUserGroup). | HTTP 403 access_denied |
 | `STS-XACML-0006` | The XACML surface was refused by the access policy to a verified caller that does hold XACML_USER — an operator-edited access-control document denied it. | HTTP 403 access_denied |
@@ -4157,8 +4160,8 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0009` | A remote-PEP endpoint was refused to a verified certificate whose subject resolves to no directory entry holding REMOTE_PEPS (not in roles.remotePepGroup). | HTTP 403 access_denied |
 | `STS-XACML-0010` | A remote-PEP endpoint was refused by the access policy to a verified caller that does hold REMOTE_PEPS — an operator-edited access-control document denied it. | HTTP 403 access_denied |
 | `STS-XACML-0011` | A decision request to POST /xacml/pdp was not a well-formed JSON Profile request. | HTTP 400 invalid_request |
-| `STS-XACML-0012` | A decision could not be made because the repository's root policy does not load; the PDP answered Indeterminate. | HTTP 200 with decision Indeterminate (XACML status syntax-error); GET /xacml/protected may then refuse with 403 |
-| `STS-XACML-0013` | The engine reached Indeterminate through a processing or syntax error while evaluating a policy (not a missing attribute). | HTTP 200 with decision Indeterminate (XACML status processing-error or syntax-error); GET /xacml/protected may then refuse with 403 |
+| `STS-XACML-0012` | A decision could not be made because the repository's root policy does not load; the PDP answered Indeterminate. | HTTP 200 with decision Indeterminate (XACML status syntax-error); a PEP asking it may then refuse with 403 |
+| `STS-XACML-0013` | The engine reached Indeterminate through a processing or syntax error while evaluating a policy (not a missing attribute). | HTTP 200 with decision Indeterminate (XACML status processing-error or syntax-error); a PEP asking it may then refuse with 403 |
 | `STS-XACML-0014` *(retired)* | The embedded demonstration PEP at GET /xacml/protected refused the subject because the decision was not one its bias allows. Retired 2026-10-12 (#596): the demonstration PEP was deleted; the remote PEP container's GET /protected is the demonstration | HTTP 403 with the PEP's JSON enforcement answer |
 | `STS-XACML-0015` *(retired)* | The embedded demonstration PEP refused a Permit because the decision carried an obligation it cannot discharge (XACML 3.0 section 7.2). Retired 2026-10-12 (#596): the demonstration PEP was deleted; the remote PEP container's GET /protected is the demonstration | HTTP 403 with the PEP's JSON enforcement answer |
 | `STS-XACML-0016` | GET /xacml was asked with a format or bias query parameter outside its allowed values. | HTTP 400 text/plain |

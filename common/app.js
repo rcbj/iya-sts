@@ -96,10 +96,6 @@ const requestPool = require('./request_pool');
 // table and the capability table at load, and `persistence.js` only inside a
 // request. Installed directly below the pool's middleware — see there.
 const clusterBarrier = require('../cluster/cluster_barrier');
-// THE MODE (#585): `demoOnly` below asks it. `helpers.js` above required it at
-// load, so this is a cache hit and closes nothing — and adds no file to the
-// parent project's Kerberos COPY closure, which reaches this file.
-const mode = require('./mode');
 // --- express app -----------------------------------------------------------
 const app = express();
 
@@ -1313,168 +1309,6 @@ app.get('/healthcheck', function (req, res) {
   log.debug("Leaving the healthcheck endpoint.");
 });
 
-// ---------------------------------------------------------------------------
-// THE MARK ON A DEMONSTRATION ROUTE (#585, rcbj 2026-10-12).
-//
-// Every demonstration, mock and test-control endpoint is served and listed
-// only in development mode; in a product realm it answers EXACTLY as a path
-// nothing is registered on — Express's own `Cannot GET /path` 404. So the
-// mark is a middleware placed FIRST in the route's handler list,
-//
-//     app.get('/spnego', app.demoOnly, handler)
-//
-// that calls `next('route')` where the mode says no: the rest of THAT route
-// is skipped and the router goes on as though it had never matched, which is
-// what reaches the 404. Not a refusal of our own: a 404 of this service's
-// making would differ from the unrouted answer in its body, its headers or
-// its audit row, and the point is that a product realm has no such endpoint
-// to tell apart. The per-handler product refusals these routes carried
-// (`STS-OAUTH-0178`, `STS-TLS-0024`, `STS-DEVICE-0035`, `STS-VC-0100` …) are
-// retired with this, kept in the table and never reused.
-//
-// **IT IS ALSO HOW EVERY LIST KNOWS A ROUTE IS A DEMONSTRATION.** The function
-// carries `stsDemo` and a `serves()` that answers for the ambient realm, so
-// `sts_metadata.ts` and `admin-core/protocol_endpoints.ts` read the mark off
-// the router itself, and a route cannot be served in a product realm and
-// listed nowhere, or listed and not served: there is one mark and both read
-// it. `demoMarkOf()` finds it on a route.
-//
-// TWO MARKS, because two things are the PROCESS's and not a realm's.
-// `demoOnly` asks the ambient realm, so a development realm in a product
-// process keeps its demonstrations (that is how the suite's throwaway
-// `{"global.mode":"development"}` realms reach them). `processDemoOnly` asks
-// the DEFAULT realm, for a door that changes something every realm shares —
-// the protected Kerberos service's socket since #597 deleted the open
-// truststore doors, `/tls/trust` and `/tls/trust/clear`, which carried it —
-// where a development realm in a product process must not be a way in.
-// ---------------------------------------------------------------------------
-/**
- * Passes a request on to a demonstration route's handler where the ambient
- * realm serves demonstration endpoints, and past the route otherwise, so a
- * product realm answers as for a path nothing is registered on.
- *
- * @param req - the request
- * @param res - the response
- * @param next - express's continuation
- */
-function demoOnly(req, res, next) {
-  log.debug("Entering demoOnly().");
-  if (mode.servesDemoEndpoints()) {
-    log.debug("Leaving demoOnly(). Served.");
-    next();
-    return;
-  }
-  log.debug("Leaving demoOnly(). A product realm: past the route.");
-  next('route');
-}
-
-/**
- * Whether the ambient realm serves demonstration endpoints, for the lists
- * that read `demoOnly`'s mark off the router.
- *
- * @returns true where `demoOnly` passes a request on
- */
-function servesRealmDemos() {
-  log.debug("Entering servesRealmDemos().");
-  log.debug("Leaving servesRealmDemos().");
-  return mode.servesDemoEndpoints();
-}
-
-/**
- * Whether the PROCESS — its default realm — and the ambient realm both serve
- * demonstration endpoints: the question for a door to something every realm
- * shares.
- *
- * @returns true where `processDemoOnly` passes a request on
- */
-function servesProcessDemos() {
-  log.debug("Entering servesProcessDemos().");
-  const processServes = realms.run(realms.get(realms.DEFAULT_ID),
-                                   function () {
-    return mode.servesDemoEndpoints();
-  });
-  log.debug("Leaving servesProcessDemos().");
-  return !!processServes && mode.servesDemoEndpoints();
-}
-
-/**
- * `demoOnly` for a door to something the whole process shares: passed on only
- * where the default realm and the ambient realm both serve demonstration
- * endpoints.
- *
- * @param req - the request
- * @param res - the response
- * @param next - express's continuation
- */
-function processDemoOnly(req, res, next) {
-  log.debug("Entering processDemoOnly().");
-  if (servesProcessDemos()) {
-    log.debug("Leaving processDemoOnly(). Served.");
-    next();
-    return;
-  }
-  log.debug("Leaving processDemoOnly(). Past the route.");
-  next('route');
-}
-
-Object.assign(demoOnly, { stsDemo: 'realm', serves: servesRealmDemos });
-Object.assign(processDemoOnly, { stsDemo: 'process',
-                                 serves: servesProcessDemos });
-
-/**
- * The demonstration mark on an express route, if it carries one.
- *
- * @param route - a router layer's `route`
- * @returns the mark (`demoOnly` or `processDemoOnly`), or null
- */
-function demoMarkOf(route) {
-  log.debug("Entering demoMarkOf().");
-  const stack = (route && route.stack) || [];
-  for (let i = 0; i < stack.length; i += 1) {
-    const handle = stack[i] && stack[i].handle;
-    if (handle && handle.stsDemo) {
-      log.debug("Leaving demoMarkOf(). " + handle.stsDemo);
-      return handle;
-    }
-  }
-  log.debug("Leaving demoMarkOf(). None.");
-  return null;
-}
-
-/**
- * Whether a path names a demonstration route the ambient realm is NOT
- * served (#585), for a page that links to it: a console link, a description
- * page's list. Read off the router, so a link cannot outlive its route's mark.
- *
- * @param path - a path, as a link writes it (a query or fragment is ignored)
- * @returns true where every route on the path is a demonstration this realm
- *   is not served
- */
-function demoPathHidden(path) {
-  log.debug("Entering demoPathHidden().");
-  const bare = String(path || '').split('#')[0].split('?')[0];
-  const router = app._router || app.router;
-  const stack = (router && router.stack) || [];
-  let marked = false;
-  let served = false;
-  stack.forEach(function (layer) {
-    if (!layer.route || String(layer.route.path) !== bare) {
-      return;
-    }
-    const mark = demoMarkOf(layer.route);
-    if (!mark) {
-      served = true;
-      return;
-    }
-    marked = true;
-    if (mark.serves()) {
-      served = true;
-    }
-  });
-  log.debug("Leaving demoPathHidden(). " + (marked && !served));
-  return marked && !served;
-}
-
 // The app, with its members hung off it. One `Object.assign` rather than an
 // assignment followed by four more (#50, 2026-09-16): the same object either
 // way, and the type checker accepts only this form.
@@ -1503,10 +1337,5 @@ module.exports = Object.assign(app, {
   // The two dataset uploads the body parsers leave alone (#215): the
   // console's gate asks it too, to leave the CSRF token — which is in the
   // unread body — to the upload handler.
-  isStreamedUpload: isStreamedUpload,
-  // The demonstration marks (#585), and the reader of one off a route.
-  demoOnly: demoOnly,
-  processDemoOnly: processDemoOnly,
-  demoMarkOf: demoMarkOf,
-  demoPathHidden: demoPathHidden
+  isStreamedUpload: isStreamedUpload
 });

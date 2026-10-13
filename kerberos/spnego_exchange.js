@@ -429,7 +429,8 @@ function prunePending(nowMs) {
 }
 
 // ---------------------------------------------------------------------------
-// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view.
+// THE LAST EXCHANGE, for `GET /spnego`'s diagnostic view until #595 moved
+// that page to the development companion; no route reads it now.
 //
 // It lives here rather than in `spnego.js` now that there are two doors, and
 // it carries the DOOR — so a person reading that page can tell an exchange

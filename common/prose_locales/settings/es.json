@@ -5584,8 +5584,8 @@
     "text": "Contraseña del principal de servicio"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "La contraseña de la cuenta que nombra krb5.servicePrincipal — el equivalente de un keytab. En MODO PRODUCTO se rechaza el valor predeterminado distribuido: ese valor está impreso en este repositorio, así que una clave de servicio derivada de él es una clave para la que cualquiera puede falsificar un ticket. Sin definirla no se crea la cuenta de servicio, /authn/spnego no acepta ningún ticket, y GET /admin-api/kerberos/principals indica por qué. Defínala con la contraseña de la cuenta del SPN en el KDC que emite sus tickets."
+    "en": "203b6ef1fa4a5cfa",
+    "text": "La contraseña de la cuenta que nombra krb5.servicePrincipal — el equivalente de un keytab. En MODO PRODUCTO se rechaza el valor predeterminado incluido: ese valor está impreso en este repositorio, así que una clave de servicio derivada de él es una clave con la que cualquiera puede falsificar un ticket. Entonces el modo producto asigna al SPN una clave aleatoria, una sola vez, sellada en su entrada de aplicación (Rotate en /admin/kerberos/principals entrega un keytab), y hace lo mismo con una contraseña vacía. Establézcala a la contraseña de la cuenta del SPN en el KDC que emite sus tickets y tendrá prioridad sobre esa clave. En desarrollo una contraseña vacía no crea ninguna cuenta y el aceptador no acepta ningún ticket."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -7528,8 +7528,8 @@
     "text": "Grupo que concede el rol XACML_USER"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "6256e6a60d3799e6",
-    "text": "El grupo del directorio cuyos miembros tienen el rol integrado XACML_USER, que es lo que exigen los tres endpoints XACML propiamente dichos — GET /xacml, POST /xacml/pdp y GET /xacml/policies. Quien llama presentando un certificado de cliente que este servicio VERIFICÓ es alguien a quien puede nombrar; pertenecer a este grupo es lo que lo convierte en alguien a quien deja entrar, y ambas cosas se mantienen separadas por la misma razón que roles.remotePepGroup, más arriba: un certificado prueba una identidad y un grupo concede un permiso. ES UN SEGUNDO GRUPO Y NO EL MISMO: REMOTE_PEPS alcanza los tres endpoints /xacml/pep, que entregan los documentos con los que este servicio aplica su propio control de acceso, y un solo grupo que concediera ambos haría que admitir a quien llama en la superficie de demostración lo admitiera sin avisar en aquellos. Dejarlo vacío significa que NADIE tiene el rol, lo que cierra esos tres endpoints a cualquiera que llame; es la forma de retirar la superficie XACML sin desactivar xacml.enabled y perder con ello los PEP integrados de emisión y de acceso."
+    "en": "d19a9234253beccc",
+    "text": "El grupo del directorio cuyos miembros tienen el rol integrado XACML_USER, que es lo que exigen los tres endpoints XACML propiamente dichos — GET /xacml, POST /xacml/pdp y GET /xacml/policies. Quien llama presentando un certificado de cliente que este servicio VERIFICÓ es alguien a quien puede nombrar; pertenecer a este grupo es lo que lo convierte en alguien a quien deja entrar, y ambas cosas se mantienen separadas por la misma razón que roles.remotePepGroup, más arriba: un certificado prueba una identidad y un grupo concede un permiso. ES UN SEGUNDO GRUPO Y NO EL MISMO: REMOTE_PEPS alcanza los tres endpoints /xacml/pep, que entregan los documentos con los que este servicio aplica su propio control de acceso, y un solo grupo que concediera ambos haría que admitir a quien llama en la superficie XACML propiamente dicha lo admitiera sin avisar en aquellos. Dejarlo vacío significa que NADIE tiene el rol, lo que cierra esos tres endpoints a cualquiera que llame; es la forma de retirar la superficie XACML sin desactivar xacml.enabled y perder con ello los PEP integrados de emisión y de acceso."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",
@@ -7552,8 +7552,8 @@
     "text": "La política con la que se toman las decisiones de emisión"
   },
   "xacml.issuancePolicy|description": {
-    "en": "b7864ae423459362",
-    "text": "El nombre de la entrada del directorio de la política que evalúa el PEP INTEGRADO para las decisiones de emisión propias de este servicio. Deliberadamente NO es la raíz del repositorio: la raíz responde preguntas sobre la frontera de otro — para eso es un PDP y eso es lo que le preguntan /xacml/pdp y todo PEP remoto — y esta responde una pregunta sobre ESTE servicio. Dos preguntas, dos documentos, para que editar la política de demostración no pueda cambiar quién puede iniciar sesión y restringir un rol no pueda cambiar lo que responde /xacml/pdp. La política `role-issuance` está INTEGRADA y nunca se siembra en ou=policies: una entrada del repositorio con este nombre, escrita en el ou=policies propio de un dominio, la anula solo para ese dominio, y eliminar la entrada devuelve la integrada."
+    "en": "7e89107ac8335d95",
+    "text": "El nombre de la entrada del directorio de la política que evalúa el PEP INTEGRADO para las decisiones de emisión propias de este servicio. Deliberadamente NO es la raíz del repositorio: la raíz responde preguntas sobre la frontera de otro — para eso es un PDP y eso es lo que le preguntan /xacml/pdp y todo PEP remoto — y esta responde una pregunta sobre ESTE servicio. Dos preguntas, dos documentos, para que editar la política raíz no pueda cambiar quién puede iniciar sesión y restringir un rol no pueda cambiar lo que responde /xacml/pdp. La política `role-issuance` está INTEGRADA y nunca se siembra en ou=policies: una entrada del repositorio con este nombre, escrita en el ou=policies propio de un dominio, la anula solo para ese dominio, y eliminar la entrada devuelve la integrada."
   },
   "audit.maxEvents|label": {
     "en": "e12ddec225bffa6c",

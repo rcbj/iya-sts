@@ -94,7 +94,7 @@
   "body.overrideBefore": "它是 <code>ou=policies</code> 下的普通条目，因此",
   "body.editor": "编辑器",
   "body.overrideAfter": "、ALFA、<code>/admin-api/xacml</code> 和 <code>ldapmodify</code> 都能访问它。删除它会恢复内置策略 &mdash; 它是一个覆盖，而不是唯一的副本。",
-  "body.notRoot": "<strong>它不是存储库根，也不会发送给远程 PEP。</strong>两个问题，两份文档：根回答调用者在 <code>/xacml/pdp</code> 询问的内容以及每个远程 PEP 拉取的内容，而这一份回答谁可以在这里获得签发。把它们合成一份文档意味着编辑演示策略会改变谁能登录。",
+  "body.notRoot": "<strong>它不是存储库根，也不会发送给远程 PEP。</strong>两个问题，两份文档：根回答调用者在 <code>/xacml/pdp</code> 询问的内容以及每个远程 PEP 拉取的内容，而这一份回答谁可以在这里获得签发。把它们合成一份文档意味着编辑根策略会改变谁能登录。",
   "body.notEvaluated": "<strong>签发策略未被评估。</strong>{why}",
   "body.notEvaluatedRest": "只要求 <code>{defaultRequired}</code> 的应用不受影响 &mdash; 所有人都持有它，所以从来没有需要决定的事。<strong>条目中指明了角色的应用会被拒绝</strong>，这种不对称是有意的：有人特意要求了限制，而因为实现它的文档缺失就予以允许，将意味着已配置的拒绝悄然失效。",
   "body.claimHeading": "声明",

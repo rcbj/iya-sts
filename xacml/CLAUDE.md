@@ -146,7 +146,7 @@ Four links, and each is checked by the module that owns it:
 
 | # | The question | Answered by |
 |---|---|---|
-| 1 | Did the certificate build a path to an anchor in this service's truststore? | `oauth-oidc/mtls.js`'s `peerVerified()`, over `POST /tls/trust` — and the MAIN listener joined that truststore the same day, which is what made the question answerable at all |
+| 1 | Did the certificate build a path to an anchor in this service's truststore? | `oauth-oidc/mtls.js`'s `peerVerified()`, over the truststore `POST /admin-api/tls/trust/add` fills — and the MAIN listener joined that truststore the same day, which is what made the question answerable at all |
 | 2 | Which directory entry is that? | `xacml_pep_registry.ts`'s `certificateIdentity()`, across the slot `ldap_server.js` fills — the same lookup `GET /tls/sign-in` gets (it was a certificate arriving on 8443 or 9443 until both listeners were deleted on 2026-09-16), so one certificate is one person however it turns up |
 | 3 | What roles does that entry hold? | `common/roles.js`, with the groups LEFT UNRESOLVED so it reads them from the directory. `REMOTE_PEPS` was the first built-in role held through a GROUP rather than computed from what the party is; `XACML_USER` is the second, and the two are deliberately separate |
 | 4 | Does the policy allow it? | `common/access_gate.ts` → `xacml_access_pep.ts`, on resource `xacml-pep-api` or `xacml-api` — the same embedded PEP and the same `access-control` document that decide the console and the management API |
@@ -410,8 +410,8 @@ survives being refused.
 
 **ONE GROUP GRANTING BOTH WOULD BE THE MISTAKE.** The `/xacml/pep/*` endpoints
 hand out the documents this service enforces its own access with, and
-`/xacml/pip` hands out a named person's directory attributes; the four above
-them serve a demonstration policy. Admitting a caller to the second set must
+`/xacml/pip` hands out a named person's directory attributes; the three above
+them answer questions put to the repository's root policy. Admitting a caller to the second set must
 not silently admit it to the first, which is why there are two built-in roles
 and two settings rather than one of each. `common/roles.js` argues it at the
 role and `common/access_gate.ts` at the resource — `xacml-api` and

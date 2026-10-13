@@ -1658,6 +1658,12 @@ function configuredServiceDefinition(ctx) {
   }
   const password = String(config.value('krb5.servicePassword') || '');
   if (!password) {
+    // `passwordRefused`, in both refusals below (2026-10-12): the SPN is
+    // usable and only the PASSWORD is missing or published, which is the case
+    // a product key source answers with a random key of its own
+    // (`krb5_person_keys.ts`, `acceptorKeyMissing()`). The mode is asked
+    // there, not here.
+    account.passwordRefused = true;
     account.reason = 'krb5.servicePassword (KRB5_SERVICE_PASSWORD) ' +
       'is empty, so the ' +
       'account ' + spn + '@' + REALM + ' was not created and ' +
@@ -1668,14 +1674,17 @@ function configuredServiceDefinition(ctx) {
   }
   if (!ctx.SEEDS_DEMO &&
       password === publishedDefault('krb5.servicePassword')) {
+    account.passwordRefused = true;
     account.reason = 'product mode refuses the published default ' +
       'krb5.servicePassword: that value is written in this service\'s ' +
       'source, so a key derived from it would let anybody mint a ticket this ' +
       'acceptor accepts. The ' +
       'account ' + spn + '@' + REALM + ' was NOT created, so ' +
-      'the acceptor on krb5.servicePort and /authn/spnego accept no ticket. ' +
+      'the acceptor at /authn/spnego accepts no ticket. ' +
       'Set KRB5_SERVICE_PASSWORD to the password of that SPN\'s account in ' +
-      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt).';
+      'the KDC that issues its tickets (and KRB5_SERVICE_SALT to its salt), ' +
+      'or leave it and let this KDC key the SPN at random, which a product ' +
+      'service does by itself where it can store the key.';
     log.warn(errorCodes.tag('STS-KRB-0061') + 'krb5: ' + account.reason);
     log.debug('Leaving configuredServiceDefinition(). Published default ' +
               'refused.');
@@ -1909,7 +1918,8 @@ function inactiveContext(id, reason) {
     KDC_ETYPES: [], KVNO: null, USER_PASSWORD: null,
     AUTO_SERVICE_PASSWORD: null, SERVICE_DOMAINS: [], DOMAIN_SID: '',
     KRBTGT_PASSWORD: null, KRBTGT_FROM_PASSWORD: false,
-    serviceAccount: { spn: '', available: false, reason: reason },
+    serviceAccount: { spn: '', available: false, reason: reason,
+                      passwordRefused: false },
     krbtgtReason: reason, configuredKeys: new Set(),
     signature: builtFromSignature(realms.get(id))
   };
@@ -1943,7 +1953,8 @@ function buildContext(realm) {
       KRBTGT_PASSWORD: fromPassword ?
         mode.valueInForce('krb5.krbtgtPassword') : null,
       KRBTGT_FROM_PASSWORD: fromPassword,
-      serviceAccount: { spn: '', available: false, reason: '' },
+      serviceAccount: { spn: '', available: false, reason: '',
+                        passwordRefused: false },
       krbtgtReason: '',
       configuredKeys: new Set(),
       signature: builtFromSignature(isDefault ? null : realm)
@@ -4084,13 +4095,52 @@ module.exports = {
     // for this SPN at /admin/kerberos/principals, which the acceptor prefers
     // over the password-derived account. An account refused for its published
     // password is then keyed anyway, which is the way out that refusal names.
-    const stored = !!ctx.serviceAccount.spn &&
+    let stored = !!ctx.serviceAccount.spn &&
       !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+    // THE KEY SOURCE MAY KEY THE ACCEPTOR ITSELF (2026-10-12): where the
+    // account was refused only for its password, a product key source makes
+    // a random key for the SPN — at once where it is the store's only writer,
+    // under a claim otherwise — so a trust realm that turned Kerberos on after
+    // the start has an acceptor without a restart. The source asks the mode;
+    // an older source without the member leaves this as it was.
+    if (!stored && ctx.serviceAccount.passwordRefused && keySource &&
+        typeof keySource.acceptorKeyMissing === 'function') {
+      try {
+        stored = !!keySource.acceptorKeyMissing(ctx.serviceAccount.spn) &&
+          !!storedService(ctx.serviceAccount.spn.split('/'), ctx.REALM);
+      } catch (e) {
+        // Reported and treated as no key: the acceptor refuses and says why,
+        // which is what it did before the source could make one.
+        log.error(errorCodes.tag('STS-KRB-0210') + 'krb5: making a key for ' +
+                  'the acceptor\'s SPN ' + ctx.serviceAccount.spn +
+                  ' threw: ' + ((e && e.message) || e));
+        stored = false;
+      }
+    }
     log.debug("Leaving serviceAccount().");
     return { spn: ctx.serviceAccount.spn,
              available: ctx.serviceAccount.available || stored,
              storedKey: stored,
              reason: stored ? '' : ctx.serviceAccount.reason };
+  },
+  // The acceptor's CONFIGURED account in the ambient realm, without asking
+  // the key source (2026-10-12): whether `krb5.servicePassword` built it, and
+  // whether it was refused only for its password. The key source reads it to
+  // decide whether to key the SPN itself, and whether a key it made earlier
+  // still answers — an operator's own password wins over it.
+  /**
+   * Returns the acceptor's configured account in the ambient realm, without
+   * consulting the key source.
+   *
+   * @returns `{ spn, configured, passwordRefused }`
+   */
+  acceptorAccount: function () {
+    log.debug("Entering acceptorAccount().");
+    const ctx = current();
+    log.debug("Leaving acceptorAccount().");
+    return { spn: String(ctx.serviceAccount.spn || ''),
+             configured: !!ctx.serviceAccount.available,
+             passwordRefused: !!ctx.serviceAccount.passwordRefused };
   },
   // The SPN the acceptor holds in the AMBIENT realm, as components — what
   // `krb5_service.js` read once from `krb5.servicePrincipal` until that became

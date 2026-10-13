@@ -94,7 +94,7 @@
   "body.overrideBefore": "It is an ordinary entry under <code>ou=policies</code>, so the ",
   "body.editor": "editor",
   "body.overrideAfter": ", ALFA, <code>/admin-api/xacml</code> and an <code>ldapmodify</code> all reach it. DELETING it puts the built-in policy back &mdash; it is an override rather than the only copy.",
-  "body.notRoot": "<strong>It is not the repository ROOT and it is not sent to remote PEPs.</strong> Two questions, two documents: the root answers what a caller asks at <code>/xacml/pdp</code> and what every remote PEP pulls, and this answers who may be issued something HERE. Making them one document would mean editing the demo policy changed who could sign in.",
+  "body.notRoot": "<strong>It is not the repository ROOT and it is not sent to remote PEPs.</strong> Two questions, two documents: the root answers what a caller asks at <code>/xacml/pdp</code> and what every remote PEP pulls, and this answers who may be issued something HERE. Making them one document would mean editing the root policy changed who could sign in.",
   "body.notEvaluated": "<strong>The issuance policy is not being evaluated.</strong> {why}",
   "body.notEvaluatedRest": "An application that requires only <code>{defaultRequired}</code> is unaffected &mdash; everybody holds it, so there was never anything to decide. <strong>An application whose entry names a role is REFUSED</strong>, and that asymmetry is deliberate: somebody deliberately asked for a restriction, and permitting because the document implementing it is missing would be a configured refusal silently not happening.",
   "body.claimHeading": "The claim",

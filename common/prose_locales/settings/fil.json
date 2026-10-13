@@ -5584,8 +5584,8 @@
     "text": "Password ng service principal"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "Ang password ng account na pinapangalanan ng krb5.servicePrincipal — katumbas ng isang keytab. SA PRODUCT MODE, tinatanggihan ang kasamang default: naka-print ang value na iyon sa repository na ito, kaya ang service key na hinango mula rito ay key na mapapag-forge-an ng ticket ng kahit sino. Kapag hindi ito nakatakda, hindi ginagawa ang service account, walang tinatanggap na ticket ang /authn/spnego, at sinasabi ng GET /admin-api/kerberos/principals kung bakit. Itakda ito sa password ng account ng SPN sa KDC na nag-i-issue ng mga ticket nito."
+    "en": "203b6ef1fa4a5cfa",
+    "text": "Ang password ng account na pinangangalanan ng krb5.servicePrincipal — katumbas ng isang keytab. Sa PRODUCT MODE tinatanggihan ang kasamang default: nakalimbag ang halagang iyon sa repository na ito, kaya ang service key na hinango mula rito ay key na magagamit ng kahit sino para mameke ng ticket. Kaya binibigyan ng product ang SPN ng random na key, minsan lang, naka-seal sa application entry nito (nagbibigay ng keytab ang Rotate sa /admin/kerberos/principals), at ganoon din sa walang-lamang password. Itakda ito sa password ng account ng SPN sa KDC na naglalabas ng mga ticket nito at mananaig ito sa key na iyon. Sa development, walang account na nalilikha sa walang-lamang password at walang ticket na tinatanggap ang acceptor."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -7528,8 +7528,8 @@
     "text": "Group na nagbibigay ng XACML_USER role"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "6256e6a60d3799e6",
-    "text": "Ang grupo sa directory na ang mga miyembro ay may hawak ng built-in na role na XACML_USER, na siyang hinihingi ng tatlong mismong XACML endpoint — GET /xacml, POST /xacml/pdp at GET /xacml/policies. Ang tumatawag na nagpapakita ng client certificate na BINERIPIKA ng serbisyong ito ay isang kaya nitong pangalanan; ang pagiging miyembro ng grupong ito ang nagpapasya kung papapasukin ito, at magkahiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: nagpapatunay ng pagkakakilanlan ang certificate at nagbibigay ng pahintulot ang grupo. IKALAWANG GRUPO ITO AT HINDI ANG PAREHO: naaabot ng REMOTE_PEPS ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access control, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa demonstration surface. Ang pagtatakda nito sa walang laman na string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa tatlong endpoint na iyon sa bawat tumatawag; iyon ang paraan ng pag-alis sa XACML surface nang hindi pinapatay ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
+    "en": "d19a9234253beccc",
+    "text": "Ang grupo sa directory na ang mga miyembro ay may hawak ng built-in na role na XACML_USER, na siyang hinihingi ng tatlong mismong XACML endpoint — GET /xacml, POST /xacml/pdp at GET /xacml/policies. Ang tumatawag na nagpapakita ng client certificate na BINERIPIKA ng serbisyong ito ay isang kaya nitong pangalanan; ang pagiging miyembro ng grupong ito ang nagpapasya kung papapasukin ito, at magkahiwalay ang dalawa sa parehong dahilan ng roles.remotePepGroup sa itaas: nagpapatunay ng pagkakakilanlan ang certificate at nagbibigay ng pahintulot ang grupo. IKALAWANG GRUPO ITO AT HINDI ANG PAREHO: naaabot ng REMOTE_PEPS ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access control, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo. Ang pagtatakda nito sa walang laman na string ay nangangahulugang WALANG may hawak ng role, na nagsasara sa tatlong endpoint na iyon sa bawat tumatawag; iyon ang paraan ng pag-alis sa XACML surface nang hindi pinapatay ang xacml.enabled at nawawala kasama nito ang mga embedded na issuance at access PEP."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",
@@ -7552,8 +7552,8 @@
     "text": "Ang policy na ginagamit sa mga desisyon sa issuance"
   },
   "xacml.issuancePolicy|description": {
-    "en": "b7864ae423459362",
-    "text": "Ang pangalan ng directory entry ng policy na ine-evaluate ng EMBEDDED PEP para sa sariling mga desisyon sa issuance ng serbisyong ito. Sinadyang HINDI ito ang repository root: sumasagot ang root sa mga tanong tungkol sa hangganan ng iba — iyon ang layunin ng PDP at ang itinatanong dito ng /xacml/pdp at ng bawat remote PEP — at ang isang ito ay sumasagot sa tanong tungkol sa serbisyong ITO. Dalawang tanong, dalawang dokumento, para hindi mabago ng pag-edit sa demo policy kung sino ang maaaring mag-sign in at hindi mabago ng paglimita sa isang role ang sagot ng /xacml/pdp. BUILT IN ang `role-issuance` policy at hindi kailanman sine-seed sa ou=policies: ang repository entry na may ganitong pangalan, na isinulat sa sariling ou=policies ng isang realm, ay pumapalit dito para sa realm na iyon lang, at ang pag-delete sa entry ay nagbabalik sa built-in."
+    "en": "7e89107ac8335d95",
+    "text": "Ang pangalan ng directory entry ng policy na ine-evaluate ng EMBEDDED PEP para sa sariling mga desisyon sa issuance ng serbisyong ito. Sinadyang HINDI ito ang repository root: sumasagot ang root sa mga tanong tungkol sa hangganan ng iba — iyon ang layunin ng PDP at ang itinatanong dito ng /xacml/pdp at ng bawat remote PEP — at ang isang ito ay sumasagot sa tanong tungkol sa serbisyong ITO. Dalawang tanong, dalawang dokumento, para hindi mabago ng pag-edit sa root policy kung sino ang maaaring mag-sign in at hindi mabago ng paglimita sa isang role ang sagot ng /xacml/pdp. BUILT IN ang `role-issuance` policy at hindi kailanman sine-seed sa ou=policies: ang repository entry na may ganitong pangalan, na isinulat sa sariling ou=policies ng isang realm, ay pumapalit dito para sa realm na iyon lang, at ang pag-delete sa entry ay nagbabalik sa built-in."
   },
   "audit.maxEvents|label": {
     "en": "e12ddec225bffa6c",

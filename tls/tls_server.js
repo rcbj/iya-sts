@@ -2327,8 +2327,8 @@ function describePem(pem) {
 // service hands out chains to it, and most of them are not identities.
 // `common/tls_client_certificates.js`'s `identityOf()` is what every door below
 // asks before a verified chain through a held authority signs anybody in or is
-// recorded as an authentication. An anchor POSTed to /tls/trust that happens to
-// be the same Root is not added twice.
+// recorded as an authentication. An anchor added through /admin-api/tls/trust
+// that happens to be the same Root is not added twice.
 //
 // Required lazily and answered '' on any failure: this is called whenever a
 // secure context is built, which can be before the certificate authority has
@@ -2457,7 +2457,7 @@ function secureContextOptions(policy) {
         : one.certPem;
     }),
     // THE LISTENER'S OWN TRUSTSTORE (#429): the runtime anchors every
-    // listener shares (/tls/trust), the anchors of its OWN file where it
+    // listener shares (/admin/tls/trust), the anchors of its OWN file where it
     // names one — replacing the service's file anchors for it — and the
     // service Root where its trustIssuedClientCertificates says so.
     ca: anchors.filter(function (anchor) {
@@ -4453,8 +4453,9 @@ function checkedSocket(socket) {
 // **THE OLD POSITION IS BELOW, KEPT RATHER THAN DELETED**, because it was a
 // good argument and knowing what it protected is how to avoid losing that when
 // changing it. What it said was that verification means exactly one thing —
-// OpenSSL built a chain from what the client sent to an anchor somebody POSTed
-// to `/tls/trust` — and that turning it into an identity would teach a client
+// OpenSSL built a chain from what the client sent to an anchor somebody added
+// through `/admin-api/tls/trust` — and that turning it into an identity
+// would teach a client
 // something false about every server it will ever meet.
 //
 // **WHAT THE ARGUMENT ACTUALLY PROTECTED WAS THE STRENGTH OF THE CLAIM, NOT
@@ -4741,7 +4742,8 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
 // The two are worth holding apart, because this module's whole value is that
 // it does not confuse them. What a verified certificate means here has not
 // changed and is stated everywhere this module speaks: OpenSSL built a chain
-// from what the client sent to an anchor somebody POSTed to /tls/trust. No
+// from what the client sent to an anchor somebody added through
+// /admin-api/tls/trust. No
 // session starts, no token is issued, no revocation is checked, and no endpoint
 // of this service will let the holder do anything it would not let an anonymous
 // caller do.
@@ -5477,8 +5479,8 @@ app.get('/tls/server-certificate', function (req, res) {
 //
 // `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could
 // reach the main port — test controls, development only since #585, the
-// PROCESS's mark (`app.processDemoOnly`) because the anchors are one array
-// for every listener. Adding an anchor decides whose client certificates
+// PROCESS's demonstration mark (itself removed by #599) because the anchors
+// are one array for every listener. Adding an anchor decides whose client certificates
 // VERIFY, and a verified certificate is an identity here, so #597 deleted
 // both: the doors are `/admin/tls/trust` behind the console's roles and
 // `POST /admin-api/tls/trust/{add,remove}` behind the management API's

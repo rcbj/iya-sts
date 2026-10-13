@@ -719,18 +719,6 @@
     "en": "c9aeb6e9c45812da",
     "text": "只使用在应用自身条目上注册的地址——观察永远不会添加地址。仍标记为“已观察到”的地址不算已注册：它是开发模式放上去的，在运维人员于应用页面或通过 POST /admin-api/applications/confirm-address 确认之前会被拒绝（STS-REG-0049）。在开始标记观察之前记录的地址没有标记，在切换领域之前仍需审查。控制台和门户自己的回调不从请求的 Host 标头获知（请设置 global.publicBaseUrl），与主机不符的 WebAuthn RP ID 会拒绝该仪式，而不是回退到主机。"
   },
-  "mode.requirements.demo-endpoints.what": {
-    "en": "47d4efed79e39044",
-    "text": "演示和测试控制端点存在"
-  },
-  "mode.requirements.demo-endpoints.development": {
-    "en": "e91d15ca7620fc31",
-    "text": "提供并列出：VC-API 测试端点。"
-  },
-  "mode.requirements.demo-endpoints.product": {
-    "en": "65526c68ee1acd20",
-    "text": "它们都不会被提供或列出。每一个的应答都与没有注册任何内容的路径完全相同——Express 自己的 404 \"Cannot GET\"——任何元数据页面、控制台页面、文档或日志行都不会提及它们。产品进程中的开发领域会保留它们。管理入口仍然存在：/admin-api 启动验证、读取主体并更改信任库，用户门户则提供凭据。"
-  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "测试控件处于开放状态"
@@ -947,6 +935,18 @@
     "en": "943c5e80b61d7656",
     "text": "随机——为 krb5.enctypes 中的每种加密类型执行 RFC 3961 random-to-key——每个领域生成一次，密封在目录条目 krbtgt/<REALM>@<REALM> 上，且从不显示；krb5.krbtgtPassword 被忽略。krb5.krbtgt-rotate 作业每 krb5.krbtgtRotationIntervalDays 替换一次，保留被替换的版本，保留时长为其下 TGT 可存活的最长时间（包括续订），并且在该窗口仍然打开时绝不轮换。“轮换并作废”相当于一次完成 Active Directory 的双重重置：不保留任何版本，领域中的每张 TGT 都会以 KRB_AP_ERR_BADKEYVER 拒绝。"
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "当 krb5.servicePassword 为空或为公开的默认值时，Kerberos 接受方用来解密票据的密钥"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "由公开的 krb5.servicePassword 派生，因此任何读者都能派生出它；空密码不会创建帐户，接受方也不接受任何票据。"
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "随机 —— 为 krb5.servicePrincipal 所命名的 SPN 按 krb5.enctypes 中的每种 enctype 各生成一个密钥，每个 realm 在启动时（或接受方第一次请求时）生成一次，密封在应用条目 <spn>@<REALM> 上，从不显示。在 /admin/kerberos/principals 上轮换它即可获得 keytab。运营者自己设置的 krb5.servicePassword 优先于它。"
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "未附带可验证证明的设备密钥会被拒绝"
@@ -1034,10 +1034,6 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "SPIFFE Workload Endpoint 规范（section 3）规定，不带 workload.spiffe.io 标头的调用 MUST 被拒绝。"
-  },
-  "mode.why.servesDemoEndpoints": {
-    "en": "ea60854b2569441d",
-    "text": "它配置的是演示端点，而产品模式不提供任何演示端点。请在开发领域中尝试。"
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

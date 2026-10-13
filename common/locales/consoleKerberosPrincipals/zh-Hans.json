@@ -63,7 +63,7 @@
   "tileServices": "服务主体",
   "tileEnctypes": "加密类型（krb5.enctypes）",
   "tileKvno": "起始 kvno",
-  "acceptor": "<code>krb5.servicePort</code> 和 <code>/authn/spnego</code> 上的接受方以此身份应答：",
+  "acceptor": "<code>/authn/spnego</code> 上的接受方以此身份应答：",
   "noSpn": "（无 SPN）",
   "acceptorStored": "，密钥来自此处存储的服务主体。",
   "acceptorPassword": "，密钥来自 krb5.servicePassword。在此创建该 SPN 会改为给它一个随机密钥和一个 keytab。",

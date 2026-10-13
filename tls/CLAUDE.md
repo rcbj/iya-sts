@@ -134,8 +134,10 @@ leaf.
 
 ## The truststore reaches the MAIN listener too, since 2026-09-06
 
-`POST /tls/trust` filled the client truststore for 8443 and 9443. It fills it
-for the main HTTPS port as well since that day, and that is one function
+The runtime truststore door (`POST /tls/trust` then; `POST
+/admin-api/tls/trust/add` and `/admin/tls/trust` since #597) filled the client
+truststore for 8443 and 9443. It fills it for the main HTTPS port as well since
+that day, and that is one function
 (`trustClientCertificatesOn()`) plus one registration in `server.js`. **Since
 2026-09-16 the main port is the only listener that reads it that anybody
 presents a client certificate to**, the two it was written for having been
@@ -163,7 +165,7 @@ is that a certificate which DOES chain is now known to, and
 carrying node's own `authorizationError` out whole, because that string is what
 tells somebody which of a dozen things went wrong.
 
-Every registered listener shares one anchor list, so a single `POST /tls/trust`
+Every registered listener shares one anchor list, so a single truststore add
 covers all of them and `clearAnchors()` empties all of them. A listener created
 outside this module registers rather than being required, for the ordinary
 reason: `server.js` requires this module, so this module cannot require it back.
@@ -241,16 +243,17 @@ have to account for.
 
 **One thing that arrangement costs, and it is stated on the page rather than left to
 be met as a handshake failure**: with the main port TLS there is no plain listener in
-this process, so `POST /tls/trust` and `GET /tls/server-certificate` — which exist to
-be reachable BEFORE anything is trusted — have to be called the first time with
-verification off.
+this process, so `GET /tls/server-certificate` — which exists to be reachable
+BEFORE anything is trusted — has to be called the first time with verification
+off (and so did the open `POST /tls/trust`, until #597 deleted it).
 
 Its truststore
 for CLIENT certificates is empty at startup and is filled at runtime through
-`POST /tls/trust`, because the CA it verifies is generated in somebody's browser
-minutes before the connection; that endpoint is on the MAIN port on purpose, since
-that is normally the one reachable before anything is trusted — **and since
-2026-09-16 there is no other port it could be on**. `global.https` —
+`POST /admin-api/tls/trust/add` (the open `POST /tls/trust` until #597), because
+the CA it verifies is generated in somebody's browser minutes before the
+connection; that door is on the MAIN port, since that is normally the one
+reachable before anything is trusted — **and since 2026-09-16 there is no other
+port it could be on**. `global.https` —
 which `oauth2.rfc9700` turns on — takes that property away by making the main port
 TLS as well, so the first fetch of the certificate and the first POST of an anchor
 then have to be made with verification off. Every sentence in that module which
@@ -311,7 +314,8 @@ protected is how to avoid losing that.
 
 * **A verified client certificate on the TLS listeners is not a login**, and no
   revocation is checked there. Verification means one thing exactly: OpenSSL built a
-  chain from what the client sent to an anchor somebody POSTed to `/tls/trust`. No
+  chain from what the client sent to an anchor somebody added through
+  `/admin-api/tls/trust`. No
   session starts, no token is issued, no endpoint will let its holder do anything an
   anonymous caller cannot, and a revoked certificate verifies here and would not
   verify anywhere that matters. All of that is stated in the report itself rather
@@ -554,7 +558,7 @@ rebuilt Root strands an ML-DSA leaf exactly as it strands the RSA one.
 It was SELF-SIGNED for this module's whole life, and that shaped everything
 around it: anybody who wanted to verify this service had to fetch that exact
 certificate and trust it, a restart invalidated what they had trusted, and
-`POST /tls/trust` exists partly because of it.
+the open `POST /tls/trust` (deleted by #597) existed partly because of it.
 
 Now `common/pki.js` builds a Root for the service at startup and this
 certificate's key is a leaf of it — under a **process** Intermediate rather than
@@ -580,7 +584,7 @@ Four things about how it is wired are worth knowing before changing any of it:
 * **THE LISTENERS HAVE TO BE TOLD.** A TLS server evaluates its secure context
   when it is CREATED, so mutating the certificate record is invisible to one
   already made. `onCertified` calls `applyAnchors()` — the rebuild path
-  `POST /tls/trust` already uses, and which reaches every registered listener —
+  a truststore add already uses, and which reaches every registered listener —
   and without that line the certificate is issued, recorded, reported on every
   page and **not served**, which is the most convincing way for this to look
   finished and be wrong.
@@ -1240,14 +1244,15 @@ and the sentences are `admin-core/admin_actions.ts`'s `truststoreAction()`; the 
 
 Four things about it are decisions:
 
-* **`add` IS STRICT AND `POST /tls/trust` IS NOT.** Through the gated doors a bundle with
+* **`add` IS STRICT AND `POST /tls/trust` WAS NOT** (until #597 deleted it). Through
+  the gated doors a bundle with
   one block OpenSSL cannot read is refused WHOLE, checked before anything is pushed — an
   unparseable `ca` entry makes the next `setSecureContext()` throw on every listener, which
   `applyAnchors()` logs while the listeners keep their old context and the page says
-  otherwise. The test control keeps accepting what it is given, because development-mode
-  behaviour is not this change's to alter.
-* **THERE IS NO BULK CLEAR ON EITHER GATED DOOR.** `clearAnchors()` stays behind
-  `POST /tls/trust/clear` only. A clear's reach is every client certificate every other
+  otherwise. The test control kept accepting what it was given while it existed.
+* **THERE IS NO BULK CLEAR ON EITHER GATED DOOR.** `clearAnchors()` stayed behind
+  `POST /tls/trust/clear` only, and is reached by the in-process tests alone since
+  #597. A clear's reach is every client certificate every other
   caller relies on, and `tests/CLAUDE.md` records one unguarded clear costing a remote PEP
   its identity for the rest of a run. Removing a `file` anchor IS allowed, and both the
   page and the reply say it comes back at the next start.
@@ -1794,7 +1799,8 @@ share, and it deleted four routes and a static surface.** `GET /tls`,
 surface: `tls_pages.ts`, `web_tls_pages.ts`, `web_tls_surface.ts`,
 `web_tls_views.ts`, the `tlsPages` catalogs and their bundle), and the two
 open truststore acts `POST /tls/trust` and `POST /tls/trust/clear` (the only
-routes that carried `processDemoOnly`). `STS-TLS-0023` (a bad `?format=`) and
+routes that carried #585's process-wide demonstration mark, which #599
+removed). `STS-TLS-0023` (a bad `?format=`) and
 `STS-TLS-0049`..`0051` (#583's binding of a browser's act) are retired.
 
 **THE TWO PAGES ARE ONE CONSOLE PAGE NOW, AND IT ANSWERS IN PRODUCT** (rcbj's

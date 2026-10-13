@@ -1369,8 +1369,8 @@ request leaves are tabs on this one Protocols page:
 * **Credential claims** selects claims on issued credentials.
 * **Credential status** manages this realm's issued credential statuses.
 * **OpenID4VP** holds verifier and wallet sign-in settings.
-* **Verifier request** configures what the demonstration verifier asks wallets to
-  present.
+* **Verifier request** configures what this realm's OpenID4VP Verifier asks
+  wallets to present.
 
 ### Credential claims tab — `/admin/vc#vc-tab-claims`
 

@@ -683,6 +683,27 @@ function derivesKrbtgtFromPassword() {
   return !isProduct();
 }
 
+// Does the KDC key its own ACCEPTOR'S SPN at random when krb5.servicePassword
+// is empty or the published default? (2026-10-12.) Product refuses both
+// passwords (STS-KRB-0060, STS-KRB-0061), and until this a base installation's
+// acceptor therefore accepted no ticket until an operator invented a password
+// for an SPN no other KDC issues. Product now makes a random key for the SPN,
+// sealed on its application entry as an operator's create-service would, once
+// for the cluster — and a password an operator sets wins over it. Development
+// keeps building the account from the published password, so a reader can
+// derive the key; its empty password still means no account.
+/**
+ * Tells whether the acceptor's SPN is keyed at random when its configured
+ * password is empty or the published default.
+ *
+ * @returns true in product mode
+ */
+function generatesAcceptorKey() {
+  log.debug("Entering generatesAcceptorKey().");
+  log.debug("Leaving generatesAcceptorKey().");
+  return isProduct();
+}
+
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
 // it at the token endpoint wherever a secret is checked; development accepts
 // it and says so, because a test fixture registered with a short
@@ -772,34 +793,6 @@ function acceptsUnregisteredAddresses() {
 function opensTestControls() {
   log.debug("Entering opensTestControls().");
   log.debug("Leaving opensTestControls().");
-  return !isProduct();
-}
-
-// Are the DEMONSTRATION, MOCK AND TEST-CONTROL ENDPOINTS here at all (#585,
-// rcbj 2026-10-12)? The mock relying parties and service provider, the demo
-// issuer and verifier pages, the protected Kerberos service and SPNEGO page,
-// the embedded PEP's demonstration, the VC-API test endpoints, the OpenID4VCI
-// readbacks and the rest of `demo-endpoints`' list below. Development serves
-// and lists them. Product neither serves nor lists one: each answers EXACTLY
-// as an unrouted path does — Express's own `Cannot GET …` 404, because the route
-// calls `next('route')` (`common/app.js`, `demoOnly`) — and no page,
-// document or log line names it.
-//
-// Not `opensTestControls()`, which asks whether a test control on a REAL
-// endpoint is open (`?username=` on /logout, open registration); this asks
-// whether an endpoint that exists only to be exercised exists. Asked per
-// realm, like every predicate here, so a development realm in a product
-// process keeps them — except where the thing is the PROCESS's (the
-// protected service's socket), whose callers ask it in the default realm.
-/**
- * Tells whether the demonstration, mock and test-control endpoints are
- * served and listed; in product each answers as an unrouted path does.
- *
- * @returns true in development mode
- */
-function servesDemoEndpoints() {
-  log.debug("Entering servesDemoEndpoints().");
-  log.debug("Leaving servesDemoEndpoints().");
   return !isProduct();
 }
 
@@ -3054,22 +3047,6 @@ const REQUIREMENTS = [
     where: 'saml/saml2_sso.ts, saml/saml11_sso.ts, ws-federation/wsfed.ts, ' +
            'oid4vc/vc_offers.ts, oid4vc/vc_verifier.ts, ' +
            'common/applications.js, common/oidc_rp.ts, authn/authn.ts' },
-  // #585 (2026-10-12): an ENDPOINT that exists only to be exercised is
-  // `demo-endpoints`' below; what is left here is a test control on a real
-  // endpoint.
-  { id: 'demo-endpoints',
-    what: 'The demonstration and test-control endpoints exist',
-    development: 'Served and listed: the VC-API test endpoints.',
-    product: 'None of them is served or listed. Each answers exactly as a ' +
-             'path nothing is registered on does — Express\'s own 404 ' +
-             '"Cannot GET" — and no metadata page, console page, document ' +
-             'or log line names one. A development realm in a product ' +
-             'process keeps them. The ' +
-             'administrative doors stay: /admin-api starts a verification, ' +
-             'reads the principals and changes the truststore, and the ' +
-             'user portal makes a credential offer.',
-    where: 'common/app.js, sts_metadata.ts, ' +
-           'admin-core/protocol_endpoints.ts, server.js' },
   { id: 'test-controls',
     what: 'Test controls are open',
     development: 'Signing another person out with ' +
@@ -3388,6 +3365,20 @@ const REQUIREMENTS = [
              'realm is refused KRB_AP_ERR_BADKEYVER.',
     where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_krbtgt_rotation.ts, ' +
            'kerberos/krb5_principals.js' },
+  // 2026-10-12: a base installation's acceptor keyed without a password.
+  { id: 'kerberos-acceptor-key',
+    what: 'The key the Kerberos acceptor decrypts tickets with when ' +
+          'krb5.servicePassword is empty or the published default',
+    development: 'DERIVED from the published krb5.servicePassword, so a ' +
+                 'reader can derive it; an empty password creates no ' +
+                 'account and the acceptor accepts no ticket.',
+    product: 'RANDOM — a key per enctype in krb5.enctypes for the SPN ' +
+             'krb5.servicePrincipal names, made once per realm at the start ' +
+             '(or when the acceptor first asks), sealed on the application ' +
+             'entry <spn>@<REALM> and never shown. Rotate it at ' +
+             '/admin/kerberos/principals for a keytab. A ' +
+             'krb5.servicePassword of the operator\'s own wins over it.',
+    where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_principals.js' },
   // 2026-09-26 (#164 decision 9, phase 2).
   { id: 'unattested-device-keys',
     what: 'A device key presented without a verifiable attestation is ' +
@@ -3826,11 +3817,6 @@ const WRITE_REFUSALS = {
   servesWithoutSecurityHeader:
     'the SPIFFE Workload Endpoint specification (section 3) says a call ' +
     'without the workload.spiffe.io header MUST be refused.',
-  // #585: the one row was xacml.pepBias, read only by /xacml/protected; both
-  // went to the remote PEP in #596 and no row asks this now.
-  servesDemoEndpoints:
-    'it configures a demonstration endpoint, and product serves none of ' +
-    'them. Try it in a development realm.',
   derivesKrbtgtFromPassword:
     'the krbtgt key is random there, made once per realm and kept sealed ' +
     'on the directory, so no password is read for it.',
@@ -3980,13 +3966,13 @@ module.exports = {
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
+  generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
   acceptsUnregisteredAddresses: acceptsUnregisteredAddresses,
   requiresCellKek: requiresCellKek,
   opensTestControls: opensTestControls,
-  servesDemoEndpoints: servesDemoEndpoints,
   opensConsoleToAnyone: opensConsoleToAnyone,
   authorizesDirectoryWrites: authorizesDirectoryWrites,
   authorizesDirectoryReads: authorizesDirectoryReads,

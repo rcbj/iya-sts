@@ -1235,12 +1235,8 @@ class WsFederation {
             ? 'where the sign-in response is POSTed' +
               (mode.acceptsUnregisteredAddresses() ? '.' : ', registered on ' +
                   'the realm\'s entry.')
-            : (mode.acceptsUnregisteredAddresses()
-                ? 'none was sent, so the response goes to this service\'s ' +
-                  'own ' +
-                  'demonstration relying party.'
-                : 'none was sent, so the response goes to the address ' +
-                  'registered on the realm\'s entry.') },
+            : 'none was sent, so the response goes to the address ' +
+              'registered on the realm\'s entry.' },
         { label: 'wctx', value: String(params.wctx || '(none)'),
           note: 'echoed back byte for byte and never interpreted.' }
       ].concat(wauth

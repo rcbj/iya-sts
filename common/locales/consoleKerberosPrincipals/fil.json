@@ -63,7 +63,7 @@
   "tileServices": "service principal",
   "tileEnctypes": "enctypes (krb5.enctypes)",
   "tileKvno": "panimulang kvno",
-  "acceptor": "Ang acceptor sa <code>krb5.servicePort</code> at <code>/authn/spnego</code> ay sumasagot bilang ",
+  "acceptor": "Ang acceptor sa <code>/authn/spnego</code> ay sumasagot bilang ",
   "noSpn": "(walang SPN)",
   "acceptorStored": ", naka-key mula sa service principal na naka-store dito.",
   "acceptorPassword": ", naka-key mula sa krb5.servicePassword. Kapag ginawa ang SPN na iyon dito, magkakaroon ito ng random key at keytab sa halip.",

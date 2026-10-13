@@ -72,8 +72,8 @@
     "text": "远程 XACML 策略执行点：由 `roles.remotePepGroup`（默认 \"remote-peps\"）指明的组的任何成员。`/xacml/pep/register`、`/xacml/pep/policies` 和 `/xacml/pep/heartbeat` 要求的就是它，持有它的一方通常是客户端证书 DN 而不是人员——证书说明是谁，该组说明他们是否可以。"
   },
   "roles.builtIn.XACML_USER.what": {
-    "en": "b69f968df0f81f2e",
-    "text": "XACML 界面本身的调用方：由 `roles.xacmlUserGroup`（默认 \"xacml-users\"）指明的组的任何成员。`GET /xacml`、`POST /xacml/pdp` 和 `GET /xacml/policies` 要求的就是它，持有它的一方通常是客户端证书 DN——证书说明是谁，该组说明他们是否可以。它被有意地设计为不是 REMOTE_PEPS：那个角色可以访问三个 /xacml/pep 端点，它们分发本服务用来执行自身访问控制的文档；如果一个组同时授予两者，那么允许调用方访问演示界面就会悄无声息地允许它访问那些端点。"
+    "en": "1b417a98ec7e824b",
+    "text": "XACML 界面本身的调用方：由 `roles.xacmlUserGroup`（默认 \"xacml-users\"）指明的组的任何成员。`GET /xacml`、`POST /xacml/pdp` 和 `GET /xacml/policies` 要求的就是它，持有它的一方通常是客户端证书 DN——证书说明是谁，该组说明他们是否可以。它被有意地设计为不是 REMOTE_PEPS：那个角色可以访问三个 /xacml/pep 端点，它们分发本服务用来执行自身访问控制的文档；如果一个组同时授予两者，那么允许调用方访问XACML 界面本身就会悄无声息地允许它访问那些端点。"
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",

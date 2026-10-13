@@ -94,7 +94,7 @@
   "body.overrideBefore": "Es una entrada normal bajo <code>ou=policies</code>, así que el ",
   "body.editor": "editor",
   "body.overrideAfter": ", ALFA, <code>/admin-api/xacml</code> y un <code>ldapmodify</code> llegan a ella. ELIMINARLA restablece la política predefinida &mdash; es un reemplazo, no la única copia.",
-  "body.notRoot": "<strong>No es la RAÍZ del repositorio y no se envía a los PEP remotos.</strong> Dos preguntas, dos documentos: la raíz responde lo que un llamador pregunta en <code>/xacml/pdp</code> y lo que descarga cada PEP remoto, y esta responde a quién se le puede emitir algo AQUÍ. Hacerlos un solo documento significaría que editar la política de demostración cambiaría quién puede iniciar sesión.",
+  "body.notRoot": "<strong>No es la RAÍZ del repositorio y no se envía a los PEP remotos.</strong> Dos preguntas, dos documentos: la raíz responde lo que un llamador pregunta en <code>/xacml/pdp</code> y lo que descarga cada PEP remoto, y esta responde a quién se le puede emitir algo AQUÍ. Hacerlos un solo documento significaría que editar la política raíz cambiaría quién puede iniciar sesión.",
   "body.notEvaluated": "<strong>La política de emisión no se está evaluando.</strong> {why}",
   "body.notEvaluatedRest": "Una aplicación que solo exige <code>{defaultRequired}</code> no se ve afectada &mdash; todos lo tienen, así que nunca hubo nada que decidir. <strong>Una aplicación cuya entrada nombra un rol se RECHAZA</strong>, y esa asimetría es intencionada: alguien pidió deliberadamente una restricción, y permitir porque falta el documento que la implementa sería un rechazo configurado que silenciosamente no ocurre.",
   "body.claimHeading": "El claim",

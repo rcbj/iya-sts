@@ -719,18 +719,6 @@
     "en": "c9aeb6e9c45812da",
     "text": "Ang address lang na naka-register sa sariling entry ng application — at hindi kailanman nagdaragdag ng isa ang pagkakita. HINDI naka-register ang address na naka-marka pa ring observed: inilagay ito roon ng development at tinatanggihan ito hangga't hindi kinukumpirma ng operator sa pahina ng application o sa POST /admin-api/applications/confirm-address (STS-REG-0049). Ang mga address na naitala bago minarkahan ang mga pagkakita ay walang marka at kailangan pa ring suriin bago ilipat ang isang realm. Hindi natututunan mula sa Host header ng request ang sariling mga callback ng console at portal (itakda ang global.publicBaseUrl), at ang WebAuthn RP ID na hindi tugma sa host ay tumatanggi sa ceremony sa halip na bumalik dito."
   },
-  "mode.requirements.demo-endpoints.what": {
-    "en": "47d4efed79e39044",
-    "text": "Umiiral ang mga demonstration at test-control endpoint"
-  },
-  "mode.requirements.demo-endpoints.development": {
-    "en": "e91d15ca7620fc31",
-    "text": "Inihahain at inililista: ang mga VC-API test endpoint."
-  },
-  "mode.requirements.demo-endpoints.product": {
-    "en": "65526c68ee1acd20",
-    "text": "Wala sa mga ito ang inihahain o inililista. Sumasagot ang bawat isa nang eksaktong gaya ng isang path na walang naka-register — ang sariling 404 ng Express na \"Cannot GET\" — at walang metadata page, console page, dokumento o linya ng log ang nagpapangalan ng alinman. Pinananatili ang mga ito ng isang development realm sa loob ng product process. Nananatili ang mga administrative na pinto: nagsisimula ng verification ang /admin-api, binabasa ang mga principal at binabago ang truststore, at gumagawa ng credential offer ang user portal."
-  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Bukas ang mga test control"
@@ -947,6 +935,18 @@
     "en": "943c5e80b61d7656",
     "text": "RANDOM — RFC 3961 random-to-key para sa bawat enctype sa krb5.enctypes — ginagawa nang isang beses bawat realm, naka-seal sa directory entry na krbtgt/<REALM>@<REALM> at hindi kailanman ipinapakita; binabalewala ang krb5.krbtgtPassword. Pinapalitan ito ng krb5.krbtgt-rotate job bawat krb5.krbtgtRotationIntervalDays, at itinatago ang version na pinalitan nito hangga't puwedeng mabuhay ang TGT sa ilalim nito (kasama ang mga renewal), at hindi kailanman nagro-rotate habang bukas pa ang window na iyon. Ang \"Rotate and invalidate\" ay ang double reset ng Active Directory sa iisang kilos: walang itinatago at tinatanggihan ng KRB_AP_ERR_BADKEYVER ang bawat TGT sa realm."
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "Ang key na ginagamit ng Kerberos acceptor para i-decrypt ang mga ticket kapag walang laman ang krb5.servicePassword o ito ang nakalathalang default"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "HINANGO mula sa nakalathalang krb5.servicePassword, kaya kayang hangoin ito ng sinumang nagbabasa; walang account na nalilikha sa walang-lamang password at walang ticket na tinatanggap ang acceptor."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "RANDOM — isang key sa bawat enctype sa krb5.enctypes para sa SPN na pinangangalanan ng krb5.servicePrincipal, ginagawa nang minsan bawat realm sa pagsisimula (o kapag unang humingi ang acceptor), naka-seal sa application entry na <spn>@<REALM> at hindi kailanman ipinapakita. I-rotate ito sa /admin/kerberos/principals para makakuha ng keytab. Nananaig dito ang sariling krb5.servicePassword ng operator."
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "Tinatanggihan ang device key na ipinakita nang walang nave-verify na attestation"
@@ -1034,10 +1034,6 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "sinasabi ng SPIFFE Workload Endpoint specification (section 3) na DAPAT tanggihan ang tawag na walang workload.spiffe.io header."
-  },
-  "mode.why.servesDemoEndpoints": {
-    "en": "ea60854b2569441d",
-    "text": "nagko-configure ito ng isang demonstration endpoint, at walang inihahain ang product sa mga ito. Subukan ito sa isang development realm."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

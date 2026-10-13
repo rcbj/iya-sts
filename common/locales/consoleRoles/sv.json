@@ -94,7 +94,7 @@
   "body.overrideBefore": "Den är en vanlig post under <code>ou=policies</code>, så ",
   "body.editor": "redigeraren",
   "body.overrideAfter": ", ALFA, <code>/admin-api/xacml</code> och en <code>ldapmodify</code> når den alla. Att TA BORT den återställer den inbyggda policyn &mdash; den är en ersättning snarare än den enda kopian.",
-  "body.notRoot": "<strong>Den är inte arkivets ROT och skickas inte till fjärr-PEP:ar.</strong> Två frågor, två dokument: roten svarar på det en anropare frågar på <code>/xacml/pdp</code> och det varje fjärr-PEP hämtar, och den här svarar på vem som får något utfärdat HÄR. Att göra dem till ett dokument skulle betyda att en ändring av demopolicyn ändrade vem som kunde logga in.",
+  "body.notRoot": "<strong>Den är inte arkivets ROT och skickas inte till fjärr-PEP:ar.</strong> Två frågor, två dokument: roten svarar på det en anropare frågar på <code>/xacml/pdp</code> och det varje fjärr-PEP hämtar, och den här svarar på vem som får något utfärdat HÄR. Att göra dem till ett dokument skulle betyda att en ändring av rotpolicyn ändrade vem som kunde logga in.",
   "body.notEvaluated": "<strong>Utfärdandepolicyn utvärderas inte.</strong> {why}",
   "body.notEvaluatedRest": "En applikation som bara kräver <code>{defaultRequired}</code> påverkas inte &mdash; alla har den, så det fanns aldrig något att avgöra. <strong>En applikation vars post anger en roll NEKAS</strong>, och den asymmetrin är avsiktlig: någon bad avsiktligt om en begränsning, och att tillåta för att dokumentet som genomför den saknas vore ett konfigurerat nekande som tyst uteblir.",
   "body.claimHeading": "Anspråket",

@@ -5584,8 +5584,8 @@
     "text": "Mot de passe du principal de service"
   },
   "krb5.servicePassword|description": {
-    "en": "cb9ee66eb558159b",
-    "text": "Le mot de passe du compte que nomme krb5.servicePrincipal — l’équivalent d’un keytab. En MODE PRODUIT, la valeur par défaut livrée est refusée : cette valeur est imprimée dans ce dépôt, et une clé de service dérivée d’elle est une clé pour laquelle n’importe qui peut forger un ticket. S’il n’est pas défini, le compte de service n’est pas créé, /authn/spnego n’accepte aucun ticket, et GET /admin-api/kerberos/principals en indique la raison. Définissez-le avec le mot de passe du compte du SPN dans le KDC qui émet ses tickets."
+    "en": "203b6ef1fa4a5cfa",
+    "text": "Le mot de passe du compte que nomme krb5.servicePrincipal — l’équivalent d’un keytab. En MODE PRODUIT, la valeur par défaut livrée est refusée : cette valeur est imprimée dans ce dépôt, si bien qu’une clé de service qui en est dérivée est une clé avec laquelle n’importe qui peut forger un ticket. Le mode produit attribue alors au SPN une clé aléatoire, une seule fois, scellée sur son entrée d’application (Rotate sur /admin/kerberos/principals remet un keytab), et fait de même pour un mot de passe vide. Réglez-le sur le mot de passe du compte du SPN dans le KDC qui émet ses tickets, et il l’emporte sur cette clé. En développement, un mot de passe vide ne crée aucun compte et l’accepteur n’accepte aucun ticket."
   },
   "krb5.servicePassword|restartReason": {
     "en": "6f0fcf17e84ec4f0",
@@ -7528,8 +7528,8 @@
     "text": "Groupe conférant le rôle XACML_USER"
   },
   "roles.xacmlUserGroup|description": {
-    "en": "6256e6a60d3799e6",
-    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré XACML_USER, qu’exigent les trois endpoints XACML proprement dits — GET /xacml, POST /xacml/pdp et GET /xacml/policies. Un appelant présentant un certificat client que ce service a VÉRIFIÉ est quelqu’un qu’il peut nommer ; l’appartenance à ce groupe est ce qui en fait quelqu’un qu’il laisse entrer, et les deux sont séparés pour la même raison que pour roles.remotePepGroup ci-dessus : un certificat prouve une identité et un groupe accorde une permission. C’EST UN SECOND GROUPE ET NON LE MÊME : REMOTE_PEPS donne accès aux trois endpoints /xacml/pep, qui distribuent les documents avec lesquels ce service applique son propre contrôle d’accès, et un seul groupe accordant les deux ferait qu’admettre un appelant sur l’interface de démonstration l’admettrait silencieusement sur ceux-là. Le définir à la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme ces trois endpoints à tout appelant ; c’est le moyen de retirer l’interface XACML sans désactiver xacml.enabled et perdre avec lui les PEP intégrés d’émission et d’accès."
+    "en": "d19a9234253beccc",
+    "text": "Le groupe de l’annuaire dont les membres détiennent le rôle intégré XACML_USER, qu’exigent les trois endpoints XACML proprement dits — GET /xacml, POST /xacml/pdp et GET /xacml/policies. Un appelant présentant un certificat client que ce service a VÉRIFIÉ est quelqu’un qu’il peut nommer ; l’appartenance à ce groupe est ce qui en fait quelqu’un qu’il laisse entrer, et les deux sont séparés pour la même raison que pour roles.remotePepGroup ci-dessus : un certificat prouve une identité et un groupe accorde une permission. C’EST UN SECOND GROUPE ET NON LE MÊME : REMOTE_PEPS donne accès aux trois endpoints /xacml/pep, qui distribuent les documents avec lesquels ce service applique son propre contrôle d’accès, et un seul groupe accordant les deux ferait qu’admettre un appelant sur l’interface XACML proprement dite l’admettrait silencieusement sur ceux-là. Le définir à la chaîne vide signifie que PERSONNE ne détient le rôle, ce qui ferme ces trois endpoints à tout appelant ; c’est le moyen de retirer l’interface XACML sans désactiver xacml.enabled et perdre avec lui les PEP intégrés d’émission et d’accès."
   },
   "xacml.signalResponsePolicy|label": {
     "en": "f866a10ad1ccd717",
@@ -7552,8 +7552,8 @@
     "text": "Politique utilisée pour les décisions d’émission"
   },
   "xacml.issuancePolicy|description": {
-    "en": "b7864ae423459362",
-    "text": "Le nom de l’entrée de l’annuaire de la politique qu’évalue le PEP INTÉGRÉ pour les décisions d’émission propres à ce service. Ce n’est délibérément PAS la racine du dépôt : la racine répond à des questions sur la frontière de quelqu’un d’autre — c’est le rôle d’un PDP, et ce que lui demandent /xacml/pdp et chaque PEP distant — et celle-ci répond à une question sur CE service. Deux questions, deux documents, afin que la modification de la politique de démonstration ne puisse pas changer qui peut se connecter et que la restriction d’un rôle ne puisse pas changer ce que répond /xacml/pdp. La politique `role-issuance` est INTÉGRÉE et n’est jamais créée dans ou=policies : une entrée du dépôt portant ce nom, écrite dans le propre ou=policies d’un domaine, la remplace pour ce seul domaine, et supprimer l’entrée rétablit la politique intégrée."
+    "en": "7e89107ac8335d95",
+    "text": "Le nom de l’entrée de l’annuaire de la politique qu’évalue le PEP INTÉGRÉ pour les décisions d’émission propres à ce service. Ce n’est délibérément PAS la racine du dépôt : la racine répond à des questions sur la frontière de quelqu’un d’autre — c’est le rôle d’un PDP, et ce que lui demandent /xacml/pdp et chaque PEP distant — et celle-ci répond à une question sur CE service. Deux questions, deux documents, afin que la modification de la politique racine ne puisse pas changer qui peut se connecter et que la restriction d’un rôle ne puisse pas changer ce que répond /xacml/pdp. La politique `role-issuance` est INTÉGRÉE et n’est jamais créée dans ou=policies : une entrée du dépôt portant ce nom, écrite dans le propre ou=policies d’un domaine, la remplace pour ce seul domaine, et supprimer l’entrée rétablit la politique intégrée."
   },
   "audit.maxEvents|label": {
     "en": "e12ddec225bffa6c",

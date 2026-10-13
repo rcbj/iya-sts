@@ -844,7 +844,8 @@ class ProtocolStack {
     // -------------------------------------------------------------------------
     require('../kerberos/krb5_home');
     this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
-    // The Kerberos KDC. Requiring it registers /KdcProxy and /krb5/principals
+    // The Kerberos KDC. Requiring it registers /KdcProxy (/krb5/principals
+    // until #595 deleted it)
     // — it is one of the JavaScript files the parent's tests image copies,
     // which still register at require (rule 1) — but NOT the raw TCP/UDP
     // listeners on port 88, which are started by krb5.listen() below.
@@ -1467,8 +1468,8 @@ class ProtocolStack {
                'ApiExplorer');
     this.register(app, require('../admin-ui/api_explorer'),
                   'admin-ui/api_explorer');
-    // TLS / mutual TLS. It registers its views (/tls, /tls/sign-in,
-    // /tls/server-certificate, /tls/trust and the rest) at require time, and
+    // TLS / mutual TLS. It registers its views (/tls/sign-in,
+    // /tls/server-certificate and the rest) at require time, and
     // holds the certificate the main port, LDAPS 636 and the debugger listener
     // present and the client truststore the main port asks with. **It owns no
     // socket since 2026-09-16**, when its 8443 and 9443 listeners were deleted

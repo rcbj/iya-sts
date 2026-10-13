@@ -1004,7 +1004,7 @@ const TEMPLATES: TemplateRow[] = [
     // questions, two documents: the root answers what a caller asks at
     // /xacml/pdp and what every remote PEP pulls, and this answers who may be
     // issued something here. Making them one document would mean editing the
-    // demo policy changed who could sign in, and narrowing one application's
+    // root policy changed who could sign in, and narrowing one application's
     // roles changed what /xacml/pdp told a remote PEP.
     //
     // WHY IT IS ONE POLICY FOR EVERY APPLICATION RATHER THAN ONE PER

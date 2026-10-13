@@ -719,18 +719,6 @@
     "en": "c9aeb6e9c45812da",
     "text": "Endast en adress registrerad på applikationens egen post — och en observation lägger aldrig till någon. En adress som fortfarande är markerad som observerad är INTE registrerad: utvecklingsläget satte den där och den vägras tills en operatör bekräftar den på applikationens sida eller med POST /admin-api/applications/confirm-address (STS-REG-0049). Adresser som registrerades innan observationer markerades saknar markering och behöver ändå granskas innan en sfär växlas. Konsolens och portalens egna callbacks lärs inte från en begärans Host-huvud (sätt global.publicBaseUrl), och ett WebAuthn RP ID som inte passar värden vägrar ceremonin i stället för att falla tillbaka på den."
   },
-  "mode.requirements.demo-endpoints.what": {
-    "en": "47d4efed79e39044",
-    "text": "Demonstrations- och testkontrollslutpunkterna finns"
-  },
-  "mode.requirements.demo-endpoints.development": {
-    "en": "e91d15ca7620fc31",
-    "text": "Serveras och listas: VC-API:s testslutpunkter."
-  },
-  "mode.requirements.demo-endpoints.product": {
-    "en": "65526c68ee1acd20",
-    "text": "Ingen av dem serveras eller listas. Var och en svarar exakt som en sökväg där ingenting är registrerat — Express egen 404, \"Cannot GET\" — och ingen metadatasida, konsolsida, dokumentation eller loggrad namnger någon av dem. En utvecklingsrealm i en produktprocess behåller dem. De administrativa dörrarna finns kvar: /admin-api startar en verifiering, läser principalerna och ändrar truststore, och användarportalen gör ett erbjudande om en legitimation."
-  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Testkontroller är öppna"
@@ -947,6 +935,18 @@
     "en": "943c5e80b61d7656",
     "text": "SLUMPMÄSSIG — RFC 3961 random-to-key för varje enctype i krb5.enctypes — skapad en gång per sfär, förseglad på katalogposten krbtgt/<REALM>@<REALM> och aldrig visad; krb5.krbtgtPassword ignoreras. Jobbet krb5.krbtgt-rotate ersätter den var krb5.krbtgtRotationIntervalDays, behåller versionen den ersatte så länge som en TGT under den längst kan leva (förnyelser inräknade), och roterar aldrig medan det fönstret fortfarande är öppet. \"Rotera och ogiltigförklara\" är Active Directorys dubbla återställning i en enda åtgärd: ingenting behålls och varje TGT i sfären vägras med KRB_AP_ERR_BADKEYVER."
   },
+  "mode.requirements.kerberos-acceptor-key.what": {
+    "en": "84c5d7dc0ea9d4a4",
+    "text": "Nyckeln som Kerberos-acceptorn dekrypterar biljetter med när krb5.servicePassword är tomt eller det publicerade standardvärdet"
+  },
+  "mode.requirements.kerberos-acceptor-key.development": {
+    "en": "da9cd02c270c094f",
+    "text": "HÄRLEDD från det publicerade krb5.servicePassword, så att en läsare kan härleda den; ett tomt lösenord skapar inget konto och acceptorn accepterar ingen biljett."
+  },
+  "mode.requirements.kerberos-acceptor-key.product": {
+    "en": "a725e2806d487e06",
+    "text": "SLUMPMÄSSIG — en nyckel per enctype i krb5.enctypes för det SPN som krb5.servicePrincipal namnger, skapad en gång per realm vid start (eller när acceptorn först frågar), förseglad på applikationsposten <spn>@<REALM> och aldrig visad. Rotera den på /admin/kerberos/principals för att få en keytab. Ett krb5.servicePassword som är operatörens eget har företräde framför den."
+  },
   "mode.requirements.unattested-device-keys.what": {
     "en": "6fe7c4a02a6ed641",
     "text": "En enhetsnyckel som visas upp utan verifierbar attestering vägras"
@@ -1034,10 +1034,6 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "specifikationen SPIFFE Workload Endpoint (avsnitt 3) säger att ett anrop utan huvudet workload.spiffe.io MUST vägras."
-  },
-  "mode.why.servesDemoEndpoints": {
-    "en": "ea60854b2569441d",
-    "text": "den konfigurerar en demonstrationsslutpunkt, och produkt serverar ingen av dem. Prova den i en utvecklingsrealm."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",
