@@ -5477,8 +5477,8 @@ app.get('/tls/server-certificate', function (req, res) {
 //
 // `POST /tls/trust` and `POST /tls/trust/clear` answered anybody who could
 // reach the main port — test controls, development only since #585, the
-// PROCESS's mark (`app.processDemoOnly`) because the anchors are one array
-// for every listener. Adding an anchor decides whose client certificates
+// PROCESS's demonstration mark (itself removed by #599) because the anchors
+// are one array for every listener. Adding an anchor decides whose client certificates
 // VERIFY, and a verified certificate is an identity here, so #597 deleted
 // both: the doors are `/admin/tls/trust` behind the console's roles and
 // `POST /admin-api/tls/trust/{add,remove}` behind the management API's

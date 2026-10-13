@@ -106,7 +106,6 @@ async function run(t) {
                  scope: 'vc-api:issue vc-api:verify' };
 
   t.log.info('=== A. the gate ===');
-  const app = require('../common/app');
   const config = require('../common/config');
   const helpers = require('../common/helpers');
   t.check(config.value('vcApi.enabled') === false,
@@ -124,12 +123,12 @@ async function run(t) {
                   } };
   build().registerRoutes({ get: record, post: record });
   t.check(registered.length === 9 && registered.every(function (one) {
-    return one.handlers.length === 1 && !one.handlers[0].stsDemo &&
-      one.handlers[0] !== app.demoOnly;
+    return one.handlers.length === 1;
   }) && registered.every(function (one) {
     return /^\/vc-api\//.test(one.path);
-  }), 'A1. nine routes, all under /vc-api, none carrying a demonstration ' +
-          'mark, and no status-list publish among them (#598)',
+  }), 'A1. nine routes, all under /vc-api, each one handler (no ' +
+          'demonstration mark is left to carry, #599), and no status-list ' +
+          'publish among them (#598)',
           registered.map(function (one) {
             return one.path;
           }).join(', '));

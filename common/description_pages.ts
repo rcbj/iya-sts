@@ -28,8 +28,8 @@
 //   * THE SHELL (`send()`): `common/shell_document.ts`'s document with the
 //     view in `data-sts-state` — `federation/federation_pages.ts`'s
 //     arrangement (#580): nothing to fetch, since a description is a fact
-//     of the request that drew it (the base it was reached at, the mode,
-//     which demonstrations the realm is served, #585) — 200, `no-store`,
+//     of the request that drew it (the base it was reached at, the
+//     mode) — 200, `no-store`,
 //     `text/html` as every one of them always answered, and the policy
 //     `script-src 'self'`, `connect-src 'self'` plus the sign-in service's
 //     origin where it is elsewhere (the chooser posts to `/authn/language`),

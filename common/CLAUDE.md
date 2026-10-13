@@ -8654,54 +8654,41 @@ open client registration, the SAML 1.1 attribute authority and a sign-out
 naming somebody else are refused. Development keeps all of it, which is what
 the test suite drives.
 
-**AND SINCE #585 (rcbj, 2026-10-12) A PRODUCT REALM HAS NO DEMONSTRATION,
-MOCK OR TEST-CONTROL ENDPOINT AT ALL** (`servesDemoEndpoints()`, the
-`demo-endpoints` row). `POST /tls/trust` and `POST /dpop/nonce-mode` were on
-the list above as refusals; they are not refused now, they are not there. The
-decisions, and where each half lives:
+**AND SINCE #591 (rcbj, 2026-10-12) THE RUNTIME SHIPS NO DEMONSTRATION,
+STAND-IN OR TEST-CONTROL ENDPOINT IN ANY MODE.** #585 first made them
+development-only: a mark on the route in `common/app.js` (`next('route')`
+where the realm was product, so the answer was Express's own 404), a
+predicate here, a `demo` flag on the route's `sts_metadata.ts` row, and every
+list — the metadata page, the Protocols pages, the hosted-applications
+catalogue, the Listeners page, `/admin/crypto-metadata`, the protocol settings
+pages' links — reading the mark off the router. rcbj's view was that "at
+some point, those become a liability", so #592 to #598 took each one out of
+the runtime instead:
 
-* **One mark on the route.** `common/app.js`'s `demoOnly` is placed FIRST in
-  the route's handler list and calls `next('route')` where the ambient realm
-  does not serve demonstrations, so the request falls through to Express's
-  own `Cannot GET …` 404 — EXACTLY what a path nothing is registered on
-  answers, body, headers and audit row (rcbj's decision). Not a 404 of our
-  own: the per-handler product refusals (`STS-OAUTH-0178`, `STS-TLS-0024`,
-  `STS-VC-0100`, `STS-DEVICE-0035`) are RETIRED, kept in the table, never
-  reused. `processDemoOnly` is the same mark asking the DEFAULT realm as well,
-  for a door to something every realm shares — `/tls/trust` and
-  `/tls/trust/clear`, the process's one truststore, until #597 deleted both
-  (no route carries it now) — so a development realm inside a product
-  process is not a way in. The protected Kerberos service's
-  TCP socket is the process's too: `server.js` does not bind it when the
-  default realm is product.
-* **Per realm**, like every predicate here: a development realm in a product
-  process keeps its demonstrations, which is how the suite's throwaway
-  `{"global.mode":"development"}` realms reach them.
-* **The lists read the same mark off the router**, so a route cannot be
-  served and listed nowhere, or listed and not served: the mark carries
-  `serves()`, `app.demoMarkOf(route)` finds it, and `app.demoPathHidden(path)`
-  answers a link. `sts_metadata.ts` flags each demonstration's row `demo` and
-  drops both halves together in a product realm (reporting a mark on one half
-  only as `demoMarkMismatches`), with a group, a card's specification and
-  three cards' prose following; `admin-core/protocol_endpoints.ts`, the
-  protocol settings pages' links, the console views (SAML, verifier request,
-  Kerberos principals, device registration, step-up, GNAP), the description
-  pages, `/admin/crypto-metadata`'s families, the hosted-applications
-  catalogue (`demoPrefixes`, `demo: true`), the Listeners page and the startup
-  banner all drop what the realm, or the process, is not served.
-* **Defaults that pointed at one** follow it: `xacml.pepBias`, read only by
-  `/xacml/protected`, was `onlyWhile: 'servesDemoEndpoints'` until both went
-  to the remote PEP in #596. The GNAP
-  demonstration resource server (a token's default audience, a registered
-  target and the catalogue type `urn:iya-sts:gnap:demo` where it was served)
-  and `ssf.receiveEnabled` went with their endpoints in #593.
-* **What a product operator uses instead**: `/admin-api` (verifications #587,
-  the principals, the truststore), the user portal (a credential offer, #589),
-  and in the suite the test peer (#586). Spec-defined endpoints a real feature
-  uses — `/oid4vp/request/:id`, `/oid4vp/response`,
-  `/oid4vp/verifier-certificate` — are not demonstrations and did not change
-  (#569's rule). `tests/demo_endpoints.js` holds the inventory, both modes and
-  the lists.
+* the relying parties, receivers and resource-server stand-ins the suite
+  needed went to the test peer (`tests/peer/`, #586) or were deleted (#592,
+  #593, #596);
+* the click-through demonstrations a person uses — the OpenID4VC issuer and
+  verifier, SPNEGO and the Kerberos-protected service with its socket — went
+  to the development companion (`companion/`, #594, #595);
+* `/xacml/protected` went to the remote PEP (#596);
+* the test controls became a setting, the MDM feed, a console page and
+  `/admin-api` operations (#597), and the W3C VC API a product surface off by
+  default (#598).
+
+**#599 then removed the mechanism**, with nothing left to mark: the mark and
+its readers, the predicate and its `/admin/mode` row, the metadata flag and
+its `demoMarkMismatches` drift report, `demoPrefixes`. The per-handler
+product refusals #585 retired (`STS-OAUTH-0178`, `STS-TLS-0024`,
+`STS-VC-0100`, `STS-DEVICE-0035`) stay retired; the mechanism itself recorded
+no code. `tests/demo_endpoints.js` is the guard: no route carries a mark or a
+retired demonstration path, the symbols are gone from the source, and the
+metadata page describes none. **A new endpoint that exists only to be
+exercised belongs in the test peer or the companion, never here.** What is
+left in this file is `opensTestControls()`, a test control on a REAL endpoint
+(the CIBA answer, `restore-kerberos`, `/logout ?username=`, open
+registration, the SAML 1.1 attribute responder, SCIM key add), which #591
+left out of scope.
 
 **NOR, SINCE 2026-09-22 (#103), DOES IT OPEN THE CONSOLE TO WHOEVER SIGNS IN
 FIRST** (`opensConsoleToAnyone()`, the `console-bootstrap-window` row). It is

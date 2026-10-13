@@ -62,9 +62,6 @@ import ListenersPage = require('./web_listeners');
 // `prose()` extracts (#543). Safe at the top: nothing `server_prose` loads
 // requires this file, which `protocol_stack.ts` reaches at 18k-iii.
 import serverProse = require('../common/server_prose');
-// Whether the process binds its demonstration socket (#585): the PROCESS's
-// mark's question. A cache hit — `common/app.js` is 2 of the require order.
-import sharedApp = require('../common/app');
 
 type Req = any;
 type Res = any;
@@ -292,10 +289,7 @@ class ListenersAdmin {
     const realmId = realm ? realm.id : realms.DEFAULT_ID;
     const isDefault = realmId === realms.DEFAULT_ID;
     const https = config.value('global.https') === true;
-    const demos = sharedApp.processDemoOnly.serves();
-    const listeners = LISTENERS.filter(function (row: Json): boolean {
-      return demos || !row.demo;
-    }).map(function (row: Json): Json {
+    const listeners = LISTENERS.map(function (row: Json): Json {
       let port: unknown = null;
       try {
         port = (config as any).processValue(row.setting);

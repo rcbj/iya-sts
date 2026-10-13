@@ -1003,7 +1003,7 @@ performs, one of the three that DISOWN a credential (*Disowned*, above).
 
 **A PRODUCT SURFACE SINCE #598 (rcbj's decision 2 on #591), AND OFF BY
 DEFAULT.** It was a test control — development-only under #585's
-`demoOnly` mark, because an endpoint that signs whatever it is handed with a
+demonstration mark (removed by #599), because an endpoint that signs whatever it is handed with a
 realm's key is what a conformance suite needs. Making it a surface a
 deployment may expose changed six things, each argued in `vc_api.ts`'s
 header:
@@ -1179,12 +1179,13 @@ status lists.
 `tests/oauth_oid4vc_hardcoded.js` 6a that none of the demonstration's
 routes exists, and `tests/companion.js` the companion.
 
-## Development only: this family's demonstrations (#585, 2026-10-12)
+## This family's demonstrations (#585, #591)
 
 Nothing of this family is a demonstration any more: the OpenID4VC
 demonstration left for the development companion on #594 (above), and the W3C
 VC API, the last one here, became a product surface on #598. **Not ever**
 `/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`,
 which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`)
-uses and #569's rule keeps unchanged. `common/CLAUDE.md` (`mode.js`) argues
-the `demoOnly` rule and `tests/demo_endpoints.js` holds it.
+uses and #569's rule keeps unchanged. The development-only mark #585 put on
+the rest was removed by #599 with nothing left to carry it (`common/CLAUDE.md`,
+`mode.js`); `tests/demo_endpoints.js` guards that none comes back.

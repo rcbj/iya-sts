@@ -1794,7 +1794,8 @@ share, and it deleted four routes and a static surface.** `GET /tls`,
 surface: `tls_pages.ts`, `web_tls_pages.ts`, `web_tls_surface.ts`,
 `web_tls_views.ts`, the `tlsPages` catalogs and their bundle), and the two
 open truststore acts `POST /tls/trust` and `POST /tls/trust/clear` (the only
-routes that carried `processDemoOnly`). `STS-TLS-0023` (a bad `?format=`) and
+routes that carried #585's process-wide demonstration mark, which #599
+removed). `STS-TLS-0023` (a bad `?format=`) and
 `STS-TLS-0049`..`0051` (#583's binding of a browser's act) are retired.
 
 **THE TWO PAGES ARE ONE CONSOLE PAGE NOW, AND IT ANSWERS IN PRODUCT** (rcbj's
