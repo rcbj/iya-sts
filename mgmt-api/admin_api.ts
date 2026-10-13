@@ -5071,6 +5071,94 @@ class AdminApi {
         } },
 
       // ---------------------------------------------------------------------
+      // NODE HEALTH'S ONE CONTROL (#611): a full garbage collection, on
+      // demand. `nodeHealthAdmin.collectGarbage()` — the function the page's
+      // Collect buttons are sent to — and nothing else. Under
+      // `/admin-api/node-health`, so `request_pool.js`'s NEVER_DISPATCHED
+      // already pins it to the front process: only that process knows the
+      // worker threads and can ask them. A POST, so `admin:write`; a service
+      // operation, so a realm's own token is refused it (its `mirrors` is a
+      // service page, `admin_scope.ts`).
+      // ---------------------------------------------------------------------
+      { method: 'POST', route: BASE + '/node-health/:action', tag: 'Service',
+        mirrors: 'POST /admin/node-health',
+        handler: function (req, res) {
+          log.debug("Entering the management API node health action.");
+          nodeHealthAdmin.collectGarbage(self.withAction(req, parseBody(req)),
+                                         self.callerNameOf(res))
+            .then(function (result) {
+              const out = Object.assign({}, result);
+              delete out.status;
+              delete out.errorCode;
+              if (!result.ok) {
+                errorCodes.mark(res, result.errorCode || 'STS-CORE-0160');
+                self.sendJson(res, result.status || 400, out);
+                log.debug("Leaving the management API node health action. " +
+                          "Refused.");
+                return;
+              }
+              self.sendJson(res, 200, out);
+              log.debug("Leaving the management API node health action.");
+            }).catch(function (e) {
+              log.debug("Caught in the management API node health action: " +
+                        ((e && e.message) || e));
+              log.error(errorCodes.tag('STS-CORE-0158') + 'A garbage ' +
+                        'collection could not be run: ' +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-CORE-0158');
+              self.sendJson(res, 500, { ok: false, errors: [
+                'The garbage collection could not be run.'] });
+            });
+          log.debug("Leaving handler().");
+        },
+        actions: [
+          { action: 'collect-garbage', operationId: 'collectGarbage',
+            summary: 'Run a full V8 garbage collection in this node\'s ' +
+                     'front process, one of its worker threads, or all',
+            description: 'THIS NODE only — the front process that answers ' +
+                         'and its own request and hosted-surface worker ' +
+                         'THREADS, never another node of a cluster. ' +
+                         '`target` is `all` (the default: the front ' +
+                         'process\'s main thread and every ready worker ' +
+                         'thread), `front`, or a worker thread\'s ' +
+                         '`threadId` as GET /admin-api/node-health lists ' +
+                         'it. Each worker thread is a V8 isolate of its ' +
+                         'own and collects itself, asked over the pool\'s ' +
+                         'channel and waited for up to ten seconds. A FULL ' +
+                         'COLLECTION STOPS THE THREAD IT RUNS IN UNTIL IT ' +
+                         'FINISHES; in the front process that pauses every ' +
+                         'listener of the node. A diagnostic. Answers 200 ' +
+                         'with `rows`, one per isolate collected or asked ' +
+                         '(`kind` `process` or `thread`, `pid`, ' +
+                         '`threadId`, `role`, `ok`, `heapUsedBeforeBytes`, ' +
+                         '`heapTotalBeforeBytes`, `heapUsedAfterBytes`, ' +
+                         '`heapTotalAfterBytes`, `freedBytes`, ' +
+                         '`durationMs` — the pause — and `error`), ' +
+                         '`unanswered` (worker threads that did not answer ' +
+                         'in time), `totals` and `message`; 400 for an ' +
+                         'unknown action or a malformed `target`, 404 for a ' +
+                         'thread this node does not have, 500 when the ' +
+                         'front process alone was asked and could not ' +
+                         'collect. Audited. A service operation: a ' +
+                         'realm\'s own administrator is refused it.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object',
+              properties: {
+                target: { oneOf: [{ type: 'string' },
+                                  { type: 'integer', minimum: 0 }],
+                          description: '`all`, `front`, or a worker ' +
+                                       'thread\'s threadId; `all` when ' +
+                                       'absent.' }
+              },
+              examples: [{ target: 'all' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Each isolate\'s heap before and after ' +
+                                  'its collection, and the pause.' }
+        ] },
+
+      // ---------------------------------------------------------------------
       // THE DATABASE REPORT. `databaseAdmin.databaseView()` and nothing else,
       // which is rule 7 read the strict way: the page and this operation must
       // not be able to report different numbers, and one function is the only

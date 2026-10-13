@@ -1407,6 +1407,10 @@
     "en": "8ad5e9e21c752f8d",
     "text": "ICKE-SPEC (#329). Allt som /admin/node-health ritar, som JSON: containerns CPU-utnyttjande och minne från dess cgroup, Node.js-minnet för varje process i den här noden och deras summa, siffrorna från ECS-uppgiftens metadataslutpunkt där en sådan finns, och maskinens egna siffror märkta som sådana; i ett kluster varje nod efter namn och summorna, ?node= för en (#332). Speglar GET /admin/node-health."
   },
+  "stsmetadata.endpoints./admin-api/node-health/:action.what": {
+    "en": "62b2176bf51425d1",
+    "text": "ICKE-SPEC (#611). collect-garbage, med { target? }: en fullständig V8-skräpinsamling i den här nodens frontprocess (front), i en av dess arbetstrådar (dess threadId) eller i alla (all, standard), med varje isolats heap före och efter och dess paus. En fullständig insamling stoppar tråden den körs i. Sidans Samla-knappar. Speglar POST /admin/node-health."
+  },
   "stsmetadata.endpoints./admin-api/encryption.what": {
     "en": "324a164de72ee943",
     "text": "ICKE-SPEC. Allt som /admin/encryption ritar, som JSON: läget, nyckelkrypteringsnyckeln (närvarande, BESTÄNDIG eller TILLFÄLLIG, och vilken av de fem leverantörerna den läses från), algoritmen avläst ur common/crypto.js egen parametertabell, lagret, de sex förseglade dataklasserna och de tre avsiktligt oförseglade, var och en med sitt skäl, samt operationsräknarna. DE TVÅ NYCKELFLAGGORNA ÄR OLIKA FRÅGOR och båda besvaras: utvecklingsläget HAR en nyckelkrypteringsnyckel — en tillfällig, genererad per körning, så att poolen av begäransarbetare kan dela präglade rader — och persisterar ingenting, så en klient som bara läste `present` skulle rapportera \"krypterad\" om en tjänst vars nyckel dör med processen. `unclassified` namnger varje etikett som räknarna producerade och som tabellen saknar rad för, rapporterad snarare än kastad så att ett anropsställe som lagts till utan rad syns i stället för att tyst inte gå ihop. INGEN CHIFFERTEXT OCH INGEN KLARTEXT FINNS I SVARET och ingen operation någonstans öppnar ett förseglat värde på begäran. Speglar GET /admin/encryption."

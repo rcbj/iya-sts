@@ -1407,6 +1407,10 @@
     "en": "8ad5e9e21c752f8d",
     "text": "非规范（#329）。/admin/node-health 绘制的所有内容，以 JSON 形式提供：来自容器 cgroup 的 CPU 利用率和内存、本节点每个进程的 Node.js 内存及其总和、ECS 任务元数据端点（如果有）的数据，以及明确标注的主机自身数据；在集群中按名称列出每个节点及总数，?node= 获取单个节点（#332）。对应 GET /admin/node-health。"
   },
+  "stsmetadata.endpoints./admin-api/node-health/:action.what": {
+    "en": "62b2176bf51425d1",
+    "text": "非规范（#611）。collect-garbage，参数为 { target? }：在本节点的前端进程（front）、其某个工作线程（其 threadId）或全部（all，默认）中执行一次完整的 V8 垃圾回收，返回每个 isolate 回收前后的堆及其暂停时间。完整回收会停止其所在的线程。即页面上的“回收”按钮。对应 POST /admin/node-health。"
+  },
   "stsmetadata.endpoints./admin-api/encryption.what": {
     "en": "324a164de72ee943",
     "text": "非规范。/admin/encryption 绘制的所有内容，以 JSON 形式提供：模式、密钥加密密钥（是否存在、持久还是临时，以及从五个提供方中的哪一个读取）、从 common/crypto.js 自身参数表中读出的算法、存储、六个被密封的数据类别和三个刻意不密封的类别（各附原因），以及操作计数。两个密钥标志是不同的问题，并且两者都会回答：开发模式拥有密钥加密密钥——一个每次运行生成的临时密钥，以便请求工作线程池能够共享生成的行——但不持久化任何内容，因此只读取 `present` 的客户端会把一个密钥随进程消亡的服务报告为 “已加密”。`unclassified` 指明计数器产生的、表中没有对应行的任何标签，会被报告而不是丢弃，这样新增但没有对应行的调用点会显现出来，而不是悄悄地对不上账。回复中没有密文也没有明文，任何地方都没有操作会应请求打开密封值。对应 GET /admin/encryption。"

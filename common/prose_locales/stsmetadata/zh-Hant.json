@@ -1407,6 +1407,10 @@
     "en": "8ad5e9e21c752f8d",
     "text": "非規格端點（#329）。/admin/node-health 所繪製的一切，以 JSON 提供：來自 cgroup 的容器 CPU 使用率與記憶體、此節點每個程序的 Node.js 記憶體及其總和、有 ECS 工作中繼資料端點時的數據，以及標示為機器本身的數據；在叢集中則依名稱列出每個節點及總計，?node= 取得單一節點（#332）。對應 GET /admin/node-health。"
   },
+  "stsmetadata.endpoints./admin-api/node-health/:action.what": {
+    "en": "62b2176bf51425d1",
+    "text": "非規格端點（#611）。collect-garbage，參數為 { target? }：在此節點的前端程序（front）、其某個工作執行緒（其 threadId）或全部（all，預設）中執行一次完整的 V8 垃圾回收，傳回每個 isolate 回收前後的堆積及其暫停時間。完整回收會停止其所在的執行緒。即頁面上的「回收」按鈕。對應 POST /admin/node-health。"
+  },
   "stsmetadata.endpoints./admin-api/encryption.what": {
     "en": "324a164de72ee943",
     "text": "非規格端點。/admin/encryption 所繪製的一切，以 JSON 提供：模式、金鑰加密金鑰（是否存在、為持久或暫時，以及從五個提供者中的哪一個讀取）、從 common/crypto.js 自己的參數表讀出的演算法、存放區、六種已密封資料類別與三種刻意未密封的類別（各附原因），以及操作計數。兩個金鑰旗標是不同的問題，兩者都會回答：開發模式「有」金鑰加密金鑰——一把每次執行產生的暫時金鑰，讓請求工作程序集區能共享產生的資料列——但不持久化任何東西，因此只讀取 `present` 的用戶端會將一個金鑰隨程序消失的服務回報為「已加密」。`unclassified` 指名計數器產生、但表中沒有對應資料列的任何標籤，予以回報而非丟棄，讓未加資料列就新增的呼叫位置會顯現出來，而不是悄悄地對不上帳。回覆中沒有任何密文與明文，任何地方都沒有操作會依請求開啟已密封的值。對應 GET /admin/encryption。"
