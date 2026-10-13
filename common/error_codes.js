@@ -3824,8 +3824,9 @@ const CODES = [
   { code: 'STS-PKI-0162',
     summary: 'The certificate chain an x5u header names was requested for a ' +
       'SHA-256 that is not a JOSE signing certificate in that scope — a ' +
-      'mistyped address, or a certificate replaced since the token was ' +
-      'signed.',
+      'mistyped address, an expired certificate, or one of the oldest ' +
+      'displaced from a slot (#318 keeps the newest published until they ' +
+      'expire).',
     spec: 'HTTP 404 text/plain' },
   { code: 'STS-PKI-0163',
     summary: 'The certificate the register holds for a signing key\'s slot ' +
