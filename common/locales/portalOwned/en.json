@@ -6,6 +6,5 @@
   "thHow": "How it is yours",
   "you": "You are an owner",
   "viaGroup": "Through the group {group}",
-  "none": "You own no {kind, select, roles {role} groups {group} service-accounts {service account} other {application}}.",
-  "yourGroups": "Your groups: {groups}."
+  "none": "You own no {kind, select, roles {role} groups {group} service-accounts {service account} other {application}}."
 }

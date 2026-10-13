@@ -63,11 +63,7 @@ class OwnedPages {
     return '<div class="card"><h2>' + t.html('portalOwned.heading',
       { kind: kind }) + '</h2><p class="sub">' +
       t.html('portalOwned.sub') + '</p>' + body +
-      kit.pageNav(path, ctx.query, view.paging, 'page', t) +
-      ((view.groups || []).length
-        ? '<p class="note">' + t.html('portalOwned.yourGroups',
-            { groups: view.groups.join(', ') }) + '</p>'
-        : '') + '</div>';
+      kit.pageNav(path, ctx.query, view.paging, 'page', t) + '</div>';
   }
 
   /**

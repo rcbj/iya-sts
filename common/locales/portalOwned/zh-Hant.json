@@ -6,6 +6,5 @@
   "thHow": "為何歸您所有",
   "you": "您是擁有者",
   "viaGroup": "透過群組 {group}",
-  "none": "您沒有擁有任何{kind, select, roles {角色} groups {群組} service-accounts {服務帳戶} other {應用程式}}。",
-  "yourGroups": "您的群組：{groups}。"
+  "none": "您沒有擁有任何{kind, select, roles {角色} groups {群組} service-accounts {服務帳戶} other {應用程式}}。"
 }

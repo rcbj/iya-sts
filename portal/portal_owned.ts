@@ -239,7 +239,7 @@ class PortalOwned {
    * @param kind - one of `KINDS`
    * @param caller - the signed-in person
    * @param wanted - the page asked for
-   * @returns `{ kind, rows, paging, groups }`
+   * @returns `{ kind, rows, paging }`
    */
   view(kind: string, caller: AccountCaller, wanted?: number): Json {
     const { log } = this.deps;
@@ -252,10 +252,7 @@ class PortalOwned {
     return { kind: kind,
              rows: all.slice((at - 1) * PER_PAGE, at * PER_PAGE),
              paging: { page: at, pages: pages, per: PER_PAGE,
-                       total: all.length },
-             groups: who.groups.map(function (one: Json) {
-               return one.cn;
-             }) };
+                       total: all.length } };
   }
 
   /**
@@ -293,8 +290,9 @@ class PortalOwned {
         description: 'One page (`paging`, moved by `page`) of ' + what[kind] +
           ' (#604), in name order. Each row\'s `via` says how it is yours: ' +
           '`you` where an owner value is your own entry, and `groups`, the ' +
-          'groups of yours it names. `groups` lists every group you are ' +
-          'in. An owner grants nothing.',
+          'groups of yours it names. Since #607 an owner may administer ' +
+          'what they own through /admin-api with owner:read and ' +
+          'owner:write.',
         query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

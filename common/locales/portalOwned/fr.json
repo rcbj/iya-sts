@@ -6,6 +6,5 @@
   "thHow": "Pourquoi elle est à vous",
   "you": "Vous êtes propriétaire",
   "viaGroup": "Par le groupe {group}",
-  "none": "Vous n'êtes propriétaire d'aucun{kind, select, roles { rôle} groups { groupe} service-accounts { compte de service} other {e application}}.",
-  "yourGroups": "Vos groupes : {groups}."
+  "none": "Vous n'êtes propriétaire d'aucun{kind, select, roles { rôle} groups { groupe} service-accounts { compte de service} other {e application}}."
 }

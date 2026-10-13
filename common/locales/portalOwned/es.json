@@ -6,6 +6,5 @@
   "thHow": "Por qué es suyo",
   "you": "Usted es propietario",
   "viaGroup": "A través del grupo {group}",
-  "none": "No es propietario de {kind, select, roles {ningún rol} groups {ningún grupo} service-accounts {ninguna cuenta de servicio} other {ninguna aplicación}}.",
-  "yourGroups": "Sus grupos: {groups}."
+  "none": "No es propietario de {kind, select, roles {ningún rol} groups {ningún grupo} service-accounts {ninguna cuenta de servicio} other {ninguna aplicación}}."
 }

@@ -6,6 +6,5 @@
   "thHow": "为何归您所有",
   "you": "您是所有者",
   "viaGroup": "通过组 {group}",
-  "none": "您没有拥有任何{kind, select, roles {角色} groups {组} service-accounts {服务账户} other {应用程序}}。",
-  "yourGroups": "您的组：{groups}。"
+  "none": "您没有拥有任何{kind, select, roles {角色} groups {组} service-accounts {服务账户} other {应用程序}}。"
 }

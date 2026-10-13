@@ -6,6 +6,5 @@
   "thHow": "Paano ito naging iyo",
   "you": "May-ari ka",
   "viaGroup": "Sa pamamagitan ng grupong {group}",
-  "none": "Wala kang pag-aaring {kind, select, roles {role} groups {grupo} service-accounts {service account} other {application}}.",
-  "yourGroups": "Ang mga grupo mo: {groups}."
+  "none": "Wala kang pag-aaring {kind, select, roles {role} groups {grupo} service-accounts {service account} other {application}}."
 }

@@ -6,6 +6,5 @@
   "thHow": "Varför den är din",
   "you": "Du är ägare",
   "viaGroup": "Genom gruppen {group}",
-  "none": "Du äger {kind, select, roles {ingen roll} groups {ingen grupp} service-accounts {inget tjänstekonto} other {ingen applikation}}.",
-  "yourGroups": "Dina grupper: {groups}."
+  "none": "Du äger {kind, select, roles {ingen roll} groups {ingen grupp} service-accounts {inget tjänstekonto} other {ingen applikation}}."
 }
