@@ -1237,6 +1237,14 @@ const JOBS = [
   // exception. `local: true`: this repository's SCIM surface.
   { file: 'sts_scim_conformance.js',     browser: false, local: true,
     timeoutMs: 900000 },
+  // THE OUTBOUND SCIM CLIENT (#552, 2026-10-13): a scim-client in one
+  // throwaway realm provisioning into ANOTHER realm's own /scim/v2 on this
+  // service — OAuth 2.0 client_credentials at the target's token endpoint,
+  // the service's certificate trusted through the client's own CA
+  // certificates (the job's anchor) — a person and a group pushed, a change
+  // and a disable propagated, the queue drained with no dead letter.
+  // `local: true`: this repository's SCIM client and service provider.
+  { file: 'sts_scim_client.js',          browser: false, local: true },
   // TLSFUZZER (#212, 2026-09-26): every applicable tlsfuzzer script, pinned
   // and fetched into the tests image by tests/tlsfuzzer/build-tlsfuzzer.sh,
   // against the main HTTPS port and LDAPS 636 through
