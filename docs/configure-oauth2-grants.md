@@ -381,8 +381,12 @@ POST /oauth2/register
 A dynamically registered client whose `grant_types` does not include
 `device_code` is refused with `unauthorized_client`. For a client you register
 in the console or through `/admin-api`, add
-`urn:ietf:params:oauth:grant-type:device_code` to `oauthGrantType`. No test job
-covers that path yet.
+`urn:ietf:params:oauth:grant-type:device_code` to `oauthGrantType`. The job
+`sts_admin_client_policies.js` covers that path: a public client created
+through `/admin-api` with the grant is issued tokens once the person approves
+on `/portal/device`, and a client whose `oauthGrantType` leaves the grant out
+is refused at `/oauth2/device_authorization` with `unauthorized_client`
+(`STS-OAUTH-0692`).
 
 **Requests:**
 ```

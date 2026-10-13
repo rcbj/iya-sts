@@ -143,8 +143,13 @@ returned in the fragment, and an explicit `response_mode=query` is refused.
   `id_token` alone the scope's claims go into the ID Token.
 * **`id_token token`**, and any other type containing `token`, is refused in
   RFC 9700 mode and in product mode. In those modes it is also removed from
-  `response_types_supported`. To use it you need development mode with
-  `oauth2.rfc9700` off.
+  `response_types_supported`, so the request is refused as a type the
+  server does not advertise: `unsupported_response_type`, recorded as
+  `STS-OAUTH-0163`. With nobody signed in the error is shown on a page whose
+  link carries it to the client (RFC 9700 section 4.11.2: no redirect before
+  the user is authenticated); with somebody signed in it is redirected to the
+  client. The job `sts_admin_client_policies.js` checks both. To use it you
+  need development mode with `oauth2.rfc9700` off.
 
 A client that registers itself must list `implicit` in `grant_types`
 whenever one of its `response_types` contains `token`.
@@ -162,7 +167,8 @@ goes in the fragment. `code id_token` and `code id_token token` require a
   sets `oauthIdTokenSignedResponseAlg` on a client it creates through
   `/admin-api`.
 * **`code token`** and **`code id_token token`** are refused in RFC 9700 mode
-  and product mode.
+  and product mode, the same way as `id_token token` above
+  (`sts_admin_client_policies.js` checks `code token`).
 
 The OpenID conformance job (`sts_oidcc_conformance.js`) registers its hybrid
 client like this, after setting `oauth2.openRegistration` to `true` in the
@@ -241,6 +247,12 @@ uses at `/oauth2/authorize`. PAR is on by default.
 api applications/set '{"application":"parmon-a",
   "attribute":"oauthRequirePushedAuthorizationRequests","value":"TRUE"}'
 ```
+
+With the attribute `TRUE`, a plain authorization request from that client is
+answered `400 invalid_request` on a page and is never redirected
+(`STS-OAUTH-0419`); written `FALSE` again, the plain request reaches the
+sign-in screen. The job `sts_admin_client_policies.js` checks this for a
+client created through `/admin-api`, in a development and a product realm.
 
 **Requests** (from `sts_oauth2_monitor.js`, with the `parmon-a` client above):
 ```
