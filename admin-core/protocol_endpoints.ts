@@ -632,10 +632,6 @@ class ProtocolEndpoints {
     const metadata = this.loaded('../sts_metadata');
     const names = new Map();
     const methods = new Map();
-    // THE DEMONSTRATIONS THIS REALM IS NOT SERVED (#585), read off the
-    // router's mark through `registeredRoutes()`: a page lists none of them,
-    // as `/admin/sts-metadata` lists none.
-    const hidden = new Set();
     if (metadata) {
       metadata.ENDPOINTS.forEach(function (row) {
         names.set(row.path, row.name);
@@ -649,14 +645,10 @@ class ProtocolEndpoints {
       }
       metadata.registeredRoutes().forEach(function (row) {
         methods.set(row.path, row.methods);
-        if (row.demo && row.served === false) {
-          hidden.add(row.path);
-        }
       });
     }
     log.debug("Leaving ProtocolEndpoints.catalogue(). loaded=" + !!metadata);
-    return { loaded: !!metadata, names: names, methods: methods,
-             hidden: hidden };
+    return { loaded: !!metadata, names: names, methods: methods };
   }
 
   // The named authorization servers of this realm, default excluded.
@@ -760,10 +752,6 @@ class ProtocolEndpoints {
       if (entry.socket) {
         self.sockets[entry.socket](host)
           .forEach(function (row) { rows.push(row); });
-        return;
-      }
-      if (known.hidden.has(entry.route)) {
-        // A demonstration a product realm is not served (#585).
         return;
       }
       if (!entry.perServer) {

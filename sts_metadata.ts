@@ -190,11 +190,6 @@ interface EndpointEntry {
   what: string;
   effect?: string;
   coverage?: string;
-  // A DEMONSTRATION, MOCK OR TEST-CONTROL ENDPOINT (#585): served and listed
-  // only where `mode.servesDemoEndpoints()` says so. The route carries
-  // `common/app.js`'s mark; this flag is the description's half, and
-  // `describeEndpoints()` reports the two disagreeing.
-  demo?: boolean;
 }
 
 // One protocol family's card. See the header above PROTOCOLS.
@@ -205,10 +200,6 @@ interface Protocol {
   what: string;
   sockets?: string;
   notAProtocol?: boolean;
-  // What the card says where the demonstration endpoints are NOT served
-  // (#585), for a card whose `what` names one: a product realm's page must
-  // not send anybody to an endpoint that is not there.
-  whatWithoutDemos?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -9554,11 +9545,6 @@ const PROSE_ROUTES = ['/admin-api/sts-metadata'];
 interface RegisteredRoute {
   path: string;
   methods: string[];
-  // `common/app.js`'s demonstration mark on the route (#585), and whether
-  // the ambient realm is answered there — false only for a marked route a
-  // product realm passes on to Express's own 404.
-  demo?: boolean;
-  served?: boolean;
 }
 
 // Everything a `StsMetadata` reads. The shared app is here because the page
@@ -9635,8 +9621,7 @@ class StsMetadata {
   /**
    * Extracts the stsmetadata namespace (#543 phase 3): every
    * specification's coverage note and `what`, every endpoint's `what`,
-   * `effect` and `coverage`, every protocol card's `what`, `sockets` and
-   * `whatWithoutDemos` (#585),
+   * `effect` and `coverage`, every protocol card's `what` and `sockets`,
    * and the sentences this module makes.
    *
    * NOT HARVESTED, because each is a join key or a name rather than prose:
@@ -9663,9 +9648,8 @@ class StsMetadata {
                  coverage: one.coverage };
       }), ['what', 'effect', 'coverage']),
       harvest('stsmetadata.protocols', PROTOCOLS.map(function (one) {
-        return { key: one.name, what: one.what, sockets: one.sockets,
-                 whatWithoutDemos: one.whatWithoutDemos };
-      }), ['what', 'sockets', 'whatWithoutDemos']),
+        return { key: one.name, what: one.what, sockets: one.sockets };
+      }), ['what', 'sockets']),
       harvest('stsmetadata.sentence', SENTENCES, Object.keys(SENTENCES)),
       { 'stsmetadata.param.aParameter': A_PARAMETER });
     helpers.log.debug("Leaving StsMetadata.prose(). " +
@@ -9707,33 +9691,19 @@ class StsMetadata {
   // The protocol list, joined to what is actually on the page: how many
   // endpoint rows each family has here, and the three kinds of drift a
   // hand-written list on a derived page can carry.
-  private protocolReport(rows, hidden?: EndpointEntry[],
-                         hiddenSpecs?: string[]) {
+  private protocolReport(rows) {
     const { log } = this.deps;
     log.debug("Entering StsMetadata.protocolReport().");
     const countBy = {};
     rows.forEach(function (r) {
       countBy[r.group] = (countBy[r.group] || 0) + 1;
     });
-    // A GROUP WHOSE EVERY ROW IS A HIDDEN DEMONSTRATION (#585) — as the
-    // VC API's was in a product realm until #598 — is not on the page, so a
-    // card naming it drops it rather than linking to a table that is not
-    // there, and a specification only those rows cited leaves the card too.
-    const hiddenGroups = {};
-    (hidden || []).forEach(function (r) {
-      if (!Object.prototype.hasOwnProperty.call(countBy, r.group)) {
-        hiddenGroups[r.group] = true;
-      }
-    });
-    const dropSpecs = hiddenSpecs || [];
     const claimed = {};
     const missingGroups = [];
     const missingSpecs = [];
     const list = PROTOCOLS.map(function (p) {
       let endpoints = 0;
-      const groups = p.groups.filter(function (group) {
-        return !hiddenGroups[group];
-      });
+      const groups = p.groups.slice();
       groups.forEach(function (group) {
         claimed[group] = true;
         if (!Object.prototype.hasOwnProperty.call(countBy, group)) {
@@ -9748,13 +9718,10 @@ class StsMetadata {
         }
       });
       return { name: p.name,
-               what: (hidden || []).length && p.whatWithoutDemos
-                 ? p.whatWithoutDemos : p.what,
+               what: p.what,
                sockets: p.sockets || '',
                groups: groups,
-               specs: (p.specs || []).filter(function (id) {
-                 return dropSpecs.indexOf(id) < 0;
-               }),
+               specs: (p.specs || []).slice(),
                // CARRIED INTO THE DOCUMENT rather than left on the table, so
                // the drift test can see it. A card that names no
                // specification has to say why, and the reason travels with
@@ -9798,23 +9765,11 @@ class StsMetadata {
     const router = shared._router || shared.router;
     const stack = (router && router.stack) || [];
     const byPath = new Map<string, Set<string>>();
-    // THE DEMONSTRATION MARK (#585), read off each route the way the router
-    // reads it: a path is a demonstration when a route on it carries the
-    // mark, and served when the mark passes the ambient realm on.
-    const demoOf = new Map<string, { served: boolean }>();
-    const markOf = typeof shared.demoMarkOf === 'function'
-      ? shared.demoMarkOf : function (): null {
-        return null;
-      };
     stack.forEach(function (layer) {
       if (!layer.route || !layer.route.path) {
         return;
       }
       const path = String(layer.route.path);
-      const mark = markOf(layer.route);
-      if (mark) {
-        demoOf.set(path, { served: !!mark.serves() });
-      }
       const methods = Object.keys(layer.route.methods || {})
         .filter(function (m) {
           return m !== '_all';
@@ -9831,9 +9786,7 @@ class StsMetadata {
     });
     const out: RegisteredRoute[] = [];
     byPath.forEach(function (methods, path) {
-      const demo = demoOf.get(path);
-      out.push({ path: path, methods: Array.from(methods).sort(),
-                 demo: !!demo, served: demo ? demo.served : true });
+      out.push({ path: path, methods: Array.from(methods).sort() });
     });
     log.debug("Leaving StsMetadata.registeredRoutes(). " + out.length +
               " path(s).");
@@ -9913,30 +9866,8 @@ class StsMetadata {
 
     const rows = [];
     const undocumented = [];
-    // ---------------------------------------------------------------------
-    // A DEMONSTRATION THE REALM IS NOT SERVED (#585) IS NOT ON THE PAGE AT
-    // ALL — neither its route nor its description, so the drift checks hold
-    // in both modes: in development both halves are here and join as any
-    // row does; in a product realm both are dropped together and neither is
-    // reported. What IS reported is the two halves disagreeing — a marked
-    // route whose row is not flagged `demo`, or a flagged row whose route
-    // carries no mark — because then one mode would list an endpoint the
-    // other does not serve, or serve one nobody lists.
-    // ---------------------------------------------------------------------
-    const hidden: EndpointEntry[] = [];
-    const demoMismatch: string[] = [];
     this.registeredRoutes().forEach(function (route) {
       const entry = described.get(route.path);
-      if (entry && !!entry.demo !== !!route.demo) {
-        demoMismatch.push(route.path);
-      }
-      if (route.demo && !route.served) {
-        if (entry) {
-          hidden.push(entry);
-          described.delete(route.path);
-        }
-        return;
-      }
       if (entry) {
         rows.push(Object.assign({}, entry,
                                 { methods: route.methods, documented: true }));
@@ -9952,24 +9883,6 @@ class StsMetadata {
     });
     // Whatever is left was described and is not registered.
     const stale = Array.from(described.keys());
-    // THE SPECIFICATIONS ONLY A HIDDEN DEMONSTRATION IMPLEMENTED (#585): in a
-    // product realm a specification cited by nothing but demonstration rows
-    // is not on the page either, or it would be an idle claim — as the VC
-    // API's specification was until #598 made it a product surface.
-    const live = new Set<string>();
-    rows.forEach(function (r) {
-      (r.specs || []).forEach(function (id) {
-        live.add(id);
-      });
-    });
-    const hiddenSpecs: string[] = [];
-    hidden.forEach(function (r) {
-      (r.specs || []).forEach(function (id) {
-        if (!live.has(id) && hiddenSpecs.indexOf(id) < 0) {
-          hiddenSpecs.push(id);
-        }
-      });
-    });
     // Any spec id that no entry references, and any reference to a spec that
     // does not exist. Both are drift in the same table.
     const referenced = new Set<string>();
@@ -9985,17 +9898,13 @@ class StsMetadata {
     // The hand-written half of the page, checked against the derived half.
     // See the header above PROTOCOLS for the three kinds of drift this reports
     // and why a list that cannot be derived still has to be checked.
-    const protocols = this.protocolReport(rows, hidden, hiddenSpecs);
+    const protocols = this.protocolReport(rows);
     log.debug("Leaving StsMetadata.describeEndpoints(). " + rows.length +
               " row(s), " + undocumented.length +
               " undocumented, " + stale.length + " stale, " +
               protocols.protocols.length + " protocol(s).");
     return { rows: rows, undocumented: undocumented, stale: stale,
              unknownSpecs: unknownSpecs,
-             // What a product realm is not shown (#585): the specifications
-             // only a demonstration cited, and where the two halves of the
-             // demonstration mark disagree (empty, or a drift to fix).
-             hiddenSpecs: hiddenSpecs, demoMismatch: demoMismatch,
              protocols: protocols.protocols,
              unknownProtocolGroups: protocols.missingGroups,
              unknownProtocolSpecs: protocols.missingSpecs,
@@ -10098,15 +10007,9 @@ class StsMetadata {
                  linkable: link.linkable,
                  notLinkableBecause: link.linkable ? undefined : link.reason,
                  url: link.linkable ? base + r.path : undefined,
-                 effect: r.effect,
-                 // A demonstration, served here because this realm is in
-                 // development (#585); a product realm lists none.
-                 demo: !!r.demo };
+                 effect: r.effect };
       }),
-      // Less, in a product realm, what only a demonstration cited (#585).
-      specifications: SPECS.filter(function (spec) {
-        return (report.hiddenSpecs || []).indexOf(spec.id) < 0;
-      }),
+      specifications: SPECS,
       // The protocol list, with the endpoint count each family actually has on
       // this page. It is in the document rather than only on the page for the
       // reason everything else here is: a test can then assert that this
@@ -10125,11 +10028,7 @@ class StsMetadata {
       // this service and not to the list at the top of the page.
       unknownProtocolGroups: report.unknownProtocolGroups,
       unknownProtocolSpecIds: report.unknownProtocolSpecs,
-      unclaimedGroups: report.unclaimedGroups,
-      // A route carrying the demonstration mark whose row is not flagged
-      // `demo`, or the reverse (#585): the two halves of one fact
-      // disagreeing, which a test asserts is empty.
-      demoMarkMismatches: report.demoMismatch || []
+      unclaimedGroups: report.unclaimedGroups
     };
   }
   // THE PAGE'S ANSWER (#446): `metadataJson()`, and what the page draws

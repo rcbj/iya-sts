@@ -12,10 +12,10 @@
 // EMBEDDED: the page is drawn from the view its shell carried
 // (`data-sts-state`, `description_pages.ts`), never fetched. A family's
 // description is a fact of the request that drew it — the base it was
-// reached at, the realm's mode, which demonstrations it is served (#585) —
-// and the shell already holds it, so there is no API to ask (#580's
-// arrangement, and #584's step 1 is the JSON form each path answers by
-// `?format=json` or `Accept`, not an operation of a surface).
+// reached at, the realm's mode — and the shell already holds it, so there is
+// no API to ask (#580's arrangement, and #584's step 1 is the JSON form each
+// path answers by `?format=json` or `Accept`, not an operation of a
+// surface).
 //
 //   * `/saml2`, `/saml11` — `saml/web_saml_description.ts`;
 //   * `/xacml` — `xacml/web_xacml_description.ts`, behind the XACML_USER

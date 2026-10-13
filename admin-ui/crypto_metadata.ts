@@ -876,10 +876,6 @@ interface Family {
   whatItDoesNot?: string;
   envelopes: string[];
   algorithms: () => any[];
-  // What a verb says where the demonstration endpoints are NOT served
-  // (#585), for a row whose prose names one: a product realm's page must not
-  // describe what an endpoint that is not there does.
-  withoutDemos?: { verifies?: string };
 }
 
 // One row of a family's algorithm table as the report carries it: a label
@@ -1080,9 +1076,6 @@ class CryptoMetadata {
         signs: row.signs, verifies: row.verifies, encrypts: row.encrypts,
         decrypts: row.decrypts, hashes: row.hashes, keys: row.keys || '',
         whatItDoesNot: row.whatItDoesNot || '',
-        // What a product realm reads instead (#585), translated like the
-        // rest.
-        verifiesWithoutDemos: (row.withoutDemos || {}).verifies || '',
         algorithms: tables[i].map(function (one) {
           return {
             what: chips.has(one.row.what) ? '' : one.row.what,
@@ -1103,8 +1096,7 @@ class CryptoMetadata {
       harvest('crypto.standards', STANDARDS, ['coverage', 'what']),
       harvest('crypto.families', families,
               ['signs', 'verifies', 'encrypts', 'decrypts', 'hashes',
-               'keys', 'whatItDoesNot', 'verifiesWithoutDemos', 'what',
-               'how']),
+               'keys', 'whatItDoesNot', 'what', 'how']),
       harvest('crypto.hashing.fixed', hashing.fixed.map(function (row) {
         return { what: row.what, where: isProse(row.where) ? row.where : '' };
       }), ['what', 'where']),
@@ -3976,12 +3968,9 @@ class CryptoMetadata {
       drift: self.driftReport(),
       keys: self.keyMaterial(),
       families: self.families.map(function (row) {
-        // A product realm reads a row's `withoutDemos` (#585).
-        const plain = (!mode.servesDemoEndpoints() && row.withoutDemos) ||
-                      {};
         return {
           name: row.name,
-          signs: row.signs, verifies: plain.verifies || row.verifies,
+          signs: row.signs, verifies: row.verifies,
           encrypts: row.encrypts, decrypts: row.decrypts,
           hashes: row.hashes,
           // The keys the family holds OF ITS OWN, beside the realm's signing
