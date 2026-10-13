@@ -2084,6 +2084,34 @@ credential is CHECKED; `mode.gatesScim()` is the one place the gate is decided.
 | `scim.authCookie` | `SCIM_AUTH_COOKIE` | `true` | yes | Whether the browser sign-on session this service already has — the one /authn/login creates and WS-Federation shares — authenticates a SCIM request. RFC 7644 section 2 names cookies explicitly. |
 | `scim.authClientCert` | `SCIM_AUTH_CLIENT_CERT` | `true` | yes | Mutual TLS, the first scheme RFC 7644 section 2 names. It applies only where the request arrived over TLS with a certificate that VERIFIED against the client truststore (`/admin/tls/trust`), so on the main port only when global.https is on. |
 
+### SCIM client
+
+The outbound SCIM client (#552): this service pushing a realm's people and
+groups to a remote SCIM 2.0 service provider. Each client — its address,
+credentials, scope and groups — is an application entry, configured on
+Protocols → SCIM → **Clients**; these rows are what every client in a realm
+shares. Both schedules are cluster scheduler jobs. [SCIM](scim.md#the-outbound-scim-client)
+is the guide.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `scimClient.attempts` | `STS_SCIM_CLIENT_ATTEMPTS` | `8` | yes | How many times one change is tried before it becomes a dead letter on its client's dead-letter queue. Only a network failure, a timeout, 429, 500, 502, 503 and 504 are retried; anything else is a dead letter at once. |
+| `scimClient.timeoutMs` | `STS_SCIM_CLIENT_TIMEOUT_MS` | `15000` | yes | How long one SCIM or token request may take. |
+| `scimClient.backoffMs` | `STS_SCIM_CLIENT_BACKOFF_MS` | `10000` | yes | The first retry's delay, doubled each attempt after (full jitter); a longer `Retry-After` is honoured. A retry is sent by the `scim-client.deliver` sweep. |
+| `scimClient.maxBackoffMs` | `STS_SCIM_CLIENT_MAX_BACKOFF_MS` | `3600000` | yes | The ceiling of the backoff, for one delivery's retries and for a client's pause alike. |
+| `scimClient.leaseMs` | `STS_SCIM_CLIENT_LEASE_MS` | `300000` | yes | How long one node holds a delivery while it sends it before another node may take it over. |
+| `scimClient.sweepS` | `STS_SCIM_CLIENT_SWEEP_S` | `15` | yes | How often the cluster scheduler job `scim-client.deliver` sends what is due: new changes and retries alike. |
+| `scimClient.retentionS` | `STS_SCIM_CLIENT_RETENTION_S` | `604800` | yes | How long a delivery is kept: still unsent this long after it was queued, it becomes a dead letter; a sent or dead row is removed this long after it was queued. |
+| `scimClient.maxRows` | `STS_SCIM_CLIENT_MAX_ROWS` | `200000` | yes | The most delivery rows kept per realm, every client together; the oldest finished rows go first. |
+| `scimClient.concurrency` | `STS_SCIM_CLIENT_CONCURRENCY` | `4` | yes | How many deliveries one sweep sends at once. Changes to one user or group are never sent concurrently. |
+| `scimClient.summaryS` | `STS_SCIM_CLIENT_SUMMARY_S` | `300` | yes | At most one summary log line per realm per interval. |
+| `scimClient.reconcileCheckS` | `STS_SCIM_CLIENT_RECONCILE_CHECK_S` | `60` | yes | How often the cluster scheduler job `scim-client.reconcile` asks which clients are due their scheduled reconciliation. |
+| `scimClient.pageSize` | `STS_SCIM_CLIENT_PAGE_SIZE` | `100` | yes | The `count` asked for per page when a reconciliation lists a service provider's resources, lowered to its `filter.maxResults`, and halved on a `tooMany`. |
+| `scimClient.etagRetries` | `STS_SCIM_CLIENT_ETAG_RETRIES` | `3` | yes | How many times a PUT, PATCH or DELETE refused as stale (412, or 400 `invalidVers`) re-reads the resource and tries again before it becomes a dead letter. |
+| `scimClient.allowHttp` | `STS_SCIM_CLIENT_ALLOW_HTTP` | `false` | yes | **Development mode only.** On, an `http://` base URI or token endpoint is dialled; product mode refuses plain http whatever this says (RFC 7644 section 7.2 requires TLS). |
+| `scimClient.skipTlsVerification` | `STS_SCIM_CLIENT_SKIP_TLS_VERIFICATION` | `false` | yes | **Warning — development mode only.** Sends to an https service provider without verifying its certificate, so personal data and the credential go to anybody who can intercept the connection. Ignored, and logged once (`STS-SCIMC-0027`), in product mode: give the client its CA certificates instead. |
+| `scimClient.caFile` | `STS_SCIM_CLIENT_CA_FILE` | *(empty)* | yes | A file of PEM CA certificates trusted for every SCIM client's service provider and token endpoint, beside the public roots and each client's own CA certificates. |
+
 ### Roles
 
 Who holds a role, and what requires one. **A role is not a group**: a group here

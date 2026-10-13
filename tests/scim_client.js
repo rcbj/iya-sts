@@ -1174,6 +1174,12 @@ async function scheduled(t, base, ca) {
   t.check(first.reconciled === 1 && !!view.lastReconcileAt,
           'P1. a client whose interval has come round is reconciled',
           JSON.stringify(first));
+  await act({ action: 'update-client', id: id, enabled: 'false' });
+  const refused = await act({ action: 'reconcile', id: id });
+  t.check(!refused.ok && codeOf(refused) === 'STS-SCIMC-0017',
+          'P1b. a disabled client is not reconciled by hand',
+          JSON.stringify(refused));
+  await act({ action: 'update-client', id: id, enabled: 'true' });
   const second = await scimClients.reconcileDue();
   t.check(second.reconciled === 0,
           'P2. and not again before its interval has passed',

@@ -3009,6 +3009,13 @@ class ScimClients {
         log.debug("Leaving ScimClients.act(). Not usable.");
         return this.refusal('STS-SCIMC-0017', before.problems);
       }
+      if (!before.enabled) {
+        // Every row it queued would be dead-lettered at the send
+        // (STS-SCIMC-0001): a disabled client sends nothing.
+        log.debug("Leaving ScimClients.act(). Disabled.");
+        return this.refusal('STS-SCIMC-0017', ['SCIM client ' +
+          before.identifier + ' is disabled; enable it to reconcile.']);
+      }
       const result = await this.reconcile(before, actor || 'administrator');
       log.debug("Leaving ScimClients.act(). Reconciled.");
       return Object.assign({ message: 'Reconciled: ' + result.users +
