@@ -213,10 +213,19 @@ function childMain() {
       if (one.demo || one.demoPrefixes) {
         offered.push(one.id);
       }
-      one.prefixes.concat(one.exact).forEach(function (prefix) {
-        if (RETIRED.indexOf(prefix) >= 0 ||
-            ['/vc-demo-api', '/krb5'].indexOf(prefix) >= 0) {
+      // A prefix covers more than the path it names (`/tls` is still the
+      // TLS sign-in's), so a prefix is asked against the ones that held
+      // nothing but a demonstration; an exact path against every retired
+      // one.
+      one.prefixes.forEach(function (prefix) {
+        if (['/issuer', '/vc-demo-api', '/spnego', '/krb5', '/did']
+            .indexOf(prefix) >= 0) {
           offered.push(one.id + ' ' + prefix);
+        }
+      });
+      one.exact.forEach(function (exact) {
+        if (RETIRED.indexOf(exact) >= 0) {
+          offered.push(one.id + ' ' + exact);
         }
       });
     });
