@@ -2901,6 +2901,9 @@ class SpiffeCa {
     this.bumpSequence(opts.realm,
                       'a federated bundle was ' +
                       (existing ? 'updated' : 'added'));
+    // And the listeners' TLS trust follows it (#438): see the declaration of
+    // `federated`.
+    federationChanged(this.realmIdOf(opts.realm));
     log.debug('Leaving SpiffeCa.setFederatedBundle(). ' + held.size +
               ' federated ' +
         'bundle(s).');
@@ -2925,7 +2928,10 @@ class SpiffeCa {
     const name = String(trustDomain == null ? '' : trustDomain).trim()
       .toLowerCase();
     const had = this.federatedIn(realmId).delete(name);
-    if (had) this.bumpSequence(realmId, 'a federated bundle was removed');
+    if (had) {
+      this.bumpSequence(realmId, 'a federated bundle was removed');
+      federationChanged(this.realmIdOf(realmId));
+    }
     log.debug('Leaving SpiffeCa.deleteFederatedBundle(). ' +
               (had ? 'Removed.' : 'It ' +
         'was not here.'));
@@ -2985,6 +2991,69 @@ class SpiffeCa {
     });
     log.debug("Leaving SpiffeCa.federatedBundles().");
     return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE FEDERATED X.509 AUTHORITIES AS PEM, FOR A LISTENER'S TLS TRUST (#438).
+  //
+  // Every `x509-svid` key's `x5c` of every federated bundle this realm holds —
+  // the same certificates `spiffe_auth.ts`'s `authorityCertificates()` verifies
+  // a federated SVID against, read through `federatedBundles()` so a bundle
+  // named after a served trust domain is left out here exactly as it is there.
+  // Each is its OWN PEM block: node reads concatenated DER as one certificate
+  // and silently ignores the rest (`spiffe_grpc.ts` says the same of the
+  // realm's own anchors). One that is not a certificate is skipped with the
+  // warning `authorityCertificates()` gives it, because the rest of the bundle
+  // is still usable.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns every federated trust domain's X.509 authorities as PEM, for a
+   * listener's trust.
+   *
+   * @param realmId - the realm's id, or the ambient realm's
+   * @returns `{ trustDomain, certificatePem }` per authority
+   */
+  federatedX509AuthoritiesPem(realmId?) {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeCa.federatedX509AuthoritiesPem().');
+    const out = [];
+    this.federatedBundles(realmId).forEach(function (foreign) {
+      ((foreign.document || {}).keys || []).forEach(function (key) {
+        if (key.use !== 'x509-svid') return;
+        (key.x5c || []).forEach(function (b64) {
+          try {
+            const pem = stsCrypto.parseCertificate(
+              Buffer.from(String(b64), 'base64')).toString();
+            out.push({ trustDomain: foreign.trustDomain,
+                       certificatePem: pem });
+          } catch (e) {
+            log.warn('spiffe: an x5c entry in the ' + foreign.trustDomain +
+                     ' bundle would not parse, so the listeners do not ' +
+                     'trust it: ' + ((e && e.message) || e));
+          }
+        });
+      });
+    });
+    log.debug('Leaving SpiffeCa.federatedX509AuthoritiesPem(). ' +
+              out.length + ' authority(ies).');
+    return out;
+  }
+
+  // A watcher of every realm's federated bundles: told the realm ('' for the
+  // default) on the next turn after a bundle is added, changed or removed by
+  // any process. See the declaration of `federated`.
+  /**
+   * Subscribes to changes of any realm's federated bundles.
+   *
+   * @param fn - called with the realm's id, '' for the default
+   */
+  onFederationChange(fn: (realmId: string) => void): void {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeCa.onFederationChange().');
+    if (typeof fn === 'function') {
+      federationWatchers.push(fn);
+    }
+    log.debug('Leaving SpiffeCa.onFederationChange().');
   }
 
   // What a bundle document has to look like before this service will hold it.
@@ -3601,7 +3670,85 @@ let x509Count = cacheRegistry.counter('spiffe.x509-authorities');
 // survive the `JSON.stringify` the journal writes, which is the trap three
 // other stores hit. A row persisted by the shared store restores into the
 // DEFAULT realm's partition, because a shared row carries the empty realm id.
-const federated = realms.map({ persist: 'spiffe.federatedBundles' });
+//
+// ---------------------------------------------------------------------------
+// A CHANGED FEDERATION IS ANNOUNCED, WHEREVER IT CAME FROM (#438, 2026-10-13).
+//
+// The SPIRE Server API's and the Broker API's TLS listeners trust this realm's
+// anchors AND every federated trust domain's X.509 authorities
+// (`spiffe_grpc.ts`'s `listenerTrustPem()`), so the set of bundles held here
+// is part of a bound socket's secure context — which is held by ONE process,
+// the front one, and reachable from no other (the root `CLAUDE.md`, *One front
+// process*). A bundle reaches this store three ways, and each must tell that
+// process:
+//
+//   * written HERE — `setFederatedBundle()` / `deleteFederatedBundle()`;
+//   * written by ANOTHER process — a request worker answering
+//     `BatchCreateFederatedBundle` or `/admin-api/spiffe/federation-set`, or
+//     another node — which arrives through the change log's applier;
+//   * restored at start, before anything is bound, where it changes nothing.
+//
+// The last two reach the store through its `restore` / `remove` accessors and
+// no other door (`realms.js`'s *reconcile* contract), so the reconciler below
+// is where they are seen; it admits every row unchanged and only notes the
+// realm. The note is COALESCED and run on the next turn of the event loop — a
+// reconciler runs BEFORE the row is written, and a batch of fifty bundles is
+// one refresh rather than fifty. One-shot, so not a periodic timer.
+// ---------------------------------------------------------------------------
+const federationWatchers: Array<(realmId: string) => void> = [];
+const federationPending = new Set<string>();
+
+// The default realm is '' to the listeners and `realms.DEFAULT_ID` to a
+// partition; the watchers are told the listeners' spelling.
+/**
+ * Notes that a realm's federated bundles changed, and tells the watchers on
+ * the next turn of the event loop, once per realm however many changed.
+ *
+ * @param realmId - the realm's id, or the default realm's in either spelling
+ */
+function federationChanged(realmId: string): void {
+  log.debug('Entering federationChanged().');
+  const id = !realmId || realmId === realms.DEFAULT_ID ? '' : String(realmId);
+  if (federationPending.has(id)) {
+    log.debug('Leaving federationChanged(). Already pending.');
+    return;
+  }
+  federationPending.add(id);
+  setImmediate(function () {
+    federationPending.delete(id);
+    federationWatchers.forEach(function (watcher) {
+      try {
+        watcher(id);
+      } catch (e) {
+        // A watcher is the listeners' trust; one that throws must not stop
+        // the next, and must not reach the store write that announced it.
+        log.error(errorCodes.tag('STS-SPIFFE-0147') +
+                  'spiffe: a watcher of the "' + (id || 'default') +
+                  '" realm\'s federated bundles threw: ' +
+                  ((e && e.message) || e));
+      }
+    });
+  });
+  log.debug('Leaving federationChanged().');
+}
+
+const federated = realms.map({
+  persist: 'spiffe.federatedBundles',
+  reconcile: {
+    restore: function (key, incoming, held, realmId) {
+      log.debug('Entering restore(). A federated bundle arrived: ' + key);
+      federationChanged(realmId);
+      log.debug('Leaving restore().');
+      return incoming;
+    },
+    remove: function (key, held, realmId) {
+      log.debug('Entering remove(). A federated bundle left: ' + key);
+      federationChanged(realmId);
+      log.debug('Leaving remove().');
+      return true;
+    }
+  }
+});
 
 // What the startup actually did, for the pages that report it. Set once
 // `initialise()` finishes and readable synchronously — see `state()`.
@@ -3847,6 +3994,8 @@ export = {
   deleteFederatedBundle: slot.forward('deleteFederatedBundle'),
   federatedBundle: slot.forward('federatedBundle'),
   federatedBundles: slot.forward('federatedBundles'),
+  federatedX509AuthoritiesPem: slot.forward('federatedX509AuthoritiesPem'),
+  onFederationChange: slot.forward('onFederationChange'),
   checkBundleDocument: slot.forward('checkBundleDocument'),
   rotateX509Authority: slot.forward('rotateX509Authority'),
   rotateJwtAuthority: slot.forward('rotateJwtAuthority'),
