@@ -28,12 +28,20 @@
     "text": "La versión de protocolo más baja que negociarán LDAPS y el puerto HTTPS principal. TLSv1.2 es el predeterminado del propio node y el mínimo que permite FAPI 2.0 (TLS 1.3 se prefiere siempre que un cliente lo ofrece); TLSv1.3 rechaza a todo cliente que no lo hable, que es el ajuste que suele querer una implementación y no suele querer quien depura clientes antiguos. Los dos valores más antiguos existen para poder ejercitar la gestión de degradación de un cliente, y necesitan un nivel de seguridad de OpenSSL que todavía los permita."
   },
   "oid4vci.walletUrl|label": {
-    "en": "35334515c27079db",
-    "text": "URL de la cartera"
+    "en": "3108901753a760b2",
+    "text": "URL de la cartera web"
   },
   "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "Dónde está la cartera, como una URL que pueda usar el NAVEGADOR. Las páginas de Credential Offer envían allí al usuario final, así que es la dirección propia del depurador y no algo que sirva este servicio."
+    "en": "9f7225ecd5713d87",
+    "text": "La dirección de una cartera WEB, como una URL que pueda usar el NAVEGADOR, para una implementación que tenga una. Cuando se define, una Credential Offer también se ofrece como un enlace a ella (con oid4vci.walletIssuancePath y la oferta en su consulta), junto al enlace de oid4vci.walletInvocation que abre una aplicación de cartera. VACÍA, el valor predeterminado: no se ofrece ninguna cartera web."
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "Cómo recibe una oferta una aplicación de cartera"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "El esquema de URL personalizado del enlace y del código QR con los que se entrega una Credential Offer a una aplicación de cartera. openid-credential-offer, el valor predeterminado: openid-credential-offer://, el esquema que define la sección 4.1 de OpenID4VCI 1.0 y que registran la mayoría de las carteras. haip-vci: haip-vci://, que la sección 4.2 de OpenID4VC HAIP 1.0 permite registrar en su lugar a una cartera HAIP. La oferta es la misma en ambos casos."
   },
   "oid4vci.deferredReadyMs|description": {
     "en": "ddc34c16902c4571",
@@ -52,12 +60,12 @@
     "text": "EN MODO PRODUCTO, cuántos Transaction Codes erróneos sobrevive un código preautorizado. El último lo CONSUME, para que un código de cinco dígitos no pueda adivinarse en el endpoint de token dentro de la vigencia de la oferta; el usuario final pide al emisor una nueva oferta. Desarrollo no cuenta nada, para que una cartera pueda pasar por su ruta de código erróneo tantas veces como quiera una prueba."
   },
   "oid4vci.walletIssuancePath|label": {
-    "en": "0776abf1525cbc6c",
-    "text": "Página de emisión de la cartera"
+    "en": "ce4ba0d38dfd924e",
+    "text": "Página de emisión de la cartera web"
   },
   "oid4vci.walletIssuancePath|description": {
-    "en": "07cb90695b268c4c",
-    "text": "La página bajo la URL de la cartera a la que se entrega una Credential Offer. El predeterminado es la propia página de cartera del depurador."
+    "en": "067dc49ffc4982e7",
+    "text": "La página bajo oid4vci.walletUrl a la que se entrega una Credential Offer, para una cartera web cuya página de ofertas no es su raíz. Vacía de forma predeterminada. (La cartera web del depurador integrado recibe ofertas en /vc-issuance-1.html.)"
   },
   "oid4vci.credentialCertificateHeader|description": {
     "en": "91cae7f95584d095",
@@ -80,8 +88,16 @@
     "text": "URL de la cartera"
   },
   "oid4vp.walletUrl|description": {
-    "en": "2c544a69c20b537d",
-    "text": "Adónde envía el verificador al titular para que presente. Recurre a la URL de cartera de OID4VCI, ya que es la misma cartera en todas las configuraciones en las que se usa este servicio."
+    "en": "273ca3cecab6bf43",
+    "text": "La dirección de una cartera WEB, para una implementación que tenga una: cuando se define, una solicitud de presentación también se ofrece como un enlace a ella (con oid4vp.walletPresentationPath y la solicitud en su consulta), junto al enlace de oid4vp.walletInvocation que abre una aplicación de cartera. Recurre a la cartera web de OID4VCI, vacía de forma predeterminada: no se ofrece ninguna cartera web."
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "Cómo recibe una solicitud una aplicación de cartera"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "El esquema de URL personalizado del enlace «Abrir su cartera» en la página de inicio de sesión con cartera, del código QR cuando se ofrece y del requestUri de una verificación iniciada: la solicitud por referencia (client_id y request_uri) bajo ese esquema. openid4vp, el valor predeterminado: openid4vp://, el esquema que OpenID4VP 1.0 define para un verificador que no conoce la cartera. haip-vp: haip-vp://, que la sección 5.1 de OpenID4VC HAIP 1.0 permite registrar en su lugar a una cartera HAIP. Un ID Token autoemitido solo es siempre siopv2://."
   },
   "oid4vp.signInSelfIssued|description": {
     "en": "1dd010855b9acf09",
@@ -120,12 +136,12 @@
     "text": "Cuántas filas conserva el registro de inicios de sesión con cartera por dominio de confianza — una por credencial emitida para una persona sobre un token de acceso verificado (por clave del titular para ldp_vc). Superado ese número se descarta la fila EMITIDA PRIMERO. Eso falla de forma CERRADA: una credencial sin fila no inicia la sesión de nadie, que es también lo que hace una fila repudiada. El coste del valor predeterminado: una vez que un dominio ha emitido esta cantidad de credenciales de inicio de sesión, cada nueva impide que la más antigua aún válida inicie la sesión de su titular, y al titular hay que emitirle otra. Auméntelo para un dominio que emita más; cada proceso de cada nodo retiene el registro completo."
   },
   "oid4vp.walletPresentationPath|label": {
-    "en": "aac3808882c21475",
-    "text": "Página de presentación de la cartera"
+    "en": "b6fa773dcddd6d01",
+    "text": "Página de presentación de la cartera web"
   },
   "oid4vp.walletPresentationPath|description": {
-    "en": "412a8e5add1f0e8b",
-    "text": "La página bajo la URL de la cartera a la que se entrega una solicitud de presentación. El valor predeterminado es la página de cartera propia del depurador."
+    "en": "629d354cdfa52216",
+    "text": "La página bajo oid4vp.walletUrl a la que se entrega una solicitud de presentación, para una cartera web cuya página de solicitudes no es su raíz. Vacía de forma predeterminada. (La cartera web del depurador integrado recibe solicitudes en /vc-presentation-1.html.)"
   },
   "oid4vp.allowedWalletUrls|label": {
     "en": "9ec6e9a5a1975afc",
@@ -142,6 +158,22 @@
   "oid4vp.signIn|description": {
     "en": "0f2c1a100385463b",
     "text": "Ofrece «Iniciar sesión con una cartera» en /authn/login y responde en /authn/wallet: una solicitud OpenID4VP — mediante la Digital Credentials API, o por enlace en el mismo dispositivo — de una credencial que emitió este dominio, en cualquier formato que nombre oid4vp.signInFormats, cuya presentación verificada — incluida una prueba reciente del titular — inicia una sesión para la entrada del directorio para la que se emitió la credencial, y continúa con el flujo que estuviera esperando en la pantalla de inicio de sesión. Una cartera también puede ser el segundo factor tras una contraseña, y se pide un segundo factor tras una cartera cuando la solicitud exige dos. Una credencial de cualquier otro emisor, o una emitida sobre un token de acceso que este servicio no emitió, se sigue verificando y no inicia la sesión de nadie. Desactivarlo quita el botón y cierra la puerta; una verificación que inicia un administrador no se ve afectada."
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "Inicio de sesión con cartera: prefijo del Client Identifier"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "Cómo autentica una cartera la solicitud firmada que envía un inicio de sesión con cartera (sección 5.9 de OpenID4VP 1.0), tanto en el enlace como en el código QR y la Digital Credentials API. x509_hash, el valor predeterminado y lo que exige OpenID4VC HAIP 1.0: el SHA-256 del certificado del verificador, cuya cadena lleva la solicitud; la cartera debe confiar en la raíz de este servicio (/oid4vp/verifier-certificate la muestra). x509_san_dns: el nombre DNS del certificado (oid4vp.x509DnsName). Los demás son los de oid4vp.clientIdPrefix, que rige una verificación que inicia un administrador y no esta; pre-registered solo funciona con una cartera que tenga fuera de banda la clave de este verificador."
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "Inicio de sesión con cartera: modo de respuesta"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "Cómo responde a un inicio de sesión con cartera una cartera en el mismo dispositivo, o una que escaneó el código QR. direct_post.jwt, el valor predeterminado y lo que exige la sección 5.1 de OpenID4VC HAIP 1.0: la respuesta se cifra para una clave que solo tiene este inicio de sesión (oid4vp.responseEncryptionKeyAlgs), y se rechaza una sin cifrar. direct_post: en claro, para una cartera que no puede cifrar. La Digital Credentials API corresponde a oid4vp.signInDcApiResponseMode."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

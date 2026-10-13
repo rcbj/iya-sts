@@ -4784,12 +4784,20 @@
     "text": "certifikatet genereras när processen startar"
   },
   "oid4vci.walletUrl|label": {
-    "en": "35334515c27079db",
-    "text": "Plånbokens URL"
+    "en": "3108901753a760b2",
+    "text": "Webbplånbokens URL"
   },
   "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "Var plånboken finns, som en URL som WEBBLÄSAREN kan använda. Sidorna för Credential Offer skickar slutanvändaren hit, så det är debuggerns egen adress snarare än något som den här tjänsten serverar."
+    "en": "9f7225ecd5713d87",
+    "text": "En WEBBplånboks adress, som en URL som WEBBLÄSAREN kan använda, för en driftsättning som har en. Där den är angiven erbjuds ett Credential Offer också som en länk till den (med oid4vci.walletIssuancePath och erbjudandet i dess fråga), bredvid oid4vci.walletInvocation-länken som en plånboksapp öppnar. TOM, standardvärdet: ingen webbplånbok erbjuds."
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "Hur en plånboksapp får ett erbjudande"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "Det anpassade URL-schemat för länken och QR-koden som ett Credential Offer lämnas till en plånboksapp i. openid-credential-offer, standardvärdet: openid-credential-offer://, schemat som avsnitt 4.1 i OpenID4VCI 1.0 definierar och som de flesta plånböcker registrerar. haip-vci: haip-vci://, som avsnitt 4.2 i OpenID4VC HAIP 1.0 låter en HAIP-plånbok registrera i stället. Erbjudandet är detsamma i båda fallen."
   },
   "oid4vci.authorizationServer|label": {
     "en": "1be6cf596d0873b7",
@@ -4864,12 +4872,12 @@
     "text": "Hur länge ett Credential Offer, dess issuer_state, dess förauktoriserade kod och ett notification_id förblir användbara."
   },
   "oid4vci.walletIssuancePath|label": {
-    "en": "0776abf1525cbc6c",
-    "text": "Plånbokens utfärdandesida"
+    "en": "ce4ba0d38dfd924e",
+    "text": "Webbplånbokens utfärdandesida"
   },
   "oid4vci.walletIssuancePath|description": {
-    "en": "07cb90695b268c4c",
-    "text": "Sidan under plånbokens URL som ett Credential Offer lämnas till. Standardvärdet är debuggerns egen plånbokssida."
+    "en": "067dc49ffc4982e7",
+    "text": "Sidan under oid4vci.walletUrl som ett Credential Offer lämnas till, för en webbplånbok vars erbjudandesida inte är dess rot. Tom som standard. (Den inbyggda felsökarens webbplånbok tar emot erbjudanden på /vc-issuance-1.html.)"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -5012,8 +5020,16 @@
     "text": "Plånbokens URL"
   },
   "oid4vp.walletUrl|description": {
-    "en": "2c544a69c20b537d",
-    "text": "Dit Verifiern skickar innehavaren för att presentera. Faller tillbaka på OID4VCI-plånbokens URL, eftersom det är samma plånbok i varje uppställning som den här tjänsten används i."
+    "en": "273ca3cecab6bf43",
+    "text": "En WEBBplånboks adress, för en driftsättning som har en: där den är angiven erbjuds en presentationsbegäran också som en länk till den (med oid4vp.walletPresentationPath och begäran i dess fråga), bredvid oid4vp.walletInvocation-länken som en plånboksapp öppnar. Faller tillbaka på OID4VCI:s webbplånbok, som är tom som standard: ingen webbplånbok erbjuds."
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "Hur en plånboksapp får en begäran"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "Det anpassade URL-schemat för länken ”Öppna din plånbok” på sidan för inloggning med plånbok, för QR-koden där en sådan erbjuds och för requestUri i en startad verifiering: begäran via referens (client_id och request_uri) under schemat. openid4vp, standardvärdet: openid4vp://, schemat som OpenID4VP 1.0 definierar för en verifierare som inte känner till plånboken. haip-vp: haip-vp://, som avsnitt 5.1 i OpenID4VC HAIP 1.0 låter en HAIP-plånbok registrera i stället. En självutfärdad ID Token ensam är alltid siopv2://."
   },
   "oid4vp.requestObjectCertificateHeader|label": {
     "en": "0b6d0b0867dca890",
@@ -5336,12 +5352,12 @@
     "text": "Hur många rader registret för plånboksinloggning behåller per förtroendesfär — en per intyg som utfärdats för en person på en verifierad åtkomsttoken (per innehavarnyckel för ldp_vc). Därutöver tas den rad som UTFÄRDADES FÖRST bort. Det misslyckas SLUTET: ett intyg utan rad loggar inte in någon, vilket också är vad en rad som tagits avstånd från gör. Kostnaden för standardvärdet: när en sfär har utfärdat så här många inloggningsintyg hindrar varje nytt det äldsta fortfarande giltiga från att logga in sin innehavare, och innehavaren måste få ett nytt utfärdat. Höj det för en sfär som utfärdar fler; varje process på varje nod håller hela registret."
   },
   "oid4vp.walletPresentationPath|label": {
-    "en": "aac3808882c21475",
-    "text": "Plånbokens presentationssida"
+    "en": "b6fa773dcddd6d01",
+    "text": "Webbplånbokens presentationssida"
   },
   "oid4vp.walletPresentationPath|description": {
-    "en": "412a8e5add1f0e8b",
-    "text": "Sidan under plånbokens URL som en presentationsbegäran lämnas till. Standardvärdet är debuggerns egen plånbokssida."
+    "en": "629d354cdfa52216",
+    "text": "Sidan under oid4vp.walletUrl som en presentationsbegäran lämnas till, för en webbplånbok vars begäranssida inte är dess rot. Tom som standard. (Den inbyggda felsökarens webbplånbok tar emot begäranden på /vc-presentation-1.html.)"
   },
   "oid4vp.allowedWalletUrls|label": {
     "en": "9ec6e9a5a1975afc",
@@ -5382,6 +5398,22 @@
   "oid4vp.signIn|description": {
     "en": "0f2c1a100385463b",
     "text": "Erbjud \"Logga in med en plånbok\" på /authn/login och besvara /authn/wallet: en OpenID4VP-begäran — via Digital Credentials API, eller via länk på samma enhet — efter ett intyg som den här sfären utfärdat, i vilket format som helst som oid4vp.signInFormats anger, vars verifierade presentation — inklusive ett färskt innehavarbevis — startar en session för den katalogpost som intyget utfärdades för, och fortsätter med det flöde som väntade vid inloggningsskärmen. En plånbok kan också vara den andra faktorn efter ett lösenord, och en andra faktor efterfrågas efter en plånbok där begäran kräver två. Ett intyg från någon annan utfärdare, eller ett som utfärdats på en åtkomsttoken som den här tjänsten inte utfärdade, verifieras fortfarande och loggar inte in någon. Av tar bort knappen och stänger dörren; en verifiering som en administratör startar påverkas inte."
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "Inloggning med plånbok: prefix för Client Identifier"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "Hur en plånbok autentiserar den signerade begäran som en inloggning med plånbok skickar (avsnitt 5.9 i OpenID4VP 1.0), för länken, QR-koden och Digital Credentials API lika. x509_hash, standardvärdet och det som OpenID4VC HAIP 1.0 kräver: SHA-256 för verifierarens certifikat, vars kedja begäran bär; plånboken måste lita på den här tjänstens rot (/oid4vp/verifier-certificate visar den). x509_san_dns: certifikatets DNS-namn (oid4vp.x509DnsName). De övriga är oid4vp.clientIdPrefix, som styr en verifiering som en administratör startar och inte denna; pre-registered fungerar bara med en plånbok som har den här verifierarens nyckel utanför bandet."
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "Inloggning med plånbok: svarsläge"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "Hur en plånbok på samma enhet, eller en som skannade QR-koden, svarar på en inloggning med plånbok. direct_post.jwt, standardvärdet och det som avsnitt 5.1 i OpenID4VC HAIP 1.0 kräver: svaret krypteras till en nyckel som bara den här inloggningen har (oid4vp.responseEncryptionKeyAlgs), och ett okrypterat svar avvisas. direct_post: i klartext, för en plånbok som inte kan kryptera. Digital Credentials API styrs av oid4vp.signInDcApiResponseMode."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

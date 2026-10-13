@@ -1461,8 +1461,16 @@ pre-authorized offer).
 * **THE QR CODE IS DRAWN IN THE BROWSER** (`common/web_qr.ts`, here until #572 moved it beside the sign-in surface, which draws one too), from the offer BY
   REFERENCE, which is short enough to scan; the open-in-wallet link carries
   the offer by value as the `openid-credential-offer://` URI a native wallet
-  registers for, and the configured web wallet (`oid4vci.walletUrl`) gets a
-  second link. `/portal/mfa`'s QR code is an image the server drew, because
+  registers for (`haip-vci://` where `oid4vci.walletInvocation` says so,
+  `vc_offers.ts`'s `offerScheme()`), and the configured web wallet
+  (`oid4vci.walletUrl`) gets a second link — **none by default since
+  2026-10-12**, when that setting stopped defaulting to the embedded
+  debugger's `http://localhost:3000`. Under the links the page says what to
+  do when nothing opens (`wallet-no-app`). A third-party wallet redeems the
+  pre-authorized code naming no client, which the authorization server's
+  metadata says it may (`pre-authorized_grant_anonymous_access_supported`,
+  OpenID4VCI 1.0 section 12.3); before that member a wallet defaulted to
+  sending a client_id of its own, which product refuses unregistered. `/portal/mfa`'s QR code is an image the server drew, because
   its secret is the server's to show; here the answer is a URI and the
   picture is only a way of showing it, so the renderer makes it. `web_qr.ts`
   requires nothing, emits inline SVG (the portal's `img-src` admits no

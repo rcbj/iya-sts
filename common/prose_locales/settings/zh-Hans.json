@@ -4784,12 +4784,20 @@
     "text": "证书在进程启动时生成"
   },
   "oid4vci.walletUrl|label": {
-    "en": "35334515c27079db",
-    "text": "钱包 URL"
+    "en": "3108901753a760b2",
+    "text": "网页钱包 URL"
   },
   "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "钱包所在的位置，以浏览器可以使用的 URL 表示。凭证发放（Credential Offer）页面会把终端用户送到这里，因此它是调试器自己的地址，而不是本服务提供的任何内容。"
+    "en": "9f7225ecd5713d87",
+    "text": "网页钱包的地址，即浏览器可以使用的 URL，适用于运行网页钱包的部署。设置后，Credential Offer 还会以指向它的链接形式提供（附带 oid4vci.walletIssuancePath，并在查询中带上要约），与钱包应用打开的 oid4vci.walletInvocation 链接并列。为空（默认值）：不提供网页钱包。"
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "钱包应用如何接收要约"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "将 Credential Offer 交给钱包应用时所用链接和二维码的自定义 URL 方案。openid-credential-offer（默认值）：openid-credential-offer://，即 OpenID4VCI 1.0 第 4.1 节定义、大多数钱包都会注册的方案。haip-vci：haip-vci://，OpenID4VC HAIP 1.0 第 4.2 节允许 HAIP 钱包改为注册此方案。两种情况下的要约相同。"
   },
   "oid4vci.authorizationServer|label": {
     "en": "1be6cf596d0873b7",
@@ -4864,12 +4872,12 @@
     "text": "凭证发放、其 issuer_state、其预授权码以及 notification_id 保持可用的时长。"
   },
   "oid4vci.walletIssuancePath|label": {
-    "en": "0776abf1525cbc6c",
-    "text": "钱包签发页面"
+    "en": "ce4ba0d38dfd924e",
+    "text": "网页钱包颁发页"
   },
   "oid4vci.walletIssuancePath|description": {
-    "en": "07cb90695b268c4c",
-    "text": "钱包 URL 下接收凭证发放的页面。默认值是调试器自己的钱包页面。"
+    "en": "067dc49ffc4982e7",
+    "text": "oid4vci.walletUrl 下接收 Credential Offer 的页面，适用于要约页面不是其根路径的网页钱包。默认为空。（内嵌调试器的网页钱包在 /vc-issuance-1.html 接收要约。）"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -5012,8 +5020,16 @@
     "text": "钱包 URL"
   },
   "oid4vp.walletUrl|description": {
-    "en": "2c544a69c20b537d",
-    "text": "验证方将持有者发送到何处进行出示。未设置时回退到 OID4VCI 钱包 URL，因为在本服务使用的每种部署中它都是同一个钱包。"
+    "en": "273ca3cecab6bf43",
+    "text": "网页钱包的地址，适用于运行网页钱包的部署：设置后，展示请求还会以指向它的链接形式提供（附带 oid4vp.walletPresentationPath，并在查询中带上请求），与钱包应用打开的 oid4vp.walletInvocation 链接并列。未设置时回退到 OID4VCI 网页钱包，其默认值为空：不提供网页钱包。"
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "钱包应用如何接收请求"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "钱包登录页上“打开您的钱包”链接、提供时的二维码以及已启动验证的 requestUri 所用的自定义 URL 方案：在该方案下按引用传递请求（client_id 和 request_uri）。openid4vp（默认值）：openid4vp://，即 OpenID4VP 1.0 为不认识该钱包的验证方定义的方案。haip-vp：haip-vp://，OpenID4VC HAIP 1.0 第 5.1 节允许 HAIP 钱包改为注册此方案。单独的自签发 ID Token 始终使用 siopv2://。"
   },
   "oid4vp.requestObjectCertificateHeader|label": {
     "en": "0b6d0b0867dca890",
@@ -5336,12 +5352,12 @@
     "text": "钱包登录登记册在每个信任领域保留多少行——每个基于已验证访问令牌为某人签发的凭证一行（ldp_vc 则按持有者密钥）。超过该数量时丢弃最先签发的行。这是失败即关闭：没有对应行的凭证不会让任何人登录，被撤认的行也是如此。默认值的代价是：一旦某个领域签发了这么多登录凭证，每签发一个新凭证，就会使最旧的仍然有效的凭证不再能让其持有者登录，持有者必须重新获得签发。签发更多凭证的领域应调高此值；每个节点的每个进程都持有整个登记册。"
   },
   "oid4vp.walletPresentationPath|label": {
-    "en": "aac3808882c21475",
-    "text": "钱包出示页面"
+    "en": "b6fa773dcddd6d01",
+    "text": "网页钱包展示页"
   },
   "oid4vp.walletPresentationPath|description": {
-    "en": "412a8e5add1f0e8b",
-    "text": "出示请求被交给钱包 URL 之下的哪个页面。默认是调试器自己的钱包页面。"
+    "en": "629d354cdfa52216",
+    "text": "oid4vp.walletUrl 下接收展示请求的页面，适用于请求页面不是其根路径的网页钱包。默认为空。（内嵌调试器的网页钱包在 /vc-presentation-1.html 接收请求。）"
   },
   "oid4vp.allowedWalletUrls|label": {
     "en": "9ec6e9a5a1975afc",
@@ -5382,6 +5398,22 @@
   "oid4vp.signIn|description": {
     "en": "0f2c1a100385463b",
     "text": "在 /authn/login 上提供“使用钱包登录”并响应 /authn/wallet：一个 OpenID4VP 请求——通过 Digital Credentials API，或在同一设备上通过链接——请求此领域签发的、采用 oid4vp.signInFormats 所列任一格式的凭证；其经验证的出示（包括新的持有者证明）会为该凭证所签发给的目录条目开始一个会话，并继续在登录界面等待的任何流程。钱包也可以作为密码之后的第二因素；当请求要求两个因素时，在钱包之后还会要求第二因素。来自任何其他颁发者的凭证，或基于非本服务签发的访问令牌签发的凭证，仍然可以验证，但不会让任何人登录。关闭会移除该按钮并关闭这一入口；管理员启动的验证不受影响。"
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "钱包登录：Client Identifier 前缀"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "钱包如何验证钱包登录所发送的已签名请求（OpenID4VP 1.0 第 5.9 节），链接、二维码和 Digital Credentials API 均适用。x509_hash（默认值，也是 OpenID4VC HAIP 1.0 的要求）：验证方证书的 SHA-256，请求中携带其证书链；钱包必须信任本服务的根证书（/oid4vp/verifier-certificate 会显示）。x509_san_dns：证书的 DNS 名称（oid4vp.x509DnsName）。其余前缀属于 oid4vp.clientIdPrefix，它管理管理员发起的验证而非此处；pre-registered 仅适用于在带外持有本验证方密钥的钱包。"
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "钱包登录：响应模式"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "同一设备上的钱包或扫描了二维码的钱包如何响应钱包登录。direct_post.jwt（默认值，也是 OpenID4VC HAIP 1.0 第 5.1 节的要求）：响应加密到只有本次登录持有的密钥（oid4vp.responseEncryptionKeyAlgs），未加密的响应会被拒绝。direct_post：明文，适用于无法加密的钱包。Digital Credentials API 由 oid4vp.signInDcApiResponseMode 决定。"
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

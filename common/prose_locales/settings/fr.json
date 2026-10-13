@@ -4784,12 +4784,20 @@
     "text": "le certificat est généré au démarrage du processus"
   },
   "oid4vci.walletUrl|label": {
-    "en": "35334515c27079db",
-    "text": "URL du portefeuille"
+    "en": "3108901753a760b2",
+    "text": "URL du portefeuille web"
   },
   "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "L’emplacement du portefeuille, sous forme d’URL utilisable par le NAVIGATEUR. Les pages de Credential Offer y envoient l’utilisateur final : c’est donc l’adresse propre au débogueur plutôt que quoi que ce soit que sert ce service."
+    "en": "9f7225ecd5713d87",
+    "text": "L’adresse d’un portefeuille WEB, sous forme d’URL utilisable par le NAVIGATEUR, pour un déploiement qui en exploite un. Lorsqu’elle est définie, une Credential Offer est aussi proposée sous forme de lien vers elle (avec oid4vci.walletIssuancePath et l’offre dans sa requête), à côté du lien oid4vci.walletInvocation qu’ouvre une application de portefeuille. VIDE, la valeur par défaut : aucun portefeuille web n’est proposé."
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "Comment une application de portefeuille reçoit une offre"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "Le schéma d’URL personnalisé du lien et du code QR par lesquels une Credential Offer est remise à une application de portefeuille. openid-credential-offer, la valeur par défaut : openid-credential-offer://, le schéma que définit la section 4.1 d’OpenID4VCI 1.0 et que la plupart des portefeuilles enregistrent. haip-vci : haip-vci://, que la section 4.2 d’OpenID4VC HAIP 1.0 permet à un portefeuille HAIP d’enregistrer à la place. L’offre est la même dans les deux cas."
   },
   "oid4vci.authorizationServer|label": {
     "en": "1be6cf596d0873b7",
@@ -4864,12 +4872,12 @@
     "text": "Durée pendant laquelle une Credential Offer, son issuer_state, son code pré-autorisé et un notification_id restent utilisables."
   },
   "oid4vci.walletIssuancePath|label": {
-    "en": "0776abf1525cbc6c",
-    "text": "Page d’émission du portefeuille"
+    "en": "ce4ba0d38dfd924e",
+    "text": "Page d’émission du portefeuille web"
   },
   "oid4vci.walletIssuancePath|description": {
-    "en": "07cb90695b268c4c",
-    "text": "La page, sous l’URL du portefeuille, à laquelle une Credential Offer est transmise. La valeur par défaut est la page de portefeuille propre au débogueur."
+    "en": "067dc49ffc4982e7",
+    "text": "La page, sous oid4vci.walletUrl, à laquelle une Credential Offer est remise, pour un portefeuille web dont la page d’offre n’est pas la racine. Vide par défaut. (Le portefeuille web du débogueur intégré reçoit les offres à /vc-issuance-1.html.)"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -5012,8 +5020,16 @@
     "text": "URL du portefeuille"
   },
   "oid4vp.walletUrl|description": {
-    "en": "2c544a69c20b537d",
-    "text": "L’endroit où le vérificateur envoie le détenteur pour présenter. Se rabat sur l’URL du portefeuille OID4VCI, puisqu’il s’agit du même portefeuille dans toutes les configurations où ce service est utilisé."
+    "en": "273ca3cecab6bf43",
+    "text": "L’adresse d’un portefeuille WEB, pour un déploiement qui en exploite un : lorsqu’elle est définie, une requête de présentation est aussi proposée sous forme de lien vers elle (avec oid4vp.walletPresentationPath et la requête dans sa requête), à côté du lien oid4vp.walletInvocation qu’ouvre une application de portefeuille. Se rabat sur le portefeuille web d’OID4VCI, vide par défaut : aucun portefeuille web n’est proposé."
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "Comment une application de portefeuille reçoit une requête"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "Le schéma d’URL personnalisé du lien « Ouvrir votre portefeuille » de la page de connexion par portefeuille, du code QR lorsqu’il est proposé, et du requestUri d’une vérification démarrée : la requête par référence (client_id et request_uri) sous ce schéma. openid4vp, la valeur par défaut : openid4vp://, le schéma qu’OpenID4VP 1.0 définit pour un vérificateur qui ne connaît pas le portefeuille. haip-vp : haip-vp://, que la section 5.1 d’OpenID4VC HAIP 1.0 permet à un portefeuille HAIP d’enregistrer à la place. Un ID Token auto-émis seul est toujours siopv2://."
   },
   "oid4vp.requestObjectCertificateHeader|label": {
     "en": "0b6d0b0867dca890",
@@ -5336,12 +5352,12 @@
     "text": "Le nombre de lignes que le registre des connexions par portefeuille conserve par domaine de confiance — une par attestation émise pour une personne sur un jeton d’accès vérifié (par clé de détenteur pour ldp_vc). Au-delà, la ligne ÉMISE EN PREMIER est abandonnée. L’échec est FERMÉ : une attestation sans ligne ne connecte personne, ce qui est aussi l’effet d’une ligne désavouée. Le coût de la valeur par défaut : une fois qu’un domaine a émis autant d’attestations de connexion, chaque nouvelle empêche la plus ancienne encore valide de connecter son détenteur, et il faut en émettre une autre à celui-ci. Augmentez-la pour un domaine qui en émet davantage ; chaque processus de chaque nœud détient l’intégralité du registre."
   },
   "oid4vp.walletPresentationPath|label": {
-    "en": "aac3808882c21475",
-    "text": "Page de présentation du portefeuille"
+    "en": "b6fa773dcddd6d01",
+    "text": "Page de présentation du portefeuille web"
   },
   "oid4vp.walletPresentationPath|description": {
-    "en": "412a8e5add1f0e8b",
-    "text": "La page, sous l’URL du portefeuille, à laquelle une requête de présentation est remise. La valeur par défaut est la propre page de portefeuille du débogueur."
+    "en": "629d354cdfa52216",
+    "text": "La page, sous oid4vp.walletUrl, à laquelle une requête de présentation est remise, pour un portefeuille web dont la page de requête n’est pas la racine. Vide par défaut. (Le portefeuille web du débogueur intégré reçoit les requêtes à /vc-presentation-1.html.)"
   },
   "oid4vp.allowedWalletUrls|label": {
     "en": "9ec6e9a5a1975afc",
@@ -5382,6 +5398,22 @@
   "oid4vp.signIn|description": {
     "en": "0f2c1a100385463b",
     "text": "Propose « Se connecter avec un portefeuille » sur /authn/login et répond à /authn/wallet : une requête OpenID4VP — par la Digital Credentials API, ou par lien sur le même appareil — pour une attestation émise par ce domaine, dans tout format que nomme oid4vp.signInFormats, dont la présentation vérifiée — y compris une preuve de détenteur récente — ouvre une session pour l’entrée de l’annuaire pour laquelle l’attestation a été émise, et poursuit le flux qui attendait à l’écran de connexion. Un portefeuille peut aussi servir de second facteur après un mot de passe, et un second facteur est demandé après un portefeuille lorsque la requête en exige deux. Une attestation de tout autre émetteur, ou émise sur un jeton d’accès que ce service n’a pas émis, est toujours vérifiée mais ne connecte personne. Désactivé retire le bouton et ferme la porte ; une vérification qu’un administrateur démarre n’est pas concernée."
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "Connexion par portefeuille : préfixe du Client Identifier"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "Comment un portefeuille authentifie la requête signée qu’envoie une connexion par portefeuille (section 5.9 d’OpenID4VP 1.0), pour le lien, le code QR et la Digital Credentials API. x509_hash, la valeur par défaut et ce qu’exige OpenID4VC HAIP 1.0 : le SHA-256 du certificat du vérificateur, dont la requête porte la chaîne ; le portefeuille doit faire confiance à la racine de ce service (/oid4vp/verifier-certificate l’affiche). x509_san_dns : le nom DNS du certificat (oid4vp.x509DnsName). Les autres sont ceux d’oid4vp.clientIdPrefix, qui régit une vérification lancée par un administrateur et non celle-ci ; pre-registered ne fonctionne qu’avec un portefeuille qui détient hors bande la clé de ce vérificateur."
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "Connexion par portefeuille : mode de réponse"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "Comment un portefeuille sur le même appareil, ou un portefeuille qui a balayé le code QR, répond à une connexion par portefeuille. direct_post.jwt, la valeur par défaut et ce qu’exige la section 5.1 d’OpenID4VC HAIP 1.0 : la réponse est chiffrée pour une clé que seule cette connexion détient (oid4vp.responseEncryptionKeyAlgs), et une réponse non chiffrée est refusée. direct_post : en clair, pour un portefeuille qui ne sait pas chiffrer. La Digital Credentials API relève d’oid4vp.signInDcApiResponseMode."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

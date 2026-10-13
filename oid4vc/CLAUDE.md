@@ -381,6 +381,57 @@ poll, no `response_code`, nothing to collect.
 (A.3.1, A.3.2.2) — this door always signs, and an unsigned request carries no
 `expected_origins` at all — and `transaction_data`.
 
+### A wallet APP, and a request it can act on (2026-10-12, rcbj: "the goal is to actually have this button be usable")
+
+Until that day **Open your wallet on this device** sent the browser to
+`oid4vp.walletUrl` + `oid4vp.walletPresentationPath`, whose defaults were the
+embedded debugger's web wallet (`http://localhost:3000/vc-presentation-1.html`)
+— an address no person's wallet is — and the request was signed under the
+`pre-registered` Client Identifier (`sts-verifier`) and answered by plain
+`direct_post`. A wallet that had never heard of this service could open
+neither the link nor the request. Four changes, each a default a real wallet
+needs, each a setting an operator can move back:
+
+* **THE LINK IS THE SCHEME** (`oid4vp.walletInvocation`): the request by
+  reference (`client_id`, `request_uri`, `request_uri_method=get`) under
+  `openid4vp://` — OpenID4VP 1.0's scheme for a Verifier that does not know the
+  wallet — or `haip-vp://` (OpenID4VC HAIP 1.0 section 5.1, a MAY). SIOPv2's ID
+  Token alone stays `siopv2://`. `vc_verifier.ts`'s `walletScheme()` is the one
+  place it is decided, and the QR code and a verification start's `requestUri`
+  read it too. **No `web` value**: a web wallet is not a scheme. It is offered
+  BESIDE the app link (`webWallet` in the wait view) where `oid4vp.walletUrl`
+  configures one, and replaces it only where a start NAMED one (`wallet`,
+  `tx.signIn.walletNamed`) — the caller's explicit choice. The three wallet
+  URL settings are EMPTY by default; `vpWalletFor()` answers `''` with nothing
+  configured or named.
+* **THE CLIENT IDENTIFIER IS `x509_hash`** (`oid4vp.signInClientIdPrefix`,
+  HAIP 1.0 section 5: "the Verifier MUST use" it). It is a sign-in setting and
+  not `oid4vp.clientIdPrefix`, which stays `pre-registered` for an
+  administrator's verification: changing that default would have moved every
+  start and the conformance plans for no reader's benefit. `x509_hash` needs
+  no DNS name, so product mode can use it unconfigured (the nameless
+  certificate, *The x509 prefixes* below). The certificate is issued before
+  the build (`prepareSignedClientId()`), and a certificate or request that
+  cannot be made is now a REFUSAL with the builder's code (`unbuildable()`,
+  500) — `start()` used to await it unguarded.
+* **THE ANSWER IS ENCRYPTED** (`oid4vp.signInResponseMode`, `direct_post.jwt`,
+  HAIP section 5.1: "Response encryption MUST be used"), to the keys
+  `oid4vp.responseEncryptionKeyAlgs` offers, ECDH-ES P-256 among them. The
+  Response URI's response-mode check, which skipped sign-ins, now holds them
+  too: a plaintext answer to a sign-in that asked for `direct_post.jwt` is
+  `STS-VC-0096`. Never `form_post` (the binding cookie, above).
+* **THE PAGE SAYS WHAT TO DO WHEN NOTHING OPENS** (`wallet-no-app`): a link
+  under a scheme nothing registered for does nothing at all.
+
+What a real wallet still needs from its operator, and what nothing here can
+check without one (`tests/oid4vp_sign_in.js` 2h-iv to 2k-v hold the request):
+**the wallet must trust this service's Root** for the `x5c` chain
+(`/oid4vp/verifier-certificate`); its DCQL matcher must accept a query whose
+`dc+sd-jwt` claims path is the non-disclosable `sub`, beside `jwt_vc_json`
+and `ldp_vc` queries it may not understand (`oid4vp.signInFormats=dc+sd-jwt`
+narrows the request); and it must hold a credential THIS realm issued, which
+the portal's offer is for (`portal/CLAUDE.md`, `/portal/wallet`).
+
 ### Every format signs in
 
 The DCQL query carries one credential query per format in
@@ -559,7 +610,10 @@ The response endpoint marks the refusal with `verified.statusErrorCode`
 `oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),
 `oid4vp.signInCrossDevice` (**OFF**, in both modes: the relayable path),
 `oid4vp.signInFormats` (all three), `oid4vp.signInDcApiResponseMode`
-(`dc_api.jwt`), `oid4vp.statusListMaxCacheS` (3600),
+(`dc_api.jwt`), `oid4vp.signInClientIdPrefix` (`x509_hash`),
+`oid4vp.signInResponseMode` (`direct_post.jwt`), `oid4vp.walletInvocation`
+(`openid4vp`), `oid4vp.walletUrl` and `oid4vp.walletPresentationPath`
+(empty), `oid4vp.statusListMaxCacheS` (3600),
 `oid4vp.requireStatusReference` (`all`; `off` development only) and
 `oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),

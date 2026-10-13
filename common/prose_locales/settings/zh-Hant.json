@@ -4784,12 +4784,20 @@
     "text": "憑證在程序啟動時產生"
   },
   "oid4vci.walletUrl|label": {
-    "en": "35334515c27079db",
-    "text": "錢包 URL"
+    "en": "3108901753a760b2",
+    "text": "網頁錢包 URL"
   },
   "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "錢包所在的位置，以「瀏覽器」可使用的 URL 表示。Credential Offer 頁面會將終端使用者送到這裡，因此它是除錯工具自己的位址，而不是此服務所提供的任何東西。"
+    "en": "9f7225ecd5713d87",
+    "text": "網頁錢包的位址，即瀏覽器可以使用的 URL，適用於執行網頁錢包的部署。設定後，Credential Offer 也會以指向它的連結提供（附帶 oid4vci.walletIssuancePath，並在查詢中帶上要約），與錢包應用程式開啟的 oid4vci.walletInvocation 連結並列。空白（預設值）：不提供網頁錢包。"
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "錢包應用程式如何接收要約"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "將 Credential Offer 交給錢包應用程式時所用連結與 QR 碼的自訂 URL 配置。openid-credential-offer（預設值）：openid-credential-offer://，即 OpenID4VCI 1.0 第 4.1 節定義、多數錢包都會註冊的配置。haip-vci：haip-vci://，OpenID4VC HAIP 1.0 第 4.2 節允許 HAIP 錢包改為註冊此配置。兩種情況下的要約相同。"
   },
   "oid4vci.authorizationServer|label": {
     "en": "1be6cf596d0873b7",
@@ -4864,12 +4872,12 @@
     "text": "Credential Offer、其 issuer_state、其預先授權代碼以及 notification_id 保持可用多久。"
   },
   "oid4vci.walletIssuancePath|label": {
-    "en": "0776abf1525cbc6c",
-    "text": "錢包簽發頁面"
+    "en": "ce4ba0d38dfd924e",
+    "text": "網頁錢包發行頁"
   },
   "oid4vci.walletIssuancePath|description": {
-    "en": "07cb90695b268c4c",
-    "text": "錢包 URL 下接收 Credential Offer 的頁面。預設為除錯工具自己的錢包頁面。"
+    "en": "067dc49ffc4982e7",
+    "text": "oid4vci.walletUrl 下接收 Credential Offer 的頁面，適用於要約頁面不是其根路徑的網頁錢包。預設為空白。（內嵌偵錯工具的網頁錢包在 /vc-issuance-1.html 接收要約。）"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -5012,8 +5020,16 @@
     "text": "錢包 URL"
   },
   "oid4vp.walletUrl|description": {
-    "en": "2c544a69c20b537d",
-    "text": "驗證器將持有者送往何處出示。未設定時改用 OID4VCI 錢包 URL，因為在此服務的每種使用安排中，那都是同一個錢包。"
+    "en": "273ca3cecab6bf43",
+    "text": "網頁錢包的位址，適用於執行網頁錢包的部署：設定後，出示請求也會以指向它的連結提供（附帶 oid4vp.walletPresentationPath，並在查詢中帶上請求），與錢包應用程式開啟的 oid4vp.walletInvocation 連結並列。未設定時回退到 OID4VCI 網頁錢包，其預設值為空白：不提供網頁錢包。"
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "錢包應用程式如何接收請求"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "錢包登入頁上「開啟您的錢包」連結、提供時的 QR 碼，以及已啟動驗證的 requestUri 所用的自訂 URL 配置：在該配置下以參照傳遞請求（client_id 與 request_uri）。openid4vp（預設值）：openid4vp://，即 OpenID4VP 1.0 為不認識該錢包的驗證方定義的配置。haip-vp：haip-vp://，OpenID4VC HAIP 1.0 第 5.1 節允許 HAIP 錢包改為註冊此配置。單獨的自行簽發 ID Token 一律使用 siopv2://。"
   },
   "oid4vp.requestObjectCertificateHeader|label": {
     "en": "0b6d0b0867dca890",
@@ -5336,12 +5352,12 @@
     "text": "錢包登入登錄在每個信任領域保留多少列——每份依已驗證存取權杖為某人簽發的憑證一列（ldp_vc 則為每把持有者金鑰一列）。超過時會捨棄「最先簽發」的列。這會以失敗即關閉的方式處理：沒有列的憑證不會讓任何人登入，這也是被否認的列的效果。預設值的代價：一旦某領域簽發了這麼多登入憑證，每份新憑證都會使最舊的仍有效憑證無法再讓其持有者登入，持有者必須重新取得一份。簽發量更大的領域請調高此值；每個節點的每個程序都保存整個登錄。"
   },
   "oid4vp.walletPresentationPath|label": {
-    "en": "aac3808882c21475",
-    "text": "錢包出示頁面"
+    "en": "b6fa773dcddd6d01",
+    "text": "網頁錢包出示頁"
   },
   "oid4vp.walletPresentationPath|description": {
-    "en": "412a8e5add1f0e8b",
-    "text": "出示要求交付給錢包 URL 下的哪個頁面。預設是偵錯工具自己的錢包頁面。"
+    "en": "629d354cdfa52216",
+    "text": "oid4vp.walletUrl 下接收出示請求的頁面，適用於請求頁面不是其根路徑的網頁錢包。預設為空白。（內嵌偵錯工具的網頁錢包在 /vc-presentation-1.html 接收請求。）"
   },
   "oid4vp.allowedWalletUrls|label": {
     "en": "9ec6e9a5a1975afc",
@@ -5382,6 +5398,22 @@
   "oid4vp.signIn|description": {
     "en": "0f2c1a100385463b",
     "text": "在 /authn/login 上提供「以錢包登入」並回應 /authn/wallet：一個 OpenID4VP 要求——透過 Digital Credentials API，或在同一裝置上透過連結——要求此領域簽發的、屬於 oid4vp.signInFormats 所列任一格式的憑證，其已驗證的出示（包括新的持有者證明）會為該憑證所簽發對象的目錄項目啟動工作階段，並繼續登入畫面上等待中的任何流程。錢包也可以作為密碼之後的第二因素，而在要求需要兩個因素時，錢包之後也會要求第二因素。來自其他簽發者的憑證，或依非此服務簽發之存取權杖所簽發的憑證，仍會通過驗證，但不會讓任何人登入。關閉會移除按鈕並關上這道門；管理員啟動的驗證不受影響。"
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "錢包登入：Client Identifier 前綴"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "錢包如何驗證錢包登入所傳送的已簽章請求（OpenID4VP 1.0 第 5.9 節），連結、QR 碼與 Digital Credentials API 皆適用。x509_hash（預設值，也是 OpenID4VC HAIP 1.0 的要求）：驗證方憑證的 SHA-256，請求中攜帶其憑證鏈；錢包必須信任本服務的根憑證（/oid4vp/verifier-certificate 會顯示）。x509_san_dns：憑證的 DNS 名稱（oid4vp.x509DnsName）。其餘前綴屬於 oid4vp.clientIdPrefix，它管理管理員發起的驗證而非此處；pre-registered 僅適用於在頻外持有本驗證方金鑰的錢包。"
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "錢包登入：回應模式"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "同一裝置上的錢包或掃描了 QR 碼的錢包如何回應錢包登入。direct_post.jwt（預設值，也是 OpenID4VC HAIP 1.0 第 5.1 節的要求）：回應加密至只有本次登入持有的金鑰（oid4vp.responseEncryptionKeyAlgs），未加密的回應會被拒絕。direct_post：明文，適用於無法加密的錢包。Digital Credentials API 由 oid4vp.signInDcApiResponseMode 決定。"
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

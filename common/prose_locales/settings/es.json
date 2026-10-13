@@ -4784,12 +4784,20 @@
     "text": "el certificado se genera cuando arranca el proceso"
   },
   "oid4vci.walletUrl|label": {
-    "en": "35334515c27079db",
-    "text": "URL de la billetera"
+    "en": "3108901753a760b2",
+    "text": "URL de la billetera web"
   },
   "oid4vci.walletUrl|description": {
-    "en": "851069e67fc6a1d9",
-    "text": "Dónde está la billetera, como una URL que pueda usar el NAVEGADOR. Las páginas de Credential Offer envían allí al usuario final, así que es la dirección propia del depurador y no algo que sirva este servicio."
+    "en": "9f7225ecd5713d87",
+    "text": "La dirección de una billetera WEB, como una URL que pueda usar el NAVEGADOR, para una implementación que tenga una. Cuando se define, una Credential Offer también se ofrece como un enlace a ella (con oid4vci.walletIssuancePath y la oferta en su consulta), junto al enlace de oid4vci.walletInvocation que abre una aplicación de billetera. VACÍA, el valor predeterminado: no se ofrece ninguna billetera web."
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "Cómo recibe una oferta una aplicación de billetera"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "El esquema de URL personalizado del enlace y del código QR con los que se entrega una Credential Offer a una aplicación de billetera. openid-credential-offer, el valor predeterminado: openid-credential-offer://, el esquema que define la sección 4.1 de OpenID4VCI 1.0 y que registran la mayoría de las billeteras. haip-vci: haip-vci://, que la sección 4.2 de OpenID4VC HAIP 1.0 permite registrar en su lugar a una billetera HAIP. La oferta es la misma en ambos casos."
   },
   "oid4vci.authorizationServer|label": {
     "en": "1be6cf596d0873b7",
@@ -4864,12 +4872,12 @@
     "text": "Cuánto tiempo siguen siendo utilizables una Credential Offer, su issuer_state, su código preautorizado y un notification_id."
   },
   "oid4vci.walletIssuancePath|label": {
-    "en": "0776abf1525cbc6c",
-    "text": "Página de emisión de la billetera"
+    "en": "ce4ba0d38dfd924e",
+    "text": "Página de emisión de la billetera web"
   },
   "oid4vci.walletIssuancePath|description": {
-    "en": "07cb90695b268c4c",
-    "text": "La página bajo la URL de la billetera a la que se entrega una Credential Offer. El predeterminado es la propia página de billetera del depurador."
+    "en": "067dc49ffc4982e7",
+    "text": "La página bajo oid4vci.walletUrl a la que se entrega una Credential Offer, para una billetera web cuya página de ofertas no es su raíz. Vacía de forma predeterminada. (La billetera web del depurador integrado recibe ofertas en /vc-issuance-1.html.)"
   },
   "oid4vci.requestEncryptionKeyBits|label": {
     "en": "94c1e64073bd3829",
@@ -5012,8 +5020,16 @@
     "text": "URL de la billetera"
   },
   "oid4vp.walletUrl|description": {
-    "en": "2c544a69c20b537d",
-    "text": "Adónde envía el verificador al titular para que presente. Recurre a la URL de billetera de OID4VCI, ya que es la misma billetera en todas las configuraciones en las que se usa este servicio."
+    "en": "273ca3cecab6bf43",
+    "text": "La dirección de una billetera WEB, para una implementación que tenga una: cuando se define, una solicitud de presentación también se ofrece como un enlace a ella (con oid4vp.walletPresentationPath y la solicitud en su consulta), junto al enlace de oid4vp.walletInvocation que abre una aplicación de billetera. Recurre a la billetera web de OID4VCI, vacía de forma predeterminada: no se ofrece ninguna billetera web."
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "Cómo recibe una solicitud una aplicación de billetera"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "El esquema de URL personalizado del enlace «Abrir su billetera» en la página de inicio de sesión con billetera, del código QR cuando se ofrece y del requestUri de una verificación iniciada: la solicitud por referencia (client_id y request_uri) bajo ese esquema. openid4vp, el valor predeterminado: openid4vp://, el esquema que OpenID4VP 1.0 define para un verificador que no conoce la billetera. haip-vp: haip-vp://, que la sección 5.1 de OpenID4VC HAIP 1.0 permite registrar en su lugar a una billetera HAIP. Un ID Token autoemitido solo es siempre siopv2://."
   },
   "oid4vp.requestObjectCertificateHeader|label": {
     "en": "0b6d0b0867dca890",
@@ -5336,12 +5352,12 @@
     "text": "Cuántas filas conserva el registro de inicios de sesión con billetera por dominio de confianza — una por credencial emitida para una persona sobre un token de acceso verificado (por clave del titular para ldp_vc). Superado ese número se descarta la fila EMITIDA PRIMERO. Eso falla de forma CERRADA: una credencial sin fila no inicia la sesión de nadie, que es también lo que hace una fila repudiada. El costo del valor predeterminado: una vez que un dominio ha emitido esta cantidad de credenciales de inicio de sesión, cada nueva impide que la más antigua aún válida inicie la sesión de su titular, y al titular hay que emitirle otra. Auméntelo para un dominio que emita más; cada proceso de cada nodo retiene el registro completo."
   },
   "oid4vp.walletPresentationPath|label": {
-    "en": "aac3808882c21475",
-    "text": "Página de presentación de la billetera"
+    "en": "b6fa773dcddd6d01",
+    "text": "Página de presentación de la billetera web"
   },
   "oid4vp.walletPresentationPath|description": {
-    "en": "412a8e5add1f0e8b",
-    "text": "La página bajo la URL de la billetera a la que se entrega una solicitud de presentación. El valor predeterminado es la página de billetera propia del depurador."
+    "en": "629d354cdfa52216",
+    "text": "La página bajo oid4vp.walletUrl a la que se entrega una solicitud de presentación, para una billetera web cuya página de solicitudes no es su raíz. Vacía de forma predeterminada. (La billetera web del depurador integrado recibe solicitudes en /vc-presentation-1.html.)"
   },
   "oid4vp.allowedWalletUrls|label": {
     "en": "9ec6e9a5a1975afc",
@@ -5382,6 +5398,22 @@
   "oid4vp.signIn|description": {
     "en": "0f2c1a100385463b",
     "text": "Ofrece «Iniciar sesión con una billetera» en /authn/login y responde en /authn/wallet: una solicitud OpenID4VP — mediante la Digital Credentials API, o por enlace en el mismo dispositivo — de una credencial que emitió este dominio, en cualquier formato que nombre oid4vp.signInFormats, cuya presentación verificada — incluida una prueba reciente del titular — inicia una sesión para la entrada del directorio para la que se emitió la credencial, y continúa con el flujo que estuviera esperando en la pantalla de inicio de sesión. Una billetera también puede ser el segundo factor tras una contraseña, y se pide un segundo factor tras una billetera cuando la solicitud exige dos. Una credencial de cualquier otro emisor, o una emitida sobre un token de acceso que este servicio no emitió, se sigue verificando y no inicia la sesión de nadie. Desactivarlo quita el botón y cierra la puerta; una verificación que inicia un administrador no se ve afectada."
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "Inicio de sesión con billetera: prefijo del Client Identifier"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "Cómo autentica una billetera la solicitud firmada que envía un inicio de sesión con billetera (sección 5.9 de OpenID4VP 1.0), tanto en el enlace como en el código QR y la Digital Credentials API. x509_hash, el valor predeterminado y lo que exige OpenID4VC HAIP 1.0: el SHA-256 del certificado del verificador, cuya cadena lleva la solicitud; la billetera debe confiar en la raíz de este servicio (/oid4vp/verifier-certificate la muestra). x509_san_dns: el nombre DNS del certificado (oid4vp.x509DnsName). Los demás son los de oid4vp.clientIdPrefix, que rige una verificación que inicia un administrador y no esta; pre-registered solo funciona con una billetera que tenga fuera de banda la clave de este verificador."
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "Inicio de sesión con billetera: modo de respuesta"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "Cómo responde a un inicio de sesión con billetera una billetera en el mismo dispositivo, o una que escaneó el código QR. direct_post.jwt, el valor predeterminado y lo que exige la sección 5.1 de OpenID4VC HAIP 1.0: la respuesta se cifra para una clave que solo tiene este inicio de sesión (oid4vp.responseEncryptionKeyAlgs), y se rechaza una sin cifrar. direct_post: en claro, para una billetera que no puede cifrar. La Digital Credentials API corresponde a oid4vp.signInDcApiResponseMode."
   },
   "oid4vp.signInTtlS|label": {
     "en": "a3d56f8db7204416",

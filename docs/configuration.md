@@ -1307,15 +1307,17 @@ row, and beside the input on whichever console page draws it.
 
 Five things about these settings do not fit in a cell and have cost real time:
 
-* **`OID4VCI_WALLET_URL` is the base URL the BROWSER uses**, not one this
-  service fetches. The Credential Offer pages and the verifier's request pages
-  hand the End-User back by appending `/vc-issuance-1.html` or
-  `/vc-presentation-1.html` to it (`oid4vci.walletIssuancePath` and
-  `oid4vp.walletPresentationPath`), so its default of `http://localhost:3000` is
-  right only when the browser and the wallet share a host. Get it wrong and the
-  hand-off lands on an unreachable origin — and because the URL still *contains*
-  the wallet page, a `urlContains` wait passes and the failure looks like an
-  unrelated timeout.
+* **A wallet APP is reached by its scheme, and `OID4VCI_WALLET_URL` is only
+  for a WEB wallet** (since 2026-10-12). An offer is handed over as
+  `openid-credential-offer://` and a presentation request as `openid4vp://`
+  (or HAIP's `haip-vci://` and `haip-vp://`, `oid4vci.walletInvocation` and
+  `oid4vp.walletInvocation`), which the wallet on the device registered for.
+  `oid4vci.walletUrl` is empty by default; set it, with
+  `oid4vci.walletIssuancePath` and `oid4vp.walletPresentationPath`
+  (`/vc-issuance-1.html` and `/vc-presentation-1.html` for the embedded
+  debugger's), to offer a web wallet beside the app link. It is a URL the
+  BROWSER uses, not one this service fetches: get it wrong and the hand-off
+  lands on an unreachable origin.
 * **`KRB5_KDC_PORT` is the TCP *and* UDP port.** Both transports are bound to the
   same number on purpose: a client that fails over from UDP after
   `KRB_ERR_RESPONSE_TOO_BIG` retries at the address it already had.
@@ -1895,7 +1897,8 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
-| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | `http://localhost:3000` | yes | Where the wallet lives, as a URL the BROWSER can use. The Credential Offer pages send the End-User here, so it is the debugger's own address rather than anything this service serves. |
+| `oid4vci.walletUrl` | `OID4VCI_WALLET_URL` | *(empty)* | yes | A WEB wallet's address, as a URL the BROWSER can use, for a deployment that runs one: a Credential Offer is then also offered as a link to it, beside the `oid4vci.walletInvocation` link a wallet app opens. Empty: no web wallet is offered. |
+| `oid4vci.walletInvocation` | `OID4VCI_WALLET_INVOCATION` | `openid-credential-offer` | yes | The custom URL scheme a Credential Offer is handed to a wallet app under: `openid-credential-offer` (`openid-credential-offer://`, OpenID4VCI 1.0 section 4.1) or `haip-vci` (`haip-vci://`, OpenID4VC HAIP 1.0 section 4.2). |
 | `oid4vci.authorizationServer` | `OID4VCI_AUTHORIZATION_SERVER` | *(empty)* | yes | Set this to advertise a SEPARATE authorization server in the credential issuer metadata's authorization_servers. Empty — the default — means this service is its own, which is the arrangement every test here uses. |
 | `oid4vci.batchSize` | `OID4VCI_BATCH_SIZE` | `4` | yes | batch_credential_issuance.batch_size in the issuer metadata: how many proofs one credential request may carry, and therefore how many credentials come back from it. |
 | `oid4vci.deferredReadyMs` | `OID4VCI_DEFERRED_READY_MS` | `4000` | yes | How long a deferred credential stays issuance_pending before it is ready. Long enough that a wallet has to poll and short enough that a test does not time out. |
@@ -1907,7 +1910,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vci.txCodeLength` | `OID4VCI_TX_CODE_LENGTH` | `5` | yes | How many digits the Transaction Code a pre-authorized offer shows on the issuer's screen has. Drawn from a CSPRNG whatever this is. |
 | `oid4vci.txCodeMaxAttempts` | `OID4VCI_TX_CODE_MAX_ATTEMPTS` | `5` | yes | IN PRODUCT MODE, how many wrong Transaction Codes a pre-authorized code survives. The last one SPENDS it, so a five-digit code cannot be guessed at the token endpoint inside the offer's lifetime; the End-User asks the issuer for a new offer. Development counts nothing, so a wallet can be driven through its wrong-code path as often as a test likes. |
 | `oid4vci.offerTtlS` | `OID4VCI_OFFER_TTL_S` | `600` | yes | How long a Credential Offer, its issuer_state, its pre-authorized code and a notification_id stay usable. |
-| `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | `/vc-issuance-1.html` | yes | The page under the wallet URL that a Credential Offer is handed to. The default is the debugger's own wallet page. |
+| `oid4vci.walletIssuancePath` | `OID4VCI_WALLET_ISSUANCE_PATH` | *(empty)* | yes | The page under `oid4vci.walletUrl` a Credential Offer is handed to, for a web wallet whose offer page is not its root (`/vc-issuance-1.html` for the embedded debugger's). |
 | `oid4vci.requestEncryptionKeyBits` | `OID4VCI_REQUEST_ENCRYPTION_KEY_BITS` | `2048` | yes | The RSA modulus of the key credential_request_encryption publishes. Each trust realm has its own key, made when the realm first needs one, so a change reaches keys made AFTER it and never a key that exists. |
 | `oid4vci.requestEncryptionEncValues` | `OID4VCI_REQUEST_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | The content encryption algorithms credential_request_encryption advertises and accepts. Only A128GCM and A256GCM are implemented; anything else named here is ignored with a warning rather than advertised, because metadata that overstates is worse than metadata that says little. |
 | `oid4vci.responseEncryptionEncValues` | `OID4VCI_RESPONSE_ENCRYPTION_ENC_VALUES` | `A128GCM,A256GCM` | yes | The content encryption algorithms credential_response_encryption advertises and accepts. Same rule as the request row: A128GCM and A256GCM are implemented and nothing else is advertised. The key transport is RSA-OAEP-256, which is the only one implemented and is not a setting. |
@@ -1928,7 +1931,8 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
 |---|---|---|---|---|
 | `oid4vp.clientId` | `OID4VP_CLIENT_ID` | `sts-verifier` | yes | The client_id this service's Verifier presents in its Authorization Request, and the `aud` the Key Binding JWT must name. |
-| `oid4vp.walletUrl` *(derived)* | `OID4VP_WALLET_URL` | `http://localhost:3000` | yes | Where the Verifier sends the holder to present. Falls back to the OID4VCI wallet URL, since it is the same wallet in every arrangement this service is used in. |
+| `oid4vp.walletUrl` *(derived)* | `OID4VP_WALLET_URL` | *(`oid4vci.walletUrl`, empty)* | yes | A WEB wallet's address: where it is set, a presentation request is also offered as a link to it, beside the `oid4vp.walletInvocation` link a wallet app opens. Falls back to the OID4VCI web wallet. |
+| `oid4vp.walletInvocation` | `OID4VP_WALLET_INVOCATION` | `openid4vp` | yes | The custom URL scheme of the wallet sign-in page's "Open your wallet" link, its QR code and a verification start's `requestUri`: `openid4vp` (`openid4vp://`) or `haip-vp` (`haip-vp://`, OpenID4VC HAIP 1.0 section 5.1). A self-issued ID Token alone is always `siopv2://`. |
 | `oid4vp.kbMaxAgeS` | `OID4VP_KB_MAX_AGE_S` | `600` | yes | How old a Key Binding JWT's `iat` may be before the Verifier rejects the presentation as a replay. |
 | `oid4vp.signInSelfIssued` | `OID4VP_SIGN_IN_SELF_ISSUED` | `false` | yes | Offer "Sign in with a self-issued ID" (SIOPv2) on /authn/login and the enrolment on /portal/self-issued. It signs in only the person who ENROLLED the key, in every mode. |
 | `oid4vp.siopIdTokenMaxAgeS` | `OID4VP_SIOP_ID_TOKEN_MAX_AGE_S` | `300` | yes | How old a self-issued ID Token's `iat` may be (SIOPv2 section 11.1). |
@@ -1938,7 +1942,7 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.verifierAttestation` | `OID4VP_VERIFIER_ATTESTATION` | *(empty)* | yes | A Verifier Attestation JWT whose `cnf` is this realm's request-signing key. Empty: with the verifier_attestation prefix this realm attests itself, which only a wallet that already trusts it accepts. |
 | `oid4vp.claims` | `OID4VP_CLAIMS` | `given_name,family_name` | yes | The Verifier's STARTING request, and — this is the part worth knowing — the target its Reset returns to. It is not the live list: the Verifier request tab at `/admin/vc#vc-tab-verifier-request` owns that, and copies this at startup. |
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request — its nonce, state and Request Object — may wait for a wallet's response. |
-| `oid4vp.walletPresentationPath` | `OID4VP_WALLET_PRESENTATION_PATH` | `/vc-presentation-1.html` | yes | The page under the wallet URL a presentation request is handed to. The default is the debugger's own wallet page. |
+| `oid4vp.walletPresentationPath` | `OID4VP_WALLET_PRESENTATION_PATH` | *(empty)* | yes | The page under `oid4vp.walletUrl` a presentation request is handed to, for a web wallet whose request page is not its root (`/vc-presentation-1.html` for the embedded debugger's). |
 | `oid4vp.allowedWalletUrls` | `OID4VP_ALLOWED_WALLET_URLS` | `(empty)` | yes | IN PRODUCT MODE, the wallet URLs besides oid4vp.walletUrl that a verification start's `wallet` may name; any other is refused as an open redirect. Development accepts any URL. |
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | `(empty)` | yes | PEM certificates, concatenated, whose keys this service's Verifier accepts an SD-JWT VC or jwt_vc_json credential signature from IN ADDITION to this realm's own issuer. Empty — the default — trusts this issuer alone, which is what it always did. A certificate is used as a KEY: no chain is built and no revocation is checked. |
 | `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` the Verifier requires of a presented SD-JWT VC. The default is the type this issuer mints; set it to accept a credential another issuer mints under its own type. |
@@ -1949,6 +1953,8 @@ ordinary case, and one `entityId` between them would make that unexpressible.
 | `oid4vp.signInCrossDevice` | `OID4VP_SIGN_IN_CROSS_DEVICE` | `false` | yes | Offer a plain QR code on the wallet sign-in page, for a wallet the browser's Digital Credentials API cannot reach. **Off by default in both modes**: it is the one wallet path somebody can relay to a victim. |
 | `oid4vp.signInFormats` | `OID4VP_SIGN_IN_FORMATS` | `dc+sd-jwt,jwt_vc_json,ldp_vc` | yes | The credential formats a wallet sign-in asks for, in order of preference: one DCQL credential query each, and a credential set saying any one will do. |
 | `oid4vp.signInDcApiResponseMode` | `OID4VP_SIGN_IN_DC_API_RESPONSE_MODE` | `dc_api.jwt` | yes | How a wallet answers through the Digital Credentials API: encrypted to a key only that sign-in holds, or `dc_api` in the clear for a wallet that cannot encrypt. |
+| `oid4vp.signInClientIdPrefix` | `OID4VP_SIGN_IN_CLIENT_ID_PREFIX` | `x509_hash` | yes | The Client Identifier prefix a wallet sign-in's signed request carries (OpenID4VP 1.0 section 5.9). `x509_hash`, what OpenID4VC HAIP 1.0 requires: the wallet must trust this service's Root. `x509_san_dns`, `pre-registered`, `decentralized_identifier`, `verifier_attestation` or `openid_federation` otherwise; `oid4vp.clientIdPrefix` governs an administrator's verification. |
+| `oid4vp.signInResponseMode` | `OID4VP_SIGN_IN_RESPONSE_MODE` | `direct_post.jwt` | yes | How a wallet answers a sign-in by link or QR code: `direct_post.jwt`, encrypted (HAIP 1.0 section 5.1; an unencrypted answer is refused), or `direct_post` in the clear for a wallet that cannot encrypt. |
 | `oid4vp.responseEncryptionKeyAlgs` | `OID4VP_RESPONSE_ENCRYPTION_KEY_ALGS` | `HPKE-10-KE,ECDH-ES` | yes | The ephemeral keys a `direct_post.jwt` or `dc_api.jwt` request offers in `client_metadata.jwks`, in order, one per algorithm (#82). The default offers the X-Wing hybrid first, so a wallet that can protect its response against a future quantum adversary does, and the P-256 `ECDH-ES` key OpenID4VC HAIP requires second. Leaving `ECDH-ES` out refuses every wallet that has only it; an empty list is `ECDH-ES` alone. |
 | `oid4vp.statusListMaxCacheS` | `OID4VP_STATUS_LIST_MAX_CACHE_S` | `3600` | yes | The most the Verifier keeps a status list a trusted foreign issuer published, whatever its `ttl` says. Never past the list's own `exp`; 0 fetches for every presentation. |
 | `oid4vp.requireStatusReference` | `OID4VP_REQUIRE_STATUS_REFERENCE` | `all` | yes | Whether a credential presented to the Verifier must name a status that resolves VALID (#165). `all` (the default, both modes) refuses any credential with none (`STS-VC-0088`) and an `ldp_vc` that withheld its `credentialStatus` (`STS-VC-0089`). `own-only` accepts a foreign credential with none — **warning:** it can never be shown revoked. `off` also accepts this realm's own, and is development only (refused on write in product, `STS-CORE-0103`, and read as `all`). |
