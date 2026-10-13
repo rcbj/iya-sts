@@ -1093,6 +1093,14 @@ const ACTIONS = [
   { action: 'admin.service-account.cleared', category: 'admin',
     label: 'An administrator made a service account an ordinary person ' +
            'again' },
+  // #602: one owner added or taken off, at once.
+  { action: 'admin.service-account.owner-added', category: 'admin',
+    label: 'An administrator added an owner to a service account' },
+  { action: 'admin.service-account.owner-removed', category: 'admin',
+    label: 'An administrator took an owner off a service account' },
+  { action: 'admin.service-account.destination-set', category: 'admin',
+    label: 'An administrator set or cleared a service account\'s push ' +
+           'destination' },
   { action: 'admin.service-account.rotate', category: 'admin',
     label: 'An administrator asked for a service account\'s password to be ' +
            'rotated' },

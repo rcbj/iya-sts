@@ -967,6 +967,18 @@
     "en": "b2581e6ddce1f837",
     "text": "管理員將服務帳戶改回一般人員"
   },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "管理員為服務帳戶新增了擁有者"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "管理員從服務帳戶移除了擁有者"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "管理員設定或清除了服務帳戶的推送目標"
+  },
   "audit.actions.admin.service-account.rotate.label": {
     "en": "9eab836b051b0346",
     "text": "管理員要求輪替服務帳戶的密碼"

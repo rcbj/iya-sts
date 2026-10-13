@@ -7299,6 +7299,104 @@ class AdminApi {
             responseDescription: 'The account as it now stands (`account`), ' +
                                  'and the sessions ended (`signedOut`).' },
 
+          // ONE OWNER, OR THE DESTINATION, AT ONCE (#602): what the person
+          // page's Add, Remove and Use save the moment they are pressed.
+          { action: 'add-service-account-owner',
+            operationId: 'addServiceAccountOwner',
+            summary: 'Add one owner to a service account',
+            description: 'Adds a person or group of this realm to the ' +
+                         'service account\'s owners (#600, #602) and ' +
+                         'writes at once, keeping the other owners and the ' +
+                         'push destination. `owner` is a DN, a username or ' +
+                         'a group\'s cn. An owner already listed is `ok` ' +
+                         'with `changed: false`; more than ' +
+                         serviceAccounts.MAX_OWNERS + ' is refused.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The service account, as /admin-api/users names ' +
+                          'it.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                owner: { type: 'string',
+                         description: 'The person or group to add.' }
+              },
+              required: ['user', 'owner'],
+              examples: [{ user: 'svc-backup',
+                           owner: 'cn=operations,ou=groups,dc=example,' +
+                                  'dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The account as it now stands ' +
+                                 '(`account`), and whether it changed.' },
+          { action: 'remove-service-account-owner',
+            operationId: 'removeServiceAccountOwner',
+            summary: 'Take one owner off a service account',
+            description: 'Takes one owner off the service account and ' +
+                         'writes at once, keeping the rest and the push ' +
+                         'destination (#602). `owner` is the DN the account ' +
+                         'lists. Refused for one it does not list, and for ' +
+                         'the last owner while the service-account policy ' +
+                         'requires one.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The service account, as /admin-api/users names ' +
+                          'it.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                owner: { type: 'string',
+                         description: 'The owner\'s DN.' }
+              },
+              required: ['user', 'owner'],
+              examples: [{ user: 'svc-backup',
+                           owner: 'uid=alice,ou=users,dc=example,dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The account as it now stands.' },
+          { action: 'set-service-account-destination',
+            operationId: 'setServiceAccountDestination',
+            summary: 'Set or clear a service account\'s push destination',
+            description: 'Sets where the service account\'s rotated ' +
+                         'password is pushed (#602) and writes at once, ' +
+                         'keeping the owners: `destination`, the DN of a ' +
+                         'secret destination of this realm (GET ' +
+                         '/admin-api/secret-destinations), and ' +
+                         '`secretName`, the secret\'s name or path there, ' +
+                         'which must already exist. Both or neither: both ' +
+                         'empty clears them.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The service account, as /admin-api/users names ' +
+                          'it.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                destination: { type: 'string',
+                               description: 'The destination\'s DN, or ' +
+                                            'empty.' },
+                secretName: { type: 'string',
+                              description: 'The secret\'s name or path ' +
+                                           'there, or empty.' }
+              },
+              required: ['user'],
+              examples: [{ user: 'svc-backup',
+                           destination: 'cn=vault-prod,ou=applications,' +
+                                        'dc=example,dc=com',
+                           secretName: 'iya/svc-backup' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The account as it now stands.' },
+
           { action: 'rotate-password',
             operationId: 'rotateServiceAccountPassword',
             summary: 'Rotate a service account\'s password now',

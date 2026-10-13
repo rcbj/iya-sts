@@ -755,6 +755,123 @@ class ServiceAccounts {
              username: found.username };
   }
 
+  /**
+   * Adds one owner to a service account, writing at once (#602, rcbj: "The
+   * owners table should be automatically saved after the user clicks add").
+   * The destination and the rest of the list are kept; an owner already on
+   * the list is `ok` with `changed: false`.
+   *
+   * @param username - the service account
+   * @param owner - a DN, username or group name
+   * @returns `{ ok: true, account, changed }`, or a refusal with a code
+   */
+  addOwner(username: unknown, owner: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.addOwner().");
+    const facts = this.of(username);
+    if (!facts) {
+      log.debug("Leaving ServiceAccounts.addOwner(). Not a service account.");
+      return this.notOne(username);
+    }
+    const before = facts.owners.length;
+    const done = this.set(facts.dn, {
+      serviceAccount: true,
+      owners: facts.owners.map(function (one) {
+        return one.dn;
+      }).concat([String(owner == null ? '' : owner)]),
+      destination: facts.destination, secretName: facts.secretName });
+    log.debug("Leaving ServiceAccounts.addOwner(). " + !!done.ok);
+    return done.ok ? Object.assign({}, done, {
+      changed: (done as any).account.owners.length !== before }) : done;
+  }
+
+  /**
+   * Takes one owner off a service account, writing at once (#602). Refused
+   * for a value that is not one of its owners, and — through `set()` — for
+   * the last owner while the policy requires one.
+   *
+   * @param username - the service account
+   * @param owner - the owner's DN, as the account lists it
+   * @returns `{ ok: true, account, changed: true }`, or a refusal with a code
+   */
+  removeOwner(username: unknown, owner: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.removeOwner().");
+    const facts = this.of(username);
+    if (!facts) {
+      log.debug("Leaving ServiceAccounts.removeOwner(). Not a service " +
+                "account.");
+      return this.notOne(username);
+    }
+    const comparable = function (dn) {
+      log.debug("Entering comparable().");
+      log.debug("Leaving comparable().");
+      return String(dn || '').trim().toLowerCase().replace(/\s*,\s*/g, ',');
+    };
+    const wanted = comparable(owner);
+    const kept = facts.owners.filter(function (one) {
+      return comparable(one.dn) !== wanted;
+    });
+    if (kept.length === facts.owners.length) {
+      log.debug("Leaving ServiceAccounts.removeOwner(). Not an owner.");
+      return this.refusal('STS-SVCACCT-0032', '"' +
+        String(owner == null ? '' : owner).slice(0, 128) + '" is not one ' +
+        'of ' + facts.username + '\'s owners.');
+    }
+    const done = this.set(facts.dn, {
+      serviceAccount: true,
+      owners: kept.map(function (one) {
+        return one.dn;
+      }),
+      destination: facts.destination, secretName: facts.secretName });
+    log.debug("Leaving ServiceAccounts.removeOwner(). " + !!done.ok);
+    return done.ok ? Object.assign({}, done, { changed: true }) : done;
+  }
+
+  /**
+   * Sets a service account's push destination and the secret's name there,
+   * writing at once and keeping the owners (#602, rcbj: a destination picked
+   * from the search is "automatically set and saved"). Both empty clears
+   * them; one without the other is refused, as `set()` refuses it.
+   *
+   * @param username - the service account
+   * @param destination - the destination's DN, or ''
+   * @param secretName - the secret's name or path, or ''
+   * @returns `{ ok: true, account, changed }`, or a refusal with a code
+   */
+  setDestination(username: unknown, destination: unknown,
+                 secretName: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.setDestination().");
+    const facts = this.of(username);
+    if (!facts) {
+      log.debug("Leaving ServiceAccounts.setDestination(). Not a service " +
+                "account.");
+      return this.notOne(username);
+    }
+    const done = this.set(facts.dn, {
+      serviceAccount: true,
+      owners: facts.owners.map(function (one) {
+        return one.dn;
+      }),
+      destination: String(destination == null ? '' : destination).trim(),
+      secretName: String(secretName == null ? '' : secretName).trim() });
+    log.debug("Leaving ServiceAccounts.setDestination(). " + !!done.ok);
+    return done.ok ? Object.assign({}, done, {
+      changed: (done as any).account.destination !== facts.destination ||
+               (done as any).account.secretName !== facts.secretName })
+      : done;
+  }
+
+  private notOne(username: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.notOne().");
+    log.debug("Leaving ServiceAccounts.notOne().");
+    return this.refusal('STS-SVCACCT-0033', '"' +
+      String(username || '').slice(0, 64) + '" is not a service account ' +
+      'in this realm, so it has no owners or destination to change.');
+  }
+
   // -------------------------------------------------------------------------
   // THE ROTATION'S STATE (P4). Written through the same hook as the flag, so
   // there is one writer of these attributes.
@@ -932,6 +1049,9 @@ export = {
   secretNameInUse: slot.forward('secretNameInUse'),
   check: slot.forward('check'),
   set: slot.forward('set'),
+  addOwner: slot.forward('addOwner'),
+  removeOwner: slot.forward('removeOwner'),
+  setDestination: slot.forward('setDestination'),
   previousPassword: slot.forward('previousPassword'),
   recordRotated: slot.forward('recordRotated'),
   recordFailure: slot.forward('recordFailure'),

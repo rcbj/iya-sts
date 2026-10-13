@@ -967,6 +967,18 @@
     "en": "b2581e6ddce1f837",
     "text": "Un administrador volvió a convertir una cuenta de servicio en una persona común"
   },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "Un administrador añadió un propietario a una cuenta de servicio"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "Un administrador quitó un propietario de una cuenta de servicio"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "Un administrador definió o quitó el destino de envío de una cuenta de servicio"
+  },
   "audit.actions.admin.service-account.rotate.label": {
     "en": "9eab836b051b0346",
     "text": "Un administrador pidió que se rotara la contraseña de una cuenta de servicio"

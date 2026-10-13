@@ -401,8 +401,12 @@ const USERS_ACTIONS = ['create', 'set-password', 'issue-activation',
                        // (2026-10-01).
                        'update-fields',
                        // A service account (#221, 2026-10-06), and its
-                       // password rotated now.
-                       'set-service-account', 'rotate-password'];
+                       // password rotated now; one owner added or taken
+                       // off, at once (#602).
+                       'set-service-account', 'rotate-password',
+                       'add-service-account-owner',
+                       'remove-service-account-owner',
+                       'set-service-account-destination'];
 
 // ---------------------------------------------------------------------------
 // WHAT AN ADMINISTRATOR DOES TO SOMEBODY'S CREDENTIALS FROM THEIR PAGE
@@ -487,7 +491,16 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
   // QUEUES a rotation of a service account's password on the scheduler's
   // leader (`common/service_account_rotation.ts`): pushed first, committed
   // after; the answer is the run's id, never a password.
-  'set-service-account', 'rotate-password'];
+  'set-service-account', 'rotate-password',
+  // ONE OWNER AT A TIME (#602, rcbj: the owners table is saved the moment
+  // an owner is added): `add-service-account-owner` and
+  // `remove-service-account-owner` (`owner`) write at once and keep the
+  // destination; the last owner cannot go while the policy requires one.
+  'add-service-account-owner', 'remove-service-account-owner',
+  // And `set-service-account-destination` (`destination`, `secretName`,
+  // both or neither) writes the push destination at once and keeps the
+  // owners.
+  'set-service-account-destination'];
 
 // ---------------------------------------------------------------------------
 // POST /admin/applications — the actions in APPLICATION_ACTIONS below.
@@ -2808,6 +2821,77 @@ class AdminActions {
       log.debug("Leaving AdminActions.credentialAdminAction(). " +
                 "set-service-account.");
       return this.serviceAccountAction(who, body, ctx, audited);
+    }
+
+    if (action === 'set-service-account-destination') {
+      const { serviceAccounts } = this.deps;
+      const destination = String(body.destination == null ? ''
+                                                         : body.destination)
+        .trim();
+      const secretName = String(body.secretName == null ? ''
+                                                       : body.secretName)
+        .trim();
+      const result: any = serviceAccounts.setDestination(who, destination,
+                                                         secretName);
+      audited('admin.service-account.destination-set',
+              (result.ok ? '' : 'could not ') +
+              (destination ? 'set ' + who + '\'s push destination to ' +
+                destination : 'clear ' + who + '\'s push destination'),
+              { destination: destination, secretName: secretName,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                  "Destination refused.");
+        return this.refusedBy('STS-SVCACCT-0027', result);
+      }
+      log.debug("Leaving AdminActions.credentialAdminAction(). " +
+                "Destination set.");
+      return { ok: true, username: who, account: result.account,
+               changed: !!result.changed,
+               message: destination
+                 ? who + '\'s rotated password is pushed to ' + destination +
+                   ', secret "' + secretName + '".'
+                 : who + ' has no push destination now; its password is ' +
+                   'not rotated.' };
+    }
+
+    if (action === 'add-service-account-owner' ||
+        action === 'remove-service-account-owner') {
+      const { serviceAccounts } = this.deps;
+      const adding = action === 'add-service-account-owner';
+      const owner = String(body.owner == null ? '' : body.owner).trim();
+      const result: any = adding ? serviceAccounts.addOwner(who, owner)
+                                 : serviceAccounts.removeOwner(who, owner);
+      audited(adding ? 'admin.service-account.owner-added'
+                     : 'admin.service-account.owner-removed',
+              (result.ok ? '' : 'could not ') +
+              (adding ? 'add ' + owner + ' to ' : 'take ' + owner +
+                ' off ') + who + '\'s owners',
+              { owner: owner,
+                errors: result.ok ? undefined : (result.errors || []) },
+              result.ok ? 'success' : 'failure');
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). Owner " +
+                  "refused.");
+        return this.refusedBy('STS-SVCACCT-0027', result);
+      }
+      const named = ((result.account && result.account.owners) || [])
+        .filter(function (one) {
+          return one.dn.toLowerCase() === owner.toLowerCase() ||
+                 String(one.name).toLowerCase() === owner.toLowerCase();
+        })[0];
+      log.debug("Leaving AdminActions.credentialAdminAction(). Owner " +
+                (adding ? 'added.' : 'removed.'));
+      return { ok: true, username: who, account: result.account,
+               changed: !!result.changed,
+               message: adding
+                 ? (result.changed
+                   ? (named ? named.name || named.dn : owner) +
+                     ' is now an owner of ' + who + '.'
+                   : (named ? named.name || named.dn : owner) +
+                     ' was already an owner of ' + who + '.')
+                 : owner + ' is no longer an owner of ' + who + '.' };
     }
 
     if (action === 'rotate-password') {

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4290** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4292** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -85,7 +85,7 @@ is an ordinary outcome.
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
-* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 27
+* [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 94
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 230
@@ -4134,6 +4134,8 @@ Raised from: common/service_accounts.ts, common/service_account_policy.ts, commo
 | `STS-SVCACCT-0029` | A service account's push destination is not a registered destination in this realm, or the destination register is not loaded in this process. | HTTP 400 (management API) |
 | `STS-SVCACCT-0030` | An LDAP add or modify wrote an attribute the password rotation maintains (stsPasswordRotatedAt, stsPreviousPassword, stsRotation*); refused in product mode as pwdHistory is. | constraintViolation (19) |
 | `STS-SVCACCT-0031` | A service account was given more owners than it may name (MAX_OWNERS, #600); a group stands for many. | HTTP 400 (management API) |
+| `STS-SVCACCT-0032` | An owner was asked to be taken off a service account that does not list it (#602). | HTTP 400 (management API) |
+| `STS-SVCACCT-0033` | An owner or a push destination was changed on an entry that is not a service account in this realm (#602). | HTTP 400 (management API) |
 | `STS-SVCACCT-0040` | A rotation was asked of an entry that is not a service account in this realm. | HTTP 400 (management API) |
 | `STS-SVCACCT-0041` | A rotation was asked of a service account that names no push destination. | HTTP 400 (management API) |
 | `STS-SVCACCT-0042` | ALARM: a service account's password has failed to rotate as many times in a row as the service-account policy's rotationAlarmFailures allows. Nothing changed each time; the old password still works. | none — an error in the log and an audit row |

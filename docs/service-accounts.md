@@ -67,14 +67,51 @@ add an owner:
    **Next**.
 3. Press **Add** beside the owner you want.
 
-**Remove** takes an owner off the table. Neither **Add** nor **Remove**
-changes the account until you press **Save the service account**. On
-**Users → New user** you type the owners instead, one per line.
+For an account that is already a service account, **Add** and **Remove** save
+the change as soon as you press them. The search results stay on the page, so
+you can add several owners one after another. You cannot remove the last
+owner while the policy requires one.
+
+For a person who is not a service account yet, the table is a draft. Nothing
+is saved until you press **Make them a service account with these owners and
+push destination**, which saves the owners, the destination and the secret
+name together. On **Users → New user** you type the owners instead, one per
+line.
+
+### Push destination
+
+The push destination is chosen with a search too, and the search finds only
+secret destinations (**Directory → Secret destinations**):
+
+1. Type the secret's name or path in **Secret name or path**.
+2. Type part of a destination's name, DN or provider and press **Find**.
+3. Press **Use** beside the destination you want.
+
+For a service account, **Use** saves the destination and the secret name at
+once. The two go together, so type the secret name first. A destination that
+is set already is marked **in use**, and one that cannot be pushed to yet is
+marked **not usable now**. Once a destination is set, **Save the secret name**
+changes only the name, and **Clear the push destination** removes both. The
+password is then no longer rotated, and the owners stay.
 
 Through the management API, `owners` is the whole list. It replaces the
 owners the account has, so to add one you send the existing owners as well.
 Each entry is a DN, a username or a group's `cn`; a string is read as one
 owner per line.
+
+To change one owner or the destination without sending the rest, use the
+three actions the console uses:
+
+| Action | Body | What it does |
+|---|---|---|
+| `add-service-account-owner` | `user`, `owner` | Adds one owner and keeps the others and the destination. An owner already listed is `ok` with `changed: false`. |
+| `remove-service-account-owner` | `user`, `owner` (the DN) | Removes one owner. Refused for an owner the account does not list, and for the last owner while the policy requires one. |
+| `set-service-account-destination` | `user`, `destination`, `secretName` | Sets both, or clears both when both are empty, and keeps the owners. |
+
+Each answers `account`, the service account as it now stands. To find a
+destination, `GET /admin-api/secret-destinations?q=<text>` narrows the list to
+destinations whose name, identifier, DN or provider contains the text, and
+`matched` counts them.
 
 ## The policy
 

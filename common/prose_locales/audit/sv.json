@@ -967,6 +967,18 @@
     "en": "b2581e6ddce1f837",
     "text": "En administratör gjorde ett tjänstekonto till en vanlig person igen"
   },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "En administratör lade till en ägare till ett tjänstekonto"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "En administratör tog bort en ägare från ett tjänstekonto"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "En administratör satte eller tog bort ett tjänstekontos pushmål"
+  },
   "audit.actions.admin.service-account.rotate.label": {
     "en": "9eab836b051b0346",
     "text": "En administratör bad om att ett tjänstekontos lösenord skulle roteras"

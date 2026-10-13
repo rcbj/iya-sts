@@ -181,6 +181,12 @@ class SecretDestinationsApi {
           'what each provider\'s credential is. NEVER a credential.',
         mirrors: 'GET /admin/secret-destinations',
         parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string', maxLength: 256 },
+            description: 'Narrows `destinations` to those whose name, ' +
+                         'identifier, DN or provider contains this, ' +
+                         'case-insensitively — the person page\'s push ' +
+                         'destination search (#602). `matched` counts them.' },
           { name: 'destinationsPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of `destinations` to return, ' +
@@ -192,7 +198,8 @@ class SecretDestinationsApi {
         responseDescription: 'The register.',
         responseSchema: { type: 'object', additionalProperties: true,
                           description: '`destinations` (one page, with ' +
-                                       '`destinationsPaging`), `providers`, ' +
+                                       '`destinationsPaging`; `matched` ' +
+                                       'with `q`), `providers`, ' +
                                        '`payloads`, `credentialShapes`, ' +
                                        '`fileAllowed`, `family`.' },
         handler: function (req: Req, res: Res): void {
@@ -202,8 +209,18 @@ class SecretDestinationsApi {
           // administrator can declare destinations without a bound.
           const view = loadDestinations().view();
           const views = loadAdminViews();
-          const page = views.pagedRows(req.query || {},
-            view.destinations || [],
+          // A SEARCH (#602): what a service account's push destination is
+          // picked from, so it finds secret destinations and nothing else.
+          const wanted = String((req.query || {}).q || '').trim()
+            .toLowerCase();
+          const found = (view.destinations || []).filter(function (row) {
+            return !wanted || [row.name, row.identifier, row.id,
+                               row.provider].some(function (one) {
+              return String(one || '').toLowerCase().indexOf(wanted) >= 0;
+            });
+          });
+          view.matched = found.length;
+          const page = views.pagedRows(req.query || {}, found,
             { name: 'destinations', noun: 'destinations' });
           view.destinations = page.shown;
           view.destinationsPaging = views.pagingJson(page.paging);

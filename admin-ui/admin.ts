@@ -2775,8 +2775,12 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
 const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
   'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
   'utab-signout'];
-const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-keys',
-  'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
+// `ucred-service` (#221's Service account sub-tab) was missing until #602,
+// so that one sub-tab never showed as the one being read;
+// `tests/person_fields.js` now holds every sub-tab the page draws to this
+// list.
+const USER_SUB_TAB_IDS = ['ucred-factors', 'ucred-password', 'ucred-service',
+  'ucred-keys', 'ucred-kerberos'].concat(personEditor.FIELD_GROUPS.map(function (group) {
   return 'ufg-' + group.id;
 }));
 
