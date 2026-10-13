@@ -867,8 +867,13 @@ is configured:
   certificate.
 
 The chain address is named by the leaf's SHA-256, so it names one certificate
-for ever: after a key is rotated, an old token's `x5u` answers 404 rather than a
-chain over a different key. RFC 7515 requires the `x5u` fetch to use TLS; with
+for ever, never a chain over a different key. A certificate the realm no longer
+publishes for its key — because the key was certified again over a re-issued
+Issuing CA, or because the key was rotated — is still served at that address,
+with the chain it was issued with, until it expires, so a token signed before
+can still be followed to its CRL and OCSP responder (which says whether it was
+revoked). The newest eight certificates displaced from one slot are kept this
+way; an older one, or an expired one, answers 404. RFC 7515 requires the `x5u` fetch to use TLS; with
 `global.https` off the address is `http://` and a strict verifier will not follow
 it.
 

@@ -6225,6 +6225,33 @@ function issuedKeyPairsFor(scopeId, useCaseId) {
   });
 }
 
+// THE JOSE CERTIFICATES A SLOT NO LONGER HOLDS AND THAT ARE STILL PUBLISHED
+// (#318): the issued register's displaced records that kept their
+// certificate (`pki_merge.js`'s `displacedRecord()`), unexpired. A token
+// signed under one names it by `x5u` and is still valid; the key it is over
+// may well be the slot's current key. Newest first, as `certificatesFor()`.
+/**
+ * Lists the certificates displaced from one use case's slots that are still
+ * published: the issued-register records carrying their certificate and
+ * chain, not yet expired (#318).
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @returns records with `thumbprint`, `certificatePem`, `chainPem`, `slot`
+ */
+function displacedCertificatesFor(scopeId, useCaseId) {
+  log.debug("Entering displacedCertificatesFor().");
+  const nowMs = Date.now();
+  const out = issuedKeyPairsFor(scopeId, useCaseId).filter(function (one) {
+    return one.subjectKind === 'displaced' && !!one.certificatePem &&
+      !!one.thumbprint && new Date(one.notAfter).getTime() > nowMs;
+  }).sort(function (a, b) {
+    return String(b.issuedAt || '').localeCompare(String(a.issuedAt || ''));
+  });
+  log.debug("Leaving displacedCertificatesFor(). " + out.length + ".");
+  return out;
+}
+
 // `kid`, where given, asks for that key generation's own slot first, and the
 // plain slot only when the certificate there is over the same key — so a
 // caller naming a key never gets a certificate over another one.
@@ -6633,7 +6660,8 @@ async function certify(scopeId, useCaseId, spec) {
     })) {
       register.push(pkiMerge.displacedRecord(uc.id + ':' + record.slot,
                                              displaced));
-      fresh.issuedKeyPairs = register;
+      // Bounded (#318): the newest few of a slot keep their PEMs.
+      fresh.issuedKeyPairs = pkiMerge.trimPublished(register);
     }
   }
   fresh.certs[slotName] = record;
@@ -8587,7 +8615,8 @@ function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
     })) {
       register.push(pkiMerge.displacedRecord(useCaseId + ':' + slot,
                                              displaced));
-      fresh.issuedKeyPairs = register;
+      // Bounded (#318): the newest few of a slot keep their PEMs.
+      fresh.issuedKeyPairs = pkiMerge.trimPublished(register);
     }
   }
   fresh.certs[plainKey] = own;
@@ -13448,6 +13477,9 @@ module.exports = {
   PINNED_SIGNER_USE_CASES: PINNED_SIGNER_USE_CASES,
   certificatesFor: certificatesFor,
   issuedKeyPairsFor: issuedKeyPairsFor,
+  // The displaced JOSE certificates an `x5u` may still name (#318), for
+  // `jose_certificate_header.js`'s `chainPemFor()`.
+  displacedCertificatesFor: displacedCertificatesFor,
   certificateFor: certificateFor,
   describeCertificate: describeCertificate,
   pinnedKeyFor: pinnedKeyFor,
