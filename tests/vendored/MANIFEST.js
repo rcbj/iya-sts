@@ -1433,6 +1433,11 @@ const JOBS = [
   // on one client's entry, and `id_token token` / `code token` refused in
   // product (STS-OAUTH-0126).
   { file: 'sts_admin_client_policies.js', browser: false, local: true },
+  // #293 WP4 (2026-10-13): client_secret_jwt issued and (in product)
+  // refused, and RFC 8705's tls_client_auth and self_signed_tls_client_auth
+  // over a real handshake on the main port, for clients created through
+  // /admin-api, in a development and a product realm.
+  { file: 'sts_client_authentication.js', browser: false, local: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.
