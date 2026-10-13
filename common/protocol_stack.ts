@@ -446,6 +446,10 @@ class ProtocolStack {
     this.build('portal/portal_gnap',
                require('../portal/portal_gnap'),
                'PortalGnap');
+    // #604: /portal/owned/*, what the person owns.
+    this.build('portal/portal_owned',
+               require('../portal/portal_owned'),
+               'PortalOwned');
     this.build('portal/portal_delegate',
                require('../portal/portal_delegate'),
                'PortalDelegate');

@@ -21051,6 +21051,51 @@ function removeGroupOwner(group, owner, options) {
            message: wanted + ' is no longer an owner of ' + stored.dn + '.' };
 }
 
+/**
+ * Lists the groups of this realm whose `owner` values name any of the DNs
+ * given (#604): the user portal's Resources I own, where the DNs are the
+ * person's own and those of every group they are in.
+ *
+ * @param dns - the owner DNs to look for
+ * @returns `[{ dn, cn, description, memberCount, ownedAs }]`, `ownedAs` the
+ *   owner DNs that matched, in name order
+ */
+function groupsOwnedBy(dns) {
+  log.debug('Entering groupsOwnedBy(). ' + (dns || []).length + ' DN(s).');
+  const wanted = {};
+  (dns || []).forEach(function (dn) {
+    if (dn) {
+      wanted[normalizeDn(String(dn))] = true;
+    }
+  });
+  const out = [];
+  eachResidentEntry(function (stored) {
+    const owners = stored.attributes.owner || [];
+    if (!owners.length || !groupRuleFor(stored)) {
+      return;
+    }
+    const matched = owners.map(String).filter(function (dn) {
+      return wanted[normalizeDn(dn)];
+    });
+    if (!matched.length) {
+      return;
+    }
+    out.push({ dn: stored.dn,
+               cn: String((stored.attributes.cn || [''])[0]),
+               description: String((stored.attributes.description ||
+                                    [''])[0]),
+               memberCount: (stored.attributes.member || []).length +
+                            (stored.attributes.uniquemember || []).length +
+                            (stored.attributes.memberuid || []).length,
+               ownedAs: matched });
+  });
+  out.sort(function (a, b) {
+    return a.cn.localeCompare(b.cn);
+  });
+  log.debug('Leaving groupsOwnedBy(). ' + out.length);
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // GET /admin/ldap/spiffe — the SPIFFE containers, and their schema.
 //
@@ -22410,6 +22455,8 @@ module.exports = {
   addGroupOwner: addGroupOwner,
   removeGroupOwner: removeGroupOwner,
   MAX_GROUP_OWNERS: MAX_GROUP_OWNERS,
+  // What a person owns (#604): the portal's Resources I own.
+  groupsOwnedBy: groupsOwnedBy,
   memberDnFor: memberDnFor,
   deleteGroupEntry: deleteGroupEntry,
   // The sweep, so that somebody provisioned over SCIM gets the same credential

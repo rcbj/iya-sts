@@ -293,6 +293,23 @@ const NAV = [
       { path: BASE + '/email', label: 'Email',
         heading: 'Your email address and messages' }
     ] },
+  // RESOURCES I OWN (#604, rcbj): what the owner fields on roles, groups,
+  // service accounts and applications name this person — or a group they are
+  // in — as answering for. Read-only; drawn by `web_owned.ts` from
+  // `portal_owned.ts`'s four operations.
+  { key: 'owned', title: 'Resources I own',
+    what: 'The roles, groups, service accounts and applications that name ' +
+          'you, or a group you are in, as an owner.',
+    items: [
+      { path: BASE + '/owned/roles', label: 'Roles',
+        heading: 'Roles you own' },
+      { path: BASE + '/owned/groups', label: 'Groups',
+        heading: 'Groups you own' },
+      { path: BASE + '/owned/service-accounts', label: 'Service accounts',
+        heading: 'Service accounts you own' },
+      { path: BASE + '/owned/applications', label: 'Applications',
+        heading: 'Applications you own' }
+    ] },
   { key: 'signIn', title: 'How you sign in',
     what: 'The credentials on your own entry, one page each.',
     items: [

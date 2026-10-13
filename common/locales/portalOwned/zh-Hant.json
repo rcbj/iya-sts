@@ -1,0 +1,11 @@
+{
+  "heading": "{kind, select, roles {您擁有的角色} groups {您擁有的群組} service-accounts {您擁有的服務帳戶} other {您擁有的應用程式}}",
+  "sub": "此類中擁有者指定為您或您所在群組的全部資源。擁有者對資源負責，但不授予任何權限。如需變更，請聯絡管理員。",
+  "thName": "名稱",
+  "thDetail": "詳情",
+  "thHow": "為何歸您所有",
+  "you": "您是擁有者",
+  "viaGroup": "透過群組 {group}",
+  "none": "您沒有擁有任何{kind, select, roles {角色} groups {群組} service-accounts {服務帳戶} other {應用程式}}。",
+  "yourGroups": "您的群組：{groups}。"
+}

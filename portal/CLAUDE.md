@@ -1758,3 +1758,18 @@ Three pages over the mail channel (`common/CLAUDE.md`, 3ay), in a file beside
 - **The reset form's sentence changed with it**: "no password you had before
   works once it is set" rather than "your old password no longer works",
   because a self-service link removes nothing until it is used.
+
+## RESOURCES I OWN (#604, 2026-10-12)
+
+rcbj: a section of the column, *Resources I own*, with Roles, Groups, Service
+accounts and Applications, "driven by the owner fields". `portal_owned.ts`
+answers four GETs, `/account-api/owned/<kind>` (`KINDS`), each mirroring
+`/portal/owned/<kind>`; `web_owned.ts` draws them; `NAV`'s `owned` section
+lists them after *Your account*. A resource is the person's when one of its
+owner values — a role's `owner`, a group's `owner`, a service account's
+`stsServiceAccountOwner`, an application's `appOwner` — names the person's
+entry or a group the directory says they are in (`groupsOfUser()`); each row
+says which (`via`). Read-only: an owner grants nothing, and the owners are set
+on the console's Owners tabs. The person is the token's, as everywhere here.
+Everything is reached lazily at request time. `tests/portal_owned.js` holds it.
+

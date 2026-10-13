@@ -103,6 +103,10 @@ const PROVIDERS: Array<() => Json> = [
   function () {
     return require('../portal/portal_mail');
   },
+  // #604: Resources I own, the section after Your account.
+  function () {
+    return require('../portal/portal_owned');
+  },
   function () {
     return require('../portal/account_password');
   },

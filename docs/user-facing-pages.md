@@ -136,6 +136,13 @@ portal through single sign-on, with no screen.
 | GNAP grants | `/portal/gnap` |
 | Your signing key | `/portal/signing-key` |
 | Sign in a device | `/portal/device` |
+| Resources I own: roles, groups, service accounts, applications | `/portal/owned/roles`, `/portal/owned/groups`, `/portal/owned/service-accounts`, `/portal/owned/applications` |
+
+**Resources I own** is a section of the portal's column with four pages. Each
+lists the roles, groups, service accounts or applications whose owners name
+the person, or a group the person is in, and says which. The pages are
+read-only: an owner answers for a resource but gains no access through it, and
+an administrator sets owners on the console's Owners tabs.
 
 ## The admin console
 

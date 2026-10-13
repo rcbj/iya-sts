@@ -1,0 +1,11 @@
+{
+  "heading": "{kind, select, roles {您拥有的角色} groups {您拥有的组} service-accounts {您拥有的服务账户} other {您拥有的应用程序}}",
+  "sub": "此类中所有者指定为您或您所在组的全部资源。所有者对资源负责，但不授予任何权限。如需更改，请联系管理员。",
+  "thName": "名称",
+  "thDetail": "详情",
+  "thHow": "为何归您所有",
+  "you": "您是所有者",
+  "viaGroup": "通过组 {group}",
+  "none": "您没有拥有任何{kind, select, roles {角色} groups {组} service-accounts {服务账户} other {应用程序}}。",
+  "yourGroups": "您的组：{groups}。"
+}
