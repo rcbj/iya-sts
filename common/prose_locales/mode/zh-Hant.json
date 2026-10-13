@@ -719,18 +719,6 @@
     "en": "c9aeb6e9c45812da",
     "text": "只使用註冊在應用程式自身項目上的地址——而觀察絕不會新增地址。仍標記為觀察到的地址「不算」已註冊：那是開發模式放上去的，在營運者於應用程式頁面或以 POST /admin-api/applications/confirm-address 確認之前會被拒絕（STS-REG-0049）。在開始標記觀察之前記錄的地址沒有標記，在切換領域之前仍需檢閱。主控台與入口網站自己的回呼不會從請求的 Host 標頭學得（請設定 global.publicBaseUrl），而不符合主機的 WebAuthn RP ID 會拒絕該儀式，而不是退回使用主機。"
   },
-  "mode.requirements.demo-endpoints.what": {
-    "en": "47d4efed79e39044",
-    "text": "示範與測試控制端點存在"
-  },
-  "mode.requirements.demo-endpoints.development": {
-    "en": "e91d15ca7620fc31",
-    "text": "提供並列出：VC-API 測試端點。"
-  },
-  "mode.requirements.demo-endpoints.product": {
-    "en": "65526c68ee1acd20",
-    "text": "它們都不會被提供或列出。每一個的回應都與沒有註冊任何內容的路徑完全相同——Express 自己的 404 \"Cannot GET\"——任何中繼資料頁面、主控台頁面、文件或記錄行都不會提及它們。產品處理程序中的開發領域會保留它們。管理入口仍然存在：/admin-api 啟動驗證、讀取主體並變更信任存放區，使用者入口網站則提供憑證要約。"
-  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "測試控制項為開放"
@@ -1034,10 +1022,6 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "SPIFFE Workload Endpoint 規格（第 3 節）規定，未帶 workload.spiffe.io 標頭的呼叫 MUST 被拒絕。"
-  },
-  "mode.why.servesDemoEndpoints": {
-    "en": "ea60854b2569441d",
-    "text": "它設定的是示範端點，而產品模式不提供任何示範端點。請在開發領域中嘗試。"
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

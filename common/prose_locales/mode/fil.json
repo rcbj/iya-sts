@@ -719,18 +719,6 @@
     "en": "c9aeb6e9c45812da",
     "text": "Ang address lang na naka-register sa sariling entry ng application — at hindi kailanman nagdaragdag ng isa ang pagkakita. HINDI naka-register ang address na naka-marka pa ring observed: inilagay ito roon ng development at tinatanggihan ito hangga't hindi kinukumpirma ng operator sa pahina ng application o sa POST /admin-api/applications/confirm-address (STS-REG-0049). Ang mga address na naitala bago minarkahan ang mga pagkakita ay walang marka at kailangan pa ring suriin bago ilipat ang isang realm. Hindi natututunan mula sa Host header ng request ang sariling mga callback ng console at portal (itakda ang global.publicBaseUrl), at ang WebAuthn RP ID na hindi tugma sa host ay tumatanggi sa ceremony sa halip na bumalik dito."
   },
-  "mode.requirements.demo-endpoints.what": {
-    "en": "47d4efed79e39044",
-    "text": "Umiiral ang mga demonstration at test-control endpoint"
-  },
-  "mode.requirements.demo-endpoints.development": {
-    "en": "e91d15ca7620fc31",
-    "text": "Inihahain at inililista: ang mga VC-API test endpoint."
-  },
-  "mode.requirements.demo-endpoints.product": {
-    "en": "65526c68ee1acd20",
-    "text": "Wala sa mga ito ang inihahain o inililista. Sumasagot ang bawat isa nang eksaktong gaya ng isang path na walang naka-register — ang sariling 404 ng Express na \"Cannot GET\" — at walang metadata page, console page, dokumento o linya ng log ang nagpapangalan ng alinman. Pinananatili ang mga ito ng isang development realm sa loob ng product process. Nananatili ang mga administrative na pinto: nagsisimula ng verification ang /admin-api, binabasa ang mga principal at binabago ang truststore, at gumagawa ng credential offer ang user portal."
-  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Bukas ang mga test control"
@@ -1034,10 +1022,6 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "sinasabi ng SPIFFE Workload Endpoint specification (section 3) na DAPAT tanggihan ang tawag na walang workload.spiffe.io header."
-  },
-  "mode.why.servesDemoEndpoints": {
-    "en": "ea60854b2569441d",
-    "text": "nagko-configure ito ng isang demonstration endpoint, at walang inihahain ang product sa mga ito. Subukan ito sa isang development realm."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

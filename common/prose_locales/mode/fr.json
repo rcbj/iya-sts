@@ -719,18 +719,6 @@
     "en": "c9aeb6e9c45812da",
     "text": "Uniquement une adresse enregistrée sur l’entrée propre de l’application — et une observation n’en ajoute jamais. Une adresse encore marquée comme observée N’EST PAS enregistrée : le mode développement l’y a placée, et elle est refusée tant qu’un opérateur ne l’a pas confirmée sur la page de l’application ou avec POST /admin-api/applications/confirm-address (STS-REG-0049). Les adresses consignées avant que les observations ne soient marquées ne portent aucune marque et doivent encore être examinées avant le basculement d’un domaine. Les rappels propres à la console et au portail ne sont pas appris de l’en-tête Host d’une requête (définissez global.publicBaseUrl), et un RP ID WebAuthn qui ne correspond pas à l’hôte fait échouer la cérémonie au lieu de se rabattre sur celui-ci."
   },
-  "mode.requirements.demo-endpoints.what": {
-    "en": "47d4efed79e39044",
-    "text": "Les points de terminaison de démonstration et de contrôle de test existent"
-  },
-  "mode.requirements.demo-endpoints.development": {
-    "en": "e91d15ca7620fc31",
-    "text": "Servis et listés : les points de terminaison de test VC-API."
-  },
-  "mode.requirements.demo-endpoints.product": {
-    "en": "65526c68ee1acd20",
-    "text": "Aucun n’est servi ni listé. Chacun répond exactement comme un chemin sur lequel rien n’est enregistré — le 404 propre à Express, « Cannot GET » — et aucune page de métadonnées, page de console, documentation ni ligne de journal n’en nomme un. Un realm de développement au sein d’un processus en mode produit les conserve. Les portes d’administration restent : /admin-api démarre une vérification et lit les principaux, et le portail utilisateur fait une offre de justificatif."
-  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Les contrôles de test sont ouverts"
@@ -1034,10 +1022,6 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "la spécification SPIFFE Workload Endpoint (section 3) indique qu’un appel sans l’en-tête workload.spiffe.io MUST être refusé."
-  },
-  "mode.why.servesDemoEndpoints": {
-    "en": "ea60854b2569441d",
-    "text": "il configure un point de terminaison de démonstration, et le mode produit n’en sert aucun. Essayez-le dans un realm de développement."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",

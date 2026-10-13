@@ -719,18 +719,6 @@
     "en": "c9aeb6e9c45812da",
     "text": "Solo una dirección registrada en la propia entrada de la aplicación — y una observación nunca añade ninguna. Una dirección todavía marcada como observada NO está registrada: la puso ahí el modo de desarrollo y se rechaza hasta que un operador la confirma en la página de la aplicación o con POST /admin-api/applications/confirm-address (STS-REG-0049). Las direcciones registradas antes de que se marcaran las observaciones no llevan marca y aún deben revisarse antes de cambiar un dominio de modo. Los callbacks propios de la consola y del portal no se aprenden del encabezado Host de una solicitud (defina global.publicBaseUrl), y un RP ID de WebAuthn que no corresponde al host rechaza la ceremonia en lugar de recurrir a él."
   },
-  "mode.requirements.demo-endpoints.what": {
-    "en": "47d4efed79e39044",
-    "text": "Existen los endpoints de demostración y de control de pruebas"
-  },
-  "mode.requirements.demo-endpoints.development": {
-    "en": "e91d15ca7620fc31",
-    "text": "Se sirven y se listan: los endpoints de prueba de VC-API."
-  },
-  "mode.requirements.demo-endpoints.product": {
-    "en": "65526c68ee1acd20",
-    "text": "Ninguno se sirve ni se lista. Cada uno responde exactamente como lo hace una ruta en la que no hay nada registrado — el propio 404 de Express \"Cannot GET\" — y ninguna página de metadatos, página de la consola, documento o línea de registro nombra ninguno. Un dominio de desarrollo dentro de un proceso de producto los conserva. Las puertas administrativas se mantienen: /admin-api inicia una verificación, lee los principales y cambia el almacén de confianza, y el portal de usuario hace una oferta de credencial."
-  },
   "mode.requirements.test-controls.what": {
     "en": "0a76dd48b1006dbe",
     "text": "Los controles de prueba están abiertos"
@@ -1034,10 +1022,6 @@
   "mode.why.servesWithoutSecurityHeader": {
     "en": "fb66d1b60cae1193",
     "text": "la especificación SPIFFE Workload Endpoint (sección 3) dice que una llamada sin el encabezado workload.spiffe.io DEBE rechazarse."
-  },
-  "mode.why.servesDemoEndpoints": {
-    "en": "ea60854b2569441d",
-    "text": "configura un endpoint de demostración, y el producto no sirve ninguno. Pruébelo en un dominio de desarrollo."
   },
   "mode.why.derivesKrbtgtFromPassword": {
     "en": "25b530ec6472a47f",
