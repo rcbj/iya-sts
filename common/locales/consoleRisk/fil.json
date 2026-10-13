@@ -117,6 +117,8 @@
   "dataset.activeVersion": ": bersyon <code>{version}</code>, {rows} row, inilathala {at}",
   "dataset.rollBack": "Ibalik sa {version}",
   "lookup.heading": "Hanapin ang isang address",
+  "datasets.heading": "Mga dataset",
+  "import.heading": "Mag-load ng dataset",
   "lookup.label": "Ano ang sinasabi ng mga dataset tungkol sa",
   "lookup.button": "Hanapin",
   "upload.heading": "Mag-upload ng file",

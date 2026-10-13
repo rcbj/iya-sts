@@ -387,17 +387,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
@@ -468,6 +457,7 @@ function childMain() {
     client('bcl-one', '/bc/one');
     client('bcl-off', '/bc/off');
 
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const authorizeQuery = function (clientId) {
       return '/oauth2/authorize?' + new URLSearchParams({
         client_id: clientId, response_type: 'code', redirect_uri: REDIRECT,
@@ -485,15 +475,15 @@ function childMain() {
       let r = await b.go('GET', authorizeQuery(clientId));
       if (r.status === 302 &&
           /\/authn\/login/.test(String(r.headers.location || ''))) {
-        const page = await b.go('GET', r.headers.location);
-        const form = hiddenFields(page.text);
-        form.username = username;
-        form.password = 'anything';
-        form.action = 'login';
-        const screen = String(r.headers.location).split('?')[0]
-          .replace(/^https?:\/\/[^/]+/, '');
-        const posted = await b.go('POST', screen, { form: form });
-        r = await b.go('GET', String(posted.headers.location || ''));
+        // THE SCREEN OVER `/authn-api` (#571), in this browser's jar.
+        const sent = await authnScreen.submit({ port: port, jar: b.jar,
+          at: String(r.headers.location),
+          fields: { action: 'login', username: username,
+                    password: 'anything' } });
+        if (sent.next !== 'redirect') {
+          return { status: sent.status, json: {}, text: sent.text };
+        }
+        r = await b.go('GET', String(sent.location || ''));
       }
       const code = codeOf(r);
       if (!code) {

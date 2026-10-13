@@ -247,6 +247,25 @@ const OWN_NAMES = [
 ];
 
 // ---------------------------------------------------------------------------
+// A `schema` THAT IS PROSE RATHER THAN A CITATION (#543 phase 2c): the three
+// ways a row says its LDAP type is this service's own, named once so that the
+// scimmap namespace can carry them and `common/server_prose.ts` refill an
+// answer to `GET /admin-api/scim` in a console reader's language. Every other
+// `schema` is a document and section ("RFC 4519 2.39"), which is a citation
+// and stays as written.
+// ---------------------------------------------------------------------------
+const OWN_TYPE = Object.freeze({
+  plain: "this service's own (no standard type)",
+  claims: "this service's own (#128; no standard type)",
+  federation: "this service's own (#109; no standard type)"
+});
+
+// The routes whose answers carry the scimmap namespace's prose (#543): the
+// console's SCIM page carries the mapping (`admin_views.ts`'s
+// `scimJson()`, through `describeRow()`).
+const PROSE_ROUTES = ['/admin-api/scim'];
+
+// ---------------------------------------------------------------------------
 // THE USER MAPPING.
 //
 // `scim` is the SCIM attribute path as RFC 7643 spells it — dotted for a
@@ -277,7 +296,7 @@ const USER_ATTRIBUTES: MapRow[] = [
           'sign-in name — but it is NOT the SCIM id, which is the entry\'s ' +
           'entryUUID.' },
   { scim: 'externalId', ldap: 'scimExternalId', kind: 'single',
-    schema: "this service's own (no standard type)",
+    schema: OWN_TYPE.plain,
     note: 'The provisioning client\'s own identifier for this person. Stored ' +
           'verbatim and read by nothing here.' },
   { scim: 'name.formatted', ldap: 'cn', kind: 'single',
@@ -360,32 +379,32 @@ const USER_ATTRIBUTES: MapRow[] = [
   // so this service's own extension.
   { scim: IYA_STS_USER_SCHEMA + ':salutation', ldap: 'salutation',
     kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
   { scim: IYA_STS_USER_SCHEMA + ':birthFamilyName', ldap: 'birthFamilyName',
     kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
   { scim: IYA_STS_USER_SCHEMA + ':birthGivenName', ldap: 'birthGivenName',
     kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
   { scim: IYA_STS_USER_SCHEMA + ':birthMiddleName', ldap: 'birthMiddleName',
     kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
   { scim: IYA_STS_USER_SCHEMA + ':alsoKnownAs', ldap: 'alsoKnownAs',
     kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
   { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthCountry',
     ldap: 'placeOfBirthCountry', kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
   { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthRegion',
     ldap: 'placeOfBirthRegion', kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
   { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthLocality',
     ldap: 'placeOfBirthLocality', kind: 'single', extension: true,
-    schema: "this service's own (#128; no standard type)" },
+    schema: OWN_TYPE.claims },
 
   { scim: IYA_STS_USER_SCHEMA + ':federationLinks', ldap: 'federationLink',
     kind: 'links', extension: true,
-    schema: "this service's own (#109; no standard type)",
+    schema: OWN_TYPE.federation,
     note: 'Which federation partners\' subjects sign this person in, each ' +
           '{ relationship, issuer, subject } — issuer optional on the way ' +
           'in, the relationship\'s fedPeer. NOT SENT: unchanged, so a ' +
@@ -428,7 +447,7 @@ const GROUP_ATTRIBUTES: MapRow[] = [
   { scim: 'displayName', ldap: 'cn', kind: 'single', required: true,
     schema: 'RFC 4519 2.3' },
   { scim: 'externalId', ldap: 'scimExternalId', kind: 'single',
-    schema: "this service's own (no standard type)" },
+    schema: OWN_TYPE.plain },
   { scim: 'members', ldap: 'member', kind: 'members',
     schema: 'RFC 4519 2.17',
     note: 'READ resolves member, uniqueMember and memberUid alike; WRITE ' +
@@ -1437,6 +1456,46 @@ class ScimMap {
 // built from `defaultDeps()` when this module loads (see
 // `common/instance_slot.ts`).
 // ---------------------------------------------------------------------------
+/**
+ * Extracts the scimmap namespace (#543 phase 2c): each mapping row's `note`,
+ * keyed by its table and SCIM member, and the three prose `schema` labels.
+ * A row's `scim`, `ldap`, `kind` and `type` are names and values, and a
+ * citation `schema` is a document's name; none of them is harvested.
+ *
+ * @returns key → English
+ */
+function prose(): Record<string, string> {
+  log.debug("Entering prose().");
+  // LAZILY: a require at the top would load the server's prose machinery
+  // wherever the mapping is loaded on its own.
+  const serverProse = require('../common/server_prose');
+  // Each row with a `note`, keyed by its table and SCIM member. Two rows
+  // share a SCIM member (`phoneNumbers`) and neither has a note, so the
+  // member alone names a row with one; the LDAP type separates them if that
+  // ever changes.
+  const out: Record<string, string> = {};
+  const notes = function notes(table: string, rows: MapRow[]): void {
+    log.debug("Entering notes(). " + table);
+    rows.forEach(function (row) {
+      if (!row.note) {
+        return;
+      }
+      let key = 'scimmap.' + table + '.' + row.scim + '.note';
+      if (out[key] !== undefined) {
+        key = 'scimmap.' + table + '.' + row.scim + '|' + row.ldap + '.note';
+      }
+      out[key] = row.note;
+    });
+    log.debug("Leaving notes().");
+  };
+  notes('user', USER_ATTRIBUTES);
+  notes('group', GROUP_ATTRIBUTES);
+  Object.assign(out, serverProse.harvest('scimmap.schema', OWN_TYPE,
+                                         Object.keys(OWN_TYPE)));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 const slot = new InstanceSlot<ScimMap>(
   'scim/scim_map',
   () => new ScimMap(ScimMap.defaultDeps()),
@@ -1466,6 +1525,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   USER_SCHEMA: ScimMap.USER_SCHEMA,
+  // The scimmap namespace's routes and English (#543 phase 2c).
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   describeRow: slot.forward('describeRow'),
   describeMapping: slot.forward('describeMapping'),
   GROUP_SCHEMA: ScimMap.GROUP_SCHEMA,

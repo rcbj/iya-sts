@@ -590,6 +590,32 @@ async function statements(t) {
           !!postgres.dialOptions('host=db dbname=sts', false).refused,
           'and sslmode=disable, sslmode=allow and a keyword/value string ' +
           'are refused, never dialled in the clear (STS-STORE-0078)');
+  // #543 round 2 (rcbj): the verify modes verify whatever the setting says,
+  // as libpq reads them — verify-full the chain and the host name, verify-ca
+  // the chain only, through a checkServerIdentity that checks nothing.
+  const full = postgres.dialOptions('postgres://db/sts?sslmode=verify-full',
+                                    false);
+  t.check(!full.refused && !/sslmode/.test(full.connectionString) &&
+          full.ssl.rejectUnauthorized === true &&
+          full.ssl.checkServerIdentity === undefined &&
+          full.verifyChain === true && full.verifyHostname === true,
+          'sslmode=verify-full verifies the chain and the host name with ' +
+          'the setting off');
+  const ca = postgres.dialOptions('postgres://db/sts?sslmode=VERIFY-CA',
+                                  false);
+  t.check(!ca.refused && ca.ssl.rejectUnauthorized === true &&
+          typeof ca.ssl.checkServerIdentity === 'function' &&
+          ca.ssl.checkServerIdentity('db', {}) === undefined &&
+          ca.verifyChain === true && ca.verifyHostname === false,
+          'sslmode=verify-ca verifies the chain and not the host name with ' +
+          'the setting off');
+  const required = postgres.dialOptions(
+    'postgres://db/sts?sslmode=require', true);
+  t.check(required.ssl.rejectUnauthorized === true &&
+          required.ssl.checkServerIdentity === undefined &&
+          required.verifyHostname === true &&
+          dial.verifyChain === false && dial.verifyHostname === false,
+          'for require the setting still decides, both halves together');
   const seen = [];
   const pgPath = require.resolve('pg');
   const previous = require.cache[pgPath];

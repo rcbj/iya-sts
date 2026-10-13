@@ -1185,7 +1185,7 @@ this view.
   </md:AttributeAuthorityDescriptor>
   <md:Organization>
     <md:OrganizationName xml:lang="en">sts</md:OrganizationName>
-    <md:OrganizationDisplayName xml:lang="en">Mock security token service</md:OrganizationDisplayName>
+    <md:OrganizationDisplayName xml:lang="en">Security token service</md:OrganizationDisplayName>
     <md:OrganizationURL xml:lang="en">https://127.0.0.1:38081/</md:OrganizationURL>
   </md:Organization>
 </md:EntityDescriptor>
@@ -2404,8 +2404,8 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6InZjK2p3dCIsImtpZCI6InN0cy1mNzA0…MndHy4ilnGEWuBI8a
 This service's verifier asks a wallet for a presentation with a signed
 request object, passed by reference
 ([OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html),
-RFC 9101). `GET /oid4vp/start?by=reference` sends the browser to the wallet
-with `request_uri`, and the wallet fetches the object from
+RFC 9101). A verification started with `POST /admin-api/verifications/start`
+and `"by": "reference"` hands the wallet a `request_uri`, and the wallet fetches the object from
 `/oid4vp/request/{id}`. The query is DCQL. The long algorithm lists in
 `client_metadata` are shortened here.
 
@@ -2467,7 +2467,7 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJr…5TwyyUHNDoTzk47sX
     ]
   },
   "client_metadata": {
-    "client_name": "Mock Verifier (bar door)",
+    "client_name": "OpenID4VP Verifier",
     "vp_formats_supported": {
       "dc+sd-jwt": {
         "sd-jwt_alg_values": [
@@ -2566,11 +2566,11 @@ eyJhbGciOiJSUzI1NiIsImtpZCI6ImRpZDp3ZWI6MTI3LjAuMC4xJTNBMzgw…M2-thfMMaiN-NA01b
 
 *From the second start of the service (see the note at the top), so its keys differ from the samples above.*
 
-`GET /issuer/offer?mode=cross-device` draws a QR code for
-a Credential Offer that carries a **pre-authorized code**, plus a
-Transaction Code (`tx_code`) shown on the page to type into the wallet.
-In development mode the offer is for `oid4vci.offerUsername`
-(`diploma.student`), for anybody who asks. The QR code holds:
+A cross-device offer — made by a signed-in person on `/portal/wallet`
+(`POST /account-api/credentials/offers`; `GET /issuer/offer?mode=cross-device`
+when this sample was taken) — draws a QR code for a Credential Offer that
+carries a **pre-authorized code**, plus a Transaction Code (`tx_code`) shown on
+the page to type into the wallet. The QR code holds:
 
 ```text
 openid-credential-offer://?credential_offer=%7B%22credential_issuer%22%3A%22https%3A%2F%2F…rval%22%3A5%7D%7D%7D
@@ -2736,6 +2736,14 @@ Every format carries the same facts. These are the issuer, the audience (the
 resource server), the client, the `access` array, the lifetime and the key
 binding: the thumbprint of the client's key, so the token is useless without
 that key's signature.
+
+**These were captured before [#593](https://github.com/rcbj/iya-sts/issues/593).**
+Their audience, `https://127.0.0.1:38081/gnap/rs/resource`, is a
+demonstration resource server that was a token's default audience when its
+rights named no resource server. Both are gone: the request above is now
+refused `invalid_request` (`STS-GNAP-0904`) unless
+`https://server.example.net/` is at or under a registered resource server's
+`gnapResourceServerUri`, and the audience is then that resource server.
 
 ### `jwt-signed`
 
@@ -3514,7 +3522,8 @@ keytab carries an RC4 key there
 
 *From the second start of the service (see the note at the top), so its keys differ from the samples above.*
 
-`curl --negotiate` against `/spnego/protected`, with a
+`curl --negotiate` against the SPNEGO-protected page (`/spnego/protected`,
+the development companion's since #595), with a
 TGT from `kinit` as above. The request's `Authorization: Negotiate` carries
 a **NegTokenInit** (RFC 4178) wrapping the Kerberos AP-REQ:
 

@@ -113,19 +113,16 @@ class TlsTrustPage {
       kit.tile(json.atRuntime, t.text('consoleTlsTrust.tileAtRuntime')) +
       kit.tile(json.max, t.text('consoleTlsTrust.tileMaximum')) +
       '</div>' +
-      // The link to /tls is markup a message cannot carry, so the sentence
-      // around it is cut there.
-      kit.note((json.anchorsFile
+      // The two open test controls this note named, `POST /tls/trust` and
+      // `POST /tls/trust/clear`, were deleted by #597: this page and
+      // `/admin-api/tls/trust` are the doors, in either mode.
+      kit.note(json.anchorsFile
         ? t.html('consoleTlsTrust.fileSet',
                  { file: json.anchorsFile,
                    n: String(json.loadedFromFile) })
         : t.html('consoleTlsTrust.fileUnset')) +
-      t.html('consoleTlsTrust.controlsBefore') + '<a href="/tls">/tls</a>' +
-      t.html('consoleTlsTrust.controlsAfter') +
-      (json.doors.testControls.open
-        ? t.html('consoleTlsTrust.controlsOpen')
-        : t.html('consoleTlsTrust.controlsRefused'))) +
-      '<h2>' + t.html('consoleTlsTrust.anchors') + '</h2>' + nav.head +
+      '<h2 data-tab="anchors">' + t.html('consoleTlsTrust.anchors') +
+      '</h2>' + nav.head +
       '<table><tr><th>' + t.html('consoleTlsTrust.thSubject') + '</th><th>' +
       t.html('consoleTlsTrust.thIssuer') + '</th><th>' +
       t.html('consoleTlsTrust.thSerial') + '</th>' +
@@ -137,7 +134,8 @@ class TlsTrustPage {
                       undefined, undefined, t) +
 
       (mayChange
-        ? '<h2>' + t.html('consoleTlsTrust.addAnchors') + '</h2>' +
+        ? '<h2 data-tab="add">' + t.html('consoleTlsTrust.addAnchors') +
+          '</h2>' +
           kit.note(t.html('consoleTlsTrust.addNote')) +
           '<form method="post" action="/admin/tls/trust">' +
           '<input type="hidden" name="action" value="add">' +
@@ -156,8 +154,7 @@ class TlsTrustPage {
       '<a href="/admin-api/tls/trust">' + t.html('consoleTlsTrust.linkApi') +
       '</a> &middot; <a href="/admin/tls">' +
       t.html('consoleTlsTrust.linkSettings') + '</a> &middot; ' +
-      '<a href="/tls">' + t.html('consoleTlsTrust.linkEndpoint') +
-      '</a> &middot; <a href="/admin/pki">' +
+      '<a href="/admin/pki">' +
       t.html('consoleTlsTrust.linkPki') + '</a>');
 
     return inner;

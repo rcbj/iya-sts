@@ -52,7 +52,10 @@
 //               LogoutResponse to a service provider's LogoutRequest and the
 //               LogoutRequests of identity-provider-initiated logout. The
 //               service providers are THIS FILE — requests signed with a key
-//               made for the run.
+//               made for the run. The AuthnRequests THIS SERVICE emits as a
+//               service provider are the federation module's, below (#592:
+//               the mock service provider whose requests were validated
+//               here was deleted).
 //   SAML 1.1    the metadata; the Browser/POST Response; the SOAP responder's
 //               answer to an artifact, an AssertionIDReference, an
 //               AttributeQuery and an AuthenticationQuery (the
@@ -79,6 +82,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -467,6 +472,23 @@ function postForm(cookies, url, fields) {
     headers: { "content-type": "application/x-www-form-urlencoded" } });
 }
 
+// THE SIGN-OUT PAGE at `base`, as the page signs out since #577
+// (`authn_signin.js`'s `signOut()`): the view, the act over
+// /authn-api/logout, and the signed-out document it answers where the
+// browser has a partner to tell — answered in `hop()`'s shape, with this
+// jar's cookies kept.
+async function signOutAt(cookies, base, fields) {
+  log.debug("Entering signOutAt().");
+  const out = await authnSignin.signOut(base, fields,
+    { cookie: cookies && cookies.has() ? cookies.header() : "" });
+  if (cookies) {
+    cookies.take({ headers: out.headers });
+  }
+  log.debug("Leaving signOutAt(). " + out.status);
+  return { status: out.status, headers: out.headers, body: out.text || "",
+           url: base + "/logout", location: "" };
+}
+
 // Every form on a page, with its action and its hidden fields decoded.
 function formsIn(html) {
   log.debug("Entering formsIn().");
@@ -581,6 +603,38 @@ async function browse(cookies, startUrl, username, stopAt) {
         return { captured: captured, last: r, stop: { method: "GET",
                  url: next }, trail: trail };
       }
+      // THE SIGN-IN SCREEN, A STATIC PAGE OVER `/authn-api` SINCE #571:
+      // answered through the one helper, its answer read as the form's 303.
+      if (username && /\/authn\/login\?authn=/.test(next)) {
+        const at = new URL(next);
+        const answer = await authnSignin.submit(at.origin +
+          at.pathname.replace(/\/authn\/login$/, ""), next,
+          { action: "login", username: username, password: PASSWORD },
+          { cookie: cookies && cookies.has() ? cookies.header() : "" });
+        if (cookies) {
+          cookies.take({ headers: answer.headers });
+        }
+        r = { status: answer.next === "redirect" ? 303 : answer.status,
+              headers: answer.headers,
+              body: answer.next === "redirect" ? ""
+                : JSON.stringify(answer.json),
+              url: next, location: answer.location };
+        continue;
+      }
+      // THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+      // answered over `/authn-api/consent` through the one helper.
+      if (authnSignin.isConsent(next)) {
+        const answer = await authnSignin.consentFor(next,
+          cookies && cookies.has() ? cookies.header() : "");
+        if (cookies) {
+          cookies.take({ headers: answer.headers });
+        }
+        r = { status: authnSignin.responseLike(answer).status,
+              headers: answer.headers,
+              body: answer.text || JSON.stringify(answer.json),
+              url: next, location: answer.location };
+        continue;
+      }
       r = await hop(cookies, next);
       continue;
     }
@@ -588,9 +642,6 @@ async function browse(cookies, startUrl, username, stopAt) {
       break;
     }
     const forms = formsIn(r.body);
-    const signIn = forms.find(function (f) {
-      return "authn_id" in f.fields;
-    });
     const consent = forms.find(function (f) {
       return /consent/.test(f.action) || "consent_id" in f.fields;
     });
@@ -599,12 +650,6 @@ async function browse(cookies, startUrl, username, stopAt) {
              ("SAMLResponse" in f.fields || "SAMLRequest" in f.fields ||
               "wresult" in f.fields);
     });
-    if (signIn) {
-      const to = new URL(signIn.action || r.url, r.url).toString();
-      r = await postForm(cookies, to, Object.assign({}, signIn.fields, {
-        username: username, password: PASSWORD, action: "login" }));
-      continue;
-    }
     if (consent) {
       const to = new URL(consent.action || r.url, r.url).toString();
       r = await postForm(cookies, to, Object.assign({}, consent.fields, {
@@ -1073,26 +1118,11 @@ async function saml2(w) {
                    "NameIDPolicy) on " + m.binding, m.xml, m.from);
   }
 
-  // THE MOCK SERVICE PROVIDER's AuthnRequests (/saml2/sp, non-spec, but a
-  // document this service emits): one per response binding it offers.
-  const mock = await hop(null, w.rb + "/saml2/sp");
-  const requests = [...mock.body.matchAll(/href="([^"]*SAMLRequest=[^"]*)"/g)]
-    .map(function (x) {
-      return htmlDecode(x[1]);
-    });
-  await check(w.mode + " the mock service provider offers its " +
-              "AuthnRequests", async function () {
-    if (requests.length < 3) {
-      throw new Error(requests.length + " — " + squash(mock.body));
-    }
-  });
-  for (const link of requests) {
-    const u = new URL(link, mock.url);
-    const xml = decodeRedirect(u.searchParams.get("SAMLRequest"));
-    await validate(w.mode + " SAML 2.0 AuthnRequest from the mock service " +
-                   "provider (" + ((/ProtocolBinding="[^"]*:([^:"]+)"/
-                     .exec(xml) || [])[1] || "?") + ")", xml, "/saml2/sp");
-  }
+  // THE AuthnRequests THIS SERVICE EMITS AS A SERVICE PROVIDER are the
+  // federation module's, validated in federation() on HTTP-Redirect and
+  // HTTP-POST. Until #592 the mock service provider's (/saml2/sp) were
+  // validated here as well; it was deleted, and it had emitted nothing a
+  // real relationship does not.
   log.debug("Leaving saml2().");
 }
 
@@ -1455,8 +1485,8 @@ async function federation(idp) {
     });
     // THE OUTBOUND LogoutRequest: signing out at the service provider realm
     // offers the partner one, and the partner's LogoutResponse comes back.
-    const bye = await postForm(cookies, realmBase(sp) + "/logout",
-                               { scope: "global" });
+    const bye = await signOutAt(cookies, realmBase(sp),
+                                { scope: "global" });
     const toPartner = [...String(bye.body).matchAll(/href="([^"]+)"/g)]
       .map(function (x) {
         return htmlDecode(x[1]);

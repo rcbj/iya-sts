@@ -15,7 +15,7 @@
   "whyEnoent": "Ce fichier n’existe pas. Sur un service en mode DÉVELOPPEMENT, c’est normal : rien n’est persisté, donc la clé de chiffrement de clés n’est jamais lue et le fichier qu’elle désigne n’a pas besoin d’exister. En mode produit, c’est un service qui ne démarrerait pas.",
   "whyEacces": "Le fichier existe et ce processus n’a pas le droit de le lire. Vérifiez le propriétaire du montage plutôt que le chemin.",
   "whyTimeout": "Le stockage n’a pas répondu dans le délai <code>keys.storeProbeTimeoutMs</code>. Ce délai borne une sonde et non la page, donc les autres ci-dessous ont quand même été interrogées.",
-  "whySdk": "Le SDK de ce fournisseur n’est pas installé. Il n’est délibérément pas une dépendance de ce service — c’est d’abord une maquette, et cinq SDK cloud que personne n’utilise seraient embarqués dans chaque installation — donc le message ci-dessus nomme le paquet à installer.",
+  "whySdk": "Le SDK de ce fournisseur n’est pas installé. Il n’est délibérément pas une dépendance de ce service — cinq SDK cloud que personne n’utilise seraient embarqués dans chaque installation — donc le message ci-dessus nomme le paquet à installer.",
   "tookMs": "{ms} ms",
   "unavailableTookMs": "indisponible, {ms} ms",
   "didNotAnswer": "Il n’a pas répondu",
@@ -66,5 +66,8 @@
   "noStores": "Aucun des deux secrets n’est lu depuis un stockage, il n’y a donc rien à signaler.",
   "perStore": "Un bloc par stockage et non par secret : deux secrets conservés au même endroit partagent tout ce qui suit, et demander deux fois au même stockage s’il est scellé reviendrait pour cette page à inventer un désaccord qu’elle devrait ensuite afficher.",
   "holds": "Contient :",
-  "nothingPublished": "Ce fournisseur ne publie rien sur le stockage lui-même au-delà de ce qui figure déjà sur le secret ci-dessus &mdash; un gestionnaire de secrets cloud est un point de terminaison et une politique d’accès, et tout ce qu’il dira concerne le secret."
+  "nothingPublished": "Ce fournisseur ne publie rien sur le stockage lui-même au-delà de ce qui figure déjà sur le secret ci-dessus &mdash; un gestionnaire de secrets cloud est un point de terminaison et une politique d’accès, et tout ce qu’il dira concerne le secret.",
+  "tab.keys": "Clés de chiffrement",
+  "tab.database": "Mots de passe de la base de données",
+  "tab.mail": "Secrets de messagerie"
 }

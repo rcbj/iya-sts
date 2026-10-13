@@ -448,34 +448,22 @@ function childMain() {
       return r.status === 302 &&
              /\/authn\/login/.test(String(r.headers.location || ''));
     };
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const signIn = async function (first, username) {
       if (!toSignIn(first)) {
         return { final: first, back: '' };
       }
-      const page = await request(port, 'GET', first.headers.location,
-                                 { cookies: true });
-      const form = {};
-      (page.text.match(/<input type="hidden"[^>]*>/g) || []).forEach(
-        function (tag) {
-          const name = /name="([^"]+)"/.exec(tag);
-          const value = /value="([^"]*)"/.exec(tag);
-          if (name) {
-            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-          }
-        });
-      form.username = username || 'par-alice';
-      form.password = 'anything';
-      form.action = 'login';
-      // The screen's own path, which carries a realm's prefix in a realm.
-      const screen = String(first.headers.location).split('?')[0]
-        .replace(/^https?:\/\/[^/]+/, '');
-      const posted = await request(port, 'POST', screen,
-                                   { form: form, cookies: true });
-      const back = String(posted.headers.location || '')
-        .replace(/^https?:\/\/[^/]+/, '');
+      // THE SCREEN OVER `/authn-api` (#571), in this flow's jar. Its
+      // answer's `location` is where the form's 303 went: the round trip.
+      const sent = await authnScreen.submit({ port: port, jar: jar,
+        at: String(first.headers.location),
+        fields: { action: 'login', username: username || 'par-alice',
+                  password: 'anything' } });
+      const back = sent.next === 'redirect'
+        ? String(sent.location || '').replace(/^https?:\/\/[^/]+/, '') : '';
       const final = back
         ? await request(port, 'GET', back, { cookies: true })
-        : posted;
+        : sent;
       return { final: final, back: back };
     };
     const codeOf = function (r, target) {

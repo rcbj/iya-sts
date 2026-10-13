@@ -57,7 +57,7 @@
   "stepUpNoteEnd": "。",
   "ownRequires": "本服务自己的资源服务器（UserInfo、OpenID4VCI 端点、SCIM、Shared Signals）要求 ",
   "ownLink": "oauth2.stepUpAcrValues 和 oauth2.stepUpMaxAgeS",
-  "ownApi": "。已注册 API 的要求在其应用条目上（<code>oauthStepUpAcrValues</code>、<code>oauthStepUpMaxAge</code>），由 <code>{path}</code> 执行。",
+  "ownApi": "。已注册 API 的要求在其应用条目上（<code>oauthStepUpAcrValues</code>、<code>oauthStepUpMaxAge</code>），由该 API 自身执行。",
   "stepUpNoClients": "自进程启动以来，此领域中没有授权请求携带 acr_values 或 max_age，此处也没有资源服务器质询过令牌。",
   "lead": "自 {since} 以来<strong>授权服务器在此领域所做的事</strong>，每种机制一节。计数器在为此领域应答的所有进程间合并。",
   "noReset": "没有重置功能：能把自身监控清零的控制台，会让其上的每个数字都可能被人清零过。每次撤回的持久记录见",

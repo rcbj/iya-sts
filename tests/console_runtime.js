@@ -33,6 +33,13 @@
 //   7. A tab survives: a page drawn at an address with a fragment makes it
 //      the `:target` again (a panel drawn after the navigation is not), and
 //      an act returns to the tab its form was on.
+//   8. The application's SAML metadata form sends a file, the selected
+//      family, and an empty paste field through the mirrored API operation.
+//   9. The Verifiable Credentials page composes all six tabs, and forwards
+//      status paging to its operation.
+//  10. Protocols → Cert issuance asks each tab's operation with that
+//      operation's own names (`estCertificatesPage` is EST's
+//      `certificatesPage`), and every tab and SPIFFE sub-tab is drawn.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -147,7 +154,22 @@ function childMain() {
             removeItem: function (k) { delete store[k]; }
           },
           formDataOf: function (form) {
-            const data = new FormData();
+            const data = {
+              entries: [],
+              append: function (name, value) {
+                this.entries.push({ name: name, value: value });
+              },
+              delete: function (name) {
+                this.entries = this.entries.filter(function (one) {
+                  return one.name !== name;
+                });
+              },
+              forEach: function (callback) {
+                this.entries.slice().forEach(function (one) {
+                  callback(one.value, one.name);
+                });
+              }
+            };
             Object.keys(form.fields).forEach(function (name) {
               data.append(name, form.fields[name]);
             });
@@ -320,6 +342,128 @@ function childMain() {
          '7b. an act returns to the tab its form was on, with its answer ' +
          'in the strip', JSON.stringify(seven.replaced) + ' ' +
            seven.env.location.href);
+
+    // --- 8. metadata files use the selected family's API operation ---------
+    const metadataId = 'https://console-' + stamp + '.test/saml';
+    const metadataApp = applications.createApplication({
+      identifier: metadataId, kind: 'saml2-service-provider',
+      protocol: 'SAML 2.0 and SAML 1.1',
+      protocols: ['saml2', 'saml11'],
+      fields: { samlEntityId: metadataId } });
+    const metadataEnv = makeEnv('/admin/applications',
+      '?application=' + encodeURIComponent(metadataId));
+    metadataEnv.env.location.hash = '#cfg-saml11';
+    runtime = new ConsoleRuntime(metadataEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    const saml11Metadata = '<md:EntityDescriptor xmlns:md="' +
+      'urn:oasis:names:tc:SAML:2.0:metadata" entityID="' + metadataId +
+      '"><md:SPSSODescriptor protocolSupportEnumeration="' +
+      'urn:oasis:names:tc:SAML:1.1:protocol">' +
+      '<md:AssertionConsumerService index="0" isDefault="true" ' +
+      'Binding="urn:oasis:names:tc:SAML:1.0:profiles:artifact-01" ' +
+      'Location="https://sp.console.test/SAML/Artifact"/>' +
+      '</md:SPSSODescriptor></md:EntityDescriptor>';
+    const file = { name: 'sp-metadata.xml',
+                   size: Buffer.byteLength(saml11Metadata),
+                   text: async function () { return saml11Metadata; } };
+    await runtime.submit({
+      getAttribute: function (name) {
+        if (name === 'action') {
+          return '/admin/saml2#cfg-saml11';
+        }
+        return name === 'enctype' ? 'multipart/form-data' : '';
+      },
+      fields: { action: 'upload-metadata', family: 'saml11',
+        sp: metadataId, document: '', file: file }
+    }, null);
+    const consumed = applications.get(metadataId);
+    const consumedEndpoints = [].concat(
+      (consumed && consumed.fields.samlAcsEndpoint) || []).join(' ');
+    const returnedQuery = new URLSearchParams(
+      metadataEnv.env.location.search);
+    note(metadataApp && metadataApp.ok && consumedEndpoints.indexOf(
+      'https://sp.console.test/SAML/Artifact') >= 0 &&
+      consumedEndpoints.indexOf(
+        'urn:oasis:names:tc:SAML:1.0:profiles:artifact-01') >= 0 &&
+      metadataEnv.env.location.hash === '#cfg-saml11' &&
+      returnedQuery.get('application') === metadataId &&
+      returnedQuery.has('notice') && !returnedQuery.has('error'),
+      '8. a selected-family metadata file and empty paste field reach the ' +
+      'mirrored operation and import the matching SAML 1.1 descriptor',
+      consumedEndpoints + ' ' + metadataEnv.env.location.href);
+
+    // --- 9. all VC tabs are present on the first draw; paging is forwarded --
+    const vcCalls = [];
+    const vcEnv = makeEnv('/admin/vc', '', async function (url, init) {
+      vcCalls.push(String(url));
+      return fetch(url, init);
+    });
+    runtime = new ConsoleRuntime(vcEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    const vcHtml = vcEnv.env.document.body.innerHTML;
+    const statusUrl = vcCalls.filter(function (url) {
+      return url.indexOf('/admin-api/vc-status') >= 0;
+    })[0] || '';
+    note(statusUrl.indexOf('/admin-api/vc-status') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-metadata"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-oid4vci"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-claims"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-status"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-oid4vp"') >= 0 &&
+         vcHtml.indexOf('id="vc-tab-verifier-request"') >= 0,
+         '9a. the initial VC page draws all six tabs and its status view',
+         statusUrl + ' ' + vcHtml.slice(0, 200));
+
+    const pagedVcCalls = [];
+    const pagedVcEnv = makeEnv('/admin/vc', '?page=2&per=5',
+      async function (url, init) {
+        pagedVcCalls.push(String(url));
+        return fetch(url, init);
+      });
+    runtime = new ConsoleRuntime(pagedVcEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    const pagedStatus = pagedVcCalls.filter(function (url) {
+      return url.indexOf('/admin-api/vc-status') >= 0;
+    })[0] || '';
+    note(pagedStatus.indexOf('/admin-api/vc-status?page=2&per=5') >= 0,
+         '9b. VC status paging parameters reach the composed status operation',
+         pagedStatus);
+
+    // --- 10. Cert issuance: each tab asked by its own names; old addresses -
+    const certCalls = [];
+    const certEnv = makeEnv('/admin/cert-issuance',
+      '?per=5&estCertificatesPage=2&entriesQ=web',
+      async function (url, init) {
+        certCalls.push(String(url));
+        return fetch(url, init);
+      });
+    runtime = new ConsoleRuntime(certEnv.env);
+    await signedIn(runtime);
+    await runtime.route();
+    const certHtml = certEnv.env.document.body.innerHTML;
+    const certAsked = function (operation) {
+      return certCalls.filter(function (url) {
+        return url.split('?')[0].slice(-operation.length) === operation;
+      })[0] || '';
+    };
+    note(certAsked('/admin-api/est').indexOf('certificatesPage=2') >= 0 &&
+         certAsked('/admin-api/est').indexOf('estCertificatesPage') < 0 &&
+         certAsked('/admin-api/scep').indexOf('certificatesPage') < 0 &&
+         certAsked('/admin-api/spiffe/entries').indexOf('q=web') >= 0 &&
+         certAsked('/admin-api/spiffe/agents').indexOf('q=') < 0 &&
+         ['cert-tab-metadata', 'cert-tab-acme', 'cert-tab-est',
+          'cert-tab-scep', 'cert-tab-spiffe', 'cert-spiffe-overview',
+          'cert-spiffe-entries', 'cert-spiffe-agents',
+          'cert-spiffe-brokers'].every(function (id) {
+           return certHtml.indexOf('id="' + id + '"') >= 0;
+         }),
+         '10a. each Cert issuance tab\'s operation is asked with its own ' +
+         'names, and every tab and SPIFFE sub-tab is drawn',
+         certCalls.join(' '));
+
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

@@ -1,0 +1,11 @@
+{
+  "heading": "{kind, select, roles {Roles you own} groups {Groups you own} service-accounts {Service accounts you own} other {Applications you own}}",
+  "sub": "Everything of this kind whose owners name you, or a group you are in. An owner answers for a resource; it grants nothing. To change one, ask an administrator.",
+  "thName": "Name",
+  "thDetail": "Detail",
+  "thHow": "How it is yours",
+  "you": "You are an owner",
+  "viaGroup": "Through the group {group}",
+  "none": "You own no {kind, select, roles {role} groups {group} service-accounts {service account} other {application}}.",
+  "yourGroups": "Your groups: {groups}."
+}

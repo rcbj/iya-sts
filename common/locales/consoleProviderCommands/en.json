@@ -44,5 +44,6 @@
   "nothingIn": "Nothing {state}.",
   "counts": "{pending} pending, {sent} sent, <strong>{dead} dead</strong>",
   "colWhat": "What",
-  "deliveriesNote": "<strong>Every outbound delivery</strong> this service POSTs to an address a client registered, on the one durable queue: each is a persisted row, attempted once for the cluster under a claimed lease, retried with backoff when a timeout, a connection failure, 5xx, 408 or 429 makes that worth it, and a <strong>dead letter</strong> otherwise — sent again only when an operator presses Retry, which starts a new generation."
+  "deliveriesNote": "<strong>Every outbound delivery</strong> this service POSTs to an address a client registered, on the one durable queue: each is a persisted row, attempted once for the cluster under a claimed lease, retried with backoff when a timeout, a connection failure, 5xx, 408 or 429 makes that worth it, and a <strong>dead letter</strong> otherwise — sent again only when an operator presses Retry, which starts a new generation.",
+  "clientsHeading": "Relying parties"
 }

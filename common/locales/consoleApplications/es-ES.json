@@ -1,0 +1,4 @@
+{
+  "a2.tipES256": "ECDSA sobre P-256 con SHA-256: el predeterminado, y lo que esperan la mayoría de resolutores DID y carteras.",
+  "a3.vcMetadata": " Los metadatos del emisor siguen anunciando la selección del dominio: es un único documento para todos los clientes, así que a una cartera que pide una ruta se la sujeta a esa y luego recibe lo que contiene esta selección."
+}

@@ -24,14 +24,19 @@
 //      an ML-DSA-44 key the code flow issues an ID Token bound to an AKP key.
 //
 // OWNED HERE (local: true): this repository's authorization server, portal
-// and API.
+// and API. Since #568 the person approves on the STATIC portal: signed in as
+// it signs in (`portal_signin.js`), `/portal/device` its operation's answer
+// drawn by its renderers, Approve that form's operation (200, not 303).
 // ---------------------------------------------------------------------------
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const registry = require("./sts_applications.js");
+const PORTAL_SIGNIN = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -186,12 +191,6 @@ function hiddenFields(html) {
   return out;
 }
 
-function csrfOf(html) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (/name="csrf_token" value="([^"]+)"/.exec(html) || [])[1] || "";
-}
-
 async function ok(url, payload, what) {
   log.debug("Entering ok().");
   const r = await hop(null, "POST", url, { json: payload || {} });
@@ -202,6 +201,21 @@ async function ok(url, payload, what) {
   return r.json;
 }
 
+// Signs `username` in at the screen `location` names, over `/authn-api`
+// (#571), keeping this jar's cookies; answered in `hop()`'s shape, read as
+// the form's 303 was.
+async function signInHere(who, location, username) {
+  log.debug("Entering signInHere(). " + username);
+  const answer = await authnSignin.submit(base, location,
+    { action: "login", username: username, password: PASSWORD },
+    { cookie: who.header(location) });
+  who.take({ headers: answer.headers }, location);
+  const like = authnSignin.responseLike(answer);
+  log.debug("Leaving signInHere(). " + answer.next);
+  return { status: like.status, text: answer.text || "", json: answer.json,
+           location: answer.location };
+}
+
 // Follows redirects inside this service, signing the person in on the
 // realm's screen and allowing a consent screen, until the answer leaves the
 // service or is a page.
@@ -209,18 +223,24 @@ async function follow(who, first) {
   log.debug("Entering follow().");
   let r = first;
   for (let i = 0; i < 20; i++) {
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = PERSON;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await hop(who, "POST", base + "/authn/login", { form: fields });
+    // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+    // signed in through the one helper where the flow is sent to it.
+    if ((r.status === 302 || r.status === 303) &&
+        /\/authn\/login\?authn=/.test(r.location)) {
+      r = await signInHere(who, r.location, PERSON);
       continue;
     }
-    if (r.status === 200 && /id="consent-allow"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.action = "allow";
-      r = await hop(who, "POST", base + "/oauth2/consent", { form: fields });
+    // THE CONSENT SCREEN IS A PAGE OF THE SIGN-IN SURFACE SINCE #576:
+    // answered over `/authn-api/consent` through the one helper, this jar
+    // kept, and read as the 303 the form was answered with.
+    if ((r.status === 302 || r.status === 303) &&
+        authnSignin.isConsent(r.location)) {
+      const answer = await authnSignin.consentFor(r.location,
+                                                  who.header(r.location));
+      who.take({ headers: answer.headers }, r.location);
+      r = { status: authnSignin.responseLike(answer).status,
+            text: answer.text || "", json: answer.json,
+            location: answer.location };
       continue;
     }
     if (!(r.status === 302 || r.status === 303) ||
@@ -368,25 +388,30 @@ async function test() {
     assert.strictEqual(slow.json.error, "slow_down", slow.text.slice(0, 200));
   });
 
+  // THE PERSON, AS THE STATIC PORTAL SIGNS THEM IN (#568): `/portal/device`
+  // is drawn from `/account-api/device`'s answer by the portal's renderers,
+  // and the approval is that page's form sent to the operation mirroring it.
   const browser = jar();
-  await follow(browser, await hop(browser, "GET", base + "/portal/device"));
-  const wrong = await hop(browser, "GET", base +
-                          "/portal/device?user_code=ZZZZ-ZZZZ");
-  const found = await follow(browser, await hop(browser, "GET",
-    codes.verification_uri_complete));
+  const portal = await PORTAL_SIGNIN.signInToThePortal(base, PERSON, null,
+                                                       { password: PASSWORD });
+  const wrong = await portal.page("/portal/device",
+                                  { user_code: "ZZZZ-ZZZZ" });
+  const found = await portal.draw("/portal/device", { user_code:
+    new URL(codes.verification_uri_complete).searchParams.get("user_code") });
   check("a wrong code finds nothing; the right one shows the client and " +
         "scopes before anything is approved", function () {
-    assert.strictEqual(wrong.status, 404, wrong.text.slice(0, 200));
-    assert.strictEqual(found.status, 200, found.text.slice(0, 300));
-    assert.ok(/id="device-request"/.test(found.text));
-    assert.ok(found.text.indexOf("Device " + TAG) >= 0);
-    assert.ok(found.text.indexOf("bound_key") >= 0);
+    assert.strictEqual(wrong.status, 404, String(wrong.text).slice(0, 200));
+    assert.strictEqual(found.status, 200,
+                       JSON.stringify(found.json).slice(0, 300));
+    assert.ok(/id="device-request"/.test(found.html));
+    assert.ok(found.html.indexOf("Device " + TAG) >= 0);
+    assert.ok(found.html.indexOf("bound_key") >= 0);
   });
-  const approved = await hop(browser, "POST", base + "/portal/device", {
-    form: { action: "approve", user_code: codes.user_code,
-            csrf_token: csrfOf(found.text) } });
+  const approved = await portal.act("/portal/device",
+    { action: "approve", user_code: codes.user_code });
   check("the person approves", function () {
-    assert.strictEqual(approved.status, 303, approved.text.slice(0, 300));
+    assert.ok(approved.status === 200 && approved.json && approved.json.ok,
+              String(approved.text).slice(0, 300));
   });
 
   log.info("=== 3. Key Binding at the device_code grant ===");
@@ -448,9 +473,13 @@ async function test() {
   });
 
   log.info("=== 6. the authorization request, and ML-DSA ===");
-  const naked = authorizeUrl(client, { scope: "openid bound_key" });
-  const refused = await follow(browser, await hop(browser, "GET",
-                                                   naked.url));
+  // THE REQUEST THAT SUCCEEDS GOES FIRST, BECAUSE IT SIGNS THE PERSON IN.
+  // RFC 9700 section 4.11.2 (product mode implies that mode): an error is
+  // redirected to the client only once somebody is signed in, and is shown
+  // as a 400 otherwise. Until #568 this jar was signed in by the portal's
+  // device approval above; since then the portal signs in with a jar of its
+  // own, so the refused request, sent first, was shown rather than
+  // redirected, in product mode only.
   const pq = newKey("ML-DSA-44");
   const asked = authorizeUrl(client, { scope: "openid bound_key",
                                        dpop_jkt: pq.jkt });
@@ -461,6 +490,9 @@ async function test() {
     grant_type: "authorization_code", code: code, redirect_uri: RP_REDIRECT,
     code_verifier: asked.verifier }),
     headers: { DPoP: proof(pq, TOKEN, { c_s256: sha256(code) }) } });
+  const naked = authorizeUrl(client, { scope: "openid bound_key" });
+  const refused = await follow(browser, await hop(browser, "GET",
+                                                   naked.url));
   check("bound_key without dpop_jkt is refused; an ML-DSA-44 key binds the " +
         "ID Token", function () {
     assert.ok(/[?&]error=invalid_request/.test(refused.location),

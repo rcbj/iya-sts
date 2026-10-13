@@ -254,6 +254,16 @@ const MAX_CACHED_REQUEST_URIS = 256;
 // Described to `/admin/caches` (#74, rule 3ap). Only lookups made while the
 // cache is on are counted: with `oauth2.requestUriCacheS` at 0 a fetch is not
 // a miss, because nothing was asked of the cache.
+// The lifetime sentences below, as templates and a sentence (#543):
+// `lifetime()` picks and fills one and `cache_registry.js`'s `prose()` reads
+// them from the descriptor, so an answer to `GET /admin-api/caches` can be
+// refilled in a reader's language.
+const CACHE_SENTENCES = Object.freeze({
+  lifetime: 'oauth2.requestUriCacheS ({{seconds}} s) after the fetch, per ' +
+    'realm; the oldest goes first when full.',
+  lifetimeOff: 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.'
+});
+
 const requestUriCount = cacheRegistry.register({
   name: 'oauth2.request-uri',
   title: 'Fetched request objects',
@@ -268,12 +278,14 @@ const requestUriCount = cacheRegistry.register({
   },
   bound: 'Enforced: ' + MAX_CACHED_REQUEST_URIS + ' fetched request objects ' +
     'per realm, the oldest dropped and fetched again when next used.',
+  sentences: CACHE_SENTENCES,
   lifetime: function (): string {
     const seconds = Number(config.value('oauth2.requestUriCacheS')) || 0;
+    // Lazily, as every reader of the cache page's prose does.
+    const serverProse = require('../common/server_prose');
     return seconds > 0
-      ? 'oauth2.requestUriCacheS (' + seconds + ' s) after the fetch, per ' +
-        'realm; the oldest goes first when full.'
-      : 'Off: oauth2.requestUriCacheS is 0, so nothing is kept.';
+      ? serverProse.fill(CACHE_SENTENCES.lifetime, { seconds: seconds })
+      : CACHE_SENTENCES.lifetimeOff;
   },
   // A fetched Request Object past `until`, which `contentOf()` would fetch
   // again (#49 P5).
@@ -419,15 +431,30 @@ class RequestObject {
    * @param profile - what the selected authorization server publishes
    * @returns true when one is required
    */
-  signedRequired(client: Json, profile: Json): Json {
+  signedRequired(client: Json, profile: Json, clientId?: string): Json {
     const { config, log } = this.deps;
     log.debug("Entering RequestObject.signedRequired().");
     // FAPI 1.0 Advanced requires one of every client (Part 2 section 5.2.2
     // item 1, #139).
-    const required = !!config.value('oauth2.requireSignedRequestObject') ||
-                     !!(client && client.require_signed_request_object) ||
-                     !!(profile && profile.requireSigned === true) ||
-                     this.deps.fapi.requiresSignedRequestObject();
+    const explicit = !!config.value('oauth2.requireSignedRequestObject') ||
+                     !!(client && client.require_signed_request_object);
+    const byProfile = !!(profile && profile.requireSigned === true) ||
+                      this.deps.fapi.requiresSignedRequestObject();
+    // THE TWO HOSTED PUBLIC CLIENTS ARE EXEMPT FROM WHAT A PROFILE DEMANDS
+    // (#568): the static console and the static portal sign in from a
+    // browser, as public clients, and hold no registered key a request object
+    // could be signed with — so FAPI 1.0 Advanced or FAPI 2.0 Message
+    // Signing, which demand one of every client, would leave such a realm
+    // with no console and no portal. It is the confidential-only rule's
+    // exemption (`fapi.js`'s PUBLIC_CLIENT_EXEMPT, #446) read for this
+    // requirement too, and on the same terms: those two clients do not
+    // conform to the profile in that realm, and say so. An operator's own
+    // `oauth2.requireSignedRequestObject`, or the entry's own flag, still
+    // binds them.
+    // The client view carries no `client_id`, so a caller names it.
+    const exempt = !!client && this.deps.fapi.publicClientExempt(
+      clientId || client.client_id, client.token_endpoint_auth_method);
+    const required = explicit || (byProfile && !exempt);
     log.debug("Leaving RequestObject.signedRequired(). " + required);
     return required;
   }
@@ -1205,7 +1232,7 @@ class RequestObject {
     const profile = options.profile || {};
     const clientId = String(options.clientId || '');
     const query = options.query || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile, clientId);
     const compact = String(options.jwt || '').trim();
 
     let jws = compact;
@@ -1607,7 +1634,8 @@ class RequestObject {
     const query = options.query || {};
     const client = options.client || {};
     const profile = options.profile || {};
-    const required = self.signedRequired(client, profile);
+    const required = self.signedRequired(client, profile,
+                                         String(query.client_id || ''));
     const byValue = query.request !== undefined && query.request !== '';
     const byReference = query.request_uri !== undefined &&
                         query.request_uri !== '';

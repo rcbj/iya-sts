@@ -1,0 +1,158 @@
+{
+  "database.what": {
+    "en": "fd1bf6aaf183abc6",
+    "text": "Tout ce que PostgreSQL voudra bien dire à ce service sur lui-même, et l’état du schéma que ce service y possède."
+  },
+  "persistence.why.notPostgres": {
+    "en": "b930006cab374fd3",
+    "text": "persistence.mode vaut \"{{mode}}\" ; ce service n’a donc aucune base de données sur laquelle rendre compte. `memory` n’écrit rien du tout et `ldif` écrit des fichiers RFC 2849 — aucun des deux n’a de connexion, de pool ni de catalogue. Définissez persistence.mode à `postgres` (il ne prend effet qu’au redémarrage : le magasin est ouvert avant que l’écouteur ne soit lié)."
+  },
+  "persistence.why.noStore": {
+    "en": "e62c0b01e6b2db48",
+    "text": "persistence.mode vaut \"postgres\" et ce processus n’a AUCUN MAGASIN OUVERT. C’est une panne plutôt qu’une configuration : le magasin est ouvert par persistence.start() avant que l’écouteur ne soit lié, et un échec à ce stade est fatal — un service en fonctionnement dans cet état a donc vu son magasin arrêté sous ses pieds. Le journal de démarrage indique ce qui s’est passé."
+  },
+  "persistence.why.noMetrics": {
+    "en": "719bf77536a6fc4a",
+    "text": "le pilote ouvert ne fournit aucune fonction de métriques, ce qui signifie une version de persistence_postgres.js antérieure au 2026-09-11."
+  },
+  "persistence.status.coordinating": {
+    "en": "d2f5619db89bb946",
+    "text": "Les processus utilisant ce magasin se COORDONNENT : chaque modification est écrite dans un journal monotone au sein de la transaction qui l’a effectuée, et chaque processus applique ce que les autres ont validé. Le signal LISTEN/NOTIFY ne fait que rendre cela rapide — le journal est le contrat, donc une notification manquée coûte de la latence et jamais une modification. Ce qui n’est PAS partagé, ce sont les sockets : le KDC, les écouteurs LDAP, les ports TLS et les quatre de SPIFFE sont propres à chaque processus, et les caches anti-rejeu convergent plutôt que de se synchroniser. Ce que ce service CRÉE — sessions, jetons, codes, artefacts, tickets Kerberos, les compteurs et le journal d’audit — est persisté en mode PRODUIT sur un magasin postgres, chiffré sous la même clé de chiffrement de clé que les clés de signature, et dans aucune autre configuration : le mode développement régénère la clé de signature à chaque démarrage, de sorte qu’un jeton restauré ne serait vérifié par rien."
+  },
+  "persistence.status.notCoordinating": {
+    "en": "3e8126b9f2f2413a",
+    "text": "Dans cette configuration, la persistance n’est pas la coordination. Deux processus pointant vers un même magasin détiennent chacun leur propre copie en mémoire et ne verront pas les écritures de l’autre avant leur redémarrage. Activez persistence.coordinate sur un magasin postgres pour changer cela. Ce que ce service CRÉE — sessions, jetons, codes, artefacts, tickets Kerberos, les compteurs et le journal d’audit — est persisté en mode PRODUIT sur un magasin postgres, chiffré sous la même clé de chiffrement de clé que les clés de signature, et dans aucune autre configuration : le mode développement régénère la clé de signature à chaque démarrage, de sorte qu’un jeton restauré ne serait vérifié par rien."
+  },
+  "persistence.status.tlsVerified": {
+    "en": "0175281ec9008c40",
+    "text": "TLS, sslmode={{sslmode}} ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus."
+  },
+  "persistence.status.tlsUnverified": {
+    "en": "72f7138134696ef9",
+    "text": "AVERTISSEMENT — TLS, sslmode={{sslmode}}, mais le certificat du serveur n’est PAS VÉRIFIÉ (persistence.databaseTlsRejectUnauthorized est désactivé) ; le serveur de base de données n’est donc PAS AUTHENTIFIÉ : quiconque peut répondre à son adresse peut l’usurper et lire et écrire chaque ligne que conserve ce service. La connexion est chiffrée, et c’est tout. Réactivez ce paramètre, avec persistence.databaseTlsCaFile désignant l’AC du serveur lorsque node ne lui fait pas déjà confiance."
+  },
+  "persistence.status.tlsDefaultVerified": {
+    "en": "494e7b1b9be20828",
+    "text": "TLS — la chaîne de connexion ne définit aucun sslmode, et ce service contacte toute base de données via TLS ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus."
+  },
+  "persistence.status.tlsDefaultUnverified": {
+    "en": "67a6b00f57bdfed8",
+    "text": "AVERTISSEMENT — TLS (la chaîne de connexion ne définit aucun sslmode, et ce service contacte toute base de données via TLS), mais le certificat du serveur n’est PAS VÉRIFIÉ (persistence.databaseTlsRejectUnauthorized est désactivé) ; le serveur de base de données n’est donc PAS AUTHENTIFIÉ : quiconque peut répondre à son adresse peut l’usurper et lire et écrire chaque ligne que conserve ce service. La connexion est chiffrée, et c’est tout. Réactivez ce paramètre, avec persistence.databaseTlsCaFile désignant l’AC du serveur lorsque node ne lui fait pas déjà confiance."
+  },
+  "persistence.status.tlsPreferVerified": {
+    "en": "cc68c8b462e11562",
+    "text": "TLS, sslmode=prefer — contactée via TLS uniquement : avec prefer, libpq se rabattrait sur une connexion en clair, ce que ce service ne fait jamais ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus."
+  },
+  "persistence.status.tlsPreferUnverified": {
+    "en": "2a65ebb396c30cb4",
+    "text": "AVERTISSEMENT — TLS, sslmode=prefer, contactée via TLS uniquement (avec prefer, libpq se rabattrait sur une connexion en clair, ce que ce service ne fait jamais), mais le certificat du serveur n’est PAS VÉRIFIÉ (persistence.databaseTlsRejectUnauthorized est désactivé) ; le serveur de base de données n’est donc PAS AUTHENTIFIÉ : quiconque peut répondre à son adresse peut l’usurper et lire et écrire chaque ligne que conserve ce service. La connexion est chiffrée, et c’est tout. Réactivez ce paramètre, avec persistence.databaseTlsCaFile désignant l’AC du serveur lorsque node ne lui fait pas déjà confiance."
+  },
+  "persistence.status.tlsVerifyFull": {
+    "en": "a451d583279b78a9",
+    "text": "TLS, sslmode=verify-full ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus et son nom d’hôte est contrôlé, comme le demande le sslmode, quoi qu’indique persistence.databaseTlsRejectUnauthorized."
+  },
+  "persistence.status.tlsVerifyCa": {
+    "en": "e202517083093044",
+    "text": "TLS, sslmode=verify-ca ; le certificat du serveur est vérifié par rapport aux ancres de confiance de ce processus, comme le demande le sslmode, quoi qu’indique persistence.databaseTlsRejectUnauthorized — mais son nom d’hôte n’est PAS contrôlé : verify-ca, tel que libpq le lit, fait confiance à tout certificat qu’une autorité de confiance a émis. Utilisez verify-full pour contrôler aussi le nom."
+  },
+  "persistence.status.trustCaFile": {
+    "en": "2e641ceb50a4206c",
+    "text": "Les ancres de confiance de cette connexion sont les certificats de {{file}} (persistence.databaseTlsCaFile), à la place du magasin de confiance par défaut de ce processus."
+  },
+  "persistence.status.caFileUnusable": {
+    "en": "ce51e3182e53d854",
+    "text": "NON CONTACTÉE — persistence.databaseTlsCaFile désigne {{file}}, qui ne peut pas être lu ou ne contient aucun certificat ; ce service ne démarre donc pas avec lui."
+  },
+  "persistence.status.refusedClear": {
+    "en": "7a7f8a490bcde6cf",
+    "text": "NON CONTACTÉE — sslmode={{sslmode}} demande une connexion en clair, que ce service n’ouvre jamais ; il ne démarre donc pas avec cette chaîne de connexion."
+  },
+  "persistence.status.tlsUnknown": {
+    "en": "7c0ce538219125e3",
+    "text": "NON CONTACTÉE — la chaîne de connexion n’est pas une URL postgres://, on ne peut donc pas savoir si elle serait contactée en clair, et ce service ne démarre pas avec elle."
+  },
+  "persistence.status.notAUrl": {
+    "en": "1d1d46012eed0b29",
+    "text": "la chaîne de connexion n’est pas une URL ; rien n’en est affiché, car elle contient un mot de passe."
+  },
+  "postgres.probes.server.what": {
+    "en": "5f2f23d3ae4629e6",
+    "text": "De quel PostgreSQL il s’agit, EN TANT QUE qui ce service est connecté, et depuis combien de temps le serveur fonctionne."
+  },
+  "postgres.probes.size.what": {
+    "en": "5bfdc024932105aa",
+    "text": "L’espace disque qu’occupe cette base de données."
+  },
+  "postgres.probes.database.what": {
+    "en": "fd0e8c3479a9b1e5",
+    "text": "Chaque compteur que PostgreSQL tient pour cette base de données : validations et annulations, blocs lus par rapport aux blocs trouvés en cache, tuples dans tous les sens, interblocages, fichiers temporaires, et les durées d’E/S et de session lorsque le serveur les collecte."
+  },
+  "postgres.probes.conflicts.what": {
+    "en": "b171f5d8749419c1",
+    "text": "Requêtes annulées par des conflits de restauration. Toutes à zéro sur un serveur qui n’est pas un standby, ce qui est le cas ordinaire ici."
+  },
+  "postgres.probes.connections.what": {
+    "en": "309c5fb7cd91d74b",
+    "text": "Le nombre de backends de cette base de données, par rapport à la limite du serveur."
+  },
+  "postgres.probes.backends.what": {
+    "en": "794d0c982e4ba54c",
+    "text": "Une ligne par backend sur cette base de données. Un backend appartenant à un autre rôle apparaît comme une ligne dont l’état et la requête sont masqués, ce qui est ce qu’on montre à un rôle sans droit de supervision."
+  },
+  "postgres.probes.locks.what": {
+    "en": "b7988c9a1fc05949",
+    "text": "Verrous détenus et attendus, par mode. Un verrou en attente ici est presque toujours ce service en concurrence avec lui-même à travers le pool de workers de requêtes."
+  },
+  "postgres.probes.bgwriter.what": {
+    "en": "169cdf45721570c1",
+    "text": "Le background writer. ONZE colonnes avant PostgreSQL 17 et QUATRE à partir de 17, lorsque les compteurs de checkpoint en ont été sortis — c’est pourquoi cette sonde les demande toutes plutôt que d’en nommer aucune."
+  },
+  "postgres.probes.checkpointer.what": {
+    "en": "44d4dac2b65ef0c4",
+    "text": "Le checkpointer. Une vue à part entière depuis PostgreSQL 17 ; auparavant, ces compteurs constituent la fin de pg_stat_bgwriter ci-dessus."
+  },
+  "postgres.probes.wal.what": {
+    "en": "eeb96fbac1a1b242",
+    "text": "Génération du journal d’écriture anticipée (WAL). PostgreSQL 14 et versions ultérieures."
+  },
+  "postgres.probes.archiver.what": {
+    "en": "23ad655ebaa038a8",
+    "text": "Archivage du WAL. Tout à zéro sauf si archive_mode est activé, ce qui n’est le cas dans aucune pile que livre ce dépôt."
+  },
+  "postgres.probes.replication.what": {
+    "en": "77067e6962902928",
+    "text": "Les standbys qui répliquent en flux depuis ce serveur. VIDE est la réponse ordinaire, et c’est aussi ce qu’on montre à un rôle sans pg_monitor lorsqu’il EXISTE des standbys — une table vide ici recouvre donc deux faits différents, et la page indique lesquels elle ne peut pas distinguer."
+  },
+  "postgres.probes.tables.what": {
+    "en": "537942cce68f2b55",
+    "text": "Chaque compteur que PostgreSQL tient par table : parcours séquentiels et parcours d’index, tuples dans tous les sens, lignes vivantes et mortes, et date du dernier VACUUM et du dernier ANALYZE de chacune."
+  },
+  "postgres.probes.tableIo.what": {
+    "en": "8d93c3bdbdbd8b69",
+    "text": "E/S de blocs par table : combien provenait du cache de tampons et combien du disque, pour le heap, ses index et son TOAST."
+  },
+  "postgres.probes.sizes.what": {
+    "en": "00095ab1d398363b",
+    "text": "L’espace disque qu’occupe chaque table, réparti entre le heap, ses index et son TOAST, avec l’estimation du nombre de lignes du planificateur."
+  },
+  "postgres.probes.indexes.what": {
+    "en": "626ac6a37d500551",
+    "text": "Chaque index, combien de fois il a été parcouru, sa taille, et s’il s’agit d’une clé primaire ou d’un index unique."
+  },
+  "postgres.probes.columns.what": {
+    "en": "a72b877a7d08ff20",
+    "text": "Chaque colonne de chaque table que possède ce service, avec son type, si elle peut être nulle, et sa valeur par défaut."
+  },
+  "postgres.probes.constraints.what": {
+    "en": "9712b4c09c544e54",
+    "text": "Clés primaires, contraintes d’unicité, clés étrangères et contraintes de vérification."
+  },
+  "postgres.probes.settings.what": {
+    "en": "f4d476f237a76b71",
+    "text": "Chaque paramètre qu’un opérateur a modifié par rapport à sa valeur par défaut intégrée, et l’endroit où il a été défini — plus la poignée qui comptent, que quelqu’un y ait touché ou non."
+  },
+  "postgres.probes.extensions.what": {
+    "en": "5ecf5101b46267dd",
+    "text": "Extensions installées dans cette base de données."
+  }
+}

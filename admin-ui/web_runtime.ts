@@ -54,11 +54,12 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_kit');
+import SpaClient = require('../common/web_spa_client');
 import WebPages = require('./web_pages');
 import WebShell = require('./web_shell');
 import WebForms = require('./web_forms');
 import WebAnswers = require('./web_answers');
-import WebMessages = require('./web_messages');
+import WebMessages = require('../common/web_messages');
 
 type Json = any;
 
@@ -85,19 +86,14 @@ const RESTORE_KEY = 'sts-console-restore';
 const RESTORE_MAX_AGE_MS = 30 * 60 * 1000;
 // What `sendOnce()` answers when the request needs a sign-in first.
 const NEEDS_SIGN_IN = { needsSignIn: true };
+// The calls that negotiate the console's language (#543), which are sent
+// the browser's own Accept-Language rather than the console's answer.
+const LANGUAGE_CALLS = /\/admin-api\/console(\/language)?([?#]|$)/;
 
 /**
  * The static console's runtime: sign-in, DPoP, routing and forms.
  */
-class ConsoleRuntime {
-  private env: Json;
-  private prefix: string;
-  private accessToken: string;
-  private refreshToken: string;
-  private expiresAt: number;
-  private key: Json;
-  private publicJwk: Json;
-  private nonce: string;
+class ConsoleRuntime extends SpaClient {
   private shell: Json;
   // The console's translator (#539 phase 5), from the shell's `locale`.
   private t: Json;
@@ -109,15 +105,6 @@ class ConsoleRuntime {
   // neither is a fragment's, which the browser has already answered.
   private drawnAt: string;
   private spec: Json;
-  // WHERE THE AUTHORIZATION SERVER, THE API AND THE SIGN-IN SERVICE ARE when
-  // they are not on the console's own listener (#472): their bases, the
-  // realm prefix included, from the shell's `data-sts-*` attributes; '' where
-  // they are here, which is every service without a custom listener.
-  private elsewhere: Json;
-  // WHO SIGNED IN (#508): the ID Token's `sub`, so a sign-in again in a
-  // popup is known to be the same person before a request waiting on it is
-  // sent for them.
-  private subject: string;
   // The sign-in again in progress, while the session that ended is replaced
   // (#508): its one-use values, the requests waiting on it and the channel
   // the popup answers on. Null when none is.
@@ -135,14 +122,13 @@ class ConsoleRuntime {
    *   out) and `formDataOf` (a form's FormData)
    */
   constructor(env: Json) {
-    this.env = env;
-    this.prefix = ConsoleRuntime.prefixOf(env.location.pathname);
-    this.accessToken = '';
-    this.refreshToken = '';
-    this.expiresAt = 0;
-    this.key = null;
-    this.publicJwk = null;
-    this.nonce = '';
+    // The OAuth half — the key, the proofs, the tokens, the addresses of the
+    // authorization server and the API — is `SpaClient`'s, shared with the
+    // portal (#568).
+    super(env, ConsoleRuntime.prefixOf(env.location.pathname), {
+      clientId: CLIENT_ID, scope: SCOPE,
+      elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
+                   '/logout': 'data-sts-authn' } });
     this.shell = null;
     this.t = kit.context().t;
     this.shellPrefix = '';
@@ -151,17 +137,8 @@ class ConsoleRuntime {
     this.view = null;
     this.drawnAt = '';
     this.spec = null;
-    this.subject = '';
     this.reauth = null;
     this.submitting = null;
-    const root = env.document && env.document.documentElement;
-    const read = function (name: string): string {
-      return root && typeof root.getAttribute === 'function'
-        ? String(root.getAttribute(name) || '').replace(/\/+$/, '') : '';
-    };
-    this.elsewhere = { '/oauth2': read('data-sts-oauth'),
-                       '/admin-api': read('data-sts-api'),
-                       '/logout': read('data-sts-authn') };
   }
 
   // --- paths ---------------------------------------------------------------
@@ -173,8 +150,7 @@ class ConsoleRuntime {
    * @returns the prefix, '' in the default realm
    */
   static prefixOf(pathname: string): string {
-    const m = /^(.*?)\/admin(?:\/.*)?$/.exec(String(pathname || ''));
-    return m ? m[1] : '';
+    return ConsoleRuntime.prefixAt(pathname, '/admin');
   }
 
   /**
@@ -196,138 +172,7 @@ class ConsoleRuntime {
     return rest;
   }
 
-  /**
-   * Parses a query string into an object, the last value of a repeated
-   * name winning as express's own parser does for a single value.
-   *
-   * @param search - `?a=1&b=2` or ''
-   * @returns the query
-   */
-  static queryOf(search: string): Json {
-    const out = {};
-    new URLSearchParams(String(search || '').replace(/^\?/, ''))
-      .forEach(function (value, name) {
-        out[name] = value;
-      });
-    return out;
-  }
-
-  // --- encoding and crypto -------------------------------------------------
-
-  /**
-   * Base64url without padding.
-   *
-   * @param bytes - the bytes
-   * @returns the encoding
-   */
-  static b64u(bytes: Uint8Array): string {
-    let s = '';
-    for (let i = 0; i < bytes.length; i++) {
-      s += String.fromCharCode(bytes[i]);
-    }
-    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-  }
-
-  /**
-   * Random bytes, base64url.
-   *
-   * @param n - how many bytes
-   * @returns the encoding
-   */
-  random(n: number): string {
-    const bytes = new Uint8Array(n);
-    this.env.crypto.getRandomValues(bytes);
-    return ConsoleRuntime.b64u(bytes);
-  }
-
-  /**
-   * SHA-256 of a string, base64url.
-   *
-   * @param text - the string
-   * @returns the digest's encoding
-   */
-  async sha256(text: string): Promise<string> {
-    const digest = await this.env.crypto.subtle.digest('SHA-256',
-      new TextEncoder().encode(text));
-    return ConsoleRuntime.b64u(new Uint8Array(digest));
-  }
-
-  // THE KEY IS MADE NON-EXTRACTABLE, which is the condition rcbj attached
-  // to a public console: the private key can sign and cannot be exported, so
-  // a script that reads this page can use the key while the page lives and
-  // cannot carry it away. Only the public half is exported, for the proof's
-  // header.
-  /**
-   * Makes this page load's DPoP key, once.
-   *
-   * @returns nothing
-   */
-  async ensureKey(): Promise<void> {
-    if (this.key) {
-      return;
-    }
-    const pair = await this.env.crypto.subtle.generateKey(
-      { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
-    const jwk = await this.env.crypto.subtle.exportKey('jwk',
-                                                         pair.publicKey);
-    this.key = pair;
-    this.publicJwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y };
-  }
-
-  // RFC 9449 section 4.2: `typ` dpop+jwt, the public key in the header, and
-  // `jti`, `htm`, `htu` (no query, no fragment), `iat`, `ath` with an access
-  // token and `nonce` once a server has given one. WebCrypto's ECDSA
-  // signature is r || s, which is JOSE's ES256 form already.
-  /**
-   * Makes a DPoP proof for one request.
-   *
-   * @param method - the request's method
-   * @param url - the request's URL; its query and fragment are dropped
-   * @param accessToken - the access token it is sent with, or ''
-   * @returns the proof
-   */
-  async proof(method: string, url: string,
-              accessToken: string): Promise<string> {
-    await this.ensureKey();
-    const now = this.env.now ? this.env.now() : Date.now();
-    const header = { typ: 'dpop+jwt', alg: 'ES256', jwk: this.publicJwk };
-    const claims: Json = {
-      jti: this.random(16), htm: method.toUpperCase(),
-      htu: String(url).replace(/[?#].*$/, ''), iat: Math.floor(now / 1000)
-    };
-    if (accessToken) {
-      claims.ath = await this.sha256(accessToken);
-    }
-    if (this.nonce) {
-      claims.nonce = this.nonce;
-    }
-    const enc = function (obj) {
-      return ConsoleRuntime.b64u(new TextEncoder().encode(
-        JSON.stringify(obj)));
-    };
-    const input = enc(header) + '.' + enc(claims);
-    const signature = await this.env.crypto.subtle.sign(
-      { name: 'ECDSA', hash: 'SHA-256' }, this.key.privateKey,
-      new TextEncoder().encode(input));
-    return input + '.' + ConsoleRuntime.b64u(new Uint8Array(signature));
-  }
-
   // --- the authorization server --------------------------------------------
-
-  /**
-   * This realm's address for one of its paths.
-   *
-   * @param path - `/oauth2/token`, `/admin-api/...`
-   * @returns the absolute URL
-   */
-  url(path: string): string {
-    const elsewhere = this.elsewhere || {};
-    const first = '/' + String(path || '').split(/[/?#]/)[1];
-    if (elsewhere[first]) {
-      return elsewhere[first] + path;
-    }
-    return this.env.location.origin + this.prefix + path;
-  }
 
   /**
    * The origin the management API answers on: this page's, or the API's
@@ -367,95 +212,6 @@ class ConsoleRuntime {
     this.env.location.assign(await this.authorizeUrl(state, verifier));
   }
 
-  // A token endpoint answer with `error: use_dpop_nonce` is retried once
-  // with the nonce it sent (RFC 9449 section 8).
-  /**
-   * Posts a form to the token endpoint with a DPoP proof.
-   *
-   * @param form - the form fields
-   * @returns the response's JSON and status
-   */
-  async tokenRequest(form: Json): Promise<Json> {
-    const endpoint = this.url('/oauth2/token');
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const res = await this.env.fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded',
-                   'DPoP': await this.proof('POST', endpoint, '') },
-        body: new URLSearchParams(form).toString()
-      });
-      this.keepNonce(res);
-      const json = await res.json().catch(function () {
-        return {};
-      });
-      if (res.status === 400 && json.error === 'use_dpop_nonce' &&
-          attempt === 0) {
-        continue;
-      }
-      return { status: res.status, json: json };
-    }
-    return { status: 400, json: { error: 'use_dpop_nonce' } };
-  }
-
-  /**
-   * Keeps the tokens a token endpoint answered with.
-   *
-   * @param json - the token response
-   * @returns nothing
-   */
-  keepTokens(json: Json): void {
-    const now = this.env.now ? this.env.now() : Date.now();
-    this.accessToken = String(json.access_token || '');
-    // ROTATED: a refresh answers a new refresh token, and the old one is
-    // spent. One that answered none keeps the one in hand.
-    if (json.refresh_token) {
-      this.refreshToken = String(json.refresh_token);
-    }
-    this.expiresAt = now + (Number(json.expires_in) || 300) * 1000;
-    // WHO IT IS FOR (#508), from the ID Token the token endpoint answered
-    // this page directly. Read, not verified: it is compared with the one
-    // this page signed in with, never trusted for anything the API decides.
-    const subject = ConsoleRuntime.subjectOf(json.id_token);
-    if (subject) {
-      this.subject = subject;
-    }
-  }
-
-  /**
-   * The `sub` of an ID Token, read without verifying it.
-   *
-   * @param idToken - the compact JWT, or nothing
-   * @returns the subject, or ''
-   */
-  static subjectOf(idToken: Json): string {
-    const parts = String(idToken || '').split('.');
-    if (parts.length !== 3) {
-      return '';
-    }
-    try {
-      const text = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
-      return String(JSON.parse(text).sub || '');
-    } catch (e) {
-      // Not a JWT this page can read: no subject, which a sign-in again
-      // then treats as a different person.
-      return '';
-    }
-  }
-
-  /**
-   * Keeps the nonce a response carried, for the next proof.
-   *
-   * @param res - a fetch response
-   * @returns nothing
-   */
-  keepNonce(res: Json): void {
-    const nonce = res && res.headers && res.headers.get
-      ? res.headers.get('DPoP-Nonce') : '';
-    if (nonce) {
-      this.nonce = nonce;
-    }
-  }
-
   /**
    * Finishes a sign-in on the callback: checks the state, redeems the code
    * with the verifier and a proof, and goes where the sign-in began.
@@ -463,7 +219,9 @@ class ConsoleRuntime {
    * @returns nothing
    */
   async finishSignIn(): Promise<void> {
-    const query = ConsoleRuntime.queryOf(this.env.location.search);
+    // A JARM answer is opened and checked first (#568, `SpaClient`).
+    const query = await this.openAuthorizationResponse(
+      ConsoleRuntime.queryOf(this.env.location.search));
     // A POPUP'S SIGN-IN (#508) is the opener's to redeem: it holds the
     // verifier and the key, and this window hands the answer back.
     if (String(query.state || '').indexOf(POPUP_STATE_PREFIX) === 0) {
@@ -500,6 +258,12 @@ class ConsoleRuntime {
       this.drawProblem('Signing in failed',
         String(answer.json.error_description || answer.json.error ||
                'The token endpoint answered ' + answer.status + '.'));
+      return;
+    }
+    if (!await this.nonceMatches(answer.json.id_token, saved.verifier)) {
+      this.drawProblem('Signing in failed',
+        'The ID Token does not carry the nonce this sign-in sent. Open the ' +
+        'console again to sign in.');
       return;
     }
     this.keepTokens(answer.json);
@@ -654,13 +418,16 @@ class ConsoleRuntime {
    * @returns the URL
    */
   async authorizeUrl(state: string, verifier: string): Promise<string> {
-    const params = new URLSearchParams({
+    // Pushed first where the realm requires it (RFC 9126, #568's
+    // `SpaClient.authorizationRequestUrl()`).
+    return this.authorizationRequestUrl({
       response_type: 'code', client_id: CLIENT_ID,
       redirect_uri: this.url('/admin/callback'), scope: SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
-      code_challenge_method: 'S256', resource: this.resource()
+      code_challenge_method: 'S256', resource: this.resource(),
+      // OpenID Connect's nonce, which FAPI 1.0 requires (`SpaClient`).
+      nonce: await this.nonceFor(verifier)
     });
-    return this.url('/oauth2/authorize') + '?' + params.toString();
   }
 
   /**
@@ -791,6 +558,12 @@ class ConsoleRuntime {
         String(answer.json.error_description || answer.json.error ||
                'the token endpoint answered ' + answer.status) +
         '. Try again.');
+      return;
+    }
+    if (!await this.nonceMatches(answer.json.id_token, r.verifier)) {
+      await this.prepareReauth();
+      this.drawReauthBar('Signing in failed: the ID Token does not carry ' +
+        'the nonce this sign-in sent. Try again.');
       return;
     }
     const before = this.subject;
@@ -1163,6 +936,14 @@ class ConsoleRuntime {
         'DPoP': await this.proof(method, target, this.accessToken),
         'Accept': 'application/json'
       };
+      // THE LANGUAGE THE CONSOLE NEGOTIATED, NAMED TO THE API (#543), which
+      // translates the prose it writes into a view only when a request
+      // names one. Not on the two calls that NEGOTIATE it — the shell and
+      // the language chooser's — which must see the browser's own
+      // preference, or "follow the browser" would follow the old answer.
+      if (this.t && this.t.lang && !LANGUAGE_CALLS.test(target)) {
+        headers['Accept-Language'] = this.t.lang;
+      }
       let payload = undefined;
       if (body !== undefined && body !== null) {
         if (typeof FormData !== 'undefined' && body instanceof FormData) {
@@ -1414,26 +1195,10 @@ class ConsoleRuntime {
     }
   }
 
-  // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM. The renderers draw
-  // root-relative addresses (`/admin/users`, a form's `action`, a button's
-  // `formaction`), and the server-rendered console prefixed every one with
-  // the realm's on the way out (`common/app.js` `withRealmLinks()`); the
-  // static console draws them itself, so it does the same: `="/` and not
-  // `="//`, which is another host.
-  /**
-   * Prefixes every root-relative `href`, `action`, `formaction` and `src`.
-   *
-   * @param html - the page
-   * @param prefix - the realm's path prefix, or '' for the default realm
-   * @returns the page with its links in the realm
-   */
-  static realmLinks(html: string, prefix: string): string {
-    if (!prefix) {
-      return html;
-    }
-    return String(html).replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                                '$1="' + prefix + '/');
-  }
+  // A PAGE UNDER A REALM'S PREFIX LINKS INTO THAT REALM: the static console
+  // draws root-relative addresses and prefixes them itself, as the
+  // server-rendered console's `withRealmLinks()` did —
+  // `ConsoleRuntime.realmLinks()` is `WebPage`'s (#570), inherited.
 
   /**
    * Draws a page that says something went wrong, with no frame.
@@ -1504,7 +1269,37 @@ class ConsoleRuntime {
         null);
       return;
     }
-    this.view = { page: page, json: answer.json, query: query };
+    let json = answer.json;
+    if (page.compose) {
+      const self = this;
+      const asked = WebPages.composeRequests(page, query);
+      const answers = await Promise.all(asked.map(async function (one) {
+        const search = new URLSearchParams(one.params).toString();
+        return { member: one.member, operation: one.operation,
+          answer: await self.apiJson('GET', one.operation +
+            (search ? '?' + search : '')) };
+      }));
+      const failed = answers.filter(function (one) {
+        return !one.answer || one.answer.status !== 200 || !one.answer.json;
+      })[0];
+      if (failed) {
+        const status = failed.answer ? failed.answer.status : 'unavailable';
+        const detail = failed.answer && failed.answer.json &&
+          failed.answer.json.error
+          ? ' ' + kit.esc(failed.answer.json.error_description ||
+                          failed.answer.json.error) : '';
+        this.draw(WebPages.titleOf(page, this.t), page.path,
+          kit.warn('The management API answered ' + status + ' for <code>' +
+          kit.esc(failed.operation) + '</code>.' + detail,
+          'It could not be drawn'), null);
+        return;
+      }
+      json = Object.assign({}, json);
+      answers.forEach(function (one) {
+        json[one.member] = one.answer.json;
+      });
+    }
+    this.view = { page: page, json: json, query: query };
     this.drawView(null);
   }
 
@@ -1516,20 +1311,7 @@ class ConsoleRuntime {
   // rather than adding one — so `:target` matches the element now in the
   // page. The `popstate` that follows changes neither path nor query, and is
   // left alone (`start()`).
-  /**
-   * Makes the address's fragment the `:target` of the page just drawn.
-   *
-   * @returns nothing
-   */
-  targetFragment(): void {
-    const loc = this.env.location;
-    const hash = String(loc.hash || '');
-    if (!hash || !this.env.history || !loc.replace) {
-      return;
-    }
-    this.env.history.replaceState(null, '', loc.pathname + loc.search);
-    loc.replace(loc.pathname + loc.search + hash);
-  }
+  // `targetFragment()` is `WebPage`'s (#570), inherited.
 
   /**
    * Draws the page in hand again, with what a just-finished act left.
@@ -1760,14 +1542,55 @@ class ConsoleRuntime {
     return one || null;
   }
 
+  // AN UNTICKED CHECKBOX POSTS NOTHING, which the server-drawn console's
+  // handlers read as "no" (a policy save was told `via: 'console'`). An
+  // operation that takes the whole of a thing — Directory → Policies'
+  // profiles, where a save REPLACES the profile and every field is
+  // required — refused a save with any box unticked (rcbj, 2026-10-12:
+  // unticking "Allow a passkey sign-in with no username"). So the names
+  // of the form's unticked boxes are handed to `shapeFields()`, which
+  // sends `false` for each one the operation takes as a boolean.
+  /**
+   * The names of a form's checkboxes that are not ticked, where no box of
+   * that name is.
+   *
+   * @param form - the form element
+   * @returns the names
+   */
+  static uncheckedBoxes(form: Json): string[] {
+    if (!form || typeof form.querySelectorAll !== 'function') {
+      return [];
+    }
+    const boxes = form.querySelectorAll('input[type="checkbox"][name]');
+    const ticked: Json = {};
+    const names: string[] = [];
+    for (let i = 0; i < boxes.length; i++) {
+      // A DISABLED BOX COUNTS TOO: a form leaves it out whether ticked or
+      // not, and Directory → Policies disables a field that cannot be
+      // turned on here (an emailed factor with no mail), whose save still
+      // needs its value — off.
+      const box = boxes[i];
+      if (box.checked) {
+        ticked[box.name] = true;
+      } else if (names.indexOf(box.name) < 0) {
+        names.push(box.name);
+      }
+    }
+    return names.filter(function (name: string) {
+      return !ticked[name];
+    });
+  }
+
   /**
    * Shapes a form's fields to an operation's request schema.
    *
    * @param fields - the form's fields
    * @param schema - the operation's request schema, or null for none
+   * @param unchecked - optional; the form's unticked checkboxes' names, sent
+   *   as `false` where the schema takes that member as a boolean
    * @returns the body to send
    */
-  shapeFields(fields: Json, schema: Json): Json {
+  shapeFields(fields: Json, schema: Json, unchecked?: string[]): Json {
     const self = this;
     if (!schema || !schema.properties) {
       return fields;
@@ -1817,11 +1640,11 @@ class ConsoleRuntime {
       const types = [].concat(prop.type || []);
       let value = fieldsIn[name];
       // AN EMPTY BOX IS AN ABSENT VALUE where the schema could not take an
-      // empty string — a pattern, a minimum length, a type that is not a
-      // string — as the server-rendered console's form parser read it. It
-      // is kept where a string is all the schema asks, so a field can still
-      // be cleared.
-      if (value === '' && (prop.pattern || prop.minLength > 0 ||
+      // empty string — a pattern, a format, a minimum length, a type that is
+      // not a string — as the server-rendered console's form parser read it.
+      // It is kept where a string is all the schema asks, so a field can
+      // still be cleared.
+      if (value === '' && (prop.pattern || prop.format || prop.minLength > 0 ||
                            (types.length && types.indexOf('string') < 0))) {
         return;
       }
@@ -1862,6 +1685,26 @@ class ConsoleRuntime {
         }
       }
       out[name] = value;
+    });
+    (unchecked || []).forEach(function (name: string) {
+      if (name in out || !has(name)) {
+        return;
+      }
+      // ANY MEMBER THAT TAKES A BOOLEAN, whether its `type` says so or a
+      // branch of `oneOf`/`anyOf` does: the policy kinds declare each
+      // yes/no field as a boolean OR a string (`TRUE`/`FALSE` from a form),
+      // and those are exactly the fields the passkey profile refused.
+      const prop = self.deref(schema.properties[name]) || {};
+      const branches = [prop].concat(prop.oneOf || [], prop.anyOf || [])
+        .map(function (one: Json) {
+          return self.deref(one) || {};
+        });
+      const takesBoolean = branches.some(function (one: Json) {
+        return [].concat(one.type || []).indexOf('boolean') >= 0;
+      });
+      if (takesBoolean) {
+        out[name] = false;
+      }
     });
     return out;
   }
@@ -1933,6 +1776,22 @@ class ConsoleRuntime {
     // A FIELD'S SEARCH (#459) is a round trip that needs data: the list
     // operation's page of five, drawn under the box. It writes nothing.
     if (page && this.view && WebAnswers.isFieldSearch(page, fields)) {
+      if (page === WebAnswers.SERVICE_ACCOUNT_PAGE) {
+        await this.ownerSearch(fields);
+        return;
+      }
+      if (page === WebAnswers.GROUP_OWNERS_PAGE) {
+        await this.groupOwnerSearch(fields);
+        return;
+      }
+      if (page === WebAnswers.ROLE_OWNERS_PAGE) {
+        await this.groupOwnerSearch(fields, 'role', 'roleOwners');
+        return;
+      }
+      if (page === WebAnswers.APPLICATION_OWNERS_PAGE) {
+        await this.groupOwnerSearch(fields, 'page', 'applicationOwners');
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }
@@ -1959,7 +1818,8 @@ class ConsoleRuntime {
       this.drawView(null, drawn.banner);
       return;
     }
-    const operation = page ? WebForms.resolve(this.formTable, page, action)
+    const operation = page ? WebForms.resolve(
+      this.formTable, page + target.hash, action)
                            : null;
     const back = this.here().replace(/([?&])(notice|error)=[^&]*/g, '$1')
                             .replace(/[?&]+$/, '');
@@ -1975,7 +1835,8 @@ class ConsoleRuntime {
     const sent = multipart
       ? await this.multipartBody(operation, data)
       : { operation: operation,
-          body: this.shapeFields(fields, await this.requestSchema(operation)) };
+          body: this.shapeFields(fields, await this.requestSchema(operation),
+                                 ConsoleRuntime.uncheckedBoxes(form)) };
     const res = await this.api('POST', sent.operation, sent.body);
     if (!res) {
       return;
@@ -2126,6 +1987,114 @@ class ConsoleRuntime {
     }
   }
 
+  // A SERVICE ACCOUNT'S OWNER SEARCH (#600): the field search's Find,
+  // Previous, Next and Add, for the person page's service account form. The
+  // Users or the Groups list is asked for a page of five, and the form drawn
+  // again from its draft (`state.serviceAccount`) — an Add puts the owner in
+  // the table — with the focus back in the search box. Nothing is written
+  // until the form's Save.
+  /**
+   * Runs an owner search's Find, Previous, Next or Add and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @returns nothing
+   */
+  async ownerSearch(fields: Json): Promise<void> {
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const before = (this.view.json && this.view.json.state) || {};
+    // THE PUSH DESTINATION'S SEARCH (#602) is the same press on the other
+    // list; each keeps the other's results.
+    const kind = asked.attribute === 'destinations' ? 'destinations'
+                                                     : 'owners';
+    let draft = WebAnswers.serviceAccountDraftOf(fields,
+                                                 before.serviceAccount);
+    if (asked.add && kind === 'owners') {
+      draft = WebAnswers.withOwnerAdded(draft, asked.add);
+    }
+    if (asked.add && kind === 'destinations') {
+      draft = WebAnswers.withDestinationUsed(draft, asked.add);
+    }
+    // ON A SERVICE ACCOUNT the table is the account's, written at once
+    // (#602), and the form carries no `owner` rows: what to leave out of a
+    // groups search is what the account holds.
+    const account = this.view.json && this.view.json.serviceAccount;
+    const held = account
+      ? (account.owners || []).map(function (one: Json) {
+        return String(one.dn);
+      })
+      : draft.owners;
+    const answer = await this.apiJson('GET',
+      WebAnswers.fieldSearchPath(kind, asked, held));
+    const found = WebAnswers.fieldSearchFound(kind, asked,
+      answer && answer.status === 200 ? answer.json : null);
+    if (kind === 'destinations') {
+      draft.destFind = found;
+    } else {
+      draft.find = found;
+    }
+    draft.at = kind === 'destinations' ? 'destination' : 'owners';
+    this.view.json = Object.assign({}, this.view.json, {
+      state: Object.assign({}, before, { serviceAccount: draft }) });
+    this.drawView(null, '');
+    const doc = this.env.document;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-' + kind);
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
+  // A GROUP'S OWNER SEARCH (#603): the service account's people-or-groups
+  // search on a group's Owners tab. The Users or the Groups list is asked for
+  // a page of five — a groups search leaving out the group's owners and the
+  // group itself — and the tab drawn again with the results, the focus back
+  // in the box. Nothing is written: the results' Add writes, as an act.
+  /**
+   * Runs a group owner search's Find, Previous or Next and draws the result.
+   *
+   * @param fields - the form's fields, the pressed button's among them
+   * @param holder - optional; the view member holding the owners (`group`,
+   *   or `role` since #604)
+   * @param stateKey - optional; the page state member (`groupOwners`)
+   * @returns nothing
+   */
+  async groupOwnerSearch(fields: Json, holder?: string,
+                         stateKey?: string): Promise<void> {
+    // A ROLE'S (#604) is the same search: the role's view in `role`, its
+    // state in `roleOwners`; a role's DN names nothing a search finds.
+    const asked = WebAnswers.fieldSearchOf(fields);
+    const before = (this.view.json && this.view.json.state) || {};
+    const group = (this.view.json && this.view.json[holder || 'group']) || {};
+    const held = (group.owners || []).map(function (one: Json) {
+      return String(one.dn);
+    }).concat(group.dn ? [String(group.dn)] : []);
+    const answer = await this.apiJson('GET',
+      WebAnswers.fieldSearchPath('owners', asked, held));
+    const found = WebAnswers.fieldSearchFound('owners', asked,
+      answer && answer.status === 200 ? answer.json : null);
+    this.view.json = Object.assign({}, this.view.json, {
+      state: Object.assign({}, before, {
+        [stateKey || 'groupOwners']: { find: found, notice: '',
+                                       error: [] } }) });
+    this.drawView(null, '');
+    const doc = this.env.document;
+    const refocus = function () {
+      const box = doc.getElementById('fgq-owners');
+      if (box && box.focus) {
+        box.focus({ preventScroll: true });
+      }
+    };
+    refocus();
+    if (this.env.window && this.env.window.setTimeout) {
+      this.env.window.setTimeout(refocus, 0);
+    }
+  }
+
   // A FIELD'S SEARCH CLOSES WHEN THE READER MOVES TO ANOTHER FIELD (#462,
   // rcbj: "if they move to another field, minimize it back"). On `focusin`
   // anywhere, every open search cell that does not contain the newly
@@ -2162,6 +2131,8 @@ class ConsoleRuntime {
     }
   }
 
+  // `saveBase64()` is `WebPage`'s (#570), inherited.
+
   /**
    * Saves a response the server said is a file.
    *
@@ -2169,30 +2140,6 @@ class ConsoleRuntime {
    * @param disposition - its Content-Disposition
    * @returns nothing
    */
-  /**
-   * Saves a file an answer carried as base64.
-   *
-   * @param name - its file name
-   * @param mime - its media type
-   * @param base64 - its bytes
-   * @returns nothing
-   */
-  saveBase64(name: string, mime: string, base64: string): void {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const href = URL.createObjectURL(new Blob([bytes], { type: mime }));
-    const a = this.env.document.createElement('a');
-    a.href = href;
-    a.download = name.replace(/[\/\\]/g, '_');
-    this.env.document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(href);
-  }
-
   async save(res: Json, disposition: string): Promise<void> {
     const name = (/filename="?([^";]+)"?/i.exec(disposition) || [])[1] ||
       'download';

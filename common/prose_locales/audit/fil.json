@@ -1,0 +1,1430 @@
+{
+  "audit.categories.authentication.label": {
+    "en": "66880d2d8216260d",
+    "text": "Authentication"
+  },
+  "audit.categories.authentication.what": {
+    "en": "a75d8d51a0eb704d",
+    "text": "May TINANGGAP na credential, sa alinman sa labing-anim na protocol family dito. Itinatala ito sa iisang funnel na dinadaanan na ng bawat isa sa kanila, kaya isang lugar ito at hindi labing-anim. Huling sumali ang SCIM at mas huli pa ang SPIFFE. SCIM: tatlo sa mga scheme na tinatanggap ng mga endpoint nito — Basic, Digest at HOBA — ay nagpapakita ng credential sa bawat request, at ang pagtanggap sa isa ay isang authentication. Hindi lumalabas dito ang tatlo pa nito, dahil ipinagpapatuloy ng bawat isa ang authentication na naitala sa ibang lugar: tinanggap ang access token noong na-issue ito, ang session cookie noong nagsimula ang session nito, at ang client certificate isang beses bawat CONNECTION sa halip na isang beses bawat request. Ang SPIFFE ang ikalabing-anim at umaabot dito sa tatlong paraan: isang X509-SVID na ipinakita sa mutual TLS sa SPIRE Server API (isang beses bawat connection, sa parehong dahilan ng client certificate), isang agent na nag-a-attest, at isang JWT-SVID na na-verify sa ValidateJWTSVID. Hindi kabilang dito ang ma-ISSUE-han ng SVID."
+  },
+  "audit.categories.session.label": {
+    "en": "6fa3cbf451b2a1d5",
+    "text": "Mga session"
+  },
+  "audit.categories.session.what": {
+    "en": "da2cf9fdd76b22ff",
+    "text": "May browser sign-on session na ginawa o tinapos. Pinaghahatian ng OAuth 2.0 / OIDC at WS-Federation, kaya parehong row ang nalilikha ng isang WS-Federation sign-out at ng isang /oauth2/logout."
+  },
+  "audit.categories.directory.label": {
+    "en": "c8f84c3c5378b920",
+    "text": "Directory"
+  },
+  "audit.categories.directory.what": {
+    "en": "1783abc24177bf60",
+    "text": "Ang embedded LDAP directory: mga entry na ginawa, binura, in-update, pinalitan ng pangalan at kinuwery, sa plain 389 man o sa LDAPS 636."
+  },
+  "audit.categories.admin.label": {
+    "en": "ddf870cabeb295ab",
+    "text": "Admin console"
+  },
+  "audit.categories.admin.what": {
+    "en": "84e06d85d9c8036d",
+    "text": "Bawat pahina ng /admin na tiningnan at bawat form na na-post. Kasama ang request na gumuhit sa pahinang binabasa mo."
+  },
+  "audit.categories.api.label": {
+    "en": "60e425d8c33fe555",
+    "text": "Management API"
+  },
+  "audit.categories.api.what": {
+    "en": "71c007163c40d555",
+    "text": "Bawat tawag sa /admin-api, read man o write."
+  },
+  "audit.categories.application.label": {
+    "en": "98e33b0f3104fcf1",
+    "text": "Mga application"
+  },
+  "audit.categories.application.what": {
+    "en": "8a3b5678fb8d56d1",
+    "text": "Isang application — OAuth client, OIDC relying party, SAML service provider, WS-Federation application, WS-Trust relying party, Kerberos service — na nakita sa unang pagkakataon, o may naitalang bago. Katapat ito ng authentication row sa itaas: sinasabi niyon kung SINO, sinasabi nito kung SAAN SILA NAG-SIGN IN. Kadalasang isinusulat ng iisang kilos ang dalawa."
+  },
+  "audit.categories.protocol.label": {
+    "en": "00052adcbc9e9b70",
+    "text": "Mga protocol endpoint"
+  },
+  "audit.categories.protocol.what": {
+    "en": "8a7c104883a4462f",
+    "text": "Lahat ng iba pang HTTP endpoint: ang token endpoint, ang KDC proxy, ang credential endpoint, ang mga metadata document, lahat."
+  },
+  "audit.categories.spiffe.label": {
+    "en": "6d5acbdc8de3d29a",
+    "text": "SPIFFE"
+  },
+  "audit.categories.spiffe.what": {
+    "en": "a3485b52ee7b4222",
+    "text": "Ang tatlong server-side na surface ng SPIFFE: isang SVID na na-mint, isang registration entry na ginawa, binago o binura, isang agent na nag-a-attest, at ang trust bundle na kinukuha o pine-federate. HINDI authentication row ang SVID row — ang ma-ISSUE-han ng credential ay hindi pagpapakita nito — kaya narito ang isang issuance at hindi kailanman sa `authentication`. Ang NASA parehong lugar ay ang credential na IPINAKITA sa isa sa mga surface na ito at tinanggap: isang X509-SVID sa mutual TLS, isang agent na nag-a-attest, isang JWT-SVID na na-validate. Sumusulat din ang mga iyon ng authentication row, sa funnel, gaya ng pagsusulat ng iisang kilos ng mga row sa ilang layer saanman dito."
+  },
+  "audit.categories.signals.label": {
+    "en": "ac7e7751c687c2a8",
+    "text": "Shared Signals"
+  },
+  "audit.categories.signals.what": {
+    "en": "a6fc952d57a89b4d",
+    "text": "Ang Shared Signals Framework: isang stream na napagkasunduan, binago o binura, isang subject na idinagdag o inalis, isang status na gumalaw, at bawat Security Event Token na IPINADALA o TINANGGAP ng serbisyong ito — kasama ang mga tinanggihan ng receiver, na siyang pinakamahalagang row, dahil sa kahulugan pa lang ay hindi nakikita mula sa tumatanggap na dulo ang tinanggihang push."
+  },
+  "audit.categories.authorization.label": {
+    "en": "046aa6d90a3b5a93",
+    "text": "XACML"
+  },
+  "audit.categories.authorization.what": {
+    "en": "4180c00619794c80",
+    "text": "Mga authorization decision: kung ano ang itinanong sa PDP, kung ano ang isinagot nito, at — nang hiwalay — kung ano ang GINAWA ng embedded PEP sa sagot na iyon. Sadyang magkahiwalay na row ang dalawa: ang PDP na nagsasabing Indeterminate at ang deny-biased na PEP na tumatanggi ay iisang pangyayari para sa user at dalawang desisyon ng dalawang component, at kapag hindi sila tugma sa inaasahan ng isang tao, palagi itong dahil isa lang sa kanila ang tinitingnan. Ang mga pagbabago sa policy ay mga LDAP row laban sa ou=policies, hindi mga row dito, dahil ang directory ang repository."
+  },
+  "audit.categories.service.label": {
+    "en": "d677190e0a9990e7",
+    "text": "Serbisyo"
+  },
+  "audit.categories.service.what": {
+    "en": "a7f7b67a23b45276",
+    "text": "Mga pagkabigo ng isang bagay na ginagawa ng serbisyong ito nang kusa sa halip na bilang sagot sa isang request: persistence, koordinasyon sa pagitan ng mga process, ang mga worker pool, paghawak ng key at secret, mga background task at mga outbound request. Bawat row ay may error code."
+  },
+  "audit.categories.mail.label": {
+    "en": "07ed6ccf6bf6393d",
+    "text": "Mail"
+  },
+  "audit.categories.mail.what": {
+    "en": "8e53272332ff4aba",
+    "text": "May mensaheng na-queue, naipadala, na-capture, naging dead letter o tinanggihan (rate ceiling, opt-out, walang address), at ang sariling mga kilos ng mail channel: isang retry, isang test message, isang template na na-save. Pinangangalanan ng row ang recipient at ang kategorya, hindi kailanman ang body."
+  },
+  "audit.actions.authentication.label": {
+    "en": "579808c825684965",
+    "text": "May credential na tinanggap"
+  },
+  "audit.actions.portal.activate.label": {
+    "en": "979387f5c20ade32",
+    "text": "May taong tumapos ng account setup mula sa activation link"
+  },
+  "audit.actions.portal.activate.refused.label": {
+    "en": "b70b90f7c094681b",
+    "text": "May activation link na tinanggihan"
+  },
+  "audit.actions.portal.password.changed.label": {
+    "en": "f1da75066d25fade",
+    "text": "May taong nagpalit ng sarili niyang password"
+  },
+  "audit.actions.authn.password.changed.label": {
+    "en": "d386485290b35131",
+    "text": "May taong nagpalit ng password na kinailangan niyang palitan sa sign-in"
+  },
+  "audit.actions.portal.password.refused.label": {
+    "en": "47f69cc67c7ed68a",
+    "text": "May pagpapalit ng password na tinanggihan"
+  },
+  "audit.actions.portal.password.csrf.label": {
+    "en": "d0d17a1db73fc8e9",
+    "text": "May portal form na tinanggihan dahil sa maling CSRF token"
+  },
+  "audit.actions.portal.signout.label": {
+    "en": "3cacdea93eb86a99",
+    "text": "May taong nag-sign out sa user portal"
+  },
+  "audit.actions.portal.signout.csrf.label": {
+    "en": "5c6a2c095c428958",
+    "text": "May portal sign-out na tinanggihan dahil sa maling CSRF token"
+  },
+  "audit.actions.portal.key.enrolled.label": {
+    "en": "a3f3da7733b18c08",
+    "text": "May taong nag-enrol ng security key sa sarili niyang account"
+  },
+  "audit.actions.portal.key.removed.label": {
+    "en": "9df626538a846900",
+    "text": "May taong nag-alis ng security key sa sarili niyang account"
+  },
+  "audit.actions.portal.key.renamed.label": {
+    "en": "60304bcfd89153d4",
+    "text": "May taong nagpalit ng pangalan ng isa sa sarili niyang mga passkey"
+  },
+  "audit.actions.portal.tls-client.issued.label": {
+    "en": "76a5695181ec00c2",
+    "text": "May taong nag-issue sa sarili ng TLS client certificate"
+  },
+  "audit.actions.portal.tls-client.revoked.label": {
+    "en": "e21ff5a6b5510412",
+    "text": "May taong nag-revoke ng isa sa sarili niyang mga TLS client certificate"
+  },
+  "audit.actions.activation.issued.label": {
+    "en": "5889a60b1396424b",
+    "text": "May administrator na nag-issue ng activation link"
+  },
+  "audit.actions.portal.password-reset.label": {
+    "en": "92c286943e08eabe",
+    "text": "May taong nagtakda ng bagong password mula sa password reset link"
+  },
+  "audit.actions.portal.password-reset.refused.label": {
+    "en": "23968f6638f00db4",
+    "text": "May password reset link na tinanggihan"
+  },
+  "audit.actions.authn.mfa.enrolment.required.label": {
+    "en": "7c0e0aaea8f8b2c4",
+    "text": "May sign-in na hiniling na mag-set up ng kinakailangang second factor"
+  },
+  "audit.actions.authn.mfa.enrolment.started.label": {
+    "en": "209d46dc07311972",
+    "text": "May authenticator app secret na ipinakita sa sign-in"
+  },
+  "audit.actions.authn.mfa.enrolment.offered.label": {
+    "en": "1ed9cdf1827f2e5b",
+    "text": "May administrator na walang second factor na inalok ng isa"
+  },
+  "audit.actions.authn.mfa.enrolment.declined.label": {
+    "en": "ba0e0e725746bbf3",
+    "text": "May administrator na hindi pinansin ang alok at nag-sign in gamit ang password"
+  },
+  "audit.actions.authn.second-factor.skipped.label": {
+    "en": "8ea4bca1ff36014e",
+    "text": "May naaalalang browser na pumalit sa second factor (#265)"
+  },
+  "audit.actions.authn.mfa.enrolment.at-risk.label": {
+    "en": "c9d54d1c53954c0d",
+    "text": "May second factor na na-set up sa sign-in na may mataas na risk"
+  },
+  "audit.actions.authn.mfa.enrolled.label": {
+    "en": "9f66bf08890386c9",
+    "text": "May taong nag-set up ng kinakailangang second factor sa sign-in"
+  },
+  "audit.actions.authn.sign-in.started-over.label": {
+    "en": "2773b5e084cf4499",
+    "text": "May umalis sa isang hakbang ng pag-sign in at nagsimula muli"
+  },
+  "audit.actions.portal.mfa.started.label": {
+    "en": "d51f6daad15168fd",
+    "text": "May taong pinakitaan ng bagong authenticator-app secret"
+  },
+  "audit.actions.portal.mfa.enrolled.label": {
+    "en": "06603e0b57ab3156",
+    "text": "May taong nag-set up ng authenticator app sa sarili niyang account"
+  },
+  "audit.actions.portal.mfa.refused.label": {
+    "en": "2118006526a28182",
+    "text": "May authenticator-app setup na hindi nakumpirma"
+  },
+  "audit.actions.portal.mfa.removed.label": {
+    "en": "5bb7d0985ef3e565",
+    "text": "May taong nag-alis ng authenticator app sa sarili niyang account"
+  },
+  "audit.actions.portal.mfa.csrf.label": {
+    "en": "228f7d738861aa3c",
+    "text": "May pagbabago sa authenticator-app na tinanggihan dahil sa maling CSRF token"
+  },
+  "audit.actions.portal.activate.mfa.started.label": {
+    "en": "df561a24375c8165",
+    "text": "May authenticator-app secret na ipinakita habang ginagamit ang isang activation link"
+  },
+  "audit.actions.portal.activate.mfa.refused.label": {
+    "en": "7a566c67501c3cbf",
+    "text": "May authenticator app na hindi nakumpirma habang nag-a-activate"
+  },
+  "audit.actions.portal.activate.key.started.label": {
+    "en": "df93eecfc112a97a",
+    "text": "May security key ceremony na sinimulan habang ginagamit ang isang activation link"
+  },
+  "audit.actions.portal.activate.key.enrolled.label": {
+    "en": "6f06ac6bc8ba305b",
+    "text": "May security key na nairehistro habang ginagamit ang isang activation link"
+  },
+  "audit.actions.portal.activate.key.refused.label": {
+    "en": "0a96c72ca7f0d27e",
+    "text": "May security key na hindi nairehistro habang nag-a-activate"
+  },
+  "audit.actions.session.start.label": {
+    "en": "e88b0f8f798c2f1f",
+    "text": "May sign-on session na ginawa"
+  },
+  "audit.actions.session.end.label": {
+    "en": "4edfa53f58db7a9b",
+    "text": "May sign-on session na tinapos"
+  },
+  "audit.actions.session.renew.label": {
+    "en": "0bfd5e67a3f0fdc2",
+    "text": "May hosted surface na nag-renew ng mga token nito sa loob ng parehong session"
+  },
+  "audit.actions.logout.global.label": {
+    "en": "db32c1466e054343",
+    "text": "Tinapos ang lahat ng hawak para sa isang identity, sa bawat protocol"
+  },
+  "audit.actions.logout.selective.label": {
+    "en": "e291d5be7d6ee6b6",
+    "text": "Tinapos ang mga pinangalanang session o credential para sa isang identity"
+  },
+  "audit.actions.logout.backchannel.label": {
+    "en": "8814d3131ad9808b",
+    "text": "May back-channel Logout Token na nakarating sa relying party, o tuluyang hindi nakarating"
+  },
+  "audit.actions.mail.queued.label": {
+    "en": "b3de8ca7af29b8f6",
+    "text": "May mensaheng na-queue para sa isang recipient"
+  },
+  "audit.actions.mail.sent.label": {
+    "en": "fa6f816945723d59",
+    "text": "May mensaheng tinanggap ng transport, o na-capture"
+  },
+  "audit.actions.mail.dead.label": {
+    "en": "9af6832caf6ce8ab",
+    "text": "May mensaheng hindi naihatid at isa nang dead letter"
+  },
+  "audit.actions.mail.refused.label": {
+    "en": "ad552eb0de5cd96e",
+    "text": "May mensaheng hindi na-queue (rate ceiling, opt-out, walang address, walang transport)"
+  },
+  "audit.actions.mail.reset-requested.label": {
+    "en": "96d00a4e43d335ab",
+    "text": "May taong humingi ng self-service password reset link; sinasabi ng row kung may naipadala, at hindi kailanman ito sinasabi ng form"
+  },
+  "audit.actions.mail.retry.label": {
+    "en": "bf173570a8065c71",
+    "text": "May dead letter na muling na-queue ng isang administrator"
+  },
+  "audit.actions.mail.template.label": {
+    "en": "e647419ca1d6ef3f",
+    "text": "May message template ng isang realm na na-save o na-reset"
+  },
+  "audit.actions.mail.verified.label": {
+    "en": "3b2f440c71a1db39",
+    "text": "May taong nag-verify ng address sa kanyang entry"
+  },
+  "audit.actions.mail.preferences.label": {
+    "en": "3bcffd401e71abf8",
+    "text": "May taong nagbago kung aling mga opsyonal na mensahe ang natatanggap niya"
+  },
+  "audit.actions.scheduler.run.label": {
+    "en": "cd8826405462df3b",
+    "text": "May scheduled job na tumakbo, na-queue nang mano-mano, o inako"
+  },
+  "audit.actions.scheduler.step-down.label": {
+    "en": "c632cf6ff6fe1c5f",
+    "text": "Hiniling sa leader ng scheduler na bumaba"
+  },
+  "audit.actions.keys.rotate.label": {
+    "en": "d6193043627c50dd",
+    "text": "Na-rotate ang mga signing key ng isang realm"
+  },
+  "audit.actions.keys.rotate.emergency.label": {
+    "en": "d17d27c22826e4ce",
+    "text": "Na-rotate ang mga signing key ng isang realm dahil sa EMERGENCY: mga certificate na na-revoke dahil sa keyCompromise, mga session na tinapos"
+  },
+  "audit.actions.application.secret-expiring.label": {
+    "en": "cb6de4ce226bc1a6",
+    "text": "Malapit nang mag-expire ang client secret ng isang application"
+  },
+  "audit.actions.application.secret-expired.label": {
+    "en": "5f2e200ae7ddf231",
+    "text": "Nag-expire na ang client secret ng isang application"
+  },
+  "audit.actions.keys.retire.label": {
+    "en": "04a39be278dba264",
+    "text": "Tinanggal ang mga retiradong signing key na lampas na sa kanilang grace"
+  },
+  "audit.actions.keys.data-key-rotate.label": {
+    "en": "a92aef70eea08562",
+    "text": "Na-rotate ang mga data encryption key"
+  },
+  "audit.actions.keys.data-key-reencrypt.label": {
+    "en": "d0f2b55086c5b0cc",
+    "text": "Muling na-seal ang mga value na nasa ilalim ng mga napalitang data encryption key"
+  },
+  "audit.actions.keys.data-key-destroy.label": {
+    "en": "2cd8ec4e418d90bd",
+    "text": "Sinira ang mga napalitang data encryption key na wala nang naka-seal sa ilalim"
+  },
+  "audit.actions.keys.kek-rotate.label": {
+    "en": "45a347f68e6cd67b",
+    "text": "Na-rotate ang key-encryption key sa key management service nito at muling na-wrap ang mga data key"
+  },
+  "audit.actions.keys.pin.label": {
+    "en": "d76686444b21987a",
+    "text": "May key pair na na-pin bilang signing key ng isang realm para sa isang algorithm"
+  },
+  "audit.actions.keys.unpin.label": {
+    "en": "54192b081654a36e",
+    "text": "May naka-pin na signing key na na-unpin; ang ginawang key na ulit ang pumipirma"
+  },
+  "audit.actions.oidfed.key-minted.label": {
+    "en": "757374057c690128",
+    "text": "Nagawa ang unang Federation Entity Key ng isang realm"
+  },
+  "audit.actions.oidfed.key-rotated.label": {
+    "en": "421ae5fd8aeff013",
+    "text": "Na-rotate ang Federation Entity Key ng isang realm"
+  },
+  "audit.actions.oidfed.key-revoked.label": {
+    "en": "d44e60f7c3b5dfd2",
+    "text": "May Federation Entity Key na na-revoke"
+  },
+  "audit.actions.oidfed.subordinate-set.label": {
+    "en": "9bed214a635cd3f6",
+    "text": "May entity na nairehistro bilang federation subordinate"
+  },
+  "audit.actions.oidfed.subordinate-removed.label": {
+    "en": "0c067c73e73448f8",
+    "text": "May federation subordinate na inalis"
+  },
+  "audit.actions.oidfed.anchor-set.label": {
+    "en": "ead499e281c4e6de",
+    "text": "May federation Trust Anchor na na-configure"
+  },
+  "audit.actions.oidfed.anchor-removed.label": {
+    "en": "2b7251797963c5ef",
+    "text": "May federation Trust Anchor na inalis"
+  },
+  "audit.actions.oidfed.mark-type-set.label": {
+    "en": "9e9372675eaa32ad",
+    "text": "May Trust Mark type na nairehistro para i-issue"
+  },
+  "audit.actions.oidfed.remove-mark-type.label": {
+    "en": "835f965dca447e5d",
+    "text": "May Trust Mark type na tumigil nang i-issue"
+  },
+  "audit.actions.oidfed.mark-policy-set.label": {
+    "en": "d5ab1ca537a13651",
+    "text": "Naitakda ang policy ng isang Trust Anchor para sa isang Trust Mark type"
+  },
+  "audit.actions.oidfed.remove-mark-policy.label": {
+    "en": "9dccb0790296dce2",
+    "text": "Inalis ang policy ng isang Trust Anchor para sa isang Trust Mark type"
+  },
+  "audit.actions.oidfed.mark-issued.label": {
+    "en": "e64f13f3406e1762",
+    "text": "May Trust Mark na na-issue"
+  },
+  "audit.actions.oidfed.mark-revoked.label": {
+    "en": "6f2328d050fa14d0",
+    "text": "May Trust Mark na na-revoke"
+  },
+  "audit.actions.oidfed.held-mark-added.label": {
+    "en": "c74d829506487db2",
+    "text": "May Trust Mark na na-issue sa realm na idinagdag sa Entity Configuration nito"
+  },
+  "audit.actions.oidfed.held-mark-removed.label": {
+    "en": "95a2ca1dbc9523c2",
+    "text": "May dala-dalang Trust Mark na inalis"
+  },
+  "audit.actions.oidfed.act-refused.label": {
+    "en": "401bfc3383109058",
+    "text": "May OpenID Federation na kilos na tinanggihan dahil sa input nito"
+  },
+  "audit.actions.oidfed.resolved.label": {
+    "en": "f143a7ceda9e1a0a",
+    "text": "May administrator na nag-resolve ng Trust Chain ng isang entity"
+  },
+  "audit.actions.device.create.label": {
+    "en": "3db68946dc0a58b8",
+    "text": "May device na nairehistro"
+  },
+  "audit.actions.device.browser.remembered.label": {
+    "en": "49ff1994e426c867",
+    "text": "May taong humiling na tandaan ang browser na ito (#265)"
+  },
+  "audit.actions.device.update.label": {
+    "en": "3bc1ce21da5ded97",
+    "text": "May device na binago: ang label, may-ari, mga application o status nito"
+  },
+  "audit.actions.device.delete.label": {
+    "en": "65e418409a57cb08",
+    "text": "May device na inalis"
+  },
+  "audit.actions.device.evict.label": {
+    "en": "b1cb118450f0fbef",
+    "text": "May device na inalis para magkaroon ng puwang sa limit ng may-ari nito"
+  },
+  "audit.actions.device.attestation-revoked.label": {
+    "en": "3571d30810b2d9c7",
+    "text": "Hindi na attested ang isang device key: binabawi ng Android attestation status list ng Google ang chain nito"
+  },
+  "audit.actions.webauthn.attestation-revoked.label": {
+    "en": "0be46b8b29aaf446",
+    "text": "Hindi na pinagkakatiwalaan ang attestation ng isang security key: binabawi ng Android attestation status list ng Google ang chain nito"
+  },
+  "audit.actions.device.key-add.label": {
+    "en": "6c1b2513c20532ef",
+    "text": "May key na idinagdag sa isang device"
+  },
+  "audit.actions.device.key-remove.label": {
+    "en": "edae701aed965cc2",
+    "text": "May key na inalis sa isang device"
+  },
+  "audit.actions.device.compliance.label": {
+    "en": "60bbcc3da44c2094",
+    "text": "Naitakda ang compliance ng isang device"
+  },
+  "audit.actions.device.enrol.refused.label": {
+    "en": "9dd9615a103316c6",
+    "text": "May device key na walang na-verify na attestation na tinanggihan"
+  },
+  "audit.actions.user.create.label": {
+    "en": "3598d15a7df16d24",
+    "text": "May user na ginawa"
+  },
+  "audit.actions.user.delete.label": {
+    "en": "6577ec900f17cf27",
+    "text": "May user na binura"
+  },
+  "audit.actions.user.update.label": {
+    "en": "49d84d7d40f82651",
+    "text": "May user na in-update"
+  },
+  "audit.actions.user.rename.label": {
+    "en": "13b017cf352d6b64",
+    "text": "May user na pinalitan ng pangalan"
+  },
+  "audit.actions.cells.rehome.label": {
+    "en": "5d1b93eaa6c979c6",
+    "text": "May taong inilipat sa ibang cell"
+  },
+  "audit.actions.user.query.label": {
+    "en": "e3ae11dd4e3fe2c4",
+    "text": "May search na nagbalik ng kahit isang user"
+  },
+  "audit.actions.group.create.label": {
+    "en": "58d10c676bac86f0",
+    "text": "May group na ginawa"
+  },
+  "audit.actions.group.delete.label": {
+    "en": "c09f3ad40bb637a6",
+    "text": "May group na binura"
+  },
+  "audit.actions.group.update.label": {
+    "en": "7b8bdc21120a364b",
+    "text": "May group na in-update"
+  },
+  "audit.actions.group.rename.label": {
+    "en": "7249c5235cd5c992",
+    "text": "May group na pinalitan ng pangalan"
+  },
+  "audit.actions.entry.create.label": {
+    "en": "d15a6deade1530ee",
+    "text": "May entry sa ibang bahagi ng tree na ginawa"
+  },
+  "audit.actions.entry.delete.label": {
+    "en": "7c1e5a26bd61edeb",
+    "text": "May entry sa ibang bahagi ng tree na binura"
+  },
+  "audit.actions.entry.update.label": {
+    "en": "a04e6a7c2bb7c122",
+    "text": "May entry sa ibang bahagi ng tree na in-update"
+  },
+  "audit.actions.entry.rename.label": {
+    "en": "ca4b7726b4ea6fc4",
+    "text": "May entry sa ibang bahagi ng tree na pinalitan ng pangalan"
+  },
+  "audit.actions.directory.search.label": {
+    "en": "1846cbca767766ec",
+    "text": "Isang search na walang ibinalik na user"
+  },
+  "audit.actions.directory.compare.label": {
+    "en": "3045c116ef8b9c13",
+    "text": "May attribute value na ikinumpara"
+  },
+  "audit.actions.directory.bind.label": {
+    "en": "df3057c73cc1b56c",
+    "text": "Isang bind"
+  },
+  "audit.actions.application.create.label": {
+    "en": "24f5ef2da42260cf",
+    "text": "May application na nakita sa unang pagkakataon"
+  },
+  "audit.actions.application.secret-revealed.label": {
+    "en": "8f3f50eb41e457f1",
+    "text": "May credential ng isang application na ipinakita sa isang administrator"
+  },
+  "audit.actions.application.export.label": {
+    "en": "6cf3b675c20a94b9",
+    "text": "May application na na-export sa isang LDIF file"
+  },
+  "audit.actions.application.import.label": {
+    "en": "11baa5a45c403972",
+    "text": "May application na na-import mula sa isang LDIF file"
+  },
+  "audit.actions.application.add-owner.label": {
+    "en": "5fb5f4fb1a5e6255",
+    "text": "May idinagdag na may-ari sa isang application"
+  },
+  "audit.actions.application.remove-owner.label": {
+    "en": "74db31f6ed42d060",
+    "text": "May inalis na may-ari sa isang application"
+  },
+  "audit.actions.application.update.label": {
+    "en": "fdd9e6c7aff9da36",
+    "text": "May application na nagtala ng bago"
+  },
+  "audit.actions.consent.grant.label": {
+    "en": "b293aef893d9084c",
+    "text": "May taong pumayag sa mga scope ng isang application"
+  },
+  "audit.actions.consent.deny.label": {
+    "en": "39e3064d53842768",
+    "text": "May taong tumanggi sa mga scope ng isang application"
+  },
+  "audit.actions.consent.revoke.label": {
+    "en": "3f62e1d9194a46d3",
+    "text": "May naitalang consent na binawi"
+  },
+  "audit.actions.application.delete.label": {
+    "en": "d0041a29161906a3",
+    "text": "May application na binura sa registry"
+  },
+  "audit.actions.oidfed.registered.label": {
+    "en": "477befa37c2832e8",
+    "text": "May relying party na nairehistro sa pamamagitan ng isang OpenID Federation"
+  },
+  "audit.actions.oidfed.registration-refused.label": {
+    "en": "da4aeca7dea3666c",
+    "text": "May registration sa pamamagitan ng isang OpenID Federation na tinanggihan"
+  },
+  "audit.actions.admin.view.label": {
+    "en": "0e19d702f1b129e8",
+    "text": "May console page na tiningnan"
+  },
+  "audit.actions.admin.change.label": {
+    "en": "cfd6adfa05969133",
+    "text": "May console form na na-post"
+  },
+  "audit.actions.claims.change.label": {
+    "en": "34e69552072a4ab5",
+    "text": "May claim set ng token o assertion na binago"
+  },
+  "audit.actions.admin.role.change.label": {
+    "en": "01b01e9a91df66f7",
+    "text": "May admin console role na ibinigay o binawi"
+  },
+  "audit.actions.admin.console.bootstrap.label": {
+    "en": "fb5ea855b492ffb3",
+    "text": "Na-seed ang bootstrap administrator, o unang nag-sign in sa console"
+  },
+  "audit.actions.admin.mail.set.label": {
+    "en": "00a6e30371abdc2d",
+    "text": "Naitakda ng isang administrator ang address ng isang tao"
+  },
+  "audit.actions.admin.mfa.totp.cleared.label": {
+    "en": "478c7ee15248637f",
+    "text": "May operator na nag-clear ng authenticator app ng isang tao"
+  },
+  "audit.actions.admin.mfa.key.cleared.label": {
+    "en": "d62700d9f7751e8b",
+    "text": "May operator na nag-alis ng security key ng isang tao"
+  },
+  "audit.actions.admin.mfa.key.renamed.label": {
+    "en": "c179dbd3cb227763",
+    "text": "May operator na nagpalit ng pangalan ng passkey ng isang tao"
+  },
+  "audit.actions.admin.password.reset.label": {
+    "en": "079b0b2fbe1a3633",
+    "text": "May operator na nag-reset ng password ng isang tao"
+  },
+  "audit.actions.admin.password.reset-link.label": {
+    "en": "852a4863afb8c14c",
+    "text": "May operator na nag-issue sa isang tao ng password reset link"
+  },
+  "audit.actions.admin.mfa.primary-keys.removed.label": {
+    "en": "862aab6d15756275",
+    "text": "May operator na nag-disable ng passwordless sign-in ng isang tao"
+  },
+  "audit.actions.admin.mfa.disabled.label": {
+    "en": "3173c5ea3812f14e",
+    "text": "May operator na nag-alis ng bawat second factor na hawak ng isang tao"
+  },
+  "audit.actions.admin.mfa.required.label": {
+    "en": "26c5d8ef5b36a4ad",
+    "text": "May operator na nag-require ng second factor sa isang tao"
+  },
+  "audit.actions.admin.mfa.unrequired.label": {
+    "en": "e9ee0fbe15904e35",
+    "text": "May operator na tumigil sa pag-require ng second factor sa isang tao"
+  },
+  "audit.actions.admin.delegation.not-delegated.label": {
+    "en": "305dc1462bc75cc4",
+    "text": "May operator na nagmarka sa isang tao bilang hindi puwedeng i-delegate, o nag-clear nito"
+  },
+  "audit.actions.admin.delegation.may-act.label": {
+    "en": "2d5a617736d0c319",
+    "text": "May operator na nagpangalan o nag-clear ng party na puwedeng kumilos para sa isang tao"
+  },
+  "audit.actions.admin.delegation.semantics.label": {
+    "en": "370cb73f7a19a60b",
+    "text": "May operator na nagtakda ng delegation semantics na pinapayagan ng isang tao, o ng default nito (#186)"
+  },
+  "audit.actions.portal.delegation.may-act.label": {
+    "en": "faa7f1245749fea5",
+    "text": "May taong nagpangalan o nag-clear ng party na puwedeng kumilos para sa kanya"
+  },
+  "audit.actions.admin.password-policy.change.label": {
+    "en": "3919c9c6efb6ee77",
+    "text": "May password policy profile na binago"
+  },
+  "audit.actions.admin.authn-policy.change.label": {
+    "en": "be6362a1a19bae26",
+    "text": "May authentication policy profile na binago"
+  },
+  "audit.actions.admin.locale-policy.change.label": {
+    "en": "4dfe507526bb6dd5",
+    "text": "May locale policy profile na binago"
+  },
+  "audit.actions.authn.mail-factor.change.label": {
+    "en": "4f4ca73f8a45e801",
+    "text": "May emailed second factor na in-on o in-off"
+  },
+  "audit.actions.authn.mail-factor.sent.label": {
+    "en": "995183f127e13d83",
+    "text": "May emailed na sign-in code o link na naipadala"
+  },
+  "audit.actions.authn.mail-factor.accepted.label": {
+    "en": "4efa82bd5d58ca32",
+    "text": "May emailed na sign-in code o link na tinanggap"
+  },
+  "audit.actions.authn.mail-factor.refused.label": {
+    "en": "7c4eb49623da157f",
+    "text": "May emailed na sign-in code o link na tinanggihan"
+  },
+  "audit.actions.admin.truststore.change.label": {
+    "en": "feb59a61d26db396",
+    "text": "May client-certificate trust anchor na idinagdag o inalis"
+  },
+  "audit.actions.krb5.keys.derived.label": {
+    "en": "048452fd758565c6",
+    "text": "Kinuha mula sa password ng isang tao ang kanyang mga Kerberos key"
+  },
+  "audit.actions.admin.krb5.keys.cleared.label": {
+    "en": "a9405f7ee523fd30",
+    "text": "May operator na nag-clear ng mga Kerberos key ng isang tao"
+  },
+  "audit.actions.admin.krb5.service.created.label": {
+    "en": "c81b1d8c217579ec",
+    "text": "May Kerberos service principal na ginawa na may random na key"
+  },
+  "audit.actions.admin.krb5.service.rotated.label": {
+    "en": "322d960ee729793c",
+    "text": "Na-rotate ang key ng isang Kerberos service principal"
+  },
+  "audit.actions.admin.krb5.service.deleted.label": {
+    "en": "e9d7662a459d7ad5",
+    "text": "Binura ang naka-store na key ng isang Kerberos service principal"
+  },
+  "audit.actions.admin.krb5.previous.dropped.label": {
+    "en": "1016d50b8a7601b9",
+    "text": "May operator na nagtanggal ng mga dating bersyon ng Kerberos key na itinatago pa ng isang tao o ng isang service principal"
+  },
+  "audit.actions.api.read.label": {
+    "en": "5d856ba543153b94",
+    "text": "Isang read sa management API"
+  },
+  "audit.actions.api.change.label": {
+    "en": "258c82b64e15408a",
+    "text": "Isang write sa management API"
+  },
+  "audit.actions.protocol.call.label": {
+    "en": "9f6c67e10d66e597",
+    "text": "May protocol endpoint na tinawag"
+  },
+  "audit.actions.oauth.token.revoke.label": {
+    "en": "b95aa059ba49c87d",
+    "text": "May client na nag-revoke ng OAuth 2.0 token sa /oauth2/revoke, o tinanggihan sa token ng ibang client"
+  },
+  "audit.actions.protocol.failure.label": {
+    "en": "7a4b45f0a9763acd",
+    "text": "May protocol operation na tinanggihan o nabigo"
+  },
+  "audit.actions.service.failure.label": {
+    "en": "20f1fa365cfbca21",
+    "text": "Nabigo ang isang bagay na ginagawa ng serbisyong ito nang kusa"
+  },
+  "audit.actions.spiffe.svid.issue.label": {
+    "en": "f6a1c6d754b03f45",
+    "text": "May SVID na na-issue"
+  },
+  "audit.actions.spiffe.svid.validate.label": {
+    "en": "2985e02244f967c8",
+    "text": "May JWT-SVID na na-validate"
+  },
+  "audit.actions.spiffe.entry.create.label": {
+    "en": "9949b94180356b54",
+    "text": "May registration entry na ginawa"
+  },
+  "audit.actions.spiffe.entry.update.label": {
+    "en": "4d768a07aee4e2c9",
+    "text": "May registration entry na binago"
+  },
+  "audit.actions.spiffe.entry.delete.label": {
+    "en": "53297b800cad6afc",
+    "text": "May registration entry na binura"
+  },
+  "audit.actions.spiffe.agent.create.label": {
+    "en": "3d5c2896da415cbe",
+    "text": "May agent na nag-attest sa unang pagkakataon"
+  },
+  "audit.actions.spiffe.agent.attest.label": {
+    "en": "2878b0a388b202ab",
+    "text": "May agent na muling nag-attest"
+  },
+  "audit.actions.spiffe.agent.ban.label": {
+    "en": "da40021ba677279f",
+    "text": "May agent na na-ban"
+  },
+  "audit.actions.spiffe.agent.unban.label": {
+    "en": "77326a7c253442bb",
+    "text": "May agent na na-unban"
+  },
+  "audit.actions.spiffe.agent.delete.label": {
+    "en": "d7b8483047ba641e",
+    "text": "May agent na binura"
+  },
+  "audit.actions.spiffe.bundle.read.label": {
+    "en": "7f6e38b4ab094630",
+    "text": "Kinuha ang trust bundle"
+  },
+  "audit.actions.spiffe.bundle.change.label": {
+    "en": "61fe1f3cbe80f39c",
+    "text": "May authority na na-rotate, o may federated bundle na naitakda o inalis"
+  },
+  "audit.actions.spiffe.call.refuse.label": {
+    "en": "40d52233dda92cda",
+    "text": "May tawag sa SPIRE Server API na tinanggihan dahil sa kung sino ang tumatawag"
+  },
+  "audit.actions.xacml.decision.label": {
+    "en": "8930a657b99988a7",
+    "text": "Nakarating ang PDP sa isang desisyon"
+  },
+  "audit.actions.xacml.enforcement.label": {
+    "en": "d9fe267d0aae76d6",
+    "text": "Ipinatupad ng embedded PEP ang isang desisyon"
+  },
+  "audit.actions.xacml.issuance.refused.label": {
+    "en": "f1b5bcbea74861a0",
+    "text": "Tumanggi ang issuance PEP na hayaan ang serbisyong ito na mag-mint ng isang bagay"
+  },
+  "audit.actions.xacml.access.refused.label": {
+    "en": "82838f9e909973d8",
+    "text": "Tinanggihan ng access PEP ang isang request sa isang gated surface"
+  },
+  "audit.actions.xacml.issuance.alarm.label": {
+    "en": "38060f35597fa37d",
+    "text": "Pinalusot ng issuance PEP ang mataas na risk, nang walang factor na mapag-step-up-an, para sa application na hindi kailanman puwedeng ma-lock out ng risk"
+  },
+  "audit.actions.xacml.pep.register.label": {
+    "en": "f6687cc2fa5b3bac",
+    "text": "May remote Policy Enforcement Point na nagrehistro"
+  },
+  "audit.actions.xacml.pep.certificate.label": {
+    "en": "419007622035492d",
+    "text": "May remote PEP na na-issue-han ng HTTPS listener certificate"
+  },
+  "audit.actions.xacml.pip.query.label": {
+    "en": "af3eace9dacb68c6",
+    "text": "May remote PEP na nagtanong sa PIP ng mga attribute ng isang subject"
+  },
+  "audit.actions.saml2.request.signature.label": {
+    "en": "2c3788ba6491a142",
+    "text": "Sinuri ang request signature ng isang SAML 2.0 service provider"
+  },
+  "audit.actions.gnap.grant.request.label": {
+    "en": "76968511df03acf3",
+    "text": "May GNAP grant na hiniling"
+  },
+  "audit.actions.gnap.grant.consent.label": {
+    "en": "c353731b459990c0",
+    "text": "May resource owner na nag-apruba ng GNAP grant"
+  },
+  "audit.actions.gnap.grant.deny.label": {
+    "en": "55de39fc99dc456d",
+    "text": "May resource owner na hindi nag-apruba ng GNAP grant"
+  },
+  "audit.actions.gnap.grant.approve.label": {
+    "en": "d2aa94094296bd99",
+    "text": "May GNAP grant na naaprubahan at inilabas ang mga token nito"
+  },
+  "audit.actions.gnap.grant.revoke.label": {
+    "en": "5fb758cf8f654e10",
+    "text": "May GNAP grant na na-revoke"
+  },
+  "audit.actions.gnap.grant.owner-queued.label": {
+    "en": "27d7c634cbbfeeca",
+    "text": "May GNAP grant na naghihintay ng apruba ng wala roong resource owner nito sa portal (#432 phase 6)"
+  },
+  "audit.actions.gnap.grant.forward.label": {
+    "en": "9756220c110d11f1",
+    "text": "Ang tao sa GNAP approval page ay hindi ang user na pinangalanan ng request, at ipinadala ang grant sa portal ng user na iyon (#432 phase 6)"
+  },
+  "audit.actions.gnap.grant.finalize.label": {
+    "en": "fee9afbd448956f2",
+    "text": "May GNAP grant na na-finalize, kasama ang dahilan: issued, revoked, rejected o expired"
+  },
+  "audit.actions.gnap.token.issue.label": {
+    "en": "01a8a01e0a6de666",
+    "text": "May GNAP access token na na-issue"
+  },
+  "audit.actions.gnap.token.rotate.label": {
+    "en": "2577dadbfe39e706",
+    "text": "May GNAP access token na na-rotate"
+  },
+  "audit.actions.gnap.token.revoke.label": {
+    "en": "400717d57ee49589",
+    "text": "May GNAP access token na na-revoke"
+  },
+  "audit.actions.gnap.rs.introspect.label": {
+    "en": "95163051792199f3",
+    "text": "May resource server na nag-introspect ng GNAP access token"
+  },
+  "audit.actions.gnap.rs.register.label": {
+    "en": "616528ec363696a9",
+    "text": "May resource server na nagrehistro ng GNAP resource set"
+  },
+  "audit.actions.ssf.stream.create.label": {
+    "en": "3d4873ca2f3e8a95",
+    "text": "May Shared Signals stream na ginawa"
+  },
+  "audit.actions.ssf.stream.update.label": {
+    "en": "153bad40b9661b0f",
+    "text": "May Shared Signals stream na binago"
+  },
+  "audit.actions.ssf.stream.delete.label": {
+    "en": "ab202e818b58bb83",
+    "text": "May Shared Signals stream na binura"
+  },
+  "audit.actions.ssf.stream.status.label": {
+    "en": "b7b5eb76ca067916",
+    "text": "May stream na in-enable, in-pause o in-disable"
+  },
+  "audit.actions.ssf.subject.change.label": {
+    "en": "b5aedc901f3aa327",
+    "text": "May subject na idinagdag sa o inalis mula sa isang stream"
+  },
+  "audit.actions.ssf.event.transmit.label": {
+    "en": "3a3cd80f6d3a215a",
+    "text": "May Security Event Token na naihatid sa isang receiver"
+  },
+  "audit.actions.ssf.event.refused.label": {
+    "en": "29910e5a49b21a0c",
+    "text": "May receiver na tumanggi sa isang Security Event Token"
+  },
+  "audit.actions.ssf.stream.dead.label": {
+    "en": "06c053574e130b1a",
+    "text": "May push stream na idineklarang dead matapos ang puro bigong push"
+  },
+  "audit.actions.ssf.stream.revived.label": {
+    "en": "bb572a202bd6c70a",
+    "text": "May dead na push stream na binuhay muli"
+  },
+  "audit.actions.ssf.deadletter.clear.label": {
+    "en": "1caaf3043e122f70",
+    "text": "Mano-manong inalisan ng laman ang dead-letter queue ng isang stream"
+  },
+  "audit.actions.ssf.event.receive.label": {
+    "en": "12ab6669f5a136e8",
+    "text": "May Security Event Token na ipinush SA serbisyong ito"
+  },
+  "audit.actions.caep.event.auto.label": {
+    "en": "b5f40accc5e9e150",
+    "text": "May CAEP event na naging due dahil nagbago ang isang session"
+  },
+  "audit.actions.caep.event.emit.label": {
+    "en": "b0c8137c489493d5",
+    "text": "May CAEP event na mano-manong in-emit"
+  },
+  "audit.actions.caep.session.reset.label": {
+    "en": "dc5cd9a8d40da255",
+    "text": "Na-reset ang CAEP state ng isang session"
+  },
+  "audit.actions.caep.session.clear.label": {
+    "en": "5d7001f86cd8a1e9",
+    "text": "Na-clear ang CAEP session register"
+  },
+  "audit.actions.risc.event.auto.label": {
+    "en": "1ce902ca9f8e640a",
+    "text": "May RISC event na naging due dahil nagbago ang directory"
+  },
+  "audit.actions.risc.event.emit.label": {
+    "en": "b1167bf71ee133e2",
+    "text": "May RISC event na mano-manong in-emit"
+  },
+  "audit.actions.risc.account.reset.label": {
+    "en": "94728541aaba5150",
+    "text": "Na-reset ang RISC state ng isang account"
+  },
+  "audit.actions.risc.account.clear.label": {
+    "en": "38e9f05ac95fd655",
+    "text": "Na-clear ang RISC account register"
+  },
+  "audit.actions.admin.aud-sub.set.label": {
+    "en": "67489d67e805ecfd",
+    "text": "Binago ng isang administrator ang aud_sub setting ng isang tao"
+  },
+  "audit.actions.admin.mfa.backup-codes.cleared.label": {
+    "en": "ea84314da98659bf",
+    "text": "May administrator na nag-clear ng mga recovery code ng isang tao"
+  },
+  "audit.actions.admin.password.reset-keytab.label": {
+    "en": "b038ba117b4de668",
+    "text": "May administrator na nag-reset ng password at nag-abot ng keytab ng tao"
+  },
+  "audit.actions.admin.user.attribute.label": {
+    "en": "52f81d95b080366d",
+    "text": "May administrator na nagtakda, nagdagdag o nag-alis ng attribute ng isang tao"
+  },
+  "audit.actions.admin.service-account.set.label": {
+    "en": "5f269de6647c621b",
+    "text": "May administrator na ginawang service account ang isang tao, o nagbago ng may-ari o destination nito"
+  },
+  "audit.actions.admin.service-account.cleared.label": {
+    "en": "b2581e6ddce1f837",
+    "text": "May administrator na ibinalik ang isang service account bilang ordinaryong tao"
+  },
+  "audit.actions.admin.service-account.owner-added.label": {
+    "en": "c687ebbfdb720dfc",
+    "text": "Nagdagdag ang isang administrator ng may-ari sa isang service account"
+  },
+  "audit.actions.admin.service-account.owner-removed.label": {
+    "en": "992391801a921812",
+    "text": "Nag-alis ang isang administrator ng may-ari sa isang service account"
+  },
+  "audit.actions.admin.service-account.destination-set.label": {
+    "en": "8565f4cfb53f2a32",
+    "text": "Nagtakda o nag-alis ang isang administrator ng push destination ng isang service account"
+  },
+  "audit.actions.admin.service-account.rotate.label": {
+    "en": "9eab836b051b0346",
+    "text": "May administrator na humiling na i-rotate ang password ng isang service account"
+  },
+  "audit.actions.admin.app-password.created.label": {
+    "en": "39ab2dba96dcf58b",
+    "text": "May administrator na gumawa ng app password para sa isang tao"
+  },
+  "audit.actions.admin.app-password.revoked.label": {
+    "en": "0509990ff43e2d9e",
+    "text": "May administrator na nag-revoke ng app password ng isang tao"
+  },
+  "audit.actions.admin.ciba.answered.label": {
+    "en": "0f2e483fa60b8d8f",
+    "text": "May administrator na nag-apruba o tumanggi sa isang CIBA request (test control)"
+  },
+  "audit.actions.admin.device.removed.label": {
+    "en": "893a2ce1d871ed95",
+    "text": "May administrator na nag-alis ng device ng isang tao"
+  },
+  "audit.actions.admin.ida.recorded.label": {
+    "en": "b68f52de80751f43",
+    "text": "May administrator na nagtala ng identity verification para sa isang tao"
+  },
+  "audit.actions.admin.ida.removed.label": {
+    "en": "071852997fcc15ca",
+    "text": "May administrator na nag-alis ng identity verification ng isang tao"
+  },
+  "audit.actions.admin.siop.enrolled.label": {
+    "en": "f6e33546d3d23472",
+    "text": "May administrator na nag-enrol ng self-issued (SIOPv2) subject para sa isang tao"
+  },
+  "audit.actions.admin.siop.removed.label": {
+    "en": "f6af7681f3d25fd7",
+    "text": "May administrator na nag-alis ng self-issued (SIOPv2) subject ng isang tao"
+  },
+  "audit.actions.ssf.signals.discover.label": {
+    "en": "55d2d7d9682c339a",
+    "text": "Natuklasan ang Shared Signals configuration ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.stream.label": {
+    "en": "737beffd42f5852e",
+    "text": "May stream na ginawa sa Shared Signals transmitter ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.unblock.label": {
+    "en": "5219dcbe14570844",
+    "text": "Muling pinayagan ang mga sign-in na hinarang ng signal ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.read-stream.label": {
+    "en": "ffea29094f8154a0",
+    "text": "Binasa ang stream ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.update-stream.label": {
+    "en": "9450fed407b4c350",
+    "text": "In-update ang stream ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.delete-stream.label": {
+    "en": "b15530168632eb08",
+    "text": "Binura ang stream ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.set-status.label": {
+    "en": "285b162026e85285",
+    "text": "Naitakda ang stream status ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.add-subject.label": {
+    "en": "b63bb92d96373ae3",
+    "text": "May subject na idinagdag sa stream ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.remove-subject.label": {
+    "en": "c316b73a1a06cc62",
+    "text": "May subject na inalis sa stream ng isang federation partner"
+  },
+  "audit.actions.ssf.signals.verify.label": {
+    "en": "d9dca81bc6808ffa",
+    "text": "Hiningan ng verification event ang stream ng isang federation partner"
+  },
+  "audit.actions.application.key-issued.label": {
+    "en": "03ad47a14907e857",
+    "text": "Na-issue ng CA ang client key pair ng isang hosted surface"
+  },
+  "audit.actions.enrollment.acme.account.create.label": {
+    "en": "3e069a334b19666a",
+    "text": "May ACME account na ginawa"
+  },
+  "audit.actions.enrollment.acme.account.deactivate.label": {
+    "en": "72423ecca6d7a8d3",
+    "text": "May ACME account na na-deactivate"
+  },
+  "audit.actions.enrollment.acme.account.key-change.label": {
+    "en": "45caca51b10836c9",
+    "text": "Napalitan ang key ng isang ACME account"
+  },
+  "audit.actions.enrollment.eab.create.label": {
+    "en": "02cae811cec833c3",
+    "text": "May ACME External Account Binding key na ginawa"
+  },
+  "audit.actions.enrollment.eab.delete.label": {
+    "en": "c8aa53e6726431da",
+    "text": "May ACME External Account Binding key na inalis"
+  },
+  "audit.actions.enrollment.challenge.create.label": {
+    "en": "28c2f31734c71daf",
+    "text": "May SCEP challenge password na ginawa"
+  },
+  "audit.actions.enrollment.challenge.delete.label": {
+    "en": "f6ccc4485e9cef99",
+    "text": "May SCEP challenge password na inalis"
+  },
+  "audit.actions.enrollment.issue.label": {
+    "en": "3727fd2f52338653",
+    "text": "May certificate na na-issue sa pamamagitan ng ACME, EST o SCEP"
+  },
+  "audit.actions.enrollment.issue.refused.label": {
+    "en": "41f6f9d7815ffff2",
+    "text": "May certificate enrollment na tinanggihan"
+  },
+  "audit.actions.enrollment.revoke.label": {
+    "en": "c3925444750a1015",
+    "text": "May enrolled na certificate na na-revoke"
+  },
+  "audit.actions.federation.signal-block.label": {
+    "en": "0f06883b0dbb2366",
+    "text": "Hinarang ng Shared Signals ng isang federation partner ang mga sign-in nito ng isang tao (#373)"
+  },
+  "audit.actions.federation.signal-unblock.label": {
+    "en": "f1b6331059f472d3",
+    "text": "Inalis ng Shared Signals ng isang federation partner ang harang nito sa isang tao (#373)"
+  },
+  "audit.actions.federation.signout.label": {
+    "en": "2e6c01e23921383f",
+    "text": "Tinapos ng sign-out ng isang federation partner ang isang session"
+  },
+  "audit.actions.federation.signout-answered.label": {
+    "en": "156d4e2f462e9126",
+    "text": "Kinumpirma ng isang federation partner ang sign-out na ipinadala ng serbisyong ito"
+  },
+  "audit.actions.federation.unlink.label": {
+    "en": "a5c85407fff2c148",
+    "text": "May federation link na inalis sa isang tao"
+  },
+  "audit.actions.group.add-member.label": {
+    "en": "37da254923cef1b6",
+    "text": "May member na idinagdag sa isang group"
+  },
+  "audit.actions.group.add-owner.label": {
+    "en": "6ba2e67208b445ff",
+    "text": "Nagdagdag ng may-ari sa isang grupo"
+  },
+  "audit.actions.group.remove-owner.label": {
+    "en": "e5e65ad85891ab58",
+    "text": "Inalis ang isang may-ari sa isang grupo"
+  },
+  "audit.actions.krb5.keytab.person.label": {
+    "en": "7f9ec638380e53d7",
+    "text": "Ginawa ang keytab ng isang tao mula sa password na hawak"
+  },
+  "audit.actions.logout.backchannel.retry.label": {
+    "en": "48c1b798cbbd16cc",
+    "text": "Inulit ang isang dead na back-channel Logout Token delivery"
+  },
+  "audit.actions.oauth.device-secret.revoke.label": {
+    "en": "f382e451311ceacd",
+    "text": "May Native SSO device secret na na-revoke"
+  },
+  "audit.actions.oauth2.ciba.notify.label": {
+    "en": "40247d2486a53b3f",
+    "text": "May CIBA ping o push notification na naihatid o nabigo"
+  },
+  "audit.actions.oauth2.claim-source-linked.label": {
+    "en": "378743408d814c69",
+    "text": "May taong nag-link ng isang Claims Provider"
+  },
+  "audit.actions.oauth2.claim-source-link-refused.label": {
+    "en": "304917d0872335a3",
+    "text": "Tinanggihan ang callback ng isang Claims Provider: hindi kilala ang link, o dumating ito sa ibang sign-on session (#568)"
+  },
+  "audit.actions.oauth2.claims-providers.add-provider.label": {
+    "en": "32689eddc489b284",
+    "text": "May Claims Provider na nairehistro"
+  },
+  "audit.actions.oauth2.claims-providers.update-provider.label": {
+    "en": "47c730b95278173b",
+    "text": "May Claims Provider na binago"
+  },
+  "audit.actions.oauth2.claims-providers.remove-provider.label": {
+    "en": "be1f28b2db7c1656",
+    "text": "May Claims Provider na inalis"
+  },
+  "audit.actions.oauth2.claims-providers.revoke-link.label": {
+    "en": "a320d071faf639f1",
+    "text": "Na-revoke ang Claims Provider link ng isang tao"
+  },
+  "audit.actions.oauth2.command.label": {
+    "en": "e00f7bb85d9450bc",
+    "text": "May OpenID Provider Command na natanggap"
+  },
+  "audit.actions.oauth2.command.tenant.label": {
+    "en": "9615a82791bf97fd",
+    "text": "May OpenID Provider tenant command na isinagawa"
+  },
+  "audit.actions.oauth2.grant-revoked.label": {
+    "en": "822d13c8d94685a0",
+    "text": "May Grant Management grant na na-revoke"
+  },
+  "audit.actions.oauth2.par.withdraw.label": {
+    "en": "f3413ee65719b6eb",
+    "text": "May pushed authorization request na binawi"
+  },
+  "audit.actions.password.set.label": {
+    "en": "2a1b07a8ecbc1d84",
+    "text": "May administrator na nagtakda ng password ng isang tao"
+  },
+  "audit.actions.service-account.rotated.label": {
+    "en": "260f3e0c6496aafe",
+    "text": "Na-rotate ang password ng isang service account at ipinush sa destination nito"
+  },
+  "audit.actions.service-account.rotation-failed.label": {
+    "en": "e37cc3c875768aba",
+    "text": "Hindi na-rotate ang password ng isang service account; walang nagbago"
+  },
+  "audit.actions.portal.app-password.created.label": {
+    "en": "1128ac83789c2235",
+    "text": "May taong gumawa ng app password"
+  },
+  "audit.actions.portal.app-password.revoked.label": {
+    "en": "cc585fef9d245590",
+    "text": "May taong nag-revoke ng app password"
+  },
+  "audit.actions.portal.app-password.csrf.label": {
+    "en": "e77bbbd5f3d6480d",
+    "text": "May app password form na tinanggihan dahil sa CSRF token nito"
+  },
+  "audit.actions.portal.certificates.csrf.label": {
+    "en": "13f12b8682b65338",
+    "text": "May certificates form na tinanggihan dahil sa CSRF token nito"
+  },
+  "audit.actions.portal.device.remove.label": {
+    "en": "a23e3b91423c45b6",
+    "text": "May taong nag-alis ng Native SSO device"
+  },
+  "audit.actions.portal.device.remember-browser.label": {
+    "en": "3e6dd7c211c0de5a",
+    "text": "May taong nagpatanda sa browser na ginagamit niya sa /portal/devices (#265)"
+  },
+  "audit.actions.portal.kerberos.keytab.label": {
+    "en": "d228ad6c8de67f3a",
+    "text": "May taong nag-download ng sarili niyang keytab"
+  },
+  "audit.actions.portal.kerberos.refused.label": {
+    "en": "06c1bf49bafd77aa",
+    "text": "Tinanggihan ang keytab request ng isang tao"
+  },
+  "audit.actions.portal.kerberos.csrf.label": {
+    "en": "45607efabeb88b85",
+    "text": "May Kerberos form na tinanggihan dahil sa CSRF token nito"
+  },
+  "audit.actions.portal.key.started.label": {
+    "en": "94d7c38c91fd3cbe",
+    "text": "May taong nagsimulang mag-enrol ng security key"
+  },
+  "audit.actions.portal.key.refused.label": {
+    "en": "6679aa8b834badee",
+    "text": "Tinanggihan ang security key enrolment ng isang tao"
+  },
+  "audit.actions.portal.mfa.backup-codes.generated.label": {
+    "en": "18ec89def789c4a2",
+    "text": "May taong gumawa ng isang set ng recovery code"
+  },
+  "audit.actions.portal.mfa.backup-codes.confirmed.label": {
+    "en": "d00909f08b87672d",
+    "text": "May taong nagkumpirmang itinago niya ang kanyang mga recovery code"
+  },
+  "audit.actions.portal.mfa.backup-codes.discarded.label": {
+    "en": "6dd158a3c30ffda1",
+    "text": "May taong nagtapon ng isang ginawang set ng recovery code"
+  },
+  "audit.actions.portal.risc.optOutInitiated.label": {
+    "en": "5ab0bc8a8b2b737e",
+    "text": "May taong nagsimulang mag-opt out sa RISC"
+  },
+  "audit.actions.portal.risc.optOutCancelled.label": {
+    "en": "b84e60c2060ee85e",
+    "text": "May taong nagkansela ng RISC opt-out"
+  },
+  "audit.actions.portal.risc.optIn.label": {
+    "en": "fddad4840e8f7000",
+    "text": "May taong muling nag-opt in sa RISC"
+  },
+  "audit.actions.portal.signing-key.issued.label": {
+    "en": "ef02d14e5ec6fe11",
+    "text": "May taong nag-issue ng sarili niyang signing key pair"
+  },
+  "audit.actions.portal.signing-key.removed.label": {
+    "en": "cc45482e315cf6a0",
+    "text": "May taong nag-alis ng kanyang signing key pair"
+  },
+  "audit.actions.portal.signing-key.csrf.label": {
+    "en": "51cd295b713684de",
+    "text": "May signing key form na tinanggihan dahil sa CSRF token nito"
+  },
+  "audit.actions.portal.siop.remove.label": {
+    "en": "b6f77328c0b99b89",
+    "text": "May taong nag-alis ng self-issued subject"
+  },
+  "audit.actions.portal.vc.offer.label": {
+    "en": "631dece03539cd4a",
+    "text": "Gumawa ang isang tao ng Credential Offer para sa sarili niyang wallet"
+  },
+  "audit.actions.risk.feedback.label": {
+    "en": "e244d70b4d5a8c39",
+    "text": "Naitala ang feedback sa isang risk assessment"
+  },
+  "audit.actions.risk.response.label": {
+    "en": "36887af166b69ed0",
+    "text": "May risk response na isinagawa"
+  },
+  "audit.actions.risk.terms.accept.label": {
+    "en": "68438e41825d8a4d",
+    "text": "Tinanggap ang mga tuntunin ng isang risk dataset provider"
+  },
+  "audit.actions.attribute-sources.add.label": {
+    "en": "7723c84bf547c28f",
+    "text": "May attribute source na idinagdag"
+  },
+  "audit.actions.attribute-sources.update.label": {
+    "en": "3b252df30382723d",
+    "text": "May attribute source na binago"
+  },
+  "audit.actions.attribute-sources.remove.label": {
+    "en": "ba337c73fb4dc623",
+    "text": "May attribute source na inalis"
+  },
+  "audit.actions.attribute-sources.refresh.label": {
+    "en": "9b6a000459343ab3",
+    "text": "Mano-manong binasa ang mga tao mula sa isang attribute source"
+  },
+  "audit.actions.scim-client.change.label": {
+    "en": "64156684e8c56596",
+    "text": "May outbound SCIM client na idinagdag, binago o inalis"
+  },
+  "audit.actions.scim-client.delivery.label": {
+    "en": "daca3d57491288f9",
+    "text": "May pagbabagong naihatid sa isang SCIM service provider, o naging dead letter"
+  },
+  "audit.actions.scim-client.reconcile.label": {
+    "en": "737369e31fa0ff1f",
+    "text": "May outbound SCIM client na nag-reconcile ng service provider nito"
+  },
+  "audit.actions.scim-client.queue.label": {
+    "en": "91401140d4bddd06",
+    "text": "May dead letter ng isang outbound SCIM client na inulit o pinurga"
+  },
+  "audit.actions.secret-destination.push.label": {
+    "en": "184a296748506865",
+    "text": "Ipinush ang password ng isang service account sa isang secret destination"
+  },
+  "audit.actions.secret-destination.test-push.label": {
+    "en": "38f7979ecec34d0a",
+    "text": "May canary version na ipinush sa test secret ng isang secret destination"
+  },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "May idinagdag na may-ari sa isang role"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "May inalis na may-ari sa isang role"
+  },
+  "audit.actions.roles.create.label": {
+    "en": "a510e6ae7b1a9adb",
+    "text": "May role na ginawa"
+  },
+  "audit.actions.roles.delete.label": {
+    "en": "2426599aa1c52b19",
+    "text": "May role na binura"
+  },
+  "audit.actions.roles.describe.label": {
+    "en": "896007dff32a6824",
+    "text": "Naitakda ang description, display name o mga member type ng isang role"
+  },
+  "audit.actions.saml2.authnrequest.label": {
+    "en": "8d29d93421323443",
+    "text": "May SAML 2.0 AuthnRequest na tinanggihan"
+  },
+  "audit.actions.saml2.artifact.resolve.label": {
+    "en": "0f9a2c3b3c7b36ea",
+    "text": "May SAML 2.0 artifact resolution na tinanggihan"
+  },
+  "audit.actions.saml2.attribute-query.label": {
+    "en": "c93dbc04d8c0ead5",
+    "text": "May SAML 2.0 attribute query na sinagot o tinanggihan"
+  },
+  "audit.actions.saml2.metadata.mdq.label": {
+    "en": "a151672004b5a83f",
+    "text": "May SAML metadata MDQ lookup na ginawa o tinanggihan"
+  },
+  "audit.actions.saml2.metadata.refresh.label": {
+    "en": "775ac5b1f475f76f",
+    "text": "Na-refresh ang SAML metadata ng isang service provider"
+  },
+  "audit.actions.session.reauthenticate.label": {
+    "en": "f6867c3c6a1d35bd",
+    "text": "Muling nag-sign in ang parehong tao sa isang buhay na session"
+  },
+  "audit.actions.session.refuse.label": {
+    "en": "c8703bfa89913b23",
+    "text": "May session na tinanggihan dahil sa sign-in mechanism nito"
+  },
+  "audit.actions.session.refused.label": {
+    "en": "9422128afb69d8ad",
+    "text": "May hosted surface na tumanggi sa isang session"
+  },
+  "audit.actions.ssf.event.act.label": {
+    "en": "bf25b2c0497d20f6",
+    "text": "May natanggap na Security Event na inaksyunan"
+  },
+  "audit.actions.ssf.stream.swept.label": {
+    "en": "a5277d5fd80dfb8e",
+    "text": "May lumang receiver stream na winalis"
+  },
+  "audit.actions.xacml.pep.enable.label": {
+    "en": "4584cff2d4f455e6",
+    "text": "May remote PEP na in-enable"
+  },
+  "audit.actions.xacml.pep.disable.label": {
+    "en": "1ca5e416c1bfdf45",
+    "text": "May remote PEP na in-disable"
+  },
+  "audit.actions.xacml.pep.forget.label": {
+    "en": "82df232dbe72d709",
+    "text": "May remote PEP na kinalimutan"
+  },
+  "audit.actions.xacml.policy.write.label": {
+    "en": "29b7a729b51d40c7",
+    "text": "May XACML policy na isinulat"
+  },
+  "audit.actions.xacml.policy.delete.label": {
+    "en": "90274c33f8a0cbe3",
+    "text": "May XACML policy na binura"
+  }
+}

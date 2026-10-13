@@ -1,0 +1,1374 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "从缓存应答的一次查找"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "该查找位于本仓库不编辑的文件中"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "ACME nonce"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "已向 ACME 服务器出示过的 Replay-Nonce 值（RFC 8555 第 6.5 节），因此每个值只被接受一次。"
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "强制：每个领域最多 acme.maxSpentNonces 个已用 nonce。达到上限时清除已过期的 nonce；如果历史记录仍然已满，则拒绝下一次使用（应答 badNonce），而不是忘掉一个仍然有效的 nonce。"
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "直到 nonce 过期；达到上限时清除已过期的 nonce。"
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "一个已使用过的 nonce，因此请求被拒绝"
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "应用注册表列表"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "一个领域中的每个应用条目，已解析，并按 client_id、受众、AppliesTo 和权限各建一个查找——这样页面或令牌请求不必为每个问题解析整个注册表。"
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "结构性：每个领域一个列表，大小等于 ou=applications（其本身受 applications.max 限制）。"
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次读取会重新解析它。"
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "Shared Signals 接收方权限"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "哪个应用拥有某个 Shared Signals 流，以及它可以按主体接收哪些事件，这样一个会话事件不必遍历每个已注册的应用。"
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "强制：每个领域 4096 个应答，丢弃最旧的，下次需要时重新查找。"
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "直到该领域 ou=applications 下的任何内容发生变化；之后的下一次查找会清空该领域的应答。"
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "属性源查找"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "属性源针对某个人的键返回的行，短暂保留，使一阵密集的登录只产生一次查询（#94）。"
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "强制：每个进程 2000 行，丢弃最旧的。"
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "由几秒前的一次查找应答的登录"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "查找后 {{seconds}} 秒；对数据源的更改会丢弃其行。"
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "已解析的证书信息"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "证书列表所显示的主题、颁发者和 notAfter，以及证书是否携带后量子密钥，每个证书为 /admin/pki 和 GET /admin-api/certificates 只解析一次。以证书自身的 SHA-256 为键。"
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "强制：4,096 个证书，丢弃最旧的，下次显示时重新解析。"
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "不过期：以证书内容为键，其信息永不改变。满时最旧的先被移除。"
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "验证器密钥判定"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "本进程被询问过的每个已封存验证器（TOTP）密钥能否在其密钥加密密钥下打开（#352），这样用户列表和第二因素名册无需在每次请求时解封，就能报告一项注册是否可读。以封存文本为键；值为是或否，绝不是密钥本身。"
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "强制：20000 个判定；满时丢弃最旧的，下次被询问时重新打开该密钥。"
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "直到密钥加密密钥发生变化，或为腾出空间而被丢弃。新的注册是新的封存文本，会重新询问。"
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "一个判定已知的封存密钥，因此没有打开它"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "嵌入式调试器静态文件"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "嵌入式调试器的客户端文件，其中已替换为本服务的地址，按文件版本和地址保存，这样调试器监听器不必在每次请求时重写文件。"
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "强制：400 个文件，丢弃最旧的，下次提供时重新读取。"
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "直到磁盘上的文件发生变化（新的修改时间即为新条目）；满时最旧的先被移除。"
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "设备注册质询"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "/portal/devices 为密钥证明、App Attest 声明或 WebAuthn 关联签发的质询，以及 EST /nonce 为 TPM 密钥证明签发的新鲜度 nonce，每个都绑定到其签发给的会话（或 EST cookie），且只应答一次。"
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "强制：每个领域 devices.maxChallenges 个，插入时丢弃最旧的；每个会话和用途一个。"
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "本领域签发的质询，因此证明已被检查"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "设备注册表事件"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "本领域中每个被创建、移除或因达到个人上限而被逐出的设备各一行——即 监控 → 设备 随时间绘制的内容。绝不包含密钥、机密或所有者姓名。"
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "强制：每个领域 devices.eventsKept 个，插入时丢弃最旧的事件。"
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "直到 devices.eventsKept 个更新的事件将其挤出。"
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "DPoP nonce"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "服务器签发的 DPoP nonce（RFC 9449 第 8 节），这样携带 nonce 的证明可以对照已发出的值进行检查。"
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "强制：每个领域 oauth2.dpopNonceCacheSize 个；丢弃最旧的 nonce，出示它的客户端会得到一个新的。"
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "一个当前有效的 nonce，因此证明被接受"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "DPoP 证明 ID"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "每个被接受的 DPoP 证明的 jti，这样一个证明只对一次请求有效（RFC 9449 第 11.1 节）。"
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "强制：每个领域 oauth2.dpopReplayCacheSize 个有效 ID。历史记录已满时拒绝下一个证明（STS-OAUTH-0554），而不是忘掉一个有效的证明——那会重新为其打开重放的可能。"
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "一个已使用过的证明，因此请求被拒绝"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "联合属性发布索引"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "哪个合作方的发布列表适用于哪个应用，由 ou=federations 构建，这样签发令牌时不必遍历注册表。每个领域一个索引。"
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "结构性：每个领域一个索引，每个带发布列表的应用一个条目。"
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "构建后 federation.releaseIndexTtlMs（{{ms}} 毫秒），或者在通过本服务写入联合关系时立即失效。"
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "受信任的代理地址范围"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "global.trustedProxies 解析成的 BlockList，这样请求不必为了决定相信谁转发的地址而重新解析该设置。"
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "结构性：该设置的一份解析副本。"
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "直到 global.trustedProxies 的文本发生变化。"
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "已撤销的 biscuit"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "每个已撤销的 biscuit 访问令牌的撤销标识符，发布在 /gnap/biscuit/revocations，供自行验证 biscuit 的资源服务器使用。"
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "强制：每个领域 oauth2.maxRevokedJtis 个——即撤销注册表自身的上限，对同样的令牌作出同样的承诺。达到上限时先移除已过期的行；否则忘掉最旧的撤销（STS-GNAP-0752），那个 biscuit 在过期之前会再次被只检查此列表的资源服务器接受。"
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "直到被撤销令牌自身的 exp。"
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "已发布的列表被读取"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "已查找的资源所有者"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "资源服务器的 gnapOwnerLookupUri 为某个标识符给出的所有者，这样一项授予的请求、批准页面和签发只需询问资源服务器一次（#432 第 5 阶段）。"
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "强制：每个领域 1024 个所有者，丢弃最旧的，下次需要时重新查找。"
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "GNAP 签名"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "每个被接受的已签名 GNAP 请求（HTTP 消息签名以及附加或分离的 JWS），这样截获的请求无法再次发送。"
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "强制：每个领域 gnap.replayCacheSize 个有效签名。历史记录已满时拒绝下一个已签名请求（STS-GNAP-0718），而不是忘掉一个有效的签名——那会重新为其打开重放的可能。"
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "见到后 gnap.signatureMaxAgeS 的两倍时长。"
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "一个已见过的签名，因此请求被拒绝"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "RFC 9278 密钥标识符"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "在 keys.kidFormat=jwk-thumbprint-uri 下作为 kid 发布的 JWK Thumbprint URI，以内部 kid 为键，这样令牌签名不必从证书中重新读取密钥。"
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "强制：512 个密钥 ID，丢弃最旧的，下次被请求时重新推导。"
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "不过期：内部 kid 由密钥推导而来，因此其应答永不改变。满时最旧的先被移除。"
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "终止于根 CA 之下的证书链"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "注册表行中存储的证书链是否终止于当前服务根 CA 之下，这决定是否在 x5c 头中附加根证书。以该行的指纹和根证书的指纹为键。"
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "强制：512 个应答，丢弃最旧的，下次被询问时重新计算。"
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "不过期：以证书指纹和 kid 为键，其应答永不改变。满时最旧的先被移除。"
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "证书与签名密钥的匹配"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "证书注册表行是否持有该签名密钥，在令牌上放置 x5c 或 x5t#S256 头之前询问。以该行的指纹和密钥的 kid 为键。"
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "强制：512 个应答，丢弃最旧的，下次被询问时重新计算。"
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "不过期：以证书指纹和 kid 为键，其应答永不改变。满时最旧的先被移除。"
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "证书颁发机构"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "每个范围的证书颁发机构层级——服务根 CA、领域的中间 CA 及其签发 CA——以解密形式保留用于签名，在启动时从存储中读取或从另一进程采纳。"
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "结构性：每个范围一个层级（服务根 CA、进程分支，以及每个领域一个），替换而非追加。"
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "不过期：当层级在此处或其他节点上发生变化时被替换，并随其领域一起被丢弃。"
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "已解密的签名密钥"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "领域的签名密钥材料，在密钥加密密钥下从持久化存储中解密，并在一个空闲窗口内保留，这样持续的签名不必每次都付出一次解密的代价。仅限产品模式；开发模式的密钥从不以加密形式存储。"
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "结构性：每个领域一份该领域的密钥材料，无论保留策略如何；策略只决定保留多长时间。"
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "后量子密钥集"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "每个领域的 ML-DSA 和 SLH-DSA 密钥，在首次被需要时生成（或从存储的密钥集中读取），此后与该领域的密钥集一起保留。"
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "结构性：每个领域一个后量子密钥集，与该领域的密钥集一起保留。"
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "与该领域的密钥集相同：不过期，在领域被移除或其密钥被替换时丢弃。"
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "签名密钥集"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "每个信任领域的签名密钥（RSA、EC，以及被请求后的后量子密钥集），在首次使用时构建或从密钥存储中读取，此后为每次签名保留。"
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "结构性：每个领域一个密钥集，随领域一起丢弃，或在其密钥被轮换或采纳时被替换。"
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "不过期：在领域被移除、其密钥被轮换或采纳另一进程存储的密钥时丢弃。每个已签过名的领域一个条目。"
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "Kerberos 认证符"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "受保护服务接受的每个认证符，这样截获的 AP-REQ 无法被出示两次。按信任领域区分：即其 Kerberos 领域签发了该票据的那个领域。"
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "强制：每个领域 krb5.replayCacheMaxEntries 个。缓存已满时拒绝下一个认证符，而不是忘掉一个有效的认证符——那会重新为其打开重放的可能。"
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "一个已见过的认证符，因此请求被拒绝"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "Kerberos 长期密钥"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "每个已注册主体的长期密钥，用 string-to-key 从其密码推导（或从密钥源读取），每种加密类型一次，此后为每张票据保留。"
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "强制：同时最多 4096 个主体持有密钥，每种加密类型一行；最近最少使用的主体会被清除密钥，并在其下一张票据时重新推导或读取。"
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "不过期：随主体一起丢弃，在其记录被替换（密码更改或恢复）时丢弃，或在超过上限时作为最近最少使用者被丢弃；从不持久化。"
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "目录设备索引"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "每个设备条目的 id、密钥指纹和 Native SSO 机密哈希，映射到其在 ou=devices 下的条目，这样在令牌端点识别设备时不必复制注册表（#164）。"
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "直到 ou=devices 下有内容被写入且某次查找未命中；命中当前条目时无需等待重建。每个领域一个索引。"
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "目录 entryUUID 索引"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "每个条目的 entryUUID（及其别名）到其 DN 的映射，主体标识符和 SCIM id 正是借此找到一个人。"
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "直到目录发生变化且某次查找未命中；命中当前条目时无需等待重建。每个领域一个索引。"
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "目录组索引"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "按成员和按组 DN 组织的组成员关系，这样 groups 声明和每次角色检查不必遍历 ou=groups。"
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "直到目录以索引无法合并的方式被写入；之后的下一次查找会重建它。每个领域一个索引。"
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "memberOf 声明（按组）"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "对于每个组，其自身 memberOf 指向该组的条目，这样组页面和名册页面不必为每个组遍历一次领域（#352）。"
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "结构性：每个领域一个索引，每个 memberOf 值一行。"
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "直到目录下一次被写入，无论写在何处。"
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "人员（排序后的键）"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "每个人规范化后的 DN 和用户名，按 allPersons() 列出的顺序排列，这样一页人员列表不必为每次请求遍历、规范化并排序整个领域（#352）。"
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "结构性：每个领域一个列表，大小等于 ou=users。"
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "直到该领域 ou=users 下的任何内容被写入。"
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "目录容器列表"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "某个容器（应用、联合、策略等）下的条目，保留到该容器下有内容被写入为止。"
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "强制：每个领域 64 个容器列表，丢弃最旧的，下次被请求时重新遍历。"
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "直到该容器下有条目被添加、移除，或在未指明位置的情况下被写入；每个被列出的容器一个条目。"
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "目录用户名索引"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "一个人所对应的每个名称（uid 和 RDN）到其在 ou=users 下的条目的映射，这样登录时不必遍历目录。"
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "直到目录以索引无法合并的方式被写入；之后的下一次查找会重建它。每个领域一个索引。"
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "邮件发件箱"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "本服务发送的每封邮件各一行：其收件人、状态、尝试次数、下次到期时间——以及在待发送、失效或被捕获期间的正文，一旦发送就不再保留正文。这是 mail.deliver 作业清扫的持久队列。"
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "强制：每个领域 mail.maxRows 行，先丢弃最旧的已完成邮件；绝不为腾出空间而丢弃待发送的邮件。"
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "直到入队后 mail.retentionS；每个领域超过 mail.maxRows 时，最旧的已完成邮件先被移除。"
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "一封因与 mail.dedupWindowS 内同一操作已入队的邮件重复而被抑制的邮件"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "访问令牌状态条目"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "每个有效访问令牌在本领域访问令牌状态列表中的索引——OAuth RFC 9068 令牌和 GNAP 的两种 JWT 格式——连同其 jti，这样可以从撤销注册表计算出该位。"
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "04bb104bc7ab1ff8",
+    "text": "强制：每个领域该列表容纳 1048576 个索引；没有空闲索引的列表会拒绝铸造访问令牌（STS-OAUTH-0817），而不是重用一个有效的索引。"
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "与其描述的访问令牌一样长；此后其索引再次空闲。"
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "在此处找到了令牌的状态"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "已签名的访问令牌状态列表"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "本进程为每个领域签名的最后一个访问令牌 Status List Token，在列表未变化期间重复使用。"
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "强制：整个进程 1024 个已签名列表，丢弃最旧的，下次被请求时重新签名。"
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "直到列表发生变化，或 oauth2.accessTokenStatusListTtlS 的一半。"
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "提供了一个列表而无需重新签名"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "客户端证明质询"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "为 OAuth 2.0 Attestation-Based Client Authentication（draft-ietf-oauth-attestation-based-client-auth-11 第 6 节）发出的质询，这样携带质询的 Client Attestation PoP 可以对照已签发的值进行检查。"
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "强制：每个领域 oauth2.clientAttestationChallengeCacheSize 个；丢弃最旧的质询，出示它的客户端会通过 use_attestation_challenge 得到一个新的。"
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "一个当前有效的质询，因此 PoP 被接受"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "签发后 oauth2.clientAttestationChallengeTtlS（{{seconds}} 秒）。"
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "已解析的 authorization_details 类型"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "在资源应用上声明的 RFC 9396 类型定义，已解析，其 JSON Schema 按每个不同的定义文本编译一次。由所有领域共享，因为键就是文本。"
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "强制：512 个已解析定义，丢弃最旧的，下次使用时重新解析。"
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "不过期：以定义文本为键，因此编辑过的定义是新条目。满时最旧的先被移除。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "后端通道注销投递"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "每个被告知会话已结束的依赖方各一行（OpenID Connect Back-Channel Logout 1.0）：其状态、尝试次数、下次到期时间和已签名的 Logout Token。这是每个进程都会清扫的持久队列；死信会一直保留，直到被重试或被保留策略移除。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "强制：每个领域 oauth2.backchannelLogoutMaxRows 行，先丢弃最旧的已完成投递；绝不为腾出空间而丢弃待处理的投递。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "直到入队后 oauth2.backchannelLogoutRetentionS（无论是否完成）；每个领域超过 oauth2.backchannelLogoutMaxRows 时，最旧的已完成投递先被移除。"
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "已为该会话和客户端入队的投递，因此结束同一会话的第二个进程没有入队任何内容"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "已获取的客户端密钥集"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "客户端已注册的 jwks_uri 返回的 JSON Web Key Set，这样其客户端断言、请求对象和加密响应无需每次请求都获取一次就能找到其密钥（#120）。"
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "强制：每个领域 256 个密钥集，丢弃最旧的，下次需要时重新获取。"
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "已兑换的授权码"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "每个已在令牌端点交换过的授权码，这样第二次交换会被识别为重放（RFC 9700 第 4.5 节，RFC 6749 第 4.1.2 节）。"
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "强制：每个领域 oauth2.redeemedCodeCacheSize 个；忘掉最旧的兑换记录。授权码本身在兑换时已被移除，因此重复出示一个已被忘掉的授权码仍会作为未知授权码被拒绝。"
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "授权码本应过期之后再经过一个授权码生命周期。"
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "一个已兑换的授权码被再次出示"
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "已获取的请求对象"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "已注册的 RFC 9101 request_uri 的内容，保留下来，这样客户端再次发送同一 URI 时不会再次获取（OpenID Connect Core 第 6.2 节）。除非设置了 oauth2.requestUriCacheS，否则关闭。"
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "强制：每个领域 256 个已获取的请求对象，丢弃最旧的，下次使用时重新获取。"
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "获取后 oauth2.requestUriCacheS（{{seconds}} 秒），按领域计；满时最旧的先被移除。"
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "关闭：oauth2.requestUriCacheS 为 0，因此不保留任何内容。"
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "已签名的授权服务器元数据"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "RFC 8414 signed_metadata JWT，在构建它们所用的元数据和签名设置未变化期间重复使用，这样繁忙的发现端点不必在每次获取时都签名。"
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "强制：每个领域 oauth2.maxSignedMetadataEntries 个，丢弃最旧的，下次被请求时重新签名。"
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "已使用的断言"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "每个被接受的 RFC 7523 JWT 和 RFC 7522 SAML 断言，无论用于授权许可还是客户端身份验证，这样每个断言永远只被接受一次。"
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "强制：每个领域 oauth2.assertionReplayCacheSize 个。历史记录已满时拒绝下一个断言，而不是忘掉一个有效的断言——那会重新为其打开重放的可能。"
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "直到断言本身过期。满时拒绝新断言，而不是忘掉某个断言。在数据库存储上，这些行位于数据库中，此处不列出任何行。"
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "一个已使用过的断言，因此请求被拒绝"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "OID4VCI nonce"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "交给钱包的 c_nonce 值，这样凭据请求的证明所指明的 nonce 必须是本颁发者签发的，且只能使用一次。"
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "强制：每个领域 oid4vci.cNonceCacheSize 个；丢弃最旧的 nonce，引用它的证明会得到 invalid_nonce 应答。"
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "签发后 oid4vci.cNonceTtlS，或在被使用时。"
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "本颁发者发出的 nonce，因此证明已被检查"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "凭据状态条目"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "每个已签发凭据在本领域状态列表中的索引，以及管理员或注销为其设置的状态。"
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "强制：每个领域该状态列表容纳 131072 个索引；没有空闲索引的列表会拒绝签发凭据（STS-VC-0075），而不是重用一个有效的索引。"
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "与其描述的凭据一样长；此后其索引再次空闲。"
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "在此处找到了凭据的状态"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "已签名的状态列表"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "本进程为每个领域签名的最后一个 Status List Token 和 Bitstring Status List 凭据，在列表未变化期间重复使用。"
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "强制：整个进程 1024 个已签名文档，丢弃最旧的，下次被请求时重新签名。"
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "直到列表发生变化，或 oid4vci.statusListTtlS 的一半。"
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "提供了一个列表而无需重新签名"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "钱包登录注册表"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "91808833ee8c6a0c",
+    "text": "本领域基于其验证过的访问令牌为某人签发的凭据，只有这些凭据可以用于钱包登录——以颁发者签名的 JWT 的摘要为键，对于 ldp_vc 则以持有者密钥和该人为键。"
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "强制：每个领域 oid4vp.signInRegisterMaxEntries 个；丢弃最先签发的行。这是失败即关闭——没有对应行的凭据不能让任何人登录。"
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "直到该行上的最后一个凭据过期；被否认的行也保留到那时，以便继续拒绝。"
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "本领域记录为可让其持有人登录的已出示凭据"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "已获取的状态列表"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "受信任的外部颁发者发布的 Status List Token 和 Bitstring Status List 凭据，在其某个凭据被出示给验证方时获取。"
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "强制：整个进程 256 个已获取列表，丢弃最旧的，下次需要时重新获取。"
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "列表自身的 ttl（且从不超过其 exp），最多 oid4vp.statusListMaxCacheS；获取失败时为 30 秒。"
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "无需获取即应答了已出示凭据的状态"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "OpenID4VP 事务"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "本验证方正在等待的每个出示请求——酒吧门口的请求和钱包登录的请求，后者携带 Digital Credentials API 请求、其响应模式以及其应答所加密到的密钥。"
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "强制：每个领域 oid4vp.maxTransactions 个；丢弃最旧的等待中请求（federation.maxContexts 的规则），因为拒绝会让任何人都能为所有人阻断请求端点。"
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS，登录则为 oid4vp.signInTtlS；在构建下一个请求时被清扫。"
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "钱包的应答找到了它所对应的请求"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "进程内生成的 OpenID Federation 集合"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "本进程在不获取任何内容的情况下生成的 Entity Collection——本服务自己的领域以及已解析的下级实体——在未保留任何爬取结果时使用，这样匿名请求不会每次都为每个领域签名声明（#136）。"
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "强制：每个领域 8 个（访问该领域所用的每个主机一个），最旧的先被逐出。"
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS。"
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "OpenID Federation 解析结果"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "本领域解析出的 Trust Chain——由管理员操作触发，或针对其自身领域在进程内解析——连同解析后的元数据和已验证的 Trust Mark，这样解析端点无需为未经身份验证的调用方遍历联合即可应答（18.1）。"
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "强制：每个领域 oidfed.resolveCacheMax 个，最旧的先被逐出。"
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "直到该链过期（其最小的 exp，10.4），且最多 oidfed.resolveCacheS。"
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "泄露密码范围"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "Pwned Passwords 范围应答，按所查询的五字符 SHA-1 前缀组织（#62 P6）：其下哪些密码摘要已知遭到泄露，以及泄露次数。"
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "强制：risk.breachCacheSize 个前缀；满时丢弃最旧的，下次需要时重新查询。"
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "获取后 risk.breachCacheMinutes。"
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "一个已查询过的前缀，因此没有发出请求"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "泄露密码判定"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "某个入口刚筛查过的密码是否已泄露，供同步密码规则在同一请求中读取（#62 P6）。以密码的摘要为键，绝不是密码本身。"
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "强制：1000 个判定；满时丢弃最旧的。"
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "密码被筛查后五分钟。"
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "为正在设置的密码找到了判定"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "观测型存储声明"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "每个持久化存储是否被声明为观测型（读屏障不会等待的计数），每个存储句柄只读取一次，因为该检查位于每次存储写入的路径上。"
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "结构性：本构建声明的每个持久化存储一个标志。"
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "进程的整个生命周期：声明在运行期间不会改变。"
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "未变更写入的影子副本"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "本进程写入持久化存储的每个目录条目和领域记录的最后一份副本，这样刷写时只写入发生变化的内容。"
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "结构性：每个已写入的目录条目一行，领域记录一行，因此一个领域中最多 ldap.maxEntries + 1 行。"
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "不过期：每次刷写时刷新，每个已写入的目录条目和领域一个条目。在内存模式下为空。"
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "已获取的颁发者证书"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "从 Authority Information Access caIssuers URL 或 LDAP cACertificate 属性获取的证书，用于为撤销检查构建路径。绝不会因为被获取就受到信任。"
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "强制：pki.revocationCrlCacheEntries 个，丢弃最早写入的，下次需要时重新获取。"
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "证书撤销列表"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "为检查所出示的证书而获取的 CRL，已解析并验证，以分发点 URL 及用于验证它们的签名者指纹为键。"
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "强制：pki.revocationCrlCacheEntries 个，丢弃最早写入的，下次需要时重新获取。"
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "失败的撤销信息获取"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "一个否定缓存：获取失败的 CRL、OCSP 或证书在其重试窗口过去之前不会再次尝试，其间以记住的失败作为应答。一次命中就是一次失败被重用。"
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "强制：pki.revocationCrlCacheEntries 个，丢弃最旧的；被丢弃的失败只意味着该地址可能更早被再次询问。"
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "OCSP 响应"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "每个关于一个证书的 OCSP 应答，以响应方 URL、颁发者指纹和序列号为键。"
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "强制：pki.revocationCrlCacheEntries 个，丢弃最早写入的，下次需要时重新询问。"
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "已解析的信任锚证书"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "本服务自己的 CA 证书，为撤销注册表遍历按每个 PEM 解析一次。以 PEM 本身为键；被替换的 CA 有不同的 PEM，会产生新条目。"
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "强制：8192 次解析；满时清空整个记忆表，并在使用中重建。"
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "不过期：以内容为键。满时一次性清空整个记忆表。"
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "从磁盘读取的信任文件"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "撤销设置所指定的 PEM 文件，读取一次，保留到文件修改时间发生变化为止。"
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "结构性：每个指定文件的设置一个条目（pki.revocationCrlIssuersFile、pki.revocationLdapCaFile）。"
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "直到所指定的文件在磁盘上发生变化，或该设置指定了另一个文件。每个设置一个条目。"
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "客户端证书链（用于恢复的会话）"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "已验证的客户端证书在完整 TLS 握手中构建的路径，以叶证书为键，在该会话被恢复时交回——node 只给恢复的会话提供叶证书，没有它，撤销遍历会拒绝一个已通过验证的证书。"
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "强制：1024 个叶证书；最旧的先被忘掉。"
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "由所有节点共享并复制（#406）：一小时，若主端口的会话生命周期加一分钟更长则取后者，由该叶证书的下一次完整握手续期；满时丢弃最旧的。"
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "风险数据集查找"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "当前生效的地理位置、ASN 和 IP 列表数据集对某个地址的结论，按领域区分。只要任何节点激活了一个数据集版本就会清除。"
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "强制：10000 次查找，最旧的先被丢弃。"
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "直到某个数据集版本被激活，或因达到上限而被丢弃。"
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "风险状况"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "每个人最近一次评估的风险（级别、分数、信号），供没有可读取会话的签发使用——Kerberos 票据、WS-Trust 令牌（#62 P3）。"
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "强制：每个进程 risk.standingCacheSize 人；满时丢弃最旧的，这意味着该人的下一次无会话签发仅凭角色决定。"
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "其记录的评估之后 risk.standingValidMinutes。"
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "持有且仍然有效的风险状况，因此签发依据它作出决定"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "SAML 1.1 断言"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "已签发的 SAML 1.1 断言，保留下来，以便应答通过 AssertionIDReference 指明某个断言的属性机构请求。"
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "强制：每个领域 saml11.assertionCacheMax 个，丢弃最旧的；指向已丢弃断言的工件会作为未知工件应答。"
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "4397e5b8b411e7a8",
+    "text": "不过期：超过 saml11.assertionCacheMax 时丢弃最旧的。"
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "应答了一个 AssertionIDReference"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "SCIM Digest nonce 计数"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "每个 Digest nonce 下已接受的 nonce-count（nc）值，这样同一个响应无法发送两次。"
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "强制：每个领域 scim.maxDigestNonces 个 nonce，丢弃最旧的（该 nonce 随即过时，客户端会得到一个新的）；每个 nonce 最多 1024 个计数，超过后该 nonce 以同样方式退役。"
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "随其 nonce 一起被忘掉。已持久化，因此重启后的进程仍会拒绝它接受过的计数；在各存活节点之间判定重放的，是使用时所做的声明。"
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "一个已使用过的 nonce 计数，因此请求被拒绝"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "SCIM Digest nonce"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "/scim/v2 发出的 HTTP Digest 质询（RFC 7616），这样响应所指明的必须是本服务签发的质询。"
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "强制：每个领域 scim.maxDigestNonces 个，丢弃最旧的；使用它的客户端会得到 stale=true 应答和一个新的 nonce。"
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "本服务签发的 nonce，因此响应已被检查"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "SCIM HOBA 质询"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "/scim/v2 发出的 HOBA 质询（RFC 7486），这样签名所指明的必须是本服务签发的质询。"
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "强制：每个领域 scim.maxHobaChallenges 个，丢弃最旧的；使用它的客户端会收到一个新的质询。"
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "本服务签发的质询，因此签名已被检查"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "SCIM HOBA 签名"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "HOBA 签名到达时携带的每个（kid、质询、nonce），这样复制的凭据会被拒绝。"
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "强制：每个领域 scim.maxHobaSeen 个，最旧的连同其所针对的质询一起丢弃，因此无法针对一个仍然有效的质询重放。"
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "直到其质询过期；超过上限时，最旧的随其质询一起移除。"
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "一个已见过的签名，因此请求被拒绝"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "已解包的 SPIFFE X.509 机构"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "每个领域存储的 X.509 机构，从其存储形式一次性转换为证书，供每个签名的 SVID 和每个提供的信任包使用。"
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "结构性：每个领域一个已解包的机构列表，在存储的列表发生变化时被替换。"
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "直到该领域的机构被轮换或恢复，这会替换该条目所解包自的存储列表。"
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "Shared Signals 死信计数"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "每个流死信数量的估计值，保留下来，这样无需清点队列即可对照每个流的上限检查新死信。其他进程写入的死信要到下一次清扫才会计入。"
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "结构性：每个流一个计数，一个领域最多持有 ssf.maxStreams 个流。"
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "不过期：在每次死信清扫时重新计数，每个流一个条目。"
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "客户端证书身份"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "已验证的 TLS 客户端证书被映射到的对象——某个领域中的人员或应用，或者一次拒绝——以叶证书的摘要和遍历时持有的机构为键。"
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "强制：256 个应答；满时清空整个记忆表，并在使用中重建。"
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "不过期：替换签发 CA 会改变键。满时一次性清空整个记忆表。"
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "带状态的 VC-API 凭据"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "6276c639d08ac2a7",
+    "text": "W3C VC API 带状态条目签发的每个凭证，以及它所占用的状态列表索引，以便状态变更能找到它。"
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "强制：每个领域 4096 个凭据，最旧的先被忘掉（此后无法再在此处更改其状态；列表条目本身属于 vc_status.ts，会继续保留）。"
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "凭据的 validUntil，或一年。"
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "状态变更找到了该凭据"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "版本戳"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "从 version.json 读取一次的构建记录（M.N.O、提交、构建时刻），每个显示版本的界面都读取它。"
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "结构性：一条记录。"
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "进程的整个生命周期：构建在运行期间不会改变。"
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "common/version.js 也在远程 PEP 容器中运行，不能引入注册表"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "请求工作线程亲和性"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "浏览器会话、凭据或流程被固定到哪个请求工作线程，每个池（协议和界面）一个映射，这样多步骤流程会留在持有它的工作线程上。"
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "强制：每个池 5000 个，丢弃最旧的；被丢弃的固定关系只是重新路由。"
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "不过期：在其工作线程退出时被忘掉；当一个池持有 {{max}} 个时最旧的先被移除。仅限前端进程。"
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "已解析的 XACML 策略"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "来自 ou=policies 的策略和策略集，按每个文档文本解析并静态验证一次，以该文本的 SHA-256 为键，因此通过任何入口所做的更改都是新条目。"
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "强制：1024 次解析，丢弃最近最少使用的；被丢弃的策略在下次被请求时重新解析。"
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "不过期：以内容为键，因此编辑过的策略是新条目，其旧的解析结果在成为最近最少使用者时被移除。"
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "按最近最少使用顺序排列的有界缓存。"
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "强制：超过上限的插入会逐出最近最少使用的未固定条目。"
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "无需访问存储、从缓存应答的一次读取"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "直到因达到上限被逐出，或被其所有者丢弃。"
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "SAML 服务提供方元数据"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "按接收时的原样存储在应用条目上，不保存在内存中；从应用的页面刷新"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "远程 PEP 的策略"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "由远程 PEP 容器持有，而不是由本进程持有"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "机密存储的登录"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "是一份 /admin/secrets 报告的局部变量，因此每份报告只登录一次存储；报告绘制完成后即消失，请求之间不保留"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "{{span}}前已过期"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "不过期（以内容为键）"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "已过时"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "直到{{basis}}发生变化"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "已过时：{{basis}}已发生变化"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "直到因达到上限而作为最近最少使用的条目被丢弃"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "直到因达到上限而被丢弃"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "直到某个数据集版本被激活"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "直到它在空闲超时期间内未被使用"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "已过时：其 nonce 已过期"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "已过时：其质询已过期"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "已过时：该凭据已被否认"
+  }
+}

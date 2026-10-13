@@ -1,0 +1,10 @@
+{
+  "devices.enrolment.est.what": {
+    "en": "ac3c63e37bbad2e4",
+    "text": "在 /.well-known/est/device/ 的 EST（RFC 7030）simpleenroll：證書簽發給請求中 urn:sts:device:<id> 所指名的裝置項目——或簽發給一個由要求者擁有的新項目——並附帶 TPM 金鑰證明（draft-ietf-lamps-csr-attestation、tcg-attest-tpm-certify）。擁有者可為自己的裝置進行，Admin Write 可為任何裝置進行。"
+  },
+  "devices.recognition.x509.what": {
+    "en": "f8ebc837f9bfb4b7",
+    "text": "TLS 連線上的客戶端證書——在登入時與權杖端點（RFC 8705）——以其 SubjectPublicKeyInfo 的 SHA-256 比對，因此以相同金鑰更新的證書仍是同一裝置。交握證明了持有；鏈結是否驗證成功會被記錄，而因撤銷而被拒絕的證書不會被辨識。"
+  }
+}

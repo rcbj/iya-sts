@@ -74,6 +74,8 @@ function childMain() {
     const MFA =
       'urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract';
     const authn = require(ROOT + '/authn/authn');
+    // The sign-in screen over `/authn-api` since #571.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
     let jar = {};
     function request(method, target, form) {
@@ -116,7 +118,9 @@ function childMain() {
         'ID="_fa' + Date.now() +
         require('crypto').randomBytes(8).toString('hex') + '" ' +
         'Version="2.0" IssueInstant="' + new Date().toISOString() + '" ' +
-        'AssertionConsumerServiceURL="' + base + '/saml2/sp/acs"' +
+        // A stand-in address: the Response is read off the form and never
+        // POSTed, so nothing has to answer there (#592 deleted the mock SP).
+        'AssertionConsumerServiceURL="https://sp.force-authn.test/acs"' +
         (o.force ? ' ForceAuthn="true"' : '') +
         (o.passive ? ' IsPassive="true"' : '') + '>' +
         '<saml:Issuer>urn:force-authn:sp</saml:Issuer>' +
@@ -155,31 +159,39 @@ function childMain() {
       let screens = 0;
       let returnTo = '';
       for (let hop = 0; hop < 12; hop += 1) {
-        if (r.status >= 300 && r.status < 400 && r.location) {
-          if (/\/authn\/login/.test(r.location)) {
-            screens += 1;
-          } else if (/\/saml2\/sso\?rid=/.test(r.location)) {
-            returnTo = r.location;
-          }
-          r = await request('GET', r.location);
-          continue;
-        }
-        const authnId = /name="authn_id" value="([^"]+)"/.exec(r.text);
-        if (r.status === 200 && authnId) {
+        // THE SIGN-IN SCREEN IS A STATIC PAGE SINCE #571: its act goes to
+        // `/authn-api`, and its answer names where the browser goes next,
+        // as the form's 303 did.
+        const screenAt = r.status >= 300 && r.status < 400 && r.location &&
+          /\/authn\/login\?authn=/.test(r.location) ? String(r.location) : '';
+        if (screenAt) {
+          screens += 1;
           if (atScreen === 'skip') {
             // The return address the sign-in would have sent the browser to,
             // off the pending record — presented without authenticating.
+            const authnId = /[?&]authn=([^&]+)/.exec(screenAt)[1];
             const pending = realms.run(realms.DEFAULT_REALM, function () {
-              return authn.pendingFor(authnId[1]);
+              return authn.pendingFor(decodeURIComponent(authnId));
             });
             returnTo = pending ? pending.returnTo : '';
             r = await request('GET', returnTo);
             atScreen = 'done';
             continue;
           }
-          r = await request('POST', '/authn/login', {
-            authn_id: authnId[1], username: username || 'fa-alice',
-            password: 'x', action: atScreen });
+          const answer = await authnScreen.submit({ port: port, jar: jar,
+            at: screenAt, fields: { action: atScreen,
+                                    username: username || 'fa-alice',
+                                    password: 'x' } });
+          r = { status: answer.status,
+                location: String(answer.headers.location || ''),
+                text: answer.text };
+          continue;
+        }
+        if (r.status >= 300 && r.status < 400 && r.location) {
+          if (/\/saml2\/sso\?rid=/.test(r.location)) {
+            returnTo = r.location;
+          }
+          r = await request('GET', r.location);
           continue;
         }
         break;

@@ -1,0 +1,8 @@
+{
+  "state.queued": "已排入隊列",
+  "filter.queued": "已排入隊列",
+  "next.queuedA": "<strong>已排入隊列</strong>（手動執行，要求者：",
+  "jobs.requestWorker": "（要求工作線程）",
+  "what.p2": "工作每個<strong>時段</strong>執行一次——時段是依數據庫時鐘計算的間隔倍數，或其 cron 運算式的一次觸發——因此在無節點領導期間錯過的時段，會在有節點領導時執行一次。執行在開始前先被認領，認領的時間就是它的<strong>柵欄</strong>：暫停超過其認領期限的節點，無法以結果覆寫接替它的那次嘗試，後者顯示為<em>已放棄</em>。",
+  "detail.queued": "排入隊列時間"
+}

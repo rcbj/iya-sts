@@ -43,8 +43,12 @@
 //
 //   1. THE CHALLENGE IS SENT FROM TWO PLACES. A resource APPLICATION declares
 //      what it requires (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`), and the
-//      stand-in resource `/oauth2/step-up/resource/{application}` enforces it
-//      on the application's behalf; and this service's OWN resource server —
+//      resource server that application IS enforces it — somebody else's
+//      process, which the stand-in resource `/oauth2/step-up/resource/
+//      {application}` played here until #593 (2026-10-12) deleted it, and
+//      which `dpop.presentedAccessToken()`'s `stepUp` option still serves
+//      for a resource server built on this library; and this service's OWN
+//      resource server —
 //      UserInfo, the three credential endpoints, SCIM and SSF, all through
 //      `dpop.presentedAccessToken()` — enforces `oauth2.stepUpAcrValues` and
 //      `oauth2.stepUpMaxAgeS`. They are two sources because they are two

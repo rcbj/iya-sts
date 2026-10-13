@@ -165,9 +165,9 @@
 // SPIFFE made the same move for its authorities on 2026-09-12 — so for a realm
 // nothing was consumed at startup, and `krb5.realm` and the nine rows that
 // database is built from are `realmRuntime`. What is still consumed for the
-// process stays refused on a realm: the sockets (`krb5.kdcPort`,
-// `krb5.servicePort`) and the development-mode trust with
-// `krb5.trustedRealm`. The test is still the rule;
+// process stays refused on a realm: the KDC's socket (`krb5.kdcPort`; the
+// protected service's, `krb5.servicePort`, left with #595) and the
+// development-mode trust with `krb5.trustedRealm`. The test is still the rule;
 // a setting whose material stays process-wide is still a no.
 //
 // ---------------------------------------------------------------------------
@@ -179,9 +179,9 @@
 // "value is not a function".
 //
 // IT PUBLISHES THE KERBEROS PASSWORDS, and that is deliberate and not new:
-// `GET /krb5/principals` already prints them, for the reason written there — a
-// debugger whose accounts are unusable without reading the source is worse than
-// one that says what they are.
+// `GET /krb5/principals` printed them too until #595 deleted it, for the
+// reason written there — a debugger whose accounts are unusable without
+// reading the source is worse than one that says what they are.
 //
 // Where they are published now needs one distinction. `/admin/config` is behind
 // the console gate, which is unconditional, and `GET /admin-api/config` is
@@ -875,13 +875,13 @@ const SETTINGS = [
   //
   // WHAT IT COSTS, because it is not free: there is then NO plain HTTP
   // listener in this process that serves anything but `/pki/`
-  // (`pki.httpPort`), and `POST /tls/trust` and `GET /tls/server-certificate`
-  // were on one deliberately — they are what a caller reaches BEFORE it trusts
-  // anything. The certificate is generated at every start (and certified under
+  // (`pki.httpPort`), and `GET /tls/server-certificate` (and `POST
+  // /tls/trust`, until #597 deleted it) were on one deliberately — they are
+  // what a caller reaches BEFORE it trusts anything. The certificate is generated at every start (and certified under
   // this service's Root, which a caller does not hold yet either), so the first
   // fetch has to be made without verification (`curl -k`), which is the
-  // ordinary bootstrap for a mock and is stated on /tls rather than left to be
-  // discovered.
+  // ordinary bootstrap for a mock and is stated in docs/tls.md rather than
+  // left to be discovered.
   { key: 'global.https', group: 'Global', label: 'HTTPS on the main port',
     env: 'STS_HTTPS', type: 'bool', derived: true,
     // processValue() and not value(): a realm may carry `oauth2.rfc9700`, and
@@ -969,7 +969,8 @@ const SETTINGS = [
                  'when nothing is: with no proxy, those are ordinary headers ' +
                  'any client can set, and believing them lets a caller ' +
                  'choose what this service thinks its own issuer and ' +
-                 'endpoints are. GET /tls/forwarded shows what a request ' +
+                 'endpoints are. Monitoring → TLS connection shows what a ' +
+                 'request ' +
                  'actually carried and what was believed of it. NOTE that ' +
                  'this service never reads a client certificate out of a ' +
                  'header (X-Client-Cert and its relatives) in either mode — ' +
@@ -1380,7 +1381,8 @@ const SETTINGS = [
                  '7.3.2) is trusted. `pki` (section 11.4) requires the TLS ' +
                  'client certificate to chain to the client truststore — ' +
                  'this realm\'s TLS client authority, or an anchor installed ' +
-                 'at /tls/trust — and to be bound to the client\'s ' +
+                 'through /admin-api/tls/trust — and to be bound to the ' +
+                 'client\'s ' +
                  'application entry: issued to it by this realm, or carrying ' +
                  'the one RFC 8705 subject parameter the entry registers ' +
                  '(oauthTlsClientAuthSubjectDn or an oauthTlsClientAuthSan* ' +
@@ -1643,14 +1645,6 @@ const SETTINGS = [
     'both, never on the JWE around jwt-encrypted, which is encrypted to a ' +
     'resource server\'s key or a secret. Macaroons, biscuits and ZCAP-LD ' +
     'capabilities are not JWSs and are not affected.'),
-  { key: 'gnap.demoResourceServer', group: 'GNAP', label: 'Run the ' +
-      'demonstration resource server',
-    path: 'gnap.demoResourceServer', env: 'STS_GNAP_DEMO_RESOURCE_SERVER',
-    type: 'bool', dflt: true,
-    runtime: true,
-    description: 'GET/POST /gnap/rs/resource: judges a presented token in ' +
-                 'any of the five formats and answers the RS-first challenge ' +
-                 'of section 9.1.' },
   { key: 'gnap.ownerLookupCacheS', group: 'GNAP', label: 'Owner lookup ' +
       'cache (seconds)',
     path: 'gnap.ownerLookupCacheS', env: 'STS_GNAP_OWNER_LOOKUP_CACHE_S',
@@ -3390,8 +3384,8 @@ const SETTINGS = [
     // that `realmRuntime` has exactly the holders it names, which is how each
     // one stays a decision rather than a copied line.
     dflt: 'development', runtime: true,
-    description: 'What this service is. `development` is the mock every ' +
-                 'release before 2026-09-06 was: no password is checked in ' +
+    description: 'What this service is. `development` is what every release ' +
+                 'before 2026-09-06 was: no password is checked in ' +
                  'any protocol, an unknown user, application, service ' +
                  'principal or authorization server is created the first ' +
                  'time it is named, an OAuth client needs no secret, and — ' +
@@ -3426,7 +3420,8 @@ const SETTINGS = [
     path: 'logLevel', env: 'STS_LOG_LEVEL', type: 'enum',
     enumValues: ['trace', 'debug', 'info', 'warn', 'error', 'fatal'],
     dflt: 'info', runtime: true,
-    description: 'debug is the useful level for a mock whose job is to show ' +
+    description: 'debug is the useful level for a service whose job is to ' +
+                 'show ' +
                  'what it did: every endpoint call, and every token and ' +
                  'assertion both before and after it was signed. Changing it ' +
                  'here takes effect on the next line written, EXCEPT in the ' +
@@ -3612,10 +3607,10 @@ const SETTINGS = [
                  'request goes to the request worker. With the memory or ' +
                  'ldif store and workers.requestCount at its default there ' +
                  'is no worker, and nothing is dispatched. Empty means ' +
-                 'nothing is dispatched anywhere. /tls is ' +
-                 'never dispatched whatever this says, because its whole ' +
-                 'content is what the server saw of the connection the ' +
-                 'request arrived on.\n\n**Nothing is dispatched unless this ' +
+                 'nothing is dispatched anywhere. /tls and ' +
+                 '/admin-api/tls-connection are never dispatched whatever ' +
+                 'this says, because what they answer is what the server ' +
+                 'saw of the connection the request arrived on.\n\n**Nothing is dispatched unless this ' +
                  'process is coordinating**: an entry here with a store that ' +
                  'has no change log stops the service at startup, naming ' +
                  'this setting, rather than letting each worker hold a ' +
@@ -3640,13 +3635,13 @@ const SETTINGS = [
   { key: 'workers.fanout', group: 'Global',
     label: 'Dispatched paths with no session affinity',
     env: 'STS_WORKERS_FANOUT', type: 'string',
-    dflt: '/scim,/xacml,/admin-api',
+    dflt: '/scim,/xacml,/admin-api,/account-api',
     runtime: false, perProcess: true,
     restartReason: 'the workers this spreads requests across are forked ' +
                    'before the listener binds',
     description: 'A comma-separated list of path prefixes that go to the ' +
                  'least-loaded request worker instead of being stuck to the ' +
-                 'session or flow they belong to. These three carry their ' +
+                 'session or flow they belong to. These four carry their ' +
                  'own credential on every request and name their own target, ' +
                  'so nothing about one request has to be remembered to ' +
                  'answer the next. EVERYTHING ELSE DISPATCHED HOLDS AFFINITY ' +
@@ -4393,8 +4388,8 @@ const SETTINGS = [
                  'validating it the CLIENT\'s job and this server cannot see ' +
                  'whether it happens — so this is how to find out: a client ' +
                  'that accepts the result is not checking, and one that ' +
-                 'refuses it is. The same device as /spnego\'s three knobs ' +
-                 'and the reserved password "invalid". OFF by default, ' +
+                 'refuses it is. The same device as the reserved password ' +
+                 '"invalid". OFF by default, ' +
                  'reported on GET /oauth2/rfc9700 whichever mode is in ' +
                  'force, and every spoiled token is logged as spoiled — an ' +
                  'ID Token that is wrong in a way nobody remembers turning ' +
@@ -4735,11 +4730,10 @@ const SETTINGS = [
                  'Require DPoP rows below are what make them mandatory). PER ' +
                  'TRUST REALM since 2026-09-12 — it was one switch for the ' +
                  'whole process, so a realm turning it on turned it on for ' +
-                 'every other. In development POST /dpop/nonce-mode writes ' +
-                 'this setting for the realm it is reached in; in product ' +
-                 'that endpoint refuses and this row — through /admin/oauth2 ' +
-                 'or POST /admin-api/config/set, both behind a credential — ' +
-                 'is the only way to change it.' },
+                 'every other. This row — on the OAuth 2.0 page\'s DPoP ' +
+                 'settings or through POST /admin-api/config/set, both ' +
+                 'behind a credential — is the only way to change it, in ' +
+                 'either mode.' },
 
   { key: 'oauth2.dpopIatSkewS', group: 'OAuth 2.0 / OIDC',
     label: 'DPoP proof iat window (s)',
@@ -8019,7 +8013,7 @@ const SETTINGS = [
                  'supplies, so a federated `alice` and the local `alice` are ' +
                  'two entries. EMPTY by default, which means they are ONE ' +
                  'entry — and that is a real decision rather than a default ' +
-                 'nobody thought about. Empty is right for a mock being ' +
+                 'nobody thought about. Empty is right for a service being ' +
                  'pointed at a partner to see what comes back, because a ' +
                  'prefixed name makes every downstream token and assertion ' +
                  'look unfamiliar. Set it to something like `fed-` the ' +
@@ -8096,11 +8090,13 @@ const SETTINGS = [
     env: 'STS_FEDERATION_OUTBOUND_ALLOW_HTTP', type: 'bool', dflt: false,
     runtime: true,
     description: 'OFF by default, which is the one place this service is ' +
-                 'stricter than a mock would ordinarily be: what travels on ' +
+                 'stricter than development mode ordinarily is: what travels ' +
+                 'on ' +
                  'these requests is a client secret and an authorization ' +
                  'code, at somebody else\'s service. ON accepts an http:// ' +
                  'endpoint in DEVELOPMENT mode, which is what federating ' +
-                 'against another mock on localhost needs, and every such ' +
+                 'against another instance on localhost needs, and every ' +
+                 'such ' +
                  'request is logged. In product mode plain http is refused ' +
                  'whatever this says (STS-FED-0112).' },
   { key: 'federation.outboundSkipTlsVerification', group: 'Federation',
@@ -8384,12 +8380,12 @@ const SETTINGS = [
                  'requires a name, a display name and a URL together and an ' +
                  'organisation with no name is not one. A product deployment ' +
                  'sets its own or empties it; the default is the product ' +
-                 'name, `sts` (it was `mock-sts` until 2026-09-12).' },
+                 'name, `sts`.' },
 
   { key: 'saml.organizationDisplayName', group: 'SAML',
     label: 'Metadata OrganizationDisplayName',
     env: 'STS_SAML_ORGANIZATION_DISPLAY_NAME', type: 'string',
-    dflt: 'Mock security token service', runtime: true,
+    dflt: 'Security token service', runtime: true,
     description: 'The <md:OrganizationDisplayName> beside the name above. ' +
                  'Empty omits the element for the reason given there.' },
 
@@ -8503,7 +8499,8 @@ const SETTINGS = [
                  'given this service one cannot read what comes back. Where ' +
                  'no certificate can be found the assertion is sent in CLEAR ' +
                  'and the reason is logged and shown on /admin/saml2 — a ' +
-                 'refusal to issue would be a mock that stopped answering, ' +
+                 'refusal to issue would be a service that stopped ' +
+                 'answering, ' +
                  'and silently sending plaintext while a page said ' +
                  '"encrypted" would be worse than either. The certificate is ' +
                  'taken from samlEncryptionCertificate on its entry (which ' +
@@ -8528,7 +8525,8 @@ const SETTINGS = [
                  'ciphertext fails its tag and is refused. The two CBC ones ' +
                  'are NOT, and that is not a defect in this service — it is ' +
                  'the property CBC has, real service providers require it, ' +
-                 'and a mock that offered only the safe choice could not be ' +
+                 'and a service that offered only the safe choice could not ' +
+                 'be ' +
                  'used to show what the unsafe one does. What this service ' +
                  'does about it when READING is parse the result and refuse ' +
                  'anything that is not well-formed XML, which catches the ' +
@@ -8660,15 +8658,6 @@ const SETTINGS = [
                  'the GET it is turned into. Past it the return trip is ' +
                  'refused with a page naming this value. Was the constant ' +
                  'REQUEST_TTL_MS in saml2_sso.js.' },
-
-  { key: 'saml2.mockSpContextTtlMin', group: 'SAML 2.0',
-    label: 'Mock service provider RelayState lifetime (minutes)',
-    env: 'STS_SAML2_MOCK_SP_CONTEXT_TTL_MIN', type: 'int', dflt: 30, min: 1,
-    max: 1440, runtime: true,
-    description: 'How long /saml2/sp — the NON-SPEC mock service provider — ' +
-                 'remembers a RelayState it minted so it can check the round ' +
-                 'trip. It is that page\'s own state and nothing to do with ' +
-                 'the identity provider\'s.' },
 
   { key: 'saml2.redirectWarnLength', group: 'SAML 2.0',
     label: 'Redirect-binding length warning (characters)',
@@ -9034,16 +9023,6 @@ const SETTINGS = [
                  'the page it signed them into. An application may overrule ' +
                  'it with wsfedAssertionLifetimeMin on its entry.' },
 
-
-  { key: 'wsfed.mockRpContextTtlMin', group: 'WS-Federation',
-    label: 'Mock relying party wctx lifetime (minutes)',
-    env: 'STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN', type: 'int', dflt: 30, min: 1,
-    max: 1440, runtime: true,
-    description: 'How long /wsfed/rp — the NON-SPEC mock relying party — ' +
-                 'remembers a wctx it minted so it can check the round trip. ' +
-                 'Its own state and nobody else\'s. Was the constant ' +
-                 'RP_CONTEXT_TTL_MS in wsfed.js.' },
-
   // --- TLS -----------------------------------------------------------------
   // -------------------------------------------------------------------------
   // `tls.port` (8443) AND `tls.mutualPort` (9443) WERE REMOVED ON 2026-09-16.
@@ -9079,7 +9058,8 @@ const SETTINGS = [
                  'CA with clientAuth: every other key pair this service issues ' +
                  'chains to the same Root and is refused as one (see ' +
                  'common/tls_client_certificates.js). Off leaves the ' +
-                 'truststore to /tls/trust and tls.trustAnchorsFile, as it ' +
+                 'truststore to /admin/tls/trust and tls.trustAnchorsFile, ' +
+                 'as it ' +
                  'was before; the portal still issues, and says the ' +
                  'listeners will not accept what it issues.' },
 
@@ -9542,11 +9522,12 @@ const SETTINGS = [
     restartReason: 'the anchors are read when the listeners are created',
     description: 'A PEM file of CA certificates that client certificates on ' +
                  'the main port are verified against, loaded ' +
-                 'at startup. It is the PRODUCT-MODE way to fill the ' +
-                 'truststore: POST /tls/trust and /tls/trust/clear answer ' +
-                 'anybody in development and are refused in product mode, ' +
-                 'because an anchor anybody can add is a client certificate ' +
-                 'anybody can make verify. Empty means the truststore starts ' +
+                 'at startup. It is the way to fill the truststore before ' +
+                 'anything listens; at runtime /admin/tls/trust and POST ' +
+                 '/admin-api/tls/trust/add do it behind a credential, in ' +
+                 'either mode — there is no open door, because an anchor ' +
+                 'anybody can add is a client certificate anybody can make ' +
+                 'verify. Empty means the truststore starts ' +
                  'empty, which is what it always did.' },
 
   // THE SELF-SIGNED FALLBACK CERTIFICATE'S THREE LITERALS. Used only when
@@ -9581,13 +9562,36 @@ const SETTINGS = [
                  'The CN is the first of tls.hostnames.' },
 
   // --- OID4VCI -------------------------------------------------------------
-  { key: 'oid4vci.walletUrl', group: 'OID4VCI', label: 'Wallet URL',
-    env: 'OID4VCI_WALLET_URL', type: 'string', dflt: 'http://localhost:3000',
+  // A WALLET IS INVOKED BY ITS SCHEME, NOT BY AN ADDRESS (2026-10-12, rcbj:
+  // "the goal is to actually have this button be usable"). Until then the
+  // default was `http://localhost:3000`, the embedded debugger's web wallet,
+  // which no person's wallet app is; a Credential Offer is handed to a
+  // wallet as `openid-credential-offer://` (OpenID4VCI 1.0 section 4.1) or
+  // HAIP's `haip-vci://`, which a wallet app registers for, and a WEB wallet
+  // is offered beside it only where one is configured here.
+  { key: 'oid4vci.walletUrl', group: 'OID4VCI', label: 'Web wallet URL',
+    env: 'OID4VCI_WALLET_URL', type: 'string', dflt: '',
     runtime: true,
-    description: 'Where the wallet lives, as a URL the BROWSER can use. The ' +
-                 'Credential Offer pages send the End-User here, so it is ' +
-                 'the debugger\'s own address rather than anything this ' +
-                 'service serves.' },
+    description: 'A WEB wallet\'s address, as a URL the BROWSER can use, for ' +
+                 'a deployment that runs one. Where it is set, a Credential ' +
+                 'Offer is also offered as a link to it (with ' +
+                 'oid4vci.walletIssuancePath and the offer on its query), ' +
+                 'beside the oid4vci.walletInvocation link a wallet app ' +
+                 'opens. EMPTY, the default: no web wallet is offered.' },
+
+  { key: 'oid4vci.walletInvocation', group: 'OID4VCI',
+    label: 'How a wallet app is handed an offer',
+    env: 'OID4VCI_WALLET_INVOCATION', type: 'enum',
+    enumValues: ['openid-credential-offer', 'haip-vci'],
+    dflt: 'openid-credential-offer', runtime: true,
+    description: 'The custom URL scheme of the link and QR code a Credential ' +
+                 'Offer is handed to a wallet app in. ' +
+                 'openid-credential-offer, the default: ' +
+                 'openid-credential-offer://, the scheme OpenID4VCI 1.0 ' +
+                 'section 4.1 defines and most wallets register. haip-vci: ' +
+                 'haip-vci://, which OpenID4VC HAIP 1.0 section 4.2 lets a ' +
+                 'HAIP wallet register instead. The offer is the same ' +
+                 'either way.' },
 
   { key: 'oid4vci.authorizationServer', group: 'OID4VCI',
     label: 'Authorization server', env: 'OID4VCI_AUTHORIZATION_SERVER',
@@ -9620,8 +9624,10 @@ const SETTINGS = [
   { key: 'oid4vci.offerUsername', group: 'OID4VCI', label: 'Offer username',
     env: 'OID4VCI_OFFER_USERNAME', type: 'string', dflt: 'diploma.student',
     runtime: true,
-    description: 'Whose credential the issuer-initiated offer pages build. ' +
-                 'The claims come from that person\'s directory entry.' },
+    description: 'Whom a pre-authorized offer names when whoever makes it ' +
+                 'names nobody. No door does since the demonstration ' +
+                 'issuer left the service (#594): the portal\'s offer names ' +
+                 'the person signed in.' },
 
   { key: 'oid4vci.requestEncryptionRequired', group: 'OID4VCI',
     label: 'Require encrypted credential requests',
@@ -9634,9 +9640,10 @@ const SETTINGS = [
 
   // -------------------------------------------------------------------------
   // THE 2026-09-12 SWEEP, OID4VCI HALF. Every `dflt` below is the literal it
-  // replaced. The two that are policy rather than a number —
-  // `oid4vci.txCodeMaxAttempts` and `oid4vci.allowedWalletUrls` — are READ
-  // ONLY IN PRODUCT MODE, and say so.
+  // replaced. The one that is policy rather than a number —
+  // `oid4vci.txCodeMaxAttempts` — is READ ONLY IN PRODUCT MODE, and says so
+  // (`oid4vci.allowedWalletUrls`, the other, went with the demonstration's
+  // offer page on #594).
   // -------------------------------------------------------------------------
   { key: 'oid4vci.txCodeLength', group: 'OID4VCI',
     label: 'Transaction Code length (digits)',
@@ -9668,22 +9675,13 @@ const SETTINGS = [
                  'pre-authorized code and a notification_id stay usable.' },
 
   { key: 'oid4vci.walletIssuancePath', group: 'OID4VCI',
-    label: 'Wallet issuance page',
+    label: 'Web wallet issuance page',
     env: 'OID4VCI_WALLET_ISSUANCE_PATH', type: 'string',
-    dflt: '/vc-issuance-1.html', runtime: true,
-    description: 'The page under the wallet URL that a Credential Offer is ' +
-                 'handed to. The default is the debugger\'s own wallet page.' },
-
-  { key: 'oid4vci.allowedWalletUrls', group: 'OID4VCI',
-    label: 'Other wallet URLs an offer link may name (product)',
-    env: 'OID4VCI_ALLOWED_WALLET_URLS', type: 'csv', dflt: '', runtime: true,
-    description: 'IN PRODUCT MODE, the wallet URLs besides oid4vci.walletUrl ' +
-                 'that the `wallet` query parameter on /issuer/offer may ' +
-                 'name. Any other is refused, because an offer link that ' +
-                 'sends the End-User wherever its query string says is an ' +
-                 'open redirect carrying a pre-authorized code. Development ' +
-                 'accepts any URL, which is how a wallet on a laptop is ' +
-                 'pointed at this service.' },
+    dflt: '', runtime: true,
+    description: 'The page under oid4vci.walletUrl that a Credential Offer ' +
+                 'is handed to, for a web wallet whose offer page is not its ' +
+                 'root. Empty, the default. (The embedded debugger\'s web ' +
+                 'wallet takes offers at /vc-issuance-1.html.)' },
 
   { key: 'oid4vci.requestEncryptionKeyBits', group: 'OID4VCI',
     label: 'Request encryption key size (bits)',
@@ -9754,11 +9752,10 @@ const SETTINGS = [
                  'are signed with — post-quantum ones included — and the ' +
                  'one this realm\'s status lists are signed with, and the ' +
                  'one the DID Configuration\'s ' +
-                 'Domain Linkage Credential and /did/generate\'s did:web ' +
-                 'credential use. The metadata\'s ' +
+                 'Domain Linkage Credential uses. The metadata\'s ' +
                  'credential_signing_alg_values_supported names it, ' +
                  '/oauth2/jwks and /.well-known/did.json publish the key, ' +
-                 'and the mock Verifier checks against it. ldp_vc is ' +
+                 'and this service\'s Verifier checks against it. ldp_vc is ' +
                  'bbs-2023 and is not affected. A credential already issued ' +
                  'keeps the algorithm it was signed with.' },
 
@@ -9808,7 +9805,7 @@ const SETTINGS = [
   { key: 'oid4vci.issuerDisplayName', group: 'OID4VCI',
     label: 'Issuer display name',
     env: 'OID4VCI_ISSUER_DISPLAY_NAME', type: 'string',
-    dflt: 'IdP Tools Mock Credential Issuer', runtime: true,
+    dflt: 'IdP Tools Credential Issuer', runtime: true,
     description: 'The `display.name` of the credential issuer metadata — ' +
                  'what a wallet shows as who is offering the credential. The ' +
                  'credential configurations\' own display names and colours ' +
@@ -9823,13 +9820,6 @@ const SETTINGS = [
                  '/.well-known/did-configuration.json says it is valid. It ' +
                  'is signed per request, so this is the window a cached copy ' +
                  'may be believed for.' },
-
-  { key: 'oid4vci.generatedDidCredentialLifetimeS', group: 'OID4VCI',
-    label: '/did/generate credential lifetime (s)',
-    env: 'OID4VCI_GENERATED_DID_CREDENTIAL_LIFETIME_S', type: 'int',
-    dflt: 3600, min: 60, max: 31536000, runtime: true,
-    description: 'How long the SD-JWT VC that /did/generate signs with the ' +
-                 'DID it hands back is valid.' },
 
   // ---------------------------------------------------------------------
   // THE TWO DID FLAGS, which were the last two environment variables in this
@@ -9884,7 +9874,7 @@ const SETTINGS = [
   { key: 'oid4vp.clientId', group: 'OID4VP', label: 'Verifier client ID',
     env: 'OID4VP_CLIENT_ID', type: 'string', dflt: 'sts-verifier',
     runtime: true,
-    description: 'The client_id the mock Verifier presents in its ' +
+    description: 'The client_id this service\'s Verifier presents in its ' +
                  'Authorization Request, and the `aud` the Key Binding JWT ' +
                  'must name.' },
 
@@ -9896,14 +9886,32 @@ const SETTINGS = [
       return value('oid4vci.walletUrl');
     }, runtime: true,
     derived: true,
-    description: 'Where the Verifier sends the holder to present. Falls back ' +
-                 'to the OID4VCI wallet URL, since it is the same wallet in ' +
-                 'every arrangement this service is used in.' },
+    description: 'A WEB wallet\'s address, for a deployment that runs one: ' +
+                 'where it is set, a presentation request is also offered as ' +
+                 'a link to it (with oid4vp.walletPresentationPath and the ' +
+                 'request on its query), beside the oid4vp.walletInvocation ' +
+                 'link a wallet app opens. Falls back to the OID4VCI web ' +
+                 'wallet, which is empty by default: no web wallet is ' +
+                 'offered.' },
+
+  { key: 'oid4vp.walletInvocation', group: 'OID4VP',
+    label: 'How a wallet app is handed a request',
+    env: 'OID4VP_WALLET_INVOCATION', type: 'enum',
+    enumValues: ['openid4vp', 'haip-vp'], dflt: 'openid4vp', runtime: true,
+    description: 'The custom URL scheme of the "Open your wallet" link on ' +
+                 'the wallet sign-in page, of the QR code where one is ' +
+                 'offered, and of a verification start\'s requestUri: the ' +
+                 'request by reference (client_id and request_uri) under ' +
+                 'it. openid4vp, the default: openid4vp://, the scheme ' +
+                 'OpenID4VP 1.0 defines for a Verifier that does not know ' +
+                 'the wallet. haip-vp: haip-vp://, which OpenID4VC HAIP 1.0 ' +
+                 'section 5.1 lets a HAIP wallet register instead. A ' +
+                 'self-issued ID Token alone is always siopv2://.' },
 
   certificateHeaderSetting('oid4vp.requestObjectCertificateHeader', 'OID4VP',
     'OID4VP_REQUEST_OBJECT_CERTIFICATE_HEADER',
     'Request Object certificate header',
-    'Whether the mock Verifier\'s signed REQUEST OBJECT (RFC 9101, a request ' +
+    'Whether the Verifier\'s signed REQUEST OBJECT (RFC 9101, a request ' +
     'by reference) names the certificate chain of the key that signed it.'),
 
   { key: 'oid4vp.kbMaxAgeS', group: 'OID4VP', label: 'Key Binding max age (s)',
@@ -9956,8 +9964,8 @@ const SETTINGS = [
                  'in x5c. x509_hash: the SHA-256 of that certificate. Both ' +
                  'sign with oid4vp.x509SigningAlgorithm; ' +
                  '/oid4vp/verifier-certificate shows the certificate and ' +
-                 'both Client Identifiers. /oid4vp/start?client_id_prefix= ' +
-                 'chooses per request. ' +
+                 'both Client Identifiers. A verification start\'s ' +
+                 'client_id_prefix chooses per request. ' +
                  'An unsigned request always uses redirect_uri.' },
 
   { key: 'oid4vp.x509DnsName', group: 'OID4VP',
@@ -10246,7 +10254,7 @@ const SETTINGS = [
   { key: 'oid4vp.claims', group: 'OID4VP', label: 'Requested claims',
     env: 'OID4VP_CLAIMS', type: 'csv', dflt: 'given_name,family_name',
     runtime: true,
-    description: 'The mock Verifier\'s STARTING request, and — this is the ' +
+    description: 'The Verifier\'s STARTING request, and — this is the ' +
                  'part worth knowing — the target its Reset returns to. It ' +
                  'is not the live list: /admin/vc-verifier-config owns that, ' +
                  'and copies this at startup. So changing it here changes ' +
@@ -10300,25 +10308,27 @@ const SETTINGS = [
 
 
   { key: 'oid4vp.walletPresentationPath', group: 'OID4VP',
-    label: 'Wallet presentation page',
+    label: 'Web wallet presentation page',
     env: 'OID4VP_WALLET_PRESENTATION_PATH', type: 'string',
-    dflt: '/vc-presentation-1.html', runtime: true,
-    description: 'The page under the wallet URL a presentation request is ' +
-                 'handed to. The default is the debugger\'s own wallet page.' },
+    dflt: '', runtime: true,
+    description: 'The page under oid4vp.walletUrl a presentation request is ' +
+                 'handed to, for a web wallet whose request page is not its ' +
+                 'root. Empty, the default. (The embedded debugger\'s web ' +
+                 'wallet takes requests at /vc-presentation-1.html.)' },
 
   { key: 'oid4vp.allowedWalletUrls', group: 'OID4VP',
     label: 'Other wallet URLs a request link may name (product)',
     env: 'OID4VP_ALLOWED_WALLET_URLS', type: 'csv', dflt: '', runtime: true,
     description: 'IN PRODUCT MODE, the wallet URLs besides oid4vp.walletUrl ' +
-                 'that the `wallet` query parameter on the Verifier\'s start ' +
-                 'page may name; any other is refused as an open redirect. ' +
+                 'that a verification start\'s `wallet` may name; any other ' +
+                 'is refused as an open redirect. ' +
                  'Development accepts any URL.' },
 
   { key: 'oid4vp.trustedIssuerCertificates', group: 'OID4VP',
     label: 'Other trusted credential issuers (PEM)',
     env: 'OID4VP_TRUSTED_ISSUER_CERTIFICATES', type: 'string', dflt: '',
     runtime: true,
-    description: 'PEM certificates, concatenated, whose keys the mock ' +
+    description: 'PEM certificates, concatenated, whose keys this service\'s ' +
                  'Verifier accepts an SD-JWT VC or jwt_vc_json credential ' +
                  'signature from IN ADDITION to this realm\'s own issuer. ' +
                  'Empty — the default — trusts this issuer alone, which is ' +
@@ -10370,7 +10380,50 @@ const SETTINGS = [
                  'credential from any other issuer, or one issued on an ' +
                  'access token this service did not issue, still verifies ' +
                  'and signs nobody in. Off removes the button and closes ' +
-                 'the door; the Verifier at /oid4vp/verifier is unaffected.' },
+                 'the door; a verification an administrator starts is ' +
+                 'unaffected.' },
+
+  // WHAT A REAL WALLET ACCEPTS (2026-10-12). A sign-in request went out
+  // signed under the `pre-registered` Client Identifier (`sts-verifier`),
+  // which only a wallet configured with this service out of band can check,
+  // and answered by plain `direct_post`. OpenID4VC HAIP 1.0 section 5 has a
+  // Verifier use `x509_hash` and an encrypted response (`direct_post.jwt`),
+  // and those are what a wallet that has never heard of this service can
+  // act on: it validates the certificate chain to an anchor it trusts.
+  { key: 'oid4vp.signInClientIdPrefix', group: 'OID4VP',
+    label: 'Wallet sign-in: Client Identifier prefix',
+    env: 'OID4VP_SIGN_IN_CLIENT_ID_PREFIX', type: 'enum',
+    enumValues: ['x509_hash', 'x509_san_dns', 'pre-registered',
+                 'decentralized_identifier', 'verifier_attestation',
+                 'openid_federation'],
+    dflt: 'x509_hash', runtime: true,
+    description: 'How a wallet authenticates the signed request a wallet ' +
+                 'sign-in sends (OpenID4VP 1.0 section 5.9), on the link, ' +
+                 'the QR code and the Digital Credentials API alike. ' +
+                 'x509_hash, the default and what OpenID4VC HAIP 1.0 ' +
+                 'requires: the SHA-256 of the Verifier\'s certificate, ' +
+                 'whose chain the request carries; the wallet must trust ' +
+                 'this service\'s Root (/oid4vp/verifier-certificate shows ' +
+                 'it). x509_san_dns: the certificate\'s DNS name ' +
+                 '(oid4vp.x509DnsName). The others are ' +
+                 'oid4vp.clientIdPrefix\'s, which governs a verification ' +
+                 'an administrator starts and not this; pre-registered ' +
+                 'works only with a wallet that has this Verifier\'s key ' +
+                 'out of band.' },
+
+  { key: 'oid4vp.signInResponseMode', group: 'OID4VP',
+    label: 'Wallet sign-in: response mode',
+    env: 'OID4VP_SIGN_IN_RESPONSE_MODE', type: 'enum',
+    enumValues: ['direct_post.jwt', 'direct_post'], dflt: 'direct_post.jwt',
+    runtime: true,
+    description: 'How a wallet on the same device, or one that scanned the ' +
+                 'QR code, answers a wallet sign-in. direct_post.jwt, the ' +
+                 'default and what OpenID4VC HAIP 1.0 section 5.1 requires: ' +
+                 'the answer is encrypted to a key only this sign-in holds ' +
+                 '(oid4vp.responseEncryptionKeyAlgs), and an unencrypted ' +
+                 'one is refused. direct_post: in the clear, for a wallet ' +
+                 'that cannot encrypt. The Digital Credentials API is ' +
+                 'oid4vp.signInDcApiResponseMode\'s.' },
 
   { key: 'oid4vp.signInTtlS', group: 'OID4VP',
     label: 'Wallet sign-in lifetime (s)',
@@ -10564,6 +10617,51 @@ const SETTINGS = [
                  'one of them issued. Empty trusts none, and a key ' +
                  'attestation is then refused.' },
 
+  // --- The W3C VC API (#598) ------------------------------------------------
+  //
+  // **A PRODUCT SURFACE SINCE #598, AND OFF UNTIL A REALM TURNS IT ON.** Until
+  // then `/vc-api` was a development-only test control (#194-#199, #585). It
+  // is an issuer that signs a document ITS CALLER WROTE, a holder that
+  // presents one, and a verifier — so it is off by default for the reason any
+  // signing service is: nothing should be signing on a realm's behalf until
+  // that realm's administrator decided it should. `oid4vc/vc_api.ts` argues
+  // the surface; the setting decides only whether it exists.
+  { key: 'vcApi.enabled', group: 'W3C VC API',
+    label: 'Serve the W3C VC API',
+    env: 'STS_VC_API_ENABLED', type: 'bool', dflt: false, runtime: true,
+    description: 'Serve the W3C CCG Verifiable Credentials API (VCALM) at ' +
+                 '/vc-api: an issuer that secures a credential it is handed ' +
+                 '(Data Integrity eddsa-rdfc-2022, eddsa-jcs-2022, ' +
+                 'ecdsa-rdfc-2019, ecdsa-jcs-2019 and ecdsa-sd-2023, or a ' +
+                 'VC-JOSE-COSE envelope), a holder that proves a ' +
+                 'presentation and derives a selective disclosure, a ' +
+                 'verifier of credentials and presentations, a status ' +
+                 'service over this realm\'s Bitstring Status Lists, and DID ' +
+                 'resolution of did:key, did:jwk and this realm\'s own ' +
+                 'did:web. Every call needs an access token this realm ' +
+                 'issued carrying vc-api:issue or vc-api:verify — protected ' +
+                 'scopes, issued only to a client an administrator declared ' +
+                 'them on — in every mode. It signs with keys of its own, ' +
+                 'each named by its did:key, never with the keys that sign ' +
+                 'this realm\'s tokens. OFF BY DEFAULT, because it signs ' +
+                 'documents its caller wrote: off, every /vc-api path ' +
+                 'answers 501 — the feature is off, the URL is not wrong.' },
+
+  { key: 'vcApi.maxPerWindow', group: 'W3C VC API',
+    label: 'VC API calls one client may make per rate-limit window',
+    env: 'STS_VC_API_MAX_PER_WINDOW', type: 'int', dflt: 600,
+    min: 1, max: 100000, runtime: true,
+    description: 'How many /vc-api calls one client — and one address — may ' +
+                 'make in a security.rateLimitWindowS window, counted per ' +
+                 'realm; past it a call is refused 429 with Retry-After. ITS ' +
+                 'OWN NUMBER, for xacml.pipMaxPerWindow\'s reason: ' +
+                 'security.rateLimitPerIdentity is five, because it guards a ' +
+                 'sign-in, and an issuer or verifier a coordinator calls ' +
+                 'once per credential would be switched off by it. What it ' +
+                 'bounds is cost: a call canonicalizes JSON-LD and signs or ' +
+                 'verifies, and an admitted client could otherwise spend ' +
+                 'this service\'s CPU in a loop.' },
+
   // --- Kerberos ------------------------------------------------------------
   //
   // **A TRUST REALM HAS A KERBEROS OF ITS OWN SINCE 2026-09-15**, on the same
@@ -10608,13 +10706,12 @@ const SETTINGS = [
     restartReason: 'the TCP and UDP sockets are bound when the process starts',
     description: 'The KDC listens on TCP and UDP alike. 88 is privileged, so ' +
                  'a host run that is not root fails to bind it — which is ' +
-                 'recorded rather than thrown, and reported by GET ' +
-                 '/krb5/principals. 0 asks for any free port.' },
+                 'recorded rather than thrown, and logged. 0 asks for any ' +
+                 'free port.' },
 
-  { key: 'krb5.servicePort', group: 'Kerberos', label: 'Test service port',
-    env: 'KRB5_SERVICE_PORT', type: 'port', dflt: 8888, runtime: false,
-    restartReason: 'the socket is bound when the process starts',
-    description: 'The Kerberized test service that accepts an AP-REQ.' },
+  // `krb5.servicePort`, the Kerberized test service's socket, was here
+  // until #595: that demonstration is the development companion's now
+  // (`companion/demo_kerberos.js`, COMPANION_KRB5_SERVICE_PORT).
 
   { key: 'krb5.servicePrincipal', group: 'Kerberos', label: 'Service principal',
     env: 'KRB5_SERVICE_PRINCIPAL', type: 'string',
@@ -10622,10 +10719,11 @@ const SETTINGS = [
     realmRuntime: true,
     restartReason: 'the account and its long-term keys are created at startup' +
                    REALM_BUILDS_ITS_OWN,
-    description: 'The SPN that test service holds, in the usual ' +
-                 'service/hostname form. The account the acceptor decrypts ' +
-                 'with is created FROM this name, with krb5.servicePassword ' +
-                 'and krb5.serviceSalt — until 2026-09-12 it was always ' +
+    description: 'The SPN the SPNEGO sign-in\'s acceptor holds, in the ' +
+                 'usual service/hostname form. The account the acceptor ' +
+                 'decrypts with is created FROM this name, with ' +
+                 'krb5.servicePassword and krb5.serviceSalt — until ' +
+                 '2026-09-12 it was always ' +
                  'HTTP/web.<realm domain> whatever this said. **A TRUST ' +
                  'REALM that sets none derives HTTP/web.<its own domain>** ' +
                  'where this is still the value shipped here, so a realm is ' +
@@ -10643,11 +10741,14 @@ const SETTINGS = [
                  'the equivalent of a keytab. In PRODUCT MODE the shipped ' +
                  'default is refused: that value is printed in this ' +
                  'repository, so a service key derived from it is a key ' +
-                 'anybody can forge a ticket to. With it unset the service ' +
-                 'account is not created, the acceptor on ' +
-                 'krb5.servicePort and /authn/spnego accept no ticket, and ' +
-                 'GET /krb5/service says why. Set it to the password of the ' +
-                 'SPN\'s account in the KDC that issues its tickets.' },
+                 'anybody can forge a ticket to. Product then keys the SPN ' +
+                 'at random instead, once, sealed on its application entry ' +
+                 '(Rotate at /admin/kerberos/principals hands over a ' +
+                 'keytab), and does the same for an empty password. Set it ' +
+                 'to the password of the SPN\'s account in the KDC that ' +
+                 'issues its tickets and it wins over that key. In ' +
+                 'development an empty password creates no account, and ' +
+                 'the acceptor accepts no ticket.' },
 
   { key: 'krb5.serviceSalt', group: 'Kerberos', label: 'Service principal salt',
     env: 'KRB5_SERVICE_SALT', type: 'string', dflt: '', runtime: false,
@@ -10779,8 +10880,8 @@ const SETTINGS = [
     label: 'Largest AP-REQ the acceptor reads (bytes)',
     env: 'KRB5_SERVICE_MAX_TOKEN_BYTES', type: 'int', dflt: 65536,
     min: 1024, max: 16777216, runtime: true,
-    description: 'The acceptor on krb5.servicePort, and SPNEGO over HTTP, ' +
-                 'refuse a token larger than this.' },
+    description: 'The SPNEGO sign-in\'s acceptor refuses a token larger ' +
+                 'than this.' },
 
   { key: 'krb5.replayCacheMaxEntries', group: 'Kerberos',
     label: 'Replay cache size', env: 'KRB5_REPLAY_CACHE_MAX_ENTRIES',
@@ -10829,7 +10930,7 @@ const SETTINGS = [
       'every user\'s long-term keys are derived from it at startup' +
                    REALM_BUILDS_ITS_OWN,
     description: 'The password every user account here has. It is PUBLISHED ' +
-                 'by GET /krb5/principals on purpose: a debugger whose ' +
+                 'as this setting on purpose: a debugger whose ' +
                  'accounts are unusable without reading the source is worse ' +
                  'than one that says what they are.' },
 
@@ -10867,7 +10968,8 @@ const SETTINGS = [
                    REALM_BUILDS_ITS_OWN,
     description: 'One password for every service created on demand, and it ' +
                  'is published for the same reason the user password is: it ' +
-                 'is what lets a reader decrypt a service ticket this mock ' +
+                 'is what lets a reader decrypt a service ticket this ' +
+                 'service ' +
                  'issued and read the PAC inside it. The CONFIGURED service ' +
                  'accounts keep their own separate passwords.' },
 
@@ -10958,10 +11060,8 @@ const SETTINGS = [
     description: 'Whether /authn/spnego turns a Kerberos ticket into a ' +
                  'browser session — integrated authentication, available to ' +
                  'every application and to none in particular. With it off ' +
-                 'that endpoint answers 403 saying which setting it was, and ' +
-                 '/spnego/protected still performs the whole handshake and ' +
-                 'shows you both halves of it; what it will not do is give ' +
-                 'you a session. An application or a federation relationship ' +
+                 'that endpoint answers 403 saying which setting it was. An ' +
+                 'application or a federation relationship ' +
                  'that names the `spnego` mechanism while this is off is ' +
                  'REPORTED on the sign-in screen rather than meeting a 403 ' +
                  'halfway through a flow.' },
@@ -11167,7 +11267,7 @@ const SETTINGS = [
     env: 'KRB5_S2KPARAMS', type: 'enum', enumValues: ['omit', 'send'],
     dflt: 'omit', runtime: true,
     description: 'Whether PA-ETYPE-INFO2 carries s2kparams. Windows Server ' +
-                 'omits it and this mock sent it, which is the one ' +
+                 'omits it and this service sent it, which is the one ' +
                  'difference the captured real-DC exchange found; omit is ' +
                  'therefore the default and send is kept so a client that ' +
                  'reads it can be exercised.' },
@@ -11648,11 +11748,123 @@ const SETTINGS = [
     description: 'Mutual TLS, the first scheme RFC 7644 section 2 names. It ' +
                  'applies only where the request arrived over TLS with a ' +
                  'certificate that VERIFIED against the client truststore ' +
-                 '(see /tls), so only when global.https is on. It was the ' +
+                 '(/admin/tls/trust), so only when global.https is on. It was the ' +
                  'first place in this service where a client certificate ' +
                  'was a CREDENTIAL rather than an observation; here it ' +
                  'authenticates somebody who may then write to the ' +
                  'directory.' },
+
+  // ---------------------------------------------------------------------
+  // THE OUTBOUND SCIM CLIENT (#552): how pushes to a remote SCIM service
+  // provider are delivered, retried and reconciled. Each client — its
+  // address, credentials, scope and groups — is an application entry
+  // (`scim-client`), configured on Protocols → SCIM → Clients; these rows
+  // are what every client in a realm shares. `scim/scim_client.ts` reads
+  // them. Both schedules are cluster scheduler jobs.
+  // ---------------------------------------------------------------------
+  { key: 'scimClient.attempts', group: 'SCIM client',
+    label: 'Delivery attempts',
+    env: 'STS_SCIM_CLIENT_ATTEMPTS', type: 'int', dflt: 8, min: 1, max: 50, runtime: true,
+    description: 'How many times one change is tried before it becomes a dead letter on ' +
+                 'its client\'s dead-letter queue. Only what is worth repeating ' +
+                 'is retried: a network failure, 429 and 500, 502, 503, 504.' },
+  { key: 'scimClient.timeoutMs', group: 'SCIM client',
+    label: 'Request timeout (ms)',
+    env: 'STS_SCIM_CLIENT_TIMEOUT_MS', type: 'int', dflt: 15000, min: 1000, max: 120000, runtime: true,
+    description: 'How long one SCIM or token request may take.' },
+  { key: 'scimClient.backoffMs', group: 'SCIM client',
+    label: 'Retry backoff (ms)',
+    env: 'STS_SCIM_CLIENT_BACKOFF_MS', type: 'int', dflt: 10000, min: 0, max: 3600000, runtime: true,
+    description: 'The first retry\'s delay, doubled each attempt after; a 429 ' +
+                 'Retry-After longer than it is honoured. A retry waits for the ' +
+                 'scimClient.sweepS sweep, which is when it is sent.' },
+  { key: 'scimClient.maxBackoffMs', group: 'SCIM client',
+    label: 'Longest backoff (ms)',
+    env: 'STS_SCIM_CLIENT_MAX_BACKOFF_MS', type: 'int', dflt: 3600000, min: 1000, max: 86400000, runtime: true,
+    description: 'The ceiling of the exponential backoff, for one ' +
+                 'delivery\'s retries and for a client\'s pause alike. A ' +
+                 'service provider that fails at the network, times out, or ' +
+                 'answers 429 or 5xx PAUSES its client: none of its ' +
+                 'deliveries is attempted until the pause ends, the pause ' +
+                 'doubles with each consecutive failure (scimClient.backoffMs ' +
+                 'first, with full jitter) up to this, and one delivery goes ' +
+                 'first when it ends. A success ends the pause.' },
+  { key: 'scimClient.leaseMs', group: 'SCIM client',
+    label: 'Delivery lease (ms)',
+    env: 'STS_SCIM_CLIENT_LEASE_MS', type: 'int', dflt: 300000, min: 5000, max: 3600000, runtime: true,
+    description: 'How long one node holds a delivery while it sends it — ' +
+                 'discovery, a token, a search, the write and its ETag ' +
+                 're-reads — before another node may take it over.' },
+  { key: 'scimClient.sweepS', group: 'SCIM client',
+    label: 'Delivery sweep (seconds)',
+    env: 'STS_SCIM_CLIENT_SWEEP_S', type: 'int', dflt: 15, min: 1, max: 3600, runtime: true,
+    description: 'How often the cluster scheduler job scim-client.deliver sends what ' +
+                 'is due: new changes and retries alike.' },
+  { key: 'scimClient.retentionS', group: 'SCIM client',
+    label: 'Retention (seconds)',
+    env: 'STS_SCIM_CLIENT_RETENTION_S', type: 'int', dflt: 604800, min: 60, max: 31536000, runtime: true,
+    description: 'How long a delivery is kept: a change still unsent this long after ' +
+                 'it was queued becomes a dead letter, and a sent or dead row is ' +
+                 'removed this long after it was queued.' },
+  { key: 'scimClient.maxRows', group: 'SCIM client',
+    label: 'Deliveries kept per realm',
+    env: 'STS_SCIM_CLIENT_MAX_ROWS', type: 'int', dflt: 200000, min: 100, max: 5000000, runtime: true,
+    description: 'The most delivery rows kept per realm, every client together; the ' +
+                 'oldest finished rows go first.' },
+  { key: 'scimClient.concurrency', group: 'SCIM client',
+    label: 'Concurrent deliveries',
+    env: 'STS_SCIM_CLIENT_CONCURRENCY', type: 'int', dflt: 4, min: 1, max: 64, runtime: true,
+    description: 'How many deliveries one sweep sends at once. Changes to one user or ' +
+                 'group are never sent concurrently: there is one row per ' +
+                 'client and resource.' },
+  { key: 'scimClient.summaryS', group: 'SCIM client',
+    label: 'Summary interval (seconds)',
+    env: 'STS_SCIM_CLIENT_SUMMARY_S', type: 'int', dflt: 300, min: 1, max: 86400, runtime: true,
+    description: 'At most one summary log line per realm per interval.' },
+  { key: 'scimClient.reconcileCheckS', group: 'SCIM client',
+    label: 'Reconciliation check (seconds)',
+    env: 'STS_SCIM_CLIENT_RECONCILE_CHECK_S', type: 'int', dflt: 60, min: 10, max: 3600, runtime: true,
+    description: 'How often the cluster scheduler job scim-client.reconcile asks ' +
+                 'which clients are due a scheduled reconciliation ' +
+                 '(scimClientReconcileMinutes on each).' },
+  { key: 'scimClient.pageSize', group: 'SCIM client',
+    label: 'Reconciliation page size',
+    env: 'STS_SCIM_CLIENT_PAGE_SIZE', type: 'int', dflt: 100, min: 1, max: 1000, runtime: true,
+    description: 'The count asked for per page when a reconciliation lists a ' +
+                 'service provider\'s resources (RFC 7644 section 3.4.2.4), ' +
+                 'lowered to its filter.maxResults.' },
+  { key: 'scimClient.etagRetries', group: 'SCIM client',
+    label: 'ETag re-reads',
+    env: 'STS_SCIM_CLIENT_ETAG_RETRIES', type: 'int', dflt: 3, min: 0, max: 10, runtime: true,
+    description: 'How many times a write answered 412 Precondition Failed (RFC 7644 ' +
+                 'section 3.14) re-reads the resource and tries again before ' +
+                 'it becomes a dead letter.' },
+  { key: 'scimClient.allowHttp', group: 'SCIM client',
+    label: 'Allow http:// to a service provider (development only)',
+    env: 'STS_SCIM_CLIENT_ALLOW_HTTP', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'OFF by default. RFC 7644 section 7.2 requires TLS, and a ' +
+                 'SCIM request carries personal data and a credential. On, ' +
+                 'development mode dials an http:// base URL or token ' +
+                 'endpoint; product mode refuses it whatever this says.' },
+  { key: 'scimClient.skipTlsVerification', group: 'SCIM client',
+    label: 'Skip TLS verification to a service provider (development only)',
+    env: 'STS_SCIM_CLIENT_SKIP_TLS_VERIFICATION', type: 'bool', dflt: false,
+    runtime: true, onlyWhile: 'skipsOutboundTlsVerification',
+    description: 'WARNING — DEVELOPMENT MODE ONLY. Sends to an https ' +
+                 'service provider WITHOUT verifying its certificate, so ' +
+                 'personal data and the credential go to anybody who can ' +
+                 'intercept the connection (RFC 7644 section 7.2 requires ' +
+                 'the server identity check). In product mode it is ignored ' +
+                 'and cannot be set: give the client its CA certificates ' +
+                 'instead.' },
+  { key: 'scimClient.caFile', group: 'SCIM client',
+    label: 'CA certificates file',
+    env: 'STS_SCIM_CLIENT_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A file of PEM CA certificates trusted for every SCIM ' +
+                 'client\'s service provider and token endpoint, beside the ' +
+                 'public roots and the client\'s own scimClientCaCertificates.' },
 
 
   // ---------------------------------------------------------------------
@@ -11671,8 +11883,9 @@ const SETTINGS = [
   // is deliberate in a service whose every other surface is a turnstile. A
   // PDP's whole output is a decision; a flag that made it answer Permit when
   // it could not decide would not be a mock of anything, it would be a broken
-  // PDP. What IS configurable is what happens at the PEP — see
-  // `xacml.pepBias`, which is the PEP's decision and not the PDP's.
+  // PDP. What happens at a PEP is the PEP's own configuration: the remote
+  // PEP's `PEP_BIAS` (`xacml.pepBias`, the demonstration PEP's, went with it
+  // to the `xacml-pep` container in #596).
   { key: 'xacml.enabled', group: 'XACML', label: 'XACML enabled',
     env: 'STS_XACML_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'When on, the XACML 3.0 endpoints under /xacml answer. ' +
@@ -11691,21 +11904,6 @@ const SETTINGS = [
                  'the default persistence mode, and a caller that can create ' +
                  'entries without bound can exhaust it. Reaching the limit ' +
                  'refuses the CREATE and logs; it never evicts.' },
-
-  { key: 'xacml.pepBias', group: 'XACML',
-    label: 'What the embedded PEP does with a non-Permit',
-    env: 'STS_XACML_PEP_BIAS', type: 'enum',
-    enumValues: ['deny-biased', 'permit-biased'], dflt: 'deny-biased',
-    runtime: true,
-    description: 'THIS IS THE PEP\'S DECISION AND NOT THE PDP\'S, which is ' +
-                 'the whole reason it is a setting. XACML section 7.2 lets a ' +
-                 'PEP be deny-biased (anything that is not Permit is a ' +
-                 'refusal) or permit-biased (anything that is not Deny is ' +
-                 'allowed), and real deployments differ. Deny-biased is the ' +
-                 'default because it is what a PEP protecting anything ' +
-                 'should be; permit-biased exists so that a client can see ' +
-                 'what the other choice does to an Indeterminate, which is ' +
-                 'the case the two disagree about and the one nobody tests.' },
 
   { key: 'xacml.returnPolicyIdList', group: 'XACML',
     label: 'Always return the applicable policy identifiers',
@@ -11732,10 +11930,9 @@ const SETTINGS = [
   // is a surprise to anybody who has already read the first.
   //
   // WHAT IS NOT HERE IS A SETTING THAT CHANGES A REMOTE PEP'S BIAS. A remote
-  // PEP is a SEPARATE PROCESS with its own configuration, and `xacml.pepBias`
-  // governs the EMBEDDED one at /xacml/protected and nothing else. A row here
-  // that appeared to set a remote PEP's bias would be a control that silently
-  // did nothing, which is worse than no control: the remote one reports the
+  // PEP is a SEPARATE PROCESS with its own configuration (`PEP_BIAS`). A row
+  // here that appeared to set a remote PEP's bias would be a control that
+  // silently did nothing, which is worse than no control: the remote one reports the
   // bias it is actually running with on every heartbeat, and the console shows
   // that rather than what this service would have chosen for it.
   { key: 'xacml.remotePeps', group: 'XACML',
@@ -12126,8 +12323,9 @@ const SETTINGS = [
     env: 'STS_SSF_PUSH_ALLOWED_HOSTS', type: 'csv', dflt: '', runtime: true,
     description: 'Host names this service will push to. EMPTY MEANS ANY, ' +
                  'which is the default and the one deliberate looseness in ' +
-                 'the outbound path — it is what makes this usable as a ' +
-                 'mock. A deployment reachable by anybody it does not trust ' +
+                 'the outbound path — it is what makes this usable for ' +
+                 'testing. A deployment reachable by anybody it does not ' +
+                 'trust ' +
                  'sets the list, and every other host is refused BY NAME on ' +
                  'the stream\'s own log. Hosts rather than URLs on purpose: ' +
                  'a receiver legitimately moves its endpoint path and does ' +
@@ -12331,7 +12529,7 @@ const SETTINGS = [
                  '2026-09-22 (#144), which let one receiver use up every ' +
                  'other receiver\'s allowance. A create past it is refused ' +
                  'NAMING THIS SETTING, which is the point of having a limit ' +
-                 'on a mock at all: every ceiling here is a reachable ' +
+                 'here at all: every ceiling here is a reachable ' +
                  'negative a receiver cannot otherwise exercise. This ' +
                  'service\'s own two receiver streams are not counted.' },
 
@@ -12412,10 +12610,9 @@ const SETTINGS = [
   { key: 'ssf.maxReceivedEvents', group: 'SSF', label: 'Received events kept',
     env: 'STS_SSF_MAX_RECEIVED_EVENTS', type: 'int', dflt: 200, min: 1,
     max: 10000, runtime: true,
-    description: 'How many SETs POST /ssf/receive keeps for /admin/ssf to ' +
-                 'show. That endpoint is this service acting as a RECEIVER, ' +
-                 'which is what the debugger pushes to when the roles are ' +
-                 'the other way round; the oldest are dropped past this.' },
+    description: 'How many delivered SETs each of this service\'s own ' +
+                 'receivers (the console\'s and the portal\'s) keeps in its ' +
+                 'inbox, per realm; the oldest are dropped past this.' },
 
   { key: 'ssf.maxStreamLogEntries', group: 'SSF', label: 'Log lines per stream',
     env: 'STS_SSF_MAX_STREAM_LOG_ENTRIES', type: 'int', dflt: 200, min: 1,
@@ -12442,36 +12639,6 @@ const SETTINGS = [
                  'for a verification event. A read scope is not enough for ' +
                  'any of those, which is the first place in this service ' +
                  'besides SCIM where two scopes differ in what they permit.' },
-
-  { key: 'ssf.receiveEnabled', group: 'SSF', label: 'Accept pushed events',
-    env: 'STS_SSF_RECEIVE_ENABLED', type: 'bool', dflt: true, runtime: true,
-    description: 'Whether POST /ssf/receive accepts a Security Event Token ' +
-                 'pushed AT this service — the roles reversed, with the ' +
-                 'debugger as the transmitter. It verifies the signature ' +
-                 'when it can find a key and reports what it read either ' +
-                 'way, because a receiver that refused an unverifiable ' +
-                 'event would be unable to show a person WHY it was ' +
-                 'unverifiable. Off answers 501.' },
-
-  { key: 'ssf.receiveAudiences', group: 'SSF',
-    label: 'Audiences POST /ssf/receive answers to',
-    env: 'STS_SSF_RECEIVE_AUDIENCES', type: 'csv', dflt: '', runtime: true,
-    description: 'The `aud` values the debugger-facing receiver at ' +
-                 'POST /ssf/receive accepts. A SET addressed to none of ' +
-                 'them is recorded and refused with invalid_audience, as a ' +
-                 'real receiver refuses it. EMPTY means the endpoint\'s own ' +
-                 'URL in this realm, which is the name a transmitter can ' +
-                 'discover without being told one.' },
-
-  { key: 'ssf.receiveIssuers', group: 'SSF',
-    label: 'Issuers POST /ssf/receive accepts',
-    env: 'STS_SSF_RECEIVE_ISSUERS', type: 'csv', dflt: '', runtime: true,
-    description: 'The `iss` values POST /ssf/receive accepts (SSF 1.0 ' +
-                 'section 4.1.6: a receiver MUST check the issuer). A SET ' +
-                 'from any other issuer is recorded and refused with ' +
-                 'invalid_issuer. EMPTY means this realm\'s own transmitter ' +
-                 'issuer — the only issuer whose SETs this receiver can ' +
-                 'verify, since it holds no other key.' },
 
   { key: 'ssf.receiveRequireSignature', group: 'SSF',
     label: 'Refuse a SET whose signature does not verify',
@@ -13716,9 +13883,9 @@ const SETTINGS = [
     env: 'STS_ROLES_XACML_USER_GROUP', type: 'string', dflt: 'xacml-users',
     runtime: true,
     description: 'The directory group whose members hold the built-in ' +
-                 'XACML_USER role, which is what the four XACML endpoints ' +
-                 'proper require — GET /xacml, POST /xacml/pdp, GET ' +
-                 '/xacml/policies and GET /xacml/protected. A caller ' +
+                 'XACML_USER role, which is what the three XACML endpoints ' +
+                 'proper require — GET /xacml, POST /xacml/pdp and GET ' +
+                 '/xacml/policies. A caller ' +
                  'presenting a client certificate this service VERIFIED is ' +
                  'somebody it can name; membership of this group is what ' +
                  'makes them somebody it lets in, and the two are kept apart ' +
@@ -13728,9 +13895,9 @@ const SETTINGS = [
                  'REMOTE_PEPS reaches the three /xacml/pep endpoints, which ' +
                  'hand out the documents this service enforces its own ' +
                  'access with, and one group granting both would make ' +
-                 'admitting a caller to the demonstration surface silently ' +
+                 'admitting a caller to the XACML surface proper silently ' +
                  'admit it to those. Setting it to the empty string means ' +
-                 'NOBODY holds the role, which closes those four endpoints ' +
+                 'NOBODY holds the role, which closes those three endpoints ' +
                  'to every caller; that is the way to take the XACML surface ' +
                  'away without turning xacml.enabled off and losing the ' +
                  'embedded issuance and access PEPs with it.' },
@@ -13772,7 +13939,7 @@ const SETTINGS = [
                  'questions about somebody else\'s boundary — that is what a ' +
                  'PDP is for and what /xacml/pdp and every remote PEP ask it ' +
                  '— and this one answers a question about THIS service. Two ' +
-                 'questions, two documents, so that editing the demo policy ' +
+                 'questions, two documents, so that editing the root policy ' +
                  'cannot change who may sign in and narrowing a role cannot ' +
                  'change what /xacml/pdp answers. The `role-issuance` ' +
                  'policy is BUILT IN and is never seeded into ou=policies: ' +
@@ -14041,7 +14208,8 @@ const SETTINGS = [
                  'authorities claiming one name and every SVID either mints ' +
                  'is then ambiguous. Set it on a realm to name that realm\'s ' +
                  'trust domain outright; a realm deliberately sharing ' +
-                 'another\'s is a thing worth being able to build on a mock.' },
+                 'another\'s is a thing worth being able to build for ' +
+                 'testing.' },
 
   { key: 'spiffe.x509KeyType', group: 'SPIFFE', label: 'X.509 authority key',
     env: 'STS_SPIFFE_X509_KEY_TYPE', type: 'enum',
@@ -14924,7 +15092,8 @@ const SETTINGS = [
     label: 'Invent a registration entry on first sight',
     env: 'STS_SPIFFE_AUTOCREATE_ENTRIES', type: 'bool', dflt: true,
     runtime: true,
-    description: 'THIS IS THE SETTING THAT MAKES THIS A MOCK. On, a workload ' +
+    description: 'THIS IS THE SETTING THAT MAKES SPIFFE PERMISSIVE. On, a ' +
+                 'workload ' +
                  'that asks the Workload API for an SVID and matches no ' +
                  'registration entry gets one created for it and is issued ' +
                  'an SVID anyway — no attestation, no selectors, nothing ' +
@@ -15532,27 +15701,67 @@ const SETTINGS = [
   // and authentication are two decisions, a self-signed pair gives the first
   // and not the second, and a service that conflated them would be one where
   // turning verification off looked like turning TLS off.
+  //
+  // **ON BY DEFAULT, IN EVERY MODE (rcbj, 2026-10-12).** It was off, on the
+  // argument that the compose stack's certificate is self-signed and there
+  // was nothing to verify it against. That argued from the stack to the
+  // default, and the default is what every deployment gets: an
+  // unauthenticated database is one anything at its address can impersonate,
+  // reading and writing every row. The stack now hands its certificate to
+  // the service read-only (`persistence.databaseTlsCaFile`, below) and dials
+  // `sslmode=verify-full`, so nothing it runs needs this off.
   // ---------------------------------------------------------------------
   { key: 'persistence.databaseTlsRejectUnauthorized', group: 'Persistence',
     label: 'Verify the database certificate',
-    env: 'STS_DATABASE_TLS_REJECT_UNAUTHORIZED', type: 'bool', dflt: false,
+    env: 'STS_DATABASE_TLS_REJECT_UNAUTHORIZED', type: 'bool', dflt: true,
     runtime: false,
     restartReason: 'the connection pool is opened before the listener binds',
     description: 'Whether the PostgreSQL server\'s certificate must verify ' +
-                 'against a trust anchor this process holds. OFF by default, ' +
-                 'and that is a statement about the STACK rather than a ' +
-                 'weakened default: the certificate is generated inside the ' +
-                 'postgres container on its first start and is signed by ' +
-                 'nobody, so there is nothing for a client to verify it ' +
-                 'against and turning this on would refuse every connection ' +
-                 'with a message about a self-signed certificate. THE ' +
-                 'CONNECTION IS STILL ENCRYPTED either way — this service ' +
-                 'never dials its database in the clear (#273), the ' +
-                 'database\'s own pg_hba.conf requires TLS too, and this ' +
-                 'decides only whether the ' +
-                 'server is AUTHENTICATED. Turn it on when you point this at ' +
-                 'a real database whose certificate chains to something ' +
-                 'NODE_EXTRA_CA_CERTS names.' },
+                 'against a trust anchor this process holds, chain and host ' +
+                 'name. ON by default, in every mode. The trust anchors are ' +
+                 'persistence.databaseTlsCaFile when that is set, and this ' +
+                 'process\'s default trust store (with NODE_EXTRA_CA_CERTS) ' +
+                 'otherwise. WARNING: turning this off leaves the database ' +
+                 'server UNAUTHENTICATED — the connection is still ' +
+                 'encrypted (this service never dials its database in the ' +
+                 'clear, #273), but anything that can answer at the ' +
+                 'database\'s address can impersonate it and read and write ' +
+                 'every row this service keeps, the sealed keys and the ' +
+                 'directory included. Turn it off only for a throwaway ' +
+                 'database you would hand to anyone. ' +
+                 'It decides only for a connection string whose sslmode is ' +
+                 'unset, require or prefer: sslmode=verify-full verifies the ' +
+                 'chain and the host name, and sslmode=verify-ca the chain ' +
+                 'alone (as libpq reads them), whatever this says.' },
+
+  // ---------------------------------------------------------------------
+  // THE DATABASE'S OWN TRUST ANCHOR (2026-10-12). A certificate that chains
+  // to nothing node already trusts — the compose stack's, made self-signed
+  // inside the postgres container — could be verified only by adding it to
+  // NODE_EXTRA_CA_CERTS, which trusts it for EVERY outbound connection this
+  // process makes: a federation partner, a JWKS, a mail relay. This names a
+  // PEM file (or a directory of them, for the cells stack's two databases)
+  // trusted for the database connections ONLY, in place of the default
+  // trust store for them; `persistence.databaseTlsCa()` reads it,
+  // and a file named and unreadable, or holding no certificate, stops the
+  // service at start (STS-STORE-0079) rather than dialling with a trust
+  // anchor nobody chose.
+  // ---------------------------------------------------------------------
+  { key: 'persistence.databaseTlsCaFile', group: 'Persistence',
+    label: 'Database CA certificate file',
+    env: 'STS_DATABASE_TLS_CA_FILE', type: 'string', dflt: '',
+    runtime: false,
+    restartReason: 'the connection pool is opened before the listener binds',
+    description: 'A PEM file of CA certificates trusted for the connections ' +
+                 'to the database ONLY, in place of this process\'s default ' +
+                 'trust store for them; nothing else this service dials ' +
+                 'trusts them. It may name a directory instead, and then ' +
+                 'every .crt and .pem file in it is read. Empty uses the ' +
+                 'default trust store (with NODE_EXTRA_CA_CERTS). A file ' +
+                 'that is named and cannot be read, or holds no certificate, ' +
+                 'stops the service at start. The compose stack sets it to ' +
+                 'the certificate its postgres container generates, shared ' +
+                 'read-only without the key.' },
 
   // -------------------------------------------------------------------------
   // THE GLOBAL TIER'S DATABASE (#98, 2026-09-28). With `cells.id` set, the

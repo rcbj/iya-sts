@@ -396,6 +396,12 @@ const attributeSources = require('../attribute-sources/attribute_sources');
 // binds (2026-09-12). A LIBRARY that requires only helpers, config, crypto,
 // realms and error_codes, so the require closes no cycle and moves no route.
 const websecurity = require('../common/websecurity');
+// THE CONSOLE'S PROSE TEMPLATES (#543 phase 2b): `fill()` makes the computed
+// sentences of `description()` from SERVICE_SENTENCES below. Required at load
+// because it is safe to: `server_prose` requires only helpers, config,
+// error_codes, crypto, i18n and instance_slot, every one of them loaded long
+// before this module (#21), and none of them requires this file.
+const serverProse = require('../common/server_prose');
 // STORED KERBEROS KEYS (2026-09-12) — a directory person's, derived from their
 // password, and a service principal's random ones. A LIBRARY (rule 3) that
 // registers no route; the modules it requires are the principal database and
@@ -857,8 +863,8 @@ function pepsDn() {
 
 // ou=trustAnchors is the DURABLE half of the client-certificate truststore
 // (2026-09-12) — one entry per anchor somebody added at runtime, through
-// /admin/tls/trust, POST /admin-api/tls/trust/add or (in development)
-// POST /tls/trust. It is in the DEFAULT realm's tree and only there, because
+// /admin/tls/trust or POST /admin-api/tls/trust/add (and, until #597
+// deleted it, the open POST /tls/trust). It is in the DEFAULT realm's tree and only there, because
 // the truststore is one array for every listener in the process: a container
 // per realm would be a per-realm truststore this service does not have.
 //
@@ -3975,11 +3981,11 @@ function seed() {
   //
   // **A SECOND IDENTITY AND A SECOND GROUP RATHER THAN A SECOND MEMBER OF THE
   // PAIR ABOVE**, and that is the whole reason these four entries exist rather
-  // than two. `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` and
-  // `GET /xacml/protected` require `XACML_USER`; `/xacml/pep/*` requires
+  // than two. `GET /xacml`, `POST /xacml/pdp` and `GET /xacml/policies`
+  // require `XACML_USER`; `/xacml/pep/*` requires
   // `REMOTE_PEPS`, and those endpoints hand out the documents this service
   // enforces its own access with. One group granting both would make admitting
-  // a caller to the demonstration surface silently admit it to those, which is
+  // a caller to the XACML surface proper silently admit it to those, which is
   // exactly the case `common/roles.js` keeps the two roles apart to prevent —
   // and it is the case somebody tidying this file will be tempted to collapse.
   //
@@ -4014,8 +4020,8 @@ function seed() {
                    'client certificate whose subject common name is ' +
                    '"xacml-user-1" resolves to this entry, and its ' +
                    'membership of cn=xacml-users below is what lets it reach ' +
-                   'GET /xacml, POST /xacml/pdp, GET /xacml/policies and GET ' +
-                   '/xacml/protected. It is NOT a member of cn=remote-peps ' +
+                   'GET /xacml, POST /xacml/pdp and GET /xacml/policies. It ' +
+                   'is NOT a member of cn=remote-peps ' +
                    'and must not be made one: those three endpoints publish ' +
                    'the documents this service enforces its own access with. ' +
                    'Seeded, and authenticated by nothing until a certificate ' +
@@ -4027,10 +4033,10 @@ function seed() {
       objectClass: ['top', 'groupOfNames'],
       cn: xacmlUserGroup,
       description: 'Members hold the built-in XACML_USER role, which is what ' +
-                   'the four XACML endpoints proper require — GET /xacml, ' +
-                   'POST /xacml/pdp, GET /xacml/policies and GET ' +
-                   '/xacml/protected. The group is named by ' +
-                   'roles.xacmlUserGroup; emptying it closes those four ' +
+                   'the three XACML endpoints proper require — GET /xacml, ' +
+                   'POST /xacml/pdp and GET /xacml/policies. The group is ' +
+                   'named by roles.xacmlUserGroup; emptying it closes those ' +
+                   'three ' +
                    'endpoints to everybody, and adding a member — a person, ' +
                    'or the DN a client certificate resolves to — is how a ' +
                    'caller is admitted. It is deliberately NOT ' +
@@ -4788,7 +4794,7 @@ const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 
 // And is it a DECENTRALIZED IDENTIFIER? A third shape of identity, arriving
 // from the Decentralized Identity endpoints — an ldp_vc's `did:jwk:…` subject,
-// whatever DID the OID4VP Verifier was shown, the one /did/generate mints. Like
+// whatever DID the OID4VP Verifier was shown. Like
 // DN_SHAPED this is deliberately not shared with admin_stats.js's
 // identical-looking test: that one decides whether to split an identity at an
 // '@', this one decides where an entry goes, and one knob turning both would
@@ -5280,8 +5286,8 @@ function didPlan(info) {
   const uid = didUid(did);
   // The description says how this entry came to exist, and for a DID the
   // default — "authenticated through X" — would be the wrong sentence in both
-  // halves: nobody typed a password, and at /did/generate nobody presented
-  // anything at all. So this plan carries its own.
+  // halves: nobody typed a password, and a DID presented to the Verifier is
+  // not an authentication. So this plan carries its own.
   const note = 'named by a decentralized identifier presented through ' +
     String(info.protocol || 'an unstated protocol') +
     (info.method ? ' (' + info.method + ')' : '');
@@ -5305,8 +5311,8 @@ function didPlan(info) {
   // visible on one object instead of one each on several. One person is one
   // entry here, which is the rule that wins.
   //
-  // A DID presented with no link — the OID4VP Verifier is shown one, or
-  // /did/generate mints one — still gets its own entry. There is nothing to
+  // A DID presented with no link — the OID4VP Verifier is shown one — still
+  // gets its own entry. There is nothing to
   // attach it to, and inventing a person to attach it to would be worse than a
   // digest for a name. If it was linked EARLIER, locateEntry() finds the entry
   // by `didSubject` before this plan is ever consulted, so no duplicate
@@ -7793,6 +7799,9 @@ function groupsFor(dn) {
       danglingCount: presence.danglingCount,
       // Off the one claims index (#352), not a walk of the realm per group.
       claimedCount: unlistedClaimsOf(entry.dn).length,
+      // How many `owner` values it names (#603); who they are is the
+      // drill-down's.
+      ownerCount: (entry.attributes.owner || []).length,
       attributeCount: Object.keys(entry.attributes).length
     };
     groups.push(row);
@@ -7863,7 +7872,10 @@ function groupsFor(dn) {
     memberCount: members.length,
     presentCount: members.filter(function (m) { return m.present; }).length,
     danglingCount: members.filter(function (m) { return !m.present; }).length,
-    claimed: claimedMembersOf(stored.dn)
+    claimed: claimedMembersOf(stored.dn),
+    // Its owners (#603), each resolved, and the most it may name.
+    owners: groupOwnersOf(stored),
+    maxOwners: MAX_GROUP_OWNERS
   };
   log.debug('Leaving groupsFor(). ' + stored.dn + ' has ' + members.length +
             ' member value(s), ' + out.group.danglingCount + ' of them ' +
@@ -8219,7 +8231,9 @@ if (typeof admin.setDirectoryWriter === 'function') {
 // without the slot costs a warning rather than a TypeError at require time.
 if (typeof admin.setGroupWriter === 'function') {
   admin.setGroupWriter({ createGroup: createGroup,
-                         addGroupMember: addGroupMember });
+                         addGroupMember: addGroupMember,
+                         addGroupOwner: addGroupOwner,
+                         removeGroupOwner: removeGroupOwner });
 } else {
   log.warn('ldap: the admin console offers no setGroupWriter(), so ' +
            '/admin/groups cannot create a group or add a member to one. The ' +
@@ -8366,6 +8380,8 @@ if (typeof roles.setDirectory === 'function') {
     allRoles: allRoles,
     writeRole: writeRole,
     deleteRole: deleteRole,
+    // A role's owners (#604) are resolved as a service account's are.
+    resolveOwner: resolveServiceAccountOwner,
     groupsOfUser: function (name) {
       log.debug("Entering groupsOfUser().");
       log.debug("Leaving groupsOfUser().");
@@ -9264,6 +9280,10 @@ const SECRET_ATTRIBUTES = [
   // A secret destination's write credential (#221 P3), sealed like the
   // three above and withheld from every directory read.
   'secretdestcredential',
+  // An outbound SCIM client's three credentials (#552), sealed like the
+  // destination's and withheld from every directory read.
+  'scimclientpassword', 'scimclientoauthclientsecret',
+  'scimclienttlsprivatekey',
   'stsassertionprivatekey', 'stssamlassertionprivatekey',
   'ststotpcredential', 'stsbackupcodes', 'stsactivationtoken',
   // A person's app passwords (#101): scrypt hashes, a verifier like
@@ -16215,6 +16235,174 @@ registerWorkerOperations();
 // anything, and `/admin/sts-metadata` is built by reading that list.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// THE DIRECTORY PAGES' OWN PROSE, AS TABLES (#543 phase 2b).
+//
+// `GET /admin-api/ldap/*` answers carry these sentences, and
+// `common/server_prose.ts` translates an answer's string wherever it is
+// EXACTLY one of them — so they are declared once, here, and the views read
+// them from here rather than writing them out inline. One copy: a sentence
+// edited in a view and not here could not be translated, and cannot exist.
+//
+// SERVICE_PROSE is what `description()` says that never varies (the bind
+// policy names REFUSED_PASSWORD, a constant, so it is static too);
+// SERVICE_SENTENCES are the sentences it COMPUTES, as templates filled with
+// `serverProse.fill()`; SOURCE_OF_TRUTH is the one sentence each container
+// page opens with. `prose()` at the foot of this file hands all three to the
+// extractor.
+// ---------------------------------------------------------------------------
+const SERVICE_PROSE = Object.freeze({
+  // DEVELOPMENT's policy, and `bindPolicyProduct` product's (#543 round 2):
+  // `description()` answered this one in both modes until then, so a product
+  // realm's page said every bind succeeds while every bind was verified.
+  bindPolicy: 'every bind succeeds — any DN, any password, including an ' +
+    'anonymous one — except the literal password "' + REFUSED_PASSWORD +
+    '", which is answered LDAP_INVALID_CREDENTIALS (49) so that a negative ' +
+    'test has something to fail on',
+  bindPolicyProduct: 'only a person binds, only on LDAPS 636, and the ' +
+    'password is verified against the hashed userPassword on their entry. ' +
+    'An anonymous bind (48), any bind on 389 (13), an empty password (53), ' +
+    'a DN that is not a person (49) and a DN or address past its ' +
+    'failed-bind limit (53) are refused before a password is read; a wrong ' +
+    'password, and the literal password "' + REFUSED_PASSWORD + '", are ' +
+    'LDAP_INVALID_CREDENTIALS (49)',
+  schema: 'none. No objectClass is enforced and no attribute is checked ' +
+    'against a syntax, so an entry may carry whatever attributes a client ' +
+    'sends. A real directory would refuse most of that.',
+  authenticationFacts: 'where the protocol that accepted the credential ' +
+    'says HOW it was presented — which today is the sign-in screen and ' +
+    'nothing else, since amr is an OIDC vocabulary — the entry also ' +
+    'carries authnMethod (every RFC 8176 method this person has used here, ' +
+    'accumulated), mfaAuthenticated (TRUE or FALSE for the MOST RECENT ' +
+    'authentication, overwritten each time) and mfaLastAuthTime (when ' +
+    'multi-factor last happened, never cleared). These are this service\'s ' +
+    'own names and not schema. A WebAuthn ceremony after a password writes ' +
+    'TRUE; the same ceremony used passwordless writes authnMethod hwk with ' +
+    'no pwd beside it and mfaAuthenticated FALSE, because one factor is ' +
+    'one factor however phishing-resistant it is. Nothing here READS them: ' +
+    'no token carries them and no endpoint decides anything on them, ' +
+    'exactly as a group here grants nothing — bar the two groups that ' +
+    'decide who may use the admin console, which is the one exception ' +
+    'anywhere in this directory and is confined to that console.',
+  enforcedRules: Object.freeze([
+    'an add whose parent does not exist is LDAP_NO_SUCH_OBJECT (32)',
+    'a delete of an entry with children is LDAP_NOT_ALLOWED_ON_NONLEAF (66)',
+    'a modify delete of an attribute that is not present is ' +
+      'LDAP_NO_SUCH_ATTRIBUTE (16)',
+    'deleting the last value of an attribute deletes the attribute',
+    'an add under ou=users whose username is already here is ' +
+      'LDAP_ENTRY_ALREADY_EXISTS (68), naming the entry that holds it. ONE ' +
+      'ENTRY PER PERSON: the username is the entry\'s naming RDN value and ' +
+      'any uid it carries, so uid=rcbj and cn=rcbj are the same person and ' +
+      'only one of them can be here. It is the same refusal the console ' +
+      'and POST /admin-api/users/create give, and the same rule every ' +
+      'protocol here folds onto when it authenticates somebody'
+  ]),
+  specifications: Object.freeze([
+    'RFC 4510 (LDAP technical specification road map)',
+    'RFC 4511 (the protocol)',
+    'RFC 4512 (directory information models)',
+    'RFC 4514 (DN string representation)',
+    'RFC 4515 (search filter string representation)'
+  ]),
+  implementation: 'ldapjs 3.0.7, pinned as the node-ldapjs submodule and ' +
+    'used unmodified'
+});
+
+// The sentences `description()` makes, as templates. `{{contexts}}` is the
+// naming contexts joined with ' and ', `{{root}}` and the DN placeholders are
+// DNs and `{{port}}` the main port — data, carried into a translation as
+// they are. `{{provenance}}` is `tlsServer.certificateProvenance()`, which
+// is that module's sentence and not this namespace's.
+const SERVICE_SENTENCES = Object.freeze({
+  searchScopeRealms: 'a subtree search answers about the trust realm whose ' +
+    'base DN it started from. {{contexts}} are the contexts; an entry ' +
+    'belonging to another realm is filtered out of a search based above ' +
+    'it, and is reached by searching from that realm\'s own base. An ' +
+    'operation that names ONE DN — add, modify, delete, compare, or a ' +
+    'base-scope search — is answered wherever that DN is, because spelling ' +
+    'the DN out names the realm',
+  searchScopeOne: 'no trust realms are defined, so there is one context ' +
+    '({{root}}) and a subtree search from it answers about the whole store',
+  clientCertificates: 'never requested. This listener proves the SERVER ' +
+    'to the client and nothing more; a client certificate offered to it ' +
+    'is not asked for and would not be a login if it were. The main ' +
+    'port ({{port}}) is where client certificates are asked for and read.',
+  certificateSource: 'the same certificate and key the main port ' +
+    '({{port}}) serves. It is {{provenance}}: GET /tls/server-certificate ' +
+    'hands it out in PEM. One anchor for both sockets is why they share it.',
+  autoCreateRule: 'an entry uid=<name>,{{usersDn}} appears the first ' +
+    'time <name> authenticates to this service through ANY protocol. An ' +
+    'LDAP bind does not seed one (it presents a DN, not a user name) and ' +
+    'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is ' +
+    'the one identity that is already a DN: its entry keeps the subject\'s ' +
+    'own leaf RDN — cn=alice,{{usersDn}} for CN=alice,O=Example — or the ' +
+    'whole subject where that already lies under {{baseDn}}, and the ' +
+    'full subject, issuer, serial and validity are on the entry as x509* ' +
+    'attributes, which are this service\'s own names and not schema. A ' +
+    'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
+    'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
+    'to the OID4VP Verifier. Its entry goes ' +
+    'at uid=did-<12 hex of the SHA-256 of the DID>,{{usersDn}} — a ' +
+    'did:jwk written out in full is a DN of several hundred characters, ' +
+    'most of it key material — with the identifier itself kept whole on ' +
+    'the entry as didSubject, and its method as didMethod. Search for the ' +
+    'person by didSubject, not by uid: on those entries the uid is a ' +
+    'digest and the didSubject is the identity.'
+});
+
+// The sentence each container page under `/admin/ldap/*` opens with, by the
+// page's name in `admin.setDirectoryPages()` below.
+const SOURCE_OF_TRUTH = Object.freeze({
+  spiffe: 'These entries ARE the SPIFFE registry. An ldapmodify ' +
+    'under ou=entries changes what the next SVID looks like — ' +
+    'spiffeX509SvidTtl changes its lifetime, spiffeDnsName changes its ' +
+    'subjectAltName, and spiffeId changes whose identity it is — because ' +
+    'nothing caches them. The two containers hold different KINDS of ' +
+    'thing: entries are CONFIGURATION and agents are a RECORD, which is ' +
+    'why nothing about an agent is editable from the console.',
+  applications: 'These entries ARE the registry. An ldapmodify here ' +
+    'changes what the protocol endpoints do — adding a value to ' +
+    'oauthRedirectUri adds a redirect URI that RFC 9700 mode will then ' +
+    'accept by exact match.',
+  federations: 'These entries ARE the register. An ldapmodify here is a ' +
+    'SECURITY change: fedSigningCertificate decides whose assertions this ' +
+    'service will believe, and fedEnabled turns a partner on. Nothing ' +
+    'caches them.',
+  devices: 'These entries ARE the device register: nothing caches ' +
+    'them, so an ldapmodify of stsDeviceCompliance is the device\'s ' +
+    'compliance on the next read. stsDeviceSecretHash is withheld.',
+  roles: 'These entries ARE the membership half of the role ' +
+    'register. An ldapmodify adding a value to roleMemberUser grants that ' +
+    'role, and the next issuance decision is made against it. What ' +
+    'REQUIRES a role is appRequiredRole on an application entry under ' +
+    'ou=applications, which is a different container.',
+  policies: 'These entries ARE the policy repository. An ldapmodify ' +
+    'of xacmlPolicyDocument changes what the PDP decides on the very next ' +
+    'request and is NOT statically validated on the way in, unlike every ' +
+    'write through /admin/xacml — so a document that stops typechecking ' +
+    'answers Indeterminate rather than being refused.',
+  peps: 'Almost every attribute here is a RECORD this service ' +
+    'wrote as a PEP registered, pulled or reported. The two that are not ' +
+    'are xacmlPepEnabled, which an administrator sets and a reconnecting ' +
+    'PEP does not clear, and xacmlPepNotifyUrl, which is one of the three ' +
+    'addresses this service dials.'
+});
+
+// The `/admin-api` routes whose answers carry the prose above (#543): the
+// service description and the seven container pages that open with a
+// source-of-truth sentence. `/admin-api/ldap/directory` carries none.
+const PROSE_ROUTES = Object.freeze([
+  '/admin-api/ldap/service',
+  '/admin-api/ldap/spiffe',
+  '/admin-api/ldap/applications',
+  '/admin-api/ldap/federations',
+  '/admin-api/ldap/devices',
+  '/admin-api/ldap/roles',
+  '/admin-api/ldap/policies',
+  '/admin-api/ldap/peps'
+]);
+
 // What this directory is, as data. Shared by the page and by ?format=json so
 // the two cannot disagree — which is the same reason /admin/sts-metadata reads
 // the router rather than a written-down list.
@@ -16249,24 +16437,15 @@ function description(req) {
     // store, exactly as it always was.
     namingContexts: namingContexts(),
     searchScope: realms.active()
-      ? 'a subtree search answers about the trust realm whose base DN it ' +
-        'started from. ' + namingContexts().join(' and ') + ' are the ' +
-        'contexts; an entry belonging to another realm is filtered out of a ' +
-        'search based above it, and is reached by searching from that ' +
-        'realm\'s own base. An operation that names ONE DN — add, modify, ' +
-        'delete, compare, or a base-scope search — is answered wherever that ' +
-        'DN is, because spelling the DN out names the realm'
-      : 'no trust realms are defined, so there is one context (' + ROOT_DN +
-        ') and a subtree search from it answers about the whole store',
+      ? serverProse.fill(SERVICE_SENTENCES.searchScopeRealms,
+                         { contexts: namingContexts().join(' and ') })
+      : serverProse.fill(SERVICE_SENTENCES.searchScopeOne,
+                         { root: ROOT_DN }),
     ldapVersion: 3,
-    bindPolicy: 'every bind succeeds — any DN, any password, including an ' +
-      'anonymous one — except the literal password "' + REFUSED_PASSWORD +
-      '", which is answered LDAP_INVALID_CREDENTIALS (49) so that a negative ' +
-      'test has something to fail on',
+    bindPolicy: mode.verifiesCredentials() ? SERVICE_PROSE.bindPolicyProduct
+      : SERVICE_PROSE.bindPolicy,
     refusedPassword: REFUSED_PASSWORD,
-    schema: 'none. No objectClass is enforced and no attribute is checked ' +
-      'against a syntax, so an entry may carry whatever attributes a client ' +
-      'sends. A real directory would refuse most of that.',
+    schema: SERVICE_PROSE.schema,
     referentialIntegrity: false,
     // ---------------------------------------------------------------------
     // WHETHER THIS DIRECTORY SURVIVES A RESTART, AND IT DID NOT UNTIL
@@ -16305,73 +16484,26 @@ function description(req) {
       // submodule. LDAPS is also the one of the pair no RFC defines — RFC 4513
       // standardised StartTLS and left ldaps:// as the de-facto scheme.
       startTls: false,
-      clientCertificates: 'never requested. This listener proves the SERVER ' +
-        'to the client and nothing more; a client certificate offered to it ' +
-        'is not asked for and would not be a login if it were. The main ' +
-        'port (' + tlsPorts.main + ') is where client certificates are asked ' +
-        'for and read.',
+      clientCertificates: serverProse.fill(
+        SERVICE_SENTENCES.clientCertificates, { port: tlsPorts.main }),
       certificate: {
         subject: serverCertificate ? serverCertificate.subject : '',
         names: serverCertificate ? serverCertificate.names : [],
         fingerprint256: serverCertificate ? serverCertificate.fingerprint256 :
                         '',
         notAfter: serverCertificate ? serverCertificate.notAfter : '',
-        source: 'the same certificate and key the main port (' +
-          tlsPorts.main + ') serves. It is ' +
-          tlsServer.certificateProvenance() + ': GET ' +
-          '/tls/server-certificate hands it out in PEM. One anchor for both ' +
-          'sockets is why they share it.'
+        source: serverProse.fill(SERVICE_SENTENCES.certificateSource, {
+          port: tlsPorts.main,
+          provenance: tlsServer.certificateProvenance() })
       }
     },
     autoCreateUsers: autocreateUsers(),
-    autoCreateRule: 'an entry uid=<name>,' + usersDn() + ' appears the first ' +
-      'time <name> authenticates to this service through ANY protocol. An ' +
-      'LDAP bind does not seed one (it presents a DN, not a user name) and ' +
-      'neither does an OAuth client. A verified TLS CLIENT CERTIFICATE is ' +
-      'the one identity that is already a DN: its entry keeps the subject\'s ' +
-      'own leaf RDN — ' +
-      'cn=alice,' + usersDn() + ' for CN=alice,O=Example — or the ' +
-      'whole subject where that already lies under ' + baseDn() + ', and the ' +
-      'full subject, issuer, serial and validity are on the entry as x509* ' +
-      'attributes, which are this service\'s own names and not schema. A ' +
-      'DECENTRALIZED IDENTIFIER is the third shape and is neither a name nor ' +
-      'a DN: an issued credential\'s did:jwk subject, whatever DID presents ' +
-      'to the OID4VP Verifier, the one /did/generate mints. Its entry goes ' +
-      'at uid=did-<12 hex of the SHA-256 of the DID>,' + usersDn() + ' — a ' +
-      'did:jwk written out in full is a DN of several hundred characters, ' +
-      'most of it key material — with the identifier itself kept whole on ' +
-      'the entry as didSubject, and its method as didMethod. Search for the ' +
-      'person by didSubject, not by uid: on those entries the uid is a ' +
-      'digest and the didSubject is the identity.',
-    authenticationFacts: 'where the protocol that accepted the credential ' +
-      'says HOW it was presented — which today is the sign-in screen and ' +
-      'nothing else, since amr is an OIDC vocabulary — the entry also ' +
-      'carries authnMethod (every RFC 8176 method this person has used here, ' +
-      'accumulated), mfaAuthenticated (TRUE or FALSE for the MOST RECENT ' +
-      'authentication, overwritten each time) and mfaLastAuthTime (when ' +
-      'multi-factor last happened, never cleared). These are this service\'s ' +
-      'own names and not schema. A WebAuthn ceremony after a password writes ' +
-      'TRUE; the same ceremony used passwordless writes authnMethod hwk with ' +
-      'no pwd beside it and mfaAuthenticated FALSE, because one factor is ' +
-      'one factor however phishing-resistant it is. Nothing here READS them: ' +
-      'no token carries them and no endpoint decides anything on them, ' +
-      'exactly as a group here grants nothing — bar the two groups that ' +
-      'decide who may use the admin console, which is the one exception ' +
-      'anywhere in this directory and is confined to that console.',
-    enforcedRules: [
-      'an add whose parent does not exist is LDAP_NO_SUCH_OBJECT (32)',
-      'a delete of an entry with children is LDAP_NOT_ALLOWED_ON_NONLEAF (66)',
-      'a modify delete of an attribute that is not present is ' +
-        'LDAP_NO_SUCH_ATTRIBUTE (16)',
-      'deleting the last value of an attribute deletes the attribute',
-      'an add under ou=users whose username is already here is ' +
-        'LDAP_ENTRY_ALREADY_EXISTS (68), naming the entry that holds it. ONE ' +
-        'ENTRY PER PERSON: the username is the entry\'s naming RDN value and ' +
-        'any uid it carries, so uid=rcbj and cn=rcbj are the same person and ' +
-        'only one of them can be here. It is the same refusal the console ' +
-        'and POST /admin-api/users/create give, and the same rule every ' +
-        'protocol here folds onto when it authenticates somebody'
-    ],
+    autoCreateRule: serverProse.fill(SERVICE_SENTENCES.autoCreateRule,
+                                     { usersDn: usersDn(),
+                                       baseDn: baseDn() }),
+    authenticationFacts: SERVICE_PROSE.authenticationFacts,
+    // Copies, so that no answer holds the frozen table itself.
+    enforcedRules: SERVICE_PROSE.enforcedRules.slice(0),
     limits: {
       maxEntries: maxEntries(),
       maxSearchResults: maxSearchResults(),
@@ -16382,13 +16514,8 @@ function description(req) {
     },
     operations: ['bind', 'unbind', 'add', 'delete', 'modify', 'modifyDN',
                  'compare', 'search'],
-    specifications: ['RFC 4510 (LDAP technical specification road map)',
-                     'RFC 4511 (the protocol)',
-                     'RFC 4512 (directory information models)',
-                     'RFC 4514 (DN string representation)',
-                     'RFC 4515 (search filter string representation)'],
-    implementation: 'ldapjs 3.0.7, pinned as the node-ldapjs submodule and ' +
-      'used unmodified'
+    specifications: SERVICE_PROSE.specifications.slice(0),
+    implementation: SERVICE_PROSE.implementation
   };
   log.debug('Leaving description().');
   return out;
@@ -16970,6 +17097,8 @@ applications.setDirectory({
   allApplications: allApplications,
   countApplications: applicationCount,
   deleteApplication: deleteApplicationEntry,
+  // An application's owners (#604) are resolved as a service account's are.
+  resolveOwner: resolveServiceAccountOwner,
   // Two facts about the container itself, for the pages that report where these
   // entries live and how many will fit. They are here rather than in that
   // module because that module deliberately does not know where the container
@@ -17719,7 +17848,10 @@ function readServiceAccount(key) {
   serviceAccounts.ATTRIBUTES.forEach(function (name) {
     const held = stored.attributes[name.toLowerCase()] || [];
     if (held.length) {
-      values[name] = String(held[0]);
+      // THE OWNERS ARE A LIST (#600); every other attribute here holds one
+      // value.
+      values[name] = name === 'stsServiceAccountOwner'
+        ? held.map(String) : String(held[0]);
     }
   });
   const person = isPersonEntry(stored);
@@ -17743,11 +17875,16 @@ function writeServiceAccount(key, changes) {
     if (SERVICE_ACCOUNT_ATTRIBUTES.indexOf(lower) < 0) {
       return;
     }
+    // A LIST (the owners, #600) is written whole; an empty one is a clear.
     const value = changes[name];
-    if (value === null || value === undefined || value === '') {
+    const values = (Array.isArray(value) ? value : [value])
+      .filter(function (one) {
+        return one !== null && one !== undefined && one !== '';
+      }).map(String);
+    if (!values.length) {
       delete stored.attributes[lower];
     } else {
-      stored.attributes[lower] = [String(value)];
+      stored.attributes[lower] = values;
     }
   });
   keepServiceAccountClass(stored.attributes);
@@ -17859,20 +17996,33 @@ function serviceAccountWriteRefusal(working, touched) {
     log.debug('Leaving first().');
     return String((working[name] || [''])[0] || '').trim();
   };
-  const owner = first('stsserviceaccountowner');
-  if (!owner && serviceAccountPolicy.requiresOwner()) {
+  // EVERY OWNER (#600): at least one while the policy requires it, at most
+  // MAX_OWNERS, and each a person or a group in this realm.
+  const owners = (working.stsserviceaccountowner || []).map(function (one) {
+    return String(one || '').trim();
+  }).filter(function (one) {
+    return !!one;
+  });
+  if (!owners.length && serviceAccountPolicy.requiresOwner()) {
     log.debug('Leaving serviceAccountWriteRefusal(). No owner.');
     return coded('STS-SVCACCT-0023', new ldap.ConstraintViolationError(
       'this realm\'s service-account policy requires stsServiceAccountOwner ' +
       '(a person or a group)'));
   }
-  if (owner) {
+  if (owners.length > serviceAccounts.MAX_OWNERS) {
+    log.debug('Leaving serviceAccountWriteRefusal(). Too many owners.');
+    return coded('STS-SVCACCT-0031', new ldap.ConstraintViolationError(
+      'stsServiceAccountOwner may hold at most ' +
+      serviceAccounts.MAX_OWNERS + ' values'));
+  }
+  const nobody = owners.filter(function (owner) {
     const resolved = resolveServiceAccountOwner(owner);
-    if (resolved.kind !== 'person' && resolved.kind !== 'group') {
-      log.debug('Leaving serviceAccountWriteRefusal(). The owner is nobody.');
-      return coded('STS-SVCACCT-0024', new ldap.ConstraintViolationError(
-        'stsServiceAccountOwner must name a person or a group in this realm'));
-    }
+    return resolved.kind !== 'person' && resolved.kind !== 'group';
+  });
+  if (nobody.length) {
+    log.debug('Leaving serviceAccountWriteRefusal(). An owner is nobody.');
+    return coded('STS-SVCACCT-0024', new ldap.ConstraintViolationError(
+      'stsServiceAccountOwner must name a person or a group in this realm'));
   }
   if (!!first('stssecretdestination') !== !!first('stssecretname')) {
     log.debug('Leaving serviceAccountWriteRefusal(). Half a destination.');
@@ -20664,6 +20814,289 @@ function addGroupMember(group, member, options) {
 }
 
 // ---------------------------------------------------------------------------
+// A GROUP'S OWNERS (#603, rcbj: "apply this same owner pattern to Groups").
+//
+// They are the group entry's `owner` values — RFC 4519 section 2.23's
+// attribute, a DN of "an object (e.g., a person) that has some
+// responsibility" for it — and each names a PERSON or a GROUP of this realm,
+// the rule a service account's owners follow (#600), resolved by the same
+// `resolveServiceAccountOwner()`. Three things differ from a membership and
+// each is deliberate:
+//
+//   * **AN OWNER MUST NAME SOMEBODY.** A member may dangle, because the
+//     dangling member is a state /admin/groups exists to report; an owner is
+//     a statement about who answers for the group, and one that names
+//     nobody answers for nothing. Refused at the door (`STS-LDAP-0135`), as a
+//     service account's is. An owner deleted SINCE is kept and reported
+//     (`kind: ''`), never dropped: a delete elsewhere must not edit this
+//     entry.
+//   * **A GROUP DOES NOT OWN ITSELF** (`STS-LDAP-0136`), for the service
+//     account's reason.
+//   * **AT MOST `MAX_GROUP_OWNERS`** (`STS-LDAP-0137`): a longer list is what a
+//     group is for — name one.
+//
+// AN OWNER GRANTS NOTHING, which is the sentence every group here carries:
+// nothing in this service reads `owner` to decide anything.
+// ---------------------------------------------------------------------------
+/** The most owners a group may name; for more, name a group. */
+const MAX_GROUP_OWNERS = 25;
+
+/**
+ * Describes a group's `owner` values: each resolved to a person or a group
+ * of this realm, or `kind: ''` where it names nobody now.
+ *
+ * @param stored - the stored group entry (lower-cased attribute names)
+ * @returns `[{ dn, kind, name, present }]`, in the order the entry holds them
+ */
+function groupOwnersOf(stored) {
+  log.debug('Entering groupOwnersOf().');
+  const values = ((stored && stored.attributes && stored.attributes.owner) ||
+                  []).map(function (one) {
+    return String(one == null ? '' : one).trim();
+  }).filter(Boolean);
+  const out = values.map(function (dn) {
+    const resolved = resolveServiceAccountOwner(dn);
+    return { dn: resolved.kind ? resolved.dn : dn, kind: resolved.kind,
+             name: resolved.name, present: !!resolved.kind };
+  });
+  log.debug('Leaving groupOwnersOf(). ' + out.length);
+  return out;
+}
+
+// The group a caller named, by its cn, its DN or its SCIM id — and the
+// refusal when it is not one, worded as addGroupMember() words it.
+function groupForOwners(group, caller) {
+  log.debug('Entering groupForOwners(). ' + caller);
+  const wanted = String(group == null ? '' : group).trim();
+  if (!wanted) {
+    log.debug('Leaving groupForOwners(). No group.');
+    return { refusal: coded('STS-LDAP-0042', { ok: false, errors: [
+      'Which group? Send `group` with its `cn` or its whole DN.'] }) };
+  }
+  const dn = DN_SHAPED.test(wanted) ? wanted
+    : dnForResourceId(wanted) !== wanted ? dnForResourceId(wanted)
+      : groupDnFor(wanted);
+  const stored = getEntry(dnForResourceId(dn));
+  if (!stored || !groupRuleFor(stored)) {
+    log.debug('Leaving groupForOwners(). No such group.');
+    return { refusal: coded('STS-LDAP-0050', { ok: false, errors: [stored
+      ? 'There is an entry at ' + stored.dn + ' and it is not counted as a ' +
+        'group — it neither sits under ' + groupsDn() + ' nor carries a ' +
+        'group objectClass.'
+      : 'There is no group at ' + dn + '.'] }) };
+  }
+  log.debug('Leaving groupForOwners(). ' + stored.dn);
+  return { stored: stored };
+}
+
+// Writes a group's owner list, keeping every other attribute — the
+// addGroupMember() shape: the canonically spelled attributes back, minus the
+// operational ones, through writeGroupEntry().
+function writeGroupOwners(stored, owners, opts, action, summary, detail) {
+  log.debug('Entering writeGroupOwners().');
+  const object = entryObject(stored);
+  const attributes = {};
+  Object.keys(object.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0 ||
+        name.toLowerCase() === 'owner') {
+      return;
+    }
+    attributes[name] = object.attributes[name].slice(0);
+  });
+  if (owners.length) {
+    attributes.owner = owners.slice(0);
+  }
+  const written = writeGroupEntry(stored.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving writeGroupOwners(). The directory refused: ' +
+              written.reason);
+    return coded(errorCodes.codeOf(written), { ok: false,
+      reason: written.reason,
+      errors: ['The owners could not be written onto ' + stored.dn + ' (' +
+               written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: action,
+    actor: String(opts.actor || ''),
+    target: stored.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: summary,
+    detail: Object.assign({ ownersNow: owners.length }, detail)
+  });
+  log.debug('Leaving writeGroupOwners(). ' + owners.length + ' owner(s).');
+  return { ok: true, entry: written.entry };
+}
+
+/**
+ * Adds one owner to a group, writing at once (#603). An owner already listed
+ * answers ok with `changed: false`, the add-member rule.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @param owner - a person (username, DN or `urn:uuid:` subject) or a group
+ *   (cn or DN) of this realm
+ * @param options - `actor`, `channel`, `origin` and `protocol`, for the audit
+ *   row
+ * @returns `{ ok: true, changed, dn, owner, owners }`, or a refusal marked
+ *   with its error code
+ */
+function addGroupOwner(group, owner, options) {
+  log.debug('Entering addGroupOwner(). group=' + group + ', owner=' + owner);
+  const opts = options || {};
+  const found = groupForOwners(group, 'addGroupOwner');
+  if (found.refusal) {
+    log.debug('Leaving addGroupOwner(). No group.');
+    return found.refusal;
+  }
+  const stored = found.stored;
+  const wanted = String(owner == null ? '' : owner).trim();
+  if (!wanted) {
+    log.debug('Leaving addGroupOwner(). No owner.');
+    return coded('STS-LDAP-0134', { ok: false, errors: ['Who? Send `owner` ' +
+      'with a person (a username or DN) or a group (its cn or DN) of this ' +
+      'realm.'] });
+  }
+  const resolved = resolveServiceAccountOwner(wanted);
+  if (!resolved.kind) {
+    log.debug('Leaving addGroupOwner(). Names nobody.');
+    return coded('STS-LDAP-0135', { ok: false, errors: ['"' +
+      wanted.slice(0, 128) + '" names no person and no group in this ' +
+      'realm. An owner answers for the group, so it must name somebody.'] });
+  }
+  if (normalizeDn(resolved.dn) === normalizeDn(stored.dn)) {
+    log.debug('Leaving addGroupOwner(). Itself.');
+    return coded('STS-LDAP-0136', { ok: false, errors: [stored.dn +
+      ' cannot own itself.'] });
+  }
+  const before = groupOwnersOf(stored);
+  const owners = before.map(function (one) {
+    return one.dn;
+  });
+  const already = owners.some(function (dn) {
+    return normalizeDn(dn) === normalizeDn(resolved.dn);
+  });
+  if (already) {
+    log.debug('Leaving addGroupOwner(). Already an owner.');
+    return { ok: true, changed: false, dn: stored.dn, owner: resolved.dn,
+             owners: before,
+             message: (resolved.name || resolved.dn) + ' was already an ' +
+                      'owner of ' + stored.dn + '.' };
+  }
+  if (owners.length >= MAX_GROUP_OWNERS) {
+    log.debug('Leaving addGroupOwner(). Too many.');
+    return coded('STS-LDAP-0137', { ok: false, errors: [stored.dn +
+      ' already names ' + owners.length + ' owners, the most a group may ' +
+      'name (' + MAX_GROUP_OWNERS + '). Name a group of them instead.'] });
+  }
+  owners.push(resolved.dn);
+  const done = writeGroupOwners(stored, owners, opts, 'group.add-owner',
+    resolved.dn + ' was made an owner of ' + stored.dn,
+    { owner: resolved.dn, kind: resolved.kind });
+  if (!done.ok) {
+    log.debug('Leaving addGroupOwner(). Not written.');
+    return done;
+  }
+  const now = getEntry(stored.dn) || stored;
+  log.debug('Leaving addGroupOwner(). Added.');
+  return { ok: true, changed: true, dn: stored.dn, owner: resolved.dn,
+           owners: groupOwnersOf(now),
+           message: (resolved.name || resolved.dn) + ' is now an owner of ' +
+                    stored.dn + '.' };
+}
+
+/**
+ * Takes one owner off a group, writing at once (#603). Refused for a value
+ * the group does not list (`STS-LDAP-0138`); the last owner may go, since a
+ * group needs none.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @param owner - the owner's DN, as the group lists it
+ * @param options - `actor`, `channel`, `origin` and `protocol`, for the audit
+ *   row
+ * @returns `{ ok: true, changed: true, dn, owner, owners }`, or a refusal
+ *   marked with its error code
+ */
+function removeGroupOwner(group, owner, options) {
+  log.debug('Entering removeGroupOwner(). group=' + group + ', owner=' +
+            owner);
+  const opts = options || {};
+  const found = groupForOwners(group, 'removeGroupOwner');
+  if (found.refusal) {
+    log.debug('Leaving removeGroupOwner(). No group.');
+    return found.refusal;
+  }
+  const stored = found.stored;
+  const wanted = String(owner == null ? '' : owner).trim();
+  const values = ((stored.attributes.owner || []).map(String));
+  const kept = values.filter(function (dn) {
+    return normalizeDn(dn) !== normalizeDn(wanted);
+  });
+  if (!wanted || kept.length === values.length) {
+    log.debug('Leaving removeGroupOwner(). Not an owner.');
+    return coded('STS-LDAP-0138', { ok: false, errors: ['"' +
+      wanted.slice(0, 128) + '" is not one of ' + stored.dn + '\'s ' +
+      'owners.'] });
+  }
+  const done = writeGroupOwners(stored, kept, opts, 'group.remove-owner',
+    wanted + ' is no longer an owner of ' + stored.dn, { owner: wanted });
+  if (!done.ok) {
+    log.debug('Leaving removeGroupOwner(). Not written.');
+    return done;
+  }
+  const now = getEntry(stored.dn) || stored;
+  log.debug('Leaving removeGroupOwner(). Removed.');
+  return { ok: true, changed: true, dn: stored.dn, owner: wanted,
+           owners: groupOwnersOf(now),
+           message: wanted + ' is no longer an owner of ' + stored.dn + '.' };
+}
+
+/**
+ * Lists the groups of this realm whose `owner` values name any of the DNs
+ * given (#604): the user portal's Resources I own, where the DNs are the
+ * person's own and those of every group they are in.
+ *
+ * @param dns - the owner DNs to look for
+ * @returns `[{ dn, cn, description, memberCount, ownedAs }]`, `ownedAs` the
+ *   owner DNs that matched, in name order
+ */
+function groupsOwnedBy(dns) {
+  log.debug('Entering groupsOwnedBy(). ' + (dns || []).length + ' DN(s).');
+  const wanted = {};
+  (dns || []).forEach(function (dn) {
+    if (dn) {
+      wanted[normalizeDn(String(dn))] = true;
+    }
+  });
+  const out = [];
+  eachResidentEntry(function (stored) {
+    const owners = stored.attributes.owner || [];
+    if (!owners.length || !groupRuleFor(stored)) {
+      return;
+    }
+    const matched = owners.map(String).filter(function (dn) {
+      return wanted[normalizeDn(dn)];
+    });
+    if (!matched.length) {
+      return;
+    }
+    out.push({ dn: stored.dn,
+               cn: String((stored.attributes.cn || [''])[0]),
+               description: String((stored.attributes.description ||
+                                    [''])[0]),
+               memberCount: (stored.attributes.member || []).length +
+                            (stored.attributes.uniquemember || []).length +
+                            (stored.attributes.memberuid || []).length,
+               ownedAs: matched });
+  });
+  out.sort(function (a, b) {
+    return a.cn.localeCompare(b.cn);
+  });
+  log.debug('Leaving groupsOwnedBy(). ' + out.length);
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // GET /admin/ldap/spiffe — the SPIFFE containers, and their schema.
 //
 // The same page `/admin/ldap/applications` is, for the same reason: this
@@ -20723,13 +21156,7 @@ function ldapSpiffeView(req) {
     agents: agents.length,
     maxEntries: spiffeRegistry.maxEntries(),
     maxAgents: spiffeRegistry.maxAgents(),
-    sourceOfTruth: 'These entries ARE the SPIFFE registry. An ldapmodify ' +
-      'under ou=entries changes what the next SVID looks like — ' +
-      'spiffeX509SvidTtl changes its lifetime, spiffeDnsName changes its ' +
-      'subjectAltName, and spiffeId changes whose identity it is — because ' +
-      'nothing caches them. The two containers hold different KINDS of ' +
-      'thing: entries are CONFIGURATION and agents are a RECORD, which is ' +
-      'why nothing about an agent is editable from the console.',
+    sourceOfTruth: SOURCE_OF_TRUTH.spiffe,
     editable: spiffeRegistry.EDITABLE,
     schema: spiffeRegistry.SCHEMA,
     filter: { entryq: carried.entryq || null, agentq: carried.agentq || null },
@@ -20815,10 +21242,7 @@ function ldapApplicationsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the registry. An ldapmodify here ' +
-      'changes what the protocol endpoints do — adding a value to ' +
-      'oauthRedirectUri adds a redirect URI that RFC 9700 mode will then ' +
-      'accept by exact match.',
+    sourceOfTruth: SOURCE_OF_TRUTH.applications,
     kinds: applications.KINDS,
     schema: applications.SCHEMA,
     applications: paged.shown.map(withoutSecrets),
@@ -20875,10 +21299,7 @@ function ldapFederationsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the register. An ldapmodify here is a ' +
-      'SECURITY change: fedSigningCertificate decides whose assertions this ' +
-      'service will believe, and fedEnabled turns a partner on. Nothing ' +
-      'caches them.',
+    sourceOfTruth: SOURCE_OF_TRUTH.federations,
     roles: federation.ROLES,
     protocols: federation.PROTOCOLS,
     schema: federation.SCHEMA,
@@ -20982,9 +21403,7 @@ function ldapDevicesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the device register: nothing caches ' +
-      'them, so an ldapmodify of stsDeviceCompliance is the device\'s ' +
-      'compliance on the next read. stsDeviceSecretHash is withheld.',
+    sourceOfTruth: SOURCE_OF_TRUTH.devices,
     schema: devices.SCHEMA,
     entries: shown,
     // The paging control's own object (#446).
@@ -21066,11 +21485,7 @@ function ldapRolesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the membership half of the role ' +
-      'register. An ldapmodify adding a value to roleMemberUser grants that ' +
-      'role, and the next issuance decision is made against it. What ' +
-      'REQUIRES a role is appRequiredRole on an application entry under ' +
-      'ou=applications, which is a different container.',
+    sourceOfTruth: SOURCE_OF_TRUTH.roles,
     builtIn: roles.BUILT_IN_NAMES,
     schema: roles.SCHEMA,
     roles: paged.shown,
@@ -21157,11 +21572,7 @@ function ldapPoliciesView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'These entries ARE the policy repository. An ldapmodify ' +
-      'of xacmlPolicyDocument changes what the PDP decides on the very next ' +
-      'request and is NOT statically validated on the way in, unlike every ' +
-      'write through /admin/xacml — so a document that stops typechecking ' +
-      'answers Indeterminate rather than being refused.',
+    sourceOfTruth: SOURCE_OF_TRUTH.policies,
     schema: xacmlStore.SCHEMA,
     policies: paged.shown.map(withoutSecrets),
     // The paging control's own object, and how many are enabled (#446).
@@ -21245,11 +21656,7 @@ function ldapPepsView(req) {
     filter: { q: wantedText || null },
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
-    sourceOfTruth: 'Almost every attribute here is a RECORD this service ' +
-      'wrote as a PEP registered, pulled or reported. The two that are not ' +
-      'are xacmlPepEnabled, which an administrator sets and a reconnecting ' +
-      'PEP does not clear, and xacmlPepNotifyUrl, which is one of the three ' +
-      'addresses this service dials.',
+    sourceOfTruth: SOURCE_OF_TRUTH.peps,
     schema: xacmlPepRegistry.SCHEMA,
     peps: paged.shown.map(withoutSecrets),
     // The paging control's own object, and how many are enabled (#446).
@@ -21818,7 +22225,46 @@ function adoptEntry(dn, attributes, origin) {
   return entries.get(key) || null;
 }
 
+/**
+ * Extracts this module's console prose (#543 phase 2b): the service
+ * description's static sentences and its templates, and each container
+ * page's source-of-truth sentence — what the answers of `PROSE_ROUTES`
+ * carry from this file. The schemas those pages carry are their owning
+ * modules' (`applications.js`, `devices.ts`, ...), which extract their own.
+ *
+ * @returns {Record<string, string>} key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  /** @type {Record<string, string>} */
+  const out = {};
+  ['bindPolicy', 'bindPolicyProduct', 'schema', 'authenticationFacts',
+    'implementation']
+    .forEach(function (name) {
+      out['ldap.service.' + name] = SERVICE_PROSE[name];
+    });
+  // Arrays of strings, which `harvest()` does not walk: keyed by index.
+  SERVICE_PROSE.enforcedRules.forEach(function (rule, i) {
+    out['ldap.service.enforcedRules.' + i] = rule;
+  });
+  SERVICE_PROSE.specifications.forEach(function (one, i) {
+    out['ldap.service.specifications.' + i] = one;
+  });
+  Object.keys(SERVICE_SENTENCES).forEach(function (name) {
+    out['ldap.service.sentences.' + name] = SERVICE_SENTENCES[name];
+  });
+  Object.keys(SOURCE_OF_TRUTH).forEach(function (name) {
+    out['ldap.' + name + '.sourceOfTruth'] = SOURCE_OF_TRUTH[name];
+  });
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 module.exports = {
+  // THE CONSOLE'S PROSE (#543 phase 2b): the routes whose answers carry
+  // this module's sentences, and the sentences by key.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   listen: listen,
   close: close,
   // Re-homing a person (#98): the entry put here with its entryUUID kept,
@@ -22005,6 +22451,12 @@ module.exports = {
   // console, which is where their refusals are asserted.
   createGroup: createGroup,
   addGroupMember: addGroupMember,
+  // A group's owners (#603), the same doors.
+  addGroupOwner: addGroupOwner,
+  removeGroupOwner: removeGroupOwner,
+  MAX_GROUP_OWNERS: MAX_GROUP_OWNERS,
+  // What a person owns (#604): the portal's Resources I own.
+  groupsOwnedBy: groupsOwnedBy,
   memberDnFor: memberDnFor,
   deleteGroupEntry: deleteGroupEntry,
   // The sweep, so that somebody provisioned over SCIM gets the same credential

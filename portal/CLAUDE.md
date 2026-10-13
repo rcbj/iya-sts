@@ -1,5 +1,45 @@
 # CLAUDE.md — `portal/`
 
+## A STATIC APPLICATION SINCE #568 (2026-10-12) — READ THIS FIRST
+
+**The portal is drawn in the browser now**, on the admin console's pattern
+(#446). `/portal` and every path under it answer one document
+(`portal.ts`), which loads `/portal/portal.js` — the runtime and every page's
+renderer — and `/portal/portal.css`. The runtime signs in as the PUBLIC client
+`sts-user-portal` (PKCE, `account:manage`, every token DPoP-bound to a key the
+browser cannot export, held in memory), draws every page from an
+`/account-api` operation and sends every form to the operation that mirrors
+it. `account-api/CLAUDE.md` argues the API, its gate and its answer
+conventions. rcbj's four decisions on #568: the console's pattern (reversing
+#444's D9 for the portal), `/account-api`, the pages for nobody drawn the same
+way, and the console-session adoption dropped.
+
+| Files | What they are |
+|---|---|
+| `portal.ts` | The server half that is left: the shell (drawn and sent through `common/shell_document.ts` since #570, its bytes unchanged), its script and stylesheet, the realm chooser before a sign-in, `/portal/signals/receive`, and the directory slot (`personEntry()`). |
+| `account_*.ts` (seven), `portal_*.ts` (fourteen) | Each page family's `/account-api` operations — the page's view and its forms — with the reasoning below. The seven `account_*` modules are the pages that were in `portal.ts`. |
+| `web_*.ts` | The browser half: `web_portal_runtime.ts` (sign-in, routing, forms, how an answer is drawn; since #570 `PortalRuntime extends SpaClient extends WebPage`, `common/web_spa_client.ts` and `common/web_page.ts`, whose `publicJson()`, `formFields()`, `realmLinks()`, `targetFragment()` and `saveBase64()` it inherits — `common/CLAUDE.md`, 3cl), `web_portal_shell.ts` (the frame), `web_portal_kit.ts` (`NAV`, the stylesheet, the icons), `web_portal_webauthn.ts` (the ceremonies), `web_portal_pages.ts` (every page's row) and one renderer module per family. |
+
+**WHAT THE SECTIONS BELOW SAY THAT IS NO LONGER SO**, read with this table
+rather than rewritten one by one, because most of each section is about what
+a page DOES, which did not change:
+
+| The section says | Since #568 |
+|---|---|
+| a page is drawn by a method of `Portal` and answered by a route here | it is drawn by its `web_*.ts` renderer from its operation's answer |
+| `requireSignIn()`, the portal's relying-party session, `sts_portal`, `oidcRp.renewal('portal')` | gone: the token is the session, and `/account-api`'s gate asks what `requireSignIn()` asked — the access policy included |
+| a CSRF token on every form (A07) | gone with the cookie it guarded: a request is a DPoP-bound token and a proof by a key no other page holds |
+| a write answers 303 with `?done=` | it answers `{ ok, message }` in the person's language; a secret shown once is a `view` drawn in place |
+| `/authn/webauthn.js` on `/portal/keys`, `/portal/activate`, `/portal/devices`; `/portal/copy.js` on `/portal/mfa` | the runtime runs the ceremonies and reveals the Copy buttons (`web_portal_webauthn.ts`); the four scripted-page rows are one in the root `CLAUDE.md` |
+| the `Location`-header bug and `oidc_rp.js`'s choke point | the runtime builds its own authorization request under the realm's prefix |
+| `NAV` in `portal.ts` | `NAV` in `web_portal_kit.ts`, read by the frame and by `paths()` |
+| the console-session adoption (2026-09-30) | DROPPED: single sign-on through `/oauth2/authorize` covers it |
+
+**THE RULE THAT MATTERS MORE THAN THE REST IS UNCHANGED AND IS HELD AT THE
+API**: no operation takes a username, an id or a DN naming whose account it
+acts on — the person is the token's subject.
+
+
 ## THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT (2026-09-06)
 
 Every browser-facing surface here until now was for somebody else. The sign-in
@@ -660,157 +700,74 @@ That is refused in two places on purpose: at `/portal/activate`, where the
 combination would be created, and in `credentials.removeKey()`, where it would
 be arrived at later by removing the password. Same rule, both ends.
 
-## THE PORTAL IS AN OIDC RELYING PARTY (2026-09-06)
+## THE PORTAL IS AN OAUTH CLIENT OF THIS SERVICE — A PUBLIC ONE SINCE #568
 
-`requireSignIn()` sends an unauthenticated visitor through **the authorization
-code flow**, as the registered client `sts-user-portal` — an ordinary entry
-under `ou=applications`, seeded at startup in every realm. It does not reach for
-the sign-on session at all: the browser goes to `/oauth2/authorize`, the sign-in
-screen is reached only because the AUTHORIZATION ENDPOINT decides it needs one,
-and what comes back is a code that buys an ID Token that establishes the
-portal's OWN session in its own cookie (`sts_portal`).
-`common/oidc_rp.ts` runs it and argues it.
+It was a CONFIDENTIAL OpenID Connect relying party from 2026-09-06 to #568:
+`sts-user-portal`, `private_key_jwt`, a back-channel code redemption by this
+process and a session of its own in `sts_portal`. **It is a PUBLIC client
+now**, signing in in the browser (`web_portal_runtime.ts`): the authorization
+code flow with PKCE at the authorization server of the realm the portal was
+opened in, `resource` that realm's `/account-api`, back at
+`/portal/callback` — a page the runtime draws, whose callback address the
+shell registers on the client entry as the console's does
+(`oidcRp.ensureSurfaceCallback()`: learnt in development, refused in product
+unless registered). Every token is DPoP-bound (`sender_constraints.js`'s
+DPOP_BOUND_PUBLIC_CLIENTS) and the client is exempt from FAPI's
+confidential-client rule (`fapi.js`), the console's two arrangements.
+Under a FAPI profile it also sends an OpenID `nonce` derived from its PKCE
+verifier and refuses an ID Token without it, and under
+`oauth2.fapiRequireMtls` it is let through DPoP-bound rather than refused for
+having no client certificate (2026-10-12) — `oauth-oidc/CLAUDE.md`, 3cb,
+*under a FAPI profile they sign in at all*.
 
-Three things about it are this directory's:
+What still holds from the relying-party years:
 
-* **AND SINCE 2026-09-11 THAT SINGLE SIGN-ON REACHES THE CONSOLE, IN EVERY
-  REALM, AND IT DID NOT BEFORE.** The portal's flow has always run in the
-  AMBIENT realm — `/portal` is a person's own account in the realm they are in —
-  and the console's ran in the DEFAULT realm wherever it was reached. An
-  authorization endpoint can only answer out of the realm it is reached in, so
-  inside a realm the two surfaces were asking two different authorization
-  servers and neither could see the other's sign-on session: **signing in at
-  `/realm/acme/portal` and then opening `/realm/acme/admin` meant signing in
-  again, and so did the other direction.** Nothing here changed — the console's
-  flow moved to the ambient realm to meet this one. `admin-ui/CLAUDE.md` argues
-  what that cost the console and `common/oidc_rp.ts` holds the split.
-* **A `Location` HEADER IS NOT MARKUP, AND THIS SURFACE IS WHERE THAT COST
-  SOMETHING.** `app.js` rewrites every root-relative `href`, `action` and `src`
-  in an HTML response into the current realm — which is what carries this
-  portal's own links inside `/realm/acme` — and a redirect header is none of
-  those. The seven `requireSignIn()` call sites pass a constant built from
-  `BASE`, which is `/portal` with no prefix on it, so a sign-in at
-  `/realm/acme/portal` completed the flow in acme, was handed a session in acme,
-  and was then redirected to the DEFAULT realm's portal — which correctly has no
-  session for that person and asks them to sign in again. **A sign-in that works
-  and then immediately asks again, with nothing in the flow having failed.** It
-  is fixed at `oidc_rp.js`'s one choke point rather than at the seven call
-  sites, and idempotently, because the console passes an address that already
-  carries the prefix and a caller should not have to know which kind it holds.
-* **A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR ACCOUNT PAGE.**
-  Reading `authn.sessionOf()` would have meant exactly that — any sign-in
-  anywhere in this service silently opening somebody's own account page,
-  without this application ever having asked. Now the portal has to run a flow,
-  and single sign-on is what makes that flow invisible when there IS a sign-on
-  session: the authorization endpoint answers with a code and nobody types
-  anything. **That is single sign-on happening through the protocol rather than
-  through a shared cookie**, which is the distinction worth being able to
-  demonstrate on a mock.
-* **THE SECTION BELOW USED TO SAY `appAuthnMechanism`-style: "NO application —
-  the portal is not one".** It is one now. What made that sentence right was
-  that no entry existed and naming one would have put a fiction in the
-  registry; what makes it wrong is that the entry is real, seeded by this
-  service, and is what the role gate is handed.
-* **ENDING THE PORTAL'S SESSION ALONE DOES NOT END THE SIGN-ON SESSION**, and
-  the next visit signs the person straight back in without a screen. That is
-  what every real relying party does, and the cascade runs the other way:
-  ending the SIGN-ON session ends the portal's with it. **WHICH IS WHY THE SIGN
-  OUT BUTTON ENDS BOTH** — see below.
+* **SINGLE SIGN-ON HAPPENS THROUGH THE PROTOCOL, NOT A SHARED COOKIE.** A person
+  who signed in anywhere in this realm is answered by `/oauth2/authorize` with
+  a code and types nothing — which is also how a console administrator reaches
+  their portal now that the adoption is gone.
+* **A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR ACCOUNT PAGE**:
+  the portal still has to run a flow, and its token is its own.
+* **THE TOKEN DIES WITH THE SIGN-ON SESSION IT WAS ISSUED ON**
+  (`STS-ACCOUNT-0008`), which is what the relying-party session's cascade did.
 
-## A LIVE CONSOLE SESSION IS ADOPTED, AND THE BULLET ABOVE HAS ONE EXCEPTION (2026-09-30)
+## THE CONSOLE-SESSION ADOPTION (2026-09-30) WAS DROPPED ON #568
 
-**Observed on a product deployment:** an administrator followed the console's
-account-menu link here and was asked to choose a realm and then to sign in
-again. The console session outlives its sign-on session by renewing its own
-tokens (`common/oidc_rp.ts` section 4), so this portal's code flow met no
-sign-on session. rcbj decided that the portal reads the realm and the
-authenticated session from the console session. `adoptConsoleSession()`, called
-by `requireSignIn()` before the chooser, makes a portal session of this
-surface's own from it through `authn.adoptRelyingPartySession()`. The session
-has the same person and the same authentication record. It lives in the
-console session's identity realm (`derivedFromRealm`, the same answer the
-account-menu link uses). Its PARENT is the console session, so it ends with
-that session through the cascade and through the reader. A realm
-administrator at the bare `/portal` is REDIRECTED to their realm's portal,
-built from the registry and never echoed. Under another realm's prefix, or
-with a `?realm=` naming another realm, nothing is adopted. **ONE DIRECTION:**
-nothing here writes `sts_admin`. The access policy still decides.
-`POST /portal/signout` on an adopted session ends the console session and its
-sign-on session as well, for this file's own reason: otherwise the next page
-adopts again. What stops an adoption (STS-PORTAL-0098, -0099) leaves the old
-path exactly as it was. `tests/portal_adopts_console.js` holds it.
-**The bullet *A PERSON WHO SIGNED IN ELSEWHERE IS NOT SILENTLY IN THEIR
-ACCOUNT PAGE* still holds for every sign-on session. The one thing that
-opens the portal without a flow is this service's own console, which the
-person is already signed in to as themselves.**
+It made a portal session from a live console session, because the console's
+session outlived its sign-on session by renewing its own tokens and the
+portal's code flow then met no sign-on session. Neither side holds a server
+session any more: both are public clients whose tokens die with the sign-on
+session they came from, so a console administrator following the account
+menu's link meets a live sign-on session at `/oauth2/authorize` and is signed
+in with no screen. rcbj's decision 4 on #568. `tests/portal_adopts_console.js`
+went with it.
 
 ## Two sign-outs, and they are two different acts (2026-09-06)
 
-**They were on one page when this was written and the page split under
-them.** The narrow one moved into the shell and is now in the corner of
-EVERY page, which is the same decision rather than a new one — a
-person who wants out should not have to find the page it lives on first.
-The wider one stayed where it was, at the foot of the Overview.
+**THE BUTTON IN THE CORNER OF EVERY PAGE** is a form posting to
+`/portal/signout`, which the runtime answers (`PortalRuntime.signOut()`): it
+forgets the tokens and sends the browser to `/logout`, which ends the sign-on
+session — and with it every token issued on it, the portal's included, and
+the console's. It has to reach the sign-on session for the reason it always
+had: ending only the portal's own state would let the next visit sign straight
+back in with nothing typed.
 
-**THE BUTTON IN THE CORNER OF EVERY PAGE IS `POST /portal/signout`.** It
-ends the portal's own relying-party session AND the sign-on session it was
-derived from, and clears both cookies. It has to end both: this portal is a
-relying party, so ending only its own session would leave the next visit
-running the code flow, meeting the live sign-on session, and coming back in
-with nothing typed — a Sign out button that visibly does not sign anybody out.
-The cascade in `dropSession()` then ends anything else derived from that
-sign-on session, the admin console included, and the page SAYS so rather than
-reaching further than its label quietly.
-
-**THE BUTTON AT THE FOOT OF THE OVERVIEW IS STILL `POST /logout`**, and it is the wider
-act: every session and credential this identity holds in every protocol —
-tokens, tickets, offers, LDAP binds. Both are drawn, each says which it is, and
-the heading over the second one says it reaches further. Two controls that do
-different things is not duplication; one control that quietly did the wider
-thing would be.
-
-Three details worth keeping:
-
-* **The CSRF token is checked on the sign-out**, like every other form here. A
-  sign-out fired from another site is the classic "harmless" CSRF that is not:
-  somebody's session ending under them repeatedly, with no way to stay signed
-  in. The refusal writes `portal.signout.csrf`, beside the success's
-  `portal.signout`, for the reason every refusal here is registered in
-  `audit.js` — a log of only what worked is a log of everything except the
-  attack.
-* **It does NOT go through `requireSignIn()`**, which is deliberate rather than
-  an omission: that function redirects a person with no session into the
-  authorization code flow, which for a sign-out would send somebody who is
-  already signed out off to sign IN. A sign-out asked of a browser with no
-  session is answered with the page saying they are signed out, because that is
-  true.
-* **The sessions it ends each write their own `session.end`** through
-  `dropSession()`. The `portal.signout` row is the ACT and does not count them
-  again — rule 3c, read as it is everywhere else here.
+**THE BUTTON AT THE FOOT OF THE OVERVIEW IS STILL `POST /logout`**, the wider
+act: every session and credential this identity holds in every protocol. Both
+are drawn, each says which it is. That form is not the portal's, so the
+runtime leaves it to the browser.
 
 ## A Refresh button beside Sign out (2026-10-09, #538)
 
 Every signed-in page draws **Refresh** to the left of Sign out
-(`Portal.refreshForm()`, called by `shell()`). The portal runs no script, so it
-is a GET form, and what it reloads is decided on the server from the ambient
-request (`audit.currentRequest()`):
-
-* **a GET of the page's own path** reloads that path with the parameters a
-  portal page reads to draw itself — `page`, `per`, `<list>Page`, `stepup`,
-  `gnapstepup`, `enrolled`, `named` (`Portal.REFRESH_KEPT`) — so a paged list
-  comes back on the same page. **Nothing else is carried**: not `done`, the
-  one-time message a redirect after a write carries, which would announce the
-  write again, and not a parameter no page reads. Carrying the whole query drew
-  `?user=<somebody>` back into the page, which `sts_portal_sessions`' check that
-  a signed-in page never names another account caught in its first full run;
-* **a page drawn in answer to a POST** (a refused write re-drawn with its
-  reason) loads its own path afresh and carries nothing. The browser's own
-  reload would repeat the POST, which a Refresh button must not do;
-* **a request for another path, or none**, loads the page's path.
-
-It reads `req.url`, not `originalUrl`: `app.js` puts the realm prefix back on
-every root-relative form action, as it does for every other form on the page.
-`tests/portal_refresh.js` holds all of it.
+(`PortalShell.refreshForm()`): a GET form to the page's own path carrying only
+the parameters a page reads to draw itself — `page`, `per`, `<list>Page`,
+`stepup`, `gnapstepup`, `enrolled`, `named` (`PortalShell.REFRESH_KEPT`). The
+runtime answers it by asking the page's operation again. **Nothing else is
+carried**, for #538's reason: a parameter a link put on the URL
+(`?user=<somebody>`) must never be drawn back into a signed-in page. A message
+a write left is held in the runtime and drawn once, never on the URL, so there
+is no `done` to carry or to drop.
 
 ## `beginAuthentication()` and not a bare redirect
 
@@ -875,12 +832,12 @@ sign-in, and let it mint the record.**
 
 | | Control | Where |
 |---|---|---|
-| A01 | identity from the session, never the request | this directory, and THREE test files at three layers — see below |
+| A01 | identity from the token, never the request | `account-api/account_api.ts`, this directory, and the test files at three layers — see below |
 | A02 | scrypt for passwords, activation token hashed | `common/credentials.ts`, `common/crypto.js` |
 | A03 | every value through `esc()`; no SQL built from input anywhere | this directory |
 | A04 | rate limiting on activation, sign-in and password change | `common/websecurity.ts` |
 | A05 | the CSP `app.js` sets on every response | `common/app.js` |
-| A07 | CSRF tokens, the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `common/websecurity.ts`, `authn/authn.ts` |
+| A07 | a DPoP-bound token on every request (CSRF tokens until #568), the previous session ended on sign-in, no message distinguishing "no such person" from "wrong credential" | `account-api/account_api.ts`, `authn/authn.ts` |
 | A09 | every act audited | `common/audit.js` |
 
 **Changing a password requires the current one even though the person is signed
@@ -1467,6 +1424,68 @@ never whose it is (`STS-PORTAL-0087` when it is not theirs).
 administrator enrols by value from `/admin/users` and `/admin-api`
 (`oid4vc/CLAUDE.md`, 3ba).
 
+## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
+
+The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose
+credential leaves this service to be held somewhere else: a pre-authorized
+OpenID4VCI Credential Offer (Appendix H.2, or H.3 deferred) of one of the
+realm's credential configurations, for the person's OWN wallet. It was the
+product behaviour of the demo issuer's `/issuer/offer` until rcbj decided on
+2026-10-12 that it is a real self-service feature; `oid4vc/CLAUDE.md` has
+that history and `makeOffer()`, which the demo issuer called too until it left
+for the development companion on #594 (which links a person here for a
+pre-authorized offer).
+
+* **Two operations** (`portal_wallet.ts`): `GET
+  /account-api/credentials/offerable` (the page's view: the configurations,
+  named as the issuer's metadata names them, the two modes, the offer's
+  lifetime) and `POST /account-api/credentials/offers` (`configuration`,
+  `mode`). The paths are the API's names for the resource rather than the
+  page's, because a native application holding `account:manage` asks for an
+  offer with no page in sight; `mirrors` ties them to `GET` and `POST
+  /portal/wallet` as rule 7's twin asks.
+* **THE SUBJECT IS THE TOKEN'S**: the offer names `caller.username` and the
+  token's `sub`, and a body naming anybody is ignored — the A01 rule above.
+* **IT IS MADE ON THE SIGN-ON SESSION THE TOKEN WAS ISSUED ON**
+  (`caller.signOn`), which CAEP reports as `session-presented` naming
+  OpenID4VCI. Where the token registry no longer says
+  which session that was — it is capped — or the session continued without
+  signing in, the offer is REFUSED (`STS-PORTAL-0590`) rather than made on
+  nothing; signing in again cures it. `STS-PORTAL-0310` is the same answer
+  for a device link, for the same reason.
+* **THE OFFER IS SHOWN ONCE, IN PLACE**: the POST answers the offer and the
+  page's `view` with it, and the runtime draws it without a URL — the
+  pre-authorized code and the Transaction Code beside it must not reach the
+  address bar or the history. A reload shows the form again, and a new offer
+  is a new code.
+* **THE QR CODE IS DRAWN IN THE BROWSER** (`common/web_qr.ts`, here until #572 moved it beside the sign-in surface, which draws one too), from the offer BY
+  REFERENCE, which is short enough to scan; the open-in-wallet link carries
+  the offer by value as the `openid-credential-offer://` URI a native wallet
+  registers for (`haip-vci://` where `oid4vci.walletInvocation` says so,
+  `vc_offers.ts`'s `offerScheme()`), and the configured web wallet
+  (`oid4vci.walletUrl`) gets a second link — **none by default since
+  2026-10-12**, when that setting stopped defaulting to the embedded
+  debugger's `http://localhost:3000`. Under the links the page says what to
+  do when nothing opens (`wallet-no-app`). A third-party wallet redeems the
+  pre-authorized code naming no client, which the authorization server's
+  metadata says it may (`pre-authorized_grant_anonymous_access_supported`,
+  OpenID4VCI 1.0 section 12.3); before that member a wallet defaulted to
+  sending a client_id of its own, which product refuses unregistered. `/portal/mfa`'s QR code is an image the server drew, because
+  its secret is the server's to show; here the answer is a URI and the
+  picture is only a way of showing it, so the renderer makes it. `web_qr.ts`
+  requires nothing, emits inline SVG (the portal's `img-src` admits no
+  `data:` image) and is held module for module to the `qrcode` package the
+  server uses, for every level and mask (`tests/portal_wallet.js`, A).
+* **THE ELEMENT IDS ARE THE DEMO ISSUER'S** — `offer_qr`, `tx_code`,
+  `offer_uri`, `open_in_wallet` — so a reader of either screen finds the
+  same things.
+* **Filed under the credentials section**, beside *Self-issued IDs*, for the
+  signing keys' reason: what it hands over is a credential about the person,
+  on their own sign-in.
+* `tests/portal_wallet.js` holds the operations, the refusals and the page's
+  round trip through the bundle; three protocol jobs make their offers here
+  (`oid4vc/CLAUDE.md`).
+
 ## `/portal/devices`: A PERSON'S OWN DEVICES (2026-09-23, #130; #164 phase 2, 2026-09-26)
 
 The entries in `ou=devices` the person owns, the applications that used
@@ -1627,6 +1646,51 @@ other portal page's 303 is still a bare path (`portal_ciba.ts`, the MFA
 pages), which is the same defect in a non-default realm and is left for its
 own change.
 
+**THE CALLBACK IS BOUND TO THE BROWSER BY A COOKIE OF ITS OWN, NOT BY THE
+SIGN-ON COOKIE (2026-10-12).** #568 first bound it to the browser's
+`sts_session`; but that cookie is one per origin at `Path=/` whatever realm
+minted it (`authn/CLAUDE.md`, `consoleSession()`), so a provider that is
+another trust realm on the same origin overwrote it at its own sign-in, and
+every such link was refused `STS-PORTAL-0300` while the page said nothing —
+`sts_claims_aggregation` found it, with the refusal's text lost on a static
+shell. Link's answer now sets `sts_claim_link`, a random secret scoped to
+the realm's callback path (HttpOnly, SameSite=Lax), the flow keeps its
+SHA-256, and the callback wants that cookie (`0300`) and the sign-on session
+the token was issued on still live and the person's, asked by its id
+(`STS-PORTAL-0303`). The cookie is cleared on every callback. The page draws
+the callback's `problem` and `done` from its operation's `problem` and
+`notice`.
+
+## EVERY PORTAL LIST THAT CAN GROW WITHOUT A BOUND IS PAGED (#313's sweep, 2026-10-12)
+
+The console's rule (`admin-ui/CLAUDE.md`, *EVERY LIST THAT CAN GROW WITHOUT A
+BOUND IS PAGED*) holds here too. Three lists broke it and page now, twenty a
+page, each answer carrying the slice and a paging member beside it
+(`page`, `pages`, `per`, `total` — the portal's shape since #172):
+
+| Page | List | Moves on | Was |
+|---|---|---|---|
+| `/portal/claim-sources` | `providers`, the realm's Claims Providers (`ou=claimproviders` grows with what an operator registers) | `page`; `linked` counts the person's links over every page | the whole register |
+| `/portal/sign-ins` | `rows`, the person's assessed sign-ins of thirty days | `page`; paged IN THE STORE (`limit`/`offset`, `total` from the count), so a page reads twenty rows | the risk engine's default fifty, silently truncated |
+| `/portal/email` | `sent`, the outbox's messages to the person | `sentPage`, beside `sentPaging` — named because the page holds other things than the list | the newest twenty, silently truncated |
+
+`PortalKit.pageNav()` (`web_portal_kit.ts`) draws the control for a list that
+moves on a parameter of its own and carries the reader's other parameters,
+less `notice`, `problem` and `done`, which belong to the moment they were
+said. The three older lists (consents, GNAP grants, the overview's
+applications and signals) still draw their own `?page=` controls.
+
+**Left unpaged, each with its bound**: devices (`devices.maxPerPerson`),
+app passwords (`appPasswords.maxPerPerson`), passkeys
+(`webauthn.maxKeysPerPerson`), enrolled certificates
+(`pki.enrollmentMaxCertificatesPerEntry`), TLS client certificates
+(`pki.personTlsClientCertificateMax`), EAB keys and SCEP challenges (10 a
+person), self-issued subjects (10), CIBA and GNAP requests waiting (each
+expires with its request), administrative consents (`portal_consents.ts`
+argues it), and `/portal/wallet`'s credential configurations — a `<select>`
+over the realm's configurations, not a table, and a menu is drawn whole so it
+can be chosen from.
+
 ## `/portal/reset-password`: THE SECOND UNAUTHENTICATED PAGE (2026-09-13)
 
 **Send a reset link** on a person's `/admin/users` page stores a hash of a
@@ -1694,3 +1758,18 @@ Three pages over the mail channel (`common/CLAUDE.md`, 3ay), in a file beside
 - **The reset form's sentence changed with it**: "no password you had before
   works once it is set" rather than "your old password no longer works",
   because a self-service link removes nothing until it is used.
+
+## RESOURCES I OWN (#604, 2026-10-12)
+
+rcbj: a section of the column, *Resources I own*, with Roles, Groups, Service
+accounts and Applications, "driven by the owner fields". `portal_owned.ts`
+answers four GETs, `/account-api/owned/<kind>` (`KINDS`), each mirroring
+`/portal/owned/<kind>`; `web_owned.ts` draws them; `NAV`'s `owned` section
+lists them after *Your account*. A resource is the person's when one of its
+owner values — a role's `owner`, a group's `owner`, a service account's
+`stsServiceAccountOwner`, an application's `appOwner` — names the person's
+entry or a group the directory says they are in (`groupsOfUser()`); each row
+says which (`via`). Read-only: an owner grants nothing, and the owners are set
+on the console's Owners tabs. The person is the token's, as everywhere here.
+Everything is reached lazily at request time. `tests/portal_owned.js` holds it.
+

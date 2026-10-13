@@ -1,0 +1,6 @@
+{
+  "off": "<strong>SSF 已關閉</strong>（<code>ssf.enabled</code>）。路由仍然已註冊，並以 <code>501</code> 而不是 <code>404</code> 回應，因為功能關閉和 URL 錯誤對客戶端來說是兩句不同的話。傳送方元數據仍會回應，因此接收方可以發現此服務支援 SSF 但目前沒有在執行。請在此頁面底部的設定中重新開啟它。",
+  "card.noSubjects": "沒有主體。這代表什麼取決於傳送方元數據中的 <code>default_subjects</code>：為 ALL 時此串流涉及所有人，為 NONE 時不涉及任何人。",
+  "card.declaredDead": "於 {since} 被宣告失效：它的推送在 <code>ssf.deadStreamTimeoutS</code> 內全部失敗。不會再向它推送任何內容；它的 SET 進入無法投遞隊列，並會在 {probe} 推送一個作為探測。上次失敗：",
+  "card.payloadPlaceholder": "事件承載數據，JSON 格式"
+}

@@ -197,7 +197,7 @@ so must `admin-ui/admin.ts`.
    let a third function make this decision a third way.
 
    **NO CLIENT CERTIFICATE IS EVER READ FROM A HEADER.** `X-Client-Cert` and its
-   dozen vendor spellings are listed on `/tls/forwarded` and read by nothing:
+   dozen vendor spellings are listed on Monitoring → TLS connection and read by nothing:
    a certificate in a header is one anybody can forge, so RFC 8705 binding and
    mTLS client authentication both take it off the TLS handshake. The cost —
    a proxy terminating mTLS cannot pass the certificate through — is stated
@@ -325,7 +325,8 @@ so must `admin-ui/admin.ts`.
    it can do instead is `oauth2.breakIdTokenNonce` — a deliberately wrong nonce,
    off by default, NOT part of this mode (it is useful in either), reported on
    `GET /oauth2/rfc9700` and logged on every token it spoils. That is the same
-   device as `/spnego`'s three knobs and the reserved password `invalid`: a
+   device as the reserved password `invalid` (and `/spnego`'s three knobs,
+   until #595 moved the page to the companion): a
    reachable negative. Do not fold it into the mode — a compliance flag that
    also breaks tokens is a flag nobody will turn on.
 
@@ -797,7 +798,7 @@ so must `admin-ui/admin.ts`.
    8705 section 3 binds to the CERTIFICATE and permits a self-signed one
    explicitly — the proof is that the same key completed this handshake, not
    that a CA vouched for it. Requiring verification would make the feature
-   unreachable, since `/tls/trust` starts empty by design.
+   unreachable, since the client truststore starts empty by design.
 
    **A REVOKED certificate is NOT verified, since 2026-09-12**, and it still
    binds. `peerVerified()` reads `req.certificateRevocation` — which
@@ -1889,9 +1890,10 @@ so must `admin-ui/admin.ts`.
        (`limitsRaisedBy()`, `STS-OAUTH-0917`): the Allow and the pass are two
        requests. The code, its tokens and every refresh carry the lowered
        values.
-     The demonstration resource server's spend (`POST /gnap/rs/spend`)
-     accepts GNAP tokens only — it is GNAP's reference — so an RS counting
-     RAR limits keys its totals on the token's `grant_id` the same way.
+     GNAP's reference for a resource server's totals (`gnap/gnap_spend.ts`,
+     whose route went with the demonstration resource server in #593) takes
+     GNAP tokens only, so an RS counting RAR limits keys its totals on the
+     token's `grant_id` the same way.
 
    **AN UNKNOWN TYPE STAYS REFUSED IN EVERY MODE HERE**, unlike GNAP's
    development mode (`mode.grantsUncataloguedAccess()`): RFC 9396 section 5
@@ -1914,7 +1916,7 @@ so must `admin-ui/admin.ts`.
 
    | Asked | Chosen |
    |---|---|
-   | Who sends section 3's challenge | Both: a resource APPLICATION's `oauthStepUpAcrValues` / `oauthStepUpMaxAge`, enforced by the stand-in resource `/oauth2/step-up/resource/{application}`, and this service's own resource server through `dpop.presentedAccessToken()` |
+   | Who sends section 3's challenge | Both: a resource APPLICATION's `oauthStepUpAcrValues` / `oauthStepUpMaxAge`, enforced by the stand-in resource `/oauth2/step-up/resource/{application}` (**deleted by #593, 2026-10-12** — the API itself enforces it, and the test peer plays one), and this service's own resource server through `dpop.presentedAccessToken()` |
    | An `acr_values` nothing can meet | Refused `unmet_authentication_requirements` in EVERY mode |
    | Ordering, and the token's `acr` | `0` < `1` < `mfa`; the most preferred REQUESTED value met |
    | Monitoring and tests | A second section on `/admin/oauth2/monitor`, in-process tests |
@@ -1923,12 +1925,22 @@ so must `admin-ui/admin.ts`.
    described the application requirement as enforced in `presentedAccessToken()`.
    It cannot be reached there: those endpoints are this service's resource server
    and RFC 9068 section 4 refuses a token addressed to an API before any step-up
-   question. So an application's requirement is enforced by the stand-in
+   question. So an application's requirement was enforced by the stand-in
    resource (which passes `presentedAccessToken()` an `audience` predicate —
    `jwt_access_token.resourceServerRefusal()`'s new fourth argument replaces step
    4 and nothing else — `requireVerified`, and the requirement), and the own
    resource server's requirement is two settings, `oauth2.stepUpAcrValues` and
    `oauth2.stepUpMaxAgeS` (`-1` is off, because `0` is a real requirement).
+
+   **THE STAND-IN WAS DELETED BY #593 (2026-10-12)**, the last step of #585's
+   making it development only: an application's requirement is the
+   application's to enforce, as RFC 9470 section 3 has a resource server send
+   the challenge, and the test peer (`tests/peer/peer_stepup.js`) plays one
+   for `tests/vendored/sts_step_up.js`. The entry's two attributes stay —
+   written by an operator, read by the console — and so do `dpop.ts`'s three
+   options, the library half of such a resource server:
+   `tests/rfc9470_step_up.js` serves a stub on them. `STS-OAUTH-0505` (an
+   unknown application at the stand-in) is retired.
 
    **THE AUTHORIZATION ENDPOINT, IN ORDER** (`authorizeRequest()`, above the
    session branch): with a session and a requirement, `assessSession()`; met →
@@ -2610,7 +2622,8 @@ pages that relax `script-src`. The argument for it is made in `oauth2.ts`, above
   flow into an RFC 9700-conforming one (see rule 3f and `oauth2_bcp.js`) and, with
   it, **turns the main port into an HTTPS listener** on the certificate LDAPS 636
   and the debugger's listener already share — so there is then no plain listener
-  in this process and `/tls/trust` has to be bootstrapped with verification off. The flag is OFF by
+  in this process and the truststore's first add has to be made with
+  verification off. The flag is OFF by
   default, changes nothing until it is set, and is RESTART-ONLY because of that
   socket. What it does and does not enforce is published at `GET /oauth2/rfc9700`
   rather than left to be read out of the code. Nothing else here has such a mode.
@@ -3436,14 +3449,61 @@ answer would be filed against whoever happened to be signed in.
 
 Every one of those refusals leaves the pending record ALONE. A screen that spent
 itself on a refusal would turn each of them into a denial of service against the
-person it was asked of.
+person it was asked of. The three are `askedOf()`, asked by the shell, the view
+and the answer alike, with the codes the form's refusals were recorded under
+(`STS-OAUTH-0149`, `0150`, `0151`; a malformed id or body `0148`).
 
-### Two things it deliberately is not
+### A page of the sign-in surface since #576 (2026-10-12)
 
-**IT IS NOT A SIXTH SCRIPTED PAGE.** `app.js` sets `script-src 'none'` for the
-whole service and this repository's rule is that a page wanting a script must
-argue it CANNOT work without one. This one plainly can: it is two buttons in a
-form. There is no `contentSecurityPolicy()` override anywhere in the file.
+**What changed is the page and the door; nothing the screen decides.** #569
+converts every human-facing page to a static application, and the consent
+screen is a page of the SIGN-IN SURFACE (`authn/CLAUDE.md`, *The consent
+screen*), on #571's pattern:
+
+* **`GET /oauth2/consent?consent=<id>` answers the SHELL** (`shell()`,
+  `ShellDocument`) once the three checks pass, and refuses as it always did
+  (400, `invalid_request`) when they do not — so a stale or borrowed link
+  says why without a script. **Script is required** (rcbj on #569): the
+  `<noscript>` says so and no form is drawn.
+* **The page is drawn in the browser** by the sign-in surface's bundle,
+  served here as `/oauth2/consent.js` (the same file as `/authn/signin.js`),
+  from `GET /authn-api/consent/{id}` — `consentView()`, everything
+  `consentPage()` drew as facts and no words, the limits with
+  `AccessLimits.rows()` of them — by `web_consent_screen.ts`, in the
+  `consent` catalogs' words, with the ids the page always had
+  (`consent-allow`, `consent-deny`, which the conformance suite's person and
+  `tests/vendored/consent_screen.js`'s browser surface press).
+* **`POST /oauth2/consent` IS DELETED.** Its body is `consentAct()`, moved
+  whole: the limits read back (`loweredDetails()`), the record spent either
+  way, the audit rows, `consent.record()` and the RFC 9396 Allow. It is
+  `POST /authn-api/consent/{id}` (rcbj's decision on #576: under
+  `/authn-api`, which owns the session), bound by `authn/authn_api.ts` as
+  every act there — JSON, an `Origin` of this service, and the
+  `X-CSRF-Token` of the browser's `sts_session` cookie — with `action` and
+  the limit controls by the names the page draws (`lim_t0r<n>_<member>`).
+* **THE ANSWER NAMES THE ADDRESS** the 303 sent a browser to
+  (`next: redirect`, `location`, made by `authn.locationOf()` so the realm's
+  prefix and the listener are a redirect's), with `consent_error` on it for
+  a Deny. The authorization endpoint's second pass is exactly what it was:
+  its redirects, `form_post`, JARM, PAR and the code issued are untouched.
+* **WHERE IT IS ANSWERED (#472)**: `/authn-api/consent` belongs to the OAuth
+  2.0 / OpenID Connect application in `common/hosted_applications.js`, not
+  to the sign-in service's, and the script is served at this page's own
+  address: the page, its script and its API are answered on one listener
+  whichever listener `/authn` is mapped to — no answer here is credentialed
+  to another origin (`common/cors.js`). In a service deployed as cells
+  `/authn-api/consent` is placed by affinity, as `/oauth2` is.
+
+**Tests**: `tests/authn_consent_api.js` (the shell and its three checks, the
+script, the index and the OpenAPI document, the view, every binding refusal,
+a raised and a lowered limit, Allow, a replay, Deny, the id never in an audit
+row, the form POST gone); `tests/web_surfaces.js`'s round trip over four
+consent cases; in process `tests/tools/authn_screen.js`'s `openConsent()` and
+`answerConsent()`, over HTTP `tests/vendored/authn_signin.js`'s
+`consentPage()`, `answerConsent()`, `consentFor()` and `consentWithJar()`,
+and `tests/vendored/consent_screen.js` (localised by #576).
+
+### What it deliberately is not
 
 **IT IS NOT A REFUSAL, WHICH IS WHY THE SETTING IS ON BY DEFAULT.** Every other
 policy here is off because a refusal that cannot be turned off removes a test
@@ -3456,6 +3516,11 @@ It is not a refusal and that is why: it is the screen every real authorization
 server draws on a first sign-in, and a client that has never met one has never
 run the code that survives it. It still checks nothing — the person has already
 been let in under any name they typed.
+
+**It was not a scripted page until #576**, and argued so here: two buttons
+in a form, no `contentSecurityPolicy()` override. #569's decision made every
+human-facing page a static surface, and the argument a static surface needs
+is the root `CLAUDE.md`'s rule rather than one of its own.
 
 **THE REFRESH GRANT RE-CHECKS CONSENT SINCE #172 (2026-09-23)**, and it said
 the opposite until then: *the token endpoint asks nobody anything, a grant
@@ -3767,6 +3832,15 @@ through `/admin/oauth2` and `/admin-api/config/set` behind a credential — the
 endpoint writes it in development and `mode.opensTestControls()` refuses it in
 product. Writing the value the setting would have anyway CLEARS the override,
 so a test that turns nonces on and off leaves no `source: override` row behind.
+**AND SINCE #597 (2026-10-12) THE ENDPOINT IS GONE**, both methods, with
+`dpop.setNonceMode()` and `dpop.forgetProofs()` that only it called
+(`STS-OAUTH-0179` and `0180` retired). The setting is the one door in both
+modes — its home is `/admin/oauth2` (the `OAuth 2.0 / OIDC` group in
+`SETTING_HOMES`) and `POST /admin-api/config/set`; a test restores it with
+`clearOverride()`. The replay-cache flush the POST did is not replaced: a
+change of nonce policy leaves remembered proofs alone, which is what every
+other setting change does. `tests/oauth_oid4vc_hardcoded.js` section 3 writes
+it through the management API in a realm and reads it back per realm.
 
 **RFC 7591 REGISTRATION IS CLOSED IN PRODUCT** unless `oauth2.openRegistration`
 is on, and `registrationOpen()` is read by the endpoint AND the metadata so that
@@ -4217,7 +4291,8 @@ specification, and each fix is in EVERY mode, because none is FAPI's own rule:
   UNVERIFIED, which is safe for a refusal; development mode still only
   OBSERVES an assertion that fails its signature.
 * **`x-fapi-interaction-id`** (FAPI 1.0 Baseline section 6.2.1 items 11 and
-  13) on UserInfo, `/oauth2/grants/{id}` and the step-up stand-in: echoed
+  13) on UserInfo and `/oauth2/grants/{id}` (and the step-up stand-in until
+  #593 deleted it): echoed
   when the client sent a UUID, minted otherwise. Every mode, as a middleware
   before the routes — a named server's profile is not entered yet there, and
   the header carries nothing. A value that is not a UUID is replaced rather
@@ -4517,16 +4592,28 @@ rcbj's answers were every recommendation:
   * It takes an `_async` result, or a relying party's
     `command_requested: metadata | audit_tenant`.
   * It answers RFC 6750's errors.
-* **The mock relying party**, `/oauth2/commands/mock-rp` (development only):
-  * It checks a Command Token as section 9 asks.
+* **The relying party a test needs is the TEST PEER's** since #596
+  (2026-10-12; #591 P5): `tests/peer/peer_commands.js`, at
+  `/t/{tenant}/commands` on the peer's TLS listener. The runtime's mock,
+  `/oauth2/commands/mock-rp` (`command_mock_rp.ts`), was deleted, and its
+  code `STS-OAUTH-0782` is retired.
+  * It checks a Command Token as section 9 asks — from the OUTSIDE now:
+    the signature against the `jwks_uri` of the realm's OpenID
+    configuration, and `iss` against that configuration's `issuer`.
   * It keeps section 6's state machine per account, and invents an `aud_sub`
     for the provider to learn.
   * It streams tenant commands.
-  * It answers `_async` through the callback IN PROCESS.
+  * It answers `_async` through the callback OVER HTTP, at the
+    `callback_endpoint` the provider's `metadata` named (the mock handed the
+    result over in process), trying a 401 again a few times while another
+    process of the provider catches up with the callback token.
   * The registered URL's query carries the knobs `fail`, `drop` and `audsub`.
+  * A realm reaches it with the peer's CA as `federation.outboundCaFile`, and
+    in development mode, since the peer is on the stack's private network.
 
-Tests: `tests/provider_commands.js` and
-`tests/vendored/sts_provider_commands.js`.
+Tests: `tests/provider_commands.js`, `tests/test_peer.js` (section G, the
+relying party's own correctness) and
+`tests/vendored/sts_provider_commands.js` (`testPeer: true`).
 
 ## 3by. ASSERTIONS FROM DECLARED ISSUERS AS RFC 8693 SUBJECT AND ACTOR TOKENS (2026-10-03, #114)
 
@@ -5189,9 +5276,63 @@ other client are untouched, and the API explorer's unbound token still works.
   `docs/oauth-security.md` and `docs/spec-departures.md`. This qualifies 3av's
   *the hosted surfaces conforming*: the portal still does.
 
-**THE PORTAL IS IN NEITHER LIST.** It keeps its backend-for-frontend.
-`tests/sender_constraints.js` and `tests/fapi2_units.js` hold both lists to
-"the admin console, nothing else".
+**THE PORTAL JOINED BOTH LISTS ON #568 (2026-10-12)**: rcbj's decision made
+it the console's pattern — a static application, the public client
+`sts-user-portal`, every token DPoP-bound and audienced to `/account-api` —
+where it had kept #444's backend-for-frontend. Same two rules, same
+condition (its id AND its declared method `none`), and the same honesty: in a
+realm with a confidential-only FAPI profile the portal does not conform
+either, and the requirement rows say so. `tests/sender_constraints.js` and
+`tests/fapi2_units.js` hold both lists to "the console and the portal,
+nothing else".
+
+**AND UNDER A FAPI PROFILE THEY SIGN IN AT ALL (#568)**, which needed seven
+more pieces, each found by running the FAPI jobs with the static portal (the
+last three on 2026-10-12, `9ee610e7`):
+
+* **PAR (RFC 9126)** where the metadata requires it (FAPI 2.0): the runtimes
+  push from the browser (`common/web_spa_client.ts`,
+  `authorizationRequestUrl()`), with NO DPoP proof on the push — one there
+  binds the code to a key the callback's page load does not hold — and
+  FAPI 2.0's *a push authenticates its client* (`parAuthenticationRefusal`)
+  exempts the two clients, which have nothing to authenticate with.
+* **The advertised-method check** at the token and PAR endpoints
+  (`token_endpoint_auth_methods_supported`, STS-OAUTH-0198) exempts them:
+  the profile advertises no `none`, so without it the confidential-only
+  exemption exempted nothing.
+* **The signed request object** a profile requires (FAPI 1.0 Advanced, 2.0
+  Message Signing) is not required of them — `request_object.ts`'s
+  `signedRequired(client, profile, clientId)`, the one reading every path
+  asks: they hold no key to sign one with. An operator's
+  `oauth2.requireSignedRequestObject` or the entry's own flag still binds
+  them. The requirement rows say so.
+* **JARM** where the realm offers only JWT-secured response modes (2.0
+  Message Signing): requested, and verified in the browser
+  (`openAuthorizationResponse()`: the signature against the realm's JWKS with
+  WebCrypto, `iss`, `aud`, `exp`) before its code is believed.
+* **A `nonce` on every OpenID request.** FAPI 1.0 refuses an `openid`
+  request without one (STS-OAUTH-0575), and neither runtime sent one. Both
+  now send `nonce = base64url(SHA-256('nonce:' + PKCE verifier))`
+  (`SpaClient.nonceFor()` in `common/web_spa_client.ts`), so nothing extra
+  has to cross the redirect, and refuse an ID Token that does not carry it
+  (`nonceMatches()`) — the console's re-sign-in popup included. The two test
+  helpers (`tests/vendored/console_signin.js`, `portal_signin.js`) derive
+  the same value.
+* **No `query` response mode under FAPI 1.0 Advanced.** An Advanced realm
+  still advertised `query`, so a runtime reading discovery asked for plain
+  `code` without JARM and was refused (STS-OAUTH-0783).
+  `fapi.applyToMetadata()` drops `query` from `response_modes_supported`
+  whenever the profile is `1-advanced`, which leaves the JWT-secured modes.
+* **`oauth2.fapiRequireMtls` exempts them, DPoP-bound.** The setting makes
+  the sender constraint mTLS only (FAPI 1.0's wording), and a browser has no
+  client certificate to present, so the portal's sign-in was refused
+  (STS-OAUTH-0583). `fapi.senderConstraintRefusal(binding, clientId,
+  method)` lets `publicClientExempt()`'s two clients through when — and only
+  when — the token is DPoP-bound and they authenticated with `none`; an
+  unbound token is still refused and no other client is affected
+  (`tests/fapi_advanced_units.js`). The `sender-constrained` requirement row
+  (FAPI 1.0 Advanced 5.2.2 items 5-6) says so: under the setting these two
+  clients do not conform either.
 
 **THE BOOTSTRAP ADMINISTRATOR'S CLAIM (#103) IS MADE AT ISSUANCE**, by
 `issueAuthorizationResponse()` calling `rolePermissions.noteConsoleSignIn()`
@@ -5262,7 +5403,8 @@ one definition of that phrase, shared with GNAP's locations
   VC-API endpoints all read through `dpop.presentedAccessToken()`); the
   management API, by what `mgmt-api/admin_api.ts` accepts as an audience
   (its new `namesThisApi()` facade over `audienceAccepted()` and
-  `realmAudienceAccepted()`); and the GNAP demonstration resource server;
+  `realmAudienceAccepted()`); and the account API (#568) — the GNAP
+  demonstration resource server was one until #593 deleted it;
 * **or a registered application** (`appRegisteredBy`), found by its
   `oauthAudience`, client_id, identifier — `resolveTarget()`'s lookups — or
   permission base URI (normalised), the four names
@@ -5340,3 +5482,9 @@ request-stage `permission-not-granted` no longer applies to
 as a person's at mint (the subject kind is read off the grant), and the
 #549 exchange rule still asks the caller's delegated grant.
 
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+**None is left.** The RFC 9470 stand-in, `/oauth2/step-up/resource/:application`, was on this list until #593 (2026-10-12) deleted it — see 3an. So was the Provider Commands mock relying party, `/oauth2/commands/mock-rp`, until #596 moved it to the test peer — see 3bl.
+
+**`/dpop/nonce-mode` left the runtime with #597 (2026-10-12)**: deleted, both halves, and `oauth2.dpopNonceRequired` is set the same way in either mode (see *`POST /dpop/nonce-mode` IS PER REALM AND A TEST CONTROL*, above).

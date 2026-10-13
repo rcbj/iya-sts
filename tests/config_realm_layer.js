@@ -199,7 +199,8 @@ function checkMarker(t) {
   // then. A realm is created with `krb5.enabled` off, builds its own principal
   // database when it is turned on, and rebuilds it when one of these changes on
   // that realm. So for a realm none of the ten was consumed at any startup. The
-  // sockets (`krb5.kdcPort`, `krb5.servicePort`) and the development trust
+  // KDC's socket (`krb5.kdcPort`; `krb5.servicePort` was the other, until
+  // #595) and the development trust
   // (`krb5.trustedRealm` and its three) are NOT here, and must not be: those
   // are bound and built for the process.
   const EXPECTED_REALM_RUNTIME = [

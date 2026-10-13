@@ -1,0 +1,8 @@
+{
+  "body.introBefore": "<strong>角色是某人可以持有的名稱，而本服務正是依據是否持有角色來決定是否簽發。</strong>有三類事物可以對應到角色 &mdash; 人員、群組（如此群組中的每位成員都持有該角色）以及應用程式（如此以自身身分進行驗證的客戶端持有角色，<code>client_credentials</code> 授權就是據此決定的，其中根本沒有人員）。應用程式項目在 <code>appRequiredRole</code> 中指明它要求的角色，對於不持有其中任何角色的人，不會為該應用程式簽發任何內容 &mdash; 這項決定由 XACML PDP 依據 <code>xacml.issuancePolicy</code> 所指定的原則做出，絕不是由簽發位置中的 <code>if</code> 做出。因此，拒絕的原因是一份文件，您可以在",
+  "body.authorizeBefore": "<strong>範圍是請求；角色才是授權它的東西。</strong>受其資源應用程式管控的權限（應用程式頁面上的 <code>oauthRoleGatedPermission</code>）只會簽發給持有在此處指明它之角色的人員或應用程式，否則會從權杖中省略 &mdash; 而只請求這一項的請求會以 <code>invalid_scope</code> 被拒絕。依客戶端請求的方式命名權限：資源的 <code>oauthPermissionBaseUri</code> 後接名稱。它必須先被定義。<code>admin:read</code> 和 <code>admin:write</code> 是本服務自有的，只由主控台角色 <code>ADMIN_READ</code> 和 <code>ADMIN_WRITE</code> 授權：人員透過",
+  "body.claimRest": "對於不持有任何已設定角色的人，該宣告會被完全省略，六個內建角色也從不包含在其中：<code>{defaultRequired}</code> 和 <code>ALL_AUTHENTICATED_USERS</code> 對本服務簽發的幾乎每個權杖都成立，攜帶它們只會讓每個現有客戶端解析的每個權杖多出兩個毫無意義的成員，而且不會告訴信賴方任何它透過持有權杖還不知道的資訊。它們的存在是為了被要求，而不是為了被攜帶。<br><br><code>{name}</code> 也是傳入時查找的內容：內嵌 PEP 會從呼叫者提交的權杖中讀取該成員，並將找到的內容與此登記簿自己的答案合併。<strong>這一半較弱，原則在其自身描述中也說明了這一點</strong> &mdash; 本服務不驗證並非由它簽發的存取權杖，因此宣告只是關於權杖的證據，而不是關於人員的證據。<code>role-issuance</code> 範本有一個參數可以去掉這一分支。",
+  "conferredBy.lead": "授予透過以下客戶端登入的每個人",
+  "roleEditFold.conferTitle": "透過此客戶端登入的每個人，都會在簽發給他的權杖上持有該角色，此外還有其自身持有的角色。",
+  "roleEditFold.conferredBy": "由客戶端授予"
+}

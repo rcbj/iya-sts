@@ -43,10 +43,10 @@
 //    `federation/federation_sp.ts` says of a partner's assertion and why
 //    `common/crypto.js`'s verifier is always handed `certPem` here — its
 //    fallback to the document's own certificate is unreachable from this
-//    file. The one IMPLICIT anchor is this service's own certificate for its
-//    own mock service provider (`/saml2/sp`), which signs with this service's
-//    key: only this process holds that key, so trusting it for that one
-//    entityID lets nothing in that this process did not sign.
+//    file. There is NO implicit anchor (#592): the one there was, this
+//    service's own certificate for its own mock service provider, left with
+//    that mock, and every service provider's certificate is now a registered
+//    one.
 //
 // 3. **WITH NO REGISTERED CERTIFICATE A SIGNATURE IS RECORDED, NOT
 //    VERIFIED** (`no-certificate`), which is where every service provider
@@ -138,8 +138,6 @@ interface AssessSpec {
   messageField: string;
   // The application entry's fields.
   fields?: Record<string, unknown>;
-  // Certificates trusted for this one message beyond the entry's (base64 DER).
-  implicitCertificates?: string[];
 }
 
 // What `assess()` answers.
@@ -507,21 +505,16 @@ class RequestSignature {
    * certificates. Never throws.
    *
    * @param spec - the binding, the raw query or parameters, the decoded message
-   * and its root's local name, the message field, the entry's fields and any
-   * certificates trusted for this message alone
+   * and its root's local name, the message field and the entry's fields
    * @returns whether it was signed, the outcome, the algorithm and whether it
    * is weak, why, and its error code
    */
   assess(spec: AssessSpec): Assessment {
     const { log, stsCrypto, errorCodes } = this.deps;
-    const self = this;
     log.debug("Entering RequestSignature.assess(). binding=" + spec.binding +
               ", root=" + spec.rootLocalName);
     const params = spec.params || {};
-    const registered = this.registeredCertificates(spec.fields).concat(
-      this.valuesOf(spec.implicitCertificates).filter(function (one) {
-        return self.registeredCertificates(spec.fields).indexOf(one) < 0;
-      }));
+    const registered = this.registeredCertificates(spec.fields);
     // THE HTTP-POST-SimpleSign BINDING (#37 follow-up) is a POST carrying
     // `Signature` and `SigAlg` form fields: a detached signature like the
     // Redirect binding's, over different octets (`simpleSignOctets()`).
@@ -713,15 +706,14 @@ class RequestSignature {
    *
    * An anonymous caller is refused where signed requests are required
    * (`STS-SAML-0077`) and accepted where they are not.
-   * @param spec - the message, its root's local name, the entry's fields, the
-   * TLS client certificate and any implicitly trusted certificates
+   * @param spec - the message, its root's local name, the entry's fields and
+   * the TLS client certificate
    * @returns `{ refuse, errorCode, why, via, assessment }`, `via` being
    * `signature`, `tls` or `none`
    */
   authenticateSoapCaller(spec: { xml: string; rootLocalName: string;
                                  fields?: Record<string, unknown>;
-                                 tlsCertificate?: string;
-                                 implicitCertificates?: string[] }):
+                                 tlsCertificate?: string }):
       { refuse: boolean; errorCode: string; why: string; via: string;
         assessment: Assessment } {
     const { log } = this.deps;
@@ -729,8 +721,7 @@ class RequestSignature {
               spec.rootLocalName);
     const assessment = this.assess({
       binding: 'post', xml: spec.xml, rootLocalName: spec.rootLocalName,
-      messageField: '', fields: spec.fields,
-      implicitCertificates: spec.implicitCertificates
+      messageField: '', fields: spec.fields
     });
     if (assessment.outcome === 'failed') {
       log.debug("Leaving RequestSignature.authenticateSoapCaller(). Failed.");
@@ -745,8 +736,7 @@ class RequestSignature {
                via: 'signature', assessment: assessment };
     }
     const tls = String(spec.tlsCertificate || '').replace(/\s+/g, '');
-    const trusted = this.registeredCertificates(spec.fields).concat(
-      this.valuesOf(spec.implicitCertificates));
+    const trusted = this.registeredCertificates(spec.fields);
     if (tls && trusted.indexOf(tls) >= 0) {
       log.debug("Leaving RequestSignature.authenticateSoapCaller(). TLS.");
       return { refuse: false, errorCode: '', via: 'tls',

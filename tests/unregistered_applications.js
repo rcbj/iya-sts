@@ -416,7 +416,11 @@ function wsfed(t) {
     const res = fakeRes();
     const req = { method: 'GET', path: '/wsfed', url: '/wsfed',
                   originalUrl: '/wsfed',
-                  query: { wa: 'wsignin1.0', wtrealm: wtrealm },
+                  // A wreply always (#592): with none, and none registered,
+                  // development refuses too now the mock relying party is
+                  // gone, and this is about the wtrealm, not the address.
+                  query: { wa: 'wsignin1.0', wtrealm: wtrealm,
+                           wreply: 'https://ua-rp.example/wsfed' },
                   headers: { host: 'sts.ua.example' }, cookies: {},
                   protocol: 'https', secure: true, ip: '127.0.0.1',
                   socket: {},
@@ -827,7 +831,7 @@ function fixtures(t) {
                 appAllowedToDelegateTo: ['ua-app'] } }),
     applications.createApplication({ identifier: 'ua-rp',
       protocols: ['wsfed'],
-      fields: { wsfedReplyUrl: [BASE + '/wsfed/rp'] } }),
+      fields: { wsfedReplyUrl: ['https://ua-rp.example/wsfed'] } }),
     applications.createApplication({ identifier: 'ua-oauth',
       protocols: ['oauth2', 'oidc'],
       fields: { oauthClientId: 'ua-oauth',

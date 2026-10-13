@@ -111,13 +111,17 @@ class MetricsPage {
       kit.note(t.html('consoleMetrics.since',
                       { when: kit.whenText(snap.startedAt) })) +
 
-      '<h2>' + t.html('consoleMetrics.calls.heading') + '</h2>' +
+      // A TAB PER COUNT (2026-10-12): the tiles and the note above are
+      // Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="calls">' + t.html('consoleMetrics.calls.heading') +
+      '</h2>' +
       kit.note(t.html('consoleMetrics.calls.noteA') + ' ' +
       '<a href="/admin/sts-metadata">/admin/sts-metadata</a> ' +
       t.html('consoleMetrics.calls.noteB')) +
       MetricsPage.callTable(snap, t) +
 
-      '<h2>' + t.html('consoleMetrics.tokens.heading') + '</h2>' +
+      '<h2 data-tab="tokens">' + t.html('consoleMetrics.tokens.heading') +
+      '</h2>' +
       kit.note(t.html('consoleMetrics.tokens.noteA') + ' ' +
       '<a href="/admin/tokens">' + t.html('consoleMetrics.link.tokensPage') +
       '</a> ' + t.html('consoleMetrics.tokens.noteB')) +
@@ -128,7 +132,8 @@ class MetricsPage {
                             cap: snap.tokens.cap }))
         : '') +
 
-      '<h2>' + t.html('consoleMetrics.artifacts.heading') + '</h2>' +
+      '<h2 data-tab="artifacts">' +
+      t.html('consoleMetrics.artifacts.heading') + '</h2>' +
       kit.note(t.html('consoleMetrics.artifacts.noteA') + ' ' +
       '<a href="/admin/tokens">' + t.html('consoleMetrics.link.tokensPageLc') +
       '</a>' + t.html('consoleMetrics.artifacts.noteB')) +
@@ -139,7 +144,8 @@ class MetricsPage {
                             cap: snap.artifacts.cap }))
         : '') +
 
-      '<h2>' + t.html('consoleMetrics.sessions.heading') + '</h2>' +
+      '<h2 data-tab="sessions">' +
+      t.html('consoleMetrics.sessions.heading') + '</h2>' +
       kit.note(t.html('consoleMetrics.sessions.noteA') + ' ' +
       '<a href="/admin/users">' + t.html('consoleMetrics.link.usersPage') +
       '</a> ' + t.html('consoleMetrics.sessions.noteB')) +

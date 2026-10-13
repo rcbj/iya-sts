@@ -116,21 +116,20 @@ class ScepPage {
            t.html('consoleScep.kindApplication') + '</option></select>';
   }
 
+  // WHAT THE ENDPOINT ANSWERS (2026-10-12): the capabilities and message
+  // types, under SCEP on Protocols → Cert issuance's Metadata tab, which
+  // lists the endpoints themselves; the SCEP tab lists none.
   /**
-   * Draws the endpoints section.
+   * Draws what the SCEP endpoint answers: its capabilities and the message
+   * types it takes.
    *
    * @param json - the view
    * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static sectionEndpoints(json, t) {
+  static sectionCapabilities(json, t) {
     const self = this;
-    const rows = Object.keys(json.endpoints).map(function (name) {
-      return '<tr><th>' + esc(name) + '</th><td>' +
-             self.code(json.endpoints[name]) + '</td></tr>';
-    }).join('');
-    return '<h2>' + t.html('consoleScep.hEndpoints') +
-      '</h2><table class="kv">' + rows +
+    return '<table class="kv">' +
       '<tr><th>' + t.html('consoleScep.capsAnswers') + '</th><td>' +
       json.capabilities.map(this.code.bind(this)).join(' ') + '</td></tr>' +
       '<tr><th>' + t.html('consoleScep.messagesAnswered') + '</th><td>' +
@@ -413,11 +412,29 @@ class ScepPage {
     const inner =
       kit.note(t.html('consoleScep.intro') + ' ' +
         (json.enabled ? '' : t.html('consoleScep.turnedOff'))) +
-      this.sectionEndpoints(json, t) + this.sectionAuthority(json, t) +
-      this.sectionProfiles(json, t) +
-      this.sectionChallenges(ctx, json) + this.sectionHostNames(json, t) +
-      this.sectionCertificates(ctx, json) + this.sectionExceptions(json, t) +
-      SettingsForms.forms(json.settings, '/admin/scep', undefined, t) +
+      // EACH SECTION A SUB-TAB (2026-10-12): the SCEP tab of Protocols →
+      // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
+      // CERT_SUB_TAB_IDS. A section's own heading is the sub-tab's label.
+      kit.subTabbedPanels(t.text('console.nav.scep'), [
+        { id: 'cert-scep-ca', label: t.text('consoleScep.hIssuingCa'),
+          html: kit.untitled(this.sectionAuthority(json, t)) },
+        { id: 'cert-scep-profiles', label: t.text('consoleScep.hProfiles'),
+          html: kit.untitled(this.sectionProfiles(json, t)) },
+        { id: 'cert-scep-challenges',
+          label: t.text('consoleScep.hChallenges'),
+          html: kit.untitled(this.sectionChallenges(ctx, json)) },
+        { id: 'cert-scep-host-names', label: t.text('consoleScep.hHostNames'),
+          html: kit.untitled(this.sectionHostNames(json, t)) },
+        { id: 'cert-scep-certificates',
+          label: t.text('consoleScep.hEnrolled'),
+          html: kit.untitled(this.sectionCertificates(ctx, json)) },
+        { id: 'cert-scep-exceptions', label: t.text('consoleScep.hNotDo'),
+          html: kit.untitled(this.sectionExceptions(json, t)) },
+        { id: 'cert-scep-settings', label: t.text('consoleScep.hSettings'),
+          html: SettingsForms.forms(json.settings,
+                                    '/admin/cert-issuance#cert-scep-settings',
+                                    undefined, t) }
+      ]) +
       '<p class="links"><a href="/admin/scep?format=json">JSON</a> · ' +
       '<code>GET /admin-api/scep</code> · <a href="/admin/scep/monitor">' +
       t.html('consoleScep.linkMonitor') + '</a> · ' +
@@ -438,12 +455,15 @@ class ScepPage {
    * @param t - the page's translator (#539)
    * @returns the markup
    */
-  static table(title, counts, t) {
+  static table(title, counts, t, tab?) {
     const self = this;
     const keys = Object.keys(counts || {}).sort(function (a, b) {
       return counts[b] - counts[a];
     });
-    return '<h2>' + esc(title) + '</h2>' + (keys.length
+    // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
+    // table of counts (`WebPages.protocolTabs()`).
+    return '<h2' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
+      esc(title) + '</h2>' + (keys.length
       ? '<table><tbody>' + keys.map(function (k) {
         return '<tr><td>' + self.code(k) + '</td><td class="num">' + counts[k] +
                '</td></tr>';
@@ -487,12 +507,18 @@ class ScepPage {
                t.text('consoleScep.tileChallenges')) +
       kit.tile(json.issuedCertificates,
                t.text('consoleScep.tileCertificates')) + '</div>' +
-      self.table(t.text('consoleScep.byOperation'), json.operations, t) +
-      self.table(t.text('consoleScep.byFailInfo'), json.failInfo, t) +
-      self.table(t.text('consoleScep.byErrorCode'), json.errorCodes, t) +
-      self.table(t.text('consoleScep.byProfile'), json.profiles, t) +
-      self.table(t.text('consoleScep.byPrincipal'), json.principals, t) +
-      '<h2 id="list-page">' + t.html('consoleScep.recent') + '</h2>' +
+      self.table(t.text('consoleScep.byOperation'), json.operations, t,
+                 'operations') +
+      self.table(t.text('consoleScep.byFailInfo'), json.failInfo, t,
+                 'failinfo') +
+      self.table(t.text('consoleScep.byErrorCode'), json.errorCodes, t,
+                 'codes') +
+      self.table(t.text('consoleScep.byProfile'), json.profiles, t,
+                 'profiles') +
+      self.table(t.text('consoleScep.byPrincipal'), json.principals, t,
+                 'principals') +
+      '<h2 id="list-page" data-tab="recent">' + t.html('consoleScep.recent') +
+      '</h2>' +
       nav.head + '<table><thead><tr>' +
       '<th>' + t.html('consoleScep.thAt') + '</th><th>' +
       t.html('consoleScep.thOperation') + '</th><th>' +
@@ -504,10 +530,12 @@ class ScepPage {
       '<th>' + t.html('consoleScep.serial') + '</th></tr></thead><tbody>' +
       rows + '</tbody></table>' +
       nav.foot +
+      '<div data-metadata>' +
       kit.note(t.html('consoleScep.noReset') +
         ' <a href="/admin/audit">' + t.html('consoleScep.auditLog') +
-        '</a>.') +
-      '<p class="links"><a href="/admin/scep/monitor?format=json">JSON</a> ' +
+        '</a>.') + '</div>' +
+      '<p class="links" data-metadata>' +
+      '<a href="/admin/scep/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/scep/monitor</code> · <a ' +
       'href="/admin/scep">SCEP</a></p>';
     return inner;

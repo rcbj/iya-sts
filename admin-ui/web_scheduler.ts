@@ -321,7 +321,8 @@ class SchedulerPage {
         '</form> <small>' + t.html('consoleScheduler.leader.stepDownWhat') +
         '</small>'
       : '';
-    return '<h3>' + t.html('consoleScheduler.leader.heading') + '</h3><p>' +
+    return '<h3 data-tab="leader">' +
+      t.html('consoleScheduler.leader.heading') + '</h3><p>' +
       who + '</p>' + stepDown;
   }
 
@@ -372,7 +373,8 @@ class SchedulerPage {
         '<td><small>' + kit.esc(r.startedAt || r.queuedAt || '') +
         '</small></td></tr>';
     }).join('');
-    return '<h3>' + t.html('consoleScheduler.runs.heading') + '</h3>' +
+    return '<h3 data-tab="runs">' + t.html('consoleScheduler.runs.heading') +
+      '</h3>' +
       filter + nav.head +
       '<table class="grid"><thead><tr><th>' +
       t.html('consoleScheduler.th.run') + '</th><th>' +
@@ -428,7 +430,8 @@ class SchedulerPage {
     const disabled = json.enabled ? ''
       : kit.warn(t.html('consoleScheduler.disabled'));
     const commands = json.commands.length
-      ? '<h3>' + t.html('consoleScheduler.commands.heading') +
+      ? '<h3 data-tab="commands">' +
+        t.html('consoleScheduler.commands.heading') +
         '</h3><table class="grid"><thead><tr><th>' +
         t.html('consoleScheduler.th.command') + '</th>' +
         '<th>' + t.html('consoleScheduler.th.state') + '</th><th>' +
@@ -444,13 +447,17 @@ class SchedulerPage {
                       ' pid ' + c.obeyedBy.pid : '—') + '</td></tr>';
         }).join('') + '</tbody></table>'
       : '';
+    // TABS (2026-10-12, `WebPages.protocolTabs()`): the leader, the jobs,
+    // the runs, the commands and the settings; the tiles, the warnings and
+    // what the page is are Metadata.
     return tiles + asOf + disabled + unknown + what +
-      this.leaderBlock(json, canWrite, t) + '<h3>' +
+      this.leaderBlock(json, canWrite, t) + '<h3 data-tab="jobs">' +
       t.html('consoleScheduler.jobs.heading') + '</h3>' +
       this.jobsTable(json, canWrite, ctx.query || {}, t) +
       this.runsTable(json, ctx.query || {}, t) +
       commands + (json.confinedToRealm ? ''
-        : '<h2>' + t.html('consoleScheduler.settings.heading') + '</h2>' +
+        : '<h2 data-tab="settings">' +
+          t.html('consoleScheduler.settings.heading') + '</h2>' +
           SettingsForms.forms(json.settings, PAGE, undefined,
                               t));
   }

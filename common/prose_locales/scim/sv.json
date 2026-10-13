@@ -1,0 +1,310 @@
+{
+  "stats.operations.create.what": {
+    "en": "a9f3a873aa328908",
+    "text": "En resurs skapades (RFC 7644 avsnitt 3.3)."
+  },
+  "stats.operations.list.what": {
+    "en": "b0284ee2afa292c9",
+    "text": "En samling efterfrågades (avsnitt 3.4.2), med eller utan filter."
+  },
+  "stats.operations.read.what": {
+    "en": "822f587658cd4d92",
+    "text": "En resurs hämtades med id (avsnitt 3.4.1)."
+  },
+  "stats.operations.search.what": {
+    "en": "a40bc982b7011279",
+    "text": "En fråga skickad som POST till .search (avsnitt 3.4.3), vilket är vad en klient använder när dess filter är för långt för en URL."
+  },
+  "stats.operations.replace.what": {
+    "en": "0102fc5d08470507",
+    "text": "En hel resurs ersattes (avsnitt 3.5.1)."
+  },
+  "stats.operations.modify.what": {
+    "en": "933e8a0eaeb3eee3",
+    "text": "En PATCH tillämpades (avsnitt 3.5.2). Den operation som en provisioneringsklient använder mest, och den vars sökvägsgrammatik är svårast att få rätt — vilket är skälet till att den här tjänsten inte implementerar den själv."
+  },
+  "stats.operations.delete.what": {
+    "en": "45b55ac9659cbf0f",
+    "text": "En resurs togs bort (avsnitt 3.6)."
+  },
+  "stats.operations.bulk.what": {
+    "en": "c14ea1925044b133",
+    "text": "En BulkRequest tillämpades (avsnitt 3.7). Operationerna INUTI den räknas också var för sig, så en bulk med fem create är en bulk-rad och fem create-rader — vilket är den ärliga läsningen och sägs på sidan, eftersom en läsare som summerar kolumnen annars finner att den inte stämmer."
+  },
+  "stats.operations.discovery.what": {
+    "en": "9879abecdf50a7ea",
+    "text": "ServiceProviderConfig, ResourceTypes eller Schemas (avsnitt 4). Det som en klient läser innan den gör något annat, och det enda här som inte rör någon katalogpost."
+  },
+  "stats.operations.unknown.what": {
+    "en": "cfc21d1c585bec9c",
+    "text": "En begäran till en sökväg under /scim/v2 som inte namnger någon slutpunkt, besvarad med 404 i SCIM Error-schemat (RFC 7644 avsnitt 3.12) snarare än av express som en HTML-sida (#206)."
+  },
+  "stats.unlistedOperation": {
+    "en": "a58d0324c93bcb2e",
+    "text": "Räknad under ett namn som admin_stats.js:s SCIM_OPERATIONS inte listar. Den visas i stället för att släppas, eftersom en tabell som i tysthet kastade den skulle få kolumnen att sluta gå ihop utan något sätt att ta reda på varför."
+  },
+  "scim.doesNotDo.permissive": {
+    "en": "34742646d0317611",
+    "text": "DEN AUTENTISERAR, OCH DEN KONTROLLERAR NÄSTAN INGENTING. En autentiseringsuppgift krävs, och varje schema bakom det kravet är tillåtande: vilken anropare som helst kan få en åtkomsttoken med vilket omfång som helst från den här tjänstens egen tokenslutpunkt med vilket grant som helst, vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\" klarar Basic, vilket användarnamn som helst klarar Digest med det enda delade lösenordet, och vem som helst kan registrera en HOBA-nyckel för vilket namn som helst. Det är en spärr, inte ett lås. Det man får är att en klients hantering av 401, 403, challenge-response och omfång alls kan prövas — inget av det kan en öppen slutpunkt producera. Lägg inte den här porten på en publik adress på grundval av detta."
+  },
+  "scim.doesNotDo.permissiveOff": {
+    "en": "d13d4ee5c43db5b9",
+    "text": "DEN AUTENTISERAR, OCH DEN KONTROLLERAR NÄSTAN INGENTING. En autentiseringsuppgift krävs — förutom att det för närvarande är avstängt här, så den krävs inte, och varje schema bakom det kravet är tillåtande: vilken anropare som helst kan få en åtkomsttoken med vilket omfång som helst från den här tjänstens egen tokenslutpunkt med vilket grant som helst, vilket användarnamn som helst med vilket lösenord som helst utom \"invalid\" klarar Basic, vilket användarnamn som helst klarar Digest med det enda delade lösenordet, och vem som helst kan registrera en HOBA-nyckel för vilket namn som helst. Det är en spärr, inte ett lås. Det man får är att en klients hantering av 401, 403, challenge-response och omfång alls kan prövas — inget av det kan en öppen slutpunkt producera. Lägg inte den här porten på en publik adress på grundval av detta."
+  },
+  "scim.doesNotDo.product": {
+    "en": "63b3779ff81c6f12",
+    "text": "DEN AUTENTISERAR, OCH I PRODUKTLÄGE KONTROLLERAR DEN. En autentiseringsuppgift krävs, och varje schema bakom det kravet verifieras: en åtkomsttoken måste komma från den här tjänstens egen tokenslutpunkt med omfånget, ett Basic-lösenord kontrolleras mot det hashade userPassword på personens post, en HOBA-nyckel måste ha registrerats av sin inloggade ägare, och Digest erbjuds inte."
+  },
+  "scim.doesNotDo.productOff": {
+    "en": "2d0e7626a5d8a9b8",
+    "text": "DEN AUTENTISERAR, OCH I PRODUKTLÄGE KONTROLLERAR DEN. En autentiseringsuppgift krävs — förutom att det för närvarande är avstängt här, så den krävs inte, och varje schema bakom det kravet verifieras: en åtkomsttoken måste komma från den här tjänstens egen tokenslutpunkt med omfånget, ett Basic-lösenord kontrolleras mot det hashade userPassword på personens post, en HOBA-nyckel måste ha registrerats av sin inloggade ägare, och Digest erbjuds inte."
+  },
+  "scim.doesNotDo.scope": {
+    "en": "bbf9a990cb80b46c",
+    "text": "ETT OMFÅNG BEVILJAR OCH INGET ANNAT LÄSER ETT. scim:read och scim:write är det första omfångskravet någonstans i den här tjänsten, och de gäller endast vid dessa slutpunkter — ingen annan yta här läser ett omfång, och att ha ett ger ingenting utöver /scim/v2. Observera också att endast OAuth-schemana alls bär omfång: Basic, Digest, HOBA, en cookie och ett klientcertifikat autentiserar en anropare som sedan får göra båda, så en anropare som inte kan få ett omfång kan helt enkelt använda ett annat schema. Varje schema har en egen brytare av exakt det skälet."
+  },
+  "scim.doesNotDo.active": {
+    "en": "063502f94b8717f2",
+    "text": "active: false INAKTIVERAR KONTOT (sedan 2026-09-17). Det är lösenordspolicyns lås pwdAccountLockedTime på posten, och varje dörr vägrar personen så länge det är satt — ett lösenord, en session, ett token-grant, en Kerberos AS-REQ — och allt de hade avslutas när det skrivs. active: true aktiverar dem igen; en resurs som utelämnar active lämnar kontot som det var."
+  },
+  "scim.doesNotDo.etag": {
+    "en": "d9e78344446d3ef5",
+    "text": "INGEN ETag OCH INGEN changePassword, båda annonserade som ej stödda snarare än halvt implementerade. En version byggd på en tidsstämpel med en sekunds upplösning skulle vara en samtidighetskontroll som en klient litar på och som är fel; och inget lösenord i den här tjänsten kontrolleras, så det finns inget att ändra."
+  },
+  "scim.doesNotDo.member": {
+    "en": "3cce88d4d02d3509",
+    "text": "EN MEDLEM SOM INTE NAMNGER NÅGOT ACCEPTERAS. Den här katalogen gör avsiktligt ingen referensintegritet — att ta bort en användare lämnar deras DN i varje grupp som listade dem — så att vägra en hängande medlem här skulle göra det tillståndet omöjligt att återskapa. /admin/groups rapporterar dem."
+  },
+  "scim.endpoints.serviceProviderConfig": {
+    "en": "ec5c59eeb4453e91",
+    "text": "Vad den här servern stöder. Läs det först."
+  },
+  "scim.endpoints.resourceTypes": {
+    "en": "20ac2318fc32a81a",
+    "text": "User och Group."
+  },
+  "scim.endpoints.schemas": {
+    "en": "ed2cc578ba4c5003",
+    "text": "Kärnschemana User och Group, och enterprise-tillägget för User."
+  },
+  "scim.endpoints.usersList": {
+    "en": "d772456010cee030",
+    "text": "Listan, med ?filter, ?sortBy, ?startIndex, ?count, ?attributes."
+  },
+  "scim.endpoints.usersCreate": {
+    "en": "ed6ef4d572de7082",
+    "text": "Skapa."
+  },
+  "scim.endpoints.usersSearch": {
+    "en": "301d2bdfd3b6fcad",
+    "text": "Samma fråga som en POST-kropp, för ett filter som är för långt för en URL."
+  },
+  "scim.endpoints.userRead": {
+    "en": "e451ccebd6ae2d95",
+    "text": "En användare."
+  },
+  "scim.endpoints.userReplace": {
+    "en": "10c2d84cbed90cef",
+    "text": "Ersätt."
+  },
+  "scim.endpoints.userModify": {
+    "en": "26410632ba4e7d61",
+    "text": "Ändra (avsnitt 3.5.2), med sökvägsgrammatik och allt."
+  },
+  "scim.endpoints.userDelete": {
+    "en": "0042ecdb060ae12e",
+    "text": "Ta bort."
+  },
+  "scim.endpoints.groups": {
+    "en": "228c8cdc3717f718",
+    "text": "Grupper, vars medlemmar upplöses från member, uniqueMember och memberUid lika."
+  },
+  "scim.endpoints.search": {
+    "en": "a366df1d37258f63",
+    "text": "En fråga över BÅDA resurstyperna på en gång."
+  },
+  "scim.endpoints.bulk": {
+    "en": "6f419a02fa746e5c",
+    "text": "Upp till {{n}} operationer i en begäran."
+  },
+  "scim.endpoints.me": {
+    "en": "ca94fbd8dcbe2b39",
+    "text": "Subjektet som den här begäran autentiserades som (avsnitt 3.11), delegerat till samma User-hanterare. 501 när ingenting autentiserades, och vid POST; 404 när autentiseringsuppgiften namnger någon utan post här."
+  },
+  "scim.endpoints.hoba": {
+    "en": "78e83905543539dc",
+    "text": "Registrera en publik HOBA-nyckel (RFC 7486 avsnitt 7). Oautentiserad med avsikt — det är så en anropare får en autentiseringsuppgift. GET beskriver den."
+  },
+  "scim.negatives.noCredential.what": {
+    "en": "19d7f0fcd3764116",
+    "text": "En begäran utan autentiseringsuppgift"
+  },
+  "scim.negatives.noCredential.answer": {
+    "en": "677b3bb94689bc2b",
+    "text": "401, med ett WWW-Authenticate-huvud per erbjudet schema — RFC 7644 avsnitt 2 gör det huvudet till ett SHALL. Discovery-slutpunkterna är undantagna om inte scim.authDiscovery är på."
+  },
+  "scim.negatives.wrongScope.what": {
+    "en": "b1b1e1f4ef979ce5",
+    "text": "En åtkomsttoken med fel omfång för operationen"
+  },
+  "scim.negatives.wrongScope.answer": {
+    "en": "3699a24bfa551621",
+    "text": "403 med WWW-Authenticate: Bearer error=\"insufficient_scope\", scope=\"{{write}}\". Läsningar behöver \"{{read}}\" och skrivningar behöver \"{{write}}\"; ingetdera innebär det andra."
+  },
+  "scim.negatives.foreignToken.what": {
+    "en": "224693a8e83465fa",
+    "text": "En åtkomsttoken som den här tjänsten inte utfärdat, eller en som har återkallats"
+  },
+  "scim.negatives.foreignToken.answer": {
+    "en": "e71231b2cb1a9d38",
+    "text": "401. Dessa slutpunkter verifierar signaturen, till skillnad från OID4VCI-slutpunkterna för autentiseringsuppgifter, som accepterar en främmande token: ett omfång på en token som ingen verifierat är en behörighet som innehavaren skrivit åt sig själv."
+  },
+  "scim.negatives.refusedPassword.what": {
+    "en": "b6240d896a183cfe",
+    "text": "Basic med lösenordet \"{{password}}\""
+  },
+  "scim.negatives.refusedPassword.answer": {
+    "en": "0b050a874643f074",
+    "text": "401 — samma reserverade värde som varje annan familj här vägrar."
+  },
+  "scim.negatives.digest.what": {
+    "en": "a1ae2bb3b98538a8",
+    "text": "Digest med fel lösenord, en inaktuell nonce eller ett upprepat nc"
+  },
+  "scim.negatives.digest.answer": {
+    "en": "2d00c539d384292f",
+    "text": "401 på tre sätt: lösenordet kontrolleras verkligen här, en inaktuell nonce bär stale=true (vilket en konform klient tyst försöker igen med), och en uppspelad nonce-räknare gör det INTE — den var en giltig autentiseringsuppgift och har setts förut, vilket är en annan mening."
+  },
+  "scim.negatives.hoba.what": {
+    "en": "fc304cec6c17e496",
+    "text": "En HOBA-signatur som inte verifieras, eller en återanvänd (kid, challenge, nonce)"
+  },
+  "scim.negatives.hoba.answer": {
+    "en": "45994ffeadec09fe",
+    "text": "401. Signaturen verifieras verkligen — RSA-SHA256 över den längdprefixerade bloben i RFC 7486 avsnitt 5 — och utmaningen får ÅTERANVÄNDAS fram till sin max-age, så det som vägras som uppspelning är trippeln och inte utmaningen."
+  },
+  "scim.negatives.otherScheme.what": {
+    "en": "fd15d107e64d7600",
+    "text": "En autentiseringsuppgift i ett schema som den här tjänsten inte erbjuder"
+  },
+  "scim.negatives.otherScheme.answer": {
+    "en": "4753d6cedaf51d13",
+    "text": "401 som namnger de scheman den erbjuder. En åtkomsttoken i frågesträngen vägras separat, av samma kontroll som /oauth2/userinfo använder."
+  },
+  "scim.negatives.meAlias.what": {
+    "en": "1270ece98779d4ea",
+    "text": "GET /Me utan autentiseringsuppgift, eller POST /Me"
+  },
+  "scim.negatives.meAlias.answer": {
+    "en": "fd67bff19b9d787d",
+    "text": "501 — aliaset är otillgängligt snarare än att resursen saknas. En autentiseringsuppgift som namnger någon utan post får 404."
+  },
+  "scim.negatives.refusedUsername.what": {
+    "en": "06afe95f3e7de42b",
+    "text": "Ett userName på \"{{username}}\""
+  },
+  "scim.negatives.refusedUsername.answer": {
+    "en": "7d46037af58bb17d",
+    "text": "400 invalidValue — samma reserverade värde som password-granten, WS-Trust, WS-Federations inloggningsskärm och varje LDAP-bindning här vägrar."
+  },
+  "scim.negatives.duplicate.what": {
+    "en": "8d8c6d9ab4da0abf",
+    "text": "En andra användare med ett userName som någon redan har"
+  },
+  "scim.negatives.duplicate.answer": {
+    "en": "ed8b8754aaa714bf",
+    "text": "409 uniqueness."
+  },
+  "scim.negatives.specialCharacter.what": {
+    "en": "d2136ee121b84487",
+    "text": "Ett userName eller displayName som bär ett specialtecken enligt RFC 4514 (ett kommatecken, ett citattecken, ett plustecken, en hash, ett semikolon, ett likhetstecken, en vinkelparentes eller ett omvänt snedstreck)"
+  },
+  "scim.negatives.specialCharacter.answer": {
+    "en": "ab4a092219e4a7c1",
+    "text": "400 invalidValue — postens DN byggs från namnet, så ett namn som bär ett sådant skulle ge en post som de andra dörrarna inte kan namnge. Det är SAMMA vägran som konsolen och hanterings-API:t ger, från samma regel; en ldapadd kan fortfarande skapa en sådan post med escape-tecknen utskrivna."
+  },
+  "scim.negatives.dnShaped.what": {
+    "en": "b6fdfae975fca22b",
+    "text": "Ett userName som har formen av ett DN eller en DID"
+  },
+  "scim.negatives.dnShaped.answer": {
+    "en": "173e1cab8b6124e5",
+    "text": "400 invalidValue — en post namngiven av ett distinguished name kommer hit genom att visa upp ett klientcertifikat, och en som namnges av en decentraliserad identifierare genom att visa upp den, så det finns inget att skapa en sådan från för hand. Även konsolens och hanterings-API:ts svar, från samma funktion."
+  },
+  "scim.negatives.unknownId.what": {
+    "en": "710c51b43eeb899d",
+    "text": "Ett id som inte namnger något"
+  },
+  "scim.negatives.badFilter.what": {
+    "en": "ffcbe90773101dd8",
+    "text": "Ett filter som den här servern inte kan utvärdera"
+  },
+  "scim.negatives.badFilter.answer": {
+    "en": "121c060a88700126",
+    "text": "400 invalidFilter — vägrat snarare än besvarat med en tom lista, eftersom \"inga resultat\" och \"jag kunde inte läsa ditt filter\" är olika svar."
+  },
+  "scim.negatives.meMethod.what": {
+    "en": "3497e1e6b3a81197",
+    "text": "Vilken metod som helst på /Me"
+  },
+  "scim.description.store": {
+    "en": "94a5c148728c1a50",
+    "text": "Den inbäddade LDAP-katalogen i den här processen. Det finns inget andra lager och ingen cache: en SCIM POST och en ldapadd skriver samma post, och en person som provisionerats här syns på /admin/users, i en ldapsearch och i de attribut som deras åtkomsttoken bär."
+  },
+  "scim.description.identifiersWhy": {
+    "en": "3e9886c5109432b9",
+    "text": "RFC 7643 avsnitt 3.1 ber om en opak, servertilldelad, unik identifierare som aldrig tilldelas på nytt. Den var postens DN fram till 2026-09-14, och ett namnbyte tilldelade den på nytt. entryUUID tilldelas när posten skapas, överlever ett namnbyte och är samma värde som en persons token bär i `sub` som urn:uuid:<value>. Ett DN som visas upp som id upplöses fortfarande, för en klient som lagrade ett före ändringen. Member- och manager-värden är också id:n och lagras som de DN som LDAP håller."
+  },
+  "scim.description.mapping": {
+    "en": "808ad5bee1c6ce18",
+    "text": "Vilket LDAP-attribut varje SCIM-medlem är. Hela tabellen, med schemadokumentet som definierar varje attribut, finns på /admin/scim."
+  },
+  "auth.schemes.bearer": {
+    "en": "690a025e3d401473",
+    "text": "En åtkomsttoken utfärdad av den här tjänstens egen auktoriseringsserver, uppvisad som \"Authorization: Bearer <token>\". Vilket grant som helst duger — authorization code, client credentials, password, refresh, device, token exchange — men SCIM-omfången utfärdas endast till en klient vars oauthAllowedScope deklarerar dem, i varje läge. Token måste bära läsomfånget för att läsa och skrivomfånget för att skriva, dess klient måste fortfarande deklarera det omfånget, den måste vara en som DEN HÄR tjänsten signerat, får inte ha återkallats och får inte ha begränsats av RFC 8707 till en annan resurs."
+  },
+  "auth.schemes.dpop": {
+    "en": "4a6cf765e9ede961",
+    "text": "Den proof-of-possession-token som RFC 7644 avsnitt 2 namnger, i den form som den här tjänsten redan utfärdar: en åtkomsttoken bunden till en nyckel (cnf.jkt), uppvisad som \"Authorization: DPoP <token>\" med ett färskt DPoP-bevis över metoden och URL:en. En RFC 8705-certifikatbunden token är den andra proof-of-possession-formen och respekteras på samma väg. Hanteras av samma kontroll som Bearer-raden — de är en autentiseringsuppgift med två sätt att innehas — och listas separat eftersom en klient som läser det här dokumentet har rätt att veta att den bundna formen förstås."
+  },
+  "auth.schemes.basic": {
+    "en": "7292c47a83a49365",
+    "text": "I produktläge verifieras lösenordet mot personens hashade userPassword, och en person som har eller måste ha en andra faktor nekas sitt eget lösenord och använder ett applösenord. I utvecklingsläge går vilket användarnamn och vilket lösenord som helst igenom, precis som varje LDAP-bindning där lyckas — med det enda undantaget lösenordet \"invalid\", som vägras så att ett 401 förblir nåbart — så det som detta autentiserar där är ett NAMN, och det namnet är vad granskningsloggen registrerar. RFC 7644 avsnitt 2 AVRÅDER från detta schema, med de orden, eftersom det vilar på en relativt statisk symmetrisk hemlighet; det är implementerat ändå eftersom det är vad en provisioneringsklient oftast möter och dess hantering av 401 är värd att kunna köra."
+  },
+  "auth.schemes.digest": {
+    "en": "ab6220dc6edc03b2",
+    "text": "I produktläge erbjuds detta schema INTE, och det vägras: ett lösenord lagras som en saltad scrypt-hash, som inte kan besvara ett RFC 7616-utbyte. I utvecklingsläge är det det enda schemat där lösenordet verkligen kontrolleras, och det kan inte låta bli: svaret är en hash över lösenordet, så en server som accepterade vad som helst skulle inte alls utföra utbytet. Så den gör vad Kerberos gör av samma skäl — VILKET användarnamn som helst autentiseras och alla delar ett lösenord (scim.digestPassword). SHA-256 och SHA-512-256 erbjuds, i den ordningen, med -sess-varianterna, och MD5 sist endast där scim.digestMd5 slår på det; qop är auth. Fel lösenord ger 401, en inaktuell nonce ger 401 med stale=true, och en uppspelad nonce-räknare ger 401 — tre negativa fall som annars är svåra att framkalla."
+  },
+  "auth.schemes.hoba": {
+    "en": "c1ed97fe4e57dbcb",
+    "text": "Det signaturbaserade schema som RFC 7644 avsnitt 2 namnger, och det enda av de sex utan något lösenord alls. En klient registrerar en publik nyckel på /.well-known/hoba/register — i utvecklingsläge får vem som helst, för vilket namn som helst; i produktläge får bara den inloggade ägaren till ett befintligt konto, och en registrering skapar aldrig ett konto — och signerar sedan serverns utmaning tillsammans med ursprunget, sfären och sitt eget nyckel-id och sin nonce. SIGNATUREN VERIFIERAS VERKLIGEN, i båda lägena: en signaturkontroll som släpper igenom vad som helst är inte schemat. Endast RSA med SHA-256 (algoritm 0)."
+  },
+  "auth.schemes.cookie": {
+    "en": "b558e5c68d9956f1",
+    "text": "Den webbläsarsession för inloggning som den här tjänsten redan har — den som /authn/login upprättar och WS-Federation delar — erbjuden här eftersom avsnitt 2 namnger den: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". Det är vad som gör att ett SCIM-anrop från en sida på den här tjänsten fungerar utan en andra autentiseringsuppgift. Det finns ingen utmaning för den: en server kan inte be om en cookie i WWW-Authenticate, så den används när den finns där och krävs aldrig."
+  },
+  "auth.schemes.clientcert": {
+    "en": "2d55447d0d4792ee",
+    "text": "Ömsesidig TLS, det första schema som RFC 7644 avsnitt 2 namnger. Tillgängligt endast där den här begäran kom över TLS med ett certifikat som VERIFIERADES mot ett ankare i klientens förtroendelager (/admin/tls/trust) — så på huvudporten endast när den är bunden som HTTPS (global.https, som oauth2.rfc9700 slår på). Identiteten är subjektet i RFC 4514-form, vilket är samma sträng som /admin/users och katalogen redan arkiverar ett certifikat under. Det registreras inte igen här: tls_server.js registrerar avsiktligt ett certifikat en gång per ANSLUTNING, och att räkna det per begäran skulle göra det ogjort från andra hållet."
+  },
+  "auth.policy.oauth": {
+    "en": "25657a7b65df5ecd",
+    "text": "En OAuth-autentiseringsuppgift — en Bearer- eller DPoP-åtkomsttoken — får göra det som dess omfång säger: \"{{read}}\" för att läsa och \"{{write}}\" för att skriva. Ingetdera innebär det andra, så att en klients hantering av en skrivskyddad autentiseringsuppgift är något som den här tjänsten faktiskt kan producera."
+  },
+  "auth.policy.others": {
+    "en": "e23c0683e2f710ad",
+    "text": "VARJE ANNAT SCHEMA FÅR GÖRA BÅDA. Basic, Digest, HOBA, en sessionscookie och ett klientcertifikat bär inga omfång, så policyn för dem är hela ytan. Det är värt att läsa två gånger: en anropare som inte kan få ett omfång kan använda Basic i stället, vilket är skälet till att varje schema har en egen brytare — en driftsättning som prövar omfångshantering stänger av de andra fem."
+  },
+  "auth.policy.rfc": {
+    "en": "01badc7fa9089572",
+    "text": "RFC 7644 avsnitt 2 kräver att en leverantör ska KUNNA mappa en autentiserad klient till en åtkomstkontrollpolicy. Detta är den policyn. Den är två rader eftersom den här tjänsten i utvecklingsläge inte autentiserar någon i den mening som spelar roll — den är en spärr, inte ett lås — och i produktläge, där varje autentiseringsuppgift verifieras, är det en verifierad anropare får göra fortfarande de här två raderna."
+  },
+  "auth.policy.tied": {
+    "en": "695420f96b495164",
+    "text": "ETT OMFÅNG ÄR BUNDET TILL EN KLIENT (#110). SCIM-omfången utfärdas endast till en klient vars oauthAllowedScope deklarerar dem, i båda lägena, och en token respekteras endast så länge dess klient fortfarande deklarerar det omfång den använder — så att ta bort deklarationen stänger ute redan utfärdade token (STS-SCIM-0079)."
+  },
+  "auth.refusedByMode": {
+    "en": "024ae1b294c68b2d",
+    "text": "HTTP Digest kräver att servern har varje lösenord eller dess RFC 7616-hash, och produktläge har endast en scrypt-hash; det delade scim.digestPassword är inte en autentiseringsuppgift som en driftsättning kan erbjuda."
+  }
+}

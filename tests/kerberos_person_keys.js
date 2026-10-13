@@ -712,6 +712,20 @@ async function productChild() {
   out.withheldHelper = personKeys.withheldValues('stskrb5keys', ['abc'])[0];
 
   // --- a service principal: create, keytab, KDC, acceptor, rotate ---
+  // THE SERVICE KEYED ITS OWN ACCEPTOR FIRST (2026-10-12): product makes a
+  // random key for the acceptor's SPN when its password is the published one,
+  // the moment anything asks about the acceptor. An operator who wants that
+  // SPN's keytab from a create deletes the service's key and creates it; the
+  // rest of this section is that operator's create.
+  const generated = personKeys.currentDirectory()
+    .readService('HTTP/web.example.com@' + principals.REALM);
+  out.generatedFirst = !!(generated && generated.keys &&
+    /"generated":"acceptor"/.test(String(generated.info || '')));
+  if (out.generatedFirst) {
+    out.generatedDeleted = actions.kerberosPrincipalsAction(
+      { action: 'delete-service', spn: 'HTTP/web.example.com' },
+      { actor: 'test', via: 'api' }).ok;
+  }
   const created = actions.kerberosPrincipalsAction(
     { action: 'create-service', spn: 'HTTP/web.example.com' },
     { actor: 'test', via: 'api' });
@@ -1054,6 +1068,11 @@ function servicePrincipalsWork(t, r) {
   log.debug("Entering servicePrincipalsWork().");
   t.log.info('=== a service principal: keytab, KDC, acceptor, rotate, delete ' +
              '===');
+  t.check(r.generatedFirst === true && r.generatedDeleted === true,
+          'the service had keyed its acceptor\'s SPN itself (product, the ' +
+          'published password), and an operator can delete that key',
+          JSON.stringify({ generated: r.generatedFirst,
+                           deleted: r.generatedDeleted }));
   t.check(r.createOk === true && r.createKvno === 3 && r.keytab.length > 100,
           'create-service answers with a keytab at kvno krb5.kvno',
           JSON.stringify({ ok: r.createOk, errors: r.createErrors,

@@ -621,6 +621,49 @@ function serialiseBrowserDeviceKeys(held) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE VC-API KEYS (#598): an Ed25519, a P-256 and a P-384 key pair that sign
+// what `oid4vc/vc_api.ts` issues and presents, and nothing else — so a JWS
+// over a document a caller wrote can never verify as a token of this realm
+// (`helpers.js`, makeVcApiKeys()). PEM private halves, as the members above.
+// ---------------------------------------------------------------------------
+const VC_API_KEY_NAMES = ['ed25519', 'p256', 'p384'];
+
+function serialiseVcApiKeys(held) {
+  log.debug("Entering serialiseVcApiKeys().");
+  if (!held || VC_API_KEY_NAMES.some(function (name) {
+    return !held[name] || !held[name].privateKey;
+  })) {
+    log.debug("Leaving serialiseVcApiKeys(). None.");
+    return null;
+  }
+  const out = {};
+  VC_API_KEY_NAMES.forEach(function (name) {
+    out[name] = { privateKeyPem: held[name].privateKey.export(
+        { type: 'pkcs8', format: 'pem' }),
+                  publicJwk: held[name].publicJwk };
+  });
+  log.debug("Leaving serialiseVcApiKeys().");
+  return out;
+}
+
+function deserialiseVcApiKeys(blob) {
+  log.debug("Entering deserialiseVcApiKeys().");
+  if (!blob || VC_API_KEY_NAMES.some(function (name) {
+    return !blob[name] || !blob[name].privateKeyPem;
+  })) {
+    log.debug("Leaving deserialiseVcApiKeys(). None.");
+    return null;
+  }
+  const out = {};
+  VC_API_KEY_NAMES.forEach(function (name) {
+    out[name] = { privateKey: crypto.privateKeyFrom(blob[name].privateKeyPem),
+                  publicJwk: blob[name].publicJwk };
+  });
+  log.debug("Leaving deserialiseVcApiKeys().");
+  return out;
+}
+
 function deserialiseBrowserDeviceKeys(blob) {
   log.debug("Entering deserialiseBrowserDeviceKeys().");
   if (!blob || !blob.sign || !blob.enc || !blob.sign.privateKeyPem ||
@@ -1008,6 +1051,8 @@ function serialise(keys) {
     requestObjectEncKeys: serialiseRequestObjectKeys(keys.requestObjectEncKeys),
     // THE BROWSER DEVICE KEYS (#265) — see serialiseBrowserDeviceKeys().
     browserDeviceKeys: serialiseBrowserDeviceKeys(keys.browserDeviceKeys),
+    // THE VC-API KEYS (#598) — see serialiseVcApiKeys().
+    vcApiKeys: serialiseVcApiKeys(keys.vcApiKeys),
     // THE KEM DECRYPTION KEYS (#82) — see serialiseKemEncKeys(). Written down
     // and shared for the request object keys' reason: their public halves
     // are PUBLISHED, and a sibling that cannot open what a client encrypted
@@ -1073,6 +1118,7 @@ function deserialise(blob) {
     requestObjectEncKeys: deserialiseRequestObjectKeys(
         blob.requestObjectEncKeys),
     browserDeviceKeys: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys),
+    vcApiKeys: deserialiseVcApiKeys(blob.vcApiKeys),
     kemEncKeys: deserialiseKemEncKeys(blob.kemEncKeys),
     xmlKey: deserialiseXmlKey(blob.xmlKey),
     bbsKey: deserialiseBbsKey(blob.bbsKey),
@@ -1702,9 +1748,13 @@ function enriches(candidate, held) {
   // And the KEM decryption keys, the NINTH (#82) — a list, made lazily.
   const kemHere = (candidate.kemEncKeys || []).length;
   const kemThere = (held.kemEncKeys || []).length;
+  // And the VC-API keys, the TENTH (#598).
+  const vcHere = candidate.vcApiKeys ? 1 : 0;
+  const vcThere = held.vcApiKeys ? 1 : 0;
   if (pqHere < pqThere || vciHere < vciThere || rtHere < rtThere ||
       roHere < roThere || xmlHere < xmlThere || bbsHere < bbsThere ||
-      grpHere < grpThere || bdHere < bdThere || kemHere < kemThere) {
+      grpHere < grpThere || bdHere < bdThere || kemHere < kemThere ||
+      vcHere < vcThere) {
     log.debug("Leaving enriches().");
     return false;
   }
@@ -1817,12 +1867,33 @@ function kemEncKeysHeldFor(realmId) {
   return deserialiseKemEncKeys(blob && blob.kemEncKeys);
 }
 
+// The VC-API keys some process of this service already made for this realm
+// (#598), or null — `browserDeviceKeysHeldFor()`'s question, for
+// `helpers.js`'s vcApiKeysFor() backfill.
+/**
+ * Returns the VC-API keys some process already made for a realm, stored first
+ * and then shared.
+ *
+ * @param realmId - the realm
+ * @returns the keys, or null
+ */
+function vcApiKeysHeldFor(realmId) {
+  log.debug("Entering vcApiKeysHeldFor().");
+  const id = String(realmId || '');
+  const fromStore = storedFor(id);
+  const blob = (fromStore && fromStore.vcApiKeys)
+    ? fromStore
+    : shared.get(id);
+  log.debug("Leaving vcApiKeysHeldFor().");
+  return deserialiseVcApiKeys(blob && blob.vcApiKeys);
+}
+
 // The browser device keys some process of this service already made for this
 // realm (#265), or null — `requestObjectKeysHeldFor()`'s question, for
 // `helpers.js`'s browserDeviceKeysFor() backfill.
 /**
- * Returns the browser device keys some process already made for a realm, stored
- * first and then shared.
+ * Returns the browser device keys some process already made for a realm,
+ * stored first and then shared.
  *
  * @param realmId - the realm
  * @returns the keys, or null
@@ -2165,6 +2236,8 @@ function privateMaterialFor(realmId) {
     ro: deserialiseRequestObjectKeys(blob.requestObjectEncKeys),
     // THE BROWSER DEVICE KEYS (#265), both private halves, on this timer too.
     bd: deserialiseBrowserDeviceKeys(blob.browserDeviceKeys),
+    // THE VC-API KEYS (#598), the three private halves, on this timer too.
+    vc: deserialiseVcApiKeys(blob.vcApiKeys),
     // THE KEM DECRYPTION KEYS (#82), private JWKs by kid, on this timer too.
     kem: new Map((deserialiseKemEncKeys(blob.kemEncKeys) || []).map(
       function (one) {
@@ -2960,7 +3033,7 @@ const DIRECTORY_CLASSES = [
   'federation-client-secret', 'identity-verifications', 'gnap-shared-key',
   'gnap-macaroon-key', 'person-private-key', 'federation-encryption-key',
   'kerberos-keys', 'totp-secret', 'recovery-codes', 'directory',
-  'secret-destination-credential'
+  'secret-destination-credential', 'scim-client-credential'
 ];
 
 // The cipher a NEW data key of a class is made for.
@@ -5048,7 +5121,8 @@ function pkiSettled(scopeId) {
 // ---------------------------------------------------------------------------
 const KEY_SET_MEMBERS = ['pqKeys', 'vciRequestEncKey', 'refreshTokenEncKeys',
                          'requestObjectEncKeys', 'xmlKey', 'bbsKey',
-                         'signerGroups', 'browserDeviceKeys', 'kemEncKeys'];
+                         'signerGroups', 'browserDeviceKeys', 'kemEncKeys',
+                         'vcApiKeys'];
 
 // The ARRAY members, where an empty list is "none" (#68 added the second,
 // #82 the third).
@@ -5728,6 +5802,7 @@ module.exports = {
   requestObjectKeysHeldFor: requestObjectKeysHeldFor,
   kemEncKeysHeldFor: kemEncKeysHeldFor,
   browserDeviceKeysHeldFor: browserDeviceKeysHeldFor,
+  vcApiKeysHeldFor: vcApiKeysHeldFor,
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
   signerGroupsHeldFor: signerGroupsHeldFor,

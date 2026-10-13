@@ -126,17 +126,6 @@ function childMain() {
     };
     return { go: go, jar: jar };
   }
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
@@ -214,6 +203,7 @@ function childMain() {
                   oauthTokenEndpointAuthMethod: 'client_secret_basic',
                   oauthBackchannelLogoutUri: rpBase + suffix } });
     };
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const authorizeQuery = function (clientId) {
       return '/oauth2/authorize?' + new URLSearchParams({
         client_id: clientId, response_type: 'code', redirect_uri: REDIRECT,
@@ -224,15 +214,15 @@ function childMain() {
       let r = await b.go('GET', authorizeQuery(clientId));
       if (r.status === 302 &&
           /\/authn\/login/.test(String(r.headers.location || ''))) {
-        const page = await b.go('GET', r.headers.location);
-        const form = hiddenFields(page.text);
-        form.username = username;
-        form.password = 'anything';
-        form.action = 'login';
-        const screen = String(r.headers.location).split('?')[0]
-          .replace(/^https?:\/\/[^/]+/, '');
-        const posted = await b.go('POST', screen, { form: form });
-        r = await b.go('GET', String(posted.headers.location || ''));
+        // THE SCREEN OVER `/authn-api` (#571), in this browser's jar.
+        const sent = await authnScreen.submit({ port: port, jar: b.jar,
+          at: String(r.headers.location),
+          fields: { action: 'login', username: username,
+                    password: 'anything' } });
+        if (sent.next !== 'redirect') {
+          return { status: sent.status, json: {}, text: sent.text };
+        }
+        r = await b.go('GET', String(sent.location || ''));
       }
       const loc = String(r.headers.location || '');
       const code = r.status === 302 && loc.indexOf(REDIRECT) === 0
@@ -517,6 +507,39 @@ function childMain() {
          postsTo('/bc/restart').length === 1,
          'E2. a FRESH process — the restart — found the due row and sent ' +
          'attempt 2', JSON.stringify(rows));
+
+    // E3. A RETRY TIMER THAT FIRES BEFORE THE ROW IS DUE is armed again
+    // rather than left to the sweep: setTimeout's monotonic clock can run a
+    // millisecond ahead of the wall clock the due check reads. This one
+    // always fires 50 ms early, and no sweep runs.
+    client('bd-early', '/bc/early');
+    let failures = 1;
+    const realHttp = BL.defaultDeps().fedHttp;
+    const early = processWith({
+      fedHttp: Object.assign(Object.create(realHttp), {
+        deliverForm: function () {
+          if (failures > 0) {
+            failures--;
+            return Promise.resolve({ ok: false, kind: 'status', status: 503,
+                                     why: 'it answered 503' });
+          }
+          return realHttp.deliverForm.apply(realHttp, arguments);
+        } }),
+      later: function (fn, ms) {
+        setTimeout(fn, Math.max(0, ms - 50));
+      }
+    });
+    since = backchannel.mark();
+    const earlySession = sessionFor('bd-e3', 'bd-early');
+    const earlyTry = await early.attempt(
+      realms.currentId(), early.plan(earlySession, { via: 'E3' })[0].id);
+    await sleep(900);
+    rows = backchannel.deliveriesFor(['bd-e3'], since);
+    note(earlyTry === 'retry' && rows.length === 1 &&
+         rows[0].state === 'sent' && rows[0].attempts === 2,
+         'E3. a retry timer that fired before the row was due was armed ' +
+         'again, and attempt 2 was sent without waiting for the sweep',
+         JSON.stringify(rows));
     config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
 
     // --- F. retention ---------------------------------------------------------

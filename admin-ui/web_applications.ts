@@ -22,6 +22,7 @@
 import kit = require('./web_kit');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import SettingsForms = require('./web_settings');
+import GroupsPage = require('./web_groups');
 
 type Json = any;
 
@@ -185,7 +186,11 @@ class ApplicationsPage {
                t.text('consoleApplications.a1.tileAuthentications')) +
       kit.tile(json.max === null ? '' : json.max,
                t.text('consoleApplications.a1.tileMax')) +
-      '</div><form method="get" action="/admin/applications"><div ' +
+      // THE LIST IS A TAB (2026-10-12), headed by the page's own name; the
+      // tiles, the notes and the caveat are Metadata.
+      '</div><h2 data-tab="applications">' +
+      t.html('console.nav.applications') + '</h2>' +
+      '<form method="get" action="/admin/applications"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleApplications.a1.filterApplication') +
       '</label><input type="text" ' +
@@ -224,7 +229,8 @@ class ApplicationsPage {
                '</td></tr>') +
       '</table>' +
       nav.foot +
-      '<h2>' + t.html('consoleApplications.a1.addHeading') + '</h2>' +
+      '<h2 data-tab="add">' + t.html('consoleApplications.a1.addHeading') +
+      '</h2>' +
       // ---------------------------------------------------------------------
       // THE DOOR TO THE FULLER FORM IS A BUTTON, AND SINCE 2026-09-06 IT IS THE
       // ONLY WAY TO IT.
@@ -267,14 +273,16 @@ class ApplicationsPage {
       '<a href="/admin/applications/new">' +
       t.html('consoleApplications.a1.newApplication') + '</a>' +
       t.html('consoleApplications.a1.shortRowB')) +
+      '<div data-metadata>' +
       kit.note(t.html('consoleApplications.a1.oneEntry')) +
-      kit.note(t.html('consoleApplications.a1.countsOfChanges')) +
+      kit.note(t.html('consoleApplications.a1.countsOfChanges')) + '</div>' +
       // The two applications.* rows: how many entries this registry remembers,
       // and whether the console and the management API are seeded into it as
       // applications of their own.
       SettingsForms.forms(json.settings, '/admin/applications', undefined,
                           t) +
-      ApplicationsPage.applicationsCaveat(t) + applicationsLinks(t);
+      '<div data-metadata>' + ApplicationsPage.applicationsCaveat(t) +
+      applicationsLinks(t) + '</div>';
 
     return inner;
   }
@@ -1361,21 +1369,39 @@ class ApplicationsPage {
             json.page.roles, carryBack, t) +
             ApplicationsPage.applicationRolesSection(row, json.page.roles,
               carryBack, t) },
+        // WHO ANSWERS FOR IT (#604, rcbj: "the owner pattern to a new tab
+        // under Directory->Applications->Application"): the group's Owners
+        // section (#603) on the application, each Add and Remove written at
+        // once, posting to /admin/applications/owners.
+        { id: 'tab-owners',
+          label: t.text('consoleApplications.owners.tab'),
+          html: GroupsPage.ownersSection(t, {
+            owners: json.page.owners || [], maxOwners: json.page.maxOwners },
+            !!ctx.write, kit.queryWith(kit.listViewOf('/admin/applications',
+                                                      ctx.query), {}),
+            json.state, {
+              route: '/admin/applications/owners', id: 'application-owners',
+              field: 'application', value: row.identifier,
+              stateKey: 'applicationOwners', self: '',
+              lead: t.html('consoleApplications.owners.lead'),
+              leadRead: t.html('consoleApplications.owners.leadRead') }) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.
         { id: 'tab-metadata',
           label: t.text('consoleApplications.a2.tabMetadata'),
-          html: !forFamilies(['saml2'],
-            'x') ? '' : (metadataUrl
+          html: forFamilies(['saml2', 'saml11'], metadataUrl
           ? '<h2>' + t.html('consoleApplications.a2.spMetadataHeading') +
             '</h2>' +
             kit.note(t.html('consoleApplications.a2.spMetadataA') + '<code>' +
                       kit.esc(metadataUrl) +
-            '</code>' + t.html('consoleApplications.a2.spMetadataB') + '<a ' +
-            'href="/admin/saml2?sp=' + encodeURIComponent(row.identifier) +
-            '">' + t.html('consoleApplications.a2.saml2Page') + '</a>' +
-            t.html('consoleApplications.a2.spMetadataC')) +
+            '</code>' + t.html('consoleApplications.a2.spMetadataB') +
+            (declaredHere.indexOf('saml2') >= 0
+              ? '<a href="/admin/saml2?sp=' +
+                encodeURIComponent(row.identifier) + '">' +
+                t.html('consoleApplications.a2.saml2Page') +
+                '</a>' + t.html('consoleApplications.a2.spMetadataC')
+              : '')) +
             '<form method="post" action="/admin/applications">' + carryBack +
             '<div class="formrow">' +
             '<input type="hidden" name="action" value="refresh-metadata">' +
@@ -1726,13 +1752,6 @@ class ApplicationsPage {
               carryBack, ['access_token', 'id_token', 'userinfo'],
               'cfg-oauth')
           : '') +
-        (group.id === 'saml'
-          ? ApplicationsPage.applicationClaimsSection(ctx, row, carryBack,
-              ['saml2', 'saml11'], 'cfg-saml-attributes',
-              t.text('consoleApplications.a2.customSamlAttributes')) +
-            ApplicationsPage.applicationClaimSelectionSection(ctx, row,
-              carryBack, ['saml2', 'saml11'], 'cfg-saml')
-          : '') +
         // The realm's Credential claims page, for an OpenID4VCI client
         // (#495).
         (group.id === 'vc'
@@ -1749,7 +1768,8 @@ class ApplicationsPage {
       // The sub-tab's own fields, in one form.
       const fieldForm =
         // A sub-tab drawn only for a section has no fields to save.
-        (!mine.length ? '' : formOpen(group.id, mine.map(function (one) {
+        (!mine.length || group.id === 'saml' ? '' :
+        formOpen(group.id, mine.map(function (one) {
           return one.attribute;
         })) + viewSwitch +
         kit.fieldGridOf(mine, config.groups, values,
@@ -1764,13 +1784,86 @@ class ApplicationsPage {
                              fieldWarnings: config.fieldWarnings || {} }) +
         saveButton(t.text('consoleApplications.a2.saveGroup',
                           { label: group.label })) + '</form>');
+      // SAML'S TWO FAMILIES ARE DISTINCT VIEWS (#556): shared attributes
+      // appear in both where an application declares both; family-specific
+      // attributes and claims stay with their protocol. Metadata is consumed
+      // by the existing server-side validator and the entry is re-read after
+      // success, so an invalid document cannot partially populate the grid.
+      const samlFamilyPanels = group.id !== 'saml' ? [] :
+        ['saml2', 'saml11'].filter(function (family) {
+          return declared.indexOf(family) >= 0;
+        }).map(function (family) {
+          const familyRows = mine.filter(function (one) {
+            return one.everyFamily || one.families.indexOf(family) >= 0;
+          });
+          const familyAdvanced = familyRows.filter(function (one) {
+            return !one.simple;
+          });
+          const familyViews = kit.hasViews(familyRows);
+          const familyViewSwitch = !familyViews ? ''
+            : kit.viewSwitch(group.label,
+                !!draft && String(draft.group || '') === group.id &&
+                  String(draft.view || '') === 'advanced',
+                familyAdvanced.length,
+                familyAdvanced.filter(function (one) {
+                  return (values[one.attribute] || []).some(function (v) {
+                    return String(v).trim() !== '';
+                  });
+                }).length);
+          const familyFields = !familyRows.length ? ''
+            : formOpen(group.id, familyRows.map(function (one) {
+                return one.attribute;
+              })) + familyViewSwitch +
+              kit.fieldGridOf(familyRows, config.groups, values, {
+                redraw: '/admin/applications/edit', showSet: true,
+                protocols: config.protocols, views: familyViews,
+                searches: config.fieldSearches || {},
+                finds: (state && state.finds) || {},
+                fieldWarnings: config.fieldWarnings || {}
+              }) +
+              saveButton(t.text('consoleApplications.a2.saveGroup',
+                { label: family === 'saml2' ? 'SAML 2.0' : 'SAML 1.1' })) +
+              '</form>';
+          const metadataForm =
+            '<h3>' + t.html('consoleSaml.meta.title') + '</h3>' +
+            kit.note(t.html('consoleSaml.meta.consumeNote')) +
+            '<form method="post" action="/admin/saml2#cfg-' + family +
+            '" enctype="multipart/form-data">' + carryBack +
+            '<input type="hidden" name="action" value="upload-metadata">' +
+            '<input type="hidden" name="family" value="' + family + '">' +
+            '<input type="hidden" name="sp" value="' +
+            kit.esc(row.identifier) + '">' +
+            '<div class="formrow"><label for="cfg-' + family +
+            '-document">' + t.html('consoleSaml.meta.upload') +
+            '</label><textarea id="cfg-' + family +
+            '-document" name="document" rows="4" cols="60" placeholder="' +
+            kit.esc(t.text('consoleSaml.meta.paste')) +
+            kit.esc('<md:EntityDescriptor>…') +
+            '"></textarea></div><div class="formrow"><label for="cfg-' +
+            family + '-file">' + t.html('consoleSaml.meta.orFile') +
+            '</label><input type="file" id="cfg-' + family +
+            '-file" name="file" accept=".xml,application/samlmetadata+xml,' +
+            'application/xml,text/xml"><button>' +
+            t.html('consoleSaml.meta.consume') + '</button></div></form>';
+          const claims = ApplicationsPage.applicationClaimsSection(ctx, row,
+            carryBack, [family], 'cfg-' + family + '-claims',
+            t.text('consoleApplications.a2.customSamlAttributes')) +
+            ApplicationsPage.applicationClaimSelectionSection(ctx, row,
+              carryBack, [family], 'cfg-' + family);
+          return { id: 'cfg-' + family,
+            label: family === 'saml2' ? 'SAML 2.0' : 'SAML 1.1',
+            html: familyFields + metadataForm + claims };
+        });
+      const samlPanels = group.id === 'saml'
+        ? kit.subTabbedPanels(group.label, samlFamilyPanels) : '';
       // ON OAUTH AND SAML THE FIELDS COME FIRST (rcbj, 2026-10-07, #500):
       // their simplified view is the attributes most often set, and the
       // claims and lifetimes sections were drawn above it. Elsewhere the
       // section is the sub-tab's main content and stays at its head.
       const fieldsFirst = group.id === 'oauth' || group.id === 'saml';
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
-        (fieldsFirst ? fieldForm + sections : sections + fieldForm) +
+        (group.id === 'saml' ? samlPanels :
+          (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
         '</div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="' +
@@ -2265,7 +2358,7 @@ class ApplicationsPage {
       '<h4>' + t.html('consoleApplications.a2.otherAuthorityHeading') +
       '</h4>' +
       kit.note(t.html('consoleApplications.a2.explicitA') + '<a ' +
-      'href="/tls/trust">/tls/trust</a>' +
+      'href="/admin/tls/trust">/admin/tls/trust</a>' +
       t.html('consoleApplications.a2.explicitB') +
       (state.selfSignedThumbprint ? ' (<code>' +
         kit.esc(state.selfSignedThumbprint) + '</code>)'

@@ -357,8 +357,9 @@ const VCI_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
 // is advertised and accepted (`oid4vci.requestEncryptionEncValues`).
 const VCI_REQUEST_ENC_VALUES = IMPLEMENTED_ENC_VALUES;
 
-// How the most recent Credential Request actually arrived, readable at the
-// non-spec GET /oid4vci/last_request.
+// How the most recent Credential Request actually arrived, readable at
+// `GET /admin-api/oid4vci/last-request` (Admin Read, #594; until then the
+// non-spec, development-only GET /oid4vci/last_request).
 //
 // This exists because a wallet's claim to have encrypted something is not
 // observable from the wallet. A pane that assembles a perfect JWE, displays it,
@@ -3390,63 +3391,61 @@ class VcIssuer {
                 event + " for " + id + ".");
     });
 
-    // Non-spec, like GET /oid4vci/notification/:id and GET
-    // /oid4vp/result/:state: how the last Credential Request actually arrived
-    // on the wire.
-    //
-    // A wallet cannot prove its own encryption. Everything observable in the
-    // page — the media type it displays, the ciphertext in its pane, even a
-    // credential coming back — is equally consistent with a wallet that built a
-    // JWE and then posted the plaintext, because with encryption_required false
-    // the issuer accepts that JSON and issues from it. This is the only place
-    // the truth lives.
-    app.get('/oid4vci/last_request', (req, res) => {
-      log.debug("Entering the (non-spec) last credential request endpoint.");
-      res.set('Cache-Control', 'no-store');
-      const last = this.lastCredentialRequestRecord();
-      res.status(200).type('application/json')
-         .send(JSON.stringify(last, null, 2));
-      log.debug("Leaving the (non-spec) last credential request endpoint. " +
-                "encrypted=" +
-                last.encrypted);
-    });
-
-    // What this issuer was told about a credential. Not part of OID4VCI — it
-    // exists so a test can check that a notification actually arrived and was
-    // understood, rather than trusting a 204.
-    app.get('/oid4vci/notification/:id', (req, res) => {
-      log.debug("Entering the notification inspection endpoint. id=" +
-                req.params.id);
-      const record = notificationIds.get(String(req.params.id));
-      if (!record) {
-        log.debug("Leaving the notification inspection endpoint. Unknown " +
-                  "id.");
-        errorCodes.mark(res, 'STS-VC-0024');
-        return vciError(res, 404, 'invalid_notification_id', 'No such ' +
-            'notification_id.');
-      }
-      res.status(200).type('application/json').send(JSON.stringify({
-        notification_id: req.params.id,
-        event: record.event,
-        event_description: record.description || '',
-        notified_at: record.notifiedAt || null
-      }));
-      log.debug("Leaving the notification inspection endpoint.");
-    });
     log.debug("Leaving VcIssuer.registerRoutes().");
   }
 
-  // The record `GET /oid4vci/last_request` answers with, for the tests.
+  // ---------------------------------------------------------------------------
+  // WHAT THE ISSUER SAW, FOR AN ADMINISTRATOR (#594). Until then the non-spec
+  // `GET /oid4vci/last_request` and `GET /oid4vci/notification/:id` answered
+  // these to anybody, in a development realm; they are Admin Read
+  // operations now — `GET /admin-api/oid4vci/last-request` and `GET
+  // /admin-api/oid4vci/notifications?id=` — because what a wallet sent and
+  // what it said it did with a credential are an operator's facts, and a
+  // product realm needs them as much as a wallet under test does.
+  //
+  // A wallet cannot prove its own encryption: everything observable in it —
+  // the media type it displays, the ciphertext in its pane, even a credential
+  // coming back — is equally consistent with a wallet that built a JWE and
+  // then posted the plaintext, because with encryption_required false the
+  // issuer accepts that JSON and issues from it. The first record is the
+  // only place the truth lives. The second is so that a notification can be
+  // seen to have arrived and been understood, rather than trusted from a
+  // 204.
+  // ---------------------------------------------------------------------------
   /**
-   * Returns the record `GET /oid4vci/last_request` answers with.
+   * How the last Credential Request arrived: its media type, and the kid,
+   * alg and enc of an encrypted one — never the request itself.
    *
-   * @returns the record
+   * @returns the record, `{ seen: false }` before any
    */
   lastCredentialRequest() {
     const { log } = this.deps;
     log.debug("Entering VcIssuer.lastCredentialRequest().");
     log.debug("Leaving VcIssuer.lastCredentialRequest().");
     return this.lastCredentialRequestRecord();
+  }
+
+  /**
+   * What the Notification Endpoint was told about one issued credential.
+   *
+   * @param id - the notification_id the credential response carried
+   * @returns `{ notification_id, event, event_description, notified_at }`
+   *   (`event` null until the wallet notifies), or null for an id this
+   *   issuer did not issue
+   */
+  notificationRecord(id: unknown) {
+    const { log, notificationIds } = this.deps;
+    log.debug("Entering VcIssuer.notificationRecord().");
+    const key = String(id || '');
+    const record = key ? notificationIds.get(key) : null;
+    if (!record) {
+      log.debug("Leaving VcIssuer.notificationRecord(). Unknown.");
+      return null;
+    }
+    log.debug("Leaving VcIssuer.notificationRecord().");
+    return { notification_id: key, event: record.event || null,
+             event_description: record.description || '',
+             notified_at: record.notifiedAt || null };
   }
 }
 
@@ -3526,5 +3525,8 @@ export = {
   // (#187's ECDH-ES).
   encryptionProblem: slot.forward('encryptionProblem'),
   encryptToJwe: slot.forward('encryptToJwe'),
-  lastCredentialRequest: slot.forward('lastCredentialRequest')
+  lastCredentialRequest: slot.forward('lastCredentialRequest'),
+  // #594: the notification readback, for `GET /admin-api/oid4vci/
+  // notifications`.
+  notificationRecord: slot.forward('notificationRecord')
 };

@@ -48,6 +48,9 @@ function childMain() {
   const ROOT = process.env.WSI_ROOT;
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
+  // The sign-in screen over `/authn-api` since #571: an act, then the page
+  // its answer names, as the screen's page goes there.
+  const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
   walletKit.boot().then(async function (w) {
     const note = w.note;
@@ -79,9 +82,9 @@ function childMain() {
       m.ldap.createUser('mfa-carol', { invent: false });
       credentials.setPassword('mfa-alice', 'Correct-Horse-1', {});
     });
-    const aud = await w.inRealm(function () {
-      return m.config.value('oid4vp.clientId');
-    });
+    // The Client Identifier a sign-in signs under, the audience a holder
+    // proves for: x509_hash's since 2026-10-12 (`w.signInAudience()`).
+    const aud = await w.signInAudience();
 
     // Signs in with the wallet and answers the wait page.
     async function walletSignIn(username, holder, credential, opts) {
@@ -95,9 +98,29 @@ function childMain() {
       const presentation = w.presentSdJwt(credential, holder,
                                           one.requestObject.nonce, aud);
       await w.respond(one, presentation, { format: 'dc+sd-jwt' });
-      const page = await w.request('GET', one.waitPath, { browser: who });
+      // The poll's answer (#574); a second factor it names is read as the
+      // 303 to that step's page a browser follows (#572: `stepAt()` opens
+      // it as the sign-in surface does).
+      let page = await w.collect(who, one);
+      if (page.json && page.json.next === 'mfa' && page.json.location) {
+        page = { status: 303, json: page.json,
+                 text: JSON.stringify(page.json),
+                 headers: { location: String(page.json.location) } };
+      }
       return { who: who, page: page, one: one,
                session: w.sessionOf(who) };
+    }
+
+    // THE STEP A WALLET SIGN-IN NAMES (#572): the wallet's poll names the
+    // second-factor step's page (read as a 303 above), a page of the
+    // sign-in surface,
+    // which is opened as the browser opens it — its shell, then its view.
+    async function stepAt(who, page) {
+      const at = String((page.headers && page.headers.location) || '');
+      if (page.status !== 303 || !/\/authn\/[a-z-]+\?mfa=/.test(at)) {
+        return { status: 0, view: null, id: '', text: '' };
+      }
+      return authnScreen.openStep({ port: w.port, jar: who.cookies, at: at });
     }
 
     function endSession(session) {
@@ -118,16 +141,16 @@ function childMain() {
          alice.error);
     const forced = await walletSignIn('mfa-alice', aliceKey, alice.credential,
                                       { begin: { forceMfa: true } });
-    const stepId = /name="mfa_id" value="([^"]+)"/.exec(forced.page.text);
-    note(forced.page.status === 200 &&
-         /id="password-factor-submit"/.test(forced.page.text) && !!stepId &&
+    const forcedStep = await stepAt(forced.who, forced.page);
+    note(forced.page.status === 303 && forcedStep.view &&
+         forcedStep.view.page === 'password' && !!forcedStep.id &&
          !forced.session,
          '1a. a wallet sign-in on a request that demands two factors is ' +
          'asked for a second — her password, which everybody here has — and ' +
          'no session exists yet', forced.page.status);
-    const finished = await w.request('POST', '/authn/password-factor', {
-      browser: forced.who,
-      form: { mfa_id: stepId[1], password: 'Correct-Horse-1' } });
+    const finished = await authnScreen.stepAct({ port: w.port,
+      jar: forced.who.cookies, opened: forcedStep, op: 'password',
+      body: { password: 'Correct-Horse-1' } });
     const twoFactors = w.sessionOf(forced.who);
     note(finished.status === 303 && twoFactors &&
          JSON.stringify(twoFactors.amr) === '["pop","pwd"]' &&
@@ -152,9 +175,9 @@ function childMain() {
     const bob = await w.issue('mfa-bob', bobKey);
     const bobForced = await walletSignIn('mfa-bob', bobKey, bob.credential,
                                          { begin: { forceMfa: true } });
-    const bobStep = /name="mfa_id" value="([^"]+)"/.exec(bobForced.page.text);
-    note(!!enrolled && bobForced.page.status === 200 &&
-         /id="totp-submit"/.test(bobForced.page.text) && !!bobStep,
+    const bobStep = await stepAt(bobForced.who, bobForced.page);
+    note(!!enrolled && bobForced.page.status === 303 && bobStep.view &&
+         bobStep.view.page === 'totp',
          '1c. somebody who holds an authenticator app is asked for the code ' +
          'instead of a password', bobForced.page.status);
     // THE NEXT STEP'S CODE: the enrolment above spent this one (RFC 6238
@@ -165,8 +188,9 @@ function childMain() {
                          Date.now() + (enrolled.period || 30) * 1000,
                          enrolled);
     });
-    const bobDone = await w.request('POST', '/authn/totp', {
-      browser: bobForced.who, form: { mfa_id: bobStep[1], code: code } });
+    const bobDone = await authnScreen.stepAct({ port: w.port,
+      jar: bobForced.who.cookies, opened: bobStep, op: 'totp',
+      body: { code: code } });
     const bobSession = w.sessionOf(bobForced.who);
     note(bobDone.status === 303 && bobSession &&
          JSON.stringify(bobSession.amr) === '["pop","otp"]' &&
@@ -183,8 +207,9 @@ function childMain() {
         { requireSecondFactor: 'always' }));
     });
     const required = await walletSignIn('mfa-bob', bobKey, bob.credential);
-    note(required.page.status === 200 &&
-         /id="totp-submit"/.test(required.page.text) && !required.session,
+    const requiredStep = await stepAt(required.who, required.page);
+    note(required.page.status === 303 && requiredStep.view &&
+         requiredStep.view.page === 'totp' && !required.session,
          '1e. the realm\'s requirement asks for one after a wallet sign-in ' +
          'too, ' +
          'with no demand from the request at all', required.page.status);
@@ -197,18 +222,18 @@ function childMain() {
     // ==================================================================
     const pwId = w.pendingSignIn({ begin: { forceMfa: true } });
     const pwWho = w.browser();
-    const posted = await w.request('POST', '/authn/login', {
-      browser: pwWho,
-      form: { authn_id: pwId, username: 'mfa-alice',
-              password: 'Correct-Horse-1', action: 'login' } });
-    const link = /id="wallet-second-factor" href="([^"]+)"/.exec(posted.text);
-    note(posted.status === 200 && !!link &&
-         /mfa=/.test(w.unescapeHtml(link ? link[1] : '')),
+    const posted = await authnScreen.follow({ port: w.port,
+      jar: pwWho.cookies, at: '/authn/login?authn=' + pwId,
+      fields: { action: 'login', username: 'mfa-alice',
+                password: 'Correct-Horse-1' } });
+    // The step's page is the sign-in surface's (#572): its view says the
+    // wallet is offered, and the link is drawn from the step's id.
+    note(posted.status === 200 && posted.view && posted.view.links &&
+         posted.view.links.wallet === true && !!posted.id,
          '2a. a password sign-in that demands two factors offers the wallet ' +
          'as the second, naming the step',
-         posted.status + ' ' + (link ? w.unescapeHtml(link[1]) : ''));
-    const mfaId = new URL(w.unescapeHtml(link[1]), 'http://x')
-      .searchParams.get('mfa');
+         posted.status + ' ' + String(posted.text).slice(0, 200));
+    const mfaId = posted.id;
     const asSecond = await walletSignIn('mfa-alice', aliceKey,
                                         alice.credential,
                                         { who: pwWho, mfa: mfaId });
@@ -226,14 +251,11 @@ function childMain() {
     const carol = await w.issue('mfa-carol', carolKey);
     const otherId = w.pendingSignIn({ begin: { forceMfa: true } });
     const otherWho = w.browser();
-    const otherPosted = await w.request('POST', '/authn/login', {
-      browser: otherWho,
-      form: { authn_id: otherId, username: 'mfa-alice',
-              password: 'Correct-Horse-1', action: 'login' } });
-    const otherLink = /id="wallet-second-factor" href="([^"]+)"/
-      .exec(otherPosted.text);
-    const otherStep = new URL(w.unescapeHtml(otherLink[1]), 'http://x')
-      .searchParams.get('mfa');
+    const otherPosted = await authnScreen.follow({ port: w.port,
+      jar: otherWho.cookies, at: '/authn/login?authn=' + otherId,
+      fields: { action: 'login', username: 'mfa-alice',
+                password: 'Correct-Horse-1' } });
+    const otherStep = otherPosted.id;
     const wrongPerson = await walletSignIn('mfa-carol', carolKey,
                                            carol.credential,
                                            { who: otherWho, mfa: otherStep });
@@ -402,9 +424,11 @@ function childMain() {
       return m.authn.beginAuthentication({ returnTo: '/wsi/after',
         protocol: 'wsi-probe', application: 'wsi-wallet' });
     });
-    const screen = await w.request('GET', shut);
-    note(/^\/authn\/login\?authn=/.test(shut) &&
-         /oid4vp\.signIn is off/.test(screen.text),
+    // A static page since #571: what it says is its view's `error`.
+    const screen = await authnScreen.open({ port: w.port, jar: {},
+                                            at: shut });
+    note(/^\/authn\/login\?authn=/.test(shut) && screen.view &&
+         /oid4vp\.signIn is off/.test(String(screen.view.error)),
          '5b. and with oid4vp.signIn off it falls back to the screen and ' +
          'says why, rather than sending somebody to a door that is shut',
          shut + ' ' + screen.status);

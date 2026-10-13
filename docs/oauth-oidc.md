@@ -215,7 +215,7 @@ every grant but the token exchange (whose targets are RFC 8693's, below). A
 registered target is one of this service's own resource servers — the
 default resource indicator `<base>/resource` (or a named authorization
 server's), which UserInfo, SCIM, Shared Signals and OpenID4VCI accept;
-`<base>/admin-api`; the GNAP demonstration resource server — or an
+`<base>/admin-api`; `<base>/account-api` — or an
 application registered through the console, `/admin-api`,
 `POST /oauth2/register`, an LDAP add or an OpenID Federation, named by its
 audience, permission base URI, `client_id` or identifier. The embedded
@@ -487,10 +487,16 @@ does.
   missing consent from a missing session.
 * **The pending consent is server-side.** The only thing in the URL is an
   unguessable id, so there is no return address to rewrite. The answer is a
-  **POST** (a GET that recorded consent could be given by anything that
-  prefetches a link), the id is spent when it is answered, and the session
+  **POST** to `/authn-api/consent/{id}` (a GET that recorded consent could
+  be given by anything that prefetches a link), the id is spent when it is answered, and the session
   presenting the answer must be the person who was asked.
-* **The screen carries no script** — two buttons in a form.
+* **The screen is a static page since #576**: `/oauth2/consent` answers a
+  page that is drawn in the browser from `GET /authn-api/consent/{id}` and
+  sends Allow or Deny to `POST /authn-api/consent/{id}` as JSON, bound to
+  the browser's session by a CSRF token ([the sign-in API](authn-api.md)).
+  It needs JavaScript. The answer names the authorization request to go
+  back to, so what reaches the application — a redirect, `form_post`, JARM
+  — is decided by the authorization endpoint, exactly as before.
 * Consent is a question asked of somebody already signed in. It is not a
   password check.
 
@@ -961,7 +967,11 @@ A relying party posts `_async` results, and asks for a fresh `metadata` or
 `audit_tenant`, at `POST /oauth2/commands/callback`, Bearer the
 `callback_token` its command carried. A command that cannot be delivered is
 a dead letter on Monitoring → Outbound deliveries (`/admin/deliveries`),
-beside undelivered Logout Tokens and CIBA notifications, with a Retry.
+beside undelivered Logout Tokens and CIBA notifications, with a Retry. Each
+kind's table there is paged on a parameter of its own (`providerCommandsPage`,
+`backchannelLogoutPage`, `cibaPage`, `cellOpsPage`), and so are the four lists
+on `/admin/commands` (`clientsPage`, `accountsPage`, `runsPage`,
+`deliveriesPage`); every row is reachable.
 
 Command Tokens name an `iss`. Set `global.publicBaseUrl` so an automatic
 command knows its issuer before any command has been sent from the console.
@@ -982,9 +992,12 @@ for (OpenID Connect Core section 5.6.2, and the Claims Aggregation draft).
    (`<realm>/portal/claim-sources/callback`). Its UserInfo responses must be
    signed.
 2. **A person links the provider** on `/portal/claim-sources`. They sign in
-   and agree at the provider, and come back linked. Their tokens there are
+   and agree at the provider, and come back linked. The link finishes only
+   in the browser that started it, and only while the sign-in it was started
+   from lasts; if it cannot be finished, the page says why. Their tokens there are
    kept sealed on their own directory entry. An administrator sees every link
-   and can revoke one.
+   and can revoke one; the links are searched by `linkq` and paged by
+   `linksPage`, the providers by `providersPage`.
 3. **A relying party asks for one of those claims by name** with the `claims`
    request parameter. If the person's own entry does not answer it, the ID
    Token or UserInfo response carries `_claim_names` and `_claim_sources`:
@@ -1489,9 +1502,8 @@ the Grant Management `grant_id` where the grant is managed, otherwise an
 identifier fixed for the authorization — that stays the same across every
 refresh, and `/oauth2/introspect` returns it. **A resource server keeps its
 running totals under that `grant_id`**, so a client cannot renew its budget
-by refreshing its token. (The demonstration resource server's
-`/gnap/rs/spend` takes GNAP tokens only; it shows what a resource server
-does with the totals.)
+by refreshing its token. ([GNAP](gnap.md#limits) describes what a resource
+server does with the totals.)
 
 `derivableFrom` is GNAP's (RFC 9767 derivation). `interaction`,
 `consentActions` and `acr` are recorded and enforced by a later phase of #432.
@@ -1579,8 +1591,9 @@ draft 03). It is on in every mode.
 
 The console lists every grant on **Monitoring → Grants** (`/admin/grants`,
 `GET /admin-api/grants`), with a Revoke button each
-(`POST /admin-api/grants/revoke-grant`). What the person agreed to is
-**Consent**, beside it.
+(`POST /admin-api/grants/revoke-grant`). The list is paged by `grantsPage`
+and searched by `grantq` (a grant id, client or subject). What the person
+agreed to is **Consent**, beside it.
 
 ### Introspection and revocation
 
@@ -1918,9 +1931,10 @@ endpoints on this page:
   works unchanged for every credential format.
 * **The nonce request has two shapes**: the authorization server asks with a
   400 JSON body, a resource server with a 401 `WWW-Authenticate` challenge.
-  `POST /dpop/nonce-mode`, a non-spec switch listed as such on
-  `/admin/sts-metadata`, writes `oauth2.dpopNonceRequired` for the realm it is
-  reached in; product mode refuses it.
+  Whether nonces are demanded is the per-realm setting
+  `oauth2.dpopNonceRequired`, on the OAuth 2.0 / OIDC page or through
+  `POST /admin-api/config/set`, in either mode (the test control
+  `/dpop/nonce-mode` was deleted by #597).
 * **A foreign token's `cnf.jkt` is only a claim.** For a token this service
   did not issue (accepted by the OpenID4VCI endpoints in development), anyone
   could have written it; the binding is real only for tokens issued here,
@@ -1931,16 +1945,19 @@ endpoints on this page:
   `acr_values=1` is issued `acr: "1"` — the most preferred requested value that
   was met.
   ```
-  GET /oauth2/step-up/resource/api1          Authorization: Bearer <acr "1">
+  GET https://api1.example/photos            Authorization: Bearer <acr "1">
   401 WWW-Authenticate: Bearer error="insufficient_user_authentication",
         error_description="…", acr_values="mfa", max_age="600"
 
   GET /oauth2/authorize?client_id=app1&…&acr_values=mfa&max_age=600
   ```
-  At `/oauth2/step-up/resource/{application}` the token must verify, be this
-  service's `at+jwt` and name the application in its `aud`; then the answer is
-  the challenge or a 200 describing the authentication it met. A token with no
-  `auth_time` does not meet a `max_age`. `/admin/oauth2/monitor` counts
+  The challenge is the API's to send, from the requirement it declares on its
+  application entry (`oauthStepUpAcrValues`, `oauthStepUpMaxAge`); this
+  service's own endpoints send it for `oauth2.stepUpAcrValues` and
+  `oauth2.stepUpMaxAgeS`. A token with no `auth_time` does not meet a
+  `max_age`. (A stand-in resource that answered for a registered API,
+  `/oauth2/step-up/resource/{application}`, was removed in #593.)
+  `/admin/oauth2/monitor` counts
   requirements met by the session or by a sign-in, people sent to sign in
   again, both refusals and resource-server challenges, per client.
 

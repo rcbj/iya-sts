@@ -15,9 +15,11 @@
 // per grant id. There is no standard spend call from a resource server to
 // an authorization server, and inventing one would make every resource
 // server depend on this one being up for every operation. So this module is
-// what a resource server does, written once as the reference — the
-// demonstration resource server's `POST /gnap/rs/spend` (`gnap.ts`) is its
-// one caller, and `docs/gnap.md` points an RS author at it.
+// what a resource server does, written once as the reference, and
+// `docs/gnap.md` points an RS author at it. Its one caller was the
+// demonstration resource server's `POST /gnap/rs/spend`, which #593
+// (2026-10-12) deleted — the test peer plays a GNAP resource server and keeps
+// its own totals — so no route of this service spends through it now.
 //
 // **WHAT ONE OPERATION IS CHECKED AGAINST**, in this order, each a coded
 // refusal (`spendRefusal()`):
@@ -48,8 +50,7 @@
 //
 // **A REFUND** (`refund()`) takes back an operation that failed after its
 // spend was counted — from the period it was counted in only, never below
-// zero. The demonstration operation fails when asked to (`simulateFailure`),
-// which is how the refund is exercised.
+// zero. `tests/gnap_limits_ownership.js` exercises it.
 //
 // **A ROW OUTLIVES NO GRANT.** Each carries the grant's end; the scheduler
 // job `gnap.spend-purge` (cluster, realm, hourly) deletes the rows past it —
@@ -342,8 +343,8 @@ class GnapSpend {
         scope: SCOPE, key: spent.key, period: spent.period,
         amount: spent.amount, count: spent.count });
       if (!answer.refunded) {
-        log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a demonstration ' +
-                 'spend could not be refunded (a new period began, or the ' +
+        log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a spend could ' +
+                 'not be refunded (a new period began, or the ' +
                  'store could not be asked).');
       }
       log.debug("Leaving GnapSpend.refund(). Shared.");
@@ -353,8 +354,8 @@ class GnapSpend {
     if (!held || Number(held.period) !== Number(spent.period) ||
         BigInt(held.amount) < BigInt(spent.amount) ||
         Number(held.count) < Number(spent.count)) {
-      log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a demonstration ' +
-               'spend could not be refunded (a new period began).');
+      log.warn(errorCodes.tag('STS-GNAP-0877') + 'gnap: a spend could ' +
+               'not be refunded (a new period began).');
       log.debug("Leaving GnapSpend.refund(). Nothing to take from.");
       return false;
     }
@@ -404,9 +405,9 @@ class GnapSpend {
     s.register({
       id: PURGE_JOB,
       title: 'GNAP: limits of ended grants',
-      describe: 'Deletes the running totals the demonstration resource ' +
-                'server keeps for each GNAP grant\'s limits once the grant ' +
-                'has ended, when no token of it can be presented (#432).',
+      describe: 'Deletes the running totals kept for each GNAP grant\'s ' +
+                'limits once the grant has ended, when no token of it can ' +
+                'be presented (#432).',
       owner: 'gnap/gnap_spend.ts',
       kind: 'cluster', scope: 'realm', everyMs: function (): number {
         return PURGE_EVERY_MS;

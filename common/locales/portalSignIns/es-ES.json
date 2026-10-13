@@ -1,7 +1,7 @@
 {
-  "wasItYou": "¿Has sido tú?",
-  "saidYes": "Has dicho que eras tú.",
-  "saidNo": "<strong>Has dicho que no eras tú.</strong>",
+  "wasItYou": "¿Ha sido usted?",
+  "saidYes": "Ha dicho que era usted.",
+  "saidNo": "<strong>Ha dicho que no era usted.</strong>",
   "yes": "He sido yo",
   "no": "No he sido yo"
 }

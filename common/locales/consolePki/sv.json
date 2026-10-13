@@ -37,7 +37,7 @@
   "ianTip": "Alternativa namn för utfärdaren. Samma syntax som subjectAltName.",
   "ianCriticalTip": "Bör normalt inte vara kritiskt.",
   "ianSyntax": "Samma syntax som subjectAltName ovan.",
-  "cdpTip": "Var CRL:en som skulle återkalla certifikatet hämtas. OBSERVERA att tjänsten inte publicerar någon: tillägget är en URL som du påstår, inte ett löfte som den här attrappen håller.",
+  "cdpTip": "Var CRL:en som skulle återkalla certifikatet hämtas. OBSERVERA att tjänsten inte publicerar någon: tillägget är en URL som du påstår, inte ett löfte som den här tjänsten håller.",
   "rarelyCritical": "Sällan kritiskt.",
   "urlsPerLine": "URL:er, en per rad",
   "cdpUrlsTip": "Var CRL:en som skulle återkalla certifikatet publiceras.",

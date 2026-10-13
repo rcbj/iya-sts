@@ -81,7 +81,6 @@ import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
-import replication = require('../persistence/persistence_replication');
 import subjects = require('./ssf_subjects');
 import events = require('./ssf_events');
 
@@ -164,10 +163,6 @@ const deadLetters = realms.map({
     return at > 0 ? at + keep * 1000 : null;
   }
 });
-
-// What this service has RECEIVED, when the debugger is the transmitter and
-// this service is the receiver. Also per realm, and capped the same way.
-const received = realms.arr({ persist: 'ssf_streams.received', merge: 'own' });
 
 // The two delivery method URNs of SSF 1.0 section 7.1.1. They are the RFC
 // numbers as URNs rather than names, which catches everybody once: a stream
@@ -355,8 +350,7 @@ interface SsfStreamsDeps {
 
 /**
  * The Shared Signals streams of each trust realm: their configuration, owners,
- * subjects, event queues and dead letters, and what this service has received
- * as a receiver.
+ * subjects, event queues and dead letters.
  *
  * Stores are per realm and replicated; a record edited in place is written back
  * through `touch()`.
@@ -2796,85 +2790,6 @@ class SsfStreams {
     log.debug("Leaving SsfStreams.note().");
   }
 
-  // ---------------------------------------------------------------------------
-  // WHAT THIS SERVICE HAS RECEIVED, when the roles are the other way round.
-  //
-  // The debugger can be a TRANSMITTER, and something has to be at the far end
-  // of its push. `POST /ssf/receive` is that, and this is where what arrives is
-  // kept — so a person can see, on `/admin/ssf`, that the thing they sent
-  // actually landed. It is deliberately NOT a stream: nothing was configured,
-  // nothing is delivered onwards, and treating it as one would invite the
-  // question of which stream a bare SET belongs to, which has no answer.
-  // ---------------------------------------------------------------------------
-  /**
-   * Keeps a SET that arrived at `POST /ssf/receive`, capped at
-   * `ssf.maxReceivedEvents`.
-   *
-   * @param entry - what arrived
-   * @returns the entry
-   */
-  recordReceived(entry?) {
-    const { log } = this.deps;
-    log.debug("Entering SsfStreams.recordReceived().");
-    const list = received;
-    list.push(entry);
-    const max = this.limit('ssf.maxReceivedEvents', 200);
-    if (list.length > max) {
-      list.splice(0, list.length - max);
-    }
-    log.debug("Leaving SsfStreams.recordReceived(). " + list.length + ' held.');
-    return entry;
-  }
-
-  // EVERY PROCESS'S, NOT ONLY THIS ONE'S (2026-09-18). `received` is
-  // `merge: 'own'`, so what another node or request worker received — or this
-  // node before a restart that could not take its old origin back — reaches
-  // this process as a contribution, and a list of this process's alone showed
-  // a push that landed on the other node as never having arrived. Oldest
-  // first, as the list always was, and bounded by the same setting.
-  /**
-   * Lists what every process has received at `POST /ssf/receive`, oldest first,
-   * bounded by `ssf.maxReceivedEvents`.
-   *
-   * @returns the entries
-   */
-  listReceived() {
-    const { log } = this.deps;
-    log.debug("Entering SsfStreams.listReceived().");
-    let all: any[] = received.slice();
-    replication.remoteRows('ssf_streams.received', undefined, '')
-      .forEach(function (theirs: unknown): void {
-        if (Array.isArray(theirs)) {
-          all = all.concat(theirs);
-        }
-      });
-    all.sort(function (a: any, b: any): number {
-      return String((a && a.at) || '').localeCompare(String((b && b.at) || ''));
-    });
-    const max = this.limit('ssf.maxReceivedEvents', 200);
-    const out = all.length > max ? all.slice(all.length - max) : all;
-    log.debug("Leaving SsfStreams.listReceived(). " + out.length + '.');
-    return out;
-  }
-
-  // THIS PROCESS'S list only: another process's contribution is its row in
-  // the store, and it clears its own when asked there. A clear answered by one
-  // node of several therefore leaves what the others received on the page.
-  /**
-   * Clears this process's list of received SETs; another process's stays.
-   *
-   * @returns the number cleared
-   */
-  clearReceived() {
-    const { log } = this.deps;
-    log.debug("Entering SsfStreams.clearReceived().");
-    const list = received;
-    const gone = list.length;
-    list.length = 0;
-    log.debug("Leaving SsfStreams.clearReceived(). " + gone + ' dropped.');
-    return gone;
-  }
-
   // The wire form of a stream configuration — what a receiver gets back from
   // the management API. It is NOT the record: `subjects`, the queue, the log
   // and the counters are this service's own bookkeeping and no member of SSF
@@ -3064,8 +2979,5 @@ export = {
   countEvent: slot.forward('countEvent'),
   poll: slot.forward('poll'),
   note: slot.forward('note'),
-  recordReceived: slot.forward('recordReceived'),
-  listReceived: slot.forward('listReceived'),
-  clearReceived: slot.forward('clearReceived'),
   streamConfiguration: slot.forward('streamConfiguration')
 };

@@ -158,6 +158,15 @@ import version = require('./common/version');
 // here and closes no cycle.
 import StsMetadataPage = require('./admin-ui/web_sts_metadata');
 import InstanceSlot = require('./common/instance_slot');
+// Whether the document calls this service a test double is a question of the
+// mode (`describesItselfAsTestDouble()`). A LEAF library `helpers.js` loads
+// first, so requiring it here moves no route and closes no cycle.
+import mode = require('./common/mode');
+// #543: the prose this page's answer carries is translated where it is sent,
+// and the sentences made here are filled from templates `prose()` lists. A
+// top-level require is safe: `server_prose` requires only libraries the
+// early modules are, and this module is required last.
+import serverProse = require('./common/server_prose');
 
 // One specification: what it is, who publishes it, where to read it, and how
 // far this service implements it. A few carry a `what` as well.
@@ -197,13 +206,13 @@ interface Protocol {
 // The specifications this service implements, and how far.
 //
 // `coverage` is the honest part: "full" means a client conforming to that
-// document works against this mock; "partial" says what is missing; "mock"
-// means the shape is right and the enforcement is deliberately absent, which is
-// what a test double is for.
+// document works against this service; "partial" says what is missing;
+// "minimal" means the shape is right and the enforcement is deliberately
+// absent, which is what a test double is for.
 // ---------------------------------------------------------------------------
 /**
  * The specifications this service implements, each with its coverage (`full`,
- * `partial` or `mock`) and what is missing.
+ * `partial` or `minimal`) and what is missing.
  */
 const SPECS: Spec[] = [
   // The one specification on this page that is not a protocol this service
@@ -365,13 +374,13 @@ const SPECS: Spec[] = [
               'their own rows (RFC 6113, RFC 6560), and so is PKINIT (RFC ' +
               '4556); no request signatures, no kpasswd (S4U is [MS-SFU], ' +
               'its own row). The AP ' +
-              'exchange belongs to the protected service, not here. ' +
+              'exchange belongs to the acceptor (SPNEGO), not here. ' +
               // The rule for these notes is that they say what would mislead
               // somebody who believed the row. "Pre-authentication is
               // implemented" is true and, on its own, implies an account
               // database with per-account secrets in it.
               'ANY username authenticates and every user account shares ONE ' +
-              'password, which GET /krb5/principals publishes: ' +
+              'password, which the setting krb5.userPassword publishes: ' +
               'pre-authentication is verified for real (the password is the ' +
               'key, so it has to be), but it is the same password for ' +
               'everybody and an unknown username is created on the spot ' +
@@ -587,8 +596,9 @@ const SPECS: Spec[] = [
     where: 'Microsoft Open Specifications',
     url:
       'https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kkdcp/',
-    coverage: 'mock: POST /KdcProxy accepts a KDC-PROXY-MESSAGE and relays ' +
-              'it to the KDC in this process. Exists because a browser ' +
+    coverage: 'minimal: POST /KdcProxy accepts a KDC-PROXY-MESSAGE and ' +
+              'relays it to the KDC in this process. Exists because a ' +
+              'browser ' +
               'cannot open a raw socket to port 88.' },
   // --- SCIM 2.0 ------------------------------------------------------------
   //
@@ -712,9 +722,9 @@ const SPECS: Spec[] = [
               'Authorization header, treats 202 as delivery, and reads a 400 ' +
               '{err, description} as the receiver REFUSING — which is a ' +
               'different outcome from a network failure and is recorded as ' +
-              'one. It also RECEIVES on that profile at POST /ssf/receive, ' +
-              'the roles reversed, so a client can be the transmitter, ' +
-              'checking the typ, iss and aud of what arrives. A failed push ' +
+              'one. The console\'s and portal\'s own receivers RECEIVE on ' +
+              'that profile, checking the typ, iss and aud of what ' +
+              'arrives. A failed push ' +
               'is retried ssf.pushRetries times — 0 by default, ' +
               'deliberately, see ssf/ssf_http.ts — and then goes to the ' +
               'stream\'s dead-letter queue.' },
@@ -832,8 +842,8 @@ const SPECS: Spec[] = [
               'a receiver that could not process an event will not process ' +
               'it next time and redelivering would poll-loop. NOT covered: ' +
               'long polling. returnImmediately is honoured as "yes" always, ' +
-              'which the specification permits and which keeps a mock from ' +
-              'holding a socket open to demonstrate nothing.' },
+              'which the specification permits and which keeps this service ' +
+              'from holding a socket open to demonstrate nothing.' },
 
   // --- GNAP (2026-09-12): the grant negotiation protocol, its resource
   //     server connections, and the two HTTP documents its preferred proof
@@ -932,7 +942,7 @@ const SPECS: Spec[] = [
                          'Requirements (RFC 7642)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc7642',
-    coverage: 'mock: this is the requirements-and-use-cases document and ' +
+    coverage: 'minimal: this is the requirements-and-use-cases document and ' +
               'defines no wire format, so there is nothing in it to ' +
               'implement. It is listed because it is what says what SCIM is ' +
               'FOR, and because the use case this service serves — an ' +
@@ -1006,9 +1016,13 @@ const SPECS: Spec[] = [
   { id: 'rfc7617', name: 'The Basic HTTP Authentication Scheme (RFC 7617)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc7617',
-    coverage: 'full as a scheme, and it verifies nothing: any username with ' +
-              'any password is accepted except the reserved "invalid", which ' +
-              'keeps a 401 reachable. charset="UTF-8" is in the challenge. ' +
+    // Both modes' truth (#543 round 2): "it verifies nothing" was
+    // unqualified, and product verifies the password.
+    coverage: 'full as a scheme. In development mode it verifies nothing: ' +
+              'any username with any password is accepted except the ' +
+              'reserved "invalid", which keeps a 401 reachable. In product ' +
+              'mode the password is verified against the person\'s hashed ' +
+              'userPassword. charset="UTF-8" is in the challenge. ' +
               'RFC 7644 section 2 DISCOURAGES this scheme in those words; it ' +
               'is offered because it is what a provisioning client most ' +
               'often meets.' },
@@ -1110,8 +1124,9 @@ const SPECS: Spec[] = [
   { id: 'rfc4512', name: 'LDAP v3: directory information models (RFC 4512)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4512',
-    coverage: 'mock: the tree, the root DSE and namingContexts are real; THE ' +
-              'SCHEMA IS NOT THERE AT ALL. No objectClass is enforced, no ' +
+    coverage: 'minimal: the tree, the root DSE and namingContexts are ' +
+              'real; THE SCHEMA IS NOT THERE AT ALL. No objectClass is ' +
+              'enforced, no ' +
               'attribute is checked against a syntax or a matching rule, and ' +
               'there is no subschema subentry — so an entry may carry any ' +
               'attribute a client cares to send, which a real directory ' +
@@ -1126,12 +1141,14 @@ const SPECS: Spec[] = [
     coverage: 'partial, and the part that is here is the TRANSPORT rather ' +
               'than the authentication: simple bind (section 5.1) is the ' +
               'only method offered — no SASL, so no EXTERNAL and no ' +
-              'DIGEST-MD5 — and it authenticates nobody, since every bind ' +
-              'succeeds except the literal password "invalid". What TLS on ' +
-              '636 adds is confidentiality for a password that was never ' +
-              'going to be checked, which is worth having for a client that ' +
-              'has to prove it can do LDAPS and worth saying out loud so ' +
-              'nobody reads the TLS as authentication. StartTLS (section 3) ' +
+              'DIGEST-MD5. In development mode it authenticates nobody, ' +
+              'since every bind succeeds except the literal password ' +
+              '"invalid", and what TLS on 636 adds is confidentiality for a ' +
+              'password that was never going to be checked, which is worth ' +
+              'having for a client that has to prove it can do LDAPS and ' +
+              'worth saying out loud so nobody reads the TLS as ' +
+              'authentication; in product mode a person\'s password is ' +
+              'verified, and only over 636. StartTLS (section 3) ' +
               'is NOT implemented: it is an extended operation and the ' +
               'ldapjs submodule this service is built on implements none, ' +
               'and this repository does not patch that submodule. Worth ' +
@@ -1176,7 +1193,7 @@ const SPECS: Spec[] = [
   { id: 'rfc4519', name: 'LDAP v3: schema for user applications (RFC 4519)',
     where: 'IETF',
     url: 'https://www.rfc-editor.org/rfc/rfc4519',
-    coverage: 'mock: this document is where the NAMES this directory uses ' +
+    coverage: 'minimal: this document is where the NAMES this directory uses ' +
               'come from — cn, sn, uid, mail, givenName, member, ' +
               'uniqueMember, and the groupOfNames and organizationalUnit ' +
               'classes the seeded tree is built out of. NOTHING IN IT IS ' +
@@ -1224,9 +1241,9 @@ const SPECS: Spec[] = [
     url: 'https://www.rfc-editor.org/rfc/rfc5280',
     coverage: 'partial, and the path validation is OpenSSL\'s rather than ' +
               'this service\'s: client certificates are verified against ' +
-              'anchors POSTed to /tls/trust at runtime (development mode; ' +
-              'product mode refuses that and reads tls.trustAnchorsFile at ' +
-              'startup), beside the service Root while ' +
+              'anchors added at runtime through /admin-api/tls/trust (in ' +
+              'either mode) and read from tls.trustAnchorsFile at ' +
+              'startup, beside the service Root while ' +
               'tls.trustIssuedClientCertificates is on, and the server ' +
               'certificate is issued under that Root with a subjectAltName ' +
               'carrying every name this stack is reached by. THIS SERVICE ' +
@@ -1320,9 +1337,14 @@ const SPECS: Spec[] = [
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
-    coverage: 'mock: a UsernameToken is accepted when both members are ' +
-              'present. No password is ever checked, except that the literal ' +
-              '"invalid" is refused so a negative test can force a failure.' },
+    // Both modes' truth (#543 round 2): "No password is ever checked" was
+    // unqualified, and product verifies it.
+    coverage: 'minimal in development mode: a UsernameToken is accepted when ' +
+              'both members are present and no password is checked, except ' +
+              'that the literal "invalid" is refused so a negative test can ' +
+              'force a failure. In product mode the password is verified — ' +
+              'a person\'s against their hashed userPassword, an ' +
+              'application\'s against its client secrets.' },
   { id: 'saml2', name: 'SAML 2.0 Core',
     where: 'OASIS saml-core-2.0-os',
     url: 'https://docs.oasis-open.org/security/saml/v2.0/saml-core-2.0-os.pdf',
@@ -1408,9 +1430,8 @@ const SPECS: Spec[] = [
               'SessionNotOnOrAfter bounds the session. The ' +
               'AssertionConsumerServiceURL is accepted as sent in ' +
               'development mode and must be registered on the service ' +
-              'provider\'s entry in PRODUCT mode (2026-09-12), with no ' +
-              'fallback to the mock service provider — and, once its ' +
-              'metadata has been consumed, must be one of the endpoints it ' +
+              'provider\'s entry in PRODUCT mode (2026-09-12) — and, ' +
+              'once its metadata has been consumed, must be one of the endpoints it ' +
               'registered in EVERY mode, with AssertionConsumerServiceIndex ' +
               'and the default endpoint honoured. A LogoutRequest from a ' +
               'service provider is authenticated by its signature (4.4.3.1) ' +
@@ -1527,8 +1548,7 @@ const SPECS: Spec[] = [
               'profile (a passive request carries no recipient certificate), ' +
               'and any authorization or policy enforcement. wreply is used ' +
               'as sent in development mode and must be a registered ' +
-              'wsfedReplyUrl in PRODUCT mode (2026-09-12), with no fallback ' +
-              'to the mock relying party.' },
+              'wsfedReplyUrl in PRODUCT mode (2026-09-12).' },
   { id: 'xmldsig', name: 'XML Signature and XML Encryption',
     where: 'W3C',
     url: 'https://www.w3.org/TR/xmldsig-core1/',
@@ -1754,11 +1774,12 @@ const SPECS: Spec[] = [
               'insufficient_user_authentication challenge with acr_values ' +
               'and max_age, sent by this service\'s own resource server ' +
               '(UserInfo, the OpenID4VCI endpoints, SCIM, SSF) against ' +
-              'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS and by ' +
-              '/oauth2/step-up/resource/{application} against a resource ' +
-              'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge. ' +
-              'Mock: this service\'s sign-in produces three context classes; ' +
-              'any other acr value is met only by a federated sign-in ' +
+              'oauth2.stepUpAcrValues / oauth2.stepUpMaxAgeS; a resource ' +
+              'application\'s oauthStepUpAcrValues / oauthStepUpMaxAge are ' +
+              'recorded for the resource server that is the application to ' +
+              'enforce. Limitation: this service\'s sign-in produces three ' +
+              'context classes; any other acr value is met only by a ' +
+              'federated sign-in ' +
               'reporting exactly that acr. Counted on /admin/oauth2/monitor.' },
   { id: 'rfc9101', name: 'RFC 9101 — JWT-Secured Authorization Request ' +
       '(JAR)',
@@ -1790,14 +1811,14 @@ const SPECS: Spec[] = [
               'credential to the holder key whose possession was proved.' },
   { id: 'rfc9449', name: 'RFC 9449 — DPoP (Demonstrating Proof of Possession)',
     where: 'IETF', url: 'https://www.rfc-editor.org/rfc/rfc9449',
-    coverage: 'full for a mock: all twelve section 4.3 proof checks, cnf.jkt ' +
+    coverage: 'full: all twelve section 4.3 proof checks, cnf.jkt ' +
               'on access AND refresh tokens, token_type DPoP, the dpop_jkt ' +
               'authorization request parameter (section 10), jti replay ' +
               'detection, and the server-supplied nonce handshake in both ' +
               'shapes — 400 use_dpop_nonce at the token endpoint, 401 with ' +
               'WWW-Authenticate at a protected one. Nonces are off until ' +
-              'oauth2.dpopNonceRequired (per realm; /dpop/nonce-mode writes ' +
-              'it in development) turns them on. Not implemented: the ' +
+              'oauth2.dpopNonceRequired (per realm, through ' +
+              '/admin-api/config/set) turns them on. Not implemented: the ' +
               'mTLS-bound tokens (RFC 8705), which are the other way to ' +
               'sender-constrain; a proof sent to /oauth2/par binds the ' +
               'authorization code to its key (section 10.1). Note ' +
@@ -2171,7 +2192,8 @@ const SPECS: Spec[] = [
     coverage: 'partial, AND OFF BY DEFAULT — it is a MODE (oauth2.rfc9700) ' +
               'rather than how this service behaves, because a client is ' +
               'exercised by both answers and every existing caller of this ' +
-              'mock uses an unregistered redirect_uri, no PKCE, the implicit ' +
+              'service uses an unregistered redirect_uri, no PKCE, the ' +
+              'implicit ' +
               'grant or the password grant. Turned on it covers the whole of ' +
               'section 2. 2.1: exact-string redirect URI matching with RFC ' +
               '8252\'s loopback port exception, no open redirector at the ' +
@@ -2200,12 +2222,14 @@ const SPECS: Spec[] = [
               'are DETECTED rather than enforced, because they are the ' +
               'client\'s to keep: reuse of a code_challenge or nonce across ' +
               'transactions (which a real server generally cannot see and a ' +
-              'mock that remembers can), an unbound access token (section ' +
-              '2.2 is a SHOULD and there is deliberately no "DPoP required" ' +
-              'mode), and symmetric client authentication where 2.5 ' +
+              'service that remembers can), an unbound access token (section ' +
+              '2.2 is a SHOULD, so no mode requires a bound one; a realm ' +
+              'can, with oauth2.accessTokenRequireDpop or ' +
+              'oauth2.accessTokenRequireMtls), and symmetric client ' +
+              'authentication where 2.5 ' +
               'recommends asymmetric — the preference is detected, but all ' +
               'SIX methods are now genuinely verified, the three asymmetric ' +
-              'ones included. Section 4.5 Sections 2.2 and 2.3 are covered ' +
+              'ones included. Sections 2.2 and 2.3 are covered ' +
               'as far as an authorization server can cover them: BOTH ' +
               'sender-constraining mechanisms are implemented (DPoP, and RFC ' +
               '8705 certificate binding wherever the main port is TLS), the ' +
@@ -2461,7 +2485,8 @@ const SPECS: Spec[] = [
               'per relying party; automatic suspend, reactivate, delete, ' +
               'maintain and invalidate on directory changes and global ' +
               'sign-outs, only to a relying party that listed the command. ' +
-              'A mock relying party answers every command in development. ' +
+              'The test peer (tests/peer/) plays a relying party that ' +
+              'answers every command. ' +
               'MISSING: acting as the relying party for another OP.' },
   { id: 'oidc-enterprise', name: 'OpenID Connect Enterprise Extensions 1.0 ' +
                                  '(draft 01)',
@@ -2566,7 +2591,8 @@ const SPECS: Spec[] = [
               'accepted step is stored on the enrolment and anything at or ' +
               'below it is refused by name. **CODES ARE CHECKED FOR REAL IN ' +
               'BOTH MODES**, which is the one place besides SPNEGO where ' +
-              'this mock verifies an end user\'s credential: a verifier that ' +
+              'this service verifies an end user\'s credential: a verifier ' +
+              'that ' +
               'accepted any six digits would not be a permissive RFC 6238, ' +
               'it would be a broken one. Enrolment is the Key Uri Format ' +
               '(otpauth://, Google\'s convention rather than any RFC) drawn ' +
@@ -3021,7 +3047,7 @@ const SPECS: Spec[] = [
     where: 'W3C', url: 'https://www.w3.org/TR/vc-data-model-2.0/',
     coverage: 'partial: the VC-JWT encoding of VCDM 1.1 (jwt_vc_json) and ' +
               'VCDM 2.0 credentials with an embedded proof (ldp_vc); and, ' +
-              'at the VC-API test endpoints (#194), every MUST of the data ' +
+              'at the W3C VC API (#194), every MUST of the data ' +
               'model checked on a credential or presentation somebody else ' +
               'wrote, JSON-LD safe mode over the vendored contexts, and ' +
               'enveloped credentials and presentations — held to the W3C ' +
@@ -3037,13 +3063,13 @@ const SPECS: Spec[] = [
               'did:key verification methods; and signing and verification ' +
               'of a GNAP zcap token\'s delegation proof in Ed25519, ML-DSA-44 ' +
               'or SLH-DSA-SHA2-128s against a Multikey controller document. ' +
-              'At the VC-API test endpoints the two EC and EdDSA JCS suites ' +
+              'At the W3C VC API the two EC and EdDSA JCS suites ' +
               'also secure and verify credentials, with proof sets and ' +
               'proof chains (#195, #196). The RDFC suites are di-rdfc.' },
   { id: 'di-rdfc', name: 'W3C Data Integrity — eddsa-rdfc-2022 and ' +
                          'ecdsa-rdfc-2019',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-eddsa/',
-    coverage: 'full for issuing and verifying at the VC-API test endpoints ' +
+    coverage: 'full for issuing and verifying at the W3C VC API ' +
               '(#195, #196): Ed25519, P-256 and P-384, RDFC-1.0 over the ' +
               'vendored contexts in safe mode with a null base, proof sets ' +
               'and chains, VC 1.1 and 2.0 — held to the W3C EdDSA and ECDSA ' +
@@ -3061,21 +3087,28 @@ const SPECS: Spec[] = [
                               'JOSE and COSE',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-jose-cose/',
     coverage: 'partial: vc+jwt, vc+sd-jwt and vc+cose and their vp forms, ' +
-              'secured and verified at the VC-API test endpoints (#198), ' +
+              'secured and verified at the W3C VC API (#198), ' +
               'SD-JWT disclosures processed as RFC 9901 section 7.1 says; ' +
               'keys by a did:key or did:jwk kid or a caller-named public ' +
               'key, nothing fetched. The OID4VCI issuer does not issue these ' +
               'forms (jwt_vc_json is VCDM 1.1), and a Key Binding JWT on an ' +
               'SD-JWT presentation is reported, not checked.' },
-  { id: 'vc-api', name: 'W3C CCG Verifiable Credentials API (test ' +
-                        'endpoints)',
-    where: 'W3C CCG', url: 'https://w3c-ccg.github.io/vc-api/',
-    coverage: 'partial, and a TEST CONTROL: the issue, verify, prove, ' +
-              'derive and status operations the W3C test suites drive, over ' +
-              'this service\'s own cryptosuites, keys and status lists, in ' +
-              'a development realm only, behind an access token carrying ' +
-              'vc-api:issue or vc-api:verify. No zcap authorization, no ' +
-              'workflows, no credential storage.' },
+  { id: 'vc-api', name: 'W3C Verifiable Credentials API (VCALM, the CCG ' +
+                        'VC API)',
+    where: 'W3C CCG', url: 'https://w3c.github.io/vcalm/',
+    coverage: 'partial: the issuer (issue), holder (prove, derive), ' +
+              'verifier (credentials and presentations) and status ' +
+              'services, over this service\'s own cryptosuites, status ' +
+              'lists and keys of the VC API\'s own, OFF until a realm turns ' +
+              'it on (vcApi.enabled), behind an OAuth 2.0 access token ' +
+              'carrying vc-api:issue or vc-api:verify in every mode, rate ' +
+              'limited per client, an option it does not understand ' +
+              'refused. Not built: zcap authorization, workflows and ' +
+              'exchanges, challenges, credential and presentation storage ' +
+              '(GET and DELETE of /credentials/{id}), VCALM\'s ' +
+              'operation:path scopes, and issuer instances configured ' +
+              'per realm (the instances are fixed, one per securing ' +
+              'mechanism and curve).' },
   { id: 'token-status-list',
     name: 'Token Status List (draft-ietf-oauth-status-list-21)',
     where: 'IETF',
@@ -3103,10 +3136,10 @@ const SPECS: Spec[] = [
               'statusSize 1 only; no statusMessage.' },
   { id: 'dc-api', name: 'W3C Digital Credentials API',
     where: 'W3C', url: 'https://www.w3.org/TR/digital-credentials/',
-    coverage: 'partial: the wallet sign-in page calls ' +
+    coverage: 'partial: the wallet sign-in\'s wait page calls ' +
               'navigator.credentials.get({ digital }) with one signed ' +
-              'OpenID4VP request and posts the answer; nothing else here ' +
-              'uses it.' },
+              'OpenID4VP request and sends the answer to ' +
+              '/authn-api/wallet/{state}/dc-api; nothing else here uses it.' },
   { id: 'di-bbs', name: 'W3C Data Integrity — bbs-2023 cryptosuite',
     where: 'W3C', url: 'https://www.w3.org/TR/vc-di-bbs/',
     coverage: 'full for base proofs and derived proofs over BLS12-381, ' +
@@ -3123,7 +3156,7 @@ const SPECS: Spec[] = [
     coverage: 'partial: this service PUBLISHES a did:web document with two ' +
               'verification methods, and resolves and dereferences (section ' +
               '7) did:key, did:jwk and its own did:web in both JSON ' +
-              'representations at the VC-API test endpoints (#199), held to ' +
+              'representations at the W3C VC API (#199), held to ' +
               'the W3C DID test suite. No other did:web is fetched; no DID ' +
               'parameters (service, versionId, …) are supported.' },
   { id: 'did-config', name: 'DIF Well Known DID Configuration',
@@ -3181,7 +3214,7 @@ const SPECS: Spec[] = [
                                     '(draft-ietf-acme-device-attest)',
     where: 'IETF (draft)',
     url: 'https://datatracker.ietf.org/doc/draft-ietf-acme-device-attest/',
-    coverage: 'mock: only the permanent-identifier identifier type, which ' +
+    coverage: 'minimal: only the permanent-identifier identifier type, which ' +
               'here names the account\'s own directory entry and becomes its ' +
               'urn:sts: subjectAltName. The device-attest-01 challenge and ' +
               'the WebAuthn attestation statement are not implemented.' },
@@ -3309,6 +3342,11 @@ const SPECS: Spec[] = [
 // `group` orders the page. `specs` are ids from SPECS above; a typo there is
 // reported on the page rather than silently dropping the link.
 // ---------------------------------------------------------------------------
+// What every W3C VC API row says about being off (#598): the routes are
+// registered in every realm and answer 501 until the realm turns them on.
+const OFF_UNTIL_ENABLED = 'answers 501 until vcApi.enabled is on in the ' +
+                          'realm';
+
 /**
  * What each HTTP endpoint is, keyed by its Express path: its group, a
  * description and the specifications it implements.
@@ -3317,65 +3355,34 @@ const ENDPOINTS: EndpointEntry[] = [
   // --- Kerberos ---
   //
   // Note what is NOT on this page and cannot be: the KDC's own listeners are
-  // RAW SOCKETS on TCP and UDP port 88, and the protected service is a raw TCP
-  // socket of its own. This page is built by walking the live Express router,
-  // which is exactly why it cannot go stale — and a protocol that registers no
-  // route is the one blind spot that design has. The three HTTP endpoints below
-  // are the only Kerberos surfaces the walk can see; the sockets are described
-  // in their rows' text so a reader is not left thinking port 88 does not
-  // exist.
+  // RAW SOCKETS on TCP and UDP port 88. This page is built by walking the
+  // live Express router, which is exactly why it cannot go stale — and a
+  // protocol that registers no route is the one blind spot that design has.
+  // The HTTP endpoint below (and the SPNEGO sign-in, in the Authentication
+  // group) are the only Kerberos surfaces the walk can see; the sockets are
+  // described in their rows' text so a reader is not left thinking port 88
+  // does not exist.
   { path: '/KdcProxy', group: 'Kerberos', name: 'KDC Proxy (MS-KKDCP)',
     // rfc3961 belongs here because every message this relays has enc-parts
     // encrypted under that framework by the KDC behind it — and because a
     // specification nothing links to is an IDLE CLAIM, which
     // tests/vendored/sts_metadata.js fails the page for. It was listed and
     // unlinked when the Kerberos rows were first added.
-    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'rfc6113', 'rfc6560',
-            'rfc8129', 'rfc4556', 'rfc8070', 'rfc8636', 'rfc5349',
+    // ms-pac since #595: every ticket the KDC behind it issues carries a
+    // PAC, and the rows that linked it (`/krb5/principals`,
+    // `/spnego/protected`) are gone.
+    specs: ['ms-kkdcp', 'rfc4120', 'rfc3961', 'ms-pac', 'rfc6113',
+            'rfc6560', 'rfc8129', 'rfc4556', 'rfc8070', 'rfc8636', 'rfc5349',
             'rfc8062'],
     what: 'Relays a KDC-PROXY-MESSAGE to the KDC listening on TCP and UDP ' +
           'port 88 in this process. A browser cannot open a raw socket, so ' +
           'this is how the in-browser client reaches a KDC without the api ' +
           'relay.' },
-  { path: '/krb5/principals', group: 'Kerberos', name: 'What the KDC knows',
-    // The salts and the offered etypes ARE the RFC 3961/3962 surface:
-    // string-to-key takes the salt, and etype negotiation is what the list
-    // decides.
-    specs: ['rfc4120', 'ms-pac', 'rfc3961'],
-    what: 'The principal database of both realms: names, salts (which are ' +
-          'NOT derivable from the principal name, which is why ' +
-          'PA-ETYPE-INFO2 exists), offered etypes, the deliberate ' +
-          'misconfigurations, and the PAC identity each account carries. ' +
-          'Also the account policy — any username authenticates, every user ' +
-          'shares one password, and this is where that password is written ' +
-          'down. Not a real Kerberos endpoint — a KDC publishes none of ' +
-          'this.' },
-  { path: '/krb5/service', group: 'Kerberos', name: 'The protected service',
-    specs: ['rfc4120'],
-    what: 'What the AP-REQ acceptor is, where its raw TCP socket is ' +
-          'listening, and the ordered checks it applies to a ticket. Not a ' +
-          'real Kerberos endpoint either.' },
-  { path: '/spnego', group: 'Kerberos', name: 'A SPNEGO-protected page is ' +
-                                              'advertised here',
-    specs: ['rfc4559', 'rfc4178', 'rfc4120'],
-    what: 'Says that /spnego/protected exists, which service principal name ' +
-          'is behind it, which mechanisms are accepted, and which query ' +
-          'knobs make the negotiation fail in one specific way. None of that ' +
-          'is in the protocol exchange itself — a client has to derive the ' +
-          'SPN from the URL and find the KDC from its own configuration, ' +
-          'which is why so many SPNEGO failures leave no evidence on the ' +
-          'wire. Add ?format=json.' },
-  { path: '/spnego/protected', group: 'Kerberos',
-    name: 'The protected resource',
-    // rfc3961 is linked because the AP-REQ inside the mechToken, its
-    // Authenticator and the AP-REP returned for mutual authentication are all
-    // encrypted under that framework.
-    specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'ms-pac'],
-    what: 'Answers 401 with a bare "WWW-Authenticate: Negotiate" to an ' +
-          'unauthenticated request, and 200 with an AP-REP in that header to ' +
-          'a valid one. The Kerberos checks are krb5_service.js\'s, ' +
-          'unchanged — this endpoint adds the negotiation and the HTTP that ' +
-          'carries it and no protocol code of its own.' },
+  // `/krb5/principals`, `/krb5/service`, `/spnego`, `/spnego/pages.js` and
+  // `/spnego/protected` had rows here until #595: the first was deleted
+  // (`GET /admin-api/kerberos/principals` lists the database), the rest —
+  // and the protected service's TCP socket — are the development
+  // companion's (`companion/demo_kerberos.js`).
 
   // --- LDAP ---
   //
@@ -3425,6 +3432,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'caller this service admits. An unadmitted one gets a 403 that ' +
           'names the group and the setting, which is the part of this page ' +
           'they need.' },
+  { path: '/xacml/description.js', group: 'XACML',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /xacml from the view its shell carries. ' +
+          'It REQUIRES XACML_USER, as the page does.' },
   { path: '/xacml/pdp', group: 'XACML', name: 'A decision',
     specs: ['xacml30', 'xacmljson'],
     what: 'POST a JSON Profile request, get a JSON Profile response. TWO ' +
@@ -3453,21 +3468,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'lets people in is not the same act as publishing a demonstration ' +
           'policy. The store is ou=policies in the embedded directory — ' +
           'that container IS the repository.' },
-  { path: '/xacml/protected', group: 'XACML', name: 'The embedded PEP',
-    specs: ['xacml30'],
-    what: 'A resource this service guards with its own PDP. Takes subject, ' +
-          'resource and action as query parameters, asks the PDP, and ' +
-          'ENFORCES the answer — 200 or 403. It is where xacml.pepBias is ' +
-          'visible: deny-biased and permit-biased agree on every Permit and ' +
-          'every Deny and differ on Indeterminate and NotApplicable, which ' +
-          'is the case nobody tests. An obligation it cannot discharge turns ' +
-          'a Permit into a refusal (section 7.2), which is the part ' +
-          'implementations skip. TWO GATES, ABOUT TWO DIFFERENT PEOPLE: the ' +
-          'CALLER needs XACML_USER to drive it at all, and the SUBJECT named ' +
-          'in ?subject= is what the PEP then enforces about. Keeping them ' +
-          'apart is what lets an admitted caller ask about somebody the ' +
-          'policy refuses and watch it refuse — which is the whole ' +
-          'demonstration.' },
   { path: '/xacml/pep/register', group: 'XACML',
     name: 'A remote PEP registers', specs: ['xacml30'],
     what: 'A Policy Enforcement Point in ANOTHER PROCESS says it exists, ' +
@@ -3596,20 +3596,50 @@ const ENDPOINTS: EndpointEntry[] = [
           'rather than a browser redirect.' },
   { path: '/gnap/code', group: 'GNAP', name: 'User code entry',
     specs: ['rfc9635'],
-    what: 'Sections 4.1.2 and 4.1.3: GET draws the form a person types a ' +
-          'user code into, or takes the code on the query for user_code_uri; ' +
-          'POST spends it. Rate limited per address, and a code is ' +
-          'single-use and case-folded.' },
+    what: 'Sections 4.1.2 and 4.1.3: the page a person types a user code ' +
+          'into, for user_code and user_code_uri alike. A page of GNAP\'s ' +
+          'interaction surface since #578: the code goes to ' +
+          '/gnap-api/code, which spends it. Rate limited per address, and ' +
+          'a code is single-use and case-folded.' },
   { path: '/gnap/approve/:id', group: 'GNAP', name: 'Resource owner approval',
     specs: ['rfc9635'],
     what: 'The page that asks the signed-in resource owner whether the ' +
-          'client instance may have what it asked for, one right at a time, ' +
-          'and the form that answers it. Protected by the session and a CSRF ' +
+          'client instance may have what it asked for, one right at a time. ' +
+          'A page of GNAP\'s interaction surface since #578: the answer goes ' +
+          'to /gnap-api/approve/{id}, protected by the session and a CSRF ' +
           'token. An approval is remembered in the consent register when ' +
           'gnap.rememberApprovals is on, so the same request from the same ' +
-          'application is not asked twice. On a redirect finish it returns ' +
-          'to the registered finish URI with the interaction hash; on push ' +
-          'it POSTs the hash to it.' },
+          'application is not asked twice. On a redirect finish the browser ' +
+          'returns to the registered finish URI with the interaction hash; ' +
+          'on push the hash is POSTed to it.' },
+  { path: '/gnap/interaction.js', group: 'GNAP',
+    name: 'The interaction pages\' script', specs: [],
+    what: 'NON-SPEC (#578). The runtime and renderers of GNAP\'s ' +
+          'interaction pages in one file, built by build-typescript.sh ' +
+          '(gnap/gnap-interaction-spa.js) and served precompressed: it ' +
+          'draws /gnap/code and /gnap/approve/{id} from /gnap-api and sends ' +
+          'their acts there, and draws the pages a shell carries.' },
+  { path: '/gnap-api', group: 'GNAP', name: 'The interaction API index',
+    specs: [],
+    what: 'NON-SPEC (#578). The operations of GNAP\'s interaction API, ' +
+          'each with the page or control it is the door of (mirrors). ' +
+          'Language-free.' },
+  { path: '/gnap-api/code', group: 'GNAP',
+    name: 'Enter a GNAP user code', specs: [],
+    what: 'NON-SPEC door to sections 4.1.2 and 4.1.3 (#578). GET answers ' +
+          'the user code page\'s CSRF token; POST spends a code — JSON, an ' +
+          'Origin of this service and X-CSRF-Token bound to the sts_session ' +
+          'cookie — and names the approval page it leads to. Rate limited ' +
+          'per address.' },
+  { path: '/gnap-api/approve/:id', group: 'GNAP',
+    name: 'Answer a GNAP approval', specs: [],
+    what: 'NON-SPEC door to section 4 (#578). GET answers what the ' +
+          'approval page asks the signed-in resource owner, as facts, or ' +
+          'sends the browser back to the page where it must sign in or ' +
+          'step up first; POST is the answer — the rights left ticked, the ' +
+          'limits as lowered, and whether to say who they are — bound as ' +
+          'every act is, and answers the finish URI to go to or what to ' +
+          'say.' },
   { path: '/.well-known/gnap-as-rs', group: 'GNAP', name: 'Resource server ' +
       'discovery',
     specs: ['rfc9767'],
@@ -3622,7 +3652,10 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['rfc9767'],
     what: 'The same document for one authorization server profile.' },
   { path: '/gnap/introspect', group: 'GNAP', name: 'Token introspection',
-    specs: ['rfc9767'],
+    // `macaroons` (#593): introspection verifies a macaroon in its own
+    // format, and the demonstration resource server that also cited it is
+    // gone.
+    specs: ['rfc9767', 'macaroons'],
     what: 'RFC 9767 section 3.3: a resource server, proofed with its own ' +
           'key, asks whether a token is active and gets the section 2.1 ' +
           'token model back — in every format, including the three that are ' +
@@ -3665,27 +3698,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'Identifiers v1.0 document under the JCS suites, an ' +
           'Ed25519VerificationKey2020 under Ed25519Signature2020. Served ' +
           'no-store.' },
-  { path: '/gnap/rs/resource', group: 'GNAP', name: 'The demonstration ' +
-                                                    'resource server',
-    specs: ['rfc9635', 'rfc9767', 'macaroons'],
-    what: 'A protected resource on this service, for a client instance to ' +
-          'spend a token against: with no token it answers 401 with the ' +
-          'section 9.1 WWW-Authenticate challenge naming the grant endpoint; ' +
-          'with one it checks the format, the audience, the key binding and ' +
-          'the access rights the way a resource server would. ' +
-          'gnap.demoResourceServer turns it off.' },
-  { path: '/gnap/rs/spend', group: 'GNAP', name: 'The demonstration ' +
-                                                 'resource server\'s spend',
-    specs: ['rfc9635', 'rfc9767'],
-    what: 'An operation that SPENDS against a right\'s limits (#432 phase ' +
-          '5): POST with an amount, currency and receiver, under a token ' +
-          'granting spend on the demonstration type. The resource server ' +
-          'keeps the running totals per grant — atomically across the ' +
-          'cluster, reset at each boundary of the limits\' repeating ' +
-          'interval, refunded when the operation fails — and refuses an ' +
-          'over-limit operation with 403 insufficient_scope. The reference ' +
-          'for what a resource server does with a limit. ' +
-          'gnap.demoResourceServer turns it off.' },
   { path: '/admin-api/gnap', group: 'GNAP', name: 'The GNAP console page ' +
                                                   'over JSON',
     specs: ['rfc9635', 'rfc9767'],
@@ -3995,6 +4007,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'AND NOT THE VOCABULARY — it defines two events of its own, both ' +
           'about the pipe, and CAEP and RISC are the vocabularies spoken ' +
           'over it. Add ?format=json.' },
+  { path: '/ssf/description.js', group: 'Shared Signals',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /ssf from the view its shell carries.' },
   { path: '/ssf/stream', group: 'Shared Signals', name: 'The stream ' +
                                                         'management API',
     specs: ['ssf', 'rfc9493'],
@@ -4073,29 +4092,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'person can see it. RFC 8936 has no stream_id member because a ' +
           'real poll endpoint is per stream; this transmitter publishes one ' +
           'URL, so the id goes in the body.' },
-  { path: '/ssf/receive', group: 'Shared Signals',
-    name: 'A Security Event Token pushed AT this service',
-    specs: ['rfc8935', 'rfc8417'],
-    what: 'THE ROLES REVERSED, and not an SSF endpoint: a transmitter has to ' +
-          'have somewhere to push, so this service is a RECEIVER here for a ' +
-          'client\'s benefit. It ACCEPTS a SET whose signature does not ' +
-          'verify and reports why, which is exactly right for a debugger — a ' +
-          'receiver that refused could not show anybody what arrived or why ' +
-          'it did not verify, which is the question being asked. ' +
-          'ssf.receiveRequireSignature turns the 400 invalid_key on, which ' +
-          'is what a real receiver does. The verification is against THIS ' +
-          'service\'s own key, the only one it has, so a SET signed by ' +
-          'somebody else is "not verifiable here" rather than invalid.' },
-  { path: '/ssf/received', group: 'Shared Signals', name: 'What has been ' +
-      'pushed here',
-    specs: ['rfc8935'],
-    what: 'Not an SSF endpoint either. Everything POST /ssf/receive has ' +
-          'taken, with what each one decoded to, whether its signature ' +
-          'verified and whether it carried the application/secevent+jwt ' +
-          'media type RFC 8417 section 2.3 specifies — a receiver that ' +
-          'dispatches on the type, and several do, drops a SET sent as a ' +
-          'plain JWT with no error anybody sees.' },
-
   { path: '/scim', group: 'SCIM', name: 'What the SCIM surface is',
     specs: ['rfc7642', 'rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616',
             'rfc7486', 'rfc4511', 'rfc4519'],
@@ -4114,6 +4110,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'offers no Digest and lets only a signed-in owner register a key); ' +
           'and active:false DISABLES THE ACCOUNT — the password-policy lock ' +
           'every door refuses. Add ?format=json.' },
+  { path: '/scim/description.js', group: 'SCIM',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /scim from the view its shell carries.' },
   { path: '/scim/v2/ServiceProviderConfig', group: 'SCIM',
     name: 'What this SCIM server supports',
     specs: ['rfc7643', 'rfc7644', 'rfc7235', 'rfc7617', 'rfc7616', 'rfc7486'],
@@ -4258,7 +4261,7 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'RFC 7486 section 7. A form-encoded POST carrying pub=<PEM public ' +
           'key> and (this service\'s own parameter) username=<who it is ' +
           'for>, answered with 201 and the Hobareg: regok header. ' +
-          'UNAUTHENTICATED on purpose, for the reason POST /tls/trust is: it ' +
+          'UNAUTHENTICATED on purpose: it ' +
           'is how a caller GETS a credential, so requiring one to reach it ' +
           'would make the scheme unusable by anybody who did not already ' +
           'have another. Anybody may register any key for any name — the ' +
@@ -4284,18 +4287,6 @@ const ENDPOINTS: EndpointEntry[] = [
   // the directory's LDAPS listener on 636, which serves the certificate below.
   // It is under LDAP because that is the protocol it speaks, and the only
   // reason to know it is here is the certificate — one anchor covers both.
-  { path: '/tls', group: 'TLS', name: 'What the TLS endpoint is',
-    specs: ['rfc8446', 'rfc5280'],
-    what: 'The certificate this service presents, the client truststore it ' +
-          'verifies against, and what this deployment does with a client ' +
-          'certificate. THE MAIN PORT ASKS EVERY CONNECTION FOR ONE AND ' +
-          'REQUIRES NONE, so presenting it is the client\'s own decision. ' +
-          'Two listeners of this family\'s own — 8443, which asked, and ' +
-          '9443, which required — were deleted on 2026-09-16 along with the ' +
-          'connection report they served. What a certificate is worth is ' +
-          'decided where it is USED: GET /tls/sign-in for a session, the ' +
-          'token endpoint for RFC 8705, /xacml and /scim/v2 for theirs. Add ' +
-          '?format=json.' },
   { path: '/tls/sign-in', group: 'TLS', name: 'Sign in with a client ' +
       'certificate',
     specs: ['rfc8446', 'rfc5280'],
@@ -4310,23 +4301,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'identity, and an application\'s certificate (an RFC 8705 ' +
           'credential, not a person) are each answered 200 with no session ' +
           'and the reason.' },
-  { path: '/tls/forwarded', group: 'TLS',
-    name: 'What a proxy told this service',
-    specs: ['rfc9700', 'rfc8446'],
-    what: 'NON-SPEC. The request as it ARRIVED and what was believed of it: ' +
-          'every forwarding header, every client-certificate header a proxy ' +
-          'might inject, whether global.trustProxy made this service believe ' +
-          'any of it, and what the effective base URL came out as — which ' +
-          'every issuer and every endpoint in both discovery documents is ' +
-          'built from, so if that is wrong everything a client reads is ' +
-          'wrong with it. RFC 9700 section 2.6 has two halves here: a proxy ' +
-          'MUST strip inbound security-sensitive headers before setting its ' +
-          'own, which this service cannot do for it, and an application must ' +
-          'not BELIEVE them unless a proxy is really there, which is what ' +
-          'the setting is. NO CLIENT CERTIFICATE IS EVER READ FROM A HEADER ' +
-          'in either mode — a certificate in a header is one anybody can ' +
-          'forge — and the ones a request carried are listed so that ' +
-          'ignoring them is visible rather than silent. Add ?format=json.' },
   { path: '/tls/server-certificate', group: 'TLS', name: 'The server ' +
       'certificate (PEM)',
     specs: ['rfc5280'],
@@ -4353,31 +4327,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'copy of it stays valid — hence Cache-Control: no-store. It ' +
           'publishes no private key. Fetch it into your own truststore ' +
           'rather than switching verification off.' },
-  { path: '/tls/trust', group: 'TLS', name: 'Trust a client certificate issuer',
-    specs: ['rfc5280'],
-    what: 'POST one or more PEM certificates — raw, or as the `certificates` ' +
-          'field of a form or JSON body — and client certificates chaining ' +
-          'to them verify from the next handshake onward ' +
-          '(tls.Server.setSecureContext; existing connections keep the ' +
-          'truststore they were made under). It holds no runtime anchor at ' +
-          'start (the service Root is trusted beside it, behind ' +
-          'tls.trustIssuedClientCertificates): the CA a test verifies is ' +
-          'usually generated in a browser minutes before the connection and ' +
-          'exists nowhere else, so no file could hold it. It is on the main ' +
-          'port, which asks for a client certificate and requires none, so it ' +
-          'is reachable before anything is trusted. POST only. A ' +
-          'DEVELOPMENT TEST CONTROL: it ' +
-          'needs no credential, so product mode refuses it and names the ' +
-          'gated doors — /admin/tls/trust and POST /admin-api/tls/trust/add.' },
-  { path: '/tls/trust/clear', group: 'TLS', name: 'Empty the client truststore',
-    specs: ['rfc5280'],
-    what: 'Removes every anchor — a tls.trustAnchorsFile one until the ' +
-          'next start — so only a certificate chaining to the service Root ' +
-          '(trusted beside the truststore while ' +
-          'tls.trustIssuedClientCertificates is on) still verifies. POST ' +
-          'only. A development test ' +
-          'control that product mode refuses; the gated doors remove one ' +
-          'anchor at a time and have no clear.' },
 
   // --- service ---
   { path: '/', group: 'Service', name: 'The front page',
@@ -4390,13 +4339,42 @@ const ENDPOINTS: EndpointEntry[] = [
           'list, it is generated, and a hand-written set of highlights on ' +
           'the front door would be a second copy of it that nothing checks. ' +
           'It was an unrouted path until 2026-08-24, so the answer to the ' +
-          'one URL a person types first was Express\'s "Cannot GET /".' },
+          'one URL a person types first was Express\'s "Cannot GET /". ' +
+          'Since #579 a static surface: this answers the shell, and ' +
+          '/home.js draws the card in the browser\'s language from ' +
+          '/home-api/front.' },
+  { path: '/home.js', group: 'Service', name: 'The front page\'s script',
+    specs: [],
+    what: 'NON-SPEC (#579). The front door\'s runtime and renderer in one ' +
+          'file over the public surfaces\' shared runtime, built by ' +
+          'build-typescript.sh (home/home-spa.js) and served precompressed. ' +
+          'Public: nothing in it is secret.' },
+  { path: '/home.css', group: 'Service',
+    name: 'The front page\'s stylesheet', specs: [],
+    what: 'NON-SPEC (#579). The front door\'s own rules over ' +
+          '/web/card.css: the wider card, the band behind the logo, the ' +
+          'version line, the warning and the link rows.' },
+  { path: '/home-api', group: 'Service', name: 'The front door API index',
+    specs: [],
+    what: 'NON-SPEC (#579). The front door API\'s operations, each with ' +
+          'the page it is the door of (mirrors), as /account-api lists its ' +
+          'own. Public and language-free.' },
+  { path: '/home-api/front', group: 'Service',
+    name: 'The front page\'s view', specs: [],
+    what: 'NON-SPEC (#579). Everything the front page draws, as facts and ' +
+          'no words: the name, the version and its build, whether a ' +
+          'sign-in checks the password and whether the console is gated, ' +
+          'the logo, and the five links as ids and addresses — the ' +
+          'console\'s and the portal\'s on the listener that answers them ' +
+          '(#472). Public, no-store; it lists no endpoints, as the page ' +
+          'never did.' },
   { path: '/logo.png', group: 'Service', name: 'The logo on the front page',
     specs: [],
-    what: 'The only image this service serves: the parent project\'s logo, ' +
-          'resized and reduced to 31 kB, read from disk once at startup. If ' +
-          'it could not be read this answers 404 in its own words rather ' +
-          'than Express\'s, and the front page is drawn without it.' },
+    what: 'The front page\'s logo, `home/assets/logo.png`, read from ' +
+          'disk once at startup. The front page has been a static page ' +
+          'since #579 and names it in `GET /home-api/front` (`logo`), ' +
+          'with `null` when it could not be read; this route then answers ' +
+          '404 in its own words rather than Express\'s.' },
   { path: '/realms', group: 'Service', name: 'The trust realm directory',
     specs: [],
     what: 'NON-SPEC, and deliberately UNGATED. Every trust realm this ' +
@@ -4417,6 +4395,29 @@ const ENDPOINTS: EndpointEntry[] = [
           'console\'s gate — the same argument every discovery document here ' +
           'rests on.' },
 
+  { path: '/web/card.css', group: 'Service',
+    name: 'The public surfaces\' card stylesheet', specs: [],
+    what: 'NON-SPEC (#570). The sign-in screen\'s card and the language ' +
+          'chooser\'s rules, as one stylesheet a static public surface\'s ' +
+          'shell links (common/web_card_css.ts). Answered on every ' +
+          'listener; an address carrying this build\'s ?v= is cached for ' +
+          'good.' },
+  { path: '/web/locales/catalogs.json', group: 'Service',
+    name: 'The locale catalog index', specs: ['bcp47'],
+    what: 'NON-SPEC (#570). Which catalogs exist (tag, endonym, status, the ' +
+          'base an overlay extends) and which locales the language chooser ' +
+          'offers — common/locales/catalogs.json, for a static surface\'s ' +
+          'runtime to negotiate the page\'s language in the browser in ' +
+          '#539\'s order. Public, on every listener, cached for good under ' +
+          'this build\'s ?v=.' },
+  { path: '/web/locales/:ns/:file', group: 'Service',
+    name: 'One namespace\'s messages in one catalog', specs: ['bcp47'],
+    what: 'NON-SPEC (#570). The messages a static surface draws, as ' +
+          'common/i18n.ts loaded them: <namespace>/<catalog>.json, a flat ' +
+          'object key to ICU-subset message. An unknown namespace, catalog ' +
+          'or file name is a 404 (STS-I18N-0012) — nothing is read from ' +
+          'disk by a requested name; a known pair with no file is {}. ' +
+          'Errors are not in any catalog: they stay English (#539).' },
   { path: '/healthcheck', group: 'Service', name: 'Health check',
     specs: [], what: 'Liveness only. Answers 200 with a JSON message; used ' +
                      'by the compose healthcheck.' },
@@ -4495,6 +4496,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'SPIRE Server API, whose TCP port is MUTUAL TLS with an X509-SVID, ' +
           'unconditionally — because what comes out of these surfaces is a ' +
           'credential another service will believe. Add ?format=json.' },
+  { path: '/spiffe/description.js', group: 'SPIFFE',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /spiffe from the view its shell carries.' },
   { path: '/spiffe/bundle', group: 'SPIFFE', name: 'The trust bundle',
     specs: ['spiffe-bundle'],
     what: 'THE FEDERATION SURFACE, and the whole of it: one GET returning a ' +
@@ -4566,213 +4574,38 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/portal', group: 'User portal',
     name: 'A person\'s own account',
     specs: [],
-    what: 'NON-SPEC. THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE ' +
-          'PERSON LOOKING AT IT. Every other browser surface here is for ' +
-          'somebody else — the sign-in screen is a step in another ' +
-          'protocol\'s flow, the consent screen asks one question and ' +
-          'leaves, /admin is for an operator and is gated on two roles. This ' +
-          'shows a person what this identity provider knows about them and ' +
-          'lets them change how they authenticate: their password, and their ' +
-          'security keys and whether each is a primary credential or a ' +
-          'second factor. **IT IS FOUR PAGES BEHIND A NAVIGATION COLUMN OF ' +
-          'ITS OWN SINCE 2026-09-06** and this path is the OVERVIEW — who ' +
-          'you are, a summary of how you sign in, and the wider of the two ' +
-          'sign-outs. The password form and the security-key list moved to ' +
-          'pages of their own, and /portal/applications joined them. The ' +
-          'column is not the console\'s: that shell draws forty ' +
-          'administrative pages, a realm chooser and a gate asking whether ' +
-          'this person holds Admin Read, none of which belongs in front of ' +
-          'somebody managing their own account. IT IS A SEPARATE APPLICATION ' +
-          'FROM THE ADMIN CONSOLE and shares nothing with it but the ' +
-          'session, because there is one answer here to "who is this ' +
-          'browser" and a second would eventually disagree. THE IDENTITY ' +
-          'COMES FROM THE SESSION AND NEVER FROM THE REQUEST — no route here ' +
-          'takes a username, an id or a DN from a query string or a body, so ' +
-          'there is no parameter for anybody to change (OWASP A01). Every ' +
-          'form carries a CSRF token, changing a password requires the ' +
-          'current one even though the person is signed in, and both are ' +
-          'rate limited.' },
-  { path: '/portal/email', group: 'User portal',
-    name: 'Your email address, its verification, and what was sent to you',
+    what: 'NON-SPEC. THE FIRST SURFACE IN THIS SERVICE THAT BELONGS TO THE ' +
+          'PERSON LOOKING AT IT, and a STATIC APPLICATION since #568: this ' +
+          'path and every one under it answer the same document, which ' +
+          'loads the portal\'s script and stylesheet. The script signs in ' +
+          'as the public client sts-user-portal (PKCE, DPoP-bound tokens ' +
+          'held in memory, account:manage) and draws every page in the ' +
+          'browser from /account-api, and every act it performs is an ' +
+          '/account-api operation — the admin console\'s pattern (#446). ' +
+          'Nothing here is gated: the document carries no fact and no ' +
+          'credential, and the API is the only gate. A method other than ' +
+          'GET is answered 404. A bare /portal on a service with realms asks ' +
+          'which realm first (common/realm_chooser.ts).' },
+  { path: '/portal/*', group: 'User portal', name: 'Every portal page',
     specs: [],
-    effect: 'sends a verification link, or declines optional messages',
-    what: 'NON-SPEC (#63). Signed in. The address on the person\'s own ' +
-          'entry and whether it is verified, a button that mails a ' +
-          'single-use verification link to it, the categories of message ' +
-          'with the one that may be declined (notifications; security ' +
-          'notices and requested links may not), and what this service ' +
-          'sent them — never a body. CSRF-protected; the identity is the ' +
-          'session\'s.' },
-  { path: '/portal/verify-email', group: 'User portal',
-    name: 'Follow an address verification link',
-    specs: [],
-    effect: 'records the address as verified and spends the link',
-    what: 'NON-SPEC (#63). Unauthenticated: the TOKEN is the credential, ' +
-          'as on /portal/activate. The GET spends nothing and draws a ' +
-          'button, so a mail scanner that opens every link verifies ' +
-          'nothing; the POST records stsMailVerified as the address the ' +
-          'link was sent to, if the entry still has it. Hashed at rest, ' +
-          'single use, valid for mail.verificationTtlMinutes, rate limited, ' +
-          'and every failure is one sentence.' },
-  { path: '/portal/forgot-password', group: 'User portal',
-    name: 'Ask for a password reset link by mail',
-    specs: [],
-    effect: 'mails a /portal/reset-password link to the account\'s address',
-    what: 'NON-SPEC (#63). Unauthenticated; linked from the sign-in screen. ' +
-          'A person names their account by username or by the address on ' +
-          'it, and a single-use reset link is mailed to that address (a ' +
-          'verified one, by default) — the password they have keeps ' +
-          'working until it is used. The answer is ONE SENTENCE whatever ' +
-          'happened and is sent before the work is done. RISC ' +
-          'recovery-activated is sent with the person as the initiating ' +
-          'entity. Rate limited per account and per address; 404 where it ' +
-          'is not offered (mail.selfServiceReset, a transport, product ' +
-          'mode).' },
-  { path: '/portal/reset-password', group: 'User portal',
-    name: 'Spend a password reset link and choose a new password',
-    specs: [],
-    effect: 'sets a new password, clears pwdReset and spends the link',
-    what: 'NON-SPEC. THE SECOND UNAUTHENTICATED PAGE OF THE PORTAL ' +
-          '(2026-09-13), and like /portal/activate it takes a username ' +
-          'because nobody is signed in and what authorises it is the TOKEN. ' +
-          'An administrator issued the link from the person\'s /admin/users ' +
-          'page or POST /admin-api/users/issue-password-reset, which removed ' +
-          'the password they had and signed them out of everything. The link ' +
-          'is hashed at rest, single use, valid for ' +
-          'security.passwordResetTtlMinutes, rate limited on the GET and the ' +
-          'POST, and answers every failure with one sentence. The new ' +
-          'password goes through credentials.setPassword(), so the realm\'s ' +
-          'password policy and history apply in product mode; it is spent ' +
-          'when the password is stored, and a CAEP credential-change ' +
-          '(password, create) is sent. It signs nobody in: the page links to ' +
-          '/portal, whose sign-in asks for any second factor as usual.'
-  },
-  { path: '/portal/activate', group: 'User portal',
-    name: 'Spend an activation link and set up a credential',
-    specs: [],
-    effect: 'sets a password and/or enrols a security key, and spends the link',
-    what: 'NON-SPEC. THE UNAUTHENTICATED HALF OF THE PORTAL, and the only ' +
-          'route on it that takes an identity from the request — because ' +
-          'nobody is signed in yet and what authorises it is the TOKEN, ' +
-          'which is a credential. Somebody provisioned through /admin-api, ' +
-          'SCIM or an LDAP add arrives with no way to authenticate; an ' +
-          'administrator issues them a single-use, time-limited URL and they ' +
-          'choose a password, a security key, or both — and for a key, ' +
-          'whether it is a primary credential or a second factor. The link ' +
-          'is HASHED at rest like a password, rate limited at both the GET ' +
-          'and the POST, and SPENT WHEN THE SETUP FINISHES rather than when ' +
-          'it is opened, because a link burned by a mail scanner or a ' +
-          'browser prefetch would strand the person it was for. IT DOES NOT ' +
-          'SIGN ANYBODY IN: spending it proves possession of a link, not of ' +
-          'the credential just configured, so the last step is to go and use ' +
-          'it. Every way it can fail answers the same sentence, so the page ' +
-          'cannot be used to discover which usernames have an activation ' +
-          'outstanding.' },
-  { path: '/portal/callback', group: 'User portal',
-    name: 'The portal\'s OIDC redirect URI', specs: ['oidc'],
-    what: 'WHERE THE USER PORTAL COMES BACK FROM THIS SERVICE\'S OWN ' +
-          'AUTHORIZATION SERVER (2026-09-06). The portal is a REGISTERED ' +
-          'CLIENT — `sts-user-portal`, seeded under ou=applications in EVERY ' +
-          'realm, because the portal reads the ambient realm\'s session — ' +
-          'and it signs people in with the ordinary authorization code flow ' +
-          'rather than by reading the sign-on session directly. Code and ' +
-          'state arrive here, the code is redeemed at /oauth2/token with the ' +
-          'client secret and a PKCE verifier, the ID Token is verified ' +
-          'against /oauth2/jwks, and the session the portal then holds is ' +
-          'ITS OWN, in its own cookie, derived from the sign-on session and ' +
-          'ended with it. It grants nothing on its own: the state must be ' +
-          'one this service minted, it is single-use, and every refusal is ' +
-          'drawn rather than redirected.',
-    coverage: 'full — the authorization code flow with PKCE and a confirmed ' +
-              'nonce, as a client. The refresh token is discarded and the ' +
-              'access token is never presented anywhere: the flow buys one ' +
-              'thing here, an ID Token saying who signed in.' },
-  { path: '/portal/password', group: 'User portal',
-    name: 'Change your own password',
-    specs: [],
-    effect: 'replaces the password on the signed-in person\'s own entry',
-    what: 'NON-SPEC. A PAGE AND A HANDLER ON ONE PATH SINCE 2026-09-06: the ' +
-          'GET draws the form, which used to be a card on /portal, and the ' +
-          'POST answers it. One path rather than two because a form and the ' +
-          'handler that answers it living on separate addresses is a ' +
-          'distinction nobody could state a reason for. Four controls in one ' +
-          'handler and each is a different item on the OWASP list: the CSRF ' +
-          'token this session\'s forms carry, a rate limit so the ' +
-          'current-password check is not an oracle, RE-AUTHENTICATION (the ' +
-          'current password is required even though the person is signed in, ' +
-          'because a browser left open on a shared machine must not be an ' +
-          'account takeover), and the identity taken from the session rather ' +
-          'than the body.' },
-  { path: '/portal/applications', group: 'User portal',
-    name: 'Applications you can sign in to',
-    specs: ['rfc6749', 'oidc', 'saml2', 'ws-federation'],
-    what: 'NON-SPEC. THE FIRST PAGE IN THIS SERVICE TO PUT THE APPLICATION ' +
-          'REGISTRY AND THE ISSUANCE POLICY TOGETHER AND ANSWER A QUESTION A ' +
-          'PERSON RATHER THAN AN OPERATOR WOULD ASK (2026-09-06): where will ' +
-          'this identity provider actually sign me in? Every row was decided ' +
-          'by `common/issuance_gate.js` — THE SAME CALL the token endpoint, ' +
-          'both SAML profiles, WS-Federation, WS-Trust and the KDC make ' +
-          'before they issue anything — so this page and those endpoints ' +
-          'cannot disagree. Working the answer out here instead, from ' +
-          '`appRequiredRole` and the roles the person holds, would have been ' +
-          'a SECOND implementation of the rule and the first thing to ' +
-          'diverge the moment somebody edited the issuance policy on ' +
-          '/admin/xacml/policies. It asks once per application per distinct ' +
-          'issuance kind, because `kind` becomes the XACML action-id and a ' +
-          'policy may legitimately say something different about an ID Token ' +
-          'from what it says about a SAML assertion. IT LISTS WHAT THE ' +
-          'POLICY PERMITS AND NAMES NOTHING IT DOES NOT — the refused ' +
-          'entries are counted, and so are the registry entries that are not ' +
-          'sign-in destinations at all (a Shared Signals receiver, a SCIM ' +
-          'client, an LDAP binder, a SPIFFE workload). It is a DRY RUN and ' +
-          'says so to the PEP: nothing is issued, so nothing is written to ' +
-          'the audit log as a refusal and nothing is counted on ' +
-          '/admin/xacml/monitor as a decision this service acted on. ' +
-          'Paginated, and it stops at 1,000 entries — evaluating a policy ' +
-          'per row happens on the one thread that answers every socket this ' +
-          'service holds. THERE IS NO LAUNCH BUTTON, deliberately: this ' +
-          'service implements identity-provider-initiated sign-on in none of ' +
-          'the four browser profiles, so a link would have to invent a ' +
-          'request the application never asked for.',
-    coverage: 'full for what it claims — it reports the issuance decision ' +
-              'and does not start a sign-in. What it cannot show is an ' +
-              'application nobody has registered: this registry records an ' +
-              'application on FIRST SIGHT, so something no client has ever ' +
-              'presented an identifier for and no operator has created is ' +
-              'not there to be listed.' },
-  { path: '/portal/signals', group: 'User portal',
-    name: 'Your security activity',
-    specs: ['ssf', 'caep', 'risc'],
-    what: 'NON-SPEC PAGE OVER A SPECIFIED FEED. THIS PORTAL IS A REGISTERED ' +
-          'SHARED SIGNALS RECEIVER SINCE 2026-09-10: it has a stream of its ' +
-          'own (`sts-user-portal`), seeded per trust realm, asking for every ' +
-          'CAEP and every RISC event type, delivered by RFC 8935 PUSH to the ' +
-          'endpoint below. This page draws what arrived, narrowed to the ' +
-          'events whose subject is the SIGNED-IN PERSON. That narrowing is ' +
-          'the whole of the page\'s security: one stream carries events ' +
-          'about everybody this portal serves, because a receiver is told ' +
-          'about the people it serves and there is one of it, so the filter ' +
-          'is on the way OUT and the person is composed from the session and ' +
-          'from nothing else. IT FAILS CLOSED — an identifier this service ' +
-          'cannot resolve to an account (a phone number, an opaque id it did ' +
-          'not compose) is NOT shown, because showing one person another ' +
-          'person\'s account lockout is a disclosure and failing to show ' +
-          'somebody one of their own is an incomplete page. THE LIST HAS NO ' +
-          'CONTROL: a person may not clear the record of what was said ' +
-          'about their own account, so the Clear is the console\'s at ' +
-          '/admin/signals. THE ONE CONTROL (#146, 2026-09-22) is RISC ' +
-          'section 2.8\'s: the POST moves the account holder\'s own ' +
-          'participation — opt-out-initiated, opt-out-cancelled, opt-in — ' +
-          'only along the state diagram, and opt-out-effective is sent by ' +
-          'the risc.opt-out-effective scheduler job after ' +
-          'risc.optOutDelayHours, never by the person.',
-    coverage: 'full for what it claims. It shows every delivered event this ' +
-              'service could match to the signed-in person and says, on the ' +
-              'page, that a subject it cannot match is left out rather than ' +
-              'guessed at. It is not the transmitter\'s record: what this ' +
-              'service SENT is /admin/ssf, and what it BELIEVES about a ' +
-              'session or an account is /admin/caep-sessions and ' +
-              '/admin/risc-accounts.' },
+    what: 'NON-SPEC. The same document as /portal, for every portal path ' +
+          '(#568): the path names the page and the browser reads it, so a ' +
+          'deep link — an activation or reset link, /portal/device?' +
+          'user_code=, a CIBA request — and the history work. ' +
+          '/portal/callback is where a sign-in comes back with a code; ' +
+          'serving the shell registers it on the portal\'s client entry ' +
+          '(learnt in development, refused in product unless registered). ' +
+          'The pages an activation, reset or verification link opens are ' +
+          'drawn for nobody, from operations that take no token.' },
+  { path: '/portal/portal.js', group: 'User portal',
+    name: 'The portal\'s script', specs: [],
+    what: 'NON-SPEC. The static portal (#568): its runtime, every page\'s ' +
+          'renderer and its WebAuthn ceremonies in one file, built by ' +
+          'build-typescript.sh and served precompressed. Public, like the ' +
+          'document: nothing in it is secret.' },
+  { path: '/portal/portal.css', group: 'User portal',
+    name: 'The portal\'s stylesheet', specs: [],
+    what: 'NON-SPEC. The portal\'s one stylesheet (#568).' },
   { path: '/portal/signals/receive', group: 'User portal',
     name: 'The portal\'s Shared Signals receive endpoint',
     specs: ['ssf', 'rfc8935', 'rfc8417'],
@@ -4804,97 +4637,6 @@ const ENDPOINTS: EndpointEntry[] = [
               'implement RFC 8936 poll at this end — this receiver is a push ' +
               'receiver — and nothing here retries, which is the ' +
               'transmitter\'s side of the same deliberate omission.' },
-  { path: '/portal/keys', group: 'User portal',
-    name: 'Your passkeys',
-    specs: ['webauthn'],
-    what: 'NON-SPEC. The passkey page (#470), drawn to the passkey ' +
-          'management guidelines: one Passkeys heading over two groups — ' +
-          'passkeys on your devices (backup eligible, or a platform ' +
-          'authenticator) and passkeys on security keys — each row an icon, ' +
-          'a name (the owner\'s, else the provider FIDO MDS names where a ' +
-          'BLOB is loaded, else a short credential-manager table), Created, ' +
-          'Last used, Rename and Remove, and a Details fold with the role, ' +
-          'algorithm, attestation, AAGUID, backup state and transports. Two ' +
-          'calls to action, Create a passkey and Use a security key, begin ' +
-          'a registration ceremony (WebAuthn Level 3 section 7.1) with ' +
-          'hints (section 5.4.8) and excludeCredentials; the new passkey ' +
-          'is offered a nickname afterwards. Where no other realm is ' +
-          'defined the page sends the Signal API\'s accepted credentials ' +
-          'and user details (section 5.1.10).' },
-  { path: '/portal/rename-key', group: 'User portal',
-    name: 'Rename one of your own passkeys',
-    specs: [],
-    effect: 'changes the name of a WebAuthn credential on the person\'s ' +
-            'entry',
-    what: 'NON-SPEC (#470). The credential id comes from the body and the ' +
-          'USERNAME does not, /portal/remove-key\'s rule: the id is looked ' +
-          'up among this person\'s own keys. At most 60 characters and no ' +
-          'control characters; an empty name restores the default (the ' +
-          'provider\'s or the group\'s). Audited; no CAEP event, because a ' +
-          'name says nothing about what the key proves.' },
-  { path: '/portal/language', group: 'User portal',
-    name: 'Set or remove the language on your own entry',
-    specs: [],
-    effect: 'writes or removes preferredLanguage on the person\'s entry',
-    what: 'NON-SPEC (#539). The Overview\'s Language and region card posts ' +
-          'here: signed in, CSRF, and the USERNAME from the session, ' +
-          '/portal/remove-key\'s rule. A BCP 47 tag a catalog answers is ' +
-          'written to preferredLanguage (RFC 2798 section 2.7) through the ' +
-          'person editor and set as the language chooser\'s cookie; an ' +
-          'empty one removes the attribute, so the browser\'s ' +
-          'Accept-Language decides again. A tag no catalog answers is ' +
-          'refused (STS-I18N-0008). Answers 303 to /portal?done=language.' },
-  { path: '/portal/mfa', group: 'User portal',
-    name: 'Your authenticator app',
-    specs: ['rfc6238', 'rfc4226'],
-    effect: 'enrols or removes the signed-in person\'s own one-time password ' +
-            'secret',
-    what: 'NON-SPEC page over RFC 6238. THE FIRST PAGE IN THIS SERVICE THAT ' +
-          'HANDS SOMEBODY A CREDENTIAL rather than taking one: it mints a ' +
-          'shared secret, draws it as a QR code (an SVG this server ' +
-          'rendered, as a data: URI, because every page of this portal is ' +
-          'script-src \'none\') and as a transcribable base32 string beside ' +
-          'it, and asks for a code back. **TWO STEPS, AND THE FIRST WRITES ' +
-          'NOTHING** — an unconfirmed secret on somebody\'s entry would be a ' +
-          'second factor they cannot produce, so nothing reaches the ' +
-          'directory until a code proves the app has it. One secret per ' +
-          'person and enrolling again REPLACES, because a six-digit code ' +
-          'names no credential and two secrets would mean trying both. The ' +
-          'identity is the session\'s and there is no parameter for it: a ' +
-          'username read from this body would let anybody signed in enrol ' +
-          'THEIR OWN app as somebody else\'s second factor, which is a ' +
-          'takeover rather than a leak.' },
-  { path: '/portal/certificates', group: 'User portal',
-    name: 'Your certificates: ACME and SCEP credentials, enrolled certificates',
-    specs: ['rfc8555', 'rfc7030', 'rfc8894'],
-    effect: 'makes, deletes and revokes the signed-in person\'s own ' +
-            'enrollment credentials and certificates',
-    what: 'NON-SPEC page. Where a person makes an ACME External Account ' +
-          'Binding key (RFC 8555 section 7.3.4) or a SCEP challenge password ' +
-          '(RFC 8894 section 2.2) FOR THEMSELVES — each bound to their own ' +
-          'directory entry, shown once on a 200 page — lists the certificates ' +
-          'ACME, EST and SCEP issued them, and revokes one. The identity is ' +
-          'the session\'s; nothing on the form names a person.' },
-  { path: '/portal/delegate', group: 'User portal',
-    name: 'Who may act for you — your RFC 8693 may_act',
-    specs: ['rfc8693'],
-    effect: 'names or clears the one party who may act for the signed-in ' +
-            'person (stsMayAct)',
-    what: 'NON-SPEC page (#108). A person names, by its DN, the one ' +
-          'person or ' +
-          'application who may act for them; every access token issued ' +
-          'about them then carries RFC 8693 section 4.4\'s may_act naming ' +
-          'that party, and a token exchange of one by anybody else is ' +
-          'refused invalid_request in every mode. The identity is the ' +
-          'session\'s; the form names only the delegate.' },
-  { path: '/portal/claim-sources', group: 'User portal',
-    name: 'Connected claim sources — linking a Claims Provider',
-    specs: ['oidc-claims-aggregation'],
-    effect: 'lists the realm\'s Claims Providers, links one by sending the ' +
-            'person to it, and unlinks one',
-    what: 'NON-SPEC page (#147): the setup phase of Claims Aggregation, ' +
-          'the person\'s. Link runs an authorization code flow with PKCE ' +
-          'to the provider.' },
   { path: '/portal/claim-sources/callback', group: 'User portal',
     name: 'Connected claim sources — the provider\'s answer',
     specs: ['oidc-claims-aggregation'],
@@ -4902,245 +4644,6 @@ const ENDPOINTS: EndpointEntry[] = [
             'from its signed claims, and seals the tokens on their entry',
     what: 'The redirect URI a Claims Provider sends the person back to ' +
           '(#147).' },
-  { path: '/portal/ciba', group: 'User portal',
-    name: 'Sign-in requests — answering OpenID Connect CIBA',
-    specs: ['oidc-ciba'],
-    effect: 'lists the CIBA requests waiting for the signed-in person, ' +
-            'approves or denies one, and sets their user code',
-    what: 'NON-SPEC page (#131): CIBA\'s authentication device. Each ' +
-          'request shows its client, scopes and binding_message; an ' +
-          'approval that asks for more than the session proved offers a ' +
-          'stronger sign-in first.' },
-  { path: '/portal/device', group: 'User portal',
-    name: 'Sign in a device — RFC 8628\'s verification URI',
-    specs: ['rfc8628'],
-    effect: 'finds the device waiting with the code typed, shows its ' +
-            'client and scopes, and approves or denies it',
-    what: 'NON-SPEC page (#150): the verification URI. A code, typed or ' +
-          'prefilled, only brings the request up; approving is a second ' +
-          'act (section 5.4).' },
-  { path: '/portal/devices', group: 'User portal',
-    name: 'Your devices — ou=devices, and Native SSO',
-    specs: ['oidc-native-sso', 'webauthn'],
-    effect: 'lists the signed-in person\'s devices and removes one; ' +
-            'registers one by a key proof over a challenge (a JWS, an ' +
-            'Android Key Attestation, an Apple App Attest statement) or by ' +
-            'linking a WebAuthn platform credential with a fresh assertion',
-    what: 'NON-SPEC page (#130, #164 phase 2). The device entries the ' +
-          'person owns, their keys and attestation, the applications that ' +
-          'used each, and whether its Native SSO secret is live. The ' +
-          'identity is the session\'s; the forms name only the device or ' +
-          'the credential. The link step runs /authn/webauthn.js.' },
-  { path: '/portal/copy.js', group: 'User portal',
-    name: 'Recovery codes Copy script', specs: [],
-    what: 'NON-SPEC (#224). The script behind the Copy all codes button on ' +
-          '/portal/mfa, loaded only by the one response that shows a freshly ' +
-          'generated set of recovery codes: it writes the read-only box of ' +
-          'codes, one per line, to the clipboard. It sends nothing; with it ' +
-          'blocked the button stays hidden and the box is copied by hand.' },
-  { path: '/portal/devices/challenge', group: 'User portal',
-    name: 'Device enrolment challenge (JSON)',
-    specs: [],
-    effect: 'issues a challenge bound to the portal session, for a device ' +
-            'app to sign or attest',
-    what: 'NON-SPEC (#164 phase 2). application/json only. Answers ' +
-          '{ challenge, audience, typ, expires_at, proof_endpoint }; one ' +
-          'per session, answered once, devices.challengeTtlSeconds.' },
-  { path: '/portal/devices/proof', group: 'User portal',
-    name: 'Device key proof (JSON)',
-    specs: [],
-    effect: 'registers the signed-in person\'s device by a JWS over the ' +
-            'challenge, or an Apple App Attest statement',
-    what: 'NON-SPEC (#164 phase 2). application/json only. A ' +
-          'device-key-proof+jwt JWS (an Android Key Attestation in x5c) ' +
-          'or { app_attest: { key_id, attestation } }; 201 with the ' +
-          'device, or 400 with the reason. Product refuses a key with no ' +
-          'attestation that chained to a trusted root.' },
-  { path: '/portal/self-issued', group: 'User portal',
-    name: 'Your self-issued IDs — the SIOPv2 keys that sign you in',
-    specs: ['siopv2'],
-    effect: 'lists and removes the signed-in person\'s enrolled self-issued ' +
-            'subjects; "Enrol a wallet" starts a SIOPv2 request at ' +
-            '/authn/wallet?siop=1&enrol=1',
-    what: 'NON-SPEC page (#129). A person enrols a wallet key by PROVING ' +
-          'it — their wallet answers a SIOPv2 request from the session ' +
-          'they already hold, and the verified subject is enrolled for ' +
-          'them — never by typing a DID. The identity is the session\'s; ' +
-          'the removal form names only the subject.' },
-  { path: '/portal/app-passwords', group: 'User portal',
-    name: 'Your app passwords, for the doors that take only a password',
-    specs: ['rfc4513', 'rfc7617', 'rfc7030'],
-    effect: 'makes and revokes the signed-in person\'s own app passwords',
-    what: 'NON-SPEC page (#101). In product mode a person who holds a ' +
-          'second factor, or of whom one is required, is refused their own ' +
-          'password at the five doors that cannot ask for one — an LDAP ' +
-          'bind (RFC 4513), a WS-Security UsernameToken, SCIM and SSF HTTP ' +
-          'Basic (RFC 7617) and EST Basic (RFC 7030 section 3.2.3). Here ' +
-          'they make an APP PASSWORD for such a client instead: generated, ' +
-          'SHOWN ONCE on the 200 that answers the form, stored as a scrypt ' +
-          'hash, named, and scoped to one or more of those doors — accepted ' +
-          'there and NEVER at a browser sign-in. It lists each one with its ' +
-          'last use and revokes one (a CAEP credential-change). The identity ' +
-          'is the session\'s; nothing on the form names a person. A real ' +
-          'submit button and no script.' },
-  { path: '/portal/kerberos', group: 'User portal',
-    name: 'Your Kerberos principal, and a keytab from your own password',
-    specs: ['rfc4120', 'rfc3961'],
-    effect: 'makes the signed-in person a keytab for their own principal, ' +
-            'shown once; changes nothing on the account',
-    what: 'NON-SPEC page (#59). Shows the signed-in person\'s Kerberos ' +
-          'principal in this realm and the PUBLIC half of their keys (kvno, ' +
-          'enctypes), and makes them an MIT keytab (format 0x502) from their ' +
-          'CURRENT PASSWORD, typed on the form and verified first — which is ' +
-          'also the re-authentication a password-equivalent export needs, ' +
-          'counted against the password change\'s budget. RFC 3961 ' +
-          'string-to-key over that password and the account\'s salt, at the ' +
-          'current kvno only, checked against the key the KDC holds before ' +
-          'it is handed over; a stored key is never read back out. SHOWN ' +
-          'ONCE on the 200 that answers the form, no-store, and not kept. In ' +
-          'development mode the KDC keys every user from krb5.userPassword, ' +
-          'so the keytab holds that key and the page says so. The identity ' +
-          'is the session\'s; nothing on the form names a person. A real ' +
-          'submit button and no script.' },
-  { path: '/portal/sign-ins', group: 'User portal',
-    name: 'Your recent sign-ins, and whether each was you',
-    specs: [],
-    effect: 'records "this was me" or "this wasn\'t me" on one of the ' +
-            'signed-in person\'s own assessed sign-ins; "not me" puts their ' +
-            'risk at HIGH, which ends everything they hold',
-    what: 'NON-SPEC page (#62 P6). The signed-in person\'s own risk ' +
-          'assessments of the last thirty days — when, from where (the city, ' +
-          'country and network the datasets named), with what browser and ' +
-          'system, through which door, at what level — each with two ' +
-          'buttons until answered. "This was me" is recorded for ' +
-          'calibration and lowers the person\'s standing to LOW only when ' +
-          'said from another, low-risk session. "This wasn\'t me" puts the ' +
-          'standing at HIGH (reported-not-me), which the risk-response ' +
-          'policy answers — every session ended, RISC told the credential is ' +
-          'compromised. The identity is the session\'s; the assessment ' +
-          'named must be the person\'s own. Real submit buttons and no ' +
-          'script.' },
-  { path: '/portal/consents', group: 'User portal',
-    name: 'What you have agreed applications may ask for, and withdrawing it',
-    specs: ['rfc6749', 'oidc'],
-    effect: 'withdraws one of the signed-in person\'s own consents, or ' +
-            'everything they agreed to for one application, and revokes ' +
-            'every token issued under it',
-    what: 'NON-SPEC page for a spec behaviour (#172). The signed-in ' +
-          'person\'s own recorded consents — oauthConsent on their entry — ' +
-          'one card per application, each scope with a Withdraw form and ' +
-          'the application with a Withdraw-everything form. A withdrawal is ' +
-          'what /admin/consent\'s revoke-consent and ' +
-          'revoke-application-consent do, through the same functions: the ' +
-          'tokens the application holds for them under it are revoked on ' +
-          'every node, and the instant is recorded, so a refresh token ' +
-          'granted before it is refused even after they agree again (RFC ' +
-          '6749 sections 1.5 and 6, OIDC Core section 11 for ' +
-          'offline_access). A scope under global consent is not theirs to ' +
-          'withdraw and is not listed. The identity is the session\'s; the ' +
-          'form names only an application and a scope, checked against the ' +
-          'person\'s own entry. Paged by application. Real submit buttons ' +
-          'and no script.' },
-  { path: '/portal/gnap', group: 'User portal',
-    name: 'The GNAP grants you gave, and revoking one',
-    specs: ['rfc9635'],
-    effect: 'revokes one of the signed-in person\'s own GNAP grants and ' +
-            'every token issued under it',
-    what: 'NON-SPEC page for a spec behaviour (#432). Every GNAP grant the ' +
-          'signed-in person is the resource owner of — approved by them, ' +
-          'or acted on by a trusted client presenting a verified assertion ' +
-          'about them — with the access rights it holds (limits included), ' +
-          'the tokens issued under it (label, format, expiry, state; never ' +
-          'a value), its own lifetime and, once finalized, why: issued, ' +
-          'revoked, rejected or expired. Revoke is the client\'s RFC 9635 ' +
-          'section 5.4 act performed for them, through the one path the ' +
-          'client\'s DELETE and the console take: the tokens revoked, the ' +
-          'grant finalized as revoked, CAEP session-revoked sent. The ' +
-          'identity is the session\'s; the form names only a grant, ' +
-          'checked against the person\'s own. The same view as the ' +
-          'GNAP grants tab of /admin/users and gnapGrants in ' +
-          '/admin-api/users?user=. Under cells, this cell\'s grants, and ' +
-          'the page says so. Paged; real submit buttons and no script.' },
-  { path: '/portal/signing-key', group: 'User portal',
-    name: 'Your own RFC 7523 signing key',
-    specs: ['rfc7521', 'rfc7523', 'rfc5280'],
-    effect: 'issues, replaces or removes the signed-in person\'s own ' +
-            'assertion signing key pair',
-    what: 'NON-SPEC page over RFC 7523 section 2.1. THE SECOND PAGE IN THIS ' +
-          'PORTAL THAT HANDS SOMEBODY A CREDENTIAL rather than taking one, ' +
-          'and the only door in this service where the person a key pair is ' +
-          'FOR is the one who issues it: a leaf signed by this realm\'s ' +
-          'Issuing CA, written onto their own entry as stsAssertion*, with ' +
-          'the private half SHOWN ONCE on the page that comes back and ' +
-          'sealed at rest afterwards — nothing here, on /admin/pki or in ' +
-          '/admin-api opens it again, so generating replaces and there is no ' +
-          'second chance at a copy. **THE KEY\'S WHOLE AUTHORITY IS *this is ' +
-          'me***: an assertion signed with it that names anybody else as ' +
-          '`sub` is refused, on the registered key and on a certificate ' +
-          'presented in x5c alike, because the leaf carries ' +
-          'urn:sts:person:<name> as a URI subjectAltName. The identity is ' +
-          'the session\'s and the form has no name field — one would let ' +
-          'anybody signed in write a key pair onto somebody else\'s entry. ' +
-          'Generate is RATE LIMITED where nothing else on these pages is: an ' +
-          'RSA key pair is CPU on the one thread every protocol here answers ' +
-          'on. `pki.personSelfService` turns the offer off without touching ' +
-          'a key anybody already holds, and a realm with no certificate ' +
-          'authority draws no button at all.' },
-  { path: '/portal/signout', group: 'User portal',
-    name: 'Sign out of the portal', specs: [],
-    effect: 'ends the portal session and the sign-on session behind it',
-    what: 'NON-SPEC. The Sign out button in the corner of every portal page ' +
-          '— the account pages\' own shell draws it — and the same ' +
-          'two-session act the console\'s is: this portal is a relying party ' +
-          'with a session of its own, so ending it alone would leave the ' +
-          'sign-on session live and the next page would sign the person ' +
-          'straight back in. It carries the CSRF token every form here does, ' +
-          'and a sign-out asked of a browser with no session is answered ' +
-          'rather than refused — somebody signed out already is in the state ' +
-          'they were asking for. **It is the narrower of the two sign-outs ' +
-          'on that page**: /logout, at the foot of it, ends every session ' +
-          'and credential this identity holds in every protocol.' },
-  { path: '/portal/remove-key', group: 'User portal',
-    name: 'Remove one of your own passkeys',
-    specs: [],
-    effect: 'removes an enrolled WebAuthn credential from the person\'s entry',
-    what: 'NON-SPEC. The credential id comes from the body and the USERNAME ' +
-          'does not, which is what keeps it safe: the id is looked up among ' +
-          'this person\'s own keys, so one belonging to somebody else ' +
-          'matches nothing. IT REFUSES TO REMOVE THE LAST WAY IN — a person ' +
-          'with no password whose only primary key this is would be locked ' +
-          'out by their own click, and an identity provider that allows that ' +
-          'has a support queue rather than a security control.' },
-  // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13). Its own listener is NOT on
-  // this router — it is an express app of its own on `debugger.port`, the
-  // blind spot the KDC's and the directory's sockets are — so it is described
-  // here, in the row for the page that reports it.
-
-
-
-  // ---------------------------------------------------------------------------
-  // THE EIGHT PROTOCOL SETTINGS PAGES, added 2026-08-27 when every family's
-  // appconfig rows moved off /admin/config and onto the page for the family
-  // they configure. Each of these families had settings and no page, which is
-  // why they are new rather than the settings having been added to something
-  // that already existed. They are `group: 'Admin'` like every other console
-  // page: what they configure is a protocol, but what they ARE is a page of
-  // this console.
-  // ---------------------------------------------------------------------------
-
-  // --- Management API ---
-  //
-  // NON-SPEC, all of it, and it is the /admin console's own surface over JSON:
-  // every page's `?format=json` view and every one of its forms, at a path a
-  // script can use. The rows are short on purpose — the OpenAPI document at
-  // /admin-api/openapi.json carries the detail, is built from the same table
-  // that registers these routes, and cannot go stale in the way a hand-written
-  // description can.
-  //
-  // The four POST rows are ONE express pattern each, behind every action in
-  // them: `/admin-api/tokens/:action` serves six real URLs. That is why they
-  // are listed with the parameter rather than as twenty-four rows, and why they
-  // are not linkable here.
   { path: '/admin-api', group: 'Management API', name: 'Management API index',
     specs: ['openapi'],
     what: 'NON-SPEC. What the API is and every operation in it, each naming ' +
@@ -5171,6 +4674,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'servers[0].url is this service as the request reached it, so a ' +
           'document fetched through a published port names an address the ' +
           'caller can use.' },
+  { path: '/admin-api/account-api', group: 'Management API',
+    name: 'The account API\'s OpenAPI document', specs: ['openapi'],
+    what: 'NON-SPEC (#568). The OpenAPI document of /account-api, the user ' +
+          'portal\'s API, for the realm the call is in — the one ' +
+          '/account-api/openapi.json publishes — with where it is published ' +
+          'and how many operations it holds. The console\'s Account API ' +
+          'page is drawn from it.' },
   { path: '/admin-api/console/language',
     group: 'Admin console API',
     name: 'The console\'s language, for yourself', specs: ['bcp47'],
@@ -6241,7 +5751,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/ssf/:action', group: 'Management API',
     name: 'Change a stream, or transmit an event',
     specs: ['openapi', 'ssf', 'rfc8935', 'rfc8936'],
-    what: 'status, transmit, delete and clear-received — the same four the ' +
+    what: 'status, transmit, delete, revive, clear-dead-letters and verify ' +
+          '— the actions the ' +
           'console\'s forms post, through the same action function, with the ' +
           'action taken from the URL instead of a hidden input. THERE IS ' +
           'DELIBERATELY NO `create`: a stream carries a delivery endpoint ' +
@@ -6446,6 +5957,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'remove-destination and test-push (a canary version written to a ' +
           'test secret): the console\'s four acts, each audited. The write ' +
           'credential is taken and never returned.' },
+  { path: '/admin-api/scim/clients', group: 'Management API',
+    name: 'Outbound SCIM clients', specs: ['openapi', 'rfc7644'],
+    what: 'NON-SPEC (#552). What Protocols → SCIM → Clients draws: the ' +
+          'application entries declared for scim-client — the service ' +
+          'providers this realm pushes its people and groups to — each ' +
+          'with its queue counts and backoff pause, and with ?client= one ' +
+          'client\'s retry and dead-letter queues and discovery. Never a ' +
+          'credential.' },
+  { path: '/admin-api/scim/clients/:action', group: 'Management API',
+    name: 'Change the outbound SCIM clients', specs: ['openapi', 'rfc7644'],
+    what: 'NON-SPEC (#552). add-client, update-client, remove-client, ' +
+          'issue-certificate, test-connection, reconcile, deliver-now, ' +
+          'retry-delivery, retry-dead and purge-dead: the console\'s ten ' +
+          'acts, each audited. A credential is taken and never returned.' },
   { path: '/admin-api/roles', group: 'Management API', name: 'Roles',
     specs: ['openapi', 'xacml30'],
     what: 'NON-SPEC. The role register, both relations. `roles` is ' +
@@ -6927,8 +6452,22 @@ const ENDPOINTS: EndpointEntry[] = [
           'takes `certificates` (one or more PEM blocks, refused whole if ' +
           'OpenSSL cannot read one); remove takes one `fingerprint`. NO BULK ' +
           'CLEAR, deliberately. Needs admin:write, works in both modes, and ' +
-          'is the gated twin of POST /tls/trust, which product mode refuses. ' +
+          'is the one runtime door (the open POST /tls/trust is gone). ' +
           'Written to ou=trustAnchors, so a change survives a restart.' },
+  { path: '/admin-api/tls-connection', group: 'Management API',
+    name: 'What this service saw of a request\'s TLS connection',
+    specs: ['rfc8446', 'rfc5280', 'rfc9700', 'openapi'],
+    what: 'NON-SPEC (#597). GET /admin/tls-connection over JSON: the ' +
+          'request that asked, as this service saw and believed it — its ' +
+          'TLS version and cipher, the client certificate the connection ' +
+          'presented (whether it verified against the truststore, what the ' +
+          'identity gate made of it, its revocation verdict), and every ' +
+          'forwarding header with what global.trustProxy and ' +
+          'global.trustedProxies let this service believe of it, the ' +
+          'effective base URL among them. No client certificate is ever ' +
+          'read from a header. Admin Read, in both modes; it changes ' +
+          'nothing. It replaced the development pages /tls and ' +
+          '/tls/forwarded.' },
   { path: '/admin-api/kerberos/claims', group: 'Management API',
     name: 'Kerberos PAC claims',
     specs: ['ms-pac', 'openapi'],
@@ -7181,8 +6720,8 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/admin-api/verifier-request', group: 'Management API',
     name: 'Verifier request (the bar door)',
     specs: ['oid4vp', 'sd-jwt-vc', 'vcdm', 'rfc4519'],
-    what: 'NON-SPEC. What the mock Verifier at /oid4vp/verifier asks a ' +
-          'wallet for, in which credential format, and the dcql_query they ' +
+    what: 'NON-SPEC. What the OID4VP Verifier asks a wallet for, in which ' +
+          'credential format, and the dcql_query they ' +
           'build — from the function that builds the real one, so it is the ' +
           'next Authorization Request rather than a description of it. Each ' +
           'catalogue row also says whether the ISSUER currently mints that ' +
@@ -7200,6 +6739,47 @@ const ENDPOINTS: EndpointEntry[] = [
           'absent claims member as the whole credential. A request already ' +
           'in flight keeps the claims it was built with. Mirrors POST ' +
           '/admin/vc-verifier-config.' },
+  { path: '/admin-api/verifications/:action', group: 'Management API',
+    name: 'Start a verification',
+    specs: ['oid4vp', 'siopv2', 'rfc9101'],
+    effect: 'builds an OID4VP Authorization Request and records its ' +
+            'transaction',
+    what: 'NON-SPEC (#587). Where a verification starts, for an ' +
+          'administrator or an application holding Admin Write (#594: the ' +
+          'development companion\'s bar door is one). The body names ' +
+          'format, by, client_id_prefix, response_type, response_mode, ' +
+          'mode, wallet, and redirect_uri — the caller\'s page the Response ' +
+          'Endpoint sends the wallet to afterwards, one of the calling ' +
+          'client\'s registered redirect URIs where only registered ' +
+          'addresses are accepted. The answer is JSON: the state, the ' +
+          'wallet URL a same-device start goes to, the openid4vp:// (or ' +
+          'siopv2://) URI a cross-device QR code carries, and the ' +
+          'request_uri by reference. Answered in every mode. Mirrors the ' +
+          'Start a verification form on /admin/vc.' },
+  { path: '/admin-api/verifications', group: 'Management API',
+    name: 'A verification\'s outcome',
+    specs: ['oid4vp'],
+    what: 'NON-SPEC (#587). With ?state=, what the Verifier decided — ' +
+          'every check and the disclosed claims (404 for a state with no ' +
+          'record); without, the realm\'s open verifications and what each ' +
+          'decided, newest first — the list the Verifier request tab ' +
+          'draws. A wallet sign-in is not listed.' },
+  { path: '/admin-api/oid4vci/last-request', group: 'Management API',
+    name: 'The last Credential Request',
+    specs: ['oid4vci', 'rfc7516'],
+    what: 'NON-SPEC (#594). How the OpenID4VCI issuer\'s last Credential ' +
+          'Request arrived: its media type and, encrypted, its JWE\'s kid, ' +
+          'alg and enc — never the request. A wallet cannot prove it ' +
+          'encrypted; only the issuer knows what arrived. Admin Read; until ' +
+          '#594 the development-only /oid4vci/last_request.' },
+  { path: '/admin-api/oid4vci/notifications', group: 'Management API',
+    name: 'A credential\'s notification',
+    specs: ['oid4vci'],
+    what: 'NON-SPEC (#594). With ?id=, what a wallet told the Notification ' +
+          'Endpoint about the credential that notification_id names: the ' +
+          'event, its description and when (404 for an id this issuer did ' +
+          'not issue). Admin Read; until #594 the development-only ' +
+          '/oid4vci/notification/:id.' },
 
   // --- WS-Trust ---
   { path: '/sts', group: 'WS-Trust', name: 'Security Token Service',
@@ -7224,7 +6804,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'Referer header); wsignout1.0 ends the session and sends a cleanup ' +
           'request to every relying party it signed into; wsignoutcleanup1.0 ' +
           'ends it without fanning out. Reads wtrealm (required, and the ' +
-          'audience), wreply (optional — defaults to /wsfed/rp), wctx ' +
+          'audience), wreply (optional — defaults to the registered ' +
+          'wsfedReplyUrl), wctx ' +
           '(echoed byte for byte), wct, wfresh (MINUTES), wauth (a hardware ' +
           'or multi-factor demand the session does not meet is a step-up ' +
           'through the sign-in, refused only if that fails), whr and a ' +
@@ -7268,19 +6849,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'the application\'s identifier (its wtrealm) or its slug. A ' +
           'segment naming no REGISTERED application is a 404 in both modes ' +
           '(STS-WSFED-0019). no-store.' },
-  { path: '/wsfed/rp', group: 'WS-Federation', name: 'Mock relying party ' +
-                                                     '(not a spec endpoint)',
-    specs: ['ws-federation', 'saml11', 'saml2', 'xmldsig'],
-    effect: 'mints a wctx and offers a complete sign-in request for each ' +
-            'shape the endpoint can issue',
-    what: 'NON-SPEC — a relying party is not part of an identity provider. ' +
-          'It is here because it is the default wreply, and because it ' +
-          'VERIFIES the sign-in response check by check: the assertion ' +
-          'signature against /sts/cert, the issuer, the audience against its ' +
-          'own realm, the validity window, and the wctx round trip (an ' +
-          'identity provider that re-encoded it produces the same symptom as ' +
-          'a lost session). Also answers wa=wsignoutcleanup1.0, which is the ' +
-          'direction that message is really defined for.' },
 
   // --- SAML 2.0 ---
   // The profile whose absence this file documented at length until 2026-08-24.
@@ -7292,7 +6860,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'the per-service-provider metadata works. GET /sts and GET /wsfed ' +
           'answer the same way for the same reason — an endpoint that 400s ' +
           'at somebody who wanted to know what it was is a bad first ' +
-          'impression.' },
+          'impression. Drawn in the browser since #584; ?format=json, or an ' +
+          'Accept preferring JSON, answers its view as data.' },
+  { path: '/saml2/description.js', group: 'SAML 2.0',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /saml2 from the view its shell carries.' },
   { path: '/saml2/metadata', group: 'SAML 2.0', name: 'Identity provider ' +
                                                       'metadata',
     specs: ['saml2-metadata', 'xmldsig'],
@@ -7442,19 +7018,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'one resource, never \'unsafe-inline\', and the page carries a ' +
           'REAL SUBMIT BUTTON — with scripting off the button is the whole ' +
           'mechanism.' },
-  { path: '/saml2/sp', group: 'SAML 2.0', name: 'Mock service provider (not ' +
-                                                'a spec endpoint)',
-    specs: ['saml2', 'saml2-bindings', 'saml2-profiles', 'xmldsig'],
-    effect: 'mints a RelayState and offers a complete AuthnRequest asking ' +
-            'for the response on HTTP POST, HTTP Redirect and HTTP Artifact',
-    what: 'NON-SPEC — a service provider is not part of an identity ' +
-          'provider. It is here because it is the default ' +
-          'AssertionConsumerServiceURL, and because it VERIFIES the response ' +
-          'check by check: both signatures, the issuer, the audience, the ' +
-          'validity window, the bearer SubjectConfirmationData that section ' +
-          '4.1.4.2 requires, and the RelayState round trip. It also resolves ' +
-          'an artifact, in process rather than by this service making a SOAP ' +
-          'call to itself.' },
 
   // --- SAML 1.1 ---
   { path: '/saml11', group: 'SAML 1.1', name: 'What the profile is',
@@ -7462,7 +7025,16 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'A description page: the endpoints, the two browser profiles, and ' +
           'the list of what SAML 1.1 spells differently from 2.0 — which is ' +
           'most of what makes this a separate implementation rather than a ' +
-          'flag. GET /saml2, GET /sts and GET /wsfed answer the same way.' },
+          'flag. GET /saml2, GET /sts and GET /wsfed answer the same way. ' +
+          'Drawn in the browser since #584; ?format=json, or an Accept ' +
+          'preferring JSON, answers its view as data.' },
+  { path: '/saml11/description.js', group: 'SAML 1.1',
+    name: 'The description page\'s script', specs: [],
+    what: 'NON-SPEC (#584). The runtime and renderers of the six ' +
+          'protocol families\' description pages, one file built by ' +
+          'build-typescript.sh (common/description-pages-spa.js) and ' +
+          'served precompressed on each family\'s own path: here it ' +
+          'draws GET /saml11 from the view its shell carries.' },
   { path: '/saml11/metadata', group: 'SAML 1.1', name: 'Identity provider ' +
                                                        'metadata',
     specs: ['saml11', 'saml2-metadata', 'xmldsig'],
@@ -7553,21 +7125,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'relaxed to \'self\' naming this one resource, never ' +
           '\'unsafe-inline\', and the page carries a REAL SUBMIT BUTTON — ' +
           'with scripting off the button is the whole mechanism.' },
-  { path: '/saml11/rp', group: 'SAML 1.1', name: 'Mock relying party (not a ' +
-                                                 'spec endpoint)',
-    specs: ['saml11', 'saml11-bindings', 'saml11-profiles', 'xmldsig'],
-    effect: 'starts a complete flow on either browser profile and verifies ' +
-            'what comes back',
-    what: 'NON-SPEC — a relying party is not part of an identity provider. ' +
-          'It is here because it is the default assertion consumer, and ' +
-          'because it VERIFIES check by check: both signatures through the ' +
-          'id attributes SAML 1.1 actually uses, the status QName, the ' +
-          'Recipient, the ABSENCE of InResponseTo on a profile with no ' +
-          'request, the confirmation method matching the profile, and the ' +
-          'DoNotCacheCondition that Browser/POST carries and the artifact ' +
-          'profile does not. It resolves an artifact IN PROCESS rather than ' +
-          'by this service making a SOAP call to itself, and reloading the ' +
-          'result page demonstrates the one-shot rule rather than erroring.' },
 
   // --- Federation ---
   //
@@ -7582,6 +7139,16 @@ const ENDPOINTS: EndpointEntry[] = [
           'GET /saml11 and GET /wsfed answer the same way and for the same ' +
           'reason. It is also the one page in this service that says out ' +
           'loud that a feature here REFUSES by default.' },
+  { path: '/federation/pages.js', group: 'Federation',
+    name: 'The federation pages\' script', specs: [],
+    what: 'NON-SPEC (#580). The runtime and renderers of the federation ' +
+          'pages that are this service\'s own, in one file built by ' +
+          'build-typescript.sh (federation/federation-pages-spa.js) and ' +
+          'served precompressed: it draws /federation, and what ' +
+          '/federation/login/{id} and /federation/link/{handle} say when they ' +
+          'refuse or sign somebody in with nowhere to send them, from the ' +
+          'state each shell carries. The assertion consumer service\'s ' +
+          'answers are not among them.' },
   { path: '/federation/login/:id', group: 'Federation',
     name: 'Start a federated sign-in',
     specs: ['saml2-profiles', 'saml11-profiles', 'ws-federation', 'oidc',
@@ -7883,21 +7450,44 @@ const ENDPOINTS: EndpointEntry[] = [
           'nothing that signing in as them would not; in PRODUCT mode a ' +
           'sign-out names only the signed-in caller, whatever that setting ' +
           'says. Add ?format=json.' },
+  { path: '/logout/signout.js', group: 'Authentication',
+    name: 'The sign-out page\'s script', specs: [],
+    what: 'NON-SPEC (#577). A browser\'s GET /logout is a static page ' +
+          'since #577, and this is its script: it draws the page from ' +
+          '/authn-api/logout and sends the sign-out there. Public.' },
+  { path: '/logout/signout.css', group: 'Authentication',
+    name: 'The sign-out page\'s stylesheet', specs: [],
+    what: 'NON-SPEC (#577). The rules the server-drawn sign-out page ' +
+          'carried inline, for the static one.' },
+  { path: '/logout/signed-out', group: 'Authentication',
+    name: 'The signed-out page', specs: ['oidc-fclogout', 'ws-federation',
+                                         'saml2'],
+    effect: 'draws a sign-out\'s result; ends nothing',
+    what: 'NON-SPEC (#577). Where a sign-out left the browser something ' +
+          'to do, the page posts here the result it was answered, and this ' +
+          'draws it as /logout always did, with the Front-Channel Logout ' +
+          'iframes, the cleanup images and the LogoutRequest links. Only ' +
+          'from this service\'s own pages, with a result it made.' },
   { path: '/authn/login', group: 'Authentication', name: 'Sign-in screen',
     specs: ['oidc'],
     effect: 'shows the sign-in screen for a request another endpoint sent ' +
             'here; needs an ?authn= id, so following it bare answers 400',
-    what: 'THE AUTHENTICATION SERVICE. The POST that carries a username and ' +
-          'a password is answered with a 303 and never a 307 (RFC 9700 ' +
-          'section 4.12): a 307 preserves the method and the body, so the ' +
-          'browser would repeat those credentials to whatever the redirect ' +
-          'points at — which after a sign-in is a URL the calling protocol ' +
-          'composed. Every protocol here that needs a person identified ' +
-          'sends them to this one screen with a return URL carrying its own ' +
-          'request whole, and gets them back with a session cookie ' +
-          'established — GET renders the screen, POST takes what was typed. ' +
-          'No password is checked; the username typed becomes the identity ' +
-          'in every token, assertion and credential that follows. It knows ' +
+    what: 'THE AUTHENTICATION SERVICE. A static surface since #571: this ' +
+          'answers the shell, and /authn/signin.js draws the screen from ' +
+          '/authn-api/pending/{id} and sends what was typed there as JSON; ' +
+          'the answer names the next step, and the browser follows it with ' +
+          'a GET, as it followed the 303 the form was answered with (RFC ' +
+          '9700 section 4.12). Every protocol here that needs a person ' +
+          'identified sends them to this one screen with a return URL ' +
+          'carrying its own request whole, and gets them back with a ' +
+          'session cookie established. ' +
+          // Both modes' truth (#543 round 2): it read "No password is
+          // checked" unqualified.
+          'In development mode no password is checked and the username ' +
+          'typed becomes the identity in every token, assertion and ' +
+          'credential that follows; in product mode the password, or the ' +
+          'key or code the realm\'s authentication policy allows, is ' +
+          'verified. It knows ' +
           'nothing about the protocol that sent anybody here: what the ' +
           'screen SHOWS about the request it interrupted is supplied by the ' +
           'caller, and a refusal comes back as authn_error=access_denied for ' +
@@ -7932,7 +7522,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'two buttons, and two buttons is exactly what a correct list of ' +
           'two draws. The list is re-read when this page is drawn rather ' +
           'than taken from the redirect that produced it, and if fewer than ' +
-          'two partners are left the sign-in screen is drawn instead.' },
+          'two partners are left the sign-in screen is drawn instead. A ' +
+          'static page since #571, drawn from ' +
+          '/authn-api/pending/{id}/partners.' },
   { path: '/authn/spnego', group: 'Authentication',
     name: 'Sign in with a Kerberos ticket',
     specs: ['rfc4559', 'rfc4178', 'rfc4120', 'rfc3961', 'rfc8129',
@@ -7944,11 +7536,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'A CREDENTIAL THIS SERVICE GENUINELY VERIFIED. Everywhere else the ' +
           'username typed IS the identity; Kerberos cannot work that way, ' +
           'because the password there is the key — so this door checks a ' +
-          'real service ticket against a real long-term key, through the ' +
-          'same acceptor /spnego/protected uses and with no protocol code of ' +
+          'real service ticket against a real long-term key, through this ' +
+          'service\'s own acceptor and with no protocol code of ' +
           'its own. The KDC behind it is still as permissive as the protocol ' +
           'allows (any username, one shared password, an account created on ' +
-          'first sight), which is what keeps the mock a mock — the ' +
+          'first sight), which is what keeps development mode permissive — ' +
+          'the ' +
           'verification is real, the account policy is not. It is AVAILABLE ' +
           'TO EVERY APPLICATION and registered for none: a button on ' +
           '/authn/login offers it for whatever flow is already in progress, ' +
@@ -7971,13 +7564,16 @@ const ENDPOINTS: EndpointEntry[] = [
     name: 'Sign in with a wallet',
     specs: ['oid4vp', 'dc-api', 'sd-jwt', 'sd-jwt-vc', 'vcdm', 'oidc',
             'siopv2'],
-    effect: 'builds an OpenID4VP request bound to the pending sign-in (or to ' +
-            'a second-factor step), sets the browser-binding cookie and ' +
-            'redirects to the wait page',
+    effect: 'answers the sign-in surface\'s shell; its script starts an ' +
+            'OpenID4VP request bound to the pending sign-in (or to a ' +
+            'second-factor step) at /authn-api/wallet and goes to the wait ' +
+            'page',
     what: 'A VERIFIED PRESENTATION AS A SIGN-IN (2026-09-17). Offered on ' +
           '/authn/login to every flow in progress, like the Kerberos ' +
           'button: it takes ?authn= (or ?mfa=, a wallet as the second ' +
-          'factor after a password) and NEVER a returnTo. The request is ' +
+          'factor after a password) and NEVER a returnTo. A route of the ' +
+          'static sign-in surface since #574: the request is made by POST ' +
+          '/authn-api/wallet, never by this GET. The request is ' +
           'always signed, asks for this issuer\'s credential in every ' +
           'format oid4vp.signInFormats names (a credential query each and ' +
           'a credential set), and is offered through the Digital ' +
@@ -7994,42 +7590,25 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/authn/wallet/wait', group: 'Authentication',
     name: 'Wallet sign-in: wait, and finish',
     specs: ['oid4vp', 'dc-api', 'oidc'],
-    effect: 'once the wallet has answered, establishes the browser session ' +
-            '(or asks for a second factor) and returns to whatever was ' +
-            'interrupted',
-    what: 'The page the browser waits on: a Digital Credentials API button ' +
-          '— the one scripted exception on this path, /authn/wallet.js — ' +
-          'the same-device wallet link, and, only where ' +
-          'oid4vp.signInCrossDevice is on (off by default), a link to a ' +
-          'server-drawn QR code page (?qr=1) that polls with a <meta> ' +
-          'refresh. Once the wallet has answered it either signs the ' +
-          'browser in or says why nobody was: the presentation did not ' +
-          'verify, the credential was a trusted foreign issuer\'s, this ' +
-          'realm has no record of issuing it to a person on a token it ' +
-          'verified, it was disowned or its status is not VALID, or the ' +
-          'entry is gone. It finishes ONLY in the browser that started the ' +
-          'sign-in (a hashed binding cookie), ONLY with the right ' +
-          'response_code where one is carried (OpenID4VP section 8.2), and ' +
-          'ONCE — across a cluster too; the transaction lives ' +
+    effect: 'answers the sign-in surface\'s shell; its script finishes the ' +
+            'sign-in at /authn-api/wallet once the wallet has answered',
+    what: 'The page the browser waits on, drawn by the sign-in surface ' +
+          'since #574 from GET /authn-api/wallet/{state}: a Digital ' +
+          'Credentials API button, the same-device wallet link, and, only ' +
+          'where oid4vp.signInCrossDevice is on (off by default), a QR ' +
+          'code (?qr=1) drawn in the browser and polled every ' +
+          'oid4vp.signInPollS seconds. A wallet\'s same-device answer ' +
+          'sends the person back here with its response_code, and the ' +
+          'page collects the sign-in. Once the wallet has answered it ' +
+          'either signs the browser in or says why nobody was: the ' +
+          'presentation did not verify, the credential was a trusted ' +
+          'foreign issuer\'s, this realm has no record of issuing it to a ' +
+          'person on a token it verified, it was disowned or its status is ' +
+          'not VALID, or the entry is gone. It finishes ONLY in the browser ' +
+          'that started the sign-in (a hashed binding cookie), ONLY with ' +
+          'the right response_code where one is carried (OpenID4VP section ' +
+          '8.2), and ONCE — across a cluster too; the transaction lives ' +
           'oid4vp.signInTtlS.' },
-  { path: '/authn/wallet/dc-api', group: 'Authentication',
-    name: 'Wallet sign-in: the Digital Credentials API answer',
-    specs: ['oid4vp', 'dc-api', 'rfc7516', 'di-jcs'],
-    effect: 'verifies the wallet\'s answer and signs the posting browser in',
-    what: 'What the wait page\'s script posts: the DigitalCredential ' +
-          'navigator.credentials.get() returned (OpenID4VP Appendix A.4), ' +
-          'decrypted where the request asked for dc_api.jwt, verified with ' +
-          'origin:<origin> as the audience, and answered once. Accepted only ' +
-          'from the browser that started the sign-in and from this ' +
-          'service\'s own origin (STS-VC-0074). An empty form — the ' +
-          'script did not run — is answered with the same-device link ' +
-          '(STS-VC-0081).' },
-  { path: '/authn/wallet.js', group: 'Authentication',
-    name: 'Wallet sign-in script',
-    specs: ['dc-api'],
-    what: 'NON-SPEC. The one static script the wait page loads under ' +
-          'script-src \'self\': it calls the Digital Credentials API with ' +
-          'the request on the page and submits the answer in a real form.' },
   { path: '/authn/password-factor', group: 'Authentication',
     name: 'Password as the second factor',
     specs: ['oidc', 'rfc8176'],
@@ -8038,7 +7617,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'for a person who holds no authenticator app or security key: ' +
           'their password, checked as the sign-in screen checks one and ' +
           'rate limited on the same bucket. The session records amr ' +
-          '["pop","pwd"] and acr "mfa". No script.' },
+          '["pop","pwd"] and acr "mfa". A page of the sign-in surface ' +
+          'since #572: the password goes to ' +
+          '/authn-api/mfa/{id}/password.' },
   { path: '/authn/webauthn', group: 'Authentication', name: 'WebAuthn ' +
       'security-key step',
     specs: ['oidc', 'webauthn'],
@@ -8072,7 +7653,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'additionally flags that entry mfaAuthenticated TRUE. The RP ID is ' +
           'this origin\'s host and is not configurable: WebAuthn binds a ' +
           'ceremony to the calling origin, and that is the whole of its ' +
-          'phishing resistance.' },
+          'phishing resistance. A page of the sign-in surface since #572: ' +
+          'its script runs the ceremony, armed by ' +
+          '/authn-api/mfa/{id}/webauthn/options and answered to ' +
+          '/authn-api/mfa/{id}/webauthn.' },
   { path: '/authn/backup-code', group: 'Authentication',
     name: 'Recovery code second-factor step',
     specs: [],
@@ -8088,7 +7672,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'DRAWS THE PAGE FOR A STEP THAT ALREADY EXISTS and refuses one for ' +
           'somebody who holds no unspent code — a screen asking for a ' +
           'credential that cannot exist reads as a service that has lost it. ' +
-          'THE POST CHECKS THE CODE FOR REAL IN BOTH MODES and SPENDS it: a ' +
+          'THE CODE IS CHECKED FOR REAL IN BOTH MODES and SPENT ' +
+          '(/authn-api/mfa/{id}/backup-code since #572): a ' +
           'failed spend REFUSES the sign-in, which is the opposite of what ' +
           '/authn/totp does with its counter and is argued in ' +
           'common/credentials.ts — a one-time code that cannot be counted is ' +
@@ -8099,9 +7684,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'relying party can look up. Rate limited by identity AND by ' +
           'address, through the same buckets as the code step. **IT ISSUES ' +
           'NOTHING AND ENROLS NOBODY** — a set is created by the ACT of ' +
-          'enrolling a second factor, once, in common/credentials.ts. This ' +
-          'page has NO SCRIPT: a person reads a string off paper and types ' +
-          'it.' },
+          'enrolling a second factor, once, in common/credentials.ts. A ' +
+          'page of the sign-in surface since #572.' },
   // #64: the emailed code and the emailed sign-in link.
   { path: '/authn/email-code', group: 'Authentication',
     name: 'Emailed code step',
@@ -8112,33 +7696,37 @@ const ENDPOINTS: EndpointEntry[] = [
           'sign-in code") or a second (opted into on /portal/mfa), where the ' +
           'authentication policy allows it — OFF by default, because NIST SP ' +
           '800-63B-4 section 3.1.3.1 does not count email as an ' +
-          'authenticator. The GET draws the page for a step that exists and ' +
-          'sends nothing; the POST sends (action=send) or checks one. Kept ' +
+          'authenticator. The page sends nothing when it is drawn; ' +
+          '/authn-api/mfa/{id}/email/send sends a code and ' +
+          '/authn-api/mfa/{id}/email/code checks one (#573). Kept ' +
           'only as a scrypt hash on the step, valid for at most ten minutes, ' +
           'once for the cluster, a bounded number of wrong codes per step, ' +
           'rate limited as the one-time code step is. As a first factor the ' +
           'page is the same whether or not the account exists or has a ' +
           'verified address. amr ["otp"] and acr "1" alone, the first ' +
           'factor\'s amr plus "otp" and acr "mfa" as a second; it never ' +
-          'meets a risk step-up. No script.' },
+          'meets a risk step-up. A page of the sign-in surface since #573.' },
   { path: '/authn/email-link', group: 'Authentication',
     name: 'Emailed sign-in link: the waiting page',
     specs: ['rfc8176', 'nist-800-63b'],
     what: 'NON-SPEC (#64). The page a person waits on after an emailed ' +
-          'sign-in link is sent (POST, action=send), refreshed by a <meta> ' +
-          'tag. The link completes the sign-in ONLY in the browser that ' +
-          'started it — the step keeps the hash of a cookie set when it was ' +
-          'sent — so the sign-in continues in the tab the link opens, and ' +
-          'this page then says so. No script.' },
+          'sign-in link is sent (/authn-api/mfa/{id}/email/send), asking ' +
+          'again every few seconds. The link completes the sign-in ONLY in ' +
+          'the browser that started it — the step keeps the hash of a ' +
+          'cookie set when it was sent — so the sign-in continues in the ' +
+          'tab the link opens, and this page then says so. A page of the ' +
+          'sign-in surface since #573.' },
   { path: '/authn/email-link/open', group: 'Authentication',
     name: 'Emailed sign-in link: where it lands',
     specs: ['rfc8176', 'nist-800-63b'],
     effect: 'establishes the sign-on session once the link verifies',
     what: 'NON-SPEC (#64). The GET spends nothing — a mail scanner fetches ' +
-          'every link in a message — and draws a Continue button; the POST ' +
-          'checks the browser binding, the token\'s scrypt hash, the expiry ' +
-          'and the single-use claim, and signs in. Opened in another browser ' +
-          'it spends nothing and says where to open it.' },
+          'every link in a message — and draws a Continue button, which ' +
+          'sends the token to /authn-api/mfa/{id}/email-link/open (#573): ' +
+          'the browser binding, the token\'s scrypt hash, the expiry and ' +
+          'the single-use claim are checked there, and the person signed ' +
+          'in. Opened in another browser it spends nothing and says where ' +
+          'to open it.' },
   { path: '/authn/language', group: 'Authentication',
     name: 'Language chooser',
     specs: ['bcp47', 'oidc'],
@@ -8167,7 +7755,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'would have, second factor included. Needs a ?change= id minted by ' +
           'that step, so following it bare answers 400. Every other door ' +
           'that verifies a password refuses such an account in product mode ' +
-          '(STS-AUTHN-0142) until the change is made here'
+          '(STS-AUTHN-0142) until the change is made here. A static page ' +
+          'since #571, drawn from /authn-api/password-change/{id}, which ' +
+          'also takes the new password.'
   },
   { path: '/authn/mfa-setup', group: 'Authentication',
     name: 'Required second factor set-up step',
@@ -8182,8 +7772,9 @@ const ENDPOINTS: EndpointEntry[] = [
           'who ' +
           'holds neither an authenticator app nor an mfa-role security key ' +
           'lands here instead of being signed in. They choose one: an ' +
-          'authenticator app is enrolled on this page (a QR code this server ' +
-          'draws and a code typed back, confirmed through ' +
+          'authenticator app is enrolled on this page (a QR code the browser ' +
+          'draws from the otpauth: URI and a code typed back, confirmed ' +
+          'through ' +
           'credentials.confirmTotpEnrolment(), session amr ["pwd","otp"], ' +
           'acr ' +
           '"mfa"), and a security key goes to the ordinary /authn/webauthn ' +
@@ -8191,7 +7782,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'factor, because enrolling a second one at a sign-in is the bypass ' +
           'the security-key box is reserved against. Needs an ?mfa= id ' +
           'minted ' +
-          'by the password step, so following it bare answers 400. No script.'
+          'by the password step, so following it bare answers 400. A page ' +
+          'of the sign-in surface since #572.'
   },
   { path: '/authn/totp', group: 'Authentication',
     name: 'One-time code second-factor step',
@@ -8215,33 +7807,192 @@ const ENDPOINTS: EndpointEntry[] = [
           'no enrolment. **IT ENROLS NOBODY**, which is the whole difference ' +
           'from /authn/webauthn beside it: enrolling means being shown a ' +
           'shared secret, so it happens at /portal/mfa or while an ' +
-          'activation link is spent, and never at a sign-in screen. This ' +
-          'page has NO SCRIPT and is served under the service-wide ' +
-          'script-src \'none\' — a person reads digits and types them, so ' +
-          'the exception the security-key page needs does not apply here.' },
+          'activation link is spent, and never at a sign-in screen. A page ' +
+          'of the sign-in surface since #572: the code goes to ' +
+          '/authn-api/mfa/{id}/totp.' },
+  { path: '/authn/signin.js', group: 'Authentication',
+    name: 'The sign-in screen\'s script', specs: [],
+    what: 'NON-SPEC (#571). The sign-in surface\'s runtime and renderers in ' +
+          'one file, built by build-typescript.sh (authn/authn-spa.js) and ' +
+          'served precompressed: it draws /authn/login, /authn/select-idp, ' +
+          '/authn/password-change and, since #572 and #573, every step ' +
+          'after them from /authn-api and sends their acts ' +
+          'there. Public: nothing in it is secret.' },
+  { path: '/authn-api', group: 'Authentication',
+    name: 'The sign-in API index', specs: [],
+    what: 'NON-SPEC (#571). The sign-in API\'s operations, each with the ' +
+          'page or control it is the door of (mirrors). Public and ' +
+          'language-free.' },
+  { path: '/authn-api/openapi.json', group: 'Authentication',
+    name: 'The sign-in API\'s OpenAPI document', specs: [],
+    what: 'NON-SPEC (#571). Generated from the operation table and its ' +
+          'body schemas.' },
+  { path: '/authn-api/pending/:id', group: 'Authentication',
+    name: 'What the sign-in screen offers', specs: [],
+    what: 'NON-SPEC (#571). The screen\'s view for a pending sign-in, as ' +
+          'facts and no words, and the CSRF token its acts carry. The id ' +
+          'is a bearer capability and is never logged.' },
+  { path: '/authn-api/pending/:id/partners', group: 'Authentication',
+    name: 'The federation partners to choose between', specs: [],
+    what: 'NON-SPEC (#571). The chooser\'s view, resolved again from the ' +
+          'application\'s entry.' },
+  { path: '/authn-api/pending/:id/password', group: 'Authentication',
+    name: 'Sign in with a password', specs: [],
+    what: 'NON-SPEC (#571). The Sign In button: JSON, an Origin of this ' +
+          'service and the X-CSRF-Token of the browser\'s session. Rate ' +
+          'limited, risk-scored and decided by the issuance policy as the ' +
+          'form was; the answer names the next step.' },
+  { path: '/authn-api/pending/:id/cancel', group: 'Authentication',
+    name: 'Decline the sign-in', specs: [],
+    what: 'NON-SPEC (#571). Cancel: the caller is told access_denied.' },
+  { path: '/authn-api/pending/:id/anonymous', group: 'Authentication',
+    name: 'Continue without signing in', specs: [],
+    what: 'NON-SPEC (#571). Where authn.unauthenticatedSessions is on.' },
+  { path: '/authn-api/pending/:id/email', group: 'Authentication',
+    name: 'Sign in with an emailed code or link', specs: [],
+    what: 'NON-SPEC (#571). Where the authentication policy accepts one.' },
+  { path: '/authn-api/pending/:id/passkey/options', group: 'Authentication',
+    name: 'Arm a passkey ceremony', specs: [],
+    what: 'NON-SPEC (#571). A single-use challenge for a passkey with no ' +
+          'username.' },
+  { path: '/authn-api/pending/:id/passkey', group: 'Authentication',
+    name: 'Sign in with a passkey and no username', specs: [],
+    what: 'NON-SPEC (#571). The ceremony\'s result, verified with user ' +
+          'verification required.' },
+  { path: '/authn-api/wallet', group: 'Authentication',
+    name: 'Start a wallet sign-in', specs: ['oid4vp', 'dc-api'],
+    what: 'NON-SPEC (#574). GET answers what the start page needs and the ' +
+          'CSRF token, and creates nothing; POST — JSON, an Origin of this ' +
+          'service and the X-CSRF-Token of the browser\'s session — makes ' +
+          'the signed OpenID4VP request, bound to the pending sign-in (or ' +
+          'step, or enrolment) and to this browser by the ' +
+          'sts_wallet_binding cookie it sets, and names the wait page.' },
+  { path: '/authn-api/wallet/:state', group: 'Authentication',
+    name: 'What the wallet sign-in\'s wait page draws', specs: [],
+    what: 'NON-SPEC (#574). For the browser that started the transaction ' +
+          'only: the Digital Credentials API request, the same-device ' +
+          'link, the QR code\'s text where it is offered, and the time ' +
+          'left. The state is a bearer capability and is never logged.' },
+  { path: '/authn-api/wallet/:state/status', group: 'Authentication',
+    name: 'Collect a wallet sign-in', specs: ['oid4vp'],
+    effect: 'once the wallet has answered, establishes the browser session ' +
+            '(or names a second factor) and names whatever was interrupted',
+    what: 'NON-SPEC (#574). The wait page\'s poll: wait until the wallet ' +
+          'has answered, then the sign-in finished in this request, once, ' +
+          'with the response_code a same-device wallet sent the person ' +
+          'back with where one is carried.' },
+  { path: '/authn-api/wallet/:state/dc-api', group: 'Authentication',
+    name: 'Wallet sign-in: the Digital Credentials API answer',
+    specs: ['oid4vp', 'dc-api', 'rfc7516', 'di-jcs'],
+    effect: 'verifies the wallet\'s answer and signs the posting browser in',
+    what: 'What the wait page\'s script sends: the DigitalCredential ' +
+          'navigator.credentials.get() returned (OpenID4VP Appendix A.4), ' +
+          'decrypted where the request asked for dc_api.jwt, verified with ' +
+          'origin:<origin> as the audience, and answered once. Accepted only ' +
+          'from the browser that started the sign-in and from this ' +
+          'service\'s own origin (STS-VC-0074); since #574 also only as ' +
+          'JSON with the X-CSRF-Token of the browser\'s session.' },
+  { path: '/authn-api/logout', group: 'Authentication',
+    name: 'What a sign-out would end, and the sign-out', specs: [],
+    effect: 'POST ends sessions and revokes what the person holds',
+    what: 'NON-SPEC (#577). GET answers what the person the browser\'s ' +
+          'session names still holds, and the CSRF token; POST, with that ' +
+          'token, signs out of everything or of what was ticked.' },
+  { path: '/authn-api/consent/:id', group: 'OAuth 2.0 / OIDC',
+    name: 'What the consent screen asks, and the answer', specs: ['rfc9396'],
+    effect: 'POST records Allow or Deny and names the authorization request ' +
+            'to go back to',
+    what: 'NON-SPEC (#576). GET answers the consent screen\'s view — the ' +
+          'application, each scope and authorization detail, the limits a ' +
+          'person may lower, what was already agreed — and the CSRF token; ' +
+          'POST takes Allow or Deny as JSON, with an Origin of this service ' +
+          'and the X-CSRF-Token of the browser\'s session, and only from ' +
+          'the person it was asked of. The id is a bearer capability and is ' +
+          'never logged.' },
+  { path: '/authn-api/password-change/:id', group: 'Authentication',
+    name: 'A forced password change', specs: [],
+    what: 'NON-SPEC (#571). GET answers whose password must change; POST ' +
+          'stores the new one and continues the sign-in.' },
+  { path: '/authn-api/password-change/:id/start-over',
+    group: 'Authentication',
+    name: 'Start a sign-in over from the password change', specs: [],
+    what: 'NON-SPEC (2026-10-12). The forced password change\'s Start over: ' +
+          'nothing is changed, and the pending sign-in it carries is put ' +
+          'back for the sign-in screen.' },
+  // #572, #573: the steps after the screen.
+  { path: '/authn-api/mfa/:id', group: 'Authentication',
+    name: 'What a sign-in step\'s page shows', specs: [],
+    what: 'NON-SPEC (#572, #573). The view of a second-factor or emailed ' +
+          'factor step\'s page (?page=), as facts and no words, and the ' +
+          'CSRF token its acts carry; refused where the page could never ' +
+          'be drawn for the step. The id is a bearer capability and is ' +
+          'never logged.' },
+  { path: '/authn-api/mfa/:id/totp', group: 'Authentication',
+    name: 'Check a one-time code', specs: ['rfc6238'],
+    what: 'NON-SPEC (#572). A code from an authenticator app, checked in ' +
+          'every mode and rate limited; a wrong one keeps the step.' },
+  { path: '/authn-api/mfa/:id/backup-code', group: 'Authentication',
+    name: 'Spend a recovery code', specs: [],
+    what: 'NON-SPEC (#572). Checked and spent; a code that cannot be ' +
+          'marked spent is refused.' },
+  { path: '/authn-api/mfa/:id/password', group: 'Authentication',
+    name: 'Check a password as the second factor', specs: [],
+    what: 'NON-SPEC (#572). After a wallet, rate limited on the sign-in ' +
+          'bucket.' },
+  { path: '/authn-api/mfa/:id/webauthn/options', group: 'Authentication',
+    name: 'Arm a passkey step\'s ceremony', specs: ['webauthn'],
+    what: 'NON-SPEC (#572). The step\'s challenge, RP ID, user and keys, ' +
+          'and the passkey policy\'s options.' },
+  { path: '/authn-api/mfa/:id/webauthn', group: 'Authentication',
+    name: 'Finish a passkey step', specs: ['webauthn'],
+    what: 'NON-SPEC (#572). The ceremony\'s result, verified: a ' +
+          'registration where the step enrols a key, an assertion ' +
+          'otherwise — decided by the step.' },
+  { path: '/authn-api/mfa/:id/setup/totp', group: 'Authentication',
+    name: 'Begin setting up an authenticator app', specs: [],
+    what: 'NON-SPEC (#572). At the set-up step; its secret is drawn next.' },
+  { path: '/authn-api/mfa/:id/setup/confirm', group: 'Authentication',
+    name: 'Confirm an authenticator app', specs: ['rfc6238'],
+    what: 'NON-SPEC (#572). Its first code, rate limited; a session of two ' +
+          'factors where it is right.' },
+  { path: '/authn-api/mfa/:id/setup/webauthn', group: 'Authentication',
+    name: 'Choose a passkey at the set-up step', specs: [],
+    what: 'NON-SPEC (#572). The next step is the passkey page\'s ' +
+          'registration.' },
+  { path: '/authn-api/mfa/:id/skip', group: 'Authentication',
+    name: 'Ignore an offered second factor', specs: [],
+    what: 'NON-SPEC (#572, #246). Only where the step was offered: the ' +
+          'sign-in finishes on the password.' },
+  { path: '/authn-api/mfa/:id/email/send', group: 'Authentication',
+    name: 'Mail a sign-in code or link', specs: [],
+    what: 'NON-SPEC (#573). To the verified address only; a resend ' +
+          'replaces the last.' },
+  { path: '/authn-api/mfa/:id/email/code', group: 'Authentication',
+    name: 'Check an emailed code', specs: [],
+    what: 'NON-SPEC (#573). Once for the cluster, a bounded number of ' +
+          'wrong codes per step.' },
+  { path: '/authn-api/mfa/:id/email-link/open', group: 'Authentication',
+    name: 'Spend a mailed sign-in link', specs: [],
+    what: 'NON-SPEC (#573). The Continue button of the page the link ' +
+          'lands on, only in the browser that asked for it.' },
+  { path: '/authn-api/mfa/:id/start-over', group: 'Authentication',
+    name: 'Start a sign-in over from a step', specs: [],
+    what: 'NON-SPEC (2026-10-12). Every step page\'s Start over: the step ' +
+          'is ended with whatever it held, no session is started, and the ' +
+          'pending sign-in it carries is put back for the sign-in screen, ' +
+          'so the original request still completes.' },
   { path: '/authn/fingerprint.js', group: 'Authentication',
     name: 'Browser fingerprint script (optional)',
     specs: [],
     what: 'NON-SPEC (#62 P6). Served only while risk.fingerprinting is on in ' +
-          'the realm — 404 otherwise — and then the sign-in screen is the ' +
-          'ninth scripted page: FingerprintJS (MIT, v5; it runs in the ' +
-          'browser and sends nothing, its usage ping turned off) puts a ' +
-          'visitorId in a hidden field, and the service keeps only a keyed ' +
+          'the realm — 404 otherwise — and then the sign-in screen loads ' +
+          'it beside its own script: FingerprintJS (MIT, v5; it runs in the ' +
+          'browser and sends nothing, its usage ping turned off) computes a ' +
+          'visitorId the sign-in sends, and the service keeps only a keyed ' +
           'digest of it, scored as a device this person never used. The ' +
-          'form works without it. Off by default: it is personal data, and ' +
+          'sign-in works without it. Off by default: it is personal data, and ' +
           'turning it on is the operator\'s decision, after the privacy ' +
           'impact assessment the risk-scoring page describes.' },
-  { path: '/authn/webauthn.js', group: 'Authentication', name: 'WebAuthn ' +
-      'ceremony script',
-    specs: ['webauthn'],
-    what: 'The script the security-key page runs, in both of its roles — the ' +
-          'ceremony a second factor performs and the one a passwordless ' +
-          'sign-in performs are the same bytes. It is a separate resource ' +
-          'rather than an inline script because this service sets script-src ' +
-          '\'none\' on every response by default; that one page relaxes it ' +
-          'to \'self\', which is the smallest exception that works. An ' +
-          'inline script there would simply not run, with the button doing ' +
-          'nothing and no error anywhere.' },
   { path: '/oauth2/check_session', group: 'OAuth 2.0 / OIDC',
     name: 'OP iframe (check_session_iframe)', specs: ['oidc-session'],
     what: 'Session Management section 3.2 (#121), while ' +
@@ -8325,30 +8076,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'code presented a second time is refused rather than answered with ' +
           'the tokens it already bought, and those tokens are revoked ' +
           '(section 4.5, and RFC 6749 section 10.5 for the revocation).' },
-  { path: '/devices/test/compliance', group: 'Shared Signals',
-    name: 'Device compliance test control (not a spec endpoint)',
-    specs: ['caep'],
-    effect: 'sets a device\'s compliance, with no credential',
-    what: 'NON-SPEC (#164 decision 9), for tests: the MDM feed\'s body — a ' +
-          'report naming a device by id, thumbprint or certificate, or ' +
-          'reports: [...] — WITHOUT the device:compliance scope, recorded ' +
-          'with source test-control, so a client under test can drive the ' +
-          'CAEP device-compliance-change it reacts to. PRODUCT MODE REFUSES ' +
-          'IT with 403 (mode.opensTestControls(), STS-DEVICE-0035): there ' +
-          'the feed at /admin-api/device-compliance, under its scope, is ' +
-          'the door.' },
-  { path: '/dpop/nonce-mode', group: 'OAuth 2.0 / OIDC',
-    name: 'DPoP nonce switch (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests and for trying the handshake by hand: turns ' +
-          'the RFC 9449 section 8/9 server-supplied nonce requirement on and ' +
-          'off at runtime, so the 401/retry exchange can be exercised ' +
-          'without restarting the service. GET reports the current state; ' +
-          'POST {"required": true|false} sets it — for the TRUST REALM it is ' +
-          'reached in, by writing oauth2.dpopNonceRequired (it was one ' +
-          'switch for the whole process until 2026-09-12). PRODUCT MODE ' +
-          'REFUSES THE POST with 403, because it is a test control: there ' +
-          'the setting is changed through /admin/oauth2 or POST ' +
-          '/admin-api/config/set.' },
   { path: '/oauth2/consent', group: 'OAuth 2.0 / OIDC', name: 'Consent screen',
     specs: ['oidc', 'rfc6749'],
     effect: 'needs a pending consent id — answers 400 when followed bare',
@@ -8373,12 +8100,21 @@ const ENDPOINTS: EndpointEntry[] = [
           'a GET that recorded consent would be consent anything that ' +
           'prefetches a link could give; and the session is checked against ' +
           'the person the question was asked of, which is the one failure ' +
-          'here that would write something untrue into the directory. NO ' +
-          'SCRIPT — two buttons in a form, so the service-wide script-src ' +
-          '\'none\' is untouched. oauth2.consentRequired turns it off, and ' +
+          'here that would write something untrue into the directory. A ' +
+          'PAGE OF THE SIGN-IN SURFACE since #576: this GET answers the ' +
+          'shell once those checks pass, and /oauth2/consent.js draws the ' +
+          'page from /authn-api/consent/{id} and sends Allow or Deny there ' +
+          'as JSON; script is required. oauth2.consentRequired turns it ' +
+          'off, and ' +
           'it is ON by default; /admin/consent is the register, and ' +
           'oauthGlobalConsent on an application entry skips the prompt for ' +
           'everybody without writing anything about anybody.' },
+  { path: '/oauth2/consent.js', group: 'OAuth 2.0 / OIDC',
+    name: 'The consent screen\'s script', specs: [],
+    what: 'NON-SPEC (#576). The sign-in surface\'s bundle — the same file ' +
+          'as /authn/signin.js — at the consent screen\'s own address, so ' +
+          'the page\'s listener serves its script. Public: nothing in it is ' +
+          'secret.' },
   { path: '/oauth2/autopost.js', group: 'OAuth 2.0 / OIDC',
     name: 'The form-post response script',
     specs: ['oauth-form-post', 'rfc9700'],
@@ -8467,8 +8203,10 @@ const ENDPOINTS: EndpointEntry[] = [
   { path: '/:as/oauth2/jwks', group: 'OAuth 2.0 / OIDC',
     name: 'JWKS (a named authorization server)', specs: ['rfc7515', 'rfc7519'],
     what: 'The same signing key. Every authorization server in this process ' +
-          'signs with it, which is a property of the mock rather than of the ' +
-          'model — they are separate issuers sharing one key, and a real ' +
+          'signs with it, which is a property of this implementation rather ' +
+          'than ' +
+          'of the model — they are separate issuers sharing one key, and a ' +
+          'real ' +
           'deployment would not do that.' },
   { path: '/oauth2/rfc9700', group: 'OAuth 2.0 / OIDC',
     name: 'RFC 9700 mode report (not a spec endpoint)', specs: ['rfc9700'],
@@ -8525,7 +8263,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'DIFFERENT audience (RFC 8707 `resource`) is refused. OIDC Core ' +
           'section 5.3, on GET and POST. The claims about whoever the access ' +
           'token was issued for, gated by its scope (section 5.4) — which is ' +
-          'the only place in this mock a scope changes the answer. THE ONE ' +
+          'the only place in this service a scope changes the answer. THE ' +
+          'ONE ' +
           'PROTECTED ENDPOINT HERE THAT REFUSES A TOKEN IT DID NOT ISSUE: it ' +
           'verifies the signature, the typ (so a refresh token or an ' +
           'id_token is refused), revocation and the openid scope, each with ' +
@@ -8596,22 +8335,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'validated as an authorization request would be and refused as ' +
           'JSON; a `request` object may carry the parameters; a DPoP proof ' +
           'binds the code. Every other method is 405.' },
-  { path: '/oauth2/step-up/resource/:application', group: 'OAuth 2.0 / OIDC',
-    name: 'Step-up stand-in resource',
-    specs: ['rfc9470', 'rfc9068', 'rfc6750', 'rfc9449'],
-    effect: 'answers 401 with a WWW-Authenticate challenge when followed ' +
-            'bare, and 404 for an application the realm has no entry for',
-    what: 'NON-SPEC: a protected resource answering FOR a registered ' +
-          'application, on GET and POST, so a client can be driven through ' +
-          'RFC 9470 without deploying the API. The access token must ' +
-          'verify, be an at+jwt from an authorization server this service ' +
-          'publishes, and name the application in its aud; then the ' +
-          'application\'s oauthStepUpAcrValues and oauthStepUpMaxAge are ' +
-          'asked of its acr and auth_time, and a token that does not meet ' +
-          'them is answered 401 insufficient_user_authentication with ' +
-          'acr_values and max_age in the challenge. A token that does gets ' +
-          '200 and the requirement and the authentication it met. Holds ' +
-          'no data.' },
   // The authorization server's monitoring page and its two management API
   // operations (2026-09-13), `/admin/acme/monitor`'s arrangement: the page,
   // the same view over JSON, and the one control as an action.
@@ -8659,13 +8382,6 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'Where a relying party POSTs an _async command\'s result or asks ' +
           'for a fresh metadata or audit_tenant, Bearer the callback_token ' +
           'the command carried (#151). 204, or RFC 6750\'s errors.' },
-  { path: '/oauth2/commands/mock-rp', group: 'OAuth 2.0 / OIDC',
-    name: 'Mock relying party command endpoint (not a spec endpoint)',
-    specs: ['oidc-provider-commands'],
-    what: 'NON-SPEC, development only (#151): a relying party\'s ' +
-          'command_endpoint that checks a Command Token as section 9 asks ' +
-          'and answers every account and tenant command, streams included; ' +
-          'GET shows what it holds. 404 in product mode.' },
   { path: '/admin-api/claim-providers', group: 'OAuth 2.0 / OIDC',
     name: 'The Claims Providers console page over JSON',
     specs: ['oidc-claims-aggregation'],
@@ -8798,13 +8514,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'when Accept asks for JSON-LD or JSON and not the JWT first, the ' +
           'same credential with an eddsa-rdfc-2022 proof by the realm\'s ' +
           'Ed25519 key, issued as its did:key (#197).' },
-  { path: '/oid4vci/status-lists/bitstring/:purpose/publish',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Publish a status list (VC-API, test control)',
-    specs: ['vc-api', 'bitstring-status-list'],
-    what: 'The W3C suites\' "publish the list now". A list here is computed ' +
-          'on every read, so 204 and nothing else; a test control, behind ' +
-          'vc-api:issue.' },
   { path: '/oid4vci/deferred_credential', group: 'VC Issuance (OID4VCI)',
     name: 'Deferred credential endpoint', specs: ['oid4vci', 'rfc6750'],
     what: 'Collects a credential the issuer answered 202 for, against its ' +
@@ -8815,28 +8524,9 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['oid4vci', 'rfc6750'], what: 'Section 11: the wallet reports ' +
                               'what it did with the credential. Validated ' +
                               'and recorded.' },
-  { path: '/oid4vci/notification/:id', group: 'VC Issuance (OID4VCI)',
-    name: 'Notification readback (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests: what the wallet reported against a ' +
-          'notification_id.' },
-  { path: '/oid4vci/last_request', group: 'VC Issuance (OID4VCI)',
-    name: 'Last Credential Request (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests: whether the last Credential Request arrived ' +
-          'encrypted, and how.' },
   { path: '/oid4vci/credential-offer/:id', group: 'VC Issuance (OID4VCI)',
     name: 'Credential Offer by reference', specs: ['oid4vci'],
     what: 'Serves an offer fetched via credential_offer_uri.' },
-  { path: '/issuer', group: 'VC Issuance (OID4VCI)', name: 'Issuer web page',
-    specs: ['oid4vci'], what: 'Appendix H.1: where an End-User starts an ' +
-                              'issuer-initiated flow.' },
-  { path: '/issuer/offer', group: 'VC Issuance (OID4VCI)', name: 'Build a ' +
-      'Credential Offer',
-    specs: ['oid4vci'], effect: 'mints an offer and redirects the browser to ' +
-                                'the wallet',
-    what: 'Builds an offer and either sends the browser to the wallet or ' +
-          'renders a QR code. ?mode=cross-device (H.2) and ?mode=deferred ' +
-          '(H.3) select the pre-authorized code grant with a Transaction ' +
-          'Code.' },
   { path: '/bbs/keys/:id', group: 'VC Issuance (OID4VCI)',
     name: 'BBS public key',
     specs: ['di-bbs'],
@@ -8847,16 +8537,19 @@ const ENDPOINTS: EndpointEntry[] = [
           'their grace — the key rotates with the realm\'s signing keys, ' +
           '#49); `/bbs/keys/1` is the current one. 404 for any other.' },
 
-  // --- W3C VC-API test endpoints (#194-#199) ---
-  { path: '/vc-api/issuers', group: 'W3C VC-API (test endpoints)',
-    name: 'The VC-API issuers (test control)', specs: ['vc-api'],
-    what: 'NON-SPEC listing, for the suite jobs: each issuer this adapter ' +
-          'offers — a securing mechanism and the realm key it signs with — ' +
-          'with its did:key and endpoint. A development realm only; ' +
-          'vc-api:issue.' },
+  // --- The W3C VC API (#194-#199; a product surface since #598) ---
+  // Every one answers 501 until vcApi.enabled is on in the realm, and asks
+  // for an access token carrying the scope it names in every mode.
+  { path: '/vc-api/issuers', group: 'W3C VC API',
+    name: 'The VC API issuers', specs: ['vc-api'],
+    what: 'NON-SPEC listing, an implementation manifest\'s list of issuer ' +
+          'instances: each issuer this service offers — a securing ' +
+          'mechanism and the VC API key it signs with — with its did:key ' +
+          'and endpoint. vc-api:issue.',
+    effect: OFF_UNTIL_ENABLED },
   { path: '/vc-api/issuers/:issuer/credentials/issue',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Issue a credential (VC-API, test control)',
+    group: 'W3C VC API',
+    name: 'Issue a credential (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'di-ecdsa-sd',
             'vc-jose-cose', 'bitstring-status-list'],
     what: 'Secures the credential it is handed after checking every MUST ' +
@@ -8866,56 +8559,65 @@ const ENDPOINTS: EndpointEntry[] = [
           'ecdsa-sd-2023) or a VC-JOSE-COSE envelope (jose-p256, ' +
           'sd-jwt-p256, cose-p256). The credential\'s issuer must be the ' +
           'key\'s did:key; options.credentialStatus allocates an index in ' +
-          'the realm\'s Bitstring Status Lists. A development realm only; ' +
-          'vc-api:issue. 201 { verifiableCredential }.' },
-  { path: '/vc-api/credentials/verify', group: 'W3C VC-API (test endpoints)',
-    name: 'Verify a credential (VC-API, test control)',
+          'the realm\'s Bitstring Status Lists. Signed with the VC API\'s ' +
+          'own keys, never the keys that sign this realm\'s tokens; an ' +
+          'option it does not understand is refused. vc-api:issue. 201 ' +
+          '{ verifiableCredential }.',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/credentials/verify', group: 'W3C VC API',
+    name: 'Verify a credential (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'di-ecdsa-sd',
             'vc-jose-cose', 'bitstring-status-list'],
     what: 'The data model, JSON-LD safe mode, every proof of a proof set ' +
           'and chain (verification methods did:key and did:jwk, nothing ' +
           'fetched) or the envelope, and — asked, or named — the ' +
           'credential\'s status in this realm\'s lists. 200 or 400 ' +
-          '{ verified, checks, warnings, errors }. vc-api:verify.' },
+          '{ verified, checks, warnings, errors }. vc-api:verify.',
+    effect: OFF_UNTIL_ENABLED },
   { path: '/vc-api/presentations/verify',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Verify a presentation (VC-API, test control)',
+    group: 'W3C VC API',
+    name: 'Verify a presentation (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'vc-jose-cose'],
     what: 'The presentation\'s own proof (authentication, the challenge ' +
           'and domain asked for) or envelope (its nonce and aud), and every ' +
           'credential in it as /vc-api/credentials/verify checks one. ' +
-          'vc-api:verify.' },
+          'vc-api:verify.',
+    effect: OFF_UNTIL_ENABLED },
   { path: '/vc-api/holders/:holder/presentations/prove',
-    group: 'W3C VC-API (test endpoints)',
-    name: 'Prove a presentation (VC-API, test control)',
+    group: 'W3C VC API',
+    name: 'Prove a presentation (VC API)',
     specs: ['vc-api', 'vcdm', 'di-rdfc', 'di-jcs', 'vc-jose-cose'],
-    what: 'Secures a presentation as the realm key\'s did:key: a Data ' +
+    what: 'Secures a presentation as the VC API key\'s did:key: a Data ' +
           'Integrity proof with the challenge and domain given, or a ' +
-          'VC-JOSE-COSE envelope. vc-api:issue.' },
-  { path: '/vc-api/credentials/derive', group: 'W3C VC-API (test endpoints)',
-    name: 'Derive a selective disclosure (VC-API, test control)',
+          'VC-JOSE-COSE envelope. vc-api:issue.',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/credentials/derive', group: 'W3C VC API',
+    name: 'Derive a selective disclosure (VC API)',
     specs: ['vc-api', 'di-ecdsa-sd'],
     what: 'An ecdsa-sd-2023 derived proof from a base proof, revealing the ' +
           'mandatory statements and options.selectivePointers. ' +
-          'vc-api:issue.' },
-  { path: '/vc-api/credentials/status', group: 'W3C VC-API (test endpoints)',
-    name: 'Change a credential\'s status (VC-API, test control)',
+          'vc-api:issue.',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/credentials/status', group: 'W3C VC API',
+    name: 'Change a credential\'s status (VC API)',
     specs: ['vc-api', 'bitstring-status-list'],
     what: 'Revokes, suspends or lifts a suspension of a credential this ' +
-          'adapter issued with a status — the act /admin/vc-status ' +
+          'VC API issued with a status — the act /admin/vc-status ' +
           'performs, one of the three that disown a credential. A ' +
-          'revocation is final. vc-api:issue.' },
-  { path: '/vc-api/resolve', group: 'W3C VC-API (test endpoints)',
-    name: 'Resolve a DID (test control)', specs: ['did-core', 'vc-api'],
+          'revocation is final. vc-api:issue.',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/resolve', group: 'W3C VC API',
+    name: 'Resolve a DID', specs: ['did-core', 'vc-api'],
     what: 'DID Core section 7.1\'s resolve or resolveRepresentation ' +
           '(?function=) for did:key, did:jwk and this realm\'s own did:web, ' +
           'answering the resolution result; any other did:web is notFound ' +
-          'rather than fetched. vc-api:verify.' },
-  { path: '/vc-api/dereference', group: 'W3C VC-API (test endpoints)',
-    name: 'Dereference a DID URL (test control)', specs: ['did-core',
-                                                          'vc-api'],
+          'rather than fetched. vc-api:verify.',
+    effect: OFF_UNTIL_ENABLED },
+  { path: '/vc-api/dereference', group: 'W3C VC API',
+    name: 'Dereference a DID URL', specs: ['did-core', 'vc-api'],
     what: 'DID Core section 7.2: the document, or the verification method a ' +
-          'fragment names. vc-api:verify.' },
+          'fragment names. vc-api:verify.',
+    effect: OFF_UNTIL_ENABLED },
 
   // --- DIDs ---
   { path: '/.well-known/did.json', group: 'Decentralized Identifiers',
@@ -8954,14 +8656,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'generated on the application\'s Configuration tab or with ' +
           'POST /admin-api/applications/generate-did-key, which hands the ' +
           'private key out once.' },
-  { path: '/did/generate', group: 'Decentralized Identifiers',
-    name: 'Generate a verifiable DID (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for tests and for trying the DID Tools page: ' +
-          '?method=jwk mints a fresh P-256 key and returns a did:jwk with a ' +
-          'credential signed by it; ?method=web returns this service\'s own ' +
-          'did:web with one signed by the RS256 key its document publishes. ' +
-          'A DID with nothing signed by it could only be parsed, not ' +
-          'verified.' },
   { path: '/.well-known/did-configuration.json', group: 'Decentralized ' +
                                                         'Identifiers',
     name: 'Domain Linkage Credential', specs: ['did-config', 'vcdm', 'rfc7519'],
@@ -8970,20 +8664,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'fetching host.' },
 
   // --- OID4VP ---
-  { path: '/oid4vp/verifier', group: 'VC Presentation (OID4VP)',
-    name: 'Verifier ' +
-      'web page',
-    specs: ['oid4vp'], what: 'Where a presentation starts: the verifier ' +
-                             'asks, the wallet answers.' },
-  { path: '/oid4vp/start', group: 'VC Presentation (OID4VP)', name: 'Build ' +
-      'an Authorization Request',
-    specs: ['oid4vp'], effect: 'builds a request and redirects the browser ' +
-                               'to the wallet',
-    what: 'response_type=vp_token with a DCQL query, a fresh nonce and ' +
-          'response_mode=direct_post, passed by value or by reference, with ' +
-          'a QR screen for cross-device. `client_id_prefix` names the ' +
-          'Client Identifier Prefix of THIS request (section 5.9) and makes ' +
-          'it signed; an x509 prefix certifies the Verifier first (#230).' },
   { path: '/oid4vp/verifier-certificate', group: 'VC Presentation (OID4VP)',
     name: 'The Verifier\'s x509 identity',
     specs: ['oid4vp', 'rfc5280'],
@@ -9019,15 +8699,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'answers once, and sends a same-device wallet back with a ' +
           'response_code; the session itself is set on the browser\'s next ' +
           'request, never on this one, which is the wallet\'s.' },
-  { path: '/oid4vp/result/:state', group: 'VC Presentation (OID4VP)',
-    name: 'Verification verdict (not a spec endpoint)', specs: [],
-    what: 'NON-SPEC, for the wallet\'s step 3 and for tests: the per-check ' +
-          'verdict for a presentation.' },
-  { path: '/oid4vp/done', group: 'VC Presentation (OID4VP)',
-    name: 'Presentation ' +
-      'complete page',
-    specs: ['oid4vp'], what: 'Where the End-User lands after a cross-device ' +
-                             'presentation.' },
   // ===== ACME endpoints (acme/) =====
   { path: '/enroll/acme/directory', group: 'ACME', name: 'The ACME directory',
     specs: ['rfc8555', 'acme-profiles', 'rfc9773'],
@@ -9427,13 +9098,13 @@ const PROTOCOLS: Protocol[] = [
             'oidc-ciba', 'fapi-ciba', 'oauth-grant-management',
             'oidc-claims-aggregation', 'oidc-enterprise', 'oidc-ephemeral',
             'oidc-provider-commands'],
-    what: 'A mock authorization server and OpenID Provider: all five grants, ' +
+    what: 'An authorization server and OpenID Provider: all five grants, ' +
           'PKCE, DPoP, introspection, revocation, dynamic registration, ' +
           'UserInfo and RP-initiated logout, with as many named ' +
           'authorization servers as have been asked for. RFC 9700 mode ' +
           'turns the BCP\'s refusals on, and OAuth 2.1 mode ' +
           '(draft-ietf-oauth-v2-1-16) turns those on and adds its own.' },
-  { name: 'User portal', groups: ['User portal'],
+  { name: 'User portal', groups: ['User portal', 'Account API'],
     specs: [],
     // **THE ONE CARD ON THIS PAGE THAT IMPLEMENTS NO SPECIFICATION, AND IT
     // SAYS SO IN A FIELD RATHER THAN BY HAVING AN EMPTY LIST.** Every other
@@ -9456,12 +9127,18 @@ const PROTOCOLS: Protocol[] = [
           'their password, and their security keys and whether each is a ' +
           'primary credential or a second factor. It is a SEPARATE ' +
           'APPLICATION from the admin console and shares nothing with it but ' +
-          'the session. /portal/activate is its unauthenticated half, where ' +
+          'the sign-on session at this service\'s authorization server: ' +
+          'each is a public OAuth client (sts-user-portal here) holding its ' +
+          'own DPoP-bound token in memory. /portal/activate is its ' +
+          'unauthenticated half, where ' +
           'somebody provisioned through /admin-api or SCIM spends a ' +
           'single-use, time-limited activation link to set up a credential — ' +
           'hashed at rest like a password, rate limited, spent when the ' +
           'setup finishes rather than when the link is opened, and never ' +
-          'signing anybody in.' },
+          'signing anybody in. SINCE #568 IT IS A STATIC APPLICATION over ' +
+          '/account-api, the Account API group below: an operation per page ' +
+          'and per form, the person always the token\'s subject, described ' +
+          'by its own OpenAPI document.' },
   { name: 'GNAP', groups: ['GNAP'],
     specs: ['rfc9635', 'rfc9767', 'rfc9421', 'rfc9530'],
     what: 'An authorization server for the Grant Negotiation and ' +
@@ -9514,7 +9191,7 @@ const PROTOCOLS: Protocol[] = [
           'attributes are released to it.\n\n**IT IS THE ONE FEATURE HERE ' +
           'THAT REFUSES BY DEFAULT AND HAS TO BE CONFIGURED BEFORE IT WILL ' +
           'DO ANYTHING**, and that is not an omission to fix: "accept any ' +
-          'assertion" would not be a permissive mock of federation, it would ' +
+          'assertion" would not be a permissive form of federation, it would ' +
           'be an authentication bypass for every protocol in this process. A ' +
           'relationship is created disabled, at /admin/federation or POST ' +
           '/admin-api/federation/create.\n\n**A PARTNER\'S SIGN-OUT ENDS ' +
@@ -9613,10 +9290,9 @@ const PROTOCOLS: Protocol[] = [
              'this profile existed.' },
   { name: 'WS-Federation', groups: ['WS-Federation'],
     specs: ['ws-federation', 'saml11', 'saml2'],
-    what: 'The 1.2 Web (Passive) Requestor Profile: /wsfed dispatching on ' +
-          'wa, the sign-in screen, signed federation metadata at the AD FS ' +
-          'path, wsignout1.0, and a mock relying party that shows what was ' +
-          'sent to it.' },
+    what: 'The 1.2 Web (Passive) Requestor Profile: /wsfed ' +
+          'dispatching on wa, the sign-in screen, signed federation ' +
+          'metadata at the AD FS path, and wsignout1.0.' },
   { name: 'WS-Trust', groups: ['WS-Trust'],
     specs: ['ws-trust', 'wss-username', 'xmldsig'],
     what: 'RST / RSTR over SOAP at /sts, in all four versions (1.0 through ' +
@@ -9624,18 +9300,19 @@ const PROTOCOLS: Protocol[] = [
           'optionally encrypted to the requestor\'s certificate.' },
   { name: 'Kerberos', groups: ['Kerberos'],
     specs: ['rfc4120', 'rfc3961', 'ms-pac', 'ms-kkdcp'],
-    what: 'A mock KDC: AS-REQ / TGS-REQ, pre-authentication, four encryption ' +
-          'types, a Microsoft PAC in the ticket, cross-realm referrals and ' +
-          'constrained delegation. The rows on this page are its HTTP views ' +
-          'and its MS-KKDCP proxy, which exists because a browser cannot ' +
-          'open a socket.',
+    what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +
+          'encryption types, a Microsoft PAC in the ticket, cross-realm ' +
+          'referrals and constrained delegation. The row on this page is ' +
+          'its MS-KKDCP proxy, which exists because a browser cannot open a ' +
+          'socket.',
     sockets: 'The KDC itself is TCP and UDP port 88, which this page cannot ' +
              'see.' },
   { name: 'SPNEGO', groups: ['Kerberos'], specs: ['rfc4178', 'rfc4559'],
-    what: 'Kerberos over HTTP: /spnego/protected answers 401 ' +
-          'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser or ' +
-          'a client sends back, and accepts the AP-REQ inside it against the ' +
-          'service principal\'s key.',
+    what: 'Kerberos over HTTP: /authn/spnego answers 401 ' +
+          'WWW-Authenticate: Negotiate, reads the NegTokenInit a browser ' +
+          'sends back, accepts the AP-REQ inside it against the service ' +
+          'principal\'s key, and signs its client in (the Authentication ' +
+          'group).',
     sockets: 'The ticket it accepts comes from the KDC on port 88.' },
   { name: 'SPIFFE', groups: ['SPIFFE'],
     specs: ['spiffe-id', 'spiffe-bundle', 'spiffe-x509-svid',
@@ -9738,7 +9415,7 @@ const PROTOCOLS: Protocol[] = [
     specs: ['rfc6238', 'rfc4226'],
     what: 'The other second factor on the sign-in screen every protocol here ' +
           'sends a person to, and the only credential besides a Kerberos ' +
-          'ticket this mock really CHECKS: the code is computed from the ' +
+          'ticket this service really CHECKS: the code is computed from the ' +
           'shared secret and the clock and compared, in both modes, with RFC ' +
           '6238 section 5.2\'s accept-once rule enforced. Enrolment is a QR ' +
           'code this server drew, at /portal/mfa or while an activation link ' +
@@ -9797,7 +9474,7 @@ const PROTOCOLS: Protocol[] = [
           'session standing on one (refuseEmailFactor).' },
   { name: 'Verifiable Credentials (OID4VCI / OID4VP)',
     groups: ['VC Issuance (OID4VCI)', 'VC Presentation (OID4VP)',
-             'Decentralized Identifiers', 'W3C VC-API (test endpoints)'],
+             'Decentralized Identifiers', 'W3C VC API'],
     specs: ['oid4vci', 'oid4vp', 'sd-jwt-vc', 'vcdm', 'did-core',
             'token-status-list', 'bitstring-status-list', 'dc-api',
             'di-jcs', 'di-rdfc', 'di-ecdsa-sd', 'vc-jose-cose', 'vc-api',
@@ -9835,9 +9512,34 @@ const GROUP_ORDER = ['Service', 'Authentication', 'WS-Trust', 'WS-Federation',
                      'VC Issuance (OID4VCI)', 'Decentralized Identifiers',
                      'VC ' +
                          'Presentation (OID4VP)',
-                     'W3C VC-API (test endpoints)',
+                     'W3C VC API',
                      'Admin', 'Management API', 'Admin console API',
                      'Undocumented'];
+
+// ---------------------------------------------------------------------------
+// THE SENTENCES THIS MODULE MAKES (#543 phase 3), each a template filled with
+// `serverProse.fill()` where it is made, so the sentence and the template the
+// server matches it against cannot differ: why a path is not a link, and
+// what an undescribed route's row says. A method, a method list and a
+// parameter name are data and stay as they are; 'a parameter' is the one
+// phrase that is only ever a parameter.
+// ---------------------------------------------------------------------------
+const SENTENCES = Object.freeze({
+  only: '{{method}} only',
+  noGet: 'no GET ({{methods}})',
+  takes: 'takes {{name}}',
+  wildcard: 'wildcard',
+  undocumented: 'This route is registered but sts_metadata.ts does not ' +
+                'describe it.'
+});
+
+// The phrase `takes {{name}}` is filled with when the path names no
+// parameter the pattern can read.
+const A_PARAMETER = 'a parameter';
+
+// The routes whose answers carry this namespace's prose (#543): the page's
+// own operation. The two OpenAPI documents stay English.
+const PROSE_ROUTES = ['/admin-api/sts-metadata'];
 
 // One row of the router's own list: a path and the methods it answers.
 interface RegisteredRoute {
@@ -9859,6 +9561,7 @@ interface StsMetadataDeps {
   authorizationServers: typeof authorizationServers;
   cryptoMetadata: typeof cryptoMetadata;
   version: typeof version;
+  mode: typeof mode;
 }
 
 /**
@@ -9905,8 +9608,53 @@ class StsMetadata {
       admin: admin,
       authorizationServers: authorizationServers,
       cryptoMetadata: cryptoMetadata,
-      version: version
+      version: version,
+      mode: mode
     };
+  }
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the stsmetadata namespace (#543 phase 3): every
+   * specification's coverage note and `what`, every endpoint's `what`,
+   * `effect` and `coverage`, every protocol card's `what` and `sockets`,
+   * and the sentences this module makes.
+   *
+   * NOT HARVESTED, because each is a join key or a name rather than prose:
+   * a specification's `id`, `name`, `where` and `url`; a card's `name`,
+   * which `/admin/crypto-metadata` and `realms.realmSupport()` join on; an
+   * endpoint's `path`, `group` and `specs`. An endpoint's `name` is the
+   * `endpoints` namespace's (`admin-core/protocol_endpoints.ts`), which
+   * every Protocols page carries as well. Each table is keyed by what
+   * identifies a row — a specification by its id, an endpoint by its path,
+   * a card by its name — since `harvest()` would key a specification by its
+   * name and an endpoint by a name five rows share.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering StsMetadata.prose().");
+    const harvest = serverProse.harvest;
+    const out: Record<string, string> = Object.assign({},
+      harvest('stsmetadata.specs', SPECS.map(function (one) {
+        return { key: one.id, coverage: one.coverage, what: one.what };
+      }), ['coverage', 'what']),
+      harvest('stsmetadata.endpoints', ENDPOINTS.map(function (one) {
+        return { key: one.path, what: one.what, effect: one.effect,
+                 coverage: one.coverage };
+      }), ['what', 'effect', 'coverage']),
+      harvest('stsmetadata.protocols', PROTOCOLS.map(function (one) {
+        return { key: one.name, what: one.what, sockets: one.sockets };
+      }), ['what', 'sockets']),
+      harvest('stsmetadata.sentence', SENTENCES, Object.keys(SENTENCES)),
+      { 'stsmetadata.param.aParameter': A_PARAMETER });
+    helpers.log.debug("Leaving StsMetadata.prose(). " +
+                      Object.keys(out).length);
+    return out;
   }
 
   // -------------------------------------------------------------------------
@@ -9955,7 +9703,8 @@ class StsMetadata {
     const missingSpecs = [];
     const list = PROTOCOLS.map(function (p) {
       let endpoints = 0;
-      p.groups.forEach(function (group) {
+      const groups = p.groups.slice();
+      groups.forEach(function (group) {
         claimed[group] = true;
         if (!Object.prototype.hasOwnProperty.call(countBy, group)) {
           missingGroups.push(p.name + ' -> ' + group);
@@ -9968,8 +9717,11 @@ class StsMetadata {
           missingSpecs.push(p.name + ' -> ' + id);
         }
       });
-      return { name: p.name, what: p.what, sockets: p.sockets || '',
-               groups: p.groups.slice(0), specs: (p.specs || []).slice(0),
+      return { name: p.name,
+               what: p.what,
+               sockets: p.sockets || '',
+               groups: groups,
+               specs: (p.specs || []).slice(),
                // CARRIED INTO THE DOCUMENT rather than left on the table, so
                // the drift test can see it. A card that names no
                // specification has to say why, and the reason travels with
@@ -10041,6 +9793,51 @@ class StsMetadata {
     return out;
   }
 
+  /**
+   * The account API's endpoint rows, from its operation table (#568).
+   *
+   * @returns one row per path
+   */
+  accountApiEndpoints(): EndpointEntry[] {
+    const { log } = this.deps;
+    log.debug("Entering StsMetadata.accountApiEndpoints().");
+    let ops: any[] = [];
+    try {
+      ops = require('./account-api/account_api').operations();
+    } catch (e) {
+      // No account API in this process (a module loaded on its own): its
+      // routes are not registered either, so nothing goes undescribed.
+      log.debug("Caught in StsMetadata.accountApiEndpoints(): " +
+                ((e && e.message) || e));
+      ops = [];
+    }
+    const byPath = new Map<string, any[]>();
+    ops.forEach(function (op) {
+      if (!byPath.has(op.path)) {
+        byPath.set(op.path, []);
+      }
+      byPath.get(op.path).push(op);
+    });
+    const out: EndpointEntry[] = [];
+    byPath.forEach(function (rows, path) {
+      out.push({ path: path, group: 'Account API',
+        name: rows.map(function (op) {
+          return op.summary;
+        }).join('; '),
+        specs: ['openapi'],
+        what: 'NON-SPEC (#568). ' + rows.map(function (op) {
+          return op.method + ': ' + op.description +
+            (op.mirrors ? ' The door of the portal\'s ' + op.mirrors + '.'
+                        : '') +
+            (op.access === 'person' ? ''
+              : ' Takes no token' + (op.access === 'link'
+                ? ': it spends the single-use link it carries.' : '.'));
+        }).join(' ') });
+    });
+    log.debug("Leaving StsMetadata.accountApiEndpoints(). " + out.length);
+    return out;
+  }
+
   // Join the router's paths to their descriptions, and report both kinds of
   // drift.
   /**
@@ -10058,6 +9855,14 @@ class StsMetadata {
     ENDPOINTS.forEach(function (e) {
       described.set(e.path, e);
     });
+    // THE ACCOUNT API'S ROWS ARE ITS OPERATION TABLE'S (#568), not a second
+    // hand-written copy: the table registers the routes and builds the
+    // OpenAPI document, so a row read from it cannot go stale, and an
+    // operation cannot exist undescribed. One row per path, its methods'
+    // summaries and the portal page or form each is the door of.
+    this.accountApiEndpoints().forEach(function (e) {
+      described.set(e.path, e);
+    });
 
     const rows = [];
     const undocumented = [];
@@ -10073,8 +9878,7 @@ class StsMetadata {
       rows.push({ path: route.path, methods: route.methods,
                   group: 'Undocumented',
                   name: '(undocumented)', specs: [],
-                  what: 'This route is registered but sts_metadata.ts does ' +
-                        'not describe it.',
+                  what: SENTENCES.undocumented,
                   documented: false });
     });
     // Whatever is left was described and is not registered.
@@ -10140,31 +9944,36 @@ class StsMetadata {
       log.debug("Leaving StsMetadata.linkabilityOf().");
       return { linkable: false,
                reason: methods.length === 1
-                 ? methods[0] + ' only'
-                 : 'no GET (' + methods.join(', ') + ')' };
+                 ? serverProse.fill(SENTENCES.only, { method: methods[0] })
+                 : serverProse.fill(SENTENCES.noGet,
+                                    { methods: methods.join(', ') }) };
     }
     if (row.path.indexOf(':') !== -1) {
       const name = (/:([A-Za-z0-9_]+)/.exec(row.path) || [])[0] ||
-        'a parameter';
+        A_PARAMETER;
       log.debug("Leaving StsMetadata.linkabilityOf().");
-      return { linkable: false, reason: 'takes ' + name };
+      return { linkable: false,
+               reason: serverProse.fill(SENTENCES.takes, { name: name }) };
     }
     if (row.path.indexOf('*') !== -1) {
       log.debug("Leaving StsMetadata.linkabilityOf().");
-      return { linkable: false, reason: 'wildcard' };
+      return { linkable: false, reason: SENTENCES.wildcard };
     }
     log.debug("Leaving StsMetadata.linkabilityOf().");
     return { linkable: true, reason: '' };
   }
 
   private metadataJson(base, report) {
-    const { log, config, port } = this.deps;
+    const { log, config, port, mode } = this.deps;
     const self = this;
     const APP_VERSION = this.appVersion;
     log.debug("Entering StsMetadata.metadataJson().");
     log.debug("Leaving StsMetadata.metadataJson().");
     return {
-      service: 'idptools mock Security Token Service',
+      // The service's own name since the 2026-09-15 rename (it read
+      // 'idptools mock Security Token Service', the parent project's), as
+      // the OpenAPI documents and the README spell it.
+      service: 'IYA STS — Security Token Service',
       // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read
       // from the running router, so it describes the process that answered —
       // and this says which process that was. Downloaded, the two travel
@@ -10181,7 +9990,10 @@ class StsMetadata {
       issuer: base,
       wsTrustIssuer: IssuerNames.issuer(),
       port: port,
-      testDouble: true,
+      // True only where it is true: development checks no password and
+      // validates no access token; product does both. It was the literal
+      // `true` in both modes.
+      testDouble: mode.describesItselfAsTestDouble(),
       endpoints: report.rows.map(function (r) {
         const link = self.linkabilityOf(r);
         return { path: r.path, methods: r.methods, name: r.name,
@@ -10249,15 +10061,22 @@ class StsMetadata {
   }
 
 
+  // REGISTERS NOTHING SINCE THE #446 CUTOVER (2026-10-05), and kept so the
+  // composition root's `register()` call — last of all — still has something
+  // to call. `/admin/sts-metadata` is the static console's document, answered
+  // by the console's shell for every `/admin/*` path, and its data is
+  // `GET /admin-api/sts-metadata`, which `mgmt-api/admin_api.ts` registers
+  // over `pageJson()`. The page still reads the router WHEN IT IS ASKED,
+  // which is why this module stays last in `common/protocol_stack.ts`.
   /**
-   * Registers `GET /admin/sts-metadata`, last of all the routes, drawn in the
-   * console's shell.
+   * Registers nothing: the page is the static console's document and its
+   * data `GET /admin-api/sts-metadata` (`pageJson()`); kept for the
+   * composition root's last `register()` call.
    *
    * @param app - the express app
    */
   registerRoutes(app: { get: Function }): void {
-    const { log, baseUrlOf, admin } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering StsMetadata.registerRoutes().");
     log.debug("Leaving StsMetadata.registerRoutes().");
   }
@@ -10278,9 +10097,9 @@ const slot = new InstanceSlot<StsMetadata>(
   helpers.log);
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
-// module no longer registers anything. `common/protocol_stack.ts` calls the
-// exported `registerRoutes(app)` last, at the point in the route order where
-// requiring this module used to register the page.
+// module registers nothing. `common/protocol_stack.ts` calls the exported
+// `registerRoutes(app)` last, where requiring this module used to register
+// the page — and since #446 that call registers nothing either.
 
 // Standalone, build the default now, as loading this module always did.
 slot.buildNowUnlessDeferred();
@@ -10296,7 +10115,8 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   /**
-   * Registers `GET /admin/sts-metadata` on the installed instance.
+   * Registers nothing (see `StsMetadata.registerRoutes()`); forwarded to
+   * the installed instance for the composition root.
    */
   registerRoutes: slot.forward('registerRoutes'),
   /**
@@ -10304,6 +10124,14 @@ export = {
    */
   pageJson: slot.forward('pageJson'),
   StsMetadata: StsMetadata,
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  PROSE_ROUTES: StsMetadata.PROSE_ROUTES,
+  /**
+   * Extracts the stsmetadata namespace (#543).
+   */
+  prose: StsMetadata.prose,
   /**
    * Installs the instance the module-level functions forward to.
    */
@@ -10319,5 +10147,7 @@ export = {
   PROTOCOLS: PROTOCOLS,
   ENDPOINTS: ENDPOINTS,
   registeredRoutes: slot.forward('registeredRoutes'),
+  // The account API's rows, from its own table (#568).
+  accountApiEndpoints: slot.forward('accountApiEndpoints'),
   describeEndpoints: slot.forward('describeEndpoints')
 };

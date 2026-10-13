@@ -9,7 +9,7 @@
   "fields.directory": "Directorio (file, solo desarrollo)",
   "fields.caCertificates": "Certificados de CA (PEM, vault)",
   "fields.credential": "Credencial de escritura",
-  "fields.credentialKept": "definida — déjala vacía para conservarla",
+  "fields.credentialKept": "definida — déjela vacía para conservarla",
   "fields.credentialRequired": "obligatoria, salvo para un archivo",
   "row.region": "región {region}",
   "row.project": "proyecto {project}",

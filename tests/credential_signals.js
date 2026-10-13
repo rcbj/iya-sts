@@ -640,9 +640,22 @@ function childMain() {
           const location = String(first.headers.location || '');
           const authnId = (location.match(/[?&]authn=([^&]+)/) || [])[1] ||
             '';
-          const posted = await request('POST', '/authn/login',
-            { authn_id: decodeURIComponent(authnId), username: 'cs-brie',
-              password: BREACHED, action: 'login' }, jar);
+          // THE SCREEN OVER `/authn-api` (#571), with this browser's
+          // cookies as the in-process helper keeps them (name to value).
+          const kept = {};
+          String(jar.cookie || '').split(/;\s*/).forEach(function (pair) {
+            const eq = pair.indexOf('=');
+            if (eq > 0) {
+              kept[pair.slice(0, eq)] = pair.slice(eq + 1);
+            }
+          });
+          const posted = await require(ROOT +
+            '/tests/tools/authn_screen').submit({ port: port, jar: kept,
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+              'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 ' +
+              'Safari/537.36', at: location,
+            fields: { action: 'login', username: 'cs-brie',
+                      password: BREACHED } });
           return { authnId: authnId, first: first, posted: posted };
         };
         let mark = since();
@@ -651,11 +664,12 @@ function childMain() {
         const compromised = riscAfter(mark, 'cs-brie', 'credentialCompromise');
         const required = riscAfter(mark, 'cs-brie',
                                    'credentialChangeRequired');
-        note(setFirst.ok && one.authnId && one.posted.status === 200 &&
+        note(setFirst.ok && one.authnId &&
+             one.posted.next === 'password-change' &&
              credentials.passwordResetRequired('cs-brie'),
              'F1. the sign-in with a breached password is held at the ' +
              'change step', setFirst.ok + ' ' + one.first.status + ' ' +
-             one.posted.status + ' ' + one.posted.text.slice(0, 200));
+             one.posted.next + ' ' + String(one.posted.text).slice(0, 200));
         note(compromised.length === 1 &&
              compromised[0].values.credential_type === 'password' &&
              compromised[0].initiatingEntity === 'system' &&

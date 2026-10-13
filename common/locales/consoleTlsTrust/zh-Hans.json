@@ -20,10 +20,6 @@
   "tileMaximum": "上限",
   "fileSet": "<code>tls.trustAnchorsFile</code> 为 <code>{file}</code>，启动时从中加载了 {n} 个锚点。",
   "fileUnset": "未设置 <code>tls.trustAnchorsFile</code>，因此这里的每个锚点都是在此进程运行期间添加的。",
-  "controlsBefore": " ",
-  "controlsAfter": " 上的两个测试控件 — <code>POST /tls/trust</code> 和 <code>POST /tls/trust/clear</code> — ",
-  "controlsOpen": "在此开发模式进程中对任何人开放。",
-  "controlsRefused": "在产品模式下会被拒绝；此页面和 <code>/admin-api/tls/trust</code> 是运行时的入口。",
   "anchors": "锚点",
   "thSubject": "主体",
   "thIssuer": "颁发者",
@@ -40,6 +36,5 @@
   "linkJson": "此页面的 JSON",
   "linkApi": "通过管理 API 获取的相同内容",
   "linkSettings": "TLS 监听器的设置",
-  "linkEndpoint": "TLS 端点",
   "linkPki": "本服务自己的证书颁发机构"
 }

@@ -10,24 +10,25 @@
 //
 // Three browser profiles deliver a signed assertion to an address the REQUEST
 // names: a SAML 2.0 AssertionConsumerServiceURL, a SAML 1.1 `shire`, and a
-// WS-Federation `wreply`. Each also had a FALLBACK for a request that named
-// none — the registered value if the entry had one, and otherwise this
-// service's own mock service provider or relying party (`/saml2/sp`,
-// `/saml11/rp`, `/wsfed/rp`).
+// WS-Federation `wreply`. Each also has a FALLBACK for a request that names
+// none: the registered value, if the entry has one.
 //
-// **IN DEVELOPMENT ALL OF THAT IS UNCHANGED, and it is on purpose.** It is how
-// a client under test is pointed at this service without registering first,
-// and the mock SP and RP are how a response can be verified with nothing else
-// running. Every one of the three files said so beside the line.
+// **IN DEVELOPMENT THE REQUEST'S ADDRESS IS TAKEN AS IT IS, and it is on
+// purpose.** It is how a client under test is pointed at this service
+// without registering first. Until #592 a request naming no address and
+// finding none registered went to this service's own mock service provider
+// or relying party (`/saml2/sp`, `/saml11/rp`, `/wsfed/rp`); those mocks are
+// deleted, and such a request is now REFUSED in development as in product —
+// there is nowhere to deliver it.
 //
 // **IN PRODUCT (`mode.acceptsUnregisteredAddresses()` false) IT IS AN IDENTITY
 // PROVIDER'S RULE INSTEAD**: a response goes only to an address on the
 // application's own entry — `samlAssertionConsumerService` for both SAML
 // profiles, `wsfedReplyUrl` for WS-Federation — a request naming any other is
-// REFUSED, and there is NO fallback to a built-in mock. Without that rule this
-// service is a signed-assertion forwarding service: anybody who can put a link
-// in front of a signed-in person receives an assertion about them, at an
-// address they chose, audienced to an application that never asked.
+// REFUSED, and there is no fallback but the registered address. Without that
+// rule this service is a signed-assertion forwarding service: anybody who can
+// put a link in front of a signed-in person receives an assertion about them,
+// at an address they chose, audienced to an application that never asked.
 //
 // The comparison is EXACT, which is what RFC 9700 section 4.1.3 asks of a
 // redirect URI and is the only rule that does not become a prefix-matching
@@ -70,7 +71,6 @@ interface ReturnAddressSpec {
   requested?: unknown;
   registered?: unknown;
   unconfirmed?: unknown;
-  fallback?: unknown;
   attribute?: string;
   parameter?: string;
   application?: string;
@@ -92,7 +92,7 @@ interface ReturnAddressDeps {
 
 /**
  * Decides where a signed assertion is delivered: in development the request's
- * address or a fallback, in product only an address registered on the
+ * address or the registered one, in product only an address registered on the
  * application's own entry.
  */
 class ReturnAddress {
@@ -158,22 +158,22 @@ class ReturnAddress {
   //                check may believe
   //   unconfirmed  the addresses it withheld because they are still marked
   //                as observed — always empty in development
-  //   fallback     the built-in mock's address, used in development only
   //   attribute    the attribute's NAME, for the sentence a refusal carries
   //   parameter    the request parameter's name, likewise
   //   application  the identifier the entry is filed under
   //
   // Answers `{ ok, url, from }` or `{ ok: false, why }`. In development it is
-  // exactly the old precedence — the request, then the LAST registered value
-  // (which is what both SAML modules always took), then the fallback.
+  // the old precedence — the request, then the LAST registered value (which
+  // is what both SAML modules always took) — and, since the mocks went
+  // (#592), a refusal where there is neither.
   // -------------------------------------------------------------------------
   /**
    * Resolves the address a response is delivered to.
    *
-   * In development: the request's address, then the last registered one, then
-   * the built-in mock's. In product: only a registered address; a request
-   * naming any other is refused, and there is no fallback.
-   * @param spec - `requested`, `registered`, `unconfirmed`, `fallback`, and the
+   * In development: the request's address, then the last registered one, and
+   * a refusal with neither. In product: only a registered address; a request
+   * naming any other is refused.
+   * @param spec - `requested`, `registered`, `unconfirmed`, and the
    * `attribute`, `parameter` and `application` a refusal names
    * @returns `{ ok, url, from }`, or `{ ok: false, why }` carrying its error
    * code
@@ -197,11 +197,16 @@ class ReturnAddress {
         return { ok: true, url: registered[registered.length - 1],
                  from: 'the ' + spec.attribute + ' on the application entry' };
       }
-      log.debug("Leaving ReturnAddress.resolve(). Development: the " +
-                "built-in mock.");
-      return { ok: true, url: String(spec.fallback || ''),
-               from:
-                 'this service\'s own mock, because nothing named an address' };
+      log.debug("Leaving ReturnAddress.resolve(). Development: nothing " +
+                "named an address and none is registered.");
+      return { ok: false,
+               why: 'The request named no ' + spec.parameter + ', and "' +
+                    application + '" has no ' + spec.attribute +
+                    ' registered, so there is nowhere to deliver the ' +
+                    'response. Name the address in the request, or register ' +
+                    'it on the application (the console\'s application ' +
+                    'page, POST /admin-api/applications/add with attribute ' +
+                    spec.attribute + ', or an ldapmodify).' };
     }
     const unconfirmed = this.valuesOf(spec.unconfirmed);
     // AN OBSERVED ADDRESS IS REFUSED FIRST WHEN IT IS THE ONE ASKED FOR,

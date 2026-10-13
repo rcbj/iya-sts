@@ -62,7 +62,7 @@
   "cryptoReport": "el informe criptográfico",
   "whatDoes": " dice lo que este servicio <em>hace</em> cuando firma o cifra, y diría lo mismo de un servicio que arrancó hace un segundo, y",
   "keysPage": "la página de claves",
-  "whatHolds": " dice lo que <em>tiene</em> un dominio. Los números de aquí suben mientras miras.",
+  "whatHolds": " dice lo que <em>tiene</em> un dominio. Los números de aquí suben mientras mira.",
   "whatNeither": "<strong>En esta página no aparece ningún valor sellado ni ninguno abierto.</strong> Un valor sellado es una clave privada, el secreto compartido de un autenticador o los códigos de recuperación de alguien, y mostrar cualquiera de sus dos mitades entregaría justo lo que el sellado existe para proteger. Sus únicos controles rotan las claves de cifrado de datos, vuelven a sellar y cuentan lo que sellaron, y rotan una clave de cifrado de claves que está en un servicio de gestión de claves (que crea la versión nueva por sí mismo), y no muestran nada. Una clave de cifrado de claves LEÍDA en este proceso se rota desplegando su sucesora &mdash; este servicio lee una y nunca escribe ninguna &mdash; y un botón <em>descifrar esto</em> sería la única puerta a un material al que ninguna puerta debe dar acceso.",
   "whatTitle": "Qué es esta página, y las dos cosas que deliberadamente no tiene",
   "keyReadBy": "La clave de cifrado de claves la lee <code>common/secrets.js</code> desde ",

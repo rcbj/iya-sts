@@ -38,7 +38,7 @@
   "specs.heading": "已實作的規格",
   "specs.thSpec": "規格",
   "specs.thWhere": "發布者",
-  "specs.thCoverage": "在此模擬服務中的涵蓋範圍",
+  "specs.thCoverage": "在本服務中的涵蓋範圍",
   "machineReadable": "機器可讀：<code>{base}/admin/sts-metadata?format=json</code>，也就是頂端按鈕以檔案形式提供的內容。它與本頁一樣位於主控台門禁之後，因此取得它的程式需先在 <code>/authn/login</code> 登入，或透過不受門禁限制的 <code>/admin-api</code> 讀取同一服務。本文件不是由規格定義的探索文件 &mdash; 此類文件請參閱 <code>/.well-known/openid-configuration</code>、<code>/.well-known/oauth-authorization-server</code>、<code>/.well-known/openid-credential-issuer</code>、<code>/.well-known/jwt-vc-issuer</code>、<code>/.well-known/did.json</code> 與 <code>/.well-known/did-configuration.json</code>。",
   "reason.only": "僅 {method}",
   "reason.noGet": "無 GET（{methods}）",

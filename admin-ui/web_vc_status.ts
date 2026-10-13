@@ -11,7 +11,8 @@
 //
 // Draws Credential status from the answer of `GET /admin-api/vc-status`: where
 // this realm's status lists are published, and every credential that carries
-// an index in them, with the controls that suspend, reinstate and revoke one.
+// an index in them, with the controls that suspend, reinstate and revoke one
+// — and, since #598, the one that publishes a Bitstring Status List.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
 // only, logs nothing, and is bundled for a browser by `build-typescript.sh`.
@@ -71,7 +72,20 @@ class VcStatusPage {
       '</code></td></tr>' +
       '<tr><th>Bitstring Status Lists</th><td>' +
       json.bitstring.map(function (u: string): string {
-        return '<code>' + kit.esc(u) + '</code>';
+        // PUBLISH (#598): the W3C suites' "publish the list now", an
+        // operator's act since the VC API stopped carrying it. The purpose
+        // is the list URL's last segment.
+        const purpose = String(u).split('/').pop() || '';
+        const publish = !canWrite ||
+          ['revocation', 'suspension'].indexOf(purpose) < 0 ? '' :
+          ' <form method="post" action="' + PAGE + '" class="inline">' +
+          '<input type="hidden" name="purpose" value="' +
+          kit.esc(purpose) + '">' +
+          '<input type="hidden" name="action" value="publish">' +
+          '<button type="submit" id="vc-status-publish-' +
+          kit.esc(purpose) + '">' + t.html('consoleVcStatus.publish') +
+          '</button></form>';
+        return '<code>' + kit.esc(u) + '</code>' + publish;
       }).join('<br>') + '<br><small>application/vc+jwt</small></td></tr>' +
       '<tr><th>' + t.html('consoleVcStatus.thTtl') + '</th><td>' +
       t.html('consoleVcStatus.ttl', { ttl: String(json.ttlS),

@@ -72,3 +72,50 @@ tests/vectors/
 # launcher may write a key pair here, and none is ever committed.
 xacml-pep/certs/*
 !xacml-pep/certs/.gitkeep
+
+# THE PORTAL'S BUNDLES (#568), written by build-typescript.sh inside an image
+# build — and by hand into a worktree, to run a protocol job's `draw()` from
+# the host. Generated, never committed.
+portal/portal.bundle.js
+portal/portal-spa.js
+portal/portal-spa.js.br
+portal/portal-spa.js.gz
+# The front door's (#579), the same kind of file.
+home/home.bundle.js
+home/home-spa.js
+home/home-spa.js.br
+home/home-spa.js.gz
+# The sign-in screen's (#571), the same kind of file.
+authn/authn.bundle.js
+authn/authn-spa.js
+authn/authn-spa.js.br
+authn/authn-spa.js.gz
+# GNAP's interaction pages' (#578), the same kind of file.
+gnap/gnap-interaction.bundle.js
+gnap/gnap-interaction-spa.js
+gnap/gnap-interaction-spa.js.br
+gnap/gnap-interaction-spa.js.gz
+# The sign-out's (#577), the same kind of file.
+logout/signout.bundle.js
+logout/signout-spa.js
+logout/signout-spa.js.br
+logout/signout-spa.js.gz
+# The OpenID4VC demonstration's (#582), the same kind of file.
+oid4vc/vc-demo.bundle.js
+oid4vc/vc-demo-spa.js
+oid4vc/vc-demo-spa.js.br
+oid4vc/vc-demo-spa.js.gz
+# The federation pages' (#580), the same kind of file.
+federation/federation-pages.bundle.js
+federation/federation-pages-spa.js
+federation/federation-pages-spa.js.br
+federation/federation-pages-spa.js.gz
+# The TLS and SPNEGO diagnostic pages' (#583), the same kind of file.
+tls/tls-pages.bundle.js
+tls/tls-pages-spa.js
+tls/tls-pages-spa.js.br
+tls/tls-pages-spa.js.gz
+kerberos/spnego-pages.bundle.js
+kerberos/spnego-pages-spa.js
+kerberos/spnego-pages-spa.js.br
+kerberos/spnego-pages-spa.js.gz

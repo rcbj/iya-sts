@@ -1,0 +1,258 @@
+{
+  "totp.issuer|description": {
+    "en": "4c8eec6ab16fd85f",
+    "text": "El nombre que muestra una aplicación de autenticación junto a la cuenta — el `issuer` del formato Key Uri de otpauth, escrito a la vez como prefijo de la etiqueta y como parámetro porque las aplicaciones antiguas leen uno y las nuevas el otro. **Vacío significa el propio host de este dominio**, seguido del id del dominio cuando lo hay, y es a propósito: dos dominios de un mismo proceso son dos proveedores de identidad, y un móvil que muestra dos cuentas con el mismo nombre al lado es una lista que nadie puede usar."
+  },
+  "totp.window|description": {
+    "en": "fb24e80574c56ed5",
+    "text": "Cuántos pasos a cada lado del momento actual se aceptan. La sección 5.2 de RFC 6238 recomienda como máximo uno, que es el valor predeterminado y hace que un código valga unos noventa segundos. **Este SÍ es en vivo** y se aplica a cada registro existente — cuánto perdona un despliegue a un móvil con el reloj desfasado es una política y no algo que el código QR comunicó a la aplicación. Cero exige un reloj perfectamente sincronizado y es el ajuste al que recurrir para demostrar qué ocurre sin uno."
+  },
+  "totp.enrolmentTtlMinutes|description": {
+    "en": "f034b2f597ec08a5",
+    "text": "Cuánto tiempo sigue disponible un secreto que se ha MOSTRADO pero aún no se ha confirmado con un código. Se guarda aparte — en memoria, o sellado en el almacén cuando varios procesos comparten uno — y nunca se escribe en el directorio hasta que un código demuestra que la aplicación lo tiene de verdad: un secreto sin confirmar en la entrada de alguien sería un segundo factor que no puede presentar, lo que es un bloqueo y no un control. Diez minutos es tiempo suficiente para encontrar un móvil y lo bastante corto para que un registro abandonado no se quede ahí."
+  },
+  "keys.offerKemEncryption|description": {
+    "en": "16bd897eb9c3284a",
+    "text": "Si los algoritmos JWE ML-KEM y HPKE (#82 — borradores, consulte keys.encryptionKemAlgs) se ofrecen cuando este dominio cifra PARA una clave que tiene un cliente o una cartera: anunciados en `userinfo_encryption_alg_values_supported`, `id_token_encryption_alg_values_supported`, `authorization_encryption_alg_values_supported` (JARM), `introspection_encryption_alg_values_supported` y el `credential_response_encryption` de un emisor OpenID4VCI, y aceptados cuando un cliente registra uno o una cartera nombra uno. **Desactivado de forma predeterminada, y decisión de un administrador:** estos algoritmos proceden de Internet-Drafts, y un cliente o una suite de conformidad que prueba cada algoritmo anunciado se encuentra con algunos que no conoce. Un cliente ya registrado para uno conserva su registro; con esto desactivado su siguiente respuesta cifrada se rechaza, como para cualquier algoritmo que este dominio no ofrezca."
+  },
+  "keys.kekField|description": {
+    "en": "b7c693647b90a5bf",
+    "text": "Qué campo de un secreto de HashiCorp Vault contiene la clave. Ambas versiones del motor KV se gestionan sin ningún ajuste — v2 anida los datos un nivel más que v1 y la respuesta se desenvuelve según su forma, porque un despliegue normalmente no sabe en qué motor está."
+  },
+  "oauth2.idaAutomaticVerifications|description": {
+    "en": "6381e314e34a5240",
+    "text": "ACTIVADO, el predeterminado: un inicio de sesión con cartera usando una credencial emitida por este dominio registra una verificación electronic_record de los claims divulgados con los que coincide la entrada de la persona, y un inicio de sesión con certificado de cliente una verificación electronic_signature de los del sujeto, cada una reemplazando a la anterior, bajo el primero de oauth2.idaTrustFrameworks. DESACTIVADO, solo lo que registra un administrador se publica como verified_claims."
+  },
+  "tls.minVersion|description": {
+    "en": "7bb6cc61df74f27f",
+    "text": "La versión de protocolo más baja que negociarán LDAPS y el puerto HTTPS principal. TLSv1.2 es el predeterminado del propio node y el mínimo que permite FAPI 2.0 (TLS 1.3 se prefiere siempre que un cliente lo ofrece); TLSv1.3 rechaza a todo cliente que no lo hable, que es el ajuste que suele querer una implementación y no suele querer quien depura clientes antiguos. Los dos valores más antiguos existen para poder ejercitar la gestión de degradación de un cliente, y necesitan un nivel de seguridad de OpenSSL que todavía los permita."
+  },
+  "oid4vci.walletUrl|label": {
+    "en": "3108901753a760b2",
+    "text": "URL de la cartera web"
+  },
+  "oid4vci.walletUrl|description": {
+    "en": "9f7225ecd5713d87",
+    "text": "La dirección de una cartera WEB, como una URL que pueda usar el NAVEGADOR, para una implementación que tenga una. Cuando se define, una Credential Offer también se ofrece como un enlace a ella (con oid4vci.walletIssuancePath y la oferta en su consulta), junto al enlace de oid4vci.walletInvocation que abre una aplicación de cartera. VACÍA, el valor predeterminado: no se ofrece ninguna cartera web."
+  },
+  "oid4vci.walletInvocation|label": {
+    "en": "a20565a2001b0325",
+    "text": "Cómo recibe una oferta una aplicación de cartera"
+  },
+  "oid4vci.walletInvocation|description": {
+    "en": "8cbd0689641ebd44",
+    "text": "El esquema de URL personalizado del enlace y del código QR con los que se entrega una Credential Offer a una aplicación de cartera. openid-credential-offer, el valor predeterminado: openid-credential-offer://, el esquema que define la sección 4.1 de OpenID4VCI 1.0 y que registran la mayoría de las carteras. haip-vci: haip-vci://, que la sección 4.2 de OpenID4VC HAIP 1.0 permite registrar en su lugar a una cartera HAIP. La oferta es la misma en ambos casos."
+  },
+  "oid4vci.deferredReadyMs|description": {
+    "en": "ddc34c16902c4571",
+    "text": "Cuánto tiempo permanece una credencial diferida en issuance_pending antes de estar lista. Lo bastante largo para que una cartera tenga que sondear y lo bastante corto para que una prueba no agote su tiempo de espera."
+  },
+  "oid4vci.deferredIntervalS|description": {
+    "en": "445e2a0af69fb6b5",
+    "text": "El `interval` que este emisor pide a una cartera que espere entre sondeos de credenciales diferidas."
+  },
+  "oid4vci.requestEncryptionRequired|description": {
+    "en": "f6d66bad0376b337",
+    "text": "Activado, se rechaza una solicitud de credencial que no sea un JWE. El caso negativo que vale la pena tener: una cartera no puede demostrar que cifra cifrando si el emisor también acepta texto plano."
+  },
+  "oid4vci.txCodeMaxAttempts|description": {
+    "en": "4c2dcc105ba5c4f2",
+    "text": "EN MODO PRODUCTO, cuántos Transaction Codes erróneos sobrevive un código preautorizado. El último lo CONSUME, para que un código de cinco dígitos no pueda adivinarse en el endpoint de token dentro de la vigencia de la oferta; el usuario final pide al emisor una nueva oferta. Desarrollo no cuenta nada, para que una cartera pueda pasar por su ruta de código erróneo tantas veces como quiera una prueba."
+  },
+  "oid4vci.walletIssuancePath|label": {
+    "en": "ce4ba0d38dfd924e",
+    "text": "Página de emisión de la cartera web"
+  },
+  "oid4vci.walletIssuancePath|description": {
+    "en": "067dc49ffc4982e7",
+    "text": "La página bajo oid4vci.walletUrl a la que se entrega una Credential Offer, para una cartera web cuya página de ofertas no es su raíz. Vacía de forma predeterminada. (La cartera web del depurador integrado recibe ofertas en /vc-issuance-1.html.)"
+  },
+  "oid4vci.credentialCertificateHeader|description": {
+    "en": "91cae7f95584d095",
+    "text": "Si una CREDENCIAL dc+sd-jwt o jwt_vc_json emitida nombra la cadena de certificados de la clave que la firmó. SD-JWT VC nombra `x5c` como una de las formas en que un verificador puede encontrar la clave de un emisor, de modo que una cartera o un verificador que nunca obtiene los metadatos de este emisor aún puede comprobar la firma contra un ancla de confianza. ldp_vc no es un JWS y no se ve afectado. El x5c aquí (y en un Status List Token) deja fuera del final el ancla de confianza, la Root del servicio, como exige HAIP 1.0 sección 6.1.1; HAIP también exige x5c, así que un dominio HAIP define x5c. `x5u` — el predeterminado — es la dirección de la cadena en este servicio, `/pki/chain/{scope}/{sha256}.pem`, de unos cien bytes; `x5c` es la cadena en línea, primero la hoja y al final la Root del servicio, DER en base64, de varios kilobytes; `both` es ambos y `none` ninguno. En cualquier caso, es lo que una parte que confía que solo tiene el token necesita para llegar a los puntos de distribución de CRL, al respondedor OCSP y a la dirección caIssuers de cada certificado. Una clave aún no certificada bajo la CA emisora JOSE de este dominio, y una firma HMAC, no reciben ninguno. RFC 7515 sección 4.1.5 exige que la obtención de `x5u` use TLS: con global.https desactivado la dirección es `http://` y un verificador estricto se negará a seguirla. A las cabeceras JWE nunca se les da una — ninguna clave certificada de este servicio cifra nada. Configurable por dominio."
+  },
+  "oid4vci.proofIatWindowS|description": {
+    "en": "d2e6aa88a5bf4282",
+    "text": "Cuánto puede alejarse del momento actual, en uno u otro sentido, el `iat` de un openid4vci-proof+jwt de una cartera. El c_nonce es lo que hace que una prueba sea de un solo uso; esto es lo que impide que se use en absoluto una acuñada hace mucho tiempo."
+  },
+  "oid4vci.cNonceCacheSize|description": {
+    "en": "816e544a7d9489ea",
+    "text": "Cuántos valores de c_nonce del Nonce Endpoint retiene un dominio de confianza. Superado ese número se descarta el MÁS ANTIGUO: una prueba que lo cite recibe invalid_nonce, y la cartera obtiene uno nuevo, como OpenID4VCI sección 7 le indica hacer ante un nonce caducado."
+  },
+  "oid4vci.issuerDisplayName|description": {
+    "en": "d2106c0f8af08f01",
+    "text": "El `display.name` de los metadatos del emisor de credenciales — lo que una cartera muestra como quién ofrece la credencial. Los nombres visibles y colores propios de las configuraciones de credenciales forman parte del catálogo en oid4vc/vc_issuer.ts y no son ajustes."
+  },
+  "oid4vp.walletUrl|label": {
+    "en": "35334515c27079db",
+    "text": "URL de la cartera"
+  },
+  "oid4vp.walletUrl|description": {
+    "en": "273ca3cecab6bf43",
+    "text": "La dirección de una cartera WEB, para una implementación que tenga una: cuando se define, una solicitud de presentación también se ofrece como un enlace a ella (con oid4vp.walletPresentationPath y la solicitud en su consulta), junto al enlace de oid4vp.walletInvocation que abre una aplicación de cartera. Recurre a la cartera web de OID4VCI, vacía de forma predeterminada: no se ofrece ninguna cartera web."
+  },
+  "oid4vp.walletInvocation|label": {
+    "en": "a9146678945ce25e",
+    "text": "Cómo recibe una solicitud una aplicación de cartera"
+  },
+  "oid4vp.walletInvocation|description": {
+    "en": "d7c4e28f7bdf5fc8",
+    "text": "El esquema de URL personalizado del enlace «Abrir su cartera» en la página de inicio de sesión con cartera, del código QR cuando se ofrece y del requestUri de una verificación iniciada: la solicitud por referencia (client_id y request_uri) bajo ese esquema. openid4vp, el valor predeterminado: openid4vp://, el esquema que OpenID4VP 1.0 define para un verificador que no conoce la cartera. haip-vp: haip-vp://, que la sección 5.1 de OpenID4VC HAIP 1.0 permite registrar en su lugar a una cartera HAIP. Un ID Token autoemitido solo es siempre siopv2://."
+  },
+  "oid4vp.signInSelfIssued|description": {
+    "en": "1dd010855b9acf09",
+    "text": "Ofrece «Iniciar sesión con un ID autoemitido» en /authn/login: una solicitud SIOPv2 (response_type=id_token) cuyo ID Token la cartera firma con su propia clave. Solo inicia la sesión de la persona que INSCRIBIÓ esa clave — en /portal/self-issued, o por un administrador en /admin/users — en todos los modos, y ofrece la misma página de inscripción. DESACTIVADO por defecto: una nueva vía de entrada es algo que un dominio activa."
+  },
+  "oid4vp.clientIdPrefix|description": {
+    "en": "8e5bc19e401b8880",
+    "text": "Cómo debe autenticar una cartera una solicitud FIRMADA (OpenID4VP sección 5.9). pre-registered: oid4vp.clientId, que la cartera conoce por otro canal. decentralized_identifier: el did:web del dominio, con la solicitud firmada con una clave que su documento enumera. verifier_attestation: un Verifier Attestation JWT en la cabecera `jwt` de la solicitud — oid4vp.verifierAttestation, o uno que este dominio firma para sí mismo, en el que una cartera confía solo si confía en este dominio. openid_federation: el identificador de entidad de este dominio, cuya Entity Configuration está en /.well-known/openid-federation. x509_san_dns: oid4vp.x509DnsName, un dNSName del certificado del verificador, cuya cadena la solicitud lleva en x5c. x509_hash: el SHA-256 de ese certificado. Ambos firman con oid4vp.x509SigningAlgorithm; /oid4vp/verifier-certificate muestra el certificado y ambos Client Identifiers. El client_id_prefix de un inicio de verificación lo elige por solicitud. Una solicitud sin firmar siempre usa redirect_uri."
+  },
+  "oid4vp.x509DnsName|description": {
+    "en": "de449adfa5dc57ee",
+    "text": "El nombre DNS que el certificado del verificador lleva en su subjectAltName y que nombra el Client Identifier x509_san_dns (OpenID4VP 1.0 sección 5.9.3). DEBE ser el host de la Response URI, lo que comprueba una cartera que por lo demás no confía en el verificador, así que se rechaza una solicitud cuya Response URI esté en otro host. VACÍO, el predeterminado: el host de global.publicBaseUrl cuando está fijado; si no — solo en desarrollo — el host al que llegó la solicitud. El modo producto nunca certifica una cabecera Host: quien la enviara elegiría adónde envía las presentaciones una solicitud firmada y de confianza."
+  },
+  "oid4vp.x509SigningAlgorithm|description": {
+    "en": "f85d7f30b92687ec",
+    "text": "El algoritmo JWS con el que se firma un Request Object con el Client Identifier x509_san_dns o x509_hash, y por tanto la clave del dominio sobre la que se emite el certificado del verificador. ES256 por defecto, que OpenID4VC HAIP exige que una cartera acepte. Aún no se ofrece un algoritmo poscuántico: el Request Object se firma en la ruta de la solicitud, y las claves poscuánticas de este dominio firman en el grupo de hilos de libuv (oid4vc/CLAUDE.md, los prefijos x509)."
+  },
+  "oid4vp.verifierAttestation|description": {
+    "en": "c39fa3d8102074f4",
+    "text": "Un Verifier Attestation JWT que un emisor de atestaciones en el que confían las carteras firmó para este verificador (typ verifier-attestation+jwt). Su `cnf` debe nombrar la clave de firma de solicitudes de este dominio y su `sub` pasa a ser el Client Identifier. VACÍO, el predeterminado: con oid4vp.clientIdPrefix=verifier_attestation este dominio se atesta a sí mismo, lo que solo aceptará una cartera que ya confíe en este dominio."
+  },
+  "oid4vp.presentationRequestTtlS|description": {
+    "en": "7db9759ae37adbf0",
+    "text": "Cuánto tiempo puede esperar una solicitud de presentación — su nonce, su state y su Request Object — la respuesta de una cartera."
+  },
+  "oid4vp.maxTransactions|description": {
+    "en": "480f0c65c89b69bb",
+    "text": "Cuántas solicitudes de presentación — las de la puerta del bar y los inicios de sesión con cartera — mantiene en espera de una cartera un dominio de confianza. Superado ese número se descarta la MÁS ANTIGUA, la regla de federation.maxContexts: rechazar en su lugar permitiría a cualquiera que alcance el endpoint de solicitud dejarlo inservible para todos, mientras que descartar pierde una solicitud abandonada."
+  },
+  "oid4vp.signInRegisterMaxEntries|label": {
+    "en": "3c232e9789c8b07b",
+    "text": "Tamaño del registro de inicios de sesión con cartera (por dominio)"
+  },
+  "oid4vp.signInRegisterMaxEntries|description": {
+    "en": "e4c6eb2b5df062c9",
+    "text": "Cuántas filas conserva el registro de inicios de sesión con cartera por dominio de confianza — una por credencial emitida para una persona sobre un token de acceso verificado (por clave del titular para ldp_vc). Superado ese número se descarta la fila EMITIDA PRIMERO. Eso falla de forma CERRADA: una credencial sin fila no inicia la sesión de nadie, que es también lo que hace una fila repudiada. El coste del valor predeterminado: una vez que un dominio ha emitido esta cantidad de credenciales de inicio de sesión, cada nueva impide que la más antigua aún válida inicie la sesión de su titular, y al titular hay que emitirle otra. Auméntelo para un dominio que emita más; cada proceso de cada nodo retiene el registro completo."
+  },
+  "oid4vp.walletPresentationPath|label": {
+    "en": "b6fa773dcddd6d01",
+    "text": "Página de presentación de la cartera web"
+  },
+  "oid4vp.walletPresentationPath|description": {
+    "en": "629d354cdfa52216",
+    "text": "La página bajo oid4vp.walletUrl a la que se entrega una solicitud de presentación, para una cartera web cuya página de solicitudes no es su raíz. Vacía de forma predeterminada. (La cartera web del depurador integrado recibe solicitudes en /vc-presentation-1.html.)"
+  },
+  "oid4vp.allowedWalletUrls|label": {
+    "en": "9ec6e9a5a1975afc",
+    "text": "Otras URL de cartera que puede nombrar un enlace de solicitud (producto)"
+  },
+  "oid4vp.allowedWalletUrls|description": {
+    "en": "12e0e5f89e591fc8",
+    "text": "EN MODO PRODUCTO, las URL de cartera además de oid4vp.walletUrl que puede nombrar el `wallet` de un inicio de verificación; cualquier otra se rechaza como redirección abierta. Desarrollo acepta cualquier URL."
+  },
+  "oid4vp.signIn|label": {
+    "en": "762000c7e5e841a9",
+    "text": "Iniciar sesión con una cartera"
+  },
+  "oid4vp.signIn|description": {
+    "en": "0f2c1a100385463b",
+    "text": "Ofrece «Iniciar sesión con una cartera» en /authn/login y responde en /authn/wallet: una solicitud OpenID4VP — mediante la Digital Credentials API, o por enlace en el mismo dispositivo — de una credencial que emitió este dominio, en cualquier formato que nombre oid4vp.signInFormats, cuya presentación verificada — incluida una prueba reciente del titular — inicia una sesión para la entrada del directorio para la que se emitió la credencial, y continúa con el flujo que estuviera esperando en la pantalla de inicio de sesión. Una cartera también puede ser el segundo factor tras una contraseña, y se pide un segundo factor tras una cartera cuando la solicitud exige dos. Una credencial de cualquier otro emisor, o una emitida sobre un token de acceso que este servicio no emitió, se sigue verificando y no inicia la sesión de nadie. Desactivarlo quita el botón y cierra la puerta; una verificación que inicia un administrador no se ve afectada."
+  },
+  "oid4vp.signInClientIdPrefix|label": {
+    "en": "43879ec489d9b15c",
+    "text": "Inicio de sesión con cartera: prefijo del Client Identifier"
+  },
+  "oid4vp.signInClientIdPrefix|description": {
+    "en": "3cd3ff96417209ba",
+    "text": "Cómo autentica una cartera la solicitud firmada que envía un inicio de sesión con cartera (sección 5.9 de OpenID4VP 1.0), tanto en el enlace como en el código QR y la Digital Credentials API. x509_hash, el valor predeterminado y lo que exige OpenID4VC HAIP 1.0: el SHA-256 del certificado del verificador, cuya cadena lleva la solicitud; la cartera debe confiar en la raíz de este servicio (/oid4vp/verifier-certificate la muestra). x509_san_dns: el nombre DNS del certificado (oid4vp.x509DnsName). Los demás son los de oid4vp.clientIdPrefix, que rige una verificación que inicia un administrador y no esta; pre-registered solo funciona con una cartera que tenga fuera de banda la clave de este verificador."
+  },
+  "oid4vp.signInResponseMode|label": {
+    "en": "ae2a539691bd00e1",
+    "text": "Inicio de sesión con cartera: modo de respuesta"
+  },
+  "oid4vp.signInResponseMode|description": {
+    "en": "4acf957db4d1cc9c",
+    "text": "Cómo responde a un inicio de sesión con cartera una cartera en el mismo dispositivo, o una que escaneó el código QR. direct_post.jwt, el valor predeterminado y lo que exige la sección 5.1 de OpenID4VC HAIP 1.0: la respuesta se cifra para una clave que solo tiene este inicio de sesión (oid4vp.responseEncryptionKeyAlgs), y se rechaza una sin cifrar. direct_post: en claro, para una cartera que no puede cifrar. La Digital Credentials API corresponde a oid4vp.signInDcApiResponseMode."
+  },
+  "oid4vp.signInTtlS|label": {
+    "en": "a3d56f8db7204416",
+    "text": "Vigencia del inicio de sesión con cartera (s)"
+  },
+  "oid4vp.signInTtlS|description": {
+    "en": "f508d0d891322207",
+    "text": "Cuánto tiempo espera un inicio de sesión con cartera a que la cartera responda, y cuánto puede tardar el navegador que lo inició en recoger la sesión. Corto a propósito: un código QR que sigue siendo válido es un código QR que otra persona tiene más tiempo para retransmitir."
+  },
+  "oid4vp.signInPollS|label": {
+    "en": "f82030ee084d3d65",
+    "text": "Actualización de la página de inicio de sesión con cartera (s)"
+  },
+  "oid4vp.signInPollS|description": {
+    "en": "439aa4f77625ebb1",
+    "text": "Con qué frecuencia se recarga la página del código QR (oid4vp.signInCrossDevice) mientras responde una cartera en otro dispositivo. Es una actualización <meta> y no un script, así que cada recarga es una página completa. La página de la Digital Credentials API no se recarga: una recarga cerraría el diálogo de cartera del navegador."
+  },
+  "oid4vp.signInCrossDevice|label": {
+    "en": "20ef4bd658348a2f",
+    "text": "Código QR de inicio de sesión con cartera (entre dispositivos, retransmisible)"
+  },
+  "oid4vp.signInCrossDevice|description": {
+    "en": "efc0c9399fffd682",
+    "text": "Ofrece un código QR simple en la página de inicio de sesión con cartera, para una cartera en otro dispositivo que la Digital Credentials API del navegador no puede alcanzar. DESACTIVADO por defecto: solo el navegador que inició el inicio de sesión puede quedar autenticado con él, y eso es exactamente lo que explota una retransmisión — alguien muestra su propio código a una víctima que lo escanea y autentica el navegador del atacante. La vía de la Digital Credentials API demuestra que la cartera está cerca del navegador y no se ve afectada por este ajuste."
+  },
+  "oid4vp.signInFormats|label": {
+    "en": "5f37c7913338b50c",
+    "text": "Formatos de credencial del inicio de sesión con cartera"
+  },
+  "oid4vp.signInFormats|description": {
+    "en": "e90ac91d5df31d20",
+    "text": "Los formatos de credencial que pide un inicio de sesión con cartera, por orden de preferencia: una consulta de credencial DCQL por cada uno, y un conjunto de credenciales que indica que cualquiera sirve. Cada uno inicia sesión solo con una prueba reciente del titular — un Key Binding JWT, un VP JWT o una prueba Data Integrity — para esta solicitud. Los nombres desconocidos se ignoran; ninguno significa los tres. Una cartera que solo responde la primera consulta que lee responde en el primer formato de aquí."
+  },
+  "oid4vp.signInDcApiResponseMode|description": {
+    "en": "1721241f011b9a28",
+    "text": "Cómo responde una cartera a un inicio de sesión mediante la Digital Credentials API (OpenID4VP Appendix A): dc_api.jwt — cifrado (ECDH-ES) para una clave que solo tiene este inicio de sesión, de modo que el script de la página transporta un JWE — o dc_api, en claro, para una cartera que no puede cifrar."
+  },
+  "oid4vp.responseEncryptionKeyAlgs|description": {
+    "en": "6b36da5bfb73147f",
+    "text": "Las claves efímeras que una solicitud direct_post.jwt o dc_api.jwt ofrece en `client_metadata.jwks`, en orden — una clave por algoritmo, creada para esa única transacción y guardada sellada en ella. La cartera cifra para una que admita. El valor predeterminado ofrece primero el híbrido X-Wing (HPKE-10-KE, ML-KEM-768 + X25519, draft-reddy-cose-jose-pqc-hybrid-hpke-11), para que una cartera que pueda proteger la respuesta frente a un futuro adversario cuántico lo haga, y en segundo lugar la clave ECDH-ES P-256 que exige OpenID4VC HAIP, para que toda cartera HAIP aún pueda. Omitir ECDH-ES rechaza a toda cartera que solo tenga ese; una lista vacía se interpreta como ECDH-ES solo."
+  },
+  "oid4vp.requireStatusReference|description": {
+    "en": "8965f26113e9a2b0",
+    "text": "all — el predeterminado, en ambos modos — rechaza toda credencial presentada al verificador que no nombre un estado (un claim `status` de Token Status List o una BitstringStatusListEntry) que se resuelva como VÁLIDO, sea quien sea su emisor (STS-VC-0088), y una ldp_vc cuya presentación no reveló su credentialStatus (STS-VC-0089; la solicitud lo pide). Un emisor de confianza que no publica estado se exime mediante oid4vp.statusOptionalIssuers, no debilitando esto. own-only acepta una credencial EXTERNA sin referencia — ADVERTENCIA: nunca podrá demostrarse que tal credencial fue revocada o suspendida, así que una credencial que su emisor retiró sigue aceptándose aquí. off también acepta una de las propias de este dominio sin referencia y una ldp_vc que ocultó su estado — una credencial revocada pasa ocultando su entrada de estado — y es SOLO PARA MODO DESARROLLO: en producto se ignora donde se lee (se registra una vez, STS-CORE-0106) y se rechaza al escribirse (STS-CORE-0103). Un inicio de sesión con cartera lee el estado de su propia credencial del registro de emitidas diga lo que diga esto."
+  },
+  "oid4vci.keyAttestationRequired|description": {
+    "en": "1d6952f567ad37de",
+    "text": "Exige que toda Credential Request lleve una atestación de clave (OpenID4VCI Appendix D) — en la cabecera key_attestation de una prueba jwt, o como el tipo de prueba attestation — y lo indica en los metadatos (key_attestations_required). Desactivado, una atestación que se envíe se sigue verificando y registrando. Lo que atesta decide lo que declara un inicio de sesión con cartera: hwk para un almacenamiento de claves que resiste un potencial de ataque Moderate, y acr «mfa» cuando la autenticación del usuario también lo hace."
+  },
+  "scim.scopeRead|description": {
+    "en": "6dacb97bcbc32f0e",
+    "text": "El ámbito de OAuth 2.0 que debe llevar un token de acceso para leer en /scim/v2 — el primer requisito de ámbito de este servicio. Se publica en scopes_supported en ambos documentos de descubrimiento, para que un cliente pueda encontrar el nombre que necesita en lugar de que se le indique por otro canal. Cualquier concesión lo obtendrá: este servidor de autorización concede lo que se le pide, así que lo que ejercita el requisito es la gestión de un ámbito por parte del CLIENTE más que la disposición de este servicio a negarlo."
+  },
+  "scim.scopeWrite|description": {
+    "en": "b501d3bda726fe8d",
+    "text": "El ámbito necesario para crear, reemplazar, modificar, eliminar u operar en masa. NO implica el ámbito de lectura y el ámbito de lectura no lo implica, deliberadamente: una credencial de aprovisionamiento de solo lectura es algo que un cliente tiene que gestionar, y un servidor que tratara un ámbito como ambos no podría producirla."
+  },
+  "caep.autoEmitTypes|description": {
+    "en": "2071bea21de6cc08",
+    "text": "Los NOMBRES CORTOS de los eventos CAEP que este servicio emite por sí mismo, de entre los ocho actos que realmente puede observar — el séptimo, desde #62 P4, el cambio del NIVEL DE RIESGO de una persona, que emite risk-level-change donde la política de respuesta al riesgo permite anunciarlo (y, desde #164, el de un DISPOSITIVO registrado, con principal DEVICE): el inicio de una sesión, la presentación de una sesión, el fin de una sesión, una persona que se vuelve a autenticar en una sesión que ya tiene con un acr distinto (una elevación o reducción, desde 2026-09-14, que emite assurance-level-change en la escala urn:sts:acr), una credencial de una persona creada, cambiada, revocada o eliminada en cualquier puerta que cambie una — la consola y /admin-api, el portal, el inicio de sesión, una escritura de contraseña LDAP, un certificado inscrito o revocado, un par de claves de firma, una credencial de cartera (desde 2026-09-22, #145) —, que emite credential-change, y — desde 2026-09-22 — una escritura en el directorio que modifica un claim de una persona que tiene tokens o aserciones vigentes (un atributo que asigna el catálogo de claims, o un grupo al que se une, que abandona o que se renombra), que emite token-claims-change. El octavo, desde #164 (2026-09-26), es el cambio del CUMPLIMIENTO de un dispositivo registrado — definido por un administrador, la fuente MDM o el control de prueba del desarrollo —, que emite device-compliance-change; las claves de un dispositivo y su secreto de Native SSO también emiten credential-change. Una fila que nombre cualquier otra cosa se descarta con una advertencia en lugar de producir un evento que nada aquí puede causar."
+  },
+  "listenerMain.minVersion|description": {
+    "en": "325bb2a3c0cc0f3b",
+    "text": "Solo para la escucha del puerto principal: tls.minVersion. inherit, el predeterminado, sigue a tls.minVersion; cualquier otro valor decide solo para esta escucha. La versión de protocolo más baja que negociarán LDAPS y el puerto HTTPS principal. TLSv1.2 es el valor predeterminado propio de node y el mínimo que permite FAPI 2.0 (TLS 1.3 se prefiere siempre que un cliente lo ofrezca); TLSv1.3 rechaza a todo cliente que no pueda hablarlo, que es el ajuste que suele querer un despliegue y que no suele querer quien depura clientes antiguos. Los dos valores más antiguos existen para poder ejercitar la gestión de la degradación de un cliente, y necesitan un nivel de seguridad de OpenSSL que todavía los permita."
+  },
+  "listenerLdaps.minVersion|description": {
+    "en": "80013229e3717f44",
+    "text": "Solo para la escucha LDAPS: tls.minVersion. inherit, el predeterminado, sigue a tls.minVersion; cualquier otro valor decide solo para esta escucha. La versión de protocolo más baja que negociarán LDAPS y el puerto HTTPS principal. TLSv1.2 es el valor predeterminado propio de node y el mínimo que permite FAPI 2.0 (TLS 1.3 se prefiere siempre que un cliente lo ofrezca); TLSv1.3 rechaza a todo cliente que no pueda hablarlo, que es el ajuste que suele querer un despliegue y que no suele querer quien depura clientes antiguos. Los dos valores más antiguos existen para poder ejercitar la gestión de la degradación de un cliente, y necesitan un nivel de seguridad de OpenSSL que todavía los permita."
+  },
+  "listenerDebugger.minVersion|description": {
+    "en": "a478a9f18ea5953c",
+    "text": "Solo para la escucha del depurador de protocolos: tls.minVersion. inherit, el predeterminado, sigue a tls.minVersion; cualquier otro valor decide solo para esta escucha. La versión de protocolo más baja que negociarán LDAPS y el puerto HTTPS principal. TLSv1.2 es el valor predeterminado propio de node y el mínimo que permite FAPI 2.0 (TLS 1.3 se prefiere siempre que un cliente lo ofrezca); TLSv1.3 rechaza a todo cliente que no pueda hablarlo, que es el ajuste que suele querer un despliegue y que no suele querer quien depura clientes antiguos. Los dos valores más antiguos existen para poder ejercitar la gestión de la degradación de un cliente, y necesitan un nivel de seguridad de OpenSSL que todavía los permita."
+  },
+  "listenerSpiffeServer.minVersion|description": {
+    "en": "1f0123e9269bc7d5",
+    "text": "Solo para la escucha de la SPIRE Server API: tls.minVersion. inherit, el predeterminado, sigue a tls.minVersion; cualquier otro valor decide solo para esta escucha. La versión de protocolo más baja que negociarán LDAPS y el puerto HTTPS principal. TLSv1.2 es el valor predeterminado propio de node y el mínimo que permite FAPI 2.0 (TLS 1.3 se prefiere siempre que un cliente lo ofrezca); TLSv1.3 rechaza a todo cliente que no pueda hablarlo, que es el ajuste que suele querer un despliegue y que no suele querer quien depura clientes antiguos. Los dos valores más antiguos existen para poder ejercitar la gestión de la degradación de un cliente, y necesitan un nivel de seguridad de OpenSSL que todavía los permita."
+  },
+  "listenerSpiffeBroker.minVersion|description": {
+    "en": "03d7d996ee7d83ca",
+    "text": "Solo para la escucha de la SPIFFE Broker API: tls.minVersion. inherit, el predeterminado, sigue a tls.minVersion; cualquier otro valor decide solo para esta escucha. La versión de protocolo más baja que negociarán LDAPS y el puerto HTTPS principal. TLSv1.2 es el valor predeterminado propio de node y el mínimo que permite FAPI 2.0 (TLS 1.3 se prefiere siempre que un cliente lo ofrezca); TLSv1.3 rechaza a todo cliente que no pueda hablarlo, que es el ajuste que suele querer un despliegue y que no suele querer quien depura clientes antiguos. Los dos valores más antiguos existen para poder ejercitar la gestión de la degradación de un cliente, y necesitan un nivel de seguridad de OpenSSL que todavía los permita."
+  }
+}

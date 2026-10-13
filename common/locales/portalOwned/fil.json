@@ -1,0 +1,11 @@
+{
+  "heading": "{kind, select, roles {Mga role na pag-aari mo} groups {Mga grupong pag-aari mo} service-accounts {Mga service account na pag-aari mo} other {Mga application na pag-aari mo}}",
+  "sub": "Lahat ng ganitong uri na ang mga may-ari ay nagpapangalan sa iyo, o sa isang grupong kinabibilangan mo. Nananagot ang may-ari para sa isang resource; wala itong ibinibigay. Para baguhin ang isa, humingi sa isang administrator.",
+  "thName": "Pangalan",
+  "thDetail": "Detalye",
+  "thHow": "Paano ito naging iyo",
+  "you": "May-ari ka",
+  "viaGroup": "Sa pamamagitan ng grupong {group}",
+  "none": "Wala kang pag-aaring {kind, select, roles {role} groups {grupo} service-accounts {service account} other {application}}.",
+  "yourGroups": "Ang mga grupo mo: {groups}."
+}

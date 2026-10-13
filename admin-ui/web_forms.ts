@@ -61,7 +61,7 @@ class WebForms {
     return out;
   }
 
-  // Keyed `<console path> <action>`, and `<console path>` alone for the
+  // Keyed `<console path>[#tab] <action>`, and the path alone for the
   // page whose form carries no action — kept only when exactly one POST
   // operation mirrors that page, since otherwise there is no one answer.
   // Every operation a key names is kept: two can mirror one control
@@ -105,7 +105,8 @@ class WebForms {
    * Resolves one form.
    *
    * @param table - `table()`'s answer
-   * @param page - the console path the form posts to, with no realm prefix
+   * @param page - the console path and optional tab fragment, without a realm
+   *   prefix
    * @param action - the form's `action` field, or '' when it has none
    * @returns the operation's path, or null when no one operation is it
    */
@@ -114,7 +115,10 @@ class WebForms {
     // `/admin/users` is `/admin-api/users/...` — and otherwise none: two
     // operations in other areas are two acts to choose between, and the
     // runtime does not choose.
-    const area = '/admin-api' + String(page).replace(/^\/admin/, '') + '/';
+    const pageWithTab = String(page);
+    const pagePath = pageWithTab.split('#')[0];
+    const tabKey = pageWithTab.indexOf('#') >= 0 ? pageWithTab : '';
+    const area = '/admin-api' + pagePath.replace(/^\/admin/, '') + '/';
     const has = function (key) {
       const held = Object.prototype.hasOwnProperty.call(table, key)
         ? table[key] : [];
@@ -127,12 +131,14 @@ class WebForms {
       return own.length === 1 ? own[0] : null;
     };
     if (action) {
-      return has(page + ' ' + action);
+      return (tabKey && has(tabKey + ' ' + action)) ||
+             has(pagePath + ' ' + action);
     }
     // A form with no `action` field whose page is named after its act —
     // `POST /admin/keys/export` — is that action of the operation that
     // mirrors it, when the page alone is shared by several.
-    return has(page) || has(page + ' ' + String(page).split('/').pop());
+    return (tabKey && has(tabKey)) || has(pagePath) ||
+           has(pagePath + ' ' + pagePath.split('/').pop());
   }
 }
 

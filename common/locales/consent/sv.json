@@ -1,5 +1,5 @@
 {
-  "title": "Tillåta åtkomst? — simulerad auktoriseringsserver",
+  "title": "Tillåta åtkomst? — auktoriseringsserver",
   "heading": "Tillåta åtkomst?",
   "signedInAs": "Inloggad som <code>{username}</code> på <code>{base}</code>",
   "asking": "<strong>{client}</strong> ber om åtkomst för din räkning.",

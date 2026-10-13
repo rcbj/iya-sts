@@ -1,0 +1,138 @@
+{
+  "roles.schema.objectClasses.stsRole.what": {
+    "en": "e80eac42b07fd952",
+    "text": "Isang ROLE. Pinangangalanan ang entry ayon sa pangalan ng role (`cn=staff`), at MEMBERSHIP ang lahat ng nasa loob nito — kung sino ang may hawak ng role. Ang kung para saan KINAKAILANGAN ang role ay nasa application entry na nangangailangan nito, sa `appRequiredRole`, dahil katotohanan iyon tungkol sa application at hindi tungkol sa role."
+  },
+  "roles.schema.attributes.roleName.what": {
+    "en": "5b8fbb4273c31dfa",
+    "text": "Ang pangalan ng role, na siya ring `cn`. Tahasan din itong dala para may pangalan ang nagbabasang mga attribute lang ang hawak."
+  },
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "Isang username na may hawak ng role na ito. Multi-valued. Hindi kailangang umiiral na ang tao — gumagawa ang serbisyong ito ng directory entry para sa anumang pangalan sa unang pagkakita, kaya puwedeng ibigay ang role bago pa man mag-sign in ang may hawak nito."
+  },
+  "roles.schema.attributes.roleMemberGroup.what": {
+    "en": "ed79e4eb54a86c36",
+    "text": "Isang group na ang bawat miyembro ay may hawak ng role na ito. Multi-valued. Nire-resolve sa ORAS NG PAGPAPASYA sa halip na ine-expand sa write, kaya binabago ng `ldapmodify` na nagdaragdag ng isang tao sa group ang mismong susunod na token."
+  },
+  "roles.schema.attributes.roleMemberApplication.what": {
+    "en": "cecc4552c88342d4",
+    "text": "Isang application na may hawak ng role na ito BILANG ITO MISMO — ang pinagbabatayan ng pasya sa client_credentials grant, kung saan walang tao. Multi-valued. HINDI ito parehong relasyon ng `appRequiredRole` sa application entry, na siyang HINIHINGI ng application na iyon sa iba."
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "Isang permission na puwedeng I-ISSUE sa may hawak ng role na ito (#303). Multi-valued. Pinangangalanan gaya ng paghingi ng client: ang generic na application permission ayon sa buong scope value nito — ang `oauthPermissionBaseUri` ng resource application na sinusundan ng pangalan — at ang native permission ng serbisyong ito ayon sa sarili nitong pangalan (`admin:read`, `admin:write`). Mahalaga lang ito para sa permission na GINA-GATE ng resource application nito (`oauthRoleGatedPermission`); in-iissue lang ang gated permission sa subject na may hawak na role na nagpapangalan nito, at ang ungated gaya ng dati."
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "Isang client na NAGKAKALOOB ng role na ito (#454): bawat taong nagsa-sign in sa pamamagitan ng client na iyon ay may hawak ng role sa access token na in-issue sa client, at sa walang ibang token. Multi-valued, mga client_id ng mga application sa realm na ito. Ang role na hawak sa ganitong paraan ay katotohanan tungkol sa TOKEN at hindi tungkol sa tao, kaya hinahalo ito sa mga role na hawak mismo ng tao sa bawat tawag, at ang pag-alis ng client dito ay agad na nag-aalis ng role sa mga token ng client na iyon. Hindi kailanman inilalapat sa sariling client_credentials token ng client, na ang mga role ay ang membership nito. Naka-seed ang ADMIN_CONSOLE bilang ipinagkakaloob ng `sts-admin-console`."
+  },
+  "roles.schema.attributes.roleApplication.what": {
+    "en": "364af2be7fcecb90",
+    "text": "Ang ISANG application na pinagmamay-ari ng role na ito (#310), ayon sa identifier nito sa ou=applications; kapag wala, realm-wide ang role. Pinangangalanang `<role>@<application>` sa register ang role ng application, kaya puwedeng magkaroon ang dalawang application ng kani-kaniyang `reader`; dala ito ng token o assertion para sa application na iyon bilang `<role>`, at hindi ito dala kailanman ng token ng ibang application. Puwede itong pangalanan ng `appRequiredRole` ng application bilang `<role>`."
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "SINO ANG PUWEDENG HUMAWAK ng role na ito (#93): `user` (mga tao, direkta o sa pamamagitan ng group) at `application` (isang application bilang ito mismo). Multi-valued; kapag wala, puwede ang dalawa — bawat role na isinulat bago ito. Tinatanggihan ang miyembro ng uri na hindi pinapayagan ng role kapag isinusulat ang role. Hindi malilimitahan ang dalawang console role: ibinibigay ng roster ang mga tao nila at ng seed ang application nila."
+  },
+  "roles.schema.attributes.displayName.what": {
+    "en": "96a85a48288e9845",
+    "text": "Opsyonal na pangalan para basahin ng mga tao (#93). Ang PANGALAN ng role pa rin ang dala ng token, ang pinangangalanan ng requirement at ang key ng register; label lang ito sa console at sa API. Ang stable id nito ay ang `entryUUID` ng entry, na nananatili sa bawat edit."
+  },
+  "roles.schema.attributes.description.what": {
+    "en": "d3cd66c299e05098",
+    "text": "Kung para saan ang role, para sa susunod na tao."
+  },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "Isang tao o grupo ng realm na ito na nananagot para sa role (#604), ayon sa DN — ang attribute ng RFC 4519 section 2.23, gaya ng mga may-ari ng isang grupo (#603). Maraming value, hanggang 25. WALANG IBINIBIGAY ang may-ari: walang bahagi ng serbisyong ito ang bumabasa nito upang magpasya. Inililista ng user portal ang pag-aari ng isang tao."
+  },
+  "roles.builtIn.EVERYBODY.what": {
+    "en": "40f390becf1977a2",
+    "text": "Kahit sino, authenticated man o hindi, tao man o application. ITO ANG DEFAULT NA REQUIREMENT: ang application na walang pinangangalanang required role ay nangangailangan nito, hawak ito ng lahat, at walang tinatanggihan — eksaktong ganito kumilos ang serbisyong ito bago umiral ang mga role."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_USERS.what": {
+    "en": "2defec4a92314419",
+    "text": "Isang taong may live na authenticated session sa security context kung saan ginagawa ang pasyang ito."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_USERS.what": {
+    "en": "dcc2d43ade379f11",
+    "text": "Isang taong HINDI pa nag-a-authenticate. Hindi ito ang negation ng role sa itaas sa pananaw ng isang policy — isa itong pangalan na puwedeng tugmaan ng target, at hindi masasabi ng mga XACML target ang \"not\"."
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "Anumang client, paano man ito dumating."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "Isang client na NAGPATUNAY kung sino ito — isang secret, isang private_key_jwt assertion, o isang na-verify na client certificate. Hindi ito ang public client na nagpadala lang ng client_id."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "Isang public client na walang pinatunayan."
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "a542d84d6db4c5b5",
+    "text": "Isang remote XACML Policy Enforcement Point: sinumang miyembro ng group na pinangangalanan ng `roles.remotePepGroup` (default \"remote-peps\"). Ito ang kailangan ng `/xacml/pep/register`, `/xacml/pep/policies` at `/xacml/pep/heartbeat`, at ang party na may hawak nito ay karaniwang client-certificate DN at hindi tao — sinasabi ng certificate kung SINO, at sinasabi ng group na ito kung puwede sila."
+  },
+  "roles.builtIn.XACML_USER.what": {
+    "en": "1b417a98ec7e824b",
+    "text": "Isang tumatawag sa mismong XACML surface: sinumang miyembro ng grupong pinangalanan ng `roles.xacmlUserGroup` (default na \"xacml-users\"). Ito ang hinihingi ng `GET /xacml`, `POST /xacml/pdp` at `GET /xacml/policies`, at ang may hawak nito ay karaniwang isang client-certificate DN — sinasabi ng certificate kung SINO, at sinasabi ng grupong ito kung puwede sila. Sadya itong HINDI REMOTE_PEPS: naaabot ng role na iyon ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo."
+  },
+  "roles.native.ADMIN_READ.what": {
+    "en": "7d6481dffa0d517c",
+    "text": "Admin Read: bawat READ sa /admin-api. Hawak ng mga Admin Read at Admin Write group ng console (nagpapahiwatig ng Admin Read ang Admin Write) at ng mga application na nakalista rito. Nag-a-authorize ng admin:read permission."
+  },
+  "roles.native.ADMIN_WRITE.what": {
+    "en": "ecff5f0bc1a5a16a",
+    "text": "Admin Write: bawat /admin-api operation na may BINABAGO. Hawak ng Admin Write group ng console at ng mga application na nakalista rito. Nag-a-authorize ng admin:write permission. Hindi nito ipinapahiwatig ang Admin Read sa isang token: puwedeng dalhin ng token ang alinmang scope, at hinihingi ng policy ang kailangan ng operation."
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "Ang admin console: ang mga operation sa ilalim ng /admin-api/console na umiiral lang para iguhit ang console — ang frame nito, ang mga drawing nito at ang mga form helper nito. Nag-a-authorize ng admin:console permission. Ipinagkakaloob ng sariling client ng console, ang sts-admin-console, sa bawat taong nagsa-sign in sa console, at walang humahawak nito bilang miyembro. Wala itong ibang ibinibigay: humihingi rin ng ADMIN_READ ang pahinang nagpapakita ng realm data."
+  },
+  "roles.native.DEVICE_COMPLIANCE.what": {
+    "en": "54220e44643bd84c",
+    "text": "Ang device compliance feed: isang MDM o posture feed na nag-uulat ng compliance ng isang device sa pamamagitan ng POST /admin-api/device-compliance, at wala nang iba sa /admin-api. Nag-a-authorize ng device:compliance permission. Naka-seed nang walang miyembro: idagdag ang application ng feed."
+  },
+  "roles.memberKinds.user.label": {
+    "en": "df381eb4bb572daf",
+    "text": "isang tao"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "Isang username. Hindi kailangang umiiral na ang tao: gumagawa ang serbisyong ito ng directory entry para sa anumang pangalan sa unang pagkakita, kaya puwedeng ibigay ang role bago pa man mag-sign in ang may hawak nito."
+  },
+  "roles.memberKinds.group.label": {
+    "en": "7058b14ed9a6b2fc",
+    "text": "isang group"
+  },
+  "roles.memberKinds.group.what": {
+    "en": "807d0833e4b29343",
+    "text": "Isang group sa ou=groups. Hawak ng bawat miyembro nito ang role, nire-resolve sa ORAS NG PAGPAPASYA sa halip na ine-expand sa write — kaya binabago ng ldapmodify na nagdaragdag ng isang tao sa group ang mismong susunod na token."
+  },
+  "roles.memberKinds.application.label": {
+    "en": "7b0b893d972a8266",
+    "text": "isang application"
+  },
+  "roles.memberKinds.application.what": {
+    "en": "67e543bef5013764",
+    "text": "Isang application na may hawak ng role BILANG ITO MISMO. Ito ang pinagbabatayan ng pasya sa client_credentials grant, kung saan walang tao, at ito ang dahilan kung bakit first-class member ng role dito ang isang application."
+  },
+  "roles.console.read.label": {
+    "en": "528d2a45607ec613",
+    "text": "Admin Read"
+  },
+  "roles.console.read.what": {
+    "en": "d824947bfa7bb0cd",
+    "text": "Tingnan ang bawat pahina ng console na ito, at ang bawat ?format=json view ng isa. Wala itong binabago: nakikita ng nagbabasa kung aling mga token ang revoked at hindi siya makakapag-revoke ng isa."
+  },
+  "roles.console.write.label": {
+    "en": "41407227fe92a8f6",
+    "text": "Admin Write"
+  },
+  "roles.console.write.what": {
+    "en": "476b1b61c16b02e4",
+    "text": "I-post ang bawat form sa console na ito — mag-revoke ng token, magdagdag ng custom claim, magbago ng setting, gumawa ng tao, magbigay ng role. KASAMA NITO ANG READ, kaya kayang gamitin ng miyembro ng role na ito lang ang buong console."
+  }
+}

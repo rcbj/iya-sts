@@ -8,7 +8,7 @@ itself.
 
 | File | What it does |
 |---|---|
-| `generate-tls.sh` | makes the server key pair on first start |
+| `generate-tls.sh` | makes the server key pair on first start, and with `POSTGRES_TLS_PUBLIC_DIR` copies the certificate (never the key) there as `<CN>.crt` on every start |
 | `require-tls.sh` | rewrites every `host` rule in `pg_hba.conf` to `hostssl` |
 | `schema.sql` | **builds the schema and the least-privileged role this service dials with.** Plain SQL, idempotent, takes psql variables, and runnable by hand against any database |
 | `apply-schema.sh` | runs `schema.sql` once, on the start that creates the cluster, with the role name and password the stack was given |
@@ -31,6 +31,22 @@ them all.
   script**: `ssl_cert_file` is read when the server boots, and initdb scripts
   run after a first boot. The wrapper `exec`s `docker-entrypoint.sh` so
   postgres keeps pid 1 and gets the stop signal.
+* **The certificate leaves the container through a SECOND volume, and the
+  key never does (2026-10-12).** The service verifies the database's
+  certificate by default, and a self-signed one verifies only against
+  itself, so `POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca` (the `sts-db-ca`
+  volume) receives `postgres.crt`, which `sts` mounts read-only and names in
+  `STS_DATABASE_TLS_CA_FILE`. The key stays in `/var/lib/postgresql/tls`,
+  inside `sts-db`, which only this container mounts — sharing the TLS
+  directory itself would have handed `sts` the key. It is a mount at
+  `/run`, NOT under `/var/lib/postgresql`, for the reason the bullet above
+  gives. Copied on every start, after a generation or not, and written to a
+  hidden temporary name and renamed, so a restored data volume and a fresh
+  share agree and a reader never sees half a file. **It exists by the time
+  `sts` starts**: the copy runs before `exec docker-entrypoint.sh`, and `sts`
+  waits for `service_healthy`. One file per CN, so the cells test layer's
+  `postgres-global` and `postgres-cellb` (which `extends` this service and
+  inherits the volume and the variable) write beside it without a race.
 * **`require-tls.sh` is `00-` and `apply-schema.sh` is `10-`** in
   `/docker-entrypoint-initdb.d`, so TLS hardening runs first. `schema.sql`
   is mounted OUTSIDE that directory on purpose: the entrypoint runs every
@@ -135,10 +151,11 @@ rules means the database refuses, so both ends say it and neither can be quietly
 relaxed.
 
 **The argument for both is in `persistence/CLAUDE.md`** — *TLS TO THE DATABASE,
-REQUIRED AT BOTH ENDS* — along with the thing this arrangement deliberately does
-NOT do: the certificate is signed by nobody, so the connection is encrypted and
-the server is not authenticated, and `/admin/persistence` reports those as two
-facts rather than one tick. Do not argue it again here.
+REQUIRED AT BOTH ENDS* — along with how the server is AUTHENTICATED since
+2026-10-12 (verification on by default, the certificate shared as above and
+trusted for the database alone through `persistence.databaseTlsCaFile`,
+`sslmode=verify-full`), and `/admin/persistence` reporting encryption and
+authentication as two facts rather than one tick. Do not argue it again here.
 
 ## On a managed database the owner is not a superuser (2026-09-15)
 

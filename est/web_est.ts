@@ -126,6 +126,25 @@ class EstPage {
   // ---------------------------------------------------------------------------
   // The body of /admin/est, from the view.
   // ---------------------------------------------------------------------------
+  // THE LABEL FORM (2026-10-12): what Protocols → Cert issuance's Metadata
+  // tab says under EST, beside the endpoints, since the EST tab lists none.
+  /**
+   * Draws the note on EST's label form of every endpoint, if the realm has
+   * one.
+   *
+   * @param json - `est_console.ts`'s `estView()`
+   * @param t - the page's translator (#539)
+   * @returns the markup, or ''
+   */
+  static labelFormNote(json, t) {
+    return json.labelForm
+      ? '<p class="sub">' + t.html('consoleEst.labelForm',
+                                   { base: json.labelForm.base }) + ' ' +
+        esc(json.labelForm.note) +
+        '</p>'
+      : '';
+  }
+
   /**
    * Draws the body of `/admin/est` from the view.
    *
@@ -136,23 +155,8 @@ class EstPage {
   static estPageBody(ctx, json) {
     const self = this;
     const t = ctx.t;
-    // What an endpoint does, the label form's note, a profile's needs, a
-    // refusal's reason and a credential's description are the view's,
-    // drawn as they come (#539).
-    const endpointRows = json.endpoints.map(function (one) {
-      return '<tr><td><code>' + esc(one.method) + '</code></td><td><code>' +
-             esc(one.url) + '</code>' + (one.labelFormUrl
-               ? '<div class="sub">' +
-                 t.html('consoleEst.orUrl', { url: one.labelFormUrl }) +
-                 '</div>' : '') + '</td><td>' + esc(one.what) +
-             '</td><td>RFC 7030 ' + esc(one.section) + '</td></tr>';
-    }).join('');
-    const labelFormNote = json.labelForm
-      ? '<p class="sub">' + t.html('consoleEst.labelForm',
-                                   { base: json.labelForm.base }) + ' ' +
-        esc(json.labelForm.note) +
-        '</p>'
-      : '';
+    // A profile's needs, a refusal's reason and a credential's description
+    // are the view's, drawn as they come (#539).
     const authority = json.hierarchy.authority;
     const caBlock = json.hierarchy.built && authority
       ? '<table class="kv"><tr><th>' + t.html('consoleEst.subject') +
@@ -276,14 +280,14 @@ class EstPage {
         t.html('consoleEst.development') + ' ' + esc(json.mode.development) +
         ' ' + t.html('consoleEst.product') + ' ' +
         esc(json.mode.product)) +
-      '<h2>' + t.html('consoleEst.hEndpoints') + '</h2><table><thead><tr>' +
-      '<th>' + t.html('consoleEst.thMethod') + '</th><th>URL</th><th>' +
-      t.html('consoleEst.thWhat') + '</th><th>' +
-      t.html('consoleEst.thSection') + '</th></tr></thead><tbody>' +
-      endpointRows +
-      '</tbody></table>' + labelFormNote +
-      '<h2>' + t.html('consoleEst.hIssuingCa') + '</h2>' + caBlock +
-      '<h2>' + t.html('consoleEst.hProfiles') + '</h2><p class="sub">' +
+      // EACH SECTION A SUB-TAB (2026-10-12): the EST tab of Protocols →
+      // Cert issuance, one sub-tab per section, the ids in `admin.ts`'s
+      // CERT_SUB_TAB_IDS.
+      kit.subTabbedPanels(t.text('console.nav.est'), [
+        { id: 'cert-est-ca', label: t.text('consoleEst.hIssuingCa'),
+          html: caBlock },
+        { id: 'cert-est-profiles', label: t.text('consoleEst.hProfiles'),
+          html: '<p class="sub">' +
       t.html('consoleEst.profilesNote', { profile: json.defaultProfile }) +
       '</p><table><thead><tr><th>' + t.html('consoleEst.profile') +
       '</th><th>' + t.html('consoleEst.thAllowed') + '</th><th>' +
@@ -294,8 +298,9 @@ class EstPage {
       '<h3>' + t.html('consoleEst.hNeverIssued') +
       '</h3><table><thead><tr><th>' + t.html('consoleEst.profile') +
       '</th><th>' + t.html('consoleEst.thWhy') +
-      '</th></tr></thead><tbody>' + refusedRows + '</tbody></table>' +
-      '<h2>' + t.html('consoleEst.hCredentials') + '</h2><p class="sub">' +
+      '</th></tr></thead><tbody>' + refusedRows + '</tbody></table>' },
+        { id: 'cert-est-credentials', label: t.text('consoleEst.hCredentials'),
+          html: '<p class="sub">' +
       t.html('consoleEst.noCredential') + ' ' +
       'Basic ' + this.yesNo(json.authentication.basic, t) +
       ', ' + t.html('consoleEst.clientCertificates') + ' ' +
@@ -304,18 +309,19 @@ class EstPage {
       '.</p><table><thead><tr><th>' + t.html('consoleEst.thCredential') +
       '</th><th>' + t.html('consoleEst.thWhat') + '</th><th>' +
       t.html('consoleEst.thManagedAt') +
-      '</th></tr></thead><tbody>' + credentialRows + '</tbody></table>' +
-      '<h2>' + t.html('consoleEst.hIssue') + '</h2><p ' +
-      'class="sub">' + t.html('consoleEst.issueNote') + '</p>' +
-      issueForm +
-      '<h2>' + t.html('consoleEst.hHostNames') + '</h2><p class="sub">' +
+      '</th></tr></thead><tbody>' + credentialRows + '</tbody></table>' },
+        { id: 'cert-est-issue', label: t.text('consoleEst.hIssue'),
+          html: '<p class="sub">' + t.html('consoleEst.issueNote') + '</p>' +
+      issueForm },
+        { id: 'cert-est-host-names', label: t.text('consoleEst.hHostNames'),
+          html: '<p class="sub">' +
       t.html('consoleEst.hostNamesNote') + '</p><table><thead>' +
       '<tr><th>' + t.html('consoleEst.thEntry') + '</th><th>' +
       t.html('consoleEst.thHostNames') + '</th></tr></thead><tbody>' +
       hostRows +
-      '</tbody></table>' + hostForm +
-      '<h2 id="list-certificatesPage">' + t.html('consoleEst.hEnrolled') +
-      '</h2>' + nav.head +
+      '</tbody></table>' + hostForm },
+        { id: 'cert-est-certificates', label: t.text('consoleEst.hEnrolled'),
+          html: nav.head +
       '<table><thead><tr><th>' + t.html('consoleEst.serial') + '</th><th>' +
       t.html('consoleEst.thEntry') + '</th><th>' +
       t.html('consoleEst.profile') + '</th><th>' +
@@ -324,9 +330,12 @@ class EstPage {
       t.html('consoleEst.thExpires') + '</th><th>' +
       t.html('consoleEst.thRequestedBy') + '</th><th>' +
       '</th></tr></thead><tbody>' + certificateRows + '</tbody></table>' +
-      nav.foot +
-      '<h2>' + t.html('consoleEst.hSettings') + '</h2>' +
-      SettingsForms.forms(json.settings, '/admin/est', undefined, t) +
+      nav.foot },
+        { id: 'cert-est-settings', label: t.text('consoleEst.hSettings'),
+          html: SettingsForms.forms(json.settings,
+                                    '/admin/cert-issuance#cert-est-settings',
+                                    undefined, t) }
+      ]) +
       '<p class="links"><a href="/admin/est?format=json">JSON</a> · ' +
       '<code>GET /admin-api/est</code> · <a href="/admin/est/monitor">' +
       t.html('consoleEst.linkMonitor') +
@@ -347,8 +356,11 @@ class EstPage {
    * @param t - the page's translator (#539)
    * @returns the HTML
    */
-  static countTable(title, rows, t) {
-    return '<h3>' + esc(title) + '</h3><table><tbody>' + (rows.length
+  static countTable(title, rows, t, tab?) {
+    // `tab` (2026-10-12): the Monitoring page is drawn as tabs, one per
+    // table of counts (`WebPages.protocolTabs()`).
+    return '<h3' + (tab ? ' data-tab="' + esc(tab) + '"' : '') + '>' +
+      esc(title) + '</h3><table><tbody>' + (rows.length
       ? rows.map(function (row) {
         return '<tr><td><code>' + esc(row.name) + '</code></td><td ' +
                'class="num">' + row.count + '</td></tr>';
@@ -404,12 +416,18 @@ class EstPage {
                         n: json.processes }) +
         ' <a href="/admin/audit">' + t.html('consoleEst.auditLog') +
         '</a>.') + tiles +
-      self.countTable(t.text('consoleEst.byOperation'), json.operations, t) +
-      self.countTable(t.text('consoleEst.byProfile'), json.profiles, t) +
-      self.countTable(t.text('consoleEst.byPrincipal'), json.principals, t) +
-      self.countTable(t.text('consoleEst.byErrorCode'), json.errorCodes, t) +
-      self.countTable(t.text('consoleEst.byStatus'), json.statuses, t) +
-      '<h2 id="list-page">' + t.html('consoleEst.recent') + '</h2>' +
+      self.countTable(t.text('consoleEst.byOperation'), json.operations, t,
+                      'operations') +
+      self.countTable(t.text('consoleEst.byProfile'), json.profiles, t,
+                      'profiles') +
+      self.countTable(t.text('consoleEst.byPrincipal'), json.principals, t,
+                      'principals') +
+      self.countTable(t.text('consoleEst.byErrorCode'), json.errorCodes, t,
+                      'codes') +
+      self.countTable(t.text('consoleEst.byStatus'), json.statuses, t,
+                      'statuses') +
+      '<h2 id="list-page" data-tab="recent">' + t.html('consoleEst.recent') +
+      '</h2>' +
       nav.head +
       '<table><thead><tr><th>' + t.html('consoleEst.thAt') + '</th><th>' +
       t.html('consoleEst.thOperation') + '</th><th>' +
@@ -422,8 +440,10 @@ class EstPage {
       '</th><th>' + t.html('consoleEst.serial') + '</th></tr></thead><tbody>' +
       recentRows +
       '</tbody></table>' + nav.foot +
-      kit.note(t.html('consoleEst.noReset')) +
-      '<p class="links"><a href="/admin/est/monitor?format=json">JSON</a> ' +
+      '<div data-metadata>' + kit.note(t.html('consoleEst.noReset')) +
+      '</div>' +
+      '<p class="links" data-metadata>' +
+      '<a href="/admin/est/monitor?format=json">JSON</a> ' +
       '· <code>GET /admin-api/est/monitor</code> · <a ' +
       'href="/admin/est">EST</a></p>';
     return inner;

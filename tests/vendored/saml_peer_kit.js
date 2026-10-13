@@ -31,6 +31,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
@@ -572,6 +574,17 @@ function create(name) {
           log.debug("Leaving walk(). Stopped before a redirect.");
           return { captured: captured, last: r, trail: trail, next: next };
         }
+        // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
+        // answered through the one helper where the walk is sent to it.
+        if (o.username && /\/authn\/login\?authn=/.test(next)) {
+          r = await kit.signInAt(b, next, o.username, o.password);
+          continue;
+        }
+        // THE CONSENT SCREEN, A PAGE OF THE SIGN-IN SURFACE SINCE #576.
+        if (authnSignin.isConsent(next)) {
+          r = await kit.consentAt(b, next);
+          continue;
+        }
         r = await b.hop(next);
         continue;
       }
@@ -586,9 +599,6 @@ function create(name) {
                           : await b.hop(to);
         continue;
       }
-      const signIn = forms.find(function (f) {
-        return "authn_id" in f.fields;
-      });
       const consent = forms.find(function (f) {
         return /consent/.test(f.action) || "consent_id" in f.fields;
       });
@@ -597,12 +607,6 @@ function create(name) {
                ("SAMLResponse" in f.fields || "SAMLRequest" in f.fields ||
                 "SAMLart" in f.fields);
       });
-      if (signIn && o.username) {
-        const to = new URL(signIn.action || r.url, r.url).toString();
-        r = await b.postForm(to, Object.assign({}, signIn.fields, {
-          username: o.username, password: o.password, action: "login" }));
-        continue;
-      }
       if (consent) {
         const to = new URL(consent.action || r.url, r.url).toString();
         r = await b.postForm(to, Object.assign({}, consent.fields, {
@@ -624,6 +628,38 @@ function create(name) {
     }
     log.debug("Leaving walk(). " + trail.length + " hop(s).");
     return { captured: captured, last: r, trail: trail };
+  };
+  // The service's sign-in screen at `url`, answered with a password over
+  // `/authn-api` (#571, `authn_signin.js`) with this browser's cookies and
+  // User-Agent, and answered in `hop()`'s shape — a 303 to where the act
+  // says the walk goes next, as the form's POST was answered.
+  kit.signInAt = async function (b, url, username, password) {
+    log.debug("Entering signInAt(). " + username);
+    const at = new URL(url);
+    const answer = await authnSignin.submit(at.origin +
+      at.pathname.replace(/\/authn\/login$/, ""), url,
+      { action: "login", username: username, password: password },
+      { cookie: b.cookies(url), headers: { "User-Agent": AGENT } });
+    b.take(url, { headers: answer.headers });
+    log.debug("Leaving signInAt(). " + answer.next);
+    return { status: authnSignin.responseLike(answer).status,
+             headers: answer.headers,
+             body: answer.text || JSON.stringify(answer.json), url: url,
+             location: answer.location };
+  };
+  // THE CONSENT SCREEN (#576): answered over `/authn-api/consent` through
+  // the one helper with this browser's cookies, in `hop()`'s shape — a 303
+  // back to the authorization request, as the form's POST was answered.
+  kit.consentAt = async function (b, url) {
+    log.debug("Entering consentAt().");
+    const answer = await authnSignin.consentFor(url, b.cookies(url),
+      { headers: { "User-Agent": AGENT } });
+    b.take(url, { headers: answer.headers });
+    log.debug("Leaving consentAt(). " + answer.next);
+    return { status: authnSignin.responseLike(answer).status,
+             headers: answer.headers,
+             body: answer.text || JSON.stringify(answer.json), url: url,
+             location: answer.location };
   };
   kit.describeWalk = function (w) {
     log.debug("Entering describeWalk().");

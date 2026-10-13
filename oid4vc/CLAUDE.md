@@ -6,13 +6,14 @@ DID Core with DIF domain linkage.
 | File | What it is |
 |---|---|
 | `vc_configs.ts` | The credential configurations. Exists to break a require cycle. |
-| `vc_offers.ts` | The Credential Offer pages and the pre-authorized codes. Same reason. |
+| `vc_offers.ts` | The Credential Offer's state and the pre-authorized codes, `makeOffer()` (the portal's offer, #589) and `/oid4vci/credential-offer/{id}`. Exists to break a require cycle. The demonstration issuer's pages left for `companion/` on #594. |
 | `vc_claims.ts` | Which LDAP attribute types an issued credential carries, plus the invented persona. |
 | `vc_verifier_config.ts` | What the mock Verifier ASKS FOR, and in which of the three formats. |
 | `vc_issuer.ts` | The three credential endpoints. |
-| `vc_verifier.ts` | The bar door at `/oid4vp/verifier`, and the Verifier every sign-in's request goes through. |
+| `vc_verifier.ts` | The OpenID4VP Verifier: the request object, the response endpoint, every check — what `POST /admin-api/verifications/start` starts (`startVerification()`, `completionUriFor()`) and every sign-in's request goes through. The bar door's pages left for `companion/` on #594. |
 | `vc_issued.ts` | The register of credentials this realm issued for a person on an access token it verified (rule 3ar). A library. |
-| `vc_signin.ts` | Signing in with a wallet: `/authn/wallet`, `/authn/wallet/wait`, the Digital Credentials API answer at `/authn/wallet/dc-api` and the one script at `/authn/wallet.js`. |
+| `vc_signin.ts` | Signing in with a wallet: the shells `/authn/wallet` and `/authn/wallet/wait`, and the `/authn-api/wallet` operations `authn/authn_api.ts` hands it — the start, the wait view, the collection and the Digital Credentials API answer (#574). |
+| `web_vc_signin.ts` | The wallet's pages drawn in the browser (#574): the start, the wait page, the QR code (`common/web_qr.ts`), a refusal — and `WalletFlow`, what they run: the start, the poll, the Digital Credentials API call. A `web_` module in the sign-in surface's bundle. |
 | `vc_status.ts` | The status lists every issued credential names, and the check the Verifier makes against them (rule 3as). A library and four routes. |
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
 | `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
@@ -22,7 +23,7 @@ DID Core with DIF domain linkage.
 | `vc_ecdsa_sd.ts` | `ecdsa-sd-2023`: base proofs, derived proofs and their verification, the specification's own steps (#196). A library `vc_data_integrity.ts` dispatches to. |
 | `vc_jose_cose.ts` | VC-JOSE-COSE's envelopes: `vc+jwt`, `vc+sd-jwt`, `vc+cose` and the `vp` forms, secured and verified (#198). A library. |
 | `vc_did_resolver.ts` | DID Core section 7: resolve, resolveRepresentation and dereference for `did:key`, `did:jwk` and this realm's `did:web` (#199). A library. |
-| `vc_api.ts` | The W3C VC-API test endpoints (`/vc-api/*`) over everything above — a TEST CONTROL (#194-#199). *The W3C VC-API adapter* below. |
+| `vc_api.ts` | The W3C VC API (VCALM, `/vc-api/*`) over everything above (#194-#199) — a product surface since #598, OFF by default (`vcApi.enabled`). *The W3C VC API* below. |
 | `contexts/` | The JSON-LD contexts `vc_jsonld.ts` answers from, fetched once from their URLs; `vc_jsonld.ts`'s header is their provenance. |
 
 **`vc_configs.ts` and `vc_offers.ts` exist to break require cycles, not to group
@@ -89,8 +90,7 @@ consumers of that definition, not co-owners of it.
 
 3a-ii. **`vc_verifier_config.ts` is the same kind of library, and it holds the
    OTHER end of that catalogue.** `vc_claims.ts` says what an issued credential
-   CARRIES; this says what the mock Verifier — the bar door at `/oid4vp/verifier` —
-   ASKS FOR, and which of the three credential formats it asks in. Both ends read
+   CARRIES; this says what the Verifier ASKS FOR, and which of the three credential formats it asks in. Both ends read
    it (`vc_verifier.ts` early, `admin.js` and `admin-core/` late), so it
    registers no route and requires only `helpers.js`, `realms.js`, `config.js`,
    `vc_claims.ts` and `vc_configs.ts`, none of which registers anything
@@ -137,8 +137,8 @@ consumers of that definition, not co-owners of it.
   OID4VP Verifier checks properly — issuer signature, every Disclosure digest
   against `_sd`, the Key Binding JWT including `sd_hash`, the nonce, the
   audience, the validity window and whether the claims asked for arrived — and
-  a presentation made at `/oid4vp/verifier` then says yes on a web page and
-  stops: nobody there asked to be signed in, and a session started because a
+  a presentation made to a verification an administrator started (the bar
+  door at `/oid4vp/verifier` until #594) is decided and stops: nobody there asked to be signed in, and a session started because a
   bar door was shown a credential would be one nobody requested. **It IS
   recorded, which is a different claim and the two must not be merged** — the
   holder goes through `recordAuthentication()` like every other accepted
@@ -261,12 +261,15 @@ signs nobody in is recorded at the response endpoint exactly as before.
 ### The browser it belongs to
 
 The wallet's `direct_post` is the wallet's request, so the session is minted on
-the browser's next request to `/authn/wallet/wait`, and only in the browser that
-started the sign-in: `sts_wallet_binding` (HttpOnly, SameSite=Lax, one per
+the browser's next collection — `POST /authn-api/wallet/{state}/status`, the
+wait page's poll since #574 — and only in the browser that started the sign-in: `sts_wallet_binding` (HttpOnly, SameSite=Lax, one per
 browser, reused) is hashed onto the transaction and compared in constant time
 (`STS-VC-0055`). A same-device wallet is answered with a `redirect_uri`
-carrying a one-time `response_code` (OpenID4VP section 8.2; its hash is kept),
-and a wait request carrying one must carry the right one (`STS-VC-0065`). The
+carrying a one-time `response_code` (OpenID4VP section 8.2; its hash is kept)
+— the wait page, whose runtime collects with it at once — and a collection
+carrying one must carry the right one (`STS-VC-0065`). The `redirect_uri`
+names a second-factor step's `mfa` too since #574, which the wait page must
+name to be admitted. The
 transaction lives `oid4vp.signInTtlS` — enforced at the response endpoint too,
 for a sign-in only (`STS-VC-0056`; the bar door's late answers are still
 verified as before) — and is answered once and finished once (above).
@@ -280,32 +283,53 @@ by cannot be relayed. *The Digital Credentials API* below is the argument.
 `startSession()`'s `sameIdentity()` decides, as for every door
 (`tests/oid4vp_sign_in.js` 5b).
 
-### The page has a script now, and it is the root `CLAUDE.md`'s exception
+### The pages are routes of the sign-in surface (#574, 2026-10-12)
 
-The wait page had none and argued that it needed none: a `<meta>` refresh was
-the poll, and the answer was a page this server drew. **What changed is the
-Digital Credentials API**, which is a browser API call
-(`navigator.credentials.get({ digital: … })`) and cannot be made by markup, a
-form or a link: nothing but a script can ask a wallet that way, and the answer
-arrives in the page and nowhere else. So the page CANNOT offer the one path
-that resists the relay without one, which is the test the root file sets, and
-the exception takes the same shape as every other:
+The wait page had no script, and argued that it needed none: a `<meta>`
+refresh was the poll, and the answer was a page this server drew. **The
+Digital Credentials API changed that** — a browser API call
+(`navigator.credentials.get({ digital: … })`) that no markup, form or link
+can make — and it got one script, `/authn/wallet.js`, as the root
+`CLAUDE.md`'s exception, with a real submit button for a browser without it
+and the `<meta>` refresh moved to a QR page of its own (`?qr=1`), because a
+reload throws the browser's credential dialog away.
 
-* `script-src 'self'` through `app.contentSecurityPolicy()`, so
-  `frame-ancestors` and `base-uri` cannot be lost; never `'unsafe-inline'`;
-* ONE static resource, `/authn/wallet.js`, which carries no transaction and is
-  the same bytes for everybody — everything it needs is a `data-request`
-  attribute on the form;
-* a REAL SUBMIT BUTTON. The form posts to `/authn/wallet/dc-api` whether the
-  script ran or not; with it blocked, that endpoint answers a page saying the
-  API did not run (`STS-VC-0081`) and offers the same-device link, which is a
-  plain `<a>`.
+**Since #574 both pages are routes of the static sign-in surface** (#569:
+script is required, and no server-drawn fallback is kept), and the argument
+above is the surface's rule rather than an exception:
 
-**THE `<meta>` REFRESH MOVED TO THE QR PAGE** (`?qr=1`, drawn only where the QR
-code is on): a reload while the browser's credential dialog is open throws the
-dialog away. That page has no script, polls exactly as the wait page used to,
-and is the second half of the refused-script table's row — a polling page still
-does not need a script, which is why it did not get one.
+* **`/authn/wallet` and `/authn/wallet/wait` answer the surface's shell**
+  (`authn.signInShell()`, for the pending sign-in's application), and both are
+  `ARRIVAL_PATHS`, so a browser arriving there — a second factor's *Use your
+  wallet instead*, the portal's *Enrol a wallet*, a same-device wallet's
+  return — holds the `sts_session` cookie every act is bound to.
+* **The acts are `/authn-api/wallet`'s** (`authn/authn_api.ts` binds them —
+  JSON, an Origin of this service, the X-CSRF-Token — and hands each to
+  `vc_signin.ts`): `GET /authn-api/wallet` (the start page's view, which
+  creates NOTHING: a GET is followed by prefetchers), `POST /authn-api/wallet`
+  (the start: the transaction, the binding cookie, `go` to the wait page),
+  `GET /authn-api/wallet/{state}` (the wait view, for the browser that started
+  it; the record, step and enrolment are the transaction's), `POST
+  …/{state}/status` (the collection) and `POST …/{state}/dc-api`.
+* **The drawing is `web_vc_signin.ts`'s**: the start page (which starts at
+  once and REPLACES itself in the history, so Back does not start a second),
+  the wait page, the QR code — drawn in the browser by `common/web_qr.ts`,
+  the portal's encoder, from the request's text — and a refusal, whose `view`
+  of kind `refused` carries the heading, the presentation's checks and the
+  ways on, under its English sentence.
+* **The poll is the runtime's**: on the QR page every `pollSeconds`, where
+  the `<meta>` refresh was (a browser timer, `tests/no_periodic_timers.js`'s
+  recorded exception); once at once on a same-device return with its
+  `response_code`; and on *Check now*. **The plain wait page does not poll by
+  itself**, as it never did: a same-device wallet that comes back opens the
+  wait page in its own tab, and a poll in the tab left behind would collect
+  the sign-in first and leave the returning tab to say it was already used.
+  The poll pauses while the browser's credential dialog is open, so it never
+  races the API's answer to finish one sign-in.
+* **What a refusal says is JSON** (`{ ok: false, next: 'refused', errors }`,
+  English, no code), and the codes are the ones the pages were marked with.
+  `STS-VC-0081` is now an answer sent with nothing in it — the form posted
+  without the script is gone.
 
 ### The Digital Credentials API (rcbj's decision for the relay)
 
@@ -341,9 +365,13 @@ transaction — one nonce, one DCQL query, answered once:
   Client Identifier. A presentation made for the `direct_post` path therefore
   signs nobody in here, which `tests/oid4vp_dc_api.js` holds.
 
-`/authn/wallet/dc-api` takes what the page posts. It is admitted exactly as the
-wait page is — the binding cookie, the transaction, the pending record — and
-then: the `Origin` header must be this service's own (`STS-VC-0074`); the
+`POST /authn-api/wallet/{state}/dc-api` takes what the page sends (it was the
+form POST `/authn/wallet/dc-api` until #574). It is bound as every act on
+`/authn-api` is — JSON, an Origin this service answers on, the X-CSRF-Token —
+and admitted exactly as the collection is — the binding cookie, the
+transaction, the pending record — and then: the `Origin` header must be THE
+origin the request named, this service's own (`STS-VC-0074`; another site's
+is refused at the door first, `STS-AUTHN-0326`); the
 answer must be a `DigitalCredential` in the protocol the request named
 (`STS-VC-0073`); an encrypted one is opened with that transaction's key; and
 the sign-in is finished IN THAT REQUEST, because it is the browser's own — no
@@ -352,6 +380,57 @@ poll, no `response_code`, nothing to collect.
 **What is not implemented**: the unsigned and multi-signed request forms
 (A.3.1, A.3.2.2) — this door always signs, and an unsigned request carries no
 `expected_origins` at all — and `transaction_data`.
+
+### A wallet APP, and a request it can act on (2026-10-12, rcbj: "the goal is to actually have this button be usable")
+
+Until that day **Open your wallet on this device** sent the browser to
+`oid4vp.walletUrl` + `oid4vp.walletPresentationPath`, whose defaults were the
+embedded debugger's web wallet (`http://localhost:3000/vc-presentation-1.html`)
+— an address no person's wallet is — and the request was signed under the
+`pre-registered` Client Identifier (`sts-verifier`) and answered by plain
+`direct_post`. A wallet that had never heard of this service could open
+neither the link nor the request. Four changes, each a default a real wallet
+needs, each a setting an operator can move back:
+
+* **THE LINK IS THE SCHEME** (`oid4vp.walletInvocation`): the request by
+  reference (`client_id`, `request_uri`, `request_uri_method=get`) under
+  `openid4vp://` — OpenID4VP 1.0's scheme for a Verifier that does not know the
+  wallet — or `haip-vp://` (OpenID4VC HAIP 1.0 section 5.1, a MAY). SIOPv2's ID
+  Token alone stays `siopv2://`. `vc_verifier.ts`'s `walletScheme()` is the one
+  place it is decided, and the QR code and a verification start's `requestUri`
+  read it too. **No `web` value**: a web wallet is not a scheme. It is offered
+  BESIDE the app link (`webWallet` in the wait view) where `oid4vp.walletUrl`
+  configures one, and replaces it only where a start NAMED one (`wallet`,
+  `tx.signIn.walletNamed`) — the caller's explicit choice. The three wallet
+  URL settings are EMPTY by default; `vpWalletFor()` answers `''` with nothing
+  configured or named.
+* **THE CLIENT IDENTIFIER IS `x509_hash`** (`oid4vp.signInClientIdPrefix`,
+  HAIP 1.0 section 5: "the Verifier MUST use" it). It is a sign-in setting and
+  not `oid4vp.clientIdPrefix`, which stays `pre-registered` for an
+  administrator's verification: changing that default would have moved every
+  start and the conformance plans for no reader's benefit. `x509_hash` needs
+  no DNS name, so product mode can use it unconfigured (the nameless
+  certificate, *The x509 prefixes* below). The certificate is issued before
+  the build (`prepareSignedClientId()`), and a certificate or request that
+  cannot be made is now a REFUSAL with the builder's code (`unbuildable()`,
+  500) — `start()` used to await it unguarded.
+* **THE ANSWER IS ENCRYPTED** (`oid4vp.signInResponseMode`, `direct_post.jwt`,
+  HAIP section 5.1: "Response encryption MUST be used"), to the keys
+  `oid4vp.responseEncryptionKeyAlgs` offers, ECDH-ES P-256 among them. The
+  Response URI's response-mode check, which skipped sign-ins, now holds them
+  too: a plaintext answer to a sign-in that asked for `direct_post.jwt` is
+  `STS-VC-0096`. Never `form_post` (the binding cookie, above).
+* **THE PAGE SAYS WHAT TO DO WHEN NOTHING OPENS** (`wallet-no-app`): a link
+  under a scheme nothing registered for does nothing at all.
+
+What a real wallet still needs from its operator, and what nothing here can
+check without one (`tests/oid4vp_sign_in.js` 2h-iv to 2k-v hold the request):
+**the wallet must trust this service's Root** for the `x5c` chain
+(`/oid4vp/verifier-certificate`); its DCQL matcher must accept a query whose
+`dc+sd-jwt` claims path is the non-disclosable `sub`, beside `jwt_vc_json`
+and `ldp_vc` queries it may not understand (`oid4vp.signInFormats=dc+sd-jwt`
+narrows the request); and it must hold a credential THIS realm issued, which
+the portal's offer is for (`portal/CLAUDE.md`, `/portal/wallet`).
 
 ### Every format signs in
 
@@ -531,7 +610,10 @@ The response endpoint marks the refusal with `verified.statusErrorCode`
 `oid4vp.signIn` (on), `oid4vp.signInTtlS` (300), `oid4vp.signInPollS` (3),
 `oid4vp.signInCrossDevice` (**OFF**, in both modes: the relayable path),
 `oid4vp.signInFormats` (all three), `oid4vp.signInDcApiResponseMode`
-(`dc_api.jwt`), `oid4vp.statusListMaxCacheS` (3600),
+(`dc_api.jwt`), `oid4vp.signInClientIdPrefix` (`x509_hash`),
+`oid4vp.signInResponseMode` (`direct_post.jwt`), `oid4vp.walletInvocation`
+(`openid4vp`), `oid4vp.walletUrl` and `oid4vp.walletPresentationPath`
+(empty), `oid4vp.statusListMaxCacheS` (3600),
 `oid4vp.requireStatusReference` (`all`; `off` development only) and
 `oid4vp.statusOptionalIssuers` (empty) — group OID4VP; and
 `oid4vci.statusListTtlS` (300), `oid4vci.statusListLifetimeS` (86400),
@@ -638,7 +720,9 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   slot per DNS name, sixteen at most per realm (`STS-PKI-0205`).
 * **ISSUED BEFORE THE BUILD, READ DURING IT.** Issuing a certificate is
   asynchronous and `buildVpRequest()` is not. So `prepareSignedClientId()`
-  is awaited first by `/oid4vp/start`, by `/authn/wallet` and by the
+  is awaited first by `startVerification()` (`POST
+  /admin-api/verifications/start`, #587), by `/authn/wallet` and
+  by the
   verifier-certificate document. It issues the certificate, or answers the
   one in place when it is over the same key and more than a day from
   expiry. `x509Material()` then reads it synchronously and refuses
@@ -665,7 +749,7 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   host. `x509_hash` needs no name, and signs under a nameless certificate
   where none can be had, so it works unconfigured in product.
 * **PER REALM OR PER REQUEST.** `oid4vp.clientIdPrefix` is the realm's
-  choice, and `/oid4vp/start?client_id_prefix=` is one request's choice
+  choice, and a start's `client_id_prefix` is one request's choice
   (section 5.9 has the Verifier choose per request). Naming a prefix makes
   the request signed. The sign-in's Digital Credentials API request is
   signed under the same certificate.
@@ -692,8 +776,8 @@ wallet does, using only node's `crypto`, and refuses the mismatches.
 `client.client_id` = the bare DNS name for `x509_san_dns` (the suite adds the
 prefix itself) and `client.request_object_trust_anchor_pem` = the
 `trust_anchor_pem` from `/oid4vp/verifier-certificate`. The variant is
-`request_method: request_uri_signed`. The End-User starts at
-`/oid4vp/start?client_id_prefix=<prefix>`. In product mode, also set
+`request_method: request_uri_signed`. A verification is started at `POST
+/admin-api/verifications/start` with `client_id_prefix: <prefix>`. In product mode, also set
 `oid4vp.x509DnsName` to the realm's host.
 
 ## AN APPLICATION'S DID (rcbj, 2026-10-01)
@@ -760,7 +844,7 @@ application declared for the `did` family (its own checkbox, `applications.js`
 The literals became `config.js` rows whose `dflt` is the old value, read per
 use: credential lifetimes, the proof `iat` window, the c_nonce and offer
 lifetimes, the issuer display name, the wallet pages, the encryption `enc`
-lists, the Domain Linkage and `/did/generate` lifetimes, the Verifier's request
+lists, the Domain Linkage lifetime (and `/did/generate`'s, until #594), the Verifier's request
 lifetime, expected `vct` and claim cap. The credential CATALOGUE — configuration
 display names and colours, the `VCI_*` identifiers — stays code on purpose: it
 is what `vc_configs.ts` exists to hold, and a setting per string would be a
@@ -774,21 +858,42 @@ second catalogue. What is more than a number, and what
   product mode** a wrong code is counted — in cluster claims since 2026-09-14,
   see the section below — and the one that reaches `oid4vci.txCodeMaxAttempts`
   SPENDS it.
-* **`GET /issuer/offer` MINTS FOR THE SIGNED-IN PERSON WHERE TEST CONTROLS ARE
-  CLOSED.** A cross-device or deferred offer carries a pre-authorized code, which
-  IS an authorization: minting one for `oid4vci.offerUsername` for anybody who
-  loads the page is H.2's demo, and a test control. In product the page sends an
-  unsigned-in browser through the sign-in screen and refuses a "continue without
-  signing in" session. `authn.js` is required inside the handler, because this
-  file is a store module `oauth2.js` requires. A same-device offer grants
-  nothing and is not gated. **An offer minted this way is CAEP's
-  `session-presented`** (#240, 2026-09-26): it is made on the session's
-  authority, since the pre-authorized code authorizes a credential about the
-  person and nobody authenticated for it. The page calls
-  `authn.notePresented(session, 'OpenID4VCI', req)`. Development's offer for
-  the fixed test person reads no session and sends nothing, and neither does a
-  same-device offer. `docs/caep-events.md` no longer says that OpenID4VCI is
-  never a session event.
+* **A PERSON'S OWN PRE-AUTHORIZED OFFER IS THE PORTAL'S (#589, 2026-10-12)**,
+  and since #594 the demo issuer that minted one for anybody is not this
+  service's at all. A
+  cross-device or deferred offer carries a pre-authorized code, which IS an
+  authorization: minting one for `oid4vci.offerUsername` for anybody who loads
+  the page is H.2's demo, and a test control, which development keeps. From
+  2026-09-12 product made the page mint for the person SIGNED IN instead;
+  rcbj decided on 2026-10-12 that this is a real self-service feature — a
+  person putting a credential about themselves into their own wallet — and it
+  moved to the user portal: `/portal/wallet`, over
+  `GET /account-api/credentials/offerable` and
+  `POST /account-api/credentials/offers` (`portal/portal_wallet.ts`, drawn by
+  `portal/web_wallet.ts`, the QR code by `common/web_qr.ts`), and
+  `STS-VC-0027` (a "continue without signing in" session refused there) is
+  retired. **The `/issuer` pages were development-only from #585 and left
+  for the development companion on #594** (`companion/`), which links a
+  person to `/portal/wallet` for a pre-authorized offer and makes the
+  same-device one — which grants nothing — itself.
+  **ONE FUNCTION MAKES EVERY OFFER**: `VcOffers.makeOffer()` — the
+  CAEP presentation, `buildCredentialOffer()`, the sweep of expired state, the
+  reference stored and cell-stamped, the `openid-credential-offer://` URI and
+  the wallet link — called by the portal's operation (and by `/issuer/offer`
+  until #594). **The portal's offer is CAEP's
+  `session-presented`** (#240, 2026-09-26): it is made on the authority of the
+  sign-on session the portal's token was issued on (`caller.signOn`, #568),
+  since the pre-authorized code authorizes a credential about the person and
+  nobody authenticated for it; `makeOffer()` calls
+  `authn.notePresented(session, 'OpenID4VCI', req)`, requiring `authn.js`
+  inside the call because this file is a store module `oauth2.js` requires. A
+  token whose sign-on session is no longer known, or a session that continued
+  without signing in, is refused (`STS-PORTAL-0590`) rather than offered on
+  nothing.
+  `tests/portal_wallet.js` holds the operations and the page;
+  `sts_caep_oauth_grants.js`, `sts_oid4vci_preauth_subject.js` and
+  `sts_oid4vci_conformance.js` (the pre-authorized plan) make their offers
+  there.
 * **THE PERSON IS RESOLVED WHEN THE CODE IS REDEEMED, NOT TAKEN FROM THE OFFER
   (#158, 2026-10-05).** The offer records `userFor()` when it is MINTED. In
   development that person is `oid4vci.offerUsername`, who may have no entry
@@ -812,7 +917,7 @@ second catalogue. What is more than a number, and what
   default and exactly the old path; any other synchronous algorithm this realm
   holds a key for through `helpers.signingKeyFor()`. The metadata names it, the
   DID document publishes that key beside the RSA one, the Domain Linkage
-  Credential and `/did/generate` use it, and the Verifier's
+  Credential uses it (and `/did/generate` did, until #594), and the Verifier's
   `verifyIssuerSignature()` finds the realm's key by `alg` and `kid` — plus
   anything in `oid4vp.trustedIssuerCertificates`, used as keys and nothing more.
 * **THE KEY BINDING JWT ACCEPTS WHAT THE ISSUER BINDS TO** — every asymmetric
@@ -851,7 +956,8 @@ second catalogue. What is more than a number, and what
   shared blob first, so a process adopting a sibling's backfill does not make a
   second key — written down, and offered on as an enrichment
   (`keystore.enriches()`). `tests/vci_request_encryption_key.js` pins all of it.
-* **`/oid4vci/last_request` IS PER REALM TOO (2026-09-12).** It was one `let`, so
+* **THE LAST-REQUEST RECORD IS PER REALM TOO (2026-09-12)** — `/oid4vci/last_request`
+  until #594, `GET /admin-api/oid4vci/last-request` since. It was one `let`, so
   a realm's debugging endpoint reported however another realm's last Credential
   Request had arrived, kid included. **Persisted since 2026-09-14 (#46)**
   (`vc_issuer.lastCredentialRequest`, one key): behind a balancer the wallet's
@@ -934,7 +1040,7 @@ needed to tell them apart.
 
 ---
 
-## THE W3C VC-API ADAPTER AND THE W3C SUITES (#194-#199, 2026-09-26)
+## THE W3C VC API AND THE W3C SUITES (#194-#199, 2026-09-26; A PRODUCT SURFACE SINCE #598, 2026-10-12)
 
 The Verifiable Credentials and DID Working Groups' own test suites — VC Data
 Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status List,
@@ -949,15 +1055,55 @@ did:key), a credential's status is an index `vc_status.ts` allocates, and a
 status change is `vc_status.setStatus()` — the act `/admin/vc-status`
 performs, one of the three that DISOWN a credential (*Disowned*, above).
 
-**A TEST CONTROL** (`mode.opensTestControls()`): in a product realm every
-route is a 404 (`STS-VC-0100`). An endpoint that signs whatever it is handed
-with a realm's key is what a conformance suite needs and no deployment
-should expose. **AND AUTHENTICATED ANYWAY**, the way
-`vc-test-suite-implementations` lets a suite authenticate: an OAuth 2.0
-client-credentials token this realm issued, verified and not revoked,
-carrying `vc-api:issue` or `vc-api:verify` — two new PROTECTED scopes
-(`common/scope_policy.ts`), issued only to a client an administrator
-declared them on, re-checked on every call (`STS-VC-0101`).
+**A PRODUCT SURFACE SINCE #598 (rcbj's decision 2 on #591), AND OFF BY
+DEFAULT.** It was a test control — development-only under #585's
+demonstration mark (removed by #599), because an endpoint that signs whatever it is handed with a
+realm's key is what a conformance suite needs. Making it a surface a
+deployment may expose changed six things, each argued in `vc_api.ts`'s
+header:
+
+* **`vcApi.enabled`, per realm, off.** Off, every route answers **501**
+  (`STS-VC-0120`) with the VC API's error shape before a token is read —
+  `scim.enabled`'s, `ssf.enabled`'s and `xacml.enabled`'s answer, not
+  Express's 404: the feature is off, the URL is not wrong, and
+  `/admin/sts-metadata`'s list stays true in every realm (each row's
+  `effect` says so). The setting is drawn on `/admin/vc`'s OpenID4VCI tab
+  (the `W3C VC API` group, `SETTING_HOMES`).
+* **KEYS OF ITS OWN** — the realm key set's `vcApiKeys` member
+  (`common/helpers.js` makeVcApiKeys(), `vc_data_integrity.ts`
+  `vcApiKeyFor()`): Ed25519, P-256 and P-384, made with the set, sealed in
+  product, shared across processes like the browser device keys, carried
+  over a rotation unchanged (a did:key IS its key), and never published or a
+  candidate of `ownCandidatesFor()`. It signed with the realm's token keys
+  (`extraKeys`) until then, and a `jose-p256` issue was a compact JWS over a
+  document the caller wrote: any `iss`/`sub`/`aud` it liked, signed by a key
+  `verifyOwnJws()` tries for any kid it does not know (RFC 8725 section
+  3.12). `realmKeyFor()` still signs the status lists' JSON-LD form.
+* **AUTHENTICATED IN EVERY MODE**, as before: an OAuth 2.0 access token this
+  realm issued, verified, not revoked, carrying `vc-api:issue` or
+  `vc-api:verify` — PROTECTED scopes (`common/scope_policy.ts`), issued only
+  to a client an administrator declared them on, re-checked on every call
+  (`STS-VC-0101`). The file reads no mode predicate at all.
+* **RATE LIMITED** after the token, per client and per address, per realm
+  (`vcApi.maxPerWindow`, `STS-VC-0121`) — `xacml.pipMaxPerWindow`'s
+  arrangement, because signing and canonicalizing cost CPU.
+* **AN OPTION IT DOES NOT UNDERSTAND IS REFUSED** (`STS-VC-0122`), as
+  VCALM says it MUST be, each known option's shape checked. That closed a
+  hole the test control had: `securedByEnvelope`, the verifier's own
+  "an envelope already verified this", was read from the CALLER's options,
+  and a verify carrying it was `verified: true` with no proof checked. It is
+  an argument now. A private member under `verificationMethod` is refused
+  rather than ignored. The DID queries go through `validation.check()`.
+* **THE STATUS-LIST PUBLISH LEFT** for `POST /admin-api/vc-status/publish`
+  (Admin Write) and a *Publish now* button on the Credential status tab
+  (`admin-ui/vc_status_admin.ts`): it was the suites' hook beside the list,
+  a list here is computed on every read, and an act that only says so is an
+  operator's.
+
+`vc_api.issued` (credential id → status index) moved to the GLOBAL tier
+(`persistence/tiers.js`) beside `vc_status.entries`, so a status change
+reaches its index from any cell; `/vc-api` stays `local` in
+`common/cell_placement.ts`, since nothing it reads is a person's.
 
 **NOTHING IS FETCHED, WHICH IS WHY THE RDFC SUITES COULD BE ADDED AT ALL.**
 `vc_data_integrity.ts`'s header argued JCS for the holder proof because an
@@ -1006,8 +1152,11 @@ resolveRepresentation for a contentType and a parseable stream (#199, one).
 
 ### Not built
 
-zcap authorization (OAuth only); a Key Binding JWT on an SD-JWT presentation
-is reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
+zcap authorization (OAuth only); VCALM's workflows and exchanges,
+challenges, credential and presentation storage, its `operation:path`
+scopes, and issuer instances configured per realm (they are fixed, one per
+mechanism and curve); a Key Binding JWT on an SD-JWT presentation is
+reported, not checked; `ecdsa-sd-2023` over P-384 (see above); DID
 parameters (`service`, `versionId`, …) and any did:web but the realm's own;
 Bitstring Status Lists of the `message` purpose (`statusSize` > 1); the
 bbs-2023 suite at the adapter (no ticket asks for its suite).
@@ -1016,3 +1165,81 @@ bbs-2023 suite at the adapter (no ticket asks for its suite).
 `tests/vc_jose_cose.js` and `tests/vc_api.js` hold the libraries in process;
 the six `tests/vendored/sts_*_suite.js` jobs run the W3C suites
 (`tests/CLAUDE.md`, *The W3C VC and DID suites*).
+
+## THE DEMONSTRATION LEFT THE SERVICE (#594, 2026-10-12)
+
+**The OpenID4VC demonstration is the development companion's** (`companion/`,
+rcbj's decision 1 on #591): the issuer's page `/issuer`, the offer
+`/issuer/offer`, the bar door `/oid4vp/verifier`, its start `/oid4vp/start`,
+its closing page `/oid4vp/done`, their script `/issuer/demo.js` and API
+`/vc-demo-api` (the static surface #582 made them), and the non-spec
+`/oid4vp/result/:state` are no longer routes of this service in any mode.
+`companion/CLAUDE.md` argues the companion; what changed HERE:
+
+* **A VERIFICATION STARTS ONLY AT `POST /admin-api/verifications/start`**
+  (#587) and is read at `GET /admin-api/verifications?state=`.
+  `startVerification(req, asked, where, options)` is everything the start
+  page did before it sent anything — the `OID4VC_QUERY` check
+  (`checkParsed()`), `prepareSignedClientId()`, `buildVpRequest()`,
+  `vpRequestQuery()` and `vpWalletFor()` — and returns `{ ok, record,
+  query, wallet, walletUrl, requestUri, mode }` or `{ ok: false, status,
+  code, error }`; `verificationOutcome(state)` reads the store directly (not
+  `transactionFor()`, which removes an expired transaction: "what did it
+  decide" outlives "may it still be answered"); `recentVerifications()`
+  lists the open ones for the console and the bare `GET`, never a sign-in's;
+  `START_VOCABULARY` is the operation's closed sets (#86). The companion's
+  bar door is an application calling these.
+* **THE RESPONSE ENDPOINT'S `redirect_uri` IS THE STARTER'S** (OpenID4VP 1.0
+  section 8.2). It named `/oid4vp/done?state=…` for every verification that
+  was not a sign-in — a demonstration page, so a product verification sent
+  the person to a 404. The start now names it (`redirect_uri`, checked by
+  `completionUriFor()`: the calling client's registered redirect URIs where
+  only registered addresses are accepted, any absolute http(s) URL without a
+  fragment elsewhere, `STS-VC-0123` otherwise), it rides on the transaction
+  as `completionUri`, and `afterResponseUri()` answers it. A start that
+  named none is answered `{}` — no `redirect_uri` — and a SIOPv2
+  `form_post` answer with no page is told in plain text that it arrived. A
+  SIGN-IN's transaction is unchanged: its wallet goes back to the sign-in's
+  own page with the `response_code`.
+* **NOBODY HERE MAKES A SAME-DEVICE OFFER ANY MORE.** `makeOffer()` and
+  `buildCredentialOffer()` keep the H.1 branch (an `issuer_state` the
+  authorization endpoint honours), and the portal makes the two
+  pre-authorized ones (#589); the companion makes its same-device offer
+  itself with no `issuer_state`, which section 4.1.1 allows. `walletFor()`
+  and `oid4vci.allowedWalletUrls` went with the offer page — the portal's
+  link goes to the configured wallet only (`configuredWalletUrl()`).
+* **THE ISSUER'S READBACKS ARE ADMIN READ OPERATIONS**: `GET
+  /admin-api/oid4vci/last-request` (`lastCredentialRequest()`, the record
+  per realm and persisted as before) and `GET
+  /admin-api/oid4vci/notifications?id=` (`notificationRecord()`, 404
+  `STS-VC-0024`). They were `/oid4vci/last_request` and
+  `/oid4vci/notification/:id`, answered to anybody in a development realm.
+* **`/did/generate` IS GONE**, with `oid4vci.generatedDidCredentialLifetimeS`:
+  it minted a did:jwk and a credential signed by it for tests, and test
+  tooling makes its own keys (`sts_did_test_suite.js` makes its did:jwk from
+  a P-256 key of its own).
+* **RETIRED CODES**: `STS-VC-0025`, `0026` (the offer page's query and
+  wallet), `0046` (`/did/generate`'s method), `0116`–`0119` (`/vc-demo-api`'s
+  binding). Never reused.
+
+The protocol endpoints are unchanged: the issuer metadata, the credential,
+nonce, deferred and notification endpoints, the token endpoint's
+pre-authorized grant, `/oid4vci/credential-offer/{id}`, the request object,
+the response endpoint (but for the `redirect_uri` above), the DC API and the
+status lists.
+
+`tests/admin_api_verifications.js` holds the start and the outcome,
+`tests/oid4vp_sign_in.js` section 7 the starter's page and its absence,
+`tests/oauth_oid4vc_hardcoded.js` 6a that none of the demonstration's
+routes exists, and `tests/companion.js` the companion.
+
+## This family's demonstrations (#585, #591)
+
+Nothing of this family is a demonstration any more: the OpenID4VC
+demonstration left for the development companion on #594 (above), and the W3C
+VC API, the last one here, became a product surface on #598. **Not ever**
+`/oid4vp/request/{id}`, `/oid4vp/response` or `/oid4vp/verifier-certificate`,
+which a real feature (`/authn/wallet`, `POST /admin-api/verifications/start`)
+uses and #569's rule keeps unchanged. The development-only mark #585 put on
+the rest was removed by #599 with nothing left to carry it (`common/CLAUDE.md`,
+`mode.js`); `tests/demo_endpoints.js` guards that none comes back.

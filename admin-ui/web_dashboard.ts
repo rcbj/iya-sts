@@ -94,7 +94,11 @@ class DashboardPage {
       t.html('consoleDashboard.not.droppedOn') + ' ' +
       link('/admin/audit', t.html('consoleDashboard.link.audit')) +
       t.html('consoleDashboard.not.rememberB')) +
-      kit.bullet(t.html('consoleDashboard.not.password')) +
+      // The console's own door, per mode (#543 round 2): the answer's
+      // `verifiesCredentials` chooses, as `persistence` chooses above.
+      kit.bullet(t.html(json.verifiesCredentials
+        ? 'consoleDashboard.not.passwordProduct'
+        : 'consoleDashboard.not.password')) +
       kit.bullet(t.html('consoleDashboard.not.enforceA') + ' ' +
       link('/admin/oauth2', t.html('consoleDashboard.link.oauth')) + ' ' +
       t.html('consoleDashboard.not.enforceB') + ' ' +
@@ -106,7 +110,7 @@ class DashboardPage {
       link('/admin/delegation', t.html('consoleDashboard.link.delegation')) +
       ' ' + t.html('consoleDashboard.not.delegateB')) +
       kit.bullet(t.html('consoleDashboard.not.attestA') + ' ' +
-      link('/admin/spiffe', 'SPIFFE') + ' ' +
+      link('/admin/cert-issuance#cert-spiffe-overview', 'SPIFFE') + ' ' +
       t.html('consoleDashboard.not.attestB')) +
       // `{id}` in the SCIM path is a literal brace, which no message may
       // hold, so the path stays in code between two messages.
@@ -187,13 +191,15 @@ class DashboardPage {
             if (!inner.length) {
               return;
             }
-            // The group's own description folds like a page's, for the same
-            // reason: SAML's runs to five lines and sat between the heading
-            // and the three pages under it.
+            // The group's own description stays with its heading, rather
+            // than being mistaken for the first page beneath it.
             out.push('<li><span class="grp">' + kit.esc(item.title) +
                      '</span>' +
                      kit.note(kit.esc(item.what)) +
                      '<ul>' + inner.join('') + '</ul></li>');
+            return;
+          }
+          if (item.hidden) {
             return;
           }
           if (item.path === activePath) {

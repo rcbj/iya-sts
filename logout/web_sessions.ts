@@ -59,10 +59,22 @@ class SessionsPage {
     // What every paging link carries with it. The page number is not in here
     // — kit.pageNavPair() supplies that per link — and neither is `format`,
     // because JSON has no links in it.
+    // The unauthenticated section's page rides along too (#313), so paging
+    // one list leaves the other where the reader left it.
+    const anonPaging = json.unauthenticatedPaging;
     const filterParams = { q: (json.filter.q || ''),
       protocol: (json.filter.protocol || ''),
-                           per: ctx.query.per ? paging.perPage : '' };
-    const nav = kit.pageNavPair('/admin/sessions', filterParams, paging);
+                           per: ctx.query.per ? paging.perPage : '',
+                           anonymousPage: anonPaging && anonPaging.page > 1
+                             ? anonPaging.page : '' };
+    const nav = kit.pageNavPair('/admin/sessions', filterParams, paging, t);
+    const anonNav = anonPaging
+      ? kit.pageNavPair('/admin/sessions',
+                        Object.assign({}, filterParams,
+                                      { page: paging.page > 1
+                                          ? paging.page : '' }),
+                        anonPaging, t)
+      : { head: '', foot: '' };
     // Where a Revoke sends the reader back to: THIS page of THIS filter,
     // because the row above and below the one they ended is what they were
     // reading.
@@ -127,7 +139,9 @@ class SessionsPage {
       '<a href="/logout">' + t.html('consoleSessions.revokeLink') + '</a>' +
       t.html('consoleSessions.revokeAfter')) +
 
-      '<h2>' + t.html('consoleSessions.hLive') + '</h2>' +
+      // A TAB PER LIST (2026-10-12): the lead, the tiles and the kinds are
+      // Metadata (`WebPages.protocolTabs()`).
+      '<h2 data-tab="live">' + t.html('consoleSessions.hLive') + '</h2>' +
       // No `page` input in this form, and that is the point: changing the
       // filter or the page size sends the reader back to page 1. Carrying the
       // old page number over would land somebody on page 6 of a two-page
@@ -177,7 +191,8 @@ class SessionsPage {
       // section that disappeared with the setting would hide exactly those.
       // What changes with the setting is the sentence, not the presence.
       // ---------------------------------------------------------------------
-      '<h2>' + t.html('consoleSessions.hUnauthenticated') + '</h2>' +
+      '<h2 data-tab="unauthenticated">' +
+      t.html('consoleSessions.hUnauthenticated') + '</h2>' +
 
       kit.note(t.html('consoleSessions.unauthLead')) +
 
@@ -194,15 +209,15 @@ class SessionsPage {
           '</a>' + t.html('consoleSessions.offAfter'))) +
 
       (json.unauthenticatedHeld
-        ? '<table>' + thead +
+        ? anonNav.head + '<table>' + thead +
           json.unauthenticatedSessions.map(function (row) {
             return SessionsPage.sessionRow(t, row, nowMs, ctx.write, back);
-          }).join('') + '</table>' +
+          }).join('') + '</table>' + anonNav.foot +
           kit.note(t.html('consoleSessions.unauthCount', {
             n: json.unauthenticatedHeld, held: json.held }))
         : kit.note(t.html('consoleSessions.unauthNone'))) +
 
-      kit.note('<a href="/admin/logout">' +
+      '<div data-metadata>' + kit.note('<a href="/admin/logout">' +
       t.html('consoleSessions.linkLogout') + '</a>' +
       t.html('consoleSessions.linkLogoutAfter') + ' &middot; <a ' +
       'href="/admin/tokens">' + t.html('consoleSessions.linkTokens') +
@@ -214,7 +229,7 @@ class SessionsPage {
       'href="/admin/sessions?format=json">' +
       t.html('consoleSessions.linkJson') + '</a> &middot; ' +
       '<a href="/admin-api/sessions">' + t.html('consoleSessions.linkApi') +
-      '</a>');
+      '</a>') + '</div>';
 
     return inner;
   }

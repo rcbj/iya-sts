@@ -27,7 +27,7 @@ You can set the flag in three ways:
 - On the console, tick **Service account** on **Users → New user**, or use
   the **Service account** tab of an existing person's page.
 - Through the management API, call
-  `POST /admin-api/users/set-service-account` with `user`, `owner`,
+  `POST /admin-api/users/set-service-account` with `user`, `owners`,
   `destination` and `secretName`. Send `serviceAccount: false` to make the
   person an ordinary person again. `POST /admin-api/users/create` accepts
   the same fields with `serviceAccount: true`.
@@ -40,7 +40,7 @@ The person can never set the flag on their own entry, whatever
 
 | Attribute | What it is |
 |---|---|
-| `stsServiceAccountOwner` | The DN of the person or group responsible for the account. It is required while the policy's `requireOwner` is on, which is the default. |
+| `stsServiceAccountOwner` | The DN of a person or group responsible for the account, one value per owner and at most 25. At least one is required while the policy's `requireOwner` is on, which is the default. |
 | `stsSecretDestination` | The DN of the push destination, an application entry. |
 | `stsSecretName` | The secret's name or path at that destination. The secret must already exist, because a push never creates one. |
 | `stsPasswordRotatedAt` | When the password was last rotated. |
@@ -50,6 +50,68 @@ The person can never set the flag on their own entry, whatever
 **Users** lists service accounts with a tag. The filter
 `?kind=service` (or `?kind=person`) shows only service accounts (or only
 everyone else), on the console and at `GET /admin-api/users`.
+
+### Owners
+
+An account can have more than one owner. Each owner is a person or a group
+in the realm, and a group stands for everyone in it. You can name at most 25
+owners. While the policy's `requireOwner` is on, which is the default, an
+account must have at least one.
+
+On the console, the **Service account** tab lists the owners in a table. To
+add an owner:
+
+1. Choose **people** or **groups** and type part of a username or a group's
+   name.
+2. Press **Find**. The results show five at a time, with **Previous** and
+   **Next**.
+3. Press **Add** beside the owner you want.
+
+For an account that is already a service account, **Add** and **Remove** save
+the change as soon as you press them. The search results stay on the page, so
+you can add several owners one after another. You cannot remove the last
+owner while the policy requires one.
+
+For a person who is not a service account yet, the table is a draft. Nothing
+is saved until you press **Make them a service account with these owners and
+push destination**, which saves the owners, the destination and the secret
+name together. On **Users → New user** you type the owners instead, one per
+line.
+
+### Push destination
+
+The push destination is chosen with a search too, and the search finds only
+secret destinations (**Directory → Secret destinations**):
+
+1. Type the secret's name or path in **Secret name or path**.
+2. Type part of a destination's name, DN or provider and press **Find**.
+3. Press **Use** beside the destination you want.
+
+For a service account, **Use** saves the destination and the secret name at
+once. The two go together, so type the secret name first. A destination that
+is set already is marked **in use**, and one that cannot be pushed to yet is
+marked **not usable now**. Once a destination is set, **Save the secret name**
+changes only the name, and **Clear the push destination** removes both. The
+password is then no longer rotated, and the owners stay.
+
+Through the management API, `owners` is the whole list. It replaces the
+owners the account has, so to add one you send the existing owners as well.
+Each entry is a DN, a username or a group's `cn`; a string is read as one
+owner per line.
+
+To change one owner or the destination without sending the rest, use the
+three actions the console uses:
+
+| Action | Body | What it does |
+|---|---|---|
+| `add-service-account-owner` | `user`, `owner` | Adds one owner and keeps the others and the destination. An owner already listed is `ok` with `changed: false`. |
+| `remove-service-account-owner` | `user`, `owner` (the DN) | Removes one owner. Refused for an owner the account does not list, and for the last owner while the policy requires one. |
+| `set-service-account-destination` | `user`, `destination`, `secretName` | Sets both, or clears both when both are empty, and keeps the owners. |
+
+Each answers `account`, the service account as it now stands. To find a
+destination, `GET /admin-api/secret-destinations?q=<text>` narrows the list to
+destinations whose name, identifier, DN or provider contains the text, and
+`matched` counts them.
 
 ## The policy
 
@@ -67,7 +129,7 @@ the more secure choice.**
 | `rotationIntervalDays` | 30 | How often the password rotates. |
 | `rotationOverlapMinutes` | 60 | How long the previous password is still accepted after a rotation. |
 | `generatedLength` | 32 | The length of a rotated password. It can never be shorter than the password policy's minimum. |
-| `requireOwner` | on | Whether an account must name an owner. |
+| `requireOwner` | on | Whether an account must name at least one owner. |
 | `rotationAlarmFailures` | 3 | How many failed rotations in a row raise an alarm. |
 
 The policy applies **in both modes**, as the authentication policy does. In

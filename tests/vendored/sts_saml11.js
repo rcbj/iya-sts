@@ -110,11 +110,28 @@
 // makes every run of every test one person and a leftover row says nothing about
 // which file put it there.
 //
+// **THE RELYING PARTIES ARE NOT THE SERVICE'S OWN MOCKS (#586).** Until #585
+// the addresses this job registered were `/saml11/rp`, `/wsfed/rp` and the
+// SSO check asked `/saml2/sp` — the service's own demo endpoints, which were
+// development only from that ticket and deleted by #592. The relying party this job plays
+// itself now registers an address under `example.test` that nothing dials
+// (the job reads every answer at the identity provider, which is the point
+// of it), and the parties that must RECEIVE something are the TEST PEER's
+// (tests/peer/): a SAML 1.1 relying party that consumes a Browser/POST
+// response and resolves a Browser/Artifact artifact at the responder with a
+// request its own key signs, a SAML 2.0 service provider whose SP-initiated
+// request the session answers without a sign-in, and a WS-Federation relying
+// party the sign-in response is posted to — each registered here as an
+// ordinary application, and each read back from the peer. With no peer (an
+// AWS target) those checks skip, saying so; everything else runs.
+//
 // IT DOES NOT CHECK THAT ANYBODY IS WHO THEY SAY THEY ARE, because the service
 // does not: any username signs in, and the assertion describes whoever was
 // typed. A test that asserted otherwise would be asserting a bug.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require('./authn_signin');
 const assert = require('assert');
 const http = require('http');
 const https = require('https');
@@ -123,6 +140,7 @@ const { URL } = require('url');
 const { Command, Option } = require('commander');
 const { usernameFor, runStamp } = require('./random_username.js');
 const registry = require('./sts_applications.js');
+const testPeer = require('./test_peer.js');
 var appconfig = require(process.env.CONFIG_FILE);
 const bunyan = require('bunyan');
 const { DOMParser } = require('@xmldom/xmldom');
@@ -146,6 +164,17 @@ const BASE = (process.env.SAML11_IDP_URL ||
 // registry entry — and a row left behind names the file that made it.
 const RP = 'urn:test:saml11:' + runStamp();
 
+// THE PARTIES THAT RECEIVE (#586): the test peer, as a SAML 1.1 relying
+// party, a SAML 2.0 service provider and a WS-Federation relying party, each
+// a tenant of its own and an application of its own in the default realm.
+// Null where this run has no peer.
+const RP_PEER = 'urn:test:saml11:peer:' + runStamp();
+const SP_PEER = 'urn:test:saml2:peer:' + runStamp();
+const WSFED_REALM = 'urn:test:wsfed:' + runStamp();
+let peer11 = null;
+let peer2 = null;
+let peerWsfed = null;
+
 const PASSWORD = 'Saml11-' + crypto.randomBytes(9).toString('base64url') + '-Aa1!';
 const USER_POST = usernameFor('saml11-post');
 // Whether the service is in PRODUCT mode, where a return address nobody
@@ -161,6 +190,7 @@ const CLAIM_NS = 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims';
 const NS_SAML = 'urn:oasis:names:tc:SAML:1.0:assertion';
 
 const NS_SAMLP = 'urn:oasis:names:tc:SAML:1.0:protocol';
+const NS_SAMLP11 = 'urn:oasis:names:tc:SAML:1.1:protocol';
 
 const CM_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
 
@@ -231,6 +261,22 @@ function request(method, path, body, headers) {
     }
     req.end();
   });
+}
+
+// THE SIGN-IN SCREEN OVER `/authn-api` (#571), through the one helper: the
+// screen's address, a name and PASSWORD, answered as the form's POST was — a
+// 303 to where the flow goes on, or the refusal's status and text — with
+// this job's cookie kept.
+async function screenSignIn(location, username) {
+  const signed = await authnSignin.submit(BASE, location,
+    { action: 'login', username: username, password: PASSWORD },
+    { cookie: cookie });
+  cookie = signed.cookie;
+  return signed.next === 'redirect'
+    ? { status: 303, headers: { location: signed.location }, body: '' }
+    : { status: signed.status, headers: {},
+        body: typeof signed.text === 'string' ? signed.text
+                                              : JSON.stringify(signed.json) };
 }
 
 function form(obj) {
@@ -348,10 +394,7 @@ async function signIn(query, username) {
 async function resume(path, username) {
   let res = await request('GET', path);
   if (res.status === 303 && /\/authn\/login/.test(res.headers.location || '')) {
-    const id = decodeURIComponent(/authn=([^&]+)/.exec(res.headers.location)[1]);
-    res = await request('POST', '/authn/login',
-                        form({ authn_id: id, username: username,
-                               password: PASSWORD, action: 'login' }), FORM);
+    res = await screenSignIn(res.headers.location, username);
   }
   let hops = 0;
   while ((res.status === 302 || res.status === 303) && hops++ < 8) {
@@ -504,6 +547,226 @@ async function restoreSettings() {
 }
 
 // ===========================================================================
+// ---------------------------------------------------------------------------
+// THE TEST PEER (#586): three tenants of it, one per role, each registered
+// in the default realm — where this job runs — as an ordinary application,
+// with the peer's own entityID, return address and signing certificate. A
+// run with no peer leaves all three null, and the sections that need them
+// skip, saying so.
+// ---------------------------------------------------------------------------
+async function setUpPeer() {
+  log.debug('Entering setUpPeer().');
+  if (!testPeer.available()) {
+    log.info(testPeer.skipReason('the SAML 1.1, SAML 2.0 and WS-Federation ' +
+                                 'parties that receive'));
+    log.debug('Leaving setUpPeer(). No peer.');
+    return;
+  }
+  peer11 = await testPeer.tenant(testPeer.tenantId('saml11-rp'), BASE, BASE,
+                                 { saml: { entityId: RP_PEER } });
+  await registry.provision(registry.baseOf(BASE), {
+    identifier: RP_PEER, name: 'The test peer as a SAML 1.1 relying party',
+    protocols: ['saml11'], fields: testPeer.saml11Fields(peer11),
+    why: 'the relying party that receives the Browser/POST response and ' +
+         'resolves the Browser/Artifact artifact (#586)'
+  });
+  peer2 = await testPeer.tenant(testPeer.tenantId('saml2-sp'), BASE, BASE,
+                                { saml: { entityId: SP_PEER } });
+  await registry.provision(registry.baseOf(BASE), {
+    identifier: SP_PEER, name: 'The test peer as a SAML 2.0 service provider',
+    protocols: ['saml2'], fields: testPeer.saml2Fields(peer2),
+    why: 'the service provider whose request the shared session answers (#586)'
+  });
+  peerWsfed = await testPeer.tenant(testPeer.tenantId('wsfed-rp'), BASE, BASE,
+                                    { wsfed: { realm: WSFED_REALM } });
+  log.debug('Leaving setUpPeer().');
+}
+
+// Hidden form fields of a page, decoded.
+function hiddenFieldsOf(page) {
+  log.debug('Entering hiddenFieldsOf().');
+  const out = {};
+  const re = /<input[^>]*type="hidden"[^>]*>/gi;
+  let m = re.exec(page);
+  while (m) {
+    const name = /name="([^"]+)"/.exec(m[0]);
+    const value = /value="([^"]*)"/.exec(m[0]);
+    if (name) {
+      out[name[1]] = value ? value[1].replace(/&quot;/g, '"')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&') : '';
+    }
+    m = re.exec(page);
+  }
+  log.debug('Leaving hiddenFieldsOf().');
+  return out;
+}
+
+// The action of a page's first form, decoded.
+function formActionOf(page) {
+  log.debug('Entering formActionOf().');
+  const m = /<form[^>]*action="([^"]*)"/i.exec(page);
+  log.debug('Leaving formActionOf().');
+  return m ? m[1].replace(/&amp;/g, '&') : '';
+}
+
+// The last record of `role` on a peer tenant after `since`.
+async function peerSaw(view, role, since) {
+  log.debug('Entering peerSaw().');
+  const got = await testPeer.received(view.tenant, role, since);
+  log.debug('Leaving peerSaw().');
+  return got.events[got.events.length - 1] || null;
+}
+
+// SAML 1.1 at a relying party that is NOT this job: the Browser/POST
+// response posted to the peer, which verifies it through ResponseID and
+// AssertionID against the metadata's key; and a Browser/Artifact artifact
+// the peer resolves itself, at the responder, with a request its own
+// registered key signs.
+async function theTestPeerRelyingParty(target) {
+  log.debug('Entering theTestPeerRelyingParty().');
+  if (!peer11) {
+    log.info(testPeer.skipReason('the SAML 1.1 relying party that receives'));
+    log.debug('Leaving theTestPeerRelyingParty(). No peer.');
+    return;
+  }
+  const acs = peer11.urls.saml11Acs;
+  let since = await testPeer.mark(peer11.tenant);
+  let res = await signIn({ providerId: RP_PEER, shire: acs, TARGET: target,
+                           profile: 'post' }, USER_POST);
+  const fields = hiddenFieldsOf(res.body);
+  check('the Browser/POST page posts to the peer\'s assertion consumer',
+        res.status === 200 && formActionOf(res.body) === acs &&
+        !!fields.SAMLResponse, 'status ' + res.status + ' ' +
+        formActionOf(res.body));
+  res = await request('POST', acs, form({ SAMLResponse: fields.SAMLResponse,
+                                          TARGET: fields.TARGET || '' }),
+                      FORM);
+  let seen = await peerSaw(peer11, 'saml11', since);
+  check('THE PEER ACCEPTED THE Browser/POST RESPONSE: both signatures ' +
+        'verified through ResponseID and AssertionID, bearer, no ' +
+        'InResponseTo, addressed to it, for the person who signed in',
+        res.status === 200 && !!seen && seen.ok === true &&
+        seen.profile === 'post' && seen.responseSignatureValid === true &&
+        seen.assertionSignatureValid === true &&
+        seen.nameIdentifier === USER_POST &&
+        seen.audiences.indexOf(RP_PEER) >= 0,
+        'status ' + res.status + ' ' + JSON.stringify(seen).slice(0, 600));
+  since = await testPeer.mark(peer11.tenant);
+  res = await signIn({ providerId: RP_PEER, shire: acs, TARGET: target,
+                       profile: 'artifact' }, USER_ARTIFACT);
+  const location = res.headers.location || '';
+  check('the artifact profile redirects to the peer\'s assertion consumer',
+        res.status === 303 && location.indexOf(acs + '?') === 0 &&
+        /[?&]SAMLart=/.test(location), 'status ' + res.status + ' ' + location);
+  res = await request('GET', location);
+  seen = await peerSaw(peer11, 'saml11', since);
+  check('THE PEER RESOLVED THE ARTIFACT ITSELF, at the responder, with a ' +
+        'request its own registered key signed, and got the cm:artifact ' +
+        'assertion for the person who signed in',
+        res.status === 200 && !!seen && seen.ok === true &&
+        seen.profile === 'artifact' &&
+        seen.confirmationMethods.indexOf(CM_ARTIFACT) >= 0 &&
+        seen.nameIdentifier === USER_ARTIFACT,
+        'status ' + res.status + ' ' + JSON.stringify(seen).slice(0, 600));
+  log.debug('Leaving theTestPeerRelyingParty().');
+}
+
+// SINGLE SIGN-ON INTO SAML 2.0, from a service provider that is not this
+// job: the peer's SP-initiated AuthnRequest (redirect binding, signed by its
+// registered key) followed with this job's cookie jar, answered with no
+// sign-in screen, and the Response posted back to the peer, which verifies
+// it and records who it names. Without a peer it skips, saying so, in both
+// modes: the development realm's own mock service provider it fell back on
+// was deleted (#592).
+async function theSaml2SessionIsShared(who) {
+  log.debug('Entering theSaml2SessionIsShared().');
+  if (!peer2) {
+    log.info(testPeer.skipReason('the SAML 2.0 service provider the ' +
+                                 'session is shared with'));
+    log.debug('Leaving theSaml2SessionIsShared(). No peer.');
+    return;
+  }
+  const since = await testPeer.mark(peer2.tenant);
+  let res = await request('GET', peer2.urls.saml2Login + '?binding=post');
+  const start = res.headers.location || '';
+  check('the peer starts SP-initiated SAML 2.0 with a redirect to this ' +
+        'identity provider', res.status === 302 &&
+        start.indexOf(BASE + '/saml2/sso?') === 0, 'status ' + res.status +
+        ' ' + start.slice(0, 160));
+  res = await request('GET', start);
+  for (let hops = 0; (res.status === 302 || res.status === 303) && hops < 8;
+       hops++) {
+    const where = res.headers.location || '';
+    if (!/^(\/authn\/|\/saml2\/sso)/.test(where.replace(BASE, ''))) {
+      break;
+    }
+    res = await request('GET', where);
+  }
+  const fields = hiddenFieldsOf(res.body);
+  check('THE SAME SESSION ANSWERS IT: a SAML 2.0 Response with no sign-in ' +
+        'screen, posted to the peer',
+        res.status === 200 && !!fields.SAMLResponse &&
+        !/\/authn\/signin\.js/.test(res.body) &&
+        formActionOf(res.body) === peer2.urls.saml2Acs,
+        'status ' + res.status + ' ' + formActionOf(res.body));
+  res = await request('POST', peer2.urls.saml2Acs, form(fields), FORM);
+  const seen = await peerSaw(peer2, 'saml2', since);
+  check('and the peer accepted it: signed, in response to its own request, ' +
+        'addressed to it, naming the person the session belongs to',
+        res.status === 200 && !!seen && seen.ok === true &&
+        seen.solicited === true && seen.nameId !== '' &&
+        (seen.nameId === who || PRODUCT),
+        'status ' + res.status + ' ' + JSON.stringify(seen).slice(0, 600));
+  log.debug('Leaving theSaml2SessionIsShared().');
+}
+
+// WS-FEDERATION AT A RELYING PARTY THAT RECEIVES: a sign-in, and the
+// sign-in response posted to the peer, which verifies the token against the
+// federation metadata's key and records whom it names and for which realm.
+async function theWsfedRelyingPartyReceives(wreply, who) {
+  log.debug('Entering theWsfedRelyingPartyReceives().');
+  if (!peerWsfed) {
+    log.info(testPeer.skipReason('the WS-Federation relying party that ' +
+                                 'receives'));
+    log.debug('Leaving theWsfedRelyingPartyReceives(). No peer.');
+    return;
+  }
+  const since = await testPeer.mark(peerWsfed.tenant);
+  cookie = '';
+  let res = await request('GET', '/wsfed?' + form({ wa: 'wsignin1.0',
+    wtrealm: WSFED_REALM, wreply: wreply, wctx: 'ctx-' + runStamp() }));
+  for (let hops = 0; hops < 10; hops++) {
+    if ((res.status === 302 || res.status === 303) &&
+        /\/authn\/login/.test(res.headers.location || '')) {
+      res = await screenSignIn(res.headers.location, who);
+      continue;
+    }
+    const where = (res.headers.location || '').replace(BASE, '');
+    if ((res.status === 302 || res.status === 303) &&
+        /^(\/authn\/|\/wsfed)/.test(where)) {
+      res = await request('GET', where);
+      continue;
+    }
+    break;
+  }
+  const fields = hiddenFieldsOf(res.body);
+  check('the sign-in response is a form posting a wresult to the peer',
+        res.status === 200 && !!fields.wresult &&
+        formActionOf(res.body) === wreply,
+        'status ' + res.status + ' ' + formActionOf(res.body));
+  res = await request('POST', wreply, form(fields), FORM);
+  const seen = await peerSaw(peerWsfed, 'wsfed', since);
+  check('THE PEER ACCEPTED THE TOKEN: its signature verified against the ' +
+        'federation metadata, for this realm, naming the person who signed ' +
+        'in, with wctx returned', res.status === 200 && !!seen &&
+        seen.ok === true && seen.signatureValid === true &&
+        seen.audiences.indexOf(WSFED_REALM) >= 0 &&
+        seen.subject !== '' && /^ctx-/.test(seen.wctx || ''),
+        'status ' + res.status + ' ' + JSON.stringify(seen).slice(0, 600));
+  log.debug('Leaving theWsfedRelyingPartyReceives().');
+}
+
 async function main() {
   log.debug('Entering main().');
   log.info('driving the SAML 1.1 browser profiles at ' + BASE +
@@ -552,10 +815,30 @@ async function main() {
 
   // -------------------------------------------------------------------------
   heading('the pages a person reaches by clicking');
+  // SINCE #584 THE PAGE IS DRAWN IN THE BROWSER: the shell carries the
+  // profile's description as its view in data-sts-state, and the sentences
+  // a person reads come from the page's catalog, served as static JSON under
+  // /web. Both halves are asserted, the words from the English catalog.
+  const stateMatch = /data-sts-state="([^"]*)"/.exec(reachable.body);
+  let described = null;
+  try {
+    described = stateMatch ? JSON.parse(stateMatch[1].replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')) : null;
+  } catch (e) {
+    log.debug('Caught in main(): ' + ((e && e.message) || e));
+    described = null;
+  }
+  const profileView = (described && described.view) || {};
+  const words = await request('GET',
+                              '/web/locales/describeSaml11/en.json');
   check('GET /saml11 describes the profile',
-        /inter-site transfer service/i.test(reachable.body));
+        profileView.kind === 'saml11' && profileView.paths &&
+        /\/saml11\/sso/.test(String(profileView.paths.sso)) &&
+        /inter-site transfer service/i.test(words.body),
+        JSON.stringify(profileView).slice(0, 200));
   check('it says up front that SAML 1.1 has no request message',
-        /no request message/i.test(reachable.body));
+        /no request message/i.test(words.body), 'catalog ' + words.status);
   let res = await request('GET', '/saml11/sso');
   check('GET /saml11/sso with no parameters describes itself rather than 400ing',
         res.status === 200 && /TARGET/.test(res.body), 'status ' + res.status);
@@ -663,7 +946,10 @@ async function main() {
   // -------------------------------------------------------------------------
   heading('Browser/POST, end to end');
   const target = BASE + '/done?x=1';
-  const acs = BASE + '/saml11/rp';
+  // THIS JOB IS THE RELYING PARTY, and it reads every answer at the identity
+  // provider, so its assertion consumer is an address nothing dials — the
+  // service's own `/saml11/rp` was deleted (#592).
+  const acs = 'https://rp-' + runStamp() + '.saml11.example.test/SAML/POST';
 
   // THE RELYING PARTY, IN THE REGISTRY, BEFORE THE FIRST FLOW.
   //
@@ -693,6 +979,105 @@ async function main() {
     },
     why: 'the relying party providerId names in every flow below'
   });
+  await setUpPeer();
+
+  heading('SAML 1.1-only service-provider metadata');
+  const metadataRp = RP + ':metadata';
+  const metadataAcs = 'https://rp-' + runStamp() +
+                      '.saml11.example.test/SAML/Artifact';
+  const newApplication = await request('GET',
+    '/admin-api/applications/new');
+  const newApplicationFields = JSON.parse(newApplication.body).fields || [];
+  const metadataField = newApplicationFields.filter(function (one) {
+    return one.attribute === 'samlSpMetadata';
+  })[0];
+  check('the new-application form offers metadata for SAML 1.1',
+        metadataField &&
+        Array.isArray(metadataField.families) &&
+        metadataField.families.indexOf('saml11') >= 0,
+        JSON.stringify(metadataField || null));
+  await registry.provision(registry.baseOf(BASE), {
+    identifier: metadataRp,
+    name: 'SAML 1.1 metadata-only relying party',
+    protocols: ['saml11'],
+    fields: { samlEntityId: [metadataRp] },
+    why: 'the metadata-only relying party used to test SAML 1.1 descriptor ' +
+         'consumption'
+  });
+  const metadataDocument =
+    '<md:EntityDescriptor xmlns:md="' +
+    'urn:oasis:names:tc:SAML:2.0:metadata" entityID="' + metadataRp + '">' +
+    '<md:SPSSODescriptor protocolSupportEnumeration="' + NS_SAMLP11 + '">' +
+    '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="' +
+    'http://www.w3.org/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>' +
+    rpSigning.certB64 + '</ds:X509Certificate></ds:X509Data></ds:KeyInfo>' +
+    '</md:KeyDescriptor><md:AssertionConsumerService index="0" ' +
+    'isDefault="true" Binding="urn:oasis:names:tc:SAML:1.0:profiles:' +
+    'artifact-01" Location="' + metadataAcs + '"/>' +
+    '</md:SPSSODescriptor></md:EntityDescriptor>';
+  const createdMetadataRp = metadataRp + ':create';
+  const createdMetadataAcs = metadataAcs + '-create';
+  const createdMetadataDocument = metadataDocument
+    .replace(metadataRp, createdMetadataRp)
+    .replace(metadataAcs, createdMetadataAcs);
+  const createdMetadata = await registry.provision(
+    registry.baseOf(BASE), {
+      identifier: createdMetadataRp,
+      name: 'SAML 1.1 metadata configured at creation',
+      protocols: ['saml11'],
+      fields: { samlEntityId: [createdMetadataRp],
+                samlSpMetadata: createdMetadataDocument },
+      why: 'the new-application form consumes supplied SAML 1.1 metadata'
+    });
+  const createdMetadataAcsValue = registry.valuesOf(
+    createdMetadata.attributes.samlAcsEndpoint).join(' ');
+  check('creating a SAML 1.1 application consumes its metadata field',
+        createdMetadataAcsValue.indexOf(createdMetadataAcs) >= 0 &&
+        registry.valuesOf(createdMetadata.attributes.samlSigningCertificate)
+          .indexOf(rpSigning.certB64) >= 0,
+        createdMetadataAcsValue);
+  res = await api('/admin-api/saml2/upload-metadata',
+                  { sp: metadataRp, document: metadataDocument });
+  const metadataUpload = JSON.parse(res.body);
+  check('SAML 1.1-only metadata upload is consumed',
+        res.status === 200 && metadataUpload.ok,
+        'status ' + res.status + ' ' +
+        JSON.stringify(metadataUpload.errors || metadataUpload.message));
+  check('its ACS and signing certificate are registered',
+        metadataUpload.assertionConsumerServices &&
+        metadataUpload.assertionConsumerServices.indexOf(metadataAcs) >= 0 &&
+        metadataUpload.signingCertificates === 1,
+        JSON.stringify(metadataUpload));
+
+  const metadataFlow = await signIn({
+    providerId: metadataRp, shire: metadataAcs, TARGET: target
+  }, USER_ARTIFACT);
+  const metadataLocation = metadataFlow.headers.location || '';
+  const metadataArtifact = decodeURIComponent(
+    (/[?&]SAMLart=([^&]+)/.exec(metadataLocation) || [])[1] || '');
+  check('the registered artifact binding selects Browser/Artifact without ' +
+        'profile',
+        metadataFlow.status === 303 && !!metadataArtifact,
+        'status ' + metadataFlow.status + ' ' + metadataLocation);
+  if (metadataArtifact) {
+    const metadataRequestId = '_metadata' + Date.now();
+    const metadataResolve = await request('POST', '/saml11/responder',
+      samlRequest('<samlp:AssertionArtifact>' + metadataArtifact +
+                  '</samlp:AssertionArtifact>', metadataRequestId), XML);
+    const metadataAssertion = byLocal(parse(metadataResolve.body), 'Assertion');
+    check('the metadata-registered signing key resolves the artifact',
+          metadataResolve.status === 200 &&
+          statusOf(parse(metadataResolve.body)) === 'samlp:Success' &&
+          !!metadataAssertion,
+          'status ' + metadataResolve.status + ' ' +
+          statusOf(parse(metadataResolve.body)));
+    check('the resolved assertion is bound to the artifact',
+          !!metadataAssertion &&
+          textOf(metadataAssertion, 'ConfirmationMethod') === CM_ARTIFACT,
+          metadataAssertion ? textOf(metadataAssertion, 'ConfirmationMethod')
+                            : 'no assertion');
+  }
+
   if (!scopedEntityId) {
     // Product (#112): the scoped document exists now that `RP` is registered.
     res = await request('GET', '/saml11/metadata/' + encodeURIComponent(RP));
@@ -909,6 +1294,10 @@ async function main() {
         byLocal(doc, 'Response').getAttribute('InResponseTo') === requestId);
 
   // -------------------------------------------------------------------------
+  heading('a relying party that is not this job: the test peer (#586)');
+  await theTestPeerRelyingParty(target);
+
+  // -------------------------------------------------------------------------
   heading('the SAML responder: the other three request types');
   const heldId = artAssertion.getAttribute('AssertionID');
   res = await request('POST', '/saml11/responder',
@@ -1115,10 +1504,11 @@ async function main() {
   check('and it is the same person',
         !!second && (byLocal(parse(second), 'NameIdentifier').textContent || '').trim() === 'heidi');
   check('the session cookie was not replaced', cookie === before);
-  // The session is authn.js's, shared with OAuth, WS-Federation and SAML 2.0.
-  res = await request('GET', '/saml2/sp');
-  check('the SAML 2.0 profile is still reachable in the same session', res.status === 200,
-        'status ' + res.status);
+  // The session is authn.js's, shared with OAuth, WS-Federation and SAML 2.0:
+  // the test peer's SAML 2.0 service provider starts a request, and the
+  // same session answers it with no sign-in (#586; this asked `/saml2/sp`,
+  // which #592 deleted).
+  await theSaml2SessionIsShared('heidi');
 
   // -------------------------------------------------------------------------
   heading('refusals at the inter-site transfer service');
@@ -1304,16 +1694,24 @@ async function main() {
   // every WS-Federation assertion this service issues.
   // Registered first: a product-mode service answers a wreply only when it is
   // registered on the application the wtrealm names.
+  // The reply address is the test peer's WS-Federation relying party where
+  // there is one (#586), and otherwise an address nothing dials — the
+  // service's own `/wsfed/rp` was deleted (#592).
+  const wreply = peerWsfed ? peerWsfed.urls.wsfedReply
+    : 'https://rp-' + runStamp() + '.wsfed.example.test/';
   await registry.provision(registry.baseOf(BASE), {
-    identifier: 'urn:test:wsfed', name: 'SAML 1.1 test WS-Federation realm',
+    identifier: WSFED_REALM, name: 'SAML 1.1 test WS-Federation realm',
     protocols: ['wsfed'],
-    fields: { wsfedRealm: ['urn:test:wsfed'], wsfedReplyUrl: [BASE + '/wsfed/rp'] },
+    fields: { wsfedRealm: [WSFED_REALM], wsfedReplyUrl: [wreply] },
     why: 'the WS-Federation realm this job signs in to, to show that door still answers'
   });
-  res = await request('GET', '/wsfed?' + form({ wa: 'wsignin1.0', wtrealm: 'urn:test:wsfed',
-                                                wreply: BASE + '/wsfed/rp' }));
+  cookie = '';
+  res = await request('GET', '/wsfed?' + form({ wa: 'wsignin1.0',
+                                                wtrealm: WSFED_REALM,
+                                                wreply: wreply }));
   check('WS-Federation still answers', res.status === 200 || res.status === 303,
         'status ' + res.status);
+  await theWsfedRelyingPartyReceives(wreply, 'judy');
   res = await request('GET', '/saml2/metadata');
   check('the SAML 2.0 profile still publishes its metadata', res.status === 200,
         'status ' + res.status);

@@ -119,6 +119,17 @@ const GRANT_MANAGEMENT_SCOPES = Object.freeze(['grant_management_query',
 // debugger permission's reason below; `tests/scope_policy.js` compares.
 const VC_API_SCOPES = Object.freeze(['vc-api:issue', 'vc-api:verify']);
 
+// THE ACCOUNT API'S (#568): `/account-api`, the user portal's only door, is
+// this service's own resource server, and its one scope is protected like
+// the rest — a client must declare it, in both modes, and the API asks again
+// on every call. Only the seeded `sts-user-portal` declares it. Written out
+// rather than required from `account-api/account_api.ts`, for the debugger
+// permission's reason below.
+/**
+ * The account API's one scope, protected like the rest.
+ */
+const ACCOUNT_SCOPE = 'account:manage';
+
 // THE MDM FEED'S (#164 phase 3): the one scope `/admin-api`'s device
 // compliance operation takes instead of `admin:write`, so a posture feed
 // holds nothing else. Protected like the rest — a client must declare it, in
@@ -283,7 +294,7 @@ class ScopePolicy {
      String(config.value('scim.scopeWrite') || 'scim:write'),
      String(config.value('ssf.authScopeRead') || 'ssf:read'),
      String(config.value('ssf.authScopeWrite') || 'ssf:write'),
-     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE]
+     DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE]
       .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {

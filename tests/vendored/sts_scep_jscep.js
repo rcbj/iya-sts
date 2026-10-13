@@ -228,8 +228,9 @@ async function test() {
   const portal = await K.portalSignIn(REALM, FRAN, password);
   const made = await portal.post({ action: "create-challenge",
                                    profile: "tls-client" });
-  const own = (made.text.match(
-    /Challenge password<\/th><td><code>([^<]+)<\/code>/) || [])[1];
+  // The challenge made is the answer's `view.fresh`, shown once (#568).
+  const own = made.json && made.json.view && made.json.view.fresh
+    ? made.json.view.fresh.challenge : undefined;
   assert.ok(own, "/portal/certificates made no challenge");
   secrets.push(own);
   const req = await K.opensslRequest(work, "fran",

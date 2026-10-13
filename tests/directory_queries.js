@@ -25,7 +25,8 @@
 //      wait for the column step (`afterColumns`), and against an OLD table
 //      `open()` issues every ALTER before any of them.
 //   D. THE BRIDGE'S CONNECTION: the read side's options, the sslmode taken
-//      out of the URL and turned into the one `ssl` option.
+//      out of the URL and turned into the one `ssl` option; and verify-ca's
+//      host-name exemption carried as data a thread can be handed.
 //
 // WHAT NEEDS A REAL POSTGRES (on #349): that each generated expression is
 // accepted as immutable and computes what `ldap_server.js` computes, that the
@@ -331,6 +332,24 @@ function bridgeConnection(t) {
           'D2. no sslmode means require (#273): the ssl option is there too',
           JSON.stringify({ url: plain && plain.connectionString,
                            ssl: plain && plain.ssl }));
+  // #543 round 2: verify-ca's ssl option holds a function, which cannot be
+  // posted to the thread, so the bridge says it as data — and the whole
+  // answer survives structured cloning, as a Worker's workerData must.
+  const ca = driverWith(
+    [], null, 'postgres://sts_app@db:5432/sts?sslmode=verify-ca')
+    .bridgeConnection();
+  let cloned = null;
+  try {
+    cloned = structuredClone(ca);
+  } catch (e) {
+    log.debug("Caught in bridgeConnection(): " + ((e && e.message) || e));
+  }
+  t.check(cloned && cloned.ssl && cloned.ssl.rejectUnauthorized === true &&
+          cloned.ssl.hostnameUnchecked === true &&
+          cloned.ssl.checkServerIdentity === undefined,
+          'D3. verify-ca reaches the bridge as data: the chain verified, ' +
+          'the host name marked unchecked, and nothing uncloneable',
+          JSON.stringify(ca && ca.ssl));
   log.debug("Leaving bridgeConnection().");
 }
 

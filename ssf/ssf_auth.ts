@@ -564,7 +564,7 @@ class SsfAuth {
   // GNAP token is judged against this authorization server's record of it —
   // issued here, live, presented under the scheme RFC 9635 section 7.2
   // requires, and accompanied by a proof by the key it is bound to. It is the
-  // synchronous half of what the demonstration resource server asks; the
+  // synchronous half of `gnap_rs.ts`'s `authenticate()`; the
   // format's own verification is left out because this process holds the
   // record the format would re-derive, and this gate is synchronous across
   // every SSF endpoint.
@@ -780,10 +780,16 @@ class SsfAuth {
     const password = cut < 0 ? '' : decoded.slice(cut + 1);
     if (!user) {
       log.debug("Leaving SsfAuth.attemptBasic(). No username.");
+      // Per mode (#543 round 2): "accepts any username with any password"
+      // was the answer in product too, where the password is verified.
       return this.refusal('STS-SSF-0007', 401,
         'The Basic credential did not decode to "user:password". It is ' +
-        'base64 of those two joined by a colon, and this service accepts ' +
-        'any username with any password except "' + REFUSED_PASSWORD + '".',
+        'base64 of those two joined by a colon, and ' +
+        (mode.verifiesCredentials()
+          ? 'the password is verified against the person\'s directory ' +
+            'entry.'
+          : 'this realm, in development mode, accepts any username with ' +
+            'any password except "' + REFUSED_PASSWORD + '".'),
         { 'WWW-Authenticate': this.challenges() });
     }
     // `door: 'ssf'` (#101): a password-only door — see credentials.ts.

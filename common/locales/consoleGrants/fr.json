@@ -13,5 +13,8 @@
   "colGeneration": "Génération",
   "colCreated": "Créée / mise à jour",
   "colExpires": "Expire",
-  "colTokens": "Jetons détenus"
+  "colTokens": "Jetons détenus",
+  "noMatch": "Aucune autorisation ne correspond à <code>{wanted}</code>.",
+  "searchLabel": "Restreindre les autorisations",
+  "searchPlaceholder": "un grant_id, un client ou un sujet"
 }

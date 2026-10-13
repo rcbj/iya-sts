@@ -22,309 +22,66 @@
 //   * **"This wasn't me"** puts the person's standing at HIGH, and the
 //     risk-response policy answers it — everything they hold ended, this
 //     session included, and RISC told the credential is compromised. The
-//     page that answers says so, and sends them to change their password.
+//     answer says so, and sends them to change their password.
 //
-// **THE IDENTITY IS THE SESSION'S AND THERE IS NO PARAMETER FOR IT** — the
-// portal's rule (portal/CLAUDE.md). The assessment named in the form must be
-// the session's person's own, which `feedback()` checks against the store.
+// **SINCE #568 THESE ARE TWO `/account-api` OPERATIONS** — the view and the
+// answer — and the page is drawn in the browser by `web_sign_ins.ts`.
+// **THE IDENTITY IS THE TOKEN'S AND THERE IS NO PARAMETER FOR IT** — the
+// portal's rule (portal/CLAUDE.md). The assessment named in the body must be
+// the caller's own, which `feedback()` checks against the store. "From
+// ANOTHER session" is the sign-on session the token was issued on.
 //
-// **NO SCRIPT**: two forms per row, under the service-wide `script-src
-// 'none'`.
-//
-// **IT IS A FILE BESIDE `portal.ts`**, registered through `register(context)`
-// as `portal_kerberos.ts` is, and for its reason. The risk engine is required
-// LAZILY: the portal is built at 8a, the risk modules at 18j.
+// The risk engine is required LAZILY: the portal is built at 8a, the risk
+// modules at 18j.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import validation = require('../common/validation');
 
-type Req = import('express').Request;
-type Res = import('express').Response;
 type Json = any;
+type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountContext = import('../types/account-api').AccountContext;
+type AccountCaller = import('../types/account-api').AccountCaller;
 
-// What the portal hands over — `portal_kerberos.ts`'s context.
-interface PortalContext {
-  app: {
-    get(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-    post(path: string, handler: (req: Req, res: Res) => unknown): unknown;
-  };
-  BASE: string;
-  log: {
-    debug(message: string): void;
-    info(message: string): void;
-  };
-  esc(value: unknown): string;
-  shell(path: string, session: Json, message: unknown, error: unknown,
-        body: string): string;
-  send(res: Res, status: number, body: string): unknown;
-  requireSignIn(req: Req, res: Res, path: string, action: unknown): Json;
-  // error-code: none — the portal helper's type, not a call to it.
-  refuseShape(res: Res, result: Json): unknown;
-  innerCode(result: Json): string;
-  baseUrlOf(req: Req): string;
-  parseBody(req: Req): Json;
-  validation: Json;
-  websecurity: Json;
-  accessGate: Json;
-  audit: Json;
-  errorCodes: Json;
-  config: { value(key: string): any };
-  // The portal's translator for a page drawn for this session (#539
-  // phase 3): the portal's application and the person's own language.
-  translatorFor(session: Json): any;
-}
+const vz = validation.z;
+const vt = validation.types;
 
 interface PortalSignInsDeps {
   log: { debug(message: string): void };
-  // The risk engine and the realm, asked for when a page is drawn.
+  // The risk engine and the realm, asked for when a request arrives.
   riskEngine: () => Json;
   realms: () => Json;
 }
 
-// A level's colours: the badge a person reads at a glance.
-const LEVEL_STYLE: Record<string, string> = {
-  LOW: 'background:#e6f4ea;color:#137333',
-  MEDIUM: 'background:#fef7e0;color:#b06000',
-  HIGH: 'background:#fce8e6;color:#a50e0e',
-  UNSCORED: 'background:#f1f3f4;color:#3c4043'
-};
-
 // How far back the page looks.
 const DAYS = 30;
+// A PAGE AT A TIME (#313's sweep). Thirty days of sign-ins is as many rows
+// as the person signed in, and the page drew the risk engine's default fifty
+// of them and silently stopped there. The store pages in SQL — `limit` and
+// `offset`, and `total` for the whole thirty days — so a page reads twenty
+// rows whatever the person has.
+const PER_PAGE = 20;
 
-class PortalSignInsPage {
-  readonly PATH: string;
-  private readonly FORM: Json;
-  private readonly QUERY: Json;
+const PAGE_QUERY = vz.object({
+  page: vt.opt(vt.integer(1, 100000))
+    .describe('Which page of `rows`, newest first. Clamped to the last.')
+});
 
-  constructor(private readonly deps: PortalSignInsDeps,
-              private readonly ctx: PortalContext) {
-    ctx.log.debug("Entering PortalSignInsPage.constructor().");
-    const vz = ctx.validation.z;
-    const vt = ctx.validation.types;
-    this.PATH = ctx.BASE + '/sign-ins';
-    this.FORM = vz.object({
-      action: vt.oneOf(['confirm', 'deny']),
-      assessment: vz.string().min(1).max(200),
-      csrf_token: vt.opt(vt.token)
-    });
-    this.QUERY = vz.object({
-      done: vz.string().max(200).optional()
-    });
-    ctx.log.debug("Leaving PortalSignInsPage.constructor().");
-  }
-
-  // The person's own assessments of the last DAYS days, newest first.
-  private async rowsOf(session: Json): Promise<Json[]> {
-    const { log } = this.ctx;
-    log.debug("Entering PortalSignInsPage.rowsOf().");
-    let rows: Json[] = [];
-    try {
-      const engine = this.deps.riskEngine();
-      const view = await engine.view(this.deps.realms().currentId(), {
-        subject: String(session.user.sub || ''), days: DAYS });
-      rows = (view.assessments && view.assessments.rows || [])
-        .filter(function (a: Json): boolean {
-          return a.subject === session.user.sub;
-        });
-    } catch (e) {
-      log.debug("Caught in PortalSignInsPage.rowsOf(): " +
-                ((e && e.message) || e));
-      // No risk engine in this process: nothing to list, and the page says
-      // so rather than failing.
-      rows = [];
-    }
-    log.debug("Leaving PortalSignInsPage.rowsOf(). " + rows.length + ".");
-    return rows;
-  }
-
-  private page(session: Json, rows: Json[], message: unknown,
-               error: unknown): string {
-    const { log, shell, esc } = this.ctx;
-    const self = this;
-    log.debug("Entering PortalSignInsPage.page().");
-    const t = this.ctx.translatorFor(session);
-    const body = rows.length
-      ? '<table><tr><th>' + t.html('portalSignIns.when') + '</th><th>' +
-        t.html('portalSignIns.from') + '</th><th>' +
-        t.html('portalSignIns.with') + '</th><th>' +
-        t.html('portalSignIns.through') + '</th><th>' +
-        t.html('portalSignIns.risk') + '</th><th>' +
-        t.html('portalSignIns.wasItYou') + '</th></tr>' +
-        rows.map(function (a: Json): string {
-          const where = [a.city, a.country].filter(Boolean).join(', ') ||
-                        t.text('portalSignIns.nowhere');
-          const network = a.asOrg ? String(a.asOrg)
-                                  : String(a.addressPrefix || '');
-          // "Chrome on Linux" is a sentence, so its "on" is the catalog's
-          // (#539); the two names are data.
-          const device = a.uaFamily && a.uaOs
-            ? t.text('portalSignIns.deviceOn',
-                     { family: a.uaFamily, os: a.uaOs })
-            : (a.uaFamily || a.uaOs || t.text('portalSignIns.noDevice'));
-          const style = LEVEL_STYLE[String(a.level)] || LEVEL_STYLE.UNSCORED;
-          const answer = a.feedback === 'confirmed'
-            ? t.html('portalSignIns.saidYes')
-            : a.feedback === 'denied' ? t.html('portalSignIns.saidNo')
-            : self.answerForms(session, a.id, t);
-          // The level is the risk engine's word; its four known values are
-          // the catalog's, and anything else is drawn as it came.
-          return '<tr><td>' + esc(t.date(Number(a.at))) +
-            '</td><td>' + esc(where) + '<br><small>' + esc(network) +
-            '</small></td><td>' + esc(device) + '</td><td>' +
-            esc(a.door || '') + '</td><td><span style="' + style +
-            ';padding:2px 8px;border-radius:10px;font-weight:600">' +
-            t.html('portalSignIns.level', { level: String(a.level) }) +
-            '</span>' + (a.id === (session.risk || {})
-              .assessmentId ? '<br><small>' +
-              t.html('portalSignIns.thisSession') + '</small>' : '') +
-            '</td><td>' + answer + '</td></tr>';
-        }).join('') + '</table>'
-      : '<p class="sub">' + t.html('portalSignIns.none', { days: DAYS }) +
-        '</p>';
-    log.debug("Leaving PortalSignInsPage.page().");
-    return shell(this.PATH, session, message, error,
-      '<div class="card"><h2>' + t.html('portalSignIns.heading') + '</h2>' +
-      '<p class="sub">' + t.html('portalSignIns.sub') + '</p>' + body +
-      '</div>');
-  }
-
-  private answerForms(session: Json, id: string, t: Json): string {
-    const { log, esc, websecurity } = this.ctx;
-    log.debug("Entering PortalSignInsPage.answerForms().");
-    const path = this.PATH;
-    log.debug("Leaving PortalSignInsPage.answerForms().");
-    return [['confirm', t.html('portalSignIns.yes')],
-            ['deny', t.html('portalSignIns.no')]]
-      .map(function (pair: string[]): string {
-        return '<form method="post" action="' + esc(path) + '" ' +
-          'style="display:inline">' + websecurity.field(session.id) +
-          '<input type="hidden" name="action" value="' + pair[0] + '">' +
-          '<input type="hidden" name="assessment" value="' + esc(id) + '">' +
-          '<button type="submit">' + pair[1] + '</button></form>';
-      }).join(' ');
-  }
-
-  // -------------------------------------------------------------------------
-  // GET /portal/sign-ins
-  // -------------------------------------------------------------------------
-  private async getPage(req: Req, res: Res): Promise<unknown> {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering GET ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.READ);
-    if (!session) {
-      log.debug('Leaving GET ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const asked = ctx.validation.check(req, 'query', this.QUERY);
-    if (!asked.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(asked) || 'STS-PORTAL-0001');
-      log.debug('Leaving GET ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, asked);
-    }
-    const rows = await this.rowsOf(session);
-    log.debug('Leaving GET ' + PATH + '.');
-    return ctx.send(res, 200, this.page(session, rows,
-                                        asked.value.done || null, null));
-  }
-
-  // -------------------------------------------------------------------------
-  // POST /portal/sign-ins — `manage-own`: it moves this person's standing.
-  // -------------------------------------------------------------------------
-  private async postPage(req: Req, res: Res): Promise<unknown> {
-    const ctx = this.ctx;
-    const { log } = ctx;
-    const PATH = this.PATH;
-    log.debug('Entering POST ' + PATH + '.');
-    const session = ctx.requireSignIn(req, res, PATH,
-                                      ctx.accessGate.ACTION.MANAGE_OWN);
-    if (!session) {
-      log.debug('Leaving POST ' + PATH + '. Not signed in.');
-      return undefined;
-    }
-    const who = String(session.user.username);
-    const posted = ctx.validation.checkParsed(ctx.parseBody(req), 'body',
-                                              this.FORM);
-    if (!posted.ok) {
-      ctx.errorCodes.mark(res, ctx.innerCode(posted) || 'STS-PORTAL-0001');
-      log.debug('Leaving POST ' + PATH + '. Malformed.');
-      return ctx.refuseShape(res, posted);
-    }
-    const body = posted.value;
-    const csrf = ctx.websecurity.checkCsrf(session.id, body);
-    if (!csrf.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0083');
-      log.debug('Leaving POST ' + PATH + '. CSRF.');
-      return ctx.send(res, 403, this.page(session, await this.rowsOf(session),
-                                          null, csrf.detail));
-    }
-    let answer: Json = null;
-    try {
-      answer = await this.deps.riskEngine().feedback({
-        realm: this.deps.realms().currentId(),
-        subject: String(session.user.sub || ''), username: who,
-        assessmentId: String(body.assessment),
-        verdict: body.action === 'deny' ? 'denied' : 'confirmed',
-        fromSessionId: session.id,
-        fromSessionLevel: String((session.risk || {}).level || '') });
-    } catch (e) {
-      log.debug('Caught in POST ' + PATH + ': ' + ((e && e.message) || e));
-      // No risk engine in this process: nothing could be recorded.
-      answer = { ok: false, why: 'Sign-ins are not assessed here.' };
-    }
-    if (!answer || !answer.ok) {
-      ctx.errorCodes.mark(res, 'STS-PORTAL-0084');
-      log.debug('Leaving POST ' + PATH + '. Not recorded.');
-      return ctx.send(res, 400, this.page(session, await this.rowsOf(session),
-        null, (answer && answer.why) || 'That could not be recorded.'));
-    }
-    if (answer.verdict === 'denied') {
-      // Everything the person held is being ended — this session with it —
-      // so the answer is a page, not a redirect back into a session that is
-      // going away.
-      log.debug('Leaving POST ' + PATH + '. Denied.');
-      res.set('Cache-Control', 'no-store');
-      return ctx.send(res, 200, this.page(session, [],
-        ctx.translatorFor(session).text('portalSignIns.doneDenied',
-          { path: ctx.BASE + '/password' }), null));
-    }
-    log.debug('Leaving POST ' + PATH + '. Confirmed.');
-    // In the person's language (#539): the text rides the redirect.
-    const t = ctx.translatorFor(session);
-    res.redirect(303, PATH + '?done=' + encodeURIComponent(
-      answer.moved === 'LOW' ? t.text('portalSignIns.doneConfirmedLow')
-                             : t.text('portalSignIns.doneConfirmed')));
-    return undefined;
-  }
-
-  registerRoutes(app: PortalContext['app']): void {
-    const self = this;
-    const { log } = this.ctx;
-    log.debug("Entering PortalSignInsPage.registerRoutes().");
-    app.get(this.PATH, function (req, res) {
-      return self.getPage(req, res);
-    });
-    app.post(this.PATH, function (req, res) {
-      return self.postPage(req, res);
-    });
-    log.debug("Leaving PortalSignInsPage.registerRoutes().");
-  }
-}
+const ANSWER_FORM = vz.object({
+  action: vt.oneOf(['confirm', 'deny'])
+    .describe('`confirm`: this was me. `deny`: this was not me.'),
+  assessment: vz.string().min(1).max(200)
+    .describe('The assessment\'s id, from the list.')
+});
 
 /**
- * The portal page at /portal/sign-ins: where a person sees their recent
- * sign-ins as the risk engine saw them, and says whether each was them (#62).
- *
- * Its routes are registered by `register()`, which `portal.ts` calls at the one
- * point in its body where the route order is right.
+ * `/portal/sign-ins`' account API operations: the person's recent sign-ins
+ * as the risk engine saw them, and their answer about each (#62).
  */
 class PortalSignIns {
   /**
-   * Builds the page's module over its dependencies.
+   * Builds the module over its dependencies.
    *
    * @param deps - the modules the page reads and writes through
    */
@@ -356,19 +113,174 @@ class PortalSignIns {
     };
   }
 
+  // The person's own assessments of the last DAYS days, newest first, one
+  // page of them, and how many there are in all.
   /**
-   * Registers the page's routes on the portal's app.
+   * One page of the caller's own assessments.
    *
-   * @param context - what the portal shares with its pages: the app, `BASE`,
-   *   the logger, the page shell, the sign-in check and the refusal helpers
-   * @returns the page's path
+   * @param caller - the signed-in person
+   * @param offset - the first row wanted
+   * @returns `{ total, rows }`
    */
-  register(context: PortalContext): { path: string } {
-    context.log.debug("Entering PortalSignIns.register().");
-    const page = new PortalSignInsPage(this.deps, context);
-    page.registerRoutes(context.app);
-    context.log.debug("Leaving PortalSignIns.register().");
-    return { path: page.PATH };
+  async pageOf(caller: AccountCaller, offset: number): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering PortalSignIns.pageOf(). offset=" + offset);
+    let out: Json = { total: 0, rows: [] };
+    try {
+      const engine = this.deps.riskEngine();
+      const view = await engine.view(this.deps.realms().currentId(), {
+        subject: caller.sub, days: DAYS, limit: PER_PAGE, offset: offset });
+      const found = view.assessments || {};
+      out = { total: Number(found.total) || 0,
+              rows: (found.rows || []).filter(function (a: Json): boolean {
+                return a.subject === caller.sub;
+              }) };
+    } catch (e) {
+      log.debug("Caught in PortalSignIns.pageOf(): " +
+                ((e && e.message) || e));
+      // No risk engine in this process: nothing to list, and the page says
+      // so rather than failing.
+      out = { total: 0, rows: [] };
+    }
+    log.debug("Leaving PortalSignIns.pageOf(). " + out.rows.length +
+              " of " + out.total + ".");
+    return out;
+  }
+
+  /**
+   * The page's view.
+   *
+   * @param caller - the signed-in person
+   * @param wanted - the page asked for; the first when left out
+   * @returns `{ days, rows, paging, thisSession }`
+   */
+  async view(caller: AccountCaller, wanted?: number): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering PortalSignIns.view().");
+    let at = Math.max(1, Number(wanted) || 1);
+    let found = await this.pageOf(caller, (at - 1) * PER_PAGE);
+    const pages = Math.max(1, Math.ceil(found.total / PER_PAGE));
+    // PAST THE END, the last page: the total is only known once one page
+    // has been asked for, so a stale link costs a second query.
+    if (at > pages) {
+      at = pages;
+      found = await this.pageOf(caller, (at - 1) * PER_PAGE);
+    }
+    log.debug("Leaving PortalSignIns.view(). Page " + at + " of " + pages +
+              ".");
+    return { days: DAYS,
+             thisSession: String((caller.session.risk || {}).assessmentId ||
+                                 ''),
+             paging: { page: at, pages: pages, per: PER_PAGE,
+                       total: found.total },
+             rows: found.rows.map(function (a: Json): Json {
+               return { id: a.id, at: a.at, city: a.city || '',
+                        country: a.country || '', asOrg: a.asOrg || '',
+                        addressPrefix: a.addressPrefix || '',
+                        uaFamily: a.uaFamily || '', uaOs: a.uaOs || '',
+                        door: a.door || '', level: a.level || '',
+                        feedback: a.feedback || '' };
+             }) };
+  }
+
+  /**
+   * Records the caller's answer about one of their sign-ins.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body
+   * @returns nothing
+   */
+  async answer(ctx: AccountContext, res: Json, caller: AccountCaller,
+               body: Json): Promise<unknown> {
+    const { log } = this.deps;
+    log.debug("Entering PortalSignIns.answer().");
+    let answered: Json = null;
+    try {
+      answered = await this.deps.riskEngine().feedback({
+        realm: this.deps.realms().currentId(),
+        subject: caller.sub, username: caller.username,
+        assessmentId: String(body.assessment),
+        verdict: body.action === 'deny' ? 'denied' : 'confirmed',
+        fromSessionId: caller.session.id,
+        fromSessionLevel: String((caller.session.risk || {}).level || '') });
+    } catch (e) {
+      log.debug("Caught in PortalSignIns.answer(): " +
+                ((e && e.message) || e));
+      // No risk engine in this process: nothing could be recorded.
+      answered = { ok: false, why: 'Sign-ins are not assessed here.' };
+    }
+    if (!answered || !answered.ok) {
+      log.debug("Leaving PortalSignIns.answer(). Refused.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0084',
+        (answered && answered.why) || 'That could not be recorded.');
+    }
+    const t = ctx.translatorFor(caller.username);
+    if (answered.verdict === 'denied') {
+      // Everything the person held is being ended — this session with it,
+      // and the token this request came on — so the answer says so and the
+      // page draws it from an empty list rather than asking again.
+      log.debug("Leaving PortalSignIns.answer(). Denied.");
+      return ctx.json(res, 200, { ok: true, ended: true,
+        message: t.text('portalSignIns.doneDenied',
+                        { path: ctx.PORTAL + '/password' }),
+        view: { days: DAYS, thisSession: '', rows: [],
+                paging: { page: 1, pages: 1, per: PER_PAGE, total: 0 } } });
+    }
+    log.debug("Leaving PortalSignIns.answer(). Confirmed.");
+    return ctx.json(res, 200, { ok: true,
+      message: answered.moved === 'LOW'
+        ? t.text('portalSignIns.doneConfirmedLow')
+        : t.text('portalSignIns.doneConfirmed') });
+  }
+
+  /**
+   * The operations, for `account-api/account_api.ts`.
+   *
+   * @param ctx - the account API's helpers
+   * @returns the operations
+   */
+  accountOperations(ctx: AccountContext): AccountOperation[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering PortalSignIns.accountOperations().");
+    const rows: AccountOperation[] = [
+      { method: 'GET', path: ctx.BASE + '/sign-ins',
+        operationId: 'getSignIns', tag: 'Recent sign-ins', access: 'person',
+        mirrors: 'GET ' + ctx.PORTAL + '/sign-ins',
+        summary: 'Your sign-ins of the last thirty days, as assessed',
+        description: 'One page (`paging`, moved by `page`, newest ' +
+          'first) of the assessments of your sign-ins: when, the city, ' +
+          'country and network, the browser and system, the door, the risk ' +
+          'level, and your answer if you gave one. `paging.total` counts ' +
+          'every sign-in of the thirty days. `thisSession` is the ' +
+          'assessment of the session this token was issued on.',
+        query: PAGE_QUERY,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.view(caller, input.query.page || 1)
+            .then(function (view: Json) {
+              return ctx.json(res, 200, view);
+            });
+        } },
+      { method: 'POST', path: ctx.BASE + '/sign-ins',
+        operationId: 'answerSignIn', tag: 'Recent sign-ins',
+        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/sign-ins',
+        summary: 'Says whether a sign-in was you',
+        description: '`confirm` is recorded, and lowers your standing only ' +
+          'when said from another, low-risk session. `deny` puts your ' +
+          'standing at HIGH: everything you hold is ended, this session ' +
+          'included, and RISC is told the credential is compromised ' +
+          '(`ended: true`).',
+        body: ANSWER_FORM,
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.answer(ctx, res, caller, input.body);
+        } }
+    ];
+    log.debug("Leaving PortalSignIns.accountOperations().");
+    return rows;
   }
 }
 
@@ -381,12 +293,12 @@ const slot = new InstanceSlot<PortalSignIns>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The portal page at /portal/sign-ins, registered by `portal.ts`.
+ * `/portal/sign-ins`' account API operations (#62, #568).
  * @namespace
  */
 export = {
   PortalSignIns: PortalSignIns,
   installInstance: (instance: PortalSignIns): void => slot.install(instance),
   instanceOrigin: (): string => slot.origin(),
-  register: slot.forward('register')
+  accountOperations: slot.forward('accountOperations')
 };

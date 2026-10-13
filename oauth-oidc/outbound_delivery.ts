@@ -153,6 +153,15 @@ interface DeliveryKind {
   send?(row: Json, prepared: Prepared,
         options: { timeoutMs: number }): Promise<Json>;
   judge?(result: Json, row: Json): Judgement | null;
+  // THE WAIT BEFORE A RETRY, when the kind's is not the plain doubling of
+  // `backoffMs`: the outbound SCIM client's is jittered, capped and honours a
+  // Retry-After (#552). `n` is the attempt that failed; `row` carries the
+  // judgement's patch.
+  backoff?(n: number, row: Json): number;
+  // A PENDING ROW THE SWEEP MUST NOT ATTEMPT YET although it is due: a time
+  // after `at` holds it. The outbound SCIM client holds a paused client's
+  // rows (#552). An operator's retry is not held.
+  holdUntil?(row: Json, at: number): number;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
   onRetry?(row: Json): { problem?: string; patch?: Json };
@@ -541,7 +550,27 @@ class OutboundDelivery {
     const realm = realms.get(realmId);
     later(function () {
       realms.run(realm, function () {
-        return self.attempt(realmId, id).catch(function (e) {
+        return self.attempt(realmId, id).then(function (result) {
+          // A TIMER CAN FIRE A MOMENT BEFORE THE ROW IS DUE: setTimeout runs
+          // on node's monotonic clock and `now()` is the wall clock, which
+          // may read a millisecond short of `nextAttemptAt`. `attempt()` then
+          // answers `not-due` and does nothing — and until this re-armed the
+          // timer, the retry waited for the kind's sweep job instead, up to
+          // its interval later (an OpenID Provider Commands retry seen to
+          // land half a minute late). Armed again for the row's due time, at
+          // least a millisecond on, so it never spins.
+          if (result !== 'not-due') {
+            return;
+          }
+          const row = self.liveRow(realmId, id);
+          if (row && row.state === 'pending') {
+            log.debug("OutboundDelivery.scheduleRetry(): " + id + " fired " +
+                      "before it was due; armed again.");
+            self.scheduleRetry(realmId, id,
+                               Math.max(Number(row.nextAttemptAt),
+                                        now() + 1));
+          }
+        }).catch(function (e) {
           log.debug("Caught in OutboundDelivery.scheduleRetry(): " +
                     ((e && e.message) || e));
         });
@@ -700,8 +729,10 @@ class OutboundDelivery {
       log.debug("Leaving OutboundDelivery.attempt(). Dead.");
       return 'dead';
     }
-    const backoff = Math.max(0, this.setting(kind.settings.backoffMs)) *
-      Math.pow(2, n - 1);
+    const backoff = kind.backoff
+      ? Math.max(0, Number(kind.backoff(n, current)) || 0)
+      : Math.max(0, this.setting(kind.settings.backoffMs)) *
+        Math.pow(2, n - 1);
     current.errorCode = judged.code || '';
     current.why = why + ' (attempt ' + n + '; trying again)';
     current.nextAttemptAt = now() + backoff;
@@ -863,7 +894,8 @@ class OutboundDelivery {
       if (row.state === 'pending') {
         if (at - Number(row.queuedAt) > keepMs) {
           stale.push(Object.assign({}, row));
-        } else if (!(Number(row.nextAttemptAt) > at)) {
+        } else if (!(Number(row.nextAttemptAt) > at) &&
+                   !(kind.holdUntil && kind.holdUntil(row, at) > at)) {
           due.push(id);
         }
         return;
@@ -1137,7 +1169,7 @@ const KINDS = [
 
 /**
  * Reports every kind's counts and rows, newest first, for `/admin/deliveries`
- * and `GET /admin-api/deliveries`.
+ * and `GET /admin-api/deliveries` — every row, or the first `limit`.
  *
  * @param options - `kind`, `state`, `q` and `limit`
  * @returns `{ kinds, states }`
@@ -1145,7 +1177,10 @@ const KINDS = [
 function kindReport(options?: Json): Json {
   helpers.log.debug("Entering kindReport().");
   const o = options || {};
-  const limit = Number(o.limit) > 0 ? Number(o.limit) : 200;
+  // WHOLE unless a caller asks for a `limit` (#313's sweep): every kind was
+  // cut at 200 rows, silently, so a delivery past the cut could not be
+  // reached. `GET /admin-api/deliveries` pages each kind instead.
+  const limit = Number(o.limit) > 0 ? Number(o.limit) : undefined;
   const out = KINDS.filter(function (k) {
     return !o.kind || k.id === String(o.kind);
   }).map(function (k) {

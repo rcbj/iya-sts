@@ -1,7 +1,17 @@
 {
-  "chooser.accountPlaceholder": "使用者名稱、主體或電郵地址的一部分",
-  "risc.emitNote": "十四種中有十種描述的是這裡沒有任何東西會做的事 &mdash; 本服務不搜尋任何外洩資料庫，也不執行任何復原流程 &mdash; 因此此表單是產生它們的唯一途徑。<strong>這十種中有四種在發出時會改變真實狀態</strong>：RISC 第 2.8 節將每個退出事件定義為<em>帳戶處於此狀態</em>，而不是回報狀態發生了變化，所以在這裡發出一個就是完成了轉換。主體由您選擇的帳戶組成，格式由 <code>risc.subjectFormat</code> 指定 &mdash; 兩個識別碼事件除外，它們無論如何都使用電郵地址，因為對這兩個事件而言，識別碼就是訊息。",
-  "accounts.searchPlaceholder": "使用者名稱、主體、電郵地址或 DN",
+  "chooser.accountPlaceholder": "用戶名稱、主體或電郵地址的一部分",
+  "risc.emitNote": "十四種中有十種描述的是這裡沒有任何東西會做的事 &mdash; 本服務不搜尋任何外洩數據庫，也不執行任何復原流程 &mdash; 因此此表單是產生它們的唯一途徑。<strong>這十種中有四種在發出時會改變真實狀態</strong>：RISC 第 2.8 節將每個退出事件定義為<em>帳戶處於此狀態</em>，而不是回報狀態發生了變化，所以在這裡發出一個就是完成了轉換。主體由您選擇的帳戶組成，格式由 <code>risc.subjectFormat</code> 指定 &mdash; 兩個識別碼事件除外，它們無論如何都使用電郵地址，因為對這兩個事件而言，識別碼就是訊息。",
+  "accounts.searchPlaceholder": "用戶名稱、主體、電郵地址或 DN",
   "accounts.searchWhat": "它比對帳戶識別碼、<code>sub</code>、電郵地址、電話號碼、傳送給接收端的 SSF 主體、目錄 DN &mdash; 以及此帳戶以前使用過的每個識別碼。最後一項並非求全：<code>identifier-changed</code> 是關於金鑰本身的事件，因此讀者手上拿著的地址往往正是該帳戶已不再使用的那個。",
-  "facts.email": "電郵"
+  "facts.email": "電郵",
+  "th.who": "用戶",
+  "chooser.sessionPlaceholder": "用戶名稱、主體或工作階段 id 的一部分",
+  "risc.directory1": "<strong>本服務在其自身目錄發生變化時發出 RISC 事件</strong>，這與 CAEP 的觀察者不同。開啟 <code>risc.autoEmit</code> 後，刪除一個人會發出 <code>account-purged</code>，<code>active</code> 變為 false 或 true 會發出 <code>account-disabled</code> 或 <code>account-enabled</code>，變更電郵地址或電話號碼會發出 <code>identifier-changed</code>。這些操作可以透過 ",
+  "sessions.searchPlaceholder": "用戶名稱、主體或工作階段 id",
+  "sessions.searchWhat": "它比對用戶名稱、<code>sub</code>、工作階段識別碼、傳送給接收端的 SSF 主體，以及啟動該工作階段所用的協定 &mdash; 因為讀者手上恰好拿著其中一項，卻不知道它會出現在哪一欄。它只篩選此表格；下方的串流是關於傳送端的，而不是關於某個人的。",
+  "sessions.perApp1": "<strong>此傳送端在所有工作階段中向每個接收端說了什麼。</strong>上面的表格依串流統計，再上面的依工作階段統計；這是第三個問題，也是一旦存在多個接收端時人們真正帶著來的問題：<em>我正在測試的應用程式有沒有收到東西，收到了什麼。</em>計數依事件類型統計且永不遺忘 &mdash; 它們在 Security Event Token 建立並排入隊列時計入，也就是本服務「說了」什麼的時候，所以一個還沒有人輪詢過的輪詢串流仍會顯示等待它的內容。",
+  "sessions.perApp2": "<strong>沒有串流的應用程式是一列，而不是被遺漏</strong>，這也是受測接收端最常見的狀態：已在這裡宣告並剔選了 Shared Signals，但尚未議定任何內容。每個計數都為零，<em>串流</em>欄也會顯示這一點，這是什麼都沒收到時首先要檢查的。<em>接收</em>欄顯示 <code>CAEP 的八種都不接收</code> 的列是第二件要檢查的：對於傳送端不會傳遞的類型，SSF 沒有拒絕機制，因此該類型不在 <code>events_delivered</code> 中是接收端得到的唯一提示。",
+  "apps.none2": "上剔選 Shared Signals 即可。",
+  "accounts.none2": "），或用 <code>ldapmodify</code> 變更電郵地址 &mdash; 無論是否已議定任何串流，這裡都會出現一列，正因如此才能把「什麼都沒收到」追溯到「沒有人要求」。",
+  "facts.who": "用戶"
 }

@@ -30,11 +30,15 @@
 // so a new route family cannot arrive unmapped and quietly answer on every
 // listener.
 //
-// **ONE PATH IS EVERYWHERE**: `/healthcheck`, which a load balancer in front
-// of ANY listener asks. It is no application's, and `classify()` answers
-// `EVERYWHERE` for it. A path nothing claims (an unrouted one) answers null,
-// and is admitted everywhere, so Express's own `Cannot GET` body — what the
-// metadata test tells an unrouted path from a 404 by — is unchanged.
+// **TWO PATHS ARE EVERYWHERE**: `/healthcheck`, which a load balancer in
+// front of ANY listener asks, and since #570 everything under `/web` — the
+// card stylesheet and the locale catalogs every static public surface draws
+// with (`common/public_assets.ts`), which a listener answering any of those
+// surfaces must answer. Neither is an application's, and `classify()`
+// answers `EVERYWHERE` for them. A path nothing claims (an unrouted one)
+// answers null, and is admitted everywhere, so Express's own `Cannot GET`
+// body — what the metadata test tells an unrouted path from a 404 by — is
+// unchanged.
 //
 // **NAMED AUTHORIZATION SERVERS** (`/<as>/oauth2/...`, `/<as>/gnap`, and
 // `/<as>/.well-known/openid-configuration`) have a first segment the
@@ -62,30 +66,48 @@ const EVERYWHERE = '*everywhere*';
 // `/oauth2x`); `exact` match only themselves. `session: true` marks the
 // applications that read the sign-on session's cookie, which is what the
 // cookie-domain rule in `listener_map.js` is about.
+//
+// No application here is a demonstration (#591): the runtime ships none, so
+// every prefix is offered in every mode.
 const APPLICATIONS = [
   { id: 'home', label: 'Front door',
     what: 'GET /, its image, the documentation, terms and policy pages and ' +
           'the realm list.',
-    prefixes: [],
-    exact: ['/', '/logo.png', '/docs', '/tos', '/policy', '/realms'] },
+    // `/home-api`, `/home.js` and `/home.css` are the static front door's
+    // API, script and stylesheet (#579), beside the shell they serve.
+    prefixes: ['/home-api'],
+    exact: ['/', '/home.js', '/home.css', '/logo.png', '/docs', '/tos',
+            '/policy', '/realms'] },
   { id: 'authn', label: 'Authentication service', session: true,
     what: 'The sign-in service and its second factors, the wallet, ' +
           'SPNEGO and certificate sign-ins, and the sign-out.',
-    prefixes: ['/authn', '/logout', '/.well-known/hoba'],
+    // `/authn-api` is the sign-in screen's API (#571): one application with
+    // the shells it draws, so the screen never has to be told where it is.
+    prefixes: ['/authn', '/authn-api', '/logout', '/.well-known/hoba'],
     exact: ['/tls/sign-in'] },
+  // `/account-api` IS THE PORTAL'S (#568): the portal is a static
+  // application that draws every page from it, so the two are one
+  // application on one listener and the portal never has to be told where
+  // its own API is.
   { id: 'portal', label: 'User portal', session: true,
-    what: 'The pages that belong to the person looking at them.',
-    prefixes: ['/portal'], exact: [] },
+    what: 'The pages that belong to the person looking at them, and the ' +
+          'account API they are drawn from.',
+    prefixes: ['/portal', '/account-api'], exact: [] },
   { id: 'admin-console', label: 'Admin console', rescued: true,
     what: 'The console at /admin, its script and its pages.',
     prefixes: ['/admin'], exact: [] },
   { id: 'management-api', label: 'Management API', rescued: true,
     what: '/admin-api, every console control reachable by a machine.',
     prefixes: ['/admin-api'], exact: [] },
+  // `/authn-api/consent` IS THE CONSENT SCREEN'S API (#576), and goes with
+  // the page — `/oauth2/consent` and its script — so the screen's calls are
+  // answered on the listener that drew it, whichever listener `/authn` is
+  // on: no answer here is ever credentialed to another origin
+  // (`common/cors.js`). It is longer than `/authn-api`, so it is found first.
   { id: 'oauth-oidc', label: 'OAuth 2.0 / OpenID Connect', session: true,
     what: 'The authorization server and OpenID provider, their discovery ' +
           'documents and the access-token status list.',
-    prefixes: ['/oauth2', '/status-lists', '/dpop',
+    prefixes: ['/oauth2', '/authn-api/consent', '/status-lists',
                '/.well-known/openid-configuration',
                '/.well-known/oauth-authorization-server',
                '/.well-known/webfinger'],
@@ -108,10 +130,10 @@ const APPLICATIONS = [
   { id: 'oidfed', label: 'OpenID Federation',
     what: 'The Entity Configuration and the federation endpoints.',
     prefixes: ['/oidfed', '/.well-known/openid-federation'], exact: [] },
+  // `/vc-api` has been a product surface since #598.
   { id: 'oid4vc', label: 'Verifiable credentials',
-    what: 'OpenID4VCI, OpenID4VP, DIDs, the status lists and the VC-API ' +
-          'test endpoints.',
-    prefixes: ['/oid4vci', '/oid4vp', '/issuer', '/did', '/applications',
+    what: 'OpenID4VCI, OpenID4VP, DIDs and the status lists.',
+    prefixes: ['/oid4vci', '/oid4vp', '/applications',
                '/bbs', '/vc-api', '/.well-known/did.json',
                '/.well-known/did-configuration.json',
                '/.well-known/openid-credential-issuer',
@@ -121,11 +143,14 @@ const APPLICATIONS = [
     what: 'Provisioning into the directory.',
     prefixes: ['/scim'], exact: [] },
   { id: 'ssf', label: 'Shared Signals',
-    what: 'The Shared Signals transmitter and receiver.',
+    what: 'The Shared Signals transmitter.',
     prefixes: ['/ssf', '/.well-known/ssf-configuration'], exact: [] },
+  // `/gnap-api` IS THE INTERACTION PAGES' API (#578): the pages are a
+  // static surface drawn from it, so the two are one application on one
+  // listener, as `/authn` and `/authn-api` are.
   { id: 'gnap', label: 'GNAP', session: true,
     what: 'The GNAP authorization server and its interaction pages.',
-    prefixes: ['/gnap', '/.well-known/gnap-as-rs'], exact: [] },
+    prefixes: ['/gnap', '/gnap-api', '/.well-known/gnap-as-rs'], exact: [] },
   { id: 'xacml', label: 'XACML',
     what: 'The policy decision point, its policies and the remote PEPs\' ' +
           'doors.',
@@ -140,18 +165,18 @@ const APPLICATIONS = [
     what: 'CRLs, OCSP, the CA certificates and chains, and the ' +
           'cryptographic metadata documents.',
     prefixes: ['/pki', '/crypto'], exact: [] },
+  // MS-KKDCP alone since #595: `/krb5/principals` was deleted and
+  // `/krb5/service`, `/spnego` and `/spnego/protected` are the development
+  // companion's.
   { id: 'kerberos', label: 'Kerberos',
-    what: 'MS-KKDCP, the SPNEGO negotiation page and the principals.',
-    prefixes: ['/KdcProxy', '/krb5', '/spnego'], exact: [] },
+    what: 'MS-KKDCP, the Kerberos KDC over HTTPS.',
+    prefixes: ['/KdcProxy'], exact: [] },
   { id: 'spiffe', label: 'SPIFFE',
     what: 'The SPIFFE bundle endpoint.',
     prefixes: ['/spiffe'], exact: [] },
-  { id: 'tls', label: 'TLS diagnostics',
-    what: 'The TLS views and the client truststore\'s door.',
-    prefixes: ['/tls'], exact: [] },
-  { id: 'devices', label: 'Device registration',
-    what: 'The device register\'s test controls.',
-    prefixes: ['/devices'], exact: [] }
+  { id: 'tls', label: 'TLS',
+    what: 'The server certificate this service presents.',
+    prefixes: ['/tls'], exact: [] }
 ];
 
 const byId = {};
@@ -198,12 +223,12 @@ function underPrefix(path) {
  * table lookup on every request.
  *
  * @param path - the path, without the realm prefix and without a query
- * @returns the application's id, `EVERYWHERE` for `/healthcheck`, or null
- *   for a path no application claims
+ * @returns the application's id, `EVERYWHERE` for `/healthcheck` and
+ *   `/web`, or null for a path no application claims
  */
 function classify(path) {
   const p = String(path || '').split('?')[0].split('#')[0] || '/';
-  if (p === '/healthcheck') {
+  if (p === '/healthcheck' || p === '/web' || p.indexOf('/web/') === 0) {
     return EVERYWHERE;
   }
   if (Object.prototype.hasOwnProperty.call(EXACT, p)) {
@@ -303,6 +328,33 @@ function labelOf(id) {
   return byId[String(id)] ? byId[String(id)].label : String(id);
 }
 
+// THE LISTENERS NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b), this file's
+// part: each application's label and sentence, which `GET
+// /admin-api/listeners` carries in `applications` (`listener_map.js`'s
+// `mappingView()`). The ids, prefixes and paths are not prose.
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/listeners'];
+
+/**
+ * Extracts this file's part of the listeners namespace (#543 phase 2b):
+ * each hosted application's label and sentence.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const out = require('./server_prose').harvest('listeners.applications',
+                                                APPLICATIONS,
+                                                ['label', 'what']);
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 module.exports = {
   EVERYWHERE: EVERYWHERE,
   classify: classify,
@@ -310,5 +362,7 @@ module.exports = {
   isApplication: isApplication,
   sessionApplications: sessionApplications,
   rescuedApplications: rescuedApplications,
-  labelOf: labelOf
+  labelOf: labelOf,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

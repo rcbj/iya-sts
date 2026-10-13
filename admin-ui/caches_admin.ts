@@ -79,6 +79,9 @@ import cacheRegistry = require('../common/cache_registry');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import version = require('../common/version');
+// The prose templates' filler (#543). Safe at the top: this module is built
+// at 18g, long after what server_prose.ts requires.
+import serverProse = require('../common/server_prose');
 import cluster = require('../cluster/cluster');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
@@ -114,6 +117,82 @@ const NOT_LISTED = [
          'once per report; it is gone when the report is drawn, and ' +
          'nothing holds it between requests' }
 ];
+
+// HOW LONG AN ENTRY IS STILL GOOD, as `remainingText()` says it (#543 phase
+// 2c): the computed sentences as templates, filled there, so that
+// `common/server_prose.ts` can refill an answer to `GET /admin-api/caches`
+// in a console reader's language. Each is the sentence written inline until
+// #543, byte for byte. Three things stay English, and why:
+//   * the duration itself ("4 min 10 s", `span()`): units, not a sentence,
+//     and a template of a bare `{{n}} s` would match far more than a span;
+//   * 'no expiry', because it is also a row's `basis` VALUE, in the same
+//     answer, and a message is matched wherever its text appears;
+//   * a `basis` that is already a sentence ("until rotated or adopted"),
+//     which is the owner's text and passed through as it came.
+// The `basis` in the last two is the owner's word ("directory version") and
+// is carried over as it is.
+//
+// **NOT EVERY `basis` IS A NOUN THAT "until the … changes" CAN TAKE**
+// (#543 follow-up): the fallback read "until the least recently used
+// changes" for every bounded LRU, "until the until-activation changes" and
+// "until the none changes". So a basis the owners use that is not the name
+// of a thing whose change ends an entry has its own sentence, chosen in
+// `remainingText()` through `BASIS_SENTENCES` and `TIME_BASES` below; the
+// fallback is left to the nouns ("directory version", "setting text",
+// "file modification time", "stored authority list", "worker pool").
+const REMAINING = Object.freeze({
+  expiredAgo: 'expired {{span}} ago',
+  noExpiryByContent: 'no expiry (keyed by content)',
+  stale: 'stale',
+  untilChanges: 'until the {{basis}} changes',
+  staleChanged: 'stale: the {{basis}} has changed',
+  untilEvicted: 'until the bound drops it as the least recently used',
+  untilBound: 'until the bound drops it',
+  untilActivation: 'until a dataset version is activated',
+  untilIdle: 'until it goes unused for the idle timeout',
+  nonceExpired: 'stale: its nonce has expired',
+  challengeExpired: 'stale: its challenge has expired',
+  disowned: 'stale: the credential was disowned'
+});
+
+// A basis with a sentence of its own: the sentence while the entry is
+// valid, and while its owner calls it stale ('' for the plain `stale`).
+// `bounded_lru.ts`'s 'least recently used', `devices.ts`'s 'none' (an event
+// kept until newer ones push it out), `risk_datasets.ts`'s
+// 'until-activation', `keystore.js`'s 'idle timeout' when no purge is
+// scheduled, `scim_auth.ts`'s two replay rows whose record has gone, and
+// `vc_issued.ts`'s disowned credential.
+const BASIS_SENTENCES: Record<string, [string, string]> = {
+  'least recently used': [REMAINING.untilEvicted, ''],
+  'none': [REMAINING.untilBound, ''],
+  'until-activation': [REMAINING.untilActivation, ''],
+  'idle timeout': [REMAINING.untilIdle, ''],
+  'its nonce': [REMAINING.stale, REMAINING.nonceExpired],
+  'its challenge': [REMAINING.stale, REMAINING.challengeExpired],
+  'disowned': [REMAINING.stale, REMAINING.disowned]
+};
+
+// A basis whose owner names the entry's deadline or what it recorded, not
+// a thing whose change ends it — so an entry with such a basis and no
+// deadline has no expiry: 'time' (the registry's own default), `vc_status`'s
+// 'ttl' and 'failure', `breached_passwords.ts`'s verdicts and suffix counts,
+// `vc_verifier.ts`'s transaction states and `risk_engine.ts`'s
+// 'the assessment <id>'. Each normally carries a deadline and is said as a
+// span; this is the row whose deadline was missing.
+const TIME_BASES = ['time', 'ttl', 'failure', 'breached', 'not found',
+                    'sign-in', 'finished'];
+const TIME_BASIS_SHAPES = [/^\d+ suffix\(es\)$/, /^the assessment /];
+
+// A basis that names WHY a value was cached rather than what its validity
+// rests on: `credentials.ts`'s TOTP verdicts ('opens', 'will not open') are
+// good until the key-encryption key changes.
+const BASIS_NOUNS: Record<string, string> = {
+  'opens': 'key-encryption key',
+  'will not open': 'key-encryption key'
+};
+
+// The routes whose answers carry this module's prose (#543).
+const PROSE_ROUTES = ['/admin-api/caches'];
 
 // THE VERSION STAMP, described from here (2026-09-18). `common/version.js`
 // keeps the record it read from version.json for the life of the process —
@@ -167,6 +246,34 @@ class CachesAdmin {
    * See the module's `NOT_LISTED`.
    */
   static readonly NOT_LISTED = NOT_LISTED;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts this module's part of the caches namespace (#543 phase 2c):
+   * what is deliberately not listed and why, and the templates of how long
+   * an entry is still good. An unlisted thing's `where` is a path and is not
+   * harvested. Every registered store's own prose — the version stamp this
+   * file registers among them — is `common/cache_registry.js`'s `prose()`.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering CachesAdmin.prose().");
+    const harvest = serverProse.harvest;
+    // Keyed by position: an unlisted thing has no id but its path.
+    const out: Record<string, string> = Object.assign({},
+      harvest('caches.notListed', NOT_LISTED.map(function (one) {
+        return { what: one.what, why: one.why };
+      }), ['what', 'why']),
+      harvest('caches.remaining', REMAINING, Object.keys(REMAINING)));
+    helpers.log.debug("Leaving CachesAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   /**
    * Builds an instance over the modules it depends on.
@@ -247,21 +354,37 @@ class CachesAdmin {
   remainingText(row: Json, at: number): string {
     const { log } = this.deps;
     log.debug("Entering CachesAdmin.remainingText().");
+    const fill = serverProse.fill;
     let text: string;
     if (row.validUntil !== null) {
       text = row.validUntil > at
         ? this.span(row.validUntil - at)
-        : 'expired ' + this.span(at - row.validUntil) + ' ago';
+        : fill(REMAINING.expiredAgo,
+               { span: this.span(at - row.validUntil) });
     } else if (row.basis === 'no expiry' || row.basis === 'content-keyed') {
+      // 'no expiry' stays English: it is also the row's `basis` value.
       text = row.basis === 'content-keyed'
-        ? 'no expiry (keyed by content)' : 'no expiry';
+        ? REMAINING.noExpiryByContent : 'no expiry';
+    } else if (Object.prototype.hasOwnProperty.call(BASIS_SENTENCES,
+                                                    row.basis)) {
+      const pair = BASIS_SENTENCES[row.basis];
+      text = row.valid ? pair[0] : (pair[1] || REMAINING.stale);
+    } else if (TIME_BASES.indexOf(row.basis) >= 0 ||
+               TIME_BASIS_SHAPES.some(function (re): boolean {
+                 return re.test(row.basis);
+               })) {
+      // A deadline-shaped basis with no deadline: see `TIME_BASES`.
+      text = row.valid ? 'no expiry' : REMAINING.stale;
     } else if (/^(until|held) /.test(row.basis)) {
       // A basis that is already a sentence ("until rotated or adopted").
-      text = row.valid ? row.basis : 'stale';
+      text = row.valid ? row.basis : REMAINING.stale;
     } else {
+      const noun = Object.prototype.hasOwnProperty.call(BASIS_NOUNS,
+                                                        row.basis)
+        ? BASIS_NOUNS[row.basis] : row.basis;
       text = row.valid
-        ? 'until the ' + row.basis + ' changes'
-        : 'stale: the ' + row.basis + ' has changed';
+        ? fill(REMAINING.untilChanges, { basis: noun })
+        : fill(REMAINING.staleChanged, { basis: noun });
     }
     log.debug("Leaving CachesAdmin.remainingText().");
     return text;
@@ -545,5 +668,8 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   // For `mgmt-api/admin_api.ts` (rule 7): the page's own JSON.
   cachesView: slot.forward('cachesView'),
-  NOT_LISTED: NOT_LISTED
+  NOT_LISTED: NOT_LISTED,
+  // The caches namespace (#543): its routes and its English.
+  PROSE_ROUTES: CachesAdmin.PROSE_ROUTES,
+  prose: CachesAdmin.prose
 };

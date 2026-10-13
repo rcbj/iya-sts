@@ -13,8 +13,10 @@
 // stream that takes CAEP credential-change:
 //
 //   0. a person makes an APP PASSWORD on /portal/app-passwords after signing
-//      in: a real form with a real submit button and no script, the password
-//      shown once on the 200, `Cache-Control: no-store`;
+//      in: a real form with a real submit button, the password shown once in
+//      the view the act answers, `Cache-Control: no-store`. Since #568 the
+//      portal is a static application over `/account-api` and the page is
+//      that operation's view drawn by the portal's own renderers;
 //   1. a second factor is then REQUIRED of them (/admin-api/users/
 //      require-mfa), and at each of the five doors — an LDAPS simple bind, a
 //      WS-Security UsernameToken, SCIM Basic, SSF Basic and EST Basic — in
@@ -40,10 +42,14 @@
 //
 // OWNED HERE (local: true): this repository's own doors, portal and API.
 // ---------------------------------------------------------------------------
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const ldapjs = require("ldapjs");
 const names = require("./random_username.js");
 const facts = require("./service_facts.js");
+const nodeCrypto = require("crypto");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -153,6 +159,15 @@ async function resetSetting(key) {
   log.debug("Leaving resetSetting().");
 }
 
+// A browser's jar as one Cookie header (#571).
+function jarHeader(b) {
+  log.debug("Entering jarHeader().");
+  log.debug("Leaving jarHeader().");
+  return Object.keys(b.jar).map(function (k) {
+    return k + "=" + b.jar[k];
+  }).join("; ");
+}
+
 // ---------------------------------------------------------------------------
 // ONE BROWSER, with a cookie jar and manual redirects.
 // ---------------------------------------------------------------------------
@@ -160,6 +175,7 @@ function browser(name) {
   log.debug("Entering browser(). " + name);
   const jar = {};
   const self = {
+    jar: jar,
     async go(method, path, body) {
       log.debug("Entering go(). " + method + " " + path);
       const headers = {};
@@ -198,51 +214,82 @@ function browser(name) {
   return self;
 }
 
-function hiddenFields(html) {
-  log.debug("Entering hiddenFields().");
-  const out = {};
-  (String(html).match(/<input type="hidden"[^>]*>/g) || [])
-    .forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name) {
-        out[name[1]] = value ? value[1].replace(/&amp;/g, "&") : "";
-      }
-    });
-  log.debug("Leaving hiddenFields().");
-  return out;
+function b64u(buffer) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(buffer).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
+// The realm portal's authorization request, as its runtime sends it (#568):
+// the public client `sts-user-portal`, PKCE, `resource` the realm's
+// `/account-api`. Section 2 walks it by hand to the sign-in screen.
+function portalAuthorizeUrl() {
+  log.debug("Entering portalAuthorizeUrl().");
+  const verifier = b64u(nodeCrypto.randomBytes(32));
+  const url = realmBase + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: realmBase + "/portal/callback",
+    scope: "openid account:manage", state: b64u(nodeCrypto.randomBytes(16)),
+    code_challenge: b64u(nodeCrypto.createHash("sha256").update(verifier)
+      .digest()),
+    code_challenge_method: "S256", resource: realmBase + "/account-api" })
+    .toString();
+  log.debug("Leaving portalAuthorizeUrl().");
+  return url;
 }
 
-// Signs `who` in to a portal page, following the code flow: the page, the
-// authorization endpoint, the sign-in screen, the callback, the page again.
-// Answers the browser and the page's final 200.
+// A page of the portal, as the portal draws it for `b`'s person: its
+// operation's view drawn by the portal's own renderers.
+async function pageOf(b, path) {
+  log.debug("Entering pageOf(). " + path);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  assert.ok(row, "the portal draws no page at " + path);
+  const answer = await b.portal.api("GET", row.operation);
+  log.debug("Leaving pageOf().");
+  return { status: answer.status, json: answer.json, headers: answer.headers,
+           text: answer.status === 200 && answer.json
+             ? drawView(b, path, answer.json) : "" };
+}
+
+function drawView(b, path, view) {
+  log.debug("Entering drawView(). " + path);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  const t = table.messages.WebTranslator.fromData(b.me && b.me.locale);
+  log.debug("Leaving drawView().");
+  return row.render(view, { t: t, query: {}, prefix: R, origin: base,
+                            me: b.me, locale: b.me && b.me.locale,
+                            version: b.me && b.me.version, here: path });
+}
+
+// The form at `path`, acted on through the operation that mirrors it.
+async function act(b, path, fields) {
+  log.debug("Entering act(). " + path);
+  const r = await b.portal.act(path, fields);
+  const json = r.json || {};
+  log.debug("Leaving act().");
+  return { status: r.status, json: r.json, headers: r.headers,
+           text: json.view ? drawView(b, path, json.view)
+                           : String(r.text || "") };
+}
+
+// Signs `who` in to the realm's portal as the static portal does (#568) and
+// answers the signed-in person and the page at `path`.
 async function portalSignIn(who, path) {
   log.debug("Entering portalSignIn(). " + who);
-  const b = browser(who);
-  let r = await b.go("GET", path);
-  for (let hop = 0; hop < 12 && r.status !== 200; hop++) {
-    assert.ok(r.status === 302 || r.status === 303,
-      "signing in to " + path + " stopped at " + r.status + " " +
-      r.text.slice(0, 300));
-    r = await b.go("GET", r.location);
-    if (r.status === 200 && /name="authn_id"/.test(r.text)) {
-      const fields = hiddenFields(r.text);
-      fields.username = who;
-      fields.password = PASSWORD;
-      fields.action = "login";
-      r = await b.go("POST", R + "/authn/login", form(fields));
-    }
-  }
-  assert.strictEqual(r.status, 200, "the signed-in page: " + r.status);
+  const b = { portal: await portal.signInToThePortal(realmBase, who, null,
+                                                     { password: PASSWORD }) };
+  b.me = (await b.portal.api("GET", "/account-api/me")).json;
+  const page = await pageOf(b, path);
+  assert.strictEqual(page.status, 200, "the signed-in page: " + page.status);
   log.debug("Leaving portalSignIn().");
-  return { b: b, page: r };
+  return { b: b, page: page };
 }
 
 // ---------------------------------------------------------------------------
@@ -510,11 +557,11 @@ async function test() {
 
   // -------------------------------------------------------------------------
   log.info("=== 0. the portal: a person makes an app password ===");
-  const PAGE = R + "/portal/app-passwords";
+  const PAGE = "/portal/app-passwords";
   const signed = await portalSignIn(ALICE, PAGE);
   const b = signed.b;
-  check("/portal/app-passwords draws a form with a REAL submit button and " +
-        "no script", function () {
+  check("/portal/app-passwords draws a form with a REAL submit button, and " +
+        "no script of its own", function () {
     assert.ok(/<button type="submit">Make an app password<\/button>/
       .test(signed.page.text), signed.page.text.slice(0, 600));
     assert.ok(!/<script/i.test(signed.page.text),
@@ -525,19 +572,19 @@ async function test() {
     });
   });
   const madeName = "portal client " + STAMP;
-  const made = await b.go("POST", PAGE, form({ action: "create",
+  const made = await act(b, PAGE, { action: "create",
     name: madeName, door_ldap: "on", door_wstrust: "on", door_scim: "on",
-    door_ssf: "on", door_est: "on", csrf_token: csrfOf(signed.page.text) }));
+    door_ssf: "on", door_est: "on" });
   const shown = (made.text.match(
     /<code class="app-password">([A-Z2-7-]+)<\/code>/) || [])[1] || "";
-  check("making one answers 200 with the password ONCE, not in a redirect, " +
-        "no-store", function () {
+  check("making one answers 200 with the password ONCE, in the view it " +
+        "answers rather than on a URL, no-store", function () {
     assert.strictEqual(made.status, 200, made.text.slice(0, 400));
     assert.ok(/^[A-Z2-7]{4}(-[A-Z2-7]{4}){5}$/.test(shown),
               "no app password on the page: " + made.text.slice(0, 800));
     assert.ok(/no-store/.test(String(made.headers.get("cache-control"))));
   });
-  const again = await b.go("GET", PAGE);
+  const again = await pageOf(b, PAGE);
   check("the list shows it by name and id, and never the password again",
         function () {
     assert.ok(again.text.indexOf(madeName) >= 0);
@@ -586,20 +633,21 @@ async function test() {
   log.info("=== 2. never at the sign-in screen ===");
   if (product) {
     const s = browser("app-at-login");
-    let r = await s.go("GET", R + "/portal");
-    for (let hop = 0; hop < 6 && !/name="authn_id"/.test(r.text); hop++) {
+    let r = await s.go("GET", portalAuthorizeUrl());
+    for (let hop = 0; hop < 6 && !/\/authn\/login\?authn=/.test(r.location);
+         hop++) {
       r = await s.go("GET", r.location);
     }
-    const fields = hiddenFields(r.text);
-    fields.username = ALICE;
-    fields.password = shown;
-    fields.action = "login";
-    const posted = await s.go("POST", R + "/authn/login", form(fields));
+    // THE SCREEN OVER `/authn-api` (#571), through the one helper.
+    const posted = await authnSignin.submit(base + R, r.location,
+      { action: "login", username: ALICE, password: shown },
+      { cookie: jarHeader(s) });
     check("the app password is REFUSED at the sign-in screen", function () {
-      assert.strictEqual(posted.status, 200,
-                         "the screen let it through: " + posted.location);
-      assert.ok(/Authentication failed/.test(posted.text),
-                posted.text.slice(0, 400));
+      assert.strictEqual(posted.next, "refused",
+                         "the screen let it through: " + posted.next + " " +
+                         posted.location);
+      assert.ok(/Authentication failed/.test(posted.errors.join(" ")),
+                JSON.stringify(posted.json).slice(0, 400));
     });
   } else {
     log.info("  (development checks no password at the sign-in screen)");
@@ -687,11 +735,12 @@ async function test() {
         function () {
     assert.ok(/Make an app password/.test(fresh.page.text));
   });
-  const listPage = await b.go("GET", PAGE);
-  const revoke = await b.go("POST", PAGE, form({ action: "revoke",
-    id: shown.slice(0, 4), csrf_token: csrfOf(listPage.text) }));
-  check("revoking on the portal redirects back with done=", function () {
-    assert.strictEqual(revoke.status, 303, revoke.text.slice(0, 300));
+  const revoke = await act(b, PAGE, { action: "revoke",
+                                      id: shown.slice(0, 4) });
+  check("revoking on the portal answers what it did (it was a 303 with " +
+        "done= until #568)", function () {
+    assert.ok(revoke.status === 200 && revoke.json && revoke.json.ok === true &&
+              revoke.json.message, revoke.text.slice(0, 300));
   });
   ev = await waitForChange(token, streamId, madeName, "revoke");
   check("and says so over CAEP, initiated by the user", function () {
@@ -701,8 +750,7 @@ async function test() {
   if (product) {
     await refused("scim", ALICE, shown, "the revoked app password is refused");
   }
-  const notMine = await fresh.b.go("POST", PAGE, form({ action: "revoke",
-    id: "ABCD", csrf_token: csrfOf(fresh.page.text) }));
+  const notMine = await act(fresh.b, PAGE, { action: "revoke", id: "ABCD" });
   check("revoking an id the person does not hold is a 404, never an oracle",
         function () {
     assert.strictEqual(notMine.status, 404);

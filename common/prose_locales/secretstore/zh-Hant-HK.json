@@ -1,0 +1,58 @@
+{
+  "secretstore.source.reportWhat": {
+    "en": "22bc75be21c4a09a",
+    "text": "本服務從何處讀取其原始秘密——用來密封其所密封之一切的金鑰加密金鑰，以及數據庫密碼——是否確實讀取了它們，以及另一端的儲存區正在做什麼。"
+  },
+  "secretstore.source.wrapsInKms": {
+    "en": "7bd54b22d846fe00",
+    "text": "每把數據加密金鑰，在 KMS 中"
+  },
+  "secretstore.source.wrapsInVault": {
+    "en": "405bbc4d85fe30ff",
+    "text": "每把數據加密金鑰，在 vault 中"
+  },
+  "secretstore.source.byCertificateAt": {
+    "en": "60b072e1200fbd17",
+    "text": "客戶端證書（{{cert}}）"
+  },
+  "secretstore.source.byCertificate": {
+    "en": "1d3bee4abba86445",
+    "text": "客戶端證書"
+  },
+  "secretstore.source.sharesKekFile": {
+    "en": "77ad17c585850a0a",
+    "text": "此秘密與金鑰加密金鑰共用檔案，而該檔案不是 JSON 物件——因此其中的內容就是「金鑰」，讀取此秘密會被「拒絕」，而不是把那把金鑰交給數據庫。"
+  },
+  "secretstore.source.noLogin": {
+    "en": "d1d304bf7a11be99",
+    "text": "未設定客戶端證書，因此未進行登入：權杖就是 {{token}} 或 SDK 的 VAULT_TOKEN 所提供的。"
+  },
+  "secretstore.probe.vault/client-certificate": {
+    "en": "f94c9e7471f63b08",
+    "text": "本服務向儲存區出示的證書，以及其到期時間。"
+  },
+  "secretstore.probe.vault/versions": {
+    "en": "e6d3fd30c886c72b",
+    "text": "此秘密的 KV 元數據：寫入時間、共有幾個版本，以及讀取時會取得哪一個版本。"
+  },
+  "secretstore.probe.vault-transit/transit-key": {
+    "en": "8b5ec8540e5a645c",
+    "text": "Transit 對包裝數據金鑰之金鑰的說明：其類型、其版本，以及它是否可能離開 KMS。"
+  },
+  "secretstore.probe.aws-kms/kms-key": {
+    "en": "c7a90045558f0a02",
+    "text": "AWS KMS 對包裝數據金鑰之金鑰的說明：其狀態，以及 AWS 是否會輪替它。"
+  },
+  "secretstore.probe.gcp-kms/kms-key": {
+    "en": "a889c918017a3a6e",
+    "text": "Cloud KMS 對包裝數據金鑰之金鑰的說明：其用途、其主要版本與其輪替排程。"
+  },
+  "secretstore.probe.azure-keys/vault-key": {
+    "en": "4c46af2b365b08fe",
+    "text": "vault 對包裝數據金鑰之金鑰的說明：其類型、大小、作業、版本與輪替。"
+  },
+  "secretstore.probe.gcp/secret": {
+    "en": "f7750717cdd5bfbc",
+    "text": "秘密自身的元數據：複寫、標籤、輪替與到期。"
+  }
+}

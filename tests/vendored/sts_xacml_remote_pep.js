@@ -382,7 +382,8 @@ async function mintTheCredential() {
   xacmlUser = await credentials.mint({
     subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
   const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
-  assert.ok(posted.ok, "POST /tls/trust should accept the Root CA this file " +
+  assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
+    "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and section 3 cannot ask the PDP " +
     "anything at all.");
@@ -395,8 +396,9 @@ async function mintTheCredential() {
   //
   // The launcher posted it once, before this container started, and **the
   // truststore is a Map in the service's process that ANY job can empty**:
-  // `POST /tls/trust/clear` needs no credential, and a job that exercises the
-  // truststore is entitled to use it.
+  // `POST /tls/trust/clear` needed no credential until #597 deleted it, and a
+  // job that exercises the truststore through /admin-api/tls/trust is still
+  // entitled to remove what it finds.
   //
   // **NOTHING NOTICED UNTIL THE DAY A CLIENT CERTIFICATE STOPPED BEING A
   // TURNSTILE.** This container's pull, its heartbeat and — since the PIP
@@ -426,7 +428,8 @@ async function mintTheCredential() {
   if (containerAnchor.indexOf("BEGIN CERTIFICATE") >= 0) {
     const back = await credentials.trustAnchor(base, containerAnchor);
     assert.ok(back.ok,
-      "POST /tls/trust should accept the PEP container's Root CA, which the " +
+      "POST /admin-api/tls/trust/add should accept the PEP container's " +
+      "Root CA, which the " +
       "launcher minted and exported as XACML_PEP_CA_PEM; it answered " +
       back.status + ". Every assertion below rests on that container's " +
       "certificate VERIFYING, and an earlier job in this run may have " +
@@ -896,7 +899,8 @@ async function mintTheContainersCredential() {
   const cred = await credentials.mint({ subject: containerSubject() });
   const posted = await credentials.trustAnchor(base, cred.anchorPem);
   assert.ok(posted.ok,
-    "POST /tls/trust should accept the Root CA for the PEP container this " +
+    "POST /admin-api/tls/trust/add should accept the Root CA for the PEP " +
+    "container this " +
     "job is about to start; it answered " + posted.status + ". Without the " +
     "anchor that container's certificate verifies against nothing, it " +
     "registers as an unauthenticated caller, and the PDP refuses it with a " +
@@ -1319,9 +1323,10 @@ async function itRegistersAndPulls() {
       "drives \"" + PEP_NAME + "\"");
     assert.strictEqual(seen.registration.authenticated, true,
       "OVER MUTUAL TLS, BETWEEN TWO CONTAINERS. The launcher minted a client " +
-      "certificate with tests/tools/pep-credential.js, POSTed its Root CA to " +
-      "/tls/trust and mounted the leaf and key into this container; the " +
-      "handshake at /xacml/pep/register carried it. It says " +
+      "certificate with tests/tools/pep-credential.js, added its Root CA " +
+      "through /admin-api/tls/trust/add and mounted the leaf and key into " +
+      "this container; the handshake at /xacml/pep/register carried it. " +
+      "It says " +
       JSON.stringify(seen.registration) + pepLog());
   });
 
@@ -2139,6 +2144,98 @@ async function aDeployedPolicyConverges() {
            "in a container " + arrived.ms + "ms later.");
   log.debug("Leaving aDeployedPolicyConverges().");
   return arrived.ms;
+}
+
+// ===========================================================================
+// 4b. AN OBLIGATION THE CONTAINER CANNOT DISCHARGE (#596).
+//
+// Section 7.2's part implementations skip: an obligation is the half of a
+// decision that says "yes, AND you must also do this", so a PEP that cannot
+// discharge one turns a Permit into a REFUSAL. This was asserted at the
+// service's embedded demonstration PEP, `/xacml/protected`, in
+// `sts_xacml_endpoints.js` section 5 until #596 deleted that PEP; it is
+// asserted HERE now, at the PEP that replaced it, which is the stronger
+// claim: the obligation is written at the PAP, PULLED, and refused in
+// another process.
+//
+// The pair is what makes it assertable: the editor's `add-policy-obligation`
+// mints `urn:sts:xacml:obligation:1`, which no PEP knows, and
+// `edit-obligation` renames it to the one both PEPs discharge. Same policy,
+// same request, same Permit — and the enforcement flips, which shows the
+// refusal was about the OBLIGATION and not about the decision.
+// ===========================================================================
+const DISCHARGEABLE = "urn:sts:xacml:obligation:log";
+
+async function anUndischargeableObligationRefuses() {
+  log.debug("Entering anUndischargeableObligationRefuses().");
+  log.info("=== An obligation the container cannot discharge ===");
+  const ask = { subject: ADMIN_PERSON, employeeType: "admin", action: "GET" };
+
+  await act("add-policy-obligation", { policy: POLICY_B, path: "",
+                                       on: "Permit" },
+            "added an obligation to the root policy");
+  const refused = await until(
+    "the PEP to refuse a Permit carrying an obligation it cannot discharge",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 403 && r.body.decision === "Permit",
+               r: r, note: "the PEP answered " + r.status + " (" +
+                           r.body.decision + ")" };
+    });
+  check("an undischargeable obligation turns the Permit into a refusal — " +
+        "in the container, on policy it pulled", function () {
+    const body = refused.r.body;
+    assert.strictEqual(body.allowed, false);
+    assert.ok(String(body.why).indexOf("obligation") > 0,
+      "the refusal should name the obligation as the cause; it says: " +
+      body.why);
+    assert.deepStrictEqual(body.obligations,
+      [{ id: "urn:sts:xacml:obligation:1", discharged: false }],
+      "the obligation should be reported UNDISCHARGED rather than omitted; " +
+      "it reports " + JSON.stringify(body.obligations));
+  });
+
+  const tree = await get(api("/xacml/editor?policy=" + POLICY_B));
+  const obligation = ((tree.body && tree.body.tree) || [])
+    .filter(function (row) {
+      return row.kind === "obligation";
+    })[0];
+  assert.ok(obligation, "no obligation row in the editor tree: " +
+    String(tree.text).slice(0, 300));
+  await act("edit-obligation", { policy: POLICY_B, path: obligation.path,
+                                 id: DISCHARGEABLE, on: "Permit" },
+            "renamed the obligation to the one a PEP knows");
+  const discharged = await until(
+    "the PEP to discharge the obligation it knows",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 200, r: r,
+               note: "the PEP answered " + r.status };
+    });
+  check("the one obligation the PEP knows IS discharged, and access returns",
+        function () {
+    assert.deepStrictEqual(discharged.r.body.obligations,
+      [{ id: DISCHARGEABLE, discharged: true }],
+      "and it should say so rather than silently allowing; it reports " +
+      JSON.stringify(discharged.r.body.obligations));
+  });
+
+  await act("remove", { policy: POLICY_B, path: obligation.path },
+            "removed the obligation again");
+  const clean = await until("the PEP to hold the policy without it",
+    async function () {
+      const r = await askThePep(ask);
+      return { ok: r.status === 200 && r.body.obligations.length === 0,
+               r: r, note: "the PEP reports " +
+                           JSON.stringify(r.body.obligations) };
+    });
+  check("removing the obligation leaves an ordinary Permit", function () {
+    assert.strictEqual(clean.r.body.decision, "Permit");
+  });
+
+  log.info("[obligations] OK — one Permit enforced three ways in another " +
+           "process, and only the obligation changed.");
+  log.debug("Leaving anUndischargeableObligationRefuses().");
 }
 
 // ===========================================================================
@@ -2966,6 +3063,7 @@ async function test() {
       await itDecidesInItsOwnProcess();
       await thePipReachesTheDirectory();
       const polledMs = await aDeployedPolicyConverges();
+      await anUndischargeableObligationRefuses();
       await aDisabledPolicyStopsBeingEnforced();
       await theNudgeIsDelivered(polledMs);
       await thePdpSeesWhatItNeverSaw();
@@ -2982,8 +3080,8 @@ async function test() {
   // A FLOOR ON THE COUNT, for the reason sts_admin_console.js gives: a section
   // that stops being called takes its assertions with it and the run still says
   // "passed", which is the one failure mode a suite cannot report about itself.
-  assert.ok(checks >= 26,
-    "only " + checks + " checks ran. This file makes more than twenty-six " +
+  assert.ok(checks >= 29,
+    "only " + checks + " checks ran. This file makes more than twenty-nine " +
     "against a healthy service, so a count this low means a SECTION STOPPED " +
     "BEING CALLED rather than that the surface got simpler.");
   log.info(checks + " checks passed.");

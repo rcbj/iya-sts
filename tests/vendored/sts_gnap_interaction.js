@@ -26,7 +26,8 @@
 //      short, the request is denied and the client told request_denied.
 //   5. APPROVAL BY AN ABSENT OWNER (`gnap.ownerApproval`): a request with no
 //      interaction naming the owner waits; `too_fast` holds while the
-//      client polls; the request is listed on the owner's `/portal/ciba`
+//      client polls; the request is listed on the owner's `/portal/ciba` (the
+//      static portal since #568, drawn from `/account-api`)
 //      and nobody else's; approved on a subset, the client's poll collects
 //      the token; a second, denied, is user_denied; and another person
 //      signing in at the approval page sends the grant to the owner, who
@@ -44,6 +45,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -88,36 +90,44 @@ function pause(ms) {
   });
 }
 
-// A browser signed in to the realm's portal, through the portal's own code
-// flow and the sign-in screen, and the page at `path` once it is drawn.
-async function portal(b, who, path) {
-  log.debug("Entering portal().");
-  let r = await b.go("GET", "/realm/" + h.realm + path);
-  for (let hop = 0; hop < 12; hop++) {
-    if (r.status === 302 || r.status === 303) {
-      r = await b.go("GET", r.location);
-      continue;
-    }
-    const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) ||
-                     [])[1];
-    if (r.status === 200 && authnId) {
-      r = await b.go("POST", "/realm/" + h.realm + "/authn/login",
-                     { authn_id: authnId, username: who, password: PASSWORD,
-                       action: "login", csrf_token: h.csrfOf(r.text) });
-      continue;
-    }
-    break;
+// THE PERSON'S PORTAL (#568): the static portal's own sign-in, as its
+// public client with PKCE and a DPoP-bound token for the realm's
+// /account-api — one per person, kept — and the page at `path` drawn by the
+// portal's renderers from its operation's answer. `b` is unused since the
+// portal holds no cookie of its own; it stays so the sections read as they
+// did, one browser per person.
+const portals = {};
+async function portalOf(who) {
+  log.debug("Entering portalOf().");
+  if (!portals[who]) {
+    portals[who] = await portalSignin.signInToThePortal(h.realmBase, who,
+      null, { password: PASSWORD });
   }
-  log.debug("Leaving portal().");
-  return r;
+  log.debug("Leaving portalOf().");
+  return portals[who];
 }
 
-// The waiting GNAP request on a /portal/ciba page: its id, and the CSRF token.
+async function portal(b, who, path) {
+  log.debug("Entering portal().");
+  const drawn = await (await portalOf(who)).draw(path);
+  log.debug("Leaving portal().");
+  return { status: drawn.status, text: drawn.html, json: drawn.json };
+}
+
+// The waiting GNAP request on a /portal/ciba page: its id.
 function waitingOn(page) {
   log.debug("Entering waitingOn().");
   const m = /name="action" value="gnap-approve"><input type="hidden" name="id" value="([^"]+)"/.exec(page.text);
   log.debug("Leaving waitingOn().");
-  return { id: m ? m[1] : "", csrf: h.csrfOf(page.text) };
+  return { id: m ? m[1] : "" };
+}
+
+// An answer on the portal: the form's /account-api operation.
+async function answer(who, fields) {
+  log.debug("Entering answer().");
+  const r = await (await portalOf(who)).act("/portal/ciba", fields);
+  log.debug("Leaving answer(). " + r.status);
+  return r;
 }
 
 async function test() {
@@ -212,7 +222,10 @@ async function test() {
   check("2e. and the approval page is drawn for the person", function () {
     assert.strictEqual(trustedApproval.page.status, 200,
                        trustedApproval.page.text.slice(0, 300));
-    assert.ok(/Allow access\?/.test(trustedApproval.page.text));
+    // The page is drawn from its view since #578.
+    assert.ok(trustedApproval.view &&
+              trustedApproval.view.kind === "approve",
+              JSON.stringify(trustedApproval.view));
   });
 
   // =========================================================================
@@ -242,7 +255,8 @@ async function test() {
   check("3a. an always type's remembered approval does not skip the page",
         function () {
     assert.strictEqual(page.status, 200, page.status + " " + page.location);
-    assert.ok(/Allow access\?/.test(page.text), page.text.slice(0, 300));
+    assert.ok(page.view && page.view.kind === "approve",
+              JSON.stringify(page.view) + " " + page.text.slice(0, 300));
   });
   page = await again([{ type: DFLT, actions: ["read"] }]);
   check("3b. control: a default type's remembered approval skips it",
@@ -317,14 +331,11 @@ async function test() {
     assert.strictEqual(otherPage.status, 200, otherPage.text.slice(0, 300));
     assert.ok(otherPage.text.indexOf(waiting.id) < 0);
   });
-  r = await ownerBrowser.go("POST", "/realm/" + h.realm + "/portal/ciba",
-                            "action=gnap-approve&id=" +
-                            encodeURIComponent(waiting.id) +
-                            "&right=t0r0&csrf_token=" +
-                            encodeURIComponent(waiting.csrf));
+  r = await answer(OWNER, { action: "gnap-approve", id: waiting.id,
+                            right: "t0r0" });
   check("5e. the owner approves the first right only", function () {
-    assert.strictEqual(r.status, 303, r.text.slice(0, 300));
-    assert.ok(/Approved/.test(decodeURIComponent(r.location)), r.location);
+    assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+    assert.ok(/Approved/.test(String(r.json && r.json.message)), r.text);
   });
   r = await absent.send("POST", cont.uri, { token: cont.access_token.value });
   check("5f. the client's next poll collects a token carrying what the " +
@@ -340,10 +351,8 @@ async function test() {
   cont = r.json.continue;
   page = await portal(ownerBrowser, OWNER, "/portal/ciba");
   const second = waitingOn(page);
-  r = await ownerBrowser.go("POST", "/realm/" + h.realm + "/portal/ciba",
-                            { action: "gnap-deny", id: second.id,
-                              csrf_token: second.csrf });
-  assert.strictEqual(r.status, 303, r.text.slice(0, 300));
+  r = await answer(OWNER, { action: "gnap-deny", id: second.id });
+  assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   await pause((Number(cont.wait) || 0) * 1000 + 200);
   r = await absent.send("POST", cont.uri, { token: cont.access_token.value });
   check("5g. a request the owner denies is user_denied", function () {
@@ -375,12 +384,9 @@ async function test() {
     assert.ok(third.id, page.text.slice(0, 300));
     assert.ok(page.text.indexOf(OTHER) >= 0, "the requester is not named");
   });
-  r = await ownerBrowser.go("POST", "/realm/" + h.realm + "/portal/ciba",
-                            "action=gnap-approve&id=" +
-                            encodeURIComponent(third.id) +
-                            "&right=t0r0&csrf_token=" +
-                            encodeURIComponent(third.csrf));
-  assert.strictEqual(r.status, 303, r.text.slice(0, 300));
+  r = await answer(OWNER, { action: "gnap-approve", id: third.id,
+                            right: "t0r0" });
+  assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   r = await named.send("POST", cont.uri, { token: cont.access_token.value });
   check("5j. and the owner's approval releases it", function () {
     assert.strictEqual(r.status, 200, r.text);

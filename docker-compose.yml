@@ -12,8 +12,10 @@ services:
       - POSTGRES_DB=sts
       - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      - POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca
     volumes:
       - sts-db:/var/lib/postgresql
+      - sts-db-ca:/run/sts-db-ca
       - ./postgres/generate-tls.sh:/usr/local/bin/generate-tls.sh:ro
       - ./postgres/require-tls.sh:/docker-entrypoint-initdb.d/00-require-tls.sh:ro
       - ./postgres/apply-schema.sh:/docker-entrypoint-initdb.d/10-apply-schema.sh:ro
@@ -138,6 +140,8 @@ services:
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
       - "${STS_PKI_HOST_PORT:-8082}:8082"
+      - "${STS_KDC_HOST_PORT:-88}:88"
+      - "${STS_KDC_HOST_PORT:-88}:88/udp"
     depends_on:
       postgres:
         condition: service_healthy
@@ -146,6 +150,7 @@ services:
     volumes:
       - sts-bao-client:/run/secrets/openbao:ro
       - sts-bao-startup:/run/secrets/openbao-startup
+      - sts-db-ca:/run/secrets/database-ca:ro
       - sts-data:/usr/src/sts/data
       - sts-risk-uploads:/usr/src/sts/data/risk-uploads
       - ./env:/usr/src/sts/env:ro
@@ -160,15 +165,17 @@ services:
       - PKI_DISTRIBUTION_LDAP_HOST=${PKI_DISTRIBUTION_LDAP_HOST:-}
       - STS_PERSISTENCE_MODE=${STS_PERSISTENCE_MODE:-postgres}
       - STS_MODE=${STS_MODE:-product}
+      - KRB5_SERVICE_PRINCIPAL=${KRB5_SERVICE_PRINCIPAL:-HTTP/localhost}
       - STS_PERSISTENCE_COORDINATE=${STS_PERSISTENCE_COORDINATE:-true}
       - STS_WORKERS_REQUEST_COUNT=${STS_WORKERS_REQUEST_COUNT:-2}
       - STS_WORKERS_SURFACE_COUNT=${STS_WORKERS_SURFACE_COUNT:-0}
       - STS_WORKERS_DISPATCH=${STS_WORKERS_DISPATCH:-*}
-      - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api}
+      - STS_WORKERS_FANOUT=${STS_WORKERS_FANOUT:-/scim,/xacml,/admin-api,/account-api}
       - STS_WORKERS_READ_YOUR_WRITE=${STS_WORKERS_READ_YOUR_WRITE:-true}
       - ADMIN_API_AUTH_REQUIRED
       - ADMIN_API_AUDIENCE
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=require}
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=verify-full}
+      - STS_DATABASE_TLS_CA_FILE=${STS_DATABASE_TLS_CA_FILE:-/run/secrets/database-ca/postgres.crt}
       - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault-transit}
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
       - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-sts-kek}
@@ -227,6 +234,40 @@ services:
       - PEP_HEARTBEAT_INTERVAL_MS=${XACML_PEP_HEARTBEAT_INTERVAL_MS:-60000}
       - PEP_LOG_LEVEL=${XACML_PEP_LOG_LEVEL:-info}
 
+  companion:
+    container_name: ${STS_COMPANION_CONTAINER_NAME:-sts-companion}
+    hostname: companion
+    profiles: ["companion"]
+    image: ${STS_COMPANION_IMAGE:-iya-sts-companion}
+    build:
+      context: ./companion
+    ports:
+      - "${COMPANION_HOST_PORT:-9700}:9700"
+      - "${COMPANION_KRB5_HOST_PORT:-8888}:8888"
+    depends_on:
+      sts:
+        condition: service_healthy
+    environment:
+      - COMPANION_PORT=9700
+      - COMPANION_PUBLIC_URL=${COMPANION_PUBLIC_URL:-http://localhost:9700}
+      - COMPANION_STS_URL=${COMPANION_STS_URL:-https://sts:8081}
+      - COMPANION_STS_PUBLIC_URL=${COMPANION_STS_PUBLIC_URL:-https://localhost:8081}
+      - COMPANION_STS_CA_FILE=${COMPANION_STS_CA_FILE:-}
+      - COMPANION_STS_TLS_INSECURE=${COMPANION_STS_TLS_INSECURE:-true}
+      - COMPANION_CLIENT_ID=${COMPANION_CLIENT_ID:-iya-sts-companion}
+      - COMPANION_CLIENT_SECRET=${COMPANION_CLIENT_SECRET:-}
+      - COMPANION_BOOTSTRAP_SECRET=${ADMIN_API_CLIENT_SECRET:-}
+      - COMPANION_WALLET_URL=${COMPANION_WALLET_URL:-}
+      - COMPANION_KRB5_SPN=${COMPANION_KRB5_SPN:-}
+      - COMPANION_KRB5_SERVICE_PORT=8888
+      - COMPANION_LOG_LEVEL=${COMPANION_LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get({host:'localhost',port:9700,path:'/healthz'},function(r){process.exit(r.statusCode===200?0:1)}).on('error',function(){process.exit(1)})\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
 networks:
   default:
     ipam:
@@ -238,5 +279,6 @@ volumes:
   sts-bao-client:
   sts-bao-startup:
   sts-db:
+  sts-db-ca:
   sts-data:
   sts-risk-uploads:

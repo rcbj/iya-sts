@@ -1706,7 +1706,7 @@ class DelegationPage {
           : '&mdash;') + '</td></tr>';
     }).join('');
     const register = view.register;
-    return '<h2 id="delegation-policy">' +
+    return '<h2 id="delegation-policy" data-tab="policy">' +
       t.html('consoleDelegation.hPolicy') + '</h2>' +
       kit.note(t.html('consoleDelegation.policyLead') +
       (register.protectedGroups.length
@@ -1845,7 +1845,8 @@ class DelegationPage {
     const permNav = kit.pageNavPair(here, navParams, permPage.paging);
     const grantNav = kit.pageNavPair(here, navParams, grantPage.paging);
 
-    return '<h2 id="allowed">' + t.html('consoleDelegation.hAllowed') +
+    return '<h2 id="allowed" data-tab="register">' +
+      t.html('consoleDelegation.hAllowed') +
       '</h2>' +
 
       kit.note(t.html('consoleDelegation.allowedEvidence')) +
@@ -3666,7 +3667,11 @@ class DelegationPage {
       DelegationPage.delegationUserChooser(t, json.userChooser, '',
         { path: '/admin/delegation', query: ctx.query }) +
 
-      '<h2>' + t.html('consoleDelegation.hWhatHappened') + '</h2>' +
+      // A TAB PER REGISTER (2026-10-12): the lead, the picture's link and
+      // the two choosers above are Metadata, and so are the mechanisms and
+      // the closing notes (`WebPages.protocolTabs()`).
+      '<h2 data-tab="happened">' + t.html('consoleDelegation.hWhatHappened') +
+      '</h2>' +
       // No `page` input in this form, deliberately: changing a filter or the
       // page size returns to page 1. Carrying the old page number over would
       // land somebody on page 6 of a two-page result and the clamp in
@@ -3762,7 +3767,8 @@ class DelegationPage {
                  { max: json.maxRecords })) +
       t.html('consoleDelegation.seqNote')) +
 
-      '<h2>' + t.html('consoleDelegation.hChains') + '</h2>' +
+      '<h2 data-tab="chains">' + t.html('consoleDelegation.hChains') +
+      '</h2>' +
       kit.note(t.html('consoleDelegation.chainsBefore') +
       '<a href="/admin/delegation/map">' +
       t.html('consoleDelegation.chainsLink') + '</a>' +
@@ -3818,7 +3824,8 @@ class DelegationPage {
       DelegationPage.permissionsSection(ctx, json.permissionsView,
                                         listView, false) +
 
-      '<h2>' + t.html('consoleDelegation.hKerberosPolicy') + '</h2>' +
+      '<h2 data-tab="kerberos">' +
+      t.html('consoleDelegation.hKerberosPolicy') + '</h2>' +
       kit.note(t.html('consoleDelegation.kdcView')) +
       kit.note(t.html('consoleDelegation.twoAttributes')) +
       kit.note(t.html('consoleDelegation.beyondAttribute')) +
@@ -3851,7 +3858,8 @@ class DelegationPage {
       DelegationPage.delegationPolicySection(ctx,
                                              json.exchangePolicyView) +
 
-      '<h3>' + t.html('consoleDelegation.hMechanisms') + '</h3>' +
+      '<div data-metadata><h3>' +
+      t.html('consoleDelegation.hMechanisms') + '</h3>' +
       kit.note(t.html('consoleDelegation.mechanismsNote')) +
       mechanismsNav.head +
       '<ul>' + json.mechanismPage.shown.map(function (entry) {
@@ -3893,7 +3901,7 @@ class DelegationPage {
       kit.note(t.html('consoleDelegation.everyTablePaged', {
         per: json.delegationPerPage, max: kit.MAX_ROWS })) +
 
-      kit.note(t.html('consoleDelegation.jsonWhole')));
+      kit.note(t.html('consoleDelegation.jsonWhole')) + '</div>');
   }
 }
 

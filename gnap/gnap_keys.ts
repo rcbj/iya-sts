@@ -524,8 +524,8 @@ class GnapKeys {
   }
 
   // Whether a presented descriptor is the key a confirmation names. Used by
-  // the demonstration RS and by every format's verify(), which is handed this
-  // shape as `presentedKey`.
+  // `gnap_rs.ts`'s `authenticate()` and by every format's verify(), which is
+  // handed this shape as `presentedKey`.
   /**
    * Returns the confirmation of a presented key, the shape every token format's
    * `verify()` is handed as `presentedKey`.

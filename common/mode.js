@@ -604,6 +604,25 @@ function seedsDemoData() {
   return !isProduct();
 }
 
+// Does this service DESCRIBE ITSELF as a test double? (#543's review.) The
+// service metadata document (`GET /admin-api/sts-metadata`) carries a
+// `testDouble` member so that a reader of an endpoint list cannot take it for
+// a claim that every one of those endpoints checks what it is handed. It was
+// the literal `true` and said so in product mode too, where passwords are
+// verified and access tokens validated — the one place the document was
+// wrong about the service that served it.
+/**
+ * Tells whether the service metadata document describes this service as a
+ * test double: one that checks no password and validates no access token.
+ *
+ * @returns true in development mode
+ */
+function describesItselfAsTestDouble() {
+  log.debug("Entering describesItselfAsTestDouble().");
+  log.debug("Leaving describesItselfAsTestDouble().");
+  return !isProduct();
+}
+
 // Does this service ROTATE its signing keys on a schedule? (2026-09-22, #42.)
 // Product keeps a key set for as long as the store does, so a key that is
 // never replaced is a key whose compromise never ends; each unit gets a
@@ -662,6 +681,27 @@ function derivesKrbtgtFromPassword() {
   log.debug("Entering derivesKrbtgtFromPassword().");
   log.debug("Leaving derivesKrbtgtFromPassword().");
   return !isProduct();
+}
+
+// Does the KDC key its own ACCEPTOR'S SPN at random when krb5.servicePassword
+// is empty or the published default? (2026-10-12.) Product refuses both
+// passwords (STS-KRB-0060, STS-KRB-0061), and until this a base installation's
+// acceptor therefore accepted no ticket until an operator invented a password
+// for an SPN no other KDC issues. Product now makes a random key for the SPN,
+// sealed on its application entry as an operator's create-service would, once
+// for the cluster — and a password an operator sets wins over it. Development
+// keeps building the account from the published password, so a reader can
+// derive the key; its empty password still means no account.
+/**
+ * Tells whether the acceptor's SPN is keyed at random when its configured
+ * password is empty or the published default.
+ *
+ * @returns true in product mode
+ */
+function generatesAcceptorKey() {
+  log.debug("Entering generatesAcceptorKey().");
+  log.debug("Leaving generatesAcceptorKey().");
+  return isProduct();
 }
 
 // Is an EXPIRED client secret refused? (2026-09-22, #49 P5.) Product refuses
@@ -736,9 +776,9 @@ function acceptsUnregisteredAddresses() {
   return !isProduct();
 }
 
-// Are the TEST CONTROLS open to anybody who can reach the port? Adding a trust
-// anchor at POST /tls/trust, switching DPoP nonces, reading the Kerberos
-// fixture passwords off /krb5/principals, signing somebody ELSE out with
+// Are the TEST CONTROLS open to anybody who can reach the port? Reading the
+// Kerberos fixture passwords off /krb5/principals (until #595 deleted it),
+// signing somebody ELSE out with
 // ?username=, registering an OAuth client with no initial credential, asking a
 // SAML 1.1 attribute authority about any named person. Each exists so a test
 // can drive a state; in product each is either refused or behind the credential
@@ -2034,7 +2074,8 @@ function observesRiskOnly() {
 // product inbox should not hold forgeries either). Development keeps the
 // debugger's posture — accept it and say why it did not verify, which is the
 // question a person testing a transmitter is asking — unless the setting
-// turns the refusal on. `/ssf/receive` and `ssf/ssf_receivers.ts` ask it.
+// turns the refusal on. `ssf/ssf_receivers.ts` and `ssf/ssf_transmitters.ts`
+// ask it.
 /**
  * Tells whether a receiver here refuses a Security Event Token whose signature
  * does not verify.
@@ -2122,15 +2163,24 @@ const REQUIREMENTS = [
   { id: 'unverified-signals',
     what: 'A received Security Event Token whose signature does not verify ' +
           'is refused',
-    development: 'POST /ssf/receive and the console\'s and portal\'s own ' +
+    development: 'The console\'s and portal\'s own ' +
                  'receivers accept it, record it and say why it did not ' +
                  'verify — the debugger\'s posture — unless ' +
-                 'ssf.receiveRequireSignature is on. Nothing acts on it.',
-    product: 'Every receiver answers 400 invalid_key, whatever ' +
-             'ssf.receiveRequireSignature says (#117): /ssf/receive, which ' +
-             'authenticates nobody, records nothing; the console\'s and ' +
-             'portal\'s receivers, behind their stream\'s own secret, keep ' +
-             'it on their inbox marked refused.' },
+                 'ssf.receiveRequireSignature is on. Nothing acts on it. A ' +
+                 'federation partner\'s Shared Signals, pushed to ' +
+                 '/federation/signals/{id} or polled, are treated the same: ' +
+                 'an unverified SET is recorded on the relationship\'s ' +
+                 'inbox as unverified and acted on in no way, unless ' +
+                 'ssf.receiveRequireSignature is on.',
+    product: 'The console\'s and portal\'s receivers answer 400 ' +
+             'invalid_key, whatever ssf.receiveRequireSignature says ' +
+             '(#117), and keep it on their inbox marked refused. ' +
+             'A federation partner\'s unverified SET is refused ' +
+             'invalid_key too — HTTP 400 to a push to ' +
+             '/federation/signals/{id}, and in setErrs on the next poll ' +
+             'request for a polled one — kept on the relationship\'s inbox ' +
+             'marked refused, and never acted on.',
+    where: 'ssf/ssf_receivers.ts, ssf/ssf_transmitters.ts' },
   { id: 'signal-reactions',
     what: 'What this service\'s own console and portal do with a CAEP or ' +
           'RISC event they receive is done',
@@ -2142,7 +2192,11 @@ const REQUIREMENTS = [
              'session-revoked, credential-change, a RISC account or ' +
              'credential event, a risk-level-change to HIGH, by default — ' +
              'ends the receiving surface\'s own sessions for the person it ' +
-             'names. An unverified event is never acted on in either mode.' },
+             'names. An unverified event is never acted on in either mode.',
+    // The policy is xacml_signal_pep.ts's; ssf_transmitters.ts asks the
+    // same predicate before a federation partner's signal is acted on.
+    where: 'ssf/ssf_receivers.ts, xacml/xacml_signal_pep.ts, ' +
+           'ssf/ssf_transmitters.ts' },
   { id: 'risk-decisions',
     what: 'The issuance policy\'s decisions on the RISK of an ' +
           'authentication are enforced',
@@ -2798,6 +2852,15 @@ const REQUIREMENTS = [
              'passwords published in this repository.',
     where: 'ldap/ldap_server.js, kerberos/krb5_principals.js, ' +
            'spiffe/spiffe_registry.ts' },
+  { id: 'test-double',
+    what: 'The service metadata document says this service is a test double',
+    development: '`testDouble` is true in GET /admin-api/sts-metadata: this ' +
+                 'service checks no password and validates no access ' +
+                 'token, and an endpoint list must not read as a claim that ' +
+                 'it does.',
+    product: '`testDouble` is false: passwords are verified and access ' +
+             'tokens validated, and the document says so.',
+    where: 'sts_metadata.ts' },
   { id: 'claim-values',
     what: 'A claim value may be invented',
     development: 'A token names a persona — family name `Mock`, an address ' +
@@ -2941,13 +3004,15 @@ const REQUIREMENTS = [
                  'authorization, PAR and token endpoints and becomes the ' +
                  'token\'s aud; a GNAP location that names no resource ' +
                  'server is left out of the token\'s audience and the ' +
-                 'right is granted.',
+                 'right is granted, while something else in the token ' +
+                 'names one — a token whose access names none is refused ' +
+                 'invalid_request in every mode (STS-GNAP-0904).',
     product: 'A resource (outside a token exchange, whose targets are the ' +
              'policy\'s unregistered-target) and every location of a GNAP ' +
              'access right must name a registered target: one of this ' +
              'service\'s own resource servers (the default resource ' +
              'indicator UserInfo, SCIM, Shared Signals and OpenID4VCI ' +
-             'accept; /admin-api; the GNAP demonstration resource server) ' +
+             'accept; /admin-api; /account-api) ' +
              'or an application registered ahead of time (appRegisteredBy ' +
              'set — a sighting is not a registration), by its ' +
              'oauthAudience, permission base URI, client_id or identifier ' +
@@ -2984,11 +3049,7 @@ const REQUIREMENTS = [
            'common/applications.js, common/oidc_rp.ts, authn/authn.ts' },
   { id: 'test-controls',
     what: 'Test controls are open',
-    development: 'POST /tls/trust and /tls/trust/clear, POST ' +
-                 '/dpop/nonce-mode, POST /devices/test/compliance (a ' +
-                 'device\'s compliance, without the device:compliance ' +
-                 'scope, #164), the passwords on ' +
-                 '/krb5/principals, signing another person out with ' +
+    development: 'Signing another person out with ' +
                  '?username=, open dynamic client registration, the SAML ' +
                  '1.1 attribute authority and HOBA key registration all ' +
                  'answer anybody, a refused SCIM Digest challenge prints ' +
@@ -3007,9 +3068,8 @@ const REQUIREMENTS = [
              'oauth2.softwareStatementOpensRegistration is on, which is the ' +
              'operator deciding who may register by deciding whose ' +
              'statements to trust.',
-    where: 'tls/tls_server.js, oauth-oidc/oauth2.ts, kerberos/krb5_kdc.js, ' +
-           'logout/logout.ts, saml/saml11_sso.ts, scim/scim_auth.ts, ' +
-           'admin-core/admin_actions.ts, admin-ui/devices_admin.ts' },
+    where: 'oauth-oidc/oauth2.ts, logout/logout.ts, saml/saml11_sso.ts, ' +
+           'scim/scim_auth.ts, admin-core/admin_actions.ts' },
   { id: 'directory-writes',
     what: 'A write to the directory over LDAP is authorized',
     development: 'Any connection may add, modify, rename or delete any entry ' +
@@ -3305,6 +3365,20 @@ const REQUIREMENTS = [
              'realm is refused KRB_AP_ERR_BADKEYVER.',
     where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_krbtgt_rotation.ts, ' +
            'kerberos/krb5_principals.js' },
+  // 2026-10-12: a base installation's acceptor keyed without a password.
+  { id: 'kerberos-acceptor-key',
+    what: 'The key the Kerberos acceptor decrypts tickets with when ' +
+          'krb5.servicePassword is empty or the published default',
+    development: 'DERIVED from the published krb5.servicePassword, so a ' +
+                 'reader can derive it; an empty password creates no ' +
+                 'account and the acceptor accepts no ticket.',
+    product: 'RANDOM — a key per enctype in krb5.enctypes for the SPN ' +
+             'krb5.servicePrincipal names, made once per realm at the start ' +
+             '(or when the acceptor first asks), sealed on the application ' +
+             'entry <spn>@<REALM> and never shown. Rotate it at ' +
+             '/admin/kerberos/principals for a keytab. A ' +
+             'krb5.servicePassword of the operator\'s own wins over it.',
+    where: 'kerberos/krb5_person_keys.ts, kerberos/krb5_principals.js' },
   // 2026-09-26 (#164 decision 9, phase 2).
   { id: 'unattested-device-keys',
     what: 'A device key presented without a verifiable attestation is ' +
@@ -3752,6 +3826,9 @@ const WRITE_REFUSALS = {
     'before the start to be able to mint one.'
 };
 
+// What a marked row whose predicate has no sentence above ends with.
+const DEFAULT_WRITE_REFUSAL = 'the setting is for development mode only.';
+
 /**
  * Explains why a development-only value is not allowed in product, by the
  * predicate its row names.
@@ -3763,8 +3840,7 @@ const WRITE_REFUSALS = {
 function writeRefusalReason(predicate) {
   log.debug("Entering writeRefusalReason(). " + predicate);
   log.debug("Leaving writeRefusalReason().");
-  return WRITE_REFUSALS[predicate] ||
-    'the setting is for development mode only.';
+  return WRITE_REFUSALS[predicate] || DEFAULT_WRITE_REFUSAL;
 }
 
 // Every row carrying the `onlyWhile` marker, with the value the ambient realm
@@ -3817,6 +3893,45 @@ function report() {
   };
 }
 
+// ---------------------------------------------------------------------------
+// THE MODE NAMESPACE OF THE SERVER'S PROSE (#543 phase 2b). `GET
+// /admin-api/mode` answers `report()`, and what it carries that is prose is
+// this file's: each requirement's `what`, `development` and `product` (and
+// `inForce`, which is one of the two copied, so the exact match finds it), each
+// NOT_YET row's `what`, and each development-only setting's `why` — a
+// WRITE_REFUSALS sentence, which is also the end of the write REFUSAL and the
+// ignored-value warning. Those two stay English: the refusal is answered on
+// other routes and the warning is written to the log, and a phrase is matched
+// only on the routes listed here. `where` is file paths, every `id` a code.
+// ---------------------------------------------------------------------------
+/**
+ * The `/admin-api` routes whose answers carry this file's prose (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/mode'];
+
+/**
+ * Extracts the mode namespace (#543 phase 2b): the requirements, NOT_YET and
+ * the sentence a development-only setting's `why` carries.
+ *
+ * `server_prose` is required here, LAZILY: `helpers.js` requires this file at
+ * load and `server_prose` requires `helpers.js`.
+ *
+ * @returns key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  const harvest = require('./server_prose').harvest;
+  const out = {};
+  Object.assign(out, harvest('mode.requirements', REQUIREMENTS,
+                             ['what', 'development', 'product']));
+  Object.assign(out, harvest('mode.notYet', NOT_YET, ['what']));
+  Object.assign(out, harvest('mode.why', WRITE_REFUSALS,
+                             Object.keys(WRITE_REFUSALS)));
+  out['mode.why.default'] = DEFAULT_WRITE_REFUSAL;
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * The one place development and product mode are told apart: a predicate per
  * policy question, named for the question.
@@ -3847,9 +3962,11 @@ module.exports = {
   enforcesOauthSecurityBcp: enforcesOauthSecurityBcp,
   opensManagementApi: opensManagementApi,
   seedsDemoData: seedsDemoData,
+  describesItselfAsTestDouble: describesItselfAsTestDouble,
   rotatesSigningKeys: rotatesSigningKeys,
   rotatesKerberosKeys: rotatesKerberosKeys,
   derivesKrbtgtFromPassword: derivesKrbtgtFromPassword,
+  generatesAcceptorKey: generatesAcceptorKey,
   refusesExpiredClientSecrets: refusesExpiredClientSecrets,
   listsRealmsBeforeSignIn: listsRealmsBeforeSignIn,
   inventsClaimValues: inventsClaimValues,
@@ -3923,5 +4040,7 @@ module.exports = {
   writeRefusalReason: writeRefusalReason,
   REQUIREMENTS: REQUIREMENTS,
   NOT_YET: NOT_YET,
-  report: report
+  report: report,
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose
 };

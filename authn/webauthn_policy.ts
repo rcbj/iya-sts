@@ -289,7 +289,7 @@ class WebauthnPolicy {
       // THE SERVICE'S NAME A PROMPT SHOWS, with the realm's name and/or the
       // organisation's where the passkey policy appends them (#533).
       rpName: passkeyPolicy.rpNameFor(
-        String(config.value('webauthn.rpName') || 'Mock authorization ' +
+        String(config.value('webauthn.rpName') || 'Authorization ' +
                                                   'server'),
         String((realms.current() || {}).name || realms.currentId() || ''),
         String(config.value('saml.organizationName') || ''), passkeys),

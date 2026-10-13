@@ -53,6 +53,8 @@ function childMain() {
   const ROOT = process.env.WSI_ROOT;
   const OUT = process.env.WSI_OUT;
   const walletKit = require(ROOT + '/tests/wallet_kit');
+  // The sign-in screen over `/authn-api` since #571.
+  const authnScreen = require(ROOT + '/tests/tools/authn_screen');
 
   walletKit.boot().then(async function (w) {
     try {
@@ -204,14 +206,27 @@ function childMain() {
       return m.authn.beginAuthentication({ returnTo: '/mech/after',
         protocol: 'mech-probe', application: 'mech-door' });
     });
+    // THE SCREEN IS A STATIC PAGE SINCE #571, drawn from its view; and an
+    // act at it is a JSON operation bound to the browser's cookie.
+    const viewAt = async function (who, at) {
+      return authnScreen.open({ port: w.port, jar: who.cookies, at: at });
+    };
+    const passwordAct = async function (who, at, username) {
+      const opened = await viewAt(who, at);
+      return w.request('POST', '/authn-api/pending/' +
+        encodeURIComponent(opened.id) + '/password', {
+          browser: who, json: { username: username, password: 'anything' },
+          headers: { origin: 'http://127.0.0.1:' + w.port,
+                     'x-csrf-token': opened.csrf } });
+    };
     const who = w.browser();
-    const screen = await w.request('GET', screenAt, { browser: who });
+    const screen = await viewAt(who, screenAt);
+    const sv = screen.view || {};
     note(/^\/authn\/login\?authn=/.test(screenAt) && screen.status === 200 &&
-         !/id="password"/.test(screen.text) &&
-         !/kc-email-code|kc-email-link/.test(screen.text) &&
-         !/\/authn\/spnego\?/.test(screen.text) &&
-         /\/authn\/wallet/.test(screen.text) &&
-         /webauthn_only/.test(screen.text),
+         sv.screen === true && sv.password === false &&
+         !sv.email.code && !sv.email.link && !sv.kerberos &&
+         sv.wallet && /\/authn\/wallet/.test(sv.wallet.href) &&
+         sv.keys.primaryAllowed === true,
          'D. several allowed draw the screen with only those: a key and the ' +
          'wallet, no password, no emailed code, no Kerberos',
          screenAt + ' ' + screen.status);
@@ -231,23 +246,19 @@ function childMain() {
         protocol: 'mech-probe', application: 'mech-elsewhere' });
     });
     const other = w.browser();
-    const bare = await w.request('GET', elsewhereAt, { browser: other });
-    note(bare.status === 200 && !/id="username"/.test(bare.text) &&
-         /not signed in to on this screen/.test(bare.text) &&
-         /\/authn\/wallet/.test(bare.text),
+    const bare = await viewAt(other, elsewhereAt);
+    const bv = bare.view || {};
+    note(bare.status === 200 && bv.screen === false &&
+         bv.wallet && /\/authn\/wallet/.test(bv.wallet.href),
          'E. nothing on the screen allowed: no username or password, only ' +
          'the doors it allows', elsewhereAt + ' ' + bare.status);
-    const authnId = (/name="authn_id" value="([^"]+)"/.exec(bare.text) ||
-                     [])[1];
-    const refused = await w.request('POST', '/authn/login', {
-      browser: other,
-      form: { authn_id: authnId, username: 'mech-alice',
-              password: 'anything', action: 'login' } });
+    const refused = await passwordAct(other, elsewhereAt, 'mech-alice');
     note(refused.code === 'STS-AUTHN-0298' && !w.sessionOf(other) &&
+         refused.status === 400 &&
          /requires signing in with/.test(refused.text),
          'E. a password posted anyway is refused at the door, the screen ' +
          'drawn again saying what it allows',
-         refused.status + ' ' + refused.code);
+         refused.status + ' ' + refused.code + ' ' + refused.text);
 
     // A browser holding an ordinary password session, for F and G.
     const signedIn = w.browser();
@@ -255,13 +266,7 @@ function childMain() {
       return m.authn.beginAuthentication({ returnTo: '/mech/after',
         protocol: 'mech-probe' });
     });
-    const plain = await w.request('GET', plainAt, { browser: signedIn });
-    const plainId = (/name="authn_id" value="([^"]+)"/.exec(plain.text) ||
-                     [])[1];
-    await w.request('POST', '/authn/login', {
-      browser: signedIn,
-      form: { authn_id: plainId, username: 'mech-alice',
-              password: 'anything', action: 'login' } });
+    await passwordAct(signedIn, plainAt, 'mech-alice');
     note(!!w.sessionOf(signedIn),
          'F0. mech-alice signs in with a password for no application in ' +
          'particular');

@@ -156,29 +156,30 @@ async function flag(t) {
     person('svc-a');
     person('svc-owner');
     const nobody = serviceAccounts.set('svc-nobody', { serviceAccount: true,
-                                                       owner: 'svc-owner' });
+                                                       owners: ['svc-owner'] });
     t.equal(errorCodes.codeOf(nobody), 'STS-SVCACCT-0021',
             'A2. nobody by that name is refused');
     const noOwner = serviceAccounts.set('svc-a', { serviceAccount: true });
     t.equal(errorCodes.codeOf(noOwner), 'STS-SVCACCT-0023',
             'A3. requireOwner is ON by default, so no owner is refused');
     const badOwner = serviceAccounts.set('svc-a', { serviceAccount: true,
-                                                    owner: 'nobody-here' });
+                                                    owners: ['nobody-here'] });
     t.equal(errorCodes.codeOf(badOwner), 'STS-SVCACCT-0024',
             'A4. an owner who is neither a person nor a group is refused');
     const self = serviceAccounts.set('svc-a', { serviceAccount: true,
-                                                owner: 'svc-a' });
+                                                owners: ['svc-a'] });
     t.equal(errorCodes.codeOf(self), 'STS-SVCACCT-0025',
             'A5. an account cannot own itself');
     const half = serviceAccounts.set('svc-a', { serviceAccount: true,
-                                                owner: 'svc-owner',
+                                                owners: ['svc-owner'],
                                                 secretName: 'x' });
     t.equal(errorCodes.codeOf(half), 'STS-SVCACCT-0026',
             'A6. a secret name without a destination is refused');
     const made = serviceAccounts.set('svc-a', { serviceAccount: true,
-                                                owner: 'svc-owner' });
+                                                owners: ['svc-owner'] });
     t.check(made.ok && made.changed && made.account &&
-            made.account.ownerKind === 'person',
+            made.account.owners.length === 1 &&
+            made.account.owners[0].kind === 'person',
             'A7. a person owns a service account', JSON.stringify(made));
     t.check(serviceAccounts.isServiceAccountName('svc-a') &&
             !serviceAccounts.isServiceAccountName('svc-owner') &&
@@ -193,7 +194,7 @@ async function flag(t) {
               JSON.stringify(classes));
     }
     const groupOwned = serviceAccounts.set('svc-a', {
-      serviceAccount: true, owner: 'cn=admin-read,' +
+      serviceAccount: true, owners: ['cn=admin-read,'] +
         'ou=groups,' + ldap.baseDn() });
     t.check(groupOwned.ok || errorCodes.codeOf(groupOwned) ===
             'STS-SVCACCT-0024',
@@ -288,7 +289,7 @@ async function doors(t) {
     person('svc-d');
     person('svc-d-owner');
     serviceAccounts.set('svc-d', { serviceAccount: true,
-                                   owner: 'svc-d-owner' });
+                                   owners: ['svc-d-owner'] });
     for (const mode of ['development', 'product']) {
       await withSettings({ 'global.mode': mode }, async function () {
         const open = credentials.verify('svc-d', PASSWORD,
@@ -350,7 +351,7 @@ async function secondFactor(t) {
     person('svc-m');
     person('svc-m-owner');
     serviceAccounts.set('svc-m', { serviceAccount: true,
-                                   owner: 'svc-m-owner' });
+                                   owners: ['svc-m-owner'] });
     credentials.setMfaRequired('svc-m', true);
     t.check(credentials.secondFactorDemand('svc-m').needed === true,
             'D1. a service account a second factor is required of needs one');
@@ -391,7 +392,7 @@ async function sessions(t) {
     person('svc-s');
     person('svc-s-owner');
     serviceAccounts.set('svc-s', { serviceAccount: true,
-                                   owner: 'svc-s-owner' });
+                                   owners: ['svc-s-owner'] });
     const detail = {};
     const browser = authn.startSession(noBrowser(), 'svc-s', ['pwd'], '1',
                                        'a test', detail);
@@ -415,7 +416,7 @@ async function consoleAndApi(t) {
     person('svc-c-owner');
     const refused = adminActions.usersAction({
       action: 'create', username: 'svc-c-refused', credential: 'none',
-      invent: 'no', serviceAccount: 'true', owner: 'nobody-at-all' },
+      invent: 'no', serviceAccount: 'true', owners: ['nobody-at-all'] },
       { via: 'test', actor: 'tester' });
     t.check(refused.ok === false &&
             errorCodes.codeOf(refused) === 'STS-SVCACCT-0024' &&
@@ -424,7 +425,7 @@ async function consoleAndApi(t) {
             JSON.stringify(refused));
     const created = adminActions.usersAction({
       action: 'create', username: 'svc-c', credential: 'none', invent: 'no',
-      serviceAccount: 'true', owner: 'svc-c-owner' },
+      serviceAccount: 'true', owners: ['svc-c-owner'] },
       { via: 'test', actor: 'tester' });
     t.check(created.ok && created.serviceAccount === true &&
             serviceAccounts.isServiceAccountName('svc-c'),
@@ -447,7 +448,8 @@ async function consoleAndApi(t) {
       return row.key === 'svc-c';
     }), 'F4. and ?kind=person leaves them out');
     const detail = adminViews.serviceAccountJson('svc-c');
-    t.check(detail && detail.owner && detail.policy &&
+    t.check(detail && detail.owners && detail.owners.length === 1 &&
+            detail.policy &&
             detail.policy.allowBrowserSignIn === false,
             'F5. the person page describes the account and its policy');
     const cleared = adminActions.usersAction({
@@ -456,7 +458,7 @@ async function consoleAndApi(t) {
     t.check(cleared.ok && !serviceAccounts.isServiceAccountName('svc-c'),
             'F6. set-service-account false makes them a person again');
     const again = adminActions.usersAction({
-      action: 'set-service-account', user: 'svc-c', owner: 'svc-c-owner' },
+      action: 'set-service-account', user: 'svc-c', owners: ['svc-c-owner'] },
       { via: 'test', actor: 'tester' });
     t.check(again.ok && again.serviceAccount === true,
             'F7. set-service-account (true by default) makes one again',
@@ -546,7 +548,7 @@ async function rotation(t) {
       person('svc-r');
       person('svc-r-owner');
       serviceAccounts.set('svc-r', { serviceAccount: true,
-                                     owner: 'svc-r-owner' });
+                                     owners: ['svc-r-owner'] });
       const failing = fakeDestinations({ ok: false });
       const rotator = rotationWith(failing);
       const notOne = await rotator.rotateOne('svc-r-owner');
@@ -643,13 +645,13 @@ async function endToEnd(t) {
       t.check(added.ok && added.destination && added.destination.usable,
               'I1. a file destination is registered', JSON.stringify(added));
       const made = serviceAccounts.set('svc-e', { serviceAccount: true,
-        owner: 'svc-e-owner', destination: added.destination.id,
+        owners: ['svc-e-owner'], destination: added.destination.id,
         secretName: 'svc-e' });
       t.check(made.ok && made.account.destination === added.destination.id,
               'I2. the account names it, checked against the register',
               JSON.stringify(made));
       const notThere = serviceAccounts.set('svc-e', { serviceAccount: true,
-        owner: 'svc-e-owner', destination: 'cn=nope,ou=applications,' +
+        owners: ['svc-e-owner'], destination: 'cn=nope,ou=applications,' +
           ldap.baseDn(), secretName: 'x' });
       t.equal(errorCodes.codeOf(notThere), 'STS-SVCACCT-0029',
               'I3. a DN that is no destination is refused');

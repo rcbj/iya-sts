@@ -28,6 +28,7 @@
 //   F. Negotiation: `zh-HK` reads the Hong Kong overlay over Traditional and
 //      never Simplified; `tl` is Filipino; `fr-CA` overlays `fr`; a language
 //      with no catalog falls through to the next preference.
+//   G. The protocol name `SAML` is invariant in the console navigation.
 // ===========================================================================
 
 const fs = require('fs');
@@ -224,6 +225,29 @@ async function run(t) {
   t.check(i18n.acceptLanguage('de-CH, fr;q=0.9, sv;q=0, *;q=0.1')
             .join(' ') === 'de-CH fr',
           'F. Accept-Language is read by q, q=0 and the wildcard left out');
+
+  // G. A translated role description is not the name of this protocol page.
+  index.offered.forEach(function (o) {
+    const chain = i18n.chainFor(o.tag).chain;
+    let label = '';
+    chain.some(function (tag) {
+      const messages = i18n.messagesOf('console', tag);
+      if ('nav.saml2' in messages) {
+        label = messages['nav.saml2'];
+        return true;
+      }
+      return false;
+    });
+    t.check(label === 'SAML', 'G. ' + o.tag +
+            ' keeps the protocol name in console navigation', label);
+  });
+  const englishVc = i18n.messagesOf('console', 'en');
+  t.check(englishVc['nav.vc'] ===
+            englishVc['group.verifiable-credentials'] &&
+          englishVc['nav.vc-claims'] === 'Credential claims',
+          'G. Verifiable Credentials is the destination label and claims ' +
+          'keeps its own tab label',
+          englishVc['nav.vc'] + ' / ' + englishVc['nav.vc-claims']);
   log.debug("Leaving run().");
 }
 

@@ -1,0 +1,11 @@
+{
+  "heading": "{kind, select, roles {Roles de los que es propietario} groups {Grupos de los que es propietario} service-accounts {Cuentas de servicio de las que es propietario} other {Aplicaciones de las que es propietario}}",
+  "sub": "Todo lo de este tipo cuyos propietarios le nombran a usted o a un grupo al que pertenece. Un propietario responde por un recurso; no concede nada. Para cambiar uno, pídaselo a un administrador.",
+  "thName": "Nombre",
+  "thDetail": "Detalle",
+  "thHow": "Por qué es suyo",
+  "you": "Usted es propietario",
+  "viaGroup": "A través del grupo {group}",
+  "none": "No es propietario de {kind, select, roles {ningún rol} groups {ningún grupo} service-accounts {ninguna cuenta de servicio} other {ninguna aplicación}}.",
+  "yourGroups": "Sus grupos: {groups}."
+}

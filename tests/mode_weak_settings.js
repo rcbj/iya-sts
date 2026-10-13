@@ -40,7 +40,7 @@
 //      XML SignatureMethod, the SHA-1 verdict, the SAML 2.0 assertion
 //      signature service-wide and per application, the key transport
 //      service-wide and per application, the SAML 1.1 Response signature, the
-//      Workload API's header, the KDC's clock (`GET /krb5/principals`), the
+//      Workload API's header, the KDC's clock (its `clockOffsetSeconds()`), the
 //      CA's signature algorithm — and an rsa-1_5 EncryptedKey unwrapped in
 //      development and refused, STS-KEYS-0070, in product. Each ignored
 //      setting, and each overriding attribute, logged ONCE (STS-CORE-0106).
@@ -180,7 +180,10 @@ function childMain() {
         const configured = pki.algorithmsFrom({ keyAlg: 'rsa-2048' });
         const named = pki.algorithmsFrom({ keyAlg: 'rsa-2048',
                                            signatureAlg: 'sha1-rsa' });
-        const principals = await getJson('/krb5/principals');
+        // The KDC's own reading of its clock, from the module: the
+        // document that published it, /krb5/principals, was a demonstration
+        // (#585) and is gone (#595).
+        const kdc = require(ROOT + '/kerberos/krb5_kdc.js');
         const spiffe = await getJson('/spiffe?format=json');
         return {
           risc: Object.prototype.hasOwnProperty.call(subject,
@@ -200,9 +203,7 @@ function childMain() {
           header: grpc.requireSecurityHeader(),
           headerView: !!(spiffe.json && spiffe.json.workloadApi &&
                          spiffe.json.workloadApi.securityHeaderRequired),
-          clockOffset: principals.json ?
-            principals.json.clockOffsetSeconds : 'status ' +
-            principals.status,
+          clockOffset: kdc.clockOffsetSeconds(),
           caConfigured: configured.ok ? configured.signatureAlg : 'refused',
           caNamed: named.ok ? named.signatureAlg : errorCodes.codeOf(named)
         };

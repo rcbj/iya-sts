@@ -1,0 +1,546 @@
+{
+  "sched.jobs.attribute-sources.refresh.title": {
+    "en": "f3af7a728e869ac5",
+    "text": "属性源：定时刷新"
+  },
+  "sched.jobs.attribute-sources.refresh.describe": {
+    "en": "e753a576c8530ce3",
+    "text": "对每个已到定时间隔的属性源，读取本领域人员的下一页数据并写入其条目（#94）。每次运行每个属性源处理 attributeSources.refreshBatch 个人员。"
+  },
+  "sched.jobs.authn.session-expiry.title": {
+    "en": "0d2b2447af869e65",
+    "text": "会话过期"
+  },
+  "sched.jobs.authn.session-expiry.describe": {
+    "en": "ca99d997bdb0c403",
+    "text": "在每个领域中结束所有已超过生存期或空闲超时的单点登录会话：写一条审计记录、发送 CAEP session-revoked 和反向通道 Logout Token，整个集群只执行一次。"
+  },
+  "sched.jobs.caches.eject-expired.title": {
+    "en": "0cd05b8d7db4c75b",
+    "text": "过期缓存条目清除"
+  },
+  "sched.jobs.caches.eject-expired.describe": {
+    "en": "1ae2468f3087d86b",
+    "text": "在本进程中删除所有已超过生存期的缓存和重放存储条目——仅为日常清理：每个存储在读取时仍会拒绝过期条目。"
+  },
+  "sched.jobs.cluster.claims-purge.title": {
+    "en": "263ab3366839b277",
+    "text": "过期声明清理"
+  },
+  "sched.jobs.cluster.claims-purge.describe": {
+    "en": "b3ee8feee29a65c0",
+    "text": "从所有节点共享的表中删除已超过生存期的一次性声明。"
+  },
+  "sched.jobs.cluster.node-snapshot.title": {
+    "en": "8be187108d31777e",
+    "text": "节点快照"
+  },
+  "sched.jobs.cluster.node-snapshot.describe": {
+    "en": "2831c3d3902f9ad4",
+    "text": "将本节点的“监控 → 工作池”和“→ 节点健康”视图写入共享存储，每个节点名称一行，以便每个节点都能在这些页面上绘制所有节点（#332）。"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.title": {
+    "en": "83b1b328de6501ab",
+    "text": "节点快照清除"
+  },
+  "sched.jobs.cluster.node-snapshot-purge.describe": {
+    "en": "d94b5f29e1a3b672",
+    "text": "删除不再是活动集群成员的节点的工作池和节点健康快照，条件是快照早于 cluster.nodeSnapshotRetentionHours；绝不删除活动成员的快照，无法读取成员关系时不删除任何内容（#332）。"
+  },
+  "sched.jobs.cluster.rate-window-purge.title": {
+    "en": "10451e2a1990b97a",
+    "text": "已结束速率限制窗口清理"
+  },
+  "sched.jobs.cluster.rate-window-purge.describe": {
+    "en": "772463775db370a2",
+    "text": "从所有节点共享的表中删除已过去的速率限制窗口。"
+  },
+  "sched.jobs.devices.android-status-recheck.title": {
+    "en": "fe97755c55eeb3e2",
+    "text": "Android 证明重新检查"
+  },
+  "sched.jobs.devices.android-status-recheck.describe": {
+    "en": "f918ea71421d9df1",
+    "text": "就每条已存储的 Android 链——每个领域中的设备密钥和 WebAuthn 凭据——查询当前生效的 Android 证明状态列表，并将其吊销或暂停的链降级：改为自我声明、记录审计、发送 CAEP credential-change。在列表激活时运行，并且每天运行一次。"
+  },
+  "sched.jobs.devices.android-status-refresh.title": {
+    "en": "95d19bd56eac78af",
+    "text": "Android 证明状态列表下载"
+  },
+  "sched.jobs.devices.android-status-refresh.describe": {
+    "en": "af65a7bf379c0b71",
+    "text": "从 devices.androidStatusUrl 下载 Google 的 Android 密钥证明状态列表，并将其加载为风险数据集 android.attestation-status：哪些证明证书已被吊销或暂停。每天一次（devices.androidStatusRefreshS）；与当前生效列表相同的列表不加载任何内容。"
+  },
+  "sched.jobs.federation.encryption-key-retire.title": {
+    "en": "0c323ec372941184",
+    "text": "联合加密密钥退役"
+  },
+  "sched.jobs.federation.encryption-key-retire.describe": {
+    "en": "c8990a4ca5b5163e",
+    "text": "在 federation.encryptionKeyGraceS 过后，从每个联合关系中移除被轮换替换的加密密钥。该密钥在那一刻就已停止解密；此作业只是将它从条目上移除。"
+  },
+  "sched.jobs.gnap.grant-expiry.title": {
+    "en": "ed1bb7e24484e928",
+    "text": "GNAP：过期授予"
+  },
+  "sched.jobs.gnap.grant-expiry.describe": {
+    "en": "d5ae13ff9e6e4b50",
+    "text": "终结每个交互或授予生存期（gnap.grantLifetimeS）已结束、且此后没有任何请求触及的 GNAP 授予，并记录原因（#432）。"
+  },
+  "sched.jobs.gnap.spend-purge.title": {
+    "en": "cefadb9704ec0cd1",
+    "text": "GNAP：已结束授予的限额"
+  },
+  "sched.jobs.gnap.spend-purge.describe": {
+    "en": "71471822b228b1b8",
+    "text": "在 GNAP 授予结束、其令牌已无法出示之后，删除为该授予的限额保留的累计值（#432）。"
+  },
+  "sched.jobs.keys.data-key-count.title": {
+    "en": "c6e6cb1a17fd0095",
+    "text": "数据加密密钥的值计数"
+  },
+  "sched.jobs.keys.data-key-count.describe": {
+    "en": "1563aab7487de8a6",
+    "text": "对存储做一次遍历，统计每个数据加密密钥下封存的值，并将每个计数保存在其密钥上，供 /admin/encryption 使用。"
+  },
+  "sched.jobs.keys.data-key-reencrypt.title": {
+    "en": "e83b2a80fc8ab721",
+    "text": "数据重新加密和密钥销毁"
+  },
+  "sched.jobs.keys.data-key-reencrypt.describe": {
+    "en": "b8460307f2319fea",
+    "text": "将所有仍在已被取代的数据加密密钥下封存的值，在当前密钥下重新封存；当已被取代的密钥下不再封存任何内容、且已被取代达 keys.dataKeyRetireAfterDays 时将其销毁。"
+  },
+  "sched.jobs.keys.data-key-rotate.title": {
+    "en": "7e230b0aa64dfb58",
+    "text": "数据加密密钥轮换"
+  },
+  "sched.jobs.keys.data-key-rotate.describe": {
+    "en": "afd86bfabb1a98ab",
+    "text": "为每个已封存新值达 keys.dataKeyRotationDays 的数据加密密钥生成后继密钥，在其下封存任何内容之前提前 keys.dataKeyActivationLeadSeconds 发布；随后由重新加密作业重新封存旧密钥封存的内容。"
+  },
+  "sched.jobs.keys.data-key-rotate-now.title": {
+    "en": "13aab83fb56f4e4f",
+    "text": "手动轮换数据加密密钥"
+  },
+  "sched.jobs.keys.data-key-rotate-now.describe": {
+    "en": "a4d23163545ebff6",
+    "text": "立即轮换所有已存储的数据加密密钥——或某个领域的、某个类别的；被替换的密钥在其封存的内容被重新封存之前，仍可继续打开这些内容。"
+  },
+  "sched.jobs.keys.kek-rotate-now.title": {
+    "en": "56ce4e44eba4fdbf",
+    "text": "手动轮换密钥加密密钥"
+  },
+  "sched.jobs.keys.kek-rotate-now.describe": {
+    "en": "57116faef542211d",
+    "text": "在密钥管理服务中为密钥加密密钥创建新版本，并在其下重新包装每个数据加密密钥。仅适用于 KMS 中的密钥。"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.title": {
+    "en": "fa4e83114be4d14c",
+    "text": "krbtgt 密钥轮换"
+  },
+  "sched.jobs.krb5.krbtgt-rotate.describe": {
+    "en": "c85b767fff8efbb2",
+    "text": "当每个领域的 krbtgt 密钥（即封存每个 TGT 所用的密钥）达到 krb5.krbtgtRotationIntervalDays 时，以下一个 kvno 的新随机密钥替换它，被替换的密钥保留至其下 TGT 的最长存活时间，并且在上次轮换所保留的版本仍处于其窗口期时绝不轮换。为没有密钥的产品领域生成第一个密钥。每次运行的结果会给出 kvno、上次轮换以及下次轮换的时间。"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.title": {
+    "en": "09f54cab8475d618",
+    "text": "手动轮换 krbtgt 密钥"
+  },
+  "sched.jobs.krb5.krbtgt-rotate-now.describe": {
+    "en": "6fffa44535aa160d",
+    "text": "立即轮换本领域的 krbtgt 密钥。使用 invalidate 时不保留旧版本：此前签发的每个 TGT 都会被拒绝，并由一个 Shared Signals 事件说明这一点。"
+  },
+  "sched.jobs.mail.deliver.title": {
+    "en": "2bb1b3533e3e44d6",
+    "text": "邮件发件箱投递"
+  },
+  "sched.jobs.mail.deliver.describe": {
+    "en": "b1ea77995ea52a10",
+    "text": "发送所有到期的排队邮件——退避时间已过的重试、已失效的租约、重启后恢复的行——将超过 mail.retentionS 仍未完成的邮件转入死信，并移除超过该时间的已完成行。"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.title": {
+    "en": "4cbeb4551a77fd01",
+    "text": "反向通道注销清理"
+  },
+  "sched.jobs.oauth2.backchannel-logout-sweep.describe": {
+    "en": "0b2f79f86bc38003",
+    "text": "发送所有到期的 Logout Token 投递——退避时间已过的重试、已失效的租约、重启后恢复的行——并将超过 oauth2.backchannelLogoutRetentionS 仍未完成的投递转入死信。"
+  },
+  "sched.jobs.oauth2.ciba-sweep.title": {
+    "en": "f971b3b6fdbe4dff",
+    "text": "CIBA 清理"
+  },
+  "sched.jobs.oauth2.ciba-sweep.describe": {
+    "en": "89f25abc272e9c08",
+    "text": "尝试所有到期的 CIBA ping 和 push，将超过 oauth2.cibaNotifyRetentionS 仍未完成的转入死信，使无人及时应答的反向通道身份验证请求过期，并丢弃一小时前已结束的内容。"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.title": {
+    "en": "fa4263e54da3a7de",
+    "text": "声明提供方：刷新关联的令牌"
+  },
+  "sched.jobs.oauth2.claim-sources-refresh.describe": {
+    "en": "72166ea059d3fc98",
+    "text": "在每个人员关联的声明提供方处的令牌过期之前刷新它，并丢弃无人完成的关联请求（#147）。"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.title": {
+    "en": "e4f6d805130bd62e",
+    "text": "客户端密钥过期"
+  },
+  "sched.jobs.oauth2.client-secret-expiry.describe": {
+    "en": "bf894947ce420111",
+    "text": "检查每个应用的每个客户端密钥：对持有将在 oauth2.clientSecretExpiryWarningDays 内过期密钥的应用，以及所有密钥均已过期的应用，各写一条审计记录；并在应用同时持有未过期密钥时移除其过期密钥——绝不移除其最后一个，该密钥保留下来，并在产品模式中被拒绝。"
+  },
+  "sched.jobs.oauth2.command-sweep.title": {
+    "en": "e200c4ae261a2eb6",
+    "text": "OpenID Provider Commands 清理"
+  },
+  "sched.jobs.oauth2.command-sweep.describe": {
+    "en": "fb4789a8030f5374",
+    "text": "发送所有到期的 Command Token 投递——退避时间已过的重试、已失效的租约、重启后恢复的行——将超过 oauth2.commandRetentionS 仍未完成的投递转入死信，并丢弃过期的回调令牌和已完成的租户运行。"
+  },
+  "sched.jobs.oauth2.device-code-sweep.title": {
+    "en": "d3bada4835d70dba",
+    "text": "设备授权：过期代码"
+  },
+  "sched.jobs.oauth2.device-code-sweep.describe": {
+    "en": "9c1da47db8a08725",
+    "text": "使无人及时批准的 RFC 8628 设备代码过期，并移除一小时前已结束的代码（#150）。"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.title": {
+    "en": "3a8c69653b6b768b",
+    "text": "临时主体：过期映射"
+  },
+  "sched.jobs.oauth2.ephemeral-subjects-purge.describe": {
+    "en": "86f9e46ec5a00f92",
+    "text": "移除每个其令牌和会话都已不可能再被使用的临时主体标识符（#149）。"
+  },
+  "sched.jobs.oauth2.expired-token-purge.title": {
+    "en": "9ae64452fa61c48d",
+    "text": "过期的跟踪令牌清除"
+  },
+  "sched.jobs.oauth2.expired-token-purge.describe": {
+    "en": "f3b55c35762b6af1",
+    "text": "删除已过期且超过 oauth2.expiredTokenRetentionS 的令牌记录，以及已过期令牌的吊销记录。"
+  },
+  "sched.jobs.oauth2.grant-management-purge.title": {
+    "en": "38d564339874ba6d",
+    "text": "Grant Management：过期授予"
+  },
+  "sched.jobs.oauth2.grant-management-purge.describe": {
+    "en": "46dabea2677465d2",
+    "text": "移除最后一个令牌已过期的每个 OAuth 授予，以及授予下铸造的每个令牌在其过期后的记录（#142）。"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.title": {
+    "en": "1b76c505917f3b58",
+    "text": "过期的已用断言清理"
+  },
+  "sched.jobs.oauth2.used-assertion-purge.describe": {
+    "en": "e47edb491dd535ca",
+    "text": "从所有节点共享的一次性历史中删除已超过生存期的 RFC 7523 和 RFC 7522 断言。"
+  },
+  "sched.jobs.oidfed.collection-crawl.title": {
+    "en": "6853316e0728d95d",
+    "text": "OpenID Federation 实体集合爬取"
+  },
+  "sched.jobs.oidfed.collection-crawl.describe": {
+    "en": "7c517525f3e272f7",
+    "text": "遍历本领域之下的每个实体——每个实体在获取其自身列表之前都先解析到本领域——并保存找到的内容，供集合端点使用（#136）。"
+  },
+  "sched.jobs.oidfed.key-rotate.title": {
+    "en": "f6185cae95e3ee7c",
+    "text": "OpenID Federation 密钥轮换"
+  },
+  "sched.jobs.oidfed.key-rotate.describe": {
+    "en": "d896be46e875fb02",
+    "text": "使每个领域的 Federation Entity Key 始终提前一次轮换——下一个密钥在签名之前发布——并在当前密钥早于 oidfed.keyRotationDays、且下一个密钥已发布满 oidfed.keyOverlapDays 时进行轮换。"
+  },
+  "sched.jobs.oidfed.key-rotate-now.title": {
+    "en": "cd07acae980819dc",
+    "text": "手动轮换 OpenID Federation 密钥"
+  },
+  "sched.jobs.oidfed.key-rotate-now.describe": {
+    "en": "22011c13ae57b8ff",
+    "text": "立即轮换本领域的 Federation Entity Key——或者在紧急情况下，将当前密钥和下一个密钥作为已泄露吊销并替换它们。"
+  },
+  "sched.jobs.oidfed.registrations-expire.title": {
+    "en": "44fe44470d028a2d",
+    "text": "已结束的 OpenID Federation 注册"
+  },
+  "sched.jobs.oidfed.registrations-expire.describe": {
+    "en": "183fddf95526a70b",
+    "text": "移除通过 OpenID Federation Trust Chain 注册且注册已结束的每个客户端（12.3）。每个端点早已将此类客户端视为未知；此作业只是避免条目残留。"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.title": {
+    "en": "2e5c5abaf78a47c9",
+    "text": "过期铸造行清除"
+  },
+  "sched.jobs.persistence.minted-expiry-purge.describe": {
+    "en": "51010ce2ada820cd",
+    "text": "从共享存储中删除任何启动都不会再读取的铸造行，每批 5000 行，每次运行每种类型最多 20 批：已超过自身过期时间的行、已不再定义的领域的行（写入超过一小时）、以及短期存储中没有过期时间且早于 persistence.mintedRetention 的行。"
+  },
+  "sched.jobs.persistence.tombstone-purge.title": {
+    "en": "1eba3997d260e28f",
+    "text": "过期墓碑清理"
+  },
+  "sched.jobs.persistence.tombstone-purge.describe": {
+    "en": "d5b8faad6c0c24c4",
+    "text": "从共享存储中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑。"
+  },
+  "sched.jobs.process.memory-report.title": {
+    "en": "b84bcf99d45e1ee1",
+    "text": "内存报告"
+  },
+  "sched.jobs.process.memory-report.describe": {
+    "en": "4f2c054a1405a843",
+    "text": "在本进程中记录一行日志，包含其角色和内存：常驻内存大小、已用堆和堆总量、堆限制、外部内存和数组缓冲区（#341）。"
+  },
+  "sched.jobs.risc.opt-out-effective.title": {
+    "en": "04bdbc25402e8321",
+    "text": "RISC 退出生效"
+  },
+  "sched.jobs.risc.opt-out-effective.describe": {
+    "en": "8aeeb2e505277a9f",
+    "text": "对于持有人在 /portal/signals 上选择退出已至少 risc.optOutDelayHours 且未取消的每个账户，发送 RISC opt-out-effective（RISC 1.0 section 2.8），使该账户进入退出状态。"
+  },
+  "sched.jobs.risk.dataset-directory.title": {
+    "en": "73f11f291cb6c096",
+    "text": "风险数据集目录导入"
+  },
+  "sched.jobs.risk.dataset-directory.describe": {
+    "en": "8dfa5a10279b18b3",
+    "text": "按清单导入操作员放入 risk.datasetsDirectory 的每个数据集，对其进行验证并激活；已记录的版本不会再次加载。"
+  },
+  "sched.jobs.risk.mds-refresh.title": {
+    "en": "e7e41553eb6e60e0",
+    "text": "FIDO 元数据下载"
+  },
+  "sched.jobs.risk.mds-refresh.describe": {
+    "en": "86a8a6e4f0464f5a",
+    "text": "从 risk.mdsUrl 下载 FIDO MDS3 BLOB，当其序列号比当前生效的更新时导入——依据 FIDO 根进行验证、检查其链的吊销状态，并以已记录的对 fido-mds3 条款的接受为前提。每天一次（risk.mdsRefreshS），当前生效的 BLOB 超过其自身 nextUpdate 后改为每小时一次。"
+  },
+  "sched.jobs.risk.rescore.title": {
+    "en": "73f6fff62d4516f9",
+    "text": "活动会话的风险重新检查"
+  },
+  "sched.jobs.risk.rescore.describe": {
+    "en": "b0d47f656c2b3bf8",
+    "text": "依据当前生效的数据集和失败历史重新检查每个活动的单点登录会话，并提高风险已上升的会话的风险——例如地址现已出现在 Tor 或拒绝列表上、密码正被猜测——因此该会话上的每个令牌都依据新的风险作出决定，进入 HIGH 的人员则由风险响应策略处理。"
+  },
+  "sched.jobs.risk.retention.title": {
+    "en": "649264448d64d03c",
+    "text": "风险数据保留"
+  },
+  "sched.jobs.risk.retention.describe": {
+    "en": "fbb862c0e9dfc9d1",
+    "text": "删除被取代超过 risk.supersededRetentionDays 的数据集版本和被拒绝版本的行、早于 risk.failureRetentionDays 的失败记录，以及超过 risk.assessmentRetentionDays 和 risk.historyRetentionDays 的评估记录和模型历史。"
+  },
+  "sched.jobs.risk.stalled-imports.title": {
+    "en": "752cf482464d7ae2",
+    "text": "停滞的风险导入"
+  },
+  "sched.jobs.risk.stalled-imports.describe": {
+    "en": "92f0f81938bbebfd",
+    "text": "将处于加载状态且 risk.importStallMinutes 内毫无进展的每个数据集版本标记为已拒绝（STS-RISK-0035）——即进程中途停止的导入——并丢弃它已写入的所有行。"
+  },
+  "sched.jobs.risk.upload-cleanup.title": {
+    "en": "13380873b2cfb982",
+    "text": "风险上传清理"
+  },
+  "sched.jobs.risk.upload-cleanup.describe": {
+    "en": "758dfacad5326b05",
+    "text": "在每个进程中：使本进程正在导入的数据集上传保持新鲜，并从 risk.uploadDirectory 中删除 risk.importStallMinutes 内没有任何活动进程触及的上传——即中途停止导入的进程留下的内容。"
+  },
+  "sched.jobs.scheduler.history.title": {
+    "en": "90b5d921c8c2f750",
+    "text": "调度器运行历史"
+  },
+  "sched.jobs.scheduler.history.describe": {
+    "en": "395a5d6b46d20680",
+    "text": "按作业保留其最近 scheduler.runHistoryCount 次运行或最近 scheduler.runHistoryHours 内的运行，取较多者，并始终保留其最新一次运行；删除其余内容——以及每一行指明已移除领域的记录——每批 2000 行，每次运行最多 25 批。"
+  },
+  "sched.jobs.scim-client.deliver.title": {
+    "en": "a61c6de73b133149",
+    "text": "出站 SCIM 投递"
+  },
+  "sched.jobs.scim-client.deliver.describe": {
+    "en": "0f6f8f579a0da361",
+    "text": "将每个出站 SCIM 客户端到期的投递——新的更改和重试一样——发送给其服务提供方，每次 scimClient.concurrency 个，跳过因退避而暂停的客户端，并使队列遵守其保留期限（#552）。"
+  },
+  "sched.jobs.scim-client.reconcile.title": {
+    "en": "6c7875103a7e0df5",
+    "text": "出站 SCIM 对账"
+  },
+  "sched.jobs.scim-client.reconcile.describe": {
+    "en": "f7662303b08a899d",
+    "text": "对每个已到 scimClientReconcileMinutes 的出站 SCIM 客户端进行对账：推送其范围内的每个人员和组，并对其服务提供方以本领域的 externalId 持有、但已不在范围内的内容取消预配（#552）。"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.title": {
+    "en": "64baab64578fd68f",
+    "text": "服务账户旧密码清理"
+  },
+  "sched.jobs.service-accounts.previous-cleanup.describe": {
+    "en": "ea76ac1aa4f768fc",
+    "text": "在重叠期结束后清除已轮换服务账户的旧密码。重叠期在读取密码时检查，因此这只是日常清理。"
+  },
+  "sched.jobs.service-accounts.rotate.title": {
+    "en": "6a7f6e4e2a5b87f5",
+    "text": "服务账户密码轮换"
+  },
+  "sched.jobs.service-accounts.rotate.describe": {
+    "en": "c0a19d2107a20be6",
+    "text": "为每个指定了推送目标的服务账户在其间隔过后生成新密码（服务账户策略）：先推送到目标，推送成功后才提交，重叠期内仍接受旧密码。推送失败则不做任何更改。"
+  },
+  "sched.jobs.service-accounts.rotate-now.title": {
+    "en": "f07e35fb1b7ff49c",
+    "text": "手动轮换服务账户密码"
+  },
+  "sched.jobs.service-accounts.rotate-now.describe": {
+    "en": "1a51777caf07724c",
+    "text": "立即轮换某个服务账户的密码，方式与每小时作业相同：先推送，再提交。"
+  },
+  "sched.jobs.signing.retire.title": {
+    "en": "18591df12ae7ddce",
+    "text": "已退役签名密钥清理"
+  },
+  "sched.jobs.signing.retire.describe": {
+    "en": "34bd339dcd1027c2",
+    "text": "丢弃每个宽限期已过的已退役签名密钥，并在其签发 CA 的列表上将其证书标记为已取代。"
+  },
+  "sched.jobs.signing.rotate.title": {
+    "en": "63864371a41c9128",
+    "text": "签名密钥轮换"
+  },
+  "sched.jobs.signing.rotate.describe": {
+    "en": "e5971267a8efd579",
+    "text": "为本领域的每个签名单元生成下一个密钥，在它签署任何内容之前发布，并在每个下一个密钥已发布满一个完整间隔（signing.rotationIntervalDays）后将其提升；被替换的密钥在宽限期内继续用于验证。"
+  },
+  "sched.jobs.signing.rotate-now.title": {
+    "en": "a78325432e1f3ccd",
+    "text": "手动轮换签名密钥"
+  },
+  "sched.jobs.signing.rotate-now.describe": {
+    "en": "1eb024ca4b66e471",
+    "text": "立即轮换本领域指定的签名单元——或全部：每个下一个密钥成为当前密钥，被替换的密钥退役，并在宽限期内继续用于验证。"
+  },
+  "sched.jobs.spiffe.authority-rotation.title": {
+    "en": "1fb758bdc13d49a3",
+    "text": "SPIFFE 颁发机构轮换"
+  },
+  "sched.jobs.spiffe.authority-rotation.describe": {
+    "en": "4f47ccc2e2ee9287",
+    "text": "当本领域的 SPIFFE X.509 颁发机构超过其生存期的一半时轮换它，当其 JWT 颁发机构早于 spiffe.caTtl 的一半时轮换它；旧的颁发机构仍保持发布（spiffe.retainedAuthorities）。"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.title": {
+    "en": "6111c578fd8cd145",
+    "text": "sigstore TUF 刷新"
+  },
+  "sched.jobs.spiffe.sigstore-tuf-refresh.describe": {
+    "en": "23ca3d0e22f4d09a",
+    "text": "通过 TUF 获取 sigstore 信任根（Fulcio CA、Rekor 和 CT 日志密钥），供 docker 工作负载证明器检查镜像签名；刷新失败时保留上次验证过的集合。"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.title": {
+    "en": "825439e56379bcb0",
+    "text": "Shared Signals 死信清理"
+  },
+  "sched.jobs.ssf.dead-letter-sweep.describe": {
+    "en": "e88db26ddb6a4159",
+    "text": "删除本进程的过期死信，探测到期的失效流（仅在一个节点上），并记录自上次清理以来转入死信的内容摘要。"
+  },
+  "sched.jobs.ssf.foreign-poll.title": {
+    "en": "aca9d362728fd7b0",
+    "text": "联合伙伴的 Shared Signals 轮询"
+  },
+  "sched.jobs.ssf.foreign-poll.describe": {
+    "en": "51871a2d4ac5a3aa",
+    "text": "轮询其伙伴的 Shared Signals 流为轮询流（RFC 8936）的每个联合关系：对其持有的 Security Event Token 进行验证、处理和确认。"
+  },
+  "sched.jobs.ssf.stream-maintenance.title": {
+    "en": "7b2875452b588faa",
+    "text": "Shared Signals 流维护"
+  },
+  "sched.jobs.ssf.stream-maintenance.describe": {
+    "en": "bd4794eda9c5d2d2",
+    "text": "对接收方已不活动达 ssf.inactivityTimeoutS 的流进行暂停、禁用或删除（SSF 1.0 section 8.1.1），暂停或禁用前先以 stream-updated 事件通告；并向每个已启用、且在 ssf.verificationEveryS 内未从本发送方收到验证事件的流发送验证事件（section 8.1.4）。"
+  },
+  "sched.jobs.tls.ticket-key-rotate.title": {
+    "en": "8bb62416b0f1932c",
+    "text": "TLS 会话票据密钥轮换"
+  },
+  "sched.jobs.tls.ticket-key-rotate.describe": {
+    "en": "d685d1a2ff40e09e",
+    "text": "替换双活集群中所有节点的 TLS 监听器共享的会话票据密钥，使一个节点签发的票据能在另一个节点上恢复会话。被替换的密钥会被删除，这限定了恢复会话的机密能从票据中恢复的时间范围。"
+  },
+  "sched.sentence.onDemand": {
+    "en": "92e0ecb68dc6ec36",
+    "text": "仅按需"
+  },
+  "sched.sentence.cron": {
+    "en": "1514dcdd2f8d083f",
+    "text": "cron {{cron}}（UTC）"
+  },
+  "sched.sentence.every": {
+    "en": "cad7aff2b61c1a2d",
+    "text": "每 {{span}}（固定间隔）"
+  },
+  "sched.sentence.everyFrom": {
+    "en": "e3f70e78d2f74d9a",
+    "text": "每 {{span}}（来自 {{setting}}）"
+  },
+  "sched.sentence.noInterval": {
+    "en": "ea9235468f83c6bf",
+    "text": "无间隔（0）"
+  },
+  "sched.sentence.noIntervalFrom": {
+    "en": "d63051687e6eb040",
+    "text": "无间隔（0），来自 {{setting}}"
+  },
+  "sched.sentence.overdueTicking": {
+    "en": "e886381cac5c2371",
+    "text": "领导者正在计时；上一次运行可能仍在进行，或其声明尚未失效"
+  },
+  "sched.sentence.overdueSilent": {
+    "en": "6abb814e0bba89e8",
+    "text": "自{{since}}以来没有领导者计时"
+  },
+  "sched.sentence.offScheduler": {
+    "en": "b6e1b2eac4850f35",
+    "text": "scheduler.enabled 已关闭"
+  },
+  "sched.sentence.offListed": {
+    "en": "bccf1db17ab66560",
+    "text": "列于 scheduler.disabledJobs 中"
+  },
+  "sched.sentence.offZero": {
+    "en": "59bff00c7aa224e7",
+    "text": "{{setting}} 为 0，因此该作业已关闭"
+  },
+  "sched.sentence.offZeroFixed": {
+    "en": "81110f1e46dc1b16",
+    "text": "其间隔为 0，因此该作业已关闭"
+  },
+  "sched.sentence.clockProcess": {
+    "en": "bd7af0544bafb825",
+    "text": "本进程"
+  },
+  "sched.sentence.clockDatabase": {
+    "en": "4510afc0b42a97bf",
+    "text": "数据库"
+  },
+  "sched.param.sinceStart": {
+    "en": "0712f841eae1cd73",
+    "text": "本服务启动"
+  },
+  "schedAdmin.message.steppedDown": {
+    "en": "26017997a3d259cf",
+    "text": "已要求调度器的领导者让位。它会在下一次计时时让位，另一个节点会在其下一次心跳时接任领导者。"
+  },
+  "schedAdmin.message.queued": {
+    "en": "651740d298354de6",
+    "text": "{{job}} 的一次运行已排队。调度器的领导者会在下一次计时时启动它。"
+  },
+  "schedAdmin.message.queuedAgain": {
+    "en": "29c8136a0695fb5e",
+    "text": "{{job}} 的一次运行已排队（此前已有一次排队；就是这一次）。调度器的领导者会在下一次计时时启动它。"
+  }
+}

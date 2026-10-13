@@ -177,7 +177,7 @@
   "essentialA": "<strong>Marqué essentiel et pourtant absent :</strong> ",
   "essentialB": ". Ce n’est toujours pas une erreur — <code>essential</code> est une déclaration sur ce que le CLIENT fera sans le claim, pas une instruction à ce serveur. C’est journalisé au niveau warn pour pouvoir être retrouvé.",
   "mismatchA": "<strong>Une valeur a été demandée et une autre est détenue :</strong> ",
-  "mismatchB": ". C’est la valeur DÉTENUE qui est renvoyée. Ce service pourrait renvoyer en écho tout ce qu’une requête lui demande d’affirmer et ne le fait délibérément pas : tout ce qu’il dit d’une personne vient de l’annuaire ou du personnage inventé, et une simulation qui serait d’accord avec la requête ne pourrait servir à tester quoi que ce soit.",
+  "mismatchB": ". C’est la valeur DÉTENUE qui est renvoyée. Ce service pourrait renvoyer en écho tout ce qu’une requête lui demande d’affirmer et ne le fait délibérément pas : tout ce qu’il dit d’une personne vient de l’annuaire ou du personnage inventé, et un service qui serait d’accord avec la requête ne pourrait servir à tester quoi que ce soit.",
   "requestEntryFound": "{user} a une entrée sous <code>ou=users</code>, donc une valeur marquée <em>directory</em> est ce que lit un <code>ldapsearch</code>.",
   "requestNoEntry": "{user} n’a pas d’entrée dans l’annuaire, donc chaque valeur ci-dessus est inventée à partir du nom d’utilisateur — la même personne inventée à chaque fois, d’un redémarrage à l’autre.",
   "colClaimId": "Identifiant de claim",

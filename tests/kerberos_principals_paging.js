@@ -4,8 +4,8 @@
 'use strict';
 
 // ===========================================================================
-// tests/kerberos_principals_paging.js — THE TWO LISTS ON
-// /admin/kerberos/principals PAGE ON THEIR OWN PARAMETERS (2026-09-13).
+// tests/kerberos_principals_paging.js — THE TWO LISTS ON THE
+// /admin/kerberos PRINCIPALS TAB ON THEIR OWN PARAMETERS (2026-09-13).
 //
 // `adminViews.kerberosPrincipalsJson()` handed `pagedRows()` a `param` option,
 // and `pagingOf()` reads no such option — it builds the parameter from `name`.
@@ -22,13 +22,14 @@
 //   2. A bare `?page=` moves neither, which is what tells this fix from one
 //      that made both lists follow one parameter.
 //   3. The page draws the second page's principals when its own link is
-//      followed, and every link it draws names a parameter the view reads.
+//      followed, and every link it draws names a parameter the view reads —
+//      `databasePage` among them since #595, for the KDC's whole database
+//      (`/krb5/principals` until then), which moves on its own too.
 //
 // In process because it needs more than one page of each list, and a real
 // service principal is a random key sealed on a directory entry: the two list
 // functions are replaced for the length of the file and put back in a
-// `finally`. The page's handler is called below the console gate with a
-// request carrying only a query, as `pki_key_pair_paging.js` does.
+// `finally`; the page's view is drawn through the static page table.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -36,7 +37,7 @@ delete process.env.CONFIG_FILE;
 const krb5PersonKeys = require('../kerberos/krb5_person_keys');
 const adminViews = require('../admin-core/admin_views');
 const app = require('../common/app');
-// Registers `/admin/kerberos/principals` and starts nothing.
+// Registers the admin console and starts nothing.
 // Loading a module registers nothing since #50's R1; the composition root
 // (`common/protocol_stack.ts`) does, so a test that loads one module
 // registers its routes itself.
@@ -74,7 +75,7 @@ const drawer = require('./tools/console_page.js')
 
 async function drawPage(query) {
   log.debug("Entering drawPage().");
-  const drawn = await drawer.draw('/admin/kerberos/principals', query);
+  const drawn = await drawer.draw('/admin/kerberos', query);
   log.debug("Leaving drawPage(). " + drawn.html.length +
             " character(s).");
   return drawn.html;
@@ -117,17 +118,27 @@ async function runBody(t) {
 
   // -------------------------------------------------------------------------
   t.log.info('=== 3. the page follows its own links ===');
-  t.check(require('../admin-ui/web_pages').PAGES.some(function (one) {
-    return one.path === '/admin/kerberos/principals';
-  }), '/admin/kerberos/principals is a console page');
+  const pages = require('../admin-ui/web_pages');
+  t.check(pages.pageFor('/admin/kerberos') &&
+          pages.pageFor('/admin/kerberos/principals') === null,
+          'Principals is a tab of /admin/kerberos, not a console page');
   const first = await drawPage({ per: '3' });
   const links = first.match(
-    /href="\/admin\/kerberos\/principals\?[^"#]*#list-[a-zA-Z]+"/g) || [];
+    /href="\/admin\/kerberos\?[^"#]*#kerberos-tab-principals"/g) || [];
   t.check(links.length > 0 && links.every(function (href) {
-    return /(peoplePage|servicesPage)=\d+/.test(href) &&
-           !/[?&]page=/.test(href);
-  }), 'every paging link names `peoplePage` or `servicesPage`, which the ' +
-      'view reads', links.slice(0, 3).join(' '));
+    return /(peoplePage|servicesPage|databasePage)=\d+/.test(href) &&
+           href.indexOf('#kerberos-tab-principals') >= 0;
+  }), 'every paging link names `peoplePage`, `servicesPage` or ' +
+      '`databasePage` (#595), which the view reads', links.slice(0, 3)
+        .join(' '));
+  const database = adminViews.kerberosPrincipalsJson({
+    query: { per: '3', databasePage: '2' } });
+  t.check(database.databasePaging.page === 2 &&
+          database.database.length > 0 &&
+          database.peoplePaging.page === 1 &&
+          database.servicesPaging.page === 1,
+          '`databasePage=2` moves the database list (#595) and neither of ' +
+          'the others', JSON.stringify(database.databasePaging));
   t.check(first.indexOf('HTTP/kpp-service-0') >= 0 &&
           first.indexOf('HTTP/kpp-service-3') < 0,
           'page 1 draws the first services and not the fourth');
@@ -141,7 +152,8 @@ async function runBody(t) {
   // session does not hold, so what is checked is the other carrier: the
   // PEOPLE table's links on this page must keep the services position.
   const peopleLinks = second.match(
-    /href="\/admin\/kerberos\/principals\?[^"#]*peoplePage=\d+[^"#]*#/g) || [];
+    /href="\/admin\/kerberos\?[^"#]*peoplePage=\d+[^"#]*#kerberos-tab-principals"/g)
+      || [];
   t.check(peopleLinks.length > 0 && peopleLinks.every(function (href) {
     return href.indexOf('servicesPage=2') >= 0;
   }), 'every People link on that page keeps `servicesPage=2`',
@@ -181,8 +193,8 @@ async function run(t) {
 
 module.exports = {
   name: 'kerberos_principals_paging',
-  describe: 'The people and service principal lists on ' +
-            '/admin/kerberos/principals page on peoplePage and servicesPage, ' +
-            'which the page\'s own links write.',
+  describe: 'The people and service principal lists on the Principals tab ' +
+            'of /admin/kerberos page on peoplePage and servicesPage, which ' +
+            'the page\'s own links write.',
   run: run
 };

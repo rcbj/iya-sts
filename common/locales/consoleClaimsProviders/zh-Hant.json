@@ -44,5 +44,9 @@
   "colPerson": "使用者",
   "colTheirSub": "其在那裡的 sub",
   "colLinked": "連結時間",
-  "colToken": "權杖"
+  "colToken": "權杖",
+  "providersHeading": "聲明提供者",
+  "noLinkMatch": "沒有與 <code>{wanted}</code> 相符的連結。",
+  "linkSearchLabel": "篩選連結",
+  "linkSearchPlaceholder": "人員、提供者或其在該處的主體"
 }

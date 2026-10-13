@@ -350,9 +350,13 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # from a workstation or CI and never by the service.
 # `rust/` (#444, 2026-10-05) is the Rust conversion: its own images build it,
 # and this Node service runs none of it.
+# `companion/` (#594, 2026-10-12) is the development-only companion, a second
+# container built from its own directory: the click-through demonstrations
+# the service ships none of. It is in the context because that directory is
+# in the repository, and nothing of it may reach this image.
 RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
-           ./build-typescript.sh ./rust
+           ./build-typescript.sh ./rust ./companion
 
 # The debugger's built tree — see the stage at the top of this file. After the
 # `rm` above and before the version stamp, and into the directory
@@ -426,8 +430,8 @@ ENV CONFIG_FILE=./env/local.js
 ENV NODE_ENV=production
 
 # 8081 is the HTTP service. Most of the rest are the listeners that are NOT HTTP
-# and so are not on it: 88 is the KDC (TCP and UDP), 8888 the Kerberos-protected
-# test service, 389 the LDAP directory and 636 the same directory over TLS. The
+# and so are not on it: 88 is the KDC (TCP and UDP), 389 the LDAP directory and
+# 636 the same directory over TLS. The
 # two other HTTP listeners (8082, 8444) and the SPIFFE gRPC ones are explained
 # beside their own lines below.
 # EXPOSE documents them; each compose file decides which it publishes.
@@ -459,15 +463,10 @@ EXPOSE 88/tcp
 EXPOSE 88/udp
 EXPOSE 389
 EXPOSE 636
-# 8888 IS THE KERBEROS-PROTECTED TEST SERVICE (krb5.servicePort), and it was
-# missing from this list until 2026-09-07 — found by `tests/readme_ports.js`,
-# which holds the README's ports table to config.js and this file to the table.
-# It is a raw TCP listener like 88 and 389, it is bound on every start, and the
-# sentence above enumerating "the listeners that are NOT HTTP" did not mention
-# it either until then. Nothing failed, and nothing could: EXPOSE publishes nothing, so an
-# omission here costs exactly one thing — `docker run -P` leaves that port
-# unmapped, which is the one command that reads this.
-EXPOSE 8888
+# 8888 WAS THE KERBEROS-PROTECTED TEST SERVICE (krb5.servicePort) until #595
+# moved that demonstration to the development companion, which exposes it
+# itself (`companion/Dockerfile`). `tests/readme_ports.js` holds this list to
+# the README's ports table and the table to config.js, in both directions.
 # The two SPIFFE gRPC listeners over TCP: 8092 is the Workload API and 8181 the
 # SPIRE Server API. 8181 rather than SPIRE's own 8081 because that is this
 # service's HTTP port, so a client configured for a real spire-server has one

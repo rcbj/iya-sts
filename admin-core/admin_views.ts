@@ -135,6 +135,11 @@ import oidcRp = require('../common/oidc_rp');
 import rbac = require('../admin-ui/admin_rbac');
 import vcClaims = require('../oid4vc/vc_claims');
 import vpConfig = require('../oid4vc/vc_verifier_config');
+// THE VERIFIER ITSELF (#587), for the verifications an administrator started
+// and their verdicts. A plain require in the ordinary direction: it is a
+// converted route module, so requiring it registers nothing (rule 1), it is
+// loaded at 11–14 long before this layer, and it requires nothing here.
+import vcVerifier = require('../oid4vc/vc_verifier');
 import claimAttributes = require('../common/claim_attributes');
 import scimMap = require('../scim/scim_map');
 import groupClaims = require('../common/group_claims');
@@ -160,6 +165,9 @@ import passwordPolicy = require('../common/password_policy');
 // THE KINDS OF POLICY ON THAT PAGE (#64): the password policy, the
 // authentication policy, and whatever is defined next. A library.
 import policyKinds = require('./policy_kinds');
+// THE PROSE THE SERVER TRANSLATES (#543): `fill()` for the keys and notes
+// built as templates below. A library that requires nothing of this file.
+import serverProse = require('../common/server_prose');
 // THE DELEGATION PICTURE'S RENDERER (#446), for `delegationMapModel()`. A
 // LIBRARY (rule 3): it registers nothing and requires nothing of this
 // service but `helpers.js`, so it cannot move a route or join a cycle —
@@ -328,6 +336,12 @@ const CHOOSER_HITS = WebKit.CHOOSER_HITS;
  * Rows per page when the query names none.
  */
 const DEFAULT_PER_PAGE = 50;
+// HOW MANY OPEN VERIFICATIONS THE VERIFIER REQUEST TAB AND `GET
+// /admin-api/verifications` LIST (#587). A transaction lives for
+// oid4vp.presentationRequestTtlS and the store is bounded by
+// oid4vp.maxTransactions, so this is a page of the newest, not the store;
+// `total` says how many there are, and any one is `?state=` away.
+const VERIFICATIONS_SHOWN = 25;
 
 // Rows per page for EVERY list on /admin/delegation, which is the one page here
 // that carries seven of them at once.
@@ -391,8 +405,8 @@ const DEFAULT_CREDENTIAL = adminActions.DEFAULT_CREDENTIAL;
 // answer began saying which fields its simplified view offers. They are not
 // setting overrides — nothing in config.js corresponds to them —
 // so they are not in `overridableSettings()` and would otherwise appear on no
-// form at all. They are conditional on SAML 2.0 like everything else in that
-// family.
+// form at all. The metadata fields are shared by the SAML 2.0 and SAML 1.1
+// families.
 //
 // `samlSpMetadata` is a TEXTAREA and the other two are inputs, which is the
 // same shape rule the field grid follows: a document is not something
@@ -493,6 +507,358 @@ const NOT_A_VIEW = ['format', 'notice', 'error'];
  */
 const DEFAULT_BLOCKS_PER_PAGE = 5;
 
+// ---------------------------------------------------------------------------
+// THE TWO PICTURES' KEYS, AS PROSE (#543 phase 2b). `delegationMapKey()` and
+// `federationMapKey()` answer each key as ONE string of HTML, `mapKey`, which
+// the console draws RAW. The server translates a string of an answer only
+// where the whole of it is a message or a filled template, so the key is
+// built as a TEMPLATE whose parameters are its parts:
+//
+//   * each row's sentence is a parameter, and a message of its own (a
+//     `.param.` key, so it is translated only inside the key);
+//   * each swatch is a parameter too, and NOT a message: the SVG is carried
+//     over as it was;
+//   * the table, its headings and the row markup are the template's own text.
+//
+// So a translator translates sentences, the markup is never theirs to keep
+// but in the template, and the English is byte-identical to the
+// concatenation it replaced, because `ServerProse.fill()` is that
+// concatenation.
+//
+// THE PERSON'S KEY HAS THREE ROWS MORE, AND THEY RIDE IN THE LAST ROW'S
+// PARAMETER (`MAP_KEY_TAIL`) rather than in a second seventeen-row template.
+// A template is matched by a regular expression of lazy groups, and a
+// fourteen-row key tried against a seventeen-row template fails only after
+// trying every way of spreading its rows over the groups — about 80 ms on a key
+// of this size, measured. The fourteen-row template matches both
+// keys at once (its last group runs to the end), and the tail is matched
+// inside it as a filled template, so neither key is ever tried and failed.
+//
+// THE FEDERATION KEY'S NOTE IS `WebKit.note()`'s FOLD, whose summary is a
+// teaser cut from the note's own text. `FEDERATION_NOTE_FOLD` is that fold
+// as a template, and `mapKeyProse()` declares the teaser beside the note.
+// What stays English: the words drawn INSIDE a swatch — the box labels
+// ('This service', 'an application', 'a partner') and each line's `<title>`
+// — because a swatch is a parameter carried as it was.
+//
+// HERE, beside the code that draws them, and extracted through
+// `common/delegation.js`'s `prose()`, the delegation namespace's module: this
+// module's own `prose()` is the kerberos namespace's, and a module answers
+// one namespace.
+// ---------------------------------------------------------------------------
+/**
+ * The sentences of the delegation pictures' key (#543): one per row of
+ * `delegationMapKey()`, and the three only the person's picture adds.
+ */
+const MAP_KEY_PROSE = Object.freeze({
+  rows: Object.freeze([
+    // A person.
+    '<strong>A person.</strong> Something with an entry under ' +
+      '<code>ou=users</code> — anybody this service has authenticated, in ' +
+      'any of the sixteen families.',
+    // An application.
+    '<strong>An application.</strong> Something with an entry under ' +
+      '<code>ou=applications</code> — an OAuth client, a service provider, a ' +
+      'Kerberos service, a WS-Trust relying party.',
+    // Both: a person and an application.
+    '<strong>Both, which the middle tier usually is.</strong> ' +
+      '<code>HTTP/frontend.example.com</code> authenticates (so the funnel ' +
+      'files it with the people) AND has tickets issued FOR it (so the ' +
+      'registry has it). Two entries, one party.',
+    // This service, in one trust realm (the hexagon).
+    '<strong>This service, in one trust realm.</strong> Every line here ' +
+      'exists because it issued or refused a credential. The realm is on the ' +
+      'box because a realm is a whole logical copy of this service.',
+    // The two small lines under a name.
+    '<strong>The two small lines under a name are different ' +
+      'sentences.</strong> The first is what the box IS &mdash; which of the ' +
+      'two stores knows it, or the role its shape was guessed from. The ' +
+      'second is <strong>the identifier a protocol would have to present to ' +
+      'reach it, with that protocol\'s own word for it</strong>: a ' +
+      '<code>client_id</code> for OAuth 2.0 and OpenID Connect, an ' +
+      '<code>entityID</code> for either SAML profile, a <code>wtrealm</code> ' +
+      'for WS-Federation, an <code>AppliesTo</code> for WS-Trust, an ' +
+      '<code>SPN</code> for Kerberos. The NAME on the box is what somebody ' +
+      'CALLED this thing &mdash; a <code>cn</code>, an <code>appName</code> ' +
+      '&mdash; and is no use in a request you are about to build, which is ' +
+      'why the identifier is on the picture and not only in the tooltip. ' +
+      'Where the two are the same string only the word is drawn, because the ' +
+      'value is already the label; where ONE string is two families\' ' +
+      'identifier both words are drawn (<code>AppliesTo / entityID</code>); ' +
+      'and where the application answers to several DIFFERENT names, the one ' +
+      'drawn is the one this act actually carried &mdash; or, if the act ' +
+      'carried something no identifier attribute holds, the first declared ' +
+      'one, with the tooltip saying so. Every name it answers to is in that ' +
+      'tooltip either way.',
+    // A dashed outline.
+    '<strong>A dashed outline is something neither store knows.</strong> It ' +
+      'is drawn in the shape its ROLE implies and is not an error: an RFC ' +
+      '8693 <code>audience</code> nobody has otherwise mentioned is exactly ' +
+      'this.',
+    // Which way a line goes.
+    '<strong>Which way a line goes is at BOTH of its ends.</strong> It ' +
+      'leaves the box with the round end and arrives at the box with the ' +
+      'arrowhead &mdash; so the question a reader actually asks, standing at ' +
+      'one box: <em>is this line mine, or somebody\'s on me?</em>, is ' +
+      'answered where they are standing rather than at the far end of a ' +
+      'curve that crosses three others on the way. Every line here has both ' +
+      'marks, and no line here is two-way: two applications that reach each ' +
+      'other are drawn as two lines.',
+    // acts for: an impersonation (amber).
+    '<strong>acts for &mdash; an IMPERSONATION.</strong> What came out names ' +
+      'the initial identity and nothing else, so nothing at the far end can ' +
+      'tell an intermediary was involved. Amber because this picture is the ' +
+      'only place that fact will ever exist.',
+    // acts for: a delegation (green).
+    '<strong>acts for &mdash; a DELEGATION.</strong> What came out CARRIES ' +
+      'the chain: an <code>act</code> claim, a composite <code>ActAs</code>, ' +
+      '<code>S4U_DELEGATION_INFO</code> in the PAC.',
+    // reaches: the trust relationship.
+    '<strong>reaches &mdash; the TRUST relationship.</strong> What the ' +
+      'credential is FOR: the back-end service, the <code>AppliesTo</code>, ' +
+      'the audience or resource. The label says whose name it carries.',
+    // A broken line.
+    '<strong>A broken line jumps a party nobody named.</strong> A forwarded ' +
+      'ticket-granting ticket has no intermediary and cannot have one — the ' +
+      'client gives it to whichever service it chooses and this KDC is never ' +
+      'told which.',
+    // may delegate: a configured relationship.
+    '<strong>may delegate &mdash; a CONFIGURED relationship, DASHED until an ' +
+      'act has used it.</strong> One line per pair an entry allows: ' +
+      '<code>appAllowedToDelegateTo</code> on the source (constrained) or ' +
+      '<code>appAllowedToActOnBehalfOf</code> on the target (resource-based) ' +
+      '&mdash; the same controls for the OAuth 2.0 token exchange, WS-Trust ' +
+      'and Kerberos. Solid once an act has crossed it. Drawn unless the acts ' +
+      'are narrowed by outcome, type or text.',
+    // Red.
+    '<strong>Red is a chain nothing was ever issued on.</strong> The tooltip ' +
+      'carries the KDC\'s own words for why, which is the same sentence the ' +
+      'client was sent.',
+    // Grey and dashed, from the hexagon.
+    '<strong>Grey and dashed, from the hexagon: this service ISSUED to that ' +
+      'party.</strong> It goes to whoever ASKED — the intermediary where a ' +
+      'chain has one, the initial identity where it does not.'
+  ]),
+  issuance: Object.freeze([
+    // Dotted, into the hexagon.
+    '<strong>Dotted, into the hexagon: this person AUTHENTICATED ' +
+      'here.</strong> The label is the protocol family and the tooltip is ' +
+      'the method — the sign-in screen, an AS-REQ, a UsernameToken, a ' +
+      'federated assertion. It is why everything else on the picture was ' +
+      'allowed.',
+    // Solid indigo: an ordinary grant.
+    '<strong>Solid indigo: an ORDINARY GRANT, and the label is the exact ' +
+      'one</strong> — <code>authorization_code</code>, ' +
+      '<code>refresh_token</code>, <code>client_credentials</code>, with the ' +
+      'specification section in the tooltip. Out of the PERSON it means a ' +
+      'credential naming them went to that application; out of the HEXAGON ' +
+      'it means nobody else holds it — a <code>client_credentials</code> ' +
+      'token is about the client itself and an X509-SVID has no audience, so ' +
+      'the subject and the holder are one box and there is one line rather ' +
+      'than two. It takes no amber or green, because impersonation and ' +
+      'delegation are properties of a delegation mechanism and a grant ' +
+      'claims neither.',
+    // Solid indigo out of an application.
+    '<strong>Solid indigo out of an APPLICATION is that same relationship ' +
+      'one step further on: what the credential it holds is ADDRESSED ' +
+      'to.</strong> It is the <em>reaches</em> line above, said about an ' +
+      'ordinary grant instead of about a delegation — an access token issued ' +
+      'to a web front end and addressed to an API gateway is this service ' +
+      'saying the first may reach the second in this person\'s name, with ' +
+      'nothing exchanged to get there. The mechanism on the label is what ' +
+      'tells the two apart: a grant, or <code>Token exchange</code>. The ' +
+      'audience the token actually carries is in the tooltip, because the ' +
+      'box is named after whichever application registered that audience. ' +
+      '<strong>The line under it names the DELEGATED PERMISSIONS on that ' +
+      'token</strong> — the values on its <code>scope</code> claim that the ' +
+      'resource at the far end has DEFINED, which is what a client asks for ' +
+      'by sending the whole permission identifier (the resource\'s base URI ' +
+      'followed by the name) as a scope. <strong><code>default ' +
+      'permissions</code> means the token named the resource and asked for ' +
+      'none of them</strong>: that is what a scope naming the resource\'s ' +
+      'own <code>client_id</code> produces, since that value becomes the ' +
+      'audience and comes off the scope claim. It says what was ISSUED and ' +
+      'not what was GRANTED — <a href="/admin/delegation/allowed">the ' +
+      'configured register</a> is the other question, and in development ' +
+      '<code>oauth2.delegatedPermissionsEnforced</code> is off by default, ' +
+      'so a token can carry a permission its client was never granted ' +
+      '(product mode refuses one).'
+  ])
+});
+
+/**
+ * The sentences of the federation picture's key (#543): one per box and
+ * line `federationMapKey()` draws, and the note between the two tables.
+ */
+const FEDERATION_KEY_PROSE = Object.freeze({
+  boxes: Object.freeze([
+    // This service.
+    'The trust realm you are looking at. Every line on the picture starts or ' +
+      'ends here, because every relationship is between this realm and ' +
+      'somebody else.',
+    // An application.
+    'An application registered HERE whose people are authenticated somewhere ' +
+      'else. What points it at a partner is ' +
+      '<code>appFederationRelationship</code> on its entry under ' +
+      '<code>ou=applications</code>.',
+    // A partner service provider.
+    'A FOREIGN SERVICE PROVIDER. It asks this service to authenticate ' +
+      'somebody. Dashed, because it is not this service and nothing here can ' +
+      'see inside it.',
+    // A partner identity provider.
+    'A FOREIGN IDENTITY PROVIDER. It authenticates the person and this ' +
+      'service consumes what it issues. Dashed for the same reason — and a ' +
+      'hexagon rather than a rectangle because it is an identity service, ' +
+      'which is what this service is too.'
+  ]),
+  lines: Object.freeze([
+    // Ready.
+    '<strong>Ready</strong> — enabled and fully configured. It will work.',
+    // Disabled.
+    '<strong>Disabled</strong> — which is how every relationship starts. ' +
+      'This is the ordinary state of something somebody has not finished ' +
+      'setting up, not a fault.',
+    // Enabled and not configured.
+    '<strong>Enabled and NOT configured</strong> — the loud one, and it ' +
+      'earns being the only red on this page: it will REFUSE at the moment ' +
+      'somebody tries to use it, and it looks finished from every angle ' +
+      'except this one.',
+    // A broker that cannot broker.
+    '<strong>A broker that cannot broker</strong> — the relationship is fine ' +
+      'and the relationship it authenticates THROUGH is not, so the person ' +
+      'meets the sign-in screen instead of the partner. That screen checks ' +
+      'no password, which is why this is worth a colour of its own: it is ' +
+      'the only failure here that produces a working sign-in.'
+  ]),
+  note: '<strong>An arrow is a REQUEST and not an assertion</strong>, which ' +
+    'is the one thing about this picture that looks backwards until it is ' +
+    'said. Everything on the left arrives wanting somebody signed in; ' +
+    'everything on the right is asked to do the signing in. So an ' +
+    'identity-provider-side relationship — where this service ASSERTS to the ' +
+    'partner — points INWARD, because what the partner did was ask. Drawn ' +
+    'the other way an identity broker is two arrows leaving the same box ' +
+    'with nothing joining them; drawn this way it is one straight line ' +
+    'through the middle, which is what a bridge is.'
+});
+
+/**
+ * The delegation pictures' key as a template: the table and its headings,
+ * and per row of `MAP_KEY_PROSE.rows` a swatch `{{art<i>}}` and a sentence
+ * `{{what<i>}}`.
+ */
+const MAP_KEY_TEMPLATE = '<table class="key"><tr><th>Shape</th><th>What ' +
+  'it means</th></tr>' + MAP_KEY_PROSE.rows.map(function (what, i) {
+    return '<tr><td class="art">{{art' + i + '}}</td><td>{{what' + i +
+           '}}</td></tr>';
+  }).join('') + '</table>';
+
+/**
+ * The rows only the person's key draws, carried in the last row's sentence
+ * (`{{last}}`, that sentence itself): per row of `MAP_KEY_PROSE.issuance`
+ * a swatch `{{art<j>}}` and a sentence `{{what<j>}}`.
+ */
+const MAP_KEY_TAIL = '{{last}}' +
+  MAP_KEY_PROSE.issuance.map(function (what, j) {
+    return '</td></tr><tr><td class="art">{{art' + j + '}}</td><td>{{what' +
+           j + '}}';
+  }).join('');
+
+/**
+ * The federation picture's key as a template: per box a drawing
+ * `{{box<i>}}` and a sentence `{{boxWhat<i>}}`, the note `{{note}}`, and per
+ * line a swatch `{{line<i>}}` and a sentence `{{lineWhat<i>}}`.
+ */
+const FEDERATION_KEY_TEMPLATE = '<h3>The boxes</h3><table><tr><th>Drawn ' +
+  'as</th><th>What it is</th></tr>' +
+  FEDERATION_KEY_PROSE.boxes.map(function (what, i) {
+    return '<tr><td>{{box' + i + '}}</td><td>{{boxWhat' + i + '}}</td></tr>';
+  }).join('') + '</table><h3>The lines</h3>{{note}}<table><tr><th>Colour' +
+  '</th><th>What it means</th></tr>' +
+  FEDERATION_KEY_PROSE.lines.map(function (what, i) {
+    return '<tr><td>{{line' + i + '}}</td><td>{{lineWhat' + i +
+           '}}</td></tr>';
+  }).join('') + '</table>';
+
+/**
+ * `WebKit.note()`'s folded form, as a template: the teaser it cuts from a
+ * note longer than a line, and the note.
+ */
+const FEDERATION_NOTE_FOLD = '<details class="note fold"><summary>' +
+  '{{summary}}</summary><div class="foldbody">{{body}}</div></details>';
+
+// ---------------------------------------------------------------------------
+// WHAT `kerberosPrincipalsJson()` SAYS UNDER `notes` (#543 phase 2b): the
+// kerberos namespace, and this module's `prose()`. Three sentences are
+// templates: the realm's own Kerberos realm, why a realm has no KDC, and why
+// a realm whose KDC is on cannot use it — the last two
+// `krb5_principals.js`'s sentence when it gives one, carried over in English
+// where it is not a message here.
+//
+// **ON IS NOT THE SAME AS SERVING** (#543 follow-up): the note branched on
+// `kerberos.enabled` alone, so a realm with krb5.enabled on whose context is
+// inactive (no usable enctype), or whose product krbtgt key is not stored
+// yet, was told its KDC served it, and the reason — which
+// `kerberosRealmOf()` fills only for an inactive realm — was never shown.
+// `realmInactive` is that case.
+// ---------------------------------------------------------------------------
+/**
+ * The notes of `/admin-api/kerberos/principals` (#543), `{{name}}` a value.
+ */
+const KERBEROS_NOTES = Object.freeze({
+  keys: 'No key material is in this answer or on the page. A person\'s ' +
+    'keys are derived from their password when it is set or verified and ' +
+    'are never shown; a service principal\'s keytab is handed over ONCE, ' +
+    'by the create or rotate that made it, and a person\'s keytab ONCE, ' +
+    'derived from a password in hand — the one an administrator sets on ' +
+    'the person\'s page, or their own on /portal/kerberos.',
+  modeProduct: 'This KDC is a PRODUCT one: a person authenticates with ' +
+    'their own password through the keys stored on their directory entry, ' +
+    'and a person with none is refused with "sign in once".',
+  modeDevelopment: 'This KDC is a DEVELOPMENT one: every user is keyed ' +
+    'from krb5.userPassword and people are never given stored keys. ' +
+    'Service principals created here are used in both modes.',
+  realmServed: 'A KDC PER TRUST REALM: these are the people and ' +
+    'applications of the trust realm this page is read in, as principals ' +
+    'of its own Kerberos realm {{kerberosRealm}}.',
+  realmNone: 'THIS TRUST REALM HAS NO KDC: {{reason}}. Set krb5.realm on ' +
+    'the realm and turn krb5.enabled on to give it one; port 88 routes a ' +
+    'request by the Kerberos realm name inside it.',
+  realmInactive: 'THIS TRUST REALM\'S KDC IS ON BUT CANNOT BE USED: ' +
+    '{{reason}}. Its Kerberos realm is {{kerberosRealm}}.',
+  window: 'Keys are derived AFTER a password is set or verified and take a ' +
+    'few tens of milliseconds to land; until they do, the KDC refuses the ' +
+    'person rather than accepting an older key.',
+  previous: 'A password change or a rotation keeps the version it ' +
+    'replaced — at most krb5.retainedKeyVersions of them, each for ' +
+    'krb5.retainedKeyTtlS — so a ticket issued under it is still accepted ' +
+    'until it could have expired. A previous version only ever OPENS such ' +
+    'a ticket: nothing is issued under it and an old password never signs ' +
+    'in. "Drop previous versions" ends the window at once, after a ' +
+    'compromise.'
+});
+
+/**
+ * The phrase `KERBEROS_NOTES.realmNone` says when no reason is given.
+ */
+const KERBEROS_NO_KDC_REASON = 'krb5.enabled is off for it';
+
+/**
+ * The routes whose answers carry this module's prose: the kerberos
+ * namespace's (#543).
+ */
+const PROSE_ROUTES = ['/admin-api/kerberos/principals'];
+
+// The routes whose answers carry the two pictures' keys (#543): this
+// module's part of the DELEGATION namespace, offered under its own names
+// because `PROSE_ROUTES` and `prose()` are the kerberos namespace's.
+const MAP_KEY_PROSE_ROUTES = [
+  '/admin-api/delegation/user',
+  '/admin-api/delegation/application',
+  '/admin-api/console/delegation/map',
+  '/admin-api/console/delegation/chain',
+  '/admin-api/console/federation/map'
+];
+
 interface AdminViewsDeps {
   log: typeof helpers.log;
   baseUrlOf: typeof helpers.baseUrlOf;
@@ -519,6 +885,7 @@ interface AdminViewsDeps {
   rbac: typeof rbac;
   vcClaims: typeof vcClaims;
   vpConfig: typeof vpConfig;
+  vcVerifier: typeof vcVerifier;
   claimAttributes: typeof claimAttributes;
   scimMap: typeof scimMap;
   groupClaims: typeof groupClaims;
@@ -598,6 +965,73 @@ class AdminViews {
     deps.log.debug("Leaving AdminViews.constructor().");
   }
 
+  /**
+   * The routes whose answers carry this module's prose: the kerberos
+   * namespace's (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+  /**
+   * The routes whose answers carry the map keys (the delegation namespace).
+   */
+  static readonly MAP_KEY_PROSE_ROUTES = MAP_KEY_PROSE_ROUTES;
+
+  /**
+   * Extracts the kerberos namespace (#543): `/admin-api/kerberos/principals`'
+   * notes, two of them templates, and the phrase one says when no reason is
+   * given.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering AdminViews.prose().");
+    const out: Record<string, string> = {};
+    Object.keys(KERBEROS_NOTES).forEach(function (name) {
+      out['kerberos.notes.' + name] = KERBEROS_NOTES[name];
+    });
+    out['kerberos.notes.param.noKdcReason'] = KERBEROS_NO_KDC_REASON;
+    helpers.log.debug("Leaving AdminViews.prose(). " + Object.keys(out).length);
+    return out;
+  }
+
+  /**
+   * Extracts the two pictures' keys for the delegation namespace (#543),
+   * which `common/delegation.js`'s `prose()` returns: the templates, every
+   * row's sentence, the federation note and the teaser `WebKit.note()` folds
+   * it under.
+   *
+   * @returns key → English
+   */
+  static mapKeyProse(): Record<string, string> {
+    helpers.log.debug("Entering AdminViews.mapKeyProse().");
+    const out: Record<string, string> = {
+      'delegation.mapKey.table': MAP_KEY_TEMPLATE,
+      'delegation.mapKey.tail': MAP_KEY_TAIL,
+      'delegation.federationKey.table': FEDERATION_KEY_TEMPLATE,
+      'delegation.federationKey.fold': FEDERATION_NOTE_FOLD
+    };
+    MAP_KEY_PROSE.rows.forEach(function (what, i) {
+      out['delegation.mapKey.param.row' + i] = what;
+    });
+    MAP_KEY_PROSE.issuance.forEach(function (what, j) {
+      out['delegation.mapKey.param.issuance' + j] = what;
+    });
+    FEDERATION_KEY_PROSE.boxes.forEach(function (what, i) {
+      out['delegation.federationKey.param.box' + i] = what;
+    });
+    FEDERATION_KEY_PROSE.lines.forEach(function (what, i) {
+      out['delegation.federationKey.param.line' + i] = what;
+    });
+    // The fold `federationMapKey()`'s `WebKit.note()` draws: the teaser it
+    // cuts from the note, and the note. A note short enough not to fold
+    // would match no template and be carried in English.
+    const fold = WebKit.foldOf(FEDERATION_KEY_PROSE.note, undefined);
+    out['delegation.federationKey.param.noteSummary'] = fold.summary;
+    out['delegation.federationKey.param.note'] = fold.body;
+    helpers.log.debug("Leaving AdminViews.mapKeyProse(). " +
+                      Object.keys(out).length);
+    return out;
+  }
+
   // What the composition root passes, from the real modules.
   /**
    * Returns the dependencies the composition root passes.
@@ -633,6 +1067,7 @@ class AdminViews {
       rbac: rbac,
       vcClaims: vcClaims,
       vpConfig: vpConfig,
+      vcVerifier: vcVerifier,
       claimAttributes: claimAttributes,
       scimMap: scimMap,
       groupClaims: groupClaims,
@@ -899,13 +1334,15 @@ class AdminViews {
    * settings answers it.
    *
    * @param path - the page's path
+   * @param only - optional; the group names to include, for a tab of a page
+   *   that draws several families' groups (`/admin/cert-issuance`)
    * @returns the block, or null before the console has filled the slot
    */
-  settingsBlockOf(path) {
+  settingsBlockOf(path, only?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.settingsBlockOf(). path=" + path);
     log.debug("Leaving AdminViews.settingsBlockOf().");
-    return configSettingsJson ? configSettingsJson(path) : null;
+    return configSettingsJson ? configSettingsJson(path, only) : null;
   }
 
   /**
@@ -1702,6 +2139,63 @@ class AdminViews {
     return out;
   }
 
+  // ONE ROLE'S PAGE (#604): everything the register knows about a role.
+  /**
+   * Returns one role in full: the register's row, its owners, the
+   * applications whose requirement names it, its directory entry, and
+   * whether the register can be written.
+   *
+   * @param name - the role name
+   * @param register - the register, as `rolesRegister()` answers it
+   * @returns `{ found, name, ... }`
+   */
+  roleDetail(name, register) {
+    const { log, roles } = this.deps;
+    log.debug("Entering AdminViews.roleDetail(). " + name);
+    const builtIn = (register.builtIn || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    if (builtIn) {
+      log.debug("Leaving AdminViews.roleDetail(). Built in.");
+      return { found: true, builtIn: true, name: name, what: builtIn.what,
+               owners: [], requiredBy: [], entry: null };
+    }
+    const row = (register.roles || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    if (!row) {
+      log.debug("Leaving AdminViews.roleDetail(). Not here.");
+      return { found: false, name: name };
+    }
+    // An application's requirement names a realm-wide role by its name, and
+    // its own role (#310) by the name inside it.
+    const requiredBy = (register.requiring || []).filter(function (one) {
+      return row.application
+        ? one.application === row.application &&
+          one.required.indexOf(row.localName) >= 0
+        : one.required.indexOf(row.name) >= 0;
+    }).map(function (one) {
+      return { application: one.application, name: one.name };
+    });
+    const entry = roles.entryOf(row.name);
+    const out = Object.assign({}, row, {
+      found: true,
+      owners: roles.ownersOf(row),
+      maxOwners: roles.MAX_OWNERS,
+      requiredBy: requiredBy,
+      holderCount: row.users.length + row.groups.length +
+                   row.applications.length,
+      canWrite: !!register.storable,
+      entry: entry ? { dn: entry.dn, createdAt: entry.createdAt || null,
+                       modifiedAt: entry.modifiedAt || null,
+                       operational: entry.operational || [],
+                       attributes: entry.attributes } : null
+    });
+    log.debug("Leaving AdminViews.roleDetail(). " + out.owners.length +
+              " owner(s).");
+    return out;
+  }
+
   // THE ROLES PAGE'S VIEW, AND `GET /admin-api/roles`' (#446). It was the
   // register alone for the API and the register with the page's own members
   // for the page, built in the route; one function now, so the page is drawn
@@ -1736,7 +2230,15 @@ class AdminViews {
       : register.roles;
     const rolePage = this.pagedRows(q0, matched,
       { name: 'roles', noun: 'roles', defaultPer: 25 });
+    // THE APPLICATIONS THAT NARROWED WHAT THEY REQUIRE, PAGED (#313) on
+    // `requiringPage`: a row per such application, which only
+    // `applications.max` bounds. `counts.requiring` and
+    // `counts.unsatisfiable` stay the register's whole counts.
+    const requiringPage = this.pagedRows(q0, register.requiring,
+      { name: 'requiring', noun: 'applications' });
     const json = Object.assign({}, register, {
+      requiring: requiringPage.shown,
+      requiringPaging: this.pagingJson(requiringPage.paging),
       matched: matched.length,
       shown: rolePage.shown.length,
       paging: this.pagingJson(rolePage.paging),
@@ -1751,6 +2253,15 @@ class AdminViews {
         return { identifier: row.identifier, name: row.name || '' };
       })
     });
+    // ONE ROLE IN FULL (#604): `?role=<name>` answers the role page — the
+    // row, its owners resolved, the applications requiring it, and its
+    // directory entry — beside the register, as `GET /admin-api/groups`
+    // answers a group. A name nothing holds is `found: false`.
+    const wantedRole = String((Array.isArray(q0.role) ? q0.role[0]
+                                                      : q0.role) || '').trim();
+    if (wantedRole) {
+      (json as any).role = this.roleDetail(wantedRole, register);
+    }
     log.debug("Leaving AdminViews.rolesView(). " + register.roles.length +
               " role(s).");
     return json;
@@ -1792,15 +2303,15 @@ class AdminViews {
     // package, with its version, until #65 put the draw in crypto.js's
     // section 13; there is no version of this service's own to print, so
     // the member is empty rather than gone, for a reader that expects it.
+    // The sentences are `admin-core/policy_kinds.ts`'s VIEW_PROSE (#543).
+    const prose = this.deps.policyKinds.VIEW_PROSE;
     return {
       module: 'common/crypto.js randomString()',
       version: '',
-      source: 'node\'s crypto.randomInt, rejection-sampled so that no ' +
-              'character of the pool is likelier than another',
-      pools: ['lowercase letters', 'uppercase letters', 'digits', 'symbols'],
+      source: prose.generatorSource,
+      pools: prose.generatorPools.slice(),
       excluded: ['"', '`'],
-      drawsUntil: 'the password satisfies the profile, so every generated ' +
-                  'password is uniform over the passwords the profile accepts'
+      drawsUntil: prose.generatorDrawsUntil
     };
   }
 
@@ -1874,23 +2385,11 @@ class AdminViews {
       // THE DOORS, named so that "enforced" is a claim a reader can check
       // rather than one they have to take. Every one ends in
       // `credentials.preparePassword()`.
-      doors: [
-        { door: '/admin/users/new and /admin/users (Set password)',
-          via: 'credentials.setPassword()' },
-        { door:
-            'POST /admin-api/users/create and /admin-api/users/set-password',
-          via: 'credentials.setPassword()' },
-        { door: '/portal/password', via: 'credentials.setPassword()' },
-        { door: '/portal/activate (the first password a person sets)',
-          via: 'credentials.setPassword()' },
-        { door: 'an LDAP add or modify of userPassword on 389 or 636',
-          via: 'credentials.preparePassword()' }
-      ],
-      notDoors: 'SCIM carries no password (this service advertises ' +
-                'changePassword: false), and a password is never set by ' +
-                'signing in. Passwords stored BEFORE a rule changed are ' +
-                'not re-checked: nothing here holds a password in a form ' +
-                'that could be, and the rule applies from the next change.'
+      // `admin-core/policy_kinds.ts`'s VIEW_PROSE holds them (#543).
+      doors: this.deps.policyKinds.VIEW_PROSE.doors.map(function (one) {
+        return { door: one.door, via: one.via };
+      }),
+      notDoors: this.deps.policyKinds.VIEW_PROSE.notDoors
     };
   }
 
@@ -1902,9 +2401,7 @@ class AdminViews {
     const authn = authnPolicy;
     const mailUsable = authn.mailUsable();
     const mailWhy = mailUsable ? ''
-      : 'This realm cannot send mail, so the two email mechanisms cannot be ' +
-        'turned on and are never offered. Configure a transport on Server ' +
-        'configuration > Mail.';
+      : this.deps.policyKinds.VIEW_PROSE.mailWhy;
     member.fields.forEach(function (field) {
       field.disabled = !!(field.email && !mailUsable);
       field.disabledWhy = field.disabled ? mailWhy : '';
@@ -1975,15 +2472,8 @@ class AdminViews {
     // that kind depends on.
     const enforced = mode.verifiesCredentials();
     out.enforced = enforced;
-    out.enforcement = enforced
-      ? 'ENFORCED. This realm is in product mode, so every password set ' +
-        'here — at every door below — must meet the profile, and a new ' +
-        'password may not repeat a remembered one.'
-      : 'NOT ENFORCED. This realm is in development mode, where no password ' +
-        'is checked at any door, so a rule about one would be a rule about ' +
-        'a credential nothing reads. The history is still RECORDED, so a ' +
-        'realm switched to product mode starts with one. A GENERATED ' +
-        'password meets the profile in both modes.';
+    out.enforcement = enforced ? policyKinds.VIEW_PROSE.enforced
+                               : policyKinds.VIEW_PROSE.notEnforced;
     const listed = this.pagedRows(q, rows);
     out.profiles = listed.shown;
     out.paging = this.pagingJson(listed.paging);
@@ -2598,12 +3088,60 @@ class AdminViews {
       }).map(function (row) {
         return { claim: row.claim,
                  paths: vpConfig.dcqlPathsFor(format, row.claim) };
-      })
+      }),
+      // THE VERIFICATIONS STILL OPEN, AND WHAT EACH DECIDED (#587): the tab's
+      // outcome list under its Start a verification form, the answer of
+      // `GET /admin-api/verifications` with no `state` — one function, so the
+      // tab and the operation cannot list different things. It rides on this
+      // view because the tab is drawn from it alone.
+      recentVerifications: this.deps.vcVerifier.recentVerifications(
+        VERIFICATIONS_SHOWN),
+      // What the Start a verification form may name, read off the Verifier
+      // (#587) so the form's menus are the lists the start checks against.
+      startChoices: this.deps.vcVerifier.START_VOCABULARY
     };
     log.debug("Leaving AdminViews.vpConfigJson(). Asking for " +
               json.requested.length +
               " claim(s).");
     return json;
+  }
+
+  // ---------------------------------------------------------------------------
+  // `GET /admin-api/verifications` (#587) — the OpenID4VP Verifier's, NOT a
+  // person's identity verifications (`verificationsJson()`, #127). With
+  // `state`, the verdict `verificationOutcome()` answers, `found: true`
+  // beside it — or `found: false` for a state this realm holds no record
+  // of, which the operation answers 404 with STS-VC-0042. Without it, the realm's open
+  // verifications, newest first: the list the Verifier request tab draws.
+  // ---------------------------------------------------------------------------
+  /**
+   * Builds `GET /admin-api/verifications`'s answer: one verdict, or the open
+   * verifications.
+   *
+   * @param req - the request; only `req.query.state` is read
+   * @returns `{ found, ...outcome }` for a state, or `{ verifications,
+   *   total, limit }`
+   */
+  presentationVerificationsJson(req) {
+    const { log, vcVerifier } = this.deps;
+    log.debug("Entering AdminViews.presentationVerificationsJson().");
+    const query = (req && req.query) || {};
+    const state = String(query.state || '');
+    if (!state) {
+      const list = vcVerifier.recentVerifications(VERIFICATIONS_SHOWN);
+      log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+                list.total + " open.");
+      return list;
+    }
+    const outcome = vcVerifier.verificationOutcome(state);
+    if (!outcome) {
+      log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+                "Unknown state.");
+      return { found: false, state: state };
+    }
+    log.debug("Leaving AdminViews.presentationVerificationsJson(). " +
+              "received=" + outcome.received);
+    return Object.assign({ found: true }, outcome);
   }
 
   // The base URL of this service WITHOUT any realm prefix. Every URL this page
@@ -2987,6 +3525,23 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
+  // The outbound SCIM clients' view (#552), or null where the module is not
+  // loaded.
+  scimClientsView(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.scimClientsView().");
+    let out = null;
+    try {
+      out = require('../scim/scim_client').view((req && req.query) || {});
+    } catch (e) {
+      log.debug("Caught in AdminViews.scimClientsView(): " +
+                ((e && e.message) || e));
+      out = null;
+    }
+    log.debug("Leaving AdminViews.scimClientsView().");
+    return out;
+  }
+
   scimJson(req) {
     const { log, stats, scimMap } = this.deps;
     log.debug("Entering AdminViews.scimJson().");
@@ -3021,7 +3576,11 @@ class AdminViews {
       // The twenty-one scim.* rows this page now edits, described. It answers
       // the question the rest of this reply cannot: not what the server does,
       // but where the value that decides it came from.
-      settings: configSettingsJson('/admin/scim')
+      settings: configSettingsJson('/admin/scim'),
+      // THE CLIENTS TAB (#552): the outbound SCIM clients, and with
+      // `?client=` one client's page. Read lazily — `scim/scim_client` is
+      // built at 22 — and null in a process that never loaded it.
+      scimClients: this.scimClientsView(req)
     };
     log.debug("Leaving AdminViews.scimJson(). " + counters.total +
               " request(s) counted.");
@@ -3676,13 +4235,20 @@ class AdminViews {
     });
     // THE UNAUTHENTICATED ONES, AS A LIST OF THEIR OWN (2026-09-05).
     //
-    // NOT FILTERED AND NOT PAGED, deliberately, where the table above it is
-    // both. The two lists answer different questions: the main one is *what is
-    // live*, which is long and needs narrowing, and this one is *is anybody in
-    // here without having signed in*, which is a question about the whole
-    // service and would be answered wrongly by a filter somebody had left set.
-    // A search box that could hide one of these rows would make the section
-    // worse than not having it.
+    // NOT FILTERED, deliberately, where the table above it is. The two lists
+    // answer different questions: the main one is *what is live*, which is
+    // long and needs narrowing, and this one is *is anybody in here without
+    // having signed in*, which is a question about the whole service and
+    // would be answered wrongly by a filter somebody had left set. A search
+    // box that could hide one of these rows would make the section worse
+    // than not having it.
+    //
+    // BUT PAGED (#313), on `anonymousPage` with the shared `per`. It was
+    // drawn whole, and while `authn.unauthenticatedSessions` is on it holds a
+    // row per anonymous visit until each expires — a list nothing bounds but
+    // time, which is what the console's paging rule is about. Paging hides no
+    // row from the count: `unauthenticatedHeld` is the whole list, and the
+    // tile reads it.
     //
     // It is a SECTION rather than a column on the table above because the
     // answer is almost always "none", and a column that is the same on every
@@ -3691,6 +4257,8 @@ class AdminViews {
     const unauthenticated = all.filter(function (row) {
       return row.authenticated === false;
     });
+    const anonymousPage = this.pagedRows(query, unauthenticated,
+      { name: 'anonymous', noun: 'sessions' });
     log.debug("Leaving AdminViews.sessionsView(). " + shown.length +
               " row(s) of " +
               filtered.length + " (" + all.length + " live).");
@@ -3708,7 +4276,7 @@ class AdminViews {
         // the two things a caller asks and deriving the first from the second
         // would make an empty list and an absent field look alike.
         unauthenticatedHeld: unauthenticated.length,
-        unauthenticatedSessions: unauthenticated.map(function (row) {
+        unauthenticatedSessions: anonymousPage.shown.map(function (row) {
           return { id: row.id, family: row.family, username: row.username,
                    sub: row.sub, protocol: row.protocol,
                    sessionId: row.sessionId,
@@ -3738,7 +4306,9 @@ class AdminViews {
         // Whether sessions that authenticated nobody are kept, which the
         // page says beside them.
         unauthenticatedKept: !!config.value('authn.unauthenticatedSessions'),
-        paging: this.pagingJson(paging)
+        paging: this.pagingJson(paging),
+        // The unauthenticated section's page (#313), on `anonymousPage`.
+        unauthenticatedPaging: this.pagingJson(anonymousPage.paging)
       }
     };
   }
@@ -4064,7 +4634,14 @@ class AdminViews {
         paging: this.pagingJson(paging),
         knownActors: knownActors,
         settings: configSettingsJson ? configSettingsJson('/admin/audit')
-          : null
+          : null,
+        // WHAT THE PAGE'S CLOSING NOTE IS ABOUT (#543 round 2): whether a
+        // presented password is verified in this realm, and whether this log
+        // is persisted with what this service mints (product mode on a
+        // postgres store). The note said "in memory … checks no password
+        // anywhere" in every configuration until then.
+        verifiesCredentials: mode.verifiesCredentials(),
+        persisted: !!(persistence.mintedStatus() || {}).persisting
       }
     };
   }
@@ -4422,32 +4999,21 @@ class AdminViews {
     };
     const items = [
       { art: swatch(delegationMap.personGlyph(9, 3, C.indigo, false, 1), 44),
-        what: '<strong>A person.</strong> Something with an entry under ' +
-              '<code>ou=users</code> — anybody this service has ' +
-              'authenticated, in any of the sixteen families.' },
+        what: MAP_KEY_PROSE.rows[0] },
       { art: swatch('<rect x="3" y="9" width="56" height="22" rx="5" fill="' +
                     C.panel +
                     '" stroke="' + C.indigo + '" stroke-width="1.5"/>', 64),
-        what: '<strong>An application.</strong> Something with an entry ' +
-              'under <code>ou=applications</code> — an OAuth client, a ' +
-              'service provider, a Kerberos service, a WS-Trust relying ' +
-              'party.' },
+        what: MAP_KEY_PROSE.rows[1] },
       { art: swatch('<rect x="3" y="4" width="56" height="32" rx="5" fill="' +
                     C.panel +
                     '" stroke="' + C.indigo + '" stroke-width="1.5"/>' +
                     delegationMap.personGlyph(7, 3, C.indigo, false, 0.85), 64),
-        what: '<strong>Both, which the middle tier usually is.</strong> ' +
-              '<code>HTTP/frontend.example.com</code> authenticates (so the ' +
-              'funnel files it with the people) AND has tickets issued FOR ' +
-              'it (so the registry has it). Two entries, one party.' },
+        what: MAP_KEY_PROSE.rows[2] },
       { art: swatch('<path d="' + delegationMap.hexPath(3, 6, 58, 28) +
                     '" fill="' +
                     C.wash + '" stroke="' + C.indigo + '" stroke-width="1.8"/>',
                     64),
-        what: '<strong>This service, in one trust realm.</strong> Every line ' +
-              'here exists because it issued or refused a credential. The ' +
-              'realm is on the box because a realm is a whole logical copy ' +
-              'of this service.' },
+        what: MAP_KEY_PROSE.rows[3] },
       // Wider than every other swatch here, and it has to be: the whole point
       // of the row is the THIRD line, and an identifier is the one thing on a
       // box that is as long as a protocol allows. At 80 the sample ran out
@@ -4463,144 +5029,59 @@ class AdminViews {
                     C.quiet + '">application</text><text x="55" y="34" ' +
                     'text-anchor="middle" font-size="8" fill="' +
                     C.quiet + '">client_id: acme-web</text>', 110),
-        what: '<strong>The two small lines under a name are different ' +
-              'sentences.</strong> The first is what the box IS &mdash; ' +
-              'which of the two stores knows it, or the role its shape was ' +
-              'guessed from. The second is <strong>the identifier a protocol ' +
-              'would have to present to reach it, with that protocol\'s own ' +
-              'word for it</strong>: a <code>client_id</code> for OAuth 2.0 ' +
-              'and OpenID Connect, an <code>entityID</code> for either SAML ' +
-              'profile, a <code>wtrealm</code> for WS-Federation, an ' +
-              '<code>AppliesTo</code> for WS-Trust, an <code>SPN</code> for ' +
-              'Kerberos. The NAME on the box is what somebody CALLED this ' +
-              'thing &mdash; a <code>cn</code>, an <code>appName</code> ' +
-              '&mdash; and is no use in a request you are about to build, ' +
-              'which is why the identifier is on the picture and not only in ' +
-              'the tooltip. Where the two are the same string only the word ' +
-              'is drawn, because the value is already the label; where ONE ' +
-              'string is two families\' identifier both words are drawn ' +
-              '(<code>AppliesTo / entityID</code>); and where the ' +
-              'application answers to several DIFFERENT names, the one drawn ' +
-              'is the one this act actually carried &mdash; or, if the act ' +
-              'carried something no identifier attribute holds, the first ' +
-              'declared one, with the tooltip saying so. Every name it ' +
-              'answers to is in that tooltip either way.' },
+        what: MAP_KEY_PROSE.rows[4] },
       { art: swatch(delegationMap.personGlyph(9, 3, C.grey, true, 1), 44),
-        what: '<strong>A dashed outline is something neither store ' +
-              'knows.</strong> It is drawn in the shape its ROLE implies and ' +
-              'is not an error: an RFC 8693 <code>audience</code> nobody has ' +
-              'otherwise mentioned is exactly this.' },
+        what: MAP_KEY_PROSE.rows[5] },
       { art: swatch(line(C.indigo, ''), 64),
-        what: '<strong>Which way a line goes is at BOTH of its ' +
-              'ends.</strong> It leaves the box with the round end and ' +
-              'arrives at the box with the arrowhead &mdash; so the question ' +
-              'a reader actually asks, standing at one box: <em>is this line ' +
-              'mine, or somebody\'s on me?</em>, is answered where they are ' +
-              'standing rather than at the far end of a curve that crosses ' +
-              'three others on the way. Every line here has both marks, and ' +
-              'no line here is two-way: two applications that reach each ' +
-              'other are drawn as two lines.' },
+        what: MAP_KEY_PROSE.rows[6] },
       { art: swatch(line(C.amber, ''), 64),
-        what: '<strong>acts for &mdash; an IMPERSONATION.</strong> What came ' +
-              'out names the initial identity and nothing else, so nothing ' +
-              'at the far end can tell an intermediary was involved. Amber ' +
-              'because this picture is the only place that fact will ever ' +
-              'exist.' },
+        what: MAP_KEY_PROSE.rows[7] },
       { art: swatch(line(C.green, ''), 64),
-        what: '<strong>acts for &mdash; a DELEGATION.</strong> What came out ' +
-              'CARRIES the chain: an <code>act</code> claim, a composite ' +
-              '<code>ActAs</code>, <code>S4U_DELEGATION_INFO</code> in the ' +
-              'PAC.' },
+        what: MAP_KEY_PROSE.rows[8] },
       { art: swatch(line(C.indigo, ''), 64),
-        what: '<strong>reaches &mdash; the TRUST relationship.</strong> What ' +
-              'the credential is FOR: the back-end service, the ' +
-              '<code>AppliesTo</code>, the audience or resource. The label ' +
-              'says whose name it carries.' },
+        what: MAP_KEY_PROSE.rows[9] },
       { art: swatch(line(C.indigo, '7 4'), 64),
-        what: '<strong>A broken line jumps a party nobody named.</strong> A ' +
-              'forwarded ticket-granting ticket has no intermediary and ' +
-              'cannot have one — the client gives it to whichever service it ' +
-              'chooses and this KDC is never told which.' },
+        what: MAP_KEY_PROSE.rows[10] },
       // #186: the configured pairs, beside the acts.
       { art: swatch(line(C.indigo, '6 4'), 64),
-        what: '<strong>may delegate &mdash; a CONFIGURED relationship, ' +
-              'DASHED until an act has used it.</strong> One line per pair ' +
-              'an entry allows: <code>appAllowedToDelegateTo</code> on the ' +
-              'source (constrained) or ' +
-                '<code>appAllowedToActOnBehalfOf</code> ' +
-              'on the target (resource-based) &mdash; the same controls for ' +
-              'the OAuth 2.0 token exchange, WS-Trust and Kerberos. Solid ' +
-              'once an act has crossed it. Drawn unless the acts are ' +
-              'narrowed by outcome, type or text.' },
+        what: MAP_KEY_PROSE.rows[11] },
       { art: swatch(line(C.red, '5 3'), 64),
-        what: '<strong>Red is a chain nothing was ever issued on.</strong> ' +
-              'The tooltip carries the KDC\'s own words for why, which is ' +
-              'the same sentence the client was sent.' },
+        what: MAP_KEY_PROSE.rows[12] },
       { art: swatch(line(C.grey, '4 3'), 64),
-        what: '<strong>Grey and dashed, from the hexagon: this service ' +
-              'ISSUED to that party.</strong> It goes to whoever ASKED — the ' +
-              'intermediary where a chain has one, the initial identity ' +
-              'where it does not.' }
+        what: MAP_KEY_PROSE.rows[13] }
     ];
     if (options && options.issuance) {
       items.push(
         { art: swatch(line(C.indigo, '2 3'), 64),
-          what: '<strong>Dotted, into the hexagon: this person AUTHENTICATED ' +
-                'here.</strong> The label is the protocol family and the ' +
-                'tooltip is the method — the sign-in screen, an AS-REQ, a ' +
-                'UsernameToken, a federated assertion. It is why everything ' +
-                'else on the picture was allowed.' },
+          what: MAP_KEY_PROSE.issuance[0] },
         { art: swatch(line(C.indigo, ''), 64),
-          what: '<strong>Solid indigo: an ORDINARY GRANT, and the label is ' +
-                'the exact one</strong> — <code>authorization_code</code>, ' +
-                '<code>refresh_token</code>, ' +
-                '<code>client_credentials</code>, with the specification ' +
-                'section in the tooltip. Out of the PERSON it means a ' +
-                'credential naming them went to that application; out of the ' +
-                'HEXAGON it means nobody else holds it — a ' +
-                '<code>client_credentials</code> token is about the client ' +
-                'itself and an X509-SVID has no audience, so the subject and ' +
-                'the holder are one box and there is one line rather than ' +
-                'two. It takes no amber or green, because impersonation and ' +
-                'delegation are properties of a delegation mechanism and a ' +
-                'grant claims neither.' },
+          what: MAP_KEY_PROSE.issuance[1] },
         { art: swatch(line(C.indigo, ''), 64),
-          what: '<strong>Solid indigo out of an APPLICATION is that same ' +
-                'relationship one step further on: what the credential it ' +
-                'holds is ADDRESSED to.</strong> It is the <em>reaches</em> ' +
-                'line above, said about an ordinary grant instead of about a ' +
-                'delegation — an access token issued to a web front end and ' +
-                'addressed to an API gateway is this service saying the ' +
-                'first may reach the second in this person\'s name, with ' +
-                'nothing exchanged to get there. The mechanism on the label ' +
-                'is what tells the two apart: a grant, or <code>Token ' +
-                'exchange</code>. The audience the token actually carries is ' +
-                'in the tooltip, because the box is named after whichever ' +
-                'application registered that audience. <strong>The line ' +
-                'under it names the DELEGATED PERMISSIONS on that ' +
-                'token</strong> — the values on its <code>scope</code> claim ' +
-                'that the resource at the far end has DEFINED, which is what ' +
-                'a client asks for by sending the whole permission ' +
-                'identifier (the resource\'s base URI followed by the name) ' +
-                'as a scope. <strong><code>default permissions</code> means ' +
-                'the token named the resource and asked for none of ' +
-                'them</strong>: that is what a scope naming the resource\'s ' +
-                'own <code>client_id</code> produces, since that value ' +
-                'becomes the audience and comes off the scope claim. It says ' +
-                'what was ISSUED and not what was GRANTED — <a ' +
-                'href="/admin/delegation/allowed">the configured ' +
-                'register</a> is the other question, and ' +
-                'in development <code>oauth2.delegatedPermissionsEnforced' +
-                '</code> is off by default, so a token can carry a ' +
-                'permission its client was never granted (product mode ' +
-                'refuses one).' });
+          what: MAP_KEY_PROSE.issuance[2] });
+    }
+    // THE KEY AS A FILLED TEMPLATE (#543), so a reader in another language
+    // gets each row's sentence translated and every swatch as it was. The
+    // rows past `MAP_KEY_PROSE.rows` ride in the last row's sentence, as
+    // `MAP_KEY_TAIL` (the header above `MAP_KEY_PROSE` says why).
+    const fill = serverProse.fill;
+    const base = items.slice(0, MAP_KEY_PROSE.rows.length);
+    const params: Record<string, string> = {};
+    base.forEach(function (one, i) {
+      params['art' + i] = one.art;
+      params['what' + i] = one.what;
+    });
+    const extra = items.slice(base.length);
+    if (extra.length) {
+      const tail: Record<string, string> = {
+        last: params['what' + (base.length - 1)] };
+      extra.forEach(function (one, j) {
+        tail['art' + j] = one.art;
+        tail['what' + j] = one.what;
+      });
+      params['what' + (base.length - 1)] = fill(MAP_KEY_TAIL, tail);
     }
     log.debug("Leaving AdminViews.delegationMapKey().");
-    return '<table class="key"><tr><th>Shape</th><th>What it means</th></tr>' +
-      items.map(function (one) {
-        return '<tr><td class="art">' + one.art + '</td><td>' + one.what +
-               '</td></tr>';
-      }).join('') + '</table>';
+    return fill(MAP_KEY_TEMPLATE, params);
   }
   // ---------------------------------------------------------------------------
   // THE WHOLE PICTURE AS ONE ANSWER, FOR THE MANAGEMENT API (#446, 2026-10-05).
@@ -5333,72 +5814,55 @@ class AdminViews {
    */
   federationMapKey() {
     const { log, federationDiagram } = this.deps;
-    const self = this;
     log.debug("Entering AdminViews.federationMapKey().");
     const shapes = [
       { kind: 'sts', label: 'This service',
         realm: 'default', realmName: 'this realm',
-        what: 'The trust realm you are looking at. Every line on the picture ' +
-              'starts or ends here, because every relationship is between ' +
-              'this realm and somebody else.' },
+        what: FEDERATION_KEY_PROSE.boxes[0] },
       { kind: 'application', label: 'an application',
-        what: 'An application registered HERE whose people are authenticated ' +
-              'somewhere else. What points it at a partner is ' +
-              '<code>appFederationRelationship</code> on its entry under ' +
-              '<code>ou=applications</code>.' },
+        what: FEDERATION_KEY_PROSE.boxes[1] },
       { kind: 'partner-sp', label: 'a partner',
-        what: 'A FOREIGN SERVICE PROVIDER. It asks this service to ' +
-              'authenticate somebody. Dashed, because it is not this service ' +
-              'and nothing here can see inside it.' },
+        what: FEDERATION_KEY_PROSE.boxes[2] },
       { kind: 'partner-idp', label: 'a partner',
-        what: 'A FOREIGN IDENTITY PROVIDER. It authenticates the person and ' +
-              'this service consumes what it issues. Dashed for the same ' +
-              'reason — and a hexagon rather than a rectangle because it is ' +
-              'an identity service, which is what this service is too.' }
+        what: FEDERATION_KEY_PROSE.boxes[3] }
     ];
-    const shapeRows = shapes.map(function (one) {
+    // THE KEY IS A FILLED TEMPLATE (#543): each drawing and sentence a
+    // parameter of `FEDERATION_KEY_TEMPLATE`, so the sentences are
+    // translated and the drawings carried as they are.
+    const params: Record<string, string> = {};
+    shapes.forEach(function (one, i) {
       const drawn = federationDiagram.render(
         { nodes: [Object.assign({ id: 'k', relationships: [] }, one)],
           edges: [] },
         { links: false, id: 'key-' + one.kind, label: one.label });
-      return '<tr><td>' + drawn.svg + '</td><td>' + one.what + '</td></tr>';
-    }).join('');
+      params['box' + i] = drawn.svg;
+      params['boxWhat' + i] = one.what;
+    });
 
     // THE LINES, AND THE FOUR STATES ARE THE LIST PAGE'S FOUR. Each is drawn by
     // handing render() a relationship in that state, so the colour in the key
     // is the colour edgeLook() will actually choose rather than a second
     // opinion about it.
     const states = [
-      { what: '<strong>Ready</strong> — enabled and fully configured. It ' +
-              'will work.',
+      { what: FEDERATION_KEY_PROSE.lines[0],
         row: { id: 'ready', protocolLabel: 'SAML 2.0', enabled: true,
                ready: true,
                usable: true, missing: [], applicationCount: 0,
                authentications: 0,
                users: 0, releases: [], lastError: '', mechanismLabel: '' } },
-      { what: '<strong>Disabled</strong> — which is how every relationship ' +
-              'starts. This is the ordinary state of something somebody has ' +
-              'not finished setting up, not a fault.',
+      { what: FEDERATION_KEY_PROSE.lines[1],
         row: { id: 'disabled', protocolLabel: 'SAML 2.0', enabled: false,
                ready: true,
                usable: false, missing: [], applicationCount: 0, authentications:
                                                                   0,
                users: 0, releases: [], lastError: '', mechanismLabel: '' } },
-      { what: '<strong>Enabled and NOT configured</strong> — the loud one, ' +
-              'and it earns being the only red on this page: it will REFUSE ' +
-              'at the moment somebody tries to use it, and it looks finished ' +
-              'from every angle except this one.',
+      { what: FEDERATION_KEY_PROSE.lines[2],
         row: { id: 'half', protocolLabel: 'SAML 2.0', enabled: true,
                ready: false,
                usable: false, missing: ['fedSigningCertificate'],
                applicationCount: 0, authentications: 0, users: 0, releases: [],
                lastError: '', mechanismLabel: '' } },
-      { what: '<strong>A broker that cannot broker</strong> — the ' +
-              'relationship is fine and the relationship it authenticates ' +
-              'THROUGH is not, so the person meets the sign-in screen ' +
-              'instead of the partner. That screen checks no password, which ' +
-              'is why this is worth a colour of its own: it is the only ' +
-              'failure here that produces a working sign-in.',
+      { what: FEDERATION_KEY_PROSE.lines[3],
         row: { id: 'broker', protocolLabel: 'OpenID Connect', enabled: true,
                ready: true, usable: true, missing: [], applicationCount: 0,
                authentications: 0, users: 0, releases: [], lastError: '',
@@ -5406,7 +5870,7 @@ class AdminViews {
                brokersTo: 'somewhere', brokerUsable: false,
                brokerProblem: 'it is disabled' } }
     ];
-    const stateRows = states.map(function (one, i) {
+    states.forEach(function (one, i) {
       const drawn = federationDiagram.render({
         nodes: [{ id: 'a', kind: 'application', label: 'from',
                   relationships: [] },
@@ -5419,31 +5883,19 @@ class AdminViews {
       // Only the line is wanted, not the two boxes it needs in order to exist,
       // so the swatch is the label panel's own words. It is drawn rather than
       // written because these four colours are the whole content of the key.
-      return '<tr><td><svg xmlns="http://www.w3.org/2000/svg" width="120" ' +
-        'height="26" viewBox="0 0 120 26" role="img"><title>' +
+      params['line' + i] = '<svg xmlns="http://www.w3.org/2000/svg" ' +
+        'width="120" height="26" viewBox="0 0 120 26" role="img"><title>' +
         WebKit.esc(WebKit.plainTextOf(one.what)) + '</title>' +
         drawn.svg.replace(/^[\s\S]*?<defs>/, '<defs>')
                  .replace(/<rect[\s\S]*$/, '') +
-        '</svg></td><td>' + one.what + '</td></tr>';
-    }).join('');
+        '</svg>';
+      params['lineWhat' + i] = one.what;
+    });
 
+    // `WebKit.note()` folds it, and `FEDERATION_NOTE_FOLD` is that fold.
+    params.note = WebKit.note(FEDERATION_KEY_PROSE.note);
     log.debug("Leaving AdminViews.federationMapKey().");
-    return '<h3>The boxes</h3>' +
-      '<table><tr><th>Drawn as</th><th>What it is</th></tr>' + shapeRows +
-      '</table><h3>The ' +
-      'lines</h3>' +
-      WebKit.note('<strong>An arrow is a REQUEST and not an ' +
-      'assertion</strong>, which is the one thing about this picture that ' +
-      'looks backwards until it is said. Everything on the left arrives ' +
-      'wanting somebody signed in; everything on the right is asked to do ' +
-      'the signing in. So an identity-provider-side relationship — where ' +
-      'this service ASSERTS to the partner — points INWARD, because what the ' +
-      'partner did was ask. Drawn the other way an identity broker is two ' +
-      'arrows leaving the same box with nothing joining them; drawn this way ' +
-      'it is one straight line through the middle, which is what a bridge ' +
-      'is.') +
-      '<table><tr><th>Colour</th><th>What it means</th></tr>' + stateRows +
-      '</table>';
+    return serverProse.fill(FEDERATION_KEY_TEMPLATE, params);
   }
   // What every box is called, where it links, and nothing about its shape — the
   // shape is `federation_diagram.js`'s and is decided from the node's kind,
@@ -6184,7 +6636,8 @@ class AdminViews {
         '`value` and `values` are CHECKED and not honoured. This service ' +
           'could echo back whatever a client asked it to assert and ' +
           'deliberately does not — everything it says about a person comes ' +
-          'from the directory or from the invented persona, and a mock that ' +
+          'from the directory or from the invented persona, and a service ' +
+          'that ' +
           'agreed with the request could not be used to test anything. A ' +
           'mismatch is reported in the log and in the response\'s artifact.',
         'A claims request IS filtered by the federation release policy, ' +
@@ -6347,17 +6800,14 @@ class AdminViews {
    * @returns the JSON
    */
   truststoreJson(req) {
-    const { log, mode, realms, adminActions } = this.deps;
+    const { log, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
-    const openToAnybody = realms.run(realms.get(realms.DEFAULT_ID),
-                                     function () {
-      return mode.opensTestControls();
-    });
+    // THE TWO GATED DOORS, AND THE ONLY ONES: the open test controls
+    // `POST /tls/trust` and `POST /tls/trust/clear` (`testControls`, a
+    // demonstration of the process's since #585) were deleted by #597.
     const doors = {
       console: '/admin/tls/trust',
-      api: '/admin-api/tls/trust',
-      testControls: { add: '/tls/trust', clear: '/tls/trust/clear',
-                      open: openToAnybody }
+      api: '/admin-api/tls/trust'
     };
     const notes = {
       persisted: 'A RUNTIME ANCHOR IS WRITTEN TO ou=trustAnchors in the ' +
@@ -6458,7 +6908,7 @@ class AdminViews {
    */
   kerberosPrincipalsJson(req) {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
-      adminActions } = this.deps;
+      adminActions, mode } = this.deps;
     log.debug("Entering AdminViews.kerberosPrincipalsJson().");
     const query = (req && req.query) || {};
     // PAGED, THEN DESCRIBED (#352): the population is the undescribed rows,
@@ -6484,6 +6934,27 @@ class AdminViews {
         "person(s), " +
               services.length + " service principal(s).");
     const kerberos = krb5Principals.kerberosRealmOf();
+    // THE KDC'S WHOLE DATABASE (#595): every principal by its public fields,
+    // which `GET /krb5/principals` listed until that demonstration document
+    // was deleted — the fixtures and the names created on first sight among
+    // them, which the two lists above do not hold. Paged as they
+    // are; empty in a realm with no KDC.
+    const database = kerberos.enabled ? krb5Principals.describeAll()
+                                     : [];
+    const databasePage = this.pagedRows(query, database,
+                                        { name: 'database',
+                                          noun: 'principals' });
+    // Why an enabled realm's KDC cannot be used, '' when it can: an
+    // inactive context's own reason, else `krbtgtUnavailableReason()` (in
+    // product, no random krbtgt key stored yet). See `KERBEROS_NOTES`.
+    const unusable = !kerberos.enabled ? ''
+      : !kerberos.active
+        // An inactive context always carries its reason (no usable
+        // enctype, or a realm this process does not hold yet); the krbtgt
+        // reason is the same sentence for it, asked only if it were empty.
+        ? String(kerberos.reason ||
+                 krb5Principals.krbtgtUnavailableReason() || '')
+        : String(krb5Principals.krbtgtUnavailableReason() || '');
     return {
       installed: krb5PersonKeys.installed(),
       realm: krb5Principals.REALM,
@@ -6506,6 +6977,21 @@ class AdminViews {
                    ttlSetting: Number(config.value('krb5.retainedKeyTtlS')) },
       acceptor: { spn: account.spn, available: account.available,
                   storedKey: !!account.storedKey },
+      // WHICH NAMES THIS KDC WILL ANSWER FOR THAT IT DOES NOT HOLD (#587):
+      // the facts `/krb5/principals` published as `accountPolicy` until #595
+      // deleted it, so a job that asks "can this KDC produce an account under
+      // this name" (`random_username.js`'s requireKnownOrCreatable()) has an
+      // administrator's door to ask. THE TWO SHARED PASSWORDS ARE NOT HERE,
+      // in either mode: nothing in this answer is key material
+      // (`notes.keys`); the development ones are settings
+      // (`krb5.userPassword`, `krb5.autoServicePassword`), read through
+      // `/admin-api/settings` by whoever may read settings.
+      accountPolicy: {
+        anyUsernameAuthenticates: mode.autoCreates(),
+        neverCreated: krb5Principals.reservedUnknown(),
+        serviceHosts: mode.autoCreates()
+          ? krb5Principals.SERVICE_DOMAINS : []
+      },
       // THE REALM'S KRBTGT (#169): where its key comes from, the kvno, when
       // it was made and last rotated, the versions kept, and the schedule —
       // never a key. `null` in a realm with no KDC.
@@ -6517,44 +7003,33 @@ class AdminViews {
       services: servicesPage.shown,
       servicesTotal: services.length,
       servicesPaging: this.pagingJson(servicesPage.paging),
+      // Whether the development fixtures were seeded, and the Kerberos realm
+      // names this KDC answers for — the two facts of the deleted document's
+      // header a reader of `database` needs beside it.
+      fixtureAccounts: !!krb5Principals.seedsDemoPrincipals,
+      realmsServed: kerberos.enabled ? krb5Principals.realmsServed() : [],
+      database: databasePage.shown,
+      databaseTotal: database.length,
+      databasePaging: this.pagingJson(databasePage.paging),
+      // THE NOTES ARE `KERBEROS_NOTES` (#543), the realm's two filled.
       notes: {
-        keys: 'No key material is in this answer or on the page. A person\'s ' +
-          'keys are derived from their password when it is set or verified ' +
-          'and ' +
-          'are never shown; a service principal\'s keytab is handed over ' +
-          'ONCE, by the create or rotate that made it, and a person\'s ' +
-          'keytab ONCE, derived from a password in hand — the one an ' +
-          'administrator sets on the person\'s page, or their own on ' +
-          '/portal/kerberos.',
-        mode: krb5PersonKeys.productKdc()
-          ?
-          'This KDC is a PRODUCT one: a person authenticates with their own ' +
-            'password through the keys stored on their directory entry, and ' +
-            'a person with none is refused with "sign in once".'
-          : 'This KDC is a DEVELOPMENT one: every user is keyed from ' +
-            'krb5.userPassword and people are never given stored keys. ' +
-            'Service principals created here are used in both modes.',
-        realm: kerberos.enabled
-          ? 'A KDC PER TRUST REALM: these are the people and applications of ' +
-            'the trust realm this page is read in, as principals of its own ' +
-            'Kerberos realm ' + (kerberos.kerberosRealm || '') + '.'
-          : 'THIS TRUST REALM HAS NO KDC: ' + (kerberos.reason ||
-            'krb5.enabled is off for it') + '. Set krb5.realm on the realm ' +
-            'and turn ' +
-            'krb5.enabled on to give it one; port 88 routes a request by the ' +
-            'Kerberos realm name inside it.',
-        window: 'Keys are derived AFTER a password is set or verified and ' +
-                'take ' +
-          'a few tens of milliseconds to land; until they do, the KDC ' +
-          'refuses the person rather than accepting an older key.',
-        previous: 'A password change or a rotation keeps the version it ' +
-          'replaced — at most krb5.retainedKeyVersions of them, each for ' +
-          'krb5.retainedKeyTtlS — so a ticket issued under it is still ' +
-          'accepted until it could have expired. A previous version only ' +
-          'ever ' +
-          'OPENS such a ticket: nothing is issued under it and an old ' +
-          'password never signs in. "Drop previous versions" ends the window ' +
-          'at once, after a compromise.'
+        keys: KERBEROS_NOTES.keys,
+        mode: krb5PersonKeys.productKdc() ? KERBEROS_NOTES.modeProduct
+                                          : KERBEROS_NOTES.modeDevelopment,
+        realm: !kerberos.enabled
+          ? serverProse.fill(KERBEROS_NOTES.realmNone,
+                             { reason: kerberos.reason ||
+                                       KERBEROS_NO_KDC_REASON })
+          : unusable
+            ? serverProse.fill(KERBEROS_NOTES.realmInactive,
+                               { reason: unusable,
+                                 kerberosRealm:
+                                   kerberos.kerberosRealm || '' })
+            : serverProse.fill(KERBEROS_NOTES.realmServed,
+                               { kerberosRealm:
+                                   kerberos.kerberosRealm || '' }),
+        window: KERBEROS_NOTES.window,
+        previous: KERBEROS_NOTES.previous
       }
     };
   }
@@ -6574,7 +7049,12 @@ class AdminViews {
     if (!signalsReporter) {
       log.debug("Leaving AdminViews.ssfJson(). Not installed.");
       return { installed: false, enabled: false, streamDetail: [],
-               receivedDetail: [], settings: configSettingsJson('/admin/ssf'),
+               streamTotals: { streams: 0, enabled: 0, delivered: 0,
+                               failed: 0, waiting: 0, dead: 0,
+                               deadLetters: 0 },
+               paging: { streams: this.pagingJson(this.pagingOf(
+                 req.query || {}, 0, { name: 'streams', noun: 'streams' })) },
+               settings: configSettingsJson('/admin/ssf'),
                statuses: [], eventTypes: [],
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals Framework.' };
@@ -6586,8 +7066,48 @@ class AdminViews {
     // may be set to and the event types this transmitter can send.
     report.statuses = signalsReporter.statuses.slice();
     report.eventTypes = signalsReporter.eventTypes();
+    // THE STREAM CARDS ARE PAGED (#313's sweep, 2026-10-12). One card per
+    // stream in the realm, and `ssf.maxStreams` bounds each receiver rather
+    // than how many receivers there are, so the cards are a page moved by
+    // `streamsPage`. `stream` narrows them to one, EXACT, which is what the
+    // dead letters' stream links carry so a card is found whatever page it
+    // would be on. The tiles above the cards count the WHOLE transmitter,
+    // so `streamTotals` is taken here, before the narrowing and the slice.
+    const all = report.streamDetail || [];
+    report.streamTotals = {
+      streams: all.length,
+      enabled: all.filter(function (row) {
+        return row.status === 'enabled';
+      }).length,
+      delivered: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.delivered) || 0);
+      }, 0),
+      failed: all.reduce(function (n, row) {
+        return n + (Number(row.counters && row.counters.failed) || 0);
+      }, 0),
+      waiting: all.reduce(function (n, row) {
+        return n + (row.queue || []).length;
+      }, 0),
+      dead: all.filter(function (row) {
+        return row.dead;
+      }).length,
+      deadLetters: all.reduce(function (n, row) {
+        return n + (row.deadLetters || []).length;
+      }, 0)
+    };
+    const wanted = this.queryOne(req.query || {}, 'stream').trim();
+    const matched = wanted
+      ? all.filter(function (row) {
+          return String(row.stream_id) === wanted;
+        })
+      : all;
+    const page = this.pagedRows(req.query || {}, matched,
+      { name: 'streams', noun: 'streams' });
+    report.streamDetail = page.shown;
+    report.streamFilter = wanted || null;
+    report.paging = { streams: this.pagingJson(page.paging) };
     log.debug("Leaving AdminViews.ssfJson(). " + report.streamDetail.length +
-              " stream(s).");
+              " of " + all.length + " stream(s).");
     return report;
   }
 
@@ -6642,10 +7162,26 @@ class AdminViews {
     });
     const page = this.pagedRows(req.query, rows,
       { name: 'letters', noun: 'dead letters' });
+    // THE STREAMS TABLE, NARROWED BY THE SAME TWO EXACT FILTERS AND PAGED
+    // (#313): a row per stream holding a letter or not delivering, however
+    // many receivers there are. `dlstream` keeps its one row and `dlcause`
+    // the streams holding a letter of that cause; `dlq` is over the letters
+    // and leaves this table whole. Filter first, then page.
+    const streamRows = (report.streams || []).filter(function (row) {
+      if (stream && row.stream_id !== stream) {
+        return false;
+      }
+      if (cause && !(row.causes && row.causes[cause] > 0)) {
+        return false;
+      }
+      return true;
+    });
+    const streamPage = this.pagedRows(req.query, streamRows,
+      { name: 'streams', noun: 'streams' });
     log.debug("Leaving AdminViews.ssfDeadLettersState(). " + rows.length +
               " match(es).");
     return { wanted: wanted, stream: stream, cause: cause, rows: rows,
-             page: page };
+             page: page, streamPage: streamPage };
   }
 
   /**
@@ -6664,7 +7200,9 @@ class AdminViews {
                totals: { held: 0 }, matched: 0,
                filter: { q: null, stream: null, cause: null },
                paging: { letters: this.pagingJson(this.pagingOf(req.query, 0,
-                 { name: 'letters', noun: 'dead letters' })) },
+                 { name: 'letters', noun: 'dead letters' })),
+                 streams: this.pagingJson(this.pagingOf(req.query, 0,
+                 { name: 'streams', noun: 'streams' })) },
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Shared Signals dead-letter ' +
                      'queues.' };
@@ -6680,7 +7218,9 @@ class AdminViews {
                 cause: state.cause || null },
       matched: state.rows.length,
       letters: state.page.shown,
-      paging: { letters: this.pagingJson(state.page.paging) }
+      streams: state.streamPage.shown,
+      paging: { letters: this.pagingJson(state.page.paging),
+                streams: this.pagingJson(state.streamPage.paging) }
     });
   }
 
@@ -6700,7 +7240,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.caepJson(). Not installed.");
       return { installed: false, enabled: false, sessions: [], eventTypes: [],
                streams: [], totals: {}, tracked: 0,
-               settings: configSettingsJson('/admin/caep'),
+               settings: configSettingsJson('/admin/ssf', ['CAEP']),
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Continuous Access Evaluation ' +
                      'Profile.' };
@@ -6708,7 +7248,7 @@ class AdminViews {
     const report = caepReporter.report(req);
     report.installed = true;
     report.catalogue = caepReporter.eventTypes();
-    report.settings = configSettingsJson('/admin/caep');
+    report.settings = configSettingsJson('/admin/ssf', ['CAEP']);
     log.debug("Leaving AdminViews.caepJson(). " + report.tracked +
               " session(s).");
     return report;
@@ -6794,6 +7334,42 @@ class AdminViews {
     return { wanted: wanted, matched: matched, page: page };
   }
 
+  // ---------------------------------------------------------------------------
+  // WHERE AN EVENT COULD GO, PAGED (#313).
+  //
+  // `/admin/caep-sessions` and `/admin/risc-accounts` each list every Shared
+  // Signals stream in the realm with the event types it takes, and
+  // `ssf.maxStreams` limits each receiver, not the number of receivers — so
+  // the list grows with the realm. It is the third list on each page and
+  // moves on `streamsPage`, so paging it keeps the other two where they are.
+  // The tile above the tables counts the streams that take any event of the
+  // page's family, which is a count over the WHOLE list: it is taken here,
+  // before the slice, and published as `streamCounts`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Pages the streams a CAEP or RISC report lists.
+   *
+   * @param req - the request
+   * @param report - the CAEP or RISC report
+   * @returns the counts over the whole list, and the page
+   */
+  signalStreamsState(req, report) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.signalStreamsState().");
+    const all = report.streams || [];
+    const counts = {
+      total: all.length,
+      taking: all.filter(function (row) {
+        return (row.takes || []).length > 0;
+      }).length
+    };
+    const page = this.pagedRows(req.query, all,
+      { name: 'streams', noun: 'streams' });
+    log.debug("Leaving AdminViews.signalStreamsState(). " +
+              page.shown.length + " of " + all.length + ".");
+    return { counts: counts, page: page };
+  }
+
   // The reply BOTH doors answer with. `/admin/caep-sessions?format=json` and
   // GET /admin-api/caep/sessions are the same document — rule 7 — and the
   // drill- down is `?session=`, which is one operation answering two shapes for
@@ -6824,18 +7400,26 @@ class AdminViews {
     }
     const state = this.caepSessionsState(req, json);
     const appState = this.caepApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.caepSessionsJson(). The list.");
     return Object.assign({}, json, {
       filter: { sessions: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { sessions: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) },
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
       // The rows each table's page shows and how many each filter matched
-      // (#446): the page draws its two tables from this answer.
+      // (#446): the page draws its three tables from this answer.
       shown: { sessions: state.page.shown,
-               applications: appState.page.shown },
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
       matched: { sessions: state.matched.length,
-                 applications: appState.matched.length }
+                 applications: appState.matched.length,
+                 streams: streamState.page.paging.total },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -6855,7 +7439,7 @@ class AdminViews {
       log.debug("Leaving AdminViews.riscJson(). Not installed.");
       return { installed: false, enabled: false, accounts: [], eventTypes: [],
                streams: [], totals: {}, tracked: 0,
-               settings: configSettingsJson('/admin/risc'),
+               settings: configSettingsJson('/admin/ssf', ['RISC']),
                note: 'ssf/ssf.ts is not loaded in this process, so nothing ' +
                      'here can report on the Risk Incident Sharing and ' +
                      'Coordination profile.' };
@@ -6863,7 +7447,7 @@ class AdminViews {
     const report = riscReporter.report(req);
     report.installed = true;
     report.catalogue = riscReporter.eventTypes();
-    report.settings = configSettingsJson('/admin/risc');
+    report.settings = configSettingsJson('/admin/ssf', ['RISC']);
     log.debug("Leaving AdminViews.riscJson(). " + report.tracked +
               " account(s).");
     return report;
@@ -6974,16 +7558,23 @@ class AdminViews {
     }
     const state = this.riscAccountsState(req, json);
     const appState = this.riscApplicationsState(req, json);
+    const streamState = this.signalStreamsState(req, json);
     log.debug("Leaving AdminViews.riscAccountsJson(). The list.");
     return Object.assign({}, json, {
       filter: { accounts: state.wanted || null,
                 applications: appState.wanted || null },
       paging: { accounts: this.pagingJson(state.page.paging),
-                applications: this.pagingJson(appState.page.paging) },
-      // The rows each table's page shows (#446): the page draws its two
+                applications: this.pagingJson(appState.page.paging),
+                streams: this.pagingJson(streamState.page.paging) },
+      // The rows each table's page shows (#446): the page draws its three
       // tables from this answer.
       shown: { accounts: state.page.shown,
-               applications: appState.page.shown }
+               applications: appState.page.shown,
+               streams: streamState.page.shown },
+      // The streams are the page's slice (#313); what the tile counts is
+      // the realm's, taken before the slice.
+      streams: streamState.page.shown,
+      streamCounts: streamState.counts
     });
   }
 
@@ -7114,7 +7705,8 @@ class AdminViews {
       })
     };
     extra.serverApiAuthenticated = spiffeAuth.authRequired();
-    extra.settingsForms = configSettingsJson('/admin/spiffe');
+    extra.settingsForms = configSettingsJson('/admin/cert-issuance',
+                                             ['SPIFFE']);
     log.debug("Leaving AdminViews.spiffeJson(). ready=" + json.ready);
     return json;
   }
@@ -9316,6 +9908,9 @@ class AdminViews {
     // carry (`scopePolicy.configuredScopeWarnings()`).
     const scopeWarnings = self.applicationScopeWarnings(row.identifier);
     (out as any).warnings = scopeWarnings;
+    // ITS OWNERS (#604), resolved, for the Owners tab.
+    (out as any).owners = applications.ownersOf(row);
+    (out as any).maxOwners = applications.MAX_OWNERS;
     (out.config as any).fieldWarnings = scopeWarnings.length
       ? { wstrustJwtScope: scopeWarnings } : {};
     log.debug("Leaving AdminViews.applicationPageData().");
@@ -11772,8 +12367,8 @@ class AdminViews {
   }
 
   /**
-   * Describes a service account for its person page: its owner, destination
-   * and rotation state, and what the realm's policy lets it do.
+   * Describes a service account for its person page: its owners,
+   * destination and rotation state, and what the realm's policy lets it do.
    *
    * @param key - the person
    * @returns the description, or null for an ordinary person
@@ -11795,8 +12390,9 @@ class AdminViews {
       : NaN;
     log.debug("Leaving AdminViews.serviceAccountJson().");
     return {
-      owner: facts.owner || null, ownerKind: facts.ownerKind || null,
-      ownerName: facts.ownerName || null,
+      // EVERY OWNER (#600), each `{ dn, kind, name }`; `kind` '' for a value
+      // that no longer names a person or a group.
+      owners: facts.owners,
       destination: facts.destination || null,
       secretName: facts.secretName || null,
       rotatedAt: facts.rotatedAt || null,
@@ -11818,6 +12414,7 @@ class AdminViews {
         exemptFromSecondFactor: profile.exemptFromSecondFactor === true,
         allowBrowserSignIn: profile.allowBrowserSignIn === true,
         doors: serviceAccountPolicy.allowedDoors(profile),
+        requiresOwner: profile.requireOwner === true,
         from: profile.from
       }
     };
@@ -12141,6 +12738,16 @@ class AdminViews {
       // Who may act for them (#108): `stsNotDelegated` and `stsMayAct`.
       delegation: credentials.delegationFactsFor(key) || {},
       keyPairs: keyPairs,
+      // WHAT THE SERVICE ACCOUNT TAB'S OWNER LIST IS HELD TO (#600), whether
+      // or not they are one yet: the policy's `requireOwner`, the most owners
+      // an account may name, and their own DN, which a search may not offer
+      // (an account cannot own itself).
+      serviceAccountRules: {
+        requiresOwner: this.deps.serviceAccountPolicy.requiresOwner(),
+        maxOwners: this.deps.serviceAccounts.MAX_OWNERS,
+        dn: String((view.directory && view.directory.json &&
+                    view.directory.json.dn) || '')
+      },
       serviceProviders: (federation.inRole('service-provider') || [])
         .map(function (one) {
           return { fedId: one.fedId, fedPeer: one.fedPeer || '' };
@@ -13026,6 +13633,7 @@ export = {
   caepSessionsState: slot.forward('caepSessionsState'),
   caepApplicationsState: slot.forward('caepApplicationsState'),
   caepSessionsJson: slot.forward('caepSessionsJson'),
+  signalStreamsState: slot.forward('signalStreamsState'),
   riscJson: slot.forward('riscJson'),
   riscAccountsState: slot.forward('riscAccountsState'),
   riscApplicationsState: slot.forward('riscApplicationsState'),
@@ -13048,6 +13656,12 @@ export = {
   delegationLooks: slot.forward('delegationLooks'),
   delegationMapModel: slot.forward('delegationMapModel'),
   delegationMapKey: slot.forward('delegationMapKey'),
+  // #543: the kerberos namespace's routes and English, and the two keys'
+  // English for the delegation namespace (`common/delegation.js`).
+  PROSE_ROUTES: AdminViews.PROSE_ROUTES,
+  MAP_KEY_PROSE_ROUTES: AdminViews.MAP_KEY_PROSE_ROUTES,
+  prose: AdminViews.prose,
+  mapKeyProse: AdminViews.mapKeyProse,
   apiGateStateOf: slot.forward('apiGateStateOf'),
   signingHistoryCertificate: slot.forward('signingHistoryCertificate'),
   federationMapModel: slot.forward('federationMapModel'),
@@ -13117,6 +13731,8 @@ export = {
   vcPreviewUser: slot.forward('vcPreviewUser'),
   vcJson: slot.forward('vcJson'),
   vpConfigJson: slot.forward('vpConfigJson'),
+  presentationVerificationsJson: slot.forward(
+    'presentationVerificationsJson'),
   realmRootUrl: slot.forward('realmRootUrl'),
   realmSettingRows: slot.forward('realmSettingRows'),
   realmJson: slot.forward('realmJson'),

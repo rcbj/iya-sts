@@ -1,0 +1,1374 @@
+{
+  "caches.registry.default.hitMeaning": {
+    "en": "4314127680e25488",
+    "text": "isang lookup na sinagot mula sa cache"
+  },
+  "caches.registry.default.notCountedWhy": {
+    "en": "99031acf625704cc",
+    "text": "nasa isang file na hindi ine-edit ng repository na ito ang lookup"
+  },
+  "caches.store.acme.nonces.title": {
+    "en": "e25c959b1d4ea38a",
+    "text": "Mga ACME nonce"
+  },
+  "caches.store.acme.nonces.description": {
+    "en": "d8605f70794b6e01",
+    "text": "Ang mga Replay-Nonce value na naipakita na sa ACME server (RFC 8555 section 6.5), para isang beses lang tanggapin ang bawat isa."
+  },
+  "caches.store.acme.nonces.bound": {
+    "en": "08c86b675ec9c9e4",
+    "text": "Ipinapatupad: acme.maxSpentNonces na nagamit nang nonce bawat realm. Nililinis ang mga expired kapag naabot ang hangganan; ang history na puno pa rin ay TUMATANGGI sa susunod na paggamit (sinasagot ng badNonce) sa halip na kalimutan ang isang buhay pa."
+  },
+  "caches.store.acme.nonces.lifetime": {
+    "en": "4429efe4e095ab5b",
+    "text": "Hanggang mag-expire ang nonce; nililinis ang mga expired kapag naabot ang limit."
+  },
+  "caches.store.acme.nonces.hitMeaning": {
+    "en": "87a572725d5885db",
+    "text": "isang nonce na nagamit na, kaya tinanggihan ang request"
+  },
+  "caches.store.applications.listing.title": {
+    "en": "eee968e6707b5423",
+    "text": "Listahan ng application registry"
+  },
+  "caches.store.applications.listing.description": {
+    "en": "b14bdfe854b508da",
+    "text": "Bawat application entry sa isang realm, naka-parse, na may lookup bawat client_id, audience, AppliesTo at permission — para hindi i-parse ng isang page o token request ang buong registry sa bawat tanong."
+  },
+  "caches.store.applications.listing.bound": {
+    "en": "acf20913d7111d22",
+    "text": "Istruktural: isang listahan bawat realm, kasinlaki ng ou=applications (na mismong nililimitahan ng applications.max)."
+  },
+  "caches.store.applications.listing.lifetime": {
+    "en": "0d7ef2a117733512",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay ipa-parse itong muli ng susunod na read."
+  },
+  "caches.store.applications.ssf-allowed-events.title": {
+    "en": "da62d279c1ec6d48",
+    "text": "Mga permission ng Shared Signals receiver"
+  },
+  "caches.store.applications.ssf-allowed-events.description": {
+    "en": "e079736452f08ea4",
+    "text": "Kung aling application ang may-ari ng isang Shared Signals stream at kung aling mga event ang puwede nitong matanggap, bawat principal, para hindi dumaan ang isang session event sa bawat naka-register na application."
+  },
+  "caches.store.applications.ssf-allowed-events.bound": {
+    "en": "a4734e7608a889bd",
+    "text": "Ipinapatupad: 4096 na sagot bawat realm; tinatanggal ang pinakaluma at hinahanap muli kapag kailangan na ulit."
+  },
+  "caches.store.applications.ssf-allowed-events.lifetime": {
+    "en": "995228533c95870f",
+    "text": "Hanggang may magbago sa ilalim ng ou=applications ng realm; pagkatapos ay binubura ng susunod na lookup ang mga sagot ng realm na iyon."
+  },
+  "caches.store.attribute-sources.lookups.title": {
+    "en": "0e79812ce7455f95",
+    "text": "Mga lookup sa attribute source"
+  },
+  "caches.store.attribute-sources.lookups.description": {
+    "en": "f579fe8e54fdccd5",
+    "text": "Ang row na ibinalik ng isang attribute source para sa key ng isang tao, hinahawakan nang sandali para isang query lang ang sunud-sunod na sign-in (#94)."
+  },
+  "caches.store.attribute-sources.lookups.bound": {
+    "en": "27ece14a75b504e2",
+    "text": "Ipinapatupad: 2000 row bawat process; tinatanggal ang pinakaluma."
+  },
+  "caches.store.attribute-sources.lookups.hitMeaning": {
+    "en": "21657e9840c744f0",
+    "text": "isang sign-in na sinagot mula sa lookup na ginawa ilang segundo bago nito"
+  },
+  "caches.store.attribute-sources.lookups.sentences.lifetime": {
+    "en": "758990e906bc4fb2",
+    "text": "{{seconds}} s pagkatapos ng lookup; tinatanggal ng pagbabago sa source ang mga row nito."
+  },
+  "caches.store.certificates.parsed-facts.title": {
+    "en": "5746d523daca087a",
+    "text": "Mga naka-parse na detalye ng certificate"
+  },
+  "caches.store.certificates.parsed-facts.description": {
+    "en": "9bd397c6aabdfd7e",
+    "text": "Ang subject, issuer at notAfter na ipinapakita ng isang listahan ng certificate, at kung may post-quantum key ang isang certificate, na pina-parse nang isang beses bawat certificate para sa /admin/pki at GET /admin-api/certificates. Naka-key sa sariling SHA-256 ng certificate."
+  },
+  "caches.store.certificates.parsed-facts.bound": {
+    "en": "652e9484a6aabccf",
+    "text": "Ipinapatupad: 4,096 na certificate; tinatanggal ang pinakaluma at pina-parse muli kapag ipinakita ulit."
+  },
+  "caches.store.certificates.parsed-facts.lifetime": {
+    "en": "67ce8000dd01d5b4",
+    "text": "Walang expiry: naka-key sa nilalaman ng certificate, na hindi kailanman nagbabago ang mga detalye. Ang pinakaluma ang unang tinatanggal kapag puno."
+  },
+  "caches.store.credentials.totp-verdicts.title": {
+    "en": "cf29b20375e49e75",
+    "text": "Mga hatol sa authenticator secret"
+  },
+  "caches.store.credentials.totp-verdicts.description": {
+    "en": "44ed095a8aaddf55",
+    "text": "Kung nabubuksan ba sa ilalim ng key-encryption key nito ang bawat naka-seal na authenticator (TOTP) secret na itinanong sa process na ito (#352), para maiulat ng listahan ng mga user at ng second-factor roster kung nababasa o hindi ang isang enrolment nang hindi ito ina-unseal sa bawat request. Naka-key sa naka-seal na text; oo o hindi ang value, hindi kailanman ang secret."
+  },
+  "caches.store.credentials.totp-verdicts.bound": {
+    "en": "26d3fe6063b4d737",
+    "text": "Ipinapatupad: 20000 hatol; kapag puno, tinatanggal ang pinakaluma at bubuksan muli ang secret na iyon kapag itinanong ulit."
+  },
+  "caches.store.credentials.totp-verdicts.lifetime": {
+    "en": "6681c5901df77218",
+    "text": "Hanggang magbago ang mga key-encryption key, o tanggalin ito para magkaroon ng puwang. Ang bagong enrolment ay bagong naka-seal na text at itinatanong mula sa simula."
+  },
+  "caches.store.credentials.totp-verdicts.hitMeaning": {
+    "en": "55449e18bd6dd225",
+    "text": "isang naka-seal na secret na alam na ang hatol, kaya hindi na ito binuksan"
+  },
+  "caches.store.debugger.static-files.title": {
+    "en": "391f9031c0bbe0bb",
+    "text": "Mga static file ng embedded debugger"
+  },
+  "caches.store.debugger.static-files.description": {
+    "en": "4b3f347eb0b511c1",
+    "text": "Ang mga client file ng embedded debugger na pinalitan ng address ng serbisyong ito, itinatago bawat bersyon ng file at address para hindi isulat muli ng debugger listener ang isang file sa bawat request."
+  },
+  "caches.store.debugger.static-files.bound": {
+    "en": "45ba4df709cbf3c3",
+    "text": "Ipinapatupad: 400 file; tinatanggal ang pinakaluma at binabasa muli kapag ise-serve ulit."
+  },
+  "caches.store.debugger.static-files.lifetime": {
+    "en": "ed5fb6e35c20a032",
+    "text": "Hanggang magbago ang file sa disk (bagong entry ang bagong modification time); ang pinakaluma ang unang tinatanggal kapag puno."
+  },
+  "caches.store.devices.challenges.title": {
+    "en": "71ba1256c880f287",
+    "text": "Mga challenge sa device enrolment"
+  },
+  "caches.store.devices.challenges.description": {
+    "en": "8419d9ee3d2f3c39",
+    "text": "Ang mga challenge na in-issue ng /portal/devices para sa isang key proof, isang App Attest statement o isang WebAuthn link, at ang mga freshness nonce na in-issue ng EST /nonce para sa isang TPM key attestation, bawat isa ay nakatali sa session (o EST cookie) na pinag-issue-han nito at sinasagot nang isang beses."
+  },
+  "caches.store.devices.challenges.bound": {
+    "en": "09b572ec38f68351",
+    "text": "Ipinapatupad: devices.maxChallenges bawat realm, tinatanggal ang pinakaluma sa pag-insert; isa bawat session at layunin."
+  },
+  "caches.store.devices.challenges.hitMeaning": {
+    "en": "3c188e43349d3468",
+    "text": "isang challenge na in-issue ng realm na ito, kaya sinuri ang proof"
+  },
+  "caches.store.devices.events.title": {
+    "en": "83817a9f9a3a3e29",
+    "text": "Mga event ng device register"
+  },
+  "caches.store.devices.events.description": {
+    "en": "b374122fe6382c32",
+    "text": "Isang row bawat device na ginawa, inalis o pinaalis sa hangganan ng isang tao sa realm na ito — ang iginuguhit ng Monitoring → Devices sa paglipas ng panahon. Hindi kailanman isang key, isang secret o pangalan ng may-ari."
+  },
+  "caches.store.devices.events.bound": {
+    "en": "f055322b7dd157b2",
+    "text": "Ipinapatupad: devices.eventsKept bawat realm, tinatanggal ang pinakalumang event sa pag-insert."
+  },
+  "caches.store.devices.events.lifetime": {
+    "en": "080afaefbe52c342",
+    "text": "Hanggang itulak ito palabas ng devices.eventsKept na mas bagong event."
+  },
+  "caches.store.dpop.nonces.title": {
+    "en": "a131d3dea3731f75",
+    "text": "Mga DPoP nonce"
+  },
+  "caches.store.dpop.nonces.description": {
+    "en": "b375c554b6362540",
+    "text": "Mga DPoP nonce na in-issue ng server (RFC 9449 section 8), para masuri ang proof na may dala nito laban sa ipinamigay."
+  },
+  "caches.store.dpop.nonces.bound": {
+    "en": "cf88aac51271454f",
+    "text": "Ipinapatupad: oauth2.dpopNonceCacheSize bawat realm; tinatanggal ang pinakalumang nonce, at binibigyan ng bago ang client na magpapakita nito."
+  },
+  "caches.store.dpop.nonces.hitMeaning": {
+    "en": "054858096e8ee64e",
+    "text": "isang nonce na natagpuang kasalukuyan, kaya tinanggap ang proof"
+  },
+  "caches.store.dpop.proof-ids.title": {
+    "en": "fdc1f37867ca23d7",
+    "text": "Mga DPoP proof ID"
+  },
+  "caches.store.dpop.proof-ids.description": {
+    "en": "e4ad47d3ddf82b82",
+    "text": "Ang jti ng bawat DPoP proof na tinanggap, para sa iisang request lang magagamit ang isang proof (RFC 9449 section 11.1)."
+  },
+  "caches.store.dpop.proof-ids.bound": {
+    "en": "b6132425d7ebf69a",
+    "text": "Ipinapatupad: oauth2.dpopReplayCacheSize na buhay na ID bawat realm. TUMATANGGI ang punong history sa susunod na proof (STS-OAUTH-0554) sa halip na kalimutan ang isang buhay pa, na magbubukas muli sa replay nito."
+  },
+  "caches.store.dpop.proof-ids.hitMeaning": {
+    "en": "47b81c5d2badc0bc",
+    "text": "isang proof na nagamit na, kaya tinanggihan ang request"
+  },
+  "caches.store.federation.release-index.title": {
+    "en": "320bf243877446b0",
+    "text": "Index ng attribute release ng federation"
+  },
+  "caches.store.federation.release-index.description": {
+    "en": "b4d5f3108b264826",
+    "text": "Kung aling release list ng partner ang naaangkop sa aling application, binuo mula sa ou=federations para hindi dumaan sa register ang pag-issue ng token. Isang index bawat realm."
+  },
+  "caches.store.federation.release-index.bound": {
+    "en": "6ad2d9fb0c661c1d",
+    "text": "Istruktural: isang index bawat realm, na may isang entry bawat application na may release list."
+  },
+  "caches.store.federation.release-index.sentences.lifetime": {
+    "en": "335d6e9891f39e35",
+    "text": "federation.releaseIndexTtlMs ({{ms}} ms) pagkatapos itong mabuo, o agad kapag may federation relationship na isinulat sa pamamagitan ng serbisyong ito."
+  },
+  "caches.store.global.trusted-proxies.title": {
+    "en": "9c82ac7525550c6d",
+    "text": "Mga pinagkakatiwalaang proxy range"
+  },
+  "caches.store.global.trusted-proxies.description": {
+    "en": "6312ef008eaa90ec",
+    "text": "Ang global.trustedProxies, naka-parse sa isang BlockList, para hindi i-parse muli ng isang request ang setting upang magpasya kung kaninong forwarded address ang paniniwalaan."
+  },
+  "caches.store.global.trusted-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Istruktural: isang naka-parse na kopya ng setting."
+  },
+  "caches.store.global.trusted-proxies.lifetime": {
+    "en": "a234a6c3782a6a59",
+    "text": "Hanggang magbago ang text ng global.trustedProxies."
+  },
+  "caches.store.gnap.biscuit-revocations.title": {
+    "en": "337581d2c9bece04",
+    "text": "Mga na-revoke na biscuit"
+  },
+  "caches.store.gnap.biscuit-revocations.description": {
+    "en": "bec35292747e2dd3",
+    "text": "Ang mga revocation identifier ng bawat na-revoke na biscuit access token, na inilalathala sa /gnap/biscuit/revocations para sa resource server na nagve-verify ng mga biscuit nang mag-isa."
+  },
+  "caches.store.gnap.biscuit-revocations.bound": {
+    "en": "64c244911f86f322",
+    "text": "Ipinapatupad: oauth2.maxRevokedJtis bawat realm — ang sariling hangganan ng revocation register, para sa parehong pangako tungkol sa parehong mga token. Sa hangganan, ang expired na row ang unang tinatanggal; kung hindi, kinakalimutan ang PINAKALUMANG revocation (STS-GNAP-0752), at tatanggapin muli ang biscuit na iyon ng resource server na listahang ito lang ang sinusuri hanggang mag-expire ito."
+  },
+  "caches.store.gnap.biscuit-revocations.lifetime": {
+    "en": "2e7b9a4f7165b5ba",
+    "text": "hanggang sa sariling exp ng na-revoke na token."
+  },
+  "caches.store.gnap.biscuit-revocations.hitMeaning": {
+    "en": "aa2cb2991b347fd3",
+    "text": "nabasa ang inilathalang listahan"
+  },
+  "caches.store.gnap.owner-lookups.title": {
+    "en": "e7c42445cf1d0c35",
+    "text": "Mga hinanap na resource owner"
+  },
+  "caches.store.gnap.owner-lookups.description": {
+    "en": "04f8ef8478ff0188",
+    "text": "Ang owner na pinangalanan ng gnapOwnerLookupUri ng isang resource server para sa isang identifier, para isang beses lang magtanong sa resource server ang request, approval page at pag-issue ng isang grant (#432 phase 5)."
+  },
+  "caches.store.gnap.owner-lookups.bound": {
+    "en": "94bd0cb7c6469038",
+    "text": "Ipinapatupad: 1024 owner bawat realm; tinatanggal ang pinakaluma at hinahanap muli kapag kailangan na ulit."
+  },
+  "caches.store.gnap.signatures.title": {
+    "en": "8e21c4fe5987c2c0",
+    "text": "Mga GNAP signature"
+  },
+  "caches.store.gnap.signatures.description": {
+    "en": "9df162f452e8424c",
+    "text": "Bawat naka-sign na GNAP request na tinanggap (HTTP message signatures at attached o detached na JWS), para hindi na maipadala muli ang isang nahuling request."
+  },
+  "caches.store.gnap.signatures.bound": {
+    "en": "36dc000f8f6cdb57",
+    "text": "Ipinapatupad: gnap.replayCacheSize na buhay na signature bawat realm. TUMATANGGI ang punong history sa susunod na naka-sign na request (STS-GNAP-0718) sa halip na kalimutan ang isang buhay pa, na magbubukas muli sa replay nito."
+  },
+  "caches.store.gnap.signatures.lifetime": {
+    "en": "7811612a3c4ca16d",
+    "text": "Doble ng gnap.signatureMaxAgeS pagkatapos itong makita."
+  },
+  "caches.store.gnap.signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "isang signature na nakita na, kaya tinanggihan ang request"
+  },
+  "caches.store.jose.kid-thumbprint-uris.title": {
+    "en": "336e569778455530",
+    "text": "Mga RFC 9278 key identifier"
+  },
+  "caches.store.jose.kid-thumbprint-uris.description": {
+    "en": "036518b411a3041a",
+    "text": "Ang JWK Thumbprint URI na inilalathala bilang kid sa ilalim ng keys.kidFormat=jwk-thumbprint-uri, naka-key sa internal na kid, para hindi basahin muli ng isang token signature ang key mula sa certificate nito."
+  },
+  "caches.store.jose.kid-thumbprint-uris.bound": {
+    "en": "7f85e649ed06b202",
+    "text": "Ipinapatupad: 512 key ID; tinatanggal ang pinakaluma at dine-derive muli kapag hiningi ulit."
+  },
+  "caches.store.jose.kid-thumbprint-uris.lifetime": {
+    "en": "cc27797b71edc78e",
+    "text": "Walang expiry: dine-derive ang internal na kid mula sa key, kaya hindi kailanman nagbabago ang sagot nito. Ang pinakaluma ang unang tinatanggal kapag puno."
+  },
+  "caches.store.jose.x5c-chain-under-root.title": {
+    "en": "60184de45f42b205",
+    "text": "Mga certificate chain na nagtatapos sa ilalim ng Root"
+  },
+  "caches.store.jose.x5c-chain-under-root.description": {
+    "en": "4683a9fbb696ec3e",
+    "text": "Kung nagtatapos sa ilalim ng kasalukuyang service Root ang naka-store na chain ng isang register row, na siyang nagpapasya kung idaragdag ang Root sa isang x5c header. Naka-key sa thumbprint ng row at ng Root."
+  },
+  "caches.store.jose.x5c-chain-under-root.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Ipinapatupad: 512 sagot; tinatanggal ang pinakaluma at kinakalkula muli kapag hiningi ulit."
+  },
+  "caches.store.jose.x5c-chain-under-root.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Walang expiry: naka-key sa certificate thumbprint at sa kid, na hindi kailanman nagbabago ang sagot. Ang pinakaluma ang unang tinatanggal kapag puno."
+  },
+  "caches.store.jose.x5c-key-match.title": {
+    "en": "070b8f9475789530",
+    "text": "Mga pagtutugma ng certificate sa signing key"
+  },
+  "caches.store.jose.x5c-key-match.description": {
+    "en": "8abb041e0d309c39",
+    "text": "Kung hawak ng isang certificate register row ang signing key, itinatanong bago lagyan ng x5c o x5t#S256 header ang isang token. Naka-key sa thumbprint ng row at sa kid ng key."
+  },
+  "caches.store.jose.x5c-key-match.bound": {
+    "en": "a398fbe4dfc655cc",
+    "text": "Ipinapatupad: 512 sagot; tinatanggal ang pinakaluma at kinakalkula muli kapag hiningi ulit."
+  },
+  "caches.store.jose.x5c-key-match.lifetime": {
+    "en": "aa520701ba5654bb",
+    "text": "Walang expiry: naka-key sa certificate thumbprint at sa kid, na hindi kailanman nagbabago ang sagot. Ang pinakaluma ang unang tinatanggal kapag puno."
+  },
+  "caches.store.keys.ca-hierarchies.title": {
+    "en": "bb578538c72a914b",
+    "text": "Mga certificate authority"
+  },
+  "caches.store.keys.ca-hierarchies.description": {
+    "en": "10ca9967b48a2a15",
+    "text": "Ang certificate authority hierarchy ng bawat scope — ang service Root, ang Intermediate ng isang realm at ang mga Issuing CA nito — na hawak nang naka-decrypt para sa pag-sign, binasa mula sa store sa pagsisimula o inampon mula sa ibang process."
+  },
+  "caches.store.keys.ca-hierarchies.bound": {
+    "en": "ee4228c31fe34d79",
+    "text": "Istruktural: isang hierarchy bawat scope (ang service Root, ang process branch, at isa bawat realm), pinapalitan sa halip na dinadagdagan."
+  },
+  "caches.store.keys.ca-hierarchies.lifetime": {
+    "en": "d0ae04f76208dec0",
+    "text": "Walang expiry: pinapalitan kapag nagbago ang hierarchy dito o sa ibang node, at tinatanggal kasama ng realm nito."
+  },
+  "caches.store.keys.plaintext.title": {
+    "en": "51cb646ea755ee9e",
+    "text": "Mga naka-decrypt na signing key"
+  },
+  "caches.store.keys.plaintext.description": {
+    "en": "9ae5fbc71d0ee089",
+    "text": "Ang signing-key material ng isang realm, na-decrypt mula sa persistence store sa ilalim ng key-encryption key at hinahawakan sa loob ng idle window para hindi magbayad ng decrypt sa bawat pagkakataon ang tuloy-tuloy na pag-sign. Sa product mode lang; hindi kailanman naka-store nang naka-encrypt ang mga development key."
+  },
+  "caches.store.keys.plaintext.bound": {
+    "en": "403b3bdab80f68d0",
+    "text": "Istruktural: key material ng isang realm bawat realm, anuman ang retention policy; kung gaano katagal lang ito hinahawakan ang pinagpapasyahan ng policy."
+  },
+  "caches.store.keys.post-quantum-sets.title": {
+    "en": "31793faed0af5624",
+    "text": "Mga post-quantum key set"
+  },
+  "caches.store.keys.post-quantum-sets.description": {
+    "en": "48908823922d3c59",
+    "text": "Ang mga ML-DSA at SLH-DSA key ng bawat realm, na ginagawa (o binabasa mula sa naka-store na set) sa unang pagkakataong kailanganin ng anuman, at hinahawakan kasama ng key set ng realm pagkatapos noon."
+  },
+  "caches.store.keys.post-quantum-sets.bound": {
+    "en": "6b7474127f960dde",
+    "text": "Istruktural: isang post-quantum set bawat realm, hinahawakan kasama ng key set ng realm."
+  },
+  "caches.store.keys.post-quantum-sets.lifetime": {
+    "en": "6888983df500912c",
+    "text": "Tulad ng sa key set ng realm: walang expiry, tinatanggal kapag inalis ang realm o pinalitan ang mga key nito."
+  },
+  "caches.store.keys.signing-sets.title": {
+    "en": "08f9512fa0140953",
+    "text": "Mga signing key set"
+  },
+  "caches.store.keys.signing-sets.description": {
+    "en": "90fabe3bffe305d8",
+    "text": "Ang mga signing key ng bawat trust realm (RSA, EC, at ang post-quantum set kapag hiningi na), na binubuo o binabasa mula sa key store sa unang paggamit at hinahawakan para sa bawat signature pagkatapos noon."
+  },
+  "caches.store.keys.signing-sets.bound": {
+    "en": "9011975e56c13eb7",
+    "text": "Istruktural: isang key set bawat realm, tinatanggal kasama ng realm o pinapalitan kapag ni-rotate o inampon ang mga key nito."
+  },
+  "caches.store.keys.signing-sets.lifetime": {
+    "en": "86e5adc71e4eb758",
+    "text": "Walang expiry: tinatanggal kapag inalis ang realm, ni-rotate ang mga key nito, o inampon ang naka-store na mga key ng ibang process. Isang entry bawat realm na nakapag-sign na."
+  },
+  "caches.store.krb5.authenticator-replay.title": {
+    "en": "2e4f78c88940562b",
+    "text": "Mga Kerberos authenticator"
+  },
+  "caches.store.krb5.authenticator-replay.description": {
+    "en": "bd92a375c1ba17cd",
+    "text": "Bawat authenticator na tinanggap ng protected service, para hindi maipakita nang dalawang beses ang isang nahuling AP-REQ. Bawat trust realm: ang realm na ang Kerberos realm ang nag-issue ng ticket."
+  },
+  "caches.store.krb5.authenticator-replay.bound": {
+    "en": "f80dfee6019f5638",
+    "text": "Ipinapatupad: krb5.replayCacheMaxEntries bawat realm. TUMATANGGI ang punong cache sa susunod na authenticator sa halip na kalimutan ang isang buhay pa, na magbubukas muli sa replay nito."
+  },
+  "caches.store.krb5.authenticator-replay.hitMeaning": {
+    "en": "c44d8906b93d52b2",
+    "text": "isang authenticator na nakita na, kaya tinanggihan ang request"
+  },
+  "caches.store.krb5.long-term-keys.title": {
+    "en": "908c0978f6268343",
+    "text": "Mga Kerberos long-term key"
+  },
+  "caches.store.krb5.long-term-keys.description": {
+    "en": "69997baa6ed64476",
+    "text": "Ang mga long-term key ng bawat naka-register na principal, dine-derive mula sa password nito gamit ang string-to-key (o binabasa mula sa key source) nang isang beses bawat encryption type at hinahawakan para sa bawat ticket pagkatapos noon."
+  },
+  "caches.store.krb5.long-term-keys.bound": {
+    "en": "8c11652313ab159c",
+    "text": "Ipinapatupad: hindi hihigit sa 4096 na principal ang may hawak na key nang sabay, isang row bawat encryption type; nililinis ang mga key ng least recently used, at dine-derive o binabasa muli ang mga ito sa susunod nitong ticket."
+  },
+  "caches.store.krb5.long-term-keys.lifetime": {
+    "en": "ce837804788fa2c5",
+    "text": "Walang expiry: tinatanggal kasama ng principal, kapag pinalitan ang record nito (pagpapalit ng password o restore), o kapag ito ang least recently used na lampas sa hangganan; hindi kailanman pine-persist."
+  },
+  "caches.store.ldap.device-index.title": {
+    "en": "cb268f1d4224510b",
+    "text": "Index ng device sa directory"
+  },
+  "caches.store.ldap.device-index.description": {
+    "en": "db3c95d463a78acc",
+    "text": "Ang id, mga key thumbprint at Native SSO secret hash ng bawat device entry, patungo sa entry nito sa ilalim ng ou=devices, para hindi kopyahin ang register sa pagkilala ng isang device sa token endpoint (#164)."
+  },
+  "caches.store.ldap.device-index.lifetime": {
+    "en": "5390ee30fa237c70",
+    "text": "Hanggang may maisulat sa ilalim ng ou=devices at may lookup na hindi tumama; hindi naghihintay ng rebuild ang hit sa isang kasalukuyang entry. Isang index bawat realm."
+  },
+  "caches.store.ldap.entryuuid-index.title": {
+    "en": "84a281e4f601dfe3",
+    "text": "Index ng entryUUID sa directory"
+  },
+  "caches.store.ldap.entryuuid-index.description": {
+    "en": "9ae0fb72e2b9426c",
+    "text": "Ang entryUUID ng bawat entry (at ang mga alias nito) patungo sa DN nito, na siyang paraan para mahanap ng isang subject identifier at isang SCIM id ang isang tao."
+  },
+  "caches.store.ldap.entryuuid-index.lifetime": {
+    "en": "b0f0da21ac461ad3",
+    "text": "Hanggang magbago ang directory at may lookup na hindi tumama; hindi naghihintay ng rebuild ang hit sa isang kasalukuyang entry. Isang index bawat realm."
+  },
+  "caches.store.ldap.group-index.title": {
+    "en": "ed4018229dabe2c1",
+    "text": "Index ng group sa directory"
+  },
+  "caches.store.ldap.group-index.description": {
+    "en": "b7a9d5e55510d7e8",
+    "text": "Group membership ayon sa member at ayon sa group DN, para hindi dumaan sa ou=groups ang groups claim at bawat role check."
+  },
+  "caches.store.ldap.group-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Hanggang masulatan ang directory sa paraang hindi kayang isama ng index; pagkatapos ay bubuuin itong muli ng susunod na lookup. Isang index bawat realm."
+  },
+  "caches.store.ldap.memberof-claims.title": {
+    "en": "e11214f5dcb2df7b",
+    "text": "Mga memberOf claim, ayon sa group"
+  },
+  "caches.store.ldap.memberof-claims.description": {
+    "en": "a8b814b367bde432",
+    "text": "Para sa bawat group, ang mga entry na ang sariling memberOf ay nagpapangalan dito, para hindi dumaan sa realm nang isang beses bawat group ang mga page ng groups at roster (#352)."
+  },
+  "caches.store.ldap.memberof-claims.bound": {
+    "en": "1c452f55ba1fa07a",
+    "text": "Istruktural: isang index bawat realm, isang row bawat memberOf value."
+  },
+  "caches.store.ldap.memberof-claims.lifetime": {
+    "en": "f929877e04baf8dc",
+    "text": "Hanggang sa susunod na pagsulat sa directory, saanman."
+  },
+  "caches.store.ldap.person-keys.title": {
+    "en": "3ebad5ed26bc69ee",
+    "text": "Mga tao, bilang naka-sort na key"
+  },
+  "caches.store.ldap.person-keys.description": {
+    "en": "7a8e30d74e436094",
+    "text": "Ang normalised na DN at username ng bawat tao, sa pagkakasunod na inililista ng allPersons(), para hindi dumaan, mag-normalise at mag-sort ng realm bawat request ang isang page ng mga tao (#352)."
+  },
+  "caches.store.ldap.person-keys.bound": {
+    "en": "9023115342c9c596",
+    "text": "Istruktural: isang listahan bawat realm, kasinlaki ng ou=users."
+  },
+  "caches.store.ldap.person-keys.lifetime": {
+    "en": "1c2c57f79cea4fb0",
+    "text": "Hanggang may maisulat sa ilalim ng ou=users ng realm."
+  },
+  "caches.store.ldap.subtree-listings.title": {
+    "en": "89d5ba5e5411f55d",
+    "text": "Mga listahan ng container sa directory"
+  },
+  "caches.store.ldap.subtree-listings.description": {
+    "en": "c4abe28dc7061031",
+    "text": "Ang mga entry sa ilalim ng isang container (applications, federations, policies at iba pa), itinatago hanggang may maisulat sa ilalim nito."
+  },
+  "caches.store.ldap.subtree-listings.bound": {
+    "en": "0a25541682bbfb7c",
+    "text": "Ipinapatupad: 64 na listahan ng container bawat realm; tinatanggal ang pinakaluma at dinadaanan muli kapag hiningi ulit."
+  },
+  "caches.store.ldap.subtree-listings.lifetime": {
+    "en": "57e3e963207e4be2",
+    "text": "Hanggang may entry sa ilalim ng container na idagdag, alisin o isulat nang hindi sinasabi kung saan; isang entry bawat container na nailista."
+  },
+  "caches.store.ldap.username-index.title": {
+    "en": "f619a8c6ea91bc8f",
+    "text": "Index ng username sa directory"
+  },
+  "caches.store.ldap.username-index.description": {
+    "en": "d7a1bebd68ee2f7c",
+    "text": "Bawat pangalang tinutugunan ng isang tao (uid at RDN), patungo sa entry niya sa ilalim ng ou=users, para hindi dumaan sa directory ang isang sign-in."
+  },
+  "caches.store.ldap.username-index.lifetime": {
+    "en": "b12dd09efefaa6bd",
+    "text": "Hanggang masulatan ang directory sa paraang hindi kayang isama ng index; pagkatapos ay bubuuin itong muli ng susunod na lookup. Isang index bawat realm."
+  },
+  "caches.store.mail.outbox.title": {
+    "en": "d40abea9379f4e22",
+    "text": "Mail outbox"
+  },
+  "caches.store.mail.outbox.description": {
+    "en": "a6352896048fde4b",
+    "text": "Isang row bawat mensaheng ipinapadala ng serbisyong ito: ang recipient nito, ang state nito, ang mga attempt nito, kung kailan ito susunod na due — at ang body nito habang pending, dead o captured, hindi kailanman kapag naipadala na. Ang durable na queue na sine-sweep ng mail.deliver job."
+  },
+  "caches.store.mail.outbox.bound": {
+    "en": "6a37e278a83399a5",
+    "text": "Ipinapatupad: mail.maxRows bawat realm, ang pinakalumang TAPOS nang mensahe ang unang tinatanggal; hindi kailanman tinatanggal ang isang pending para magkaroon ng puwang."
+  },
+  "caches.store.mail.outbox.lifetime": {
+    "en": "18d9f9e9aaa28b0a",
+    "text": "Hanggang mail.retentionS pagkatapos itong i-queue, ang pinakalumang tapos na ang una kapag lumampas sa mail.maxRows bawat realm."
+  },
+  "caches.store.mail.outbox.hitMeaning": {
+    "en": "cdfb417042891812",
+    "text": "isang mensaheng pinigil bilang duplicate ng isang naka-queue na para sa parehong aksyon sa loob ng mail.dedupWindowS"
+  },
+  "caches.store.oauth2.access-token-status.title": {
+    "en": "510d919c0bffd0a8",
+    "text": "Mga status entry ng access token"
+  },
+  "caches.store.oauth2.access-token-status.description": {
+    "en": "642c7b724ba0c31a",
+    "text": "Ang index ng bawat buhay na access token sa access-token status list ng realm na ito — mga OAuth RFC 9068 token at ang dalawang JWT format ng GNAP — kasama ang jti nito, para makalkula ang bit mula sa revocation register."
+  },
+  "caches.store.oauth2.access-token-status.bound": {
+    "en": "04bb104bc7ab1ff8",
+    "text": "Ipinapatupad: 1048576 index ang hawak ng listahan bawat realm; ang listahang walang bakanteng index ay TUMATANGGING mag-mint ng access token (STS-OAUTH-0817) sa halip na gamitin muli ang isang buhay pa."
+  },
+  "caches.store.oauth2.access-token-status.lifetime": {
+    "en": "8de02df809461e33",
+    "text": "hangga't buhay ang access token na inilalarawan nito; bakante na muli ang index nito pagkatapos noon."
+  },
+  "caches.store.oauth2.access-token-status.hitMeaning": {
+    "en": "f3d3ecc4c22434cc",
+    "text": "natagpuan dito ang status ng isang token"
+  },
+  "caches.store.oauth2.access-token-status-lists.title": {
+    "en": "fbf9c8a567bfa76a",
+    "text": "Mga naka-sign na access-token status list"
+  },
+  "caches.store.oauth2.access-token-status-lists.description": {
+    "en": "5dd0b4a74b29c624",
+    "text": "Ang huling access-token Status List Token na sinign ng process na ito para sa bawat realm, ginagamit muli habang hindi nagbabago ang listahan."
+  },
+  "caches.store.oauth2.access-token-status-lists.bound": {
+    "en": "80432c4ebde95ad8",
+    "text": "Ipinapatupad: 1024 naka-sign na listahan para sa process; tinatanggal ang pinakaluma at sina-sign muli kapag hiningi ulit."
+  },
+  "caches.store.oauth2.access-token-status-lists.lifetime": {
+    "en": "51e29a7ed466e171",
+    "text": "hanggang magbago ang listahan, o kalahati ng oauth2.accessTokenStatusListTtlS."
+  },
+  "caches.store.oauth2.access-token-status-lists.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "na-serve ang isang listahan nang hindi ito sina-sign muli"
+  },
+  "caches.store.oauth2.attestation-challenges.title": {
+    "en": "f19e208930fddc5c",
+    "text": "Mga client attestation challenge"
+  },
+  "caches.store.oauth2.attestation-challenges.description": {
+    "en": "662374646ca59f3f",
+    "text": "Mga challenge na ipinamigay para sa OAuth 2.0 Attestation-Based Client Authentication (draft-ietf-oauth-attestation-based-client-auth-11 section 6), para masuri ang Client Attestation PoP na may dala nito laban sa in-issue."
+  },
+  "caches.store.oauth2.attestation-challenges.bound": {
+    "en": "35159bcb83ab4004",
+    "text": "Ipinapatupad: oauth2.clientAttestationChallengeCacheSize bawat realm; tinatanggal ang pinakalumang challenge, at binibigyan ng bago kasama ang use_attestation_challenge ang client na magpapakita nito."
+  },
+  "caches.store.oauth2.attestation-challenges.hitMeaning": {
+    "en": "ec2ac5040ee56556",
+    "text": "isang challenge na natagpuang kasalukuyan, kaya tinanggap ang PoP"
+  },
+  "caches.store.oauth2.attestation-challenges.sentences.lifetime": {
+    "en": "2e89c6be2e93654a",
+    "text": "oauth2.clientAttestationChallengeTtlS ({{seconds}} s) pagkatapos itong ma-issue."
+  },
+  "caches.store.oauth2.authorization-details-types.title": {
+    "en": "567064e52a2873c3",
+    "text": "Mga naka-parse na authorization_details type"
+  },
+  "caches.store.oauth2.authorization-details-types.description": {
+    "en": "8900e32db6598589",
+    "text": "Mga RFC 9396 type definition na idineklara sa mga resource application, naka-parse at na-compile ang mga JSON Schema nang isang beses bawat natatanging text ng definition. Pinagsasaluhan ng bawat realm, dahil ang text ang key."
+  },
+  "caches.store.oauth2.authorization-details-types.bound": {
+    "en": "112a6e6fa385c928",
+    "text": "Ipinapatupad: 512 naka-parse na definition; tinatanggal ang pinakaluma at pina-parse muli kapag ginamit ulit."
+  },
+  "caches.store.oauth2.authorization-details-types.lifetime": {
+    "en": "473355e47deb4520",
+    "text": "Walang expiry: naka-key sa text ng definition, kaya bagong entry ang na-edit na definition. Ang pinakaluma ang unang tinatanggal kapag puno."
+  },
+  "caches.store.oauth2.backchannelDeliveries.title": {
+    "en": "77766290cfc9291c",
+    "text": "Mga delivery ng Back-channel Logout"
+  },
+  "caches.store.oauth2.backchannelDeliveries.description": {
+    "en": "4aeb276277f6aab5",
+    "text": "Isang row bawat relying party na sinabihang natapos ang isang session (OpenID Connect Back-Channel Logout 1.0): ang state nito, ang mga attempt nito, kung kailan ito susunod na due at ang naka-sign na Logout Token. Ang durable na queue na sine-sweep ng bawat process; nananatili ang isang dead letter hanggang subukang muli o alisin ng retention."
+  },
+  "caches.store.oauth2.backchannelDeliveries.bound": {
+    "en": "f9b82a863658b91d",
+    "text": "Ipinapatupad: oauth2.backchannelLogoutMaxRows bawat realm, ang pinakalumang TAPOS nang delivery ang unang tinatanggal; hindi kailanman tinatanggal ang isang pending para magkaroon ng puwang."
+  },
+  "caches.store.oauth2.backchannelDeliveries.lifetime": {
+    "en": "c265d018294ec409",
+    "text": "Hanggang oauth2.backchannelLogoutRetentionS pagkatapos itong i-queue (tapos man o hindi), ang pinakalumang tapos na ang una kapag lumampas sa oauth2.backchannelLogoutMaxRows bawat realm."
+  },
+  "caches.store.oauth2.backchannelDeliveries.hitMeaning": {
+    "en": "caea9bfc772cb4de",
+    "text": "isang delivery na naka-queue na para sa session at client na iyon, kaya walang na-queue ang ikalawang process na tumapos sa parehong session"
+  },
+  "caches.store.oauth2.client-jwks.title": {
+    "en": "3272fee4e1b83bb7",
+    "text": "Mga kinuhang client key set"
+  },
+  "caches.store.oauth2.client-jwks.description": {
+    "en": "65bfbd863f38dc47",
+    "text": "Ang JSON Web Key Set na isinagot ng naka-register na jwks_uri ng isang client, para mahanap ng mga client assertion, request object at encrypted response nito ang mga key nito nang walang fetch bawat request (#120)."
+  },
+  "caches.store.oauth2.client-jwks.bound": {
+    "en": "bfe4788c0fa5b7fe",
+    "text": "Ipinapatupad: 256 key set bawat realm; tinatanggal ang pinakaluma at kinukuha muli kapag kailangan na ulit."
+  },
+  "caches.store.oauth2.redeemed-codes.title": {
+    "en": "d05b2abe4dfcac4c",
+    "text": "Mga na-redeem na authorization code"
+  },
+  "caches.store.oauth2.redeemed-codes.description": {
+    "en": "95d0628d00fe6871",
+    "text": "Bawat authorization code na naipalit na sa token endpoint, para makilala bilang replay ang ikalawang palitan (RFC 9700 section 4.5, RFC 6749 section 4.1.2)."
+  },
+  "caches.store.oauth2.redeemed-codes.bound": {
+    "en": "68bf16c7399216cb",
+    "text": "Ipinapatupad: oauth2.redeemedCodeCacheSize bawat realm; kinakalimutan ang pinakalumang redemption. Nawala na ang code mismo sa redemption, kaya tinatanggihan pa rin ang pag-uulit ng isang nakalimutan, bilang hindi kilalang code."
+  },
+  "caches.store.oauth2.redeemed-codes.lifetime": {
+    "en": "a5b0ac55b8d2fee9",
+    "text": "Isang code lifetime pagkatapos sanang mag-expire ang code."
+  },
+  "caches.store.oauth2.redeemed-codes.hitMeaning": {
+    "en": "55156810371e3ec1",
+    "text": "isang code na na-redeem na, ipinakita muli"
+  },
+  "caches.store.oauth2.request-uri.title": {
+    "en": "3ae35b709a8c09f7",
+    "text": "Mga kinuhang request object"
+  },
+  "caches.store.oauth2.request-uri.description": {
+    "en": "e131879806506d25",
+    "text": "Ang nilalaman ng isang naka-register na RFC 9101 request_uri, itinatago para hindi na muling kunin kapag ipinadala ulit ng isang client ang parehong URI (OpenID Connect Core section 6.2). Naka-off maliban kung itinakda ang oauth2.requestUriCacheS."
+  },
+  "caches.store.oauth2.request-uri.bound": {
+    "en": "85d51ba970545675",
+    "text": "Ipinapatupad: 256 kinuhang request object bawat realm; tinatanggal ang pinakaluma at kinukuha muli kapag ginamit ulit."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetime": {
+    "en": "873bf7d50fb75475",
+    "text": "oauth2.requestUriCacheS ({{seconds}} s) pagkatapos ng fetch, bawat realm; ang pinakaluma ang unang tinatanggal kapag puno."
+  },
+  "caches.store.oauth2.request-uri.sentences.lifetimeOff": {
+    "en": "e4da95e27cb3da50",
+    "text": "Naka-off: 0 ang oauth2.requestUriCacheS, kaya walang itinatago."
+  },
+  "caches.store.oauth2.signed-metadata.title": {
+    "en": "3dd1b4bc87c49970",
+    "text": "Naka-sign na authorization server metadata"
+  },
+  "caches.store.oauth2.signed-metadata.description": {
+    "en": "bb3264a47fd20369",
+    "text": "Mga RFC 8414 signed_metadata JWT, ginagamit muli habang hindi nagbabago ang metadata at mga signing setting na pinagbuuan ng mga ito, para hindi mag-sign sa bawat fetch ang abalang discovery endpoint."
+  },
+  "caches.store.oauth2.signed-metadata.bound": {
+    "en": "d492592aaeda96a9",
+    "text": "Ipinapatupad: oauth2.maxSignedMetadataEntries bawat realm; tinatanggal ang pinakaluma at sina-sign muli kapag hiningi ulit."
+  },
+  "caches.store.oauth2.used-assertions.title": {
+    "en": "73611edaf06c6db9",
+    "text": "Mga nagamit nang assertion"
+  },
+  "caches.store.oauth2.used-assertions.description": {
+    "en": "3b419f31b05f2f53",
+    "text": "Bawat RFC 7523 JWT at RFC 7522 SAML assertion na tinanggap, para sa isang grant o para sa client authentication, para isang beses lang kailanman tanggapin ang bawat isa."
+  },
+  "caches.store.oauth2.used-assertions.bound": {
+    "en": "638f25295e1c0d43",
+    "text": "Ipinapatupad: oauth2.assertionReplayCacheSize bawat realm. TUMATANGGI ang punong history sa susunod na assertion sa halip na kalimutan ang isang buhay pa, na magbubukas muli sa replay nito."
+  },
+  "caches.store.oauth2.used-assertions.lifetime": {
+    "en": "94d0ca921a65d035",
+    "text": "Hanggang mag-expire ang assertion mismo. Tumatanggi sa mga bagong assertion kapag puno sa halip na kalimutan ang isa. Sa isang database store, nasa database ang mga row at walang nakalista rito."
+  },
+  "caches.store.oauth2.used-assertions.hitMeaning": {
+    "en": "6a3a94d2a957b664",
+    "text": "isang assertion na nagamit na, kaya tinanggihan ang request"
+  },
+  "caches.store.oid4vci.nonces.title": {
+    "en": "37b4454d3ea9239d",
+    "text": "Mga OID4VCI nonce"
+  },
+  "caches.store.oid4vci.nonces.description": {
+    "en": "632fb796a062271b",
+    "text": "Ang mga c_nonce value na ibinigay sa mga wallet, para ang proof ng isang credential request ay magpangalan ng isang in-issue ng issuer na ito, at gamitin ito nang isang beses."
+  },
+  "caches.store.oid4vci.nonces.bound": {
+    "en": "7191bca374cecc2b",
+    "text": "Ipinapatupad: oid4vci.cNonceCacheSize bawat realm; tinatanggal ang pinakalumang nonce, at sinasagot ng invalid_nonce ang proof na bumabanggit dito."
+  },
+  "caches.store.oid4vci.nonces.lifetime": {
+    "en": "93e82934be7922d7",
+    "text": "oid4vci.cNonceTtlS pagkatapos itong ma-issue, o kapag nagamit na."
+  },
+  "caches.store.oid4vci.nonces.hitMeaning": {
+    "en": "4773369ba8623f1c",
+    "text": "isang nonce na ipinamigay ng issuer na ito, kaya sinuri ang proof"
+  },
+  "caches.store.oid4vci.status-entries.title": {
+    "en": "56843562e68b0331",
+    "text": "Mga status entry ng credential"
+  },
+  "caches.store.oid4vci.status-entries.description": {
+    "en": "3a0bf81182e19590",
+    "text": "Ang index ng bawat in-issue na credential sa mga status list ng realm na ito at ang status na itinakda para dito ng isang administrator o ng isang sign-out."
+  },
+  "caches.store.oid4vci.status-entries.bound": {
+    "en": "3bf8c1289f83c0ef",
+    "text": "Ipinapatupad: 131072 index ang hawak ng status list bawat realm; ang listahang walang bakanteng index ay TUMATANGGING mag-issue ng credential (STS-VC-0075) sa halip na gamitin muli ang isang buhay pa."
+  },
+  "caches.store.oid4vci.status-entries.lifetime": {
+    "en": "3a29fdc0d43392bc",
+    "text": "hangga't buhay ang credential na inilalarawan nito; bakante na muli ang index nito pagkatapos noon."
+  },
+  "caches.store.oid4vci.status-entries.hitMeaning": {
+    "en": "73245de2fcaad199",
+    "text": "natagpuan dito ang status ng isang credential"
+  },
+  "caches.store.oid4vci.status-list-tokens.title": {
+    "en": "866d48f2249eb97d",
+    "text": "Mga naka-sign na status list"
+  },
+  "caches.store.oid4vci.status-list-tokens.description": {
+    "en": "0d499c1db7ce1b33",
+    "text": "Ang huling Status List Token at Bitstring Status List credential na sinign ng process na ito para sa bawat realm, ginagamit muli habang hindi nagbabago ang listahan."
+  },
+  "caches.store.oid4vci.status-list-tokens.bound": {
+    "en": "88419eb5f5e652eb",
+    "text": "Ipinapatupad: 1024 naka-sign na dokumento para sa process; tinatanggal ang pinakaluma at sina-sign muli kapag hiningi ulit."
+  },
+  "caches.store.oid4vci.status-list-tokens.lifetime": {
+    "en": "2bd4807258e34312",
+    "text": "hanggang magbago ang listahan, o kalahati ng oid4vci.statusListTtlS."
+  },
+  "caches.store.oid4vci.status-list-tokens.hitMeaning": {
+    "en": "48214c6b54f10691",
+    "text": "na-serve ang isang listahan nang hindi ito sina-sign muli"
+  },
+  "caches.store.oid4vp.sign-in-register.title": {
+    "en": "8377fd5187608db2",
+    "text": "Register ng wallet sign-in"
+  },
+  "caches.store.oid4vp.sign-in-register.description": {
+    "en": "91808833ee8c6a0c",
+    "text": "Ang mga credential na in-issue ng realm na ito para sa isang tao batay sa isang access token na na-verify nito, na siya lamang mga puwedeng gamitin ng isang wallet para mag-sign in — naka-key sa isang digest ng issuer-signed JWT, o para sa ldp_vc ay sa holder key at sa tao."
+  },
+  "caches.store.oid4vp.sign-in-register.bound": {
+    "en": "89a00ee69a340570",
+    "text": "Ipinapatupad: oid4vp.signInRegisterMaxEntries bawat realm; tinatanggal ang row na unang in-issue. Nagfe-fail ito nang SARADO — ang credential na walang row ay walang sinumang naisa-sign in."
+  },
+  "caches.store.oid4vp.sign-in-register.lifetime": {
+    "en": "c4978652a50a81bb",
+    "text": "hanggang mag-expire ang huling credential sa row; itinatago rin hanggang noon ang isang itinatwang row, para patuloy itong tumanggi."
+  },
+  "caches.store.oid4vp.sign-in-register.hitMeaning": {
+    "en": "edf65c6768151cfc",
+    "text": "isang ipinakitang credential na itinala ng realm na ito bilang puwedeng mag-sign in sa tao nito"
+  },
+  "caches.store.oid4vp.status-lists-fetched.title": {
+    "en": "15a3636c9501e7c5",
+    "text": "Mga kinuhang status list"
+  },
+  "caches.store.oid4vp.status-lists-fetched.description": {
+    "en": "864c6eeca25082c3",
+    "text": "Mga Status List Token at Bitstring Status List credential na inilathala ng isang pinagkakatiwalaang foreign issuer, kinuha nang may isa sa mga credential nito na ipinakita sa Verifier."
+  },
+  "caches.store.oid4vp.status-lists-fetched.bound": {
+    "en": "bcf56be849d1f682",
+    "text": "Ipinapatupad: 256 kinuhang listahan para sa process; tinatanggal ang pinakaluma at kinukuha muli kapag kailangan na ulit."
+  },
+  "caches.store.oid4vp.status-lists-fetched.lifetime": {
+    "en": "c7ab92ad02d104b4",
+    "text": "ang sariling ttl ng listahan (at hindi kailanman lampas sa exp nito), hindi hihigit sa oid4vp.statusListMaxCacheS; 30 segundo para sa nabigong fetch."
+  },
+  "caches.store.oid4vp.status-lists-fetched.hitMeaning": {
+    "en": "f822f1850d9e7875",
+    "text": "nasagot ang status ng isang ipinakitang credential nang walang fetch"
+  },
+  "caches.store.oid4vp.transactions.title": {
+    "en": "8713c7cb29f0bd13",
+    "text": "Mga OpenID4VP transaction"
+  },
+  "caches.store.oid4vp.transactions.description": {
+    "en": "90e0bfc3241f7632",
+    "text": "Bawat presentation request na hinihintay ng Verifier na ito — ang sa bar door at ang sa isang wallet sign-in, kung saan dala ng huli ang Digital Credentials API request, ang response mode nito at ang key na pinag-e-encrypt-an ng sagot nito."
+  },
+  "caches.store.oid4vp.transactions.bound": {
+    "en": "906ceadcdc3ebca9",
+    "text": "Ipinapatupad: oid4vp.maxTransactions bawat realm; tinatanggal ang pinakalumang naghihintay na request (ang patakaran ng federation.maxContexts), dahil ang pagtanggi ay magpapahintulot sa kahit sino na pahintuin ang request endpoint para sa lahat."
+  },
+  "caches.store.oid4vp.transactions.lifetime": {
+    "en": "3fa7d80df304403b",
+    "text": "oid4vp.presentationRequestTtlS, o oid4vp.signInTtlS para sa isang sign-in; sine-sweep kapag binuo ang susunod na request."
+  },
+  "caches.store.oid4vp.transactions.hitMeaning": {
+    "en": "8fb2e09564d83b32",
+    "text": "nahanap ng sagot ng isang wallet ang request na pinagmulan nito"
+  },
+  "caches.store.oidfed.collections.title": {
+    "en": "02796e1277627f75",
+    "text": "Mga OpenID Federation collection, ginawa sa loob ng process"
+  },
+  "caches.store.oidfed.collections.description": {
+    "en": "2f2e159f830abf0b",
+    "text": "Ang Entity Collection ayon sa pagkakagawa ng process na ito nang walang kinukuha — ang sariling mga realm ng serbisyong ito, at mga subordinate na na-resolve na — ginagamit kung saan walang naitagong crawl, para hindi mag-sign ng mga statement para sa bawat realm ang bawat anonymous na request (#136)."
+  },
+  "caches.store.oidfed.collections.bound": {
+    "en": "0be0a09e5b54fc2c",
+    "text": "Ipinapatupad: 8 bawat realm (isa bawat host na inaabot ang realm), ang pinakaluma ang unang pinaaalis."
+  },
+  "caches.store.oidfed.collections.lifetime": {
+    "en": "04891ecb8bc94b6c",
+    "text": "oidfed.collectionCacheS."
+  },
+  "caches.store.oidfed.resolutions.title": {
+    "en": "491967416029bead",
+    "text": "Mga OpenID Federation resolution"
+  },
+  "caches.store.oidfed.resolutions.description": {
+    "en": "bddcd39bede47404",
+    "text": "Mga Trust Chain na na-resolve ng realm na ito — sa isang aksyon ng administrator, o sa loob ng process para sa sarili nitong mga realm — kasama ang na-resolve na metadata at ang mga na-verify na Trust Mark, para masagot ng resolve endpoint ang isang hindi naka-authenticate na caller nang hindi nilalakad ang federation (18.1)."
+  },
+  "caches.store.oidfed.resolutions.bound": {
+    "en": "ba33533130408063",
+    "text": "Ipinapatupad: oidfed.resolveCacheMax bawat realm, ang pinakaluma ang unang tinatanggal."
+  },
+  "caches.store.oidfed.resolutions.lifetime": {
+    "en": "ce6f4a649ea6af77",
+    "text": "Hanggang mag-expire ang chain (ang pinakamaliit nitong exp, 10.4), at hindi hihigit sa oidfed.resolveCacheS."
+  },
+  "caches.store.passwords.breach-ranges.title": {
+    "en": "5746db291bee19b3",
+    "text": "Mga range ng na-breach na password"
+  },
+  "caches.store.passwords.breach-ranges.description": {
+    "en": "a63073324d3b97be",
+    "text": "Mga sagot ng Pwned Passwords range, ayon sa limang-character na SHA-1 prefix na itinanong (#62 P6): kung aling mga password digest sa ilalim nito ang kilalang na-breach, at gaano kadalas."
+  },
+  "caches.store.passwords.breach-ranges.bound": {
+    "en": "24463075100aedaa",
+    "text": "Ipinapatupad: risk.breachCacheSize na prefix; kapag puno, tinatanggal ang pinakaluma at itinatanong muli kapag kailangan ulit."
+  },
+  "caches.store.passwords.breach-ranges.lifetime": {
+    "en": "aae341c66c7e2c1a",
+    "text": "risk.breachCacheMinutes pagkatapos itong ma-fetch."
+  },
+  "caches.store.passwords.breach-ranges.hitMeaning": {
+    "en": "48c6ca9f5e775571",
+    "text": "isang prefix na naitanong na, kaya walang ginawang request"
+  },
+  "caches.store.passwords.breach-verdicts.title": {
+    "en": "aae3278a7898fa0e",
+    "text": "Mga hatol sa na-breach na password"
+  },
+  "caches.store.passwords.breach-verdicts.description": {
+    "en": "f99aab54b7cbaca0",
+    "text": "Kung na-breach ba ang isang password na kasisuri lang ng isang pinto, para mabasa ito ng mga synchronous na password rule sa parehong request (#62 P6). Naka-key sa isang digest ng password, hindi kailanman sa password."
+  },
+  "caches.store.passwords.breach-verdicts.bound": {
+    "en": "b080f1460f9ce4f3",
+    "text": "Ipinapatupad: 1000 hatol; kapag puno, tinatanggal ang pinakaluma."
+  },
+  "caches.store.passwords.breach-verdicts.lifetime": {
+    "en": "163b9a20f735bea7",
+    "text": "limang minuto pagkatapos masuri ang password."
+  },
+  "caches.store.passwords.breach-verdicts.hitMeaning": {
+    "en": "6be02cca3aeca2ef",
+    "text": "isang hatol na nakita para sa password na itinatakda"
+  },
+  "caches.store.persistence.observational-stores.title": {
+    "en": "419e59390ec83d75",
+    "text": "Mga deklarasyon ng observation store"
+  },
+  "caches.store.persistence.observational-stores.description": {
+    "en": "64160a787450a0e1",
+    "text": "Kung idineklara bang observation ang bawat persisted store (isang bilang na hindi hinihintay ng read barrier), na binabasa nang isang beses bawat store handle dahil nasa daan ng bawat store write ang pagsusuri."
+  },
+  "caches.store.persistence.observational-stores.bound": {
+    "en": "c60e874dcf573f9b",
+    "text": "Istruktural: isang flag bawat persisted store na idinedeklara ng build na ito."
+  },
+  "caches.store.persistence.observational-stores.lifetime": {
+    "en": "600d9d2014883617",
+    "text": "Habang buhay ang process: hindi puwedeng magbago ang isang deklarasyon habang tumatakbo ito."
+  },
+  "caches.store.persistence.write-shadow.title": {
+    "en": "d577317e78eee7d6",
+    "text": "Shadow ng hindi nagbagong write"
+  },
+  "caches.store.persistence.write-shadow.description": {
+    "en": "61a1fa8c2fa1f796",
+    "text": "Ang huling kopya ng bawat directory entry at realm record na isinulat ng process na ito sa persistence store, para ang nagbago lang ang isulat ng isang flush."
+  },
+  "caches.store.persistence.write-shadow.bound": {
+    "en": "25e652cba44fd7ec",
+    "text": "Istruktural: isang row bawat directory entry na isinulat at isa para sa realm record, kaya hindi hihigit sa ldap.maxEntries + 1 sa isang realm."
+  },
+  "caches.store.persistence.write-shadow.lifetime": {
+    "en": "9c59c7826b7934f6",
+    "text": "Walang expiry: nire-refresh sa bawat flush, isang entry bawat directory entry at realm na isinulat. Walang laman sa memory mode."
+  },
+  "caches.store.revocation.ca-certificates.title": {
+    "en": "c65adefa5d027d1a",
+    "text": "Mga na-fetch na issuer certificate"
+  },
+  "caches.store.revocation.ca-certificates.description": {
+    "en": "c33c6761aae6d7a6",
+    "text": "Mga certificate na na-fetch mula sa isang Authority Information Access caIssuers URL o sa isang LDAP cACertificate attribute, para makabuo ng path para sa isang revocation check. Hindi kailanman pinagkakatiwalaan dahil lang na-fetch."
+  },
+  "caches.store.revocation.ca-certificates.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Ipinapatupad: pki.revocationCrlCacheEntries, tinatanggal ang pinakalumang write at fine-fetch muli kapag kailangan ulit."
+  },
+  "caches.store.revocation.crl.title": {
+    "en": "103ad3aaa8b602ed",
+    "text": "Mga certificate revocation list"
+  },
+  "caches.store.revocation.crl.description": {
+    "en": "35e5514e29ea7646",
+    "text": "Mga CRL na na-fetch para suriin ang isang ipinakitang certificate, naka-parse at na-verify, naka-key sa distribution point URL at sa mga fingerprint ng mga signer na pinag-verify-han ng mga ito."
+  },
+  "caches.store.revocation.crl.bound": {
+    "en": "026141faa20a43bf",
+    "text": "Ipinapatupad: pki.revocationCrlCacheEntries, tinatanggal ang pinakalumang write at fine-fetch muli kapag kailangan ulit."
+  },
+  "caches.store.revocation.failures.title": {
+    "en": "e4d1527ba168d4a0",
+    "text": "Mga nabigong revocation fetch"
+  },
+  "caches.store.revocation.failures.description": {
+    "en": "dbb6ac12fe1343bf",
+    "text": "Isang negative cache: ang CRL, OCSP o certificate fetch na nabigo ay hindi sinusubukang muli hangga't hindi lumilipas ang retry window nito, at ang naaalalang pagkabigo ang sagot habang iyon. Ang hit ay isang pagkabigong muling ginamit."
+  },
+  "caches.store.revocation.failures.bound": {
+    "en": "f79a5dadafc412d8",
+    "text": "Ipinapatupad: pki.revocationCrlCacheEntries, tinatanggal ang pinakaluma; ang ibig sabihin lang ng tinanggal na pagkabigo ay puwedeng itanong muli ang address nang mas maaga."
+  },
+  "caches.store.revocation.ocsp.title": {
+    "en": "5cb556fe6018af0b",
+    "text": "Mga OCSP response"
+  },
+  "caches.store.revocation.ocsp.description": {
+    "en": "f2cbc8a367642667",
+    "text": "Mga sagot ng OCSP tungkol sa tig-iisang certificate, naka-key sa responder URL, issuer fingerprint at serial number."
+  },
+  "caches.store.revocation.ocsp.bound": {
+    "en": "0b95d0db46e148cd",
+    "text": "Ipinapatupad: pki.revocationCrlCacheEntries, tinatanggal ang pinakalumang write at itinatanong muli kapag kailangan ulit."
+  },
+  "caches.store.revocation.parsed-tiers.title": {
+    "en": "9d1b05aed46f4898",
+    "text": "Mga naka-parse na trust-anchor certificate"
+  },
+  "caches.store.revocation.parsed-tiers.description": {
+    "en": "2ab4c1418758f008",
+    "text": "Ang sariling mga CA certificate ng serbisyong ito, pina-parse nang isang beses bawat PEM para sa paglakad sa revocation register. Naka-key sa PEM mismo; ang napalitang CA ay may ibang PEM at bagong entry."
+  },
+  "caches.store.revocation.parsed-tiers.bound": {
+    "en": "e64e50f254ba86b3",
+    "text": "Ipinapatupad: 8192 parse; kapag puno, inaalisan ng laman ang buong memo at binubuo muli habang ginagamit."
+  },
+  "caches.store.revocation.parsed-tiers.lifetime": {
+    "en": "b8e9b839bbae7740",
+    "text": "Walang expiry: naka-key sa nilalaman. Kapag puno, inaalisan ng laman ang buong memo nang sabay-sabay."
+  },
+  "caches.store.revocation.pem-files.title": {
+    "en": "5bba075753f2c751",
+    "text": "Mga trust file na binasa mula sa disk"
+  },
+  "caches.store.revocation.pem-files.description": {
+    "en": "8ced004de4c5eb3f",
+    "text": "Ang mga PEM file na pinangalanan ng mga revocation setting, binabasa nang isang beses at itinatago hanggang magbago ang modification time ng file."
+  },
+  "caches.store.revocation.pem-files.bound": {
+    "en": "fe1bda7532b3e9c1",
+    "text": "Istruktural: isang entry bawat setting na nagpapangalan ng file (pki.revocationCrlIssuersFile, pki.revocationLdapCaFile)."
+  },
+  "caches.store.revocation.pem-files.lifetime": {
+    "en": "25a592100bbb938d",
+    "text": "Hanggang magbago sa disk ang pinangalanang file, o magpangalan ang setting ng ibang file. Isang entry bawat setting."
+  },
+  "caches.store.revocation.presented-chains.title": {
+    "en": "c1aadccf1ec9f484",
+    "text": "Mga client certificate chain, para sa mga resumed session"
+  },
+  "caches.store.revocation.presented-chains.description": {
+    "en": "d1dfca3ff5d777e5",
+    "text": "Ang path na nabuo ng isang na-verify na client certificate sa isang buong TLS handshake, naka-key sa leaf, ibinabalik kapag NI-RESUME ang session na iyon — leaf lang ang ibinibigay ng node sa isang resumed session, at kung wala ito, tinatanggihan ng revocation walk ang isang certificate na na-verify."
+  },
+  "caches.store.revocation.presented-chains.bound": {
+    "en": "d1664dfb6bfaa88f",
+    "text": "Ipinapatupad: 1024 leaf; ang pinakaluma ang unang kinakalimutan."
+  },
+  "caches.store.revocation.presented-chains.lifetime": {
+    "en": "bb0b83daf5258fef",
+    "text": "Ibinabahagi ng bawat node at nire-replicate (#406): isang oras, o ang session lifetime ng main port at isang minuto kapag mas mahaba, nire-renew ng susunod na buong handshake ng leaf; tinatanggal ang pinakaluma kapag puno."
+  },
+  "caches.store.risk.dataset-lookups.title": {
+    "en": "fb13e848d289d04e",
+    "text": "Mga lookup sa risk dataset"
+  },
+  "caches.store.risk.dataset-lookups.description": {
+    "en": "f63859539f3ae0dc",
+    "text": "Ang sinabi ng mga aktibong geolocation, ASN at IP-list dataset tungkol sa isang address, bawat realm. Binubura tuwing may dataset version na ina-activate sa alinmang node."
+  },
+  "caches.store.risk.dataset-lookups.bound": {
+    "en": "c911a586d2203607",
+    "text": "Ipinapatupad: 10000 lookup, ang pinakaluma ang unang tinatanggal."
+  },
+  "caches.store.risk.dataset-lookups.lifetime": {
+    "en": "cabefdef4e47cbf3",
+    "text": "Hanggang may ma-activate na dataset version, o tanggalin ito ng hangganan."
+  },
+  "caches.store.risk.standings.title": {
+    "en": "492e058d1adf8354",
+    "text": "Mga risk standing"
+  },
+  "caches.store.risk.standings.description": {
+    "en": "4d054f02f95acda8",
+    "text": "Ang huling na-assess na risk ng bawat tao (level, score, mga signal), para sa isang issuance na walang session na mababasahan nito — isang Kerberos ticket, isang WS-Trust token (#62 P3)."
+  },
+  "caches.store.risk.standings.bound": {
+    "en": "f5d37f56be898128",
+    "text": "Ipinapatupad: risk.standingCacheSize na tao bawat process; kapag puno, tinatanggal ang pinakaluma, kaya ang susunod na sessionless na issuance ng taong iyon ay pagpapasyahan batay sa mga role lang."
+  },
+  "caches.store.risk.standings.lifetime": {
+    "en": "09d8d0f5307cb80c",
+    "text": "risk.standingValidMinutes pagkatapos ng assessment na itinatala nito."
+  },
+  "caches.store.risk.standings.hitMeaning": {
+    "en": "8d6fb31ae90a70a5",
+    "text": "isang standing na hawak at valid pa, kaya ito ang ginamit sa pagpapasya sa issuance"
+  },
+  "caches.store.saml11.assertions.title": {
+    "en": "8dd27dfb9529ae0c",
+    "text": "Mga SAML 1.1 assertion"
+  },
+  "caches.store.saml11.assertions.description": {
+    "en": "5871e55cdce3067d",
+    "text": "Mga na-issue na SAML 1.1 assertion, itinatago para masagot ang isang attribute authority request na nagpapangalan ng isa sa pamamagitan ng AssertionIDReference."
+  },
+  "caches.store.saml11.assertions.bound": {
+    "en": "9d12efffcb44be21",
+    "text": "Ipinapatupad: saml11.assertionCacheMax bawat realm, tinatanggal ang pinakaluma; ang artifact na nagpapangalan ng tinanggal na assertion ay sinasagot bilang hindi kilala."
+  },
+  "caches.store.saml11.assertions.lifetime": {
+    "en": "4397e5b8b411e7a8",
+    "text": "Walang expiry: tinatanggal ang pinakaluma kapag lumampas sa saml11.assertionCacheMax."
+  },
+  "caches.store.saml11.assertions.hitMeaning": {
+    "en": "b7e393c624057aea",
+    "text": "isang AssertionIDReference na nasagot"
+  },
+  "caches.store.scim.digest-nonce-counts.title": {
+    "en": "96cc15215936464e",
+    "text": "Mga SCIM Digest nonce count"
+  },
+  "caches.store.scim.digest-nonce-counts.description": {
+    "en": "9cf76c08d5bdd84d",
+    "text": "Ang mga nonce-count (nc) value na tinanggap na sa ilalim ng bawat Digest nonce, para hindi maipadala nang dalawang beses ang isang response."
+  },
+  "caches.store.scim.digest-nonce-counts.bound": {
+    "en": "64f5a29e49d56390",
+    "text": "Ipinapatupad: scim.maxDigestNonces na nonce bawat realm, tinatanggal ang pinakaluma (stale na ang nonce, at binibigyan ng bago ang client); at 1024 count bawat nonce, pagkatapos nito ay nire-retire ang nonce sa parehong paraan."
+  },
+  "caches.store.scim.digest-nonce-counts.lifetime": {
+    "en": "efeadb072ad16204",
+    "text": "Kinakalimutan kasama ng nonce nito. Persisted, kaya tinatanggihan pa rin ng na-restart na process ang isang count na tinanggap na nito; ang claim na ginagawa ng isang spend ang nagpapasya sa replay sa pagitan ng mga buhay na node."
+  },
+  "caches.store.scim.digest-nonce-counts.hitMeaning": {
+    "en": "e6f3c950888715fc",
+    "text": "isang nonce count na nagamit na, kaya tinanggihan ang request"
+  },
+  "caches.store.scim.digest-nonces.title": {
+    "en": "fe5e78bccba7a348",
+    "text": "Mga SCIM Digest nonce"
+  },
+  "caches.store.scim.digest-nonces.description": {
+    "en": "67f0b9ca7d8ae2e9",
+    "text": "Ang mga HTTP Digest challenge na naibigay ng /scim/v2 (RFC 7616), para ang isang response ay magpangalan ng isang in-issue ng serbisyong ito."
+  },
+  "caches.store.scim.digest-nonces.bound": {
+    "en": "dd6e6894aa2f1e70",
+    "text": "Ipinapatupad: scim.maxDigestNonces bawat realm, tinatanggal ang pinakaluma; ang client na gumagamit nito ay sinasagot ng stale=true kasama ang bago."
+  },
+  "caches.store.scim.digest-nonces.hitMeaning": {
+    "en": "6564f906d6ce4a3e",
+    "text": "isang nonce na in-issue ng serbisyong ito, kaya sinuri ang response"
+  },
+  "caches.store.scim.hoba-challenges.title": {
+    "en": "3acc5a8d73a93f82",
+    "text": "Mga SCIM HOBA challenge"
+  },
+  "caches.store.scim.hoba-challenges.description": {
+    "en": "3a8b3b3e6201e3be",
+    "text": "Ang mga HOBA challenge na naibigay ng /scim/v2 (RFC 7486), para ang isang signature ay magpangalan ng isang in-issue ng serbisyong ito."
+  },
+  "caches.store.scim.hoba-challenges.bound": {
+    "en": "487c5ab98e1a9d69",
+    "text": "Ipinapatupad: scim.maxHobaChallenges bawat realm, tinatanggal ang pinakaluma; ang client na gumagamit nito ay pinapadalhan ng bagong challenge."
+  },
+  "caches.store.scim.hoba-challenges.hitMeaning": {
+    "en": "5ad2c51ee6de00bd",
+    "text": "isang challenge na in-issue ng serbisyong ito, kaya sinuri ang signature"
+  },
+  "caches.store.scim.hoba-signatures.title": {
+    "en": "eaf577ca3629172c",
+    "text": "Mga SCIM HOBA signature"
+  },
+  "caches.store.scim.hoba-signatures.description": {
+    "en": "6b4d95830f64e6d4",
+    "text": "Bawat (kid, challenge, nonce) na kasamang dumating ng isang HOBA signature, para tanggihan ang isang kinopyang credential."
+  },
+  "caches.store.scim.hoba-signatures.bound": {
+    "en": "2f72f1afb6269174",
+    "text": "Ipinapatupad: scim.maxHobaSeen bawat realm, tinatanggal ang pinakaluma kasama ng challenge na pinaggawan nito, kaya hindi ito mai-replay laban sa isang buhay pa."
+  },
+  "caches.store.scim.hoba-signatures.lifetime": {
+    "en": "a43fc993f53c433b",
+    "text": "Hanggang mag-expire ang challenge nito; lampas sa limit, sumasama ang pinakaluma sa kanilang challenge."
+  },
+  "caches.store.scim.hoba-signatures.hitMeaning": {
+    "en": "1d89a0731fc525e7",
+    "text": "isang signature na nakita na, kaya tinanggihan ang request"
+  },
+  "caches.store.spiffe.x509-authorities.title": {
+    "en": "b85d5faab7cde9ef",
+    "text": "Mga na-unpack na SPIFFE X.509 authority"
+  },
+  "caches.store.spiffe.x509-authorities.description": {
+    "en": "d9f9182caa79c265",
+    "text": "Ang mga naka-store na X.509 authority ng bawat realm, ginawang certificate mula sa naka-store nilang anyo nang isang beses, para sa bawat SVID na pinirmahan at bawat bundle na ise-serve."
+  },
+  "caches.store.spiffe.x509-authorities.bound": {
+    "en": "c5f0314994fb5deb",
+    "text": "Istruktural: isang na-unpack na listahan ng authority bawat realm, pinapalitan kapag nagbago ang naka-store na listahan."
+  },
+  "caches.store.spiffe.x509-authorities.lifetime": {
+    "en": "27c141ecfc4da53a",
+    "text": "Hanggang i-rotate o i-restore ang mga authority ng realm, na siyang pumapalit sa naka-store na listahang pinag-unpack-an ng entry."
+  },
+  "caches.store.ssf.dead-letter-counts.title": {
+    "en": "2ae2baadc4bf3135",
+    "text": "Mga bilang ng Shared Signals dead letter"
+  },
+  "caches.store.ssf.dead-letter-counts.description": {
+    "en": "ea293d3db7b99efa",
+    "text": "Isang tantiya ng mga dead letter ng bawat stream, itinatago para masuri ang bago laban sa per-stream cap nang hindi binibilang ang queue. Wala rito ang mga letter na isinulat ng ibang process hanggang sa susunod na sweep."
+  },
+  "caches.store.ssf.dead-letter-counts.bound": {
+    "en": "18ea80b569ceb959",
+    "text": "Istruktural: isang bilang bawat stream, at hindi hihigit sa ssf.maxStreams na stream ang hawak ng isang realm."
+  },
+  "caches.store.ssf.dead-letter-counts.lifetime": {
+    "en": "33e19c1540ed3a70",
+    "text": "Walang expiry: binibilang muli sa bawat dead-letter sweep, isang entry bawat stream."
+  },
+  "caches.store.tls.client-certificate-identities.title": {
+    "en": "6621d01bf0591364",
+    "text": "Mga identity ng client certificate"
+  },
+  "caches.store.tls.client-certificate-identities.description": {
+    "en": "51bc8185f1a7b942",
+    "text": "Kung saan na-map ang isang na-verify na TLS client certificate — isang tao o application sa isang realm, o isang pagtanggi — naka-key sa digest ng leaf at sa mga authority na hawak noong nilakad ito."
+  },
+  "caches.store.tls.client-certificate-identities.bound": {
+    "en": "60b3f06ac2fcba6f",
+    "text": "Ipinapatupad: 256 na sagot; kapag puno, inaalisan ng laman ang buong memo at binubuo muli habang ginagamit."
+  },
+  "caches.store.tls.client-certificate-identities.lifetime": {
+    "en": "7e34d7e487ace8d1",
+    "text": "Walang expiry: binabago ng napalitang Issuing CA ang key. Kapag puno, inaalisan ng laman ang buong memo nang sabay-sabay."
+  },
+  "caches.store.vc-api.issued.title": {
+    "en": "146ad69e9e6c821f",
+    "text": "Mga VC-API credential na may status"
+  },
+  "caches.store.vc-api.issued.description": {
+    "en": "6276c639d08ac2a7",
+    "text": "Bawat kredensyal na inilabas ng W3C VC API na may entry ng status, at ang index ng status list na kinuha nito, upang mahanap ito ng isang pagbabago ng status."
+  },
+  "caches.store.vc-api.issued.bound": {
+    "en": "c05e415f3ddb333b",
+    "text": "Ipinapatupad: 4096 na credential bawat realm, ang pinakaluma ang unang kinakalimutan (hindi na mababago rito ang status nito; ang list entry mismo ay sa vc_status.ts at nananatili)."
+  },
+  "caches.store.vc-api.issued.lifetime": {
+    "en": "ec5d07ae10c640a3",
+    "text": "ang validUntil ng credential, o isang taon."
+  },
+  "caches.store.vc-api.issued.hitMeaning": {
+    "en": "17d270b650c46964",
+    "text": "nahanap ng isang pagbabago ng status ang credential"
+  },
+  "caches.store.version.stamp.title": {
+    "en": "c7dae27be2ec0b59",
+    "text": "Version stamp"
+  },
+  "caches.store.version.stamp.description": {
+    "en": "b7ad6d424d0d5996",
+    "text": "Ang build record (M.N.O, ang commit, ang oras ng build) na binasa mula sa version.json nang isang beses, na binabasa ng bawat surface na nagpapakita ng bersyon."
+  },
+  "caches.store.version.stamp.bound": {
+    "en": "0c3944127f2a49b7",
+    "text": "Istruktural: isang record."
+  },
+  "caches.store.version.stamp.lifetime": {
+    "en": "98303c30c59712b7",
+    "text": "Habang buhay ang process: hindi puwedeng magbago ang build habang tumatakbo ito."
+  },
+  "caches.store.version.stamp.notCountedWhy": {
+    "en": "4b5f6c4e422b4474",
+    "text": "tumatakbo rin ang common/version.js sa remote PEP container at hindi nito puwedeng i-require ang registry"
+  },
+  "caches.store.workers.request-affinity.title": {
+    "en": "a4571cd2c6ca1e6f",
+    "text": "Affinity ng request worker"
+  },
+  "caches.store.workers.request-affinity.description": {
+    "en": "4e7a7ba4a736c39f",
+    "text": "Kung saang request worker naka-pin ang isang browser session, isang credential o isang flow, isang map bawat pool (protocol at surfaces), para manatili ang isang multi-step na flow sa worker na humahawak dito."
+  },
+  "caches.store.workers.request-affinity.bound": {
+    "en": "ef4d1bcdaf3e72cb",
+    "text": "Ipinapatupad: 5000 bawat pool, tinatanggal ang pinakaluma; ang tinanggal na pin ay iru-route lang muli."
+  },
+  "caches.store.workers.request-affinity.sentences.lifetime": {
+    "en": "e1ead9c67dd2fa2c",
+    "text": "Walang expiry: kinakalimutan kapag nag-exit ang worker nito; ang pinakaluma ang unang tinatanggal kapag may hawak na {{max}} ang isang pool. Front process lang."
+  },
+  "caches.store.xacml.parsed-policies.title": {
+    "en": "45d5651efd462f89",
+    "text": "Mga naka-parse na XACML policy"
+  },
+  "caches.store.xacml.parsed-policies.description": {
+    "en": "49eb7823626734e3",
+    "text": "Mga policy at policy set mula sa ou=policies, pina-parse at statically na vina-validate nang isang beses bawat text ng dokumento, naka-key sa SHA-256 ng text na iyon kaya bagong entry ang pagbabago sa alinmang pinto."
+  },
+  "caches.store.xacml.parsed-policies.bound": {
+    "en": "456f6c745a32ef47",
+    "text": "Ipinapatupad: 1024 parse, tinatanggal ang pinakamatagal nang hindi nagagamit; ang tinanggal na policy ay pina-parse muli kapag hiningi ulit."
+  },
+  "caches.store.xacml.parsed-policies.lifetime": {
+    "en": "6ba64c6240c222a0",
+    "text": "Walang expiry: naka-key sa nilalaman, kaya bagong entry ang na-edit na policy at nawawala ang lumang parse nito kapag ito na ang pinakamatagal nang hindi nagagamit."
+  },
+  "caches.lru.default.description": {
+    "en": "777e71be96460478",
+    "text": "Isang may-hangganang cache na naka-ayos ayon sa least-recently-used."
+  },
+  "caches.lru.default.bound": {
+    "en": "c79fdeffe84515df",
+    "text": "Ipinapatupad: ang insert na lampas sa hangganan ay nagtatanggal ng mga pinakamatagal nang hindi nagagamit na entry na hindi naka-pin."
+  },
+  "caches.lru.default.hitMeaning": {
+    "en": "8cfd5e8b0fe3eb88",
+    "text": "isang read na sinagot mula sa cache nang hindi pumupunta sa store"
+  },
+  "caches.lru.default.lifetime": {
+    "en": "1dee092cb10aa3f5",
+    "text": "Hanggang tanggalin ng hangganan o alisin ng may-ari nito."
+  },
+  "caches.notListed.0.what": {
+    "en": "441b01b35e9c6547",
+    "text": "Metadata ng SAML service provider"
+  },
+  "caches.notListed.0.why": {
+    "en": "8c739fbd97bfccff",
+    "text": "naka-store sa application entry gaya ng natanggap, hindi hinahawakan sa memory; nire-refresh mula sa page ng application"
+  },
+  "caches.notListed.1.what": {
+    "en": "17cca5745feb8f19",
+    "text": "Ang policy ng isang remote PEP"
+  },
+  "caches.notListed.1.why": {
+    "en": "dd0d05560aece1a9",
+    "text": "hawak ng remote PEP container, hindi ng process na ito"
+  },
+  "caches.notListed.2.what": {
+    "en": "fa1039fc2441114c",
+    "text": "Isang secret-store login"
+  },
+  "caches.notListed.2.why": {
+    "en": "f91837521ad465fe",
+    "text": "isang local ng isang /admin/secrets report, kaya isang beses lang nagla-login sa isang store bawat report; nawawala ito kapag naiguhit na ang report, at walang humahawak dito sa pagitan ng mga request"
+  },
+  "caches.remaining.expiredAgo": {
+    "en": "b37737685a26ad66",
+    "text": "nag-expire {{span}} na ang nakalipas"
+  },
+  "caches.remaining.noExpiryByContent": {
+    "en": "3ebe07479ff8b7bc",
+    "text": "walang expiry (naka-key sa nilalaman)"
+  },
+  "caches.remaining.stale": {
+    "en": "a03f2386ae06b211",
+    "text": "stale"
+  },
+  "caches.remaining.untilChanges": {
+    "en": "80bf20c29c949806",
+    "text": "hanggang magbago ang {{basis}}"
+  },
+  "caches.remaining.staleChanged": {
+    "en": "1134a1cffa605ffb",
+    "text": "stale: nagbago na ang {{basis}}"
+  },
+  "caches.remaining.untilEvicted": {
+    "en": "0720ff476383563a",
+    "text": "hanggang alisin ito ng bound bilang least recently used"
+  },
+  "caches.remaining.untilBound": {
+    "en": "da7296d0ef57eafd",
+    "text": "hanggang alisin ito ng bound"
+  },
+  "caches.remaining.untilActivation": {
+    "en": "559a2238c9ffa5c4",
+    "text": "hanggang ma-activate ang isang version ng dataset"
+  },
+  "caches.remaining.untilIdle": {
+    "en": "0a72edba2b1b69f9",
+    "text": "hanggang hindi ito magamit sa buong idle timeout"
+  },
+  "caches.remaining.nonceExpired": {
+    "en": "e59448baf4bc8498",
+    "text": "stale: nag-expire na ang nonce nito"
+  },
+  "caches.remaining.challengeExpired": {
+    "en": "b59065915d6116bf",
+    "text": "stale: nag-expire na ang challenge nito"
+  },
+  "caches.remaining.disowned": {
+    "en": "0e9453a606f40a73",
+    "text": "stale: na-disown na ang credential"
+  }
+}

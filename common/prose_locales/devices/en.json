@@ -1,0 +1,18 @@
+{
+  "devices.enrolment.native-sso.what": "OpenID Connect Native SSO for Mobile Apps: the first app's authorization-code grant with the device_sso scope makes the device and hands it a device_secret, hashed on the entry and good for that sign-on session only.",
+  "devices.enrolment.admin.what": "An administrator, on Directory → Devices or POST /admin-api/devices/create: owned by a person or by an application, with keys typed in by value. A key added this way is recorded as proven by nobody and self-asserted.",
+  "devices.enrolment.portal.what": "The owner on /portal/devices (or its JSON doors, POST /portal/devices/challenge and /portal/devices/proof), proving a key: a device-key-proof+jwt JWS over a challenge bound to their session — with an Android Key Attestation in its x5c, or an Apple App Attest statement instead — or linking a WebAuthn platform credential they enrolled, with a fresh assertion.",
+  "devices.enrolment.est.what": "EST (RFC 7030) simpleenroll at /.well-known/est/device/: a certificate issued to the device entry the request's urn:sts:device:<id> names — or to a new one, owned by the requester — with a TPM key attestation (draft-ietf-lamps-csr-attestation, tcg-attest-tpm-certify). The owner for their own device, Admin Write for any.",
+  "devices.enrolment.scep.what": "SCEP (RFC 8894) PKCSReq with a challenge password issued for the device profile — the same, for the devices that speak only it.",
+  "devices.recognition.x509.what": "The client certificate on the TLS connection — at a sign-in and at the token endpoint (RFC 8705) — matched by the SHA-256 of its SubjectPublicKeyInfo, so a renewed certificate over the same key is the same device. The handshake proves possession; whether the chain verified is recorded, and a certificate refused on revocation is not recognised.",
+  "devices.recognition.jwk.what": "A DPoP proof at the token endpoint, matched by its jkt — the RFC 7638 thumbprint every jwk key carries.",
+  "devices.recognition.webauthn.what": "A WebAuthn assertion at a sign-in whose credential is linked to the device.",
+  "devices.recognition.native-sso.what": "The Native SSO device_secret, while the sign-on session it was issued for is live.",
+  "devices.notes.caepSessions": "the device member on session-established, session-presented and session-revoked",
+  "devices.notes.riscSessionsRevoked": "sessions-revoked (where risc.autoEmitTypes names it; not by default)",
+  "devices.notes.subject": "complex: device (iss_sub — this realm's issuer and the device id) and user (the owner, where a person)",
+  "devices.notes.recordedAtSignIn": "the authentication event's registeredDevice (authn.registeredDeviceOf(session) reads the latest)",
+  "devices.notes.recordedAtTokenEndpoint": "the issuance request's registered_device, before the issuance gate",
+  "devices.notes.adminKeys": "an administrator's by-value key is accepted in both modes, recorded proof admin and self-asserted",
+  "devices.notes.scepFreshness": "SCEP has no nonce operation, so a TPM statement over it is never shown fresh"
+}

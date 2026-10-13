@@ -212,7 +212,8 @@ class XacmlPage {
         shared;
     }
     const list = where.map(function (one) {
-      return '<a href="/realm/' + esc(one.id) + '/admin/xacml/peps"><code>' +
+      return '<a href="/realm/' + esc(one.id) +
+        '/admin/xacml#xacml-tab-peps"><code>' +
         esc(one.id) + '</code></a> (' + one.count + ')';
     }).join(', ');
     return t.html('consoleXacml.noPeps.elsewhere', { n: where.length }) +
@@ -315,9 +316,7 @@ class XacmlPage {
       (row.kind === 'remote'
         ? '<div class="sub">' + t.html('consoleXacml.monitor.reportedByIt') +
         '</div>'
-        : (row.id === 'protected'
-            ? '<div class="sub"><code>xacml.pepBias</code></div>'
-            : '')) +
+        : '') +
       '</td>' +
       '<td class="num">' + row.decisions + '</td>' +
       self.enforcementCells(row, t) +
@@ -343,7 +342,6 @@ class XacmlPage {
       kit.tile(json.policies, t.text('consoleXacml.tile.policies')) +
       kit.tile(json.enabledPolicies, t.text('consoleXacml.tile.enabled')) +
       kit.tile(json.root || '—', t.text('consoleXacml.tile.root')) +
-      kit.tile(json.pepBias, t.text('consoleXacml.tile.pepBias')) +
       kit.tile(json.pipAvailable ? t.text('consoleXacml.yes')
         : t.text('consoleXacml.no'),
                t.text('consoleXacml.tile.pip')) +
@@ -361,7 +359,6 @@ class XacmlPage {
       '<p>' + t.html('consoleXacml.overview.p1') +
       '</p><p>' + t.html('consoleXacml.overview.p2') +
       '</p><p>' + t.html('consoleXacml.overview.p3') +
-      '</p><p>' + t.html('consoleXacml.overview.p4') +
       '</p>',
       t.text('consoleXacml.overview.label'));
     return tiles + rootWarning + what +
@@ -707,8 +704,11 @@ class XacmlPage {
         '<td class="num">' + figures.undischargeable + '</td>' +
         '<td class="sub">' + what + '</td></tr>';
     };
+    // A TAB PER SECTION (2026-10-12): the tiles, the warning and what this
+    // page is are Metadata (`WebPages.protocolTabs()`).
     const evidence =
-      '<h2>' + t.html('consoleXacml.monitor.figuresHeading') + '</h2>' +
+      '<h2 data-tab="figures">' +
+      t.html('consoleXacml.monitor.figuresHeading') + '</h2>' +
       '<table><tr><th>' + t.html('consoleXacml.th.counted') +
       '</th><th class="num">' + t.html('consoleXacml.th.decisions') + '</th>' +
       '<th class="num">' + t.html('consoleXacml.th.allowed') +
@@ -764,7 +764,8 @@ class XacmlPage {
     // zero.
     // ---------------------------------------------------------------------
     const allRows = (json.rows as any[]).concat(json.remoteRows);
-    const table = '<h2>' + t.html('consoleXacml.monitor.everyPoint') + '</h2>' +
+    const table = '<h2 data-tab="points">' +
+      t.html('consoleXacml.monitor.everyPoint') + '</h2>' +
       '<table><tr><th>' + t.html('consoleXacml.th.point') + '</th><th>' +
       t.html('consoleXacml.th.state') + '</th><th>' +
       t.html('consoleXacml.th.bias') + '</th>' +

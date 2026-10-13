@@ -548,7 +548,7 @@ function childMain() {
          tail(r) + ' | ' + tail(r4));
     r = await probe(dbgPort, { version: '1.3', cert: file('client.crt'),
                                key: file('client.key') });
-    note(r.accepted, 'K2. and a runtime anchor (/tls/trust) still reaches ' +
+    note(r.accepted, 'K2. and a runtime anchor still reaches ' +
          'the debugger: its own file replaces the service\'s FILE anchors, ' +
          'not the runtime ones', tail(r));
     r = await probe(mainPort, { version: '1.3', cert: file('client3.crt'),

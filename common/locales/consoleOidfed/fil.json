@@ -48,6 +48,7 @@
   "registerSubordinate": "I-register ang subordinate",
   "information": "impormasyon",
   "historyCount": "Kasaysayan ({n})",
+  "historyLatest": "Ang pinakahuling {shown}; nakalathala ang buong kasaysayan sa /oidfed/subordinate-events.",
   "realmDeleted": "realm <code>{realm}</code>, binura",
   "revoked": "binawi",
   "formerHeading": "Mga dating subordinate",

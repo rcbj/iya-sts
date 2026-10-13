@@ -88,6 +88,9 @@ services:
   # The global tier's database. The same image, scripts and application role
   # as `postgres`: the schema is one schema, and which rows a tier holds is
   # the service's decision (persistence/tiers.js), not the database's.
+  # Its certificate goes into the shared `sts-db-ca` as postgres-global.crt
+  # (the volume and POSTGRES_TLS_PUBLIC_DIR come with `extends`), which is
+  # how both cells verify it with sslmode=verify-full.
   postgres-global:
     extends:
       file: docker-compose-run-tests.yml
@@ -97,7 +100,7 @@ services:
     environment:
       - POSTGRES_TLS_CN=postgres-global
 
-  # Cell B's own database.
+  # Cell B's own database; its certificate is postgres-cellb.crt there.
   postgres-cellb:
     extends:
       file: docker-compose-run-tests.yml
@@ -144,8 +147,8 @@ services:
       - STS_CELL_HOSTNAME=sts
       - STS_CELL_PORT=8446
       - 'STS_CELL_PEERS=[{"id":"cellb","jurisdiction":"ca","url":"https://sts2:8446"}]'
-      - STS_GLOBAL_DATABASE_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
-      - STS_GLOBAL_DATABASE_READ_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
+      - STS_GLOBAL_DATABASE_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=verify-full
+      - STS_GLOBAL_DATABASE_READ_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=verify-full
       # The same secret as the cell's own database password: one OpenBao
       # secret, one application role password in every database here.
       - STS_GLOBAL_DATABASE_PASSWORD_PROVIDER=vault
@@ -194,9 +197,9 @@ services:
       - STS_CELL_HOSTNAME=sts2
       - STS_CELL_PORT=8446
       - 'STS_CELL_PEERS=[{"id":"cella","jurisdiction":"us","url":"https://sts:8446"}]'
-      - STS_DATABASE_URL=postgres://sts_app@postgres-cellb:5432/sts?sslmode=require
-      - STS_GLOBAL_DATABASE_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
-      - STS_GLOBAL_DATABASE_READ_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=require
+      - STS_DATABASE_URL=postgres://sts_app@postgres-cellb:5432/sts?sslmode=verify-full
+      - STS_GLOBAL_DATABASE_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=verify-full
+      - STS_GLOBAL_DATABASE_READ_URL=postgres://sts_app@postgres-global:5432/sts?sslmode=verify-full
       - STS_GLOBAL_DATABASE_PASSWORD_PROVIDER=vault
       - STS_GLOBAL_DATABASE_PASSWORD_FIELD=databasePassword
       - STS_CELL_KEK_PROVIDER=file

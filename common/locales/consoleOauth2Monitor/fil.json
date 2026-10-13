@@ -57,7 +57,7 @@
   "stepUpNoteEnd": ".",
   "ownRequires": "Ang sariling resource server ng serbisyong ito (UserInfo, ang mga OpenID4VCI endpoint, SCIM, Shared Signals) ay nangangailangan ng ",
   "ownLink": "oauth2.stepUpAcrValues at oauth2.stepUpMaxAgeS",
-  "ownApi": ". Ang requirement ng isang naka-register na API ay nasa application entry nito (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), ipinapatupad ng <code>{path}</code>.",
+  "ownApi": ". Ang requirement ng isang naka-register na API ay nasa application entry nito (<code>oauthStepUpAcrValues</code>, <code>oauthStepUpMaxAge</code>), at ang API mismo ang nagpapatupad nito.",
   "stepUpNoClients": "Mula nang magsimula ang proseso, walang authorization request sa realm na ito na may acr_values o max_age, at walang resource server dito na humamon sa isang token.",
   "lead": "<strong>Ang ginawa ng authorization server</strong> sa realm na ito mula {since}, isang seksyon bawat mekanismo. Pinagsasama ang mga counter sa lahat ng prosesong sumasagot para sa realm na ito.",
   "noReset": "Walang reset: ang console na kayang i-zero ang sarili nitong monitoring ay gagawing posibleng na-zero ng isang tao ang bawat numero rito. Ang pangmatagalang talaan ng bawat pag-urong ay ang ",

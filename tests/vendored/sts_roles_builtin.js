@@ -128,6 +128,8 @@
 
 "use strict";
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
@@ -366,14 +368,20 @@ function authorizeUrl(clientId, state) {
   });
 }
 
-// The `authn_id` the sign-in form carries. Read out of the markup rather than
-// guessed, because it is minted per request and is the only thing tying the
-// POST back to the flow that started it.
-function authnIdIn(html) {
-  log.debug("Entering authnIdIn().");
-  const m = /name="authn_id"\s+value="([^"]+)"/.exec(String(html));
-  log.debug("Leaving authnIdIn().");
-  return m ? m[1] : "";
+// THE SIGN-IN SCREEN'S ACT OVER `/authn-api` (#571), through the one
+// helper, in this job's realm, and answered as the form's POST was: a 303
+// to where the act says the flow goes, or the refusal's status with the
+// answer's JSON as its text — and the answer itself, for what it says. The
+// browser's cookie becomes the walk's jar, its session among it.
+async function screenAct(b, location, fields) {
+  log.debug("Entering screenAct(). " + fields.action);
+  const answer = await authnSignin.submit(base + "/realm/" + REALM, location,
+                                          fields, { cookie: b.cookie });
+  b.cookie = answer.cookie;
+  log.debug("Leaving screenAct(). " + answer.next);
+  return { status: answer.next === "redirect" ? 303 : answer.status,
+           location: answer.location,
+           text: JSON.stringify(answer.json), answer: answer };
 }
 
 // SIGN SOMEBODY IN, OR DECLINE TO. One function for both, because the two
@@ -389,17 +397,14 @@ async function arriveAt(clientId, how, state) {
   assert.strictEqual(first.status, 302,
     "an authorization request with no session should redirect to the " +
     "sign-in screen; it answered " + first.status);
-  const screen = await b.go("GET", first.location);
-  const id = authnIdIn(screen.text);
-  assert.ok(id, "the sign-in screen should carry an authn_id; it did not. " +
-    String(screen.text).slice(0, 300));
   const fields = how === "anonymous"
-    ? { authn_id: id, action: "anonymous" }
-    : { authn_id: id, action: "login", username: PERSON, password: PASSWORD };
-  const posted = await b.go("POST", "/realm/" + REALM + "/authn/login",
-                            form(fields));
+    ? { action: "anonymous" }
+    : { action: "login", username: PERSON, password: PASSWORD };
+  const posted = await screenAct(b, first.location, fields);
+  assert.ok(posted.answer.view, "the sign-in screen should be drawn for the " +
+    "flow; its view answered " + posted.status + " " + posted.text);
   log.debug("Leaving arriveAt(). status=" + posted.status);
-  return { browser: b, posted: posted, screen: screen };
+  return { browser: b, posted: posted, screen: { view: posted.answer.view } };
 }
 
 // A SESSION OBTAINED SOMEWHERE PERMISSIVE, TO BE PRESENTED SOMEWHERE STRICT.
@@ -433,17 +438,17 @@ async function sessionVia(how, state) {
 
 // WAS THIS THE SIGN-IN SCREEN REFUSING, and did it say why?
 //
-// The screen's refusal is the PAGE AGAIN with the reason on it, rather than a
-// redirect carrying an error, and that is deliberate in `authn.js`: the only
+// The screen's refusal is the SCREEN AGAIN with the reason on it, rather than
+// a redirect carrying an error, and that is deliberate in `authn.js`: the only
 // place to send somebody is back into the authorization endpoint that would
-// refuse them a second time, which is a loop. So a refusal here is a 200 that
-// is still the form, and the assertion has to be about the sentence.
+// refuse them a second time, which is a loop. Since #571 the screen's act
+// answers `next: refused` with the sentence, and the page draws it — so the
+// assertion is about the sentence.
 function refusedAtTheScreen(posted, requiredRole) {
   log.debug("Entering refusedAtTheScreen().");
   log.debug("Leaving refusedAtTheScreen().");
-  return posted.status === 200 &&
-         /name="authn_id"/.test(String(posted.text)) &&
-         String(posted.text).indexOf(requiredRole) >= 0;
+  return !!posted.answer && posted.answer.next === "refused" &&
+         posted.answer.errors.join(" ").indexOf(requiredRole) >= 0;
 }
 
 // WHAT THE AUTHORIZATION ENDPOINT ANSWERED, split into the two shapes that
@@ -757,22 +762,24 @@ async function theUnauthenticatedSession() {
   await setSetting("authn.unauthenticatedSessions", false);
   const b = browser();
   const first = await b.go("GET", authorizeUrl(APP_EVERYBODY, "u3"));
-  const screen = await b.go("GET", first.location);
+  const screen = await authnSignin.screen(base + "/realm/" + REALM,
+                                          first.location,
+                                          { cookie: b.cookie });
+  b.cookie = screen.cookie;
   check("with the setting off the button is not drawn", function () {
-    assert.ok(String(screen.text).indexOf("kc-anonymous") < 0,
+    assert.ok(screen.view && screen.view.anonymous === false,
       "the sign-in screen should not offer the third button while " +
-      "authn.unauthenticatedSessions is off.");
+      "authn.unauthenticatedSessions is off; its view says " +
+      JSON.stringify(screen.view && screen.view.anonymous));
   });
-  const byHand = await b.go("POST", "/realm/" + REALM + "/authn/login",
-                            form({ authn_id: authnIdIn(screen.text),
-                                   action: "anonymous" }));
-  check("and posting the form by hand does NOT mint a session", function () {
-    assert.ok(byHand.status !== 303 ||
-              /\/authn\/login/.test(String(byHand.location)),
-      "with the setting off, action=anonymous must not start a session — the " +
-      "button being absent is a fact about one rendering and the refusal has " +
-      "to be a fact about the endpoint. It answered " + byHand.status + " -> " +
-      byHand.location);
+  // The anonymous operation sent anyway — the page's button absent.
+  const byHand = await screenAct(b, first.location, { action: "anonymous" });
+  check("and sending the act by hand does NOT mint a session", function () {
+    assert.ok(byHand.answer.next !== "redirect",
+      "with the setting off, the anonymous act must not start a session — " +
+      "the button being absent is a fact about one rendering and the " +
+      "refusal has to be a fact about the endpoint. It answered " +
+      byHand.status + " " + byHand.answer.next + " -> " + byHand.location);
   });
   await setSetting("authn.unauthenticatedSessions", true);
   log.debug("Leaving theUnauthenticatedSession().");

@@ -6,7 +6,7 @@ family here and the first one that TALKS BACK.
 
 | File | What it is |
 |---|---|
-| `ssf.ts` | The routes. The metadata document, the stream management API, status, subjects, verification, poll delivery, and the two endpoints that are not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, which are this service acting as a RECEIVER so that a client can be the transmitter. |
+| `ssf.ts` | The routes. The metadata document, the stream management API, status, subjects, verification and poll delivery. The two endpoints that were not SSF at all — `POST /ssf/receive` and `GET /ssf/received`, this service acting as a RECEIVER so that a client could be the transmitter — were deleted by #593 (see *The roles reversed are the test peer's*, below). |
 | `ssf_subjects.js` | **RFC 9493** subject identifiers: the eight formats with their CLOSED member sets, SSF's complex subject, and the nesting ban. A LIBRARY. |
 | `ssf_events.js` | The event vocabulary — SSF's two — and the **RFC 8417** Security Event Token they travel in. A LIBRARY. |
 | `ssf_streams.ts` | The streams, their subjects and their queues, per trust realm — the queue as a row per SET since 2026-09-13. A LIBRARY. |
@@ -1088,9 +1088,9 @@ stream IDs and aud values"; nothing here did.
   build.
 
 The receivers still CHECK `aud`, and now `iss` and `typ` too (sections 4.1.6 and
-4.1.1): `ssf_receivers.ts`'s `accept()` against the stream's own values, and
-`/ssf/receive` against `ssf.receiveIssuers` / `ssf.receiveAudiences`, which
-default to the only issuer whose key it holds and to the endpoint's own URL.
+4.1.1): `ssf_receivers.ts`'s `accept()` against the stream's own values.
+`/ssf/receive` checked them against `ssf.receiveIssuers` /
+`ssf.receiveAudiences` until #593 deleted it with both settings.
 
 ---
 
@@ -2628,3 +2628,11 @@ instead.
 on `ssf_streams.ts`'s three filters, so the real emitters build each event);
 `tests/vendored/sts_application_signals.js` subscribes a receiver to an
 application and rotates its secret over the wire.
+
+## The roles reversed are the test peer's (#593, 2026-10-12)
+
+`POST /ssf/receive` and `GET /ssf/received` were the receiver "for the debugger's benefit": a SET pushed AT this service, recorded whether or not it verified, with `typ`, `iss` and `aud` checked against `ssf.receiveIssuers` / `ssf.receiveAudiences`. #585 made them development only; #593 deleted them, because the test peer (`tests/peer/peer_ssf.js`, #586) is an SSF push receiver that talks to this service only through the protocol, and this service's own receivers are the console's and the portal's (`ssf_receivers.ts`), which are not demonstrations and are unchanged. What went with them: the inbox store (`ssf_streams.received`, a `merge: 'own'` accumulator), the console's *Pushed at this service* section and its `clear-received` action (and `POST /admin-api/ssf/clear-received`), the settings `ssf.receiveEnabled`, `ssf.receiveIssuers` and `ssf.receiveAudiences`, and `STS-SSF-0022`–`0025` and `0106` (retired). `ssf.receiveRequireSignature` stays — the console's and portal's receivers and a federation partner's signals read it through `mode.refusesUnverifiedSignals()` — and so does `ssf.maxReceivedEvents`, the receivers' inbox cap. **Owed by the parent project**: its `caep_page.js` pushes at `/ssf/receive`.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /ssf` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `ssf/web_ssf_description.ts` from the `describeSsf` catalogs, with `/ssf/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds each stream's delivery method by name. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

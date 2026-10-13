@@ -887,6 +887,43 @@ const DOCUMENTS = [
       return bad;
     } },
 
+  // -- The user portal's API, `/account-api` (#568) ------------------------
+  // The portal became a static application over `/account-api`, which
+  // publishes its OpenAPI document to anybody: it describes every operation
+  // and carries no secret and no key. Before #568 the portal published no
+  // document at all and was in NO_PUBLIC_METADATA below.
+  { family: "User portal", spec: "OpenAPI 3.1",
+    path: "/account-api/openapi.json",
+    type: JSON_TYPE, json: true, badCredential: "ignored",
+    must: function (d) {
+      log.debug("Entering must().");
+      const bad = [];
+      if (!/^3\.1\./.test(String(d.openapi || ""))) {
+        bad.push("openapi is " + JSON.stringify(d.openapi) + ", not 3.1");
+      }
+      const servers = Array.isArray(d.servers) ? d.servers : [];
+      if (!servers.length || servers[0].url !== base) {
+        bad.push("servers[0].url is " +
+                 JSON.stringify(servers.length ? servers[0].url : null) +
+                 " and the document was fetched from " + base);
+      }
+      const paths = d.paths || {};
+      ["/account-api/me", "/account-api/password"].forEach(function (p) {
+        if (!paths[p]) {
+          bad.push("the document does not describe " + p);
+        }
+      });
+      const scheme = ((d.components || {}).securitySchemes || {}).portal;
+      if (!scheme || scheme.type !== "oauth2") {
+        bad.push("there is no oauth2 security scheme named portal");
+      }
+      if (/PRIVATE KEY|"d":"/.test(JSON.stringify(d))) {
+        bad.push("the account API's document CONTAINS KEY MATERIAL");
+      }
+      log.debug("Leaving must().");
+      return bad;
+    } },
+
   // -- The service's own directory of realms -------------------------------
   // NOT a protocol family (`sts_metadata.ts` files it under `Service`), and it
   // is here because it is the document a client reads to discover the OTHER
@@ -1024,9 +1061,7 @@ const NO_PUBLIC_METADATA = {
   "Federation":
     "there is no service-wide document — /federation/metadata/:id is one per " +
     "CONFIGURED relationship, and section 5 asserts the surface is ungated " +
-    "by asking for a relationship that does not exist.",
-  "User portal":
-    "not a protocol. Its own card on /admin/sts-metadata says so in a field."
+    "by asking for a relationship that does not exist."
 };
 
 // ---------------------------------------------------------------------------

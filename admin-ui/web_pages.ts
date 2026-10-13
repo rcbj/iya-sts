@@ -86,13 +86,14 @@ import SecretDestinationsPage = require('./web_secret_destinations');
 import SecretsPage = require('./web_secrets');
 import SessionsPage = require('../logout/web_sessions');
 import SettingsForms = require('./web_settings');
-import WebMessages = require('./web_messages');
+import WebMessages = require('../common/web_messages');
 import SignalsPage = require('../ssf/web_signals');
 import SpiffePage = require('../spiffe/web_spiffe');
 import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
+import TlsConnectionPage = require('../tls/web_tls_connection');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
 import UsedAssertionsPage = require('./web_used_assertions');
@@ -107,6 +108,7 @@ import DelegationPage = require('./web_delegation');
 import DashboardPage = require('./web_dashboard');
 import StsMetadataPage = require('./web_sts_metadata');
 import ExplorerPage = require('./web_explorer');
+import AccountApiPage = require('./web_account_api');
 import WebAnswers = require('./web_answers');
 
 type Json = any;
@@ -119,8 +121,19 @@ interface WebPage {
   title: string;
   operation: string;
   // Other operations whose answers the view is composed with, by the member
-  // each goes in: asked only when the page's query asks for it (#446).
+  // each goes in. `composeWhen` limits a member to a query that names one of
+  // its inputs; otherwise the operation is part of every view.
   compose?: Record<string, string>;
+  composeWhen?: Record<string, string[]>;
+  // THE MEMBER'S OWN NAMES (2026-10-12): where two tabs' lists share a
+  // parameter's name, the page carries each under a name of its own
+  // (`composeWhen` lists the page's), and the member's operation is asked
+  // with the name it reads — `estCertificatesPage` is EST's
+  // `certificatesPage`. `composeRequests()` is the one reading of it.
+  composeParams?: Record<string, Record<string, string>>;
+  // Members listed here are always composed, even when `composeWhen` names
+  // query parameters that are absent. Those parameters are still forwarded.
+  composeAlways?: string[];
   // THE DRILL-DOWN AT THE SAME PATH (#446): `/admin/groups?group=<dn>` is
   // one group, answered by the same operation asked with the same query, so
   // a drill-down is not a page of its own but a second renderer chosen when
@@ -143,9 +156,231 @@ interface WebPage {
   render: (view: Json, ctx?: Json) => string;
 }
 
+// PROTOCOLS → CERT ISSUANCE, ONE PAGE OF TABS (rcbj, 2026-10-12). ACME, EST,
+// SCEP and SPIFFE's four pages were seven console pages; they are one, each
+// a tab drawn by its own family's renderer from its own operation, SPIFFE's
+// four as sub-tabs of one tab.
+//
+// ONE ADDRESS CARRIES THE WHOLE PAGE'S STATE, AND THE SEVEN SHARED NAMES.
+// ACME, EST and SCEP all page a list on `certificatesPage`; ACME and SCEP
+// one on `credentialsPage`; the three SPIFFE lists all search `q` and page
+// on `page`. So on this page each tab's names carry the tab's prefix
+// (`estCertificatesPage`, `entriesQ`): its operation is asked with its own
+// names (`composeParams`), its renderer is handed them
+// (`certContext()`), and what it draws is given the page's names back
+// (`certTabLinks()`). `per` is shared, as on every page holding more than
+// one list; `entry` and `agent`, the two drill-downs, are one tab's each.
+const CERT_PANELS: Json = {
+  acme: { path: '/admin/acme', operation: '/admin-api/acme',
+          tab: 'cert-tab-acme', prefix: 'acme', routes: '/enroll/acme',
+          names: ['certificatesPage', 'credentialsPage', 'accountsPage',
+                  'hostNamesPage'] },
+  est: { path: '/admin/est', operation: '/admin-api/est',
+         tab: 'cert-tab-est', prefix: 'est', routes: '/.well-known/est',
+         names: ['certificatesPage'] },
+  scep: { path: '/admin/scep', operation: '/admin-api/scep',
+          tab: 'cert-tab-scep', prefix: 'scep', routes: '/enroll/scep',
+          names: ['certificatesPage', 'credentialsPage'] },
+  spiffe: { path: '/admin/spiffe', operation: '/admin-api/spiffe',
+            tab: 'cert-spiffe-overview', prefix: 'spiffe', routes: '/spiffe',
+            names: [] },
+  spiffeEntries: { path: '/admin/spiffe/entries',
+                   operation: '/admin-api/spiffe/entries',
+                   tab: 'cert-spiffe-entries', prefix: 'entries',
+                   names: ['q', 'origin', 'page'], drill: 'entry' },
+  spiffeAgents: { path: '/admin/spiffe/agents',
+                  operation: '/admin-api/spiffe/agents',
+                  tab: 'cert-spiffe-agents', prefix: 'agents',
+                  names: ['q', 'page'], drill: 'agent' },
+  spiffeBrokers: { path: '/admin/spiffe/brokers',
+                   operation: '/admin-api/spiffe/brokers',
+                   tab: 'cert-spiffe-brokers', prefix: 'brokers',
+                   names: ['q', 'page'] }
+};
+const CERT_PAGE = '/admin/cert-issuance';
+
+/**
+ * A tab's name for one of its own parameters on the combined page.
+ *
+ * @param key - the tab's key in `CERT_PANELS`
+ * @param name - the parameter as the tab's operation reads it
+ * @returns the page's name, such as `estCertificatesPage`
+ */
+function certName(key: string, name: string): string {
+  const panel = CERT_PANELS[key];
+  return panel.prefix + name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+/**
+ * The combined page's row members for every tab but the SPIFFE trust
+ * domain's, whose operation is the page's own (it reads no parameter, so
+ * no tab's names are the page's): what each is asked with, under which
+ * names.
+ *
+ * @returns `{ compose, composeWhen, composeParams, composeAlways }`
+ */
+function certComposition(): Json {
+  const out: Json = { compose: {}, composeWhen: {}, composeParams: {},
+                      composeAlways: [] };
+  Object.keys(CERT_PANELS).filter(function (key) {
+    return key !== 'spiffe';
+  }).forEach(function (key) {
+    const panel = CERT_PANELS[key];
+    const names: Json = { per: 'per' };
+    panel.names.forEach(function (name: string) {
+      names[certName(key, name)] = name;
+    });
+    if (panel.drill) {
+      names[panel.drill] = panel.drill;
+    }
+    out.compose[key] = panel.operation;
+    out.composeWhen[key] = Object.keys(names);
+    out.composeParams[key] = names;
+    out.composeAlways.push(key);
+  });
+  return out;
+}
+
+const CERT_COMPOSITION = certComposition();
+
+// EVERY PROTOCOLS PAGE AS TABS, METADATA FIRST (rcbj, 2026-10-12), AND THE
+// DIRECTORY PAGES WITH MORE THAN ONE SECTION. The pages that were drawn as
+// one long column of sections are cut
+// into tabs by `protocolTabs()`: a section whose heading carries
+// `data-tab="<name>"` is that tab, and everything else — the lead notes, the
+// endpoints, what explains the protocol or reports its state — is the
+// Metadata tab, which is first. A renderer marks its own sections; this
+// table names each page's tabs, in order, so the stylesheet can mark the
+// tab being read (`admin.ts`, which reads `PROTOCOL_TAB_IDS`) and a test
+// can hold the renderers to it: a tab name drawn and not listed here fails
+// `tests/console_web_bundle.js`. A listed tab may be absent where the page
+// draws nothing for it (PKI's issue forms before a hierarchy exists).
+const PROTOCOL_TABS: Record<string, string[]> = {
+  '/admin/delegation-settings': ['register', 'settings'],
+  '/admin/federation': ['relationships', 'add', 'settings'],
+  '/admin/oidfed': ['keys', 'subordinates', 'collection', 'anchors',
+                    'marks', 'resolve', 'settings'],
+  '/admin/commands': ['clients', 'send', 'accounts', 'tenants',
+                      'deliveries'],
+  '/admin/claim-providers': ['providers', 'register', 'links'],
+  '/admin/gnap': ['grants', 'resources', 'settings'],
+  '/admin/totp': ['settings'],
+  '/admin/backup-codes': ['settings'],
+  '/admin/webauthn': ['settings'],
+  '/admin/device-registration': ['settings'],
+  '/admin/ldap': ['settings'],
+  '/admin/wstrust': ['settings'],
+  '/admin/wsfed': ['settings'],
+  '/admin/pki': ['hierarchy', 'pinned', 'edit', 'build', 'applications',
+                 'people', 'revocation', 'workbench', 'settings'],
+  '/admin/tls': [],
+  '/admin/tls/trust': ['anchors', 'add'],
+  // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
+  // page with one (Users, Every entry, The directory service) is left as
+  // it is; Policies draws tabs of its own, Metadata first.
+  '/admin/groups': ['groups', 'create', 'settings'],
+  '/admin/roles': ['roles', 'create', 'member', 'authorizes', 'requiring',
+                   'preview', 'settings'],
+  '/admin/applications': ['applications', 'add', 'settings'],
+  '/admin/devices': ['devices', 'register'],
+  '/admin/attribute-sources': ['sources', 'add', 'person', 'settings'],
+  '/admin/secret-destinations': ['destinations', 'add'],
+  '/admin/ldap/applications': ['entries'],
+  '/admin/ldap/federations': ['entries'],
+  '/admin/ldap/roles': ['entries'],
+  '/admin/ldap/policies': ['entries'],
+  '/admin/ldap/peps': ['entries'],
+  '/admin/ldap/spiffe': ['entries', 'agents'],
+  '/admin/ldap/devices': ['entries'],
+  // MONITORING AND SERVER CONFIGURATION (rcbj, 2026-10-12), the pages with
+  // more than one section; each renderer marks its own. Listeners draws
+  // tabs of its own and is not here.
+  '/admin/metrics': ['calls', 'tokens', 'artifacts', 'sessions'],
+  '/admin/sessions': ['live', 'unauthenticated'],
+  '/admin/tokens': ['invalidate', 'issued'],
+  '/admin/delegation': ['happened', 'chains', 'register', 'kerberos',
+                        'policy'],
+  '/admin/caep-sessions': ['sessions', 'streams', 'applications'],
+  '/admin/risc-accounts': ['accounts', 'streams', 'applications'],
+  '/admin/signals': ['events', 'clear'],
+  '/admin/ssf/transmitters': ['relationships', 'blocks', 'locks', 'arrived'],
+  '/admin/ssf/dead-letters': ['when', 'why', 'streams', 'letters', 'process',
+                              'settings'],
+  // One tab per outbound delivery kind (`oauth-oidc/outbound_delivery.ts`):
+  // a kind added there owes its id here.
+  '/admin/deliveries': ['backchannel-logout', 'ciba', 'cell-ops',
+                        'provider-commands'],
+  '/admin/consent': ['globals', 'recorded'],
+  '/admin/xacml/monitor': ['figures', 'points'],
+  '/admin/gnap/monitor': ['formats', 'applications'],
+  '/admin/acme/monitor': ['operations', 'profiles', 'codes', 'statuses',
+                          'principals', 'recent'],
+  '/admin/est/monitor': ['operations', 'profiles', 'principals', 'codes',
+                         'statuses', 'recent'],
+  '/admin/scep/monitor': ['operations', 'failinfo', 'codes', 'profiles',
+                          'principals', 'recent'],
+  '/admin/oauth2/monitor': ['par', 'stepup'],
+  '/admin/scim/monitor': ['calls', 'resources', 'clients', 'schemes',
+                          'responses', 'recent', 'written'],
+  '/admin/logout': ['lookup', 'backchannel', 'settings'],
+  '/admin/database': ['server', 'activity', 'background', 'schema',
+                      'configuration'],
+  '/admin/encryption': ['classes', 'datakeys'],
+  '/admin/secrets': ['keys', 'database', 'mail', 'stores'],
+  '/admin/caches': ['caches', 'replay', 'nodes', 'entries'],
+  '/admin/worker-pools': ['request', 'surface'],
+  '/admin/node-health': ['cpu', 'memory', 'processes', 'ecs', 'machine'],
+  '/admin/tls-connection': ['connection', 'forwarded'],
+  '/admin/scheduler': ['leader', 'jobs', 'runs', 'commands', 'settings'],
+  '/admin/devices/monitor': ['register', 'activity', 'days'],
+  '/admin/risk': ['assessments', 'standings', 'lookup', 'datasets', 'import',
+                  'providers', 'failures', 'settings'],
+  '/admin/risk-scoring': ['assessments', 'signals', 'decisions', 'process'],
+  '/admin/audit': ['events', 'settings'],
+  '/admin/error-codes': ['subsystems', 'codes'],
+  '/admin/realms': ['realms', 'define', 'settings'],
+  '/admin/config': ['index', 'settings'],
+  '/admin/mode': ['requirements', 'development', 'notyet'],
+  '/admin/persistence': ['settings'],
+  '/admin/cells': ['cells', 'residents', 'rehome', 'settings'],
+  '/admin/mail': ['test', 'verify', 'messages', 'settings'],
+  '/admin/rbac': ['holders', 'grant', 'settings'],
+  '/admin/debugger': ['settings'],
+  '/admin/sts-metadata': ['protocols', 'servers', 'endpoints',
+                          'specifications'],
+  '/admin/keys': ['rotation', 'keys', 'settings'],
+  '/admin/crypto-metadata': ['families', 'material', 'hashing', 'signatures',
+                             'encryption', 'post-quantum', 'standards']
+};
+
+/**
+ * The id prefix of a Protocols page's tabs: its path under `/admin`.
+ *
+ * @param path - the page's path
+ * @returns `gnap`, `tls-trust`
+ */
+function protocolSlug(path: string): string {
+  return String(path).replace(/^\/admin\//, '').replace(/[^a-z0-9]+/gi, '-');
+}
+
+/**
+ * Every tab id `protocolTabs()` can draw: the stylesheet's list.
+ *
+ * @returns the ids
+ */
+function protocolTabIds(): string[] {
+  const out: string[] = [];
+  Object.keys(PROTOCOL_TABS).forEach(function (path) {
+    const slug = protocolSlug(path);
+    out.push(slug + '-tab-metadata');
+    PROTOCOL_TABS[path].forEach(function (name) {
+      out.push(slug + '-tab-' + name);
+    });
+  });
+  return out;
+}
+
 const PAGES: WebPage[] = [
-  { path: '/admin/acme', title: 'ACME', operation: '/admin-api/acme',
-    render: AcmePage.render },
   { path: '/admin/acme/monitor', title: 'ACME enrollments',
     operation: '/admin-api/acme/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -192,15 +427,32 @@ const PAGES: WebPage[] = [
     } },
   { path: '/admin/caches', title: 'Caches', operation: '/admin-api/caches',
     render: CachesPage.render },
+  { path: CERT_PAGE, title: 'Cert issuance',
+    operation: CERT_PANELS.spiffe.operation,
+    compose: CERT_COMPOSITION.compose,
+    composeWhen: CERT_COMPOSITION.composeWhen,
+    composeParams: CERT_COMPOSITION.composeParams,
+    composeAlways: CERT_COMPOSITION.composeAlways,
+    // A registration entry is drawn in place of the tabs (`?entry=`), and
+    // so is an agent (`?agent=`, in `certIssuance()`); the entry is the
+    // drill the runtime's trail and the bundle's check know.
+    drill: {
+      param: 'entry',
+      sample: function (view: Json): string | null {
+        const rows = (view.spiffeEntries && view.spiffeEntries.entries) || [];
+        return rows[0] ? rows[0].id : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return WebPages.certIssuance(view, ctx || WebKit.context());
+      }
+    },
+    render: function (view: Json, ctx?: Json): string {
+      return WebPages.certIssuance(view, ctx || WebKit.context());
+    } },
   { path: '/admin/audit', title: 'Audit log',
     operation: '/admin-api/audit',
     render: function (view: Json, ctx?: Json): string {
       return AuditPage.body(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/caep', title: 'CAEP',
-    operation: '/admin-api/caep',
-    render: function (view: Json, ctx?: Json): string {
-      return CaepRiscPage.caepBody(ctx || WebKit.context(), view);
     } },
   { path: '/admin/caep-sessions/session', title: 'CAEP sessions — one session',
     operation: '/admin-api/caep/sessions', params: { id: 'session' },
@@ -246,6 +498,8 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ExplorerPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/account-api', title: 'Account API',
+    operation: '/admin-api/account-api', render: AccountApiPage.render },
   { path: '/admin/sts-metadata', title: 'Service metadata',
     operation: '/admin-api/sts-metadata',
     render: function (view: Json, ctx?: Json): string {
@@ -345,8 +599,6 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ErrorCodesPage.body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/est', title: 'EST', operation: '/admin-api/est',
-    render: EstPage.render },
   { path: '/admin/est/monitor', title: 'EST enrollments',
     operation: '/admin-api/est/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -395,16 +647,6 @@ const PAGES: WebPage[] = [
     },
     render: function (view: Json, ctx?: Json): string {
       return GroupsPage.body(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/kerberos/claims', title: 'Kerberos PAC claims',
-    operation: '/admin-api/kerberos/claims',
-    render: function (view: Json, ctx?: Json): string {
-      return ClaimsPage.kerberosClaimsBody(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/kerberos/principals', title: 'Kerberos principals',
-    operation: '/admin-api/kerberos/principals',
-    render: function (view: Json, ctx?: Json): string {
-      return KerberosPrincipalsPage.body(ctx || WebKit.context(), view);
     } },
   { path: '/admin/keys', title: 'Key pairs', operation: '/admin-api/keys',
     render: function (view: Json, ctx?: Json): string {
@@ -522,11 +764,6 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return RealmsPage.body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/risc', title: 'RISC',
-    operation: '/admin-api/risc',
-    render: function (view: Json, ctx?: Json): string {
-      return CaepRiscPage.riscBody(ctx || WebKit.context(), view);
-    } },
   { path: '/admin/risc-accounts/account',
     title: 'RISC accounts — one account',
     operation: '/admin-api/risc/accounts', params: { id: 'account' },
@@ -550,10 +787,29 @@ const PAGES: WebPage[] = [
   { path: '/admin/roles', title: 'Roles',
     operation: '/admin-api/roles',
     compose: { preview: '/admin-api/roles/preview' },
+    composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'] },
+    // ONE ROLE'S PAGE (#604): the same operation, asked with `role`.
+    drill: {
+      param: 'role',
+      sample: function (list: Json): string | null {
+        return list.roles && list.roles[0] ? list.roles[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return RolesPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return RolesPage.body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/saml2', title: 'SAML 2.0', operation: '/admin-api/saml2',
+  { path: '/admin/saml2', title: 'SAML', operation: '/admin-api/saml2',
+    // The tabs are separate API answers, but have no standalone console routes.
+    compose: {
+      saml11: '/admin-api/saml11',
+      saml11Detail: '/admin-api/saml11',
+      assertions: '/admin-api/saml-assertions',
+      attributes: '/admin-api/saml-attributes'
+    },
+    composeWhen: { saml11Detail: ['rp'] },
     drill: {
       param: 'sp',
       sample: function (list: Json): string | null {
@@ -567,33 +823,6 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return SamlPage.saml2Body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/saml11', title: 'SAML 1.1',
-    operation: '/admin-api/saml11',
-    drill: {
-      param: 'rp',
-      sample: function (list: Json): string | null {
-        const rows = list.relyingParties || [];
-        return rows[0] ? rows[0].identifier : null;
-      },
-      render: function (view: Json, ctx?: Json): string {
-        return SamlPage.saml11Detail(ctx || WebKit.context(), view);
-      }
-    },
-    render: function (view: Json, ctx?: Json): string {
-      return SamlPage.saml11Body(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/saml-attributes', title: 'Custom SAML attributes',
-    operation: '/admin-api/saml-attributes',
-    render: function (view: Json, ctx?: Json): string {
-      return ClaimsPage.samlAttributesBody(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/saml-assertions', title: 'SAML assertions',
-    operation: '/admin-api/saml-assertions',
-    render: function (view: Json, ctx?: Json): string {
-      return SamlAssertionsPage.body(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/scep', title: 'SCEP', operation: '/admin-api/scep',
-    render: ScepPage.render },
   { path: '/admin/scep/monitor', title: 'SCEP enrollments',
     operation: '/admin-api/scep/monitor',
     render: function (view: Json, ctx?: Json): string {
@@ -611,7 +840,21 @@ const PAGES: WebPage[] = [
   { path: '/admin/scim', title: 'SCIM',
     operation: '/admin-api/scim',
     render: function (view: Json, ctx?: Json): string {
-      return ScimPage.body(ctx || WebKit.context(), view);
+      const context = ctx || WebKit.context();
+      return ScimPage.body(context, view,
+        WebPages.withEndpoints('', view, context.t));
+    },
+    // ONE OUTBOUND SCIM CLIENT'S PAGE (#552): `?client=` on the same
+    // operation, which answers `scimClients.client`.
+    drill: {
+      param: 'client',
+      sample: function (list: Json): string | null {
+        const rows = (list.scimClients && list.scimClients.clients) || [];
+        return rows[0] ? rows[0].identifier : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return ScimPage.clientDetail(ctx || WebKit.context(), view);
+      }
     } },
   { path: '/admin/scim/monitor', title: 'SCIM activity',
     operation: '/admin-api/scim/monitor',
@@ -630,49 +873,34 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return SignalsPage.body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/spiffe', title: 'SPIFFE', operation: '/admin-api/spiffe',
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.overview(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/spiffe/agents', title: 'SPIFFE agents',
-    operation: '/admin-api/spiffe/agents',
-    drill: {
-      param: 'agent',
-      sample: function (list: Json): string | null {
-        const rows = list.agents || [];
-        return rows[0] ? rows[0].id : null;
-      },
-      render: function (view: Json, ctx?: Json): string {
-        return SpiffePage.agent(ctx || WebKit.context(), view);
-      }
-    },
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.agents(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/spiffe/brokers', title: 'SPIFFE brokers',
-    operation: '/admin-api/spiffe/brokers',
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.brokers(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/spiffe/entries', title: 'SPIFFE entries',
-    operation: '/admin-api/spiffe/entries',
-    drill: {
-      param: 'entry',
-      sample: function (list: Json): string | null {
-        const rows = list.entries || [];
-        return rows[0] ? rows[0].id : null;
-      },
-      render: function (view: Json, ctx?: Json): string {
-        return SpiffePage.entry(ctx || WebKit.context(), view);
-      }
-    },
-    render: function (view: Json, ctx?: Json): string {
-      return SpiffePage.entries(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/ssf', title: 'Shared Signals',
+  { path: '/admin/ssf', title: 'SSF',
     operation: '/admin-api/ssf',
+    compose: {
+      caep: '/admin-api/caep',
+      risc: '/admin-api/risc'
+    },
+    composeAlways: ['caep', 'risc'],
     render: function (view: Json, ctx?: Json): string {
-      return SsfPage.body(ctx || WebKit.context(), view);
+      const context = ctx || WebKit.context();
+      if (!view.caep || !view.risc) {
+        throw new Error('The SSF page is missing a vocabulary view.');
+      }
+      const panels = [
+        { id: 'ssf-tab-metadata',
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          html: WebPages.withEndpoints('', view, context.t) },
+        { id: 'ssf-tab-ssf', label: context.t.text('console.nav.ssf'),
+          html: SsfPage.body(context, view, ['SSF']) },
+        { id: 'ssf-tab-caep', label: context.t.text('console.nav.caep'),
+          html: CaepRiscPage.caepBody(context, view.caep, ['CAEP']) },
+        { id: 'ssf-tab-risc', label: context.t.text('console.nav.risc'),
+          html: CaepRiscPage.riscBody(context, view.risc, ['RISC']) }
+      ];
+      const rendered = panels.map(function (one) {
+        return { id: one.id, label: one.label,
+          html: WebPages.ssfTabLinks(one.html) };
+      });
+      return WebKit.tabbedPanels('ssf-pages', rendered);
     } },
   { path: '/admin/ssf/dead-letters', title: 'Dead letters',
     operation: '/admin-api/ssf/dead-letters',
@@ -682,6 +910,9 @@ const PAGES: WebPage[] = [
   { path: '/admin/ssf/transmitters', title: 'Signals from partners',
     operation: '/admin-api/ssf/transmitters',
     render: SsfTransmittersPage.render },
+  { path: '/admin/tls-connection', title: 'TLS connection',
+    operation: '/admin-api/tls-connection',
+    render: TlsConnectionPage.render },
   { path: '/admin/tls/trust', title: 'Client-certificate truststore',
     operation: '/admin-api/tls/trust',
     render: function (view: Json, ctx?: Json): string {
@@ -739,39 +970,52 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return UsersPage.newUserBody(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/vc', title: 'Credential claims',
+  { path: '/admin/vc', title: 'Verifiable Credentials',
     operation: '/admin-api/credential-claims',
+    compose: {
+      oid4vciSettings: '/admin-api/oid4vci-settings',
+      vcStatus: '/admin-api/vc-status',
+      oid4vpSettings: '/admin-api/oid4vp-settings',
+      verifierRequest: '/admin-api/verifier-request'
+    },
+    composeWhen: { vcStatus: ['page', 'per'] },
+    composeAlways: ['vcStatus'],
     render: function (view: Json, ctx?: Json): string {
       return VcClaimsPage.body(ctx || WebKit.context(), view);
     } },
-  { path: '/admin/vc-status', title: 'Credential status',
-    operation: '/admin-api/vc-status', render: VcStatusPage.render },
-  { path: '/admin/xacml/editor', title: 'Policy editor',
-    operation: '/admin-api/xacml/editor',
+  { path: '/admin/kerberos', title: 'Kerberos',
+    operation: '/admin-api/kerberos',
+    compose: {
+      kerberosClaims: '/admin-api/kerberos/claims',
+      kerberosPrincipals: '/admin-api/kerberos/principals'
+    },
+    composeWhen: {
+      kerberosClaims: ['user'],
+      kerberosPrincipals: ['per', 'peoplePage', 'servicesPage']
+    },
+    composeAlways: ['kerberosClaims', 'kerberosPrincipals'],
     render: function (view: Json, ctx?: Json): string {
-      return XacmlPage.editorBody(ctx || WebKit.context(), view);
+      return ProtocolSettingsPage.render(view, ctx || WebKit.context());
     } },
   { path: '/admin/xacml', title: 'XACML', operation: '/admin-api/xacml',
+    compose: {
+      xacmlPolicies: '/admin-api/xacml/policies',
+      xacmlEditor: '/admin-api/xacml/editor',
+      xacmlPeps: '/admin-api/xacml/peps',
+      xacmlDecide: '/admin-api/xacml/decide'
+    },
+    composeWhen: {
+      xacmlEditor: ['policy'],
+      xacmlDecide: ['subject', 'action', 'resource']
+    },
+    composeAlways: [
+      'xacmlPolicies', 'xacmlEditor', 'xacmlPeps', 'xacmlDecide'
+    ],
     render: XacmlPage.render },
-  { path: '/admin/xacml/decide', title: 'Try a decision',
-    operation: '/admin-api/xacml/decide',
-    render: function (view: Json, ctx?: Json): string {
-      return XacmlPage.decideBody(ctx || WebKit.context(), view);
-    } },
   { path: '/admin/xacml/monitor', title: 'XACML decisions',
     operation: '/admin-api/xacml/monitor',
     render: function (view: Json, ctx?: Json): string {
       return XacmlPage.monitorBody(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/xacml/peps', title: 'Remote PEPs',
-    operation: '/admin-api/xacml/peps',
-    render: function (view: Json, ctx?: Json): string {
-      return XacmlPage.pepsBody(ctx || WebKit.context(), view);
-    } },
-  { path: '/admin/xacml/policies', title: 'XACML policies',
-    operation: '/admin-api/xacml/policies',
-    render: function (view: Json, ctx?: Json): string {
-      return XacmlPage.policiesBody(ctx || WebKit.context(), view);
     } },
   // The generated settings pages (#446), a status block drawn by
   // `web_protocol_settings.ts` where the page has one.
@@ -787,16 +1031,14 @@ const PAGES: WebPage[] = [
   { path: '/admin/webauthn', title: 'WebAuthn',
     operation: '/admin-api/webauthn',
     render: ProtocolSettingsPage.render },
-  { path: '/admin/kerberos', title: 'Kerberos settings',
-    operation: '/admin-api/kerberos',
-    render: ProtocolSettingsPage.render },
   { path: '/admin/oauth2', title: 'OAuth 2.0 / OIDC settings',
-    operation: '/admin-api/oauth2', render: ProtocolSettingsPage.render },
-  { path: '/admin/oid4vci', title: 'OpenID4VCI',
-    operation: '/admin-api/oid4vci-settings',
-    render: ProtocolSettingsPage.render },
-  { path: '/admin/oid4vp', title: 'OpenID4VP',
-    operation: '/admin-api/oid4vp-settings',
+    operation: '/admin-api/oauth2',
+    compose: {
+      authorizationServers: '/admin-api/authorization-servers',
+      tokenLifetimes: '/admin-api/token-lifetimes',
+      claims: '/admin-api/claims',
+      userinfoClaims: '/admin-api/userinfo-claims'
+    },
     render: ProtocolSettingsPage.render },
   { path: '/admin/ldap', title: 'LDAP / LDAPS',
     operation: '/admin-api/ldap', render: ProtocolSettingsPage.render },
@@ -806,11 +1048,6 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/wsfed', render: ProtocolSettingsPage.render },
   { path: '/admin/tls', title: 'TLS / mutual TLS',
     operation: '/admin-api/tls', render: ProtocolSettingsPage.render },
-  { path: '/admin/vc-verifier-config', title: 'Verifier request',
-    operation: '/admin-api/verifier-request',
-    render: function (view: Json, ctx?: Json): string {
-      return VcVerifierConfigPage.body(ctx || WebKit.context(), view);
-    } },
   { path: '/admin/worker-pools', title: 'Worker pools',
     operation: '/admin-api/worker-pools', render: WorkerPoolsPage.render }
 ];
@@ -826,6 +1063,16 @@ class WebPages {
    * Every converted page.
    */
   static readonly PAGES = PAGES;
+
+  /**
+   * The Protocols pages drawn as tabs by `protocolTabs()`, and their tabs.
+   */
+  static readonly PROTOCOL_TABS = PROTOCOL_TABS;
+
+  /**
+   * Every tab id `protocolTabs()` can draw, for the stylesheet.
+   */
+  static readonly PROTOCOL_TAB_IDS = protocolTabIds();
 
   /**
    * The rendering kit, for the runtime that draws the shell around a page.
@@ -897,17 +1144,982 @@ class WebPages {
     return out;
   }
 
+  /**
+   * What a page's composed members are asked: each member its query sets
+   * off, with the parameters its `composeWhen` names, under the names its
+   * `composeParams` gives. The runtime and the jobs that draw a page as the
+   * console does all ask this, so there is one reading of the row.
+   *
+   * @param page - the page's row
+   * @param query - the page's query
+   * @returns `{ member, operation, params }` per member asked
+   */
+  static composeRequests(page: WebPage, query: Json):
+      Array<{ member: string; operation: string;
+              params: Record<string, string> }> {
+    const asked = query || {};
+    const has = function (name: string): boolean {
+      return Object.prototype.hasOwnProperty.call(asked, name);
+    };
+    return Object.keys((page && page.compose) || {}).filter(
+      function (member) {
+        const when = (page.composeWhen || {})[member];
+        return !when || (page.composeAlways || []).indexOf(member) >= 0 ||
+          when.some(has);
+      }).map(function (member) {
+      const names = (page.composeParams || {})[member] || {};
+      const params: Record<string, string> = {};
+      ((page.composeWhen || {})[member] || []).forEach(function (name) {
+        if (has(name)) {
+          params[names[name] || name] = asked[name];
+        }
+      });
+      return { member: member, operation: page.compose[member],
+               params: params };
+    });
+  }
+
+  /**
+   * Draws Protocols → Cert issuance: Metadata, a tab each for ACME, EST and
+   * SCEP, and one for SPIFFE whose four former pages are sub-tabs — or, with
+   * `entry` or `agent` in the query, that one registration entry or agent.
+   *
+   * @param view - the SPIFFE trust domain's answer, the other six tabs'
+   *   composed in
+   * @param context - the render context
+   * @returns the page as HTML
+   */
+  static certIssuance(view: Json, context: Json): string {
+    const missing = Object.keys(CERT_COMPOSITION.compose).filter(
+      function (member) {
+        return !view[member];
+      });
+    if (missing.length) {
+      throw new Error('The Cert issuance page is missing a tab view: ' +
+                      missing.join(', ') + '.');
+    }
+    const t = context.t;
+    const query = context.query || {};
+    const draw = function (key: string, html: string): string {
+      return WebPages.certTabLinks(html, key);
+    };
+    const ctxOf = function (key: string): Json {
+      return WebPages.certContext(context, key);
+    };
+    if (query.entry) {
+      return draw('spiffeEntries', SpiffePage.entry(ctxOf('spiffeEntries'),
+                                                    view.spiffeEntries));
+    }
+    if (query.agent) {
+      return draw('spiffeAgents', SpiffePage.agent(ctxOf('spiffeAgents'),
+                                                   view.spiffeAgents));
+    }
+    // Every tab's endpoints, once each, on Metadata alone: the seven
+    // operations mirror this one page, so each answers the whole list.
+    // They are drawn by protocol (`certMetadata()`).
+    const endpoints: Json[] = [];
+    const seen: Json = {};
+    [view].concat(Object.keys(CERT_COMPOSITION.compose).map(
+      function (member) {
+        return view[member];
+      })).forEach(function (answer: Json) {
+      (Array.isArray(answer.protocolEndpoints)
+        ? answer.protocolEndpoints : []).forEach(function (row: Json) {
+        const key = String(row.name) + '\n' + String(row.url);
+        if (!seen[key]) {
+          seen[key] = true;
+          endpoints.push(row);
+        }
+      });
+    });
+    const spiffe = WebKit.subTabbedPanels(t.text('console.nav.spiffe'), [
+      { id: CERT_PANELS.spiffe.tab,
+        label: t.text('console.nav.spiffe-trust-domain'),
+        html: draw('spiffe', SpiffePage.overview(ctxOf('spiffe'), view)) },
+      { id: CERT_PANELS.spiffeEntries.tab,
+        label: t.text('console.nav.spiffe-entries'),
+        html: draw('spiffeEntries', SpiffePage.entries(
+          ctxOf('spiffeEntries'), view.spiffeEntries)) },
+      { id: CERT_PANELS.spiffeAgents.tab,
+        label: t.text('console.nav.spiffe-agents'),
+        html: draw('spiffeAgents', SpiffePage.agents(ctxOf('spiffeAgents'),
+                                                     view.spiffeAgents)) },
+      { id: CERT_PANELS.spiffeBrokers.tab,
+        label: t.text('console.nav.spiffe-brokers'),
+        html: draw('spiffeBrokers', SpiffePage.brokers(
+          ctxOf('spiffeBrokers'), view.spiffeBrokers)) }
+    ]);
+    return WebKit.tabbedPanels('cert-pages', [
+      { id: 'cert-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: WebPages.certMetadata(view, endpoints, t) },
+      { id: CERT_PANELS.acme.tab, label: t.text('console.nav.acme'),
+        html: draw('acme', AcmePage.render(view.acme, ctxOf('acme'))) },
+      { id: CERT_PANELS.est.tab, label: t.text('console.nav.est'),
+        html: draw('est', EstPage.render(view.est, ctxOf('est'))) },
+      { id: CERT_PANELS.scep.tab, label: t.text('console.nav.scep'),
+        html: draw('scep', ScepPage.render(view.scep, ctxOf('scep'))) },
+      { id: 'cert-tab-spiffe', label: t.text('console.nav.spiffe'),
+        html: spiffe }
+    ]);
+  }
+
+  // THE SPLITTER (2026-10-12). It cuts only at a heading at the TOP LEVEL
+  // of the page — outside every form, table, list and block — so no panel
+  // can hold half an element. An `<h2>` starts a section; an `<h3>` starts
+  // one only where no `<h2>` section is open (PKI, Provider Commands and
+  // Claims Providers head their sections with `<h3>`; elsewhere an `<h3>`
+  // is a heading inside its `<h2>`'s section), or where it is marked as a
+  // tab (Roles' sections are `<h3>`s under one `<h2>`). A section is a tab when its
+  // heading carries `data-tab`, which the tab's label then replaces; two
+  // sections naming one tab are one tab. A block marked `data-metadata`
+  // (a page's closing links) returns to Metadata. The rest, in page order,
+  // is Metadata.
+  /**
+   * Draws a Protocols page as tabs, Metadata first.
+   *
+   * @param path - the page's path, a key of `PROTOCOL_TABS`
+   * @param html - the page as drawn, its endpoints added
+   * @param t - the page's translator
+   * @returns the page as tabs
+   */
+  static protocolTabs(path: string, html: string, t: Json): string {
+    const slug = protocolSlug(path);
+    const blocks = ['div', 'form', 'table', 'details', 'section', 'ul', 'ol',
+                    'fieldset', 'nav', 'dl', 'p', 'aside'];
+    // A block marked `data-outside-tabs` — the certificate details dialog —
+    // is drawn after the tabs, not inside whichever one it followed.
+    const outside: string[] = [];
+    let text = String(html || '');
+    let cut = /<([a-zA-Z0-9]+)\b[^>]*\bdata-outside-tabs\b[^>]*>/.exec(text);
+    while (cut) {
+      const inner = /<(\/?)([a-zA-Z0-9]+)\b[^>]*?(\/?)>/g;
+      inner.lastIndex = cut.index;
+      let level = 0;
+      let end = text.length;
+      let one = inner.exec(text);
+      while (one) {
+        if (blocks.indexOf(one[2].toLowerCase()) >= 0 && !one[3]) {
+          level += one[1] ? -1 : 1;
+          if (level === 0) {
+            end = one.index + one[0].length;
+            break;
+          }
+        }
+        one = inner.exec(text);
+      }
+      outside.push(text.slice(cut.index, end));
+      text = text.slice(0, cut.index) + text.slice(end);
+      cut = /<([a-zA-Z0-9]+)\b[^>]*\bdata-outside-tabs\b[^>]*>/.exec(text);
+    }
+    const tag = /<(\/?)([a-zA-Z0-9]+)\b[^>]*?(\/?)>/g;
+    const sections: Json[] = [{ level: 0, tab: null, at: 0, start: 0 }];
+    let depth = 0;
+    let m = tag.exec(text);
+    while (m) {
+      const name = m[2].toLowerCase();
+      if (blocks.indexOf(name) >= 0) {
+        // A block marked `data-metadata` — a page's closing links — goes
+        // back to Metadata from whatever tab it follows.
+        if (!m[1] && depth === 0 && /\bdata-metadata\b/.test(m[0])) {
+          sections.push({ level: 0, tab: null, at: m.index,
+                          start: m.index });
+        }
+        depth += m[1] ? -1 : (m[3] ? 0 : 1);
+      } else if (!m[1] && depth === 0 && (name === 'h2' || name === 'h3') &&
+                 (name === 'h2' || /\bdata-tab="/.test(m[0]) ||
+                  sections[sections.length - 1].level !== 2)) {
+        const close = text.indexOf('</' + name + '>', m.index);
+        const end = close < 0 ? m.index + m[0].length
+                              : close + name.length + 3;
+        const marked = /\bdata-tab="([^"]+)"/.exec(m[0]);
+        const id = /\bid="([^"]+)"/.exec(m[0]);
+        sections.push({ level: name === 'h2' ? 2 : 3,
+                        tab: marked ? marked[1] : null, at: m.index,
+                        start: end, id: id ? id[1] : '',
+                        label: WebPages.textOf(
+                          text.slice(m.index + m[0].length,
+                                     close < 0 ? end : close)) });
+      }
+      m = tag.exec(text);
+    }
+    // A page that draws no marked section this time — the mail page's one
+    // template, a list with no rows to act on — is drawn as it was: a bar
+    // holding one Metadata tab says nothing.
+    if (!sections.some(function (one: Json) { return !!one.tab; })) {
+      return String(html || '');
+    }
+    let metadata = '';
+    const tabs: Json = {};
+    const order: string[] = [];
+    sections.forEach(function (one: Json, n: number) {
+      const stop = n + 1 < sections.length ? sections[n + 1].at : text.length;
+      if (!one.tab) {
+        metadata += text.slice(one.at, stop);
+        return;
+      }
+      if (!tabs[one.tab]) {
+        tabs[one.tab] = { label: one.label, html: '' };
+        order.push(one.tab);
+      }
+      // The heading goes, its label being the tab's; an id it carried
+      // stays, since a form's answer may return to it.
+      tabs[one.tab].html += (one.id
+        ? '<span id="' + WebKit.esc(one.id) + '"></span>' : '') +
+        text.slice(one.start, stop);
+    });
+    return WebKit.tabbedPanels(slug + '-pages', [
+      { id: slug + '-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: metadata }
+    ].concat(order.map(function (name) {
+      return { id: slug + '-tab-' + name, label: tabs[name].label,
+               html: tabs[name].html };
+    }))) + outside.join('');
+  }
+
+  // A heading's text, for a tab's label (which `tabbedPanels()` escapes):
+  // its markup taken off and the entities the renderers write put back.
+  /**
+   * The text of a fragment of markup.
+   *
+   * @param html - the fragment
+   * @returns its text
+   */
+  static textOf(html: string): string {
+    const named: Json = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+                          nbsp: ' ', mdash: '—', ndash: '–', rsaquo: '›',
+                          lsaquo: '‹', hellip: '…', middot: '·' };
+    return String(html || '').replace(/<[^>]*>/g, '')
+      .replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);/gi,
+        function (whole: string, code: string): string {
+          if (code.charAt(0) === '#') {
+            const n = code.charAt(1).toLowerCase() === 'x'
+              ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+            return isFinite(n) ? String.fromCodePoint(n) : whole;
+          }
+          return Object.prototype.hasOwnProperty.call(named,
+            code.toLowerCase()) ? named[code.toLowerCase()] : whole;
+        }).replace(/\s+/g, ' ').trim();
+  }
+
+  // METADATA, ONE SECTION PER PROTOCOL (rcbj, 2026-10-12): forty-odd rows
+  // in one table did not say which protocol a row was, so each family's
+  // HTTP endpoints are a table of their own under its name — chosen by
+  // the route's prefix (`CERT_PANELS`' `routes`) — with what its tab used to
+  // say about them: EST's label form, what SCEP answers, and SPIFFE's gRPC
+  // listeners, which are the sockets the endpoint list would otherwise name
+  // with less. The four tabs list no endpoint.
+  /**
+   * Draws Cert issuance's Metadata tab: each protocol's endpoints under its
+   * name.
+   *
+   * @param view - the page's composed view
+   * @param endpoints - every row of the page's endpoint list, once each
+   * @param t - the page's translator
+   * @returns the tab as HTML
+   */
+  static certMetadata(view: Json, endpoints: Json[], t: Json): string {
+    const families = ['acme', 'est', 'scep', 'spiffe'];
+    const familyOf = function (row: Json): string | null {
+      const route = String(row.route || '');
+      return families.filter(function (key) {
+        const prefix = CERT_PANELS[key].routes;
+        return route === prefix || route.indexOf(prefix + '/') === 0;
+      })[0] || null;
+    };
+    const extras: Json = {
+      acme: '',
+      est: EstPage.labelFormNote(view.est, t),
+      scep: ScepPage.sectionCapabilities(view.scep, t),
+      spiffe: SpiffePage.listenersSection(t, view)
+    };
+    const sections = families.map(function (key) {
+      const rows = endpoints.filter(function (row) {
+        return familyOf(row) === key;
+      });
+      // The heading is the tab's own label; the key is built in a variable
+      // for `titleOf()`'s reason.
+      const label = 'console.nav.' + key;
+      return '<h2 id="cert-metadata-' + key + '">' +
+        WebKit.esc(t.text(label)) + '</h2>' +
+        WebPages.endpointTable(rows, t) + extras[key];
+    });
+    // A row no family's prefix claims is still listed, under the section
+    // every Protocols page has.
+    const other = endpoints.filter(function (row) {
+      return row.route && !familyOf(row);
+    });
+    return sections.join('') + (other.length
+      ? WebPages.withEndpoints('', { protocolEndpoints: other }, t) : '');
+  }
+
+  /**
+   * One tab's render context: the page's query with the tab's own names
+   * given back as its renderer reads them, the other tabs' left as they are.
+   *
+   * @param context - the page's render context
+   * @param key - the tab's key in `CERT_PANELS`
+   * @returns the tab's render context
+   */
+  static certContext(context: Json, key: string): Json {
+    const query = Object.assign({}, context.query || {});
+    CERT_PANELS[key].names.forEach(function (name: string) {
+      const own = certName(key, name);
+      delete query[name];
+      if (Object.prototype.hasOwnProperty.call(query, own)) {
+        query[name] = query[own];
+      }
+      delete query[own];
+    });
+    return Object.assign({}, context, { query: query });
+  }
+
+  /**
+   * Keeps one Cert issuance tab's links on the page: a link to one of the
+   * four families' former pages opens its tab, with the tab's own names
+   * given the page's; a link to a former page's document is to its
+   * operation's; and a filter form's action, names and ids are the tab's,
+   * so two tabs' forms are not one control. A POST form is left to post
+   * where it did — the operation that mirrors it is unchanged.
+   *
+   * @param html - one tab's rendered HTML
+   * @param key - the tab's key in `CERT_PANELS`
+   * @returns the HTML with the page's links
+   */
+  static certTabLinks(html: string, key: string): string {
+    const panel = CERT_PANELS[key];
+    const own = function (name: string): string {
+      return panel.names.indexOf(name) >= 0 ? certName(key, name) : name;
+    };
+    const keyOf = function (path: string): string {
+      return Object.keys(CERT_PANELS).filter(function (one) {
+        return CERT_PANELS[one].path === path;
+      })[0];
+    };
+    // A query as drawn — escaped, so `&amp;` — with this tab's names renamed
+    // and every value as it was.
+    const renamed = function (search: string, target: string): string {
+      if (!search) {
+        return '';
+      }
+      return '?' + search.slice(1).split(/(&amp;|&)/).map(function (part,
+                                                                    n) {
+        if (n % 2 === 1 || target !== key) {
+          return part;
+        }
+        const at = part.indexOf('=');
+        const name = at < 0 ? part : part.slice(0, at);
+        let plain = name;
+        try {
+          plain = decodeURIComponent(name);
+        } catch (e) {
+          return part;
+        }
+        return own(plain) === plain ? part
+          : encodeURIComponent(own(plain)) + (at < 0 ? '' : part.slice(at));
+      }).join('');
+    };
+    const routes = '/admin/(?:acme|est|scep|spiffe(?:/entries|/agents|' +
+                   '/brokers)?)';
+    html = String(html || '').replace(new RegExp('href="(' + routes +
+      ')(\\?[^"#]*)?(#[^"]*)?"', 'g'),
+    function (_match: string, path: string, search: string,
+              fragment: string): string {
+      const target = keyOf(path);
+      // The page as a document is its operation's answer: the console
+      // cannot draw a former page in another shape.
+      if (/[?&;]format=/.test(search || '')) {
+        const kept = (search || '').slice(1).split(/&amp;|&/)
+          .filter(function (part) {
+            return part && !/^format=/.test(part);
+          });
+        return 'href="' + CERT_PANELS[target].operation +
+          (kept.length ? '?' + kept.join('&amp;') : '') + '"';
+      }
+      const list = /^#list-(.+)$/.exec(fragment || '');
+      const goes = list && target === key ? '#list-' + own(list[1])
+        : fragment || '#' + CERT_PANELS[target].tab;
+      return 'href="' + CERT_PAGE + renamed(search || '', target) + goes +
+        '"';
+    });
+    // A pager's anchor, and the table it heads, named for this tab's list.
+    html = html.replace(/\bid="list-([A-Za-z]+)"/g,
+      function (_match: string, name: string): string {
+        return 'id="list-' + own(name) + '"';
+      });
+    return html.replace(/<form\b[^>]*\bmethod="get"[^>]*>[\s\S]*?<\/form>/gi,
+      function (form: string): string {
+        return form.replace(new RegExp('\\baction="(' + routes +
+          ')(?:\\?[^"#]*)?(#[^"]*)?"'),
+        function (_match: string, path: string, fragment: string): string {
+          return 'action="' + CERT_PAGE +
+            (fragment || '#' + CERT_PANELS[keyOf(path)].tab) + '"';
+        }).replace(/\b(name|id|for)="([^"]+)"/g,
+        function (_match: string, attr: string, value: string): string {
+          return attr === 'name' ? 'name="' + own(value) + '"'
+                                 : attr + '="' + panel.prefix + '-' + value +
+                                   '"';
+        });
+      });
+  }
+
   static render(path: string, view: Json, ctx?: Json): string | null {
     const page = WebPages.pageFor(path);
     const context = ctx || WebKit.context();
     if (!page) {
       return null;
     }
+    if (page.path === '/admin/kerberos') {
+      if (!view.kerberosClaims || !view.kerberosPrincipals) {
+        throw new Error('The Kerberos page is missing a tab view.');
+      }
+      const endpoints: Json[] = [];
+      const seen: Json = {};
+      [view, view.kerberosClaims, view.kerberosPrincipals]
+        .forEach(function (answer) {
+          (Array.isArray(answer.protocolEndpoints)
+            ? answer.protocolEndpoints : []).forEach(function (row: Json) {
+            const key = String(row.name) + '\n' + String(row.url);
+            if (!seen[key]) {
+              seen[key] = true;
+              endpoints.push(row);
+            }
+          });
+        });
+      const metadataView = Object.assign({}, view, {
+        settings: Object.assign({}, view.settings, { groups: [] }),
+        status: null
+      });
+      const metadata = WebPages.withEndpoints(
+        ProtocolSettingsPage.render(metadataView, context), {
+          protocolEndpoints: endpoints
+        }, context.t);
+      const settings = ProtocolSettingsPage.kerberosPreauthStatus(
+        view.status, context.t) +
+        SettingsForms.forms(view.settings,
+          '/admin/kerberos#kerberos-tab-settings', ['Kerberos'], context.t);
+      const panels = [
+        { id: 'kerberos-tab-metadata',
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          html: metadata },
+        { id: 'kerberos-tab-settings',
+          label: context.t.text('consoleProtocolSettings.globalSettings'),
+          html: settings },
+        { id: 'kerberos-tab-claims',
+          label: context.t.text('console.nav.kerberos-claims'),
+          html: ClaimsPage.kerberosClaimsBody(context,
+            view.kerberosClaims) },
+        { id: 'kerberos-tab-principals',
+          label: context.t.text('console.nav.kerberos-principals'),
+          html: KerberosPrincipalsPage.body(context,
+            view.kerberosPrincipals) }
+      ];
+      const rendered = panels.map(function (one) {
+        return { id: one.id, label: one.label,
+          html: WebPages.kerberosTabLinks(one.html) };
+      });
+      return WebKit.tabbedPanels('kerberos-pages', rendered);
+    }
+    if (page.path === '/admin/oauth2') {
+      const authorizationServers =
+        WebPages.pageFor('/admin/authorization-servers');
+      const tokenLifetimes = WebPages.pageFor('/admin/token-lifetimes');
+      const claims = WebPages.pageFor('/admin/claims');
+      const userinfoClaims = WebPages.pageFor('/admin/userinfo-claims');
+      if (!authorizationServers || !tokenLifetimes || !claims ||
+          !userinfoClaims) {
+        throw new Error('The OAuth 2.0 / OIDC page is missing a tab.');
+      }
+      const panels: Array<{ id: string; page: WebPage; view: Json;
+                            label: string; render?: () => string;
+                            endpoints?: boolean }> = [
+        { id: 'oauth-tab-metadata',
+          page: page,
+          view: view,
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          endpoints: true,
+          render: function (): string {
+            return ProtocolSettingsPage.oauthMetadata(view, context.t);
+          } },
+        { id: 'oauth-tab-global-settings',
+          page: page,
+          view: view,
+          label: context.t.text('consoleProtocolSettings.globalSettings'),
+          endpoints: false },
+        { id: 'oauth-tab-authorization-servers',
+          page: authorizationServers,
+          view: view.authorizationServers,
+          label: WebPages.titleOf(authorizationServers, context.t) },
+        { id: 'oauth-tab-token-lifetimes',
+          page: tokenLifetimes,
+          view: view.tokenLifetimes,
+          label: WebPages.titleOf(tokenLifetimes, context.t) },
+        { id: 'oauth-tab-claims',
+          page: claims,
+          view: view.claims,
+          label: WebPages.titleOf(claims, context.t) },
+        { id: 'oauth-tab-userinfo-claims',
+          page: userinfoClaims,
+          view: view.userinfoClaims,
+          label: WebPages.titleOf(userinfoClaims, context.t) }
+      ];
+      const rendered = panels.map(function (one) {
+        const html = one.render ? one.render() : one.page && one.view
+          ? one.page.render(one.view, context) : '';
+        return { id: one.id, label: one.label,
+          html: one.page && one.view
+            ? WebPages.oauthTabLinks(one.endpoints === false ? html
+              : WebPages.withEndpoints(html, one.view, context.t))
+            : '' };
+      });
+      return WebKit.tabbedPanels('oauth-pages', rendered);
+    }
+    if (page.path === '/admin/saml2' && context.query &&
+        context.query.sp) {
+      return SamlPage.saml2Detail(context, view);
+    }
+    if (page.path === '/admin/saml2' && context.query &&
+        context.query.rp) {
+      if (!view.saml11Detail) {
+        throw new Error('The SAML 1.1 detail view is missing.');
+      }
+      return SamlPage.saml11Detail(context, view.saml11Detail);
+    }
+    if (page.path === '/admin/saml2') {
+      if (!view.saml11 || !view.assertions || !view.attributes) {
+        throw new Error('The SAML page is missing a tab view.');
+      }
+      const endpoints: Json[] = [];
+      const endpointKeys: Json = {};
+      [view, view.saml11, view.assertions, view.attributes]
+        .forEach(function (answer) {
+          (Array.isArray(answer.protocolEndpoints)
+            ? answer.protocolEndpoints : []).forEach(function (row: Json) {
+            const key = String(row.name) + '\n' + String(row.url);
+            if (!endpointKeys[key]) {
+              endpointKeys[key] = true;
+              endpoints.push(row);
+            }
+          });
+        });
+      const metadata = WebPages.withEndpoints(
+        SamlPage.metadataBody(context), { protocolEndpoints: endpoints },
+        context.t);
+      const globalSettings =
+        SettingsForms.forms(view.settings, '/admin/saml2', ['SAML 2.0'],
+                            context.t) +
+        SettingsForms.forms(view.settings, '/admin/saml2', ['SAML 1.1'],
+                            context.t);
+      const sharedSettings =
+        SettingsForms.forms(view.settings, '/admin/saml2', ['SAML'],
+                            context.t);
+      const saml2Body = SamlPage.saml2Body(context, view, {
+        includeMetadata: false, includeSettings: false
+      });
+      const saml11Body = SamlPage.saml11Body(context, view.saml11, {
+        includeMetadata: false, includeSettings: false
+      });
+      // The compatibility assertion page also edits the shared clock skew.
+      // In the combined page that control lives in the shared-settings tab;
+      // retain the timing data so the assertion warnings still use its value.
+      const assertionView = Object.assign({}, view.assertions, {
+        settings: view.assertions.settings.filter(function (setting: Json) {
+          return setting.key !== 'saml.clockSkewS';
+        })
+      });
+      const panels = [
+        { id: 'saml-tab-metadata',
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          html: metadata },
+        { id: 'saml-tab-global-settings',
+          label: context.t.text('consoleProtocolSettings.globalSettings'),
+          html: globalSettings },
+        { id: 'saml-tab-shared-settings',
+          label: context.t.text(
+            'consoleProtocolSettings.sharedProfileSettings'),
+          html: sharedSettings },
+        { id: 'saml-tab-saml2',
+          label: 'SAML 2.0 IdP',
+          html: saml2Body },
+        { id: 'saml-tab-saml11',
+          label: 'SAML 1.1 IdP',
+          html: saml11Body },
+        { id: 'saml-tab-assertions',
+          label: context.t.text('consolePages.title.saml-assertions'),
+          html: SamlAssertionsPage.body(context, assertionView) },
+        { id: 'saml-tab-attributes',
+          label: context.t.text('consolePages.title.saml-attributes'),
+          html: ClaimsPage.samlAttributesBody(context, view.attributes) }
+      ];
+      const rendered = panels.map(function (one) {
+        return { id: one.id, label: one.label,
+          html: WebPages.samlTabLinks(one.html) };
+      });
+      return WebKit.tabbedPanels('saml-pages', rendered);
+    }
+    if (page.path === '/admin/vc') {
+      if (!view.oid4vciSettings || !view.vcStatus ||
+          !view.oid4vpSettings || !view.verifierRequest) {
+        throw new Error('The Verifiable Credentials page is missing a tab ' +
+                        'view.');
+      }
+      const metadata = WebPages.withEndpoints(
+        WebPages.vcMetadata(view.oid4vciSettings,
+                            view.oid4vpSettings, context.t),
+        view, context.t);
+      const vciSettings = SettingsForms.forms(
+        view.oid4vciSettings.settings,
+        '/admin/vc#vc-tab-oid4vci', ['OID4VCI', 'W3C VC API'], context.t);
+      const vpSettings = SettingsForms.forms(
+        view.oid4vpSettings.settings,
+        '/admin/vc#vc-tab-oid4vp', ['OID4VP'], context.t);
+      const panels = [
+        { id: 'vc-tab-metadata',
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          html: metadata },
+        { id: 'vc-tab-oid4vci',
+          label: context.t.text('console.nav.oid4vci'),
+          html: vciSettings },
+        { id: 'vc-tab-claims',
+          label: context.t.text('console.nav.vc-claims'),
+          html: VcClaimsPage.body(context, view) },
+        { id: 'vc-tab-status',
+          label: context.t.text('console.nav.vc-status'),
+          html: VcStatusPage.render(view.vcStatus, context) },
+        { id: 'vc-tab-oid4vp',
+          label: context.t.text('console.nav.oid4vp'),
+          html: vpSettings },
+        { id: 'vc-tab-verifier-request',
+          label: context.t.text('console.nav.vc-verifier-config'),
+          html: VcVerifierConfigPage.body(context, view.verifierRequest) }
+      ];
+      const rendered = panels.map(function (one) {
+        return { id: one.id, label: one.label,
+          html: WebPages.vcTabLinks(one.html) };
+      });
+      return WebKit.tabbedPanels('vc-pages', rendered);
+    }
+    if (page.path === '/admin/xacml') {
+      if (!view.xacmlPolicies || !view.xacmlEditor || !view.xacmlPeps ||
+          !view.xacmlDecide) {
+        throw new Error('The XACML page is missing a tab view.');
+      }
+      const panels = [
+        { id: 'xacml-tab-metadata',
+          label: context.t.text('consoleProtocolSettings.metadataHeading'),
+          html: WebPages.withEndpoints('', view, context.t) },
+        { id: 'xacml-tab-settings',
+          label: context.t.text('consoleProtocolSettings.globalSettings'),
+          html: XacmlPage.render(view, context) },
+        { id: 'xacml-tab-policies',
+          label: context.t.text('console.nav.xacml-policies'),
+          html: XacmlPage.policiesBody(context, view.xacmlPolicies) },
+        { id: 'xacml-tab-editor',
+          label: context.t.text('console.nav.xacml-editor'),
+          html: XacmlPage.editorBody(context, view.xacmlEditor) },
+        { id: 'xacml-tab-peps',
+          label: context.t.text('console.nav.xacml-peps'),
+          html: XacmlPage.pepsBody(context, view.xacmlPeps) },
+        { id: 'xacml-tab-decide',
+          label: context.t.text('console.nav.xacml-decide'),
+          html: XacmlPage.decideBody(context, view.xacmlDecide) }
+      ];
+      const rendered = panels.map(function (one) {
+        return { id: one.id, label: one.label,
+          html: WebPages.xacmlTabLinks(one.html) };
+      });
+      return WebKit.tabbedPanels('xacml-pages', rendered);
+    }
+    if (page.path === '/admin/scim') {
+      if (context.query && context.query.client && page.drill) {
+        return page.drill.render(view, context);
+      }
+      return page.render(view, context);
+    }
+    if (page.path === '/admin/ssf') {
+      return page.render(view, context);
+    }
+    if (page.path === CERT_PAGE) {
+      return WebPages.certIssuance(view, context);
+    }
     if (page.drill && context.query && context.query[page.drill.param]) {
       return page.drill.render(view, context);
     }
+    if (PROTOCOL_TABS[page.path]) {
+      return WebPages.protocolTabs(page.path,
+        WebPages.withEndpoints(page.render(view, context), view, context.t),
+        context.t);
+    }
     return WebPages.withEndpoints(page.render(view, context), view,
                                   context.t);
+  }
+
+  /**
+   * Keeps links between the five OAuth pages inside their combined tabbed
+   * page, without changing their direct routes.
+   *
+   * @param html - one OAuth page's rendered HTML
+   * @returns the HTML with intra-page links
+   */
+  static oauthTabLinks(html: string): string {
+    const paths = {
+      '/admin/oauth2': 'oauth-tab-global-settings',
+      '/admin/authorization-servers': 'oauth-tab-authorization-servers',
+      '/admin/token-lifetimes': 'oauth-tab-token-lifetimes',
+      '/admin/claims': 'oauth-tab-claims',
+      '/admin/userinfo-claims': 'oauth-tab-userinfo-claims'
+    };
+    Object.keys(paths).forEach(function (path) {
+      html = html.split('href="' + path + '"')
+        .join('href="#' + paths[path] + '"');
+    });
+    return html;
+  }
+
+  /**
+   * Keeps links and forms between the XACML views on their tabs.
+   *
+   * @param html - one XACML view's rendered HTML
+   * @returns the HTML with intra-page links and forms
+   */
+  static xacmlTabLinks(html: string): string {
+    const paths = {
+      '/admin/xacml/policies': 'xacml-tab-policies',
+      '/admin/xacml/editor': 'xacml-tab-editor',
+      '/admin/xacml/peps': 'xacml-tab-peps',
+      '/admin/xacml/decide': 'xacml-tab-decide',
+      '/admin/xacml': 'xacml-tab-settings'
+    };
+    const route = '/admin/xacml/policies|/admin/xacml/editor|' +
+      '/admin/xacml/peps|/admin/xacml/decide|/admin/xacml';
+    html = html.replace(new RegExp('href="(' + route +
+      ')(\\?[^"#]*)?(#[^"]*)?"', 'g'),
+    function (_match: string, path: string, query: string,
+              fragment: string): string {
+      return 'href="/admin/xacml' + (query || '') +
+        (fragment || '#' + paths[path]) + '"';
+    });
+    html = html.replace(
+      /<form\b([^>]*)>/gi,
+      function (match: string, attrs: string): string {
+        const action = /action="([^"]*)"/i.exec(attrs);
+        if (!action) {
+          return match;
+        }
+        const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);
+        if (!target || !Object.prototype.hasOwnProperty.call(
+          paths, target[1])) {
+          return match;
+        }
+        return match.replace(action[0],
+          'action="/admin/xacml' + (target[2] || '') + '#' +
+          paths[target[1]] + '"');
+      });
+    return html;
+  }
+
+  /**
+   * Keeps links between Shared Signals and its vocabulary tabs in the
+   * combined SSF page.
+   *
+   * @param html - one SSF view's rendered HTML
+   * @returns the HTML with intra-page links
+   */
+  static ssfTabLinks(html: string): string {
+    const paths = {
+      '/admin/ssf': 'ssf-tab-ssf',
+      '/admin/caep': 'ssf-tab-caep',
+      '/admin/risc': 'ssf-tab-risc'
+    };
+    // A link may carry a fragment of its own (`#find-sessq`, the CAEP search
+    // box): that anchor is inside its tab's panel, so it opens the tab and is
+    // kept; a link with none gets the tab's.
+    html = html.replace(
+      /href="(\/admin\/ssf|\/admin\/caep|\/admin\/risc)(\?[^"#]*)?(#[^"]*)?"/g,
+      function (_match: string, path: string, query: string,
+                fragment: string): string {
+        return 'href="/admin/ssf' + (query || '') +
+          (fragment || '#' + paths[path]) + '"';
+      });
+    // A GET form (the CAEP and RISC searches) submits to its action, and
+    // /admin/caep and /admin/risc are tabs of this page, not pages: a search
+    // pressed there answered 404 (sts_admin_console, 2026-10-12). A POST form
+    // is an act the console resolves through its operation's `mirrors`, which
+    // still name those paths, so it is left alone.
+    return html.replace(
+      /<form\b([^>]*)>/gi,
+      function (match: string, attrs: string): string {
+        if (/method="post"/i.test(attrs)) {
+          return match;
+        }
+        const action = /action="([^"]*)"/i.exec(attrs);
+        if (!action) {
+          return match;
+        }
+        const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);
+        if (!target || !Object.prototype.hasOwnProperty.call(
+          paths, target[1])) {
+          return match;
+        }
+        return match.replace(action[0], 'action="/admin/ssf' +
+          (target[2] || '') + (target[3] || '#' + paths[target[1]]) + '"');
+      });
+  }
+
+  /**
+   * Keeps links and forms between the Kerberos views on their page tabs.
+   *
+   * @param html - one Kerberos view's rendered HTML
+   * @returns the HTML with intra-page links and forms
+   */
+  static kerberosTabLinks(html: string): string {
+    const paths = {
+      '/admin/kerberos': 'kerberos-tab-settings',
+      '/admin/kerberos/claims': 'kerberos-tab-claims',
+      '/admin/kerberos/principals': 'kerberos-tab-principals'
+    };
+    html = html.replace(
+      /href="(\/admin\/kerberos(?:\/claims|\/principals)?)(\?[^"#]*)?(#[^"]*)?"/g,
+      function (_match: string, path: string, query: string): string {
+        return 'href="/admin/kerberos' + (query || '') + '#' + paths[path] +
+          '"';
+      });
+    html = html.replace(
+      /(<input\b[^>]*\bname="back"[^>]*\bvalue=")(\/admin\/kerberos(?:\/claims|\/principals)?)(\?[^"]*)?(")/gi,
+      function (_match: string, before: string, path: string,
+                query: string, after: string): string {
+        return before + '/admin/kerberos' + (query || '') + '#' + paths[path] +
+          after;
+      });
+    return html.replace(
+      /<form\b([^>]*)>/gi,
+      function (match: string, attrs: string): string {
+        const action = /action="([^"]*)"/i.exec(attrs);
+        if (!action) {
+          return match;
+        }
+        const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);
+        if (!target || !Object.prototype.hasOwnProperty.call(
+          paths, target[1])) {
+          return match;
+        }
+        return match.replace(action[0],
+          'action="/admin/kerberos' + (target[2] || '') + '#' +
+          paths[target[1]] + '"');
+      });
+  }
+
+  /**
+   * Keeps navigation between the SAML views inside their combined page.
+   *
+   * @param html - one SAML page's rendered HTML
+   * @returns the HTML with intra-page links
+   */
+  static samlTabLinks(html: string): string {
+    const paths = {
+      '/admin/saml2': 'saml-tab-saml2',
+      '/admin/saml11': 'saml-tab-saml11',
+      '/admin/saml-assertions': 'saml-tab-assertions',
+      '/admin/saml-attributes': 'saml-tab-attributes'
+    };
+    const tabHref = function (path: string, query: string): string {
+      const tab = paths[path];
+      return path === '/admin/saml2' && query
+        ? 'href="' + path + query + '#' + tab + '"'
+        : 'href="/admin/saml2' + query + '#' + tab + '"';
+    };
+    html = html.replace(
+      /href="(\/admin\/saml2|\/admin\/saml11|\/admin\/saml-assertions|\/admin\/saml-attributes)(\?[^"#]*)?"/g,
+      function (_match: string, path: string, query: string): string {
+        return tabHref(path, query || '');
+      });
+    html = html.replace(
+      /<form\b([^>]*)>/gi,
+      function (match: string, attrs: string): string {
+        const action = /action="([^"]*)"/i.exec(attrs);
+        if (!action) {
+          return match;
+        }
+        const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);
+        if (!target || !Object.prototype.hasOwnProperty.call(
+          paths, target[1])) {
+          return match;
+        }
+        return match.replace(action[0],
+          'action="/admin/saml2' + (target[2] || '') + '#' +
+          paths[target[1]] + '"');
+      });
+    return html;
+  }
+
+  /**
+   * Keeps links and forms between the Verifiable Credentials views on their
+   * corresponding tabs of the combined page.
+   *
+   * @param html - one VC view's rendered HTML
+   * @returns the HTML with intra-page links and forms
+   */
+  static vcTabLinks(html: string): string {
+    const paths = {
+      '/admin/oid4vci': 'vc-tab-oid4vci',
+      '/admin/vc': 'vc-tab-claims',
+      '/admin/vc-status': 'vc-tab-status',
+      '/admin/oid4vp': 'vc-tab-oid4vp',
+      '/admin/vc-verifier-config': 'vc-tab-verifier-request'
+    };
+    html = html.replace(
+      /href="(\/admin\/oid4vci|\/admin\/vc|\/admin\/vc-status|\/admin\/oid4vp|\/admin\/vc-verifier-config)(\?[^"#]*)?"/g,
+      function (_match: string, path: string, query: string): string {
+        return 'href="/admin/vc' + (query || '') + '#' + paths[path] + '"';
+      });
+    html = html.replace(
+      /<form\b([^>]*)>/gi,
+      function (match: string, attrs: string): string {
+        const action = /action="([^"]*)"/i.exec(attrs);
+        if (!action) {
+          return match;
+        }
+        const target = /^([^?#]*)(\?[^#]*)?(#.*)?$/.exec(action[1]);
+        if (!target || !Object.prototype.hasOwnProperty.call(
+          paths, target[1])) {
+          return match;
+        }
+        return match.replace(action[0],
+          'action="/admin/vc' + (target[2] || '') + '#' +
+          paths[target[1]] + '"');
+      });
+    return html;
+  }
+
+  /**
+   * Keeps the issuer and verifier guidance from their former pages with the
+   * unified endpoint inventory on Metadata, not in either settings tab.
+   *
+   * @param issuer - the OpenID4VCI settings operation's page prose
+   * @param verifier - the OpenID4VP settings operation's page prose
+   * @param t - translator for the two page labels
+   * @returns the shared metadata panel's descriptive sections
+   */
+  static vcMetadata(issuer: Json, verifier: Json, t: Json): string {
+    const esc = WebKit.esc;
+    const sections = [
+      { label: t.text('console.nav.oid4vci'), view: issuer },
+      { label: t.text('console.nav.oid4vp'), view: verifier }
+    ];
+    return sections.map(function (section): string {
+      const view = section.view;
+      const links = (view.links || []).map(function (link: Json): string {
+        return '<li><a href="' + esc(link.href) + '">' +
+          esc(link.what) + '</a></li>';
+      }).join('');
+      const notes = (view.alsoHtml || []).map(function (note: string) {
+        return '<p>' + note + '</p>';
+      }).join('');
+      return '<details class="fold vc-metadata"><summary>' +
+        esc(section.label) + '</summary>' + (view.leadHtml || '') + notes +
+        (links ? '<ul>' + links + '</ul>' : '') + '</details>';
+    }).join('');
   }
 
   // A PAGE'S TITLE IN THE READER'S LANGUAGE (#539 phase 5), drawn in the
@@ -954,6 +2166,25 @@ class WebPages {
       return html;
     }
     t = t || WebKit.context().t;
+    const section = '<h2>' + t.html('consolePages.endpoints') + '</h2>' +
+                    WebPages.endpointTable(rows, t);
+    const text = String(html || '');
+    const at = text.indexOf('<h2');
+    return at < 0 ? text + section
+                  : text.slice(0, at) + section + text.slice(at);
+  }
+
+  /**
+   * Draws endpoint rows as the table every Protocols page's Endpoints
+   * section is: each URL with its Copy button, its methods or transport, and
+   * whether it is registered and listening.
+   *
+   * @param rows - `protocolEndpoints` rows
+   * @param t - optional; the translator, the default when left out
+   * @returns the table as HTML
+   */
+  static endpointTable(rows: Json[], t?: Json): string {
+    t = t || WebKit.context().t;
     const esc = WebKit.esc;
     const body = rows.length ? rows.map(function (row: Json): string {
       const methods = Array.isArray(row.methods) ? row.methods : [];
@@ -972,12 +2203,7 @@ class WebPages {
           : '') + '</td></tr>';
     }).join('') : '<tr><td class="sub">' +
                   t.html('consolePages.endpoints.none') + '</td></tr>';
-    const section = '<h2>' + t.html('consolePages.endpoints') +
-                    '</h2><table class="kv">' + body + '</table>';
-    const text = String(html || '');
-    const at = text.indexOf('<h2');
-    return at < 0 ? text + section
-                  : text.slice(0, at) + section + text.slice(at);
+    return '<table class="kv">' + body + '</table>';
   }
 }
 

@@ -1,0 +1,138 @@
+{
+  "roles.schema.objectClasses.stsRole.what": {
+    "en": "e80eac42b07fd952",
+    "text": "Un ROL. La entrada lleva el nombre del rol (`cn=staff`), y todo lo que contiene es PERTENENCIA — quién tiene el rol. Para qué se EXIGE un rol vive en la entrada de aplicación que lo exige, en `appRequiredRole`, porque es un hecho sobre la aplicación y no sobre el rol."
+  },
+  "roles.schema.attributes.roleName.what": {
+    "en": "5b8fbb4273c31dfa",
+    "text": "El nombre del rol, que también es el `cn`. Se lleva también de forma explícita para que un lector que solo tenga los atributos tenga el nombre."
+  },
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "Un nombre de usuario que tiene este rol. Multivalor. La persona no necesita existir todavía — este servicio crea una entrada de directorio para cualquier nombre la primera vez que lo ve, así que un rol puede concederse antes de que su titular haya iniciado sesión."
+  },
+  "roles.schema.attributes.roleMemberGroup.what": {
+    "en": "ed79e4eb54a86c36",
+    "text": "Un grupo cuyos miembros tienen todos este rol. Multivalor. Se resuelve EN EL MOMENTO DE LA DECISIÓN en lugar de expandirse al escribir, así que un `ldapmodify` que añade a alguien al grupo cambia el siguiente token."
+  },
+  "roles.schema.attributes.roleMemberApplication.what": {
+    "en": "cecc4552c88342d4",
+    "text": "Una aplicación que tiene este rol COMO SÍ MISMA — sobre lo que se decide una concesión client_credentials, donde no hay persona. Multivalor. NO es la misma relación que `appRequiredRole` en la entrada de aplicación, que es lo que esa aplicación EXIGE a los demás."
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "Un permiso que se puede EMITIR a un titular de este rol (#303). Multivalor. Se nombra como lo pide un cliente: un permiso genérico de aplicación por su valor de ámbito completo — el `oauthPermissionBaseUri` de la aplicación de recurso seguido del nombre — y un permiso nativo de este servicio por su propio nombre (`admin:read`, `admin:write`). Solo importa para un permiso que su aplicación de recurso CONDICIONA (`oauthRoleGatedPermission`); un permiso condicionado solo se emite a un sujeto que tiene un rol que lo nombra, y uno no condicionado como siempre."
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "Un cliente que CONFIERE este rol (#454): toda persona que inicia sesión a través de ese cliente tiene el rol en el token de acceso emitido al cliente, y en ningún otro token. Multivalor, client_ids de aplicaciones de este dominio. Un rol que se tiene así es un hecho sobre el TOKEN y no sobre la persona, así que se combina con los roles que la persona tiene por sí misma en cada llamada, y quitar un cliente de él quita el rol de los tokens de ese cliente de inmediato. Nunca se aplica al propio token client_credentials de un cliente, cuyos roles son su pertenencia. ADMIN_CONSOLE se siembra conferido por `sts-admin-console`."
+  },
+  "roles.schema.attributes.roleApplication.what": {
+    "en": "364af2be7fcecb90",
+    "text": "La ÚNICA aplicación a la que pertenece este rol (#310), por su identificador en ou=applications; si falta, el rol abarca todo el dominio. El rol de una aplicación se nombra `<role>@<application>` en el registro, así que dos aplicaciones pueden tener cada una un `reader`; un token o aserción para esa aplicación lo lleva como `<role>`, y el token de ninguna otra aplicación lo lleva en absoluto. El `appRequiredRole` de la aplicación puede nombrarlo por `<role>`."
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "QUIÉN PUEDE TENER este rol (#93): `user` (personas, directamente o a través de un grupo) y `application` (una aplicación como sí misma). Multivalor; si falta, ambos pueden — todo rol escrito antes de que existiera. Un miembro de un tipo que el rol no permite se rechaza al escribir el rol. Los dos roles de la consola no se pueden restringir: la lista concede sus personas y la siembra su aplicación."
+  },
+  "roles.schema.attributes.displayName.what": {
+    "en": "96a85a48288e9845",
+    "text": "Un nombre opcional para que lo lean las personas (#93). El NOMBRE del rol sigue siendo lo que lleva un token, lo que nombra un requisito y la clave del registro; esto es solo su etiqueta en la consola y la API. Su id estable es el `entryUUID` de la entrada, que se conserva en cada edición."
+  },
+  "roles.schema.attributes.description.what": {
+    "en": "d3cd66c299e05098",
+    "text": "Para qué sirve el rol, para la próxima persona."
+  },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "Una persona o un grupo de este dominio que responde por el rol (#604), por DN — el atributo de la sección 2.23 del RFC 4519, como los propietarios de un grupo (#603). Multivalor, como máximo 25. Un propietario NO CONCEDE NADA: nada en este servicio lo lee para decidir algo. El portal de usuario lista lo que posee una persona."
+  },
+  "roles.builtIn.EVERYBODY.what": {
+    "en": "40f390becf1977a2",
+    "text": "Cualquiera, autenticado o no, persona o aplicación. ESTE ES EL REQUISITO PREDETERMINADO: una aplicación que no nombra ningún rol obligatorio exige este, todos lo tienen y no se rechaza nada — que es exactamente como se comportaba este servicio antes de que existieran los roles."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_USERS.what": {
+    "en": "2defec4a92314419",
+    "text": "Una persona con una sesión autenticada vigente en el contexto de seguridad en el que se toma esta decisión."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_USERS.what": {
+    "en": "dcc2d43ade379f11",
+    "text": "Una persona que NO se ha autenticado. No es la negación del rol anterior en lo que respecta a una política — es un nombre con el que un target puede coincidir, y los targets de XACML no pueden decir \"no\"."
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "Cualquier cliente, haya llegado como haya llegado."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "Un cliente que DEMOSTRÓ quién es — un secreto, una aserción private_key_jwt o un certificado de cliente verificado. Un cliente público que simplemente envió un client_id no lo es."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "Un cliente público que no demostró nada."
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "a542d84d6db4c5b5",
+    "text": "Un Policy Enforcement Point remoto de XACML: quien sea miembro del grupo nombrado por `roles.remotePepGroup` (de forma predeterminada \"remote-peps\"). Es lo que exigen `/xacml/pep/register`, `/xacml/pep/policies` y `/xacml/pep/heartbeat`, y quien lo tiene normalmente es un DN de certificado de cliente más que una persona — el certificado dice QUIÉN, y este grupo dice si puede."
+  },
+  "roles.builtIn.XACML_USER.what": {
+    "en": "1b417a98ec7e824b",
+    "text": "Quien llama a la superficie XACML propiamente dicha: cualquier miembro del grupo nombrado por `roles.xacmlUserGroup` (por defecto \"xacml-users\"). Es lo que exigen `GET /xacml`, `POST /xacml/pdp` y `GET /xacml/policies`, y quien lo tiene es normalmente el DN de un certificado de cliente — el certificado dice QUIÉN, y este grupo dice si puede. Deliberadamente NO es REMOTE_PEPS: ese rol alcanza los tres endpoints /xacml/pep, que entregan los documentos con los que este servicio aplica su propio control de acceso, y un grupo que concediera ambos haría que admitir a quien llama en la superficie XACML propiamente dicha lo admitiera sin avisar en aquellos."
+  },
+  "roles.native.ADMIN_READ.what": {
+    "en": "7d6481dffa0d517c",
+    "text": "Admin Read: toda LECTURA en /admin-api. Lo tienen los grupos Admin Read y Admin Write de la consola (Admin Write implica Admin Read) y las aplicaciones listadas aquí. Autoriza el permiso admin:read."
+  },
+  "roles.native.ADMIN_WRITE.what": {
+    "en": "ecff5f0bc1a5a16a",
+    "text": "Admin Write: toda operación de /admin-api que CAMBIA algo. Lo tienen el grupo Admin Write de la consola y las aplicaciones listadas aquí. Autoriza el permiso admin:write. No implica Admin Read en un token: un token puede llevar cualquiera de los dos ámbitos, y la política pide el que necesita la operación."
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "La consola de administración: las operaciones bajo /admin-api/console que existen solo para dibujar la consola — su marco, sus dibujos y sus ayudas de formulario. Autoriza el permiso admin:console. Lo confiere el propio cliente de la consola, sts-admin-console, a toda persona que inicia sesión en la consola, y nadie lo tiene como miembro. No concede nada más: una página que muestra datos del dominio también pide ADMIN_READ."
+  },
+  "roles.native.DEVICE_COMPLIANCE.what": {
+    "en": "54220e44643bd84c",
+    "text": "La fuente de cumplimiento de dispositivos: una fuente de MDM o de postura que informa del cumplimiento de un dispositivo mediante POST /admin-api/device-compliance, y nada más en /admin-api. Autoriza el permiso device:compliance. Se siembra sin miembros: añada la aplicación de la fuente."
+  },
+  "roles.memberKinds.user.label": {
+    "en": "df381eb4bb572daf",
+    "text": "una persona"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "Un nombre de usuario. La persona no necesita existir todavía: este servicio crea una entrada de directorio para cualquier nombre la primera vez que lo ve, así que un rol puede concederse antes de que su titular haya iniciado sesión."
+  },
+  "roles.memberKinds.group.label": {
+    "en": "7058b14ed9a6b2fc",
+    "text": "un grupo"
+  },
+  "roles.memberKinds.group.what": {
+    "en": "807d0833e4b29343",
+    "text": "Un grupo en ou=groups. Todos sus miembros tienen el rol, resuelto EN EL MOMENTO DE LA DECISIÓN en lugar de expandirse al escribir — así que un ldapmodify que añade a alguien al grupo cambia el siguiente token."
+  },
+  "roles.memberKinds.application.label": {
+    "en": "7b0b893d972a8266",
+    "text": "una aplicación"
+  },
+  "roles.memberKinds.application.what": {
+    "en": "67e543bef5013764",
+    "text": "Una aplicación que tiene el rol COMO SÍ MISMA. Es sobre lo que se decide una concesión client_credentials, donde no hay ninguna persona, y es la razón por la que aquí una aplicación es un miembro de pleno derecho de un rol."
+  },
+  "roles.console.read.label": {
+    "en": "528d2a45607ec613",
+    "text": "Admin Read"
+  },
+  "roles.console.read.what": {
+    "en": "d824947bfa7bb0cd",
+    "text": "Ver todas las páginas de esta consola, y todas sus vistas ?format=json. No cambia nada: un lector puede ver qué tokens están revocados y no puede revocar ninguno."
+  },
+  "roles.console.write.label": {
+    "en": "41407227fe92a8f6",
+    "text": "Admin Write"
+  },
+  "roles.console.write.what": {
+    "en": "476b1b61c16b02e4",
+    "text": "Enviar todos los formularios de esta consola — revocar un token, añadir un claim personalizado, cambiar un ajuste, crear una persona, conceder un rol. INCLUYE LA LECTURA, así que un miembro de solo este rol puede usar toda la consola."
+  }
+}

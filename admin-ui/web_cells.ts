@@ -88,7 +88,9 @@ class CellsPage {
         (c.self ? ' <small>' + t.html('consoleCells.thisCellsOwn') +
                   '</small>' : '');
     };
-    const map = '<h2>' + t.html('consoleCells.headCells') +
+    // THE CELLS, THE RESIDENTS AND THE RE-HOMING ARE TABS (2026-10-12); the
+    // tiles, the notes and the store's state are Metadata.
+    const map = '<h2 data-tab="cells">' + t.html('consoleCells.headCells') +
       '</h2><table class="grid"><thead><tr>' +
       '<th>' + t.html('consoleCells.thCell') + '</th><th>' +
       t.html('consoleCells.thJurisdiction') + '</th><th>' +
@@ -146,7 +148,8 @@ class CellsPage {
         esc(c.jurisdiction) + ')</option>';
     }).join('');
     const ask = json.multi && json.peers.length
-      ? '<h2>' + t.html('consoleCells.headResidents') + '</h2><p>' +
+      ? '<h2 data-tab="residents">' +
+        t.html('consoleCells.headResidents') + '</h2><p>' +
         t.html('consoleCells.residentsText') +
         '</p><form method="get" action="' + PAGE + '">' +
         '<select name="people">' + options + '</select> ' +
@@ -176,7 +179,8 @@ class CellsPage {
     // RE-HOMING (§8.8): an administrator's act, drawn only where there is
     // somewhere to move a person to.
     const rehome = json.multi && json.peers.length
-      ? '<h2>' + t.html('consoleCells.headRehome') + '</h2><p>' +
+      ? '<h2 data-tab="rehome">' + t.html('consoleCells.headRehome') +
+        '</h2><p>' +
         t.html('consoleCells.rehomeText') + '</p>' +
         '<form method="post" action="' + PAGE + '">' +
         '<input type="hidden" name="action" value="rehome">' +

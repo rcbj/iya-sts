@@ -177,7 +177,7 @@
   "essentialA": "<strong>Marked essential and still absent:</strong> ",
   "essentialB": ". That is still not an error &mdash; <code>essential</code> is a statement about what the CLIENT will do without the claim, not an instruction to this server. It is logged at warn level so it can be found.",
   "mismatchA": "<strong>A value was asked for and a different one is held:</strong> ",
-  "mismatchB": ". The value HELD is what is returned. This service could echo back whatever a request asked it to assert and deliberately does not: everything it says about a person comes from the directory or the invented persona, and a mock that agreed with the request could not be used to test anything.",
+  "mismatchB": ". The value HELD is what is returned. This service could echo back whatever a request asked it to assert and deliberately does not: everything it says about a person comes from the directory or the invented persona, and a service that agreed with the request could not be used to test anything.",
   "requestEntryFound": "{user} has an entry under <code>ou=users</code>, so a value marked <em>directory</em> is what an <code>ldapsearch</code> reads.",
   "requestNoEntry": "{user} has no entry in the directory, so every value above is invented from the username &mdash; the same invented person every time, across restarts.",
   "colClaimId": "Claim id",

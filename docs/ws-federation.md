@@ -8,8 +8,9 @@ iya-sts is a **WS-Federation identity provider**: the Web (Passive) Requestor
 Profile of
 [WS-Federation 1.2](https://docs.oasis-open.org/wsfed/federation/v1.2/os/ws-federation-1.2-spec-os.html)
 (section 13) — sign-in, sign-out and sign-out cleanup — with signed federation
-metadata at the path AD FS publishes it, and a mock relying party. Every trust
-realm has its own, with its own entityID, signing key and mock relying party.
+metadata at the path AD FS publishes it. Every trust realm has its own, with
+its own entityID and signing key. There is no built-in relying party (#592): a
+test that needs one uses the test peer (`tests/peer/`).
 
 A relying party redirects a browser to `/wsfed?wa=wsignin1.0`; the person signs
 in at the service's one sign-in screen; and the browser comes back **with a
@@ -36,7 +37,6 @@ reaching the relying party while the sign-in still appeared to succeed.
 | `GET\|POST /wsfed` | the passive requestor endpoint, dispatched on `wa`; with no `wa` it describes itself and every parameter, the way `GET /sts` does |
 | `GET /FederationMetadata/2007-06/FederationMetadata.xml` | the signed federation metadata |
 | `GET /wsfed/metadata/{rp}` | one **registered** relying party's own signed metadata, naming the entityID its assertions are issued under (#494) |
-| `GET\|POST /wsfed/rp` | a **mock relying party** (not part of any specification) |
 | `GET /wsfed/autopost.js` | the one script the sign-in response page runs |
 
 In a trust realm every path is under `/realm/{id}`. The full, current list is
@@ -203,20 +203,7 @@ a request arrived on.
 `/wsfed/metadata/{rp}` — `{rp}` the application's identifier (its `wtrealm`)
 or its slug, as on `/admin/saml2` — is the same document, for a relying party
 that is configured per application. A segment naming no registered relying
-party is a 404 (`STS-WSFED-0019`) in both modes. The mock relying party checks
-the issuer against that one name.
-
-### The mock relying party
-
-`/wsfed/rp` is the default `wreply` — so a request that names no return
-address has somewhere real to go — and a test harness that shows every verdict
-rather than one boolean. It sends a complete
-sign-in request and verifies the response check by check: `wa`, `wresult`, the
-RSTR and its token type, the assertion's signature against `/sts/cert`, the
-issuer, the audience, the validity window, the subject, the claims — and that
-its own `wctx` came back unaltered (remembered for `wsfed.mockRpContextTtlMin`).
-There is one per trust realm, and a `wctx` minted in one realm is not recognised
-in another.
+party is a 404 (`STS-WSFED-0019`) in both modes.
 
 ### Not implemented
 
@@ -233,7 +220,7 @@ nothing more). `wreqptr` is refused by design.
 | | Development | Product |
 |---|---|---|
 | `wtrealm` | any relying party; it is filed in the register | a **registered** relying party only — one an administrator, dynamic registration, an OpenID Federation or this service's seeding put there, not one the register merely recorded from an earlier sign-in. Any other is a 404 page (`STS-WSFED-0021`) before the sign-in screen, and nothing is recorded (#496) |
-| `wreply` | used as it stands; with none, the mock relying party | must be one of the `wsfedReplyUrl` values on the `wtrealm`'s application entry, exact match; with none, the registered one; no mock fallback. An address development merely observed is refused until an operator confirms it |
+| `wreply` | used as it stands; with none, the registered one, and with none registered the request is refused | must be one of the `wsfedReplyUrl` values on the `wtrealm`'s application entry, exact match; with none, the registered one. An address development merely observed is refused until an operator confirms it |
 | Password at the sign-in screen | any password but `invalid` | verified |
 | Given name, surname, mail, display name, UPN | invented, and described that way in the metadata | read off the directory entry, or omitted — and the signed metadata describes them that way |
 
@@ -245,7 +232,6 @@ same in both modes. See [What is not checked](what-is-not-checked.md).
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `wsfed.assertionLifetimeMin` | `STS_WSFED_ASSERTION_LIFETIME_MIN` | `60` | yes | The lifetime of the assertion and of the RSTR's `wsu:Lifetime`; per relying party with `wsfedAssertionLifetimeMin`. |
-| `wsfed.mockRpContextTtlMin` | `STS_WSFED_MOCK_RP_CONTEXT_TTL_MIN` | `30` | yes | How long the mock relying party remembers a `wctx` it minted. |
 
 The assertion's issuer, signature algorithm, skew and attributes are the shared
 `saml.*` settings and the SAML attribute sets — see the
@@ -258,7 +244,7 @@ changed on `/admin/wsfed`, `/admin/saml-assertions` or with
 ## Design decisions
 
 * **SAML 1.1 is the default token.** AD FS issues SAML 1.1 to a WS-Federation
-  relying party unless told otherwise, and a mock defaulting to the rarer type
+  relying party unless told otherwise, and a service defaulting to the rarer type
   would exercise the wrong half of those clients.
 * **The February 2005 RSTR by default, ws-sx on request.** It is what AD FS
   emits; a relying party that has only ever seen one shape has usually
@@ -282,13 +268,15 @@ changed on `/admin/wsfed`, `/admin/saml-assertions` or with
   providers cannot loop.
 * **The metadata's name and the assertion's issuer are separate settings, and
   disagreement is reported rather than reconciled.**
-* **The mock relying party is per realm**, so its `wctx` check cannot answer yes
-  across a realm boundary.
+* **There is no built-in relying party (#592).** One shipped until then, as the
+  default `wreply` and a page that verified the response check by check; it
+  was demonstration code in the runtime, and the test peer plays the relying
+  party a test needs.
 
 ## In the running service
 
 * **Protocols → WS-Federation** (`/admin/wsfed`): the endpoint, the entityID,
-  which setting is which, and the mock relying party. The assertion's issuer
+  and which setting is which. The assertion's issuer
   and contents are configured on the SAML pages —
   [SAML assertions](saml2-sso.md#the-assertion-settings-every-application-inherits)
   and [Custom SAML attributes](saml2-sso.md#custom-saml-attributes).

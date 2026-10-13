@@ -810,7 +810,8 @@ async function verifyAssertion(opts) {
 // `_san_dns`, `_san_uri`, `_san_ip`, `_san_email`, compared by
 // `common/certificate_subject.js` as a name rather than a string — and it is
 // what an application holding a certificate from somebody else's authority
-// uses, that authority's root installed at /tls/trust. The IMPLICIT one is
+// uses, that authority's root installed at /admin-api/tls/trust. The
+// IMPLICIT one is
 // this service's certificate-to-identity mapping, the one a person's TLS
 // client certificate signs them in by, pointed at an application:
 // `common/tls_client_certificates.js`'s `identityOf()` names the application a
@@ -988,7 +989,7 @@ function verifyCertificate(opts) {
                           'did not verify' +
                           (peer.error ? ' (' + peer.error + ')' : '') + '. ' +
                           'Install the issuing authority\'s root at ' +
-                          '/tls/trust, send the intermediates with the ' +
+                          '/admin/tls/trust, send the intermediates with the ' +
                           'certificate, or register the client for ' +
                           'self_signed_tls_client_auth instead.' };
   }

@@ -20,10 +20,6 @@
   "tileMaximum": "maximum",
   "fileSet": "<code>tls.trustAnchorsFile</code> is <code>{file}</code>, and {n} anchor(s) were loaded from it at startup.",
   "fileUnset": "<code>tls.trustAnchorsFile</code> is not set, so every anchor here was added while this process was running.",
-  "controlsBefore": " The two test controls on ",
-  "controlsAfter": " — <code>POST /tls/trust</code> and <code>POST /tls/trust/clear</code> — ",
-  "controlsOpen": "answer anybody in this development-mode process.",
-  "controlsRefused": "are refused in product mode; this page and <code>/admin-api/tls/trust</code> are the runtime doors.",
   "anchors": "Anchors",
   "thSubject": "Subject",
   "thIssuer": "Issuer",
@@ -40,6 +36,5 @@
   "linkJson": "this page as JSON",
   "linkApi": "the same over the management API",
   "linkSettings": "the TLS listeners' settings",
-  "linkEndpoint": "the TLS endpoint",
   "linkPki": "this service's own certificate authority"
 }

@@ -61,6 +61,27 @@ const port = data.port;
 function pgBackend(connection: Record<string, unknown>): Backend {
   const queries = require('../persistence/directory_queries');
   const pg = require('pg');
+  // sslmode=verify-ca verifies the chain and not the host name, which takes
+  // a `checkServerIdentity` that checks nothing — a function, which cannot
+  // be posted here, so the driver's `bridgeConnection()` says it as
+  // `hostnameUnchecked` and it is put back now (#543 round 2). Without it
+  // node would check the host name, and this thread would refuse a server
+  // the driver's own pools accept. The trust anchors (`ca`, the database's
+  // own since 2026-10-12) are kept: dropping them here would verify against
+  // node's default store and refuse a certificate the pools trust.
+  const ssl = connection.ssl as Record<string, unknown> | undefined;
+  if (ssl && ssl.hostnameUnchecked === true) {
+    const restored: Record<string, unknown> = {
+      rejectUnauthorized: ssl.rejectUnauthorized,
+      checkServerIdentity: function () {
+        return undefined;
+      }
+    };
+    if (ssl.ca) {
+      restored.ca = ssl.ca;
+    }
+    connection = Object.assign({}, connection, { ssl: restored });
+  }
   let client: any = null;
   let connecting: Promise<any> | null = null;
   function connected(): Promise<any> {

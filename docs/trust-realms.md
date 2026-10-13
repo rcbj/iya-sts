@@ -339,8 +339,8 @@ does:
 Over MS-KKDCP there are two doors. A bare `/KdcProxy` routes by the name, like
 the socket. A realm's own `/realm/acme/KdcProxy` is **pinned** to that realm and
 refuses another realm's name with `KDC_ERR_WRONG_REALM` (`STS-KRB-0122`) — the
-prefix is an address somebody chose. The acceptor on `krb5.servicePort` and
-SPNEGO follow the same two rules: a ticket is accepted in the realm that issued
+prefix is an address somebody chose. The SPNEGO acceptor follows the same two
+rules: a ticket is accepted in the realm that issued
 it, and a ticket from another realm presented under a realm's prefix is refused
 (`STS-KRB-0126`).
 
@@ -350,9 +350,8 @@ another — it is unknown there. The cross-realm referral this service does serv
 is the development-mode second realm (`krb5.trustedRealm`, `PARTNER.COM`), which
 belongs to the default realm alone.
 
-**What is still the process's:** the two sockets (`krb5.kdcPort`,
-`krb5.servicePort`), so a realm cannot move or take a port of its own, and that
-development trust. A realm administrator manages their realm's Kerberos —
+**What is still the process's:** the KDC's socket (`krb5.kdcPort`), so a realm
+cannot move or take a port of its own, and that development trust. A realm administrator manages their realm's Kerberos —
 principals, keytabs and the settings the database is built from — and those five
 settings stay service-wide.
 

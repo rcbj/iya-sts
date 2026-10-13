@@ -101,7 +101,6 @@ const TOKEN_LIFETIMES: [string, number][] = [
 ];
 const CREDENTIAL_LIFETIMES: [string, number][] = [
   ['oid4vci.credentialLifetimeS', 1000],
-  ['oid4vci.generatedDidCredentialLifetimeS', 1000],
   ['oid4vci.domainLinkageLifetimeS', 1000],
   ['oid4vci.statusListLifetimeS', 1000]
 ];

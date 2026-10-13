@@ -7,9 +7,11 @@
 # from its own Dockerfile; `tests`, this repository's suite built from
 # tests/Dockerfile with a Chrome in it; `postgres`, the store the two
 # persisting modes of tests/tools/modes.sh run on; `openbao` and its two
-# one-shot helpers, the secret store; and `xacml-pep`, the remote enforcement
-# point one job drives the seam to. The tests container drives the
-# service by its compose DNS name and exits with the suite's status;
+# one-shot helpers, the secret store; `xacml-pep`, the remote enforcement
+# point one job drives the seam to; and `test-peer` (#586), the far party of
+# the protocols the service's own demo endpoints used to play. The tests
+# container drives the service by its compose DNS name and exits with the
+# suite's status;
 # ./run-tests.sh brings the pair up with --exit-code-from tests and takes
 # them down again.
 #
@@ -184,8 +186,16 @@ services:
       # tests/postgres_schema.js is what notices if only one of them moves.
       - STS_DB_APP_USER=${STS_DB_APP_USER:-sts_app}
       - STS_DB_APP_PASSWORD=${STS_DB_APP_PASSWORD:-sts_app}
+      # WHERE generate-tls.sh SHARES ITS CERTIFICATE — the certificate and
+      # never the key — as `<CN>.crt` (2026-10-12): `sts` verifies the
+      # database by default and trusts this directory for it
+      # (STS_DATABASE_TLS_CA_FILE below). The cells layer's two databases
+      # `extends` this service and write their own file into the same one.
+      - POSTGRES_TLS_PUBLIC_DIR=/run/sts-db-ca
     volumes:
-      # THE SCRIPTS ONLY. See the header: no data volume, deliberately.
+      # THE SCRIPTS, and the shared certificate directory. See the header: no
+      # data volume, deliberately.
+      - sts-db-ca:/run/sts-db-ca
       - ./postgres/generate-tls.sh:/usr/local/bin/generate-tls.sh:ro
       # Turns every `host` rule in pg_hba.conf into `hostssl`, so a plaintext
       # dial is refused rather than merely discouraged.
@@ -596,17 +606,20 @@ services:
       # gives — a connection string is one string and compose cannot build it
       # from the parts.
       #
-      # `sslmode=require` IS NOT DECORATION. postgres/require-tls.sh rewrites
-      # every `host` rule in pg_hba.conf to `hostssl`, so a plaintext dial is
-      # REFUSED by that container — and the service says so at startup when the
-      # string does not ask for TLS, which is a warning printed just before a
-      # connection failure that reads as something else.
+      # `sslmode=verify-full` (2026-10-12; `require` until then): the
+      # connection is TLS — postgres/require-tls.sh rewrites every `host`
+      # rule in pg_hba.conf to `hostssl`, and this service never dials in the
+      # clear (#273) — and the server is AUTHENTICATED, chain and host name,
+      # against the certificate the `postgres` service shares in
+      # `sts-db-ca`, which STS_DATABASE_TLS_CA_FILE names. A directory, so
+      # the cells layer's cells trust their global tier from the same one.
       #
       # Ignored entirely in `memory` mode, where nothing opens a store.
       # NO PASSWORD IN THIS STRING (2026-09-12): it comes from the secret
       # store above, like docker-compose.yml's. The service dials the same
       # database as the same role either way.
-      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=require}
+      - STS_DATABASE_URL=${STS_DATABASE_URL:-postgres://sts_app@postgres:5432/sts?sslmode=verify-full}
+      - STS_DATABASE_TLS_CA_FILE=${STS_DATABASE_TLS_CA_FILE:-/run/secrets/database-ca}
       - STS_KEYS_KEK_PROVIDER=${STS_KEYS_KEK_PROVIDER:-vault}
       - STS_KEYS_KEK_VAULT=${STS_KEYS_KEK_VAULT:-https://openbao:8200}
       - STS_KEYS_KEK_REF=${STS_KEYS_KEK_REF:-secret/data/sts}
@@ -689,6 +702,9 @@ services:
       - sts-bao-client:/run/secrets/openbao:ro
       # THIS NODE'S START-UP TOKEN (#254), taken by the command above as root.
       - sts-bao-startup:/run/secrets/openbao-startup
+      # THE DATABASES' CERTIFICATES, read-only, without their keys
+      # (2026-10-12): what STS_DATABASE_TLS_CA_FILE names.
+      - sts-db-ca:/run/secrets/database-ca:ro
       # A DIRECTORY SHARED WITH THE RUNNER (#171). A job that runs a push
       # listener of its own makes a CA at run time and writes the CA's
       # CERTIFICATE here, then names it in a `…CaFile` setting so the service
@@ -1081,6 +1097,59 @@ services:
       default:
         ipv4_address: ${SAML_KEYCLOAK_ADDRESS:-172.30.0.46}
 
+  # ===========================================================================
+  # THE TEST PEER (#586): the far party of the protocols — a SAML 2.0 service
+  # provider, a SAML 1.1 and a WS-Federation relying party, an RFC 9470 and a
+  # GNAP resource server, an SSF receiver — that the jobs used the service's
+  # own demo endpoints for until those became development only (#585). One
+  # image, one port (9600, plain http and TLS told apart by the first byte),
+  # one JSON readback; built from tests/peer. tests/CLAUDE.md, *THE TEST
+  # PEER*, argues it.
+  #
+  # IN EVERY MODE, with no profile: it is small, starts in a second, and every
+  # mode's jobs drive it. The runner is told where it is by STS_TEST_PEER_URL
+  # (set by ./run-tests.sh for every local mode); an AWS target sets nothing,
+  # and the jobs that need it skip, saying so.
+  #
+  # NOTHING IS A KEY: it makes its CA and TLS certificate when it starts, and
+  # writes the CA CERTIFICATE alone to the shared volume, where a product
+  # realm is told to trust it (`ssf.pushCaFile`) — the volume is mounted in
+  # `sts` at the same path, so the file name the peer reports is the one the
+  # service reads.
+  #
+  # STARTED, NOT HEALTHY, IN THE RUNNER'S depends_on, for xacml-pep's reason:
+  # a peer that will not start fails the jobs that need it — the helper waits
+  # for it and says so — and nothing else. PINNED at `.48`, above the
+  # conformance TLS writer's `.47`, for the conformance suite's reason: the
+  # service adds `.11` to `.13` to its own interface, which docker's
+  # allocator cannot see.
+  # ===========================================================================
+  test-peer:
+    container_name: ${STS_TEST_PEER_CONTAINER_NAME:-sts-docker-tests-test-peer}
+    hostname: test-peer
+    image: ${TEST_PEER_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/sts-test-peer:${IMAGE_TAG:-latest}}
+    build:
+      context: tests/peer
+      # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
+      additional_contexts: *mirror-contexts
+    environment:
+      - TEST_PEER_PORT=9600
+      - TEST_PEER_PUBLIC_HOST=test-peer
+      - TEST_PEER_NAMES=test-peer,localhost,127.0.0.1
+      - TEST_PEER_CA_DIR=/run/sts-test/test-peer
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - sts-test-shared:/run/sts-test
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9600/health').then(function (r) { process.exit(r.status === 200 ? 0 : 1); }, function () { process.exit(1); })"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    networks:
+      default:
+        ipv4_address: ${TEST_PEER_ADDRESS:-172.30.0.48}
+
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
     image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
@@ -1213,7 +1282,7 @@ services:
       # CI runs and works in the one a developer runs.
       #
       # What it is for: the truststore is a Map in the service's process and
-      # `POST /tls/trust/clear` needs no credential, so any job may empty it.
+      # any job holding an admin:write token may remove an anchor from it.
       # The job that DEPENDS on this anchor re-establishes it, and it travels
       # as text because the runner container cannot see the directory the PEP
       # mounts its certificate from.
@@ -1266,6 +1335,14 @@ services:
       - SAML_PEER_PYSAML2_URL=${SAML_PEER_PYSAML2_URL:-}
       - SAML_PEER_KEYCLOAK_URL=${SAML_PEER_KEYCLOAK_URL:-}
       - SAML_PEERS_LOG_DIR=${SAML_PEERS_LOG_DIR:-/run/sts-test/saml-peers}
+      # The test peer (#586). ./run-tests.sh names it in every local mode;
+      # EMPTY is what the jobs read as "there is no peer", which is an AWS
+      # target's case — so a hand run of this file, which has the container,
+      # gets the default address.
+      - STS_TEST_PEER_URL=${STS_TEST_PEER_URL-http://test-peer:9600}
+      # The CA certificate the peer writes, at the path the SERVICE reads it
+      # (the same volume, mounted at the same place in `sts`).
+      - TEST_PEER_CA_FILE=${TEST_PEER_CA_FILE:-/run/sts-test/test-peer/ca.crt}
       # A file secret push destination's directory (#221 P3): the same
       # volume, at the same path, in `sts`. Empty skips the job's file half.
       - SECRET_PUSH_TEST_DIR=${SECRET_PUSH_TEST_DIR-/run/sts-test-secret-push}
@@ -1289,6 +1366,10 @@ services:
       # The mail catcher (#63): STARTED, for xacml-pep's reason below — a
       # catcher that will not come up fails sts_mail.js and nothing else.
       mailpit:
+        condition: service_started
+      # The test peer (#586): STARTED, for the catcher's reason — the jobs
+      # that need it wait for it themselves (tests/vendored/test_peer.js).
+      test-peer:
         condition: service_started
       sts:
         # The whole ordering of this file. `up` reports success for a container
@@ -1332,6 +1413,8 @@ volumes:
   sts-test-secret-push:
   # An uploaded risk dataset while it is imported (#215).
   sts-risk-uploads:
+  # The databases' certificates, shared with `sts` without their keys.
+  sts-db-ca:
 
 # One bridge, and nothing published on it. `docker compose` gives the network a
 # name from the project, so two projects cannot share one.

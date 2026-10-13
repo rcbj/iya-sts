@@ -217,7 +217,7 @@ class AcmeConsole {
     // THE PAGE'S SETTINGS BLOCK (#446), as every page that owns settings
     // answers it — the page is drawn from this view alone. It was the ACME
     // group's bare rows until then.
-    return adminViews.settingsBlockOf('/admin/acme');
+    return adminViews.settingsBlockOf('/admin/cert-issuance', ['ACME']);
   }
 
   /**

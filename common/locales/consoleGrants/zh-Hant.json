@@ -13,5 +13,8 @@
   "colGeneration": "代次",
   "colCreated": "建立 / 更新",
   "colExpires": "到期",
-  "colTokens": "持有的權杖"
+  "colTokens": "持有的權杖",
+  "noMatch": "沒有與 <code>{wanted}</code> 相符的授權。",
+  "searchLabel": "篩選授權",
+  "searchPlaceholder": "grant_id、用戶端或主體"
 }

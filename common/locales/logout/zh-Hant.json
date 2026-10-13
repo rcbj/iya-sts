@@ -7,7 +7,6 @@
   "inventory.globalButton": "全域登出 — 結束下方的所有內容",
   "inventory.globalNote": "預設選項。向 <code>/logout</code> 傳送未選取任何內容的 POST 要求，效果與此完全相同。",
   "inventory.selectedButton": "結束已勾選的項目",
-  "inventory.selectedNote": "請在下方的表格中勾選。未勾選任何項目則不會結束任何內容。",
   "inventory.liveCount": "<strong>{total} 個有效項目</strong>，分布在 {families, plural, other {# 個系列}}中。其中一些任何人都無法結束 — 它們連同原因一併列出，因為隱藏它們的登出看似完整，實則不然。",
   "inventory.anyUserOpen": "本服務在任何地方都不檢查密碼，因此 <code>?username=</code> 可以指定任何人，且不會授予原本不具備的任何權限 — 以其身分登入只需一個要求。<code>logout.anyUser</code> 可關閉此功能。",
   "inventory.anyUserOff": "<code>logout.anyUser</code> 已關閉，因此此端點只作用於您目前持有的工作階段。",
@@ -31,5 +30,13 @@
   "result.remain": "還剩 {total} 項。",
   "result.lookAgain": "再檢視一次",
   "result.lookAgainEnd": "。",
-  "result.nothingLeft": "沒有了。本服務已不再為 {key} 保留任何它仍能看到的有效工作階段或憑證。"
+  "result.nothingLeft": "沒有了。本服務已不再為 {key} 保留任何它仍能看到的有效工作階段或憑證。",
+  "result.toPortal": "前往使用者入口網站中的您的帳戶",
+  "result.brief": "您已登出。",
+  "result.seeDetails": "已結束、未結束及仍然有效的項目請見「詳細資訊」分頁。",
+  "tab.signOut": "登出",
+  "tab.details": "詳細資訊",
+  "list.colProtocol": "協定",
+  "inventory.listNote": "請在上方清單中勾選。未勾選任何項目則不會結束任何內容。",
+  "inventory.detailsNote": "請在上方表格中勾選權杖和憑證。未勾選任何項目則不會結束任何內容。"
 }

@@ -15,7 +15,7 @@
   "whyEnoent": "Walang ganoong file. Sa isang serbisyong nasa DEVELOPMENT mode, karaniwan iyon: walang naka-persist, kaya hindi kailanman binabasa ang key-encryption key at hindi kailangang umiral ang file na tinutukoy nito. Sa product mode, ito ay serbisyong hindi magsisimula.",
   "whyEacces": "Nandoon ang file at hindi ito puwedeng basahin ng prosesong ito. Suriin ang may-ari ng mount sa halip na ang path.",
   "whyTimeout": "Hindi sumagot ang store sa loob ng <code>keys.storeProbeTimeoutMs</code>. Isang probe lang ang nililimitahan nito at hindi ang pahina, kaya tinanong pa rin ang iba sa ibaba.",
-  "whySdk": "Hindi naka-install ang SDK ng provider na ito. Sadya itong hindi dependency ng serbisyong ito — mock muna ito, at limang cloud SDK na walang gumagamit ang dadalhin ng bawat install — kaya pinapangalanan ng mensahe sa itaas ang package na dapat i-install.",
+  "whySdk": "Hindi naka-install ang SDK ng provider na ito. Sadya itong hindi dependency ng serbisyong ito — limang cloud SDK na walang gumagamit ang dadalhin ng bawat install — kaya pinapangalanan ng mensahe sa itaas ang package na dapat i-install.",
   "tookMs": "{ms}ms",
   "unavailableTookMs": "hindi available, {ms}ms",
   "didNotAnswer": "Hindi ito sumagot",
@@ -66,5 +66,8 @@
   "noStores": "Wala sa dalawang secret ang binabasa mula sa isang store, kaya walang maiuulat.",
   "perStore": "Isang block kada store at hindi kada secret: ang dalawang secret na nasa iisang lugar ay magkahati sa lahat ng nasa ibaba, at ang pagtatanong nang dalawang beses sa iisang store kung naka-seal ito ay pag-imbento ng pahinang ito ng isang hindi pagkakasundo na kailangan pa nitong ipakita.",
   "holds": "Hawak:",
-  "nothingPublished": "Walang inilalathala ang provider na ito tungkol sa mismong store bukod sa nasa secret na sa itaas &mdash; ang cloud secret manager ay isang endpoint at isang access policy, at lahat ng sasabihin nito ay tungkol sa secret."
+  "nothingPublished": "Walang inilalathala ang provider na ito tungkol sa mismong store bukod sa nasa secret na sa itaas &mdash; ang cloud secret manager ay isang endpoint at isang access policy, at lahat ng sasabihin nito ay tungkol sa secret.",
+  "tab.keys": "Mga encryption key",
+  "tab.database": "Mga password ng database",
+  "tab.mail": "Mga sikreto ng mail"
 }

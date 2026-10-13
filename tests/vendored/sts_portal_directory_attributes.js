@@ -37,6 +37,11 @@
 // And a sixth, which every page in this application owes: one signed-in person
 // cannot read another's entry, whatever they put in the request.
 //
+// SINCE #568 the portal is a static application: the page is drawn in the
+// browser from `GET /account-api/overview`, and this job signs in as the
+// portal does and draws it with the portal's own renderers — so every claim
+// above is about the markup a person is shown, and the sixth asks the API.
+//
 // ---------------------------------------------------------------------------
 // WHY IT IS HERE, WHICH IS THE FIRST QUESTION tests/CLAUDE.md ASKS.
 //
@@ -54,6 +59,7 @@
 const assert = require("assert");
 const { usernameFor } = require("./random_username.js");
 const nodeCrypto = require("crypto");
+const portalSignin = require("./portal_signin.js");
 
 // ---------------------------------------------------------------------------
 // THIRTY LINES OF RFC 4226 OVER RFC 6238, carried rather than required from
@@ -140,81 +146,6 @@ function check(what, fn) {
   log.debug("Leaving check().");
 }
 
-// ---------------------------------------------------------------------------
-// ONE BROWSER. Manual redirects and a cookie jar of our own, KEYED BY NAME: a
-// browser signed in to a hosted surface holds TWO cookies — the sign-on
-// session and the surface's own — and keeping only the last one seen drops
-// whichever arrived first.
-// ---------------------------------------------------------------------------
-function form(o) {
-  log.debug("Entering form().");
-  log.debug("Leaving form().");
-  return new URLSearchParams(o).toString();
-}
-
-function absolute(location) {
-  log.debug("Entering absolute().");
-  log.debug("Leaving absolute().");
-  return /^https?:\/\//i.test(String(location || ""))
-    ? String(location) : base + String(location || "");
-}
-
-function browser(name) {
-  log.debug("Entering browser().");
-  const self = {
-    name: name,
-    cookie: "",
-    jar: {},
-    cookieHeader: function () {
-      log.debug("Entering cookieHeader().");
-      log.debug("Leaving cookieHeader().");
-      return Object.keys(self.jar).map(function (k) {
-        return k + "=" + self.jar[k];
-      }).join("; ");
-    },
-    async go(method, path, body) {
-      log.debug("Entering go().");
-      const headers = {};
-      if (self.cookie) headers.cookie = self.cookie;
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/x-www-form-urlencoded";
-      }
-      const r = await fetch(absolute(path),
-                            { method: method, redirect: "manual",
-                                              headers: headers, body: body });
-      const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
-      set.forEach(function (one) {
-        const pair = String(one).split(";")[0];
-        const nm = pair.split("=")[0];
-        const value = pair.slice(nm.length + 1);
-        if (value === "" || /Expires=Thu, 01 Jan 1970/i.test(String(one))) {
-          delete self.jar[nm];
-        } else {
-          self.jar[nm] = value;
-        }
-        self.cookie = self.cookieHeader();
-      });
-      log.debug("Leaving go().");
-      return { status: r.status, location: r.headers.get("location") || "",
-               text: await r.text() };
-    }
-  };
-  log.debug("Leaving browser().");
-  return self;
-}
-
-// A BARE `/portal` DRAWS THE REALM CHOOSER once a service has trust realms
-// (2026-09-14, #32), and the suite nearly always has some. The chooser's own
-// `?realm=default` is what a script names to skip it, so the door this file
-// signs in through names it. `sts_realm_administrators.js` asserts the chooser
-// itself.
-const PORTAL_DOOR = "/portal?realm=default";
-
-// THE SCIM CALLER IS A PERSON THIS JOB CREATES, and its Basic credential is
-// that person's username and password (2026-09-12). Product mode verifies a
-// SCIM Basic credential against the named person's own `userPassword`, so a
-// made-up name with a word nothing checks is a credential only development
-// accepts. The account is made on first use, by `ensurePerson()` below.
 const SCIM_CALLER = usernameFor("dir-scim-caller");
 const ENTERPRISE = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
 
@@ -242,13 +173,6 @@ async function scim(method, path, payload) {
   }
   log.debug("Leaving scim().");
   return { status: r.status, body: body, raw: raw };
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
 }
 
 // The management API taking JSON, for creating the person before they sign in.
@@ -324,38 +248,51 @@ async function ensurePerson(who) {
 }
 
 // ---------------------------------------------------------------------------
-// SIGN IN AT `/portal`, which is an OpenID Connect relying party of this
-// service's own authorization server — so this is a code flow.
+// SIGN IN AS THE STATIC PORTAL (#568). The portal is a static application
+// over `/account-api` since #568: the person signs in as the public client
+// `sts-user-portal` (PKCE, a DPoP-bound token) and every page is drawn in the
+// browser from its operation's answer. `portal_signin.js` does both, and
+// `draw()` is the page as the browser draws it, with the portal's own
+// renderers — so the markup this job reads below is the markup a person sees.
+// The two forms this job posts go to the operations that mirror them.
 // ---------------------------------------------------------------------------
 async function signIn(who, password) {
   log.debug("Entering signIn(). who=" + who);
   await ensurePerson(who);
-  const b = browser(who);
-  let r = await b.go("GET", PORTAL_DOOR);
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    "/portal should send an unauthenticated browser to the authorization " +
-    "endpoint; it answered " + r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
-    "the authorization endpoint should send a browser with no sign-on " +
-    "session to the sign-in screen; it answered " + r.status + " -> " +
-    r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: who,
-                        password: password || PASSWORD, action: "login",
-                        csrf_token: csrfOf(r.text) }));
-  assert.ok(r.status === 303 || r.status === 302,
-    "the sign-in should end in a redirect; got " + r.status + " " +
-    String(r.text).slice(0, 300));
-  r = await b.go("GET",
-                 r.location);   // the authorization endpoint, with a code
-  r = await b.go("GET", r.location);   // the callback, which mints the session
-  assert.ok(b.cookie, "completing the flow should establish a session cookie.");
+  const client = await portalSignin.signInToThePortal(base, who, log,
+    { password: password || PASSWORD });
   log.debug("Leaving signIn().");
-  return b;
+  return {
+    client: client,
+    // A portal page, drawn as the portal's runtime draws it: the operation
+    // its row in the page table names (`web_portal_pages.ts`), and the
+    // row's own renderer, in the reader's language. `{ status, text, json }`.
+    draw: async function (path, query) {
+      log.debug("Entering draw(). " + path);
+      const table = portalSignin.portalBundle();
+      const row = table.PAGES.filter(function (one) {
+        return one.path === path;
+      })[0];
+      assert.ok(row, "the portal draws no page at " + path);
+      const qs = new URLSearchParams(query || {}).toString();
+      const answer = await client.api("GET", row.operation +
+                                             (qs ? "?" + qs : ""));
+      if (this.me === undefined) {
+        this.me = (await client.api("GET", "/account-api/me")).json;
+      }
+      const t = table.messages.WebTranslator.fromData(this.me &&
+                                                       this.me.locale);
+      const html = answer.status === 200 && answer.json
+        ? row.render(answer.json, { t: t, query: query || {}, prefix: "",
+                                    origin: base, me: this.me,
+                                    locale: this.me && this.me.locale,
+                                    version: this.me && this.me.version,
+                                    here: path })
+        : "";
+      log.debug("Leaving draw().");
+      return { status: answer.status, text: html, json: answer.json };
+    }
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -429,7 +366,7 @@ async function itDrawsTheDirectory() {
   // of, so nobody signs in without one — and the page is about somebody this
   // service has met.
   const b = await signIn(OWNER);
-  const before = await b.go("GET", "/portal");
+  const before = await b.draw("/portal");
   check("the Overview draws the directory section", function () {
     assert.strictEqual(before.status, 200, "/portal answered " + before.status);
     assert.ok(sectionOf(before.text),
@@ -484,8 +421,9 @@ async function itDrawsTheDirectory() {
       String(drawn.get("carLicense")).slice(0, 120));
   });
 
-  check("and the empty ones are behind a <details> fold, which is MARKUP and " +
-        "not script — every page of this portal is script-src 'none'",
+  check("and the empty ones are behind a <details> fold, which is MARKUP " +
+        "and not script — the page draws no script of its own (#568: the " +
+        "portal's one script is its runtime)",
         function () {
     assert.ok(/<details><summary>/.test(sectionOf(before.text)),
       "the unset attributes are not folded; fifty rows of nothing is a wall.");
@@ -531,7 +469,7 @@ async function itReadsTheEntryAndNotTheSession(b) {
       String(patched.raw).slice(0, 300));
   });
 
-  const after = await b.go("GET", "/portal");
+  const after = await b.draw("/portal");
   const drawn = attributesOn(after.text);
   check("AND ALL THREE ARE ON THE ACCOUNT PAGE — none of them was in the " +
         "session, and SCIM has no session in it at all, so a page reading " +
@@ -581,7 +519,7 @@ async function theRefusalsHold(b) {
   // `event_timestamp` second and ends one begun within it.
   await new Promise(function (resolve) { setTimeout(resolve, 1100); });
   const signedIn = await signIn(OWNER, PROBE_PASSWORD);
-  const page = await signedIn.go("GET", "/portal");
+  const page = await signedIn.draw("/portal");
   const drawn = attributesOn(page.text);
 
   check("`userPassword` IS ON THE PAGE — it is on the `person` MAY list, and " +
@@ -670,26 +608,21 @@ async function theCredentialsAreNotOnIt(b) {
   // Signals receiver whose default signal-response policy ends the person's
   // sessions on it. The password is untouched, so it still signs them in.
   b = await signIn(OWNER, PROBE_PASSWORD);
-  let page = await b.go("GET", "/portal/mfa");
-  await b.go("POST", "/portal/mfa",
-             form({ action: "start", csrf_token: csrfOf(page.text) }));
-  page = await b.go("GET", "/portal/mfa");
+  await b.client.act("/portal/mfa", { action: "start" });
+  const page = await b.draw("/portal/mfa");
   const secret = ((page.text.match(
     /<th>Secret<\/th><td><code>([^<]+)<\/code>/) || [])[1] || "")
     .replace(/\s+/g, "");
   assert.ok(secret.length > 10, "no shared secret was shown on /portal/mfa.");
-  const confirmed = await b.go("POST", "/portal/mfa",
-    form({ action: "confirm", code: codeFor(secret),
-           csrf_token: csrfOf(page.text) }));
+  const confirmed = await b.client.act("/portal/mfa",
+    { action: "confirm", code: codeFor(secret) });
   check("AND AN AUTHENTICATOR ENROLMENT IS CONFIRMED, which is what actually " +
         "writes `stsTotpCredential` — a shared secret this service can read " +
         "back, and the one thing on that entry a leak would really cost",
         function () {
-    assert.ok(confirmed.status === 200 || confirmed.status === 303,
+    assert.ok(confirmed.status === 200 && confirmed.json &&
+              confirmed.json.ok === true,
       "the confirmation answered " + confirmed.status + " " +
-      String(confirmed.text).slice(0, 300));
-    assert.ok(!/class="err"/.test(confirmed.text),
-      "the confirmation came back with an error on it: " +
       String(confirmed.text).slice(0, 300));
   });
 
@@ -714,7 +647,7 @@ async function theCredentialsAreNotOnIt(b) {
       JSON.stringify(one).slice(0, 400));
   });
 
-  const overview = await b.go("GET", "/portal");
+  const overview = await b.draw("/portal");
   check("**THE SHARED SECRET IS NOWHERE ON THE ACCOUNT PAGE.** This is the " +
         "assertion the whole design is for: every other check in this file " +
         "passes against a page that iterates the stored attributes, and this " +
@@ -770,9 +703,10 @@ async function oneUserCannotReadAnother() {
   log.info("=== 6. the identity is the session's and there is no parameter " +
            "===");
   const intruder = await signIn(INTRUDER);
-  const theirs = await intruder.go("GET",
-    "/portal?user=" + encodeURIComponent(OWNER) +
-    "&username=" + encodeURIComponent(OWNER));
+  // Since #568 the page's view is `GET /account-api/overview`, asked here
+  // with another person's name in every parameter it could plausibly read.
+  const theirs = await intruder.draw("/portal",
+    { user: OWNER, username: OWNER });
   check("a signed-in person naming somebody else in the query gets THEIR OWN " +
         "entry", function () {
     assert.strictEqual(theirs.status, 200,

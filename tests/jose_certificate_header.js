@@ -77,7 +77,10 @@ const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs', '.git',
 // this scan already reads, with their comments — the exemptions among them
 // — taken out.
 const SKIP_FILES = ['common/crypto.js', 'admin-ui/console.bundle.js',
-                    'admin-ui/console.js'];
+                    'admin-ui/console.js', 'portal/portal.bundle.js',
+                    'portal/portal-spa.js', 'home/home.bundle.js',
+                    'home/home-spa.js', 'authn/authn.bundle.js',
+                    'authn/authn-spa.js'];
 
 const SIGNING_CALL = /(?:\bsignJwt|\bsignJwtAs|\bsignJwtAsAsync|\.signJws|\.signJwsAsync|\bsignPublishedDocument)\(/g;
 

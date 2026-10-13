@@ -1,6 +1,10 @@
 {
   "asJson": "esta página como JSON",
   "everyEndpoint": "todos los endpoints que registra este servicio",
+  "globalSettings": "Configuración global",
+  "metadataHeading": "Metadatos",
+  "sharedProfileSettings": "Configuración compartida entre perfiles",
+  "metadataDescription": "El documento de descubrimiento de OpenID Connect publica los endpoints y las capacidades de este servidor de autorización.",
   "thWhat": "Qué",
   "thAnswer": "Respuesta",
   "period": ".",
@@ -31,7 +35,7 @@
   "thNote": "Nota",
   "totpHeading": "El mecanismo",
   "totpOff1": "<strong>La política de autenticación desactiva las aplicaciones de autenticación</strong> (",
-  "totpOff2": "), así que nadie nuevo puede registrar una aplicación de autenticación. <strong>No desactiva un secreto que alguien ya tenga</strong> — esa cuenta sigue configurada para dos factores y la pantalla de inicio de sesión sigue pidiendo el código, porque un interruptor que la degradara en silencio sería un control de seguridad cuya posición de apagado hace algo distinto de lo que dice. Para borrar un registro existente, ve a la fila de esa persona en ",
+  "totpOff2": "), así que nadie nuevo puede registrar una aplicación de autenticación. <strong>No desactiva un secreto que alguien ya tenga</strong> — esa cuenta sigue configurada para dos factores y la pantalla de inicio de sesión sigue pidiendo el código, porque un interruptor que la degradara en silencio sería un control de seguridad cuya posición de apagado hace algo distinto de lo que dice. Para borrar un registro existente, vaya a la fila de esa persona en ",
   "thCode": "Código",
   "totpCode": "{digits} dígitos, uno nuevo cada {period} segundos",
   "thSkew": "Desfase tolerado",
@@ -63,7 +67,7 @@
   "bcNoteNeverShown": "<strong>Esta consola nunca muestra un código.</strong> La persona vuelve a leer su propio juego en <code>/portal/mfa</code> y en ningún otro sitio. Mostrarlos aquí entregaría un segundo factor válido a quien tenga Admin Read, que es la misma puerta que esta consola ya se niega a abrir para el registro de una aplicación de autenticación.",
   "bcNoteNotFirst": "<strong>Un código de recuperación nunca es un PRIMER factor ni el factor que pide un inicio de sesión.</strong> <code>credentials.mechanismsFor().secondFactor</code> responde <code>webauthn</code> o <code>totp</code> y nunca este; a la pantalla de recuperación solo se llega como SALIDA de uno de esos dos, con un id de paso que la persona ya tiene.",
   "waHeading": "La ceremonia",
-  "waOff": "<strong><code>webauthn.enabled</code> está desactivado</strong>, así que aquí no se puede registrar ninguna llave de seguridad nueva. <strong>No desactiva una llave que alguien ya tenga</strong>, por la razón de la fila TOTP — y hay un riesgo mayor: alguien cuya única credencial sea una llave <code>primary</code> quedaría fuera de su propia cuenta por este interruptor. Para quitar una llave, ve a la fila de esa persona en ",
+  "waOff": "<strong><code>webauthn.enabled</code> está desactivado</strong>, así que aquí no se puede registrar ninguna llave de seguridad nueva. <strong>No desactiva una llave que alguien ya tenga</strong>, por la razón de la fila TOTP — y hay un riesgo mayor: alguien cuya única credencial sea una llave <code>primary</code> quedaría fuera de su propia cuenta por este interruptor. Para quitar una llave, vaya a la fila de esa persona en ",
   "thRpId": "RP ID",
   "waRpIdSet": " — configurado. Solo se usa cuando es un <strong>sufijo de dominio registrable</strong> del host por el que se llegó a este servicio; cualquier otra cosa se rechaza aquí, con el motivo en el registro, porque un navegador lo rechazaría con un error indistinguible de un fallo de hardware.",
   "waRpIdDefault": "el host por el que se llegó a este servicio. Es el valor predeterminado y es a lo que queda vinculada una credencial.",
@@ -218,7 +222,7 @@
   "perPullFailed": "LA ÚLTIMA OBTENCIÓN FALLÓ",
   "perBehind": ". Este proceso va ATRASADO y sirve su propia copia hasta que se ponga al día.",
   "perNotCoord": "<strong>sin coordinar</strong> — este proceso tiene su propia copia y no verá las escrituras de otro hasta que se reinicie. ",
-  "perSetCoordinate": "Configura <code>persistence.coordinate</code> para cambiarlo.",
+  "perSetCoordinate": "Configure <code>persistence.coordinate</code> para cambiarlo.",
   "perCannot1": "El almacén ",
   "perCannot2": " no puede coordinarse: un registro de cambios necesita una transacción y una secuencia, y ese almacén escribe archivos completos.",
   "thWhen": "Cuándo",
@@ -252,5 +256,5 @@
   "perNo": "<strong>NO.</strong> ",
   "perRightNow": "Ahora mismo",
   "perOffNote": "Nada de esta página está vigente: <code>persistence.mode</code> es <code>memory</code>, así que este servicio lo guarda todo en memoria y lo perderá todo cuando termine el proceso — exactamente lo que siempre ha hecho. Los ajustes de abajo cambian eso, y todos menos uno requieren reiniciar, porque el almacén se abre y se LEE antes de que se enlace el agente de escucha.",
-  "perNotAccepting": "<strong>El almacén persistente no está aceptando escrituras en este momento.</strong> Todo lo de abajo sigue describiendo lo que este servicio intenta hacer; la fila Estado de salud dice qué salió mal. No se ha perdido nada — consulta la nota de arriba sobre una escritura fallida."
+  "perNotAccepting": "<strong>El almacén persistente no está aceptando escrituras en este momento.</strong> Todo lo de abajo sigue describiendo lo que este servicio intenta hacer; la fila Estado de salud dice qué salió mal. No se ha perdido nada — consulte la nota de arriba sobre una escritura fallida."
 }

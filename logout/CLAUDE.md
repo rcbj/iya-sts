@@ -1,10 +1,13 @@
 # logout/
 
-The protocol-independent sign-out. One file:
+The protocol-independent sign-out:
 
 | File | What it is |
 |---|---|
-| `logout.ts` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, and the page. |
+| `logout.ts` | `GET|POST /logout` — the model of what a live session IS across every family, the inventory, the termination, the shell, the JSON door, the page's two operations' logic, and the signed-out document (`/logout/signed-out`). |
+| `web_signout_pages.ts` | The static sign-out's page table and renderers (#577): the inventory, a result with nothing to fan out, the two refusals. The bundle `logout/signout.bundle.js` (`StsSignout`). |
+| `web_signout.ts` | The static sign-out's runtime (#577), served at `/logout/signout.js` (`signout-spa.js` on disk). |
+| `web_logout.ts`, `web_sessions.ts` | The CONSOLE's `/admin/logout` and `/admin/sessions` (#446), drawn from `/admin-api`; `admin-ui/CLAUDE.md` carries them. |
 
 It is a directory of its own rather than a file in `authn/` or in `common/`, and
 each of those was considered:
@@ -156,7 +159,7 @@ something that has since been reissued under the same id.
 
 | Surface | Who | Gate | Difference |
 |---|---|---|---|
-| `GET|POST /logout` | a person, about themselves | none | defaults to the session cookie; **renders the notifications**, because they are iframes in that person's browser |
+| `GET|POST /logout` | a person, about themselves | none; the page's act is bound to the `sts_session` cookie (#577) | defaults to the session cookie; **renders the notifications**, because they are iframes in that person's browser — in the server-drawn signed-out document since #577 |
 | `GET|POST /admin/logout` | an operator, about somebody | Admin Read / Admin Write | always names a `user`; filters, pages, and has the two **NON-SPEC undos** |
 | `GET|POST /admin-api/logout[/{action}]` | a test or a machine | an access token carrying `admin:read` / `admin:write` (`mgmt-api/CLAUDE.md`) | the same two functions; four actions |
 
@@ -188,6 +191,95 @@ second way to present it here would be a second answer to who may end somebody
 else's sessions. `tests/session_clocks.js` section 5 pins it.
 
 ---
+
+## THE PAGE IS A STATIC SURFACE, AND THE RESULT THAT FANS OUT IS NOT (#577, 2026-10-12)
+
+#569 converts every page this service defines for itself into a static
+surface (`common/CLAUDE.md` 3cl); **the specifications' sign-outs —
+`/oauth2/logout`, the front-channel iframes, back-channel, SAML and
+WS-Federation single logout, `/federation/slo`, `check_session` — are not
+touched** (#569's rule), and nothing they answer changed.
+
+* **A browser's `GET /logout` answers the SHELL** (`shell()`,
+  `ShellDocument`, `/logout/signout.js` and `/logout/signout.css`), after
+  the same two decisions it always made first: no session and no name is a
+  302 to sign in; a name that may not be used is the shell too, and the
+  page draws the API's refusal. **Script is required**: the `<noscript>`
+  says so and nothing else is drawn.
+* **The page's view and act are `GET` and `POST /authn-api/logout`**
+  (`authn/CLAUDE.md`), whose logic is `signOutView()` and `signOutAct()`
+  here: the inventory as `inventoryFor()` lists it, and the act through
+  `endFor()` — the one place a sign-out from either door calls
+  `terminate()` and clears the cookie. Bound as every act on that API is:
+  JSON, an Origin of this service, the `X-CSRF-Token` of the cookie's
+  session. Under `/authn-api` rather than an API of its own because it is
+  the same session, the same cookie and the same binding, and `/logout` is
+  the authentication service's application.
+* **THE INVENTORY IS TWO TABS (rcbj, 2026-10-12)**, through the console's
+  `WebKit.tabbedPanels()` and tab rules in `LOGOUT_CSS`, with no script of
+  their own. **Sign out** opens by default: the global sign-out, then every
+  live SESSION in ONE list — the families in `SESSION_FAMILIES`: sign-on,
+  relying-party and partner sessions, directory connections, Kerberos
+  tickets (`sessionList()`: a checkbox where it can be
+  ended, a dash with the reason as its tooltip where it cannot, what it is,
+  its protocol family, since and until) and the ticked-items button.
+  **Details** holds everything else: the TOKENS AND CREDENTIALS (tokens,
+  grants, codes, wallet items, GNAP grants, what was issued), each family
+  with its checkboxes and a ticked-items button of their own (rcbj, later
+  the same day: the first tab lists sessions only), then the live count, each family's label,
+  protocol and specification, what a sign-out does to it, its rows' details
+  and refusal reasons (`familyDetails()`, read-only), the rows not listed,
+  and who may be named here. The JSON is unchanged; the browser jobs press
+  Global logout, which is on the first tab.
+* **THE RESULT IS TWO KINDS OF PAGE, by rcbj's plan on #577.** Where the
+  act leaves the browser something to do — `fanOutOf()`'s iframes, cleanup
+  images, LogoutRequest links and back-channel table, or a partner's
+  sign-out — the result is the SERVER-DRAWN document it always was
+  (`resultPage()`, unchanged, its policy the fan-out's), at `POST
+  /logout/signed-out`: the act answers a `form` the runtime POSTS AS A
+  NAVIGATION, carrying the result. Where there is nothing to fan out the
+  act answers the result's `view` and the page draws it in place.
+* **BOTH KINDS OF RESULT ARE TWO TABS (rcbj, 2026-10-12)**, with the
+  inventory's ids and rules. **Sign out** says only that the person is
+  signed out (or that nothing was ended), then a button to the user portal
+  (`/portal`, root-relative so the realm prefix is added); the signed-out
+  document also keeps the partner sign-outs (#167) there, because each is a
+  step the person has to take. **Details** holds the rest: the model's
+  message, what was ended and what was not, the fan-out (its iframes and
+  cleanup images load from a hidden panel all the same), and what is still
+  live.
+* **THE RESULT TRAVELS WITH THE BROWSER, MACed, and nothing here stores
+  it** — rule 3m is that this module holds no state, and the document may
+  be drawn by another node or request worker than the one that ended the
+  sessions. `sealResult()` deflates it and MACs it under the `logout-result`
+  cluster secret (`cluster/cluster_secrets.ts`) with the realm and a
+  five-minute expiry; `openResult()` refuses anything else
+  (`STS-LOGOUT-0008`), and the document refuses a post from another
+  origin (`STS-LOGOUT-0009`) — taking `Origin: null` only with
+  `Sec-Fetch-Site: same-origin`, because every page here is sent
+  `Referrer-Policy: no-referrer`, under which the runtime's own navigation
+  carries a null Origin (found over CDP). Not encrypted: it is what the document
+  shows the person. Drawn again within its life it only fans out again to
+  sessions that have already ended. The document mints no arrival cookie
+  (`NOT_ARRIVAL_PATHS`).
+* **The JSON door is unchanged**: `GET /logout` asking for JSON and `POST
+  /logout` with a JSON body or `Accept: application/json` answer as they
+  did, and a body refused is now JSON (`STS-LOGOUT-0003`) where it was a
+  page. **A FORM POSTED TO `/logout` IS NO LONGER AN ACT**: it is sent to
+  the page with a 303 (`STS-LOGOUT-0010`) and ends nothing. The portal's
+  Sign out of everything opens the page (a GET form) since.
+* **Nothing ticked ends nothing**, as the page says under the button: the
+  runtime sends no act for the ticked-items button with no box ticked. An
+  act with an empty selection is still a GLOBAL sign-out — the JSON door's
+  documented default, above — so the page keeps its own promise itself.
+* **The page's rules are `LOGOUT_CSS`**, inline in the signed-out document
+  and served as `/logout/signout.css`, so the two cannot drift
+  (`tests/logout_api.js` 6d holds them byte-equal).
+
+**Tests**: `tests/logout_api.js`; the round trip's sign-out cases in
+`tests/tools/web_surfaces.js`; `tests/tools/authn_screen.js`'s `signOut()` in
+process and `tests/vendored/authn_signin.js`'s `signOut()` over HTTP, which
+every job that signed out through the form now signs out through.
 
 ## What a logout reaches, protocol by protocol — and what it does not
 

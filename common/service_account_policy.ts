@@ -77,6 +77,9 @@ import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+// The sentences `describe()` makes are filled from SENTENCES below, so the
+// server can translate them into a console reader's language (#543).
+import serverProse = require('./server_prose');
 
 const { log } = helpers;
 
@@ -151,6 +154,26 @@ const DEFAULT_PROFILE = 'default';
  * draws them. `id` is what a door passes to `credentials.verify()` as `door`
  * (`browser` and `kerberos` are answered by the sign-in funnel and the KDC).
  */
+// ---------------------------------------------------------------------------
+// THE SENTENCES `describe()` MAKES, as templates (#543 phase 2) — one copy,
+// filled there with `ServerProse.fill()` and matched by
+// `common/server_prose.ts` to refill in a console reader's language. A
+// `param.` key is a phrase that only ever stands inside another sentence.
+// ---------------------------------------------------------------------------
+const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
+  exempt: 'service accounts are EXEMPT from the second factor',
+  notExempt: 'service accounts meet the second-factor rules everybody does',
+  browser: 'service accounts may sign in at a browser',
+  noBrowser: 'service accounts are refused at every browser sign-in',
+  doors: 'password doors: {{list}}',
+  'param.none': 'none',
+  rotation: 'passwords rotate every {{days}} days, the previous one ' +
+    'working for {{minutes}} minutes',
+  noRotation: 'passwords do not rotate automatically',
+  owner: 'every service account names an owner',
+  noOwner: 'a service account may have no owner'
+});
+
 const DOORS = [
   { id: 'ldap', key: 'allowLdapBind', label: 'LDAP simple bind',
     what: 'A bind on 389 or 636 (RFC 4513).' },
@@ -316,6 +339,10 @@ class ServiceAccountPolicy {
    * The directory schema of `ou=serviceAccountPolicies`.
    */
   static readonly SCHEMA = SCHEMA;
+  /**
+   * The sentences `describe()` makes, as templates (#543).
+   */
+  static readonly SENTENCES = SENTENCES;
 
   private directory: DirectoryHooks | null = null;
   private warnedAboutNoDirectory = false;
@@ -755,22 +782,23 @@ class ServiceAccountPolicy {
       return one.label;
     });
     const rotation = this.rotation(rules);
+    const fill = serverProse.fill;
     const out = [
       rules.exemptFromSecondFactor === true
-        ? 'service accounts are EXEMPT from the second factor'
-        : 'service accounts meet the second-factor rules everybody does',
+        ? SENTENCES.exempt
+        : SENTENCES.notExempt,
       rules.allowBrowserSignIn === true
-        ? 'service accounts may sign in at a browser'
-        : 'service accounts are refused at every browser sign-in',
-      'password doors: ' + (doors.length ? doors.join(', ') : 'none'),
+        ? SENTENCES.browser
+        : SENTENCES.noBrowser,
+      fill(SENTENCES.doors, { list: doors.length ? doors.join(', ')
+                                                 : SENTENCES['param.none'] }),
       rotation.enabled
-        ? 'passwords rotate every ' + rules.rotationIntervalDays + ' days, ' +
-          'the previous one working for ' + rules.rotationOverlapMinutes +
-          ' minutes'
-        : 'passwords do not rotate automatically',
+        ? fill(SENTENCES.rotation, { days: rules.rotationIntervalDays,
+                                     minutes: rules.rotationOverlapMinutes })
+        : SENTENCES.noRotation,
       rules.requireOwner === true
-        ? 'every service account names an owner'
-        : 'a service account may have no owner'
+        ? SENTENCES.owner
+        : SENTENCES.noOwner
     ];
     log.debug("Leaving ServiceAccountPolicy.describe().");
     return out;
@@ -970,6 +998,7 @@ export = {
   FIELD_BY_KEY: ServiceAccountPolicy.FIELD_BY_KEY,
   DOORS: ServiceAccountPolicy.DOORS,
   SCHEMA: ServiceAccountPolicy.SCHEMA,
+  SENTENCES: ServiceAccountPolicy.SENTENCES,
   setDirectory: slot.forward('setDirectory'),
   directoryInstalled: slot.forward('directoryInstalled'),
   read: slot.forward('read'),

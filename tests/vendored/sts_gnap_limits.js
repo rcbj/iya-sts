@@ -16,19 +16,26 @@
 //      person who is not in the group reaches the approval page and is
 //      REFUSED there, a member approves, and the RS's introspection of the
 //      token returns the right with its limits and the `grant_id`.
-//   2. A LOWERED LIMIT: a grant for the demonstration type asking to spend
+//   2. A LOWERED LIMIT: a grant for the peer's type asking to spend
 //      at most 100 EUR in 5 operations; the person lowers the amount to 30
 //      on the approval page; the token says 30 — read by this job's OWN
 //      decoding of the jwt-signed token, with the grant it counts against —
 //      and a raised amount posted to the page is refused.
-//   3. THE DEMONSTRATION RESOURCE SERVER SPENDS (`POST /gnap/rs/spend`): 20,
-//      then 20 refused (403 insufficient_scope), a failing operation
-//      refunded (502), 10 more to exactly 30, and one more refused; another
-//      currency refused.
+//   3. THE RESOURCE SERVER SPENDS — the TEST PEER's (#586), in every mode;
+//      the service's demonstration one (`POST /gnap/rs/spend`) was deleted
+//      by #593: 20, then 20 refused (403 insufficient_scope), a failing
+//      operation refunded (502), 10 more to exactly 30, and one more
+//      refused; another currency refused. The peer keeps the totals per
+//      grant, as rcbj's decision 2 on #432 has a resource server do, from
+//      the limits and grant_id RFC 9767 introspection hands it. A run with
+//      no peer — an AWS target — reports this job SKIPPED (`testPeer` in
+//      MANIFEST.js).
 //   4. THE ABSENT OWNER ON /portal/ciba (#432 phase 6's flow): a request
 //      naming somebody who does not own the identifier waits on their
 //      portal and their approval is REFUSED there; one naming the owner is
 //      approved with its limit LOWERED on the portal, and the token says so.
+//      The portal is the static application of #568, answered through
+//      /account-api.
 //
 // The in-process half — the vocabulary, lookups, the policy in both stages,
 // the totals across periods and the shared store's statement — is
@@ -42,6 +49,7 @@ const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
+const portalSignin = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -68,7 +76,9 @@ const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnaplim").replace(/[^a-z0-9-]/g, "").slice(0, 30),
   password: PASSWORD,
-  log: log
+  log: log,
+  // The resource server that spends is the test peer's (#586).
+  peer: true
 });
 const check = h.check;
 const OWNER = usernameFor("gnap-lim-owner");
@@ -86,38 +96,37 @@ function claimsOf(value) {
                           .toString("utf8"));
 }
 
-// A browser signed in to the realm's portal, through the portal's own code
-// flow and the sign-in screen, and the page at `path` once it is drawn.
-async function portal(b, who, path) {
-  log.debug("Entering portal().");
-  let r = await b.go("GET", "/realm/" + h.realm + path);
-  for (let hop = 0; hop < 12; hop++) {
-    if (r.status === 302 || r.status === 303) {
-      r = await b.go("GET", r.location);
-      continue;
-    }
-    const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) ||
-                     [])[1];
-    if (r.status === 200 && authnId) {
-      r = await b.go("POST", "/realm/" + h.realm + "/authn/login",
-                     { authn_id: authnId, username: who, password: PASSWORD,
-                       action: "login", csrf_token: h.csrfOf(r.text) });
-      continue;
-    }
-    break;
+// THE PERSON'S PORTAL (#568): the static portal's own sign-in, as its
+// public client with PKCE and a DPoP-bound token for the realm's
+// /account-api — one per person, kept — and the page at `path` drawn by the
+// portal's renderers from its operation's answer. `b` is unused since the
+// portal holds no cookie of its own.
+const portals = {};
+async function portalOf(who) {
+  log.debug("Entering portalOf().");
+  if (!portals[who]) {
+    portals[who] = await portalSignin.signInToThePortal(h.realmBase, who,
+      null, { password: PASSWORD });
   }
-  log.debug("Leaving portal().");
-  return r;
+  log.debug("Leaving portalOf().");
+  return portals[who];
 }
 
-// The waiting GNAP request on a /portal/ciba page, and its CSRF token.
+async function portal(b, who, path) {
+  log.debug("Entering portal().");
+  const drawn = await (await portalOf(who)).draw(path);
+  log.debug("Leaving portal().");
+  return { status: drawn.status, text: drawn.html, json: drawn.json };
+}
+
+// The waiting GNAP request on a /portal/ciba page.
 function waitingOn(page) {
   log.debug("Entering waitingOn().");
   const m = new RegExp('name="action" value="gnap-approve"><input ' +
                        'type="hidden" name="id" value="([^"]+)"')
     .exec(page.text);
   log.debug("Leaving waitingOn().");
-  return { id: m ? m[1] : "", csrf: h.csrfOf(page.text) };
+  return { id: m ? m[1] : "" };
 }
 
 async function test() {
@@ -125,6 +134,9 @@ async function test() {
   log.info("Driving GNAP ownership and limits at " + h.realmBase);
   await h.createRealm("GNAP ownership and limits");
   await h.setting("gnap.continueWaitS", 0);
+  // The resource server section 3 spends at (#586): the test peer,
+  // registered in this realm, declaring the type section 2 asks for.
+  await h.usePeer();
   // The jwt-signed format, so this job can read the token's claims itself.
   await h.setting("gnap.accessTokenFormat", "jwt-signed");
   await h.ensurePerson(OWNER);
@@ -194,8 +206,10 @@ async function test() {
         function () {
     assert.strictEqual(approval.page.status, 400,
                        approval.page.text.slice(0, 400));
-    assert.ok(/cannot approve this request/.test(approval.page.text),
-              approval.page.text.slice(0, 600));
+    // The refusal is the shell carrying its view since #578.
+    assert.ok(approval.view && approval.view.kind === "problem" &&
+              /cannot approve this request/.test(approval.view.heading),
+              JSON.stringify(approval.view));
   });
   // The owner: a new grant (the stranger's browser holds the first one's
   // sign-in), approved and released.
@@ -232,15 +246,21 @@ async function test() {
     const p = rr.json;
     const browser = h.browser();
     const ap = await h.reachApproval(browser, p.interact.redirect, OWNER);
-    assert.ok(ap.page.status === 200 &&
-              /name="lim_t0r0_amount" value="100"/.test(ap.page.text),
+    // The page's view carries the right's limits and the rows its controls
+    // are drawn from (#578), and the answer goes to /gnap-api with the
+    // lowered value beside the right, under the control's name.
+    const shown = ap.view && ap.view.kind === "approve"
+      ? ap.view.tokens[0].rights[0] : {};
+    assert.ok(ap.page.status === 200 && shown.limits &&
+              String(shown.limits.amount) === "100" &&
+              (shown.limitRows || []).some(function (row) {
+                return row.member === "amount";
+              }),
               "the page draws the amount as a control: " +
-              ap.page.text.slice(0, 800));
-    const form = "action=allow&right=t0r0&csrf_token=" +
-      encodeURIComponent(h.csrfOf(ap.page.text)) +
-      "&lim_t0r0_amount=" + encodeURIComponent(amount) +
-      "&lim_t0r0_count=5";
-    rr = await browser.go("POST", ap.approve, form);
+              JSON.stringify(ap.view).slice(0, 800));
+    rr = await h.answer(browser, ap, "allow", [],
+                        { lim_t0r0_amount: String(amount),
+                          lim_t0r0_count: "5" });
     log.debug("Leaving askAndLower().");
     return { pending: p, answer: rr, asked: asked };
   };
@@ -270,13 +290,13 @@ async function test() {
   });
 
   // =========================================================================
-  // 3. THE DEMONSTRATION RESOURCE SERVER KEEPS THE TOTALS.
+  // 3. THE RESOURCE SERVER (THE TEST PEER) KEEPS THE TOTALS.
   // =========================================================================
-  log.info("=== 3. the demonstration resource server spends ===");
+  log.info("=== 3. the resource server (the test peer) spends ===");
   const spend = function (json) {
     log.debug("Entering spend().");
     log.debug("Leaving spend().");
-    return payer.send("POST", h.realmBase + "/gnap/rs/spend",
+    return payer.send("POST", h.SPEND,
                       { token: spendToken.value, json: json });
   };
   r = await spend({ amount: "20", currency: "EUR" });
@@ -312,7 +332,7 @@ async function test() {
     assert.strictEqual(r.status, 403, r.text);
     assert.ok(/EUR/.test(r.json.error_description), r.text);
   });
-  r = await payer.send("POST", h.realmBase + "/gnap/rs/spend",
+  r = await payer.send("POST", h.SPEND,
                        { json: { amount: "1", currency: "EUR" } });
   check("3g. with no token: the RS-first challenge", function () {
     assert.strictEqual(r.status, 401, r.text);
@@ -335,15 +355,16 @@ async function test() {
   };
   const answerOnPortal = async function (who, form) {
     log.debug("Entering answerOnPortal().");
-    const browser = h.browser();
-    const page = await portal(browser, who, "/portal/ciba");
+    const page = await portal(null, who, "/portal/ciba");
     const waiting = waitingOn(page);
     assert.ok(waiting.id, "the request is listed on " + who + "'s portal: " +
               page.text.slice(0, 600));
-    const answer = await browser.go("POST", "/realm/" + h.realm +
-      "/portal/ciba", "action=gnap-approve&id=" +
-      encodeURIComponent(waiting.id) + "&right=t0r0&csrf_token=" +
-      encodeURIComponent(waiting.csrf) + (form || ""));
+    // The form's fields, sent to its /account-api operation as JSON (#568).
+    const fields = { action: "gnap-approve", id: waiting.id, right: "t0r0" };
+    new URLSearchParams(form || "").forEach(function (value, name) {
+      fields[name] = value;
+    });
+    const answer = await (await portalOf(who)).act("/portal/ciba", fields);
     log.debug("Leaving answerOnPortal().");
     return { page: page, answer: answer };
   };
@@ -371,7 +392,7 @@ async function test() {
         function () {
     assert.ok(/name="lim_t0r0_count" value="3"/.test(answered.page.text),
               answered.page.text.slice(0, 800));
-    assert.strictEqual(answered.answer.status, 303,
+    assert.strictEqual(answered.answer.status, 200,
                        answered.answer.text.slice(0, 400));
   });
   r = await absent.send("POST", waitingCont.uri,

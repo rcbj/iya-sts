@@ -1,5 +1,5 @@
 {
-  "shell.title": "{title} — service d’authentification fictif",
+  "shell.title": "{title} — service d’authentification",
   "checkEmail": "Consultez vos e-mails",
   "signingInAs": "Connexion en tant que <code>{name}</code>",
   "secondFactorFor": "Second facteur pour <code>{name}</code>",

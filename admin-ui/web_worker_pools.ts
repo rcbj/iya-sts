@@ -124,8 +124,11 @@ class WorkerPoolsPage {
         }
         // Another node's sections carry its name in their anchors, so the
         // page's own `id="pool-request"` and the rest stay this node's.
+        // On a cluster the page is one column per node, as it was: a pool
+        // is a tab only where one node is drawn, so its marks go here.
         return head + (n.self ? body
-          : body.replace(/ id="/g, ' id="' + kit.esc(n.name) + '-'));
+          : body.replace(/ id="/g, ' id="' + kit.esc(n.name) + '-'))
+          .replace(/ data-tab="[^"]*"/g, '');
       }).join('');
     return html;
   }
@@ -200,7 +203,10 @@ class WorkerPoolsPage {
       t.html('consoleWorkerPools.aboutAfter') + '</p>',
       t.text('consoleWorkerPools.whatThisPageIs'));
     const sections = json.pools.map(function (p: Json): string {
-      const head = '<h2 id="pool-' + kit.esc(p.id) + '">' +
+      // A TAB PER POOL (2026-10-12, `WebPages.protocolTabs()`): `request`
+      // and `surface`; the tiles and the note above are Metadata.
+      const head = '<h2 id="pool-' + kit.esc(p.id) + '" data-tab="' +
+        kit.esc(p.id) + '">' +
         kit.esc(p.title) + '</h2><p><code>' + kit.esc(p.module) +
         '</code> · <code>' + kit.esc(p.setting) + '</code> · <strong>' +
         kit.esc(p.state) + '</strong>: ' + kit.esc(p.stateText) + '</p>';

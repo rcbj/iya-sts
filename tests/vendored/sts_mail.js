@@ -29,7 +29,12 @@
 //      address, which is where an unverified address comes from.
 //   3. Forgot password: an unknown account and a known one get the SAME
 //      page; only the known one is mailed; the link sets a new password; the
-//      person is then told their password changed.
+//      person is then told their password changed. Since #568 the portal is a
+//      static application, so the form and the link are the operations the
+//      portal's pages are drawn from and post to: `/account-api/forgot-
+//      password` and `/account-api/reset-password`, which take no token —
+//      the reset link's secret is what authorises the reset. The link in the
+//      mail still names the portal page, `/portal/reset-password?...`.
 //   4. An administrator's reset link with `deliver: "mail"`: not returned,
 //      mailed.
 //   5. A dead letter: a transport that cannot talk to the catcher (implicit
@@ -194,11 +199,19 @@ function linkIn(message) {
   return found ? found[1] : "";
 }
 
-function hiddenValue(html, name) {
-  log.debug("Entering hiddenValue().");
-  const m = new RegExp('name="' + name + '" value="([^"]*)"').exec(html);
-  log.debug("Leaving hiddenValue().");
-  return m ? m[1].replace(/&amp;/g, "&") : "";
+// The `user` and `token` a mailed link carries in its query.
+function linkParam(link, name) {
+  log.debug("Entering linkParam().");
+  let value = "";
+  try {
+    value = new URL(link).searchParams.get(name) || "";
+  } catch (e) {
+    log.debug("Caught in linkParam(): " + ((e && e.message) || e));
+    // Not a URL: no parameter, which the assertion that reads it says.
+    value = "";
+  }
+  log.debug("Leaving linkParam().");
+  return value;
 }
 
 async function test() {
@@ -329,26 +342,31 @@ async function test() {
   // =========================================================================
   // 3. FORGOT PASSWORD
   // =========================================================================
-  r = await call("GET", realmBase() + "/portal/forgot-password");
+  r = await call("GET", realmBase() + "/account-api/forgot-password");
   check("3. the forgot-password page is offered (product, a transport)",
         function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   });
-  const unknown = await call("POST", realmBase() + "/portal/forgot-password",
-                             { account: "nobody-" + PERSON }, {}, true);
-  const known = await call("POST", realmBase() + "/portal/forgot-password",
-                           { account: ADDRESS }, {}, true);
+  const unknown = await call("POST", realmBase() +
+                             "/account-api/forgot-password",
+                             { account: "nobody-" + PERSON });
+  const known = await call("POST", realmBase() +
+                           "/account-api/forgot-password",
+                           { account: ADDRESS });
   check("3. an unknown account and a known one get the same page",
         function () {
     assert.strictEqual(unknown.status, 200);
     assert.strictEqual(known.status, 200);
-    const sentence = function (html) {
+    const sentence = function (answer) {
       log.debug("Entering sentence().");
       log.debug("Leaving sentence().");
-      return (/<div class="ok">([^<]*)<\/div>/.exec(html) || [])[1];
+      return answer.json && answer.json.view ? answer.json.view.note : "";
     };
-    assert.ok(sentence(known.text), known.text.slice(0, 400));
-    assert.strictEqual(sentence(unknown.text), sentence(known.text));
+    assert.ok(sentence(known), known.text.slice(0, 400));
+    assert.strictEqual(sentence(unknown), sentence(known));
+    assert.strictEqual(JSON.stringify(unknown.json),
+                       JSON.stringify(known.json),
+                       "the two answers differ");
   });
   got = await arrived(ADDRESS, /Reset your/, seen);
   seen.push(got.id);
@@ -358,16 +376,20 @@ async function test() {
     assert.ok(resetLink.indexOf(base + "/realm/" + REALM +
                                 "/portal/reset-password?") === 0, resetLink);
   });
-  r = await call("GET", resetLink);
+  const linkUser = linkParam(resetLink, "user");
+  const linkToken = linkParam(resetLink, "token");
+  r = await call("GET", realmBase() + "/account-api/reset-password?" +
+                 new URLSearchParams({ user: linkUser, token: linkToken })
+                   .toString());
   check("3. the link opens the form", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
   });
-  r = await call("POST", realmBase() + "/portal/reset-password",
-                 { user: hiddenValue(r.text, "user"),
-                   token: hiddenValue(r.text, "token"),
-                   password: NEW_PASSWORD, confirm: NEW_PASSWORD }, {}, true);
+  r = await call("POST", realmBase() + "/account-api/reset-password",
+                 { user: linkUser, token: linkToken,
+                   password: NEW_PASSWORD, confirm: NEW_PASSWORD });
   check("3. and sets a new password", function () {
-    assert.ok(r.status === 200 || r.status === 303,
+    assert.ok(r.status === 200 && r.json && r.json.ok &&
+              r.json.view && r.json.view.done,
               r.status + " " + r.text.slice(0, 300));
   });
   got = await arrived(ADDRESS, /password was changed/, seen);

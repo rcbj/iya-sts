@@ -19,12 +19,13 @@
 // it; the reply is piped back untouched. This is §5's "Kerberos AS-REQ …
 // forwarded the same way" — the request travels, the person's data does not.
 //
-// **`krb5_kdc.js` IS LOCKED** (the parent project's copy set, `CLAUDE.md`,
-// *The parent project loads these modules in-process*), so this is a route of
-// its own, registered on `POST /KdcProxy` JUST BEFORE the KDC's
-// (`common/protocol_stack.ts`), that decodes just enough to find the client
-// and either relays the request or calls `next()` — after which the KDC's own
-// handler runs exactly as it always did. It REQUIRES the vendored codec
+// **`krb5_kdc.js` IS IN THE PARENT'S COPY SET** (this repository's own, but
+// the parent's tests image copies it and its requires; `kerberos/CLAUDE.md`),
+// so rather than grow its closure this is a route of its own, registered on
+// `POST /KdcProxy` JUST BEFORE the KDC's (`common/protocol_stack.ts`), that
+// decodes just enough to find the client and either relays the request or
+// calls `next()` — after which the KDC's own handler runs exactly as it
+// always did. It REQUIRES the vendored codec
 // (`krb5_messages`, `krb5_asn1`, `krb5_primitives`, `krb5_crypto`) and the
 // principal database; it edits none of them, and none of them requires it, so
 // the parent project's COPY closure does not move.
@@ -51,23 +52,46 @@
 //     with more than one component, a message that does not decode — is
 //     answered where it arrived, by the KDC, in its own words.
 //
-// **THE RAW SOCKETS ON TCP AND UDP 88 ARE NOT PLACED**, and cannot be from
-// here: `krb5_kdc.js` starts them in `listen()` and hands each message to its
-// own module-private `handleMessage()`, with no hook between the socket and
-// the answer. A traveller's AS-REQ over port 88 at a visiting cell is
-// therefore answered THERE — which, for a person that cell does not hold, is
-// an unknown principal in product and a fresh one in development. The
-// exception, and what the parent project would have to add to close it, is in
-// `CLAUDE.md`, *Cells: a Kerberos request is answered at home*.
+// **AND THE RAW SOCKETS ON TCP AND UDP 88 (#588, 2026-10-12).** Until this
+// date they were not placed: `krb5_kdc.js` handed each message straight to
+// its own answer, so a traveller whose `krb5.conf` names port 88 and whose
+// packets reached a visiting cell was answered THERE — an unknown principal in
+// product, a freshly made one in development. The KDC now asks a MESSAGE
+// ROUTER before it answers (`setMessageRouter()`), and `install()` below
+// fills it with `routeMessage()`, which makes the SAME decision this route
+// makes — `clientOf()`, then the routing index — so the two doors cannot
+// disagree about where a person is answered. A request for somebody homed
+// elsewhere is the inter-cell operation `kdc-message`: its bytes, the
+// transport and the client's address as this cell saw it, answered at home by
+// `answerRelayed()` through the KDC's `answerMessage()` — the code its own
+// sockets run — and the reply's bytes and refusal sent back. This cell's
+// socket then writes it exactly as one it made: the TCP length prefix, and on
+// UDP RFC 4120 section 7.2.1's size limit, so an oversized relayed reply is
+// KRB_ERR_RESPONSE_TOO_BIG and the client retries over TCP (rcbj's decision
+// on #588). The KDC is handed in (`install(kdc)`, from
+// `common/protocol_stack.ts` just after it is required) rather than required
+// here, because requiring the JavaScript KDC from this module would register
+// its `/KdcProxy` before this one's; and the KDC requires nothing new, so the
+// parent project's COPY closure does not move.
+//
+// **A HOME THAT CANNOT BE REACHED IS FAIL-CLOSED**, as a relayed MS-KKDCP
+// request is answered 503 (`cell_channel.ts`'s `relay()`, #98 D6): the client
+// is told KDC_ERR_SVC_UNAVAILABLE (29, STS-KRB-0207), which MIT and Heimdal
+// read as "try the next KDC". Answering it here instead would be the
+// exception this closed. A realm's hard geofence (`cells.hardGeofence`)
+// refuses with KDC_ERR_POLICY (12), the serve policy's own code.
 //
 // **SINGLE-CELL MODE DOES NOT DECODE ANYTHING**: the handler calls `next()`
-// before it reads the body.
+// before it reads the body, and `install()` sets no router on the KDC
+// (`cells.id` is restart-only), so port 88 is answered byte for byte as it
+// was.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import realms = require('../common/realms');
+import errorCodes = require('../common/error_codes');
 import asn1Module = require('./krb5_asn1');
 import msgsModule = require('./krb5_messages');
 import primModule = require('./krb5_primitives');
@@ -82,6 +106,12 @@ const kcrypto: any = kcryptoModule;
 
 const log = bunyan.createLogger({ name: 'sts-krb5-home' });
 
+// The inter-cell operation a port-88 message travels home as.
+const KDC_MESSAGE_OP = 'kdc-message';
+// KDC_ERR_SVC_UNAVAILABLE and KDC_ERR_POLICY (RFC 4120 section 7.5.9).
+const SVC_UNAVAILABLE = 29;
+const POLICY = 12;
+
 /**
  * Who a Kerberos request is about, as the routing index keys them.
  */
@@ -91,12 +121,17 @@ interface Client {
 }
 
 /**
- * The placement of a KDC request relayed over MS-KKDCP: the route registered
- * ahead of the KDC's own, and the decoding that finds the client.
+ * The placement of a KDC request: the MS-KKDCP route registered ahead of the
+ * KDC's own, the router the KDC's port-88 sockets ask, the operation a home
+ * cell answers a relayed message with, and the decoding that finds the
+ * client.
  */
 class Krb5Home {
+  // The KDC, handed in by install(); null until then.
+  private kdc: any = null;
+
   /**
-   * Builds it. It holds nothing.
+   * Builds it. It holds nothing until install().
    */
   constructor() {
     log.debug("Entering Krb5Home.constructor().");
@@ -283,6 +318,171 @@ class Krb5Home {
   }
 
   /**
+   * Installs the port-88 half: the `kdc-message` operation another cell
+   * calls, and — in a service deployed as cells only — the KDC's message
+   * router. Called by `common/protocol_stack.ts` just after `krb5_kdc.js` is
+   * required, with that module, so this one never requires it.
+   *
+   * @param kdc - the KDC module (`kerberos/krb5_kdc.js`)
+   * @returns whether a router was set
+   */
+  install(kdc: any): boolean {
+    log.debug("Entering Krb5Home.install().");
+    const self = this;
+    if (!kdc || typeof kdc.setMessageRouter !== 'function' ||
+        typeof kdc.answerMessage !== 'function') {
+      log.debug("Leaving Krb5Home.install(). No seam on that KDC.");
+      return false;
+    }
+    this.kdc = kdc;
+    // The operation is registered in every mode, as every other module's
+    // is: it is reachable only over the inter-cell listener, which a single
+    // cell never binds.
+    require('../common/cell_channel').registerOp(KDC_MESSAGE_OP,
+      function (body: any, ctx: any) {
+        return self.answerRelayed(body, ctx);
+      });
+    if (!cells.isMulti()) {
+      log.debug("Leaving Krb5Home.install(). Single-cell: no router.");
+      return false;
+    }
+    kdc.setMessageRouter(function (bytes: Uint8Array, ctx: any) {
+      return self.routeMessage(bytes, ctx);
+    });
+    log.debug("Leaving Krb5Home.install(). The router is set.");
+    return true;
+  }
+
+  // A KRB-ERROR made by the KDC in the client's trust realm, so its realm
+  // and the default sname are that realm's Kerberos name.
+  private refuse(realmId: string, code: number, errorCode: string,
+                 eText: string): any {
+    log.debug("Entering Krb5Home.refuse().");
+    const kdc = this.kdc;
+    const realm = realms.get(realmId) || realms.DEFAULT_REALM;
+    log.debug("Leaving Krb5Home.refuse().");
+    return realms.run(realm, function () {
+      // error-code: none — the code is the caller's, passed in as errorCode
+      return kdc.errorReply(code, { errorCode: errorCode, eText: eText });
+    });
+  }
+
+  /**
+   * The KDC's message router: a port-88 message whose client is homed in
+   * another cell is answered there, and every other one is left to this
+   * cell's KDC (null). The same decision `handle()` makes for MS-KKDCP.
+   *
+   * @param bytes - the complete Kerberos message, unframed
+   * @param ctx - `{ transport, peer: { address, port } }` from the socket
+   * @returns a promise of `{ reply, refusal }`, a KRB-ERROR's bytes, or null
+   */
+  async routeMessage(bytes: Uint8Array, ctx: any): Promise<any> {
+    log.debug("Entering Krb5Home.routeMessage().");
+    if (!cells.isMulti()) {
+      log.debug("Leaving Krb5Home.routeMessage(). Single-cell.");
+      return null;
+    }
+    let client: Client | null = null;
+    try {
+      client = await Krb5Home.clientOf(bytes, null);
+    } catch (e) {
+      // A message that does not decode, or a ticket that will not open here,
+      // is the KDC's to refuse in its own words, where it arrived.
+      log.debug("Caught in Krb5Home.routeMessage(): " +
+                ((e && e.message) || e));
+      client = null;
+    }
+    if (!client) {
+      log.debug("Leaving Krb5Home.routeMessage(). Nobody to route by.");
+      return null;
+    }
+    const home: string = await require('../common/cell_routing')
+      .homeOf(client.realmId, 'name', client.name);
+    if (!home || home === cells.id() || !cells.get(home)) {
+      log.debug("Leaving Krb5Home.routeMessage(). Homed here.");
+      return null;
+    }
+    // THE HARD GEOFENCE (#98 D4), the question `relayToHome()` asks for
+    // MS-KKDCP: a realm whose law forbids even carrying the traffic is
+    // refused here rather than relayed. The policy decides.
+    let decision: any = { allowed: false };
+    try {
+      decision = require('../common/cell_transfer').serveDecision({
+        realm: client.realmId, subject: '', homeCell: home,
+        servingCell: cells.id() });
+    } catch (e) {
+      log.debug("Caught in Krb5Home.routeMessage(): " +
+                ((e && e.message) || e));
+      decision = { allowed: false };
+    }
+    if (!decision || !decision.allowed) {
+      log.debug("Leaving Krb5Home.routeMessage(). Refused by the serve " +
+                "policy.");
+      return this.refuse(client.realmId, POLICY,
+                         errorCodes.codeOf(decision) || 'STS-CELL-0183',
+                         'this account cannot be served from here');
+    }
+    const t = ctx || {};
+    const peer = t.peer || {};
+    const transport = t.transport === 'udp' ? 'udp' : 'tcp';
+    try {
+      const answer = await require('../common/cell_channel').call(home,
+        KDC_MESSAGE_OP, {
+          message: Buffer.from(bytes).toString('base64'),
+          transport: transport,
+          address: String(peer.address || ''),
+          port: Number(peer.port) || 0
+        });
+      const reply = Buffer.from(String((answer && answer.reply) || ''),
+                                'base64');
+      if (!reply.length) {
+        throw new Error('cell "' + home + '" answered no reply');
+      }
+      log.debug("Leaving Krb5Home.routeMessage(). Answered at " + home + ".");
+      return { reply: reply, refusal: (answer && answer.refusal) || null };
+    } catch (e) {
+      log.error(errorCodes.tag('STS-KRB-0207') + 'krb5: a ' + transport +
+                ' message for a person homed in cell "' + home + '" could ' +
+                'not be answered there: ' +
+                String((e && e.message) || e).replace(/\.$/, '') + '. The ' +
+                'client is told KDC_ERR_SVC_UNAVAILABLE, fail-closed.');
+      log.debug("Leaving Krb5Home.routeMessage(). The home failed.");
+      return this.refuse(client.realmId, SVC_UNAVAILABLE, 'STS-KRB-0207',
+                         'the KDC could not complete this request; try again');
+    }
+  }
+
+  /**
+   * The `kdc-message` operation, at home: a message another cell received
+   * on port 88, answered by this cell's KDC as its own socket would answer
+   * it — and never routed again (one hop).
+   *
+   * @param body - `{ message, transport, address, port }`, the message base64
+   * @param ctx - `{ peer }`, the calling cell
+   * @returns a promise of `{ reply, refusal }`, the reply base64
+   */
+  async answerRelayed(body: any, ctx: any): Promise<any> {
+    log.debug("Entering Krb5Home.answerRelayed().");
+    const b = body || {};
+    const bytes = Buffer.from(String(b.message || ''), 'base64');
+    if (!bytes.length || !this.kdc) {
+      log.debug("Leaving Krb5Home.answerRelayed(). Nothing to answer.");
+      throw new Error(errorCodes.tag('STS-KRB-0208') + 'krb5: cell "' +
+                      String((ctx && ctx.peer) || '?') + '" relayed ' +
+                      (this.kdc ? 'no Kerberos message' : 'a Kerberos ' +
+                       'message to a process with no KDC') + '.');
+    }
+    const reply = await this.kdc.answerMessage(bytes,
+      b.transport === 'udp' ? 'udp' : 'tcp',
+      { address: String(b.address || ''), port: Number(b.port) || 0 });
+    log.debug("Leaving Krb5Home.answerRelayed().");
+    return {
+      reply: Buffer.from(reply).toString('base64'),
+      refusal: this.kdc.refusalOf(reply) || null
+    };
+  }
+
+  /**
    * Registers `POST /KdcProxy` ahead of the KDC's own. Called by
    * `common/protocol_stack.ts`, just before `krb5_kdc.js` is required.
    *
@@ -301,14 +501,21 @@ class Krb5Home {
 const home = new Krb5Home();
 
 /**
- * Where a Kerberos request relayed over MS-KKDCP is answered in a service
- * deployed as cells (#98): its client's home cell. One route, registered
- * ahead of the KDC's; the KDC itself is locked and unchanged.
+ * Where a Kerberos request over MS-KKDCP or TCP and UDP 88 is answered in a
+ * service deployed as cells (#98, #588): its client's home cell. One route,
+ * registered ahead of the KDC's, and the KDC's message router, installed
+ * from outside, so the KDC's require closure is unchanged.
  * @namespace
  */
 export = {
   Krb5Home: Krb5Home,
   messageOf: Krb5Home.messageOf,
   clientOf: Krb5Home.clientOf,
-  registerRoutes: (app: any): void => home.registerRoutes(app)
+  KDC_MESSAGE_OP: KDC_MESSAGE_OP,
+  registerRoutes: (app: any): void => home.registerRoutes(app),
+  install: (kdc: any): boolean => home.install(kdc),
+  routeMessage: (bytes: Uint8Array, ctx: any): Promise<any> =>
+    home.routeMessage(bytes, ctx),
+  answerRelayed: (body: any, ctx: any): Promise<any> =>
+    home.answerRelayed(body, ctx)
 };

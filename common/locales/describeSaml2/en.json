@@ -1,0 +1,18 @@
+{
+  "title": "SAML 2.0 — Web Browser SSO",
+  "heading": "SAML 2.0 — Web Browser SSO, all four bindings",
+  "sub": "Identity provider <code>{entityId}</code> at <code>{base}</code>",
+  "lead": "A full SAML 2.0 identity provider: HTTP Redirect, HTTP POST and HTTP POST SimpleSign for the request, and HTTP POST, HTTP Redirect, HTTP POST SimpleSign or HTTP Artifact for the response, with a SOAP artifact resolution service behind the last. In development mode it accepts ANY entityID — a service provider does not have to be provisioned here before it can be pointed at this service, and the first valid AuthnRequest from an entityID creates its application entry in the embedded directory. In product mode only a REGISTERED service provider is served (#496).",
+  "endpoints": "The endpoints",
+  "endpoint": "Endpoint",
+  "what": "What it is",
+  "sso": "Single Sign-On. <code>{scoped}</code> is the same service scoped to one service provider.",
+  "ars": "Artifact Resolution, SOAP over HTTP. A browser never touches it — the service provider calls it directly, which is the whole point of the artifact profile.",
+  "slo": "Single Logout, both directions.",
+  "unsolicited": "Identity-provider-initiated sign-in: an unsolicited Response to the service provider <code>providerId</code> names (<code>saml2.unsolicitedSso</code>).",
+  "aa": "The attribute authority: a SOAP <code>{element}</code>, the Assertion Query and Request profile.",
+  "metadata": "The signed identity provider metadata. <code>{scoped}</code> is a document of its OWN for that service provider — a different entityID and different endpoints — and it is minted for any {sp} asked for.",
+  "perSp": "Per-service-provider metadata",
+  "perSpLead": "Every service provider gets its own endpoints under its own path, with this identity provider's one entityID, the realm's OAuth issuer. Ask for <code>{path}</code> and it is minted — the entityID may be a percent-encoded URL or a plain name:",
+  "generic": "The generic endpoints are <code>{sso}</code>, <code>{slo}</code> and <code>{ars}</code>. They behave identically — the scope in the path decides which identity provider names itself in the answer, and the AuthnRequest's own Issuer decides who the assertion is for either way."
+}

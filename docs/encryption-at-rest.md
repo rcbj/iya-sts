@@ -462,7 +462,7 @@ encrypt and decrypt), so a refusal anywhere else is the policy working.
 ## The database password comes from the same place, if you want it to
 
 `persistence.databaseUrl` carries its password in plain text
-— right for a throwaway database of mock identities, wrong for anything you
+— right for a throwaway database of invented identities, wrong for anything you
 would call a deployment — and **`persistence.databasePasswordProvider` reads it
 from a secret store instead**, using the same five providers and the same code
 as the key-encryption key above.
@@ -626,11 +626,13 @@ partition or an encrypted ZFS dataset. Two specifics are easy to get wrong:
   service or secret store that does not share a disk with the database.
 * **TLS to the database is already on and is a different property.**
   The stack's PostgreSQL refuses a plaintext connection (`hostssl` on every
-  rule) and this service asks for `sslmode=require`, so both ends insist. It
-  does **not** authenticate that server — the certificate is generated in the
-  container and signed by nobody — and `/admin/persistence` reports those as
-  two facts rather than one tick. Encryption in transit is not encryption at
-  rest, and neither implies the other.
+  rule) and this service never dials one, so both ends insist. Since
+  2026-10-12 it also **authenticates** that server by default: the
+  certificate generated in the container is shared with the service (without
+  its key), which trusts it for the database alone and dials
+  `sslmode=verify-full`. `/admin/persistence` reports encryption and
+  authentication as two facts rather than one tick. Encryption in transit is
+  not encryption at rest, and neither implies the other.
 
 ## A recommendation
 

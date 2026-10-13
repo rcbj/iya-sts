@@ -509,8 +509,8 @@ class IntrospectionJwt {
       return true;
     }
     // The caller's name, then the entry's four spellings — one reading of "an
-    // aud naming this application", shared with RFC 9470's stand-in resource
-    // since 2026-09-13 (`applications.audienceNamesEntry()`).
+    // aud naming this application", shared with `dpop.presentedAccessToken()`'s
+    // `audience` option (`applications.audienceNamesEntry()`).
     const entry = applications.forClientId(caller);
     const matched = audiences.indexOf(caller) >= 0 ||
                     applications.audienceNamesEntry(entry, audiences);

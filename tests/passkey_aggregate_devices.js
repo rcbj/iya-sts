@@ -196,30 +196,11 @@ function childMain() {
       }
     };
   };
-  const dataAttribute = function (html, name, within) {
-    let text = html;
-    if (within) {
-      const at = html.indexOf('id="' + within + '"');
-      text = at < 0 ? '' : html.slice(at, html.indexOf('>', at));
-    }
-    const found = new RegExp(' data-' + name + '="([^"]*)"').exec(text);
-    return found ? found[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&')
-      : '';
-  };
-  const hiddenFields = function (html) {
-    const form = {};
-    (html.match(/<input type="hidden"[^>]*>/g) || []).forEach(function (tag) {
-      const name = /name="([^"]+)"/.exec(tag);
-      const value = /value="([^"]*)"/.exec(tag);
-      if (name && !/ disabled/.test(tag)) {
-        form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
-      }
-    });
-    return form;
-  };
 
   (async function () {
     require(ROOT + '/common/protocol_stack');
+    // The sign-in screen over `/authn-api` since #571.
+    const authnScreen = require(ROOT + '/tests/tools/authn_screen');
     const app = require(ROOT + '/common/app');
     const config = require(ROOT + '/common/config');
     const passkeyPolicy = require(ROOT + '/common/passkey_policy');
@@ -275,50 +256,64 @@ function childMain() {
             .update(nodeCrypto.randomBytes(32).toString('base64url'))
             .digest('base64url'),
           code_challenge_method: 'S256' }).toString());
-      const screen = await b.go('GET', String(start.headers.location || ''));
-      return { b: b, screen: screen };
+      // A STATIC PAGE SINCE #571: its shell, and its view.
+      const opened = await authnScreen.open({ port: port, jar: b.jar,
+        at: String(start.headers.location || '') });
+      return { b: b, screen: opened.shell, opened: opened,
+               view: opened.view || {} };
     };
     // The password screen's first step: passwordless (`webauthn_only`) or a
     // password, then the passkey page it draws.
     const firstStep = async function (name, passwordless) {
       const s = await screenFor();
-      const form = hiddenFields(s.screen.text);
-      form.username = name;
-      form.password = passwordless ? '' : PASSWORD;
-      if (passwordless) {
-        form.webauthn_only = '1';
-      }
-      form.action = 'login';
-      const step = await s.b.go('POST', '/authn/login', { form: form });
-      return { s: s, step: step,
-               // From the form, or — on the per-passkey choice, which draws
-               // no form (#534) — from its links.
-               mfaId: decodeURIComponent(
-                 (step.text.match(/name="mfa_id" value="([^"]+)"/) ||
-                  step.text.match(/[?]mfa=([^&"]+)/) || [])[1] || '') };
+      // The step's page, which the act names (#571).
+      const step = await authnScreen.follow({ port: port, jar: s.b.jar,
+        opened: s.opened, fields: { action: 'login', username: name,
+          password: passwordless ? '' : PASSWORD,
+          webauthn_only: passwordless ? '1' : '' } });
+      // The step's page is the sign-in surface's since #572: its view.
+      return { s: s, step: step, mfaId: step.id };
+    };
+    // A STEP'S ANSWER READ AS THE FORM'S WAS (#572): `redirect` as its 303
+    // with `location`; a refusal at its status (400), the sentence its text.
+    const formLike = function (a) {
+      const loc = String(a.location || '');
+      const goes = a.next === 'redirect' || a.next === 'mfa' ||
+        (a.next === 'refused' && !!loc);
+      return { status: goes ? 303 : a.apiStatus,
+               headers: goes ? { location: loc } : {},
+               text: (a.errors || []).length ? a.errors.join(' ')
+                                             : String(a.text || ''),
+               answer: a };
+    };
+    // The passkey step's ceremony (#572): armed by `…/webauthn/options`,
+    // made by the test's authenticator, sent to `…/webauthn`.
+    const ceremony = async function (f, make) {
+      const done = await authnScreen.passkeyStep({ port: port,
+        jar: f.s.b.jar, opened: f.step }, make);
+      return formLike(done.answer);
     };
     const register = async function (name, key) {
       const f = await firstStep(name, true);
-      return f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'create',
-        credential: JSON.stringify(key.register(
-          dataAttribute(f.step.text, 'challenge'),
-          dataAttribute(f.step.text, 'userid'))) } });
+      return ceremony(f, function (c) {
+        return key.register(c.challenge, c.user.id);
+      });
     };
     const signIn = async function (name, key, passwordless) {
       const f = await firstStep(name, passwordless);
-      return f.s.b.go('POST', '/authn/webauthn', { form: {
-        mfa_id: f.mfaId, mode: 'get',
-        credential: JSON.stringify(key.assert(
-          dataAttribute(f.step.text, 'challenge', 'wa-data'))) } });
+      return ceremony(f, function (c) {
+        return key.assert(c.challenge);
+      });
     };
     const usernameless = async function (key) {
       const s = await screenFor();
-      const form = hiddenFields(s.screen.text);
-      form.action = 'passkey';
-      form.passkey_credential = JSON.stringify(key.assert(
-        dataAttribute(s.screen.text, 'challenge', 'wa-passkey')));
-      return s.b.go('POST', '/authn/login', { form: form });
+      // Armed and sent as the screen's page does (#571).
+      const armed = await authnScreen.passkeyOptions({ port: port,
+        jar: s.b.jar, opened: s.opened });
+      return authnScreen.act({ port: port, jar: s.b.jar, opened: s.opened,
+        path: '/authn-api/pending/' + encodeURIComponent(s.opened.id) +
+              '/passkey',
+        body: { credential: JSON.stringify(key.assert(armed.challenge)) } });
     };
     const redirected = function (r) {
       return r.status === 302 || r.status === 303;
@@ -339,16 +334,30 @@ function childMain() {
     const twos = keysFor('pkg-two', 2, 'primary');
     const fives = keysFor('pkg-five', 5, 'primary');
     const daves = keysFor('pkg-dave', 2, 'mfa');
-    const allowOf = function (html) {
-      const v = dataAttribute(html, 'allow', 'wa-data');
-      return v ? v.split(',') : [];
+    // THE CEREMONY A STEP ARMS (#572: `POST …/webauthn/options`, refused
+    // while a passkey is still to be chosen): the keys it allows, or null
+    // where it arms none.
+    const allowOf = async function (f, key) {
+      const armed = await authnScreen.stepAct({ port: port, jar: f.s.b.jar,
+        opened: f.step, op: 'webauthn/options',
+        body: key ? { key: key } : {} });
+      return armed.apiStatus === 200 && armed.json
+        ? (armed.json.allow || []) : null;
     };
-    const choicesOf = function (html) {
-      const list = /<ul id="wa-choices">([\s\S]*?)<\/ul>/.exec(html);
-      return list ? (list[1].match(/<li>/g) || []).length : 0;
+    // The passkeys the page offers one by one (#534), off its view.
+    const choicesOf = function (f) {
+      const w = (f.step && f.step.view && f.step.view.webauthn) || {};
+      return (w.choices || []).length;
+    };
+    // The page again for one passkey chosen (`?key=`), as its link draws it.
+    const chosen = async function (f, key) {
+      const opened = await authnScreen.openStep({ port: port,
+        jar: f.s.b.jar, at: '/authn/webauthn?mfa=' +
+          encodeURIComponent(f.mfaId) + '&key=' + encodeURIComponent(key) });
+      return { s: f.s, step: opened, mfaId: f.mfaId };
     };
     const same = function (a, b) {
-      return JSON.stringify(a.slice().sort()) ===
+      return !!a && JSON.stringify(a.slice().sort()) ===
              JSON.stringify(b.slice().sort());
     };
 
@@ -356,52 +365,54 @@ function childMain() {
     let f1 = await firstStep('pkg-one', true);
     let f2 = await firstStep('pkg-two', true);
     let f5 = await firstStep('pkg-five', true);
-    note(same(allowOf(f1.step.text), ones) &&
-         same(allowOf(f2.step.text), twos) &&
-         same(allowOf(f5.step.text), fives) &&
-         !choicesOf(f2.step.text) && !choicesOf(f5.step.text),
+    let a1 = await allowOf(f1);
+    let a2 = await allowOf(f2);
+    let a5 = await allowOf(f5);
+    note(same(a1, ones) && same(a2, twos) && same(a5, fives) &&
+         !choicesOf(f2) && !choicesOf(f5),
          '1. ON (the default): one ceremony listing every key, for one, two ' +
-         'and five', JSON.stringify([allowOf(f2.step.text).length,
-                                     allowOf(f5.step.text).length]));
+         'and five', JSON.stringify([(a2 || []).length, (a5 || []).length]));
 
     // 2. Off.
     policy({ aggregateDevices: false });
     f1 = await firstStep('pkg-one', true);
     f2 = await firstStep('pkg-two', true);
     f5 = await firstStep('pkg-five', true);
-    note(same(allowOf(f1.step.text), ones) && !choicesOf(f1.step.text),
+    a1 = await allowOf(f1);
+    note(same(a1, ones) && !choicesOf(f1),
          '2a. OFF, one key is still one ceremony', f1.step.text.slice(0, 200));
-    note(choicesOf(f2.step.text) === 2 && choicesOf(f5.step.text) === 5 &&
-         !/id="wa-data"/.test(f5.step.text) &&
-         /Key 3/.test(f5.step.text),
-         '2b. two and five are a choice: a link per key, by its name, and ' +
+    a5 = await allowOf(f5);
+    note(choicesOf(f2) === 2 && choicesOf(f5) === 5 && a5 === null &&
+         f5.step.view.webauthn.choices.some(function (c) {
+           return c.name === 'Key 3';
+         }),
+         '2b. two and five are a choice: one per key, by its name, and ' +
          'no ceremony until one is chosen',
-         choicesOf(f2.step.text) + ' ' + choicesOf(f5.step.text));
+         choicesOf(f2) + ' ' + choicesOf(f5));
 
     // 3. Chosen.
-    const pick = await f5.s.b.go('GET', '/authn/webauthn?mfa=' +
-      encodeURIComponent(f5.mfaId) + '&key=' + encodeURIComponent(fives[3]));
-    note(pick.status === 200 && same(allowOf(pick.text), [fives[3]]) &&
-         /choose another/.test(pick.text) && /Using <strong>Key 3/.test(
-           pick.text),
+    const pick = await chosen(f5, fives[3]);
+    const pickAllow = await allowOf(pick, fives[3]);
+    const named = (pick.step.view && pick.step.view.webauthn &&
+                   pick.step.view.webauthn.chosen) || {};
+    note(pick.step.status === 200 && same(pickAllow, [fives[3]]) &&
+         named.name === 'Key 3' && !choicesOf(pick),
          '3a. a chosen key draws the ceremony naming only it, with a way ' +
-         'back', pick.status + ' ' + JSON.stringify(allowOf(pick.text)) +
-           ' ' + pick.text.slice(0, 300));
-    const stray = await f5.s.b.go('GET', '/authn/webauthn?mfa=' +
-      encodeURIComponent(f5.mfaId) + '&key=' + encodeURIComponent(twos[0]));
-    note(stray.status === 200 && choicesOf(stray.text) === 5 &&
-         !/id="wa-data"/.test(stray.text),
+         'back', pick.step.status + ' ' + JSON.stringify(pickAllow) +
+           ' ' + pick.step.text.slice(0, 300));
+    const stray = await chosen(f5, twos[0]);
+    note(stray.step.status === 200 && choicesOf(stray) === 5 &&
+         (await allowOf(stray, twos[0])) === null,
          '3b. a key that is not this person\'s is not a choice: the list ' +
-         'again', stray.status);
+         'again', stray.step.status);
 
     // 4. The second-factor step.
     const fd = await firstStep('pkg-dave', false);
-    const dpick = await fd.s.b.go('GET', '/authn/webauthn?mfa=' +
-      encodeURIComponent(fd.mfaId) + '&key=' + encodeURIComponent(daves[1]));
-    note(choicesOf(fd.step.text) === 2 &&
-         same(allowOf(dpick.text), [daves[1]]),
+    const dpick = await chosen(fd, daves[1]);
+    const dAllow = await allowOf(dpick, daves[1]);
+    note(choicesOf(fd) === 2 && same(dAllow, [daves[1]]),
          '4. the second-factor step follows the same rule',
-         choicesOf(fd.step.text) + ' ' + JSON.stringify(allowOf(dpick.text)));
+         choicesOf(fd) + ' ' + JSON.stringify(dAllow));
     passkeyPolicy.reset('default');
     server.close();
   })().catch(function (e) {

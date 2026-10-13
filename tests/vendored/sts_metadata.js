@@ -98,9 +98,8 @@ async function signInToTheConsole() {
 // mock's own inventions for the benefit of tests and the debugger's panes. A
 // reader who mistook one for a standard endpoint would go looking for it in a
 // specification that does not mention it.
-const NON_SPEC_PATHS = ["/oid4vci/last_request", "/oid4vci/notification/:id",
-                        "/oid4vp/result/:state", "/admin/sts-metadata",
-                            "/healthcheck"];
+// (The issuer's two readbacks and `/oid4vp/result/:state` left on #594.)
+const NON_SPEC_PATHS = ["/admin/sts-metadata", "/healthcheck"];
 
 async function theDocumentIsServed(consoleClient) {
   log.debug("Entering theDocumentIsServed().");
@@ -119,12 +118,21 @@ async function theDocumentIsServed(consoleClient) {
     (doc && doc.endpoints ? doc.endpoints.length : "none"));
   assert.ok(Array.isArray(doc.specifications) && doc.specifications.length > 10,
     "and the specifications it implements.");
-  assert.strictEqual(doc.testDouble, true,
-    "it must say it is a test double. A page describing this service as an " +
-        "implementation of " +
-    "twenty specifications, without saying it checks no passwords and " +
-        "validates no access tokens, " +
-    "would be the most misleading thing in the repository.");
+  // `testDouble` FOLLOWS THE MODE (#543's review): it was the literal `true`
+  // and said so in product mode too, where passwords are verified. So the
+  // mode is asked of the service (`GET /admin-api/mode`, the console's
+  // Server mode page) rather than assumed.
+  const modeAnswer = await consoleClient.get("/admin/mode");
+  assert.ok(modeAnswer.status === 200 && modeAnswer.body &&
+            typeof modeAnswer.body.isProduct === "boolean",
+            "GET /admin-api/mode should answer 200 with isProduct; got " +
+            modeAnswer.status);
+  assert.strictEqual(doc.testDouble, !modeAnswer.body.isProduct,
+    "in development mode it must say it is a test double: a page " +
+    "describing this service as an implementation of twenty " +
+    "specifications, without saying it checks no passwords and validates " +
+    "no access tokens, would be the most misleading thing in the " +
+    "repository. In product mode, which checks both, it must not.");
 
   // THE ADDRESS ANSWERS THE CONSOLE'S DOCUMENT, as HTML: the static console
   // (#446) — a whole document that loads its one script from this origin.
@@ -396,9 +404,9 @@ function specificationsAreHonest(doc) {
     ids.add(s.id);
     // The coverage note is the honest part. "full" is allowed, but a bare word
     // is not: what is missing has to be said, or the list overstates.
-    assert.ok(/^(full|partial|mock)\b/.test(s.coverage),
+    assert.ok(/^(full|partial|minimal)\b/.test(s.coverage),
       s.id + ' should say how far it goes, starting "full", "partial" or ' +
-          '"mock": "' +
+          '"minimal": "' +
       s.coverage.slice(0, 60) + '"');
     assert.ok(s.coverage.length > 30,
       s.id + "'s coverage note should say what is and is not implemented.");
@@ -498,8 +506,8 @@ async function theMethodsShownActuallyAnswer(doc) {
       // than a tidying one. This check asks whether THIS service's router has
       // a handler at the path its own index advertises, and a 3xx IS that
       // handler answering; following it asks the same question of whoever the
-      // Location names, which is a different service. `/issuer/offer` is the
-      // case that showed it — it 302s to the wallet at `oid4vp.walletUrl` — so
+      // Location names, which is a different service. `/issuer/offer` (gone
+      // with #594) was the case that showed it — it 302'd to the wallet — so
       // with fetch's default redirect handling this probe left the mock
       // altogether and the verdict came to rest on the debugger's client being
       // up on port 3000. Against the mock repository's own stack, which is one
@@ -539,6 +547,44 @@ async function theMethodsShownActuallyAnswer(doc) {
 // The index must not omit the endpoints this service's OTHER documents
 // advertise. Those are discovered by clients, so an index that missed one would
 // be missing exactly the endpoints that matter most.
+// NO DEMONSTRATION IS LEFT (#591, #599). #585 served and listed them only in
+// development, behind a mark on the route and a `demo` flag on the row;
+// #592 to #598 moved every one out of the runtime, and #599 removed the
+// mark, the flag and the document's `demoMarkMismatches` with them. So no
+// row may carry a demonstration member, and a known few former paths are
+// asked directly, since a path the page does not list is a path the method
+// check above never calls.
+async function noDemonstrationIsLeft(doc) {
+  log.debug("Entering noDemonstrationIsLeft().");
+  log.info("=== No demonstration endpoint ===");
+  const flagged = doc.endpoints.filter(function (e) {
+    return Object.prototype.hasOwnProperty.call(e, "demo");
+  });
+  assert.deepStrictEqual(flagged.map(function (e) { return e.path; }), [],
+    "no endpoint row may carry a demonstration flag: the runtime ships no " +
+    "demonstration (#591, #599).");
+  assert.ok(!Object.prototype.hasOwnProperty.call(doc, "demoMarkMismatches"),
+    "the document reports no demonstration mark: there is none (#599).");
+  const probes = [["GET", "/saml2/sp"], ["GET", "/issuer"],
+                  ["GET", "/oid4vp/verifier"], ["GET", "/tls"],
+                  ["POST", "/ssf/receive"], ["GET", "/krb5/principals"],
+                  ["GET", "/krb5/service"], ["GET", "/spnego"],
+                  ["GET", "/spnego/protected"]];
+  for (const probe of probes) {
+    const r = await common.httpJson(issuerBase + probe[1],
+                                    { method: probe[0], redirect: "manual" });
+    const unrouted = r.status === 404 &&
+      new RegExp("Cannot " + probe[0] + " ").test(String(r.raw || "")
+        .replace(/<[^>]*>/g, ""));
+    assert.ok(unrouted, probe[0] + " " + probe[1] + " should answer as an " +
+              "unrouted path (Express's own 404, #591); " +
+              "got " + r.status + " " + String(r.raw || "").slice(0, 80));
+  }
+  log.info("[demos] OK — none listed, and " + probes.length + " probed " +
+           "answer as unrouted paths.");
+  log.debug("Leaving noDemonstrationIsLeft().");
+}
+
 async function theAdvertisedEndpointsAreAllListed(doc) {
   log.debug("Entering theAdvertisedEndpointsAreAllListed().");
   log.info("=== Against the service's own discovery documents ===");
@@ -658,6 +704,7 @@ async function test() {
   await theMethodsShownActuallyAnswer(doc);
   await pathsAreFollowableLinks(doc, served.page);
   await theAdvertisedEndpointsAreAllListed(doc);
+  await noDemonstrationIsLeft(doc);
   log.info("Test completed successfully.");
   log.debug("Leaving test().");
 }

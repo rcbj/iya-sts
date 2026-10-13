@@ -97,6 +97,10 @@ import mode = require('../common/mode');
 import persistence = require('../persistence/persistence');
 import minted = require('../persistence/persistence_minted');
 import InstanceSlot = require('../common/instance_slot');
+// THE CONSOLE PROSE IN THE READER'S LANGUAGE (#543): `harvest()` collects
+// this module's tables for the encryption namespace. Safe at the top: this
+// module is built at 18b, long after what server_prose.ts requires.
+import serverProse = require('../common/server_prose');
 
 type Req = any;
 type Res = any;
@@ -348,6 +352,20 @@ const DATA_CLASSES = [
          'returned by `/admin-api`.'
   },
   {
+    label: 'scim-client-credential',
+    what: 'An outbound SCIM client’s credentials (#552) — ' +
+          '`scimClientPassword`, `scimClientOAuthClientSecret` and ' +
+          '`scimClientTlsPrivateKey`: what this service authenticates to a ' +
+          'remote SCIM service provider, or its token endpoint, with',
+    where: 'attributes on the client’s application entry under ' +
+           '`ou=applications`',
+    sealed: true,
+    why: 'Whoever holds them can create, change and delete accounts at the ' +
+         'remote identity provider. Sealed at rest when keys persist and ' +
+         'WITHHELD from every reader, as a secret destination’s credential ' +
+         'is: opened only for the request that uses it.'
+  },
+  {
     label: 'person-private-key',
     what: 'The assertion signing key pairs `/admin/pki` issues to a PERSON — ' +
           '`stsAssertionPrivateKey` (2026-09-11) and, for RFC 7522, ' +
@@ -481,6 +499,125 @@ const DATA_CLASSES = [
   }
 ];
 
+// ---------------------------------------------------------------------------
+// WHAT `encryptionJson()` SAYS BESIDES THE TABLE, as a table (#543 phase 2b):
+// the page's sentences, so that the encryption namespace can carry them and
+// `common/server_prose.ts` refill an answer to `GET /admin-api/encryption`
+// in a console reader's language. Each is the sentence written inline until
+// #543, byte for byte; `keyPersisted` and `keyEphemeral` are the two the key's
+// `note` chooses between. The backquotes are kept: the renderer draws these
+// RAW, and a translator is told to keep markup.
+// ---------------------------------------------------------------------------
+const NOTES = Object.freeze({
+  what: 'What this service encrypts AT REST, with which key, under which ' +
+    'algorithm, and how much of it has happened in this process.',
+  keyPersisted: 'The key-encryption key is read from the provider above at ' +
+    'startup, before the listener binds. This service never ' +
+    'generates it and never writes it down, and a service that ' +
+    'cannot read it does NOT start — it does not generate a ' +
+    'replacement and carry on, because that would stop every token ' +
+    'it has ever issued from verifying, silently, at somebody else’s ' +
+    'relying party.',
+  keyEphemeral: 'This service is in development mode, so nothing it holds ' +
+    'outlives the process and the key-encryption key is EPHEMERAL: ' +
+    'generated per run, never written down, and used only so that ' +
+    'the request-worker pool can share minted rows within one run. ' +
+    'Sealing a directory attribute under it would be WORSE than the ' +
+    'clear — the entry survives a restart in the `ldif` and ' +
+    '`postgres` stores and the key does not, so the value would come ' +
+    'back as permanent garbage. That is why the test at every write ' +
+    'site is `keystore.persists()` rather than `keystore.sealed()`.',
+  algorithmNote:
+    'AES-256-GCM and deliberately not CBC: GCM is AUTHENTICATED, so a ' +
+    'ciphertext somebody altered fails to decrypt instead of yielding a ' +
+    'subtly different key. A signing key that decrypted to the wrong ' +
+    'bytes would produce signatures nothing can verify, and the failure ' +
+    'would surface at a relying party as "the signature is invalid" — as ' +
+    'far from the cause as it is possible to get. The key-encryption key ' +
+    'NEVER ENCRYPTS A VALUE (#391): every value is encrypted under a ' +
+    'data encryption key — 256 random bits, one per realm per data ' +
+    'class — and the data encryption keys are what the key-encryption ' +
+    'key wraps. A process unwraps each once and holds it, so a key ' +
+    'held in a key management service is asked per data key, never per ' +
+    'value, and rotating the key-encryption key re-wraps a handful of ' +
+    'keys rather than re-encrypting the store.',
+  realms: 'THERE IS ONE KEY-ENCRYPTION KEY FOR THIS SERVICE, NOT ONE PER ' +
+    'TRUST REALM, AND A DATA ENCRYPTION KEY PER REALM PER DATA CLASS ' +
+    '(#391). No data encryption key is shared between realms, so a ' +
+    'value of one realm is never sealed under a key another realm\'s ' +
+    'values are. But every data encryption key is wrapped under the ' +
+    'one key-encryption key, so a realm is NOT an independent ' +
+    'boundary at rest: whoever can read that key can unwrap every ' +
+    'realm\'s data keys, and rotating it re-wraps every realm\'s at ' +
+    'once.',
+  storage:
+    'EVERYTHING NOT IN THE TABLE ABOVE IS PLAINTEXT IN THE STORE — the ' +
+    'directory entries, the groups, the applications, the realms and ' +
+    'the settings, and in development mode very nearly all of it. This ' +
+    'service seals credentials and private keys and nothing else, ' +
+    'deliberately: column-level encryption leaves the plaintext in the ' +
+    'write-ahead log, in temporary files when a sort spills, in a ' +
+    'pg_dump, on replicas and in query logs, so the layer that covers ' +
+    'a whole store belongs UNDER the database rather than inside it. ' +
+    'That layer is the operator\'s — LUKS or an encrypted ZFS dataset ' +
+    'under PGDATA, a cloud disk with a customer-managed key, or one of ' +
+    'the PostgreSQL forks that has TDE, since the community build has ' +
+    'none. docs/encryption-at-rest.md is this repository\'s write-up ' +
+    'of the options.',
+  keyResidency:
+    'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on ' +
+    'the same unencrypted volume as the store hands both halves to ' +
+    'whoever takes the volume; that is fine for a development stack ' +
+    'and is why the `file` provider is the default, and it is not a ' +
+    'deployment. keys.kekProvider selects a secret store instead.',
+  accountingNote: 'Counted at the ONE funnel both operations pass through — ' +
+    '`crypto.js`’s `encryptWithDek()` and `decryptWithDek()`, with ' +
+    'the data encryption keys’ own wraps and unwraps under ' +
+    '`data-keys` — ' +
+    'rather than at the call sites, because a total assembled from call ' +
+    'sites is wrong the first time somebody adds another one and is ' +
+    'wrong SILENTLY. The breakdown below is by a LABEL each call site ' +
+    'passes; a caller that passes none is still counted, under ' +
+    '`(unlabelled)`. THESE ARE PROCESS-WIDE AND NOT PER REALM — a ' +
+    'key-encryption key belongs to the process, so partitioning the ' +
+    'count by realm would be counting the realm a request happened to be ' +
+    'in — and they are in memory, so a restart is how you get an empty ' +
+    'one.',
+  failuresNote: 'A FAILURE IS ALMOST ALWAYS THE WRONG KEY-ENCRYPTION KEY — a ' +
+    'rotated secret, or a store carried between deployments — and it ' +
+    'is its own figure rather than being folded into the decryptions, ' +
+    'because nine hundred decryptions and nine hundred decryptions with ' +
+    'four hundred failures are very different reports. What happens next ' +
+    'depends on what was being read: a signing key that will not open is ' +
+    'FATAL at startup, a session row is dropped, and a second factor ' +
+    'that will not open makes that person unable to sign in until an ' +
+    'operator clears the enrolment — never silently absent, which would ' +
+    'remove a security control.',
+  noSamples:
+    'Neither a sealed value nor an opened one appears anywhere on this ' +
+    'page or in this document. A sealed value is a private key, a shared ' +
+    'secret or somebody’s recovery codes, and printing either half of ' +
+    'one would hand over exactly what the sealing exists to protect. ' +
+    '/admin/ldap/directory is where a `$aesgcm$…` envelope can be ' +
+    'seen, under a heading that says it is the store as the directory ' +
+    'sees it.',
+  storeNote: 'Sealing protects what is WRITTEN DOWN, so what the store holds ' +
+    'decides how much of the table above is reachable by anybody at ' +
+    'all. A `memory` store writes nothing, so nothing in it survives ' +
+    'this process to be read.',
+  dataKeysNote:
+    'One data encryption key per realm and data class seals every ' +
+    'value of that class; the key-encryption key only wraps the data ' +
+    'keys. A ROTATED data key is superseded: it still opens what it ' +
+    'sealed, nothing new is sealed under it, and the re-encryption ' +
+    'job re-seals what it sealed and then destroys it. A DERIVED key ' +
+    'is made from the key-encryption key per run where nothing ' +
+    'outlives the process, and is never stored or rotated.'
+});
+
+// The routes whose answers carry the encryption namespace's prose (#543).
+const PROSE_ROUTES = ['/admin-api/encryption'];
+
 /**
  * Monitoring → Encryption: what is encrypted in the store, with which key,
  * under which algorithm, and how much of it has happened.
@@ -490,6 +627,34 @@ class EncryptionAdmin {
    * See the module's `DATA_CLASSES`.
    */
   static readonly DATA_CLASSES = DATA_CLASSES;
+
+  /**
+   * The routes whose answers carry this module's prose (#543).
+   */
+  static readonly PROSE_ROUTES = PROSE_ROUTES;
+
+  /**
+   * Extracts the encryption namespace (#543 phase 2b): what each data class
+   * is and why it is or is not sealed, and the page's notes. A class's
+   * `where` is not harvested: most of them name a table, a row or an
+   * attribute, and a translated one would no longer say where to look.
+   *
+   * @returns key → English
+   */
+  static prose(): Record<string, string> {
+    helpers.log.debug("Entering EncryptionAdmin.prose().");
+    const harvest = serverProse.harvest;
+    // Keyed by position: a class's `label` is null for the ones that are
+    // not sealed, so it cannot name a row.
+    const out: Record<string, string> = Object.assign({},
+      harvest('encryption.classes', DATA_CLASSES.map(function (one) {
+        return { what: one.what, why: one.why };
+      }), ['what', 'why']),
+      harvest('encryption.notes', NOTES, Object.keys(NOTES)));
+    helpers.log.debug("Leaving EncryptionAdmin.prose(). " +
+                      Object.keys(out).length);
+    return out;
+  }
 
   /**
    * The four acts of `POST /admin/encryption/data-keys` and
@@ -593,8 +758,7 @@ class EncryptionAdmin {
     });
 
     const out = {
-      what: 'What this service encrypts AT REST, with which key, under which ' +
-            'algorithm, and how much of it has happened in this process.',
+      what: NOTES.what,
       mode: mode.current(),
       // ---------------------------------------------------------------------
       // THE KEY. `keystore.persists()` and `keystore.sealed()` are DIFFERENT
@@ -618,40 +782,11 @@ class EncryptionAdmin {
         providerKnown: !!report.kek.known,
         where: report.kek.where,
         providers: report.kek.providers,
-        note: report.persisting
-          ? 'The key-encryption key is read from the provider above at ' +
-            'startup, before the listener binds. This service never ' +
-            'generates it and never writes it down, and a service that ' +
-            'cannot read it does NOT start — it does not generate a ' +
-            'replacement and carry on, because that would stop every token ' +
-            'it has ever issued from verifying, silently, at somebody else’s ' +
-            'relying party.'
-          : 'This service is in development mode, so nothing it holds ' +
-            'outlives the process and the key-encryption key is EPHEMERAL: ' +
-            'generated per run, never written down, and used only so that ' +
-            'the request-worker pool can share minted rows within one run. ' +
-            'Sealing a directory attribute under it would be WORSE than the ' +
-            'clear — the entry survives a restart in the `ldif` and ' +
-            '`postgres` stores and the key does not, so the value would come ' +
-            'back as permanent garbage. That is why the test at every write ' +
-            'site is `keystore.persists()` rather than `keystore.sealed()`.'
+        note: report.persisting ? NOTES.keyPersisted : NOTES.keyEphemeral
       },
       algorithm: crypto.KEK_PARAMETERS,
       dataKeys: self.dataKeysJson(query || {}),
-      algorithmNote:
-        'AES-256-GCM and deliberately not CBC: GCM is AUTHENTICATED, so a ' +
-        'ciphertext somebody altered fails to decrypt instead of yielding a ' +
-        'subtly different key. A signing key that decrypted to the wrong ' +
-        'bytes would produce signatures nothing can verify, and the failure ' +
-        'would surface at a relying party as "the signature is invalid" — as ' +
-        'far from the cause as it is possible to get. The key-encryption key ' +
-        'NEVER ENCRYPTS A VALUE (#391): every value is encrypted under a ' +
-        'data encryption key — 256 random bits, one per realm per data ' +
-        'class — and the data encryption keys are what the key-encryption ' +
-        'key wraps. A process unwraps each once and holds it, so a key ' +
-        'held in a key management service is asked per data key, never per ' +
-        'value, and rotating the key-encryption key re-wraps a handful of ' +
-        'keys rather than re-encrypting the store.',
+      algorithmNote: NOTES.algorithmNote,
       // ---------------------------------------------------------------------
       // THE TWO LIMITS OF EVERYTHING ABOVE (2026-09-12), and they are on the
       // JSON as well as on the page for `pki_admin.ts`'s `revocationNote`
@@ -668,39 +803,12 @@ class EncryptionAdmin {
         // can assert it rather than matching on a sentence.
         perRealmKey: false,
         perRealmDataKey: true,
-        realms:
-          'THERE IS ONE KEY-ENCRYPTION KEY FOR THIS SERVICE, NOT ONE PER ' +
-          'TRUST REALM, AND A DATA ENCRYPTION KEY PER REALM PER DATA CLASS ' +
-          '(#391). No data encryption key is shared between realms, so a ' +
-          'value of one realm is never sealed under a key another realm\'s ' +
-          'values are. But every data encryption key is wrapped under the ' +
-          'one key-encryption key, so a realm is NOT an independent ' +
-          'boundary at rest: whoever can read that key can unwrap every ' +
-          'realm\'s data keys, and rotating it re-wraps every realm\'s at ' +
-          'once.',
-        storage:
-          'EVERYTHING NOT IN THE TABLE ABOVE IS PLAINTEXT IN THE STORE — the ' +
-          'directory entries, the groups, the applications, the realms and ' +
-          'the settings, and in development mode very nearly all of it. This ' +
-          'service seals credentials and private keys and nothing else, ' +
-          'deliberately: column-level encryption leaves the plaintext in the ' +
-          'write-ahead log, in temporary files when a sort spills, in a ' +
-          'pg_dump, on replicas and in query logs, so the layer that covers ' +
-          'a whole store belongs UNDER the database rather than inside it. ' +
-          'That layer is the operator\'s — LUKS or an encrypted ZFS dataset ' +
-          'under PGDATA, a cloud disk with a customer-managed key, or one of ' +
-          'the PostgreSQL forks that has TDE, since the community build has ' +
-          'none. docs/encryption-at-rest.md is this repository\'s write-up ' +
-          'of the options.',
+        realms: NOTES.realms,
+        storage: NOTES.storage,
         // The one deployment mistake that makes everything above decorative,
         // and the one this repository's own compose stack invites by mounting a
         // key file beside the database volume.
-        keyResidency:
-          'AND THE KEY MUST NOT LIVE ON THE DISK IT PROTECTS. A key file on ' +
-          'the same unencrypted volume as the store hands both halves to ' +
-          'whoever takes the volume; that is fine for a development stack ' +
-          'and is why the `file` provider is the default, and it is not a ' +
-          'deployment. keys.kekProvider selects a secret store instead.'
+        keyResidency: NOTES.keyResidency
       },
       store: store,
       classes: classes,
@@ -719,42 +827,12 @@ class EncryptionAdmin {
           ? new Date(accounting.lastAt).toISOString() : null,
         labels: accounting.labels
       },
-      accountingNote:
-        'Counted at the ONE funnel both operations pass through — ' +
-        '`crypto.js`’s `encryptWithDek()` and `decryptWithDek()`, with ' +
-        'the data encryption keys’ own wraps and unwraps under ' +
-        '`data-keys` — ' +
-        'rather than at the call sites, because a total assembled from call ' +
-        'sites is wrong the first time somebody adds another one and is ' +
-        'wrong SILENTLY. The breakdown below is by a LABEL each call site ' +
-        'passes; a caller that passes none is still counted, under ' +
-        '`(unlabelled)`. THESE ARE PROCESS-WIDE AND NOT PER REALM — a ' +
-        'key-encryption key belongs to the process, so partitioning the ' +
-        'count by realm would be counting the realm a request happened to be ' +
-        'in — and they are in memory, so a restart is how you get an empty ' +
-        'one.',
-      failuresNote:
-        'A FAILURE IS ALMOST ALWAYS THE WRONG KEY-ENCRYPTION KEY — a ' +
-        'rotated secret, or a store carried between deployments — and it ' +
-        'is its own figure rather than being folded into the decryptions, ' +
-        'because nine hundred decryptions and nine hundred decryptions with ' +
-        'four hundred failures are very different reports. What happens next ' +
-        'depends on what was being read: a signing key that will not open is ' +
-        'FATAL at startup, a session row is dropped, and a second factor ' +
-        'that will not open makes that person unable to sign in until an ' +
-        'operator clears the enrolment — never silently absent, which would ' +
-        'remove a security control.',
+      accountingNote: NOTES.accountingNote,
+      failuresNote: NOTES.failuresNote,
       // NO CIPHERTEXT AND NO PLAINTEXT IS ON THIS PAGE, said in the JSON as
       // well as in the markup, because a machine reading this may be about to
       // ask where the samples are.
-      noSamples:
-        'Neither a sealed value nor an opened one appears anywhere on this ' +
-        'page or in this document. A sealed value is a private key, a shared ' +
-        'secret or somebody’s recovery codes, and printing either half of ' +
-        'one would hand over exactly what the sealing exists to protect. ' +
-        '/admin/ldap/directory is where a `$aesgcm$…` envelope can be ' +
-        'seen, under a heading that says it is the store as the directory ' +
-        'sees it.'
+      noSamples: NOTES.noSamples
     };
     log.debug('Leaving EncryptionAdmin.encryptionJson(). ' +
               out.accounting.operations + ' operation(s).');
@@ -800,10 +878,7 @@ class EncryptionAdmin {
       // of one tick.
       fellBack: !!active && active !== setting,
       persistsMinted: mintedOn,
-      note: 'Sealing protects what is WRITTEN DOWN, so what the store holds ' +
-            'decides how much of the table above is reachable by anybody at ' +
-            'all. A `memory` store writes nothing, so nothing in it survives ' +
-            'this process to be read.'
+      note: NOTES.storeNote
     };
   }
 
@@ -864,13 +939,7 @@ class EncryptionAdmin {
       lastCounted: counted ? new Date(counted).toISOString() : null,
       keys: paged.shown,
       paging: adminViews().pagingJson(paged.paging),
-      note: 'One data encryption key per realm and data class seals every ' +
-            'value of that class; the key-encryption key only wraps the data ' +
-            'keys. A ROTATED data key is superseded: it still opens what it ' +
-            'sealed, nothing new is sealed under it, and the re-encryption ' +
-            'job re-seals what it sealed and then destroys it. A DERIVED key ' +
-            'is made from the key-encryption key per run where nothing ' +
-            'outlives the process, and is never stored or rotated.'
+      note: NOTES.dataKeysNote
     };
     Object.defineProperty(out, 'pagingRaw',
                           { value: paged.paging, enumerable: false });
@@ -1017,6 +1086,8 @@ slot.buildNowUnlessDeferred();
 export = {
   registerRoutes: slot.forward('registerRoutes'),
   EncryptionAdmin: EncryptionAdmin,
+  PROSE_ROUTES: EncryptionAdmin.PROSE_ROUTES,
+  prose: EncryptionAdmin.prose,
   /**
    * Installs the instance the composition root built and runs its
    * wire step; a second install is refused.

@@ -27,11 +27,15 @@
 //      password, a hidden field or a secret) and the tab, and they are put
 //      back after for the same page and person, a different person's
 //      sign-in putting back nothing;
-//   6. an ID Token's `sub` is read from the token response.
+//   6. an ID Token's `sub` is read from the token response;
+//   7. the popup's request carries an OpenID Connect `nonce` derived from its
+//      PKCE verifier, and an ID Token without that nonce is refused: the
+//      waiting request is not sent (FAPI 1.0 requires the nonce).
 // ---------------------------------------------------------------------------
 
 delete process.env.CONFIG_FILE;
 
+const nodeCrypto = require('crypto');
 const ConsoleRuntime = require('../admin-ui/web_runtime');
 
 const log = require('bunyan').createLogger({
@@ -44,15 +48,34 @@ const ORIGIN = 'https://sts.example.com';
  * An unsigned JWT carrying a subject, as the token endpoint's ID Token.
  *
  * @param sub - the subject
+ * @param nonce - the nonce it carries, or nothing
  * @returns the compact JWT
  */
-function idTokenFor(sub) {
+function idTokenFor(sub, nonce) {
   log.debug("Entering idTokenFor().");
   const b64u = function (o) {
     return Buffer.from(JSON.stringify(o)).toString('base64url');
   };
+  const claims = { sub: sub };
+  if (nonce) {
+    claims.nonce = nonce;
+  }
   log.debug("Leaving idTokenFor().");
-  return b64u({ alg: 'ES256' }) + '.' + b64u({ sub: sub }) + '.sig';
+  return b64u({ alg: 'ES256' }) + '.' + b64u(claims) + '.sig';
+}
+
+/**
+ * The nonce a sign-in with this PKCE verifier sends, worked out here
+ * independently of `SpaClient.nonceFor()`.
+ *
+ * @param verifier - the PKCE verifier
+ * @returns the nonce
+ */
+function nonceOf(verifier) {
+  log.debug("Entering nonceOf().");
+  log.debug("Leaving nonceOf().");
+  return nodeCrypto.createHash('sha256').update('nonce:' + verifier)
+    .digest('base64url');
 }
 
 /**
@@ -94,9 +117,10 @@ function form(action, elements) {
  *
  * @param tokenSub - the `sub` the token endpoint's ID Token names
  * @param forms - the forms the page holds
+ * @param wrongNonce - whether the ID Token carries another sign-in's nonce
  * @returns `{ rt, env, calls, channels, opened, bar }`
  */
-function onAPage(tokenSub, forms) {
+function onAPage(tokenSub, forms, wrongNonce) {
   log.debug("Entering onAPage().");
   const calls = [];
   const channels = [];
@@ -155,11 +179,16 @@ function onAPage(tokenSub, forms) {
       calls.push({ url: String(url), init: init || {} });
       const empty = { get: function () { return ''; } };
       if (/\/oauth2\/token$/.test(String(url))) {
+        // THE NONCE IS ECHOED as the token endpoint echoes it: the one the
+        // request sent, which the runtime derived from this verifier.
+        const sent = new URLSearchParams(String((init && init.body) || ''));
+        const nonce = nonceOf(wrongNonce ? 'another sign-in'
+                                         : sent.get('code_verifier') || '');
         return { status: 200, headers: empty,
                  json: async function () {
                    return { access_token: 'fresh-at', expires_in: 300,
                             refresh_token: 'fresh-rt',
-                            id_token: idTokenFor(tokenSub) };
+                            id_token: idTokenFor(tokenSub, nonce) };
                  } };
       }
       // The API: refused while the token is the ended one.
@@ -337,6 +366,30 @@ async function run(t) {
   e.rt.restorePageState();
   t.check(other[0].elements[0].value === '',
           '5. a different person\'s sign-in puts nothing back');
+
+  // 7. The nonce: in the popup's request, derived from its verifier, and an
+  //    ID Token carrying another one refused with nothing sent.
+  t.check(!!(url && url.searchParams.get('nonce')),
+          '7. the popup\'s request carries a nonce', a.opened[0]);
+  const g = onAPage('urn:uuid:alice', [], true);
+  const held = g.rt.send('POST', ORIGIN + '/admin-api/users/' +
+                         'update-fields', { user: 'alice' });
+  await until(function () { return g.rt.reauth && g.rt.reauth.url; });
+  const gUrl = new URL(g.rt.reauth.url);
+  t.check(gUrl.searchParams.get('nonce') === nonceOf(g.rt.reauth.verifier),
+          '7. the nonce is the hash of this sign-in\'s verifier, under its ' +
+          'own label', g.rt.reauth.url);
+  await g.rt.onPopupAnswer({ state: g.rt.reauth.state, code: 'c3' });
+  const gBar = g.elements['reauth-bar'];
+  t.check(gBar && /nonce/.test(gBar.innerHTML) && g.rt.reauth &&
+          !g.calls.some(function (c) {
+            return /update-fields/.test(c.url) &&
+                   c.init.headers.Authorization === 'DPoP fresh-at';
+          }),
+          '7. an ID Token carrying another sign-in\'s nonce is refused, the ' +
+          'bar says why and the waiting request is not sent',
+          gBar && gBar.innerHTML);
+  void held;
   log.debug("Leaving run().");
 }
 

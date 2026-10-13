@@ -243,6 +243,27 @@ function childMain() {
                  inner.indexOf('id="' + id + '"') < at[4],
                'E. the Credentials tab holds the ' + id + ' sub-tab');
         });
+      // THE SUB-TAB BEING READ IS MARKED (#602): the stylesheet names each
+      // sub-tab's id, since a selector cannot compare a link's href with the
+      // id that is targeted — so every sub-tab link this page draws must be
+      // one it names. The Service account sub-tab was not, and never lit up.
+      const css = require(ROOT + '/admin-ui/admin').stylesheet();
+      const subLinks = [];
+      inner.replace(/<nav class="tabbar subbar"[^>]*>([\s\S]*?)<\/nav>/g,
+                    function (all, bar) {
+                      bar.replace(/href="#([^"]+)"/g, function (a, id) {
+                        subLinks.push(id);
+                        return a;
+                      });
+                      return all;
+                    });
+      const unmarked = subLinks.filter(function (id) {
+        return css.indexOf(':has(#' + id + ':target,#' + id + ' :target)' +
+                           '>.subbar a[href="#' + id + '"]') < 0;
+      });
+      note(subLinks.indexOf('ucred-service') >= 0 && unmarked.length === 0,
+           'E. every sub-tab of the person page is marked when it is read',
+           JSON.stringify({ subLinks: subLinks, unmarked: unmarked }));
       const writable = /action="\/admin\/users\/edit#ufg-name"/.test(inner);
       if (writable) {
         ['name', 'contact', 'organization', 'address', 'identity']

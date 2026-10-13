@@ -358,9 +358,10 @@ async function serviceHasSession(w, b) {
     stopAt: function (u) {
       return u.indexOf(PEER + "/peer/env.php") === 0;
     } });
-  const onScreen = kit.formsIn(walked.last.body).some(function (f) {
-    return "authn_id" in f.fields;
-  });
+  // THE SIGN-IN SCREEN IS ITS SHELL SINCE #571: a static page whose script
+  // is /authn/signin.js, and where the walk stops when it has no name.
+  const onScreen = /\/authn\/signin\.js/.test(String(walked.last &&
+                                                      walked.last.body || ""));
   log.debug("Leaving serviceHasSession(). " + !onScreen);
   return !onScreen;
 }

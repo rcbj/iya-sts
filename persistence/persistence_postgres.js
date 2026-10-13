@@ -697,7 +697,7 @@ const SCHEMA_OBJECTS = [
   'sts_cluster_windows (window_ends_at)' },
   // `sts_cluster_budgets` — A BUDGET SPENT AGAINST A LIMIT (#432 phase 5,
   // schema version 15): the running totals of a GNAP right's limits, kept per
-  // grant by the demonstration resource server. One `INSERT … ON CONFLICT DO
+  // grant by `gnap/gnap_spend.ts`. One `INSERT … ON CONFLICT DO
   // UPDATE … WHERE the new totals are within the limits` under the primary
   // key's row lock, so two nodes spending one budget at once cannot both pass
   // it. `amount` is millionths; `key` a digest; `expires_at` the end of the
@@ -1286,7 +1286,7 @@ const METRIC_PROBES = [
          'backend_start' },
 
   { id: 'locks', group: 'Activity', shape: 'rows',
-    what: 'Locks held and waited for, by mode. A waiting lock on a mock is ' +
+    what: 'Locks held and waited for, by mode. A waiting lock here is ' +
           'almost always this service contending with itself across the ' +
           'request-worker pool.',
     sql: 'SELECT mode, granted, count(*) AS count FROM pg_locks WHERE ' +
@@ -1497,6 +1497,44 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
 // socket has no TLS; postgres answers the TLS request on one with "N", and
 // the connection fails, which is the same refusal said by the server.
 //
+// **`verify-ca` AND `verify-full` VERIFY, WHATEVER THE SETTING SAYS (rcbj,
+// #543 round 2, 2026-10-12).** Until then the parameter was stripped and
+// `persistence.databaseTlsRejectUnauthorized` alone decided whether the
+// server's certificate was believed, so a string that said `verify-full`
+// and a setting left at its default (off) dialled an UNAUTHENTICATED
+// server while the string an operator wrote said the opposite — the very
+// "connection string says one thing, the client does another" shape #273
+// removed for encryption, left standing for authentication. Now the two
+// verify modes mean what libpq means by them:
+//
+//   * `verify-ca`   — the chain is verified against this process's trust
+//     anchors and the host name is NOT checked (libpq's verify-ca checks
+//     only that the certificate was issued by a trusted CA);
+//   * `verify-full` — the chain AND the host name are verified.
+//
+// For no sslmode, `require` and `prefer` the setting still decides, both
+// halves together, as it always did. The setting can only ADD verification
+// to those; it can never take it away from a verify mode. A verify mode
+// whose certificate does not verify is a connection `pg` refuses, and at
+// start that is `persistence.start()`'s fatal open, STS-STORE-0006, with
+// node's own reason ("self-signed certificate", "Hostname/IP does not match
+// certificate's altnames") in the message.
+//
+// **THE TRUST ANCHORS MAY BE THE DATABASE'S OWN (2026-10-12).** `ca`, the
+// PEM text of `persistence.databaseTlsCaFile` (`persistence.databaseTlsCa()`
+// reads and checks it), goes on the `ssl` option as node's `ca`, which
+// REPLACES the default trust store for this connection and no other — so
+// the compose stack's self-signed certificate is trusted by the database
+// pools and by nothing else this process dials. Empty leaves node's default
+// store (with NODE_EXTRA_CA_CERTS). It is text, so it crosses to the
+// directory bridge's thread as it is.
+//
+// `verify-ca` needs a `checkServerIdentity` that checks nothing, because
+// node verifies the host name whenever it verifies the chain. A function
+// cannot cross to a thread, so the directory bridge's options carry
+// `hostnameUnchecked` instead and `common/sync_query_thread.ts` puts the
+// function back (`bridgeConnection()`, below).
+//
 // A PURE FUNCTION with no log line, for `poolMax()`'s reason: this module's
 // logger arrives with create(). `refused` carries why a string cannot be
 // dialled, and each caller throws it, tagged, on its own logger.
@@ -1506,17 +1544,23 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
  * does.
  *
  * @param url - the connection string
- * @param verifyTls - whether the server's certificate is verified
- * @returns `{ connectionString, ssl, refused }`; `refused` is '' or why the
- * string is not dialled (it would be in the clear, or cannot be told)
+ * @param verifyTls - whether the server's certificate is verified where the
+ * string's `sslmode` does not decide it (none, `require`, `prefer`)
+ * @param [ca] - PEM text of the certificates trusted for this connection in
+ * place of node's default store, or '' for that store
+ * @returns `{ connectionString, ssl, refused, verifyChain, verifyHostname }`;
+ * `refused` is '' or why the string is not dialled (it would be in the
+ * clear, or cannot be told); `verifyChain` and `verifyHostname` say what is
+ * checked of the server's certificate
  */
-function dialOptions(url, verifyTls) {
+function dialOptions(url, verifyTls, ca) {
   const raw = String(url || '');
   if (/(^|[?&\s])sslmode\s*=\s*(disable|allow)\b/i.test(raw)) {
     return { connectionString: '', ssl: undefined,
              refused: 'its sslmode asks for a connection in the clear, ' +
                       'which this service never opens; use ' +
-                      'sslmode=require, or leave sslmode out' };
+                      'sslmode=require, or leave sslmode out',
+             verifyChain: false, verifyHostname: false };
   }
   let parsed = null;
   try {
@@ -1528,19 +1572,48 @@ function dialOptions(url, verifyTls) {
              refused: 'it is not a postgres:// URL (' +
                       (String((e && e.message) || e) || 'not a URL') +
                       '), so whether it would be dialled in the clear ' +
-                      'cannot be told; write it as a URL' };
+                      'cannot be told; write it as a URL',
+             verifyChain: false, verifyHostname: false };
   }
   if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
     return { connectionString: '', ssl: undefined,
              refused: 'it is not a postgres:// URL (' + parsed.protocol +
                       '), so whether it would be dialled in the clear ' +
-                      'cannot be told; write it as a URL' };
+                      'cannot be told; write it as a URL',
+             verifyChain: false, verifyHostname: false };
   }
+  // Read before it is stripped: the verify modes decide verification
+  // themselves (the header). Lower-cased as the refusal above matches.
+  const sslmode = String(parsed.searchParams.get('sslmode') || '')
+    .toLowerCase();
   parsed.searchParams.delete('sslmode');
+  const verifyChain = sslmode === 'verify-ca' || sslmode === 'verify-full' ||
+    !!verifyTls;
+  const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
+  /**
+   * @type {{ rejectUnauthorized: boolean, ca?: string,
+   *          checkServerIdentity?: Function }}
+   */
+  const ssl = { rejectUnauthorized: verifyChain };
+  if (ca) {
+    // The database's own trust anchors, in place of the default store for
+    // this connection only (the header).
+    ssl.ca = String(ca);
+  }
+  if (verifyChain && !verifyHostname) {
+    // libpq's verify-ca: the chain, and no host name. Node checks the host
+    // name through this hook whenever it verifies the chain, so answering
+    // "no error" is how the check is left out — and only that check.
+    ssl.checkServerIdentity = function () {
+      return undefined;
+    };
+  }
   return {
     connectionString: parsed.toString(),
-    ssl: { rejectUnauthorized: !!verifyTls },
-    refused: ''
+    ssl: ssl,
+    refused: '',
+    verifyChain: verifyChain,
+    verifyHostname: verifyHostname
   };
 }
 
@@ -1549,10 +1622,11 @@ function dialOptions(url, verifyTls) {
  *
  * A connection pool, a transaction per flush, the change log that several
  * processes coordinate through, and the minted, key, cluster and risk tables.
- * TLS is used when the connection string's `sslmode` asks for it.
+ * Every connection is TLS; a string whose `sslmode` would dial in the clear
+ * is refused (`dialOptions()`, #273).
  * @param options - `url`, the connection string; `log`, the logger;
- * `verifyTls`, whether the server certificate is verified; and `poolMax`, the
- * pool size
+ * `verifyTls`, whether the server certificate is verified; `tlsCa`, the PEM
+ * trust anchors for it or ''; and `poolMax`, the pool size
  * @returns the driver object, with the methods the persistence contract names
  */
 function create(options) {
@@ -2052,21 +2126,41 @@ function create(options) {
   // the start fails saying why (persistence.start() is the one fatal open).
   // `dialOptions()`, above create(), is the one reading of it (#98): this
   // driver's pools and an out-of-process tool dial the same way.
-  const dial = dialOptions(url, options.verifyTls);
+  const tlsCa = String(options.tlsCa || '');
+  const dial = dialOptions(url, options.verifyTls, tlsCa);
   if (dial.refused) {
     throw new Error(errorCodes.tag('STS-STORE-0078') +
                     'persistence: the database connection string is not ' +
                     'dialled: ' + dial.refused + ' (#273).');
   }
+  // The SETTING, passed on to the read pool's own dialOptions() below; what
+  // is actually checked is the dial's, because a verify-mode sslmode
+  // verifies whatever the setting says (the header above dialOptions()).
   const verify = !!options.verifyTls;
-  log.info('persistence: the database connection is TLS, and the server ' +
-           'certificate is ' +
-           (verify ? 'VERIFIED against this process\'s trust anchors.'
-                   : 'NOT verified — ' +
-                     'persistence.databaseTlsRejectUnauthorized is off, ' +
-                     'which is the honest setting for the self-signed pair ' +
-                     'the compose stack generates. The connection is ' +
-                     'encrypted either way.'));
+  const anchors = tlsCa
+    ? 'the certificates in persistence.databaseTlsCaFile'
+    : 'this process\'s default trust store';
+  if (dial.verifyChain) {
+    log.info('persistence: the database connection is TLS, and the server ' +
+             'certificate is ' +
+             (dial.verifyHostname
+               ? 'VERIFIED, chain and host name, against ' + anchors + '.'
+               : 'VERIFIED against ' + anchors + ', and its host name is ' +
+                 'not checked (sslmode=verify-ca, as libpq reads it).'));
+  } else {
+    // LOUDLY (2026-10-12): verification is on by default, so reaching this
+    // line is an operator's choice, and it is the one that leaves every row
+    // this service keeps readable and writable by whatever answers at the
+    // database's address.
+    log.warn('persistence: the database connection is TLS, but the server ' +
+             'certificate is NOT VERIFIED — ' +
+             'persistence.databaseTlsRejectUnauthorized is off and the ' +
+             'connection string asks for no verify mode, so the database ' +
+             'server is UNAUTHENTICATED: anything that can answer at its ' +
+             'address can impersonate it and read and write every row ' +
+             'this service keeps. The connection is encrypted, and that is ' +
+             'all.');
+  }
 
   // ONE DECIDER, AND A FAILED CONNECTION IS WHY.
   //
@@ -2142,7 +2236,7 @@ function create(options) {
     if (!readUrl || readUrl === url) {
       return pool;
     }
-    const readDial = dialOptions(readUrl, verify);
+    const readDial = dialOptions(readUrl, verify, tlsCa);
     if (readDial.refused) {
       throw new Error(errorCodes.tag('STS-STORE-0078') +
                       'persistence: the read database connection string is ' +
@@ -4371,8 +4465,23 @@ function create(options) {
 
     bridgeConnection: function () {
       log.debug("Entering bridgeConnection().");
+      const options = readClientOptions();
+      // A function cannot be posted to a thread, and verify-ca's ssl option
+      // carries one (dialOptions()). Said as data instead, and put back by
+      // `common/sync_query_thread.ts`, so the thread checks exactly what
+      // this side's pools check rather than failing to start — or, with the
+      // hook merely dropped, checking a host name verify-ca does not.
+      // The trust anchors (`ca`, PEM text) cross as they are.
+      const ssl = options.ssl;
+      if (ssl && typeof ssl.checkServerIdentity === 'function') {
+        options.ssl = { rejectUnauthorized: ssl.rejectUnauthorized,
+                        hostnameUnchecked: true };
+        if (ssl.ca) {
+          options.ssl.ca = ssl.ca;
+        }
+      }
       log.debug("Leaving bridgeConnection().");
-      return readClientOptions();
+      return options;
     },
 
     // One minted row, same reason.
@@ -7012,6 +7121,27 @@ function create(options) {
 capabilities.provide('store.no-foreign-deletes');
 capabilities.provide('directory.concurrent-writes');
 
+// The routes whose answers carry the database namespace's prose (#543): the
+// probes' sentences, which `GET /admin-api/database` carries as each
+// probe's `what`.
+const PROSE_ROUTES = ['/admin-api/database'];
+
+// No log line, for `poolMax()`'s reason: this module's logger arrives with
+// create(), and the namespace is extracted without one.
+/**
+ * Extracts this module's part of the database namespace (#543 phase 2b):
+ * what each catalog probe asks. A probe's `group` is not harvested: it is
+ * the heading `admin-ui/web_database.ts` files it under, and that table is
+ * the renderer's.
+ *
+ * @returns key → English
+ */
+function prose() {
+  // LAZILY, for `persistence.js`'s reason: this driver is loaded by it.
+  return require('../common/server_prose').harvest('postgres.probes',
+    METRIC_PROBES, ['what']);
+}
+
 /**
  * The postgres persistence driver: the shared store, and the change log that
  * several processes coordinate through.
@@ -7021,6 +7151,8 @@ capabilities.provide('directory.concurrent-writes');
  * @namespace
  */
 module.exports = {
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   create: create,
   // For `tests/database_metrics.js`, which checks that every probe is
   // GROUPED into a section the page actually draws — a probe in a group the

@@ -155,11 +155,27 @@ function consolePage(root) {
       delete q.format;
       const answer = await call('GET', page.operation,
                                 WebPages.operationQuery(page.path, q));
-      const html = answer.status === 200 && answer.json
-        ? WebPages.render(page.path, JSON.parse(JSON.stringify(answer.json)),
-                          WebKit.context(q, true))
-        : '';
-      return { status: answer.status, json: answer.json, html: html };
+      let json = answer.status === 200 && answer.json
+        ? JSON.parse(JSON.stringify(answer.json)) : null;
+      if (json && page.compose) {
+        // The members as the runtime asks them (`composeRequests()`), each
+        // under the names its own operation reads.
+        const asked = WebPages.composeRequests(page, q);
+        const answers = await Promise.all(asked.map(function (one) {
+          return call('GET', one.operation, one.params);
+        }));
+        answers.forEach(function (one, index) {
+          if (one.status !== 200 || !one.json ||
+              typeof one.json !== 'object') {
+            throw new Error(asked[index].operation + ' answered ' +
+                            one.status);
+          }
+          json[asked[index].member] = JSON.parse(JSON.stringify(one.json));
+        });
+      }
+      const html = json
+        ? WebPages.render(page.path, json, WebKit.context(q, true)) : '';
+      return { status: answer.status, json: json, html: html };
     },
     /**
      * Calls a POST operation, as a form of the console is sent.

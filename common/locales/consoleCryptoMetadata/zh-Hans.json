@@ -1,6 +1,6 @@
 {
   "doesNot": "不做",
-  "familiesHeading": "此模拟服务公布的身份服务",
+  "familiesHeading": "本服务公布的身份服务",
   "familiesLead": "每个协议族一行，对应",
   "serviceMetadata": "服务元数据",
   "familiesLeadAfter": "中的协议族，并列出各自如何使用密码学。四个动词特意分开：签名是生成依赖方会相信的东西，验证是一个可能出错的决定，加密使用的是别人的密钥，解密则意味着持有一把调用方可以把密文对准的私钥。这是四种不同的暴露面，本服务对每一种的涉及程度都不同。",
@@ -20,7 +20,7 @@
   "envelopes": "封装",
   "doesNotDo": "<strong>它特意不做的事。</strong>",
   "keysHeading": "此进程持有的密钥材料",
-  "keysLead": "这里的每个密钥都在启动时生成，无论哪种持久化模式都不会持久化。这是特意的，有两件事依赖于此：<code>kid</code> 由密钥材料派生，因此此模拟服务的两个实例不可能为两个不同的密钥发布同一个名称；而每个携带或描述密钥的文档都以 <code>Cache-Control: no-store</code> 提供。<strong>签名密钥按信任领域区分；TLS 证书和 SPIFFE 颁发机构则不是。</strong>这里显示的是领域 <code>{realm}</code>。",
+  "keysLead": "这里的每个密钥都在启动时生成，无论哪种持久化模式都不会持久化。这是特意的，有两件事依赖于此：<code>kid</code> 由密钥材料派生，因此本服务的两个实例不可能为两个不同的密钥发布同一个名称；而每个携带或描述密钥的文档都以 <code>Cache-Control: no-store</code> 提供。<strong>签名密钥按信任领域区分；TLS 证书和 SPIFFE 颁发机构则不是。</strong>这里显示的是领域 <code>{realm}</code>。",
   "scopeRealm": "此领域",
   "scopeProcess": "进程",
   "thKey": "密钥",
@@ -63,7 +63,7 @@
   "thDigest": "摘要",
   "thWhat": "内容",
   "weakOnes": "弱算法，以及它们为何在这里",
-  "weakNote": "<strong>这些都不是疏忽，也都不是推荐。</strong>本服务的存在是为了检验别人的客户端，一个只提供安全选项的模拟服务无法用来展示不安全的选项会怎样。每一行都写明了哪个已部署群体需要它。",
+  "weakNote": "<strong>这些都不是疏忽，也都不是推荐。</strong>本服务的存在是为了检验别人的客户端，一个只提供安全选项的服务无法用来展示不安全的选项会怎样。每一行都写明了哪个已部署群体需要它。",
   "thWhy": "原因",
   "yes": "是",
   "no": "否",
@@ -143,7 +143,7 @@
   "drafts": "已实现的草案",
   "whatRemains": "尚待完成",
   "standardsHeading": "更高层的标准",
-  "standardsLead": "知道本服务用 RSA-SHA256 签名，并不能说明那个签名是 JWS、封装式 XMLDSIG、对查询字符串的分离签名还是 <code>&lt;wsse:Security&gt;</code> 标头 — 四种不同的文档，四种不同的失败方式。这里就是那一层。<strong>每条覆盖说明都以 <code>full</code>、<code>partial</code> 或 <code>mock</code> 开头</strong>，并说明缺少什么，这是以下页面遵循的规则：",
+  "standardsLead": "知道本服务用 RSA-SHA256 签名，并不能说明那个签名是 JWS、封装式 XMLDSIG、对查询字符串的分离签名还是 <code>&lt;wsse:Security&gt;</code> 标头 — 四种不同的文档，四种不同的失败方式。这里就是那一层。<strong>每条覆盖说明都以 <code>full</code>、<code>partial</code> 或 <code>minimal</code> 开头</strong>，并说明缺少什么，这是以下页面遵循的规则：",
   "standardsLeadAfter": "在这里它更有价值：一个夸大自身实现的密码学页面，对借它学习的人来说是实实在在的危险。",
   "specifications": "规范",
   "coverage": "覆盖范围",
@@ -222,7 +222,8 @@
   "cryptography": "密码学",
   "nextDoor": "页面就在旁边，它发布密钥类型、标识符和指纹，特意不包含任何密钥材料；本页面是另一半。",
   "persisted": "<strong>此领域的签名密钥已持久化</strong>，因此在这里导出的密钥不是一次性的：重启后它仍会继续签名，用它的副本签名的任何内容都会继续通过本服务实时 JWKS 的验证。下方的 TLS 和 SPIFFE 密钥仍是每次启动生成的。",
-  "defensible": "之所以说得过去，是因为这些密钥的性质：启动时生成，只保存在内存中，进程退出即失效，而且什么也不保护 — 本服务不检查任何密码，也不验证任何不是它自己签发的令牌。",
+  "defensible": "之所以说得过去，是因为这些密钥的性质：启动时生成，只保存在内存中，进程退出即失效，而且什么也不保护 — 本信任领域处于开发模式，不检查任何密码，也不验证任何不是它自己签发的令牌。",
+  "notPersistedProduct": "这些密钥在启动时生成，只保存在内存中，进程退出即失效 — 本信任领域的存储不保留其签名密钥。但本信任领域处于产品模式，会验证每个密码和每个令牌，因此在那之前，在这里交出的密钥所签署的内容会被依赖方信任：请把它当作它本来就是的现用签名密钥来对待。",
   "needsWrite": "它需要 <strong>Admin Write</strong>，这比此控制台上任何其他读取操作的要求都高，因为在这里，读取就是拿走。",
   "exporter": "<strong>导出器是调试器自己的，以内置方式引入。</strong><code>common/vendored/key_material.js</code> 以带密码的方式处理四种格式 — PEM、DER、JWK 和 PKCS#12 — 也正是调试器的 PKI 页面一直在使用的代码。在它旁边再放一个导出器，只会是更差的副本。",
   "theKeyPairs": "密钥对",
@@ -242,5 +243,5 @@
   "passwordHint": "PKCS#12 必填；其他格式用于加密私钥部分",
   "downloadKey": "下载",
   "publicOnly": "<strong>仅公开部分。</strong>RFC 9964 定义了 AKP 密钥的公开成员，而私有种子的处理仍在变化，因此没有可交出的互操作私钥编码。一个没有任何库能读取的文件，比直说更糟。",
-  "passwordNote": "<strong>PKCS#12 必须设置密码，其他三种可选</strong>，密码用于加密私钥部分（PEM 和 DER 使用 PKCS#8，JWK 以 PBES2 生成 .jwe）。留空则私钥以明文导出，这通常正是你对模拟服务的期望，在其他任何地方都绝不应如此。"
+  "passwordNote": "<strong>PKCS#12 必须设置密码，其他三种可选</strong>，密码用于加密私钥部分（PEM 和 DER 使用 PKCS#8，JWK 以 PBES2 生成 .jwe）。留空则私钥以明文导出，这通常正是你在开发中的期望，在其他任何地方都绝不应如此。"
 }

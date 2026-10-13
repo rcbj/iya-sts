@@ -1,0 +1,13 @@
+{
+  "shell.open.text": "<strong>此主控台未受保護。</strong>門禁已「關閉」，因此這裡不會檢查任何認證——此服務的其他部分也不會：在登入畫面輸入的用戶名稱，就是它簽發的每個權杖中的身分。任何能連到此連接埠的人，都可以撤銷所有權杖，並改變下一個權杖的內容。在手提電腦或 compose 網絡上這沒問題，但在公開地址上就不行。請在",
+  "shell.noSession.text": "<strong>此瀏覽器上沒有人登入。</strong>此主控台需要自己的工作階段——它是此服務的一般 OpenID Connect 客戶端，在登錄中為 <code>sts-admin-console</code>——因此它的每個頁面都會再次執行登入流程。",
+  "shell.unclaimed": "<strong>已以 <code>{who}</code> 登入，未擁有任何主控台角色：此主控台尚未被認領。</strong>在 product 模式下，在認領之前，只有初始管理員{named, select, yes { <code>{boot}</code> } other {本人}}以其密碼登入後才能使用此主控台。在授予角色之前，其他人都沒有任何角色；而透過同盟夥伴、證書、錢包或 Kerberos 票證以 {named, select, yes {<code>{boot}</code>} other {初始管理員}} 身分登入，並不算數。",
+  "shell.menu.account.title": "您在用戶入口網站中的帳戶——您的密碼、驗證器應用程式、安全金鑰，以及您可以登入的應用程式。它是與此主控台不同的應用程式，並以您已持有的工作階段為您登入，所以無須再次輸入任何內容。連結指向您登入時所用領域的入口網站，因為您的帳戶在那裡，無論您正在檢視哪個領域。",
+  "shell.runtime.facts": "以 <code>{process}</code> 執行 &middot; 模式 <code>{mode}</code> &middot; 數據庫 <code>{database}</code> &middot; 秘密存放區：金鑰加密金鑰 <code>{kek}</code>，數據庫密碼 <code>{password}</code>",
+  "group.cert-issuance": "證書簽發",
+  "nav.cert-issuance": "證書簽發",
+  "nav.tls-trust": "客戶端證書信任存放區",
+  "nav.users": "用戶",
+  "nav.database": "數據庫",
+  "nav.sts-metadata": "服務元數據"
+}

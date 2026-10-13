@@ -172,12 +172,8 @@ async function signInThroughA(realm) {
   const pair = kit.pkce();
   const start = authorizeUrl(realm.a, pair, "xf-" + STAMP);
   const first = await kit.browse(jar, start);
-  const screen = await kit.browse(jar, first.location);
-  const fields = kit.signInFields(screen.text);
-  const at = new URL(first.location);
-  const posted = await kit.browse(jar, at.origin + at.pathname,
-    { form: { authn_id: fields.authnId, username: PERSON, password: PASSWORD,
-              action: "login", csrf_token: fields.csrf } });
+  // Over `/authn-api` since #571 (`kit.postScreen()`).
+  const posted = await kit.postScreen(jar, first.location, PERSON, PASSWORD);
   const homePin = jar.get("sts_cell");
   check("the login at cell A restarts the flow at home, pinned", function () {
     assert.strictEqual(posted.status, 303, posted.status + " " +
@@ -185,13 +181,8 @@ async function signInThroughA(realm) {
     assert.ok(homePin, "no pin: " + JSON.stringify(posted.set));
   });
   const again = await kit.browse(jar, start);
-  const homeScreen = await kit.browse(jar, again.location);
-  const homeFields = kit.signInFields(homeScreen.text);
-  const homeAt = new URL(again.location);
-  const signedIn = await kit.browse(jar, homeAt.origin + homeAt.pathname,
-    { form: { authn_id: homeFields.authnId, username: PERSON,
-              password: PASSWORD, action: "login",
-              csrf_token: homeFields.csrf } });
+  const signedIn = await kit.postScreen(jar, again.location, PERSON,
+                                        PASSWORD);
   check("and the person signs in at home through cell A", function () {
     assert.ok(signedIn.status >= 300 && signedIn.status < 400,
       signedIn.status + " " + kit.said(signedIn.text));

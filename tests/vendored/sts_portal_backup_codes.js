@@ -40,10 +40,20 @@
 // `tests/backup_codes.js` holds the same reversal one layer down, in process,
 // where it can assert what is on the directory entry and what the two
 // verification doors do.
+//
+// **SINCE #568 THE PORTAL IS A STATIC APPLICATION** over `/account-api`: the
+// sign-in is still walked by hand (a second factor is what it is about), the
+// portal's own token is taken through that sign-on session, and
+// `/portal/mfa` is `GET`/`POST /account-api/mfa`, its pages drawn by the
+// portal's own renderers. A set shown once is a view the act ANSWERS, drawn
+// in place; the Copy button is the runtime's, so `/portal/copy.js` is gone.
 // ===========================================================================
 
+// The sign-in screen over `/authn-api` (#571).
+const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { usernameFor } = require("./random_username.js");
+const portal = require("./portal_signin.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -150,17 +160,30 @@ function codeFor(secret, atMs, opts) {
 // assertion here is about WHICH screen came back — a fetch that followed the
 // redirects would answer the question by hiding it.
 // ---------------------------------------------------------------------------
-function form(o) {
-  log.debug("Entering form().");
-  log.debug("Leaving form().");
-  return new URLSearchParams(o).toString();
-}
-
 function absolute(location) {
   log.debug("Entering absolute().");
   log.debug("Leaving absolute().");
   return /^https?:\/\//i.test(String(location || ""))
     ? String(location) : base + String(location || "");
+}
+
+// The cookies an `/authn-api` answer set, into a browser's jar (#571).
+function keepCookies(b, answer) {
+  log.debug("Entering keepCookies().");
+  answer.headers.getSetCookie().forEach(function (one) {
+    const pair = String(one).split(";")[0];
+    const name = pair.split("=")[0];
+    const value = pair.slice(name.length + 1);
+    if (value === "") {
+      delete b.jar[name];
+    } else {
+      b.jar[name] = value;
+    }
+  });
+  if (typeof b.cookieHeader === "function") {
+    b.cookie = b.cookieHeader();
+  }
+  log.debug("Leaving keepCookies().");
 }
 
 function browser(name) {
@@ -253,13 +276,6 @@ async function apiPost(path, body) {
   }
   log.debug("Leaving apiPost().");
   return { status: r.status, body: parsed, raw: raw };
-}
-
-function csrfOf(text) {
-  log.debug("Entering csrfOf().");
-  log.debug("Leaving csrfOf().");
-  return (String(text).match(/name="csrf_token" value="([^"]+)"/) ||
-          [])[1] || "";
 }
 
 // ---------------------------------------------------------------------------
@@ -359,32 +375,66 @@ function remainingShownOn(text) {
 }
 
 // ---------------------------------------------------------------------------
-// SIGN IN AT A DOOR. `/portal` is an OpenID Connect relying party of this
-// service's own authorization server, so this is a code flow.
+// SIGN IN, AS THE STATIC PORTAL DOES (#568). The portal is a public client of
+// this service's own authorization server, so a sign-in is a code flow: the
+// browser asks `/oauth2/authorize` as `sts-user-portal` with PKCE, meets the
+// sign-in screen because the AUTHORIZATION ENDPOINT decides it needs one, and
+// comes back to `/portal/callback` with a code. The walk is done here by hand
+// to the callback — the sign-in screen is where a second factor is demanded,
+// which is what this job is about — and the portal's DPoP-bound token is then
+// taken through the sign-on session it set (`portal_signin.js`, which signs
+// in again with nothing typed). `door` is kept for a reader: the page the
+// person came for.
 //
 // `onSecondFactor` is handed the 200 the password POST answered with when the
-// screen asks for something more, which is exactly what this job is about.
+// screen asks for something more.
 // ---------------------------------------------------------------------------
+function b64u(buffer) {
+  log.debug("Entering b64u().");
+  log.debug("Leaving b64u().");
+  return Buffer.from(buffer).toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// The authorization request the portal's runtime sends.
+function portalAuthorizeUrl() {
+  log.debug("Entering portalAuthorizeUrl().");
+  const verifier = b64u(nodeCrypto.randomBytes(32));
+  const url = base + "/oauth2/authorize?" + new URLSearchParams({
+    response_type: "code", client_id: "sts-user-portal",
+    redirect_uri: base + "/portal/callback", scope: "openid account:manage",
+    state: b64u(nodeCrypto.randomBytes(16)),
+    code_challenge: b64u(nodeCrypto.createHash("sha256").update(verifier)
+      .digest()),
+    code_challenge_method: "S256", resource: base + "/account-api" })
+    .toString();
+  log.debug("Leaving portalAuthorizeUrl().");
+  return url;
+}
+
 async function signIn(door, who, onSecondFactor) {
   log.debug("Entering signIn(). door=" + door + " who=" + who);
   await ensurePerson(who);
   const b = browser(who);
-  let r = await b.go("GET", door);
-  assert.ok(/\/oauth2\/authorize\?/.test(r.location),
-    door + " should send an unauthenticated browser to the authorization " +
-    "endpoint; it answered " + r.status + " -> " + r.location);
-  r = await b.go("GET", r.location);
+  let r = await b.go("GET", PORTAL_DOOR);
+  assert.strictEqual(r.status, 200,
+    "the portal's shell should answer " + PORTAL_DOOR + "; it answered " +
+    r.status + " -> " + r.location);
+  r = await b.go("GET", portalAuthorizeUrl());
   assert.ok(/\/authn\/login\?authn=/.test(r.location),
     "the authorization endpoint should send a browser with no sign-on " +
     "session to the sign-in screen; it answered " + r.status + " -> " +
     r.location);
-  r = await b.go("GET", r.location);
-  const authnId = (r.text.match(/name="authn_id" value="([^"]+)"/) || [])[1];
-  assert.ok(authnId, "the sign-in screen carries no authn_id to post back.");
-  r = await b.go("POST", "/authn/login",
-                 form({ authn_id: authnId, username: who,
-                        password: PASSWORD, action: "login",
-                        csrf_token: csrfOf(r.text) }));
+  // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
+  // answer read as the form's POST was — a second factor's page fetched
+  // from the address the answer names, as the browser fetches it.
+  const answer = await authnSignin.submit(base, r.location,
+    { action: "login", username: who, password: PASSWORD },
+    { cookie: b.cookieHeader() });
+  keepCookies(b, answer);
+  r = await authnSignin.asFormAnswer(answer, function (m, u) {
+    return b.go(m, u);
+  });
   if (r.status === 200) {
     assert.ok(onSecondFactor,
       "the sign-in screen asked for something more and this call was not " +
@@ -399,27 +449,78 @@ async function signIn(door, who, onSecondFactor) {
   assert.ok(r.status === 303 || r.status === 302,
     "the sign-in should end in a redirect; got " + r.status + " " +
     String(r.text).slice(0, 300));
-  r = await b.go("GET",
-                 r.location);   // the authorization endpoint, with a code
-  r = await b.go("GET", r.location);   // the callback, which mints the session
+  r = await b.go("GET", r.location);   // the authorization endpoint
+  assert.ok(/\/portal\/callback\?/.test(r.location),
+    "the authorization endpoint should answer the portal's callback with a " +
+    "code; it answered " + r.status + " -> " + r.location);
   assert.ok(b.cookie, "completing the flow should establish a session cookie.");
+  b.portal = await portal.signInToThePortal(base, who, null,
+                                            { cookie: b.cookieHeader() });
   log.debug("Leaving signIn().");
   return b;
+}
+
+// THE PAGE AS THE PORTAL DRAWS IT for `b`'s person: `{ status, json, text }`,
+// `text` the cards the portal's own renderers draw from the operation's view.
+// The operation is the one the portal's page table names for the path — what
+// the runtime asks — rather than one found by `mirrors`, which `/portal` shares
+// between the Overview and `GET /account-api/me`.
+async function pageOf(b, path) {
+  log.debug("Entering pageOf(). " + path);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  assert.ok(row, "the portal draws no page at " + path);
+  if (!b.me) {
+    b.me = (await b.portal.api("GET", "/account-api/me")).json;
+  }
+  const answer = await b.portal.api("GET", row.operation);
+  const text = answer.status === 200 && answer.json
+    ? drawView(b, path, answer.json) : "";
+  log.debug("Leaving pageOf().");
+  return { status: answer.status, json: answer.json, text: text };
+}
+
+// A VIEW AN ACT ANSWERED, drawn as the portal draws it in place — the set
+// of codes shown once arrives this way and never on a URL (#568).
+function drawView(b, path, view) {
+  log.debug("Entering drawView(). " + path);
+  const table = portal.portalBundle();
+  const row = table.PAGES.filter(function (one) {
+    return one.path === path;
+  })[0];
+  const t = table.messages.WebTranslator.fromData(b.me && b.me.locale);
+  log.debug("Leaving drawView().");
+  return row.render(view, { t: t, query: {}, prefix: "", origin: base,
+                            me: b.me, locale: b.me && b.me.locale,
+                            version: b.me && b.me.version, here: path });
+}
+
+// An act on the portal's form at `path`, and what it answered, with any view
+// it carried drawn: `{ status, json, text }`.
+async function act(b, path, fields) {
+  log.debug("Entering act(). " + path);
+  if (!b.me) {
+    b.me = (await b.portal.api("GET", "/account-api/me")).json;
+  }
+  const r = await b.portal.act(path, fields);
+  const text = r.json && r.json.view ? drawView(b, path, r.json.view)
+                                     : String(r.text || "");
+  log.debug("Leaving act().");
+  return { status: r.status, json: r.json, text: text };
 }
 
 // Enrol an authenticator app through the portal, exactly as a person does it.
 // Returns the whole POST response, because claim 1 is that NO codes are on it.
 async function enrolAuthenticator(b) {
   log.debug("Entering enrolAuthenticator().");
-  let page = await b.go("GET", "/portal/mfa");
-  await b.go("POST", "/portal/mfa",
-             form({ action: "start", csrf_token: csrfOf(page.text) }));
-  page = await b.go("GET", "/portal/mfa");
+  await act(b, "/portal/mfa", { action: "start" });
+  const page = await pageOf(b, "/portal/mfa");
   const secret = secretShownOn(page.text);
   assert.ok(secret, "no shared secret was printed on /portal/mfa.");
-  const confirmed = await b.go("POST", "/portal/mfa",
-    form({ action: "confirm", code: codeFor(secret, Date.now()),
-           csrf_token: csrfOf(page.text) }));
+  const confirmed = await act(b, "/portal/mfa",
+    { action: "confirm", code: codeFor(secret, Date.now()) });
   log.debug("Leaving enrolAuthenticator().");
   return { secret: secret, response: confirmed };
 }
@@ -440,7 +541,7 @@ async function enrollingIssuesNothing() {
   log.info("=== 1. enrolling a second factor issues nothing, and says so ===");
   const b = await signIn(PORTAL_DOOR, OWNER);
 
-  const before = await b.go("GET", "/portal/mfa");
+  const before = await pageOf(b, "/portal/mfa");
   check("before any enrolment the page says none have been generated",
         function () {
     assert.ok(/None have been generated/.test(before.text),
@@ -451,8 +552,8 @@ async function enrollingIssuesNothing() {
 
   const enrolled = await enrolAuthenticator(b);
   check("the authenticator enrols", function () {
-    assert.ok(enrolled.response.status === 200 ||
-              enrolled.response.status === 303,
+    assert.ok(enrolled.response.status === 200 &&
+              enrolled.response.json && enrolled.response.json.ok === true,
       "it answered " + enrolled.response.status);
   });
   check("AND NO CODES ARE SHOWN BY IT. The enrolment used to answer with the " +
@@ -462,7 +563,7 @@ async function enrollingIssuesNothing() {
       "the enrolment drew a list of codes.");
   });
 
-  const after = await b.go("GET", "/portal/mfa");
+  const after = await pageOf(b, "/portal/mfa");
   check("and the card now PROMPTS for a set, which is what replaced the " +
         "automatic issue — the population that protected is the people who " +
         "never think to ask, and asking is all that is left", function () {
@@ -494,15 +595,13 @@ async function generateThenConfirm(state) {
   log.info("=== 2. generated, shown, and stored only on confirm ===");
   const b = state.browser;
 
-  const page = await b.go("GET", "/portal/mfa");
-  const shown = await b.go("POST", "/portal/mfa",
-    form({ action: "generate-codes", csrf_token: csrfOf(page.text) }));
+  const shown = await act(b, "/portal/mfa", { action: "generate-codes" });
 
   const codes = codesShownOn(shown.text).map(function (
       one) { return one.code; });
-  check("asking generates a set and SHOWS it, on the response to the POST — " +
-        "a 303 cannot carry a list of credentials and a query string would " +
-        "put them in a browser history entry and every proxy log on the way",
+  check("asking generates a set and SHOWS it, IN THE ANSWER to the act — " +
+        "drawn in place, because a query string would put them in a browser " +
+        "history entry and every proxy log on the way",
         function () {
     assert.strictEqual(shown.status, 200, "it answered " + shown.status);
     assert.ok(codes.length >= 8, "only " + codes.length + " codes were drawn.");
@@ -531,27 +630,20 @@ async function generateThenConfirm(state) {
     assert.deepStrictEqual(box.split("\n"), codes,
       "the box does not hold the codes one per line, in order.");
   });
-  check("a Copy all codes button names the box, hidden until its script " +
-        "runs, and the page loads that one script", function () {
-    assert.ok(/<button type="button" class="copybtn[^"]*" hidden data-copy-target="recovery-codes-text">Copy all codes<\/button>/
+  // #568: the button is the portal runtime's, which reveals a button that
+  // names its box and copies it; `/portal/copy.js` went with the server's
+  // pages. The shell every portal path answers runs `script-src 'self'` and
+  // keeps `frame-ancestors`.
+  check("a Copy all codes button names the box, hidden until the portal's " +
+        "script reveals it", function () {
+    assert.ok(/<button type="button" class="copybtn[^"]*" hidden data-copy-from="recovery-codes-text">Copy all codes<\/button>/
       .test(shown.text), "there is no Copy button for the box.");
-    assert.ok(/<script src="\/portal\/copy\.js"><\/script>/
-      .test(shown.text), "the page does not load /portal/copy.js.");
   });
-  check("the page showing them allows script-src 'self' and keeps " +
-        "frame-ancestors; the page without a fresh set runs no script",
-        function () {
-    assert.ok(/script-src 'self'/.test(shown.csp), shown.csp);
-    assert.ok(/frame-ancestors/.test(shown.csp), shown.csp);
-    assert.ok(!/script-src 'self'/.test(page.csp), page.csp);
-  });
-  const script = await b.go("GET", "/portal/copy.js");
-  check("/portal/copy.js is served as JavaScript and copies the box",
-        function () {
-    assert.strictEqual(script.status, 200, "it answered " + script.status);
-    assert.ok(/javascript/.test(script.type), script.type);
-    assert.ok(/data-copy-target/.test(script.text) &&
-              /clipboard/.test(script.text), "it is not the copy script.");
+  const shell = await b.go("GET", "/portal/mfa");
+  check("the portal's shell allows script-src 'self' and keeps " +
+        "frame-ancestors", function () {
+    assert.ok(/script-src 'self'/.test(shell.csp), shell.csp);
+    assert.ok(/frame-ancestors/.test(shell.csp), shell.csp);
   });
 
   check("there is a CONFIRM button and a way to throw them away", function () {
@@ -583,18 +675,16 @@ async function generateThenConfirm(state) {
       JSON.stringify(row && row.backupCodes));
   });
 
-  const confirmed = await b.go("POST", "/portal/mfa",
-    form({ action: "confirm-codes", handle: handle,
-           csrf_token: csrfOf(shown.text) }));
-  check("confirming stores them and redirects", function () {
-    assert.ok(confirmed.status === 303 || confirmed.status === 200,
+  const confirmed = await act(b, "/portal/mfa",
+    { action: "confirm-codes", handle: handle });
+  check("confirming stores them", function () {
+    assert.ok(confirmed.status === 200 && confirmed.json &&
+              confirmed.json.ok === true,
       "it answered " + confirmed.status + ": " +
-      (String(confirmed.text || "").match(/class="error"[^>]*>([^<]*)/) ||
-       String(confirmed.text || "").match(/<p class="sub">([^<]*)/) ||
-       ["", "no message"])[1]);
+      String(confirmed.text || "").slice(0, 300));
   });
 
-  const nowHeld = await b.go("GET", "/portal/mfa");
+  const nowHeld = await pageOf(b, "/portal/mfa");
   check("and NOW the card reports a stored set", function () {
     const shownCount = remainingShownOn(nowHeld.text);
     assert.ok(shownCount, "the card reports no count at all.");
@@ -634,9 +724,8 @@ async function nothingShowsAStoredSet(state) {
   log.debug("Entering nothingShowsAStoredSet().");
   log.info("=== 3. no door produces a stored set, not even the owner's ===");
 
-  const page = await state.browser.go("GET", "/portal/mfa");
-  const asked = await state.browser.go("POST", "/portal/mfa",
-    form({ action: "show-codes", csrf_token: csrfOf(page.text) }));
+  const asked = await act(state.browser, "/portal/mfa",
+                          { action: "show-codes" });
   check("the OLD show-codes action is refused by the form schema rather than " +
         "quietly doing nothing — an action a page no longer offers should " +
         "not be reachable by somebody replaying an old form", function () {
@@ -680,7 +769,7 @@ async function aCodeSignsThemIn(state) {
   log.debug("Entering aCodeSignsThemIn().");
   log.info("=== 4/5. a recovery code at the sign-in screen, and the spend ===");
   const before = remainingShownOn(
-    (await state.browser.go("GET", "/portal/mfa")).text);
+    (await pageOf(state.browser, "/portal/mfa")).text);
   assert.ok(before, "no count on /portal/mfa before the sign-in.");
 
   const spending = state.codes[2];
@@ -691,45 +780,49 @@ async function aCodeSignsThemIn(state) {
     // THE SCREEN THE PASSWORD LANDED ON is the authenticator's, because that
     // is what this person is CONFIGURED for — a recovery code is never the
     // factor a sign-in asks for.
-    assert.ok(/one-time code|authenticator app/i.test(asked.text),
+    // THE STEPS ARE PAGES OF THE SIGN-IN SURFACE (#572): what a page offers
+    // is its view.
+    const view = (asked.step && asked.step.view) || {};
+    assert.strictEqual(view.page, "totp",
       "the password step did not land on the one-time code screen: " +
       String(asked.text).slice(0, 300));
-    const link = String(asked.text)
-      .match(/href="(\/authn\/backup-code\?mfa=[^"]+)"/);
-    sawTheLink = !!link;
-    assert.ok(link,
+    sawTheLink = !!(view.links && view.links.backup);
+    assert.ok(sawTheLink,
       "the one-time code screen offers no way to a recovery code. A door " +
       "nothing points at is a door nobody standing in front of a dead phone " +
       "will find.");
-    const screen = await br.go("GET", link[1].replace(/&amp;/g, "&"));
-    assert.strictEqual(screen.status, 200,
-      "the recovery screen answered " + screen.status);
-    const mfaId = (screen.text.match(/name="mfa_id" value="([^"]+)"/) || [])[1];
-    assert.ok(mfaId, "the recovery screen carries no mfa_id to post back.");
+    const screen = await authnSignin.step(base + "/authn/backup-code?mfa=" +
+      encodeURIComponent(asked.step.id), { cookie: br.cookieHeader() });
+    assert.ok(screen.status === 200 && screen.view &&
+              screen.view.page === "backup-code",
+      "the recovery screen answered " + screen.status + " " +
+      String(screen.text).slice(0, 200));
+    const send = async function (code) {
+      const a = await authnSignin.stepAct(screen, "backup-code",
+                                          { code: code });
+      keepCookies(br, a);
+      return { status: a.next === "redirect" ? 303 : a.status,
+               location: a.location, text: a.text };
+    };
 
     // A WRONG CODE FIRST, because the interesting half of claim 5 is that a
     // refusal keeps the step AND spends nothing.
-    const wrong = await br.go("POST", "/authn/backup-code",
-                              form({ mfa_id: mfaId, code: "AAAAA-AAAAA" }));
-    assert.strictEqual(wrong.status, 200,
-      "a wrong recovery code should redraw this page rather than throwing " +
-      "the password step away; it answered " + wrong.status);
+    const wrong = await send("AAAAA-AAAAA");
+    assert.strictEqual(wrong.status, 400,
+      "a wrong recovery code should be refused on this page rather than " +
+      "throwing the password step away; it answered " + wrong.status);
 
     // THIS SERVICE'S OWN RENDERING HANDED BACK TO IT, lower-cased — the
     // dashes and the case are exactly what somebody reads off paper types,
     // and a service that refused its own printed form would be arguing with
     // its own page.
-    const ok = await br.go("POST", "/authn/backup-code",
-                           form({ mfa_id: mfaId,
-                                  code: spending.toLowerCase() }));
+    const ok = await send(spending.toLowerCase());
 
     // AND THE REPLAY, inside the same flow, before the step is gone. It cannot
     // be checked afterwards: the step is spent on success. Sent WITHOUT the
     // dashes this time, so that a replay guard which only ever saw one
     // spelling could not pass this.
-    refusedReplay = await br.go("POST", "/authn/backup-code",
-                                form({ mfa_id: mfaId,
-                                       code: spending.replace(/-/g, "") }));
+    refusedReplay = await send(spending.replace(/-/g, ""));
     return ok;
   });
 
@@ -737,7 +830,7 @@ async function aCodeSignsThemIn(state) {
     assert.ok(sawTheLink, "no link was found.");
   });
 
-  const page = await b.go("GET", "/portal");
+  const page = await pageOf(b, "/portal");
   check("A RECOVERY CODE SIGNED THEM IN, in the rendering this service " +
         "printed and in the case they typed", function () {
     assert.strictEqual(page.status, 200, "/portal answered " + page.status);
@@ -766,7 +859,7 @@ async function aCodeSignsThemIn(state) {
       refusedReplay.status + " -> " + refusedReplay.location);
   });
 
-  const after = remainingShownOn((await b.go("GET", "/portal/mfa")).text);
+  const after = remainingShownOn((await pageOf(b, "/portal/mfa")).text);
   check("and exactly ONE code was spent by all of that — one success, one " +
         "wrong code and one replay", function () {
     assert.ok(after, "no count on /portal/mfa after the sign-in.");
@@ -779,7 +872,7 @@ async function aCodeSignsThemIn(state) {
   // would read as codes going missing*. There is no list to draw any more, so
   // the same worry is answered by the COUNTS: the card says how many of how
   // many are left, and the total never moves.
-  const card = await b.go("GET", "/portal/mfa");
+  const card = await pageOf(b, "/portal/mfa");
   check("and the card accounts for the spent one by COUNT rather than by " +
         "crossing it out — the total does not move, so a person reading it " +
         "sees a code used and not codes going missing", function () {
@@ -827,7 +920,7 @@ async function anOperatorCanClearIt(state) {
     assert.strictEqual(again.status, 400, "it answered " + again.status);
   });
 
-  const page = await state.browser.go("GET", "/portal/mfa");
+  const page = await pageOf(state.browser, "/portal/mfa");
   check("the portal reports the set as gone, and PROMPTS for a new one — " +
         "the person still holds a second factor, so where the Clear used to " +
         "re-arm an automatic issue it now simply makes the prompt true again",
@@ -857,9 +950,8 @@ async function anOperatorCanClearIt(state) {
       "an enrolment drew a list of codes.");
   });
 
-  const asked = await state.browser.go("GET", "/portal/mfa");
-  const made = await state.browser.go("POST", "/portal/mfa",
-    form({ action: "generate-codes", csrf_token: csrfOf(asked.text) }));
+  const made = await act(state.browser, "/portal/mfa",
+                         { action: "generate-codes" });
   const fresh = codesShownOn(made.text).map(function (
       one) { return one.code; });
   check("and the person can generate one for themselves, which is the only " +

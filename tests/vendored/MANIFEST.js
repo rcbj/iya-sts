@@ -97,8 +97,12 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // copy beside it rather than one over there.
 //
 // `browser: true` means the job drives Chrome through selenium-webdriver. There
-// are THREE, all coverage of this working tree's own pages, which is why
-// `--no-browser` names them when it leaves them out.
+// are THREE that are coverage of this working tree's own pages, which is why
+// `--no-browser` names them when it leaves them out — and, since #571, the
+// four OpenID conformance drivers whose plans sign somebody in, which play
+// the suite's person in Chrome (`conformance_browser.js`) because the
+// suite's own browser cannot run the scripted sign-in screen. Those stay in
+// their conformance lanes: one Chrome each, one page at a time.
 // `sts_admin_console.js` walks every page; `sts_xacml_editor.js` drives ONE
 // page in depth — the guided policy editor, whose forty forms per render, whose
 // menus and whose nested-form hazard are markup rather than behaviour, and are
@@ -176,8 +180,8 @@ const CLIENT_SOURCE_DIR = path.join('client', 'src');
 // assertion in any of the three therefore spans a console door and a protocol
 // door — a template built on `/admin-api` deciding at `/xacml/pdp`, a policy
 // disabled on the console disappearing from what a remote PEP pulls, a rule
-// built by pressing buttons on `/admin/xacml/editor` changing what
-// `/xacml/protected` allows — and a test with the two halves in two
+// built by pressing buttons on `/admin/xacml/editor` changing what the PDP
+// permits (`/xacml/protected` until #596) — and a test with the two halves in two
 // repositories could not make one of them. **`sts_xacml_remote_pep.js` IS THE
 // THIRD AND IS ALSO THE ONLY JOB HERE THAT STARTS A SECOND PROCESS OF ITS
 // OWN**: it runs `xacml-pep/pep.js` — the real container's program, not a
@@ -403,7 +407,10 @@ const JOBS = [
   // true`: GNAP exists here and nowhere else. Entries are left standing.
   { file: 'sts_gnap_chain_impersonation.js', browser: false, local: true },
   { file: 'sts_gnap_chain_delegation.js', browser: false, local: true },
-  { file: 'sts_dpop.js',                 browser: false },
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, which
+  // is a static surface over /authn-api since #571, through
+  // `authn_signin.js`; the parent's copy posts the form that is gone.
+  { file: 'sts_dpop.js',                 browser: false, local: true },
   // GNAP (2026-09-12). `local: true` on the second of tests/CLAUDE.md's
   // reasons: GNAP exists in this repository and nowhere else, so there is no
   // copy anywhere to sync from. Three jobs because there are three parties —
@@ -411,9 +418,19 @@ const JOBS = [
   // Shared Signals receiver (signals) — and each asserts through its own door.
   // All three drive `gnap_client.js`, a client written from the RFCs with no
   // code from `gnap/`, and each runs in a throwaway realm it leaves behind.
-  { file: 'sts_gnap_core.js',            browser: false, local: true },
-  { file: 'sts_gnap_rs.js',              browser: false, local: true },
-  { file: 'sts_gnap_signals.js',         browser: false, local: true },
+  //
+  // `testPeer: true` (#586): since the demonstration resource server became
+  // development only (#585), and was deleted (#593), the resource server
+  // these jobs present tokens at is the TEST PEER's (tests/peer/), and a
+  // run with no peer — an AWS
+  // target — reports the job SKIPPED with that reason, as `conformance` and
+  // `samlPeer` are.
+  { file: 'sts_gnap_core.js',            browser: false, local: true,
+    testPeer: true },
+  { file: 'sts_gnap_rs.js',              browser: false, local: true,
+    testPeer: true },
+  { file: 'sts_gnap_signals.js',         browser: false, local: true,
+    testPeer: true },
   // #432: the access-token status list from OAuth's side — an RFC 9068
   // token's status claim, the list fetched, verified and read by the job's
   // own code, and the bit set by RFC 7009 revocation. `local: true` on the
@@ -436,9 +453,12 @@ const JOBS = [
   // #432 phase 5: an identifier's owner from a registered resource set
   // (a non-owner refused on the approval page, a group member approving),
   // a limit lowered on the page and read off the token by the job, and the
-  // demonstration resource server spending to the limit, refunding a failed
-  // operation and refusing past it. A throwaway realm left behind.
-  { file: 'sts_gnap_limits.js',          browser: false, local: true },
+  // test peer's resource server spending to the limit, refunding a failed
+  // operation and refusing past it (#586: it was the demonstration resource
+  // server's, which is development only since #585). A throwaway realm left
+  // behind. `testPeer: true`, as sts_gnap_core.js is.
+  { file: 'sts_gnap_limits.js',          browser: false, local: true,
+    testPeer: true },
   // #432 phase 6: per-type interaction (never, always, a consent action)
   // against a client trusted to skip, a remembered approval not standing in
   // for always, the step-up an mfa type demands and its refusal, and
@@ -500,9 +520,10 @@ const JOBS = [
   // SSF 1.0 FINAL OVER THE WIRE (#144, 2026-09-22): stream ownership (another
   // receiver's stream is a 404 on all ten endpoints), a Transmitter-Supplied
   // aud, the RFC 9493 names and the final complex subject, the inserted-path
-  // discovery form, verification, status in section 8.1.5's order, and
-  // /ssf/receive's typ, iss and aud checks. `local: true`: this repository's
-  // own transmitter, in a throwaway realm it leaves behind.
+  // discovery form, verification, status in section 8.1.5's order, and a
+  // push to the test peer's receiver (/ssf/receive's own checks went with
+  // it, #593). `local: true`: this repository's own transmitter, in a
+  // throwaway realm it leaves behind.
   { file: 'sts_ssf_conformance.js',      browser: false, local: true },
   // OPENID CONNECT CORE OVER THE WIRE (#118, 2026-09-22): the ID Token's
   // hashes by its alg, errors in the fragment, POST at the authorization
@@ -594,8 +615,9 @@ const JOBS = [
   // PRE-AUTHORIZED OFFER ARE SESSION-PRESENTED (#239, #240, 2026-09-26):
   // /oauth2/revoke (user), a refresh replay (risk-level-change and policy),
   // /admin-api/tokens (admin), a CIBA approval and its tokens on the
-  // approving session, and in product the OpenID4VCI offer. `local: true`:
-  // this repository's own transmitter.
+  // approving session, and the OpenID4VCI offer a person makes on
+  // /portal/wallet (#589). `local: true`: this repository's own
+  // transmitter.
   { file: 'sts_caep_oauth_grants.js',    browser: false, local: true },
   // AN OPENID4VCI PRE-AUTHORIZED CODE NAMES ITS PERSON (#158, 2026-10-05): a
   // cross-device offer redeemed by an anonymous wallet gives an access token
@@ -993,9 +1015,13 @@ const JOBS = [
   // written through `/admin-api` and counted on the monitor, and every
   // assertion is at `/oauth2/*` — a one-factor session sent to sign in again
   // for acr_values=mfa, stepped up with a TOTP code enrolled at
-  // `/portal/mfa`, and the challenge the stand-in resource and UserInfo send.
-  // After the monitor job, in a throwaway realm it leaves standing.
-  { file: 'sts_step_up.js',              browser: false, local: true },
+  // `/portal/mfa`, and the challenge a resource server and UserInfo send.
+  // After the monitor job, in a throwaway realm it leaves standing. The
+  // resource server is the TEST PEER's since #586 (the service's stand-in is
+  // development only, #585), so `testPeer: true`: SKIPPED, with the reason,
+  // in a run with no peer.
+  { file: 'sts_step_up.js',              browser: false, local: true,
+    testPeer: true },
   // FAPI 2.0 HTTP Signatures at the resource servers (#178): a signed
   // request verified at /scim/v2 in a throwaway realm, its signed answer
   // verified by the job's own RFC 9421 code with the realm's published key,
@@ -1145,6 +1171,14 @@ const JOBS = [
   // Devices, Device registration and /admin/ldap/devices. `local: true`:
   // this repository's register and API.
   { file: 'sts_devices.js',              browser: false, local: true },
+  // MONITORING → TLS CONNECTION (#597, 2026-10-12): `/tls`,
+  // `/tls/forwarded` and the two open truststore acts unrouted; the console
+  // page and its operation, `GET /admin-api/tls-connection`, describing a
+  // request with no client certificate and its forwarding headers, and one
+  // presenting a certificate whose Root this job added through
+  // `/admin-api/tls/trust/add` (and removes again). `local: true`: this
+  // repository's console and management API.
+  { file: 'sts_tls_connection.js',       browser: false, local: true },
   // LINKING A WEBAUTHN PLATFORM CREDENTIAL ON /portal/devices, IN A REAL
   // BROWSER (#258, 2026-10-06): Chrome's virtual authenticators enrol a
   // roaming key and a platform key on /portal/keys; the roaming one is
@@ -1197,8 +1231,9 @@ const JOBS = [
     timeoutMs: 2700000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
-  // image by tests/vc-suites/fetch-suites.sh, run against the VC-API test
-  // adapter (oid4vc/vc_api.ts) of a throwaway development realm — or, for
+  // image by tests/vc-suites/fetch-suites.sh, run against the W3C VC API
+  // (oid4vc/vc_api.ts) of a throwaway development realm that turns it on
+  // (vcApi.enabled, off by default since #598) — or, for
   // the DID suite, over fixtures generated from this service's DIDs and
   // resolver. Every failure fixed or a documented exception. `local: true`:
   // this repository's oid4vc/ and its test adapter.
@@ -1214,6 +1249,12 @@ const JOBS = [
     timeoutMs: 900000 },
   { file: 'sts_did_test_suite.js',       browser: false, local: true,
     timeoutMs: 900000 },
+  // THE W3C VC API AS A PRODUCT SURFACE (#598, 2026-10-12): off by default
+  // (501), the token in a PRODUCT realm, its own keys (a VC-JOSE-COSE
+  // credential verifies against no key of the realm's JWKS), the options it
+  // refuses, and the status-list publish on /admin-api. `local: true`: this
+  // repository's oid4vc/vc_api.ts.
+  { file: 'sts_vc_api_product.js',       browser: false, local: true },
   // OPENID CONNECT ENTERPRISE EXTENSIONS (#148, 2026-09-26): session_expiry,
   // tenant and aud_sub in the ID Token, tenant refused for another realm,
   // domain_hint's home-realm discovery. `local: true`: this repository's
@@ -1236,9 +1277,12 @@ const JOBS = [
   { file: 'sts_device_key_binding.js',   browser: false, local: true },
   // OPENID PROVIDER COMMANDS (#151, 2026-09-26): registration, metadata,
   // account commands, the callback, automatic suspend and reactivate, a
-  // resumed tenant stream and a retried delivery, against the mock relying
-  // party. `local: true`.
-  { file: 'sts_provider_commands.js',    browser: false, local: true },
+  // resumed tenant stream and a retried delivery, against the TEST PEER's
+  // relying party since #596 (the service's mock was deleted, #591 P5), so
+  // `testPeer: true`: SKIPPED, with the reason, in a run with no peer.
+  // `local: true`.
+  { file: 'sts_provider_commands.js',    browser: false, local: true,
+    testPeer: true },
   // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
   // 2026-10-01): one realm's transmitter as the partner, another realm
   // receiving through federation relationships by poll and push, blocking
@@ -1255,7 +1299,7 @@ const JOBS = [
   // hands the job as CONFORMANCE_SUITE_URL. An hour's watchdog: the plans
   // took about sixteen minutes together on 2026-09-24. `local: true`: this
   // repository's authorization server.
-  { file: 'sts_fapi_conformance.js',     browser: false, local: true,
+  { file: 'sts_fapi_conformance.js',     browser: true, local: true,
     conformance: true, timeoutMs: 3600000, lane: 'conformance-fapi' },
   // THE SAME SUITE, EVERY OTHER PLAN THAT APPLIES (#187, 2026-09-24): the
   // OpenID Provider certification profiles, oidcc-test-plan's client
@@ -1264,7 +1308,7 @@ const JOBS = [
   // `conformance_suite.js` (LOCAL_HELPERS) and fail on an unexplained
   // WARNING as well as a FAILED module. `local: true`: this repository's
   // OpenID Provider.
-  { file: 'sts_oidcc_conformance.js',    browser: false, local: true,
+  { file: 'sts_oidcc_conformance.js',    browser: true, local: true,
     conformance: true, timeoutMs: 10800000, lane: 'conformance' },
   // Shared Signals (#187): the transmitter and CAEP interop plans, push and
   // poll, the CAEP events emitted by the job as the module asks for them.
@@ -1274,13 +1318,13 @@ const JOBS = [
   // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
   // and for the Trust Anchor, and the plan in which the suite plays a whole
   // federation and a realm is the OpenID Provider that joined it.
-  { file: 'sts_oidfed_conformance.js',   browser: false, local: true,
+  { file: 'sts_oidfed_conformance.js',   browser: true, local: true,
     conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
   // OpenID4VCI 1.0 (#187): the issuer plan wallet-initiated, offered and
   // pre-authorized, and the HAIP issuer plan; the job plays the issuer's
   // operator, delivering the offer and the transaction code.
-  { file: 'sts_oid4vci_conformance.js',  browser: false, local: true,
+  { file: 'sts_oid4vci_conformance.js',  browser: true, local: true,
     conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
   // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
@@ -1376,6 +1420,10 @@ const JOBS = [
   // once, the 303 to a local return only, the cookie, ui_locales first, and
   // discovery's ui_locales_supported.
   { file: 'sts_language_chooser.js',     browser: false, local: true },
+  // The prose the server writes into a view (#543): /admin-api translates
+  // a setting's label and description only for a request naming a language,
+  // changes nothing else, and never the OpenAPI document.
+  { file: 'sts_server_prose.js',         browser: false, local: true },
   // #64's addresses: an administrator's verified, a person's own change
   // pending until its link is followed, and the recovery-code reset.
   { file: 'sts_email_verification.js',   browser: false, local: true },
@@ -1430,6 +1478,9 @@ const JOBS = [
   //                           cell B, and /admin/cells draws both cells
   //   sts_cells_ldap.js       a bind at cell B's LDAPS for a person homed
   //                           at A is verified at home (D2)
+  //   sts_cells_kerberos.js   an AS and a TGS exchange at cell B's TCP 88
+  //                           for a person homed at A are answered at home,
+  //                           a sign-out at A included (#588)
   //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
   //                           cell_link.js): fail-closed refuses a refresh,
   //                           a sign-in and a bind; fail-open refreshes a
@@ -1445,6 +1496,7 @@ const JOBS = [
   { file: 'sts_cells_rehome.js',         browser: false, local: true },
   { file: 'sts_cells_console.js',        browser: false, local: true },
   { file: 'sts_cells_ldap.js',           browser: false, local: true },
+  { file: 'sts_cells_kerberos.js',       browser: false, local: true },
   { file: 'sts_cells_unreachable.js',    browser: false, local: true },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE
@@ -1523,7 +1575,6 @@ const JOBS = [
 // ---------------------------------------------------------------------------
 const HELPERS = [
   'browser_flags.js',
-  'consent_screen.js',
   'expectation.js',
   'jwt_vc_json_common.js',
   'module_paths.js',
@@ -1533,7 +1584,6 @@ const HELPERS = [
   // says a missing helper looks like.
   'page_load.js',
   'random_username.js',
-  'sts_applications.js',
   'wait_for.js',
   'env/local.js'
 ];
@@ -1552,15 +1602,42 @@ const HELPERS = [
 // a silent gap. A local helper that nothing lists gets that guarantee from
 // nothing.
 const LOCAL_HELPERS = [
+  // LOCALISED (#571, rcbj's decision): it signs in at /authn/login, a
+  // static surface over /authn-api since #571, through `authn_signin.js`;
+  // it was a copy of the parent's (listed in HELPERS until then).
+  'sts_applications.js',
+  // LOCALISED (#576, on #569's rule): it passes the consent screen, a page
+  // of the sign-in surface over /authn-api/consent since #576, through
+  // `authn_signin.js`; it was a copy of the parent's (listed in HELPERS
+  // until then).
+  'consent_screen.js',
+  // The sign-in screen over `/authn-api` (#571): the shell, the view and
+  // the act, with the CSRF binding — what every job that signs somebody in
+  // at /authn/login goes through since the screen became a static surface.
+  'authn_signin.js',
+  // The wallet's pages over `/authn-api/wallet` (#574): the start, the wait
+  // page's view, the collection and the Digital Credentials API's answer,
+  // with the same binding — what `sts_oid4vp_wallet.js` and `sts_siop.js`
+  // drive since the wallet's pages became routes of the sign-in surface.
+  'wallet_signin.js',
   // The console's sign-in and a client of the operations its pages are
   // drawn from (#446). Copied from the parent on 2026-09-06 and written here
   // since; the static console (#446) made it a different helper from the
   // parent's, which signs in to a cookie-holding console.
   'console_signin.js',
+  // The portal's sign-in and a client of the operations its pages are drawn
+  // from (#568): the static portal signs in as the public client
+  // `sts-user-portal` and draws every page from `/account-api`.
+  'portal_signin.js',
   // What the OpenID conformance suite's drivers share (#187): the suite's
   // API, a plan run module by module, and the ledger of argued failures and
   // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).
   'conformance_suite.js',
+  // The person in front of the conformance suite (#571, rcbj's decision):
+  // headless Chrome, one per job and one page at a time, opening each
+  // address a module asks a person to visit and signing in on the real
+  // scripted screen, which the suite's own HtmlUnit browser cannot draw.
+  'conformance_browser.js',
   // A Kerberos client over raw TCP 88 and MS-KKDCP — AS, TGS, the GSS-wrapped
   // AP-REQ and SPNEGO — for `sts_kerberos_spnego.js` (2026-09-18). It reuses
   // the service's codec for the encodings and works out key usages and
@@ -1674,7 +1751,12 @@ const LOCAL_HELPERS = [
   // unless STS_CHAIN_CAPTURE names a directory, then `<job>.json` there with
   // every token, assertion or ticket, decoded. Required by the three chain
   // kits above and by the GNAP one. Nothing from the service.
-  'chain_capture.js'
+  'chain_capture.js',
+  // THE TEST PEER, FROM A JOB'S SIDE (#586): whether this run has one, a
+  // tenant configured for a realm, the registrations each role needs, and
+  // the readback of what reached the peer. The peer itself is tests/peer/,
+  // a container of the stack; nothing from the service.
+  'test_peer.js'
 ];
 
 // ---------------------------------------------------------------------------

@@ -139,6 +139,10 @@ class LdapPage {
       ' <a href="/admin/applications">' +
       t.html('consoleLdap.apps.registryLink') + '</a> ' +
       t.html('consoleLdap.apps.registryNoteEnd')) +
+      // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
+      // the notes, the tiles and the container's schema are Metadata.
+      '<h2 data-tab="entries">' +
+      t.html('console.nav.ldap-applications') + '</h2>' +
       '<form method="get" action="/admin/ldap/applications"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleLdap.common.anywhere') + '</label><input ' +
@@ -265,6 +269,10 @@ class LdapPage {
       kit.tile(json.max, t.text('consoleLdap.common.tileMaxHeld')) +
       '</div>' +
       kit.warn(t.html('consoleLdap.fed.warn')) +
+      // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
+      // the notes, the tiles and the container's schema are Metadata.
+      '<h2 data-tab="entries">' +
+      t.html('console.nav.ldap-federations') + '</h2>' +
       '<form method="get" action="/admin/ldap/federations"><div ' +
       'class="formrow"><label for="q">' +
       t.html('consoleLdap.fed.thRelationship') + '</label><input ' +
@@ -396,7 +404,8 @@ class LdapPage {
                agents: json.agentsContainer }) + ' ' +
       '<a href="/spiffe">' + t.html('consoleLdap.spiffe.introWhat') +
       '</a> &middot; ' +
-      '<a href="/admin/spiffe">' + t.html('consoleLdap.spiffe.introConsole') +
+      '<a href="/admin/cert-issuance#cert-spiffe-overview">' +
+      t.html('consoleLdap.spiffe.introConsole') +
       '</a>' + t.html('consoleLdap.common.period') + '</p>' +
       '<div class="tiles">' +
       kit.tile(json.entries, t.text('consoleLdap.spiffe.tileEntries')) +
@@ -415,7 +424,8 @@ class LdapPage {
       '<button class="secondary" type="submit">' +
       t.html('consoleLdap.spiffe.apply') + '</button></div></form>' +
       kit.note(t.html('consoleLdap.spiffe.pagedNote')) +
-      '<h2>' + t.html('consoleLdap.spiffe.tileEntries') + '</h2>' +
+      '<h2 data-tab="entries">' + t.html('consoleLdap.spiffe.tileEntries') +
+      '</h2>' +
       '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
       '<input type="hidden" name="agentq" value="' + kit.esc(carried.agentq) +
       '"><input ' +
@@ -438,7 +448,8 @@ class LdapPage {
       (entryRows || '<tr><td colspan="4">' +
         t.html('consoleLdap.spiffe.none') + '</td></tr>') + '</table>' +
       entriesNav.foot +
-      '<h2>' + t.html('consoleLdap.spiffe.tileAgents') + '</h2>' +
+      '<h2 data-tab="agents">' + t.html('consoleLdap.spiffe.tileAgents') +
+      '</h2>' +
       '<form method="get" action="/admin/ldap/spiffe"><div class="formrow">' +
       '<input type="hidden" name="entryq" value="' + kit.esc(carried.entryq) +
       '"><input ' +
@@ -479,7 +490,7 @@ class LdapPage {
       '</table>' +
       '<p class="sub"><a href="/admin/ldap/spiffe?format=json">' +
       t.html('consoleLdap.common.asJson') + '</a> &middot; ' +
-      '<a href="/admin/spiffe/entries">' +
+      '<a href="/admin/cert-issuance#cert-spiffe-entries">' +
       t.html('consoleLdap.spiffe.footEntries') + '</a> &middot; ' +
       '<a href="/admin/ldap/directory">' +
       t.html('consoleLdap.common.footEveryEntry') + '</a> &middot; <a ' +
@@ -540,6 +551,9 @@ class LdapPage {
       kit.tile(json.count, t.text('consoleLdap.devices.tileEntries')) +
       '</div>' +
       kit.note(t.html('consoleLdap.devices.note')) +
+      // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
+      // the notes, the tiles and the container's schema are Metadata.
+      '<h2 data-tab="entries">' + t.html('console.nav.ldap-devices') + '</h2>' +
       '<form method="get" action="/admin/ldap/devices"><div class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.devices.thDevice') +
       '</label><input type="text" id="q" name="q" ' +
@@ -649,6 +663,9 @@ class LdapPage {
       'href="/admin/ldap/applications">' +
       t.html('consoleLdap.roles.noteAppsLink') + '</a> ' +
       t.html('consoleLdap.roles.noteEnd')) +
+      // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
+      // the notes, the tiles and the container's schema are Metadata.
+      '<h2 data-tab="entries">' + t.html('console.nav.ldap-roles') + '</h2>' +
       '<form method="get" action="/admin/ldap/roles"><div class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.common.anywhere') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
@@ -771,6 +788,10 @@ class LdapPage {
       kit.warn(t.html('consoleLdap.policies.warn') +
       ' <a href="/admin/xacml">XACML</a> ' +
       t.html('consoleLdap.policies.warnEnd')) +
+      // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
+      // the notes, the tiles and the container's schema are Metadata.
+      '<h2 data-tab="entries">' +
+      t.html('console.nav.ldap-policies') + '</h2>' +
       '<form method="get" action="/admin/ldap/policies"><div class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.common.anywhere') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +
@@ -889,6 +910,9 @@ class LdapPage {
       kit.note(t.html('consoleLdap.peps.note') +
       ' <a href="/admin/xacml/peps">' + t.html('consoleLdap.peps.noteLink') +
       '</a> ' + t.html('consoleLdap.peps.noteEnd')) +
+      // THE ENTRIES ARE A TAB (2026-10-12), headed by the page's own name;
+      // the notes, the tiles and the container's schema are Metadata.
+      '<h2 data-tab="entries">' + t.html('console.nav.ldap-peps') + '</h2>' +
       '<form method="get" action="/admin/ldap/peps"><div class="formrow">' +
       '<label for="q">' + t.html('consoleLdap.common.anywhere') + '</label>' +
       '<input type="text" id="q" name="q" value="' + kit.esc(wantedText) +

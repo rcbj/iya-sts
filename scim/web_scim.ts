@@ -28,6 +28,11 @@
 
 import kit = require('../admin-ui/web_kit');
 import SettingsForms = require('../admin-ui/web_settings');
+import ScimClientsPage = require('./web_scim_clients');
+
+// THE SETTINGS GROUP THE CLIENTS TAB DRAWS (#552); every other group on this
+// page is the server's.
+const CLIENT_GROUP = 'SCIM client';
 
 type Json = any;
 
@@ -45,7 +50,7 @@ class ScimPage {
    * @param json - the answer of the page's management API operation
    * @returns the body as HTML
    */
-  static body(ctx, json) {
+  static body(ctx, json, endpoints) {
     const t = ctx.t;
     const counters = json.counters;
 
@@ -249,8 +254,10 @@ class ScimPage {
       mappingTable(json.mapping.user) +
 
       '<h2>' + t.html('consoleScim.groupMapping') + '</h2>' +
-      mappingTable(json.mapping.group) +
+      mappingTable(json.mapping.group);
 
+    // The server's settings, a tab of their own (2026-10-12).
+    const serverSettings =
       // THIS PAGE USED TO SAY IT HAD NO CONTROLS, and the sentence it said it
       // in was the one every other page here cited: "a form here would be a
       // second door to one setting". What that argument was actually
@@ -259,13 +266,15 @@ class ScimPage {
       // same override map as /admin/config, which is the arrangement
       // /admin/token-lifetimes established. What has changed is only which
       // page draws the door.
-      SettingsForms.forms(json.settings, '/admin/scim', undefined, t) +
+      SettingsForms.forms(json.settings, '/admin/scim',
+                          ScimPage.groupsOf(json.settings, false), t) +
       kit.note(t.html('consoleScim.settingsNote') + ' <a ' +
       'href="/admin/users">' + t.html('consoleScim.linkUsers') + '</a> ' +
       t.html('consoleScim.and') + ' <a ' +
       'href="/admin/groups">' + t.html('consoleScim.linkGroups') + '</a>' +
-      t.html('consoleScim.fullStop')) +
-
+      t.html('consoleScim.fullStop'));
+    // The page's links, on Metadata.
+    const footer =
       kit.note('<a href="/scim">' + t.html('consoleScim.footerForAPerson') +
       '</a> &middot; ' +
       '<a href="/admin/scim/monitor">' + t.html('consoleScim.footerAskedToDo') +
@@ -276,7 +285,40 @@ class ScimPage {
       '</a> &middot; <a href="/admin/ldap/service">' +
       t.html('consoleScim.footerDirectory') + '</a>');
 
-    return inner;
+    // METADATA FIRST (rcbj, 2026-10-12): the realm's endpoints and everything
+    // the page explains or reports — the traffic counts, the mappings, what
+    // each operation does — then Server (its settings) and Clients (#552).
+    return kit.tabbedPanels('scim', [
+      { id: 'scim-tab-metadata',
+        label: t.text('consoleProtocolSettings.metadataHeading'),
+        html: (endpoints || '') + inner + footer },
+      { id: 'server', label: t.text('consoleScimClients.tabServer'),
+        html: serverSettings },
+      { id: 'clients', label: t.text('consoleScimClients.tabClients'),
+        html: ScimClientsPage.tab(ctx, json.scimClients) +
+              SettingsForms.forms(json.settings, '/admin/scim',
+                                  ScimPage.groupsOf(json.settings, true), t) }
+    ]);
+  }
+
+  /**
+   * Draws one outbound SCIM client's page, `/admin/scim?client=<id>`.
+   *
+   * @param ctx - the render context
+   * @param json - the answer of the page's operation with `client`
+   * @returns the page's HTML
+   */
+  static clientDetail(ctx, json) {
+    return ScimClientsPage.detail(ctx, json);
+  }
+
+  // The settings groups of one tab: the clients' group, or every other.
+  static groupsOf(settings, clients) {
+    return ((settings && settings.groups) || []).map(function (group) {
+      return group.group;
+    }).filter(function (name) {
+      return (name === CLIENT_GROUP) === clients;
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -575,7 +617,7 @@ class ScimPage {
 
       tiles +
 
-      '<h2>' + t.html('consoleScim.byCallType') + '</h2>' +
+      '<h2 data-tab="calls">' + t.html('consoleScim.byCallType') + '</h2>' +
       kit.note(t.html('consoleScim.byCallTypeNote')) +
       '<table><tr><th>' + t.html('consoleScim.colOperation') +
       '</th><th class="num">' + t.html('consoleScim.colCalls') + '</th>' +
@@ -589,12 +631,13 @@ class ScimPage {
       t.html('consoleScim.colWhatItIs') + '</th></tr>' +
       operationRows + '</table>' +
 
-      '<h2>' + t.html('consoleScim.byResourceType') + '</h2>' +
+      '<h2 data-tab="resources">' +
+      t.html('consoleScim.byResourceType') + '</h2>' +
       '<table><tr><th>' + t.html('consoleScim.colResourceType') +
       '</th><th class="num">' + t.html('consoleScim.colCalls') + '</th></tr>' +
       resourceRows + '</table>' +
 
-      '<h2>' + t.html('consoleScim.clients') + '</h2>' +
+      '<h2 data-tab="clients">' + t.html('consoleScim.clients') + '</h2>' +
       kit.note(t.html('consoleScim.clientsNote')) +
       '<div class="tiles">' +
       kit.tile(c.authentication.distinct,
@@ -625,7 +668,7 @@ class ScimPage {
       '</th><th>' + t.html('consoleScim.colLastSeen') + '</th></tr>' +
       clientRows + '</table>' +
 
-      '<h2>' + t.html('consoleScim.byScheme') + '</h2>' +
+      '<h2 data-tab="schemes">' + t.html('consoleScim.byScheme') + '</h2>' +
       kit.note(t.html('consoleScim.bySchemeNote')) +
       '<table><tr><th>' + t.html('consoleScim.colScheme') + '</th><th>' +
       t.html('consoleScim.colEnabled') + '</th><th class="num">' +
@@ -633,7 +676,8 @@ class ScimPage {
       '<th>' + t.html('consoleScim.colNotes') + '</th></tr>' + schemeRows +
       '</table>' +
 
-      '<h2>' + t.html('consoleScim.whatWentBack') + '</h2>' +
+      '<h2 data-tab="responses">' +
+      t.html('consoleScim.whatWentBack') + '</h2>' +
       kit.note(t.html('consoleScim.whatWentBackMonitorNote')) +
       '<div class="tiles" style="align-items:flex-start">' +
       '<div><table><tr><th>' + t.html('consoleScim.colClass') +
@@ -662,7 +706,8 @@ class ScimPage {
       kit.note(t.html('consoleScim.volumeNote', {
         first: kit.whenText(c.firstAt), last: kit.whenText(c.lastAt) })) +
 
-      '<h2>' + t.html('consoleScim.lastCalls', { n: c.recentCap }) +
+      '<h2 data-tab="recent">' +
+      t.html('consoleScim.lastCalls', { n: c.recentCap }) +
       '</h2>' +
       kit.note(t.html('consoleScim.recentNote1', { n: c.recentCap }) +
       ' <a href="/admin/audit">' + t.html('consoleScim.linkAuditLog') + '</a>' +
@@ -678,7 +723,8 @@ class ScimPage {
       recentRows + '</table>' +
 
       (json.store
-        ? '<h2>' + t.html('consoleScim.whatItWrote') + '</h2>' +
+        ? '<h2 data-tab="written">' +
+          t.html('consoleScim.whatItWrote') + '</h2>' +
           // The opening sentence carries no HTML entity, deliberately: the
           // console derives an h2 tooltip from it through plainTextOf() and
           // esc(), which leaves an entity showing as its own source text.
@@ -698,6 +744,8 @@ class ScimPage {
           '</div>'
         : '') +
 
+      // Metadata's, after whichever tab is last (2026-10-12).
+      '<div data-metadata>' +
       kit.note(t.html('consoleScim.noReset1') + ' <a href="/admin/audit">' +
       t.html('consoleScim.linkAuditLog') + '</a>' +
       t.html('consoleScim.noReset2')) +
@@ -710,7 +758,7 @@ class ScimPage {
       '</a> &middot; <a href="/admin/audit">' +
       t.html('consoleScim.footerDurable') +
       '</a> &middot; <a href="/admin/metrics">' +
-      t.html('consoleScim.footerByRoute') + '</a>');
+      t.html('consoleScim.footerByRoute') + '</a>') + '</div>';
 
     return inner;
   }

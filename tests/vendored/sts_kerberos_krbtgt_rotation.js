@@ -377,13 +377,15 @@ async function test() {
   // console (#446), asked as the console asks it.
   const consoleClient = await signin.signInToTheConsole(base, reader, log,
                                                         { grant: "read" });
-  const page = await consoleClient.get("/admin/kerberos/principals" +
-                                       "?format=json");
+  // The Principals tab of /admin/kerberos since the tab consolidation
+  // (2026-10-11); its view is the composed `kerberosPrincipals` member.
+  const page = await consoleClient.get("/admin/kerberos?format=json");
   const apiView = await krbtgtOf(api);
   check("the default realm's console page and the API report the same " +
         "krbtgt kvno", function () {
     assert.strictEqual(page.status, 200, page.text.slice(0, 300));
-    const drawn = page.json && page.json.krbtgt;
+    const drawn = page.json && page.json.kerberosPrincipals &&
+      page.json.kerberosPrincipals.krbtgt;
     assert.ok(drawn && apiView, JSON.stringify([drawn, apiView]));
     assert.strictEqual(drawn.kvno, apiView.kvno);
     assert.strictEqual(drawn.source, apiView.source);

@@ -1,0 +1,11 @@
+{
+  "heading": "{kind, select, roles {Roller du äger} groups {Grupper du äger} service-accounts {Tjänstekonton du äger} other {Applikationer du äger}}",
+  "sub": "Allt av det här slaget vars ägare anger dig eller en grupp du är med i. En ägare ansvarar för en resurs; den ger ingenting. Be en administratör om du vill ändra något.",
+  "thName": "Namn",
+  "thDetail": "Detalj",
+  "thHow": "Varför den är din",
+  "you": "Du är ägare",
+  "viaGroup": "Genom gruppen {group}",
+  "none": "Du äger {kind, select, roles {ingen roll} groups {ingen grupp} service-accounts {inget tjänstekonto} other {ingen applikation}}.",
+  "yourGroups": "Dina grupper: {groups}."
+}

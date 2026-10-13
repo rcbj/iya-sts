@@ -1,0 +1,18 @@
+{
+  "title": "SAML 1.1",
+  "heading": "SAML 1.1",
+  "sub": "De två webbläsarprofilerna, och SAML-responderaren bakom den ena av dem",
+  "lead": "Den här tjänsten utfärdar SAML 1.1-assertioner genom tre dörrar, och det här är den nyaste av dem: <strong>webbläsarprofilerna</strong>, där en person loggar in och en assertion når en förlitande part. De andra två är {wsfed}, som sveper in samma assertion i ett <code>wresult</code>, och {wstrust}, som returnerar en i ett <code>RSTR</code>. Alla tre anropar en och samma byggare, så ett attribut som konfigureras på <code>/admin/saml-attributes</code> syns i alla tre.",
+  "endpoints": "Slutpunkterna",
+  "endpoint": "Slutpunkt",
+  "what": "Vad den är",
+  "sso": "tjänsten för överföring mellan webbplatser (inter-site transfer service) — SAML 1.1:s namn på det som SAML 2.0 kallar Single Sign-On-tjänsten",
+  "responder": "SAML-responderaren, över SOAP. Löser upp artefakter, returnerar assertioner efter AssertionID och besvarar AttributeQuery och AuthenticationQuery — attributauktoritetshalvan av SAML 1.1",
+  "metadata": "signerade metadata. Ett SAML 2.0-metadatadokument som beskriver en SAML 1.1-identitetsleverantör, vilket är vad varje förlitande part faktiskt läser",
+  "different": "Vad som skiljer den från SAML 2.0",
+  "noRequest": "<strong>Inget begäransmeddelande.</strong> Ingen AuthnRequest, så den förlitande parten identifierar sig aldrig, ber aldrig om en bindning, ett NameID-format eller en autentiseringskontext, och får aldrig ett fel — det finns inget att besvara.",
+  "noSlo": "<strong>Ingen Single Logout.</strong> Den kom med SAML 2.0.",
+  "spellings": "<strong>Andra stavningar genomgående.</strong> <code>AssertionID</code> inte <code>ID</code>, ett <code>Issuer</code>-attribut inte ett element, en statuskod som är ett QName inte en URI, <code>AudienceRestrictionCondition</code> inte <code>AudienceRestriction</code>, och en signatur som ligger SIST i en assertion och FÖRST i ett svar.",
+  "artifact": "<strong>En artefakt på 42 byte</strong>, typ 0x0001, där SAML 2.0:s är 44 byte och typ 0x0004.",
+  "theMetadata": "Metadata"
+}

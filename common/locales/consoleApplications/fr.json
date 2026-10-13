@@ -687,7 +687,7 @@
   "a3.declaredNoteA": "<strong>Déclaré</strong> correspond à <code>appAllowedProtocol</code> — ce à quoi quelqu’un a dit que cette application SERT, sur ",
   "a3.linkNewApplication": "Nouvelle application",
   "a3.declaredNoteB": " ou via les formulaires Ajouter et Supprimer ci-dessous. <strong>Enregistré</strong> se lit d’après les TYPES du tableau ci-dessus, et non d’après les libellés de protocole à côté, car un partenaire de fédération est enregistré sous le protocole que parle sa relation et, par libellé, serait indiscernable d’un client ordinaire.",
-  "a3.recordedNote": "<strong>Enregistré n’est pas la même chose que « s’est authentifié ».</strong> Un type est généralement écrit lorsqu’un protocole reconnaît l’identifiant — mais une création en prend un aussi, donc une entrée faite à la main peut être enregistrée dans une famille où elle ne s’est jamais connectée. Le compte d’<em>Authentifications</em> ci-dessus est le chiffre qui dit si quelque chose s’est réellement produit. <strong>Et aucune des deux colonnes n’accorde quoi que ce soit :</strong> une famille déclarée et non enregistrée est généralement une application qui ne s’est pas encore connectée, une famille enregistrée et jamais déclarée est le cas ordinaire, et rien ne demande à un protocole de vérifier l’une ou l’autre — un simulateur qui refuserait un protocole retirerait un cas de test au lieu d’en ajouter un.",
+  "a3.recordedNote": "<strong>Enregistré n’est pas la même chose que « s’est authentifié ».</strong> Un type est généralement écrit lorsqu’un protocole reconnaît l’identifiant — mais une création en prend un aussi, donc une entrée faite à la main peut être enregistrée dans une famille où elle ne s’est jamais connectée. Le compte d’<em>Authentifications</em> ci-dessus est le chiffre qui dit si quelque chose s’est réellement produit. <strong>Et aucune des deux colonnes n’accorde quoi que ce soit :</strong> une famille déclarée et non enregistrée est généralement une application qui ne s’est pas encore connectée, une famille enregistrée et jamais déclarée est le cas ordinaire, et rien ne demande à un protocole de vérifier l’une ou l’autre — un service qui refuserait un protocole retirerait un cas de test au lieu d’en ajouter un.",
   "a3.colFamily": "Famille",
   "a3.colDeclared": "Déclaré",
   "a3.colRecorded": "Enregistré",
@@ -785,5 +785,8 @@
   "ldif.importIntro": "Crée une application dans ce domaine à partir d&rsquo;un fichier LDIF contenant un enregistrement d&rsquo;application, tel qu&rsquo;une exportation l&rsquo;écrit. L&rsquo;application nommée dans le fichier ne doit pas déjà exister ici : une importation n&rsquo;écrase jamais rien et ne peut donc pas modifier l&rsquo;application de cette page.",
   "ldif.file": "Fichier LDIF",
   "ldif.paste": "ou collez le LDIF",
-  "ldif.import": "Importer le LDIF"
+  "ldif.import": "Importer le LDIF",
+  "owners.tab": "Propriétaires",
+  "owners.lead": "Les personnes et les groupes qui répondent de cette application. Trouvez-en un ci-dessous et appuyez sur <strong>Ajouter</strong>, ou retirez-en un avec <strong>Retirer</strong> : chaque modification est enregistrée dès que vous appuyez. Un propriétaire n'accorde rien : rien dans ce service ne le lit pour décider quoi que ce soit.",
+  "owners.leadRead": "Les personnes et les groupes qui répondent de cette application, d'après ses valeurs <code>appOwner</code>. Un propriétaire n'accorde rien."
 }

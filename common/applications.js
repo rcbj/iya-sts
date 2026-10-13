@@ -132,16 +132,18 @@
 // (That page was unprotected when this was written; it is behind the console
 // gate since 2026-09-06, and an LDAP search never returns the attribute —
 // `ldap/ldap_server.js`'s `SECRET_ATTRIBUTES`.) The same objection applies to
-// `GET /krb5/principals`, which prints Kerberos passwords, and the answer is
-// the one written there: a debugger whose accounts are unusable without
-// reading the source is worse than one that says what they are. The secret is
+// `GET /krb5/principals`, which printed Kerberos passwords until #595, and
+// the answer is the one written there: a debugger whose accounts are
+// unusable without reading the source is worse than one that says what they
+// are. The secret is
 // generated per registration and lives on the entry, so it is written down
 // wherever the directory is (`persistence/CLAUDE.md`).
 //
 // It is worth being precise about what that costs now that RFC 9700 mode
 // CHECKS that secret (section 2.5): anyone who can read this directory can
-// authenticate as that client. On a service that authenticates nobody and says
-// so on every page, that is the honest state of affairs rather than a hole —
+// authenticate as that client. On a development-mode service that
+// authenticates nobody and says so on every page, that is the honest state of
+// affairs rather than a hole —
 // but it is why `audit.js` must never be given this value. Its rule that no
 // credential is ever recorded is about the audit log and stands untouched: the
 // rows this module writes name the application and never its secret.
@@ -234,7 +236,8 @@ const KINDS = [
     what: 'An AppliesTo from a RequestSecurityToken — the service the token ' +
           'is for.' },
   { kind: 'oid4vp-verifier', label: 'OpenID4VP verifier',
-    what: 'The client_id the mock Verifier presents in an Authorization ' +
+    what: 'The client_id this service\'s Verifier presents in an ' +
+          'Authorization ' +
           'Request.' },
   { kind: 'federation-identity-provider', label: 'Federated identity provider',
     what: 'A FOREIGN identity service this instance federates with as a ' +
@@ -604,7 +607,23 @@ const PROTOCOLS = [
           'The secret must already exist there: a push writes a new version ' +
           'and never creates one. The write credential ' +
           '(secretDestCredential) is sealed on this entry and never shown. ' +
-          'Nothing is issued through this family.' }
+          'Nothing is issued through this family.' },
+  // #552: an OUTBOUND SCIM CLIENT. Like a secret destination this is an
+  // application this service CALLS — a remote SCIM 2.0 service provider it
+  // pushes this realm's people and groups to (`scim/scim_client.ts`) — and
+  // its credentials are sealed and withheld on the entry. Nothing is issued
+  // through it.
+  { id: 'scim-client', label: 'SCIM client (outbound provisioning)',
+    kind: '', kinds: [],
+    identifierAttribute: '', redirectAttribute: '',
+    what: 'A remote SCIM 2.0 service provider this service PUSHES users and ' +
+          'groups to (#552): RFC 7643 resources over RFC 7644, created, ' +
+          'replaced or patched, deactivated or deleted as the directory ' +
+          'changes, and reconciled on demand or on a schedule. It ' +
+          'authenticates with HTTP Basic, an OAuth 2.0 client_credentials ' +
+          'token, or a TLS client certificate; every credential is sealed ' +
+          'on this entry and never shown. Configured on Protocols → SCIM → ' +
+          'Clients. Nothing is issued through this family.' }
 ];
 
 /**
@@ -1105,7 +1124,7 @@ const SCHEMA = {
             'for a URL that nothing else in the register mentions. It is a ' +
             'LOOKUP and not a permission: an audience nobody registered is ' +
             'exchanged for exactly as before and recorded verbatim, because ' +
-            'a mock that refused would remove a test case rather than add ' +
+            'a service that refused would remove a test case rather than add ' +
             'one.' },
     { name: 'oauthClientSecret', kind: 'multi', from: 'POST /oauth2/register',
       sensitive: true,
@@ -1469,6 +1488,17 @@ const SCHEMA = {
     // taken away, so a form that could remove it would be a form that could
     // bring a withdrawn grant back. `common/consent.ts` writes it, through
     // `noteGlobalConsentWithdrawn()` below, and nothing else does.
+    // WHO ANSWERS FOR THE APPLICATION (#604): people and groups of this
+    // realm, by DN, the rule a group's and a role's owners follow. Written by
+    // the application page's Owners tab alone (addOwner(), removeOwner()),
+    // so it is in no EDITABLE row and the field grid never draws it.
+    { name: 'appOwner', kind: 'multi',
+      from: 'the application page\'s Owners tab',
+      what: 'A person or a group of this realm who answers for the ' +
+            'application (#604), by DN, as a group\'s and a role\'s ' +
+            'owners are. Multi-valued, at most 25. An owner GRANTS ' +
+            'NOTHING: nothing in this service reads it to decide anything. ' +
+            'The user portal lists what a person owns.' },
     { name: 'oauthGlobalConsentWithdrawn', kind: 'multi',
       from: 'the consent register, when a global consent is withdrawn',
       what: 'WHEN A GLOBAL CONSENT WAS WITHDRAWN, as `<when> <scope>` with ' +
@@ -1849,9 +1879,11 @@ const SCHEMA = {
     // RESOURCE: what it requires of the authentication behind an access token
     // addressed to it. RFC 9470 defines no registration or metadata member for
     // either — section 3 is a challenge a resource server sends — so they are
-    // written by an operator, never by a registration. ENFORCED by the stand-in
-    // resource `/oauth2/step-up/resource/{identifier}`, which answers for this
-    // application; READ through `stepUpRequirementOf()` below, whose grammar is
+    // written by an operator, never by a registration. ENFORCED by the
+    // resource server the application is — somebody else's process (the
+    // stand-in resource that answered for it here went with #593); drawn on
+    // the monitor, and READ through `stepUpRequirementOf()` below, whose
+    // grammar is
     // `oauth-oidc/step_up.ts`'s header's. Family-scoped for the introspection
     // attributes' reason.
     { name: 'oauthStepUpAcrValues', kind: 'single',
@@ -2540,12 +2572,15 @@ const SCHEMA = {
     { name: 'samlAcsEndpoint', kind: 'multi', from: 'consumed metadata',
       what: 'An <md:AssertionConsumerService> from the consumed metadata, as ' +
             '`<index> <isDefault> <binding> <location>` — isDefault is ' +
-            '`true`, `false` or `-` for unstated. An AuthnRequest naming an ' +
-            'AssertionConsumerServiceIndex is answered at that endpoint and ' +
-            'on its binding; one naming an AssertionConsumerServiceURL must ' +
-            'name one of these (in EVERY mode, once metadata has been ' +
-            'consumed); one naming neither goes to the default endpoint ' +
-            '(saml-metadata-2.0-os section 2.2.3).' },
+            '`true`, `false` or `-` for unstated. A SAML 2.0 AuthnRequest ' +
+            'naming an AssertionConsumerServiceIndex is answered at that ' +
+            'endpoint and on its binding; one naming an ' +
+            'AssertionConsumerServiceURL must name one of these (in EVERY ' +
+            'mode, once metadata has been consumed); one naming neither ' +
+            'goes to the default endpoint (saml-metadata-2.0-os section ' +
+            '2.2.3). SAML 1.1 uses the registered binding and location to ' +
+            'select Browser/POST or Browser/Artifact when no profile is ' +
+            'explicitly requested.' },
     { name: 'samlSloEndpoint', kind: 'multi', from: 'consumed metadata',
       what: 'An <md:SingleLogoutService> from the consumed metadata, as ' +
             '`<binding> <location>` or `<binding> <location> ' +
@@ -3073,7 +3108,7 @@ const SCHEMA = {
     // says so in the log. That is this service's rule everywhere a directory
     // value is read back: an `ldapmodify` can put any string on any attribute,
     // and an identity provider that refused to issue because somebody typed
-    // "yes" instead of "true" would be a mock that stopped answering.
+    // "yes" instead of "true" would be a service that stopped answering.
     { name: 'saml2CustomAttributes', kind: 'single',
       from: 'the console\'s Custom SAML attributes section',
       what: 'THIS SERVICE PROVIDER\'S OWN SAML 2.0 ATTRIBUTES, as a JSON array ' +
@@ -3234,7 +3269,7 @@ const SCHEMA = {
             'addresses, so a WS-Federation application appeared to have a ' +
             'SAML ACS it had never named. Two facts, two attributes. Like ' +
             'the SAML one beside it this is CHECKED IN PRODUCT MODE ONLY: ' +
-            'development refuses no wreply, because a mock that refused ' +
+            'development refuses no wreply, because a service that refused ' +
             'would remove a test case rather than add one; product posts ' +
             'only to an address on this list and a sighting never adds one. ' +
             'A wreply development recorded is marked on ' +
@@ -3431,7 +3466,7 @@ const SCHEMA = {
       identifierName: 'client_id',
       what: 'THE VERIFIER\'S CLIENT_ID in an Authorization Request asking ' +
             'for a presentation — OpenID4VP\'s identifier attribute. This ' +
-            'service\'s own mock Verifier takes its from configuration ' +
+            'service\'s own Verifier takes its from configuration ' +
             '(oid4vp.clientId) rather than from a caller, so that record ' +
             'appears the first time a presentation is verified; a value ' +
             'declared here is a FOREIGN verifier somebody is configuring.' },
@@ -3462,10 +3497,14 @@ const SCHEMA = {
     { name: 'ldapBindDn', kind: 'multi', from: 'the console, or by hand',
       identifier: true,
       identifierName: 'bind DN',
-      what: 'THE DN A DIRECTORY CLIENT BINDS AS on 389 or LDAPS 636. EVERY ' +
-            'BIND HERE SUCCEEDS — any DN, any password, anonymous — so ' +
-            'nothing will ever write this and nothing will ever read it; it ' +
-            'is where an operator records which credential an application is ' +
+      // Both modes' truth (#543 round 2): "EVERY BIND HERE SUCCEEDS" was
+      // unqualified, and in product only a person binds.
+      what: 'THE DN A DIRECTORY CLIENT BINDS AS on 389 or LDAPS 636. Nothing ' +
+            'will ever write this and nothing will ever read it: in ' +
+            'development mode EVERY BIND SUCCEEDS — any DN, any password, ' +
+            'anonymous — and in product mode only a person binds, so an ' +
+            'application reads the directory through SCIM instead. It is ' +
+            'where an operator records which credential an application is ' +
             'expected to use, beside the rest of what that application is.' },
     { name: 'scimClientId', kind: 'multi', from: 'the console, or by hand',
       identifier: true,
@@ -3650,6 +3689,136 @@ const SCHEMA = {
             'own key-encryption key and database password with. Sealed with ' +
             'the key-encryption key when keys persist, WITHHELD from every ' +
             'page, /admin-api reply and directory read, and never logged.' },
+    // AN OUTBOUND SCIM CLIENT (#552): the remote service provider this
+    // entry pushes to, how it authenticates there, and what it pushes. See
+    // the `scim-client` row of PROTOCOLS and `scim/scim_client.ts`, which
+    // reads these; every address here is the operator's.
+    { name: 'scimClientBaseUrl', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'THE REMOTE SCIM BASE URI (RFC 7644 section 1.3), the /v2 ' +
+            'segment included where the service provider uses one: ' +
+            'https://idp.example.com/scim/v2. https only (section 7.2); no ' +
+            'query, fragment or user information (section 7.1).' },
+    { name: 'scimClientEnabled', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'TRUE to push changes and reconcile; FALSE (the default) keeps ' +
+            'the configuration and sends nothing.' },
+    { name: 'scimClientAuthMethod', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'HOW A REQUEST IS AUTHENTICATED (RFC 7644 section 2): basic ' +
+            '(HTTP Basic with scimClientUsername and scimClientPassword), ' +
+            'oauth2 (a client_credentials token from scimClientTokenEndpoint, ' +
+            'sent as a Bearer token), or none (only the TLS client ' +
+            'certificate, when one is configured).' },
+    { name: 'scimClientUsername', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'basic: the user name the service provider knows this client by.' },
+    { name: 'scimClientPassword', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      secret: true,
+      what: 'basic: the password. Sealed with the key-encryption key when ' +
+            'keys persist, WITHHELD from every page, /admin-api reply and ' +
+            'directory read, and never logged.' },
+    { name: 'scimClientTokenEndpoint', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: the token endpoint of the authorization server the ' +
+            'service provider trusts. https only.' },
+    { name: 'scimClientOAuthClientId', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: the client_id this client is registered under there.' },
+    { name: 'scimClientOAuthClientSecret', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      secret: true,
+      what: 'oauth2: the client secret. Sealed, withheld and never logged.' },
+    { name: 'scimClientOAuthClientAuth', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: how the client authenticates at the token endpoint — ' +
+            'client_secret_basic (the default) or client_secret_post ' +
+            '(RFC 6749 section 2.3.1).' },
+    { name: 'scimClientOAuthScope', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: the scope asked for, space-separated (scim:write, for ' +
+            'this service\'s own /scim/v2). Empty asks for none.' },
+    { name: 'scimClientOAuthResource', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'oauth2: an RFC 8707 resource indicator sent with the token ' +
+            'request, where the authorization server wants one.' },
+    { name: 'scimClientTlsSource', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'THE TLS CLIENT CERTIFICATE presented to the service provider: ' +
+            'none (the default), issued (by this realm\'s CA, from its ' +
+            'tls-client Issuing CA, revocable on /admin/pki) or uploaded ' +
+            '(scimClientTlsCertificate and scimClientTlsPrivateKey). It is ' +
+            'presented whatever scimClientAuthMethod says.' },
+    { name: 'scimClientTlsCertificate', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'The client certificate, PEM, its chain after it. Public.' },
+    { name: 'scimClientTlsPrivateKey', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      secret: true,
+      what: 'The client certificate\'s private key, PEM. Sealed, withheld ' +
+            'and never logged.' },
+    { name: 'scimClientCaCertificates', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'PEM certificates of a CA the service provider\'s TLS ' +
+            'certificate chains to, trusted beside the public roots. The ' +
+            'certificate and its host name are always verified.' },
+    { name: 'scimClientScopeMode', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHO IS PUSHED: all (every person in the realm), groups (the ' +
+            'members of scimClientScopeGroups) or filter (the people ' +
+            'scimClientScopeFilter matches). Somebody who leaves the scope ' +
+            'is deprovisioned there.' },
+    { name: 'scimClientScopeGroups', kind: 'multi',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'groups scope: the groups whose members are pushed, each a ' +
+            'group\'s cn or DN.' },
+    { name: 'scimClientScopeFilter', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'filter scope: an RFC 4515 LDAP filter a person\'s entry must ' +
+            'match, such as (department=Sales).' },
+    { name: 'scimClientGroupMode', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHICH GROUPS ARE PUSHED, each with its in-scope members only: ' +
+            'none, selected (scimClientGroups), member-groups (every group ' +
+            'an in-scope person is in) or all.' },
+    { name: 'scimClientGroups', kind: 'multi',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'selected groups: each a group\'s cn or DN.' },
+    { name: 'scimClientDeprovision', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHAT HAPPENS THERE when a person is deleted here or leaves the ' +
+            'scope: deactivate (active false, the default) or delete. A ' +
+            'disabled account here is always active false there.' },
+    { name: 'scimClientReconcileMinutes', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'HOW OFTEN THE WHOLE SCOPE IS RECONCILED, in minutes, by the ' +
+            'cluster scheduler: every person and group in scope is pushed, ' +
+            'and what the service provider holds under an externalId of ' +
+            'this realm\'s and no longer in scope is deprovisioned. 0 (the ' +
+            'default) reconciles only when an administrator asks.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -4519,6 +4688,31 @@ const EDITABLE = {
   secretDestDirectory: 'set',
   secretDestCaCertificates: 'set',
   secretDestCredential: 'set',
+  // An outbound SCIM client (#552): one value each, the two lists multi;
+  // the three credentials sealed and withheld (SEALED_FIELDS,
+  // WITHHELD_FIELDS).
+  scimClientBaseUrl: 'set',
+  scimClientEnabled: 'set',
+  scimClientAuthMethod: 'set',
+  scimClientUsername: 'set',
+  scimClientPassword: 'set',
+  scimClientTokenEndpoint: 'set',
+  scimClientOAuthClientId: 'set',
+  scimClientOAuthClientSecret: 'set',
+  scimClientOAuthClientAuth: 'set',
+  scimClientOAuthScope: 'set',
+  scimClientOAuthResource: 'set',
+  scimClientTlsSource: 'set',
+  scimClientTlsCertificate: 'set',
+  scimClientTlsPrivateKey: 'set',
+  scimClientCaCertificates: 'set',
+  scimClientScopeMode: 'set',
+  scimClientScopeGroups: 'multi',
+  scimClientScopeFilter: 'set',
+  scimClientGroupMode: 'set',
+  scimClientGroups: 'multi',
+  scimClientDeprovision: 'set',
+  scimClientReconcileMinutes: 'set',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -5340,6 +5534,8 @@ const IDENTIFIER_ATTRIBUTES = declarationAttributes().filter(function (row) {
  * The single-valued attributes that take TRUE or FALSE.
  */
 const BOOLEAN_ATTRIBUTES = [
+  // #552: whether an outbound SCIM client pushes.
+  'scimClientEnabled',
   'oauthFrontchannelLogoutSessionRequired',
   'oauthBackchannelLogoutSessionRequired', 'oauthNativeSso',
   'oauthBackchannelUserCodeParameter', 'oauthRequireSignedRequestObject',
@@ -5502,6 +5698,25 @@ const ATTRIBUTE_CHOICES = {
   secretDestPayload: function () {
     return require('./secrets').DESTINATION_PAYLOADS.slice(0);
   },
+  // An outbound SCIM client (#552), from the module that pushes.
+  scimClientAuthMethod: function () {
+    return require('../scim/scim_client_rules').AUTH_METHODS.slice(0);
+  },
+  scimClientOAuthClientAuth: function () {
+    return require('../scim/scim_client_rules').OAUTH_CLIENT_AUTH.slice(0);
+  },
+  scimClientTlsSource: function () {
+    return require('../scim/scim_client_rules').TLS_SOURCES.slice(0);
+  },
+  scimClientScopeMode: function () {
+    return require('../scim/scim_client_rules').SCOPE_MODES.slice(0);
+  },
+  scimClientGroupMode: function () {
+    return require('../scim/scim_client_rules').GROUP_MODES.slice(0);
+  },
+  scimClientDeprovision: function () {
+    return require('../scim/scim_client_rules').DEPROVISION.slice(0);
+  },
   // #395, from `scope_claims.ts`: how two sets of claims are combined, and
   // the OpenID Connect section 5.4 claims a resource server may declare.
   oauthClaimsCombineAccessToken: realmCombineModes,
@@ -5547,6 +5762,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   'acmeAllowedProfiles', 'acmeDefaultProfile', 'estAllowedProfiles',
   'estDefaultProfile', 'scepAllowedProfiles', 'scepDefaultProfile',
   'secretDestProvider', 'secretDestPayload', 'appAuthnMechanism',
+  'scimClientAuthMethod', 'scimClientOAuthClientAuth', 'scimClientTlsSource',
+  'scimClientScopeMode', 'scimClientGroupMode', 'scimClientDeprovision',
   'appMfaMechanism',
   // #395: a misspelt mode would silently be the default, and a misspelt
   // claim would be one no token ever carries.
@@ -5686,7 +5903,8 @@ const LONG_TEXT_ATTRIBUTES = [
   'oauthJwks', 'samlSpMetadata', 'samlEncryptionCertificate',
   'samlSpMetadataSigningCertificate', 'oauthSamlAssertionSigningCertificate',
   'gnapKey', 'gnapJweKey', 'oauthResourceMetadata',
-  'secretDestCaCertificates'
+  'secretDestCaCertificates',
+  'scimClientTlsCertificate', 'scimClientCaCertificates'
 ];
 
 // THE ATTRIBUTES THE GRID DOES NOT DRAW, because a control of their own does:
@@ -5714,6 +5932,10 @@ function gridExcludedAttributes() {
                // write-only; a grid cell would draw the withheld sentence
                // as its value and save it back.
                'secretDestCredential',
+               // An outbound SCIM client's three credentials (#552): set on
+               // its own page under Protocols → SCIM → Clients, write-only.
+               'scimClientPassword', 'scimClientOAuthClientSecret',
+               'scimClientTlsPrivateKey',
                // Drawn by their own Custom claims and Custom SAML
                // attributes sections (2026-10-01): a JSON array is not a
                // text box.
@@ -5923,6 +6145,19 @@ const FIELD_EXAMPLES = {
   secretDestField: 'value',
   secretDestDirectory: '/run/sts-test-secrets',
   secretDestCaCertificates: '-----BEGIN CERTIFICATE-----',
+  // An outbound SCIM client (#552).
+  scimClientBaseUrl: 'https://idp.example.com/scim/v2',
+  scimClientUsername: 'iya-sts-provisioner',
+  scimClientTokenEndpoint: 'https://idp.example.com/oauth2/token',
+  scimClientOAuthClientId: 'iya-sts-provisioner',
+  scimClientOAuthScope: 'scim:write',
+  scimClientOAuthResource: 'https://idp.example.com/scim/v2',
+  scimClientTlsCertificate: '-----BEGIN CERTIFICATE-----',
+  scimClientCaCertificates: '-----BEGIN CERTIFICATE-----',
+  scimClientScopeGroups: 'staff',
+  scimClientScopeFilter: '(department=Sales)',
+  scimClientGroups: 'staff',
+  scimClientReconcileMinutes: '0',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',
@@ -6007,6 +6242,7 @@ const FIELD_FAMILY_PREFIXES = [
   ['oid4vp', ['oid4vp']],
   ['federation', ['federation']],
   ['ldap', ['ldap']],
+  ['scimClient', ['scim-client']],
   ['scim', ['scim']],
   ['spiffe', ['spiffe']],
   ['ssf', ['ssf']],
@@ -6045,7 +6281,9 @@ const FIELD_GROUPS = [
   { id: 'enroll', label: 'Certificate enrollment',
     families: ['acme', 'est', 'scep'] },
   { id: 'secret-destination', label: 'Secret push destination',
-    families: ['secret-destination'] }
+    families: ['secret-destination'] },
+  { id: 'scim-client', label: 'SCIM client (outbound provisioning)',
+    families: ['scim-client'] }
 ];
 
 // ---------------------------------------------------------------------------
@@ -7121,7 +7359,12 @@ const SEALED_FIELDS = ['oauthAssertionPrivateKey',
                        // WITHHELD as well (below): sealed so no dump holds
                        // it, and withheld so no reader opens it — the only
                        // reader is `secretDestinationCredentialOf()`.
-                       'secretDestCredential'];
+                       'secretDestCredential',
+                       // An outbound SCIM client's credentials (#552),
+                       // sealed and withheld the same way; the reader is
+                       // `scimClientCredentialOf()`.
+                       'scimClientPassword', 'scimClientOAuthClientSecret',
+                       'scimClientTlsPrivateKey'];
 
 // The label each sealed field is sealed under, which is what
 // /admin/encryption counts by (admin-ui/encryption_admin.ts DATA_CLASSES). One
@@ -7132,6 +7375,9 @@ const SEAL_LABELS = {
   gnapSymmetricKey: 'gnap-shared-key',
   gnapMacaroonKey: 'gnap-macaroon-key',
   secretDestCredential: 'secret-destination-credential',
+  scimClientPassword: 'scim-client-credential',
+  scimClientOAuthClientSecret: 'scim-client-credential',
+  scimClientTlsPrivateKey: 'scim-client-credential',
   // Not in SEALED_FIELDS: it is multi-valued and each value is sealed WHOLE,
   // as a record — see sealClientSecretText().
   oauthClientSecret: 'client-secret',
@@ -7172,7 +7418,12 @@ const WITHHELD_FIELDS = ['krb5ServiceKeys',
                          // A secret destination's write credential (#221
                          // P3): it leaves this service only on the wire to
                          // its own secrets manager.
-                         'secretDestCredential'];
+                         'secretDestCredential',
+                         // An outbound SCIM client's credentials (#552):
+                         // they leave only on the wire to its service
+                         // provider and its token endpoint.
+                         'scimClientPassword', 'scimClientOAuthClientSecret',
+                         'scimClientTlsPrivateKey'];
 
 // ---------------------------------------------------------------------------
 // WHERE A MANAGED KEY PAIR CAME FROM (2026-09-13) — the closed vocabulary of
@@ -7241,6 +7492,12 @@ function withheldSentence(value, name) {
     log.debug("Leaving withheldSentence(). A destination credential.");
     return '(withheld: a secret destination\'s write credential, set, ' +
            'never shown)';
+  }
+  if (name === 'scimClientPassword' || name === 'scimClientOAuthClientSecret' ||
+      name === 'scimClientTlsPrivateKey') {
+    // Nor its length, for the reason above (#552).
+    log.debug("Leaving withheldSentence(). A SCIM client credential.");
+    return '(withheld: a SCIM client credential, set, never shown)';
   }
   log.debug("Leaving withheldSentence().");
   return '(withheld: Kerberos key material, ' + String(value || '').length +
@@ -7495,12 +7752,15 @@ function secretDestinationCredentialOf(identifier) {
 // wrong answer.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// WHICH ADDRESSES AN OAUTH ENTRY MAY HOLD (2026-09-13).
+// WHICH DECLARED RETURN ADDRESSES MAY BE WRITTEN (2026-09-13).
 //
 // `oauthRedirectUri` and `oauthPostLogoutRedirectUri` are addresses a browser
 // is SENT to, and `oauthFrontchannelLogoutUri` is one a sign-out page FRAMES.
 // `oauthBackchannelLogoutUri` (2026-09-17, #36) is one this service POSTs a
 // Logout Token to, and takes the same http(s)-only rule.
+// `samlAssertionConsumerService` (2026-10-10, #291) is where a signed SAML
+// assertion is sent; the SAML 1.1 registration action now writes it with the
+// relying party and this same check applies to every other write.
 // Until this date none of the three was checked on the way in — at
 // registration, at a console `add` or at `/admin-api` — so `javascript:` could
 // be stored in all of them. The two redirect attributes were caught again at
@@ -7518,6 +7778,7 @@ function secretDestinationCredentialOf(identifier) {
 // own checks and `frontchannel_logout.js` checks again when it reads.
 // ---------------------------------------------------------------------------
 const ADDRESS_ATTRIBUTES = {
+  samlAssertionConsumerService: 'saml',
   oauthRedirectUri: 'redirect',
   oauthPostLogoutRedirectUri: 'redirect',
   oauthFrontchannelLogoutUri: 'frontchannel',
@@ -7540,7 +7801,9 @@ function addressProblem(attribute, value) {
     return commandProblem ? '"' + value + '" cannot be ' + attribute +
       ': it must be an https URL with no fragment.' : null;
   }
-  const problem = kind === 'frontchannel'
+  const problem = kind === 'saml'
+    ? validation.redirectUriProblem(String(value), { privateUse: false })
+    : kind === 'frontchannel'
     ? validation.frontchannelUriProblem(String(value))
     : kind === 'backchannel'
       ? validation.backchannelUriProblem(String(value))
@@ -14582,7 +14845,7 @@ function announceScopeRemoval(identifier, record, attribute, value) {
 function clientSecretBytes() {
   log.debug("Entering clientSecretBytes().");
   log.debug("Leaving clientSecretBytes().");
-  return Number(config.value('oauth2.registeredSecretBytes')) || 24;
+  return Number(config.value('oauth2.registeredSecretBytes'));
 }
 
 /**
@@ -15850,7 +16113,8 @@ function replaceSamlMetadataFields(identifier, replacements, options) {
   }
   audit.audit({
     action: 'application.update', actor: opts.actor || '',
-    protocol: 'SAML 2.0', channel: 'internal', target: String(identifier),
+    protocol: opts.protocol || 'SAML 2.0', channel: 'internal',
+    target: String(identifier),
     summary: 'Application "' + identifier + '": its service provider ' +
              'metadata was consumed (' + (opts.how || 'unstated') + ')',
     detail: { identifier: String(identifier),
@@ -16077,6 +16341,54 @@ function deleteApplication(identifier, options) {
 // imported INTO, under that realm's base. So a file moves an application from
 // one realm to another as it stands.
 // ---------------------------------------------------------------------------
+// AN OUTBOUND SCIM CLIENT'S CREDENTIAL, OPENED FOR THE ONE REQUEST THAT USES
+// IT (#552) — `secretDestinationCredentialOf()`'s reason, for the client's
+// password, OAuth client secret and TLS private key. `scim/scim_client.ts`
+// asks at the moment it sends and keeps nothing (`key-material-residency`).
+// ---------------------------------------------------------------------------
+/**
+ * Returns one of an outbound SCIM client's credentials, opened, for the
+ * request that uses it. Never drawn and never returned by any view.
+ *
+ * @param identifier - the client application's identifier
+ * @param attribute - scimClientPassword, scimClientOAuthClientSecret or
+ *   scimClientTlsPrivateKey
+ * @returns the credential, or '' when there is none or it will not open
+ */
+function scimClientCredentialOf(identifier, attribute) {
+  log.debug("Entering scimClientCredentialOf(). " + attribute);
+  if (['scimClientPassword', 'scimClientOAuthClientSecret',
+       'scimClientTlsPrivateKey'].indexOf(attribute) < 0) {
+    log.debug("Leaving scimClientCredentialOf(). Not a credential.");
+    return '';
+  }
+  const loaded = load(identifier);
+  const stored = loaded.known
+    ? String([].concat(loaded.record.fields[attribute] || [])[0] || '')
+    : '';
+  if (!stored) {
+    log.debug("Leaving scimClientCredentialOf(). None.");
+    return '';
+  }
+  if (!isSealed(stored)) {
+    log.debug("Leaving scimClientCredentialOf(). Stored clear.");
+    return stored;
+  }
+  const opened = keystore.open(stored, sealLabelOf(attribute));
+  if (!opened) {
+    log.warn(errorCodes.tag('STS-REG-0023') +
+             'applications: the ' + attribute + ' on SCIM client "' +
+             identifier + '" is sealed and will not open under this ' +
+             'process\'s key-encryption key. Set it again on Protocols → ' +
+             'SCIM → Clients.');
+    log.debug("Leaving scimClientCredentialOf(). Will not open.");
+    return '';
+  }
+  log.debug("Leaving scimClientCredentialOf(). Opened.");
+  return opened;
+}
+
+// ---------------------------------------------------------------------------
 /**
  * The credential attributes an export may carry and an import may write:
  * the editable ones that hold a secret or a private key.
@@ -16086,7 +16398,9 @@ const PORTABLE_CREDENTIALS = ['oauthClientSecret',
                               'oauthAssertionPrivateKey',
                               'oauthSamlAssertionPrivateKey',
                               'didPrivateKeys', 'secretDestCredential',
-                              'gnapSymmetricKey'];
+                              'gnapSymmetricKey', 'scimClientPassword',
+                              'scimClientOAuthClientSecret',
+                              'scimClientTlsPrivateKey'];
 
 // The attributes that name the entry, written by the create itself rather than
 // through `fields`.
@@ -16922,7 +17236,7 @@ function lookedUp(mapName, wanted, attribute) {
 //
 // **A value that will not parse is IGNORED and logged, never thrown.** An
 // `ldapmodify` can put "yes" on `saml2SignAssertion`, and an identity provider
-// that stopped issuing because of it would be a mock that stopped answering.
+// that stopped issuing because of it would be a service that stopped answering.
 // The setting's own value is used and the log names the entry, the attribute
 // and the reason, which is the only way somebody finds out that the exception
 // they typed is not in force.
@@ -17084,6 +17398,160 @@ function noteGlobalConsentWithdrawn(identifier, scope, stamp) {
   const saved = save(record);
   log.debug("Leaving noteGlobalConsentWithdrawn(). saved=" + saved);
   return saved;
+}
+
+// ---------------------------------------------------------------------------
+// AN APPLICATION'S OWNERS (#604, rcbj: "Go ahead and [add] the owner pattern
+// to a new tab under Directory->Applications->Application"). The group's and
+// the role's rules: each owner a PERSON or a GROUP of this realm, resolved by
+// the directory's `resolveOwner` (the service account's resolver); one that
+// names nobody is refused when added and reported, never dropped, when it is
+// deleted since; at most MAX_OWNERS. Written onto `appOwner` with
+// noteGlobalConsentWithdrawn()'s load-and-save, and quietly: an owner is not
+// a credential. AN OWNER GRANTS NOTHING.
+// ---------------------------------------------------------------------------
+/** The most owners an application may name; for more, name a group. */
+const MAX_OWNERS = 25;
+
+function ownerLower(dn) {
+  log.debug("Entering ownerLower().");
+  log.debug("Leaving ownerLower().");
+  return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * Describes an application's owners, each resolved to a person or a group
+ * of this realm, or `kind: ''` where it names nobody now.
+ *
+ * @param source - a view, a record, or the identifier
+ * @returns `[{ dn, kind, name, present }]`, in the order the entry holds them
+ */
+function ownersOf(source) {
+  log.debug("Entering ownersOf().");
+  let fields = source && typeof source === 'object'
+    ? (source.fields || {}) : null;
+  if (!fields) {
+    const loaded = load(String(source || ''));
+    fields = loaded.known ? loaded.record.fields : {};
+  }
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const out = valuesOf(fields.appOwner).map(function (dn) {
+    const found = resolve ? resolve(dn) : { kind: '', dn: '', name: '' };
+    return { dn: found.kind ? found.dn : dn, kind: found.kind || '',
+             name: found.name || '', present: !!found.kind };
+  });
+  log.debug("Leaving ownersOf(). " + out.length);
+  return out;
+}
+
+/**
+ * Adds one owner to an application, writing at once (#604). An owner
+ * already listed answers ok with `changed: false`.
+ *
+ * @param identifier - the application's identifier
+ * @param owner - a person (username, DN or `urn:uuid:` subject) or a group
+ *   (cn or DN) of this realm
+ * @returns `{ ok: true, changed, application, owner, owners, message }`, or
+ *   `{ ok: false, errors }` carrying an error code
+ */
+function addOwner(identifier, owner) {
+  log.debug("Entering addOwner(). identifier=" + identifier);
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving addOwner(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const wanted = String(owner == null ? '' : owner).trim();
+  if (!wanted) {
+    log.debug("Leaving addOwner(). No owner.");
+    return errorCodes.mark({ ok: false, errors: ['Who? Send `owner` with a ' +
+             'person (a username or DN) or a group (its cn or DN) of this ' +
+             'realm.'] }, 'STS-REG-0354');
+  }
+  const resolve = directory && typeof directory.resolveOwner === 'function'
+    ? directory.resolveOwner : null;
+  const resolved = resolve ? resolve(wanted) : { kind: '' };
+  if (!resolved.kind) {
+    log.debug("Leaving addOwner(). Names nobody.");
+    return errorCodes.mark({ ok: false, errors: ['"' + wanted.slice(0, 128) +
+             '" names no person and no group in this realm. An owner ' +
+             'answers for the application, so it must name somebody.'] },
+             'STS-REG-0355');
+  }
+  const record = loaded.record;
+  const before = ownersOf(record);
+  const values = valuesOf(record.fields.appOwner);
+  if (values.some(function (dn) {
+    return ownerLower(dn) === ownerLower(resolved.dn);
+  })) {
+    log.debug("Leaving addOwner(). Already an owner.");
+    return { ok: true, changed: false, application: record.identifier,
+             owner: resolved.dn, owners: before,
+             message: (resolved.name || resolved.dn) + ' was already an ' +
+                      'owner of ' + record.identifier + '.' };
+  }
+  if (values.length >= MAX_OWNERS) {
+    log.debug("Leaving addOwner(). Too many.");
+    return errorCodes.mark({ ok: false, errors: [record.identifier +
+             ' already names ' + values.length + ' owners, the most an ' +
+             'application may name (' + MAX_OWNERS + '). Name a group of ' +
+             'them instead.'] }, 'STS-REG-0356');
+  }
+  record.fields.appOwner = values.concat([resolved.dn]);
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving addOwner(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The owner could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving addOwner(). Added.");
+  return { ok: true, changed: true, application: record.identifier,
+           owner: resolved.dn, owners: ownersOf(record.identifier),
+           message: (resolved.name || resolved.dn) + ' is now an owner of ' +
+                    record.identifier + '.' };
+}
+
+/**
+ * Takes one owner off an application, writing at once (#604). Refused for a
+ * value it does not list; the last owner may go.
+ *
+ * @param identifier - the application's identifier
+ * @param owner - the owner's DN, as the application lists it
+ * @returns `{ ok: true, changed: true, application, owner, owners, message }`,
+ *   or `{ ok: false, errors }` carrying an error code
+ */
+function removeOwner(identifier, owner) {
+  log.debug("Entering removeOwner(). identifier=" + identifier);
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving removeOwner(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const record = loaded.record;
+  const wanted = String(owner == null ? '' : owner).trim();
+  const values = valuesOf(record.fields.appOwner);
+  const kept = values.filter(function (dn) {
+    return ownerLower(dn) !== ownerLower(wanted);
+  });
+  if (!wanted || kept.length === values.length) {
+    log.debug("Leaving removeOwner(). Not an owner.");
+    return errorCodes.mark({ ok: false, errors: ['"' + wanted.slice(0, 128) +
+             '" is not one of ' + record.identifier + '\'s owners.'] },
+             'STS-REG-0357');
+  }
+  record.fields.appOwner = kept;
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving removeOwner(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The owners could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving removeOwner(). Removed.");
+  return { ok: true, changed: true, application: record.identifier,
+           owner: wanted, owners: ownersOf(record.identifier),
+           message: wanted + ' is no longer an owner of ' +
+                    record.identifier + '.' };
 }
 
 /**
@@ -18423,9 +18891,14 @@ function internalApplications() {
       // screen removes the values and gets it, which is what makes this a
       // default rather than a special case.
       // Declared OAuth 2.0 and OpenID Connect, the console's reason.
+      // `account:manage` (#568) beside the OpenID scopes: the portal asks
+      // for it on every sign-in, and asking a person whether their own
+      // account page may show them their own account is the question this
+      // row's argument already answered.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
                     oauthGlobalConsent: ['openid', 'profile', 'email',
-                                         'offline_access'] },
+                                         'offline_access',
+                                         'account:manage'] },
       registration: {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
@@ -18440,8 +18913,16 @@ function internalApplications() {
                                     '/portal'],
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
-        scope: 'openid profile email offline_access',
-        token_endpoint_auth_method: 'private_key_jwt'
+        // `account:manage` (#568): the one scope `/account-api` takes,
+        // declared by this client alone among the seeded ones.
+        scope: 'openid profile email offline_access account:manage',
+        // A PUBLIC CLIENT SINCE #568 (rcbj's decision 1, the console's
+        // #446 pattern): the portal is a static application signing in in
+        // the browser with PKCE, so it holds no credential — and every token
+        // issued to it is DPoP-bound to a key the browser cannot export
+        // (`sender_constraints.js`, DPOP_BOUND_PUBLIC_CLIENTS). It was
+        // private_key_jwt while the server signed in for it.
+        token_endpoint_auth_method: 'none'
       } },
     { identifier: 'sts-management-api',
       name: 'Management API',
@@ -18615,6 +19096,46 @@ function seedInternalApplications(options) {
   return made;
 }
 
+// THE CONSOLE'S PROSE (#543 phase 2b). The `/admin-api` routes whose
+// answers carry this module's tables: the directory's own page
+// (`/admin-api/ldap/applications`: KINDS and SCHEMA), the Applications list
+// and drill-down (`/admin-api/applications`: KINDS, PROTOCOLS, and a schema
+// row's `what` as each attribute's note), and the create form's vocabulary
+// (`/admin-api/applications/new`: KINDS, PROTOCOLS, and `what` again on
+// every row of declarationAttributes()).
+const PROSE_ROUTES = Object.freeze([
+  '/admin-api/ldap/applications',
+  '/admin-api/applications',
+  '/admin-api/applications/new'
+]);
+
+/**
+ * Extracts this module's console prose (#543 phase 2b): each kind's label
+ * and sentence, each protocol family's label and sentence, and each object
+ * class's and attribute's `what`.
+ *
+ * `from` is NOT extracted: it is where a value comes from, written mostly as
+ * a route, a menu path or a protocol name ('POST /oauth2/register',
+ * 'Protocols → SCIM → Clients'), which a translation would have to keep.
+ * `familyWhy` is NOT extracted, though the schema answer carries it: it is
+ * the reason in familyRefusal()'s refusal, and refusals stay English (#539).
+ * `identifierName`, `overrides`, `where` and `kind` name identifiers.
+ *
+ * @returns {Record<string, string>} key → English
+ */
+function prose() {
+  log.debug("Entering prose().");
+  // Lazily, for the reason every module of this namespace gives: required
+  // only when the extractor asks, so loading this module loads nothing new.
+  const harvest = require('./server_prose').harvest;
+  const out = Object.assign({},
+    harvest('applications.kinds', KINDS, ['label', 'what']),
+    harvest('applications.protocols', PROTOCOLS, ['label', 'what']),
+    harvest('applications.schema', SCHEMA, ['what']));
+  log.debug("Leaving prose(). " + Object.keys(out).length);
+  return out;
+}
+
 /**
  * Every application this service has ever been asked about, in one place: the
  * registry of `ou=applications`.
@@ -18625,6 +19146,10 @@ function seedInternalApplications(options) {
  * @namespace
  */
 module.exports = {
+  // #543 phase 2b: the routes whose answers carry this module's prose, and
+  // the prose by key.
+  PROSE_ROUTES: PROSE_ROUTES,
+  prose: prose,
   HOSTED_SURFACE_CLIENT_IDS: HOSTED_SURFACE_CLIENT_IDS,
   issuedJwtKeyPairValues: issuedJwtKeyPairValues,
   storeIssuedJwtKeyPair: storeIssuedJwtKeyPair,
@@ -18792,6 +19317,11 @@ module.exports = {
   FIELD_SECTIONS: FIELD_SECTIONS,
   SIMPLE_FIELD_ATTRIBUTES: SIMPLE_FIELD_ATTRIBUTES,
   PAGE_TAB_ATTRIBUTES: PAGE_TAB_ATTRIBUTES,
+  // An application's owners (#604).
+  MAX_OWNERS: MAX_OWNERS,
+  ownersOf: ownersOf,
+  addOwner: addOwner,
+  removeOwner: removeOwner,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
   CHOICE_IDS: CHOICE_IDS,
@@ -18808,6 +19338,7 @@ module.exports = {
   declaredFamiliesFor: declaredFamiliesFor,
   didValueProblem: didValueProblem,
   secretDestinationCredentialOf: secretDestinationCredentialOf,
+  scimClientCredentialOf: scimClientCredentialOf,
   claimRowsProblem: claimRowsProblem,
   didDuplicateProblem: didDuplicateProblem,
   DID_SERVICE_TYPES: DID_SERVICE_TYPES,

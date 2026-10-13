@@ -86,9 +86,9 @@ All three work in a THROWAWAY TRUST REALM, which is not tidiness: `ou=policies` 
 per realm and a new realm's is EMPTY — the seeded policy is written once, in the
 default realm, at require time — so a realm gives them a repository whose whole
 contents they wrote, makes every count exact rather than "at least", makes the
-no-root state reachable at all, and keeps `xacml.enabled`, `xacml.remotePeps`,
-`xacml.pepBias` and `xacml.pepRequireCertificate` off the process while they are
-turned off and on. **The remote-PEP job needs it for two reasons of its own**:
+no-root state reachable at all, and keeps `xacml.enabled`, `xacml.remotePeps`
+and `xacml.pepRequireCertificate` off the process while they are turned off and
+on. **The remote-PEP job needs it for two reasons of its own**:
 it disables every policy in the repository to reach the state where a PEP holds
 nothing, and doing that anywhere but a realm of its own would stop every other
 job in the run being decided about — and it then turns `xacml.remotePeps` OFF
@@ -146,7 +146,7 @@ Four links, and each is checked by the module that owns it:
 
 | # | The question | Answered by |
 |---|---|---|
-| 1 | Did the certificate build a path to an anchor in this service's truststore? | `oauth-oidc/mtls.js`'s `peerVerified()`, over `POST /tls/trust` — and the MAIN listener joined that truststore the same day, which is what made the question answerable at all |
+| 1 | Did the certificate build a path to an anchor in this service's truststore? | `oauth-oidc/mtls.js`'s `peerVerified()`, over the truststore `POST /admin-api/tls/trust/add` fills — and the MAIN listener joined that truststore the same day, which is what made the question answerable at all |
 | 2 | Which directory entry is that? | `xacml_pep_registry.ts`'s `certificateIdentity()`, across the slot `ldap_server.js` fills — the same lookup `GET /tls/sign-in` gets (it was a certificate arriving on 8443 or 9443 until both listeners were deleted on 2026-09-16), so one certificate is one person however it turns up |
 | 3 | What roles does that entry hold? | `common/roles.js`, with the groups LEFT UNRESOLVED so it reads them from the directory. `REMOTE_PEPS` was the first built-in role held through a GROUP rather than computed from what the party is; `XACML_USER` is the second, and the two are deliberately separate |
 | 4 | Does the policy allow it? | `common/access_gate.ts` → `xacml_access_pep.ts`, on resource `xacml-pep-api` or `xacml-api` — the same embedded PEP and the same `access-control` document that decide the console and the management API |
@@ -235,16 +235,22 @@ working and denying you.
 ## The console
 
 ```
-/admin/xacml            settings, and what the PDP decides with
-/admin/xacml/policies   the repository; enable, disable, root, delete,
+/admin/xacml            one Protocols destination, with six tabs:
+  Metadata              this realm's XACML endpoints
+  Settings              whether the PDP is on, its PEP bias and settings
+  Policies              the repository; enable, disable, root, delete,
                         import ALFA, create from a template — and this is the
-                        ONLY page that creates a policy: the editor edits one
-                        that exists, and says so on itself
-/admin/xacml/editor     the guided editor
-/admin/xacml/peps       the REMOTE enforcement points, and whether they are
+                        ONLY tab that creates a policy: the editor edits one
+                        that exists
+  Policy editor         the guided editor
+  Remote PEPs           the remote enforcement points, and whether they are
                         deciding with the same policy this service holds
-/admin/xacml/decide     ask the PDP and see what the PEP would do
+  Try a decision        ask the PDP and see what the PEP would do
 ```
+
+The former policies, editor, PEPs and decision destinations are tabs, not
+sidebar leaves; their distinct management API operations still supply them.
+The decision counters remain `/admin/xacml/monitor` under Monitoring.
 
 **The editor has no JavaScript, and that is argued rather than assumed.** This
 console is `script-src 'none'` and `admin-ui/CLAUDE.md` refuses a script nine
@@ -370,7 +376,6 @@ you most want to look at it.
 GET  /xacml                 what this is; ?format=json for the same as data
 POST /xacml/pdp             a decision. JSON Profile in, JSON Profile out
 GET  /xacml/policies        the repository as the PDP sees it, documents included
-GET  /xacml/protected       the embedded PEP — 200 or 403
 POST /xacml/pep/register    a REMOTE PEP registers, over mutual TLS
 GET  /xacml/pep/policies    the enabled policies, for a remote PEP to LOAD
 POST /xacml/pep/heartbeat   what a remote PEP has enforced
@@ -386,12 +391,12 @@ carries reaches `decide()` — a PDP that decided about whoever holds the client
 certificate would be a different and much worse component.
 
 **What changed is that "not a boundary" was being read as "not worth
-guarding".** Those are different sentences, and three of the four endpoints
-proper do something an anonymous caller should not get for free: `GET
-/xacml/policies` publishes the documents this service now decides its own
-admissions with, `GET /xacml/protected` names its own subject from a query
-parameter and is otherwise an oracle anybody can drive to map the policy one
-subject at a time, and `POST /xacml/pdp` evaluates an arbitrary document on
+guarding".** Those are different sentences, and the endpoints proper do
+something an anonymous caller should not get for free: `GET /xacml/policies`
+publishes the documents this service now decides its own admissions with
+(`GET /xacml/protected`, until #596, named its own subject from a query
+parameter and was otherwise an oracle anybody could drive to map the policy
+one subject at a time), and `POST /xacml/pdp` evaluates an arbitrary document on
 this service's thread. `GET /xacml` is guarded because it describes the other
 three, and its refusal names the group and the setting so that the page's job
 survives being refused.
@@ -400,13 +405,13 @@ survives being refused.
 
 | Endpoints | Role | Group |
 |---|---|---|
-| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies`, `GET /xacml/protected` | `XACML_USER` | `roles.xacmlUserGroup` (default `xacml-users`) |
+| `GET /xacml`, `POST /xacml/pdp`, `GET /xacml/policies` | `XACML_USER` | `roles.xacmlUserGroup` (default `xacml-users`) |
 | `POST /xacml/pep/register`, `GET /xacml/pep/policies`, `POST /xacml/pep/heartbeat`, **`POST /xacml/pip`** | `REMOTE_PEPS` | `roles.remotePepGroup` (default `remote-peps`) |
 
 **ONE GROUP GRANTING BOTH WOULD BE THE MISTAKE.** The `/xacml/pep/*` endpoints
 hand out the documents this service enforces its own access with, and
-`/xacml/pip` hands out a named person's directory attributes; the four above
-them serve a demonstration policy. Admitting a caller to the second set must
+`/xacml/pip` hands out a named person's directory attributes; the three above
+them answer questions put to the repository's root policy. Admitting a caller to the second set must
 not silently admit it to the first, which is why there are two built-in roles
 and two settings rather than one of each. `common/roles.js` argues it at the
 role and `common/access_gate.ts` at the resource — `xacml-api` and
@@ -602,8 +607,8 @@ push were assumed ("policy push"). **It is a pull.** See below.
 For the next person adding a console surface, following the shape
 `ssf/CLAUDE.md` records:
 
-* `common/config.js` — the `xacml.pepBias` row needed **`enumValues`**, not
-  `values`. The wrong key name is not a startup error: the setting loads, the
+* `common/config.js` — the `xacml.pepBias` row (deleted by #596) needed
+  **`enumValues`**, not `values`. The wrong key name is not a startup error: the setting loads, the
   service runs, and the settings form throws a 500 on the one page that draws
   it.
 * `admin-ui/admin.ts` — the **tenth slot** `setXacmlPages()`, a `SETTING_HOMES`
@@ -756,7 +761,8 @@ change and is easy to lose:
   read it* is a different question from *is it redacted*. The documents are
   still shown in full to anybody the policy admits, which is the half of the
   old sentence worth keeping.
-* **`/xacml/protected` still has TWO gates about two different people**: the
+* **`/xacml/protected` had TWO gates about two different people** (until #596
+  moved it to the remote PEP, which has no gate of its own): the
   caller needs `XACML_USER` to drive the embedded PEP at all, and the subject
   in `?subject=` is what it then enforces about. An admitted caller can still
   ask about somebody the policy refuses and watch it refuse — which is the
@@ -1488,9 +1494,10 @@ and the refusal NAMES the policy and the template that rebuilds it.
 `issuance_gate.js` answers a throw by allowing, for the locked-room reason. A
 Deny, a NotApplicable and an Indeterminate are not throws — they are answers,
 and every one of them refuses here, because the policy is `deny-unless-permit`
-and an issuance decision must not rest on a PEP's bias. **`xacml.pepBias` is
-deliberately not read here**: that setting belongs to the demo PEP at
-`/xacml/protected`, which exists to SHOW what bias does, and this one is
+and an issuance decision must not rest on a PEP's bias. **`xacml.pepBias` was
+deliberately never read here**: that setting belonged to the demo PEP at
+`/xacml/protected` (both the remote PEP's since #596, as `PEP_BIAS` and
+`GET /protected`), which existed to SHOW what bias does, and this one is
 enforcing.
 
 ### It fills `admin.js`'s `setRolePreviewer()` slot
@@ -1890,13 +1897,13 @@ declines. **Per enforcement point** — every PEP, embedded and remote, in one
 table.
 
 **IT IS FILED UNDER `Monitoring` IN THE CONSOLE AND NOT UNDER Protocols >
-XACML, and that is the paragraph above read as a placement.** The five pages
-this directory registers under `/admin/xacml` are configuration and sit in the
-XACML group; this one answers *what has this service done*, which is the
-Monitoring section's own heading, and it is labelled `XACML decisions` there
-because `Monitor` alone would name the section rather than the subject. **The
-PATH did not move**: it is `/admin/xacml/monitor` still, drawn by
-`xacml_admin.ts` still, because a console page is a `path` and a `label` in
+XACML, and that is the paragraph above read as a placement.** The five
+configuration views this directory registers are tabs on the single
+`/admin/xacml` Protocols page; this one answers *what has this service done*,
+which is the Monitoring section's own heading, and it is labelled `XACML
+decisions` there because `Monitor` alone would name the section rather than
+the subject. **The PATH did not move**: it is `/admin/xacml/monitor` still,
+drawn by `xacml_admin.ts` still, because a console page is a `path` and a `label` in
 `admin-ui/admin.ts`'s `SECTIONS` whoever builds the body — the arrangement the
 eight `/admin/ldap/*` pages have with the Directory section and
 `/admin/sts-metadata` has had since 2026-08-24. Two consequences for this
@@ -1971,8 +1978,10 @@ Which is a smaller claim than every one that exists, and the page says so.
 
 * **An embedded PEP is not "registered" and cannot be.** It is compiled into
   this process, so its existence is a fact about the build. There are exactly
-  three — the demonstration PEP at `/xacml/protected`, the issuance PEP and the
-  access PEP — and they are the catalogue in `xacml_monitor.ts`. A fifth asker
+  two — the issuance PEP and the access PEP — and they are the catalogue in
+  `xacml_monitor.ts` (the demonstration PEP at `/xacml/protected` was a third
+  until #596 moved it to the remote PEP, whose heartbeat reports it). A fourth
+  asker
   added without a row there would be decisions nobody could see.
 * **A remote PEP registers because it has no other way to be known about**, and
   even that is not a permission: an unregistered PEP pulls
@@ -1999,8 +2008,10 @@ not.** `/admin/xacml/decide` calls it too, to show what the embedded PEP WOULD
 do with a decision somebody just asked about — a what-if, not a request anybody
 guarded. Counting there would put the console's own experiments into the figure
 an operator reads to find out how much traffic authorization is seeing, and the
-number would grow every time somebody looked at the page. The count is at
-`/xacml/protected`, the one place a real request is enforced.
+number would grow every time somebody looked at the page. The count was at
+`/xacml/protected`, the one place a real request was enforced; since #596 that
+is the remote PEP's `GET /protected`, counted in its process and reported on
+its heartbeat.
 
 **Drawing the monitor page itself DOES add one to the access PEP's count, and
 that is right.** `/admin` is one of the five gated surfaces, so reading it is a
@@ -2126,3 +2137,17 @@ a third question beside the role and the ownership ones:
 
 `tests/access_policy.js` holds the four cases: the conferred role alone,
 ADMIN_READ alone, both, and an empty required-all.
+
+## Development only: this family's demonstrations (#585, 2026-10-12)
+
+**None is left (#596, 2026-10-12; #591 P5).** `GET /xacml/protected`, the embedded PEP's demonstration, and `xacml.pepBias`, which only it read, were deleted: the runtime ships no demonstration code, and the `xacml-pep` container's `GET /protected` already was that PEP — the same request through the same builder, the bias as its own option (`PEP_BIAS`), the same section 7.2 rule — in the place a PEP lives (`xacml-pep/CLAUDE.md`). What stays in the runtime:
+
+* **`enforce()`**, for `/admin/xacml/decide`'s what-if, with the bias as an ARGUMENT; the what-if (`GET /admin-api/xacml/decide`) answers `enforcement` (deny-biased, the one the page draws) and `enforcements`, both biases — one decision, two outcomes, which is what flipping the setting used to show. `tests/xacml_pep.js` still holds `enforce()` and the Rust `enforce.rs` to `xacml-pep/enforcement_cases.json`.
+* **The monitor** lists two embedded PEPs, not three; a remote PEP's refusals and undischargeable obligations arrive on its heartbeat.
+* **The tests moved**: `sts_xacml_endpoints.js` sections 2 and 5 read the bias and the obligation rule off the what-if, `sts_xacml_editor.js` asks the PDP through it, and `sts_xacml_remote_pep.js` section 4b asserts the obligation rule IN THE CONTAINER, on policy it pulled. Both throwaway-realm jobs still create their realm in development, as before. A permit-biased PEP is not driven end to end: the launcher's PEP runs one bias, and the two are compared through the shared table instead.
+* `GET /xacml` names the trust-anchor door, `POST /admin-api/tls/trust/add` (the open `POST /tls/trust` was deleted by #597), and no longer carries `pep`.
+* `STS-XACML-0014` and `0015`, the demonstration PEP's two refusals, are retired; the remote PEP's are its own `STS-XPEP-*` lines.
+
+## The description page is a static surface's shell (#584, 2026-10-12)
+
+`GET /xacml` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `xacml/web_xacml_description.ts` from the `describeXacml` catalogs, with `/xacml/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before. **The gate is the page's, unchanged and asked first**, and `/xacml/description.js` asks it too: a part of the surface answered to a caller the page refuses would be a part outside the gate. A page load is therefore two access decisions where it was one. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.

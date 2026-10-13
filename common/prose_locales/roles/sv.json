@@ -1,0 +1,138 @@
+{
+  "roles.schema.objectClasses.stsRole.what": {
+    "en": "e80eac42b07fd952",
+    "text": "En ROLL. Posten namnges efter rollnamnet (`cn=staff`), och allt på den är MEDLEMSKAP — vem som har rollen. Det som en roll KRÄVS för finns på applikationsposten som kräver den, i `appRequiredRole`, eftersom det är ett faktum om applikationen snarare än om rollen."
+  },
+  "roles.schema.attributes.roleName.what": {
+    "en": "5b8fbb4273c31dfa",
+    "text": "Rollnamnet, som också är `cn`. Bärs även uttryckligen så att en läsare som bara har attributen har namnet."
+  },
+  "roles.schema.attributes.roleMemberUser.what": {
+    "en": "2111e210eae7f37d",
+    "text": "Ett användarnamn som har den här rollen. Flervärt. Personen behöver inte finnas ännu — den här tjänsten skapar en katalogpost för vilket namn som helst vid första observation, så en roll kan beviljas innan dess innehavare någonsin har loggat in."
+  },
+  "roles.schema.attributes.roleMemberGroup.what": {
+    "en": "ed79e4eb54a86c36",
+    "text": "En grupp vars samtliga medlemmar har den här rollen. Flervärt. Upplöses vid BESLUTSTILLFÄLLET snarare än expanderas vid skrivning, så en `ldapmodify` som lägger till någon i gruppen ändrar redan nästa token."
+  },
+  "roles.schema.attributes.roleMemberApplication.what": {
+    "en": "cecc4552c88342d4",
+    "text": "En applikation som har den här rollen SOM SIG SJÄLV — det som ett client_credentials-grant avgörs på, där det inte finns någon person. Flervärt. INTE samma relation som `appRequiredRole` på applikationsposten, som är det som den applikationen KRÄVER av andra."
+  },
+  "roles.schema.attributes.rolePermission.what": {
+    "en": "8c4a8b212ef0e2f9",
+    "text": "En behörighet som en innehavare av den här rollen får UTFÄRDAS (#303). Flervärt. Namngiven så som en klient ber om den: en generisk applikationsbehörighet med sitt fullständiga omfångsvärde — resursapplikationens `oauthPermissionBaseUri` följt av namnet — och en inbyggd behörighet i den här tjänsten med sitt eget namn (`admin:read`, `admin:write`). Den spelar roll endast för en behörighet som dess resursapplikation SPÄRRAR (`oauthRoleGatedPermission`); en spärrad behörighet utfärdas endast till ett subjekt som har en roll som namnger den, och en ospärrad som den alltid har gjort."
+  },
+  "roles.schema.attributes.roleConferredBy.what": {
+    "en": "f8584e245b96003a",
+    "text": "En klient som den här rollen TILLDELAS AV (#454): varje person som loggar in via den klienten har rollen på den åtkomsttoken som klienten får, och på ingen annan token. Flervärt, client_id:n för applikationer i den här sfären. En roll som innehas på det här sättet är ett faktum om TOKEN snarare än om personen, så den blandas med de roller som personen själv har vid varje anrop, och att ta bort en klient från den tar omedelbart bort rollen från den klientens token. Tillämpas aldrig på en klients egen client_credentials-token, vars roller är dess medlemskap. ADMIN_CONSOLE sås som tilldelad av `sts-admin-console`."
+  },
+  "roles.schema.attributes.roleApplication.what": {
+    "en": "364af2be7fcecb90",
+    "text": "Den ENDA applikation som den här rollen tillhör (#310), med sin identifierare i ou=applications; saknas den är rollen sfärsövergripande. En applikations roll namnges `<role>@<application>` i registret, så två applikationer kan var och en ha en `reader`; en token eller ett intyg för den applikationen bär den som `<role>`, och ingen annan applikations token bär den alls. Applikationens `appRequiredRole` får namnge den som `<role>`."
+  },
+  "roles.schema.attributes.roleAllowedMemberType.what": {
+    "en": "d68c39dff61cf682",
+    "text": "VEM SOM FÅR HA den här rollen (#93): `user` (personer, direkt eller via en grupp) och `application` (en applikation som sig själv). Flervärt; saknas det får båda — varje roll som skrevs före det. En medlem av ett slag som rollen inte tillåter vägras när rollen skrivs. De två konsolrollerna kan inte begränsas: förteckningen beviljar deras personer och sådden deras applikation."
+  },
+  "roles.schema.attributes.displayName.what": {
+    "en": "96a85a48288e9845",
+    "text": "Ett valfritt namn för människor att läsa (#93). Rollens NAMN är fortfarande det som en token bär, det som ett krav namnger och det som registret nycklas på; det här är endast dess etikett i konsolen och API:t. Dess stabila id är postens `entryUUID`, som behålls genom varje redigering."
+  },
+  "roles.schema.attributes.description.what": {
+    "en": "d3cd66c299e05098",
+    "text": "Vad rollen är till för, för nästa person."
+  },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "En person eller grupp i den här realmen som ansvarar för rollen (#604), med DN — attributet i RFC 4519 avsnitt 2.23, som en grupps ägare (#603). Flervärt, högst 25. En ägare GER INGENTING: inget i den här tjänsten läser den för att besluta något. Användarportalen listar vad en person äger."
+  },
+  "roles.builtIn.EVERYBODY.what": {
+    "en": "40f390becf1977a2",
+    "text": "Vem som helst, autentiserad eller inte, person eller applikation. DETTA ÄR STANDARDKRAVET: en applikation som inte namnger någon krävd roll kräver den här, alla har den, och ingenting vägras — vilket är precis hur den här tjänsten betedde sig innan roller fanns."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_USERS.what": {
+    "en": "2defec4a92314419",
+    "text": "En person med en levande autentiserad session i den säkerhetskontext som det här beslutet fattas i."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_USERS.what": {
+    "en": "dcc2d43ade379f11",
+    "text": "En person som INTE har autentiserat sig. Det är inte negationen av rollen ovan vad en policy beträffar — det är ett namn som ett mål kan matcha, och XACML-mål kan inte säga \"inte\"."
+  },
+  "roles.builtIn.ALL_APPLICATIONS.what": {
+    "en": "b3fc06c57f1fbf9a",
+    "text": "Vilken klient som helst, hur den än dök upp."
+  },
+  "roles.builtIn.ALL_AUTHENTICATED_APPLICATIONS.what": {
+    "en": "14248fac9f0f2491",
+    "text": "En klient som BEVISADE vem den är — en hemlighet, ett private_key_jwt-intyg eller ett verifierat klientcertifikat. En publik klient som bara skickade ett client_id är inte detta."
+  },
+  "roles.builtIn.ALL_UNAUTHENTICATED_APPLICATIONS.what": {
+    "en": "f85ae0dad867697a",
+    "text": "En publik klient som inte bevisade någonting."
+  },
+  "roles.builtIn.REMOTE_PEPS.what": {
+    "en": "a542d84d6db4c5b5",
+    "text": "En fjärransluten XACML Policy Enforcement Point: den som är medlem i gruppen som namnges av `roles.remotePepGroup` (standard \"remote-peps\"). Det är vad `/xacml/pep/register`, `/xacml/pep/policies` och `/xacml/pep/heartbeat` kräver, och parten som har den är normalt ett klientcertifikats DN snarare än en person — certifikatet säger VEM, och den här gruppen säger om de får."
+  },
+  "roles.builtIn.XACML_USER.what": {
+    "en": "1b417a98ec7e824b",
+    "text": "En anropare av den egentliga XACML-ytan: den som är medlem i gruppen som `roles.xacmlUserGroup` namnger (som standard \"xacml-users\"). Det är vad `GET /xacml`, `POST /xacml/pdp` och `GET /xacml/policies` kräver, och den som har den är normalt ett klientcertifikats DN — certifikatet säger VEM, och den här gruppen säger om de får. Den är med avsikt INTE REMOTE_PEPS: den rollen når de tre /xacml/pep-slutpunkterna, som lämnar ut de dokument tjänsten tillämpar sin egen åtkomstkontroll med, och en grupp som gav båda skulle göra att en anropare som släpps in på själva XACML-ytan tyst släpps in på dem också."
+  },
+  "roles.native.ADMIN_READ.what": {
+    "en": "7d6481dffa0d517c",
+    "text": "Admin Read: varje LÄSNING på /admin-api. Innehas av konsolens grupper Admin Read och Admin Write (Admin Write innebär Admin Read) och av applikationerna som listas här. Auktoriserar behörigheten admin:read."
+  },
+  "roles.native.ADMIN_WRITE.what": {
+    "en": "ecff5f0bc1a5a16a",
+    "text": "Admin Write: varje /admin-api-operation som ÄNDRAR något. Innehas av konsolens grupp Admin Write och av applikationerna som listas här. Auktoriserar behörigheten admin:write. Den innebär inte Admin Read på en token: en token kan bära vilket omfång som helst, och policyn ber om det som operationen behöver."
+  },
+  "roles.native.ADMIN_CONSOLE.what": {
+    "en": "5661913dba04f59a",
+    "text": "Administratörskonsolen: operationerna under /admin-api/console som finns endast för att rita konsolen — dess ram, dess ritningar och dess formulärhjälpare. Auktoriserar behörigheten admin:console. Tilldelas av konsolens egen klient, sts-admin-console, till varje person som loggar in i konsolen, och innehas inte av någon som medlem. Den beviljar ingenting annat: en sida som visar sfärdata ber också om ADMIN_READ."
+  },
+  "roles.native.DEVICE_COMPLIANCE.what": {
+    "en": "54220e44643bd84c",
+    "text": "Flödet för enhetsefterlevnad: ett MDM- eller posture-flöde som rapporterar en enhets efterlevnad via POST /admin-api/device-compliance, och ingenting annat på /admin-api. Auktoriserar behörigheten device:compliance. Sådd utan medlem: lägg till flödets applikation."
+  },
+  "roles.memberKinds.user.label": {
+    "en": "df381eb4bb572daf",
+    "text": "en person"
+  },
+  "roles.memberKinds.user.what": {
+    "en": "f44ab9f659dd78d5",
+    "text": "Ett användarnamn. Personen behöver inte finnas ännu: den här tjänsten skapar en katalogpost för vilket namn som helst vid första observation, så en roll kan beviljas innan dess innehavare någonsin har loggat in."
+  },
+  "roles.memberKinds.group.label": {
+    "en": "7058b14ed9a6b2fc",
+    "text": "en grupp"
+  },
+  "roles.memberKinds.group.what": {
+    "en": "807d0833e4b29343",
+    "text": "En grupp i ou=groups. Varje medlem i den har rollen, upplöst vid BESLUTSTILLFÄLLET snarare än expanderad vid skrivning — så en ldapmodify som lägger till någon i gruppen ändrar redan nästa token."
+  },
+  "roles.memberKinds.application.label": {
+    "en": "7b0b893d972a8266",
+    "text": "en applikation"
+  },
+  "roles.memberKinds.application.what": {
+    "en": "67e543bef5013764",
+    "text": "En applikation som har rollen SOM SIG SJÄLV. Det är detta som ett client_credentials-grant avgörs på, där det inte finns någon person alls, och det är skälet till att en applikation här är en fullvärdig medlem i en roll."
+  },
+  "roles.console.read.label": {
+    "en": "528d2a45607ec613",
+    "text": "Admin Read"
+  },
+  "roles.console.read.what": {
+    "en": "d824947bfa7bb0cd",
+    "text": "Titta på varje sida i den här konsolen, och på varje ?format=json-vy av en sida. Den ändrar ingenting: en läsare kan se vilka token som är återkallade men kan inte återkalla någon."
+  },
+  "roles.console.write.label": {
+    "en": "41407227fe92a8f6",
+    "text": "Admin Write"
+  },
+  "roles.console.write.what": {
+    "en": "476b1b61c16b02e4",
+    "text": "Skicka varje formulär i den här konsolen — återkalla en token, lägga till ett anpassat anspråk, ändra en inställning, skapa en person, bevilja en roll. DEN INNEFATTAR LÄSNING, så en medlem av enbart den här rollen kan använda hela konsolen."
+  }
+}

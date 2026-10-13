@@ -7,7 +7,6 @@
   "inventory.globalButton": "全局退出 — 结束下面的所有内容",
   "inventory.globalNote": "默认选项。向 <code>/logout</code> 发送未选择任何内容的 POST 请求，效果与此完全相同。",
   "inventory.selectedButton": "结束已勾选的项目",
-  "inventory.selectedNote": "请在下面的表格中勾选。未勾选任何项目则不会结束任何内容。",
   "inventory.liveCount": "<strong>{total} 个有效项目</strong>，分布在 {families, plural, other {# 个系列}}中。其中一些任何人都无法结束 — 它们连同原因一并列出，因为隐藏它们的退出看似完整，实则不然。",
   "inventory.anyUserOpen": "本服务在任何地方都不检查密码，因此 <code>?username=</code> 可以指定任何人，且不会授予原本不具备的任何权限 — 以其身份登录只需一个请求。<code>logout.anyUser</code> 可关闭此功能。",
   "inventory.anyUserOff": "<code>logout.anyUser</code> 已关闭，因此此端点只作用于您当前持有的会话。",
@@ -31,5 +30,13 @@
   "result.remain": "还剩 {total} 项。",
   "result.lookAgain": "再查看一次",
   "result.lookAgainEnd": "。",
-  "result.nothingLeft": "没有了。本服务已不再为 {key} 保留任何它仍能看到的有效会话或凭据。"
+  "result.nothingLeft": "没有了。本服务已不再为 {key} 保留任何它仍能看到的有效会话或凭据。",
+  "result.toPortal": "前往用户门户中的您的账户",
+  "result.brief": "您已退出登录。",
+  "result.seeDetails": "已结束的、未结束的以及仍然有效的内容见“详细信息”选项卡。",
+  "tab.signOut": "登出",
+  "tab.details": "详细信息",
+  "list.colProtocol": "协议",
+  "inventory.listNote": "请在上方列表中勾选。未勾选任何项目则不会结束任何内容。",
+  "inventory.detailsNote": "请在上方表格中勾选令牌和凭据。未勾选任何项目则不会结束任何内容。"
 }

@@ -69,8 +69,8 @@
 //
 // A STATIC UTILITY CLASS (the code style's rule for a helper with no
 // dependency but the logger): no route, no store, no require of anything in
-// a protocol directory, so `oauth-oidc/authorization_details.ts`, `gnap/`
-// and the demonstration resource server all read the one copy.
+// a protocol directory, so `oauth-oidc/authorization_details.ts` and `gnap/`
+// both read the one copy.
 // ===========================================================================
 
 import helpers = require('./helpers');
