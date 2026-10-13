@@ -281,10 +281,14 @@ async function startSignIn(who) {
   return out;
 }
 
+// The wallet's answer, under the request's response mode: a sign-in asks
+// for `direct_post.jwt` by default since 2026-10-12, so the ID Token is
+// sent encrypted to the request's key (`wallet_signin.js`).
 async function answer(request, idToken) {
   log.debug("Entering answer().");
-  const r = await hop(null, "POST", request.response_uri, { form: {
-    state: request.state, id_token: idToken } });
+  const r = await hop(null, "POST", request.response_uri, {
+    form: walletSignin.answerForm(request, {
+      state: request.state, id_token: idToken }) });
   log.debug("Leaving answer(). " + r.status);
   return r;
 }

@@ -769,7 +769,8 @@ var config = {
 
   // --- OID4VCI ---------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",               // Wallet URL
+    walletUrl: "",                                    // Web wallet URL
+    walletInvocation: "openid-credential-offer",      // How a wallet app is handed an offer
     authorizationServer: "",                          // Authorization server
     batchSize: 4,                                     // Batch size
     deferredReadyMs: 4000,                            // Deferred: ready after (ms)
@@ -779,7 +780,7 @@ var config = {
     txCodeLength: 5,                                  // Transaction Code length (digits)
     txCodeMaxAttempts: 5,                             // Wrong Transaction Codes before the code is spent (product)
     offerTtlS: 600,                                   // Credential Offer lifetime (s)
-    walletIssuancePath: "/vc-issuance-1.html",        // Wallet issuance page
+    walletIssuancePath: "",                           // Web wallet issuance page
     requestEncryptionKeyBits: 2048,                   // Request encryption key size (bits)
     requestEncryptionEncValues: "A128GCM,A256GCM",    // Request encryption: enc values
     responseEncryptionEncValues: "A128GCM,A256GCM",   // Response encryption: enc values
@@ -803,34 +804,37 @@ var config = {
 
   // --- OID4VP ----------------------------------------------------------
   oid4vp: {
-    clientId: "sts-verifier",                          // Verifier client ID
-    requestObjectCertificateHeader: "x5u",             // Request Object certificate header
-    kbMaxAgeS: 600,                                    // Key Binding max age (s)
-    signInSelfIssued: false,                           // Sign in with a self-issued ID (SIOPv2)
-    siopIdTokenMaxAgeS: 300,                           // Self-issued ID Token max age (s)
-    clientIdPrefix: "pre-registered",                  // Client Identifier prefix of a signed request
-    x509DnsName: "",                                   // DNS name of the x509_san_dns Client Identifier
-    x509SigningAlgorithm: "ES256",                     // Signing algorithm of an x509 Client Identifier request
-    verifierAttestation: "",                           // Verifier Attestation JWT
-    claims: "given_name,family_name",                  // Requested claims
-    presentationRequestTtlS: 600,                      // Presentation request lifetime (s)
-    maxTransactions: 5000,                             // Presentation requests waiting (per realm)
-    signInRegisterMaxEntries: 10000,                   // Wallet sign-in register size (per realm)
-    walletPresentationPath: "/vc-presentation-1.html", // Wallet presentation page
-    allowedWalletUrls: "",                             // Other wallet URLs a request link may name (product)
-    trustedIssuerCertificates: "",                     // Other trusted credential issuers (PEM)
-    expectedVct: "urn:idptools:sd-jwt-vc:identity",    // Expected SD-JWT VC type (vct)
-    maxRequestedClaims: 40,                            // Claims one request may ask for
-    signIn: true,                                      // Sign in with a wallet
-    signInTtlS: 300,                                   // Wallet sign-in lifetime (s)
-    signInPollS: 3,                                    // Wallet sign-in page refresh (s)
-    signInCrossDevice: false,                          // Wallet sign-in QR code (cross-device, relayable)
-    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",     // Wallet sign-in credential formats
-    signInDcApiResponseMode: "dc_api.jwt",             // Digital Credentials API response mode
-    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES",   // Encrypted response: key algorithms offered
-    statusListMaxCacheS: 3600,                         // Longest a fetched status list is kept (s)
-    requireStatusReference: "all",                     // Require a status reference on every presented credential
-    statusOptionalIssuers: ""                          // Trusted issuers exempt from the status reference
+    clientId: "sts-verifier",                        // Verifier client ID
+    walletInvocation: "openid4vp",                   // How a wallet app is handed a request
+    requestObjectCertificateHeader: "x5u",           // Request Object certificate header
+    kbMaxAgeS: 600,                                  // Key Binding max age (s)
+    signInSelfIssued: false,                         // Sign in with a self-issued ID (SIOPv2)
+    siopIdTokenMaxAgeS: 300,                         // Self-issued ID Token max age (s)
+    clientIdPrefix: "pre-registered",                // Client Identifier prefix of a signed request
+    x509DnsName: "",                                 // DNS name of the x509_san_dns Client Identifier
+    x509SigningAlgorithm: "ES256",                   // Signing algorithm of an x509 Client Identifier request
+    verifierAttestation: "",                         // Verifier Attestation JWT
+    claims: "given_name,family_name",                // Requested claims
+    presentationRequestTtlS: 600,                    // Presentation request lifetime (s)
+    maxTransactions: 5000,                           // Presentation requests waiting (per realm)
+    signInRegisterMaxEntries: 10000,                 // Wallet sign-in register size (per realm)
+    walletPresentationPath: "",                      // Web wallet presentation page
+    allowedWalletUrls: "",                           // Other wallet URLs a request link may name (product)
+    trustedIssuerCertificates: "",                   // Other trusted credential issuers (PEM)
+    expectedVct: "urn:idptools:sd-jwt-vc:identity",  // Expected SD-JWT VC type (vct)
+    maxRequestedClaims: 40,                          // Claims one request may ask for
+    signIn: true,                                    // Sign in with a wallet
+    signInClientIdPrefix: "x509_hash",               // Wallet sign-in: Client Identifier prefix
+    signInResponseMode: "direct_post.jwt",           // Wallet sign-in: response mode
+    signInTtlS: 300,                                 // Wallet sign-in lifetime (s)
+    signInPollS: 3,                                  // Wallet sign-in page refresh (s)
+    signInCrossDevice: false,                        // Wallet sign-in QR code (cross-device, relayable)
+    signInFormats: "dc+sd-jwt,jwt_vc_json,ldp_vc",   // Wallet sign-in credential formats
+    signInDcApiResponseMode: "dc_api.jwt",           // Digital Credentials API response mode
+    responseEncryptionKeyAlgs: "HPKE-10-KE,ECDH-ES", // Encrypted response: key algorithms offered
+    statusListMaxCacheS: 3600,                       // Longest a fetched status list is kept (s)
+    requireStatusReference: "all",                   // Require a status reference on every presented credential
+    statusOptionalIssuers: ""                        // Trusted issuers exempt from the status reference
   },
 
   // --- OpenID Federation -----------------------------------------------

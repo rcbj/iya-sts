@@ -141,9 +141,9 @@ function childMain() {
         m.stsCrypto.certificateThumbprint(partner.certPem,
                                           { format: 'hex' }));
     });
-    const aud = w.inRealm(function () {
-      return m.config.value('oid4vp.clientId');
-    });
+    // The Client Identifier a sign-in signs under, the audience a holder
+    // proves for: x509_hash's since 2026-10-12 (`w.signInAudience()`).
+    const aud = await w.signInAudience();
     const partnerSigner = { privateKey:
       nodeCrypto.createPrivateKey(partner.privateKeyPem) };
     const presentAs = async function (sub) {

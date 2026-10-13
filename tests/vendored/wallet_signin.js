@@ -336,7 +336,113 @@ async function refreshCsrf(base, who, authnId) {
   return (opened.json && opened.json.csrf) || "";
 }
 
+// ---------------------------------------------------------------------------
+// THE WALLET'S ANSWER UNDER THE REQUEST'S RESPONSE MODE (2026-10-12). A
+// sign-in asks for `direct_post.jwt` by default (`oid4vp.signInResponseMode`,
+// OpenID4VC HAIP 1.0 section 5.1), and a HAIP wallet then sends ONE form
+// field, `response`: a JWE (OpenID4VP 1.0 section 8.3) to the P-256
+// `ECDH-ES` key the request offers in `client_metadata.jwks`, A128GCM,
+// whose plaintext is the answer's other fields. Written here with node's
+// crypto rather than taken from the service — RFC 7518 section 4.6's direct
+// key agreement and Concat KDF — so the service's decryption is held to an
+// encryption it did not write. `direct_post` is the fields as they are.
+// ---------------------------------------------------------------------------
+
+/**
+ * ECDH-ES with A128GCM, compact serialisation (RFC 7516, RFC 7518 4.6).
+ *
+ * @param {string} plaintext - the payload
+ * @param {object} jwk - the recipient's public P-256 JWK
+ * @returns {string} the compact JWE
+ */
+function encryptEcdhEs(plaintext, jwk) {
+  log.debug("Entering encryptEcdhEs().");
+  const crypto = require("crypto");
+  const ephemeral = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const epk = ephemeral.publicKey.export({ format: "jwk" });
+  const z = crypto.diffieHellman({
+    privateKey: ephemeral.privateKey,
+    publicKey: crypto.createPublicKey({ key: { kty: "EC", crv: jwk.crv,
+                                               x: jwk.x, y: jwk.y },
+                                        format: "jwk" }) });
+  const enc = "A128GCM";
+  const lenPrefixed = function (buf) {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(buf.length);
+    return Buffer.concat([len, buf]);
+  };
+  const keyBits = Buffer.alloc(4);
+  keyBits.writeUInt32BE(128);
+  const counter = Buffer.alloc(4);
+  counter.writeUInt32BE(1);
+  const otherInfo = Buffer.concat([lenPrefixed(Buffer.from(enc)),
+                                   lenPrefixed(Buffer.alloc(0)),
+                                   lenPrefixed(Buffer.alloc(0)), keyBits]);
+  const cek = crypto.createHash("sha256")
+    .update(Buffer.concat([counter, z, otherInfo])).digest().subarray(0, 16);
+  const header = { alg: "ECDH-ES", enc: enc,
+                   epk: { kty: "EC", crv: epk.crv, x: epk.x, y: epk.y } };
+  if (jwk.kid) {
+    header.kid = jwk.kid;
+  }
+  const protectedB64 = Buffer.from(JSON.stringify(header))
+    .toString("base64url");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-128-gcm", cek, iv);
+  cipher.setAAD(Buffer.from(protectedB64, "ascii"));
+  const ct = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf8")),
+                           cipher.final()]);
+  const tag = cipher.getAuthTag();
+  log.debug("Leaving encryptEcdhEs().");
+  return [protectedB64, "", iv.toString("base64url"),
+          ct.toString("base64url"), tag.toString("base64url")].join(".");
+}
+
+/**
+ * What a wallet posts to the Response URI for `fields` under the request's
+ * response mode: the fields for `direct_post`, `{ response }` for
+ * `direct_post.jwt` (`opts.plain` sends the fields whatever was asked).
+ * A `vp_token` given as JSON text is the object it encodes inside the JWE.
+ *
+ * @param {object} requestObject - the decoded Request Object
+ * @param {object} fields - the answer's fields, `state` among them
+ * @param {object} [opts] - `plain`
+ * @returns {object} the form
+ */
+function answerForm(requestObject, fields, opts) {
+  log.debug("Entering answerForm().");
+  const o = opts || {};
+  const ro = requestObject || {};
+  if (ro.response_mode !== "direct_post.jwt" || o.plain) {
+    log.debug("Leaving answerForm(). In the clear.");
+    return fields;
+  }
+  const payload = Object.assign({}, fields);
+  delete payload.state;
+  if (typeof payload.vp_token === "string") {
+    try {
+      payload.vp_token = JSON.parse(payload.vp_token);
+    } catch (e) {
+      log.debug("Caught in answerForm(): " + ((e && e.message) || e));
+      // A malformed vp_token sent on purpose travels as it is.
+    }
+  }
+  const key = (((ro.client_metadata || {}).jwks || {}).keys || [])
+    .find(function (k) {
+      return k.alg === "ECDH-ES" && k.crv === "P-256";
+    });
+  if (!key) {
+    log.debug("Leaving answerForm(). No ECDH-ES key was offered.");
+    throw new Error("the request asked for direct_post.jwt and offered no " +
+                    "P-256 ECDH-ES key");
+  }
+  log.debug("Leaving answerForm(). Encrypted.");
+  return { response: encryptEcdhEs(JSON.stringify(payload), key) };
+}
+
 module.exports = {
+  encryptEcdhEs: encryptEcdhEs,
+  answerForm: answerForm,
   baseOf: baseOf,
   call: call,
   act: act,

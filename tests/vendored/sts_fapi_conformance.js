@@ -421,7 +421,9 @@ async function prepare(plan) {
                   "saml2-bearer_supported",
                 "assertion_signing_alg_values_supported",
                 "assertion_encryption_alg_values_supported",
-                "assertion_encryption_enc_values_supported"] },
+                "assertion_encryption_enc_values_supported",
+                // OpenID4VCI 1.0 section 12.3 (2026-10-12).
+                "pre-authorized_grant_anonymous_access_supported"] },
     client: clients[0],
     client2: clients[1],
     resource: { resourceUrl: discovery.userinfo_endpoint }

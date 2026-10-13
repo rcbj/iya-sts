@@ -73,9 +73,9 @@ function childMain() {
     const aliceSub = await w.inRealm(function () {
       return m.helpers.subjectForName('dc-alice');
     });
-    const clientId = await w.inRealm(function () {
-      return m.config.value('oid4vp.clientId');
-    });
+    // The Client Identifier a sign-in signs under, the audience a holder
+    // proves for: x509_hash's since 2026-10-12 (`w.signInAudience()`).
+    const clientId = await w.signInAudience();
     const dcAud = 'origin:' + w.origin;
 
     // ==================================================================

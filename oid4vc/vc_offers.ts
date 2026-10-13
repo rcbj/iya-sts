@@ -29,9 +29,13 @@
 // which the Wallet must hand back on the authorization request so the issuer
 // can tie the two together.
 //
-// The Wallet a browser page can be sent to is a URL, not the
-// openid-credential-offer:// scheme a native wallet would register —
-// `oid4vci.walletUrl` (OID4VCI_WALLET_URL) says where it lives.
+// AN OFFER IS HANDED TO A WALLET APP BY ITS SCHEME (2026-10-12):
+// `openid-credential-offer://`, or HAIP's `haip-vci://`
+// (`oid4vci.walletInvocation`), which a wallet on the device registers
+// for. A WEB wallet is a URL a browser page can be sent to, offered beside
+// it only where `oid4vci.walletUrl` configures one; the default is none —
+// it was the embedded debugger's address until then, which no person's
+// wallet is.
 // ---------------------------------------------------------------------------
 //
 // This module owns the STATE the offer creates — the offers themselves, the
@@ -837,11 +841,17 @@ class VcOffers {
       });
     });
     const wallet = String(ask.wallet || '');
+    // THE SCHEME A WALLET APP IS HANDED THE OFFER UNDER (2026-10-12):
+    // OpenID4VCI 1.0 section 4.1's `openid-credential-offer://`, or HAIP
+    // 1.0 section 4.2's `haip-vci://` where `oid4vci.walletInvocation` says
+    // so. The web wallet's link, `walletUrl`, is beside it only where a web
+    // wallet is configured or named.
+    const scheme = this.offerScheme();
     const formOf = function (query: string): any {
       log.debug("Entering formOf().");
       log.debug("Leaving formOf().");
       return { query: query,
-               offerUri: 'openid-credential-offer://?' + query,
+               offerUri: scheme + '?' + query,
                walletUrl: wallet ? wallet + '?' + query : '' };
     };
     const byValue = formOf('credential_offer=' +
@@ -861,6 +871,21 @@ class VcOffers {
     }
     log.debug("Leaving VcOffers.makeOffer(). mode=" + built.mode);
     return { built: built, byValue: byValue, byReference: byReference };
+  }
+
+  /**
+   * The custom URL scheme, with its `://`, a Credential Offer is handed to a
+   * wallet app under (`oid4vci.walletInvocation`).
+   *
+   * @returns `openid-credential-offer://` or `haip-vci://`
+   */
+  offerScheme(): string {
+    const { log, config } = this.deps;
+    log.debug("Entering VcOffers.offerScheme().");
+    const scheme = String(config.value('oid4vci.walletInvocation') || '') ===
+      'haip-vci' ? 'haip-vci://' : 'openid-credential-offer://';
+    log.debug("Leaving VcOffers.offerScheme(). " + scheme);
+    return scheme;
   }
 
   /**

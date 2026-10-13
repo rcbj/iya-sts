@@ -195,7 +195,10 @@ var config = {
 
   // --- OID4VCI -----------------------------------------------------------
   oid4vci: {
-    walletUrl: "http://localhost:3000",
+    // No walletUrl (2026-10-12): an offer is handed to a wallet APP by its
+    // scheme (oid4vci.walletInvocation). Set walletUrl and
+    // walletIssuancePath ("/vc-issuance-1.html" for the embedded
+    // debugger's web wallet) to offer a web wallet beside it.
     authorizationServer: "",
     batchSize: 4,
     deferredReadyMs: 4000,
@@ -217,8 +220,9 @@ var config = {
   // --- OID4VP ------------------------------------------------------------
   oid4vp: {
     clientId: "sts-verifier",
-    // walletUrl: falls back to oid4vci.walletUrl. Uncomment to point the mock
-    //   Verifier at a different wallet from the issuer's.
+    // walletUrl: falls back to oid4vci.walletUrl, a web wallet offered
+    //   beside the oid4vp.walletInvocation link; walletPresentationPath is
+    //   "/vc-presentation-1.html" for the embedded debugger's.
     kbMaxAgeS: 600,
     claims: "given_name,family_name"
   },

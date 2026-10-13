@@ -590,7 +590,10 @@ const WALLET_OPERATIONS: Operation[] = [
     walletAct: 'waitView',
     summary: 'What the wallet sign-in\'s wait page draws',
     description: 'For the browser that started the transaction only: the ' +
-      'Digital Credentials API request, the same-device link, the QR ' +
+      'Digital Credentials API request, the same-device link ' +
+      '(`sameDevice`: the request under the scheme a wallet app registers ' +
+      'for, `oid4vp.walletInvocation`), a configured web wallet\'s link ' +
+      '(`webWallet`, or empty), the QR ' +
       'code\'s text where `oid4vp.signInCrossDevice` offers it, the ' +
       'seconds left and the poll\'s interval, and `csrf`.' },
   { method: 'POST', path: API + '/wallet/:state/status',

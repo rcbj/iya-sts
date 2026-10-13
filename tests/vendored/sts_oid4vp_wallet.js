@@ -571,13 +571,17 @@ function queryIdFor(requestObject, format) {
 }
 
 // POST the wallet's answer to the request's response_uri (OpenID4VP section
-// 8.2, `direct_post`). The wallet has no cookie for this service.
+// 8.2): `direct_post`, or — where the request asked for it, as a sign-in
+// does by default since 2026-10-12 — `direct_post.jwt`, encrypted to the
+// request's key (`wallet_signin.js`'s `answerForm()`). The wallet has no
+// cookie for this service.
 async function respond(requestObject, format, presentation) {
   log.debug("Entering respond(). " + format);
   const vpToken = {};
   vpToken[queryIdFor(requestObject, format)] = [presentation];
-  const r = await hop(null, "POST", requestObject.response_uri, { form: {
-    state: requestObject.state, vp_token: JSON.stringify(vpToken) } });
+  const r = await hop(null, "POST", requestObject.response_uri, {
+    form: walletSignin.answerForm(requestObject, {
+      state: requestObject.state, vp_token: JSON.stringify(vpToken) }) });
   log.debug("Leaving respond(). " + r.status);
   return r;
 }

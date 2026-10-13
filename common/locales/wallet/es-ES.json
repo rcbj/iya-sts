@@ -13,5 +13,12 @@
   "sameDevice.open": "Abrir su cartera en este dispositivo",
   "qr.heading": "Escanee con su cartera",
   "qr.warning": "Escanee esto solo con su propio móvil. Quien lo escanee inicia sesión en ESTE navegador, así que un código que otra persona le muestre es una forma de que inicie sesión como usted.",
-  "qr.waiting": "Esperando a su cartera — esta página vuelve a comprobar cada {poll} segundos, y la solicitud caduca en {seconds} segundos."
+  "qr.waiting": "Esperando a su cartera — esta página vuelve a comprobar cada {poll} segundos, y la solicitud caduca en {seconds} segundos.",
+  "sameDevice.note": "abre la aplicación de cartera de este dispositivo",
+  "webWallet.open": "Abrir su cartera web",
+  "webWallet.note": "la cartera web configurada para este servicio",
+  "noApp.lead": "Si no se abre nada, este dispositivo no tiene una aplicación de cartera para enlaces OpenID4VP.",
+  "noApp.dc": "El botón de arriba también puede llegar a una cartera en este dispositivo o en un teléfono cercano, si este navegador lo ofrece.",
+  "noApp.qr": "También puede mostrar un código QR y escanearlo con la cartera de su propio teléfono.",
+  "noApp.install": "De lo contrario, instale una cartera compatible con OpenID for Verifiable Presentations, agréguele una credencial desde «Añadir a su cartera» en el portal de su cuenta y vuelva a empezar, o inicie sesión de otra manera."
 }
