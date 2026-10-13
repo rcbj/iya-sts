@@ -658,13 +658,29 @@ carries `common/credentials.js`. It requires `helpers`, `instance_slot`,
 there with credentials — and `risk/risk_datasets` and
 `common/revocation_status.js` only lazily, inside a registration.
 
-**AND OWED AGAIN AS OF 2026-09-26: `common/enrollment_profiles.js`** (#251),
-compiled from its `.ts`. `common/realms.js` requires it at load — it holds the
+**AND OWED AGAIN AS OF 2026-09-26: `common/enrollment_profiles.js`** (#251).
+`common/realms.js` requires it at load — it holds the
 EST label names a realm may not take and that `matchPath()` must not read as a
 realm — and realms.js is in the closure through `krb5_principals.js`, so the
 commit that bumps the `sts/` pin across it needs `COPY
 sts/common/enrollment_profiles.js ./sts/common/`. It is data and requires
 nothing, so it is one line and no more.
+
+**AND SINCE 2026-10-13 THAT LINE IS AN ORDINARY COPY FROM THE CHECKOUT (#300).**
+The file was written as `enrollment_profiles.ts`, whose `.js` exists only after
+`tsc` runs inside an image build, so the parent took the compiled file out of a
+built service image — `COPY --from=mocksts` in its `tests/Dockerfile`, with
+`additional_contexts: mocksts: service:sts` in `docker-compose-run-tests.yml`,
+the one place its tests image depended on one. It is now plain JavaScript with
+`// @ts-check`, and the parent owes: both of those lines deleted, and `COPY
+sts/common/enrollment_profiles.js ./sts/common/` in their place
+(`stsModuleClosureIsCopied()` in its `tests/jwk_pem_encoding.js` confirms it).
+A lazy require in realms.js was the other fix offered and is not enough:
+`matchPath()` reaches `isEstLabel()` from the realm middleware, so the closure
+loads it anyway. **The rule it leaves: a module the closure requires AT LOAD is
+`.js` in the checkout**; `authn/webauthn_attestation`, above, is still
+compiled from its `.ts`, so wherever the parent's set carries
+`common/credentials.js` it is owed the same conversion.
 
 **AND NOT OWED FOR #236 (2026-09-26), ON PURPOSE.** `krb5_person_keys.ts`
 sends CAEP `credential-change` (`urn:iya:sts:credential-type:kerberos-key`)

@@ -2141,7 +2141,8 @@ when the path does not open with the prefix — so the same middleware enters
 it, a request worker derives it by the same rule from the same `originalUrl`,
 and `unknownRealmPath()` catches up on it the same way. A realm may not be
 called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
-from the data leaf `enrollment_profiles.ts`, which realms.js may require and
+from the data leaf `enrollment_profiles.js` — JavaScript because realms.js is
+in the parent's load-time closure (#300) — which realms.js may require and
 `cert_enrollment.ts` could not be), and a realm that already was is never
 read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
 and the "named once" refusal. **A third way needs the argument made again**,
