@@ -848,8 +848,8 @@
     "text": "DER，`application/pkix-cert`。这是该颁发机构签名的每张证书的 Authority Information Access 扩展中的 `caIssuers` 地址，它能让收到不完整证书链的客户端补全证书链。接受并忽略 `.cer` 后缀。这是本服务唯一一处发布证书时使用缓存头部而不是 `no-store` 的地方：CA 证书在设计上是持久的——发生变化的颁发机构将是一个具有不同名称的不同颁发机构——而 `caIssuers` 获取本来就只应发生一次。在任何范围内都无法通过它获取私钥。"
   },
   "stsmetadata.endpoints./pki/chain/:scope/:certificate.what": {
-    "en": "7e1cc8b6d4142b39",
-    "text": "RFC 7515 第 4.1.5 节：签署 JWS 的密钥的 X.509 证书链，PEM 格式，叶证书在前，服务根证书在后，以 `application/pem-certificate-chain` 提供。本服务用已认证密钥签名的每个 JWT——访问令牌、ID 令牌、刷新令牌内部的 JWS、已签名的 UserInfo、两种 signed_metadata 文档、OpenID4VCI 凭证、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 和 GNAP JWT 访问令牌——都可以携带指向此处的 `x5u`，由其协议页面上各自的设置决定（默认 `x5u`，或内联的 `x5c`、`both` 或 `none`），这样只持有令牌的依赖方就能找到证书链中指明的每个 CRL 分发点、OCSP 响应方和 caIssuers 地址。{scope} 为 `default` 或领域 id，位于路径中的理由与 CRL 相同；{certificate} 是叶证书的十六进制 SHA-256，可带 `.pem` 后缀，与登记册比对而不是解析。以证书而非密钥命名，因此一个 URL 永远只指向一张证书：令牌签名之后已轮换的密钥返回 404，而不是另一个密钥的证书链。与发布本服务密钥材料的每个文档一样为 `no-store`。不设关卡，因为它返回的内容已由令牌指明。"
+    "en": "a2406b55a956eeb5",
+    "text": "RFC 7515 第 4.1.5 节：签署 JWS 的密钥的 X.509 证书链，PEM 格式，叶证书在前，服务根证书在后，以 `application/pem-certificate-chain` 提供。本服务用已认证密钥签名的每个 JWT——访问令牌、ID 令牌、刷新令牌内部的 JWS、已签名的 UserInfo、两种 signed_metadata 文档、OpenID4VCI 凭证、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 和 GNAP JWT 访问令牌——都可以携带指向此处的 `x5u`，由其协议页面上各自的设置决定（默认 `x5u`，或内联的 `x5c`、`both` 或 `none`），这样只持有令牌的依赖方就能找到证书链中指明的每个 CRL 分发点、OCSP 响应方和 caIssuers 地址。{scope} 为 `default` 或领域 id，位于路径中的理由与 CRL 相同；{certificate} 是叶证书的十六进制 SHA-256，可带 `.pem` 后缀，与登记册比对而不是解析。以证书而非密钥命名，因此一个 URL 永远只指向一张证书，绝不会是另一个密钥的证书链。槽位不再持有的证书——在同一密钥上重新签发，或其密钥已轮换——仍会连同签发时的证书链一起提供，直至过期（#318；每个槽位最新的八张）；此后返回 404。与发布本服务密钥材料的每个文档一样为 `no-store`。不设关卡，因为它返回的内容已由令牌指明。"
   },
   "stsmetadata.endpoints./crypto/metadata.what": {
     "en": "13e4dff652360fb0",

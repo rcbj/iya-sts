@@ -8314,6 +8314,31 @@ hourly `signing.retire` ran during it). The displaced serial is now kept in
 cluster merge already keeps: `good` until it expires, `revoked` once something
 revokes it, never unknown. `tests/signing_rotation.js` section J.
 
+### And its `x5u` keeps answering until it expires (2026-10-13, #318)
+
+#185 kept the serial and not the certificate, so `/pki/chain/{scope}/{sha256}.pem`
+— the `x5u` every still-valid token signed under it names — answered 404
+(`STS-PKI-0162`) while OCSP answered `good` for the same certificate. Seen on
+testidp: the realm's Issuing CA was re-issued, the slot re-certified over the
+SAME key, and every token from the previous ten minutes named a chain nobody
+served. For the `jose` use case `displacedRecord()` now also keeps
+`thumbprint`, `certificatePem` and the `chainPem` it was issued with, and
+`jose_certificate_header.js`'s `chainPemFor()` falls back to those (via
+`pki.displacedCertificatesFor()`) after the current certificates:
+
+* **The chain it was issued with, never re-rooted** onto the slot's current
+  one; a revoked one is still served, and its OCSP status says so.
+* **Until `notAfter`**, when the register drops the record anyway.
+* **Bounded**: `pki_merge.trimPublished()` leaves PEMs on the newest
+  `PUBLISHED_PER_SLOT` (8) of a slot; an older record keeps its serial only.
+  A suite that rebuilds the CAs repeatedly would otherwise grow the row by a
+  chain per slot per rebuild for a year. Both writers in `pki.js` and the
+  cluster merge trim, and the merge keeps the copy that still has the PEMs.
+* **Not `xml`**: an XML signature carries its certificate in KeyInfo, so
+  nothing addresses one later.
+
+`tests/pki_rebuild_recertifies.js` section D.
+
 ### And it records only what the CURRENT authority signed (2026-09-15, #46)
 
 The signature is an await, and a branch rebuild or a reissue of the use case

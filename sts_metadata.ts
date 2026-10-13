@@ -3812,8 +3812,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'is the leaf\'s SHA-256 in hex, with an optional `.pem` suffix, ' +
           'matched against the register rather than parsed. NAMED BY THE ' +
           'CERTIFICATE AND NOT BY THE KEY, so a URL names one certificate ' +
-          'for ever: a key rotated since the token was signed is a 404 ' +
-          'rather than a chain over a different key. `no-store`, like every ' +
+          'for ever and never a chain over a different key. A certificate ' +
+          'the slot no longer holds — re-certified over the same key, or ' +
+          'its key rotated — is still served, with the chain it was issued ' +
+          'with, until it expires (#318; the newest eight per slot); then ' +
+          'it is a 404. `no-store`, like every ' +
           'document publishing this service\'s key material. Ungated, ' +
           'because what it returns is already named by the token.' },
   { path: '/crypto/metadata', group: 'PKI',
