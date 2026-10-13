@@ -2483,9 +2483,10 @@ class SpiffeGrpc {
       // `unable to get issuer certificate` — a message about the ANCHOR, on a
       // connection whose chain was complete. The Root anchors it, and a client
       // presenting [leaf, SPIFFE Issuing CA, Intermediate] builds a path to it.
-      Buffer.from(ca.state().trustAnchors.map(function (anchor) {
-        return anchor.certificatePem;
-      }).join('\n'), 'utf8'),
+      //
+      // **AND EVERY FEDERATED TRUST DOMAIN'S X.509 AUTHORITIES (#438)** —
+      // `listenerTrustPem()` says why, and what it cannot do.
+      this.listenerTrustPem().pem,
       [{ private_key: Buffer.from(svid.privateKeyPem, 'utf8'),
          cert_chain: Buffer.from(svid.chainPem.join('\n'), 'utf8') }],
       true);
@@ -2528,6 +2529,8 @@ class SpiffeGrpc {
               SpiffeGrpc.policyContextOptions(kind)));
           });
       held.stsPolicyKind = kind;
+      held.stsSurface = surface;
+      held.stsTrustFingerprint = this.listenerTrustPem().fingerprint;
     } catch (e) {
       log.error(errorCodes.tag('STS-SPIFFE-0012') +
                 'spiffe: the ' + surface + ' ' +
@@ -2580,10 +2583,10 @@ class SpiffeGrpc {
     const identity = spiffeId.serverId(ca.trustDomain());
     const svid = await ca.mintX509Svid(identity,
       { ttl: config.value('spiffe.caTtl') });
+    const trust = this.listenerTrustPem();
+    credentials.stsTrustFingerprint = trust.fingerprint;
     credentials.updateSecureContextOptions(Object.assign({
-      ca: Buffer.from(ca.state().trustAnchors.map(function (anchor) {
-        return anchor.certificatePem;
-      }).join('\n'), 'utf8'),
+      ca: trust.pem,
       cert: [Buffer.from(svid.chainPem.join('\n'), 'utf8')],
       key: [Buffer.from(svid.privateKeyPem, 'utf8')]
     // The listeners' policy (#423) goes with every new context: a context
@@ -2593,6 +2596,121 @@ class SpiffeGrpc {
              'certificate as ' + identity + ' (serial ' + svid.serialHex +
              ') under the replaced Root.');
     log.debug('Leaving SpiffeGrpc.refreshServerApiCredentials().');
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE SPIRE SERVER API'S AND THE BROKER API'S HANDSHAKE TRUSTS (#438,
+  // 2026-10-13): THIS REALM'S TRUST ANCHORS AND EVERY FEDERATED TRUST
+  // DOMAIN'S X.509 AUTHORITIES.
+  //
+  // Both listeners REQUEST a client certificate without requiring one, and
+  // `spiffe_auth.ts` verifies what arrived itself — against this realm's
+  // authorities AND its federated trust domains'. Until #438 the handshake's
+  // `ca` held only the realm's anchors, so a federated SVID never verified at
+  // the TLS layer, and grpc-js 1.14.5 (GHSA-m9gg-hp2v-232j) hands
+  // `getAuthContext()` an EMPTY object for a certificate OpenSSL did not
+  // authorize: a federated broker or agent was "none presented" to the
+  // service until `spiffe_auth.ts` learnt to read the socket
+  // (`tlsPeerCertificateOf()`). With the federated authorities here, OpenSSL
+  // chains a federated SVID, the auth context carries it, and the
+  // certificate request's acceptable-CA list names the federated authorities
+  // too — which is what a client choosing among certificates reads.
+  //
+  // **THE TLS VERDICT STILL DECIDES NOTHING.** `spiffe_auth.ts` verifies
+  // every SVID against the bundles, the trust domain against the authority
+  // that signed it (so a federated authority vouching for a name in THIS trust
+  // domain is refused there), and revocation — whatever OpenSSL said.
+  //
+  // **A FEDERATED AUTHORITY THAT IS NOT SELF-SIGNED DOES NOT ANCHOR HERE, AND
+  // NOTHING IN THIS PROCESS CAN MAKE IT.** In SPIFFE a bundle authority is a
+  // trust anchor whatever its shape, and OpenSSL needs
+  // `X509_V_FLAG_PARTIAL_CHAIN` to treat a non-self-signed certificate in the
+  // truststore as one. Node's `allowPartialTrustChain` sets it — and
+  // `tls.Server`'s `setSecureContext()`, which both
+  // `http2.createSecureServer()` and grpc-js's `updateSecureContextOptions()`
+  // go through, copies a fixed list of options into the context it builds,
+  // and that one is not on it:
+  // measured on node 22.13 and 24.16, a server given only an intermediate and
+  // the flag answers `UNABLE_TO_GET_ISSUER_CERT` at construction and after
+  // `setSecureContext()` alike. So an SVID under such an authority is
+  // unauthorized at the handshake, and `spiffe_auth.ts`'s read of the socket
+  // is what keeps it verifiable — and keeps "did not verify" apart from "none
+  // was presented", which an empty auth context alone cannot tell apart.
+  // Reaching past grpc-js into node's SecureContext to set the flag would be a
+  // second private-member reach for a case no SPIRE deployment publishes (its
+  // bundle authorities are roots, an UpstreamAuthority's included).
+  //
+  // Read in the AMBIENT realm, like every other reader here: the listeners
+  // are built and refreshed inside the realm whose socket it is.
+  // -------------------------------------------------------------------------
+  /**
+   * Returns the PEM a SPIFFE TCP listener's handshake trusts: this realm's
+   * anchors and every federated trust domain's X.509 authorities.
+   *
+   * @returns `{ pem, fingerprint, federated }` — the buffer for `ca`, its text
+   *   for telling a change, and how many federated authorities it holds
+   */
+  listenerTrustPem(): { pem: Buffer, fingerprint: string, federated: number } {
+    const { log, ca } = this.deps;
+    log.debug('Entering SpiffeGrpc.listenerTrustPem().');
+    const own = ca.state().trustAnchors.map(function (anchor) {
+      return anchor.certificatePem;
+    });
+    const foreign = ca.federatedX509AuthoritiesPem().map(function (row) {
+      return row.certificatePem;
+    });
+    const text = own.concat(foreign).map(function (pem) {
+      return String(pem).trim();
+    }).join('\n');
+    log.debug('Leaving SpiffeGrpc.listenerTrustPem(). ' + own.length +
+              ' anchor(s), ' + foreign.length + ' federated.');
+    return { pem: Buffer.from(text, 'utf8'), fingerprint: text,
+             federated: foreign.length };
+  }
+
+  // -------------------------------------------------------------------------
+  // A CHANGED FEDERATION ON A SOCKET ALREADY BOUND (#438).
+  //
+  // `spiffe_server.ts` calls this for both of a realm's TCP listeners when a
+  // federated bundle is added, changed or removed — by this process, another
+  // one, or another node, through the change log (`spiffe_ca.ts`, the
+  // declaration of `federated`). Only `ca` moves: the context in force is
+  // taken as it is — this listener's own SVID, which nothing here re-mints,
+  // and the listeners' policy (#423) — so a trust change costs no signature
+  // and never presents a different certificate. `rejectUnauthorized` is a
+  // CONSTRUCTOR option and untouched, so AttestAgent's no-SVID bootstrap is
+  // exactly what it was. Nothing is re-applied when the trust is unchanged.
+  // -------------------------------------------------------------------------
+  /**
+   * Re-applies a listener's TLS trust after its realm's federated bundles
+   * changed, to the next handshake; the rest of the context is kept.
+   *
+   * @param credentials - the listener's credentials
+   * @returns whether the trust changed
+   */
+  refreshListenerTrust(credentials): boolean {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeGrpc.refreshListenerTrust().');
+    const held: any = credentials;
+    const current = held && typeof held._getSecureContextOptions === 'function'
+      ? held._getSecureContextOptions() : null;
+    if (!current) {
+      log.debug('Leaving SpiffeGrpc.refreshListenerTrust(). No context.');
+      return false;
+    }
+    const trust = this.listenerTrustPem();
+    if (held.stsTrustFingerprint === trust.fingerprint) {
+      log.debug('Leaving SpiffeGrpc.refreshListenerTrust(). Unchanged.');
+      return false;
+    }
+    held.stsTrustFingerprint = trust.fingerprint;
+    held.updateSecureContextOptions(Object.assign({}, current,
+                                                  { ca: trust.pem }));
+    log.info('spiffe: the ' + (held.stsSurface || 'SPIFFE') + ' TCP ' +
+             'listener now trusts ' + trust.federated + ' federated X.509 ' +
+             'authority(ies) at the handshake, beside this realm\'s anchors.');
+    log.debug('Leaving SpiffeGrpc.refreshListenerTrust(). Changed.');
+    return true;
   }
 }
 
@@ -2814,6 +2932,8 @@ export = {
   brokerCredentials: slot.forward('brokerCredentials'),
   brokerHeaderPresent: slot.forward('brokerHeaderPresent'),
   refreshServerApiCredentials: slot.forward('refreshServerApiCredentials'),
+  refreshListenerTrust: slot.forward('refreshListenerTrust'),
+  listenerTrustPem: slot.forward('listenerTrustPem'),
   // Exported for `tests/spire_api_access_policy.js`, which drives the two
   // decisions this function makes directly: the claim is about a DECISION and
   // not about an endpoint, so driving it over gRPC would mean standing up two

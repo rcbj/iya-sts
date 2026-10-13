@@ -13926,6 +13926,13 @@ const CODES = [
       'and a stream whose caller lost every entry ends so (SPIFFE Workload ' +
       'API sections 5.2.1, 5.2.2, 6.2.1, 6.2.2; #274).',
     spec: 'gRPC PERMISSION_DENIED' },
+  { code: 'STS-SPIFFE-0147',
+    summary: 'A realm\'s SPIRE Server API or Broker API TCP listener could ' +
+      'not take its federated trust domains\' X.509 authorities after a ' +
+      'federated bundle changed, so a federated SVID is not chained at the ' +
+      'TLS handshake until the next change or a restart; every SVID is ' +
+      'still verified against the bundles, read off the socket (#438).',
+    spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +

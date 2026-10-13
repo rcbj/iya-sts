@@ -19,6 +19,12 @@
 //   * REFUSED WITHOUT A BROKER SVID: no `broker.spiffe.io` header is
 //     INVALID_ARGUMENT; no client certificate is UNAUTHENTICATED; an SVID
 //     that verifies and names no broker is PERMISSION_DENIED;
+//   * A FEDERATED SVID (#438): the federated authority joins the listener's
+//     TLS trust when the bundle is set, removed and restored through the
+//     store's change-log accessors, and deleted — so the handshake
+//     authorizes the SVID and it is never read off the socket — while one
+//     under an authority nobody federated is read off the socket and refused
+//     UNAUTHENTICATED for not verifying;
 //   * THE REFERENCE: none is INVALID_ARGUMENT with a google.rpc.ErrorInfo
 //     (WORKLOAD_REFERENCE_INVALID, domain spiffe.io) in
 //     `grpc-status-details-bin`; a type the broker is not allowed, and a type
@@ -379,17 +385,21 @@ function childMain() {
             a.err);
       stranger.close();
 
-      // ---- an SVID OpenSSL cannot chain (grpc-js 1.14.5) -----------------
+      // ---- a federated SVID, at the handshake and after it (#438) --------
       // grpc-js 1.14.5's getAuthContext() hides a certificate the handshake
-      // did not authorize, and a FEDERATED SVID is always one: the listener's
-      // roots are this realm's anchors. `spiffe_auth.ts` reads it off the
-      // socket and verifies it against the federated bundle itself, so a
-      // federated stranger is PERMISSION_DENIED like the realm's own — and an
-      // SVID under an authority nobody federated is UNAUTHENTICATED for not
-      // verifying, never "none was presented".
+      // did not authorize. The listener's `ca` holds this realm's anchors AND
+      // every federated trust domain's X.509 authorities (#438), re-applied
+      // whenever the federation changes — here, or through the store's
+      // change log — so a FEDERATED SVID is chained at the handshake and the
+      // auth context carries it: `spiffe_auth.ts` never has to read the
+      // socket for it. It is PERMISSION_DENIED like the realm's own stranger.
+      // An SVID under an authority nobody federated is still unauthorized at
+      // the handshake; `spiffe_auth.ts` reads it off the socket and refuses
+      // it UNAUTHENTICATED for not verifying, never "none was presented".
       const x509 = require(ROOT + '/common/vendored/x509.js');
       const keys = require(ROOT + '/common/vendored/key_material.js');
       const testCa = require(ROOT + '/tests/vendored/outbound_test_ca.js');
+      const SpiffeAuth = require(ROOT + '/spiffe/spiffe_auth').SpiffeAuth;
       const foreignSvid = async function (foreignCa, id) {
         const pair = await keys.generateKeyPair('ec-p256');
         const leaf = await x509.issueCertificate({
@@ -408,6 +418,26 @@ function childMain() {
                               names: [{ kind: 'uri', value: id }] } } });
         return { privateKeyPem: pair.privatePem, chainPem: [leaf.pem] };
       };
+      // How many times a certificate had to be read off the socket because
+      // the handshake had not authorized it — the read the TLS trust spares.
+      const realSocketRead = SpiffeAuth.prototype.tlsPeerCertificateOf;
+      let socketReads = 0;
+      SpiffeAuth.prototype.tlsPeerCertificateOf = function (call) {
+        socketReads += 1;
+        return realSocketRead.call(this, call);
+      };
+      const trustNow = function () {
+        return server.listenerTrustOf(REALM);
+      };
+      const until = async function (predicate) {
+        for (let i = 0; i < 100 && !predicate(); i++) {
+          await sleep(20);
+        }
+        return predicate();
+      };
+      const trustBase = trustNow();
+      check(trustBase.broker >= 1,
+            'the Broker endpoint trusts the realm\'s anchors', trustBase);
       const nodeCrypto = require('crypto');
       const federatedCa = await testCa.makeCa();
       const federatedTd = 'broker-federated.test';
@@ -421,26 +451,80 @@ function childMain() {
           spiffe_sequence: 1, spiffe_refresh_hint: 300 }, { realm: REALM });
       });
       check(federated.ok, 'a federated trust domain in the realm', federated);
-      const farStranger = connect(await foreignSvid(federatedCa,
-        'spiffe://' + federatedTd + '/stranger'));
-      a = await unary(farStranger, 'FetchJWTSVID', jwtRequest(pidRef(
-        process.pid)));
-      farStranger.close();
+      check(await until(function () {
+        return trustNow().broker === trustBase.broker + 1;
+      }), 'the federated authority joins the Broker endpoint\'s TLS trust',
+      { before: trustBase, after: trustNow() });
+      check(trustBase.api === null || trustNow().api === trustBase.api + 1,
+            'and the SPIRE Server API\'s, where its credentials are built',
+            { before: trustBase, after: trustNow() });
+      const farStrangerSvid = await foreignSvid(federatedCa,
+        'spiffe://' + federatedTd + '/stranger');
+      const askAsFarStranger = async function () {
+        const c = connect(farStrangerSvid);
+        const answer = await unary(c, 'FetchJWTSVID', jwtRequest(pidRef(
+          process.pid)));
+        c.close();
+        return answer;
+      };
+      socketReads = 0;
+      a = await askAsFarStranger();
       check(a.err && a.err.code === grpc.status.PERMISSION_DENIED &&
             /not an authorized broker/.test(a.err.details),
             'a FEDERATED SVID that names no broker: PERMISSION_DENIED, not ' +
-            'UNAUTHENTICATED (grpc-js 1.14.5 hides it from the auth context)',
-            a.err);
+            'UNAUTHENTICATED', a.err);
+      check(socketReads === 0,
+            'and the handshake authorized it: its certificate came from the ' +
+            'auth context, never read off the socket (#438)', socketReads);
       const unknownCa = await testCa.makeCa();
       const unknown = connect(await foreignSvid(unknownCa,
         'spiffe://' + federatedTd + '/stranger'));
+      socketReads = 0;
       a = await unary(unknown, 'FetchJWTSVID', jwtRequest(pidRef(
         process.pid)));
       unknown.close();
       check(a.err && a.err.code === grpc.status.UNAUTHENTICATED &&
-            !/none was presented/.test(a.err.details),
-            'an SVID under an authority nobody federated: UNAUTHENTICATED ' +
-            'for not verifying, not for presenting nothing', a.err);
+            !/none was presented/.test(a.err.details) && socketReads > 0,
+            'an SVID under an authority nobody federated: unauthorized at ' +
+            'the handshake, read off the socket, and UNAUTHENTICATED for not ' +
+            'verifying, not for presenting nothing',
+            { err: a.err, socketReads: socketReads });
+
+      // ---- the federation changed by another process (#438) -------------
+      // A request worker or another node writes a federated bundle into the
+      // store, and this process learns it through the change log's applier —
+      // the store's `remove` and `restore` accessors, which is exactly what
+      // this drives. The listener's trust follows both ways.
+      const handle = realms.handleFor('spiffe.federatedBundles');
+      const row = JSON.parse(JSON.stringify(inRealm(function () {
+        return ca.federatedBundle(federatedTd);
+      })));
+      handle.remove(REALM, federatedTd);
+      check(await until(function () {
+        return trustNow().broker === trustBase.broker;
+      }), 'a federated bundle REMOVED through the change log leaves the ' +
+      'Broker endpoint\'s TLS trust', trustNow());
+      a = await askAsFarStranger();
+      check(a.err && a.err.code === grpc.status.UNAUTHENTICATED,
+            'and that trust domain\'s SVID is no longer believed', a.err);
+      handle.restore(REALM, federatedTd, row);
+      check(await until(function () {
+        return trustNow().broker === trustBase.broker + 1;
+      }), 'a federated bundle RESTORED through the change log joins it again',
+      trustNow());
+      socketReads = 0;
+      a = await askAsFarStranger();
+      check(a.err && a.err.code === grpc.status.PERMISSION_DENIED &&
+            socketReads === 0,
+            'and its SVID is chained at the handshake again',
+            { err: a.err, socketReads: socketReads });
+      const removed = inRealm(function () {
+        return ca.deleteFederatedBundle(federatedTd);
+      });
+      check(removed && await until(function () {
+        return trustNow().broker === trustBase.broker;
+      }), 'a federated bundle deleted here leaves the TLS trust', trustNow());
+      SpiffeAuth.prototype.tlsPeerCertificateOf = realSocketRead;
 
       // ---- the reference -------------------------------------------------
       a = await unary(client, 'FetchJWTSVID',
