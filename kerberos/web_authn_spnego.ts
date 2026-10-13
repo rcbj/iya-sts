@@ -129,8 +129,13 @@ class WebAuthnSpnego {
       '</code></td></tr>' +
       '<tr><td>' + t.html('spnego.facts.realm') + '</td><td><code>' +
       esc(view.realm) + '</code></td></tr>' +
-      '<tr><td>' + t.html('spnego.facts.hosts') + '</td><td><code>' +
-      esc((view.hosts || []).join(', ')) + '</code></td></tr></table>';
+      // No row where there are no such hosts (product mode, where the KDC
+      // knows only the SPN above): an empty "also answers for" read as a
+      // promise about every host.
+      ((view.hosts || []).length
+        ? '<tr><td>' + t.html('spnego.facts.hosts') + '</td><td><code>' +
+          esc(view.hosts.join(', ')) + '</code></td></tr>'
+        : '') + '</table>';
   }
 
   /**

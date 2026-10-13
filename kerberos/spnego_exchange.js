@@ -225,7 +225,12 @@ const OUTCOMES = {
 function volunteerTheSpn(res) {
   log.debug('Entering volunteerTheSpn().');
   res.set('X-Krb5-Service-Principal', spn() + '@' + principals.REALM);
-  res.set('X-Krb5-Accepts-Spn-Hosts', principals.SERVICE_DOMAINS.join(','));
+  // Only the hosts the KDC will issue an SPN for: none in product mode,
+  // where the one SPN above is all there is (2026-10-12).
+  const hosts = principals.ADVERTISED_SERVICE_HOSTS;
+  if (hosts.length) {
+    res.set('X-Krb5-Accepts-Spn-Hosts', hosts.join(','));
+  }
   log.debug('Leaving volunteerTheSpn().');
 }
 

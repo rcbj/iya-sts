@@ -329,7 +329,16 @@ binding 88 needs root, and on a host run it usually fails.
   KDC and the acceptor, `krb5_service.js` looks the presented SPN up in the same
   table, so a name created on demand is one the service can decrypt — which was the
   whole objection. It exists because a client derives `HTTP/<url host>` and every
-  way of reaching this stack produced an SPN nobody had configured. Service,
+  way of reaching this stack produced an SPN nobody had configured. **It is
+  development's alone, and so is ADVERTISING the list (2026-10-12)**: in
+  product mode the KDC knows only `krb5.servicePrincipal`, and
+  `principals.ADVERTISED_SERVICE_HOSTS` (empty there) is what the
+  `X-Krb5-Accepts-Spn-Hosts` header, `/spnego`'s `acceptsAnySpnForHosts` and
+  `/authn/spnego`'s facts table draw — they listed `localhost` while a
+  browser's `HTTP/localhost` was refused `KDC_ERR_S_PRINCIPAL_UNKNOWN`. A
+  product deployment reached at `localhost` sets `krb5.servicePrincipal` to
+  `HTTP/localhost` (and a real `krb5.servicePassword`). No require was added
+  to the parent's COPY closure. Service,
   computer and `krbtgt` accounts keep their own distinct passwords — the two krbtgts
   and the trust must be three different secrets or assertions about which key sealed
   what pass for the wrong reason.

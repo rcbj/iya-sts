@@ -684,7 +684,8 @@ class SpnegoAuthn {
         door: 'spnego', kind: 'challenge',
         pending: this.pendingView(record),
         spn: exchange.SPN, realm: principals.REALM,
-        hosts: principals.SERVICE_DOMAINS.slice(),
+        // Empty in product mode: the KDC knows only `spn` (2026-10-12).
+        hosts: principals.ADVERTISED_SERVICE_HOSTS,
         checks: verdict.checks || null
       });
       log.debug('Leaving SpnegoAuthn.handleSignIn(). The challenge.');

@@ -431,7 +431,15 @@ function childMain() {
     config.setOverride('gnap.continueWaitS', 0);
     const GRANT = base + '/gnap';
     const gnapClient = new gnap.Client({ key: gnap.newKey('ES256') });
-    const grantBody = { access_token: { access: ['csu-read'] },
+    // A GRANT MUST NAME A REGISTERED RESOURCE SERVER SINCE #593 (rcbj's
+    // decision on #591; STS-GNAP-0904): the right names one by location.
+    const CSU_RS = 'https://rs.csu.test/api';
+    applications.createApplication({ identifier: 'csu-rs',
+      kind: 'gnap-resource-server', protocols: ['gnap'],
+      fields: { gnapResourceServerUri: CSU_RS } });
+    const grantBody = { access_token: { access: [{ type: 'csu-read',
+                                                   actions: ['read'],
+                                                   locations: [CSU_RS] }] },
       client: { key: gnapClient.keyObject(),
                 display: { name: 'csu', uri: 'https://client.csu.test/' } },
       interact: { start: ['app'] } };
