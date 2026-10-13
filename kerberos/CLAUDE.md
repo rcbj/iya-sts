@@ -98,7 +98,7 @@ What follows argues the split with both doors in it, as it was made; the
 argument stands for the one left, which is the sign-in.
 
 **The split was forced by the second door and it is not tidiness.**
-`/spnego/protected` documents a handshake; `/authn/spnego` performs the same
+`/spnego/protected` documented a handshake (until #595); `/authn/spnego` performs the same
 handshake and mints the browser session sixteen protocol families read. Those
 two have to be IDENTICAL rather than similar, because one of them is the
 documentation of the other — a second copy of the negotiation would be a page
@@ -333,7 +333,7 @@ binding 88 needs root, and on a host run it usually fails.
   development's alone, and so is ADVERTISING the list (2026-10-12)**: in
   product mode the KDC knows only `krb5.servicePrincipal`, and
   `principals.ADVERTISED_SERVICE_HOSTS` (empty there) is what the
-  `X-Krb5-Accepts-Spn-Hosts` header, `/spnego`'s `acceptsAnySpnForHosts` and
+  `X-Krb5-Accepts-Spn-Hosts` header, `/spnego`'s `acceptsAnySpnForHosts` (until #595) and
   `/authn/spnego`'s facts table draw — they listed `localhost` while a
   browser's `HTTP/localhost` was refused `KDC_ERR_S_PRINCIPAL_UNKNOWN`. A
   product deployment reached at `localhost` sets `krb5.servicePrincipal` to
