@@ -1339,6 +1339,14 @@
     "en": "38f7979ecec34d0a",
     "text": "May canary version na ipinush sa test secret ng isang secret destination"
   },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "May idinagdag na may-ari sa isang role"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "May inalis na may-ari sa isang role"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "May role na ginawa"

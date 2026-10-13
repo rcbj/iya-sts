@@ -1339,6 +1339,14 @@
     "en": "38f7979ecec34d0a",
     "text": "En kanarieversion skickades till en hemlighetsdestinations testhemlighet"
   },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "En ägare lades till i en roll"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "En ägare togs bort från en roll"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "En roll skapades"

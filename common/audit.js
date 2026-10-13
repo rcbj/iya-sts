@@ -1311,6 +1311,10 @@ const ACTIONS = [
   { action: 'secret-destination.test-push', category: 'admin',
     label: 'A canary version was pushed to a secret destination\'s test ' +
            'secret' },
+  { action: 'roles.add-owner', category: 'admin',
+    label: 'An owner was added to a role' },
+  { action: 'roles.remove-owner', category: 'admin',
+    label: 'An owner was taken off a role' },
   { action: 'roles.create', category: 'admin',
     label: 'A role was created' },
   { action: 'roles.delete', category: 'admin',

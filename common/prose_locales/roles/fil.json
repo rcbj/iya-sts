@@ -43,6 +43,10 @@
     "en": "d3cd66c299e05098",
     "text": "Kung para saan ang role, para sa susunod na tao."
   },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "Isang tao o grupo ng realm na ito na nananagot para sa role (#604), ayon sa DN — ang attribute ng RFC 4519 section 2.23, gaya ng mga may-ari ng isang grupo (#603). Maraming value, hanggang 25. WALANG IBINIBIGAY ang may-ari: walang bahagi ng serbisyong ito ang bumabasa nito upang magpasya. Inililista ng user portal ang pag-aari ng isang tao."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "Kahit sino, authenticated man o hindi, tao man o application. ITO ANG DEFAULT NA REQUIREMENT: ang application na walang pinangangalanang required role ay nangangailangan nito, hawak ito ng lahat, at walang tinatanggihan — eksaktong ganito kumilos ang serbisyong ito bago umiral ang mga role."

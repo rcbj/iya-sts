@@ -2774,6 +2774,8 @@ const APPLICATION_TAB_IDS = ['tab-overview', 'tab-config', 'tab-credentials',
 // each with its own Save) and the Credentials tab one per kind of credential.
 // A group's page (#603): Group, then Owners.
 const GROUP_TAB_IDS = ['gtab-group', 'gtab-owners'];
+// A role's page (#604): Role, then Owners.
+const ROLE_TAB_IDS = ['rtab-role', 'rtab-owners'];
 const USER_TAB_IDS = ['utab-overview', 'utab-activity', 'utab-attributes',
   'utab-credentials', 'utab-federation', 'utab-gnap', 'utab-entry',
   'utab-signout'];
@@ -4539,7 +4541,7 @@ class AdminConsole {
       // link's href with the id that is targeted, so the ids are named.
       APPLICATION_TAB_IDS.concat(applications.FIELD_GROUPS.map(function (g) {
         return 'cfg-' + g.id;
-      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS, GROUP_TAB_IDS,
+      }), ['cfg-families'], USER_TAB_IDS, USER_SUB_TAB_IDS, GROUP_TAB_IDS, ROLE_TAB_IDS,
       ['oauth-tab-metadata', 'oauth-tab-global-settings',
        'oauth-tab-authorization-servers',
        'oauth-tab-token-lifetimes', 'oauth-tab-claims',

@@ -687,7 +687,8 @@ const CONSENT_ACTIONS = ['grant-global-consent', 'revoke-global-consent',
 const ROLE_ACTIONS = ['create-role', 'delete-role', 'add-member',
                       'remove-member', 'describe-role', 'add-permission',
                       'remove-permission', 'add-conferring-client',
-                      'remove-conferring-client'];
+                      'remove-conferring-client', 'add-owner',
+                      'remove-owner'];
 
 // The three kinds of thing that can hold a role, in one table because four
 // places have to agree about them — the two member actions, the console's
@@ -6875,6 +6876,35 @@ class AdminActions {
                  ? '"' + client + '" now confers "' + name + '" on everybody ' +
                    'who signs in through it.'
                  : '"' + client + '" no longer confers "' + name + '".' };
+    }
+
+    // A ROLE'S OWNERS (#604): one added or taken off at a time, written at
+    // once — the role page's Owners tab, and its two operations. Who may be
+    // an owner and every refusal are `roles.js`'s.
+    if (action === 'add-owner' || action === 'remove-owner') {
+      const adding = action === 'add-owner';
+      const owner = String(body.owner || '').trim();
+      const result: any = adding ? roles.addOwner(name, owner)
+                                 : roles.removeOwner(name, owner);
+      if (!result.ok) {
+        log.debug("Leaving AdminActions.rolesAction(). " + action +
+                  " refused.");
+        return this.refused(this.innerCode(result) ||
+                            (adding ? 'STS-ADMIN-0854' : 'STS-ADMIN-0855'),
+                            { ok: false, errors: [result.why] });
+      }
+      if (result.changed) {
+        auditLog.audit({
+          action: adding ? 'roles.add-owner' : 'roles.remove-owner',
+          actor: actor, target: result.role, protocol: 'XACML',
+          channel: 'http',
+          detail: (adding ? 'made ' : 'took ') + result.owner +
+                  (adding ? ' an owner of' : ' off the owners of') +
+                  ' the role "' + result.role + '"' });
+      }
+      log.debug("Leaving AdminActions.rolesAction(). " + action + ": " +
+                (result.changed ? "changed." : "already so."));
+      return result;
     }
 
     log.debug("Leaving AdminActions.rolesAction(). Unknown action.");

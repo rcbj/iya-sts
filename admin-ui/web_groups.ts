@@ -573,14 +573,21 @@ class GroupsPage {
    * @param back - the list view to return to
    * @param pageState - the page's state: `groupOwners` (`find`, `notice`,
    *   `error`), after a press
+   * @param opts - optional; for another kind of thing with owners (#604, a
+   *   role): `route`, `id` (the section's anchor), `field` and `value` (the
+   *   hidden field naming it), `stateKey`, `lead` and `leadRead` (markup),
+   *   and `self` (a DN the search may not add; a group's own)
    * @returns the tab as HTML
    */
-  static ownersSection(t, group, write, back, pageState?) {
-    const route = '/admin/groups/owners';
-    const anchor = '#group-owners';
+  static ownersSection(t, group, write, back, pageState?, opts?) {
+    const o = opts || {};
+    const route = o.route || '/admin/groups/owners';
+    const id = o.id || 'group-owners';
+    const anchor = '#' + id;
     const owners = group.owners || [];
     const max = Number(group.maxOwners) || 25;
-    const drawn = (pageState && pageState.groupOwners) || {};
+    const drawn = (pageState && pageState[o.stateKey || 'groupOwners']) || {};
+    const selfDn = o.self === undefined ? group.dn : o.self;
     const lower = function (dn) {
       return String(dn || '').toLowerCase().replace(/\s*,\s*/g, ',');
     };
@@ -591,7 +598,9 @@ class GroupsPage {
       return '<input type="hidden" name="' + name + '" value="' +
         kit.esc(value) + '">';
     };
-    const who = hidden('group', group.dn) + hidden('back', back);
+    const who = hidden(o.field || 'group',
+                       o.value === undefined ? group.dn : o.value) +
+      hidden('back', back);
     const button = function (name, value, label, tipText, cls?, off?,
                              goes?) {
       return '<button type="submit" class="secondary ' + (cls || '') +
@@ -630,10 +639,11 @@ class GroupsPage {
         }).join('') + '</table>'
       : '<p class="state-none">' + t.html('consoleGroups.owners.none') +
         '</p>';
-    const head = '<h3 id="group-owners">' +
+    const head = '<h3 id="' + id + '">' +
       t.html('consoleGroups.owners.heading') + '</h3>' +
-      kit.note((write ? t.html('consoleGroups.owners.lead')
-                      : t.html('consoleGroups.owners.leadRead')) + ' ' +
+      kit.note((write ? (o.lead || t.html('consoleGroups.owners.lead'))
+                      : (o.leadRead ||
+                         t.html('consoleGroups.owners.leadRead'))) + ' ' +
                t.html('consoleGroups.owners.max', { max: String(max) })) +
       said + table;
     if (!write) {
@@ -667,7 +677,7 @@ class GroupsPage {
           kit.tip(t.text('consoleGroups.owners.isOwnerTip')) + '>' +
           t.html('consoleGroups.owners.isOwner') + '</span>';
       }
-      if (lower(one.value) === lower(group.dn)) {
+      if (selfDn && lower(one.value) === lower(selfDn)) {
         return '<span class="state-none"' +
           kit.tip(t.text('consoleGroups.owners.itselfTip')) + '>' +
           t.html('consoleGroups.owners.itself') + '</span>';
@@ -714,7 +724,7 @@ class GroupsPage {
     const placeholder = t.text('consoleGroups.owners.findPlaceholder');
     const findTip = t.text('consoleGroups.owners.findTip',
                            { n: kit.FIND_PER_PAGE });
-    const search = '<h3 id="group-owners-find">' +
+    const search = '<h3 id="' + id + '-find">' +
       t.html('consoleGroups.owners.findHeading') + '</h3>' +
       '<form method="post" action="' + kit.esc(route + anchor) +
       '" class="sa-form">' + hidden('action', 'add-owner') + who +

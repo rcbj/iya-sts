@@ -2139,6 +2139,63 @@ class AdminViews {
     return out;
   }
 
+  // ONE ROLE'S PAGE (#604): everything the register knows about a role.
+  /**
+   * Returns one role in full: the register's row, its owners, the
+   * applications whose requirement names it, its directory entry, and
+   * whether the register can be written.
+   *
+   * @param name - the role name
+   * @param register - the register, as `rolesRegister()` answers it
+   * @returns `{ found, name, ... }`
+   */
+  roleDetail(name, register) {
+    const { log, roles } = this.deps;
+    log.debug("Entering AdminViews.roleDetail(). " + name);
+    const builtIn = (register.builtIn || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    if (builtIn) {
+      log.debug("Leaving AdminViews.roleDetail(). Built in.");
+      return { found: true, builtIn: true, name: name, what: builtIn.what,
+               owners: [], requiredBy: [], entry: null };
+    }
+    const row = (register.roles || []).filter(function (one) {
+      return one.name === name;
+    })[0];
+    if (!row) {
+      log.debug("Leaving AdminViews.roleDetail(). Not here.");
+      return { found: false, name: name };
+    }
+    // An application's requirement names a realm-wide role by its name, and
+    // its own role (#310) by the name inside it.
+    const requiredBy = (register.requiring || []).filter(function (one) {
+      return row.application
+        ? one.application === row.application &&
+          one.required.indexOf(row.localName) >= 0
+        : one.required.indexOf(row.name) >= 0;
+    }).map(function (one) {
+      return { application: one.application, name: one.name };
+    });
+    const entry = roles.entryOf(row.name);
+    const out = Object.assign({}, row, {
+      found: true,
+      owners: roles.ownersOf(row),
+      maxOwners: roles.MAX_OWNERS,
+      requiredBy: requiredBy,
+      holderCount: row.users.length + row.groups.length +
+                   row.applications.length,
+      canWrite: !!register.storable,
+      entry: entry ? { dn: entry.dn, createdAt: entry.createdAt || null,
+                       modifiedAt: entry.modifiedAt || null,
+                       operational: entry.operational || [],
+                       attributes: entry.attributes } : null
+    });
+    log.debug("Leaving AdminViews.roleDetail(). " + out.owners.length +
+              " owner(s).");
+    return out;
+  }
+
   // THE ROLES PAGE'S VIEW, AND `GET /admin-api/roles`' (#446). It was the
   // register alone for the API and the register with the page's own members
   // for the page, built in the route; one function now, so the page is drawn
@@ -2196,6 +2253,15 @@ class AdminViews {
         return { identifier: row.identifier, name: row.name || '' };
       })
     });
+    // ONE ROLE IN FULL (#604): `?role=<name>` answers the role page — the
+    // row, its owners resolved, the applications requiring it, and its
+    // directory entry — beside the register, as `GET /admin-api/groups`
+    // answers a group. A name nothing holds is `found: false`.
+    const wantedRole = String((Array.isArray(q0.role) ? q0.role[0]
+                                                      : q0.role) || '').trim();
+    if (wantedRole) {
+      (json as any).role = this.roleDetail(wantedRole, register);
+    }
     log.debug("Leaving AdminViews.rolesView(). " + register.roles.length +
               " role(s).");
     return json;

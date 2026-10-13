@@ -71,6 +71,9 @@ const SERVICE_ACCOUNT_PAGE = '/admin/users/service-account';
 // `mirrors` to `add-owner` and `remove-owner`.
 const GROUP_OWNERS_PAGE = '/admin/groups/owners';
 
+// A ROLE'S OWNERS TAB (#604), the group's arrangement on a role.
+const ROLE_OWNERS_PAGE = '/admin/roles/owners';
+
 /**
  * Draws the answers a notice cannot carry.
  *
@@ -108,6 +111,7 @@ class WebAnswers {
    */
   static readonly SERVICE_ACCOUNT_PAGE = SERVICE_ACCOUNT_PAGE;
   static readonly GROUP_OWNERS_PAGE = GROUP_OWNERS_PAGE;
+  static readonly ROLE_OWNERS_PAGE = ROLE_OWNERS_PAGE;
 
   /**
    * Every non-empty value of a form field, in the order posted.
@@ -377,7 +381,8 @@ class WebAnswers {
    */
   static isFieldSearch(page: string, fields: Json): boolean {
     return (page === '/admin/applications/edit' ||
-            page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE) &&
+            page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE ||
+            page === ROLE_OWNERS_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -688,6 +693,22 @@ class WebAnswers {
         out.group.owners = answer.owners;
       }
       out.state = Object.assign({}, before, { groupOwners: {
+        find: kept.find || null,
+        notice: ok ? String(answer.message || '') : '',
+        error: ok ? [] : (errors.length ? errors : ['Refused.']) } });
+      return { json: out, banner: '' };
+    }
+    // A ROLE'S OWNER ADDED OR TAKEN OFF (#604): the group's arrangement, the
+    // role's owners in `role.owners` and the page's `state.roleOwners`.
+    if (page === ROLE_OWNERS_PAGE &&
+        (action === 'add-owner' || action === 'remove-owner')) {
+      const out = WebAnswers.copy(json);
+      const before = out.state || {};
+      const kept = before.roleOwners || {};
+      if (ok && Array.isArray(answer.owners) && out.role) {
+        out.role.owners = answer.owners;
+      }
+      out.state = Object.assign({}, before, { roleOwners: {
         find: kept.find || null,
         notice: ok ? String(answer.message || '') : '',
         error: ok ? [] : (errors.length ? errors : ['Refused.']) } });

@@ -1339,6 +1339,14 @@
     "en": "38f7979ecec34d0a",
     "text": "金丝雀版本被推送到机密目标的测试机密"
   },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "已向角色添加所有者"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "已从角色移除所有者"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "创建了角色"

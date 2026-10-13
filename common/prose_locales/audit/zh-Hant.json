@@ -1339,6 +1339,14 @@
     "en": "38f7979ecec34d0a",
     "text": "金絲雀版本被推送到秘密目的地的測試秘密"
   },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "已向角色新增擁有者"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "已從角色移除擁有者"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "建立了角色"

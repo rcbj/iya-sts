@@ -1339,6 +1339,14 @@
     "en": "38f7979ecec34d0a",
     "text": "Se envió una versión canario al secreto de prueba de un destino de secretos"
   },
+  "audit.actions.roles.add-owner.label": {
+    "en": "9c16fca67e86536f",
+    "text": "Se añadió un propietario a un rol"
+  },
+  "audit.actions.roles.remove-owner.label": {
+    "en": "904fa8504a89cb35",
+    "text": "Se quitó un propietario de un rol"
+  },
   "audit.actions.roles.create.label": {
     "en": "a510e6ae7b1a9adb",
     "text": "Se creó un rol"

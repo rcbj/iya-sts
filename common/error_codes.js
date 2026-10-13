@@ -18453,6 +18453,22 @@ const CODES = [
       'factors an application allows (appMfaMechanism, #475), so the ' +
       'issuance gate required none for that issuance.',
     spec: '' },
+  { code: 'STS-XACML-0173',
+    summary: 'Adding an owner to a role was refused: no owner was named ' +
+      '(#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0174',
+    summary: 'Adding an owner to a role was refused: the value names no ' +
+      'person and no group in this realm (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0175',
+    summary: 'Adding an owner to a role was refused: the role already ' +
+      'names the most owners a role may (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-XACML-0176',
+    summary: 'Taking an owner off a role was refused: the value is not one ' +
+      'of the role\'s owners (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -19617,6 +19633,18 @@ const CODES = [
       'the directory\'s own; where the directory gives one, that code is ' +
       'recorded instead (#603).',
     spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-ADMIN-0854',
+    summary: 'Adding an owner to a role, on the role page or through ' +
+      'POST /admin-api/roles/add-owner, was refused with no code of the ' +
+      'register\'s own; where the register gives one, that code is ' +
+      'recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
+  { code: 'STS-ADMIN-0855',
+    summary: 'Taking an owner off a role, on the role page or through ' +
+      'POST /admin-api/roles/remove-owner, was refused with no code of the ' +
+      'register\'s own; where the register gives one, that code is ' +
+      'recorded instead (#604).',
+    spec: 'HTTP 400 (API) or a refusal on the role page' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

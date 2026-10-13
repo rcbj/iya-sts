@@ -5381,6 +5381,19 @@ permissions, `STS-ADMIN-0831`), the PIP's role designator — and outside it by
 its name inside the application. `roles.rolesOf()` takes `application(s)` for
 the first reading and `ids: true` for the second.
 
+### A role has owners (#604)
+
+`owner` on the role entry: people and groups of the realm who answer for the
+role, the rule a group's owners follow (#603). `addOwner()` and
+`removeOwner()` resolve through the directory's `resolveOwner` hook (the
+service account's resolver), refuse what names nobody (`STS-XACML-0174`), no
+owner (`0173`), a value not listed (`0176`) and more than `MAX_OWNERS`
+(`0175`), and write through `write()`. **`write()` keeps the owners when a
+caller does not name them** (`given.owners === undefined`), for
+`conferredBy`'s reason: every older caller writes the whole record. An owner
+grants nothing; `ownersOf()` reports one deleted since with `kind: ''`, and
+`entryOf()` answers the role's directory entry for its page.
+
 ### `roles.js` is a LEAF and must stay one
 
 It requires `helpers.js` and `config.js` and nothing else here, which is what

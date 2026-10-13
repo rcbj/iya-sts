@@ -43,6 +43,10 @@
     "en": "d3cd66c299e05098",
     "text": "Vad rollen är till för, för nästa person."
   },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "En person eller grupp i den här realmen som ansvarar för rollen (#604), med DN — attributet i RFC 4519 avsnitt 2.23, som en grupps ägare (#603). Flervärt, högst 25. En ägare GER INGENTING: inget i den här tjänsten läser den för att besluta något. Användarportalen listar vad en person äger."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "Vem som helst, autentiserad eller inte, person eller applikation. DETTA ÄR STANDARDKRAVET: en applikation som inte namnger någon krävd roll kräver den här, alla har den, och ingenting vägras — vilket är precis hur den här tjänsten betedde sig innan roller fanns."

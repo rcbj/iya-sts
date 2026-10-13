@@ -788,6 +788,16 @@ const PAGES: WebPage[] = [
     operation: '/admin-api/roles',
     compose: { preview: '/admin-api/roles/preview' },
     composeWhen: { preview: ['application', 'subject', 'subjectKind', 'kind'] },
+    // ONE ROLE'S PAGE (#604): the same operation, asked with `role`.
+    drill: {
+      param: 'role',
+      sample: function (list: Json): string | null {
+        return list.roles && list.roles[0] ? list.roles[0].name : null;
+      },
+      render: function (view: Json, ctx?: Json): string {
+        return RolesPage.detail(ctx || WebKit.context(), view);
+      }
+    },
     render: function (view: Json, ctx?: Json): string {
       return RolesPage.body(ctx || WebKit.context(), view);
     } },

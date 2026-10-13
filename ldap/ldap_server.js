@@ -8380,6 +8380,8 @@ if (typeof roles.setDirectory === 'function') {
     allRoles: allRoles,
     writeRole: writeRole,
     deleteRole: deleteRole,
+    // A role's owners (#604) are resolved as a service account's are.
+    resolveOwner: resolveServiceAccountOwner,
     groupsOfUser: function (name) {
       log.debug("Entering groupsOfUser().");
       log.debug("Leaving groupsOfUser().");

@@ -649,6 +649,22 @@ anything. `POST /admin-api/groups/add-owner` and
 `POST /admin-api/groups/remove-owner` are the same acts, and the group's
 answer from `GET /admin-api/groups?group=` carries its `owners`.
 
+**A role's page.** On **Directory → Roles**, each name under *Roles you have
+made* opens that role's page, `/admin/roles?role=<name>`. It has two tabs:
+
+* **Role** shows everything known about the role: its kind, the application it
+  belongs to (if any), its display name and description, who may hold it, its
+  id and DN, when it was created and last changed, every member by kind, what
+  it authorizes, the clients that confer it, the applications that require it,
+  and its directory entry. Members, permissions and conferring clients are
+  still changed on the Roles page.
+* **Owners** works the way a group's Owners tab does: find a person or a group
+  and press **Add**, or press **Remove**, and each change is saved at once. A
+  role can name at most 25 owners, and an owner grants nothing.
+  `POST /admin-api/roles/add-owner` and `POST /admin-api/roles/remove-owner`
+  are the same acts, and `GET /admin-api/roles?role=` answers the role in full
+  as `role`.
+
 **What counts as a group is two rules.** An entry under `ou=groups`, *or* an
 entry carrying a group `objectClass` (`groupOfNames`, `groupOfUniqueNames`,
 `posixGroup`, `groupOfURLs`) wherever it sits. The directory is schemaless, so

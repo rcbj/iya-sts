@@ -334,6 +334,8 @@
   "audit.actions.scim-client.queue.label": "A dead letter of an outbound SCIM client was retried or purged",
   "audit.actions.secret-destination.push.label": "A service account's password was pushed to a secret destination",
   "audit.actions.secret-destination.test-push.label": "A canary version was pushed to a secret destination's test secret",
+  "audit.actions.roles.add-owner.label": "An owner was added to a role",
+  "audit.actions.roles.remove-owner.label": "An owner was taken off a role",
   "audit.actions.roles.create.label": "A role was created",
   "audit.actions.roles.delete.label": "A role was deleted",
   "audit.actions.roles.describe.label": "A role's description, display name or member types were set",

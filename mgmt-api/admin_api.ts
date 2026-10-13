@@ -21349,6 +21349,13 @@ class AdminApi {
             schema: { type: 'string' },
             description: 'Narrows the configured roles to those whose ' +
                          'name, description or a member contains this.' },
+          { name: 'role', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One role\'s name (#604): the answer also carries ' +
+                         '`role` — the role in full, its `owners` resolved, ' +
+                         '`requiredBy` (the applications whose requirement ' +
+                         'names it) and its directory `entry` — or ' +
+                         '`role.found: false`.' },
           { name: 'rolesPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of the configured roles the search ' +
@@ -21467,7 +21474,11 @@ class AdminApi {
         } },
 
       { method: 'POST', route: BASE + '/roles/:action', tag: 'Roles',
-        mirrors: 'POST /admin/roles',
+        // A SECOND CONSOLE PATH SINCE #604: the role page's Owners tab posts
+        // to /admin/roles/owners, so its Find and Add are told apart from
+        // the page's other forms; its Add and Remove reach `add-owner` and
+        // `remove-owner` here.
+        mirrors: 'POST /admin/roles and POST /admin/roles/owners',
         handler: function (req, res) {
           log.debug("Entering the management API roles action endpoint.");
           const body = parseBody(req);
@@ -21810,7 +21821,59 @@ class AdminApi {
                            client: 'sts-admin-console' }],
               additionalProperties: false
             },
-            responseDescription: 'Which client no longer confers the role.' }
+            responseDescription: 'Which client no longer confers the role.' },
+
+          // A ROLE'S OWNERS (#604): what the role page's Owners tab saves the
+          // moment Add or Remove is pressed.
+          { action: 'add-owner', operationId: 'addRoleOwner',
+            summary: 'Add one owner to a role',
+            description: 'Adds a person or a group of this realm to the ' +
+                         'role\'s `owner` values and writes at once, keeping ' +
+                         'the other owners and everything else on the role. ' +
+                         '`owner` is a username, a DN or a `urn:uuid:` ' +
+                         'subject for a person, a `cn` or DN for a group.' +
+                         '\n\nAn owner must name somebody: one that names no ' +
+                         'person and no group here is refused. A role names ' +
+                         'at most 25 owners. An owner already listed is ' +
+                         '`ok` with `changed: false`.\n\n**AN OWNER GRANTS ' +
+                         'NOTHING**: nothing in this service reads `owner` ' +
+                         'to decide anything; the user portal lists what a ' +
+                         'person owns.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                owner: { type: 'string',
+                         description: 'The person or group to add.' }
+              },
+              required: ['role', 'owner'],
+              examples: [{ role: 'staff', owner: 'alice' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether anything changed, and the role\'s ' +
+                                 'owners as they now stand (`owners`).' },
+          { action: 'remove-owner', operationId: 'removeRoleOwner',
+            summary: 'Take one owner off a role',
+            description: 'Takes one `owner` value off the role and writes at ' +
+                         'once (#604). `owner` is the DN the role lists; one ' +
+                         'it does not list is refused. The last owner may ' +
+                         'go: a role needs none.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', description: 'The role.' },
+                owner: { type: 'string',
+                         description: 'The owner\'s DN.' }
+              },
+              required: ['role', 'owner'],
+              examples: [{ role: 'staff',
+                           owner: 'uid=alice,ou=users,dc=example,dc=com' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The role\'s owners as they now stand ' +
+                                 '(`owners`).' }
         ] },
 
       // -----------------------------------------------------------------------

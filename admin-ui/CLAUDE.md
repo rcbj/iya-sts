@@ -7817,3 +7817,28 @@ mode, because a group always exists:
 `tests/group_owners.js` holds the directory, the acts, the helpers, the page
 and the stylesheet.
 
+## A ROLE'S PAGE, WITH AN OWNERS TAB (#604, 2026-10-12)
+
+rcbj: roles had no page of their own. The name in *Roles you have made* now
+opens `/admin/roles?role=<name>`, the roles row's `drill` (param `role`), drawn
+by `RolesPage.detail()` from `GET /admin-api/roles?role=` — `rolesView()` with
+the role in full as `role` (`AdminViews.roleDetail()`: the register's row, its
+owners resolved, the applications whose requirement names it, its directory
+entry). Two tabs, `rtab-role` and `rtab-owners` (`ROLE_TAB_IDS` in the
+stylesheet's list):
+
+* **Role** is read-only: the facts, every member by kind (people and
+  applications link to their pages), what it authorizes, the clients that
+  confer it, the applications requiring it, and the entry. The controls stay
+  on the list, where they were.
+* **Owners** is the group's section (#603), `GroupsPage.ownersSection()`
+  called with `opts` — its own route `/admin/roles/owners`
+  (`WebAnswers.ROLE_OWNERS_PAGE`, in `isFieldSearch()` and the roles action's
+  `mirrors`), the hidden `role` field, `state.roleOwners`, no self to leave out
+  of a search. The runtime's `groupOwnerSearch()` takes the view member and
+  state key. The acts are `add-owner` and `remove-owner` on `rolesAction()`,
+  over `roles.addOwner()` and `removeOwner()` (`common/CLAUDE.md`).
+
+`tests/role_owners.js` holds the register, the acts, the helpers, the page and
+the stylesheet.
+

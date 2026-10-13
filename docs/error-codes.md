@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4299** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4305** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -86,9 +86,9 @@ is an ordinary outcome.
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
 * [Device register (`STS-DEVICE`)](#sts-device) — 50
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 94
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 232
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 234
 * [Management API (`STS-API`)](#sts-api) — 81
 * [User portal (`STS-PORTAL`)](#sts-portal) — 92
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -4251,6 +4251,10 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0170` | The issuance policy denied a browser issuance on the sign-in mechanism (#457): the application allows only some mechanisms (appAuthnMechanism) and the person's authentication used none of them. The door re-prompts for an allowed one. | — |
 | `STS-XACML-0171` | The issuance policy denied a browser issuance on the second factor (#475): the application allows only some second factors (appMfaMechanism) and the person's authentication gave another. The door re-prompts for an allowed one. | — |
 | `STS-XACML-0172` | The application registry could not be read for the second factors an application allows (appMfaMechanism, #475), so the issuance gate required none for that issuance. | — |
+| `STS-XACML-0173` | Adding an owner to a role was refused: no owner was named (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0174` | Adding an owner to a role was refused: the value names no person and no group in this realm (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0175` | Adding an owner to a role was refused: the role already names the most owners a role may (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-XACML-0176` | Taking an owner off a role was refused: the value is not one of the role's owners (#604). | HTTP 400 (API) or a refusal on the role page |
 
 ## STS-XPEP
 
@@ -4535,6 +4539,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0851` | Registering a SAML 1.1 relying party was refused because no assertion consumer service URL was supplied. | HTTP 400 (API) or a 303 with error= |
 | `STS-ADMIN-0852` | Adding an owner to a group, on the group page or through POST /admin-api/groups/add-owner, was refused with no code of the directory's own; where the directory gives one, that code is recorded instead (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-ADMIN-0853` | Taking an owner off a group, on the group page or through POST /admin-api/groups/remove-owner, was refused with no code of the directory's own; where the directory gives one, that code is recorded instead (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-ADMIN-0854` | Adding an owner to a role, on the role page or through POST /admin-api/roles/add-owner, was refused with no code of the register's own; where the register gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the role page |
+| `STS-ADMIN-0855` | Taking an owner off a role, on the role page or through POST /admin-api/roles/remove-owner, was refused with no code of the register's own; where the register gives one, that code is recorded instead (#604). | HTTP 400 (API) or a refusal on the role page |
 
 ## STS-API
 

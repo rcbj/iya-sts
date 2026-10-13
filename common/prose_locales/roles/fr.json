@@ -43,6 +43,10 @@
     "en": "d3cd66c299e05098",
     "text": "À quoi sert le rôle, pour la personne suivante."
   },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "Une personne ou un groupe de ce royaume qui répond du rôle (#604), par DN — l'attribut de la section 2.23 du RFC 4519, comme les propriétaires d'un groupe (#603). Multivalué, au plus 25. Un propriétaire N'ACCORDE RIEN : rien dans ce service ne le lit pour décider quoi que ce soit. Le portail utilisateur liste ce que possède une personne."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "N’importe qui, authentifié ou non, personne ou application. C’EST L’EXIGENCE PAR DÉFAUT : une application qui ne nomme aucun rôle requis exige celui-ci, tout le monde le détient et rien n’est refusé — exactement comme ce service se comportait avant l’existence des rôles."

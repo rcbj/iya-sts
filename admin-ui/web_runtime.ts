@@ -1784,6 +1784,10 @@ class ConsoleRuntime extends SpaClient {
         await this.groupOwnerSearch(fields);
         return;
       }
+      if (page === WebAnswers.ROLE_OWNERS_PAGE) {
+        await this.groupOwnerSearch(fields, 'role', 'roleOwners');
+        return;
+      }
       await this.fieldSearch(fields);
       return;
     }
@@ -2050,12 +2054,18 @@ class ConsoleRuntime extends SpaClient {
    * Runs a group owner search's Find, Previous or Next and draws the result.
    *
    * @param fields - the form's fields, the pressed button's among them
+   * @param holder - optional; the view member holding the owners (`group`,
+   *   or `role` since #604)
+   * @param stateKey - optional; the page state member (`groupOwners`)
    * @returns nothing
    */
-  async groupOwnerSearch(fields: Json): Promise<void> {
+  async groupOwnerSearch(fields: Json, holder?: string,
+                         stateKey?: string): Promise<void> {
+    // A ROLE'S (#604) is the same search: the role's view in `role`, its
+    // state in `roleOwners`; a role's DN names nothing a search finds.
     const asked = WebAnswers.fieldSearchOf(fields);
     const before = (this.view.json && this.view.json.state) || {};
-    const group = (this.view.json && this.view.json.group) || {};
+    const group = (this.view.json && this.view.json[holder || 'group']) || {};
     const held = (group.owners || []).map(function (one: Json) {
       return String(one.dn);
     }).concat(group.dn ? [String(group.dn)] : []);
@@ -2065,7 +2075,8 @@ class ConsoleRuntime extends SpaClient {
       answer && answer.status === 200 ? answer.json : null);
     this.view.json = Object.assign({}, this.view.json, {
       state: Object.assign({}, before, {
-        groupOwners: { find: found, notice: '', error: [] } }) });
+        [stateKey || 'groupOwners']: { find: found, notice: '',
+                                       error: [] } }) });
     this.drawView(null, '');
     const doc = this.env.document;
     const refocus = function () {

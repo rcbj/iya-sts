@@ -43,6 +43,10 @@
     "en": "d3cd66c299e05098",
     "text": "Para qué sirve el rol, para la próxima persona."
   },
+  "roles.schema.attributes.owner.what": {
+    "en": "f9204b7066943eb5",
+    "text": "Una persona o un grupo de este dominio que responde por el rol (#604), por DN — el atributo de la sección 2.23 del RFC 4519, como los propietarios de un grupo (#603). Multivalor, como máximo 25. Un propietario NO CONCEDE NADA: nada en este servicio lo lee para decidir algo. El portal de usuario lista lo que posee una persona."
+  },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
     "text": "Cualquiera, autenticado o no, persona o aplicación. ESTE ES EL REQUISITO PREDETERMINADO: una aplicación que no nombra ningún rol obligatorio exige este, todos lo tienen y no se rechaza nada — que es exactamente como se comportaba este servicio antes de que existieran los roles."
