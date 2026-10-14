@@ -392,9 +392,12 @@ async function run(t) {
               'pki.start() in the front process writes no CRL either — the ' +
               'start no longer waits on 279 signatures before the listener ' +
               'binds', JSON.stringify({ ok: asFront.ok, writes: writes }));
-      // A turn of the event loop counted while the publication runs: with
-      // no yield between lists the whole publication is one turn, and no
-      // `setImmediate()` callback can run until it is over.
+      // A turn of the event loop counted while the publication runs: it
+      // must hand the loop back between lists, so a `setImmediate()`
+      // callback runs before the last one is written. (The signature is
+      // WebCrypto and yields by itself; `publishAll()` also yields after
+      // each synchronous directory write, so this holds whatever a
+      // signature does — it is the property, not that one line, held here.)
       let ticking = true;
       const tick = function () {
         if (!ticking) {

@@ -1339,12 +1339,13 @@ function publishSoon(scopeId, caId) {
   log.debug("Leaving publishSoon().");
 }
 
-// **IT YIELDS BETWEEN LISTS (#617, 2026-10-14).** Each list is signed and
-// written into the directory synchronously, and 279 of them were 4 s of
-// 8081's front-process start with no other turn of the event loop between
-// them — the turns the cluster heartbeat and the origin-claim renewal need.
-// A `setImmediate()` between lists lets those, and a request, run; the total
-// is unchanged.
+// **AND IT YIELDS BETWEEN LISTS (#617, 2026-10-14)**, which since #617 it
+// does while the listener is answering. The signature itself is WebCrypto
+// and already gave the loop a turn; the directory write after it is
+// synchronous — the containers, the entry, its change-log journal — so a
+// `setImmediate()` between lists makes sure a request, the heartbeat or the
+// origin-claim renewal waits for at most ONE list's write, whatever a list's
+// signature does. The total is unchanged.
 /**
  * Builds and publishes the CRL of every authority in the given scopes, and
  * the Root's, into the directory, yielding to the event loop between lists.
