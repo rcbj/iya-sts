@@ -641,7 +641,8 @@ ldif or multi-cell service is unchanged.
   own net: a change detector beside `directoryVersion`, not a cap.
 * **`ldap.maxEntries` is a PER-REALM cap on the STORE in a windowed worker**
   (rcbj): `cappedEntries()` asks the window's `capCount()` — the realm's rows
-  counted by the store at most ten seconds ago, plus this process's net since.
+  counted by the store at most ten seconds ago (a counter row read since
+  #618), plus this process's net since.
   Everywhere else it is `totalEntries()`, what the process holds, as before.
 * **The walks that can say what they want do** (phase 5), and each is the old
   walk outside a windowed worker:
@@ -663,12 +664,14 @@ ldif or multi-cell service is unchanged.
     `hasChildren()`; `countDeviceEntries()` and `personCount()` are
     `countUnderContainer()` (#610): `recentCountUnder()`, the store's count
     of the container at most ten seconds old plus this process's own creates
-    and deletes since (a `count(*)` is linear in the realm's rows — 13–15 ms
-    for 29,303 on 8081, measured), and outside a window the realm's KEYS
+    and deletes since (since #618 the store's count is a counter row the
+    database keeps, `sts_ldap_counts` — `persistence/CLAUDE.md`; it was a
+    `count(*)`, linear in the realm's rows, 13–15 ms for 29,303 on 8081),
+    and outside a window the realm's KEYS
     walked with an `endsWith`, no entry read — still a walk, said there.
     `personNamesUpTo(limit)` pages only the first `limit` + 1 people;
-    `credentialTallies()` is `countHolding()` (one `count(*) FILTER` over
-    `attr_names`) and `holders()` per credential attribute, and
+    `credentialTallies()` is `countHolding()` (two counter rows since #618;
+    it was one `count(*) FILTER` over `attr_names`) and `holders()` per credential attribute, and
     `countPeopleNamed()` is `byKeys` plus one `withNames` —
     `admin-core/CLAUDE.md`, *the tiles count the directory*.
   - `windowedFind()` for an indexed question (`directory_queries.js`), each

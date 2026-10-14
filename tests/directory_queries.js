@@ -137,11 +137,21 @@ function builders(t) {
   const self = queries.page('default', users, '', 10, { self: true });
   t.check(/dn_key = \$2 OR/.test(self.text),
           'A10. a page may include the base itself');
-  t.check(/count\(\*\)/.test(queries.count('r', '').text) &&
-          queries.count('r', '').values.length === 1,
-          'A11. count with no base counts the realm');
-  t.check(/right\(dn_key, \$3\)/.test(queries.count('r', users).text),
-          'A12. count under a base counts strictly under it');
+  // Since #618 a count is READ from the counter the triggers keep — no
+  // `count(*)`, and nothing of `sts_ldap_entries` is touched.
+  const realmCount = queries.count('r', '');
+  t.check(/FROM sts_ldap_counts/.test(realmCount.text) &&
+          !/count\(/i.test(realmCount.text) &&
+          !/sts_ldap_entries/.test(realmCount.text) &&
+          JSON.stringify(realmCount.values) === JSON.stringify(['r', '']),
+          'A11. count with no base reads the realm\'s counter (base \'\')',
+          realmCount.text);
+  const underCount = queries.count('r', users);
+  t.check(/base_key = \$2/.test(underCount.text) &&
+          !/count\(/i.test(underCount.text) &&
+          underCount.values[1] === users,
+          'A12. count under a base reads that base\'s counter',
+          underCount.text);
   const r = queries.residentOnly([{ realm: 'default', baseKey: users },
                                   { realm: 'acme', baseKey: 'ou=devices,x' }]);
   t.check(/NOT EXISTS/.test(r.text) &&
@@ -198,7 +208,8 @@ async function driverDoor(t) {
                 dn: 'uid=alice,ou=users,dc=x', attrs: { uid: ['alice'] },
                 origin: 'seed', created_at: 'c', modified_at: 'm' }];
     }
-    if (/count\(\*\)/.test(sql)) {
+    // A counter read since #618, no longer a count(*).
+    if (/FROM sts_ldap_counts/.test(sql)) {
       return [{ n: 7 }];
     }
     return undefined;
@@ -228,10 +239,10 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 15 ===');
-  t.equal(postgres.SCHEMA_VERSION, 15,
-          'C1. the driver writes schema version 15 (#222, #391 phase 6, ' +
-          '#432 phase 5)');
+  t.log.info('=== C. schema version 16 ===');
+  t.equal(postgres.SCHEMA_VERSION, 16,
+          'C1. the driver writes schema version 16 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -308,8 +319,8 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 15;
-  }), 'C6. and records version 15');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 16;
+  }), 'C6. and records version 16');
   log.debug("Leaving schema().");
 }
 

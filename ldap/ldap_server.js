@@ -2256,8 +2256,9 @@ function entriesUnder(containerDn) {
 // disagree about what counting means:
 //
 //   * **A windowed container in a windowed process** (#349/#320: `ou=users`,
-//     `ou=devices`) is the store's `count(*)` through
-//     `DirectoryWindow.recentCountUnder()` — no row read, at most ten
+//     `ou=devices`) is the store's count through
+//     `DirectoryWindow.recentCountUnder()` — a counter row the database
+//     keeps since #618 (it was a `count(*)`), no row read, at most ten
 //     seconds old for another process's writes, this process's own at once.
 //     That function's header has the measurement and why it is held.
 //   * **Anything else** is what the process holds: the container's cached
@@ -12256,8 +12257,9 @@ function censusOfEntry(stored) {
 // hold a credential attribute, plus one count:
 //
 //   * `people` and `withPassword` are COUNTED: in a windowed process the
-//     store's `count(*)` and `count(*) FILTER (WHERE attr_names ? …)` in one
-//     statement (`DirectoryWindow.countHolding()`), the values themselves
+//     store's two counter rows (#618; a `count(*)` and a `count(*) FILTER`
+//     until then) in one statement (`DirectoryWindow.countHolding()`), the
+//     values themselves
 //     being sealed; in memory, one pass over `ou=users` reading the one
 //     attribute's presence.
 //   * `holders` are the people holding any of the attributes the caller

@@ -280,9 +280,27 @@ function page(realm, baseKey, afterKey, limit, options) {
                 pageSize(limit), suffixLength(baseKey)] };
 }
 
+// ---------------------------------------------------------------------------
+// THE COUNTS ARE READ, NOT COUNTED (#618). `sts_ldap_counts` holds, per realm
+// and per base, the entries strictly under it (`attribute` '') and those
+// holding each attribute in COUNTED_ATTRIBUTES, kept by the database's own
+// triggers in the transaction that wrote (`persistence_postgres.js`,
+// SCHEMA_ROUTINES). So `count` and `countHolding` are one primary-key read
+// whatever the size of the directory, where each was a `count(*)` linear in
+// the realm's rows. A base with no counter row has nothing under it: the
+// counters are started from one count of the table, under a lock, when the
+// triggers are created, and a missing row is a zero from then on.
+// ---------------------------------------------------------------------------
+/**
+ * The attributes whose holders `sts_ldap_counts` keeps a count of, lower-cased
+ * as `attr_names` holds them. The postgres driver's trigger functions name
+ * the same list; `tests/directory_counts.js` holds the two together.
+ */
+const COUNTED_ATTRIBUTES = ['userpassword'];
+
 /**
  * How many entries are under a base (strictly), or in the whole realm when
- * the base is ''.
+ * the base is '': the counter row, read.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN, or '' for the realm
@@ -290,22 +308,21 @@ function page(realm, baseKey, afterKey, limit, options) {
  */
 function count(realm, baseKey) {
   log.debug("Entering count().");
-  if (!baseKey) {
-    log.debug("Leaving count(). The realm.");
-    return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
-                   'WHERE realm = $1', values: [String(realm)] };
-  }
   log.debug("Leaving count().");
-  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND ' + underClause(2, 3, false),
-           values: [String(realm), String(baseKey), suffixLength(baseKey)] };
+  return { text: 'SELECT COALESCE((SELECT n FROM sts_ldap_counts WHERE ' +
+                 'realm = $1 AND base_key = $2 AND attribute = \'\'), 0)' +
+                 '::bigint AS n',
+           values: [String(realm), String(baseKey || '')] };
 }
 
 /**
  * How many entries are strictly under a base, and how many of them hold an
  * attribute (by NAME — `attr_names`, the one column of an entry's attributes
- * the database can read): one pass, `count(*) FILTER`, for a page's tiles
- * (#610). Linear in the realm's rows, as `count()` is.
+ * the database can read), for a page's tiles (#610): two counter rows read,
+ * for an attribute in COUNTED_ATTRIBUTES. Any other attribute is COUNTED, a
+ * `count(*) FILTER` linear in the realm's rows — no caller asks one today
+ * (`credentialTallies()` asks `userpassword`), and a new one should join
+ * the list rather than take this path.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN
@@ -314,12 +331,22 @@ function count(realm, baseKey) {
  */
 function countHolding(realm, baseKey, attribute) {
   log.debug("Entering countHolding().");
-  log.debug("Leaving countHolding().");
+  const name = String(attribute).toLowerCase();
+  if (COUNTED_ATTRIBUTES.indexOf(name) >= 0) {
+    log.debug("Leaving countHolding(). Two counters.");
+    return { text: 'SELECT COALESCE(sum(n) FILTER (WHERE attribute = \'\'), ' +
+                   '0)::bigint AS n, COALESCE(sum(n) FILTER (WHERE ' +
+                   'attribute = $3), 0)::bigint AS holding FROM ' +
+                   'sts_ldap_counts WHERE realm = $1 AND base_key = $2 AND ' +
+                   'attribute IN (\'\', $3)',
+             values: [String(realm), String(baseKey), name] };
+  }
+  log.debug("Leaving countHolding(). Not a counted attribute: counted.");
   return { text: 'SELECT count(*)::bigint AS n, count(*) FILTER (WHERE ' +
                  'attr_names ? $4)::bigint AS holding FROM sts_ldap_entries ' +
                  'WHERE realm = $1 AND ' + underClause(2, 3, false),
            values: [String(realm), String(baseKey), suffixLength(baseKey),
-                    String(attribute).toLowerCase()] };
+                    name] };
 }
 
 /**
@@ -573,6 +600,7 @@ function build(name, args) {
 
 module.exports = {
   COLUMNS: COLUMNS,
+  COUNTED_ATTRIBUTES: COUNTED_ATTRIBUTES,
   MAX_PAGE: MAX_PAGE,
   QUERIES: QUERIES,
   build: build,

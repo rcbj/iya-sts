@@ -1712,6 +1712,47 @@ it is a report, not state anything acts on, and its age is drawn.
 `schema.sql` adds it with `CREATE TABLE IF NOT EXISTS`, and the grants on
 every table in the schema cover it.
 
+### The directory's counts are kept by the database (#618, schema version 16)
+
+`sts_ldap_counts` holds, per realm and per base (every ancestor of a row's
+DN, and `''` for the realm), the entries strictly under it and those holding
+a counted attribute (`directory_queries.COUNTED_ATTRIBUTES`: `userpassword`,
+the one the #610 tiles ask). `count` and `countHolding` read it — one
+primary-key read where each was a `count(*)` linear in the realm's rows, on
+`DirectoryWindow.capCount()`/`sizeIn()`/`exactCount()` (`ldap.maxEntries`),
+`recentCountUnder()`/`countUnder()` and `countHolding()`.
+
+**TRIGGERS, NOT THE DRIVER**, because the driver is not the only writer: the
+flush's per-row statements, the merge, a removed realm's DELETE, a cell
+conversion's upserts and a hand-run statement all land in the same table, and
+a counter kept by one of them is wrong the first time another writes. Each
+statement-level trigger reads its transition tables, so it counts its own
+rows, never the directory.
+
+**AND NOT DIRECTLY INTO THE COUNTERS.** Every write of a realm touches the
+same rows (`''`, the base DN, `ou=users`). A trigger updating them would hold
+that lock from a flush's first statement to its commit, serialising every
+flush of the realm across processes, and would close a deadlock with the
+entry locks the flush takes in key order (`saveDirectory()`'s *one lock order*).
+So a statement appends its net per parent to `sts_ldap_count_deltas`
+(insert only), the transaction's first delta also appends a row with `fold`
+set, and that row's deferred constraint trigger folds the transaction's
+deltas into the counters at COMMIT: one statement, in key order, after every
+entry lock is taken. A rollback (whole, or to a savepoint) takes its deltas
+with it. Nothing periodic is involved, so there is no scheduler job.
+
+**ONE COUNT, ONCE.** `open()` probes the functions and triggers by name
+(`pg_proc`, `pg_trigger`: `to_regclass()` knows only relations) and creates
+what is missing. When it created a trigger, it LOCKs `sts_ldap_entries`
+(SHARE ROW EXCLUSIVE, which every writer waits on) and runs `COUNTS_BACKFILL`
+while the counters are empty. `postgres/schema.sql` does the same. That is
+the only count of the directory, and an operator upgrading a large store pays
+for it once. `tests/directory_counts.js` holds the statements, the window's
+arithmetic and the one count in process. With `STS_TEST_POSTGRES_URL` it also
+checks exactness against a real postgres under eight concurrent writers (run
+on #618 against a scratch postgres:18). `tests/postgres_schema.js` holds the
+script and the driver together, functions and triggers included.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm
