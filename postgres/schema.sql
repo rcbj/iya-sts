@@ -213,10 +213,10 @@ ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS dek_keys jsonb;
 -- values looked up as written (a DID, a SPIFFE ID, a federation link).
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops) WITH (fastupdate = off);
 
 -- THE ATTRIBUTE NAMES A HOLDER QUESTION ASKS, AND THE GROUP CLASSES (#618
 -- phase 2, schema version 18), each a PARTIAL GIN index with the default
@@ -229,10 +229,31 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin
 -- still holds all its classes, which answers the same question). They
 -- replace the two below, which indexed every name and every class of every
 -- entry — about nineteen GIN entries a person insert that narrowed nothing.
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON sts_ldap_entries USING gin (class_keys) WHERE class_keys <> '[]'::jsonb;
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON sts_ldap_entries USING gin (class_keys) WITH (fastupdate = off) WHERE class_keys <> '[]'::jsonb;
 DROP INDEX IF EXISTS sts_ldap_entries_attr_names;
 DROP INDEX IF EXISTS sts_ldap_entries_classes;
+
+-- EVERY GIN INDEX OF THE DIRECTORY TAKES ITS INSERTS DIRECTLY (#618, schema
+-- version 18): `fastupdate = off`, so no search reads a pending list. On
+-- 8081 the names', uuids', mails' and values' lists held about 205,000
+-- tuples each and every login-name and UUID probe read all 500 pages of
+-- one (8.9-17.6 ms, against 0.02 ms for the RDN). The CREATEs above say it
+-- for a new store; these switch an existing one, and flush the list it
+-- already holds, once — turning the option off does not empty it. The
+-- driver's SCHEMA_RELOPTIONS argues it.
+ALTER INDEX sts_ldap_entries_names SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_mails SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_uuids SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_values SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_asked_names SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_group_classes SET (fastupdate = off);
+SELECT gin_clean_pending_list('sts_ldap_entries_names'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_mails'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_uuids'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_values'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_asked_names'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_group_classes'::regclass);
 -- The entries holding a value under any of a set of data keys (`?|`, the
 -- default GIN operator class): what a re-seal reads, and all it reads
 -- (#623). And the entries whose keys are not known yet, found without a

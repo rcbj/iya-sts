@@ -2045,6 +2045,46 @@ per person. The names' index went from 23 MB to 16 kB; the classes' stays at
 password question is a primary-key read of `sts_ldap_counts`. The figures
 are on #618.
 
+### The directory's GIN indexes have no pending list (#618, schema version 18)
+
+**Every directory GIN index but `dek_keys`' is `WITH (fastupdate = off)`.**
+With the default, an insert lands in the index's pending list, merged only at
+`gin_pending_list_limit` (4 MB) or by a vacuum, and EVERY SEARCH READS THE
+WHOLE LIST. On 8081 under the bulk load the names', uuids', mails' and
+values' lists held about 205,000 tuples (503 pages) each, so every `byName()`
+and `byUuid()` probe read ~500 buffers, 8.9–17.6 ms, beside 0.02 ms for the
+RDN branch of the same query; when autovacuum flushed them the add rate went
+from 45 to 73 a second and the database CPU per add halved
+(`load-users/dbperf/`). Off, an insert pays its entries at once — about
+0.04 ms a person for the four on the 1.2M-entry copy — and a probe after
+60,000 committed inserts read 4 buffers in 0.01 ms with no pending tuple.
+The two partial indexes above take it too: a person writes nothing to them,
+so a list there would buy nothing and only be read. `dek_keys`' keeps the
+default: one or two keys a row, searched only by the hourly job.
+
+An existing store is switched by `SCHEMA_RELOPTIONS` — `ALTER INDEX … SET
+(fastupdate = off)` and one `gin_clean_pending_list()`, because turning the
+option off stops the list growing and does not empty it. `open()` probes
+`pg_class.reloptions` and issues them only where the option is missing (so
+the least-privileged role issues none once `schema.sql` has run);
+`schema.sql` carries the same statements after the CREATEs.
+`tests/postgres_schema.js` and `tests/directory_queries.js` (C8) hold it.
+
+### The data-key index catches up in hours, not days (#618)
+
+On 8081 `sts_ldap_entries_dek_unknown` (#623) was 245 MB over 2.93M entries
+still NULL. The catch-up WAS running — the 13:00Z re-encryption pass logged
+46,500 entries indexed in its ten seconds — but the job was hourly, so the
+rest would have taken about 62 hours, every data-key count refused
+(`STS-STORE-0080`) meanwhile; and the pass returned before indexing at all
+when no key was superseded, leaving a store that never rotated the daily
+count's ten seconds (~60 days at that size). `data_key_rotation.ts` now
+indexes on every re-encryption pass, superseded keys or none, and the job's
+interval is `INDEX_CATCHUP_MS` (five minutes) while the last pass left
+entries unindexed — ten seconds of the front process in every three hundred,
+about five hours at 2.9M — and an hour again once it is complete.
+`tests/data_key_rotation.js` K5 and K6.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm

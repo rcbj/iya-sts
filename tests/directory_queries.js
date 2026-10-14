@@ -363,6 +363,37 @@ async function schema(t) {
   }), 'C7. a retired index still in the catalogue is dropped after its ' +
           'replacement is built, and one that is not is left alone',
           JSON.stringify({ dropAt: dropAt, askedAt: askedAt }));
+    // AN INDEX STILL TAKING ITS INSERTS THROUGH A PENDING LIST (#618) is
+  // switched and flushed; one already switched is left alone.
+  const switched = [];
+  const switching = driverWith(switched, function (sql) {
+    if (/to_regclass/.test(sql)) {
+      return [{}];
+    }
+    if (/c\.reloptions AS options/.test(sql)) {
+      return [{ name: 'sts_ldap_entries_names', options: null },
+              { name: 'sts_ldap_entries_uuids',
+                options: ['fastupdate=off'] }];
+    }
+    return undefined;
+  });
+  await switching.open();
+  const issued = switched.map(function (s) {
+    return s.sql;
+  });
+  const alterNames = issued.indexOf(
+    'ALTER INDEX sts_ldap_entries_names SET (fastupdate = off)');
+  t.check(alterNames >= 0 && issued[alterNames + 1] ===
+            'SELECT gin_clean_pending_list(\'sts_ldap_entries_names\'' +
+            '::regclass)' &&
+          !issued.some(function (sql) {
+            return /ALTER INDEX sts_ldap_entries_uuids/.test(sql);
+          }),
+          'C8. an index without fastupdate off is switched and its pending ' +
+          'list flushed; one with it is left alone',
+          JSON.stringify(issued.filter(function (sql) {
+            return /ALTER INDEX|gin_clean/.test(sql);
+          })));
   log.debug("Leaving schema().");
 }
 

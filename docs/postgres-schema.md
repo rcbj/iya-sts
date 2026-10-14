@@ -162,10 +162,18 @@ measurable, and the attribute-name index went from 23 MB to 16 kB. They
 replace `sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, which
 `postgres/schema.sql` drops.
 
+**Every GIN index on this table except the data keys' has `fastupdate = off`
+(schema version 18).** With PostgreSQL's default, inserts are queued in a
+pending list that every search reads in full until a vacuum merges it; on a
+busy directory that made each login-name or UUID lookup read hundreds of
+pages. With it off, each insert updates the index at once and a lookup reads
+a handful of pages.
+
 **Upgrading a store from version 17.** Run `postgres/schema.sql` as the owner.
 It builds the two new indexes, which reads the table once and holds writers
 off while it does (seconds at a million entries), then drops the two old
-ones. Nothing is rewritten. Entries written before the upgrade keep all their
+ones, switches the existing GIN indexes to `fastupdate = off` and flushes
+what each has queued. Nothing is rewritten. Entries written before the upgrade keep all their
 object classes in `class_keys`, so they stay in the classes index until they
 are next written; that changes no answer. The service refuses to start
 against a version 17 store whose role cannot build the new indexes, and says

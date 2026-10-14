@@ -128,7 +128,12 @@ the version-18 image starts**, which cannot build the indexes as `sts_app`
 and is refused; a version-17 process still running meanwhile answers its
 holder and group questions without an index until it is replaced.
 `tests/postgres_schema.js` holds the drops to `SCHEMA_RETIRED` and their
-order.
+order. **The same run switches the directory's six GIN indexes to
+`fastupdate = off` and flushes each one's pending list once**
+(`gin_clean_pending_list()`, which only the owner may call):
+`persistence/CLAUDE.md`, *The directory's GIN indexes have no pending list*.
+On 8081 the four lists held ~205,000 tuples each, so the flush is a few
+seconds of index writes inside the script's transaction.
 
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that

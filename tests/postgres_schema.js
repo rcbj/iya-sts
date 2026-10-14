@@ -263,6 +263,47 @@ function checkTheRetiredAgree(t, sql) {
   log.debug("Leaving checkTheRetiredAgree().");
 }
 
+// THE DIRECTORY'S GIN INDEXES TAKE EVERY INSERT DIRECTLY (#618, version 18):
+// each is created `WITH (fastupdate = off)`, an existing one is switched by
+// the driver's SCHEMA_RELOPTIONS — the same statements in the script, after
+// the CREATE — and its pending list flushed once, after the switch.
+function checkTheReloptionsAgree(t, sql) {
+  log.debug("Entering checkTheReloptionsAgree().");
+  const all = statementsIn(sql);
+  const wanted = driver.SCHEMA_RELOPTIONS || [];
+  t.equal(wanted.map(function (one) { return one.name; }).sort().join(','),
+          ['sts_ldap_entries_asked_names', 'sts_ldap_entries_group_classes',
+           'sts_ldap_entries_mails', 'sts_ldap_entries_names',
+           'sts_ldap_entries_uuids', 'sts_ldap_entries_values'].join(','),
+          'the driver turns the pending list off on the directory\'s six ' +
+          'GIN indexes');
+  wanted.forEach(function (one) {
+    const createAt = all.findIndex(function (statement) {
+      return statement.indexOf('CREATE INDEX IF NOT EXISTS ' + one.name +
+                               ' ') === 0;
+    });
+    const alterAt = all.indexOf(normalize(one.statement));
+    const flushAt = all.indexOf(normalize(one.flush));
+    t.check(createAt >= 0 &&
+            all[createAt].indexOf(' WITH (fastupdate = off)') > 0 &&
+            alterAt > createAt && flushAt > alterAt &&
+            one.option === 'fastupdate=off',
+            one.name + ' is created with fastupdate off, switched on an ' +
+            'existing store and its pending list flushed, in that order',
+            JSON.stringify({ createAt: createAt, alterAt: alterAt,
+                             flushAt: flushAt }));
+  });
+  const gins = driver.SCHEMA.filter(function (statement) {
+    return /ON sts_ldap_entries USING gin/.test(statement) &&
+      !/sts_ldap_entries_dek_keys /.test(statement);
+  });
+  t.check(gins.length === 6 && gins.every(function (statement) {
+    return statement.indexOf('WITH (fastupdate = off)') > 0;
+  }), 'every directory GIN index but the data keys\' is created with it',
+          String(gins.length));
+  log.debug("Leaving checkTheReloptionsAgree().");
+}
+
 function checkTheVersionAgrees(t, sql) {
   log.debug("Entering checkTheVersionAgrees().");
   // The script writes the version row so that a database built by an owner
@@ -395,6 +436,7 @@ function run(t) {
   checkTheDdlAgrees(t, sql);
   checkTheRoutinesAgree(t, sql);
   checkTheRetiredAgree(t, sql);
+  checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);
