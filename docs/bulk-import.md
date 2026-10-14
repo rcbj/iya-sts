@@ -120,14 +120,63 @@ is also correct, only slower, because every record is checked first.
 **On schema version 17, run it as the table's owner.** That schema's name
 index keeps a GIN pending list, which the per-batch name check reads in full
 every time. The import merges the list after every batch, which needs the
-owner (or `MAINTAIN`). As the application role it is refused once
-(`STS-LDAP-0161`) and the import gets slower as the list grows. Schema 18 has
-no pending list on that index.
+index's owner. As any other role the import says so once (`STS-LDAP-0161`),
+never asks, and gets slower as the list grows. Schema 18 has no pending list
+on that index.
 
 At the end, the import merges the directory's GIN pending lists and analyzes
-the table, so the first sign-ins after a large import do not pay for it. Both
-need the table's owner. If the application role is refused (`STS-LDAP-0161`),
-have the owner run `VACUUM (ANALYZE) sts_ldap_entries;`.
+the table, so the first sign-ins after a large import do not pay for it. The
+merge needs the table's owner; the analyze needs the owner or, on PostgreSQL
+17 and later, `MAINTAIN` on the table. The import asks the database what its
+role may do before it does either, and skips what it may not, with one line
+(`STS-LDAP-0161`). Then have the owner run
+`VACUUM (ANALYZE) sts_ldap_entries;`. The analyze never waits for an
+autovacuum of the table that is already running; it leaves the statistics
+to it.
+
+## Several imports at once
+
+You can run several imports at once against one store, each on its own file,
+to load faster than one process can parse and seal.
+
+**What is safe.** Every batch of every import takes the realm's import lock
+(a PostgreSQL advisory lock) for its last step: it checks its names against
+the store again, inserts, and commits. Imports of one realm therefore check
+and insert one at a time, and everything before that step runs side by side:
+reading the file, checking the batch once without the lock, and sealing it.
+In detail:
+- The one-entry-per-person rule holds across imports exactly as it holds
+  across the batches of one import.
+- The directory's counters and data-key counters stay exact.
+- `ldap.maxEntries` is read under the lock, so several imports together stop
+  at the ceiling and do not pass it.
+- Two imports that make the realm's first directory data key at the same
+  moment both keep their key. The store holds both, and the service opens
+  what either sealed.
+- An import never counts as a running service, so imports do not refuse one
+  another. A running service is still refused (`STS-LDAP-0153`).
+- The lock does not block autovacuum, so the table is vacuumed while the
+  imports run.
+
+**The files should not overlap.** Make them with
+`generate-people-ldif.js --start --count`, or split your own file by
+person, so that no DN and no username is in two files. If they do overlap,
+nothing breaks the rule. A DN in both files is imported once, and the other
+import counts it as present. A username proposed by two different DNs is
+imported for whichever import reaches it first, and the other import
+reports it as taken (`STS-LDAP-0160`). Which import wins a name is a race,
+so overlapping files give you a directory that depends on timing.
+
+**Run every import from the same build.** An import from before #637 locks
+the table instead, which does not hold an import from this build out of its
+check. Two such imports of overlapping files could both admit a name.
+
+**How many.** Start with as many imports as you have cores to spare for
+them, and no more than four. Each import's report gives `seconds`,
+`lockSeconds` (time holding the lock) and `lockWaitSeconds` (time waiting for
+it). When `lockWaitSeconds` grows to a large share of `seconds`, the imports
+are queueing for the lock and another one will not help. At that point the
+database's insert is the limit, not the import.
 
 ## Making a test file
 
