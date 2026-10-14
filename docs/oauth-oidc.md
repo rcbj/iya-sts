@@ -247,7 +247,12 @@ client retrying after a bad `code_verifier`, and names none of them. So:
   and DPoP key — gets the **same** token set, down to the `jti`. Nothing is
   minted twice, and a warning is logged each time saying a real authorization
   server would refuse. It departs from the RFC, which is why it is off by
-  default.
+  default. **It is also the only setting under which a redeemed code's whole
+  token response is kept** — access token, refresh token and ID Token, for the
+  rest of the code's lifetime — because a repeat must get those bytes back.
+  Off, the record keeps only each issued token's `jti`, which is all the
+  refusal needs to revoke them. A code redeemed while it was off and presented
+  again after it is turned on is refused, since there is nothing to replay.
 * **The refusals say what happened.** A code presented with anything different
   is refused naming the field that differed, when the code was redeemed and by
   which client. A code this service has no record of gets its own message:
@@ -257,6 +262,20 @@ client retrying after a bad `code_verifier`, and names none of them. So:
 * The OpenID4VCI **pre-authorized code** is not relaxed: its single use is a
   property of the Credential Offer under test.
 * **RFC 9700 mode** turns the relaxation off, as its section 4.5 asks.
+
+**What is kept of a code, and of the other one-time values (#614).** Every
+store of a value that is only looked up, spent or compared keeps its base64url
+SHA-256 and never the value: authorization codes (and their redemption
+records), device codes and user codes, CIBA `auth_req_id`s, pushed
+`request_uri`s, DPoP server nonces, client-attestation challenges, and the
+`state` of the sign-ins this service makes as a relying party. A memory dump,
+a replicated change or a stored row therefore yields nothing that can be
+presented. A user code is short, so its digest can be reversed by trying every
+code; it is hashed anyway, and its short lifetime and the signed-in approval
+are what protect it. A back-channel Logout Token, a CIBA ping or push and a
+Provider Command keep their token and body only until they are delivered — a
+retry sends the same bytes — and then keep their digests; a dead letter keeps
+both until an operator retries or drops it.
 
 ### Client authentication
 
@@ -1359,7 +1378,11 @@ Both discovery documents carry `pushed_authorization_request_endpoint` and
 `oauth2.pushedAuthorizationRequests` off the endpoint answers 404 and the
 member is removed; a `request_uri` already issued still works.
 `/admin/oauth2/monitor` counts pushes, reads, spends, expiries and refusals per
-client and lists the `request_uri`s still held.
+client and lists the requests still held. Each is named by its **handle**, the
+base64url SHA-256 of its `request_uri` (shown shortened as `sha256:` and twelve
+hex characters), because the store keeps no `request_uri`. **Withdraw**, and
+`POST /admin-api/oauth2/monitor/delete-pushed-request` with
+`{"request_uri_digest": "<handle>"}`, removes one by that handle.
 
 ### JWT-secured authorization requests (RFC 9101)
 

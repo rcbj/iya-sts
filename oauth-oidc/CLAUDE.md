@@ -323,7 +323,12 @@ so must `admin-ui/admin.ts`.
    `oauth2.codeReplayIdempotent` is on (off by default, a documented weaker
    option, on in `env/test.js` and `env/docker-tests.js` only for the
    parent's vendored `oauth2_sts_endpoints.js`), and RFC 9700 mode refuses
-   whatever it says.
+   whatever it says. **Since #614 the record keeps the issued `jti`s and NOT
+   the token response, except under that setting**: a refusal revokes by
+   `jti`, and only an identical repeat answered with the same bytes needs the
+   bytes. A row written with the setting off has nothing to replay, so a
+   repeat of it after the setting is turned on is refused (`STS-OAUTH-0958`)
+   and what it bought revoked.
    It revokes the access, refresh and ID Tokens that
    code bought (RFC 6749 section 10.5), through `stats.revoke()` called by
    `oauth2.ts`, never by this module. It sits BELOW the two refusals that are
@@ -1740,7 +1745,12 @@ so must `admin-ui/admin.ts`.
    client (`STS-OAUTH-0413`) and to the authorization server it was pushed at
    (`0414`, 3j's "a credential does not cross between them"), per realm and
    persisted like `authzCodes` so a push answered by one process and a browser
-   arriving at another is the ordinary case in dispatch mode. **Spent** in
+   arriving at another is the ordinary case in dispatch mode. **Held under the
+   digest of the whole `request_uri` (#614)**, and the record does not repeat
+   it: the monitoring page and `/admin-api` name a pushed request by that
+   digest (`request_uri_digest`, shown `sha256:` + twelve hex characters, as
+   `cache_registry.digestKey()` shows a key), `delete-pushed-request` takes
+   it, and the cell hand-over (#98 D9) sends it in place of the reference. **Spent** in
    `issueAuthorizationResponse()` below every refusal and above the minting, so a
    request refused for its audience or role has not thrown its `request_uri` away,
    and kept marked until it would have expired so a replay is told "already used"
@@ -3968,7 +3978,8 @@ check keeps its own code, and a same-process replay keeps `STS-OAUTH-0110`) and 
 reservation only when it accepts: `seenJtis`' rule, that only an accepted proof is
 remembered, is unchanged. **A caller of `verifyProof()` must pass `req`** for the
 cross-node half; one that does not gets the local check only. **The server nonce needs
-nothing**: `issuedNonces` is persisted, a nonce is not single use, the response carrying
+nothing**: `issuedNonces` is persisted (under each nonce's digest since #614), a nonce is
+not single use, the response carrying
 one is held by the barrier until it commits, and the retry passes the barrier's catch-up
 on whichever node it reaches.
 
@@ -4115,8 +4126,12 @@ both modes, with an `/admin-api` test control that product closes.
   `oauth2.cibaMaxPendingPerPerson` requests may wait for one person (0635,
   section 14): a client cannot fill somebody's page.
 * **The request is a row** (`ciba.ts`, `oauth2.cibaRequests`, per realm,
-  persisted where minted rows are), keyed by a 256-bit `auth_req_id` — the
-  only credential the token request needs beside the client's. `pending` →
+  persisted where minted rows are), keyed by the DIGEST of a 256-bit
+  `auth_req_id` — the only credential the token request needs beside the
+  client's (#614). The row's `key` is its handle on the portal and the
+  console and on its delivery rows; `ciba.get()` takes either, `poll()` the
+  `auth_req_id` only. The id itself stays on a ping or push row
+  (`authReqId`) until the notification that must carry it is queued. `pending` →
   `approved` / `denied` → `redeemed`, and `expired`. Only the hinted person
   sees or answers it, and once.
 * **Poll** (section 10.1, the grant): `authorization_pending` (0656), and
@@ -4496,8 +4511,12 @@ presented.
 
 * **`device_authorization.ts` owns the device codes**, off by default
   (`oauth2.deviceAuthorization`, per realm) for CIBA's reason. A persisted
-  per-realm map, `oauth2.deviceCodes`: `d|<device_code>` to the record and
-  `u|<USER-CODE>` to the device code. An approval is recorded on
+  per-realm map, `oauth2.deviceCodes`: `d|<digest of the device_code>` to
+  the record and `u|<digest of the USER-CODE>` to the device code's digest
+  (#614), the user code normalised before it is hashed; the record holds the
+  two digests (`deviceKey`, `userCodeKey`) and neither code, and `create()`
+  hands the two codes back beside it for the response. A user code's digest
+  is reversible by enumeration (about 34.6 bits) and is hashed anyway. An approval is recorded on
   `/portal/device` (`portal/portal_device.ts`) with the approving session's
   id, acr, amr and auth_time, so the device's tokens end with that session.
   A redemption is a cluster claim, so one approval is one token response on
@@ -4555,7 +4574,13 @@ rcbj's answers were every recommendation:
   * dead letters retried by hand as a new generation;
   * retention and a row cap;
   * one summary line per realm;
-  * one sweep job per kind.
+  * one sweep job per kind;
+  * **what was sent leaves the row once it lands (#614)**: `finish()` turns
+    a `sent` row's `token` and `body` into `tokenDigest` and `bodyDigest`, so
+    a landed Logout Token, CIBA push (a whole token response) or Command
+    Token is not kept for the retention. Until then both stay, because a
+    retry must send the same bytes; a dead letter keeps both for an
+    operator's retry.
 
   Each KIND declares its own store (the realm rule: a store is per realm at
   its declaration) and supplies `prepare()`, and optionally `judge()`,
@@ -4886,7 +4911,8 @@ changing anything near it needs to know.
   header this service puts on EVERY response to a request carrying an
   attestation (section 6.2, refusals included), which is what makes single use
   workable: the client always holds the one it was handed last. Issued ones are
-  a persisted per-realm map (`oauth2.attestationChallenges`, a cache-registry
+  a persisted per-realm map (`oauth2.attestationChallenges`, keyed by each
+  challenge's digest since #614, a cache-registry
   row, ejected by the scheduler, expiry checked at the read); spent ones and
   each PoP's `jti` go in `common/used_assertions.js` (new format
   `attestation-challenge`, new use `client-attestation-pop`, the PoP keyed by
@@ -5501,3 +5527,29 @@ as a person's at mint (the subject kind is read off the grant), and the
 **None is left.** The RFC 9470 stand-in, `/oauth2/step-up/resource/:application`, was on this list until #593 (2026-10-12) deleted it — see 3an. So was the Provider Commands mock relying party, `/oauth2/commands/mock-rp`, until #596 moved it to the test peer — see 3bl.
 
 **`/dpop/nonce-mode` left the runtime with #597 (2026-10-12)**: deleted, both halves, and `oauth2.dpopNonceRequired` is set the same way in either mode (see *`POST /dpop/nonce-mode` IS PER REALM AND A TEST CONTROL*, above).
+
+## WHAT THIS FAMILY'S STORES KEEP OF A CREDENTIAL (#614, 2026-10-13)
+
+rcbj's rule on #614: **wherever it is feasible, a store keeps the base64url
+SHA-256 of a credential (`crypto.credentialDigest()`) and never the
+credential**, hashed at the moment it is minted or presented, so a heap
+snapshot, a replicated change or a sealed `sts_minted` row yields nothing that
+can be presented. No migration: a row of the old shape is not found under its
+new key and goes at its own expiry.
+
+| Store | Keyed by | What is still whole, and why |
+|---|---|---|
+| `oauth2.authzCodes` | the code's digest | nothing; the cluster claim (`oauth.code`) is handed the code and hashes on its own |
+| `oauth2.redeemedCodes` | the code's digest | the issued `jti`s; the WHOLE response only under `oauth2.codeReplayIdempotent`, which must resend it (`STS-OAUTH-0958` where there is none). The fingerprint's `code_verifier` is a digest too |
+| `oauth2.deviceCodes` | `d\|`/`u\|` + digest | nothing; the user code's digest is enumerable and hashed anyway |
+| `oauth2.cibaRequests` | the `auth_req_id`'s digest | `authReqId` on a ping/push row until its notification is queued (the body and the push ID Token carry it); `client_notification_token`, sent back as a Bearer |
+| `oauth2.pushedRequests` | the whole `request_uri`'s digest | nothing; the monitor's handle is that digest |
+| `dpop.issuedNonces`, `oauth2.attestationChallenges` | the value's digest | nothing |
+| `oauth2.claimSourceFlows` | the `state`'s digest | the PKCE verifier, sent to the provider's token endpoint |
+| `oauth2.backchannelDeliveries`, `oauth2.cibaDeliveries`, `oauth2.commandDeliveries` | (delivery id) | `token` and `body` until `sent`, then `tokenDigest`/`bodyDigest`; a dead letter keeps both for an operator's retry |
+
+Left whole elsewhere in this family, each for its reason: `request_object.ts`'s
+`requestUriCache` (the object is verified again on every pass); a refresh
+token, a `jti`, a grant id, a pairwise subject and a GNAP management handle are
+identifiers or are already digests; `consent_screen.pending`'s id is bound to
+the person's session and answers nothing without it.
