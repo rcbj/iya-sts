@@ -686,6 +686,17 @@ ldif or multi-cell service is unchanged.
     `entryBySpiffeSubject()`, `locateEntry()`'s `x509subject`, `objectFor()`'s
     `alsoNamed` (`byAttribute`), `peopleByMail()` (`byMail`),
     `peopleByFederationLink()`.
+  - **`entriesByUuids()` — `entryByUuid()` for MANY values (2026-10-14)**:
+    the resident index, then `withUuids`, one statement per 500 values, each
+    row taken as the store answered it (`findWindowed()`'s `readOnly`, no
+    `byKeys` per row). It answers the subject resolver's `namesFor()`, which
+    `admin_stats.js`'s `withSubjectsResolved()` asks once for every subject
+    of the held tokens and artifacts before `userKeys()`, `buildUserRows()`
+    or `holdingsOf()` files them. Each of those had asked `byUuid` once per
+    record — a synchronous round trip, repeated on every call for a subject
+    naming nobody — so `GET /admin-api/audit` (`knownUserKeys()`) took over a
+    second on a request worker and `sts_admin_closed_sets` outlived its
+    watchdog in the postgres modes (`tests/subjects_resolved_together.js`).
   - `eachHolderOfAny()` for a walk that acts only on holders of an attribute
     (`withAttribute`, paged): consent, claim-source tokens, self-issued
     subjects, federation links, claimed memberships, delegation flags, a

@@ -900,12 +900,14 @@ class DirectoryWindow {
    * @param predicate - the service's own rule, asked of each candidate
    * @param info - optional; `rows` is set to how many rows the store
    *   answered, before any was dropped, so a caller that asked with a limit
-   *   can tell a capped answer (#320)
+   *   can tell a capped answer (#320); `readOnly` takes each row as the
+   *   store answered it where this process holds nothing newer, as
+   *   `holdersAsync()` does, rather than reading it again by key
    * @returns `[{ key, entry }]`, in key order, local additions last
    */
   findWindowed(realmId: string, name: string, args: unknown[],
                predicate: (entry: Entry, key: string) => boolean,
-               info?: { rows?: number }):
+               info?: { rows?: number; readOnly?: boolean }):
       Array<{ key: string; entry: Entry }> {
     log.debug("Entering DirectoryWindow.findWindowed(). " + name);
     const out: Array<{ key: string; entry: Entry }> = [];
@@ -920,7 +922,16 @@ class DirectoryWindow {
         return;
       }
       seen.add(row.key);
-      const entry = this.getIn(realmId, row.key);
+      // READ ONLY (a batch of subjects resolved for a page, the audit
+      // log's among them): `getIn()` is a second synchronous round trip per
+      // row the window does not hold — `holdersAsync()`'s reason — and the
+      // row IS the store's answer, so it is taken unless this process holds
+      // something newer, and nothing is handed out or put in the LRU.
+      const ck = slotKey(realmId, row.key);
+      const entry = info && info.readOnly
+        ? (this.lru.peek(ck) || this.touched.get(ck) ||
+           this.liveGhost(ck) || this.slotFromRow(realmId, row)).entry
+        : this.getIn(realmId, row.key);
       if (entry && predicate(entry, row.key)) {
         out.push({ key: row.key, entry: entry });
       }

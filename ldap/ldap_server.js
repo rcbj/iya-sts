@@ -1593,7 +1593,9 @@ function eachResidentEntry(fn) {
 
 // The windowed entries matching a named question and `predicate`, or null
 // outside a windowed worker (the caller then walks as it always did).
-function windowedFind(name, args, predicate) {
+// `info` is `findWindowed()`'s: `readOnly` takes each row as the store
+// answered it.
+function windowedFind(name, args, predicate, info) {
   log.debug("Entering windowedFind(). " + name);
   if (!directoryWindow) {
     log.debug("Leaving windowedFind(). No window.");
@@ -1601,7 +1603,7 @@ function windowedFind(name, args, predicate) {
   }
   const realmId = realms.currentId();
   const found = directoryWindow.findWindowed(realmId, name,
-    [realmId].concat(args), predicate).map(function (hit) {
+    [realmId].concat(args), predicate, info).map(function (hit) {
     return hit.entry;
   });
   log.debug("Leaving windowedFind(). " + found.length + ".");
@@ -3678,42 +3680,11 @@ function entryByUuid(uuid) {
 function residentEntryByUuid(wanted) {
   log.debug("Entering residentEntryByUuid().");
   const cache = uuidIndexes();
-  const lookup = function () {
-    const key = cache.index ? cache.index.get(wanted) : null;
-    const stored = key ? entries.get(key) : null;
-    return stored && (entryUuidOf(stored) === wanted ||
-                      entryUuidAliasesOf(stored).indexOf(wanted) >= 0)
-      ? stored : null;
-  };
-  let found = lookup();
+  let found = uuidIndexLookup(cache, wanted);
   if (!found && (cache.dirty || !cache.index)) {
     uuidIndexCount.miss();
-    const index = new Map();
-    let collisions = 0;
-    // The RESIDENT entries in a windowed worker (#349): its people and
-    // devices are asked of the store below.
-    eachResidentEntry(function (entry, key) {
-      const value = entryUuidOf(entry);
-      if (value && !index.has(value)) {
-        index.set(value, key);
-      } else if (value && index.get(value) !== key) {
-        collisions += 1;
-      }
-    });
-    // An alias second, so a primary value always wins the slot.
-    eachResidentEntry(function (entry, key) {
-      entryUuidAliasesOf(entry).forEach(function (alias) {
-        if (!index.has(alias)) {
-          index.set(alias, key);
-        } else if (index.get(alias) !== key) {
-          collisions += 1;
-        }
-      });
-    });
-    cache.index = index;
-    cache.collisions = collisions;
-    cache.dirty = false;
-    found = lookup();
+    rebuildUuidIndex(cache);
+    found = uuidIndexLookup(cache, wanted);
   } else {
     // Answered by the index as it stood — found, or current and saying
     // nobody holds that UUID.
@@ -3741,6 +3712,138 @@ function uuidHolderOf(hits, wanted) {
   return hits.filter(function (entry) {
     return entryUuidOf(entry) === wanted;
   })[0] || hits[0] || null;
+}
+
+// The entry the RESIDENT UUID index names for a bare, lower-cased UUID, when
+// that entry still holds it — `entryByUuid()`'s check, so a hit on an entry
+// that left by a path that did not fold it out is a miss.
+function uuidIndexLookup(cache, wanted) {
+  log.debug("Entering uuidIndexLookup().");
+  const key = cache.index ? cache.index.get(wanted) : null;
+  const stored = key ? entries.get(key) : null;
+  const found = stored && (entryUuidOf(stored) === wanted ||
+                           entryUuidAliasesOf(stored).indexOf(wanted) >= 0)
+    ? stored : null;
+  log.debug("Leaving uuidIndexLookup().");
+  return found;
+}
+
+// The UUID index rebuilt from the resident entries: primaries first, then
+// aliases, so a primary value always wins the slot.
+function rebuildUuidIndex(cache) {
+  log.debug("Entering rebuildUuidIndex().");
+  const index = new Map();
+  let collisions = 0;
+  // The RESIDENT entries in a windowed worker (#349): its people and
+  // devices are asked of the store.
+  eachResidentEntry(function (entry, key) {
+    const value = entryUuidOf(entry);
+    if (value && !index.has(value)) {
+      index.set(value, key);
+    } else if (value && index.get(value) !== key) {
+      collisions += 1;
+    }
+  });
+  // An alias second, so a primary value always wins the slot.
+  eachResidentEntry(function (entry, key) {
+    entryUuidAliasesOf(entry).forEach(function (alias) {
+      if (!index.has(alias)) {
+        index.set(alias, key);
+      } else if (index.get(alias) !== key) {
+        collisions += 1;
+      }
+    });
+  });
+  cache.index = index;
+  cache.collisions = collisions;
+  cache.dirty = false;
+  log.debug("Leaving rebuildUuidIndex(). " + index.size + " value(s).");
+}
+
+// ---------------------------------------------------------------------------
+// MANY UUIDS AT ONCE, AND WHY (2026-10-14). In a windowed process a UUID the
+// resident index does not hold — every person's and every device's — was a
+// synchronous `byUuid` round trip, and `admin_stats.js` asks one for the
+// subject of EVERY token and artifact it holds whenever a page names the
+// holders (`userKeys()`, `buildUserRows()`, `holdingsOf()`): a subject naming
+// nobody (a person a test deleted) is asked again on every call. Thousands of
+// them made `GET /admin-api/audit` take over a second on a request worker,
+// and the closed-sets job, which asks it once per audit category and action,
+// three hundred times, was killed by its watchdog in the postgres modes.
+//
+// So the subjects are asked TOGETHER: the resident index first, as
+// `entryByUuid()` asks it, then what it does not hold `withUuids`, one
+// statement per `UUID_BATCH`, each row taken as the store answered it
+// (`findWindowed()`'s `readOnly`) — the same answers as one `entryByUuid()`
+// per value, a primary value before an alias.
+// ---------------------------------------------------------------------------
+const UUID_BATCH = 500;
+
+/**
+ * Finds the entries of the ambient realm holding each of a list of
+ * `entryUUID` values: `entryByUuid()` for many values, asking a windowed
+ * store one statement per `UUID_BATCH` values rather than one per value.
+ *
+ * @param uuids - the UUIDs, bare or `urn:uuid:`
+ * @returns a Map from each bare, lower-cased UUID asked to its entry, or null
+ */
+function entriesByUuids(uuids) {
+  log.debug("Entering entriesByUuids(). " + (uuids || []).length +
+            " value(s).");
+  const out = new Map();
+  (uuids || []).forEach(function (one) {
+    const wanted = String(one || '').trim().toLowerCase()
+      .replace(/^urn:uuid:/, '');
+    if (UUID_SHAPED.test(wanted)) {
+      out.set(wanted, null);
+    }
+  });
+  const cache = uuidIndexes();
+  const missing = function () {
+    return Array.from(out.keys()).filter(function (wanted) {
+      return out.get(wanted) === null;
+    });
+  };
+  out.forEach(function (unused, wanted) {
+    out.set(wanted, uuidIndexLookup(cache, wanted));
+  });
+  if (missing().length && (cache.dirty || !cache.index)) {
+    uuidIndexCount.miss();
+    rebuildUuidIndex(cache);
+    missing().forEach(function (wanted) {
+      out.set(wanted, uuidIndexLookup(cache, wanted));
+    });
+  } else if (out.size) {
+    uuidIndexCount.hit();
+  }
+  const asked = directoryWindow ? missing() : [];
+  for (let at = 0; at < asked.length; at += UUID_BATCH) {
+    const batch = asked.slice(at, at + UUID_BATCH);
+    const wanted = new Set(batch);
+    const hits = windowedFind('withUuids', [batch], function (entry) {
+      return wanted.has(entryUuidOf(entry)) ||
+        entryUuidAliasesOf(entry).some(function (alias) {
+          return wanted.has(alias);
+        });
+    }, { readOnly: true }) || [];
+    // A primary value before an alias, as `entryByUuid()` ranks them.
+    hits.forEach(function (entry) {
+      const value = entryUuidOf(entry);
+      if (wanted.has(value) && out.get(value) === null) {
+        out.set(value, entry);
+      }
+    });
+    hits.forEach(function (entry) {
+      entryUuidAliasesOf(entry).forEach(function (alias) {
+        if (wanted.has(alias) && out.get(alias) === null) {
+          out.set(alias, entry);
+        }
+      });
+    });
+  }
+  log.debug("Leaving entriesByUuids(). " + asked.length + " asked of the " +
+            "store.");
+  return out;
 }
 
 // A NEW PERSON IS GIVEN A LANGUAGE (#539). rcbj: "add a policy default per
@@ -5082,8 +5185,28 @@ function personNameOf(stored) {
   return String(name || '');
 }
 
+// MANY SUBJECTS AT ONCE (2026-10-14): `nameForSubject()` for each, through
+// `entriesByUuids()` — one statement per batch in a windowed process rather
+// than a round trip per subject. Keyed by the subject as given, trimmed and
+// lower-cased; a subject naming nobody, or something other than a person,
+// maps to ''.
+function namesForSubjects(subjects) {
+  log.debug('Entering namesForSubjects(). ' + (subjects || []).length +
+            ' subject(s).');
+  const out = new Map();
+  const found = entriesByUuids(subjects || []);
+  (subjects || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim().toLowerCase();
+    const stored = found.get(text.replace(/^urn:uuid:/, '')) || null;
+    out.set(text, stored && isPersonEntry(stored) ? personNameOf(stored) : '');
+  });
+  log.debug('Leaving namesForSubjects().');
+  return out;
+}
+
 helpers.setSubjectResolver({ subjectFor: subjectForName,
-                             nameFor: nameForSubject });
+                             nameFor: nameForSubject,
+                             namesFor: namesForSubjects });
 
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
 // are NOT escaped, because a value may legitimately contain one — `O=Example\,
@@ -24289,6 +24412,7 @@ module.exports = {
   // THE ENTRY UUID (2026-09-14): the lookups a person's `sub` and a SCIM id
   // go through, exported for SCIM and for the tests.
   entryByUuid: entryByUuid,
+  entriesByUuids: entriesByUuids,
   entryUuidOf: entryUuidOf,
   mergeCreateRace: mergeCreateRace,
   dnForResourceId: dnForResourceId,
