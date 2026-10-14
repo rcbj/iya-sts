@@ -709,6 +709,8 @@ function awaitCommitConfirmations(servedBy) {
       log.debug("Leaving resolve().");
     } };
     ticketWaiters.push(waiter);
+    // Counted (#626): a reader that actually waited, for stats().
+    ticketWaits++;
     setTimeout(function () {
       if (!done) {
         // SETTLED BEFORE ANYTHING ELSE, so that the release reapStuckTickets()
@@ -2109,6 +2111,9 @@ function receiveCommitted(entry, committed) {
     if (wasCurrent) {
       entry.generation = generation;
     }
+    // AND WHAT IT WAS (#626): windowed directory keys a write may be handed
+    // in place of the pull, or shared. See staleKeysFor().
+    noteWriteKinds(entry.pid, committed.windowedKeys);
   }
   // EVERY TICKET THIS WORKER OWED IS SATISFIED: it has just told us the
   // sequence its flush reached, and its flush covers everything it had
@@ -4602,9 +4607,12 @@ let localWritesSeen = -1;
  *
  * The first sample only sets the baseline.
  * @param written - this process's committed change-row count
+ * @param kinds - optional; `localWriteKinds()`'s answer, saying whether
+ *   those rows were only windowed directory rows (#626) — absent is
+ *   "shared", which sends the next write through the whole barrier
  * @returns true when the generation moved
  */
-function noteLocalWrites(written) {
+function noteLocalWrites(written, kinds) {
   log.debug("Entering noteLocalWrites().");
   if (!readYourWrite()) {
     log.debug("Leaving noteLocalWrites().");
@@ -4625,6 +4633,9 @@ function noteLocalWrites(written) {
   const added = count - localWritesSeen;
   localWritesSeen = count;
   generation++;
+  // WHAT THEY WERE (#626): this process's own rows are named like a
+  // worker's, under no worker's pid, so every worker is handed them.
+  noteWriteKinds(null, kinds && kinds.windowedKeys);
   log.debug('noteLocalWrites(): this process committed ' + added +
             ' change row(s) of its own; the generation is now ' + generation +
             ', so every worker catches up before it answers again.');
@@ -4647,6 +4658,232 @@ function localWriteCount() {
     // No store, or none that counts. Nothing to notice, which is the honest
     // answer for a process that cannot have written a change row.
     return 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// A DISPATCHED LDAP WRITE SKIPS THE CHANGE-LOG PULL WHERE THE PULL COULD NOT
+// CHANGE ITS ANSWER (#626, 2026-10-14).
+//
+// runOperation() sent every operation through the read barrier: the ticket
+// wait, then — when the worker was behind the generation — a `syncNow()` in
+// that worker, a change-log pull, before the handler ran. Under a bulk add
+// from several connections spread over several workers every add finds the
+// others ahead, so every add paid a pull first: two channel hops and two
+// or more store round trips, more with more workers.
+//
+// What those other workers wrote was, almost always, PEOPLE — rows of a
+// WINDOWED directory key (`ldap/directory_window.ts`: strictly under a
+// realm's `ou=users` or `ou=devices`). A worker reads such a key from the
+// store whenever it does not hold it, and since #351 a write is answered
+// only after its commit, so a key not held is never stale. The pull matters
+// for a key the worker DOES hold — its LRU, a copy handed out, an absence
+// it remembered — which may be older than the store. And for anything
+// that is not a windowed row at all: a group, a policy, a role, a realm, a
+// setting, a key set, a minted session, all of which a worker holds whole
+// and learns of only from the pull.
+//
+// So the barrier is narrowed, for a write, to exactly that:
+//
+//   * EVERY ANNOUNCEMENT SAYS WHAT IT COMMITTED (`commit_announcer.ts`,
+//     `windowedKeys`): the realm and key of each windowed directory row,
+//     when that is all it committed bar the per-process tallies the barrier
+//     never waited for (`minted-own`). Anything else — or an announcement
+//     that does not say — is SHARED and moves `lastSharedGeneration`. This
+//     process's own writes are classified the same way (`localWriteKinds()`).
+//   * THE KEYS ARE KEPT, a record per announcement (`keyLog`), until every
+//     protocol worker is past them; bounded, and a worker whose position
+//     has fallen off the front (`keyLogFloor`) is sent through the barrier.
+//   * A WRITE IN `BARRIER_FREE_WRITES` sent to a worker that is behind only
+//     on such rows — nothing shared since it last synced — is sent WITHOUT
+//     the pull, carrying the keys written by every OTHER process since it
+//     last synced or was last handed keys (`staleKeys`). The worker applies
+//     them before the handler runs (`persistence.applyStaleKeys()`): each
+//     row read by key and the held copy forgotten, or marked stale when it
+//     is busy there, with the directory's indexes told — the windowed branch
+//     of the pull's own applier, key for key. Where it cannot (no window, a
+//     store it cannot read) it pulls after all. Every operation that reaches
+//     the worker after that one waits for the keys (`request_worker.ts`).
+//   * EVERYTHING ELSE IS UNCHANGED. A read — search, compare, bind — takes
+//     the barrier as before; so does a write to a worker behind on anything
+//     shared, or with more than OPERATION_KEYS_LIMIT keys to apply. The
+//     ticket wait still runs first for a write: a ticket answered and not
+//     yet announced is a write whose kind nobody has been told. (An LDAP
+//     operation's announcement is sent before its answer on one ordered
+//     channel, so under an LDAP load nothing blocks and it does not wait.)
+//
+// **WHY THE ANSWER CANNOT DIFFER FROM THE BARRIER'S.** After the keys are
+// applied, the worker holds, for every row this node's processes announced
+// up to the generation the write was sent at, what the pull would have left
+// it holding: a windowed key it held is gone (or marked stale, exactly as
+// the pull marks a busy one), read from the store when next asked for, and
+// every other row is one it had already synced. What the pull would have
+// applied beyond that is another NODE's rows, which the generation never
+// covered (`cluster/CLAUDE.md`'s barrier is that one), and the per-process
+// tallies, which it never waited for. The uniqueness refusal is unchanged
+// on top of that: `claimingTheAdd()` still holds the DN and the names across
+// processes in the front process, and catches the front up after the claim.
+//
+// The worker is NOT counted as synced (`entry.generation` stays where it
+// was): it has applied keys, not the log, and an HTTP request answered there
+// is not gated behind them. `entry.keysThrough` records how far its keys go,
+// so the next write is handed only what is new.
+// ---------------------------------------------------------------------------
+const BARRIER_FREE_WRITES = { 'ldap.add': true, 'ldap.modify': true,
+                              'ldap.del': true, 'ldap.modifyDN': true };
+// The keys kept, at most; past it the oldest records go and the floor rises.
+const KEY_LOG_LIMIT = 4096;
+// The keys one write may be handed; past it the pull is the cheaper catch-up.
+const OPERATION_KEYS_LIMIT = 512;
+// The generation of the latest announced write that was not only windowed
+// directory rows.
+let lastSharedGeneration = 0;
+// `{ gen, pid, keys: [[realm, key], ...] }`, in generation order; `pid` is
+// the announcing worker's, or null for this process.
+let keyLog = [];
+let keyLogSize = 0;
+// No record at or below this generation is kept any longer.
+let keyLogFloor = 0;
+// How each write was sent (#626), for stats(): current, keyed or synced.
+let writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
+// Sync rounds started, every kind of caller, for stats().
+let syncRounds = 0;
+// Readers that waited on a ticket at all (#626), for stats().
+let ticketWaits = 0;
+// Where this process's own committed rows were last classified up to.
+let localChangeMark = null;
+let localChangeMarked = false;
+
+/**
+ * Records what an announced write committed (#626): its windowed directory
+ * keys, or — for anything else, or an announcement that does not say —
+ * that it was shared. Called just after the generation moved for it.
+ *
+ * @param pid - the announcing worker's pid, or null for this process
+ * @param keys - `[{ realm, key }]`, or anything else for "shared"
+ */
+function noteWriteKinds(pid, keys) {
+  log.debug("Entering noteWriteKinds().");
+  if (!Array.isArray(keys)) {
+    lastSharedGeneration = generation;
+    log.debug("Leaving noteWriteKinds(). Shared at " + generation + ".");
+    return;
+  }
+  const list = [];
+  keys.forEach(function (one) {
+    if (one && one.realm !== undefined && one.key) {
+      list.push([String(one.realm), String(one.key)]);
+    }
+  });
+  if (list.length) {
+    keyLog.push({ gen: generation, pid: pid, keys: list });
+    keyLogSize += list.length;
+    trimKeyLog();
+  }
+  log.debug("Leaving noteWriteKinds(). " + list.length + " key(s) at " +
+            generation + ".");
+}
+
+// How far a worker's windowed keys are current: synced, or handed keys.
+function keyPositionOf(entry) {
+  log.debug("Entering keyPositionOf().");
+  log.debug("Leaving keyPositionOf().");
+  return Math.max(Number(entry.generation) || 0,
+                  Number(entry.keysThrough) || 0);
+}
+
+// Drops the records every protocol worker is past, then the oldest past the
+// bound, raising the floor over each: a worker not past a dropped record
+// can no longer be handed it, and goes through the barrier.
+function trimKeyLog() {
+  log.debug("Entering trimKeyLog().");
+  let low = generation;
+  readyWorkers(PROTOCOL_POOL).forEach(function (one) {
+    low = Math.min(low, keyPositionOf(one));
+  });
+  while (keyLog.length &&
+         (keyLog[0].gen <= low || keyLogSize > KEY_LOG_LIMIT)) {
+    const gone = keyLog.shift();
+    keyLogSize -= gone.keys.length;
+    keyLogFloor = Math.max(keyLogFloor, gone.gen);
+  }
+  log.debug("Leaving trimKeyLog(). " + keyLog.length + " record(s).");
+}
+
+/**
+ * The keys a write may be sent with in place of the pull, or null when it
+ * must take the barrier (#626): a kind not in BARRIER_FREE_WRITES, a shared
+ * write since the worker last synced, a key log that no longer reaches
+ * back to where the worker is, or too many keys.
+ *
+ * @param entry - the worker's table entry
+ * @param kind - the operation kind
+ * @param wanted - the generation the write is sent at
+ * @returns `[{ realm, key }]` (possibly empty), or null
+ */
+function staleKeysFor(entry, kind, wanted) {
+  log.debug("Entering staleKeysFor(). kind=" + kind);
+  if (!BARRIER_FREE_WRITES[kind]) {
+    log.debug("Leaving staleKeysFor(). Not a write that may skip it.");
+    return null;
+  }
+  if (lastSharedGeneration > (Number(entry.generation) || 0)) {
+    log.debug("Leaving staleKeysFor(). Behind on a shared write.");
+    return null;
+  }
+  const from = keyPositionOf(entry);
+  if (keyLogFloor > from) {
+    log.debug("Leaving staleKeysFor(). The key log no longer reaches back.");
+    return null;
+  }
+  const seen = new Set();
+  const keys = [];
+  for (let i = 0; i < keyLog.length; i++) {
+    const record = keyLog[i];
+    // ITS OWN WRITES are in its memory already — the exemption
+    // blockedBelow() and receiveCommitted() make for the worker that wrote.
+    if (record.gen <= from || record.gen > wanted ||
+        record.pid === entry.pid) {
+      continue;
+    }
+    for (let k = 0; k < record.keys.length; k++) {
+      const ck = record.keys[k][0] + '\n' + record.keys[k][1];
+      if (!seen.has(ck)) {
+        seen.add(ck);
+        keys.push({ realm: record.keys[k][0], key: record.keys[k][1] });
+      }
+    }
+    if (keys.length > OPERATION_KEYS_LIMIT) {
+      log.debug("Leaving staleKeysFor(). Too many keys; the pull it is.");
+      return null;
+    }
+  }
+  log.debug("Leaving staleKeysFor(). " + keys.length + " key(s).");
+  return keys;
+}
+
+// What this process committed since it last asked, by kind (#626): the
+// first ask only sets the mark, as noteLocalWrites()'s first sample does.
+// Null — "shared" — when the store says nothing.
+function localWriteKinds() {
+  log.debug("Entering localWriteKinds().");
+  try {
+    const persistence = require('../persistence/persistence');
+    if (!localChangeMarked) {
+      localChangeMarked = true;
+      localChangeMark = persistence.committedChangeMark();
+      log.debug("Leaving localWriteKinds(). The mark is set.");
+      return { windowedKeys: [] };
+    }
+    const since = persistence.committedChangesSince(localChangeMark);
+    localChangeMark = since.mark;
+    log.debug("Leaving localWriteKinds().");
+    return since;
+  } catch (e) {
+    log.debug("Caught in localWriteKinds(): " + ((e && e.message) || e));
+    log.debug("Leaving localWriteKinds(). Unknown.");
+    // No store that classifies: anything this process wrote is shared.
+    return null;
   }
 }
 
@@ -4781,6 +5018,7 @@ function startSyncRound(entry, wanted) {
   log.debug('Entering startSyncRound(). pid=' + entry.pid + ' want=' +
             wanted);
   const id = nextSyncId++;
+  syncRounds++;
   const round = { wanted: wanted, settled: false, promise: null };
   // SET BEFORE THE MESSAGE IS SENT, because a channel that refuses it settles
   // the round synchronously below, and a round recorded after it had settled
@@ -5049,7 +5287,7 @@ function middleware(options) {
         // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
         // the generation is read — a bump after this line would be a bump this
         // request does not wait for. See noteLocalWrites().
-        noteLocalWrites(localWriteCount());
+        noteLocalWrites(localWriteCount(), localWriteKinds());
         const wanted = generation;
         if (entry.generation >= wanted) {
           proxy(entry, req, res, wanted, ticket);
@@ -6006,10 +6244,26 @@ function runOperation(kind, args, opts) {
     // has, so it is the process that mints a session at /tls/sign-in and
     // writes the Kerberos replay cache — and an LDAP operation is very often
     // the next thing that has to see it.
-    noteLocalWrites(localWriteCount());
+    noteLocalWrites(localWriteCount(), localWriteKinds());
     const wanted = generation;
+    const write = !!BARRIER_FREE_WRITES[kind];
     if (entry.generation >= wanted) {
+      if (write) {
+        writeBarriers.current++;
+      }
       return sendOperation(entry, kind, args, ticket, options.onPartial);
+    }
+    // A WRITE BEHIND ONLY ON WINDOWED ROWS IS HANDED THEIR KEYS AND NOT
+    // SENT THROUGH THE PULL (#626). See staleKeysFor()'s header.
+    const keys = staleKeysFor(entry, kind, wanted);
+    if (keys) {
+      writeBarriers.keyed++;
+      writeBarriers.keysSent += keys.length;
+      return sendOperation(entry, kind, args, ticket, options.onPartial,
+                           { keys: keys, through: wanted });
+    }
+    if (write) {
+      writeBarriers.synced++;
     }
     return barrier(entry, wanted).then(function () {
       return sendOperation(entry, kind, args, ticket, options.onPartial);
@@ -6019,8 +6273,11 @@ function runOperation(kind, args, opts) {
 
 // The send itself, split out so that the three paths above share one copy of
 // the bookkeeping. A ticket of 0 means read-your-write is off and there is
-// none.
-function sendOperation(entry, kind, args, ticket, onPartial) {
+// none. `stale`, for a write sent without the pull (#626), is the keys it
+// carries and the generation they bring the worker to — recorded only once
+// the message has gone, since a worker that never got them has applied
+// nothing.
+function sendOperation(entry, kind, args, ticket, onPartial, stale) {
   log.debug('Entering sendOperation(). kind=' + kind + ' pid=' + entry.pid);
   const id = nextOperationId++;
   const promise = new Promise(function (resolve, reject) {
@@ -6035,8 +6292,18 @@ function sendOperation(entry, kind, args, ticket, onPartial) {
   });
   entry.inFlight++;
   try {
-    entry.child.send({ operation: true, id: id, kind: kind, args: args,
-                       ticket: ticket });
+    /** @type {any} */
+    const message = { operation: true, id: id, kind: kind, args: args,
+                      ticket: ticket };
+    if (stale && stale.keys.length) {
+      message.staleKeys = stale.keys;
+    }
+    entry.child.send(message);
+    if (stale) {
+      entry.keysThrough = Math.max(Number(entry.keysThrough) || 0,
+                                   stale.through);
+      trimKeyLog();
+    }
   } catch (e) {
     log.debug("Caught in sendOperation(): " + ((e && e.message) || e));
     const pending = pendingOperations.get(id);
@@ -6473,6 +6740,16 @@ function stats() {
     }),
     readYourWrite: readYourWrite(),
     generation: generation,
+    // SYNC ROUNDS STARTED, every caller (the change-log pulls the barrier
+    // asked workers for), and HOW EACH WRITE WAS SENT (#626): `current`
+    // (nothing to catch up on), `keyed` (handed `keysSent` keys in place of
+    // the pull) or `synced` (the barrier, as every write before #626).
+    syncRounds: syncRounds,
+    writes: { current: writeBarriers.current, keyed: writeBarriers.keyed,
+              synced: writeBarriers.synced, keysSent: writeBarriers.keysSent,
+              lastSharedGeneration: lastSharedGeneration,
+              keyLog: { records: keyLog.length, keys: keyLogSize,
+                        floor: keyLogFloor } },
     // THE BATCH LANE per pool: in flight, waiting, the cap, which workers are
     // in the lane, and how many were ever queued, refused or timed out.
     batch: batchStats(),
@@ -6500,7 +6777,10 @@ function stats() {
                // READERS HELD RIGHT NOW. A number that stays large once
                // nothing is being written is the waiter leak
                // releaseTicketWaiters() describes, come back.
-               waiters: ticketWaiters.length - settledWaiters },
+               waiters: ticketWaiters.length - settledWaiters,
+               // READERS THAT WAITED AT ALL, ever (#626): a reader with
+               // nothing blocking it is not counted.
+               waited: ticketWaits },
     dispatch: dispatchPrefixes(),
     affinities: affinities[PROTOCOL_POOL].size,
     socketDir: socketDir,
@@ -6553,6 +6833,16 @@ function reset() {
   ticketWaiters = [];
   settledWaiters = 0;
   reaped = 0;
+  // And what each write was and how it was sent (#626).
+  lastSharedGeneration = 0;
+  keyLog = [];
+  keyLogSize = 0;
+  keyLogFloor = 0;
+  writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
+  syncRounds = 0;
+  ticketWaits = 0;
+  localChangeMark = null;
+  localChangeMarked = false;
   // And the batch lane's counts and queue, for the same reason.
   batchState.forEach(function (state) {
     state.waiting.forEach(function (entry) { clearTimeout(entry.timer); });
@@ -6647,6 +6937,10 @@ module.exports = {
   describeTicket: describeTicket,
   awaitCommitConfirmations: awaitCommitConfirmations,
   receiveCommitted: receiveCommitted,
+  // What a write may be handed in place of the pull (#626), for
+  // tests/request_write_barrier.js.
+  staleKeysFor: staleKeysFor,
+  BARRIER_FREE_WRITES: BARRIER_FREE_WRITES,
   // THE SYNC HALF OF THE BARRIER AND THE PROXY, exported for the same file
   // (2026-09-13): that one sync round per worker is shared by every reader it
   // covers is a decision about promises and an IPC `send`, and that a client

@@ -1708,6 +1708,12 @@ const CODES = [
       'no key is destroyed on it. The jobs index those entries a bounded ' +
       'batch per pass, once (#623).',
     spec: 'none — the count job and the re-encryption job wait' },
+  { code: 'STS-STORE-0081',
+    summary: 'A request worker could not read, by key, the directory rows ' +
+      'another worker had written that a dispatched LDAP write was handed ' +
+      'in place of the read barrier\'s change-log pull (#626), so it ' +
+      'pulled the whole change log instead, as every write did before.',
+    spec: 'none — the write waits for the pull and is answered as before' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
