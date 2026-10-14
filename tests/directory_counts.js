@@ -31,9 +31,13 @@
 //      test may build a schema in (an owner): rows written before the
 //      counters exist are counted once, then eight concurrent connections
 //      insert, upsert, update, delete, roll back and roll back to a
-//      savepoint, and every counter equals a fresh count with no delta left
-//      behind. Skipped (and said) otherwise; the in-process suite has no
-//      database.
+//      savepoint, and every counter — its shards summed (#630) — equals a
+//      fresh count with no delta left behind, the folds landed in more than
+//      one shard, and `count()` reads the sum. Skipped (and said)
+//      otherwise; the in-process suite has no database.
+//   E. WHAT AN OLDER STORE IS OWED (#630): open() runs SCHEMA_UPGRADES'
+//      owed steps before the routines — required ones for any role,
+//      advisory ones for the table's owner only — and nothing not owed.
 // ===========================================================================
 
 const postgres = require('../persistence/persistence_postgres');
@@ -291,6 +295,74 @@ async function theOpen(t) {
   log.debug("Leaving theOpen().");
 }
 
+// E. WHAT AN OLDER STORE IS OWED (#630): open() probes SCHEMA_UPGRADES in
+// one query, runs every owed step's statements — a required one whoever the
+// role is, an advisory one only for the table's owner — before the
+// routines, and runs nothing for a step not owed.
+async function theUpgrades(t) {
+  log.debug("Entering theUpgrades().");
+  t.log.info('=== E. open() runs what an older store is owed ===');
+  const steps = postgres.SCHEMA_UPGRADES;
+  const runOpen = async function (owed, owner) {
+    const statements = [];
+    const driver = driverWith(statements, function (sql) {
+      if (/^SELECT \(/.test(sql) && /AS u0/.test(sql)) {
+        const row = {};
+        steps.forEach(function (step, i) {
+          row['u' + i] = owed(step);
+          row['o' + i] = owner;
+        });
+        return [row];
+      }
+      if (/to_regclass/.test(sql)) {
+        return [{}];
+      }
+      return undefined;
+    });
+    await driver.open();
+    return statements.map(function (one) { return one.sql; });
+  };
+  const all = function () { return true; };
+  const asOwner = await runOpen(all, true);
+  const everyStatement = [].concat.apply([], steps.map(function (step) {
+    return step.statements;
+  }));
+  t.check(everyStatement.every(function (sql) {
+    return asOwner.indexOf(sql) >= 0;
+  }), 'E1. the owner runs every owed step', '');
+  const firstRoutine = asOwner.findIndex(function (sql) {
+    return /^CREATE OR REPLACE FUNCTION/.test(sql);
+  });
+  const lastStep = Math.max.apply(null, everyStatement.map(function (sql) {
+    return asOwner.indexOf(sql);
+  }));
+  t.check(firstRoutine > lastStep,
+          'E2. before the routines — the old folds go before the new arrive',
+          JSON.stringify({ lastStep: lastStep, firstRoutine: firstRoutine }));
+  const notOwner = await runOpen(all, false);
+  steps.forEach(function (step) {
+    const ran = step.statements.every(function (sql) {
+      return notOwner.indexOf(sql) >= 0;
+    });
+    t.check(step.advisory ? !ran : ran,
+            'E3. a role that is not the owner ' + (step.advisory
+              ? 'skips the advisory ' : 'still runs the required ') +
+            step.name, '');
+  });
+  const none = await runOpen(function () { return false; }, true);
+  t.check(!everyStatement.some(function (sql) {
+    return none.indexOf(sql) >= 0;
+  }), 'E4. a store owed nothing is sent none of it');
+  t.check(steps.filter(function (s) { return !s.advisory; }).map(
+    function (s) { return s.name; }).sort().join(',') ===
+    ['sts_ldap_count_deltas_fold', 'sts_ldap_count_fold',
+     'sts_ldap_counts_shard_key', 'sts_ldap_dek_counts_shard_key',
+     'sts_ldap_dek_deltas_fold', 'sts_ldap_dek_fold'].sort().join(','),
+          'E5. the key swaps and the old folds are REQUIRED; the tunings ' +
+          'are advisory');
+  log.debug("Leaving theUpgrades().");
+}
+
 // D. A REAL DATABASE, when one is named.
 async function realDatabase(t) {
   log.debug("Entering realDatabase().");
@@ -340,8 +412,9 @@ async function realDatabase(t) {
       const wrong = await admin.query(
         'SELECT coalesce(c.base_key, x.base_key) AS base, ' +
         'coalesce(c.attribute, x.attribute) AS attr, c.n AS kept, ' +
-        'x.n AS counted FROM (SELECT realm, base_key, attribute, n FROM ' +
-        'sts_ldap_counts WHERE n <> 0) AS c FULL JOIN (SELECT e.realm, ' +
+        'x.n AS counted FROM (SELECT realm, base_key, attribute, sum(n) ' +
+        'AS n FROM sts_ldap_counts GROUP BY 1, 2, 3 HAVING sum(n) <> 0) ' +
+        'AS c FULL JOIN (SELECT e.realm, ' +
         'b.base_key, a.attribute, count(*) AS n FROM sts_ldap_entries AS e ' +
         'CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key) AS ' +
         'b(base_key) CROSS JOIN LATERAL (SELECT \'\' AS attribute UNION ALL ' +
@@ -428,6 +501,22 @@ async function realDatabase(t) {
     }));
     await verify('D3. after eight concurrent connections wrote, deleted, ' +
                  'upserted, rolled back');
+    // THE SHARDS (#630): eight connections folded into the shards of their
+    // own process ids, and what a reader asks is their sum.
+    const spread = await admin.query(
+      'SELECT count(DISTINCT shard)::int AS shards, max(shard)::int AS top ' +
+      'FROM sts_ldap_counts');
+    t.check(spread.rows[0].shards > 1 &&
+            spread.rows[0].top < postgres.COUNT_SHARDS,
+            'D3a. the folds landed in more than one shard, each below ' +
+            postgres.COUNT_SHARDS, JSON.stringify(spread.rows[0]));
+    const fresh = await admin.query(
+      'SELECT count(*)::int AS n FROM sts_ldap_entries WHERE realm = ' +
+      '\'default\' AND parent_key = $1', [USERS]);
+    const read = await admin.query(queries.count('default', USERS).text,
+                                   queries.count('default', USERS).values);
+    t.equal(Number(read.rows[0].n), fresh.rows[0].n,
+            'D3b. count() — the summed shards — equals a fresh count');
     await admin.query('DELETE FROM sts_ldap_entries WHERE realm = \'acme\'');
     await verify('D4. after a realm\'s rows were deleted');
   } finally {
@@ -450,6 +539,7 @@ async function run(t) {
   statementsShape(t);
   theWindow(t);
   await theOpen(t);
+  await theUpgrades(t);
   await realDatabase(t);
   log.debug("Leaving run().");
 }

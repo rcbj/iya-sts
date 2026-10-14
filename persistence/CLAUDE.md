@@ -633,7 +633,9 @@ everything after it. That single fact makes every hard part easy: a listener
 that dropped for four seconds misses nothing, the 8000-byte `pg_notify` limit
 stops mattering because the payload is a POINTER and never a row, and the
 database can restart underneath it. So `LISTEN`/`NOTIFY` stays exactly what it
-was — a nudge that wakes the poll early — and is allowed to be lossy.
+was — a nudge that wakes the poll early — and is allowed to be lossy. Since
+#630 it is sent after the COMMIT and coalesced, one a 25 ms window per
+process (*What the write path waited on*, below).
 
 **THAT IS THE ARGUMENT `xacml-pep/` ALREADY MAKES ABOUT ITS OWN PULL**, and
 citing it is the point rather than a flourish: this repository has run that
@@ -2162,6 +2164,84 @@ interval is `INDEX_CATCHUP_MS` (five minutes) while the last pass left
 entries unindexed — ten seconds of the front process in every three hundred,
 about five hours at 2.9M — and an hour again once it is complete.
 `tests/data_key_rotation.js` K5 and K6.
+
+### What the write path waited on, measured, and taken out (#630, schema version 19)
+
+From 8081 under the LDAP bulk load (`load-users/dbperf/` on the host; a
+pgbench replay of one add's statements against a copy of that database).
+Each item is a lock or a write every add paid that bought nothing:
+
+* **THE NOTIFY GOES OUT AFTER THE COMMIT, AND AT MOST ONE A 25 MS WINDOW.**
+  A transaction that has called `pg_notify` takes the server's notify-queue
+  lock at COMMIT and holds it through its WAL flush, so every writing
+  transaction of every process committed one after another: `Lock:object`
+  at COMMIT held 0.34–0.58 backends, and the replay went from 42 to 108
+  adds/s with the notify moved out. `recordChanges()` now holds a
+  transaction's kinds against its client beside its rows (`written`'s
+  arrangement, counted at commit), and `transactionOnce()` hands them to
+  `announce()` once COMMIT returns. `announce()` sends at once when the
+  last notify is a window old, and otherwise joins the one notify the
+  window's end sends (the union of kinds, the sum of rows), on the pool.
+  **Nothing about correctness moved**: the change-log row is still written
+  in the transaction, a rolled-back transaction still wakes nobody, and a
+  nudge lost between a COMMIT and its notify (the process died, the pool
+  refused) is a lost nudge, which the poll was always the answer to. The
+  timer is a debounce armed by a commit — never self-re-arming, so not a
+  scheduler job — and `close()` sends a nudge still due before the pool
+  ends. `tests/notify_after_commit.js` counts it.
+* **THE COUNTERS ARE SHARDED.** With the notify gone, every add still
+  updated four `sts_ldap_counts` rows and one `sts_ldap_dek_counts` row at
+  its COMMIT, the same rows for every add of a realm, and the replay's
+  ceiling was those row locks (`Lock:transactionid` at 4.4 backends, 104
+  adds/s; 326 with sixteen shards). `shard` is in both keys and the folds
+  (`sts_ldap_count_fold_sharded()`, `sts_ldap_dek_fold_sharded()`) add to
+  `pg_backend_pid() % 16`; `count()`, `countHolding()` and
+  `directoryDekCounts()` sum. **New routine NAMES, because routines are
+  probed by name**: a new body under `sts_ldap_count_fold` would never reach
+  a store that has the old one. The old trigger and function are
+  SCHEMA_UPGRADES' to drop, in the same transaction that creates the new
+  ones, so no commit ever sees both folds (which would race for a
+  transaction's deltas) or neither.
+* **`sts_minted` UPDATES ARE HOT.** 2.2 updates an add, 0% HOT: every upsert
+  sets `written_at = now()`, and the btree on it made each update a new row
+  version on a new page with an entry in every index. The btree is a BRIN
+  now (`sts_minted_written_brin`) — a summarizing index, which PostgreSQL 16
+  and later leave out of the HOT decision — and the fillfactor is 80, so
+  the next version fits on the page: 99% HOT in the replay and about nine
+  fewer WAL records an add. **What it costs the sweeps** (`purgeTombstones()`,
+  `purgeMinted()`, the 'orphan' and 'stale' batches of the expiry purge, the
+  only readers of `written_at`): a BRIN range only widens as its rows are
+  rewritten, so on a churned table `written_at < x` reads most ranges, and a
+  sweep tends towards a scan of the table — off the request path, in
+  batches, on the scheduler. `sts_minted_expires` is still a btree; an
+  `expires_at` that moves (a sliding session) makes that update non-HOT,
+  and the purge it serves needs the ordered index.
+* **AUTOVACUUM PER TABLE**: `sts_changes` at a 2% scale factor and a cost
+  limit of 2000 (its workers sat in `VacuumDelay` with 287,263 dead rows
+  waiting), and `sts_ldap_entries` at an insert scale factor of 1% (it
+  waited for about 600,000 inserts at 2.9M rows).
+
+**SCHEMA_UPGRADES** (new with this version) is how an older store is owed
+more than a missing object or column: a primary key that takes in `shard`,
+routines replaced under new names, an index retired, storage parameters.
+Each step is probed by a SQL condition in one query and run where owed,
+after the columns and before the routines, in `open()`'s one transaction. A
+required step a role may not take fails the open (STS-STORE-0029, as a
+missing object does); an advisory one (the storage parameters and the
+retired btree) is skipped and logged (STS-STORE-0083), because it is a cost
+and never a wrong answer. `postgres/schema.sql` carries every statement and
+condition, and `tests/postgres_schema.js` holds the two together. It runs
+after #618's SCHEMA_RELOPTIONS and SCHEMA_RETIRED, which it is the general
+form of: `sts_minted_written` is retired here rather than there because
+dropping it is a tuning a non-owner may skip, where #618's retired GIN
+indexes are dropped by whoever may — so `checkTheRetiredAgree()` counts the
+script's `DROP INDEX` statements against both lists.
+
+**An existing store needs two things**: `postgres/schema.sql` run again as
+the owner (the shards, the routines, the BRIN, the storage parameters and
+`pg_stat_statements`; the service's own role is refused at start with
+STS-STORE-0029 until then), and the compose stack's postgres restarted for
+its new server settings (`postgres/CLAUDE.md`).
 
 ### The schema version moved to 2
 

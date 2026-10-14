@@ -37,7 +37,8 @@
 //      column no longer holds is refused rather than answered "nobody".
 //   D. THE SCHEMA: the two indexes are PARTIAL, GIN with the default
 //      operator class, on exactly the builders' expressions; the two they
-//      replace are retired, not in SCHEMA_OBJECTS; the version is 18.
+//      replace are retired, not in SCHEMA_OBJECTS; the version is 18 or
+//      later.
 //
 // WHAT NEEDS A REAL POSTGRES — that the planner USES each index for each
 // query, and what the per-insert cost is — was measured on a copy of
@@ -296,7 +297,10 @@ function schema(t) {
     return !byName(name);
   }), 'D4. the two indexes they replace are retired and no longer created',
           JSON.stringify(retired));
-  t.equal(postgres.SCHEMA_VERSION, 18, 'D5. the schema version is 18');
+  // 18 brought these indexes; a later version keeps them (#630 is 19).
+  t.check(postgres.SCHEMA_VERSION >= 18,
+          'D5. the schema version is 18 or later',
+          String(postgres.SCHEMA_VERSION));
   log.debug("Leaving schema().");
 }
 

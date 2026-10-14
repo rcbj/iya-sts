@@ -1720,6 +1720,13 @@ const CODES = [
       'time; nothing is dropped on a failed read, and the next change-log ' +
       'pull tries again a minute later (#618).',
     spec: 'none — the fan-in keeps what it held' },
+  { code: 'STS-STORE-0083',
+    summary: 'The store is owed a tuning of schema version 19 (#630) — a ' +
+      'table\'s storage parameters, or the retired btree on ' +
+      'sts_minted.written_at — and the role this service dials with does ' +
+      'not own the table to make it. Nothing is wrong without it, only ' +
+      'slower: run postgres/schema.sql as the owner.',
+    spec: 'none — the store opens without it' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

@@ -183,6 +183,14 @@ async function theCount(t) {
           'directory\'s kept counter', JSON.stringify(counts));
   const all = await driver.countAllSealed();
   t.check(all.dekAAAAAAA >= 7, 'C2. countAllSealed() too', JSON.stringify(all));
+  // THE SHARDS (#630): a key's count is the sum of its rows, one a shard.
+  const reads = statements.filter(function (one) {
+    return /FROM sts_ldap_dek_counts/.test(one.sql);
+  });
+  t.check(reads.length > 0 && reads.every(function (one) {
+    return /sum\(n\)/.test(one.sql) && /GROUP BY dek_id/.test(one.sql);
+  }), 'C2a. every read of sts_ldap_dek_counts sums a key\'s shards',
+          JSON.stringify(reads.map(function (one) { return one.sql; })));
   const walks = walksIn(statements);
   t.equal(walks.length, 0, 'C3. NO STATEMENT READ AN ENTRY: the directory ' +
           'is counted from sts_ldap_dek_counts (it was every row, opened)',
@@ -328,7 +336,8 @@ async function realDatabase(t) {
     const verify = async function (what) {
       const wrong = await admin.query(
         'SELECT coalesce(c.dek_id, x.k) AS id, c.n AS kept, x.n AS summed ' +
-        'FROM (SELECT dek_id, n FROM sts_ldap_dek_counts WHERE n <> 0) AS c ' +
+        'FROM (SELECT dek_id, sum(n) AS n FROM sts_ldap_dek_counts GROUP ' +
+        'BY dek_id HAVING sum(n) <> 0) AS c ' +
         'FULL JOIN (SELECT d.key AS k, sum(d.value::bigint) AS n FROM ' +
         'sts_ldap_entries AS e CROSS JOIN LATERAL jsonb_each_text(' +
         'e.dek_keys) AS d WHERE e.dek_keys IS NOT NULL GROUP BY d.key) AS x ' +
@@ -360,8 +369,10 @@ async function realDatabase(t) {
     await admin.query('DELETE FROM sts_ldap_entries WHERE dn_key LIKE ' +
                       '\'uid=new%\'');
     await verify('F6. after a delete');
-    const zero = await admin.query('SELECT n FROM sts_ldap_dek_counts ' +
-                                   'WHERE dek_id = \'dekBBBBBBB\'');
+    // The key's shards summed (#630): one shard alone is not a count.
+    const zero = await admin.query('SELECT sum(n) AS n FROM ' +
+                                   'sts_ldap_dek_counts WHERE dek_id = ' +
+                                   '\'dekBBBBBBB\'');
     t.equal(Number((zero.rows[0] || {}).n || 0), 0,
             'F7. a key nothing holds a value under any more counts 0');
   } finally {

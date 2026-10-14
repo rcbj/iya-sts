@@ -24,6 +24,21 @@ services:
       bash -c '/usr/local/bin/generate-tls.sh &&
       exec docker-entrypoint.sh postgres
       -c max_connections=200
+      -c shared_buffers=${STS_POSTGRES_SHARED_BUFFERS:-2GB}
+      -c max_wal_size=8GB
+      -c checkpoint_timeout=15min
+      -c wal_compression=lz4
+      -c max_parallel_workers_per_gather=0
+      -c track_io_timing=on
+      -c shared_preload_libraries=pg_stat_statements,auto_explain
+      -c pg_stat_statements.track=all
+      -c pg_stat_statements.max=10000
+      -c auto_explain.log_min_duration=200ms
+      -c auto_explain.log_analyze=on
+      -c auto_explain.log_timing=off
+      -c auto_explain.log_buffers=on
+      -c auto_explain.log_nested_statements=on
+      -c log_lock_waits=on
       -c ssl=on
       -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
       -c ssl_key_file=/var/lib/postgresql/tls/server.key'

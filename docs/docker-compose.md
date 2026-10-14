@@ -216,6 +216,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `ADMIN_API_CLIENT_SECRET` | unset (generated) | Fixes the management API client's secret. It is given to the seeder, which stores it in OpenBao; the service never sees it in its environment. See [Management API](management-api.md). |
 | `ADMIN_API_AUDIENCE`, `ADMIN_API_AUTH_REQUIRED` | unset | Passed through to the service when set |
 | `PKI_DISTRIBUTION_BASE_URL` | empty | The base URL certificates name for CRL and OCSP, when the stack is reached by a host name rather than `localhost` ([PKI](pki.md)) |
+| `STS_POSTGRES_SHARED_BUFFERS` | `2GB` | The database's `shared_buffers`. Lower it on a small machine; see [the database's settings](#the-databases-settings) |
 | `STS_DB_APP_USER`, `STS_DB_APP_PASSWORD` | `sts_app`, `sts_app` | The database role the service uses. If you change the user, change it in `STS_DATABASE_URL` too. |
 | `STS_BAO_SEAL_KEY`, `STS_BAO_SEAL_KEY_ID` | a fixed demonstration key, `sts` | OpenBao's unseal key: base64 of exactly 32 bytes |
 | `STS_BAO_PRINT_CREDENTIALS` | `true` | Whether the seeder prints the operator token, and on the first run the recovery key |
@@ -294,6 +295,28 @@ only its own credentials afterwards.
 
 [Configuration](configuration.md) lists every setting and its environment
 variable.
+
+## The database's settings
+
+The `postgres` service starts the server with these settings, on its command
+line. They come from measuring the service under an LDAP bulk load (#630).
+They apply when the container starts, so an existing stack takes them at its
+next restart; nothing in the volume changes.
+
+| Setting | Value | Why |
+|---|---|---|
+| `shared_buffers` | `2GB` (`STS_POSTGRES_SHARED_BUFFERS`) | The default 128 MB held little of a multi-gigabyte directory |
+| `max_wal_size`, `checkpoint_timeout` | `8GB`, `15min` | Checkpoints ran because the WAL filled, not on time |
+| `wal_compression` | `lz4` | An add wrote several full-page images |
+| `max_parallel_workers_per_gather` | `0` | Parallel plans tripled the CPU of the service's small lookups |
+| `track_io_timing`, `log_lock_waits` | `on` | Time spent on I/O and lock waits, in the statistics and the log |
+| `shared_preload_libraries` | `pg_stat_statements,auto_explain` | Statement statistics, and the plan of any statement over 200 ms written to the log (with buffers, without per-node timing) |
+
+`postgres/schema.sql` creates the `pg_stat_statements` view. Query it as the
+owner (`docker compose exec postgres psql -U sts -d sts -c 'SELECT … FROM
+pg_stat_statements …'`). The service's own role, `sts_app`, is not given the
+right to read other roles' statements. Its plans arrive in the container's
+log (`docker compose logs postgres`).
 
 ## Things to know before relying on it
 

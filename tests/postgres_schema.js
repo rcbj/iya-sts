@@ -143,8 +143,10 @@ function checkTheDdlAgrees(t, sql) {
   // EXISTS` reaches only a new database — the driver's and the script's have
   // to be the same statement, or re-running the script leaves an old database
   // a column short of what the driver reads.
+  // ADD COLUMN only: since #630 the script also sets storage parameters
+  // and swaps two keys, which are SCHEMA_UPGRADES' (checkTheUpgradesAgree).
   const alters = statementsIn(sql).filter(function (statement) {
-    return /^ALTER TABLE/i.test(statement);
+    return /^ALTER TABLE \S+ ADD COLUMN/i.test(statement);
   });
   const columns = (driver.SCHEMA_COLUMNS || []).map(function (one) {
     return normalize(one.statement);
@@ -225,6 +227,93 @@ function checkTheRoutinesAgree(t, sql) {
   log.debug("Leaving checkTheRoutinesAgree().");
 }
 
+// WHAT AN OLDER STORE IS OWED BEYOND AN OBJECT OR A COLUMN (#630, schema
+// version 19): every statement of every SCHEMA_UPGRADES step, and the
+// condition it runs under where the script has one, is in the script — so
+// an owner's run of it and the driver's own open() bring a store to the
+// same shape. And the shapes this version is for, named: the counters'
+// keys hold `shard`, the folds add to it, readers sum it; `sts_minted`'s
+// `written_at` index is a BRIN (no btree left to block HOT) at fillfactor
+// 80; and the change log and the directory carry their autovacuum
+// parameters.
+function checkTheUpgradesAgree(t, sql) {
+  log.debug("Entering checkTheUpgradesAgree().");
+  const text = normalize(sql.split('\n').filter(function (line) {
+    return !/^\s*--/.test(line) && !/^\s*\\/.test(line);
+  }).join('\n'));
+  const steps = driver.SCHEMA_UPGRADES || [];
+  t.check(steps.length > 0, 'the driver declares SCHEMA_UPGRADES');
+  steps.forEach(function (step) {
+    step.statements.forEach(function (statement) {
+      t.check(text.indexOf(normalize(statement)) >= 0,
+              'postgres/schema.sql carries ' + step.name + ': ' +
+              normalize(statement).slice(0, 70), statement);
+    });
+    if (/KEY|shard_key/i.test(step.name)) {
+      t.check(text.indexOf('IF ' + normalize(step.when) + ' THEN') >= 0,
+              'and runs ' + step.name + ' under the driver\'s condition',
+              step.when);
+    }
+  });
+  const named = function (re, what) {
+    t.check(re.test(text), what, String(re));
+  };
+  named(/PRIMARY KEY \(realm, base_key, attribute, shard\)\)/,
+        'sts_ldap_counts is created with shard in its key');
+  named(/PRIMARY KEY \(dek_id, shard\)\)/,
+        'sts_ldap_dek_counts is created with shard in its key');
+  named(/ON CONFLICT \(realm, base_key, attribute, shard\)/,
+        'the count fold adds to a shard');
+  named(/ON CONFLICT \(dek_id, shard\)/, 'the data-key fold adds to a shard');
+  named(/USING brin \(written_at\)/,
+        'sts_minted.written_at is indexed by a BRIN, which leaves HOT alone');
+  t.check(!/ON sts_minted \(written_at\)/.test(text) &&
+          !driver.SCHEMA.some(function (statement) {
+            return /ON sts_minted \(written_at\)/.test(statement);
+          }), 'and by no btree, in the script or the driver');
+  named(/DROP INDEX IF EXISTS sts_minted_written;/,
+        'the btree an older store has is dropped');
+  named(/ALTER TABLE sts_minted SET \(fillfactor=80\)/,
+        'sts_minted is at fillfactor 80 — the minted-HOT reloption');
+  named(/ALTER TABLE sts_changes SET \(autovacuum_vacuum_scale_factor=0\.02, autovacuum_vacuum_cost_limit=2000\)/,
+        'sts_changes carries its autovacuum parameters');
+  named(/ALTER TABLE sts_ldap_entries SET \(autovacuum_vacuum_insert_scale_factor=0\.01\)/,
+        'sts_ldap_entries carries its insert-vacuum parameter');
+  named(/DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON sts_ldap_count_deltas; DROP FUNCTION IF EXISTS sts_ldap_count_fold\(\);/,
+        'the unsharded count fold is dropped before the sharded one arrives');
+  named(/DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold ON sts_ldap_dek_deltas; DROP FUNCTION IF EXISTS sts_ldap_dek_fold\(\);/,
+        'and so is the unsharded data-key fold');
+  // The driver's reloption probes name the parameters its statements set.
+  steps.filter(function (step) {
+    return /SET \(/.test(step.statements.join(' '));
+  }).forEach(function (step) {
+    const set = /SET \((.*)\)/.exec(step.statements[0])[1].split(/,\s*/);
+    set.forEach(function (one) {
+      t.check(step.when.indexOf('\'' + one + '\'') >= 0,
+              step.name + ' probes for ' + one + ', as it sets it',
+              step.when);
+    });
+  });
+  // AND THE OTHER WAY ROUND: every storage parameter the script sets, and
+  // every index or routine it drops, is a step the driver takes too — or a
+  // store the driver brings level is slower than one the script did.
+  const driverStatements = [].concat.apply([], steps.map(function (step) {
+    return step.statements.map(normalize);
+  }));
+  statementsIn(sql).filter(function (statement) {
+    return /^ALTER TABLE \S+ SET \(/.test(statement) ||
+      /^DROP (INDEX|FUNCTION) IF EXISTS sts_(minted_written|ldap_count_fold|ldap_dek_fold)\b/
+        .test(statement);
+  }).forEach(function (statement) {
+    t.check(driverStatements.indexOf(statement) >= 0,
+            'the driver takes the script\'s ' + statement.slice(0, 70),
+            JSON.stringify(driverStatements));
+  });
+  t.check(text.indexOf('CREATE EXTENSION IF NOT EXISTS pg_stat_statements') >=
+            0, 'the script creates pg_stat_statements');
+  log.debug("Leaving checkTheUpgradesAgree().");
+}
+
 // WHAT A LATER VERSION REPLACED (#618 phase 2, schema version 18): the
 // script drops every index the driver retired, and nothing else — an index
 // left behind is still written on every insert, which is the cost the
@@ -246,8 +335,16 @@ function checkTheRetiredAgree(t, sql) {
             0,
           'the driver retires the two indexes version 18 replaced',
           JSON.stringify(retired));
+  // And the advisory drop of #630's SCHEMA_UPGRADES (the minted btree), a
+  // retirement a role that does not own the table may skip.
+  const upgraded = [].concat.apply([], (driver.SCHEMA_UPGRADES || [])
+    .map(function (step) {
+      return step.statements.filter(function (statement) {
+        return /^DROP INDEX/i.test(statement);
+      }).map(normalize);
+    }));
   t.equal(JSON.stringify(drops.slice().sort()),
-          JSON.stringify(retired.slice().sort()),
+          JSON.stringify(retired.concat(upgraded).sort()),
           'postgres/schema.sql drops exactly the indexes the driver retired');
   const at = function (pattern) {
     return all.findIndex(function (statement) {
@@ -435,6 +532,7 @@ function run(t) {
   const sql = fs.readFileSync(SCHEMA_SQL, 'utf8');
   checkTheDdlAgrees(t, sql);
   checkTheRoutinesAgree(t, sql);
+  checkTheUpgradesAgree(t, sql);
   checkTheRetiredAgree(t, sql);
   checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
