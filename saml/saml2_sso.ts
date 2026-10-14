@@ -238,6 +238,9 @@ import DescriptionPages = require('../common/description_pages');
 // capability this file provides below for both profiles.
 import clusterClaims = require('../cluster/cluster_claims');
 import capabilities = require('../cluster/cluster_capabilities');
+// THE ARTIFACT STORE'S ROW ON `/admin/caches` AND ITS BOUND (#614): a leaf
+// over `config`, so this require closes no cycle and moves no route.
+import cacheRegistry = require('../common/cache_registry');
 
 // --- the vocabulary --------------------------------------------------------
 const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
@@ -381,6 +384,24 @@ const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests',
 
 // Artifact -> the message it stands for. See decision 6: resolving one deletes
 // it, so this map is also the record of what has NOT been resolved yet.
+//
+// **KEYED BY `credentialDigest(artifact)`, NEVER BY THE ARTIFACT (#614).** The
+// MessageHandle is the one secret in an artifact, and the artifact is only
+// ever LOOKED UP here: minted, stashed, found once and deleted. So the key is
+// its SHA-256, computed at the moment the artifact is minted and again at the
+// moment it is presented, and no copy of the bearer value is in this map, in a
+// heap snapshot, in an `sts_minted` row or in an `sts_changes` name. The VALUE
+// stays whole — artifact resolution hands back the message itself
+// (saml-bindings-2.0-os section 3.6.4), so there is nothing to digest it to.
+// A row written under the old key shape is simply not found, and expires.
+//
+// **BOUNDED BY `saml2.maxArtifacts` PER REALM, AND FULL MEANS REFUSE.** It had
+// a lifetime and no count, so a burst of sign-ins nobody resolved grew it
+// without limit until the lifetime caught up. At the bound the expired go
+// first and a store still full refuses the NEXT artifact rather than forget
+// an unresolved one — `used_assertions`' stance: an artifact dropped before
+// its service provider resolved it is a sign-in lost after it succeeded,
+// which is worse than one refused before it is handed out. See deliver().
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
@@ -389,6 +410,53 @@ const pendingRequests = realms.map({ persist: 'saml2_sso.pendingRequests',
 const artifacts = realms.map({ persist: 'saml2_sso.artifacts', retain: 'age',
                                // #333: the artifact's `expires`, ms.
                                expiresAt: realms.expiryField('expires', 1) });
+
+// The artifact store's bound, read in the ambient realm.
+function maxArtifacts(): number {
+  helpers.log.debug("Entering maxArtifacts().");
+  helpers.log.debug("Leaving maxArtifacts().");
+  return Number(config.value('saml2.maxArtifacts'));
+}
+
+// Described to `/admin/caches` (#614, rule 3ap), in `docs/caches.md`'s other
+// protocols. A one-time value made to work once, so a `replay` store: its
+// entries cannot be rebuilt. The key shown is the stored digest, clipped
+// again by `digestKey()` so the page shows the same short form every other
+// credential-keyed row does.
+const artifactsCount = cacheRegistry.register({
+  name: 'saml2.artifacts',
+  title: 'SAML 2.0 artifacts',
+  description: 'The messages SAML 2.0 artifacts stand for, until each is ' +
+    'resolved once at the Artifact Resolution Service. Keyed by the ' +
+    'SHA-256 of the artifact, never by the artifact.',
+  owner: 'saml/saml2_sso.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'an artifact resolved',
+  settings: ['saml2.maxArtifacts', 'saml2.artifactTtlS'],
+  maxEntries: function (): number {
+    return maxArtifacts();
+  },
+  bound: 'Enforced: saml2.maxArtifacts per realm. Expired artifacts are ' +
+    'cleared at the bound; a store still full REFUSES the next artifact ' +
+    'rather than forget an unresolved one.',
+  lifetime: function (): string {
+    return 'Until resolved once, or until saml2.artifactTtlS passes.';
+  },
+  // The artifacts `resolveArtifact()` would already refuse as expired.
+  eject: cacheRegistry.realmMapEjector(realms, artifacts,
+    function (held: any, key: unknown, now: number): boolean {
+      return Number(held && held.expires) < now;
+    }),
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, artifacts,
+      function (held: any, key: unknown): object {
+        return { key: cacheRegistry.digestKey(key),
+                 validUntil: Number(held && held.expires) || null };
+      });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // WHICH SERVICE PROVIDER A PATH NAMES.
@@ -2355,7 +2423,31 @@ class Saml2Sso {
     return foreign;
   }
 
-  private stashArtifact(artifact, detail) {
+  // The page for an artifact that could not be stored (#614): the realm's
+  // artifact store is full of unresolved artifacts. Nothing reaches the
+  // service provider — see deliver() for why not a Responder Response.
+  private refuseFullArtifactStore(res, spEntityId) {
+    const { config, errorCodes } = this.deps;
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.refuseFullArtifactStore().");
+    log.warn(errorCodes.tag('STS-SAML-0110') + 'saml2: no artifact could ' +
+             'be issued for "' + (spEntityId || '(unnamed)') + '": the ' +
+             'realm already holds saml2.maxArtifacts (' +
+             config.value('saml2.maxArtifacts') + ') unresolved artifacts, ' +
+             'and a full store refuses rather than forget one.');
+    errorCodes.mark(res, 'STS-SAML-0110');
+    this.samlError(res, 503, 'Busy — SAML 2.0',
+      'This service is holding as many unresolved SAML artifacts as it is ' +
+      'configured to (saml2.maxArtifacts), so it cannot issue another one ' +
+      'until some are resolved or expire. Nothing was sent to the service ' +
+      'provider. Try again shortly.');
+    log.debug("Leaving Saml2Sso.refuseFullArtifactStore().");
+  }
+
+  // Answers false, and stashes nothing, when the realm's store is full of
+  // unresolved artifacts (`saml2.maxArtifacts`); the caller refuses.
+  private stashArtifact(artifact, detail): boolean {
+    const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.stashArtifact().");
     // Off the service provider this artifact was minted FOR, which `detail`
@@ -2367,13 +2459,30 @@ class Saml2Sso {
     // — into five minutes (2026-09-12). Only a value that is not a number at
     // all falls back.
     const ttlSUsable = isFinite(ttlS) && ttlS >= 0 ? ttlS : 300;
-    artifacts.set(artifact,
+    // The sweep first, so the bound below counts only what is still live.
+    artifacts.forEach(function (v, k) {
+      if (v.expires < Date.now()) {
+        artifacts.delete(k);
+      }
+    });
+    // THE BOUND (#614). Refuse, never evict: see the note on `artifacts`.
+    // The registry logs the refusal (STS-CORE-0097) at most once a minute;
+    // the caller marks this request's own code.
+    const room = cacheRegistry.makeRoom(artifacts, maxArtifacts(), {
+      policy: 'refuse', counter: artifactsCount, name: 'saml2.artifacts',
+      setting: 'saml2.maxArtifacts'
+    });
+    if (!room.ok) {
+      log.debug("Leaving Saml2Sso.stashArtifact(). The store is full.");
+      return false;
+    }
+    // THE DIGEST IS THE KEY (#614); the artifact itself goes to the browser
+    // and nowhere else.
+    artifacts.set(stsCrypto.credentialDigest(artifact),
                   Object.assign({ expires: Date.now() + ttlSUsable * 1000 },
                                 detail));
-    artifacts.forEach(function (v, k) {
-      if (v.expires < Date.now()) artifacts.delete(k);
-    });
     log.debug("Leaving Saml2Sso.stashArtifact().");
+    return true;
   }
 
   // Deliver a built message to a service provider, on whichever binding was
@@ -2386,10 +2495,26 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.deliver(). binding=" + opts.binding);
     if (opts.binding === BINDING_ARTIFACT) {
       const artifact = this.mintArtifact(opts.issuer, 0);
-      this.stashArtifact(artifact, {
+      const stashed = this.stashArtifact(artifact, {
              xml: opts.xml, spEntityId: opts.spEntityId, issuer: opts.issuer,
              inResponseTo: opts.inResponseTo, createdAt: Date.now()
       });
+      if (!stashed) {
+        // THE STORE IS FULL (#614), and what is refused is the DELIVERY. A
+        // <samlp:Response> carrying Responder is what section 3.2.2 would
+        // have a failure be — but on this binding a Response travels only
+        // as an artifact, and an artifact is exactly what cannot be stored.
+        // Switching the binding is not this service's to do: the service
+        // provider asked for HTTP-Artifact at this assertion consumer, and
+        // an endpoint declared for one binding is under no obligation to
+        // read another (saml-metadata-2.0-os section 2.2.2). So the person
+        // gets this service's own page, 503 as for any exhausted resource,
+        // and nothing is sent to the service provider — the position
+        // `samlError()` describes for a request with nowhere to answer.
+        this.refuseFullArtifactStore(res, opts.spEntityId);
+        log.debug("Leaving Saml2Sso.deliver(). The artifact store is full.");
+        return;
+      }
       let url = opts.destination +
         (opts.destination.indexOf('?') >= 0 ? '&' : '?') +
         'SAMLart=' + encodeURIComponent(artifact);
@@ -4074,7 +4199,7 @@ class Saml2Sso {
   // second thing to check that no service provider library checks. The back
   // channel's own integrity is TLS's job, which is what the SOAP binding says.
   private resolveArtifact(req, res) {
-    const { errorCodes } = this.deps;
+    const { errorCodes, stsCrypto } = this.deps;
     const { firstByLocal, log, logArtifact, textByLocal } = this.deps.helpers;
     const { DOMParser } = this.deps.xmldom;
     const self = this;
@@ -4202,7 +4327,18 @@ class Saml2Sso {
                 "artifact.");
       return empty('STS-SAML-0098');
     }
-    const held = artifacts.get(artifact);
+    // THE DIGEST IS THE KEY (#614): the presented artifact is hashed here,
+    // and only its digest is looked up, deleted or kept.
+    const key = stsCrypto.credentialDigest(artifact);
+    let held = artifacts.get(key);
+    if (held && !(Number(held.expires) >= Date.now())) {
+      // EXPIRED IS NOT HELD, AT THE READ (#614). The sweep in
+      // `stashArtifact()` and the `caches.eject-expired` job are
+      // housekeeping; until one of them ran, an artifact past
+      // saml2.artifactTtlS was found here and answered.
+      artifacts.delete(key);
+      held = undefined;
+    }
     if (held) {
       // WHO IS ASKING, BEFORE ANYTHING IS SPENT (#37 follow-up): a caller that
       // is not the service provider the artifact was minted for — or cannot
@@ -4227,13 +4363,15 @@ class Saml2Sso {
                '(saml2.artifactTtlS), or it has already been resolved once — ' +
                'which destroys it, because section 3.6.4.1 says an artifact ' +
                'is resolvable exactly once.');
+      artifactsCount.miss();
       log.debug("Leaving Saml2Sso.resolveArtifact(). Unknown artifact.");
       return empty('STS-SAML-0018');
     }
     // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is
     // sent, so that two ArtifactResolve calls arriving together cannot both
     // find it.
-    artifacts.delete(artifact);
+    artifacts.delete(key);
+    artifactsCount.hit();
     log.debug("Leaving Saml2Sso.resolveArtifact(). Claiming the artifact.");
     return this.spendArtifact(artifact, held).then(function (spent) {
       log.debug("Entering Saml2Sso.resolveArtifact()'s claim answer.");

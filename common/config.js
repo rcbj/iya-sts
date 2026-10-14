@@ -8659,6 +8659,17 @@ const SETTINGS = [
                  'refused with a page naming this value. Was the constant ' +
                  'REQUEST_TTL_MS in saml2_sso.js.' },
 
+  // #614: the artifact store had a lifetime and no count.
+  { key: 'saml2.maxArtifacts', group: 'SAML 2.0',
+    label: 'Unresolved artifacts kept',
+    env: 'STS_SAML2_MAX_ARTIFACTS', type: 'int', dflt: 10000, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many SAML 2.0 artifacts may wait to be resolved, per ' +
+                 'trust realm. Expired artifacts are cleared first; a store ' +
+                 'still full REFUSES the next sign-in on the HTTP-Artifact ' +
+                 'binding with a page (HTTP 503) rather than forget an ' +
+                 'artifact a service provider has not resolved yet.' },
+
   { key: 'saml2.redirectWarnLength', group: 'SAML 2.0',
     label: 'Redirect-binding length warning (characters)',
     env: 'STS_SAML2_REDIRECT_WARN_LENGTH', type: 'int', dflt: 8000,
@@ -8944,6 +8955,27 @@ const SETTINGS = [
                  'trust realm, so a relying party can ask for one again by ' +
                  'AssertionIDReference. Oldest out first. Was the constant ' +
                  'ASSERTION_CACHE_MAX in saml11_sso.js.' },
+
+  // #614: an assertion kept for AssertionIDReference expires with itself.
+  { key: 'saml11.assertionCacheTtlS', group: 'SAML 1.1',
+    label: 'Kept assertion lifetime without NotOnOrAfter (seconds)',
+    env: 'STS_SAML11_ASSERTION_CACHE_TTL_S', type: 'int', dflt: 3600, min: 1,
+    max: 604800, runtime: true,
+    description: 'How long an issued assertion stays answerable by ' +
+                 'AssertionIDReference when it carries no NotOnOrAfter. One ' +
+                 'that does — every assertion this service builds — is kept ' +
+                 'until its NotOnOrAfter and no longer.' },
+
+  // #614: the artifact store had a lifetime and no count.
+  { key: 'saml11.maxArtifacts', group: 'SAML 1.1',
+    label: 'Unresolved artifacts kept',
+    env: 'STS_SAML11_MAX_ARTIFACTS', type: 'int', dflt: 10000, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many SAML 1.1 artifacts may wait to be resolved, per ' +
+                 'trust realm. Expired artifacts are cleared first; a store ' +
+                 'still full REFUSES the next Browser/Artifact sign-in with a ' +
+                 'page (HTTP 503) rather than forget an artifact a relying ' +
+                 'party has not resolved yet.' },
 
   // --- WS-Trust ------------------------------------------------------------
 
