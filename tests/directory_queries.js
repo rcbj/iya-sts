@@ -160,11 +160,12 @@ function builders(t) {
           'A13. residentOnly leaves out what is strictly under each windowed ' +
           'container, per realm', JSON.stringify(r.values));
   const cls = queries.classesUnder('r', users, ['groupOfNames', 'posixGroup']);
-  t.check(/class_keys \?\| \$3::text\[\]/.test(cls.text) &&
+  t.check(/class_keys \?\| \$3::text\[\] AND class_keys <> '\[\]'::jsonb/
+    .test(cls.text) &&
           JSON.stringify(cls.values[2]) ===
             JSON.stringify(['class\ngroupofnames', 'class\nposixgroup']),
           'A12b. classesUnder asks class_keys for any of the classes, ' +
-          'lower-cased', cls.text);
+          'lower-cased, with the partial index\'s predicate (#618)', cls.text);
   const names = queries.namesUnder('r', users, 'uid=a', 10);
   // The entry is a sealed blob since #391 phase 6: its `uid` is read out of
   // it by the codec on the thread that holds the keys.
@@ -239,9 +240,9 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 17 ===');
-  t.equal(postgres.SCHEMA_VERSION, 17,
-          'C1. the driver writes schema version 17 (#222, #391 phase 6, ' +
+  t.log.info('=== C. schema version 18 ===');
+  t.equal(postgres.SCHEMA_VERSION, 18,
+          'C1. the driver writes schema version 18 (#222, #391 phase 6, ' +
           '#432 phase 5, #618, #623)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
@@ -281,7 +282,7 @@ async function schema(t) {
               ? 'GENERATED … STORED' : 'written jsonb') + ' definition, in ' +
             'the CREATE TABLE and the ALTER alike', definition);
   });
-  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|attr_names|classes)$/;
+  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|asked_names|group_classes)$/;
   const indexes = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return INDEXES.test(o.name);
   });
@@ -333,8 +334,35 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 17;
-  }), 'C6. and records version 17');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 18;
+  }), 'C6. and records version 18');
+  // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
+  // catalogue still lists them, after the indexes that replace them.
+  const retired = [];
+  const dropping = driverWith(retired, function (sql) {
+    if (/to_regclass/.test(sql)) {
+      return [{}];
+    }
+    if (/FROM pg_class c JOIN pg_namespace/.test(sql)) {
+      return [{ name: 'sts_ldap_entries_attr_names' }];
+    }
+    return undefined;
+  });
+  await dropping.open();
+  const order = retired.map(function (s) {
+    return s.sql;
+  });
+  const dropAt = order.indexOf(
+    'DROP INDEX IF EXISTS sts_ldap_entries_attr_names');
+  const askedAt = order.findIndex(function (sql) {
+    return /^CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names /
+      .test(sql);
+  });
+  t.check(dropAt > askedAt && askedAt >= 0 && !order.some(function (sql) {
+    return /DROP INDEX IF EXISTS sts_ldap_entries_classes/.test(sql);
+  }), 'C7. a retired index still in the catalogue is dropped after its ' +
+          'replacement is built, and one that is not is left alone',
+          JSON.stringify({ dropAt: dropAt, askedAt: askedAt }));
   log.debug("Leaving schema().");
 }
 

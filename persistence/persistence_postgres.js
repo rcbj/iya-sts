@@ -230,7 +230,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // and `sts_ldap_dek_counts`, `sts_ldap_dek_deltas` and the triggers that
 // keep them (#623): which data keys each entry holds values under, so the
 // re-encryption job and the data-key count never open the directory.
-const SCHEMA_VERSION = 17;
+// 18 SINCE 2026-10-14, for the two narrowed directory indexes (#618 phase
+// 2): `sts_ldap_entries_asked_names` (the attribute names a holder question
+// asks, an expression of `attr_names`) and `sts_ldap_entries_group_classes`
+// (`class_keys`, which holds the group classes only), both PARTIAL, in place
+// of `sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, which
+// indexed every name and every class of every entry (SCHEMA_RETIRED).
+const SCHEMA_VERSION = 18;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -434,16 +440,33 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_values', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries ' +
   'USING gin (value_keys jsonb_path_ops)' },
-  // The attribute NAMES, GIN with the default operator class for `?`.
-  { name: 'sts_ldap_entries_attr_names', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON ' +
-  'sts_ldap_entries USING gin (attr_names)' },
-  // The object classes, GIN with the DEFAULT operator class: `?|` (any of
-  // the group classes) is what it is asked, and `jsonb_path_ops` answers
-  // only containment.
-  { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
-  'USING gin (class_keys)' },
+  // -------------------------------------------------------------------------
+  // THE ATTRIBUTE NAMES A HOLDER QUESTION ASKS, AND THE GROUP CLASSES — AND
+  // NOTHING ELSE (#618 phase 2, schema version 18). Both GIN with the
+  // DEFAULT operator class (`?` and `?|`; `jsonb_path_ops` answers only
+  // containment), and both PARTIAL, so an entry that is neither a holder of
+  // an asked attribute nor a group — nearly every person — writes no GIN
+  // entry to either. Until version 18 they indexed every attribute name
+  // (about fifteen a person, twelve of them in 99.9% of rows) and every
+  // object class (four a person, each in more than 99%): about nineteen GIN
+  // entries a person insert that narrowed nothing.
+  //   * the names: an IMMUTABLE expression of `attr_names` keeping only
+  //     `directory_queries.js`'s ASKED_ATTRIBUTES, which every query that
+  //     reads it repeats character for character (`ASKED_NAMES`), because
+  //     the planner uses an expression index only for its own expression;
+  //   * the classes: `class_keys` itself, which the service writes with the
+  //     group classes only since this version (`directory_codec.js`'s
+  //     CLASS_INDEXED) — the column holds keyed digests the database cannot
+  //     read, so it cannot be narrowed by an expression here.
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_asked_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON ' +
+  'sts_ldap_entries USING gin ((' + directoryQueries.ASKED_NAMES + ')) ' +
+  'WHERE ' + directoryQueries.ASKED_NAMES_HELD },
+  { name: 'sts_ldap_entries_group_classes', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON ' +
+  'sts_ldap_entries USING gin (class_keys) WHERE ' +
+  directoryQueries.GROUP_CLASSES_HELD },
   // -------------------------------------------------------------------------
   // WHICH ENTRIES HOLD A VALUE UNDER A DATA KEY (#623, schema version 17).
   // Until this, the re-encryption job and the data-key count WALKED every
@@ -1155,6 +1178,28 @@ const SCHEMA_OBJECTS = [
   'CREATE TABLE IF NOT EXISTS sts_schema (' +
   '  version int PRIMARY KEY,' +
   '  applied_at timestamptz NOT NULL DEFAULT now())' }
+];
+
+// OBJECTS A LATER VERSION REPLACED (#618 phase 2, schema version 18). An
+// index that is no longer read is still WRITTEN on every insert, which is the
+// cost version 18 exists to remove, so leaving one behind on an older
+// database would keep the cost and lose the reason. Each is probed by name
+// like SCHEMA_OBJECTS and dropped where present — by `postgres/schema.sql`,
+// which the owner runs for the version, and by this driver when its role may
+// (a local database it built itself); the least-privileged role finds none to
+// drop once the script has run. `tests/postgres_schema.js` holds the script
+// to this list.
+/**
+ * The objects a later schema version replaced, each `{ name, statement }`,
+ * dropped where they are still present.
+ */
+const SCHEMA_RETIRED = [
+  // Every attribute name of every entry: `sts_ldap_entries_asked_names`.
+  { name: 'sts_ldap_entries_attr_names', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_attr_names' },
+  // Every object class of every entry: `sts_ldap_entries_group_classes`.
+  { name: 'sts_ldap_entries_classes', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_classes' }
 ];
 
 // COLUMNS ADDED TO A TABLE THAT MAY ALREADY EXIST (2026-09-18). A table in
@@ -3437,6 +3482,36 @@ function create(options) {
             });
           });
           return chain;
+        }).then(function () {
+          // WHAT A LATER VERSION REPLACED (SCHEMA_RETIRED), dropped where it
+          // is still there — after its replacement exists, so no question
+          // is ever without an index — and probed first, in the catalogue
+          // by name as the routines are, so a store the script has brought
+          // level issues no DROP.
+          return client.query(
+            'SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ' +
+            'ON n.oid = c.relnamespace WHERE n.nspname = current_schema() ' +
+            'AND c.relname = ANY($1::text[])',
+            [SCHEMA_RETIRED.map(function (object) {
+              return object.name;
+            })]).then(function (result) {
+            const present = new Set(((result && result.rows) || [])
+              .map(function (row) { return row.name; }));
+            let chain = Promise.resolve();
+            SCHEMA_RETIRED.forEach(function (object) {
+              if (!present.has(object.name)) {
+                return;
+              }
+              chain = chain.then(function () {
+                return client.query(object.statement).then(function () {
+                  log.info('persistence: dropped ' + object.name + ', which ' +
+                           'schema version ' + SCHEMA_VERSION + ' replaced ' +
+                           '(#618).');
+                });
+              });
+            });
+            return chain;
+          });
         }).then(function () {
           // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
           // function or a trigger is not a relation `to_regclass()` knows —
@@ -7825,6 +7900,7 @@ module.exports = {
   DEK_COUNTS_BACKFILL: DEK_COUNTS_BACKFILL,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
+  SCHEMA_RETIRED: SCHEMA_RETIRED,
   SCHEMA_VERSION: SCHEMA_VERSION,
   poolMax: poolMax,
   // What `pg` is given for a connection string (#98): for

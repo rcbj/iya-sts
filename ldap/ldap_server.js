@@ -1794,10 +1794,10 @@ function eachHolderOfAny(attributes, fn) {
 //
 //   * **IN A WINDOWED PROCESS** the store's holders under the container
 //     (`DirectoryWindow.holdersAsync()`): `persistence/directory_queries.js`'s
-//     `withAttribute()` — `attr_names ? name`, the GIN index
-//     `sts_ldap_entries_attr_names` — a page at a time on the driver's read
-//     pool, the event loop given back between pages, each row taken as the
-//     store answered it unless this process holds a newer one;
+//     `withAttribute()` — the partial GIN index of the asked names,
+//     `sts_ldap_entries_asked_names` (#618) — a page at a time on the
+//     driver's read pool, the event loop given back between pages, each row
+//     taken as the store answered it unless this process holds a newer one;
 //   * **IN MEMORY** the realm's own Map, walked in slices of
 //     `HOLDER_SCAN_SLICE` with the event loop given back between them. That
 //     is O(entries) of in-memory string tests — **a walk, said here**, as

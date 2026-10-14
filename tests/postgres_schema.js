@@ -225,6 +225,44 @@ function checkTheRoutinesAgree(t, sql) {
   log.debug("Leaving checkTheRoutinesAgree().");
 }
 
+// WHAT A LATER VERSION REPLACED (#618 phase 2, schema version 18): the
+// script drops every index the driver retired, and nothing else — an index
+// left behind is still written on every insert, which is the cost the
+// version exists to remove — and drops each only AFTER the index that
+// replaces it is built, so no question is ever without one.
+function checkTheRetiredAgree(t, sql) {
+  log.debug("Entering checkTheRetiredAgree().");
+  const all = statementsIn(sql);
+  const drops = all.filter(function (statement) {
+    return /^DROP INDEX/i.test(statement);
+  });
+  const retired = (driver.SCHEMA_RETIRED || []).map(function (one) {
+    return normalize(one.statement);
+  });
+  t.check(retired.length === 2 &&
+          retired.indexOf('DROP INDEX IF EXISTS ' +
+                          'sts_ldap_entries_attr_names') >= 0 &&
+          retired.indexOf('DROP INDEX IF EXISTS sts_ldap_entries_classes') >=
+            0,
+          'the driver retires the two indexes version 18 replaced',
+          JSON.stringify(retired));
+  t.equal(JSON.stringify(drops.slice().sort()),
+          JSON.stringify(retired.slice().sort()),
+          'postgres/schema.sql drops exactly the indexes the driver retired');
+  const at = function (pattern) {
+    return all.findIndex(function (statement) {
+      return pattern.test(statement);
+    });
+  };
+  const askedAt = at(/^CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names /);
+  const groupsAt = at(/^CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes /);
+  t.check(askedAt >= 0 && groupsAt >= 0 &&
+          at(/sts_ldap_entries_attr_names$/) > askedAt &&
+          at(/sts_ldap_entries_classes$/) > groupsAt,
+          'and drops each after the index that replaces it is built');
+  log.debug("Leaving checkTheRetiredAgree().");
+}
+
 function checkTheVersionAgrees(t, sql) {
   log.debug("Entering checkTheVersionAgrees().");
   // The script writes the version row so that a database built by an owner
@@ -356,6 +394,7 @@ function run(t) {
   const sql = fs.readFileSync(SCHEMA_SQL, 'utf8');
   checkTheDdlAgrees(t, sql);
   checkTheRoutinesAgree(t, sql);
+  checkTheRetiredAgree(t, sql);
   checkTheVersionAgrees(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);

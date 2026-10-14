@@ -1903,6 +1903,70 @@ about 90 s of the thread at 1.5M entries on 8081), so:
 `STS_TEST_POSTGRES_URL`, the triggers' exactness against a real database;
 `tests/no_full_directory_walk_in_jobs.js` holds that the walk stays gone.
 
+### Only the asked names and the group classes are indexed (#618, schema version 18)
+
+**Two GIN indexes took a key for every name and every class of every entry,
+and nothing asked about most of them.** On a copy of 8081's 1.2M-entry store:
+`attr_names` averaged 15.2 names a row, twelve of them in 99.9% of rows and
+fourteen more in a sixth; `class_keys` held four classes a row, each in more
+than 99%. So a person insert wrote about nineteen GIN entries that no
+question could narrow by — nobody asks "who holds a `mail`" or "who is an
+`inetOrgPerson`". Version 18 replaces both, PARTIAL, with nothing a person
+writes to:
+
+* **`sts_ldap_entries_asked_names`** is a GIN over
+  `directory_queries.ASKED_NAMES`, an IMMUTABLE `jsonb_path_query_array()`
+  of `attr_names` keeping only `ASKED_ATTRIBUTES` — the names
+  `withAttribute()` and `anyWithAttribute()` are asked about, read from their
+  callers — `WHERE directory_queries.ASKED_NAMES_HELD`
+  (`attr_names ?| ARRAY[…]`).
+  Every query spells both from those two constants, because the planner uses
+  an expression index only for its own expression and a partial one only
+  where the query repeats its predicate. **The predicate is `?|` and not
+  `<expression> <> '[]'`, and that was measured**: the database checks a
+  partial index's predicate on every insert and computes the expression only
+  for a row that passes, and the jsonpath cost about 30 µs a row where `?|`
+  over the same names cost about 2. **A name not in the list is still
+  answered**, by `attr_names ? $n` with no index (said once in the log),
+  because a holder question that answered "nobody" would be worse than a
+  slow one; a new caller adds its name to the list, which changes the index
+  expression and so is a schema version. `tests/directory_asked_names.js`
+  reads the names out of the call sites and fails on one the list lacks, or a
+  listed name nobody asks.
+* **`userpassword` is not in the list**: nearly every person holds one. The
+  two questions asked about it are the counters' — `countHolding()` already,
+  and `anyWithAttribute()` (`anybodyHoldsACredential()`) now reads the
+  realm's counter row instead of the index.
+* **`sts_ldap_entries_group_classes`** is a GIN over `class_keys` `WHERE
+  class_keys <> '[]'`, and `directory_codec.js` writes into `class_keys`
+  only the GROUP classes (`CLASS_INDEXED`, which is `ldap_server.js`'s
+  `GROUP_CLASSES`): `classesUnder()`, the one question asked of the column,
+  is only ever asked for those. **It is the column that is narrowed, not an
+  expression**, because the values are keyed digests the database cannot
+  read. `keyArgs()` refuses `classesUnder` for any other class rather than
+  answer "nobody". An entry written before version 18 holds all its classes
+  until it is next written; the question answers the same over either, so
+  nothing is migrated — it only stays in the index until then.
+* **The two indexes they replace are RETIRED** (`SCHEMA_RETIRED`): an index
+  nothing reads is still written on every insert. `schema.sql` drops them
+  after building their replacements, and `open()` drops any still in the
+  catalogue (probed through `pg_class`, so a fake `pg` answering every
+  `to_regclass` as present issues no DROP) — which only a role that may
+  will; the least-privileged role finds none once the script has run, and
+  is refused with `STS-STORE-0029` on a version-17 store, whose new indexes
+  it cannot build.
+
+Measured on the 1.2M-entry copy (EXPLAIN ANALYZE of a 20,000-person INSERT
+inside a rolled-back transaction, alternated): about 265K WAL records and
+80 MB for version 17's indexes, about 222K and 58 MB for version 18's — the
+same as with neither index — so about 2.1 WAL records and 1.1 KB of WAL less
+per person. The names' index went from 23 MB to 16 kB; the classes' stays at
+6 MB until the old rows are rewritten. Every query still plans on its index
+(bitmap scans on `sts_ldap_entries_asked_names` and
+`sts_ldap_entries_group_classes`, custom and generic plans), and the
+password question is a primary-key read of `sts_ldap_counts`. The figures
+are on #618.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm
