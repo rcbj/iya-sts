@@ -97,6 +97,10 @@ const SINGLE = ['userpassword', 'pwdhistory', 'pwdchangedtime',
 const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                'description', 'oauthconsent', 'oauthconsentapplied',
                'stswebauthncredential',
+               // The Android marker (#615), derived from the keys above on
+               // every write of them: merged as they are, so a key two
+               // nodes registered at once is marked on both counts.
+               'stsandroidattestedcredential',
                'x509subject', 'didsubject', 'spiffesubject', 'authnmethod',
                'federationattribute', 'federationissuer',
                'federationrelationship', 'federationlink',
@@ -105,6 +109,9 @@ const MULTI = ['member', 'uniquemember', 'memberof', 'objectclass',
                // different keys at once must both survive.
                'stsdevicekey', 'stsdevicekeythumbprint',
                'stsdevicecredentialid',
+               // And each Android-attested key's id (#615), derived as the
+               // credential ids are.
+               'stsdeviceandroidkey',
                // A service account's owners (#600): two nodes adding
                // different owners at once must both survive.
                'stsserviceaccountowner',

@@ -290,6 +290,15 @@ const DEVICE_KEY_CREDENTIAL_TYPE = 'urn:iya:sts:credential-type:device-key';
 /** The CAEP credential type a Native SSO device secret goes out as. */
 const DEVICE_SECRET_CREDENTIAL_TYPE =
   'urn:iya:sts:credential-type:device-secret';
+// THE ANDROID MARKER (#615): each Android-attested key's id, derived on every
+// write (`write()`), which the Android attestation recheck asks the directory
+// for the holders of. What the recheck reads of each holder is the three
+// attributes below — the id, the keys and the marker — never the whole entry.
+const ANDROID_MARKER_ATTRIBUTE = 'stsDeviceAndroidKey';
+const ANDROID_READ_ATTRIBUTES = ['cn', 'stsdevicekey', 'stsdeviceandroidkey'];
+// How many devices the marker's backfill rewrites between two yields to the
+// event loop.
+const ANDROID_BATCH = 200;
 // JWK members that make a key PRIVATE (RFC 7518 section 6, RFC 8037, and
 // the ML-DSA JOSE draft's `priv` and `seed`): a device key here is public.
 const PRIVATE_JWK_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k',
@@ -761,6 +770,15 @@ class Devices {
       });
       if (credentialIds.length) {
         attributes.stsDeviceCredentialId = credentialIds;
+      }
+      // EACH ANDROID-ATTESTED KEY'S ID, derived the same way (#615): the
+      // keys the Android attestation recheck asks about, so that the
+      // recheck reads the devices HOLDING this attribute — one statement
+      // against the store's `attr_names` index — rather than every device.
+      // A downgrade rewrites the keys, so it takes the id off here.
+      const androidKeys = Devices.androidMarkerOf(device.keys);
+      if (androidKeys.length) {
+        attributes.stsDeviceAndroidKey = androidKeys;
       }
     }
     if (device.compliance && device.compliance !== 'unknown') {
@@ -1508,16 +1526,160 @@ class Devices {
     const out: Json[] = [];
     this.all().forEach(function (device: Device): void {
       device.keys.forEach(function (key: DeviceKey): void {
-        const att = key.attestation;
-        if (att && att.level === 'attested' &&
-            att.format === 'android-key-attestation' &&
-            Array.isArray(att.chainSerials) && att.chainSerials.length) {
+        if (Devices.isAndroidRecheckable(key)) {
           out.push({ deviceId: device.id, keyId: key.id,
-                     chainSerials: att.chainSerials.slice() });
+                     chainSerials: (key.attestation.chainSerials || [])
+                       .slice() });
         }
       });
     });
     log.debug("Leaving Devices.androidAttestedKeys(). " + out.length + ".");
+    return out;
+  }
+
+  /**
+   * Says whether a key is one the Android attestation recheck asks about:
+   * attested by an Android chain whose serials were kept.
+   *
+   * @param key - the key
+   * @returns true for such a key
+   */
+  static isAndroidRecheckable(key: DeviceKey): boolean {
+    helpers.log.debug("Entering Devices.isAndroidRecheckable().");
+    const att = key && key.attestation;
+    const out = !!(att && att.level === 'attested' &&
+      att.format === 'android-key-attestation' &&
+      Array.isArray(att.chainSerials) && att.chainSerials.length);
+    helpers.log.debug("Leaving Devices.isAndroidRecheckable(). " + out);
+    return out;
+  }
+
+  /**
+   * The ids of a device's keys the Android attestation recheck asks about,
+   * sorted: `stsDeviceAndroidKey`, derived on every write (#615).
+   *
+   * @param keys - the device's keys
+   * @returns the key ids, sorted
+   */
+  static androidMarkerOf(keys: DeviceKey[]): string[] {
+    helpers.log.debug("Entering Devices.androidMarkerOf().");
+    const out = (keys || []).filter(function (key) {
+      return Devices.isAndroidRecheckable(key);
+    }).map(function (key) {
+      return String(key.id);
+    }).sort();
+    helpers.log.debug("Leaving Devices.androidMarkerOf(). " + out.length +
+                      ".");
+    return out;
+  }
+
+  // ===========================================================================
+  // THE RECHECK'S DEVICES, READ FROM THE HOLDERS ONLY (#615, 2026-10-13).
+  //
+  // `androidAttestedKeys()` above reads `all()` — every device entry in the
+  // realm copied and parsed — which in a windowed process pages the whole of
+  // `ou=devices` through the synchronous bridge on the front process. This
+  // asks the directory's `holdersAsync()` for the devices carrying
+  // `stsDeviceAndroidKey` — the store's `attr_names` index, a page at a
+  // time, the event loop given back between pages — parses only those
+  // with `fromEntry()`, the register's own reading, and asks
+  // `isAndroidRecheckable()` of each key, as the walk does. Where the
+  // directory offers no `holdersAsync()` the walk answers, as before.
+  // ===========================================================================
+  /**
+   * Lists every key in the realm attested by an Android chain whose serials
+   * were kept, reading only the devices that carry the Android marker.
+   *
+   * @returns a promise of `{ rows: [{ deviceId, keyId, chainSerials }],
+   *   holders, viaHolders }`
+   */
+  async androidAttestedKeysAsync(): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering Devices.androidAttestedKeysAsync().");
+    if (!this.store('hasHook', 'holdersAsync')) {
+      const walked = this.androidAttestedKeys();
+      log.debug("Leaving Devices.androidAttestedKeysAsync(). Walked: no " +
+                "holder query.");
+      return { rows: walked, holders: null, viaHolders: false };
+    }
+    const holders: Json[] = await this.store('holdersAsync', 'device',
+      ANDROID_MARKER_ATTRIBUTE, ANDROID_READ_ATTRIBUTES) || [];
+    const rows: Json[] = [];
+    holders.forEach(function (holder: Json): void {
+      const device = Devices.fromEntry({ dn: holder.dn,
+                                         attributes: holder.attributes });
+      device.keys.forEach(function (key: DeviceKey): void {
+        if (Devices.isAndroidRecheckable(key)) {
+          rows.push({ deviceId: device.id, keyId: key.id,
+                      chainSerials: (key.attestation.chainSerials || [])
+                        .slice() });
+        }
+      });
+    });
+    log.debug("Leaving Devices.androidAttestedKeysAsync(). " + rows.length +
+              " key(s) of " + holders.length + " device(s).");
+    return { rows: rows, holders: holders.length, viaHolders: true };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE MARKER'S BACKFILL (#615): a device written before the marker existed
+  // carries none. The devices HOLDING A KEY (`stsDeviceKey`) are read — the
+  // population the marker is a subset of — and each whose marker is not
+  // what its keys say is read again by id and written, in the same tick, so
+  // `write()` derives it from what the device holds now rather than from
+  // the page the holder query answered.
+  // ---------------------------------------------------------------------------
+  /**
+   * Puts `stsDeviceAndroidKey` on every device whose keys say it belongs
+   * there and takes it off where they do not.
+   *
+   * @param stillOwner - asked between batches; false stops the backfill
+   * @returns a promise of `{ available, holders, written, failed, stopped }`
+   */
+  async backfillAndroidMarkers(stillOwner?: () => boolean): Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering Devices.backfillAndroidMarkers().");
+    const out = { available: false, holders: 0, written: 0, failed: 0,
+                  stopped: false };
+    if (!this.store('hasHook', 'holdersAsync')) {
+      log.debug("Leaving Devices.backfillAndroidMarkers(). No holder query.");
+      return out;
+    }
+    out.available = true;
+    const marker = ANDROID_MARKER_ATTRIBUTE.toLowerCase();
+    const holders: Json[] = await this.store('holdersAsync', 'device',
+      'stsDeviceKey', ANDROID_READ_ATTRIBUTES) || [];
+    out.holders = holders.length;
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const read = Devices.fromEntry({ dn: holder.dn,
+                                       attributes: holder.attributes });
+      const want = Devices.androidMarkerOf(read.keys);
+      const have = ((holder.attributes || {})[marker] || []).map(String)
+        .sort();
+      if (want.join('\n') !== have.join('\n')) {
+        const fresh = this.byId(read.id);
+        if (fresh && this.write(fresh)) {
+          out.written += 1;
+        } else if (fresh) {
+          out.failed += 1;
+          log.warn(this.deps.errorCodes.tag('STS-DEVICE-0052') + 'devices: ' +
+                   'the Android marker of device ' + read.id + ' could not ' +
+                   'be written.');
+        }
+      }
+      if ((i + 1) % ANDROID_BATCH === 0) {
+        if (stillOwner && !stillOwner()) {
+          out.stopped = true;
+          break;
+        }
+        await new Promise<void>(function (resolve) {
+          setImmediate(resolve);
+        });
+      }
+    }
+    log.debug("Leaving Devices.backfillAndroidMarkers(). " + out.written +
+              " written of " + out.holders + ".");
     return out;
   }
 
@@ -2429,6 +2591,9 @@ class Devices {
                          'the device (it may hold its maximum of entries).');
     }
     this.noteEvent('created', device);
+    if (Devices.androidMarkerOf(device.keys).length) {
+      credentials.noteAndroidRegistration('device ' + device.id);
+    }
     this.recordAudit('device.create', who, device, 'device ' + device.id +
                      ' registered (' + method + ') for ' + device.owner,
                      { method: method, keys: device.keys.length });
@@ -2638,6 +2803,9 @@ class Devices {
       log.debug("Leaving Devices.addKey(). Not stored.");
       return this.refuse('STS-DEVICE-0009', 'The directory did not store ' +
                          'the key.');
+    }
+    if (Devices.isAndroidRecheckable(prepared.key)) {
+      credentials.noteAndroidRegistration('a key of device ' + device.id);
     }
     this.recordAudit('device.key-add', String(actor || ''), device,
                      'a ' + prepared.key.kind + ' key was added to device ' +
@@ -3247,6 +3415,11 @@ class Devices {
         what: 'The credential id of each linked WebAuthn key, derived from ' +
               'stsDeviceKey on every write so a sign-in finds its device ' +
               'by index.' },
+      { name: 'stsDeviceAndroidKey', kind: 'multi',
+        what: 'The id of each key attested by an Android chain whose ' +
+              'serials were kept, derived from stsDeviceKey on every write ' +
+              'so the Android attestation recheck reads only the devices ' +
+              'holding one (#615).' },
       { name: 'stsDeviceAttestation', kind: 'single',
         what: 'attested when any key\'s attestation was verified, else ' +
               'self-asserted. Derived on every write.' },
@@ -3383,6 +3556,11 @@ export = {
   listForOwner: slot.forward('listForOwner'),
   byId: slot.forward('byId'),
   androidAttestedKeys: slot.forward('androidAttestedKeys'),
+  androidAttestedKeysAsync: slot.forward('androidAttestedKeysAsync'),
+  backfillAndroidMarkers: slot.forward('backfillAndroidMarkers'),
+  isAndroidRecheckable: Devices.isAndroidRecheckable,
+  androidMarkerOf: Devices.androidMarkerOf,
+  ANDROID_MARKER_ATTRIBUTE: ANDROID_MARKER_ATTRIBUTE,
   downgradeKeyAttestation: slot.forward('downgradeKeyAttestation'),
   bySecret: slot.forward('bySecret'),
   byCredentialId: slot.forward('byCredentialId'),
