@@ -231,7 +231,8 @@ class EmailFactor {
     const { log } = this.deps;
     log.debug("Entering EmailFactor.hashOf().");
     log.debug("Leaving EmailFactor.hashOf().");
-    return stsCrypto.digest('sha256', String(value), 'base64url');
+    // The one credential digest (#614); the same SHA-256 it always was.
+    return stsCrypto.credentialDigest(String(value));
   }
 
   private bindingOf(req: any): string {

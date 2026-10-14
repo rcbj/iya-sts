@@ -280,7 +280,8 @@ class PortalClaimSources {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering PortalClaimSources.bindingOf().");
     log.debug("Leaving PortalClaimSources.bindingOf().");
-    return stsCrypto.digest('sha256', String(secret), 'base64url');
+    // The one credential digest (#614); the same SHA-256 it always was.
+    return stsCrypto.credentialDigest(String(secret));
   }
 
   /**
