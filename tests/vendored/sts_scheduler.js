@@ -630,7 +630,7 @@ async function theClusterAgrees() {
           // about 70 s on two nodes, the 01:50 slot ran between them, and
           // the last answered 02:00 — one interval on, the earlier already
           // past when the reads ended. That is the nodes agreeing about the
-          // instant each was asked, as theApiAndThePageAgree() allows.
+          // instant each was asked, as thePageAndTheApiAgree() allows.
           const ranBetween = every > 0 && Math.abs(spread - every) < 1000 &&
             low <= readsEndedMs;
           assert.ok(spread < 1000 || ranBetween, JSON.stringify(times));
