@@ -641,6 +641,24 @@ is logged as a warning** naming both, first spelling winning. It is a warning
 and not a failure, because a table of capitalisations must never stop the
 service starting.
 
+## How a filter value is matched
+
+A search filter's equality and substring assertions are matched by **the
+attribute's own equality rule**, as the standard schema defines it. The
+attributes whose rule ignores case — RFC 4519's `uid`, `cn`, `sn`, `givenName`,
+`ou`, `o`, `dc` and the rest of its directory strings, RFC 4524's `mail` and
+COSINE strings, and RFC 2798's `displayName`, `employeeNumber` and the other
+inetOrgPerson strings — match in any case: `(uid=ALICE)` and `(uid=Ali*)` find
+`uid=alice`, and `(mail=Alice@Example.COM)` finds `alice@example.com`. Every
+other attribute — `memberUid` (caseExactIA5Match), the octet strings, and this
+service's own `sts*` attributes — is compared exactly, as it always was, and
+`objectClass` ignores case as it always did. Case is the whole of it: the
+insignificant-space handling of RFC 4518's string preparation is not done.
+
+Until 2026-10-14 (#632) every value but `objectClass`'s was compared exactly,
+so a search for a person in a case other than the one stored found nobody,
+while a sign-in, the console and SCIM found them.
+
 ## Two ldapjs defects this service routes around
 
 Both are in ldapjs's `SearchResponse.prototype.send()`, and both would hit a
