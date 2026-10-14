@@ -11812,7 +11812,16 @@ if (typeof mailChannel.setDirectory === 'function') {
       log.debug('Entering personByMail().');
       const wanted = String(address || '').trim().toLowerCase();
       let found = '';
-      if (wanted) {
+      if (wanted && directoryWindow) {
+        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
+        // is the portal's unauthenticated forgot-password form, and
+        // `allPersons()` paged and copied every person in the realm to
+        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
+        // order; the first is the answer, as the first in `allPersons()`'
+        // order was.
+        const hits = peopleByMail(wanted);
+        found = hits.length ? hits[0].username || '' : '';
+      } else if (wanted) {
         allPersons().some(function (entry) {
           const values = (entry.attributes && entry.attributes.mail) || [];
           if (values.some(function (v) {
@@ -19973,6 +19982,53 @@ function allPersons() {
   return out;
 }
 
+/**
+ * Whether this process holds its people and devices as a window onto the
+ * store (#349).
+ *
+ * @returns true when windowed
+ */
+function directoryIsWindowed() {
+  log.debug('Entering directoryIsWindowed().');
+  log.debug('Leaving directoryIsWindowed().');
+  return !!directoryWindow;
+}
+
+// ---------------------------------------------------------------------------
+// THE PEOPLE HOLDING ONE ATTRIBUTE, AS `allPersons()` HANDS THEM OVER (#616).
+//
+// For a caller that wants only the people carrying something — SCIM's HOBA
+// key lookup, run on each HOBA-authenticated request — and was asking for
+// everybody and filtering. The holders only (`eachHolderOfAny()`: in a
+// windowed process the store's `attr_names` holders a page at a time, never
+// the realm), each copied as `allPersons()` copies (`entryObject()`), in its
+// order — the normalised key's, which `personRows()` sorts by.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the people in the ambient realm holding an attribute with a value,
+ * copied, in `allPersons()`'s order.
+ *
+ * @param attribute - the attribute name, any case
+ * @returns the entries
+ */
+function personsHolding(attribute) {
+  log.debug('Entering personsHolding(). ' + attribute);
+  const wanted = String(attribute || '').toLowerCase();
+  const found = [];
+  eachHolderOfAny([wanted], function (stored) {
+    if ((stored.attributes[wanted] || []).length && isPersonEntry(stored)) {
+      found.push({ key: normalizeDn(stored.dn), entry: entryObject(stored) });
+    }
+  });
+  found.sort(function (a, b) {
+    return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+  });
+  log.debug('Leaving personsHolding(). ' + found.length + ' person(s).');
+  return found.map(function (one) {
+    return one.entry;
+  });
+}
+
 // The NAMES of every person, in `allPersons()`'s order, with the empty ones
 // dropped — what the `persons()` slots hand to the credential stores and the
 // key-pair register, which ask about names and never needed the entries.
@@ -23613,6 +23669,11 @@ module.exports = {
   isPersonEntry: isPersonEntry,
   personCount: personCount,
   allPersons: allPersons,
+  personsHolding: personsHolding,
+  // Whether this process holds its people as a window onto the store
+  // (#349, #616): where a caller with an index-shaped question asks it
+  // instead of listing everybody (SCIM's `userName eq`).
+  directoryIsWindowed: directoryIsWindowed,
   personNames: personNames,
   personDns: personDns,
   residentsPage: residentsPage,
