@@ -125,8 +125,13 @@ function childMain() {
          record.user && record.user.username === ALICE,
          '2a. POST /account-api/credentials/offers makes a pre-authorized ' +
          'offer whose code names the caller', brief(made));
+    // The record keeps the Transaction Code's DIGEST and never the code
+    // (#614), so "which is the code's" is the digest of the answer.
     note(/^\d{4,}$/.test(String(offer.txCode || '')) && record &&
-         record.txCode === offer.txCode &&
+         record.txCodeDigest ===
+           require(ROOT_DIR + '/common/crypto').credentialDigest(
+             offer.txCode) &&
+         record.txCode === undefined &&
          JSON.stringify(offer.credentialOffer).indexOf(offer.txCode) < 0,
          '2b. it answers the Transaction Code, which is the code\'s, and ' +
          'is not in the offer', String(offer.txCode));

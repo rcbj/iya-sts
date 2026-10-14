@@ -218,9 +218,18 @@ interface VcIssuerDeps {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
+//
+// **KEYED BY THE NONCE'S DIGEST, NEVER THE NONCE (#614)** —
+// `VcIssuer.nonceKey()`, at the endpoint that mints one and at every proof
+// that quotes one. A c_nonce is a value this issuer only ever looks up and
+// spends, and the store is journalled and replicated into every process, so
+// it holds `crypto.credentialDigest()` of it. The cluster claim it is spent
+// through hashes its own value (`cluster/cluster_claims.js`), so that is
+// handed the nonce as it arrived. A row from before #614 is under the raw
+// nonce, is never found, and expires on its value.
 /**
- * The `c_nonce` values this issuer has handed out and not yet seen used, per
- * trust realm; each is single-use.
+ * The digests of the `c_nonce` values this issuer has handed out and not yet
+ * seen used, per trust realm, each to its expiry; each is single-use.
  */
 const vciNonces = realms.map({ persist: 'vc_issuer.vciNonces', retain: 'age',
                                // #333: the value IS the expiry, ms.
@@ -291,7 +300,16 @@ const CLAIM_SKEW_MS = 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-// id -> { accessToken, expires, event }
+// id -> { expires, event, description, notifiedAt }
+//
+// THE ID STAYS WHOLE AND THE ACCESS TOKEN IS GONE (#614). The row carried the
+// access token the credential was issued on, whole, and nothing ever read it
+// back: the notification endpoint checks the token the WALLET presents, and
+// the row is found by the id. A `notification_id` is an identifier — like a
+// `jti` it names one issuance and authorizes nothing but reporting what the
+// wallet did with it, behind a token this issuer signed — so it keys the row
+// as it is, and `GET /admin-api/oid4vci/notifications?id=` finds it by the
+// same value.
 const notificationIds = realms.map({ persist: 'vc_issuer.notificationIds',
                                      // #333: its `expires`, ms.
                                      expiresAt: realms.expiryField('expires',
@@ -942,6 +960,20 @@ class VcIssuer {
     return e;
   }
 
+  // The key a c_nonce is stored under in `vciNonces` (#614): its digest,
+  // so the store never holds a nonce a wallet could quote.
+  /**
+   * Returns the key a `c_nonce` is stored under: its credential digest.
+   *
+   * @param nonce - the nonce, as handed out or as a proof quotes it
+   * @returns its SHA-256, base64url
+   */
+  static nonceKey(nonce: unknown): string {
+    helpers.log.debug("Entering VcIssuer.nonceKey().");
+    helpers.log.debug("Leaving VcIssuer.nonceKey().");
+    return stsCrypto.credentialDigest(String(nonce || ''));
+  }
+
   private sendVciMetadata(req, res) {
     const { log, logArtifact, errorCodes, loadOauth2 } = this.deps;
     log.debug("Entering VcIssuer.sendVciMetadata().");
@@ -1179,7 +1211,7 @@ class VcIssuer {
     } else {
       // THE `attestation` PROOF TYPE: the attestation is the proof, so its
       // nonce is the c_nonce (Appendix F.3).
-      const expires = vciNonces.get(claims.nonce);
+      const expires = vciNonces.get(VcIssuer.nonceKey(claims.nonce));
       if (!expires || expires < Date.now()) {
         throw VcIssuer.nonceError('the key attestation\'s nonce is not a ' +
                                   'c_nonce this issuer handed out (or it ' +
@@ -1256,7 +1288,7 @@ class VcIssuer {
                       this.proofIatWindowSeconds() +
                       ' seconds from now (oid4vci.proofIatWindowS).');
     }
-    const expires = vciNonces.get(claims.nonce);
+    const expires = vciNonces.get(VcIssuer.nonceKey(claims.nonce));
     if (expires) {
       vciNoncesCount.hit();
     } else {
@@ -1274,7 +1306,7 @@ class VcIssuer {
     // second proof of any batch fail, which is exactly the bug batch issuance
     // uncovered.
     if (expires < Date.now()) {
-      vciNonces.delete(claims.nonce);
+      vciNonces.delete(VcIssuer.nonceKey(claims.nonce));
       throw VcIssuer.nonceError('the proof nonce has expired.');
     }
 
@@ -2265,10 +2297,10 @@ class VcIssuer {
       if (!nonce || spent.indexOf(nonce) !== -1) {
         return;
       }
-      const expires = Number(vciNonces.get(nonce));
+      const expires = Number(vciNonces.get(VcIssuer.nonceKey(nonce)));
       lifetimes[nonce] = isFinite(expires) && expires > 0
         ? Math.max(0, expires - Date.now()) : this.cNonceTtlMs();
-      vciNonces.delete(nonce);
+      vciNonces.delete(VcIssuer.nonceKey(nonce));
       spent.push(nonce);
     });
     for (const nonce of spent) {
@@ -2338,13 +2370,13 @@ class VcIssuer {
     return out;
   }
 
-  private newNotificationId(accessToken) {
+  // No access token on the row (#614): see `notificationIds`.
+  private newNotificationId() {
     const { log, b64u, stsCrypto, offerTtlMs, notificationIds } = this.deps;
     log.debug("Entering VcIssuer.newNotificationId().");
     const id = b64u(stsCrypto.randomBytes(12));
     notificationIds.set(id,
-                        { accessToken: accessToken,
-                          expires: Date.now() + offerTtlMs(), event: null });
+                        { expires: Date.now() + offerTtlMs(), event: null });
     const now = Date.now();
     notificationIds.forEach((v, k) => {
       if (v.expires < now) {
@@ -2825,7 +2857,9 @@ class VcIssuer {
                              Number(this.deps.config.value(
                                'oid4vci.cNonceCacheSize')),
                              { counter: vciNoncesCount });
-      vciNonces.set(nonce, now + this.cNonceTtlMs());
+      // By its digest (#614): the nonce leaves in the answer and is not
+      // kept.
+      vciNonces.set(VcIssuer.nonceKey(nonce), now + this.cNonceTtlMs());
       res.set('Cache-Control', 'no-store');
       // The one thing OID4VCI says about DPoP by name: "The Credential Issuer
       // MAY provide a DPoP nonce in an HTTP header as defined in Section 8.2 of
@@ -3161,7 +3195,11 @@ class VcIssuer {
           // that decides otherwise still has them. Section 9.2 is explicit that
           // the newly provided ones win.
           encryption: encryption,
-          accessToken: accessToken,
+          // No `accessToken` (#614): the row carried it whole only to copy
+          // it onto the notification row, which never read it — everything
+          // the credential needs from the token is read off it above. The
+          // store is keyed by the transaction_id's digest
+          // (`vc_offers.deferredTransactions`).
           readyAt: Date.now() + deferredReadyMs(),
           expires: Date.now() + offerTtlMs()
         });
@@ -3207,7 +3245,7 @@ class VcIssuer {
         credentials: issued.map((b) => {
           return {credential: b.credential };
         }),
-        notification_id: this.newNotificationId(accessToken)
+        notification_id: this.newNotificationId()
       };
       logArtifact('OID4VCI Credential Response', 'as returned', response);
       this.sendCredentialResponse(res, 200, response, encryption);
@@ -3313,7 +3351,7 @@ class VcIssuer {
         credentials: issued.map((b) => {
           return {credential: b.credential };
         }),
-        notification_id: this.newNotificationId(record.accessToken)
+        notification_id: this.newNotificationId()
       };
       logArtifact('OID4VCI Deferred Credential Response', 'as returned',
                   response);
@@ -3512,6 +3550,8 @@ export = {
   verifyKeyAttestation: slot.forward('verifyKeyAttestation'),
   subjectClaimsFrom: slot.forward('subjectClaimsFrom'),
   vciNonces: vciNonces,
+  // The key a c_nonce is stored under in `vciNonces` (#614).
+  nonceKey: VcIssuer.nonceKey,
   VCI_NONCE_TTL_MS: VcIssuer.VCI_NONCE_TTL_MS,
   // The request-encryption half, for `tests/vci_request_encryption_key.js`:
   // what a realm PUBLISHES, what it will DECRYPT, and what it last SAW. A JWE

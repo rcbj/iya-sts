@@ -394,22 +394,26 @@ function childMain() {
         .toString('base64url') + '.y';
     };
     await realms.run(realms.DEFAULT_REALM, async function () {
-      vcIssuer.vciNonces.set('csu-nonce', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce'),
+                             Date.now() + 60000);
       let spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce'),
                                                    proofWith('csu-nonce')]);
       note(spent.ok === true, '2j. a c_nonce quoted by every proof in a ' +
            'batch is spent once', JSON.stringify(spent));
-      vcIssuer.vciNonces.set('csu-nonce', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce'),
+                             Date.now() + 60000);
       spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce')]);
       note(spent.ok === false && spent.errorCode === 'STS-VC-0050',
            '2k. A NODE STILL HOLDING THE c_nonce IS REFUSED (the claim)',
            JSON.stringify(spent));
       store = sharedStore();
-      vcIssuer.vciNonces.set('csu-nonce', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce'),
+                             Date.now() + 60000);
       spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce')]);
       note(spent.ok === true, '2l. the control: against an empty store it is ' +
            'spent', JSON.stringify(spent));
-      vcIssuer.vciNonces.set('csu-nonce-2', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce-2'),
+                             Date.now() + 60000);
       const racing = await Promise.all([
         vcIssuer.spendProofNonces([proofWith('csu-nonce-2')]),
         vcIssuer.spendProofNonces([proofWith('csu-nonce-2')])]);
@@ -417,7 +421,8 @@ function childMain() {
            '2m. two concurrent Credential Requests quoting one c_nonce: ' +
            'exactly one spends it', JSON.stringify(racing));
       store = brokenStore();
-      vcIssuer.vciNonces.set('csu-nonce-3', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce-3'),
+                             Date.now() + 60000);
       spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce-3')]);
       note(spent.ok === false && spent.errorCode === 'STS-VC-0051',
            '2n. and a store that cannot be asked refuses',
