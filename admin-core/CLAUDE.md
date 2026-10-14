@@ -301,7 +301,17 @@ what it needs:**
   `credentials.factorCensus()` over every spelling, from ONE call into the
   directory (`credentialCensus()`), united per row by the same
   `mergeFactors()`. The census carries seven facts and never the recovery
-  codes or the authenticator's detail, which no count reads.
+  codes or the authenticator's detail, which no count reads. **The API's
+  two doors ask it asynchronously (#621)**: `usersJsonAsync()` and
+  `mfaRosterJsonAsync()` build the population and its census first
+  (`peopleAndCensusAsync()`: the first names, then
+  `credentials.factorCensusAsync()` through the directory's
+  `credentialCensusAsync()`) and hand both to `usersListJson()`
+  (`opts.population`, `opts.census`), which then asks nothing for them. In
+  a windowed process the synchronous census was one blocking round trip
+  per person; `ldap/CLAUDE.md` (*the window*) has the counts.
+  `tests/users_page_before_decoration.js` section 8 holds that both doors
+  answer what the synchronous views answer.
 * **Page, then decorate.** `pagedRows()` takes `options.decorate(row)` and
   applies it to the shown slice only. `decoratePerson()` builds each shown
   row's full factors from `credentials.factorHolderRow()` — which is
@@ -396,7 +406,10 @@ have to be keyed on every input a fact depends on — the people subtree's
 version, the realm's authentication policy and mail settings for the emailed
 factor, and the key epoch — and a request that already reads no secret and
 makes one call into the directory does not need it. Under #349's windowed
-directory, `credentialCensus()` is one batched `byKeys()` query.
+directory the requests ask `credentialCensusAsync()` (#621): `byKeys` five
+hundred names at a time and a `byName` per name not at `uid=<name>`, all
+asynchronous; `credentialCensus()` there is still a round trip per person,
+for a synchronous caller.
 
 ## `certificate_views.ts`: THE CERTIFICATE DETAILS DIALOG'S CATALOGUE (2026-09-13)
 
