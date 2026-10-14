@@ -7005,8 +7005,10 @@ anything rotated goes on its issuer's list as `superseded` automatically.
 lists and responders are served at `/pki/crl/{scope}/{ca}`,
 `/pki/ocsp/{scope}/{ca}` and `/pki/ca/{scope}/{ca}.cer` with an index at
 `/pki/revocation`, published into the directory under `ou=crl` (by the
-front process at start and by the `pki.crl-directory-refresh` job — not by a
-request worker, since #613: `pki.js`'s `start()` argues it), and named inside
+front process once its listener is bound — `publishStartupCrls()` from
+`server.js`'s `announce()`, since #617; it was inside `pki.start()`, 4 s of
+8081's way to the socket — and by the `pki.crl-directory-refresh` job; not by
+a request worker, since #613: `pki.js`'s `start()` argues both), and named inside
 every certificate this service issues in TWO SCHEMES (http, ldap — it was three,
 with ldaps, until 2026-09-13; `pki_revocation.js`'s `httpBase()` argues it). A
 pane on `/admin/pki` revokes by hand with any of the nine reasons RFC 5280
