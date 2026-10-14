@@ -514,6 +514,67 @@ async function batchOrder(t, dir) {
     return one[1] === s.LOCK && one[2][0] === 'default';
   }), 'E7. the batch takes the realm\'s advisory lock and no table lock',
   JSON.stringify(texts(db)));
+
+  // E8. A running service, seen at the first look (nothing is sealed) and
+  // seen only under the lock (it started meanwhile: nothing is inserted).
+  for (const when of [1, 2]) {
+    let asked = 0;
+    let sealed = 0;
+    const live = pgDouble(function (text, params) {
+      if (text === s.LIVE_READERS) {
+        asked += 1;
+        return [{ n: asked >= when ? 1 : 0 }];
+      }
+      if (text === s.INSERT) {
+        return params[2].map(function (k) {
+          return { dn_key: k };
+        });
+      }
+      return [];
+    });
+    let refused = '';
+    try {
+      await bi.importFile({
+        db: live, realmId: 'default', usersDn: USERS, file: file, batch: 10,
+        codec: { sealAttributes: function () {
+          sealed += 1;
+          return '$aesgcm$sealed';
+        }, index: function () {
+          return { nameKeys: [], mailKeys: [], uuidKeys: [], classKeys: [],
+                   valueKeys: [], attrNames: [] };
+        }, dekKeys: function () {
+          return {};
+        } },
+        sealing: true, language: '', digest: function (n) {
+          return 'digest:' + n;
+        },
+        maxEntries: function () {
+          return 0;
+        },
+        seal: function (fn) {
+          return fn();
+        },
+        settle: function () {
+          return Promise.resolve();
+        },
+        uuid: function () {
+          return '00000000-0000-4000-8000-000000000000';
+        }
+      });
+    } catch (e) {
+      refused = String((e && e.message) || e);
+    }
+    const inserts = live.seen.filter(function (one) {
+      return one[1] === s.INSERT;
+    }).length;
+    t.check(/STS-LDAP-0153/.test(refused) && inserts === 0 &&
+            (when === 1 ? sealed === 0 : sealed === 6),
+            'E8. a service seen running ' + (when === 1
+              ? 'before the batch is refused before anything is sealed'
+              : 'only once the lock is held is refused before the insert') +
+            ' (STS-LDAP-0153)', refused + ' sealed ' + sealed + ' inserts ' +
+            inserts);
+  }
   log.debug("Leaving batchOrder().");
 }
 
