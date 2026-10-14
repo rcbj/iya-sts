@@ -416,8 +416,10 @@ function childMain() {
                  client: client };
       };
       const pend = function (n) {
-        pendingHandle.restore('', DOOR + '|' + n.id, {
-          at: Date.now(), id: n.id, door: DOOR, address: BALANCER,
+        // Keyed by the cookie value's digest since #614.
+        const idKey = require(ROOT + '/common/crypto').credentialDigest(n.id);
+        pendingHandle.restore('', DOOR + '|' + idKey, {
+          at: Date.now(), id: idKey, door: DOOR, address: BALANCER,
           mechListDer: prim.toHex(n.mechListDer),
           selected: spnego.KRB5_MECH_OID,
           initiatorKey: { etype: 18, key: prim.toHex(n.key) },
