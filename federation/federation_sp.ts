@@ -332,6 +332,15 @@ const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
 // would have let one realm's flood evict another realm's in-flight sign-ins,
 // which is the denial of service the cap exists to bound arriving through the
 // door it was meant to close.
+//
+// **KEYED BY `credentialDigest(handle)`, AND THE HANDLE IS NOT IN THE ROW
+// (#614).** The handle is the flow's bearer — whoever presents it as a
+// RelayState, wctx or state spends the context — and the store only looks it
+// up and spends it, so it holds the digest, computed when the handle is minted
+// and again when it comes back. The two callers that build an authorization
+// request from a context just stored are handed the handle beside it
+// (`heldContext()`), and `takeContext()` answers the record with the handle
+// it was asked for put back on. A row of the old shape is simply not found.
 const contexts = realms.map({ persist: 'federation_sp.contexts',
                               retain: 'age',
                               // #333: the context's `expires`, ms.
@@ -571,7 +580,7 @@ class FederationSp {
    *   in a service deployed as cells)
    */
   putContext(record) {
-    const { log, randomId } = this.deps;
+    const { log, randomId, stsCrypto } = this.deps;
     log.debug("Entering FederationSp.putContext().");
     // STAMPED WITH THE CELL THAT HOLDS IT (#98 D10): the context store is
     // the cell's, and a handle comes back — as a RelayState, a wctx, a
@@ -606,9 +615,10 @@ class FederationSp {
                  'tell.');
       }
     }
-    contexts.set(handle, Object.assign({ handle: handle, startedAt: now,
-                                         expires: now + this.contextTtlMs() },
-                                       record));
+    contexts.set(stsCrypto.credentialDigest(handle),
+                 Object.assign({ startedAt: now,
+                                 expires: now + this.contextTtlMs() },
+                               record));
     log.debug("Leaving FederationSp.putContext(). handle=" + handle + ', ' +
               contexts.size + ' ' +
               'in flight.');
@@ -659,21 +669,33 @@ class FederationSp {
    * @returns the context, or null when there is none or it has expired
    */
   takeContext(handle) {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering FederationSp.takeContext(). handle=" +
               (handle || '(none)'));
-    const record = contexts.get(String(handle || ''));
+    const key = stsCrypto.credentialDigest(String(handle || ''));
+    const record = contexts.get(key);
     if (!record) {
       log.debug("Leaving FederationSp.takeContext(). No such context.");
       return null;
     }
-    contexts.delete(record.handle);
+    contexts.delete(key);
     if (record.expires < Date.now()) {
       log.debug("Leaving FederationSp.takeContext(). It had expired.");
       return null;
     }
     log.debug("Leaving FederationSp.takeContext(). Found it.");
-    return record;
+    return Object.assign({ handle: String(handle) }, record);
+  }
+
+  // A context just stored, read back WITHOUT spending it, with its handle
+  // beside it (#614: the row holds no handle) — for the authorization
+  // request that carries the handle as `state`.
+  private heldContext(handle) {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering FederationSp.heldContext().");
+    const record = contexts.get(stsCrypto.credentialDigest(String(handle)));
+    log.debug("Leaving FederationSp.heldContext().");
+    return record ? Object.assign({ handle: String(handle) }, record) : null;
   }
 
   private enabled() {
@@ -3062,7 +3084,7 @@ class FederationSp {
         }
         const handle = this.putContext(contextRecord);
         const params = this.authorizationParams(base, got.record,
-                                                contexts.get(handle));
+                                                this.heldContext(handle));
         return rp.authorizationRequestUrl(got.record, params)
           .then(function (url) {
             res.redirect(302, url);
@@ -3083,7 +3105,7 @@ class FederationSp {
 
     // OIDC and OAuth 2.0.
     const handle = this.putContext(contextRecord);
-    const stored = contexts.get(handle);
+    const stored = this.heldContext(handle);
     res.redirect(302, this.authorizationRequestUrl(base, record, stored));
     log.debug("Leaving the federation login endpoint. " + record.fedProtocol +
               ' authorization request.');
