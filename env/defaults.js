@@ -765,6 +765,7 @@ var config = {
     workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
     workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
+    timeLimit: 30,                                                                                                                              // Search time limit (s)
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
     selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
     directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
