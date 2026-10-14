@@ -685,6 +685,7 @@ var config = {
     unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
+    maxArtifacts: 10000,                                                   // Unresolved artifacts kept
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
     spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
@@ -705,7 +706,9 @@ var config = {
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)
-    assertionCacheMax: 500                                                 // Assertions kept for AssertionIDReference
+    assertionCacheMax: 500,                                                // Assertions kept for AssertionIDReference
+    assertionCacheTtlS: 3600,                                              // Kept assertion lifetime without NotOnOrAfter (seconds)
+    maxArtifacts: 10000                                                    // Unresolved artifacts kept
   },
 
   // --- WS-Trust --------------------------------------------------------

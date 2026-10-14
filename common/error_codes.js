@@ -10025,6 +10025,13 @@ const CODES = [
       'on a second factor the relying party does not allow ' +
       '(appMfaMechanism, #475).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0110',
+    summary: 'A SAML 2.0 or SAML 1.1 artifact could not be issued: the ' +
+      'realm already holds saml2.maxArtifacts (saml11.maxArtifacts) ' +
+      'unresolved artifacts, and a full store refuses rather than forget ' +
+      'one (#614). Nothing was sent to the service provider.',
+    spec: 'HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 ' +
+      'Browser/Artifact profile can carry no failure without an artifact' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +

@@ -424,10 +424,60 @@ const pendingFlows = realms.map({ persist: 'saml11_sso.pendingFlows',
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
+//
+// **KEYED BY `credentialDigest(artifact)` AND BOUNDED BY `saml11.maxArtifacts`,
+// FULL MEANING REFUSE (#614)** — `saml2_sso.ts`'s note on its `artifacts` is
+// the argument for both, and it is the same here: the AssertionHandle is a
+// bearer secret that is only ever looked up, so the map holds its SHA-256;
+// the value stays whole because the responder hands the assertion back; and
+// an unresolved artifact is never evicted to make room for another.
 const artifacts = realms.map({ persist: 'saml11_sso.artifacts',
                                retain: 'age',
                                // #333: the artifact's `expires`, ms.
                                expiresAt: realms.expiryField('expires', 1) });
+
+// The artifact store's bound, read in the ambient realm.
+function maxArtifacts(): number {
+  helpers.log.debug("Entering maxArtifacts().");
+  helpers.log.debug("Leaving maxArtifacts().");
+  return Number(config.value('saml11.maxArtifacts'));
+}
+
+// Described to `/admin/caches` (#614, rule 3ap): the 2.0 row's twin.
+const artifactsCount = cacheRegistry.register({
+  name: 'saml11.artifacts',
+  title: 'SAML 1.1 artifacts',
+  description: 'The assertions SAML 1.1 artifacts stand for, until each is ' +
+    'resolved once at the SAML responder. Keyed by the SHA-256 of the ' +
+    'artifact, never by the artifact.',
+  owner: 'saml/saml11_sso.ts',
+  scope: 'realm',
+  kind: 'replay',
+  persisted: true,
+  hitMeaning: 'an artifact resolved',
+  settings: ['saml11.maxArtifacts', 'saml11.artifactTtlS'],
+  maxEntries: function (): number {
+    return maxArtifacts();
+  },
+  bound: 'Enforced: saml11.maxArtifacts per realm. Expired artifacts are ' +
+    'cleared at the bound; a store still full REFUSES the next artifact ' +
+    'rather than forget an unresolved one.',
+  lifetime: function (): string {
+    return 'Until resolved once, or until saml11.artifactTtlS passes.';
+  },
+  // The artifacts `respond()` would already refuse as expired.
+  eject: cacheRegistry.realmMapEjector(realms, artifacts,
+    function (held: any, key: unknown, now: number): boolean {
+      return Number(held && held.expires) < now;
+    }),
+  entries: function (): unknown[] {
+    return cacheRegistry.realmMapRows(realms, artifacts,
+      function (held: any, key: unknown): object {
+        return { key: cacheRegistry.digestKey(key),
+                 validUntil: Number(held && held.expires) || null };
+      });
+  }
+});
 // How much longer than an artifact's own remaining lifetime its cluster claim
 // lives: two nodes' clocks may disagree about when it expired (#46). See
 // respond().
@@ -438,7 +488,22 @@ const ARTIFACT_CLAIM_SKEW_MS = 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-const assertionsById = realms.map({ persist: 'saml11_sso.assertionsById' });
+//
+// AssertionID -> `{ xml, expires }` (#614). It had a count and no lifetime,
+// so an assertion stayed answerable by reference until 500 newer ones pushed
+// it out — on a quiet realm, for ever, long after its own NotOnOrAfter. Now
+// each entry expires with the assertion: at its <saml:Conditions
+// NotOnOrAfter>, or `saml11.assertionCacheTtlS` after it was kept when it
+// carries none. The expiry is checked where it is READ (an expired assertion
+// is never handed back), the `caches.eject-expired` scheduler job deletes
+// what has expired, and `saml11.assertionCacheMax` still bounds the count at
+// the insert. A row of the old shape (the bare XML string) carries no
+// `xml`, so it is not found.
+const assertionsById = realms.map({ persist: 'saml11_sso.assertionsById',
+                                    retain: 'age',
+                                    // the entry's `expires`, ms.
+                                    expiresAt: realms.expiryField('expires',
+                                                                  1) });
 
 // Described to `/admin/caches` (#74, rule 3ap), in `docs/caches.md`'s other
 // protocols. A register of issued assertions more than a cache — an entry
@@ -460,17 +525,33 @@ const assertionsCount = cacheRegistry.register({
   bound: 'Enforced: saml11.assertionCacheMax per realm, the oldest dropped; ' +
     'an artifact naming a dropped assertion is answered as unknown.',
   lifetime: function (): string {
-    return 'No expiry: the oldest is dropped past ' +
+    return 'Until the assertion\'s NotOnOrAfter, or ' +
+      'saml11.assertionCacheTtlS when it carries none; the oldest is ' +
+      'dropped past ' +
       'saml11.assertionCacheMax.';
   },
+  // What `respond()` would already refuse as expired (#614).
+  eject: cacheRegistry.realmMapEjector(realms, assertionsById,
+    function (held: any, id: unknown, now: number): boolean {
+      return !keptAssertionLive(held, now);
+    }),
   entries: function (): unknown[] {
     return cacheRegistry.realmMapRows(realms, assertionsById,
-      function (xml: unknown, id: unknown): object {
-        return { key: String(id), validUntil: null,
-                 basis: 'until pushed out' };
+      function (held: any, id: unknown): object {
+        return { key: String(id),
+                 validUntil: Number(held && held.expires) || null };
       });
   }
 });
+
+// Is a kept assertion still answerable (#614)? A row of the old shape, a
+// bare string, has no `expires` and is not.
+// A hot path for the ejector, which asks it of every row: no Entering/Leaving
+// pair, or a sweep of a full cache would be a thousand log lines.
+function keptAssertionLive(held: any, now: number): boolean {
+  return !!(held && typeof held === 'object' && typeof held.xml === 'string' &&
+            Number(held.expires) > now);
+}
 
 // ---------------------------------------------------------------------------
 // THE REGISTRY.
@@ -1324,7 +1405,16 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.rememberAssertion().");
       return '';
     }
-    assertionsById.set(m[1], xml);
+    // ITS OWN LIFETIME (#614): the NotOnOrAfter of its Conditions, which
+    // every assertion this service builds carries; the setting only when one
+    // does not. Read off the XML rather than passed in, so the three callers
+    // cannot disagree with the document about when it stops being valid.
+    const until = /<(?:[A-Za-z_][\w.-]*:)?Conditions\b[^>]*?\bNotOnOrAfter="([^"]+)"/
+      .exec(xml);
+    const parsed = until ? Date.parse(until[1]) : NaN;
+    const expires = isFinite(parsed) ? parsed
+      : Date.now() + Number(config.value('saml11.assertionCacheTtlS')) * 1000;
+    assertionsById.set(m[1], { xml: xml, expires: expires });
     const cap = this.assertionCacheMax();
     while (assertionsById.size > cap) {
       assertionsById.delete(assertionsById.keys().next().value);
@@ -1451,7 +1541,31 @@ class Saml11Sso {
     return foreign;
   }
 
-  private stashArtifact(artifact, detail) {
+  // The page for an artifact that could not be stored (#614): the realm's
+  // artifact store is full of unresolved artifacts. Nothing reaches the
+  // relying party — SAML 1.1's browser profiles have no failure message to
+  // send it at all (see `samlError()`), so the page is the only answer there
+  // is, 503 as for any exhausted resource.
+  private refuseFullArtifactStore(res, rpId) {
+    const { log } = this.deps;
+    log.debug("Entering Saml11Sso.refuseFullArtifactStore().");
+    log.warn(errorCodes.tag('STS-SAML-0110') + 'saml11: no artifact could ' +
+             'be issued for "' + (rpId || '(unnamed)') + '": the realm ' +
+             'already holds saml11.maxArtifacts (' +
+             config.value('saml11.maxArtifacts') + ') unresolved ' +
+             'artifacts, and a full store refuses rather than forget one.');
+    errorCodes.mark(res, 'STS-SAML-0110');
+    this.samlError(res, 503, 'Busy — SAML 1.1',
+      'This service is holding as many unresolved SAML 1.1 artifacts as it ' +
+      'is configured to (saml11.maxArtifacts), so it cannot issue another ' +
+      'one until some are resolved or expire. Nothing was sent to the ' +
+      'relying party. Try again shortly.');
+    log.debug("Leaving Saml11Sso.refuseFullArtifactStore().");
+  }
+
+  // Answers false, and stashes nothing, when the realm's store is full of
+  // unresolved artifacts (`saml11.maxArtifacts`); the caller refuses.
+  private stashArtifact(artifact, detail): boolean {
     const { log } = this.deps;
     log.debug("Entering Saml11Sso.stashArtifact().");
     // Off the relying party this artifact was minted FOR, which `detail`
@@ -1463,15 +1577,29 @@ class Saml11Sso {
     // — into five minutes (2026-09-12). Only a value that is not a number at
     // all falls back.
     const ttlSUsable = isFinite(ttlS) && ttlS >= 0 ? ttlS : 300;
-    artifacts.set(artifact,
-                  Object.assign({ expires: Date.now() + ttlSUsable * 1000 },
-                                detail));
+    // The sweep first, so the bound below counts only what is still live.
     artifacts.forEach((v, k) => {
       if (v.expires < Date.now()) {
         artifacts.delete(k);
       }
     });
+    // THE BOUND (#614): refuse, never evict. The registry logs the refusal
+    // (STS-CORE-0097) at most once a minute; the caller marks its own code.
+    const room = cacheRegistry.makeRoom(artifacts, maxArtifacts(), {
+      policy: 'refuse', counter: artifactsCount, name: 'saml11.artifacts',
+      setting: 'saml11.maxArtifacts'
+    });
+    if (!room.ok) {
+      log.debug("Leaving Saml11Sso.stashArtifact(). The store is full.");
+      return false;
+    }
+    // THE DIGEST IS THE KEY (#614); the artifact itself goes to the browser
+    // and nowhere else.
+    artifacts.set(stsCrypto.credentialDigest(artifact),
+                  Object.assign({ expires: Date.now() + ttlSUsable * 1000 },
+                                detail));
     log.debug("Leaving Saml11Sso.stashArtifact().");
+    return true;
   }
 
   // Deliver a built assertion to a relying party, on whichever profile was
@@ -1486,7 +1614,7 @@ class Saml11Sso {
       // The ASSERTION is stashed, not a Response — decision 3. The Response is
       // built at resolution time so it can carry InResponseTo and a Recipient
       // naming the SOAP caller.
-      this.stashArtifact(artifact, {
+      const stashed = this.stashArtifact(artifact, {
         assertion: opts.assertion, rpId: opts.rpId, providerId: opts.providerId,
         // BOTH NAMES THE RELYING PARTY HAD IN THIS FLOW. `scopedId` is the
         // `{rp}` segment the browser arrived on and is what the responder is
@@ -1497,6 +1625,11 @@ class Saml11Sso {
         scopedId: opts.scopedId,
         subject: opts.subject, createdAt: Date.now()
       });
+      if (!stashed) {
+        this.refuseFullArtifactStore(res, opts.rpId);
+        log.debug("Leaving Saml11Sso.deliver(). The artifact store is full.");
+        return;
+      }
       let url = opts.destination +
         (opts.destination.indexOf('?') >= 0 ? '&' : '?') +
         'SAMLart=' + encodeURIComponent(artifact);
@@ -2448,7 +2581,14 @@ class Saml11Sso {
         log.debug("Leaving Saml11Sso.respond(). Another provider's artifact.");
         return empty('STS-SAML-0098');
       }
-      const held = artifacts.get(artifact);
+      // THE DIGEST IS THE KEY (#614), and expired is not held, at the read —
+      // `saml2_sso.ts`'s `resolveArtifact()` says why for both.
+      const key = stsCrypto.credentialDigest(artifact);
+      let held = artifacts.get(key);
+      if (held && !(Number(held.expires) >= Date.now())) {
+        artifacts.delete(key);
+        held = undefined;
+      }
       if (held) {
         // WHO IS ASKING, before the artifact is spent (#37 follow-up) — see
         // authenticateArtifactCaller().
@@ -2471,12 +2611,14 @@ class Saml11Sso {
                  '(saml11.artifactTtlS), or it has already been resolved ' +
                  'once — which destroys it, because saml-bindings-1.1 ' +
                  'section 3.2.3 says an artifact is resolvable exactly once.');
+        artifactsCount.miss();
         log.debug("Leaving Saml11Sso.respond(). Unknown artifact.");
         return empty('STS-SAML-0037');
       }
       // ONE-SHOT. Deleted BEFORE the answer is built rather than after it is
       // sent, so that two requests arriving together cannot both find it.
-      artifacts.delete(artifact);
+      artifacts.delete(key);
+      artifactsCount.hit();
       // AND SPENT ACROSS THE CLUSTER before it is answered (2026-09-14, #46):
       // the delete above reaches another node a moment later, and inside that
       // moment the other node would resolve it too. saml2_sso.ts's
@@ -2541,7 +2683,14 @@ class Saml11Sso {
                   "issued the assertion.");
         return undefined;
       }
-      const assertion = assertionsById.get(wanted);
+      // EXPIRED IS NOT HELD, AT THE READ (#614): an assertion past its own
+      // NotOnOrAfter is no longer one this service stands behind, and the
+      // ejector is housekeeping. Deleted here as well, since it is dead.
+      const kept = assertionsById.get(wanted);
+      if (kept && !keptAssertionLive(kept, Date.now())) {
+        assertionsById.delete(wanted);
+      }
+      const assertion = keptAssertionLive(kept, Date.now()) ? kept.xml : null;
       if (assertion) {
         assertionsCount.hit();
       } else {
@@ -2555,8 +2704,8 @@ class Saml11Sso {
                       'no assertion with AssertionID "' + wanted + '" ' +
                       'is held here. This service keeps the ' +
                       'last ' + this.assertionCacheMax() + ' ' +
-                      'it issued, in memory, and everything is gone on ' +
-                      'restart.', '', requestId, '');
+                      'it issued, each only until its NotOnOrAfter.',
+                      '', requestId, '');
       }
       // NOT one-shot, unlike an artifact — see the note on assertionsById. A
       // reference is not a credential; whoever holds it holds the assertion

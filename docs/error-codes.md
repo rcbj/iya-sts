@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4320** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4321** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -65,7 +65,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 293
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
@@ -2293,6 +2293,7 @@ Raised from: saml/.
 | `STS-SAML-0107` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a second factor the service provider does not allow (appMfaMechanism, #475). | Responder / RequestDenied |
 | `STS-SAML-0108` | A SAML 1.1 sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0109` | A SAML 1.1 flow back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
+| `STS-SAML-0110` | A SAML 2.0 or SAML 1.1 artifact could not be issued: the realm already holds saml2.maxArtifacts (saml11.maxArtifacts) unresolved artifacts, and a full store refuses rather than forget one (#614). Nothing was sent to the service provider. | HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 Browser/Artifact profile can carry no failure without an artifact |
 
 ## STS-WSTRUST
 

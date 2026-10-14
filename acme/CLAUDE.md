@@ -90,7 +90,9 @@ MAC(realm, expiry, random)` under the `acme-nonce` secret
 any worker forks (`ssf/ssf_receivers.ts`'s channel). Any process can check it
 with no lookup.
 
-**Single use is the store half** (`acme.usedNonces`) and it CONVERGES rather
+**Single use is the store half** (`acme.usedNonces`, keyed by the nonce's
+`credentialDigest()` since #614, so the store holds no nonce — a Replay-Nonce
+is public and MAC-bound, but the issue's rule is every one-time value) and it CONVERGES rather
 than synchronises — the DPoP `jti` set's trade. What a replay inside that window
 can achieve is bounded by every resource's own state: an order finalizes once, a
 certificate revokes once, an EAB key binds once. A nonce from before a restart

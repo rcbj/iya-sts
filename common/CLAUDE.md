@@ -8236,6 +8236,13 @@ under `/admin/users`.
 produce** — a person who opens the page and never scans it would be locked out
 by a form they abandoned.
 
+**`credentials.pendingBackupCodes` is keyed by `credentialDigest(handle)`
+since #614** (`pendingCodesKey()`): the handle is what lets a form confirm the
+set and is only looked up and spent. The CODES stay whole in the record — the
+page shows them again until they are confirmed, and they are scrypt-hashed
+then. `pendingTotp` and `pendingKeys` are keyed by a username, which is not a
+credential; the TOTP seed and the WebAuthn options in them are re-drawn.
+
 **The three pending stores are persisted since 2026-09-14 (#46)** —
 `credentials.pendingTotp`, `credentials.pendingBackupCodes` and
 `credentials.pendingKeys`. They were deliberately undeclared, on the argument
