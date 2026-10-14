@@ -11812,7 +11812,16 @@ if (typeof mailChannel.setDirectory === 'function') {
       log.debug('Entering personByMail().');
       const wanted = String(address || '').trim().toLowerCase();
       let found = '';
-      if (wanted) {
+      if (wanted && directoryWindow) {
+        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
+        // is the portal's unauthenticated forgot-password form, and
+        // `allPersons()` paged and copied every person in the realm to
+        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
+        // order; the first is the answer, as the first in `allPersons()`'
+        // order was.
+        const hits = peopleByMail(wanted);
+        found = hits.length ? hits[0].username || '' : '';
+      } else if (wanted) {
         allPersons().some(function (entry) {
           const values = (entry.attributes && entry.attributes.mail) || [];
           if (values.some(function (v) {
@@ -12378,6 +12387,7 @@ if (typeof credentials.addDirectoryHooks === 'function') {
     // headline and the capped list of `/admin/users`.
     personCount: personCount,
     personNamesUpTo: personNamesUpTo,
+    personNamesUpToAsync: personNamesUpToAsync,
     // The whole directory's credential tiles, and how many names are
     // people here (#610).
     credentialTallies: credentialTallies,
@@ -14488,6 +14498,9 @@ function operationRequest(operation, req) {
       return String(a);
     });
     shape.sizeLimit = parseInt(req.sizeLimit, 10) || 0;
+    // THE CLIENT'S TIME LIMIT TRAVELS TOO (#616): a windowed search stops
+    // paging at the shorter of it and `ldap.timeLimit`.
+    shape.timeLimit = parseInt(req.timeLimit, 10) || 0;
   }
   log.debug('Leaving operationRequest().');
   return shape;
@@ -14538,6 +14551,7 @@ function operationContext(operation, shape) {
     req.filter = ldap.parseFilter(shape.filter || '(objectclass=*)');
     req.attributes = shape.attributes || [];
     req.sizeLimit = shape.sizeLimit || 0;
+    req.timeLimit = shape.timeLimit || 0;
   }
   log.debug('Leaving operationContext().');
   return req;
@@ -14613,10 +14627,30 @@ function ldapErrorNamed(name, message) {
 // `send()` takes the `SearchEntry` `toSearchEntry()` built and keeps the two
 // members that are the ANSWER, dropping the message id, which belongs to the
 // response this worker is not writing.
+//
+// **AND WITH `emit`, IT STREAMS (#616).** A search that pages the store
+// asynchronously sends entries as it finds them, and the front process
+// should be writing them to the socket while the worker reads the next
+// page, not after the last. So the entries collected since the last batch
+// go out through `emit` once the handler next gives the event loop back (a
+// `setImmediate`, which runs between two pages of the store), and
+// `operationOutcome()` answers only what is left. A handler that finishes in
+// one tick — every other operation, and a search from memory — never lets
+// the batch run, and answers everything at the end as it always did.
 // ---------------------------------------------------------------------------
-function collectingResponse() {
+function collectingResponse(emit) {
   log.debug("Entering collectingResponse().");
-  const out = { entries: [], ended: false, endArg: undefined };
+  const out = { entries: [], ended: false, endArg: undefined, emitted: 0 };
+  let scheduled = false;
+  const flush = function () {
+    scheduled = false;
+    if (!out.entries.length || out.ended) {
+      return;
+    }
+    const batch = out.entries.splice(0);
+    out.emitted += batch.length;
+    emit(batch);
+  };
   log.debug("Leaving collectingResponse().");
   return {
     // Any number will do and none of it travels; it is here because
@@ -14631,6 +14665,10 @@ function collectingResponse() {
                            entry.objectName),
         attributes: plainAttributes(entry.attributes)
       });
+      if (typeof emit === 'function' && !scheduled) {
+        scheduled = true;
+        setImmediate(flush);
+      }
       log.debug("Leaving send().");
     },
     end: function (arg) {
@@ -14660,11 +14698,13 @@ function collectingResponse() {
  *
  * @param operation - the operation's name
  * @param shape - the request, as `operationRequest()` described it
+ * @param emit - optional; handed each batch of search entries as an
+ *   asynchronous search finds them (#616), which the outcome then omits
  * @returns the outcome, `{ ok, entries, ... }` or `{ ok: false, errorName, ...
  * }`, or a promise of it
  * @throws when this process has no handler for the operation
  */
-function performOperation(operation, shape) {
+function performOperation(operation, shape, emit) {
   log.debug('Entering performOperation(). operation=' + operation);
   const handler = LOCAL_HANDLERS[operation];
   if (!handler) {
@@ -14672,7 +14712,7 @@ function performOperation(operation, shape) {
       operation + '" operation.');
   }
   const req = operationContext(operation, shape);
-  const res = collectingResponse();
+  const res = collectingResponse(emit);
   let failure = null;
   let called = false;
   let signal = null;
@@ -14746,11 +14786,14 @@ function operationOutcome(operation, req, res, failure) {
     // `tests/vendored/sts_directory_bulk_load_ldap.js` — over a socket, in a
     // stack, with operations off.
     // ---------------------------------------------------------------------
+    // SPLICED, not read: a streaming search's batch that has not yet run
+    // (`collectingResponse()`) must find nothing, or these would go twice.
+    const already = res.collected.entries.splice(0);
     log.debug('Leaving operationOutcome(). Refused with ' +
-              res.collected.entries.length + ' entry/entries already sent.');
+              already.length + ' entry/entries already sent.');
     return { ok: false, errorName: failure.name || 'OperationsError',
              error: failure.message || '',
-             entries: res.collected.entries };
+             entries: already };
   }
   if (!res.collected.ended) {
     log.debug('Leaving operationOutcome(). The handler ended nothing.');
@@ -14766,10 +14809,31 @@ function operationOutcome(operation, req, res, failure) {
                'sending a result message. See ldap/CLAUDE.md — a handler ' +
                'that neither ends nor fails hangs the client for ever.' };
   }
-  log.debug('Leaving operationOutcome(). ' + res.collected.entries.length +
-            ' entry/entries.');
-  return { ok: true, entries: res.collected.entries,
-           endArg: res.collected.endArg };
+  const rest = res.collected.entries.splice(0);
+  log.debug('Leaving operationOutcome(). ' + rest.length +
+            ' entry/entries' + (res.collected.emitted
+    ? ', ' + res.collected.emitted + ' sent ahead.' : '.'));
+  return { ok: true, entries: rest, endArg: res.collected.endArg };
+}
+
+// SEARCH ENTRIES A WORKER COLLECTED, WRITTEN TO THE REAL RESPONSE: at the end
+// (`applyOperationResult()`), and — for a search that streams (#616) — as
+// each batch arrives from the worker, before the end.
+function sendCollectedEntries(res, entries) {
+  log.debug("Entering sendCollectedEntries().");
+  (entries || []).forEach(function (entry) {
+    res.send(new ldap.SearchEntry({
+      // THE RESPONSE'S OWN MESSAGE ID. See toSearchEntry()'s header for what
+      // sending anything else costs.
+      messageId: res.messageId,
+      objectName: entry.objectName,
+      attributes: (entry.attributes || []).map(function (attribute) {
+        return new ldap.Attribute({ type: attribute.type,
+                                    values: attribute.values });
+      })
+    }));
+  });
+  log.debug("Leaving sendCollectedEntries().");
 }
 
 // ---------------------------------------------------------------------------
@@ -14797,18 +14861,7 @@ function applyOperationResult(operation, req, res, next, result) {
   // entries and code 4 — see performOperation()'s block on the same subject.
   // Every other refusal collected none, so this loop does nothing for them.
   if (operation === 'search') {
-    (result && result.entries || []).forEach(function (entry) {
-      res.send(new ldap.SearchEntry({
-        // THE RESPONSE'S OWN MESSAGE ID. See toSearchEntry()'s header for what
-        // sending anything else costs.
-        messageId: res.messageId,
-        objectName: entry.objectName,
-        attributes: (entry.attributes || []).map(function (attribute) {
-          return new ldap.Attribute({ type: attribute.type,
-                                      values: attribute.values });
-        })
-      }));
-    });
+    sendCollectedEntries(res, result && result.entries);
   }
   if (!result || !result.ok) {
     const err = ldapErrorNamed(result && result.errorName,
@@ -14876,8 +14929,17 @@ function throughTheRequestPool(operation, local) {
                'handled in this process.');
       return local(req, res, next);
     }
+    // A SEARCH STREAMS (#616): each batch the worker sends before its
+    // answer is written to this socket as it arrives, so a search paging
+    // the store reaches its client page by page; the answer carries only
+    // what was not sent ahead of it.
     pool.runOperation('ldap.' + operation, shape,
-                      { affinity: connectionAffinity(req) })
+                      { affinity: connectionAffinity(req),
+                        onPartial: operation === 'search'
+                          ? function (entries) {
+                            sendCollectedEntries(res, entries);
+                          }
+                          : undefined })
       .then(function (answer) {
         if (!answer || !answer.dispatched) {
           return local(req, res, next);
@@ -14953,8 +15015,8 @@ function registerWorkerOperations() {
     if (worker.OPERATIONS && worker.OPERATIONS.has(kind)) {
       return;
     }
-    worker.register(kind, function (shape) {
-      return performOperation(operation, shape);
+    worker.register(kind, function (shape, emit) {
+      return performOperation(operation, shape, emit);
     });
   });
   log.debug('Leaving registerWorkerOperations(). ' +
@@ -16656,29 +16718,41 @@ server.search('', function (req, res, next) {
   let withheldEntries = 0;
   // AN INDEXED EQUALITY IS ANSWERED FROM THE STORE'S INDEX (#320,
   // `indexedSearchCandidates()`), and otherwise
-  // A WINDOWED WORKER WALKS ONLY WHAT THE BASE REACHES (#349): the resident
-  // entries under it and the part of the people and devices it names, paged
-  // from the store and handed out to nobody — a search edits nothing, so
-  // nothing it read is held once it has been sent.
+  // A WINDOWED PROCESS PAGES ONLY WHAT THE BASE REACHES (#349), AND SINCE
+  // #616 ASYNCHRONOUSLY: the resident entries under it and the part of the
+  // people and devices it names, read from the store a page at a time on
+  // the driver's read pool with the event loop given back between pages,
+  // each entry SENT as it is found, the paging stopped by the size limit or
+  // the time limit (`windowedSearchCandidates()`, below the handler). It
+  // was the synchronous `walk()` until then — 28.5 s of one request
+  // worker's event loop for a search of every group at 200,000 people, the
+  // client timing out and every request dispatched to that worker waiting.
+  // A search for GROUPS asks the store's class index (`classesUnder`) for
+  // the windowed containers instead of paging them at all. Nothing read is
+  // handed out — a search edits nothing.
   const narrowed = indexedSearchCandidates(base, req.filter);
-  const candidates = narrowed ? narrowed : directoryWindow
-    ? (function* () {
-      for (const pair of directoryWindow.walk(realms.currentId(),
-                                              normalizeDn(base), true)) {
-        yield pair[1];
-      }
-    })()
-    : entries.values();
-  for (const stored of candidates) {
-    if (!isUnder(stored.dn, base)) continue;
+  const started = Date.now();
+  const timeLimit = searchTimeLimitSeconds(req);
+  // ONE CANDIDATE, CONSIDERED: scope, visibility, the filter, the size
+  // limit, and sent. True when the search has ENDED — the size limit was
+  // reached and the refusal already passed to `next()` — so whoever is
+  // feeding candidates stops, and stops paging.
+  const consider = function (stored) {
+    if (!isUnder(stored.dn, base)) {
+      return false;
+    }
     const depth = depthUnder(stored.dn, base);
-    if (scope === 'base' && depth !== 0) continue;
-    if (scope === 'one' && depth !== 1) continue;
+    if (scope === 'base' && depth !== 0) {
+      return false;
+    }
+    if (scope === 'one' && depth !== 1) {
+      return false;
+    }
     considered++;
     const view = readViewOf(reader, stored);
     if (!view.visible) {
       withheldEntries++;
-      continue;
+      return false;
     }
     let matches = false;
     try {
@@ -16706,7 +16780,9 @@ server.search('', function (req, res, next) {
                ': ' + e.message);
       matches = false;
     }
-    if (!matches) continue;
+    if (!matches) {
+      return false;
+    }
     if (sent >= limit) {
       log.info('ldap: the search reached its size limit of ' + limit + '.');
       // A truncated search is `refused` rather than `success`, and the two must
@@ -16759,10 +16835,11 @@ server.search('', function (req, res, next) {
       // already sent stay sent, which is what section 4.5.2 requires: they are
       // a valid partial answer and the code is how the client knows it is
       // partial.
-      return next(coded('STS-LDAP-0021', new ldap.SizeLimitExceededError(
+      next(coded('STS-LDAP-0021', new ldap.SizeLimitExceededError(
         'this search returned its limit of ' + limit + ' entry/entries and ' +
         'the answer is INCOMPLETE; ask for less with a filter, or raise ' +
         'ldap.sizeLimit')));
+      return true;
     }
     res.send(toSearchEntry(stored, req.attributes, res.messageId,
                            view.rule));
@@ -16771,47 +16848,269 @@ server.search('', function (req, res, next) {
         normalizeDn(stored.dn) !== normalizeDn(usersDn())) {
       usersSent++;
     }
+    return false;
+  };
+  // THE END OF A SEARCH THAT CONSIDERED EVERYTHING IN SCOPE: the log line,
+  // the audit row and the result message.
+  const finish = function () {
+    // The other naming contexts are NAMED on a search that found nothing
+    // useful in this one, rather than left for somebody to deduce. A client
+    // searching `dc=example,dc=com` for a person who is in `acme` gets an
+    // empty answer that is correct and unhelpful; this is the line that says
+    // where to look. It is logged rather than returned, because LDAP has no
+    // field for "try over there" — the root DSE is where a client is
+    // supposed to read it.
+    const otherContexts = namingContexts().filter(function (context) {
+      return normalizeDn(context) !== normalizeDn(realmBaseDn(
+          realms.currentId()));
+    });
+    log.info('ldap: the search considered ' + considered + ' entry/entries ' +
+             'in scope and returned ' + sent + '.' +
+             (otherContexts.length
+               ? ' This is the "' + realms.currentId() +
+                 '" realm\'s directory; ' +
+                 otherContexts.length + ' other naming context(s) exist (' +
+                 otherContexts.join(', ') + ') and hold their own entries.'
+               : ''));
+    // A search that returned nothing is still a search and still gets a
+    // row. That is not completeness for its own sake: a filter this store
+    // cannot evaluate, and a presence filter defeated by attribute-name
+    // case, both look exactly like an empty directory from the client's side
+    // (the comment above req.filter.matches is the record of that having
+    // happened here), and the row saying "considered 14, returned 0" is what
+    // tells the two apart.
+    auditLdap(req, {
+      action: usersSent ? 'user.query' : 'directory.search',
+      target: base,
+      summary: 'searched ' + base + ' (' + scope + ') and returned ' + sent +
+               ' of ' + considered + ' entry/entries in scope' +
+               (usersSent ? ', ' + usersSent + ' of them under ou=users'
+                 : ''),
+      detail: { scope: scope, filter: filter, considered: considered,
+                returned: sent, users: usersSent,
+                withheldEntries: withheldEntries, sizeLimit: limit,
+                timeLimit: timeLimit,
+                attributes: (req.attributes || []).join(', ') || '(all)' }
+    });
+    res.end();
+    return next();
+  };
+  if (narrowed || !directoryWindow) {
+    // FROM MEMORY, or the index's bounded answer: synchronous, as always.
+    for (const stored of narrowed || entries.values()) {
+      if (consider(stored)) {
+        log.debug('Leaving the LDAP search handler. The size limit was ' +
+                  'reached.');
+        return undefined;
+      }
+    }
+    log.debug('Leaving the LDAP search handler. ' + sent +
+              ' entry/entries sent.');
+    return finish();
   }
-  // The other naming contexts are NAMED on a search that found nothing useful
-  // in this one, rather than left for somebody to deduce. A client searching
-  // `dc=example,dc=com` for a person who is in `acme` gets an empty answer that
-  // is correct and unhelpful; this is the line that says where to look. It is
-  // logged rather than returned, because LDAP has no field for "try over
-  // there" — the root DSE is where a client is supposed to read it.
-  const otherContexts = namingContexts().filter(function (context) {
-    return normalizeDn(context) !== normalizeDn(realmBaseDn(
-        realms.currentId()));
+  // ASYNCHRONOUS FROM HERE, and said so: `performOperation()` waits for
+  // `next` rather than reading an outcome now, and ldapjs, on the socket,
+  // is content with a handler that calls `next` later.
+  req.stsAsyncOperation = true;
+  (async function () {
+    for await (const stored of windowedSearchCandidates(base, req.filter)) {
+      if (Date.now() - started >= timeLimit * 1000) {
+        searchTimedOut(req, base, scope, filter, {
+          sent: sent, users: usersSent, considered: considered,
+          withheldEntries: withheldEntries, timeLimit: timeLimit,
+          clientTimeLimit: Number(req.timeLimit) || 0
+        }, next);
+        return;
+      }
+      if (consider(stored)) {
+        return;
+      }
+    }
+    finish();
+  })().catch(function (e) {
+    // A PAGE OF THE STORE THAT DID NOT COME: the entries already sent stay
+    // sent, and the client is told unavailable (52) rather than success —
+    // an empty remainder would read as a directory with nothing more in it.
+    const code = errorCodes.codeOf(e) || 'STS-LDAP-0141';
+    log.error(errorCodes.tag(code) + 'ldap: a search of ' + base + ' could ' +
+              'not read the store after ' + sent + ' entry/entries: ' +
+              ((e && e.message) || e));
+    const unavailable = coded(code,
+      new ldap.UnavailableError('the directory could not be read'));
+    next(ldapRefusal(req, code, 'a search of ' + base + ' could not read ' +
+      'the store part way, after ' + sent + ' entry/entries; the client was ' +
+      'told LDAP_UNAVAILABLE', unavailable, base, 'error'));
   });
-  log.info('ldap: the search considered ' + considered + ' entry/entries in ' +
-           'scope and returned ' + sent + '.' +
-           (otherContexts.length
-             ? ' This is the "' + realms.currentId() +
-               '" realm\'s directory; ' +
-               otherContexts.length + ' other naming context(s) exist (' +
-               otherContexts.join(', ') + ') and hold their own entries.'
-             : ''));
-  // A search that returned nothing is still a search and still gets a row. That
-  // is not completeness for its own sake: a filter this store cannot evaluate,
-  // and a presence filter defeated by attribute-name case, both look exactly
-  // like an empty directory from the client's side (the comment above
-  // req.filter.matches is the record of that having happened here), and the row
-  // saying "considered 14, returned 0" is what tells the two apart.
-  auditLdap(req, {
-    action: usersSent ? 'user.query' : 'directory.search',
-    target: base,
-    summary: 'searched ' + base + ' (' + scope + ') and returned ' + sent +
-             ' of ' + considered + ' entry/entries in scope' +
-             (usersSent ? ', ' + usersSent + ' of them under ou=users' : ''),
-    detail: { scope: scope, filter: filter, considered: considered,
-              returned: sent, users: usersSent,
-              withheldEntries: withheldEntries, sizeLimit: limit,
-              attributes: (req.attributes || []).join(', ') || '(all)' }
-  });
-  res.end();
-  log.debug('Leaving the LDAP search handler. ' + sent +
-            ' entry/entries sent.');
-  return next();
+  log.debug('Leaving the LDAP search handler. Reading the store.');
+  return undefined;
 });
+
+// ---------------------------------------------------------------------------
+// THE SEARCH'S TIME LIMIT (#616): `ldap.timeLimit` seconds, or the client's
+// own `timeLimit` where it asked for less (RFC 4511 section 4.5.1.5: zero is
+// "no limit" from the client, which leaves the server's).
+// ---------------------------------------------------------------------------
+/**
+ * The seconds a search may take: `ldap.timeLimit`, or the client's shorter
+ * `timeLimit`.
+ *
+ * @param req - the search request
+ * @returns the limit, in seconds
+ */
+function searchTimeLimitSeconds(req) {
+  log.debug('Entering searchTimeLimitSeconds().');
+  const server = Math.max(1, Number(config.value('ldap.timeLimit')) || 1);
+  const client = parseInt(req && req.timeLimit, 10) || 0;
+  log.debug('Leaving searchTimeLimitSeconds().');
+  return client > 0 ? Math.min(client, server) : server;
+}
+
+// A SEARCH THAT RAN OUT OF TIME: the audit row (refused, like the size
+// limit's — the client holds an INCOMPLETE answer) and `timeLimitExceeded`
+// (3) after the entries already sent, which RFC 4511 section 4.2 lets a
+// server return with a partial result.
+function searchTimedOut(req, base, scope, filter, counts, next) {
+  log.debug('Entering searchTimedOut().');
+  log.info('ldap: the search of ' + base + ' reached its time limit of ' +
+           counts.timeLimit + ' s after ' + counts.sent + ' entry/entries.');
+  auditLdap(req, {
+    action: counts.users ? 'user.query' : 'directory.search',
+    outcome: 'refused', errorCode: 'STS-LDAP-0140',
+    target: base,
+    summary: 'a search of ' + base + ' hit the time limit of ' +
+             counts.timeLimit + ' s after ' + counts.sent +
+             ' entry/entries',
+    detail: { scope: scope, filter: filter, returned: counts.sent,
+              considered: counts.considered, users: counts.users,
+              withheldEntries: counts.withheldEntries,
+              timeLimit: counts.timeLimit,
+              clientTimeLimit: counts.clientTimeLimit || 'none',
+              resultCode: 3,
+              note: 'LDAP_TIME_LIMIT_EXCEEDED; the answer is incomplete' }
+  });
+  log.debug('Leaving searchTimedOut().');
+  next(coded('STS-LDAP-0140', new ldap.TimeLimitExceededError(
+    'this search reached its time limit of ' + counts.timeLimit + ' s and ' +
+    'the answer is INCOMPLETE; narrow it with a filter on uid or mail, or a ' +
+    'smaller base')));
+}
+
+// The GROUP classes a filter's every match must carry, or null (#616): an
+// equality on `objectClass` with a group class; an AND, any one term's; an
+// OR, every term's (null if one term names none). Only the four group
+// classes — the store's class index answers them in one unpaged statement
+// because a realm's groups are few, and the same statement for
+// `inetOrgPerson` would be every person in it.
+function groupClassesOf(filter, depth) {
+  log.debug('Entering groupClassesOf().');
+  if (!filter || depth > 4) {
+    log.debug('Leaving groupClassesOf(). Nothing.');
+    return null;
+  }
+  if (filter.type === 'EqualityFilter') {
+    const named = String(filter.attribute || '').toLowerCase() ===
+      'objectclass';
+    const value = String(filter.value || '').trim().toLowerCase();
+    log.debug('Leaving groupClassesOf(). An equality.');
+    return named && GROUP_CLASSES.indexOf(value) >= 0 ? [value] : null;
+  }
+  if (filter.type === 'AndFilter') {
+    for (const term of filter.clauses || []) {
+      const found = groupClassesOf(term, depth + 1);
+      if (found) {
+        log.debug('Leaving groupClassesOf(). An AND\'s term.');
+        return found;
+      }
+    }
+    log.debug('Leaving groupClassesOf(). No AND term.');
+    return null;
+  }
+  if (filter.type === 'OrFilter') {
+    const all = [];
+    for (const term of filter.clauses || []) {
+      const found = groupClassesOf(term, depth + 1);
+      if (!found) {
+        log.debug('Leaving groupClassesOf(). An OR term names none.');
+        return null;
+      }
+      found.forEach(function (one) {
+        if (all.indexOf(one) < 0) {
+          all.push(one);
+        }
+      });
+    }
+    log.debug('Leaving groupClassesOf(). An OR.');
+    return all.length ? all : null;
+  }
+  log.debug('Leaving groupClassesOf(). Not a group search.');
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// THE CANDIDATES OF A SEARCH NO INDEX NARROWED, IN A WINDOWED PROCESS (#616).
+//
+// An async iterator, so the handler stops PAGING the moment it stops
+// consuming — at the size limit or the time limit — rather than after reading
+// everything. Two shapes:
+//
+//   * **A SEARCH FOR GROUPS** (`groupClassesOf()`) whose base is at or above
+//     the windowed containers: the resident entries under the base, from
+//     memory, and the groups under each windowed container the base reaches,
+//     asked of the store's class index in one statement each
+//     (`classesUnderAsync()`) — the people are not paged at all. This is the
+//     group walk's own arrangement (`eachGroupEntry()`), asked
+//     asynchronously.
+//   * **ANYTHING ELSE**: `walkAsync()` — the resident entries under the
+//     base, then each windowed container the base reaches a page at a time
+//     on the driver's read pool, the event loop given back between pages.
+//
+// Every candidate is still asked the filter, the scope and the reader's view
+// by the handler, so a superset here never changes an answer.
+// ---------------------------------------------------------------------------
+/**
+ * The entries a windowed search considers, read from the store as they are
+ * consumed.
+ *
+ * @param base - the search base, as the client sent it
+ * @param filter - the parsed filter
+ * @returns an async iterator of stored entries
+ */
+async function* windowedSearchCandidates(base, filter) {
+  log.debug('Entering windowedSearchCandidates().');
+  const realmId = realms.currentId();
+  const baseKey = normalizeDn(base);
+  const containers = windowedContainersOf(realmId);
+  const insideOne = containers.some(function (container) {
+    return baseKey.endsWith(',' + container);
+  });
+  const classes = insideOne ? null : groupClassesOf(filter, 0);
+  if (!classes) {
+    for await (const pair of directoryWindow.walkAsync(realmId, baseKey)) {
+      yield pair[1];
+    }
+    log.debug('Leaving windowedSearchCandidates(). Paged.');
+    return;
+  }
+  for (const row of directoryWindow.residentRows(realmId)) {
+    if (isUnder(row.entry.dn, base)) {
+      yield row.entry;
+    }
+  }
+  for (const container of containers) {
+    if (container !== baseKey && !container.endsWith(',' + baseKey) &&
+        baseKey !== '') {
+      continue;
+    }
+    const hits = await directoryWindow.classesUnderAsync(realmId, container,
+      classes, function () {
+        return true;
+      });
+    for (const hit of hits) {
+      yield hit.entry;
+    }
+  }
+  log.debug('Leaving windowedSearchCandidates(). The class index.');
+}
 
 server.unbind(function (req, res, next) {
   log.debug('Entering the LDAP unbind handler.');
@@ -17309,6 +17608,165 @@ function directoryRowOf(stored) {
   };
 }
 
+// WHETHER ONE ENTRY ANSWERS THE PAGE'S `q` (lower-cased): its DN, or any
+// attribute NAME or VALUE as the page SHOWS them — canonical names, withheld
+// values replaced — so the entry is built as a row to be looked into, and
+// only when its DN did not decide.
+function directoryEntryMatches(stored, needle) {
+  log.debug('Entering directoryEntryMatches().');
+  if (String(stored.dn).toLowerCase().indexOf(needle) >= 0) {
+    log.debug('Leaving directoryEntryMatches(). The DN.');
+    return true;
+  }
+  // The NAMES and the VALUES both. See the header: the reader who needs
+  // this box most often has a value in hand and no idea which entry it is
+  // on, which a DN-only search cannot answer at all.
+  const attributes = directoryRowOf(stored).attributes;
+  const found = Object.keys(attributes).some(function (name) {
+    if (name.toLowerCase().indexOf(needle) >= 0) {
+      return true;
+    }
+    return attributes[name].some(function (value) {
+      return String(value).toLowerCase().indexOf(needle) >= 0;
+    });
+  });
+  log.debug('Leaving directoryEntryMatches(). ' + found);
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// /admin/ldap/directory IN A WINDOWED PROCESS (#616, 2026-10-14).
+//
+// The store holds every entry of the realm, so the page is asked of it, on
+// the driver's read pool (`DirectoryWindow.askAsync()`), and the event loop
+// runs while it answers:
+//
+//   * **THE COUNTS ARE THE STORE'S** — `realmCount` (the realm, and the
+//     realm of one origin) and `originCounts` (one `GROUP BY`), never a
+//     walk. Linear in the realm's rows in the database (about 100 ms at
+//     200,000) and nothing on this process's event loop.
+//   * **THE ORDER IS THE STORE'S KEY ORDER** (`ORDER BY dn_key`, the primary
+//     key), where the whole directory's page sorts the DNs as written with
+//     `Intl.Collator`. A collation cannot be pushed into the database, and
+//     the price of sorting here is reading everything; so a windowed page
+//     lists in normalised-DN order, in the database's collation, and says
+//     so (`order: 'key'`, `'dn'` where the directory is held whole).
+//   * **THE ORIGIN FILTER AND THE PAGE ARE PUSHED DOWN**: `realmPage` with
+//     the origin in its WHERE and the page as LIMIT/OFFSET — one statement,
+//     one page's rows read. A deep page costs the database its offset in
+//     index order; the service reads `per` rows.
+//   * **`q` CANNOT BE PUSHED DOWN**, because it matches attribute VALUES and
+//     the database holds them sealed (`persistence/directory_codec.js`). So
+//     a `q` looks inside at most `DIRECTORY_SEARCH_SCAN` entries, in key
+//     order and of the chosen origin, a page at a time asynchronously;
+//     `matched` and the paging are over what it found there, and `search`
+//     says how many it looked at and whether that was all of them. The
+//     console says so under the box.
+//
+// An entry this process created and has not yet flushed is not in the
+// store's answer, for the ms until the flush — `realmPageAsync()` says why.
+// ---------------------------------------------------------------------------
+// How many entries a windowed page's `q` looks inside, at most: ten pages of
+// the window's own page size. A bound on one request's reading, not a
+// setting — the answer says when it was reached.
+const DIRECTORY_SEARCH_SCAN = 5000;
+const DIRECTORY_SEARCH_PAGE = 500;
+
+/**
+ * `/admin/ldap/directory` in a windowed process: counted, filtered by origin
+ * and paged by the store, asynchronously; a `q` looks inside a bounded
+ * number of entries and says so.
+ *
+ * @param req - the request
+ * @returns a promise of the view, `{ title, json }`
+ */
+async function windowedDirectoryView(req) {
+  log.debug('Entering windowedDirectoryView().');
+  const realmId = realms.currentId();
+  const wantedText = String(req.query.q || '').trim();
+  const wantedOrigin = String(req.query.origin || '').trim();
+  const needle = wantedText.toLowerCase();
+  const counts = await Promise.all([
+    directoryWindow.askAsync('realmCount', [realmId, '']),
+    directoryWindow.askAsync('originCounts', [realmId])
+  ]);
+  const count = Number(counts[0]) || 0;
+  const originCounts = counts[1] && typeof counts[1] === 'object'
+    ? counts[1] : {};
+  let matched = 0;
+  let paging = null;
+  let shown = [];
+  let search = null;
+  if (!needle) {
+    matched = wantedOrigin
+      ? Number(await directoryWindow.askAsync('realmCount',
+                                              [realmId, wantedOrigin])) || 0
+      : count;
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    const page = await directoryWindow.realmPageAsync(realmId, '',
+      paging.perPage, { offset: paging.offset, origin: wantedOrigin });
+    shown = page.rows;
+  } else {
+    // THE BOUNDED LOOK INSIDE: pages of the chosen origin in key order, each
+    // entry asked `directoryEntryMatches()`, stopped at the bound.
+    const found = [];
+    let after = '';
+    let scanned = 0;
+    let complete = false;
+    while (scanned < DIRECTORY_SEARCH_SCAN) {
+      const page = await directoryWindow.realmPageAsync(realmId, after,
+        Math.min(DIRECTORY_SEARCH_PAGE, DIRECTORY_SEARCH_SCAN - scanned),
+        { origin: wantedOrigin });
+      scanned += page.asked;
+      page.rows.forEach(function (hit) {
+        if (directoryEntryMatches(hit.entry, needle)) {
+          found.push(hit);
+        }
+      });
+      if (!page.more || !page.last) {
+        complete = true;
+        break;
+      }
+      after = page.last;
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+    matched = found.length;
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    shown = found.slice(paging.offset, paging.offset + paging.perPage);
+    search = { complete: complete, scanned: scanned,
+               scanLimit: DIRECTORY_SEARCH_SCAN };
+  }
+  const origins = Object.keys(originCounts);
+  origins.sort();
+  const counted = {};
+  origins.forEach(function (origin) {
+    counted[origin] = Number(originCounts[origin]) || 0;
+  });
+  const payload = {
+    baseDn: baseDn(),
+    count: count,
+    matched: matched,
+    shown: shown.length,
+    filter: { q: wantedText || null, origin: wantedOrigin || null },
+    origins: origins,
+    originCounts: counted,
+    page: paging.page, pages: paging.pages, perPage: paging.perPage,
+    firstRow: paging.firstRow, lastRow: paging.lastRow,
+    paging: adminViews.pagingJson(paging),
+    order: 'key',
+    search: search,
+    entries: shown.map(function (hit) {
+      return withoutSecrets(directoryRowOf(hit.entry));
+    })
+  };
+  log.debug('Leaving windowedDirectoryView(). ' + shown.length +
+            ' row(s) of ' + matched + ' matched' +
+            (search ? ', ' + search.scanned + ' looked inside.' : '.'));
+  return { title: 'Every entry in the directory', json: payload };
+}
+
 // `a.localeCompare(b)` with no locale is this collator's `compare` — the
 // specification defines it so — built once instead of once per comparison.
 const DIRECTORY_COLLATOR = new Intl.Collator();
@@ -17328,13 +17786,20 @@ const DIRECTORY_COLLATOR = new Intl.Collator();
 // already decide; and the copy is made for the page's rows alone. Same rows,
 // same order, same counts.
 //
-// **IN #349's WINDOW** this is still a whole walk, paged through the store:
-// correct, and O(n) in the store's rows, on an administrator's page. The
-// indexed form — the DNs and origins under the base, ordered, with the count
-// per origin, and the rows of one page by key — is not built.
+// **IN #349's WINDOW IT IS NOT A WALK (#616, 2026-10-14).** It was: every
+// person paged out of the store through the synchronous bridge on a request
+// worker's event loop, 38–45 s at 200,000 people for `?per=1`, every request
+// dispatched to that worker waiting behind it. A windowed process answers
+// out of `windowedDirectoryView()` below instead, asynchronously, with what
+// can be pushed to the store pushed there; this function is the whole
+// directory's, held in memory, and is what it always was.
 // ---------------------------------------------------------------------------
 function ldapDirectoryView(req) {
   log.debug('Entering ldapDirectoryView().');
+  if (directoryWindow) {
+    log.debug('Leaving ldapDirectoryView(). Windowed: asked of the store.');
+    return windowedDirectoryView(req);
+  }
   const listed = [];
   eachEntryInRealm(function (stored) {
     listed.push({
@@ -17354,26 +17819,7 @@ function ldapDirectoryView(req) {
     if (wantedOrigin && entry.origin !== wantedOrigin) {
       return false;
     }
-    if (!needle) {
-      return true;
-    }
-    if (entry.dn.toLowerCase().indexOf(needle) >= 0) {
-      return true;
-    }
-    // The NAMES and the VALUES both. See the header: the reader who needs
-    // this box most often has a value in hand and no idea which entry it is
-    // on, which a DN-only search cannot answer at all. What is searched is
-    // what the page SHOWS — canonical names, withheld values replaced — so
-    // the entry is built as a row to be looked into.
-    const attributes = directoryRowOf(entry.stored).attributes;
-    return Object.keys(attributes).some(function (name) {
-      if (name.toLowerCase().indexOf(needle) >= 0) {
-        return true;
-      }
-      return attributes[name].some(function (value) {
-        return String(value).toLowerCase().indexOf(needle) >= 0;
-      });
-    });
+    return !needle || directoryEntryMatches(entry.stored, needle);
   });
 
   const pagedKeys = directoryPaging(req, filtered, 'entries');
@@ -17421,6 +17867,11 @@ function ldapDirectoryView(req) {
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
     paging: adminViews.pagingJson(paging),
+    // The whole directory is sorted by DN as written, collated; a windowed
+    // one in the store's key order (#616, `windowedDirectoryView()`). And
+    // its `q` looked inside every entry, so there is nothing to say.
+    order: 'dn',
+    search: null,
     entries: paged.shown.map(withoutSecrets)
   };
   log.debug('Leaving ldapDirectoryView(). ' + paged.shown.length +
@@ -19531,6 +19982,53 @@ function allPersons() {
   return out;
 }
 
+/**
+ * Whether this process holds its people and devices as a window onto the
+ * store (#349).
+ *
+ * @returns true when windowed
+ */
+function directoryIsWindowed() {
+  log.debug('Entering directoryIsWindowed().');
+  log.debug('Leaving directoryIsWindowed().');
+  return !!directoryWindow;
+}
+
+// ---------------------------------------------------------------------------
+// THE PEOPLE HOLDING ONE ATTRIBUTE, AS `allPersons()` HANDS THEM OVER (#616).
+//
+// For a caller that wants only the people carrying something — SCIM's HOBA
+// key lookup, run on each HOBA-authenticated request — and was asking for
+// everybody and filtering. The holders only (`eachHolderOfAny()`: in a
+// windowed process the store's `attr_names` holders a page at a time, never
+// the realm), each copied as `allPersons()` copies (`entryObject()`), in its
+// order — the normalised key's, which `personRows()` sorts by.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the people in the ambient realm holding an attribute with a value,
+ * copied, in `allPersons()`'s order.
+ *
+ * @param attribute - the attribute name, any case
+ * @returns the entries
+ */
+function personsHolding(attribute) {
+  log.debug('Entering personsHolding(). ' + attribute);
+  const wanted = String(attribute || '').toLowerCase();
+  const found = [];
+  eachHolderOfAny([wanted], function (stored) {
+    if ((stored.attributes[wanted] || []).length && isPersonEntry(stored)) {
+      found.push({ key: normalizeDn(stored.dn), entry: entryObject(stored) });
+    }
+  });
+  found.sort(function (a, b) {
+    return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+  });
+  log.debug('Leaving personsHolding(). ' + found.length + ' person(s).');
+  return found.map(function (one) {
+    return one.entry;
+  });
+}
+
 // The NAMES of every person, in `allPersons()`'s order, with the empty ones
 // dropped — what the `persons()` slots hand to the credential stores and the
 // key-pair register, which ask about names and never needed the entries.
@@ -19566,15 +20064,19 @@ function personNames() {
 //     memory (where `personRows()` is one walk and sort kept until
 //     `ou=users` is written), its first `limit` names — `persons()`'s
 //     prefix, exactly;
-//   * in a windowed process, the first `limit` + 1 entries of `ou=users` in
-//     the STORE's key order, paged read-only and the paging stopped there,
-//     then sorted as `personRows()` sorts. **A capped list is therefore a
+//   * in a windowed process, the first `limit` + 1 KEYS of `ou=users` in
+//     the STORE's key order — since #616 the keys and DNs alone
+//     (`keysUnder`), a thousand to a statement, no entry read or opened, in
+//     at most `limit` / 1,000 + 1 statements where it used to page and
+//     decode `limit` + 1 entries five hundred at a time (about 3 s of a
+//     request worker at 200,000 people; `/admin-api/users` now asks
+//     `personNamesUpToAsync()`, below). **A capped list is therefore a
 //     different subset from `persons()`'s prefix** where the database's
 //     collation orders keys differently from JavaScript (8081's is
 //     en_US.utf8), and the same subset on every request while nothing
 //     moves — it is a capped subset either way, the page says so, and what
-//     it costs is `limit` rows rather than the realm. Below the cap the
-//     walk reaches the end and the names are everybody, entries this
+//     it costs is `limit` keys rather than the realm. Below the cap the
+//     paging reaches the end and the names are everybody, entries this
 //     process has not yet written included.
 // ---------------------------------------------------------------------------
 /**
@@ -19594,33 +20096,62 @@ function personNamesUpTo(limit) {
     log.debug('Leaving personNamesUpTo(). From the kept rows.');
     return { names: names.slice(0, most), more: names.length > most };
   }
-  const base = normalizeDn(usersDn());
-  const suffix = ',' + base;
-  const rows = [];
-  let more = false;
-  for (const pair of directoryWindow.walk(realms.currentId(), base, true)) {
-    const key = pair[0];
-    if (key === base || !key.endsWith(suffix)) {
-      continue;
+  const first = directoryWindow.keysUnder(realms.currentId(),
+                                          normalizeDn(usersDn()), most);
+  log.debug('Leaving personNamesUpTo(). ' + first.rows.length + ' keyed' +
+            (first.more ? ', and more.' : '.'));
+  return namesOfKeys(first);
+}
+
+// The names of `keysUnder()`'s answer, in key order — a person's name is
+// their entry's RDN value (`usernameOfEntry()`), so the DN is all it reads —
+// with the empty ones dropped.
+function namesOfKeys(answer) {
+  log.debug('Entering namesOfKeys().');
+  const names = [];
+  answer.rows.forEach(function (row) {
+    const name = usernameOfEntry({ dn: row.dn });
+    if (name) {
+      names.push(name);
     }
-    const name = usernameOfEntry(pair[1]);
-    if (!name) {
-      continue;
-    }
-    if (rows.length === most) {
-      more = true;
-      break;
-    }
-    rows.push({ key: key, name: name });
-  }
-  rows.sort(function (a, b) {
-    return a.key < b.key ? -1 : 1;
   });
-  log.debug('Leaving personNamesUpTo(). ' + rows.length + ' paged' +
-            (more ? ', and more.' : '.'));
-  return { names: rows.map(function (row) {
-    return row.name;
-  }), more: more };
+  log.debug('Leaving namesOfKeys(). ' + names.length + '.');
+  return { names: names, more: !!answer.more };
+}
+
+// ---------------------------------------------------------------------------
+// AND ASYNCHRONOUSLY, FOR A REQUEST THAT CAN WAIT (#616, 2026-10-14).
+//
+// `/admin-api/users` asks for the first `credentials.factorScanLimit` (5,000)
+// names; `personNamesUpTo()` above is that question asked synchronously, and
+// on 8081 its walk held a request worker's event loop for about 3 s at
+// 200,000 people. This asks the store the same question — the KEYS and DNs
+// under `ou=users`, a thousand to a statement, no attribute read or opened
+// (`keysUnder`) — on the driver's read pool, the event loop given back
+// between pages, and stops at `limit` + 1. Outside a window it is the
+// synchronous answer, which is the people already held in memory.
+// ---------------------------------------------------------------------------
+/**
+ * `personNamesUpTo()`, asked of the store asynchronously in a windowed
+ * process.
+ *
+ * @param limit - how many names at most
+ * @returns a promise of `{ names, more }`
+ */
+async function personNamesUpToAsync(limit) {
+  log.debug('Entering personNamesUpToAsync(). limit=' + limit);
+  const most = Math.max(1, Math.floor(Number(limit) || 1));
+  const held = personRowsMemo();
+  if (!directoryWindow ||
+      (held.rows && held.version === subtreeVersion(usersDn()))) {
+    log.debug('Leaving personNamesUpToAsync(). Not asked of the store.');
+    return personNamesUpTo(most);
+  }
+  const first = await directoryWindow.keysUnderAsync(realms.currentId(),
+    normalizeDn(usersDn()), most);
+  log.debug('Leaving personNamesUpToAsync(). ' + first.rows.length +
+            ' keyed' + (first.more ? ', and more.' : '.'));
+  return namesOfKeys(first);
 }
 
 // ---------------------------------------------------------------------------
@@ -23138,6 +23669,11 @@ module.exports = {
   isPersonEntry: isPersonEntry,
   personCount: personCount,
   allPersons: allPersons,
+  personsHolding: personsHolding,
+  // Whether this process holds its people as a window onto the store
+  // (#349, #616): where a caller with an index-shaped question asks it
+  // instead of listing everybody (SCIM's `userName eq`).
+  directoryIsWindowed: directoryIsWindowed,
   personNames: personNames,
   personDns: personDns,
   residentsPage: residentsPage,

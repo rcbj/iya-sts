@@ -6043,6 +6043,14 @@
     "en": "0c2877143f2fb6ec",
     "text": "服务器端对搜索结果数量的限制，LDAP_SIZE_LIMIT_EXCEEDED 正是由此产生。"
   },
+  "ldap.timeLimit|label": {
+    "en": "9c041bfdb05c473c",
+    "text": "搜索时间限制（秒）"
+  },
+  "ldap.timeLimit|description": {
+    "en": "b74ec7b68f9251f2",
+    "text": "服务器端对搜索的时间限制，以秒为单位，LDAP_TIME_LIMIT_EXCEEDED 正是由此产生；客户端自己的 timeLimit 更短时以其为准。在此之前已发送的条目即为答复，并标记为不完整。"
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "明文 LDAP 监听器"

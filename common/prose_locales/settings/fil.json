@@ -6043,6 +6043,14 @@
     "en": "0c2877143f2fb6ec",
     "text": "Ang server-side na size limit para sa isang search, na siyang nagbubunga ng LDAP_SIZE_LIMIT_EXCEEDED."
   },
+  "ldap.timeLimit|label": {
+    "en": "9c041bfdb05c473c",
+    "text": "Time limit ng search (s)"
+  },
+  "ldap.timeLimit|description": {
+    "en": "b74ec7b68f9251f2",
+    "text": "Ang server-side na time limit para sa isang search, sa segundo, na siyang nagbubunga ng LDAP_TIME_LIMIT_EXCEEDED; nananaig ang sariling timeLimit ng client kapag mas maikli ito. Ang mga entry na naipadala bago ito ang sagot, na minarkahang hindi kumpleto."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "Plain na LDAP listener"

@@ -169,6 +169,7 @@
   "directory.placeholder": "DN、屬性名稱或值",
   "directory.cameFrom": "來源",
   "directory.searchNote": "此方塊會比對 DN、任何屬性名稱和任何屬性值，不區分大小寫。之所以搜尋值，是因為最需要它的讀者往往手上有一個指紋或祕密，卻不知道哪個項目包含它，而僅搜尋 DN 無法回答這個問題。",
+  "directory.searchLimited": "<strong>搜尋框只查看了依鍵順序排列的前 {scanned} 個項目，而非全部。</strong>屬性值在儲存區中是加密封存的，因此無法交由儲存區搜尋，而一次請求最多讀取 {limit} 個。請選擇來源，或在框中輸入更多 DN，以縮小查看範圍。",
   "directory.thAttributes": "屬性",
   "directory.noMatch": "沒有相符的項目。",
   "directory.filterHiding": "上方的篩選條件可能隱藏了一些。",

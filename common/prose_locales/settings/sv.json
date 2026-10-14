@@ -6043,6 +6043,14 @@
     "en": "0c2877143f2fb6ec",
     "text": "Storleksgränsen på serversidan för en sökning, vilket är det som ger LDAP_SIZE_LIMIT_EXCEEDED."
   },
+  "ldap.timeLimit|label": {
+    "en": "9c041bfdb05c473c",
+    "text": "Tidsgräns för sökningar (s)"
+  },
+  "ldap.timeLimit|description": {
+    "en": "b74ec7b68f9251f2",
+    "text": "Tidsgränsen på serversidan för en sökning, i sekunder, vilket är det som ger LDAP_TIME_LIMIT_EXCEEDED; en klients egen kortare timeLimit vinner. Posterna som skickats före den är svaret, markerat som ofullständigt."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "Okrypterad LDAP-lyssnare"

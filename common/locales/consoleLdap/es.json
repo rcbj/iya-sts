@@ -169,6 +169,7 @@
   "directory.placeholder": "un DN, un nombre de atributo o un valor",
   "directory.cameFrom": "Procedencia",
   "directory.searchNote": "El cuadro busca en el DN, en cualquier NOMBRE de atributo y en cualquier VALOR de atributo, sin distinguir mayúsculas. Se buscan los valores porque quien más lo necesita suele tener en la mano una huella o un secreto sin saber qué entrada lo lleva, algo que una búsqueda solo por DN no puede responder.",
+  "directory.searchLimited": "<strong>El cuadro buscó dentro de las primeras {scanned} entradas en orden de clave, no de todas.</strong> Los valores de los atributos están sellados en el almacén, así que no se le puede pedir que los busque, y una solicitud lee como máximo {limit}. Elija un origen, o escriba más del DN en el cuadro, para acotar lo que se examina.",
   "directory.thAttributes": "Atributos",
   "directory.noMatch": "Ninguna entrada coincide.",
   "directory.filterHiding": "Puede que el filtro de arriba oculte algunas.",

@@ -169,6 +169,7 @@
   "directory.placeholder": "DN、属性名或值",
   "directory.cameFrom": "来源",
   "directory.searchNote": "此框会匹配 DN、任意属性名称和任意属性值，不区分大小写。之所以搜索值，是因为最需要它的读者往往手里有一个指纹或密钥，却不知道哪个条目包含它，而仅搜索 DN 无法回答这个问题。",
+  "directory.searchLimited": "<strong>搜索框只查看了按键顺序排列的前 {scanned} 个条目，而不是全部。</strong>属性值在存储中是加密封存的，因此无法交由存储来搜索，而一次请求最多读取 {limit} 个。请选择来源，或在框中输入更多 DN，以缩小查看范围。",
   "directory.thAttributes": "属性",
   "directory.noMatch": "没有匹配的条目。",
   "directory.filterHiding": "上面的筛选条件可能隐藏了一些。",

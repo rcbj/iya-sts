@@ -2239,13 +2239,20 @@ class ScimAuth {
   // Find the entry that registered this key id. A scan, because a key id is
   // chosen by the client and there is nothing to index it by — the directory is
   // schemaless and this service does not maintain indexes on invented
-  // attributes. Bounded by ldap.maxEntries like every other sweep here.
+  // attributes. **A scan of the people HOLDING a HOBA key (#616)**, not of
+  // everybody: `personsHolding()` asks the directory for the holders of the
+  // attribute (in a windowed process the store's `attr_names` holders), where
+  // `allPersons()` paged and copied every person in the realm on each
+  // HOBA-authenticated request. A directory without it is walked as before.
   private entryForHobaKid(kid) {
     const { log, directory } = this.deps;
     log.debug("Entering ScimAuth.entryForHobaKid(). kid=" + kid);
     const wanted = String(kid) + ' ';
     let found = null;
-    directory.allPersons().forEach((entry) => {
+    const candidates = typeof directory.personsHolding === 'function'
+      ? directory.personsHolding(ScimAuth.HOBA_ATTRIBUTE)
+      : directory.allPersons();
+    candidates.forEach((entry) => {
       if (found) {
         return;
       }

@@ -1498,5 +1498,9 @@ module.exports = {
             'routing, writes and in-place edits, the flush\'s answers, ' +
             'scans and size, other processes, persistence.js over a pg ' +
             'double, the refusal, and collect(named) looking keys up',
-  run: run
+  run: run,
+  // The stand-in bridge and its rows, shared with
+  // `tests/directory_window_requests.js` (#616).
+  fakeBridge: fakeBridge,
+  row: row
 };

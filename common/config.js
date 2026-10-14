@@ -11444,6 +11444,20 @@ const SETTINGS = [
     description: 'The server-side size limit for a search, which is what ' +
                  'produces LDAP_SIZE_LIMIT_EXCEEDED.' },
 
+  // THE SERVER'S OWN TIME LIMIT ON A SEARCH (#616). A search the store's
+  // indexes cannot narrow pages the store asynchronously in a windowed
+  // process and stops at the first of this, the client's own timeLimit and
+  // ldap.sizeLimit — so a filter matching almost nothing in a realm of
+  // hundreds of thousands ends with a partial answer and result code 3
+  // rather than reading every row. Read per search.
+  { key: 'ldap.timeLimit', group: 'LDAP', label: 'Search time limit (s)',
+    env: 'LDAP_TIME_LIMIT', type: 'int', dflt: 30, min: 1, max: 3600,
+    runtime: true,
+    description: 'The server-side time limit for a search, in seconds, ' +
+                 'which is what produces LDAP_TIME_LIMIT_EXCEEDED; a ' +
+                 'client\'s own shorter timeLimit wins. The entries sent ' +
+                 'before it are the answer, marked incomplete.' },
+
   { key: 'ldap.plainListener', group: 'LDAP', label: 'Plain LDAP listener',
     env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: true, runtime: false,
     restartReason: 'the socket is bound when the process starts',

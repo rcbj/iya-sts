@@ -296,6 +296,7 @@ interface ScimDeps {
   audit: { audit: Fn };
   directory: Record<'groupsOfUser' | 'resourceIdOfDn' | 'usernameOfEntry' |
                     'claimCreate' | 'readPerson' | 'usersDn' | 'allPersons' |
+                    'directoryIsWindowed' |
                     'existingUserEntry' | 'normalizeDn' | 'createUser' |
                     'writePerson' | 'maxEntries' | 'dnForResourceId' |
                     'populateVcAttributesAt' | 'deletePerson' |
@@ -1419,6 +1420,46 @@ class Scim {
   // on — rather than surfacing as a 500 or, worse, as an empty list that reads
   // as "no such user".
   // ---------------------------------------------------------------------------
+  // THE PEOPLE A `userName eq "…"` FILTER CAN MATCH (#616), from the
+  // directory's name index — `existingUserEntry()`, the uniqueness rule a
+  // login name already has — or null when the filter is anything else: one
+  // or more `userName eq` terms joined by `or` (SCIMMY's parse is an array of
+  // alternatives, each an object of the attribute's `[operator, value]`).
+  // A superset of the matches: the caller still applies the filter.
+  private userNameLookups(filter: any): any[] | null {
+    const { log, directory } = this.deps;
+    log.debug("Entering Scim.userNameLookups().");
+    if (!Array.isArray(filter) || !filter.length || filter.length > 16) {
+      log.debug("Leaving Scim.userNameLookups(). Not a short OR.");
+      return null;
+    }
+    const names = [];
+    for (const term of filter) {
+      const keys = term && typeof term === 'object' ? Object.keys(term) : [];
+      const asked = keys.length === 1 && keys[0].toLowerCase() === 'username'
+        ? term[keys[0]] : null;
+      if (!Array.isArray(asked) || asked.length !== 2 ||
+          String(asked[0]).toLowerCase() !== 'eq' ||
+          typeof asked[1] !== 'string') {
+        log.debug("Leaving Scim.userNameLookups(). Not userName eq.");
+        return null;
+      }
+      names.push(asked[1]);
+    }
+    const out = [];
+    const seen = new Set();
+    names.forEach((name) => {
+      const stored = directory.existingUserEntry(name);
+      const entry = stored ? directory.readPerson(stored.dn) : null;
+      if (entry && !seen.has(String(entry.dn).toLowerCase())) {
+        seen.add(String(entry.dn).toLowerCase());
+        out.push(entry);
+      }
+    });
+    log.debug("Leaving Scim.userNameLookups(). " + out.length + " found.");
+    return out;
+  }
+
   private applyFilter(filter: any, values: any[], definition: any): any[] {
     const { log, errorCodes, SCIMMY } = this.deps;
     const { coded } = this;
@@ -2055,7 +2096,17 @@ class Scim {
           log.debug("Leaving the SCIM User egress handler. One resource.");
           return this.userResourceFor(entry, req);
         }
-        const all = directory.allPersons().map((entry) => {
+        // `userName eq` IS ASKED OF THE DIRECTORY'S NAME INDEX where the
+        // directory is a window onto the store (#616): it is the question a
+        // provisioning client asks before every create, and `allPersons()`
+        // paged and copied every person in the realm to answer it. The
+        // filter is still applied to what the index found, so the answer is
+        // the walk's; any other filter still lists everybody (said in
+        // `scim/CLAUDE.md`).
+        const named = typeof directory.directoryIsWindowed === 'function' &&
+          directory.directoryIsWindowed()
+          ? this.userNameLookups(resource.filter) : null;
+        const all = (named || directory.allPersons()).map((entry) => {
           return this.userResourceFor(entry, req);
         });
         const matched = this.applyFilter(resource.filter, all,
