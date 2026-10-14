@@ -254,6 +254,45 @@ const RELEASE_CLAIMS_SQL =
   'c.scope = r.scope AND c.realm = r.realm AND c.key = r.key AND ' +
   'c.reservation = r.reservation';
 
+// ---------------------------------------------------------------------------
+// A CLAIM STATEMENT OF ITS OWN COMMITS WITHOUT WAITING FOR THE WAL FLUSH
+// (#628, 2026-10-14) — `synchronous_commit = off` for that statement's own
+// implicit transaction, set by `set_config(…, true)` in a CTE the statement
+// reads (the transaction is the statement, so the setting is LOCAL to it and
+// in force at its commit; `SET LOCAL` would need a BEGIN and a COMMIT round
+// trip of its own). Measured on 8081 the same day: the claim INSERTs and
+// DELETEs were about 60% of the WAL-flush waits under a bulk load, and a
+// replay with them asynchronous went from 120 to 318 adds a second.
+//
+// **WHY IT IS SAFE.** An asynchronous commit is visible to every other
+// session at once — what the claim decides, it decides at commit, flushed or
+// not. What it gives up is durability across a CRASH of the database inside
+// the flush delay, and both directions of that are already survived: the
+// create's own entry commit is synchronous and flushes all the WAL before
+// it, the claim's included, so no created entry stands on a claim that could
+// be lost; a lost DELETE only leaves the claim until its lifetime; a lost
+// INSERT is a claim whose create had not committed either. (A failover to a
+// standby that had not received the record is the same crash.)
+//
+// **NOT THE RELEASE INSIDE THE FLUSH**: `saveDirectory()` sends
+// RELEASE_CLAIMS_SQL in the entry's own transaction, whose commit must stay
+// synchronous, and it costs no flush of its own. Only `claimMany()` and the
+// standalone `releaseClaims()` are asynchronous; `claimOnce()` and
+// `releaseClaim()`, which every other single-use value spends through, are
+// not changed.
+// ---------------------------------------------------------------------------
+const NO_FLUSH_WAIT =
+  'quiet AS (SELECT set_config(\'synchronous_commit\', \'off\', ' +
+  'true) AS was)';
+
+// RELEASE_CLAIMS_SQL as a statement of its own, committed without waiting for
+// the WAL flush (above).
+const RELEASE_CLAIMS_ALONE_SQL =
+  'WITH ' + NO_FLUSH_WAIT + ' DELETE FROM sts_cluster_claims c USING ' +
+  'unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS r(scope, ' +
+  'realm, key, reservation), quiet WHERE c.scope = r.scope AND c.realm = ' +
+  'r.realm AND c.key = r.key AND c.reservation = r.reservation';
+
 // The sentence `claimMany()` aborts a partial claim with, and recognises.
 const PARTIAL_CLAIM = 'sts_cluster_claims: a partial claim';
 
@@ -5747,7 +5786,8 @@ function create(options) {
       return pool.query(
         'WITH wanted AS (SELECT w.scope, w.key, w.ord FROM ' +
         'unnest($1::text[], $2::text[]) WITH ORDINALITY AS w(scope, key, ' +
-        'ord)), taken AS (INSERT INTO sts_cluster_claims (scope, realm, ' +
+        'ord)), ' + NO_FLUSH_WAIT + ', taken AS (INSERT INTO ' +
+        'sts_cluster_claims (scope, realm, ' +
         'key, reservation, origin, claimed_at, expires_at) SELECT ' +
         'w.scope, $3, w.key, $4, $5, ' + DB_NOW + ', ' + DB_NOW + ' + $6 ' +
         'FROM wanted w ORDER BY w.scope, w.key ON CONFLICT (scope, realm, ' +
@@ -5761,7 +5801,7 @@ function create(options) {
         'refused FROM taken) SELECT n, claimed_at, refused, CASE WHEN n > 0 ' +
         'AND n < $7::int THEN (\'' + PARTIAL_CLAIM + ' of \' || n || ' +
         '\' of \' || $7::int || \' rows is rolled back; first refused ' +
-        'row \' || refused)::int ELSE 0 END AS partial FROM counted',
+        'row \' || refused)::int ELSE 0 END AS partial FROM counted, quiet',
         [list.map(function (row) { return row.scope; }),
          list.map(function (row) { return row.key; }),
          String(realmId || ''), reservation, claimant, ttlMs, list.length]
@@ -5795,7 +5835,8 @@ function create(options) {
         return Promise.resolve(0);
       }
       log.debug("Leaving releaseClaims().");
-      return pool.query(RELEASE_CLAIMS_SQL, releaseClaimsParams(list))
+      // Committed without waiting for the WAL flush: see NO_FLUSH_WAIT.
+      return pool.query(RELEASE_CLAIMS_ALONE_SQL, releaseClaimsParams(list))
         .then(function (r) {
           return r.rowCount || 0;
         });

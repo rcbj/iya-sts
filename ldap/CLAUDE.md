@@ -3319,7 +3319,15 @@ the handler), a SCIM create of a User or a Group, and `POST
     (`persistence.releaseClaimsAtCommit()`), so a waiting create sees the
     entry the instant the claim goes; where the write has committed already
     (a door that answers after its commit, an LDAP add claimed in the front
-    and run in a worker) it is one DELETE of its own.
+    and run in a worker) it is one DELETE of its own. **The claim statement
+    and a DELETE of its own commit with `synchronous_commit` off** (a
+    `set_config(…, true)` CTE in the statement; `NO_FLUSH_WAIT` in the
+    driver): they were about 60% of 8081's WAL-flush waits, and a replay went
+    from 120 to 318 adds a second. Safe because the claim is visible at
+    commit whether flushed or not, the entry's own synchronous commit flushes
+    the claim's WAL before it, and a DELETE lost in a crash only leaves the
+    claim until its lifetime. The release inside the flush stays synchronous
+    — it is the entry's commit.
   * **Both keep the claim's semantics**: all or none; wait and ask again
     until `CLAIM_WAIT_MS`; given back at once on a refusal, after the commit
     on a success; a flush that FAILS keeps the claim until it expires (two

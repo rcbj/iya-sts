@@ -463,7 +463,9 @@ hands the rows to `persistence.releaseClaimsAtCommit()`, which deletes them
 AS A STATEMENT OF the flush transaction that commits this process's directory
 writes made so far — or alone, at once, when those have committed already. A
 transaction that fails rolls the release back with the entry, so the claims
-stay until they expire (`STS-CLUSTER-0164`). A store without `claimMany` /
+stay until they expire (`STS-CLUSTER-0164`). `claimMany()` and a `releaseMany()` of its own commit
+with `synchronous_commit` off (the driver's `NO_FLUSH_WAIT`, argued there);
+`claim()` and `release()` are unchanged. A store without `claimMany` /
 `releaseClaims` (a test's double) is asked row by row. The caller is a
 directory create (`ldap/CLAUDE.md`, *SEVERAL NODES: A CREATE CLAIMS ITS
 NAME*), and **only in `active-active`**: on one node — cluster `off` or

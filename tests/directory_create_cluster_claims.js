@@ -186,7 +186,9 @@ function fakeDatabase() {
                           partial: 0 }], rowCount: 1 };
       });
     }
-    if (/^DELETE FROM sts_cluster_claims c USING unnest/.test(text)) {
+    if (/^DELETE FROM sts_cluster_claims c USING unnest/.test(text) ||
+        /^WITH quiet AS .* DELETE FROM sts_cluster_claims c USING unnest/
+          .test(text)) {
       if (tx) {
         tx.releases = true;
         tx.effects.push(function () {
@@ -305,10 +307,11 @@ function claimStatements(db, from) {
   // A create's claims and releases — not this process's origin fence, which
   // every transaction checks and a timer renews.
   const out = list.filter(function (s) {
-    return /^(WITH wanted AS|DELETE FROM sts_cluster_claims|INSERT INTO sts_cluster_claims)/
+    return /^(WITH wanted AS|WITH quiet AS|DELETE FROM sts_cluster_claims|INSERT INTO sts_cluster_claims)/
       .test(s.text);
   }).map(function (s) {
-    return { kind: /^DELETE/.test(s.text) ? 'release' : 'claim',
+    return { kind: /DELETE FROM sts_cluster_claims/.test(s.text) ? 'release'
+      : 'claim',
              tx: s.tx, withEntry: entryTx.has(s.tx) };
   });
   log.debug("Leaving claimStatements().");
@@ -428,12 +431,13 @@ async function persistChild() {
     return s.text;
   });
   const releasedAt = between.findIndex(function (text) {
-    return /^DELETE FROM sts_cluster_claims/.test(text);
+    return /DELETE FROM sts_cluster_claims/.test(text);
   });
   const transactionBefore = between.slice(0, Math.max(0, releasedAt))
     .indexOf('BEGIN') >= 0;
   const third = await create(inStore, 'ann', 0);
   note(again.exists && again.released === true && b3.length === 2 &&
+       releasedAt >= 0 && /synchronous_commit/.test(between[releasedAt]) &&
        b3[1].kind === 'release' && b3[1].tx === 0 && !transactionBefore &&
        third.exists,
        'B3. A REFUSED CREATE GIVES ITS CLAIM BACK AT ONCE — one statement, ' +
@@ -1163,6 +1167,11 @@ async function driverStatements(t) {
           seen[0].params[6] === 2,
           'A1. two claims are ONE statement, its rows in (scope, key) order, ' +
           'and both taken is a grant', JSON.stringify(won));
+  t.check(/quiet AS \(SELECT set_config\('synchronous_commit', 'off', true\) AS was\)/
+            .test(seen[0].text) && / FROM counted, quiet$/.test(seen[0].text),
+          'A1b. and it commits without waiting for the WAL flush: ' +
+          'synchronous_commit off for its own transaction, in a CTE the ' +
+          'statement reads (so it runs)');
   t.check(/CASE WHEN n > 0 AND n < \$7::int THEN \('sts_cluster_claims: a partial claim of ' \|\| n/
             .test(seen[0].text),
           'A2. a PARTIAL take is turned into an error inside the statement, ' +
@@ -1203,9 +1212,11 @@ async function driverStatements(t) {
     { scope: 'directory.username', realm: 'default', key: 'k2',
       reservation: 'r1' }]);
   t.check(released === 2 && seen.length === 1 &&
-          /^DELETE FROM sts_cluster_claims c USING unnest/.test(seen[0].text) &&
+          /^WITH quiet AS \(SELECT set_config\('synchronous_commit', 'off', true\) AS was\) DELETE FROM sts_cluster_claims c USING unnest\(.*\), quiet WHERE/
+            .test(seen[0].text) &&
           seen[0].params[3].join(',') === 'r1,r1',
-          'A6. two releases are ONE statement, each pinned to its reservation',
+          'A6. two releases are ONE statement, each pinned to its reservation, ' +
+          'committed without waiting for the WAL flush',
           JSON.stringify(seen.map(function (s) { return s.text; })));
   seen.length = 0;
   next = { rows: [], rowCount: 1 };
@@ -1229,9 +1240,12 @@ async function driverStatements(t) {
     return /^DELETE FROM sts_cluster_claims c USING unnest/.test(text);
   });
   t.check(begin >= 0 && insert > begin && release > insert &&
-          commit > release,
+          commit > release && texts.every(function (text) {
+            return text.indexOf('synchronous_commit') < 0;
+          }),
           'A7. saveDirectory() gives a create\'s claims back BETWEEN the ' +
-          'entry\'s INSERT and the COMMIT of the same transaction',
+          'entry\'s INSERT and the COMMIT of the same transaction — which ' +
+          'stays synchronous: nothing in it turns synchronous_commit off',
           JSON.stringify({ begin: begin, insert: insert, release: release,
                            commit: commit }));
   log.debug("Leaving driverStatements().");
