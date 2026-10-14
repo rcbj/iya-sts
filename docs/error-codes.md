@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4313** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4360** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -51,10 +51,10 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 89
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 48
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 79
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
+* [Service core (`STS-CORE`)](#sts-core) — 92
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 49
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 31
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
@@ -63,20 +63,20 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 292
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 96
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 115
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
-* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 27
+* [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 77
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 146
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 147
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 51
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 120
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 120
@@ -84,12 +84,12 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
-* [Device register (`STS-DEVICE`)](#sts-device) — 50
+* [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 236
-* [Management API (`STS-API`)](#sts-api) — 81
+* [Management API (`STS-API`)](#sts-api) — 84
 * [User portal (`STS-PORTAL`)](#sts-portal) — 92
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 10
@@ -145,7 +145,7 @@ Raised from: common/proxy_protocol.ts, server.js.
 
 **Service core.** Starting the service, the settings table, trust realms, and the helpers every protocol shares.
 
-Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts.
+Raised from: server.js, common/protocol_stack.ts, common/config.js, common/config_file.js, common/realms.js, common/helpers.js, common/mode.js, common/version.js, sts_metadata.ts, home/, admin-ui/node_health_admin.ts, admin-ui/worker_pools_admin.ts (STS-CORE-0126), cluster/node_snapshots.ts, common/request_worker.ts (STS-CORE-0158).
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -238,6 +238,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0155` | A write would put the applications that read the sign-on session on listeners whose host names its cookie cannot reach: several host names with authn.cookieDomain empty (the cookie is host-only), a host name not under authn.cookieDomain, or an authn.cookieDomain that is not a DNS name (#472). | the write is refused; nothing is changed |
 | `STS-CORE-0156` | A write would take the management API off the listener the request making it arrived on, with no confirmation: nothing on that listener would answer the next one. PUT /admin-api/listeners/applications with confirm, or listeners.adminOnMain at the next start (#472). | the write is refused; nothing is changed |
 | `STS-CORE-0157` | The custom listeners and their mapping this process was started with (the environment, an appconfig file, or the store) break a rule a write of them would be refused for, or could not be read (#472). | the service does not start; logged when the listeners cannot be reconciled |
+| `STS-CORE-0158` | A garbage collection asked for on Monitoring → Node Health (POST /admin-api/node-health/collect-garbage) did not run in one isolate — the front process's main thread or a worker thread: V8 would not hand its gc to a new context, or gc threw (#611). The answer's row for that isolate says why; the others still ran. | HTTP 500 when the front process's own did not run and nothing else was asked; otherwise HTTP 200 with that row's ok false |
+| `STS-CORE-0159` | A worker thread asked to run a garbage collection by Monitoring → Node Health did not answer within its bound (#611). It may still be collecting; the answer lists it under unanswered. | none — HTTP 200, the thread listed under unanswered |
+| `STS-CORE-0160` | A garbage collection was asked for on Monitoring → Node Health with an action the operation does not have, or a target that is neither `all`, `front`, nor the threadId of a ready worker thread of this node (#611). Nothing was collected. | HTTP 400 for an unknown action or a malformed target, 404 for a thread this node does not have |
 
 ## STS-WORKER
 
@@ -295,6 +298,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0046` | A request worker ran out of heap: its heap reached its limit (workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker thread since #364, a SIGABRT of a worker process before. | Nothing directly: requests in flight on it were answered 502 |
 | `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
 | `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
+| `STS-WORKER-0049` | A part of an operation's answer that a request worker sent ahead of it (#616: an LDAP search streaming its entries) could not be handed to the caller waiting in the front process — its socket write threw. The operation itself still ends with its answer. | — |
 
 ## STS-STORE
 
@@ -383,6 +387,10 @@ Raised from: persistence/.
 | `STS-STORE-0077` | A block of sequence numbers could not be leased from the store; the next half-spent block asks again (#465). | — |
 | `STS-STORE-0078` | A postgres connection string (persistence.databaseUrl, the read or global database, or cell_convert's) was not dialled: its sslmode is disable or allow, or it is not a postgres:// URL, so it would or might connect in the clear. Every connection is TLS (#273). Fatal at persistence.start(). | — |
 | `STS-STORE-0079` | persistence.databaseTlsCaFile names a file that could not be read, or that holds no PEM certificate, so the database connection has no trust anchor anybody chose. Fatal at persistence.start(); the out-of-process tools that dial the database refuse the same way. | none — fatal at start |
+| `STS-STORE-0080` | What the directory holds under a data key was asked for while some entries, written before schema version 17, are not yet in its data-key index: the count is refused rather than given short, so no key is destroyed on it. The jobs index those entries a bounded batch per pass, once (#623). | none — the count job and the re-encryption job wait |
+| `STS-STORE-0081` | A request worker could not read, by key, the directory rows another worker had written that a dispatched LDAP write was handed in place of the read barrier's change-log pull (#626), so it pulled the whole change log instead, as every write did before. | none — the write waits for the pull and is answered as before |
+| `STS-STORE-0082` | The live readers of the change log could not be read, so no dead process was dropped from the fan-in of merge-own stores this time; nothing is dropped on a failed read, and the next change-log pull tries again a minute later (#618). | none — the fan-in keeps what it held |
+| `STS-STORE-0083` | The store is owed a tuning of schema version 19 (#630) — a table's storage parameters, or the retired btree on sts_minted.written_at — and the role this service dials with does not own the table to make it. Nothing is wrong without it, only slower: run postgres/schema.sql as the owner. | none — the store opens without it |
 
 ## STS-CLUSTER
 
@@ -422,6 +430,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
 | `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
 | `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
+| `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
 
 ## STS-CELL
 
@@ -862,7 +871,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0159` | The certificate whose key verified an assertion may not sign one: it is a certificate authority, or its KeyUsage does not permit digitalSignature. | invalid_grant at the grant, invalid_client at client authentication |
 | `STS-PKI-0160` | A registered JWK's x5c certificate does not hold the key the JWK represents (RFC 7517 section 4.7), so its chain says nothing about the key that verified the assertion. | invalid_grant at the grant, invalid_client at client authentication |
 | `STS-PKI-0161` | A certificate behind a key that verified an assertion, or one in its registered chain, could not be read. | invalid_grant at the grant, invalid_client at client authentication |
-| `STS-PKI-0162` | The certificate chain an x5u header names was requested for a SHA-256 that is not a JOSE signing certificate in that scope — a mistyped address, or a certificate replaced since the token was signed. | HTTP 404 text/plain |
+| `STS-PKI-0162` | The certificate chain an x5u header names was requested for a SHA-256 that is not a JOSE signing certificate in that scope — a mistyped address, an expired certificate, or one of the oldest displaced from a slot (#318 keeps the newest published until they expire). | HTTP 404 text/plain |
 | `STS-PKI-0163` | The certificate the register holds for a signing key's slot is over a different key, so tokens signed with that key carry no x5c or x5u until it is certified again. Logged once per certificate. | none — the token is issued without the header |
 | `STS-PKI-0164` | The x5c or x5u header for a signed token could not be built; the token was signed without it. | none — the token is issued without the header |
 | `STS-PKI-0165` | A TLS listener certificate was asked for without naming what it is for (no slot). | the caller's refusal: console page or /admin-api HTTP 400 { ok: false, errors } |
@@ -1453,6 +1462,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0330` | An act on a second-factor or emailed-factor step of the sign-in API (/authn-api/mfa/{id}/…, #572, #573) carried a body the operation does not take, or a page that is not one. | HTTP 400, { ok: false, errors } |
 | `STS-AUTHN-0331` | A Start over at a sign-in step (/authn-api/mfa/{id}/start-over or /authn-api/password-change/{id}/start-over) named a step that has already ended: spent, expired or never minted. Nothing is put back. | HTTP 400, { ok: false, errors } |
 | `STS-AUTHN-0332` | Too many usernameless passkey ceremonies were armed from this address (POST /authn-api/pending/{id}/passkey/options): its own per-address budget, security.rateLimitPerAddress in security.rateLimitWindowS. No challenge was minted. | HTTP 429 with Retry-After, { ok: false, next: refused, errors } |
+| `STS-AUTHN-0333` | A sign-in at the sign-in screen named a person where the passkey policy requires a passkey sign-in with no username (requireUsernameless, #608): the application signs in with a passkey alone, and the screen asks for no username. | none — the sign-in screen is drawn again |
+| `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
+| `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
+| `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
 
 ## STS-OAUTH
 
@@ -2174,6 +2187,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0955` | A token exchange presented an actor_token that was not issued to the exchanging client: its client_id (or azp) names another client, a token carrying neither does not name the client in aud, or a client_credentials token is about another client. Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0956` | A token exchange presented an actor_token whose aud names neither this authorization server (its issuer or token endpoint) nor the exchanging client (its client_id, identifier or oauthAudience). Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
+| `STS-OAUTH-0958` | An authorization code was presented again under oauth2.codeReplayIdempotent, and the record of its redemption holds no response to replay: it was redeemed while the relaxation was not in force, and only its jtis were kept (#614). Refused, and what it bought is revoked. | 400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5) |
 
 ## STS-SAML
 
@@ -2292,6 +2306,7 @@ Raised from: saml/.
 | `STS-SAML-0107` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a second factor the service provider does not allow (appMfaMechanism, #475). | Responder / RequestDenied |
 | `STS-SAML-0108` | A SAML 1.1 sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0109` | A SAML 1.1 flow back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
+| `STS-SAML-0110` | A SAML 2.0 or SAML 1.1 artifact could not be issued: the realm already holds saml2.maxArtifacts (saml11.maxArtifacts) unresolved artifacts, and a full store refuses rather than forget one (#614). Nothing was sent to the service provider. | HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 Browser/Artifact profile can carry no failure without an artifact |
 
 ## STS-WSTRUST
 
@@ -2815,9 +2830,9 @@ Raised from: kerberos/.
 
 ## STS-LDAP
 
-**LDAP directory.** The embedded directory on 389 and 636 and the console pages that show it.
+**LDAP directory.** The embedded directory on 389 and 636, the console pages that show it, and the offline bulk import of people into it (#629).
 
-Raised from: ldap/.
+Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -2917,6 +2932,25 @@ Raised from: ldap/.
 | `STS-LDAP-0136` | A group owner add named the group itself (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-LDAP-0137` | A group owner add was refused: the group already names the most owners a group may (MAX_GROUP_OWNERS, 25) (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-LDAP-0138` | A group owner remove named a value the group does not list as an owner (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0139` | GET /admin-api/ldap/directory, /admin-api/users or /admin-api/mfa in a process holding the directory as a window (#616) asked the store for its counts, its page or its first names asynchronously and the store failed to answer. The page is refused rather than drawn out of what this process happens to hold. | HTTP 503 with Retry-After |
+| `STS-LDAP-0140` | An LDAP search reached its time limit (#616) — the client's timeLimit or ldap.timeLimit, whichever is shorter — before it had considered everything under its base. The entries already sent are a partial answer and the paging of the store stops there. | RFC 4511 section 4.5.1.5: timeLimitExceeded (3) |
+| `STS-LDAP-0141` | An LDAP search read from the store asynchronously (#616) and a page of the read failed part way. The entries already sent stay sent; the search ends unavailable rather than answering as though the rest of the directory were empty. | RFC 4511: unavailable (52) |
+| `STS-LDAP-0142` | An LDAP add asked the store its questions asynchronously before its body ran (#621), and the body then threw something other than a store it could not read (which keeps STS-LDAP-0130/0131 and is answered unavailable). Thrown inside a promise, it would have left the add without a result; it is answered operationsError instead, and logged with the stack. | RFC 4511: operationsError (1) |
+| `STS-LDAP-0143` | An LDAP add or modify carrying a clear password was screened for a data breach (#622), which made it asynchronous, and its handler then threw where neither ldapjs nor a request worker could see it. The client is answered once rather than never: an operations error, or unavailable (52) when the store could not be read (STS-LDAP-0130, STS-LDAP-0131). | RFC 4511: operationsError (1) |
+| `STS-LDAP-0144` | A directory create was refused because this node's front process, which decides its own workers' create claims in memory (#628), already holds as many claims as it may. That many creates are never in flight at once, so something is not giving its claims back; logged once when the ceiling is reached (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
+| `STS-LDAP-0145` | A directory create in a request worker was refused because the front process did not answer its create claim in time, or could not be asked (#628). A grant that arrives later is given straight back (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
+| `STS-LDAP-0150` | The bulk import (persistence/bulk_import.js) was refused before it read anything: an unknown argument, no --file or no file there, or a --batch or --skip out of range. Nothing is changed and it exits 2. | none — an operator tool |
+| `STS-LDAP-0151` | The bulk import was refused for the service's settings: persistence.mode is not postgres, or the service is deployed as cells, whose people are claimed in the global routing index the import does not write. | none — an operator tool |
+| `STS-LDAP-0152` | The bulk import could not open the store the way the service does: the connection could not be made or would be in the clear (#273), or the schema is older than version 17 (#623). | none — an operator tool |
+| `STS-LDAP-0153` | The bulk import was refused because the service is running: a process reported into sts_change_readers within the last 60 seconds. The import runs with every node and request worker stopped, and it asks again before every batch, so a service started during an import stops it at a batch boundary. | none — an operator tool |
+| `STS-LDAP-0154` | The bulk import named a realm the store does not hold, or one whose stored row could not be read back as a realm. | none — an operator tool |
+| `STS-LDAP-0155` | The bulk import did not import a record: its DN is not directly under the realm's ou=users, its RDN is not a plain uid=<name> (no escape, no multi-valued RDN), its uid values do not include the RDN value, or a blank line between two records is missing. The rest of the file is imported; the report names the first twenty. | none — an operator tool |
+| `STS-LDAP-0156` | The bulk import did not import a record: it carries an attribute outside the person allowlist (a credential such as userPassword, an operational or sts attribute, or one that is not a person's), an objectClass other than top, person, organizationalPerson and inetOrgPerson, an empty value or a NUL byte, a URL value (name:< url), or a changetype other than add. | none — an operator tool |
+| `STS-LDAP-0157` | The bulk import stopped because the realm reached ldap.maxEntries, read against its counter row as an add reads it. What fitted was committed; raise the setting and run it again with the --skip the log line gives. | none — an operator tool |
+| `STS-LDAP-0158` | The bulk import could not seal: the key-encryption key could not be read or does not open the stored keys, or the store seals its directory and no blob came back sealed. Nothing of the batch was written. | none — an operator tool |
+| `STS-LDAP-0159` | A batch of the bulk import failed in the database, or inserted fewer rows than its check found free (something else wrote the directory meanwhile), and was rolled back; the import stopped. Every batch before it is committed: run it again, with the --skip the last progress line gave, to resume. | none — an operator tool |
+| `STS-LDAP-0160` | The bulk import did not import a record because one of its usernames (its RDN value or a uid) is already held by another entry under ou=users, in the store or earlier in the file — the one entry per person rule, as STS-LDAP-0005 refuses an add. | none — an operator tool |
+| `STS-LDAP-0161` | The bulk import could not merge a GIN pending list (gin_clean_pending_list) or ANALYZE the table: both need its owner or MAINTAIN, which the application role may not hold. After a batch (schema 17, whose name index has fastupdate on) the import goes on, slowing as the list grows; at the end nothing is lost, and lookups scan the lists until an autovacuum or the owner's VACUUM (ANALYZE) sts_ldap_entries. | none — an operator tool |
 
 ## STS-ATTR
 
@@ -2981,8 +3015,8 @@ Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clien
 | `STS-SCIMC-0004` | An outbound SCIM client's TLS material is unusable: its CA certificates, scimClient.caFile, or its client certificate and private key would not load. | none — nothing is sent |
 | `STS-SCIMC-0005` | A request to a SCIM service provider or its token endpoint timed out (scimClient.timeoutMs); retried. | none |
 | `STS-SCIMC-0006` | A request to a SCIM service provider or its token endpoint failed at the network: refused, reset, unresolved, or the TLS handshake or certificate check failed; retried. | none |
-| `STS-SCIMC-0007` | A SCIM service provider answered 400 or another refusal no second attempt changes (RFC 7644 section 3.12: invalidSyntax, invalidValue, mutability, invalidPath, noTarget, invalidVers, invalidFilter, tooMany); dead-lettered with its scimType. | none |
-| `STS-SCIMC-0008` | A SCIM service provider answered an error status: 408, 429, 500, 502, 503 or 504 are retried, anything else is dead-lettered. | none |
+| `STS-SCIMC-0007` | A SCIM service provider answered 400, 408, a 409 that is not uniqueness, or another refusal no second attempt changes (RFC 7644 section 3.12: invalidSyntax, invalidValue, mutability, invalidPath, noTarget, invalidFilter, sensitive); dead-lettered with its scimType. tooMany narrows the query first, uniqueness adopts, and invalidVers re-reads as a 412 does. | none |
+| `STS-SCIMC-0008` | A SCIM service provider answered an error status: 429, 500, 502, 503 or 504 are retried (and pause the client), anything else is dead-lettered. 408 is not retried (2026-10-13). | none |
 | `STS-SCIMC-0009` | A SCIM service provider answered 401 or 403 to an authenticated request: its credential, token or certificate is not accepted, or it is not authorized for the operation (RFC 7644 section 2). A 401 with an OAuth token is retried once with a fresh token first. | none |
 | `STS-SCIMC-0010` | An outbound SCIM client's OAuth 2.0 token request failed: the token endpoint refused the client_credentials grant, answered no access_token, or could not be reached. | none |
 | `STS-SCIMC-0011` | A SCIM delivery was not attempted because the claim store could not be asked; the next sweep tries again. | none |
@@ -2992,16 +3026,23 @@ Raised from: scim/scim_client.ts, scim/scim_client_rules.ts, mgmt-api/scim_clien
 | `STS-SCIMC-0015` | An operator's retry or purge was refused: the delivery is not a dead letter, or it is unknown in this realm. | HTTP 400 (console and API) |
 | `STS-SCIMC-0016` | A SCIM client action named an unknown action, or a client this realm does not have. | HTTP 400 (console and API) |
 | `STS-SCIMC-0017` | A SCIM client definition was refused: an unknown choice, an unusable URL, a missing credential its method needs, an unreadable LDAP filter or certificate, or a write the application registry refused. | HTTP 400 (console and API) |
-| `STS-SCIMC-0018` | A SCIM client action failed unexpectedly. | HTTP 500 (console and API) |
+| `STS-SCIMC-0018` | A SCIM client action, or the view of the clients across cells, failed unexpectedly. | HTTP 500 (console and API) |
 | `STS-SCIMC-0019` | A SCIM service provider's /ServiceProviderConfig or /ResourceTypes could not be read or was not a SCIM document (RFC 7644 section 4); the client assumes /Users and /Groups and no PATCH, filter or ETag support. | none |
 | `STS-SCIMC-0020` | A create answered 409 uniqueness (RFC 7644 section 3.3) and no resource could be found by externalId, userName or displayName to adopt; dead-lettered for an operator. | none |
-| `STS-SCIMC-0021` | A write answered 412 Precondition Failed (RFC 7644 section 3.14) more times than scimClient.etagRetries allows after re-reading the resource; dead-lettered. | none |
+| `STS-SCIMC-0021` | A PUT, PATCH or DELETE answered 412 Precondition Failed (RFC 7644 section 3.14), or 400 invalidVers, more times than scimClient.etagRetries allows after re-reading the resource; dead-lettered. | none |
 | `STS-SCIMC-0022` | An outbound SCIM client's scope filter is not an LDAP filter this service can evaluate (RFC 4515); nobody is in its scope until it is fixed. | HTTP 400 (console and API) at the write |
 | `STS-SCIMC-0023` | An outbound SCIM client's reconciliation failed part way: listing the service provider's resources, or reading the realm. | none (a log line and the action's answer) |
 | `STS-SCIMC-0024` | An outbound SCIM client's TLS client certificate could not be issued from the realm's tls-client Issuing CA. | HTTP 400 (console and API) |
 | `STS-SCIMC-0025` | A SCIM service provider answered a create or a read with a body that is not a SCIM resource carrying an id (RFC 7643 section 3.1). | none |
 | `STS-SCIMC-0026` | A SCIM service provider holds more than one resource with this realm's externalId for one entry (RFC 7643 section 3.1: the client owns externalId); dead-lettered for an operator to resolve. | none |
 | `STS-SCIMC-0027` | scimClient.skipTlsVerification is on in a product-mode realm and is ignored: the service provider's certificate is verified (logged once per process). | none (a log line) |
+| `STS-SCIMC-0028` | A SCIM service provider answered 400 tooMany (RFC 7644 section 3.4.2) to a query this client had already narrowed as far as it can: an externalId lookup asked for a page of two, or a reconciliation listing asked for one resource a page and, where filtering is supported, for externalId pr; dead-lettered, or the reconciliation reports the listing failed. | none |
+| `STS-SCIMC-0029` | A SCIM service provider's /ResourceTypes marks a schema extension required that this client has no values for (anything but the enterprise User extension, which is sent empty if need be); the resource is not sent and the delivery is dead-lettered naming the extension (RFC 7643 sections 3.3, 6). | none — nothing is sent |
+| `STS-SCIMC-0030` | A resource this client would send lacks an attribute RFC 7643 requires — a User's userName or a Group's displayName — so no create or replace is sent (RFC 7644 section 3.5.1); dead-lettered. | none — nothing is sent |
+| `STS-SCIMC-0031` | In a service deployed as cells, the issuance policy refused to release a person's data to an outbound SCIM client's service provider (release-attributes, purpose scim-provision, the client's scimClientJurisdiction as the serving side; #553). The person is out of scope: nothing is sent for one never pushed, and one pushed before is deprovisioned. Recorded at debug level; never a delivery or a dead letter. | none — nothing is sent |
+| `STS-SCIMC-0032` | In a service deployed as cells, another cell did not answer scim-client-group-share (#553): a group's owner cell could not learn every cell's share before deleting the group or replacing its members on a service provider without PATCH, or a cell could not tell the owner its share changed. Nothing is deleted or replaced; the delivery is retried, and the provider is not paused. | none — nothing is sent |
+| `STS-SCIMC-0033` | An outbound SCIM client act named a `cell` it cannot go to (#553): the service is not deployed as cells, the service has no such cell, or the act is on the client itself (add, change, remove, issue a certificate, test the connection) rather than on a cell's queue. Nothing was done. | HTTP 400 (/admin-api) |
+| `STS-SCIMC-0034` | In a service deployed as cells, another cell did not answer scim-client-summary or scim-client-act (#553): the console draws that cell as unreachable, never leaves it off, and an act sent to it was not done there (an act sent to every cell reports that cell's result as unreachable). | HTTP 400 (/admin-api) when the act named that cell; none otherwise |
 
 ## STS-SCIM
 
@@ -3243,6 +3284,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0144` | A certificate presented to the SPIRE Server or Broker API was signed by an authority this trust domain trusts and is refused: the two-certificate path breaks RFC 5280 (pki.verifyIssuedDirectly — a critical extension nothing here implements, a name constraint, a malformed certificate) or it is not a leaf X509-SVID (cA set, or a keyUsage without digitalSignature or with keyCertSign or cRLSign; X509-SVID section 4.3). #201. | UNAUTHENTICATED / PERMISSION_DENIED, as for any unverified caller |
 | `STS-SPIFFE-0145` | A request worker failed the SPIFFE Broker API's FetchJWTSVID for an attested reference before answering it (the worker went away, or the operation threw); it is not run again in the front process, because the worker may already have minted (2026-10-07). | gRPC UNAVAILABLE |
 | `STS-SPIFFE-0146` | A Workload API caller is entitled to nothing it asked for: no registration entry matches it (and none is invented), or FetchJWTSVID named a spiffe_id it is not entitled to. Refused at FetchX509SVID, FetchX509Bundles, FetchJWTSVID and FetchJWTBundles, and a stream whose caller lost every entry ends so (SPIFFE Workload API sections 5.2.1, 5.2.2, 6.2.1, 6.2.2; #274). | gRPC PERMISSION_DENIED |
+| `STS-SPIFFE-0147` | A realm's SPIRE Server API or Broker API TCP listener could not take its federated trust domains' X.509 authorities after a federated bundle changed, so a federated SVID is not chained at the TLS handshake until the next change or a restart; every SVID is still verified against the bundles, read off the socket (#438). | — |
 
 ## STS-TLS
 
@@ -4110,6 +4152,8 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0048` | An Android Key Attestation chain's revocation could not be checked — no current Android attestation status list, or a stale one — and devices.androidRevocationRequired treats that as unattested in product mode (#256). | the registration's own refusal in product (STS-DEVICE-0024) |
 | `STS-DEVICE-0049` | A newly activated Android attestation status list could not queue the recheck of the stored chains (#256); the daily devices.android-status-recheck run reaches them. | none — a warning in the log |
 | `STS-DEVICE-0050` | A TPM key attestation in a device certificate request was not proved FRESH — its TPMS_ATTEST extraData is not a live nonce this realm issued at EST /nonce to the same client and cookie, or the request came over SCEP, which has no nonce operation — and product mode requires freshness (common/mode.js requiresFreshKeyAttestation(); draft-ietf-lamps-csr-attestation section 6.2, draft-ietf-lamps-attestation-freshness) (#257). | EST 403 / SCEP failInfo badRequest |
+| `STS-DEVICE-0051` | An Android-attested key was registered and the Android attestation recheck could not be told (its registration mark not moved); the key was checked at registration, and a recheck after the next status list reaches it (#615). | — |
+| `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
 
 ## STS-SVCACCT
 
@@ -4455,9 +4499,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0650` | A software statement could not be issued because there was no issuer to name: no request address reached the action and oauth2.issuer is not set. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0700` | The query string of /admin/oauth2/monitor did not match the shape the page accepts (state, client_id, page, per, clientsPage, offset, limit, format) and was refused before anything was read. | HTTP 400 text/plain |
 | `STS-ADMIN-0701` | An OAuth 2.0 monitoring action named an action the page does not have; the refusal names the one it does. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0702` | A withdrawal of a pushed authorization request carried no request_uri, or one longer than the store could ever hold. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0703` | A withdrawal of a pushed authorization request named a value that is not in the urn:ietf:params:oauth:request_uri: namespace this service issues pushed request_uris from (RFC 9126 section 2.2). | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0704` | A withdrawal named a request_uri this realm does not hold: it was never pushed here, it expired and was swept, or it was already withdrawn. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
+| `STS-ADMIN-0702` | A withdrawal of a pushed authorization request carried no request_uri_digest (the handle it is listed by), or one longer than a handle could ever be. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
+| `STS-ADMIN-0703` | A withdrawal of a pushed authorization request named a value that is not a handle: the base64url SHA-256 of a request_uri, 43 characters, which is all the store keeps of one (#614). | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
+| `STS-ADMIN-0704` | A withdrawal named a pushed request this realm does not hold: it was never pushed here, it expired and was swept, or it was already withdrawn. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
 | `STS-ADMIN-0705` *(retired)* | An OAuth 2.0 monitoring console action threw; nothing is known to have changed and the log line carries the stack. | a 303 back to /admin/oauth2/monitor with error= |
 | `STS-ADMIN-0706` | The bootstrap administrator could not be created in the default realm, or could not be given both console roles, at startup. | none — logged |
 | `STS-ADMIN-0720` | Issuing an application a TLS client certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority). | the caller's refusal (errors on a console or /admin-api reply) |
@@ -4633,6 +4677,9 @@ Raised from: mgmt-api/.
 | `STS-API-0129` | A management API operation whose drawing is the admin console's was asked for format=svg; the drawing is its console twin's under /admin-api/console (#454). | HTTP 400 |
 | `STS-API-0130` | An unknown action was asked at a management API address whose form helpers moved to /admin-api/console (#454); the refusal names the actions the address still declares. | HTTP 400 |
 | `STS-API-0131` | A management API request to change the Kerberos PAC claim set was refused (#493); the refusal's own code names why when it has one. | HTTP 400 |
+| `STS-API-0132` | A management API request carrying only an owner's scopes (owner:read, owner:write) reached an operation that is not one an owner may ask: an owner token reaches only the operations on one object of the four kinds it may own (#607). | HTTP 403 |
+| `STS-API-0133` | The access-control policy's owner rule refused a management API request made with an owner's token (#607): the caller does not own the object, the object is closed to its owners, the action is not one an owner may take on its kind, or it would remove the last owner. | HTTP 403 |
+| `STS-API-0134` | A request to close an object to its owners, or open it again, named no kind of the four or no object (#607). | HTTP 400 |
 
 ## STS-PORTAL
 

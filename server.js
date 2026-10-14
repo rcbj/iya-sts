@@ -286,6 +286,12 @@ function announce() {
   realms.list().forEach(function (realm) {
     warmSignerGroups(realm.id);
   });
+  // EVERY AUTHORITY'S CRL INTO THE DIRECTORY (#617, 2026-10-14), here and
+  // not inside `pki.start()`, where it was 4 s of 8081's front process on
+  // the way to this socket (279 lists) — `common/pki.js` says why nothing
+  // before the listener needs it. Not awaited, for warmPqKeys()'s reason; it
+  // yields between lists and logs its own failure, and runs once.
+  require('./common/pki').publishStartupCrls();
   // THE VERSION FIRST, before the endpoint tour below, because it is the one
   // line in this banner that answers a question about the PROCESS rather than
   // about a URL — and it is the line somebody scrolls a container's log back

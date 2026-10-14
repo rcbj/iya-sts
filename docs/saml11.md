@@ -111,7 +111,7 @@ names the SOAP request and its `Recipient` names whoever asked.
 | Request | Answer |
 |---|---|
 | `AssertionArtifact` | the assertion — **exactly once**, across every node of a cluster: resolving destroys it (bindings section 3.2.3), and a second attempt — like an unknown artifact, another provider's, or one asked for by the wrong relying party — gets `samlp:Success` with no assertion and no status message, as bindings section 4.1.1.6 requires; the reason is in the log under its error code. `saml11.artifactTtlS` only bounds how long an unresolved one lives |
-| `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`; not one-shot, since holding the reference means already holding the assertion |
+| `AssertionIDReference` | an assertion this realm issued, from a cache of `saml11.assertionCacheMax`, until the assertion's own `NotOnOrAfter`; not one-shot, since holding the reference means already holding the assertion |
 | `AttributeQuery` | an assertion carrying the person's attributes and **no** `AuthenticationStatement` — in product under a release policy, below |
 | `AuthenticationQuery` | answered from a live, authenticated session for that name, with its real method and instant; with no such session, Success and no assertion — in product under the same policy |
 
@@ -250,6 +250,8 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.autocreateApplications` | `STS_SAML11_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry the first time a relying party is named. |
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a flow is held while the person signs in. |
 | `saml11.assertionCacheMax` | `STS_SAML11_ASSERTION_CACHE_MAX` | `500` | yes | Assertions kept per realm for `AssertionIDReference`, oldest out first. |
+| `saml11.assertionCacheTtlS` | `STS_SAML11_ASSERTION_CACHE_TTL_S` | `3600` | yes | How long a kept assertion with no NotOnOrAfter stays answerable; one with a NotOnOrAfter is kept until then and no longer. |
+| `saml11.maxArtifacts` | `STS_SAML11_MAX_ARTIFACTS` | `10000` | yes | Unresolved artifacts kept per realm; a store full of live ones refuses the next Browser/Artifact sign-in with a 503 page (`STS-SAML-0110`) rather than forget one. |
 
 The shared `saml.*` settings — signature algorithm, canonicalization, SHA-1
 verification, clock skew, the metadata organisation — are in the

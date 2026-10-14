@@ -50,7 +50,7 @@ when registered).
   be the rule, because it is exactly what estclient cannot send: a realm must
   be nameable by ONE segment, so that segment must mean one thing. A realm
   may not be called by any label — the nine profiles and the five refused
-  (`STS-CORE-0107`, the names from `common/enrollment_profiles.ts`) — and a
+  (`STS-CORE-0107`, the names from `common/enrollment_profiles.js`) — and a
   realm created with such a name before the rule is never read in the label
   position: the label reading wins, so no URL that meant a profile yesterday
   means a realm today. **A request names its realm once**: a label that

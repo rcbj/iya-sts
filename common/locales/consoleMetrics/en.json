@@ -4,6 +4,7 @@
   "state.active": "active",
   "tile.calls": "endpoint calls",
   "tile.routes": "routes called",
+  "tile.healthProbes": "successful health probes, not counted as calls",
   "tile.tokensIssued": "tokens issued",
   "tile.tokensRevoked": "tokens revoked",
   "tile.artifacts": "assertions, tickets, credentials",

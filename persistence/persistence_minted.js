@@ -2015,8 +2015,35 @@ function restoreFilter(nowMs) {
     // 0 is "no write-age rule": `persistence.mintedRetention` 0 keeps
     // everything, as it always did.
     staleBefore: retention ? nowMs - retention : 0,
-    ageHandles: shortLivedHandles()
+    ageHandles: shortLivedHandles(),
+    // What a request worker does not read back at all (#617).
+    skipHandles: process.env.STS_REQUEST_WORKER ? notInWorkers() : []
   };
+}
+
+// ---------------------------------------------------------------------------
+// THE STORES A REQUEST WORKER DOES NOT RESTORE (#617, 2026-10-14):
+// `restoreInWorkers: false` at `realms.map()` (`common/realms.js` argues the
+// declaration). On 8081, 42,740 of the 52,234 rows every process read back at
+// every start were `scheduler.runs` — 34 MB of 55 MB of sealed bodies, each
+// opened and parsed — and in a request worker nothing reads that store whole:
+// /admin/scheduler and `GET /admin-api/scheduler` are answered by the front
+// process (`common/request_pool.js`, NEVER_DISPATCHED). The query leaves the
+// rows out (`loadMinted()`'s `skipHandles`) and the loop below skips any a
+// driver returned anyway. **What still holds**: the worker applies the change
+// log from the high-water mark it takes after its restore, exactly as before,
+// so every row written after its start reaches it; it writes its own rows,
+// and the flush merges them with the stored ones (`mergeRow`); and the front
+// process restores everything, as every process did.
+// ---------------------------------------------------------------------------
+function notInWorkers() {
+  log.debug("Entering notInWorkers().");
+  log.debug("Leaving notInWorkers().");
+  return realms.handles().filter(function (one) {
+    return one.restoreInWorkers === false;
+  }).map(function (one) {
+    return one.handle;
+  });
 }
 
 // THE STORES THE WRITE-AGE RULE COVERS: `retain: 'age'`. It is applied only
@@ -2033,6 +2060,80 @@ function shortLivedHandles() {
     return one.retain === 'age';
   }).map(function (one) {
     return one.handle;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// THE RESTORE'S LOOP, IN SLICES (#613, 2026-10-13).
+//
+// The loop opens, parses and restores every row a restore read, and it was
+// one synchronous `forEach`: 48K rows held a request worker's event loop for
+// seconds at every start, and a front process's too — and the front process
+// is the one whose heartbeat and origin-claim renewal have to run
+// (STS-CLUSTER-0025, STS-STORE-0069). So it runs `RESTORE_SLICE_MS` at a
+// time and yields with `setImmediate()` between slices.
+//
+// **`restoring` IS SET ONLY WHILE A SLICE RUNS.** It is what keeps the
+// restore's own writes out of the journal, and a slice is synchronous, so it
+// still covers every one of them. Between slices it is clear, so a write
+// something else makes there is journalled as usual — and at the start of
+// the next slice that journal is taken ASIDE (`aside`), as the writes made
+// while the rows were loading always were (`pending`), and put back after
+// the restore, so the final `journal.clear()` cannot drop it. Before the
+// listener binds nothing much writes a minted store (the scheduler has not
+// started); this keeps it right if something does.
+// ---------------------------------------------------------------------------
+/** How long one slice of the restore may hold the event loop. */
+const RESTORE_SLICE_MS = 50;
+
+/**
+ * Runs `fn` over `rows` in slices of at most `RESTORE_SLICE_MS`, with the
+ * journal suppressed during each slice and what was journalled between slices
+ * pushed onto `aside`.
+ *
+ * @param rows - the rows read from the store
+ * @param aside - where journals taken between slices are kept
+ * @param fn - restores one row
+ * @returns a promise settled when every row has been through `fn`, or
+ *   rejected with what `fn` threw
+ */
+function restoreInSlices(rows, aside, fn) {
+  log.debug("Entering restoreInSlices(). " + rows.length + " row(s).");
+  let next = 0;
+  let slices = 0;
+  log.debug("Leaving restoreInSlices(). Slicing.");
+  return new Promise(function (resolve, reject) {
+    const slice = function () {
+      if (slices > 0) {
+        aside.push(takePendingJournal());
+      }
+      slices += 1;
+      const started = Date.now();
+      restoring = true;
+      try {
+        while (next < rows.length) {
+          fn(rows[next]);
+          next += 1;
+          if (Date.now() - started >= RESTORE_SLICE_MS) {
+            break;
+          }
+        }
+      } catch (e) {
+        restoring = false;
+        log.debug("Caught in restoreInSlices(): " + ((e && e.message) || e));
+        reject(e);
+        return;
+      }
+      restoring = false;
+      if (next < rows.length) {
+        setImmediate(slice);
+        return;
+      }
+      log.debug("restoreInSlices(): " + rows.length + " row(s) in " +
+                slices + " slice(s).");
+      resolve(null);
+    };
+    slice();
   });
 }
 
@@ -2111,16 +2212,27 @@ function restore() {
   // during the load is not guaranteed to have run. Taken aside the moment
   // `restoring` is set (nothing is journalled after that), kept across the
   // restore, which clears the journal of its own writes, and flushed after.
+  //
+  // **IN SLICES SINCE #613 (2026-10-13)**, `restoreInSlices()` below: a
+  // request worker on 8081 restored ~48K rows in one synchronous loop, about
+  // 4–5 s of its start, and `tests/tools/startup_profile.js` measures 48K
+  // small rows at 0.6 s held in one piece. Writes made by anything else
+  // while it yields are taken aside with `pending`, exactly as writes made
+  // while the rows were being LOADED always were, and flushed after.
   let pending = null;
+  const aside = [];
   return driver.loadMinted(filter).then(function (rows) {
     pending = takePendingJournal();
-    restoring = true;
     let restored = 0;
     droppedUnreadable = 0;
     droppedUnknown = 0;
     const staleHandles = new Set();
 
-    (rows || []).forEach(function (row) {
+    const skipped = new Set(filter.skipHandles || []);
+    return restoreInSlices(rows || [], aside, function (row) {
+      if (skipped.has(row.handle)) {
+        return;
+      }
       const store = realms.handleFor(row.handle);
       if (!store) {
         droppedUnknown++;
@@ -2188,44 +2300,55 @@ function restore() {
                   'under "' + row.key + '": ' + e.message);
         droppedUnreadable++;
       }
+    }).then(function () {
+      restoredRows = restored;
+      restoredAt = new Date().toISOString();
+      // THE JOURNAL IS CLEARED RATHER THAN TRUSTED. `restoring` suppressed
+      // every note above, but a store may write during a restore for a reason
+      // of its own — `realms.create()` fires every builder, and a builder that
+      // seeds something writes — and those writes are already in the store.
+      // What anything else wrote between slices is in `aside`, put back.
+      journal.clear();
+      flushAsked = false;
+      let putBack = putBackJournal(pending);
+      aside.forEach(function (one) {
+        putBack = putBackJournal(one) || putBack;
+      });
+      if (putBack && scheduler) {
+        flushAsked = scheduler() !== false;
+      }
+
+      if (staleHandles.size) {
+        log.info('persistence: ' + droppedUnknown + ' minted row(s) belong ' +
+                 'to handle(s) nothing in this build declares (' +
+                 Array.from(staleHandles).join(', ') + '). They were left ' +
+                 'alone rather than deleted: a row this build does not ' +
+                 'understand is usually an older or newer build\'s, and ' +
+                 'deleting it would make a downgrade lose state a downgrade ' +
+                 'should not lose.');
+      }
+      log.info('persistence: ' + restored + ' minted row(s) restored across ' +
+               realms.handles().length + ' declared store(s) and ' +
+               filter.realms.length + ' realm partition(s)' +
+               (skipped.size ? ' — a request worker reads none of ' +
+                Array.from(skipped).join(', ') + ', which only the front ' +
+                'process answers from' : '') +
+               (droppedUnreadable ? ', ' + droppedUnreadable + ' unreadable ' +
+                                    '(written under a different ' +
+                                    'key-encryption key?)' : '') +
+               '. Sessions, tokens, codes, artifacts, tickets, the replay ' +
+               'caches and the audit log are as they were before the ' +
+               'restart.');
+
+      log.debug('Leaving restore(). ' + restored + ' row(s).');
+      return { restored: restored };
     });
-
-    restoring = false;
-    restoredRows = restored;
-    restoredAt = new Date().toISOString();
-    // THE JOURNAL IS CLEARED RATHER THAN TRUSTED. `restoring` suppressed every
-    // note above, but a store may write during a restore for a reason of its
-    // own — `realms.create()` fires every builder, and a builder that seeds
-    // something writes — and those writes are already in the store.
-    journal.clear();
-    flushAsked = false;
-    if (putBackJournal(pending) && scheduler) {
-      flushAsked = scheduler() !== false;
-    }
-
-    if (staleHandles.size) {
-      log.info('persistence: ' + droppedUnknown + ' minted row(s) belong to ' +
-               'handle(s) nothing in this build declares (' +
-               Array.from(staleHandles).join(', ') + '). They were left ' +
-               'alone rather than deleted: a row this build does not ' +
-               'understand is usually an older or newer build\'s, and ' +
-               'deleting it would make a downgrade lose state a downgrade ' +
-               'should not lose.');
-    }
-    log.info('persistence: ' + restored + ' minted row(s) restored across ' +
-             realms.handles().length + ' declared store(s) and ' +
-             filter.realms.length + ' realm partition(s)' +
-             (droppedUnreadable ? ', ' + droppedUnreadable + ' unreadable ' +
-                                  '(written under a different key-encryption ' +
-                                  'key?)' : '') + '. Sessions, tokens, ' +
-             'codes, artifacts, tickets, the replay caches and the audit log ' +
-             'are as they were before the restart.');
-
-    log.debug('Leaving restore(). ' + restored + ' row(s).');
-    return { restored: restored };
   }).catch(function (err) {
     restoring = false;
     putBackJournal(pending);
+    aside.forEach(function (one) {
+      putBackJournal(one);
+    });
     log.debug('Leaving restore(). It failed.');
     return Promise.reject(new Error(errorCodes.tag('STS-STORE-0026') +
       'the minted state in the store could not be read: ' + err.message));

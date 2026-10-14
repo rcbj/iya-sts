@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Ingen utgång: släpps tillsammans med principalen, när dess post ersätts (ett lösenordsbyte eller en återställning), eller när den är den minst nyligen använda över gränsen; skrivs aldrig ner beständigt."
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "Personer och innehavare av behörighetsuppgifter, räknade"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "Hur många personer sfären definierar, hur många som har ett lösenord, alla som har ett attribut för behörighetsuppgifter (rått), och hur många av namnen som setts logga in som är personer här: rutorna på /admin/users över hela katalogen utan att lista den (#610)."
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "Strukturell: en sammanräkning och en namnräkning per sfär; sammanräkningen håller personerna med en behörighetsuppgift, inte alla."
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "Tills något under sfärens ou=users skrivs, och i en process som håller katalogen som ett fönster mot lagret högst tio sekunder."
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "Katalogens enhetsindex"
@@ -1071,6 +1087,26 @@
     "en": "8d6fb31ae90a70a5",
     "text": "en ställning som hölls och fortfarande var giltig, så utfärdandet avgjordes med den"
   },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "SAML 1.1-artefakter"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "De intyg som SAML 1.1-artefakter står för, tills var och en har lösts upp en gång hos SAML-svararen. Nycklade med artefaktens SHA-256, aldrig med artefakten."
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "Upprätthållen: saml11.maxArtifacts per sfär. Utgångna artefakter rensas vid gränsen; ett lager som fortfarande är fullt AVVISAR nästa artefakt hellre än att glömma en som inte lösts upp."
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "Tills den lösts upp en gång, eller tills saml11.artifactTtlS har passerat."
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "en artefakt som lösts upp"
+  },
   "caches.store.saml11.assertions.title": {
     "en": "8dd27dfb9529ae0c",
     "text": "SAML 1.1-intyg"
@@ -1084,12 +1120,32 @@
     "text": "Upprätthållen: saml11.assertionCacheMax per sfär, där det äldsta släpps; en artefakt som anger ett släppt intyg besvaras som okänd."
   },
   "caches.store.saml11.assertions.lifetime": {
-    "en": "4397e5b8b411e7a8",
-    "text": "Ingen utgång: det äldsta släpps när saml11.assertionCacheMax passeras."
+    "en": "b163f4a46cb87b30",
+    "text": "Till intygets NotOnOrAfter, eller saml11.assertionCacheTtlS när det saknar ett; det äldsta släpps när saml11.assertionCacheMax passeras."
   },
   "caches.store.saml11.assertions.hitMeaning": {
     "en": "b7e393c624057aea",
     "text": "en AssertionIDReference besvarades"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "SAML 2.0-artefakter"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "De meddelanden som SAML 2.0-artefakter står för, tills var och en har lösts upp en gång hos artefaktupplösningstjänsten. Nycklade med artefaktens SHA-256, aldrig med artefakten."
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "Upprätthållen: saml2.maxArtifacts per sfär. Utgångna artefakter rensas vid gränsen; ett lager som fortfarande är fullt AVVISAR nästa artefakt hellre än att glömma en som inte lösts upp."
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "Tills den lösts upp en gång, eller tills saml2.artifactTtlS har passerat."
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "en artefakt som lösts upp"
   },
   "caches.store.scim.digest-nonce-counts.title": {
     "en": "96cc15215936464e",

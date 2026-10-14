@@ -376,10 +376,17 @@ function whoIs(req) {
   return (req.ip || req.connection.remoteAddress || 'unknown');
 }
 
+// **THE ID IS KEPT AS ITS DIGEST (#614).** The negotiation id is the value
+// of the `sts_spnego_negotiation` cookie — a bearer of the half-finished
+// negotiation — and the store only ever looks it up and spends it, so the
+// key is `door|credentialDigest(id)`, hashed at the moment the cookie is
+// minted and again when it is presented, and the row's own `id` is the same
+// digest. A row written under the old key shape is simply not found.
 function pendingKey(door, id) {
   log.debug('Entering pendingKey().');
   log.debug('Leaving pendingKey().');
-  return String(door || '') + '|' + String(id || '');
+  return String(door || '') + '|' +
+    stsCrypto.credentialDigest(String(id || ''));
 }
 
 // The negotiation id this request carries, or ''. A plain parse of one cookie:
@@ -753,7 +760,9 @@ async function negotiate(req, opts) {
     const pendingId = stsCrypto.randomBytes(18).toString('base64url');
     pending.set(pendingKey(door, pendingId), {
       at: Date.now(),
-      id: pendingId,
+      // The digest, never the cookie value (#614): it is only the claim's
+      // name below, which `cluster_claims` digests again anyway.
+      id: stsCrypto.credentialDigest(pendingId),
       door: door,
       address: whoIs(req),
       mechListDer: prim.toHex(mechListDer),

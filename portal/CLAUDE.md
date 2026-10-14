@@ -1,6 +1,6 @@
 # CLAUDE.md — `portal/`
 
-## A STATIC APPLICATION SINCE #568 (2026-10-12) — READ THIS FIRST
+## A STATIC APPLICATION SINCE #568 (2026-10-12) — READ THIS FIRST — rule 3ck
 
 **The portal is drawn in the browser now**, on the admin console's pattern
 (#446). `/portal` and every path under it answer one document
@@ -30,6 +30,7 @@ a page DOES, which did not change:
 | `requireSignIn()`, the portal's relying-party session, `sts_portal`, `oidcRp.renewal('portal')` | gone: the token is the session, and `/account-api`'s gate asks what `requireSignIn()` asked — the access policy included |
 | a CSRF token on every form (A07) | gone with the cookie it guarded: a request is a DPoP-bound token and a proof by a key no other page holds |
 | a write answers 303 with `?done=` | it answers `{ ok, message }` in the person's language; a secret shown once is a `view` drawn in place |
+| every page here but a few is `script-src 'none'`, and a page that "has no script" or "runs no script" | every `/portal/*` path is the one shell under `script-src 'self'` and `connect-src 'self'`, and every page runs `/portal/portal.js`; what "no script" still means is that the page needs nothing in the browser beyond drawing its answer and sending its forms |
 | `/authn/webauthn.js` on `/portal/keys`, `/portal/activate`, `/portal/devices`; `/portal/copy.js` on `/portal/mfa` | the runtime runs the ceremonies and reveals the Copy buttons (`web_portal_webauthn.ts`); the four scripted-page rows are one in the root `CLAUDE.md` |
 | the `Location`-header bug and `oidc_rp.js`'s choke point | the runtime builds its own authorization request under the realm's prefix |
 | `NAV` in `portal.ts` | `NAV` in `web_portal_kit.ts`, read by the frame and by `paths()` |
@@ -276,9 +277,10 @@ own account with a form they abandoned. It is the same shape of lockout
 
 ### The QR code is an image this server drew, and the typed secret is not a fallback nobody sees
 
-`script-src 'none'` covers every page here except `/portal/keys` (see below,
-2026-09-10) and a few states of others the root `CLAUDE.md`'s table lists, so a QR library running in the browser was never available on this
-one — `common/totp.ts` renders an SVG and it arrives as
+Until #568 (2026-10-12) `script-src 'none'` covered every page here except
+`/portal/keys` (see below, 2026-09-10) and a few states of others the root
+`CLAUDE.md`'s table listed, so a QR library running in the browser was never
+available on this one — `common/totp.ts` renders an SVG and it arrives as
 a `data:` URI, which `img-src 'self' data:` already allowed for the two OID4VC
 offer pages.
 
@@ -412,10 +414,13 @@ codes (`admin-ui/web_users.ts`, the recovery codes block).
 ### It is the SEVENTH scripted page in this service and the first in this portal
 
 It arrived 2026-09-10, in a directory whose own file said every page of it was
-`script-src 'none'`.
+`script-src 'none'`. (History since #568, 2026-10-12: every portal page now
+runs `/portal/portal.js` under `script-src 'self'`, and the ceremony is
+`web_portal_webauthn.ts`'s; the argument below is why the page needed a
+script at all.)
 
-`app.js` sets `script-src 'none'` everywhere and the rule is that a page gets an
-exception only when it CANNOT work without one — several candidates have been
+`app.js` sets `script-src 'none'` as the service-wide default and the rule is
+that a page gets an exception only when it CANNOT work without one — several candidates have been
 refused on it (the root `CLAUDE.md` lists them), `/authn/totp` among them, which sits next door to a scripted page
 and still had to argue its own case.
 
@@ -707,7 +712,8 @@ It was a CONFIDENTIAL OpenID Connect relying party from 2026-09-06 to #568:
 process and a session of its own in `sts_portal`. **It is a PUBLIC client
 now**, signing in in the browser (`web_portal_runtime.ts`): the authorization
 code flow with PKCE at the authorization server of the realm the portal was
-opened in, `resource` that realm's `/account-api`, back at
+opened in, `resource` that realm's `/account-api` (and its `/admin-api`,
+for an owner's pages, since #607), back at
 `/portal/callback` — a page the runtime draws, whose callback address the
 shell registers on the client entry as the console's does
 (`oidcRp.ensureSurfaceCallback()`: learnt in development, refused in product
@@ -911,9 +917,10 @@ person it is about could clear it, so there is no Clear here — the console has
 one, for its own inbox. The page says that in as many words rather than simply
 lacking the button, because a missing control reads as an oversight.
 
-**IT NEEDS NO SCRIPT AND HAS NONE, SO THE CLAIM THIS FILE MAKES ABOUT
-`script-src 'none'` IS UNCHANGED BY IT.** `/portal/keys` is still the only
-exception in this directory. A list of events with a `<details>` per payload is
+**IT NEEDED NO SCRIPT AND HAD NONE, SO THE CLAIM THIS FILE THEN MADE ABOUT
+`script-src 'none'` WAS UNCHANGED BY IT.** `/portal/keys` was still the only
+exception in this directory (until #568, 2026-10-12, made every portal page
+the static shell under `script-src 'self'`). A list of events with a `<details>` per payload is
 markup; the argument that page was granted its exception on — a WebAuthn
 ceremony is a browser API call and there is no server-side substitute — does
 not apply here and was not reached for.
@@ -1026,8 +1033,8 @@ be explored is the more useful half. So the set ones are drawn plainly and the
 rest are one fold per class.
 
 **`<details>` is MARKUP and not script**, which is why it is available at all:
-every page of this portal but `/portal/keys` is `script-src 'none'`, and the
-console made exactly this argument for its own collapsible prose. There is no collapse-all and there
+every page of this portal but `/portal/keys` was `script-src 'none'` until #568
+(2026-10-12), and the console made exactly this argument for its own collapsible prose. There is no collapse-all and there
 will not be one.
 
 ### Nothing here can be edited
@@ -1164,7 +1171,8 @@ What is this page's:
 * **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
   one-time card with three `data:` links carrying `download` — the `.p12`, an
   encrypted `-key.pem`, the `-chain.pem` — which is the console keytab page's
-  arrangement and the only way a file leaves a page with `script-src 'none'`.
+  arrangement and was the only way a file left a page with `script-src 'none'`;
+  the static portal (#568) kept it, the links drawn by the renderer.
   Nothing keeps the private key; the page says so, and the install steps
   (Windows, macOS, Firefox, Linux Chrome, curl) are folds on the same card.
 * **THE FILE PASSWORD IS TYPED TWICE, CHECKED, USED ONCE AND NOT KEPT** — not
@@ -1769,7 +1777,47 @@ lists them after *Your account*. A resource is the person's when one of its
 owner values — a role's `owner`, a group's `owner`, a service account's
 `stsServiceAccountOwner`, an application's `appOwner` — names the person's
 entry or a group the directory says they are in (`groupsOfUser()`); each row
-says which (`via`). Read-only: an owner grants nothing, and the owners are set
-on the console's Owners tabs. The person is the token's, as everywhere here.
-Everything is reached lazily at request time. `tests/portal_owned.js` holds it.
+says which (`via`). The owners are set on the console's Owners tabs, and an
+owner may add and remove other owners (#607). The person is the token's, as
+everywhere here. Everything is reached lazily at request time.
+`tests/portal_owned.js` holds it.
+
+**rcbj, 2026-10-13: no list of the person's groups under the table** — each
+row's `via` already names the group that makes it theirs — **and a pager on
+every page**, one page or many (`pageNav(..., always)`).
+
+### AND ONE OF THEM, ADMINISTERED (#607, 2026-10-13)
+
+rcbj: a person updates what they own from here, through the MANAGEMENT API,
+and the check that they own it is the access-control policy's owner rule —
+not repeated in `/account-api` (`mgmt-api/CLAUDE.md` *OWNERS*,
+`xacml/CLAUDE.md`, `common/CLAUDE.md` 3cn). So:
+
+* **EACH ROW OPENS ITS PAGE**, `/portal/owned/<kind>?name=<id>` — the same
+  path, so the column and the heading need nothing — unless the row is
+  `closed` (`portal_owned.ts` asks `ownership.protectionOf()` for the rows on
+  the page), which says so instead.
+* **THE PAGE IS DRAWN FROM `/admin-api`**: a `PortalPage` may carry
+  `admin(query)`, the management API path whose GET answers it for that
+  query, and the runtime reads it with the OWNER TOKEN; the view is
+  `{ owned: { status, answer, canWrite, query } }`. A refusal — the owner
+  rule's sentence, or why there is no owner token — is drawn, in English.
+* **ITS FORMS POST THERE**: `data-admin="/admin-api/<kind>/<action>"`, sent
+  as JSON with the owner token (`submitOwned()`; `fields.<attribute>` and
+  `lines.<attribute>` become an `update-fields` body's `fields`), and the page
+  is drawn again with the answer's message, a regenerated client secret said
+  once, or the errors. The controls are the template's default owner
+  actions; a realm whose policy narrows them refuses, and the refusal is
+  drawn. Without `owner:write` the page draws no form.
+* **THE OWNER TOKEN** (`web_portal_runtime.ts`): the sign-in names TWO
+  resources — this realm's `/account-api` and `/admin-api` (RFC 8707,
+  `SpaClient.formOf()` repeating the parameter) — and asks for
+  `owner:read owner:write` beside `account:manage`. The code is redeemed for
+  the account API, and the management API's token is REFRESHED from the same
+  grant with `/admin-api` as its resource when an owner's page asks; the
+  refresh token keeps both resources (`oauth-oidc/CLAUDE.md`), and one
+  rotation chain serves both. The authorization server issues the owner
+  scopes only to a person who owns something, so `scope` on that answer is
+  what `canWrite` reads. The shell names `/admin-api`'s listener where it is
+  elsewhere (`data-sts-api`, and `connect-src`).
 

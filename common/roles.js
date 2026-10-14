@@ -211,9 +211,17 @@ const SCHEMA = {
     { name: 'owner',
       what: 'A person or a group of this realm who answers for the role ' +
             '(#604), by DN — RFC 4519 section 2.23\'s attribute, as a ' +
-            'group\'s owners are (#603). Multi-valued, at most 25. An owner ' +
-            'GRANTS NOTHING: nothing in this service reads it to decide ' +
-            'anything. The user portal lists what a person owns.' }
+            'group\'s owners are (#603). Multi-valued, at most 25. Since ' +
+            '#607 an owner may ADMINISTER the role through /admin-api with ' +
+            'owner:read and owner:write (OWNER_READ, OWNER_WRITE), within ' +
+            'what the access-control policy\'s owner rule allows; an owner ' +
+            'holds the role itself only by being a member. The user portal ' +
+            'lists what a person owns.' },
+    { name: 'stsOwnerProtected',
+      what: 'TRUE: the role\'s owners may not administer it through ' +
+            '/admin-api (#607), whatever they own — an administrator\'s ' +
+            'mark, read by the access-control policy\'s owner rule as ' +
+            'urn:sts:xacml:object-protected. Absent is FALSE.' }
   ]
 };
 
@@ -393,8 +401,73 @@ const BUILT_IN = [
       return (who.groups || []).some(function (one) {
         return String(one).toLowerCase() === wanted;
       });
+    } },
+  // -------------------------------------------------------------------------
+  // THE NINTH AND TENTH: AN OWNER'S TWO ROLES (#607, 2026-10-13).
+  //
+  // rcbj: "A user that is an owner of these types of objects would be granted
+  // the owner:read and owner:write roles." An owner is somebody a role, a
+  // group, a service account or an application names in its owner values —
+  // themselves, or a group they are in — and since #607 an owner may
+  // administer what they own through `/admin-api`, with `owner:read` and
+  // `owner:write`, within what the access-control policy's owner rule
+  // allows.
+  //
+  // **COMPUTED, rcbj's decision 2 on #607**, from the four owner attributes
+  // at the moment a decision is made, rather than configured roles whose
+  // membership is written when an owner is added: two stores answering one
+  // question would come to disagree, and an owner taken off the last thing
+  // they owned must stop holding the role on the very next request.
+  //
+  // **AND THE FIRST BUILT-IN ROLES THAT AUTHORIZE A PERMISSION** — each its
+  // own, `permission` on the row, which `common/role_permissions.ts` reads
+  // beside the native roles'. `holds()` reads `owns` off the context, which
+  // this file — a leaf — cannot work out: only `common/ownership.ts` can,
+  // and `role_permissions.ts` asks it. A context that does not say is
+  // somebody who owns nothing, which is the safe reading: the roles claim,
+  // the issuance PEP and the access PEP's own `rolesOf()` never carry them,
+  // and a token reaches them only through held ∩ carried.
+  //
+  // Owning a role is NOT holding it. An owner of `staff` holds OWNER_WRITE,
+  // not `staff`; adding themselves as a member is an act the owner rule
+  // decides, and a role that authorizes a protected permission is closed to
+  // it (`common/ownership.ts`, `object-protected`).
+  // -------------------------------------------------------------------------
+  { name: 'OWNER_READ', permission: 'owner:read',
+    what: 'An OWNER (#607): whoever a role, a group, a service account or ' +
+          'an application in this realm names as an owner, directly or ' +
+          'through a group they are in. Authorizes the owner:read ' +
+          'permission: reading, through /admin-api, the objects they own ' +
+          'and nothing else. Computed when a decision is made.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
+      return who.kind === 'user' && who.authenticated && who.owns === true;
+    } },
+  { name: 'OWNER_WRITE', permission: 'owner:write',
+    what: 'An OWNER (#607), as OWNER_READ. Authorizes the owner:write ' +
+          'permission: changing, through /admin-api, the objects they own, ' +
+          'within the actions the access-control policy\'s owner rule ' +
+          'allows each kind — never creating, deleting or renaming one, and ' +
+          'never an object protected from its owners.',
+    holds: function (who) {
+      log.debug("Entering holds().");
+      log.debug("Leaving holds().");
+      return who.kind === 'user' && who.authenticated && who.owns === true;
     } }
 ];
+
+// THE BUILT-IN ROLES THAT AUTHORIZE A PERMISSION (#607): the two owner roles.
+// Derived from the table, as `BUILT_IN_NAMES` is.
+/**
+ * The built-in roles that authorize a permission of this service (#607):
+ * `{ name, permission }` per row that names one.
+ */
+const OWNER_ROLES = BUILT_IN.filter(function (one) {
+  return !!one.permission;
+}).map(function (one) {
+  return { name: one.name, permission: one.permission };
+});
 
 // The group that grants REMOTE_PEPS. A setting rather than a constant because
 // a deployment that already has a group for its enforcement points should be
@@ -777,6 +850,10 @@ function all() {
                              : allValues(at, 'rolePermission'),
       // WHO ANSWERS FOR IT (#604): the `owner` DNs as stored.
       owners: allValues(at, 'owner'),
+      // CLOSED TO ITS OWNERS (#607, rcbj's decision 4): an administrator's
+      // mark, which the access-control policy's owner rule reads.
+      ownerProtected: firstValue(at, 'stsOwnerProtected').toUpperCase() ===
+                      'TRUE',
       console: !!consoleRow,
       // Seeded in every realm, undeletable, its permission fixed (#309).
       native: !!nativeRow,
@@ -1000,6 +1077,10 @@ function write(name, record) {
     }).filter(function (one, at, list) {
       return one && list.indexOf(one) === at;
     });
+  // THE MARK THAT CLOSES IT TO ITS OWNERS (#607), kept the same way: only
+  // `setOwnerProtected()` names it.
+  const ownerProtected = given.ownerProtected === undefined
+    ? before.ownerProtected === true : given.ownerProtected === true;
   const conferredBy = (given.conferredBy === undefined
     ? (before.conferredBy || [])
     : given.conferredBy).map(function (one) {
@@ -1045,6 +1126,7 @@ function write(name, record) {
     roleApplication: application ? [application] : [],
     roleAllowedMemberType: memberTypes,
     owner: owners,
+    stsOwnerProtected: ownerProtected ? ['TRUE'] : [],
     displayName: String(given.displayName || '').trim()
       ? [String(given.displayName).trim()] : [],
     // A native role's permission is fixed (see THE NATIVE ROLES) and
@@ -1279,6 +1361,41 @@ function removeOwner(name, owner) {
                     row.name + '".' };
 }
 
+/**
+ * Marks a configured role closed to its owners, or opens it again (#607,
+ * rcbj's decision 4), writing at once and keeping everything else.
+ *
+ * @param name - the role name
+ * @param flag - true closes it to its owners
+ * @returns `{ ok: true, changed, role, ownerProtected }`, or
+ *   `{ ok: false, why }` carrying an error code
+ */
+function setOwnerProtected(name, flag) {
+  log.debug('Entering setOwnerProtected(). name=' + name);
+  const row = read(name);
+  if (!row) {
+    log.debug('Leaving setOwnerProtected(). No such role.');
+    return errorCodes.mark({ ok: false,
+             why: 'There is no role called "' + name + '".' },
+             'STS-XACML-0057');
+  }
+  const wanted = flag === true;
+  if (row.ownerProtected === wanted) {
+    log.debug('Leaving setOwnerProtected(). Unchanged.');
+    return { ok: true, changed: false, role: row.name,
+             ownerProtected: wanted };
+  }
+  const written = write(row.name, Object.assign(
+    recordWithOwners(row, row.owners || []),
+    { conferredBy: row.conferredBy, ownerProtected: wanted }));
+  if (!written.ok) {
+    log.debug('Leaving setOwnerProtected(). The write was refused.');
+    return written;
+  }
+  log.debug('Leaving setOwnerProtected(). Written.');
+  return { ok: true, changed: true, role: row.name, ownerProtected: wanted };
+}
+
 // ---------------------------------------------------------------------------
 // SEEDING THE NATIVE ROLES (the two console roles, and DEVICE_COMPLIANCE
 // since #309), in the AMBIENT realm — `ldap_server.js`
@@ -1466,7 +1583,11 @@ function normalizeContext(who) {
     // presented no token is exactly what it was.
     scopes: Array.isArray(given.scopes)
       ? given.scopes.map(String)
-      : String(given.scopes || '').split(/\s+/).filter(Boolean)
+      : String(given.scopes || '').split(/\s+/).filter(Boolean),
+    // WHETHER THE PERSON OWNS ANYTHING (#607), for OWNER_READ and
+    // OWNER_WRITE: only `common/ownership.ts` can answer it, so a caller
+    // that has asked says so here, and one that has not owns nothing.
+    owns: given.owns === true
   };
 }
 
@@ -1692,6 +1813,9 @@ module.exports = {
   consoleRoleFor: consoleRoleFor,
   isConsoleRole: isConsoleRole,
   NATIVE_ROLES: NATIVE_ROLES,
+  // The two owner roles (#607): built in, each authorizing its permission.
+  OWNER_ROLES: OWNER_ROLES,
+  setOwnerProtected: setOwnerProtected,
   nativeRoleFor: nativeRoleFor,
   isNativeRole: isNativeRole,
   seedNativeRoles: seedNativeRoles,

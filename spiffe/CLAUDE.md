@@ -1212,6 +1212,59 @@ cRLSign). Either refusal is `STS-SPIFFE-0144`. Still ONE HOP, as argued above:
 this CA signs leaves directly. C2SP x509-limbo is driven through the same door by
 `tests/x509_limbo.js` (`common/CLAUDE.md`, *3w, ONE SET OF PATH RULES*).
 
+## THE TCP LISTENERS TRUST THE FEDERATED TRUST DOMAINS AT THE HANDSHAKE (#438, 2026-10-13)
+
+The SPIRE Server API and the Broker API ask for a client certificate and do not
+require one, and `spiffe_auth.ts` verifies what arrived itself, against the
+realm's own authorities and its federated trust domains'. The handshake's `ca`
+held only the realm's anchors, so a federated SVID never verified at the TLS
+layer. That did not matter until grpc-js 1.14.5 (GHSA-m9gg-hp2v-232j) began
+answering `getAuthContext()` with `{}` for a certificate OpenSSL did not
+authorize: a federated broker became "none presented"
+(`sts_spiffe_broker`, 2026-10-03). The bump went in on 2026-10-07 with
+`spiffe_auth.ts` reading the certificate off the socket
+(`tlsPeerCertificateOf()`). #438 is the TLS half:
+
+* **`SpiffeGrpc.listenerTrustPem()` is the one answer** to what both listeners
+  trust: the realm's anchors plus every `x509-svid` authority of every federated
+  bundle (`SpiffeCa.federatedX509AuthoritiesPem()`, read through
+  `federatedBundles()`, so a bundle named after a served domain is left out
+  here too). The first build, the re-key on a new Root
+  (`refreshServerApiCredentials()`) and the refresh below all use it.
+* **It follows the federation, wherever the change came from.** `spiffe_ca.ts`
+  announces a realm whose bundles changed (`onFederationChange()`). This covers
+  three sources: a write in this process, and a row arriving through the store's
+  `restore`/`remove` accessors (a reconciler that admits everything and only
+  notes the realm). The second is how a request worker's
+  `BatchCreateFederatedBundle` or `/admin-api` write and another node's reach
+  the front process that holds the sockets. Announcements are coalesced per
+  realm on the next turn. `SpiffeServer.refreshFederatedTrust()` re-applies `ca`
+  in place through `updateSecureContextOptions()`. The certificate, the
+  listeners' policy (#423) and request-but-not-require are kept, and nothing is
+  re-minted. A failure is `STS-SPIFFE-0147`.
+* **AttestAgent's no-SVID bootstrap is unchanged**: `rejectUnauthorized` is a
+  constructor option and nothing here touches it.
+* **A NON-SELF-SIGNED FEDERATED AUTHORITY DOES NOT ANCHOR, and this process
+  cannot make it.** In SPIFFE a bundle authority is an anchor whatever its
+  shape. OpenSSL needs `X509_V_FLAG_PARTIAL_CHAIN` for that, and node's
+  `allowPartialTrustChain` would set it. But `tls.Server`'s
+  `setSecureContext()` copies a fixed option list that leaves it out, and both
+  `http2.createSecureServer()` and grpc-js's `updateSecureContextOptions()` go
+  through it. Measured on node 22.13 and 24.16: refused at construction and
+  after a refresh alike. So the issue's `allowPartialTrustChain` bullet is not
+  built. An SVID under such an authority is unauthorized at the handshake and
+  verified through the socket read.
+* **So the socket read stays, and with it the distinction the issue asked
+  about.** "Did not verify" (expired, signed by nothing held here, the wrong
+  trust domain) and "none was presented" are still two refusals. An empty
+  auth context alone cannot tell them apart, and grpc-js's verdict still
+  decides nothing.
+
+`tests/spiffe_broker.js` holds it over a real handshake: the trust count rising
+and falling on a set, a change-log remove and restore, and a delete; a
+federated SVID that never needs the socket read; and an unknown authority's
+SVID that does, refused UNAUTHENTICATED.
+
 ## A PRESENTED X509-SVID IS LOOKED UP IN THE REVOCATION REGISTER (2026-09-12)
 
 `verifyPresentedCertificate()` asks `common/revocation_status.js`'s SYNCHRONOUS

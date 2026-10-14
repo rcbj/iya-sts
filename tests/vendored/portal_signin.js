@@ -34,6 +34,10 @@
 //     `path`, sent its fields as JSON.
 //   * `api(method, path, body)` — any `/account-api` path, as the portal.
 //   * `refresh()` — the refresh grant with the same DPoP key.
+//   * `ownerApi(method, path, body)` — with `options.owner` (#607): the
+//     management API as the portal's owner pages call it, with the token the
+//     same grant is refreshed into for `/admin-api`; `ownerScope()` is that
+//     token's `scope`.
 //   * `cookie` — the sign-on session's cookie the walk set, for a job that
 //     also needs the person's browser session.
 //
@@ -240,9 +244,14 @@ async function signInToThePortal(base, user, log2, options) {
   const state = b64u(crypto.randomBytes(16));
   const redirectUri = base + "/portal/callback";
   const resource = base + "/account-api";
+  // AN OWNER'S SIGN-IN (#607), as the runtime makes it: the management API
+  // as a second resource, and the owner scopes beside account:manage.
+  const ownerResource = base + "/admin-api";
   const params = {
     response_type: "code", client_id: "sts-user-portal",
-    redirect_uri: redirectUri, scope: opts.scope || "openid account:manage",
+    redirect_uri: redirectUri, scope: opts.scope || (opts.owner
+      ? "openid account:manage owner:read owner:write"
+      : "openid account:manage"),
     state: state, code_challenge: b64u(crypto.createHash("sha256")
       .update(verifier).digest()),
     code_challenge_method: "S256", resource: resource,
@@ -250,6 +259,9 @@ async function signInToThePortal(base, user, log2, options) {
     // derives it (`SpaClient.nonceFor()`); FAPI 1.0 requires one.
     nonce: crypto.createHash("sha256").update("nonce:" + verifier)
       .digest("base64url") };
+  if (opts.owner) {
+    params.resource = [resource, ownerResource];
+  }
   if (opts.prompt) {
     params.prompt = opts.prompt;
   }
@@ -260,8 +272,20 @@ async function signInToThePortal(base, user, log2, options) {
   // portal's runtime does (`SpaClient.authorizationRequestUrl()`): the
   // parameters POSTed to the PAR endpoint with a DPoP proof, the browser sent
   // with the request_uri alone.
-  let authorizeUrl = base + "/oauth2/authorize?" +
-    new URLSearchParams(params).toString();
+  // A REPEATED PARAMETER (`resource`, #607) as the runtime sends it
+  // (`SpaClient.formOf()`): `URLSearchParams(object)` would join the array.
+  function formOf(fields) {
+    log.debug("Entering formOf().");
+    const form = new URLSearchParams();
+    Object.keys(fields).forEach(function (name) {
+      [].concat(fields[name]).forEach(function (one) {
+        form.append(name, String(one));
+      });
+    });
+    log.debug("Leaving formOf().");
+    return form.toString();
+  }
+  let authorizeUrl = base + "/oauth2/authorize?" + formOf(params);
   const meta = await fetch(base + "/.well-known/oauth-authorization-server",
     { headers: { "User-Agent": AGENT } })
     .then(function (r) {
@@ -275,8 +299,7 @@ async function signInToThePortal(base, user, log2, options) {
   if (Array.isArray(modes) && modes.indexOf("query") < 0 &&
       (modes.indexOf("jwt") >= 0 || modes.indexOf("query.jwt") >= 0)) {
     params.response_mode = modes.indexOf("jwt") >= 0 ? "jwt" : "query.jwt";
-    authorizeUrl = base + "/oauth2/authorize?" +
-      new URLSearchParams(params).toString();
+    authorizeUrl = base + "/oauth2/authorize?" + formOf(params);
   }
   if (meta.require_pushed_authorization_requests === true) {
     const parUrl = String(meta.pushed_authorization_request_endpoint ||
@@ -286,7 +309,7 @@ async function signInToThePortal(base, user, log2, options) {
       const r = await fetch(parUrl, { method: "POST", headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": AGENT, dpop: key.proof("POST", parUrl, "") },
-        body: new URLSearchParams(params).toString() });
+        body: formOf(params) });
       key.keepNonce(r);
       pushed = { status: r.status, json: await r.json().catch(function () {
         return {};
@@ -458,8 +481,68 @@ async function signInToThePortal(base, user, log2, options) {
     return answer;
   }
 
+  // THE OWNER TOKEN (#607): the same grant refreshed for `/admin-api`, the
+  // refresh token it answers replacing the one in hand, as the runtime's
+  // `ownerAccess()` does.
+  let ownerToken = "";
+  let ownerScope = "";
+  async function ownerRefresh() {
+    log.debug("Entering ownerRefresh().");
+    const answer = await tokenRequest({
+      grant_type: "refresh_token", refresh_token: refreshToken,
+      client_id: "sts-user-portal", resource: ownerResource });
+    if (answer.status === 200 && answer.json.access_token) {
+      ownerToken = answer.json.access_token;
+      ownerScope = String(answer.json.scope || "");
+      refreshToken = answer.json.refresh_token || refreshToken;
+    } else {
+      ownerToken = "";
+      ownerScope = "";
+    }
+    log.debug("Leaving ownerRefresh().");
+    return answer;
+  }
+
+  async function ownerApi(method, path, body) {
+    log.debug("Entering ownerApi().");
+    if (!ownerToken) {
+      await ownerRefresh();
+    }
+    const url = /^https?:/.test(path) ? path : base + path;
+    let answer = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const headers = { authorization: "DPoP " + ownerToken,
+                        dpop: key.proof(method, url, ownerToken),
+                        accept: "application/json", "User-Agent": AGENT };
+      const init = { method: method, headers: headers };
+      if (body !== undefined) {
+        headers["content-type"] = "application/json";
+        init.body = JSON.stringify(body);
+      }
+      const r = await fetch(url, init);
+      key.keepNonce(r);
+      const text = await r.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch (e) {
+        log.debug("Caught in ownerApi(): " + ((e && e.message) || e));
+        // Not JSON: answered as its text.
+        json = null;
+      }
+      answer = { status: r.status, json: json, text: text };
+      const challenge = String(r.headers.get("www-authenticate") || "");
+      if (!(r.status === 401 && /use_dpop_nonce/.test(challenge))) {
+        break;
+      }
+    }
+    log.debug("Leaving ownerApi().");
+    return answer;
+  }
+
   say("[portal] signed in as " + user + " as the static portal: PKCE, a " +
-      "DPoP-bound token for " + resource + ".");
+      "DPoP-bound token for " + resource +
+      (opts.owner ? " and, refreshed, for " + ownerResource : "") + ".");
   log.debug("Leaving signInToThePortal().");
   return {
     user: user,
@@ -476,6 +559,13 @@ async function signInToThePortal(base, user, log2, options) {
     consentScreens: consentScreens,
     api: api,
     refresh: refresh,
+    ownerApi: ownerApi,
+    ownerRefresh: ownerRefresh,
+    ownerScope: function ownerScopeOf() {
+      log.debug("Entering ownerScopeOf().");
+      log.debug("Leaving ownerScopeOf().");
+      return ownerScope;
+    },
     key: key,
     // The page's view: the GET operation that mirrors it, with its query.
     page: async function (path, query) {

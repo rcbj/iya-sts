@@ -138,12 +138,13 @@ const TABLES = {
   sts_ldap_entries: {
     key: ['realm', 'dn_key'],
     // The six lookup columns the service writes beside the sealed `attrs`
-    // since #391 phase 6 (they were generated).
+    // since #391 phase 6 (they were generated), and the data keys the entry
+    // holds values under since #623.
     columns: ['realm', 'dn_key', 'dn', 'attrs', 'origin', 'created_at',
               'modified_at', 'name_keys', 'mail_keys', 'uuid_keys',
-              'class_keys', 'value_keys', 'attr_names'],
+              'class_keys', 'value_keys', 'attr_names', 'dek_keys'],
     json: ['attrs', 'name_keys', 'mail_keys', 'uuid_keys', 'class_keys',
-           'value_keys', 'attr_names'], time: [] },
+           'value_keys', 'attr_names', 'dek_keys'], time: [] },
   sts_minted: {
     key: ['handle', 'realm', 'key'],
     // `key_sealed`: the row's name, sealed beside its digest key (#222).
@@ -491,6 +492,7 @@ function sealPlannedEntries(rows, tier) {
     const attrs = row.attrs || {};
     const index = codec.index(attrs);
     row.attrs = codec.sealAttributes(row.realm, row.dn_key, attrs);
+    row.dek_keys = codec.dekKeys(attrs, row.attrs);
     row.name_keys = index.nameKeys;
     row.mail_keys = index.mailKeys;
     row.uuid_keys = index.uuidKeys;

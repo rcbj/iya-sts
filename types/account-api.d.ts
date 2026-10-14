@@ -151,4 +151,10 @@ export interface PortalPage {
   // A page for nobody's title (the frame titles a signed-in page from the
   // column's table).
   title?(view: any, ctx: PortalRenderContext): string;
+  // WHERE THE PAGE IS DRAWN FROM THE MANAGEMENT API (#607): the
+  // `/admin-api/...` path whose GET answers it for this query, read with the
+  // portal's owner token, or null where the query asks for the page's own
+  // `operation`. The view `render()` is then handed is
+  // `{ owned: { status, answer, canWrite, query } }`.
+  admin?(query: any): string | null;
 }

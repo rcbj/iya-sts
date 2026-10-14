@@ -60,8 +60,8 @@
     "text": "Nueva comprobación de atestación de Android"
   },
   "sched.jobs.devices.android-status-recheck.describe": {
-    "en": "f918ea71421d9df1",
-    "text": "Consulta a la lista de estado de atestación de Android activa sobre cada cadena de Android almacenada — claves de dispositivo y credenciales WebAuthn, en todos los dominios — y degrada las que revoca o suspende: autodeclarada, auditada, CAEP credential-change. Se ejecuta cuando se activa una lista, y a diario."
+    "en": "610a48914c017400",
+    "text": "Consulta a la lista de estado de atestación Android activa sobre cada cadena Android almacenada — claves de dispositivo y credenciales WebAuthn, en cada dominio — y degrada las que revoca o suspende: autodeclaradas, auditadas, CAEP credential-change. Lee solo las personas y los dispositivos marcados como poseedores de una, una página a la vez, y omite un dominio donde ni la lista ni los registros cambiaron desde su última comprobación. Se ejecuta cuando se activa una lista, y a diario."
   },
   "sched.jobs.devices.android-status-refresh.title": {
     "en": "95d19bd56eac78af",

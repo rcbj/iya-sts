@@ -867,8 +867,13 @@ is configured:
   certificate.
 
 The chain address is named by the leaf's SHA-256, so it names one certificate
-for ever: after a key is rotated, an old token's `x5u` answers 404 rather than a
-chain over a different key. RFC 7515 requires the `x5u` fetch to use TLS; with
+for ever, never a chain over a different key. A certificate the realm no longer
+publishes for its key — because the key was certified again over a re-issued
+Issuing CA, or because the key was rotated — is still served at that address,
+with the chain it was issued with, until it expires, so a token signed before
+can still be followed to its CRL and OCSP responder (which says whether it was
+revoked). The newest eight certificates displaced from one slot are kept this
+way; an older one, or an expired one, answers 404. RFC 7515 requires the `x5u` fetch to use TLS; with
 `global.https` off the address is `http://` and a strict verifier will not follow
 it.
 
@@ -1129,18 +1134,14 @@ an EC key's digest is decided by its CURVE, so a fixed value can hand a P-521
 key SHA-256 — legal, verifying, and nobody's intention. A pair whose families
 disagree is refused with the list of what that key *can* sign with beside it.
 
-## The page has no script on it
+## Keys are made on the server, not in your browser
 
-Every page of this console but the API explorer is `script-src 'none'`, and this
-one keeps that. The argument is made from scratch rather than inherited from the
-page next door, because the rule here is that it has to be: the test is whether
-the page **cannot** work without a script.
-
-It plainly can. Generating a key pair and issuing a certificate are things this
-process does far better than a browser — it holds the CA private keys, and a
-browser must never — so the button is a POST and the result is a re-rendered
-page. The debugger's PKI page needs a script because its whole point is that the
-key never leaves the browser; this page's whole point is the opposite.
+Generating a key pair and issuing a certificate are things this service does,
+never your browser — it holds the CA private keys, and a browser must never —
+so every button on this page is a request to `/admin-api` and the result is the
+page drawn again from its answer. The debugger's PKI page works the other way
+because its whole point is that the key never leaves the browser; this page's
+whole point is the opposite.
 
 
 ## Which key pairs are post-quantum
@@ -1191,7 +1192,7 @@ The dialog shows:
   identifiers, **every X.509 v3 extension decoded** with its OID and criticality,
   the outer signature algorithm and value, both fingerprints, and the PEM.
 
-The page still runs no script: opening a dialog adds `?certificate=<SHA-256>` to
+Opening a dialog adds `?certificate=<SHA-256>` to
 the address, so a dialog can be bookmarked or sent to someone, and **Back**
 closes it. Only certificates this service holds in the trust realm you are in
 can be opened — a certificate from another realm opens under that realm's
@@ -1215,8 +1216,8 @@ happens, and that difference decides the shape of everything in it.
 |---|---|
 | the profile rewrites the extension boxes as you pick it | **Apply the profile** is a submit, and the form comes back rewritten |
 | the cryptographic approach filters the algorithm menus live | the same submit |
-| the Copy buttons | gone — this console has no script, and a textarea selects |
-| **Download** builds a Blob in the browser | `POST /admin/pki/export` answers with the **file** |
+| the Copy buttons | a textarea, which selects |
+| **Download** builds a Blob in the browser | **Download** asks `/admin-api` for the files, which this service builds, and your browser saves them |
 | the key is generated in your browser and never leaves it | the key is generated **here**, because this process holds the CA private keys and a browser must never |
 
 **The form is the state and there is no draft anywhere.** Every field is
@@ -1543,9 +1544,9 @@ changed — `/admin/pki`, or `POST /admin-api/config/set`.
 * **One encoder, the debugger's own, vendored byte-identical.** A certificate
   issued here and one issued there are built by one implementation — see
   [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical).
-* **The page has no script.** Generating keys and issuing certificates are
+* **Keys are made on the server.** Generating keys and issuing certificates are
   things the process holding the CA keys should do, not a browser — see
-  [above](#the-page-has-no-script-on-it).
+  [above](#keys-are-made-on-the-server-not-in-your-browser).
 * **A limit refuses rather than forgets.** A full object store, a person's or
   an application's certificate cap, and the per-entry enrollment cap each
   refuse the next request instead of discarding something somebody may still

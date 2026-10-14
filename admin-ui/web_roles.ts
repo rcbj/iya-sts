@@ -100,7 +100,15 @@ class RolesPage {
              '</option>';
     }).join('');
 
-    const preview = json.preview;
+    // AN ANSWER THAT ASKED NOTHING IS NO ANSWER (2026-10-13). The preview is
+    // fetched whenever the query names one of the form's four fields, and
+    // the form's own Ask with its boxes empty names all four — so
+    // `/admin-api/roles/preview` answers `answered: false` with no `asked`,
+    // and reading `preview.asked.application` threw in the browser
+    // (sts_admin_console, which submits every GET form). Nothing asked draws
+    // the form and no decision, as the operation's own comment says.
+    const preview = json.preview && json.preview.answered !== false
+      ? json.preview : null;
 
     const inner =
       '<h2>' + t.html('consoleRoles.body.heading') + '</h2>' +
@@ -592,7 +600,12 @@ class RolesPage {
             route: '/admin/roles/owners', id: 'role-owners', field: 'role',
             value: role.name, stateKey: 'roleOwners', self: '',
             lead: t.html('consoleRoles.owners.lead'),
-            leadRead: t.html('consoleRoles.owners.leadRead') }) }
+            leadRead: t.html('consoleRoles.owners.leadRead') }) +
+          // Closed to its owners (#607).
+          GroupsPage.ownerProtectionSection(t, role.ownership, {
+            route: '/admin/roles/owners', id: 'role-owners', kind: 'role',
+            name: role.name, back: kit.queryWith(listView, {}),
+            write: !!role.canWrite && !!ctx.write, state: json.state }) }
     ]) + back;
   }
 

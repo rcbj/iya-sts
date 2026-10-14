@@ -138,6 +138,22 @@ SELECT format('ALTER DATABASE %I SET search_path = %I, public',
 -- ALTER DATABASE takes effect on the NEXT session, so this one says it too.
 SET search_path TO :"sts_schema", public;
 
+-- WHAT THE DATABASE SPENDS ITS TIME ON (#630): `pg_stat_statements`, the
+-- view an operator asks which statements cost what. The library is loaded
+-- by the SERVER (`shared_preload_libraries`, the compose stack's postgres
+-- command; postgres/CLAUDE.md); this creates the view. In `public`, beside
+-- whatever else is installed there, not in this service's schema. Only a
+-- role that may create it does — a superuser, RDS's master user — and any
+-- other is told and goes on: a store without the view is a store an
+-- operator cannot profile, not a store that is wrong. The application
+-- role is granted nothing for it (it is not `pg_read_all_stats`, as it is
+-- not `pg_monitor`): reading other roles' statements is the owner's.
+DO $ext$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
+EXCEPTION WHEN insufficient_privilege OR feature_not_supported OR undefined_file THEN
+  RAISE WARNING 'sts-schema: pg_stat_statements not created (%); the store works without it', SQLERRM;
+END $ext$;
+
 -- ---------------------------------------------------------------------------
 -- THE TABLES. `persistence/persistence_postgres.js`'s SCHEMA, verbatim.
 -- ---------------------------------------------------------------------------
@@ -158,9 +174,16 @@ CREATE TABLE IF NOT EXISTS sts_ldap_entries (
   class_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
   value_keys jsonb NOT NULL DEFAULT '[]'::jsonb,
   attr_names jsonb NOT NULL DEFAULT '[]'::jsonb,
+  dek_keys jsonb,
   PRIMARY KEY (realm, dn_key));
 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
+
+-- AUTOVACUUM FOR AN INSERT-HEAVY DIRECTORY (#630, schema version 19): an
+-- insert-only load is vacuumed every 20% of the table by default — about
+-- 600,000 inserts at 2.9M entries, with the GIN pending lists and the
+-- visibility map waiting that long. 1%.
+ALTER TABLE sts_ldap_entries SET (autovacuum_vacuum_insert_scale_factor=0.01);
 
 -- THE DIRECTORY'S LOOKUP COLUMNS (#349, schema version 13, 2026-09-29): what
 -- a request worker holding the people and devices as a bounded window asks
@@ -186,6 +209,9 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
 -- SPIFFE ID, a certificate subject, a federation link) — and `attr_names`,
 -- the attribute NAMES in the clear. A database built before version 14 has
 -- them generated and is refused at start (STS-STORE-0074): recreate it.
+-- Since version 18 `class_keys` holds an entry's GROUP classes only (#618).
+-- An entry written before then holds all its classes until it is next
+-- written, which the one question asked of the column answers the same.
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS name_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
@@ -195,20 +221,270 @@ ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS class_keys jsonb NOT NULL 
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS value_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS attr_names jsonb NOT NULL DEFAULT '[]'::jsonb;
 
+-- THE DATA KEYS AN ENTRY HOLDS VALUES UNDER (#623, schema version 17):
+-- `{ "<dek id>": <values> }` — the sealed blob's own key and the key of every
+-- value sealed inside it, which the database cannot see — written by the
+-- service beside the blob. NULLABLE WITH NO DEFAULT: adding it rewrites
+-- nothing, and NULL is an entry written before it existed, whose keys are
+-- not known (never "none"); the service indexes those entries a bounded
+-- batch per pass of its data-key jobs, once.
+ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS dek_keys jsonb;
+
 -- The children of a container in key order, and the RDN value there (a login
--- name); the `uid`, `mail` and entryUUID digests; the digests of the values
--- looked up as written (a DID, a SPIFFE ID, a federation link); and the
--- attribute names, with the default operator class for `?`.
+-- name); the `uid`, `mail` and entryUUID digests; and the digests of the
+-- values looked up as written (a DID, a SPIFFE ID, a federation link).
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON sts_ldap_entries USING gin (attr_names);
--- The object classes, with the default GIN operator class, for `?|`: a group
--- placed under `ou=users` or `ou=devices` found without a walk.
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries USING gin (class_keys);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops) WITH (fastupdate = off);
+
+-- THE ATTRIBUTE NAMES A HOLDER QUESTION ASKS, AND THE GROUP CLASSES (#618
+-- phase 2, schema version 18), each a PARTIAL GIN index with the default
+-- operator class (`?`, `?|`), so an entry that holds none of the asked
+-- names and is not a group — nearly every person — writes no entry to
+-- either. The names are an expression of `attr_names` keeping only
+-- `persistence/directory_queries.js`'s ASKED_ATTRIBUTES, which every query
+-- repeats character for character; `class_keys` holds the group classes
+-- only, as the service writes it from this version (an entry written before
+-- still holds all its classes, which answers the same question). They
+-- replace the two below, which indexed every name and every class of every
+-- entry — about nineteen GIN entries a person insert that narrowed nothing.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON sts_ldap_entries USING gin (class_keys) WITH (fastupdate = off) WHERE class_keys <> '[]'::jsonb;
+DROP INDEX IF EXISTS sts_ldap_entries_attr_names;
+DROP INDEX IF EXISTS sts_ldap_entries_classes;
+
+-- EVERY GIN INDEX OF THE DIRECTORY TAKES ITS INSERTS DIRECTLY (#618, schema
+-- version 18): `fastupdate = off`, so no search reads a pending list. On
+-- 8081 the names', uuids', mails' and values' lists held about 205,000
+-- tuples each and every login-name and UUID probe read all 500 pages of
+-- one (8.9-17.6 ms, against 0.02 ms for the RDN). The CREATEs above say it
+-- for a new store; these switch an existing one, and flush the list it
+-- already holds, once — turning the option off does not empty it. The
+-- driver's SCHEMA_RELOPTIONS argues it.
+ALTER INDEX sts_ldap_entries_names SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_mails SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_uuids SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_values SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_asked_names SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_group_classes SET (fastupdate = off);
+SELECT gin_clean_pending_list('sts_ldap_entries_names'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_mails'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_uuids'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_values'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_asked_names'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_group_classes'::regclass);
+-- The entries holding a value under any of a set of data keys (`?|`, the
+-- default GIN operator class): what a re-seal reads, and all it reads
+-- (#623). And the entries whose keys are not known yet, found without a
+-- scan.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_dek_keys ON sts_ldap_entries USING gin (dek_keys);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_dek_unknown ON sts_ldap_entries (realm, dn_key) WHERE dek_keys IS NULL;
+
+-- THE DIRECTORY'S COUNTS, KEPT RATHER THAN COUNTED (#618, schema version 16):
+-- per realm and per base (every ancestor of a row's DN, '' for the realm),
+-- the entries strictly under it (`attribute` '') and those holding a counted
+-- attribute. Triggers on `sts_ldap_entries` append each statement's net to
+-- `sts_ldap_count_deltas`, and a deferred constraint trigger folds a
+-- transaction's deltas into `sts_ldap_counts` at COMMIT. The driver's
+-- SCHEMA_ROUTINES carries the argument.
+CREATE TABLE IF NOT EXISTS sts_ldap_counts (
+  realm     text     NOT NULL,
+  base_key  text     NOT NULL,
+  attribute text     NOT NULL,
+  shard     smallint NOT NULL DEFAULT 0,
+  n         bigint   NOT NULL DEFAULT 0,
+  PRIMARY KEY (realm, base_key, attribute, shard));
+
+-- SHARDED (#630, schema version 19): `shard` in the key, so two commits of
+-- one realm fold into different rows unless their server process ids fall
+-- in one of sixteen shards, and every reader sums a key's shards. An
+-- existing row is shard 0, so the sums are unchanged. The key takes the
+-- column in only where it does not hold it yet.
+ALTER TABLE sts_ldap_counts ADD COLUMN IF NOT EXISTS shard smallint NOT NULL DEFAULT 0;
+DO $upgrade$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey) WHERE i.indrelid = to_regclass('sts_ldap_counts') AND i.indisprimary AND a.attname = 'shard') THEN
+  ALTER TABLE sts_ldap_counts DROP CONSTRAINT sts_ldap_counts_pkey;
+  ALTER TABLE sts_ldap_counts ADD PRIMARY KEY (realm, base_key, attribute, shard);
+END IF; END $upgrade$;
+
+CREATE TABLE IF NOT EXISTS sts_ldap_count_deltas (
+  txid       xid8    NOT NULL DEFAULT pg_current_xact_id(),
+  realm      text    NOT NULL,
+  parent_key text    NOT NULL,
+  n          bigint  NOT NULL,
+  holding    bigint  NOT NULL,
+  fold       boolean NOT NULL DEFAULT false);
+
+CREATE INDEX IF NOT EXISTS sts_ldap_count_deltas_txid ON sts_ldap_count_deltas (txid);
+
+-- WHAT THE DIRECTORY HOLDS UNDER EACH DATA KEY, KEPT (#623, schema version
+-- 17): the sum of every entry's `dek_keys` for the key, kept as #618 keeps
+-- `sts_ldap_counts` — each statement's net appended to
+-- `sts_ldap_dek_deltas`, folded in at COMMIT — so the data-key count and the
+-- re-encryption job read a few rows instead of walking the directory.
+CREATE TABLE IF NOT EXISTS sts_ldap_dek_counts (
+  dek_id text     NOT NULL,
+  shard  smallint NOT NULL DEFAULT 0,
+  n      bigint   NOT NULL DEFAULT 0,
+  PRIMARY KEY (dek_id, shard));
+
+-- Sharded as `sts_ldap_counts` is (#630, schema version 19).
+ALTER TABLE sts_ldap_dek_counts ADD COLUMN IF NOT EXISTS shard smallint NOT NULL DEFAULT 0;
+DO $upgrade$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey) WHERE i.indrelid = to_regclass('sts_ldap_dek_counts') AND i.indisprimary AND a.attname = 'shard') THEN
+  ALTER TABLE sts_ldap_dek_counts DROP CONSTRAINT sts_ldap_dek_counts_pkey;
+  ALTER TABLE sts_ldap_dek_counts ADD PRIMARY KEY (dek_id, shard);
+END IF; END $upgrade$;
+
+CREATE TABLE IF NOT EXISTS sts_ldap_dek_deltas (
+  txid   xid8    NOT NULL DEFAULT pg_current_xact_id(),
+  dek_id text    NOT NULL,
+  n      bigint  NOT NULL,
+  fold   boolean NOT NULL DEFAULT false);
+
+CREATE INDEX IF NOT EXISTS sts_ldap_dek_deltas_txid ON sts_ldap_dek_deltas (txid);
+
+-- No writer may land between the count below and the triggers: CREATE
+-- TRIGGER takes this lock too, and it is taken first so that a run against a
+-- database whose triggers already exist holds it as well.
+LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE;
+
+CREATE OR REPLACE FUNCTION sts_ldap_count_bases(parent text) RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$
+  SELECT parent
+  UNION ALL SELECT substr(parent, i + 1) FROM generate_series(1, length(parent)) AS i WHERE substr(parent, i, 1) = ','
+  UNION ALL SELECT '' WHERE parent <> ''
+$$;
+
+CREATE OR REPLACE FUNCTION sts_ldap_count_note() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE added bigint;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding)
+    SELECT realm, parent_key, count(*), count(*) FILTER (WHERE attr_names ? 'userpassword')
+    FROM new_rows GROUP BY realm, parent_key;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding)
+    SELECT realm, parent_key, -count(*), -count(*) FILTER (WHERE attr_names ? 'userpassword')
+    FROM old_rows GROUP BY realm, parent_key;
+  ELSE
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding)
+    SELECT realm, parent_key, sum(n), sum(h) FROM (SELECT realm, parent_key, 1 AS n, CASE WHEN attr_names ? 'userpassword' THEN 1 ELSE 0 END AS h FROM new_rows
+      UNION ALL SELECT realm, parent_key, -1, CASE WHEN attr_names ? 'userpassword' THEN -1 ELSE 0 END FROM old_rows) AS c
+    GROUP BY realm, parent_key HAVING sum(n) <> 0 OR sum(h) <> 0;
+  END IF;
+  GET DIAGNOSTICS added = ROW_COUNT;
+  IF added > 0 AND NOT EXISTS (SELECT 1 FROM sts_ldap_count_deltas WHERE txid = pg_current_xact_id() AND fold) THEN
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding, fold) VALUES ('', '', 0, 0, true);
+  END IF;
+  RETURN NULL;
+END $$;
+
+-- The fold adds to this connection's shard (#630), under a name of its own:
+-- the driver probes routines by name, so the old body under the old name
+-- would never be replaced on a store that has it.
+CREATE OR REPLACE FUNCTION sts_ldap_count_fold_sharded() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  WITH folded AS (DELETE FROM sts_ldap_count_deltas WHERE txid = pg_current_xact_id() RETURNING realm, parent_key, n, holding),
+  bases AS (SELECT f.realm, b.base_key, sum(f.n) AS n, sum(f.holding) AS holding FROM folded AS f CROSS JOIN LATERAL sts_ldap_count_bases(f.parent_key) AS b(base_key) WHERE f.n <> 0 OR f.holding <> 0 GROUP BY f.realm, b.base_key)
+  INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, shard, n)
+  SELECT realm, base_key, attribute, (pg_backend_pid() % 16)::smallint, n FROM (SELECT realm, base_key, '' AS attribute, n FROM bases WHERE n <> 0
+    UNION ALL SELECT realm, base_key, 'userpassword', holding FROM bases WHERE holding <> 0) AS d
+  ORDER BY realm, base_key, attribute
+  ON CONFLICT (realm, base_key, attribute, shard) DO UPDATE SET n = c.n + EXCLUDED.n;
+  RETURN NULL;
+END $$;
+
+CREATE OR REPLACE FUNCTION sts_ldap_count_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  DELETE FROM sts_ldap_counts;
+  DELETE FROM sts_ldap_count_deltas;
+  RETURN NULL;
+END $$;
+
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_insert AFTER INSERT ON sts_ldap_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_update AFTER UPDATE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_delete AFTER DELETE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_truncate AFTER TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_truncate();
+-- A constraint trigger has no OR REPLACE. The unsharded fold (#618) goes
+-- first: left beside the new one, the two would race for a transaction's
+-- deltas, and the old one's ON CONFLICT names a key the table no longer has.
+DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON sts_ldap_count_deltas;
+DROP FUNCTION IF EXISTS sts_ldap_count_fold();
+DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold_sharded ON sts_ldap_count_deltas;
+CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold_sharded AFTER INSERT ON sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold_sharded();
+
+-- AND PER DATA KEY (#623): the same arrangement over `dek_keys`. A value
+-- that is not a JSON object, and NULL, is read as no keys.
+CREATE OR REPLACE FUNCTION sts_ldap_dek_note() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE added bigint;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO sts_ldap_dek_deltas (dek_id, n)
+    SELECT d.key, sum(d.value::bigint) FROM new_rows AS r CROSS JOIN LATERAL jsonb_each_text(CASE WHEN jsonb_typeof(r.dek_keys) = 'object' THEN r.dek_keys END) AS d GROUP BY d.key;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO sts_ldap_dek_deltas (dek_id, n)
+    SELECT d.key, -sum(d.value::bigint) FROM old_rows AS r CROSS JOIN LATERAL jsonb_each_text(CASE WHEN jsonb_typeof(r.dek_keys) = 'object' THEN r.dek_keys END) AS d GROUP BY d.key;
+  ELSE
+    INSERT INTO sts_ldap_dek_deltas (dek_id, n)
+    SELECT k, sum(n) FROM (SELECT d.key AS k, d.value::bigint AS n FROM new_rows AS r CROSS JOIN LATERAL jsonb_each_text(CASE WHEN jsonb_typeof(r.dek_keys) = 'object' THEN r.dek_keys END) AS d
+      UNION ALL SELECT d.key, -d.value::bigint FROM old_rows AS r CROSS JOIN LATERAL jsonb_each_text(CASE WHEN jsonb_typeof(r.dek_keys) = 'object' THEN r.dek_keys END) AS d) AS c
+    GROUP BY k HAVING sum(n) <> 0;
+  END IF;
+  GET DIAGNOSTICS added = ROW_COUNT;
+  IF added > 0 AND NOT EXISTS (SELECT 1 FROM sts_ldap_dek_deltas WHERE txid = pg_current_xact_id() AND fold) THEN
+    INSERT INTO sts_ldap_dek_deltas (dek_id, n, fold) VALUES ('', 0, true);
+  END IF;
+  RETURN NULL;
+END $$;
+
+-- Sharded and renamed as the count fold is (#630).
+CREATE OR REPLACE FUNCTION sts_ldap_dek_fold_sharded() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  WITH folded AS (DELETE FROM sts_ldap_dek_deltas WHERE txid = pg_current_xact_id() RETURNING dek_id, n)
+  INSERT INTO sts_ldap_dek_counts AS c (dek_id, shard, n)
+  SELECT dek_id, (pg_backend_pid() % 16)::smallint, sum(n) FROM folded
+  WHERE dek_id <> '' GROUP BY dek_id
+  HAVING sum(n) <> 0 ORDER BY dek_id
+  ON CONFLICT (dek_id, shard) DO UPDATE SET n = c.n + EXCLUDED.n;
+  RETURN NULL;
+END $$;
+
+CREATE OR REPLACE FUNCTION sts_ldap_dek_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  DELETE FROM sts_ldap_dek_counts;
+  DELETE FROM sts_ldap_dek_deltas;
+  RETURN NULL;
+END $$;
+
+CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_insert AFTER INSERT ON sts_ldap_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_update AFTER UPDATE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_delete AFTER DELETE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_truncate AFTER TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_truncate();
+DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold ON sts_ldap_dek_deltas;
+DROP FUNCTION IF EXISTS sts_ldap_dek_fold();
+DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold_sharded ON sts_ldap_dek_deltas;
+CREATE CONSTRAINT TRIGGER sts_ldap_dek_deltas_fold_sharded AFTER INSERT ON sts_ldap_dek_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_dek_fold_sharded();
+
+-- THE ONE COUNT OF THE DIRECTORY: the counters started from the rows already
+-- there, under the lock above, and only when they hold nothing — running this
+-- file again adds nothing. Linear in the rows, once.
+INSERT INTO sts_ldap_counts (realm, base_key, attribute, n)
+SELECT e.realm, b.base_key, a.attribute, count(*)
+FROM sts_ldap_entries AS e
+CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key) AS b(base_key)
+CROSS JOIN LATERAL (SELECT '' AS attribute UNION ALL SELECT 'userpassword' WHERE e.attr_names ? 'userpassword') AS a
+WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_counts)
+GROUP BY e.realm, b.base_key, a.attribute;
+
+-- And the per-data-key counters (#623), on the same condition, from the
+-- entries whose keys are known; on the run that adds `dek_keys` that is
+-- none, and the rest join as the service indexes them.
+INSERT INTO sts_ldap_dek_counts (dek_id, n)
+SELECT d.key, sum(d.value::bigint) FROM sts_ldap_entries AS e
+CROSS JOIN LATERAL jsonb_each_text(CASE WHEN jsonb_typeof(e.dek_keys) = 'object' THEN e.dek_keys END) AS d
+WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_dek_counts)
+GROUP BY d.key;
 
 CREATE TABLE IF NOT EXISTS sts_realms (
   id          text PRIMARY KEY,
@@ -300,7 +576,14 @@ ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint;
 ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, realm);
-CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at);
+-- `written_at` for the sweeps as a BRIN (#630, schema version 19), where it
+-- was the btree `sts_minted_written`: every upsert sets `written_at`, so the
+-- btree made every update of this table a non-HOT one. A BRIN summarizes
+-- and leaves HOT alone (PostgreSQL 16 and later); the driver argues the
+-- cost to the sweeps. And room on each page for a row's next version.
+CREATE INDEX IF NOT EXISTS sts_minted_written_brin ON sts_minted USING brin (written_at) WITH (autosummarize = on);
+DROP INDEX IF EXISTS sts_minted_written;
+ALTER TABLE sts_minted SET (fillfactor=80);
 -- Partial: the purge looks rows up by it only where there is an expiry, and
 -- every INSERT into this, the busiest table, pays for an index.
 CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL;
@@ -339,6 +622,11 @@ CREATE TABLE IF NOT EXISTS sts_changes (
   at     timestamptz NOT NULL DEFAULT now());
 
 CREATE INDEX IF NOT EXISTS sts_changes_at ON sts_changes (at);
+
+-- AUTOVACUUM FOR THE CHANGE LOG (#630, schema version 19): the trim deletes
+-- its tail all the time, and the defaults let dead rows reach a fifth of the
+-- table and then vacuumed at the default cost limit, mostly asleep.
+ALTER TABLE sts_changes SET (autovacuum_vacuum_scale_factor=0.02, autovacuum_vacuum_cost_limit=2000);
 
 -- ---------------------------------------------------------------------------
 -- THE USED-ASSERTION HISTORY (2026-09-13): every RFC 7523 JWT and RFC 7522
@@ -765,7 +1053,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (15) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (19) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

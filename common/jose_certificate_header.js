@@ -618,6 +618,16 @@ function headerFor(useCaseId, signer) {
 // in this scope, or null. Only the `jose` use case is searched — it is the only
 // one an `x5u` this module wrote can name — and the thumbprint is matched
 // exactly against the register, never parsed into anything.
+//
+// **AND A CERTIFICATE THE SLOT NO LONGER HOLDS, UNTIL IT EXPIRES (#318).** A
+// slot is certified again over the same key when its chain changes, and the
+// tokens signed before name the old certificate's SHA-256 and are still
+// valid: on testidp every one of them answered 404 for the rest of its life.
+// The issued register keeps a displaced JOSE certificate with the chain it
+// was issued with (`pki_merge.js`'s `displacedRecord()`), and that is served
+// — never re-rooted onto the slot's current chain, and served even when
+// revoked, because its revocation status is what says so. Current
+// certificates are searched first.
 // ---------------------------------------------------------------------------
 /**
  * Returns the PEM chain an `x5u` names: the JOSE certificate with this SHA-256
@@ -640,9 +650,13 @@ function chainPemFor(scopeId, thumbprint) {
     log.debug("Leaving chainPemFor(). No certificate authority.");
     return null;
   }
-  const record = pki.certificatesFor(scopeId, 'jose').filter(function (one) {
+  const matches = function (one) {
     return one && one.thumbprint === wanted;
-  })[0];
+  };
+  const record = pki.certificatesFor(scopeId, 'jose').filter(matches)[0] ||
+    (typeof pki.displacedCertificatesFor === 'function'
+      ? pki.displacedCertificatesFor(scopeId, 'jose').filter(matches)[0]
+      : undefined);
   if (!record) {
     log.debug("Leaving chainPemFor(). No such certificate.");
     return null;

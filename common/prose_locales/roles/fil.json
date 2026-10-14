@@ -44,8 +44,12 @@
     "text": "Kung para saan ang role, para sa susunod na tao."
   },
   "roles.schema.attributes.owner.what": {
-    "en": "f9204b7066943eb5",
-    "text": "Isang tao o grupo ng realm na ito na nananagot para sa role (#604), ayon sa DN — ang attribute ng RFC 4519 section 2.23, gaya ng mga may-ari ng isang grupo (#603). Maraming value, hanggang 25. WALANG IBINIBIGAY ang may-ari: walang bahagi ng serbisyong ito ang bumabasa nito upang magpasya. Inililista ng user portal ang pag-aari ng isang tao."
+    "en": "3acf4a1763f7388c",
+    "text": "Isang tao o isang grupo ng realm na ito na nananagot para sa role (#604), ayon sa DN — ang attribute ng RFC 4519 seksiyon 2.23, gaya ng mga may-ari ng isang grupo (#603). Maraming value, hanggang 25. Mula #607, maaaring PANGASIWAAN ng isang may-ari ang role sa pamamagitan ng /admin-api gamit ang owner:read at owner:write (OWNER_READ, OWNER_WRITE), sa loob ng pinapayagan ng owner rule ng access-control policy; hawak lamang ng may-ari ang mismong role kung miyembro siya. Inililista ng user portal ang pag-aari ng isang tao."
+  },
+  "roles.schema.attributes.stsOwnerProtected.what": {
+    "en": "dcc4499eac844938",
+    "text": "TRUE: hindi maaaring pangasiwaan ng mga may-ari ng role ito sa pamamagitan ng /admin-api (#607), anuman ang pag-aari nila — isang marka ng administrator, na binabasa ng owner rule ng access-control policy bilang urn:sts:xacml:object-protected. Kapag wala, FALSE."
   },
   "roles.builtIn.EVERYBODY.what": {
     "en": "40f390becf1977a2",
@@ -78,6 +82,14 @@
   "roles.builtIn.XACML_USER.what": {
     "en": "1b417a98ec7e824b",
     "text": "Isang tumatawag sa mismong XACML surface: sinumang miyembro ng grupong pinangalanan ng `roles.xacmlUserGroup` (default na \"xacml-users\"). Ito ang hinihingi ng `GET /xacml`, `POST /xacml/pdp` at `GET /xacml/policies`, at ang may hawak nito ay karaniwang isang client-certificate DN — sinasabi ng certificate kung SINO, at sinasabi ng grupong ito kung puwede sila. Sadya itong HINDI REMOTE_PEPS: naaabot ng role na iyon ang tatlong /xacml/pep endpoint, na namimigay ng mga dokumentong ginagamit ng serbisyong ito sa pagpapatupad ng sarili nitong access, at ang iisang grupong nagbibigay ng pareho ay tahimik na magpapapasok sa mga iyon sa tumatawag na pinapasok lamang sa XACML surface mismo."
+  },
+  "roles.builtIn.OWNER_READ.what": {
+    "en": "ff8296bdbd88d5ad",
+    "text": "Isang MAY-ARI (#607): sinumang pinangangalanang may-ari ng isang role, grupo, service account o application sa realm na ito, nang direkta o sa pamamagitan ng grupong kinabibilangan niya. Pinahihintulutan ang permission na owner:read: pagbasa, sa pamamagitan ng /admin-api, ng mga object na pag-aari niya at wala nang iba. Kinakalkula kapag gumagawa ng desisyon."
+  },
+  "roles.builtIn.OWNER_WRITE.what": {
+    "en": "689161841fbe1a7d",
+    "text": "Isang MAY-ARI (#607), gaya ng OWNER_READ. Pinahihintulutan ang permission na owner:write: pagbabago, sa pamamagitan ng /admin-api, ng mga object na pag-aari niya, sa loob ng mga aksiyong pinapayagan ng owner rule ng access-control policy sa bawat uri — hindi kailanman paggawa, pagbura o pagpapalit ng pangalan ng isa, at hindi kailanman isang object na protektado mula sa mga may-ari nito."
   },
   "roles.native.ADMIN_READ.what": {
     "en": "7d6481dffa0d517c",

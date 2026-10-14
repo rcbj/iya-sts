@@ -132,17 +132,70 @@ class ScimClientRules {
 
   /**
    * Whether an HTTP status is worth another attempt: 429 and the transient
-   * server errors. 501 Not Implemented is a fact about the service provider,
-   * and 4xx a fact about the request; neither changes on a second try.
+   * server errors (#552's list: network failures, 429 with its Retry-After,
+   * 500, 502, 503 and 504). 501 Not Implemented is a fact about the service
+   * provider, and 4xx a fact about the request; neither changes on a second
+   * try. **408 IS NOT RETRIED** (2026-10-13): it was until the audit against
+   * #552's checklist, which names the five above and no other; a service
+   * provider that times a request out answers it again the same way, and
+   * this client's own timeout is a network failure, retried as one.
    *
    * @param status - the status
-   * @returns true for 408, 429, 500, 502, 503 and 504
+   * @returns true for 429, 500, 502, 503 and 504
    */
   static retryable(status: number): boolean {
     helpers.log.debug("Entering ScimClientRules.retryable(). " + status);
-    const answer = [408, 429, 500, 502, 503, 504].indexOf(Number(status)) >= 0;
+    const answer = [429, 500, 502, 503, 504].indexOf(Number(status)) >= 0;
     helpers.log.debug("Leaving ScimClientRules.retryable(). " + answer);
     return answer;
+  }
+
+  /**
+   * Reads a body as RFC 7644 section 3.12's Error response: `status` is a
+   * string in the specification's own examples and a number in some service
+   * providers' answers, so either is read; `scimType` is kept only when it
+   * is a short token, so a service provider cannot put a page of text (or a
+   * request's own values) into a dead letter through it. `detail` is NOT
+   * kept: it is free text, often quoting the value that was refused, and a
+   * dead letter is shown on a console page and written to the log.
+   *
+   * @param json - the parsed body, or null
+   * @returns `{ status, scimType }` — status 0 and scimType '' when absent
+   */
+  static errorOf(json: unknown): { status: number; scimType: string } {
+    helpers.log.debug("Entering ScimClientRules.errorOf().");
+    const j: any = json && typeof json === 'object' ? json : {};
+    const status = Number(typeof j.status === 'string' ? j.status.trim()
+                                                       : j.status);
+    const type = typeof j.scimType === 'string' &&
+      /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(j.scimType) ? j.scimType : '';
+    helpers.log.debug("Leaving ScimClientRules.errorOf(). " + type);
+    return { status: Number.isInteger(status) && status >= 100 &&
+                     status <= 599 ? status : 0,
+             scimType: type };
+  }
+
+  /**
+   * The attributes RFC 7643 makes REQUIRED on a resource this client writes
+   * — a User's `userName` (section 4.1.1) and a Group's `displayName`
+   * (section 4.2) — that a body lacks. RFC 7644 section 3.5.1: a PUT "MUST"
+   * carry every required attribute, and a create without one is refused by
+   * any service provider; the client says so itself rather than sending it.
+   *
+   * @param type - `User` or `Group`
+   * @param body - the resource about to be sent
+   * @returns the names missing, or an empty list
+   */
+  static missingRequired(type: string, body: unknown): string[] {
+    helpers.log.debug("Entering ScimClientRules.missingRequired(). " + type);
+    const b: any = body && typeof body === 'object' ? body : {};
+    const wanted = type === 'Group' ? ['displayName'] : ['userName'];
+    const out = wanted.filter(function (name) {
+      return typeof b[name] !== 'string' || !b[name].trim();
+    });
+    helpers.log.debug("Leaving ScimClientRules.missingRequired(). " +
+                      out.length);
+    return out;
   }
 }
 

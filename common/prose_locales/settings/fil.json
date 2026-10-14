@@ -2188,8 +2188,8 @@
     "text": "Sagutin ang inulit na pag-redeem ng code gamit ang parehong mga token"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "0f31c5227700295a",
-    "text": "**MAS MAHINA KAYSA SA SPECIFICATION — iwanan itong naka-off.** Kapag naka-off (ang default), ipinapakita ang authorization code nang ISANG BESES: ginagamit ito ng unang Token Request nito anuman ang kahihinatnan ng request na iyon — maling code_verifier, nabigong client authentication, anuman — at tinatanggihan ang pangalawang pagpapakita, nire-revoke ang anumang nakuha ng una (RFC 6749 sections 4.1.2 at 10.5; #424). Kapag naka-on, iniiwan ng tinanggihang request na nare-redeem ang code para maayos ito ng client at subukan ulit, at ang MAGKAPAREHONG pag-ulit ng isang pag-redeem ay sinasagot ng mga token na nakuha na nito, sa natitirang lifetime ng code. Binabalewala ito ng RFC 9700, OAuth 2.1, FAPI at product mode. Umiiral ito para sa development-mode job ng parent project na nag-a-assert pa rin ng lumang kagandahang-loob (#187)."
+    "en": "77b14590b7ee604f",
+    "text": "**MAS MAHINA KAYSA SA SPECIFICATION — iwanan itong naka-off.** Kapag naka-off (ang default), ipinapakita ang authorization code nang ISANG BESES: ginagamit ito ng unang Token Request nito anuman ang kahihinatnan ng request na iyon — maling code_verifier, nabigong client authentication, anuman — at tinatanggihan ang pangalawang pagpapakita, nire-revoke ang anumang nakuha ng una (RFC 6749 sections 4.1.2 at 10.5; #424). Kapag naka-on, iniiwan ng tinanggihang request na nare-redeem ang code para maayos ito ng client at subukan ulit, at ang MAGKAPAREHONG pag-ulit ng isang pag-redeem ay sinasagot ng mga token na nakuha na nito, sa natitirang lifetime ng code. Binabalewala ito ng RFC 9700, OAuth 2.1, FAPI at product mode. Umiiral ito para sa development-mode job ng parent project na nag-a-assert pa rin ng lumang kagandahang-loob (#187). Kapag naka-on, ang BUONG token response ng bawat na-redeem na code — access token, refresh token at ID Token — ay itinatago sa natitirang bahagi ng lifetime nito upang maipadala itong muli; kapag naka-off, ang mga jti value lamang ng mga inilabas na token ang itinatago (#614)."
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -3687,6 +3687,14 @@
     "en": "37d7c47a629e2f87",
     "text": "Ang pahinang ipinapakita sa halip na i-redirect sa client ang isang authorization error, kapag hindi pa nagsa-sign in dito ang tao (RFC 9700 section 4.11.2), ay may link para magpatuloy. Ang 0 (ang default) ay hanggang doon lang: ang tao ang nagpapasya. Kapag lampas sa 0, NAGPAPATULOY DIN nang kusa ang pahina pagkalipas ng ganitong dami ng segundo (isang meta refresh, walang script) at sinasabi ito. **Pinahihina nito ang proteksyong dahilan ng pag-iral ng pahina**: ang naka-time na redirect ay awtomatikong redirect pa rin ng browser na hindi nag-authenticate dito, na ayon sa babala ng RFC 9700 section 4.11.2 ay nagpapahintulot na gamitin ang server na ito bilang daanan para ipadala ang isang tao sa address ng client nang walang pahintulot nila. Na-match na ang address sa registration ng client, na naglilimita sa panganib. Pinapanatili ng form_post error ang button nito: hindi makakagawa ng POST nang walang script. (#317)"
   },
+  "oauth2.keyBinding|label": {
+    "en": "a7dcb6104de02166",
+    "text": "OpenID Connect Key Binding"
+  },
+  "oauth2.keyBinding|description": {
+    "en": "2394ee67a689920d",
+    "text": "Isagawa ang OpenID Connect Key Binding 1.0 (#150). Kapag naka-on: nakalista sa discovery document ang scope na `bound_key`, maaari itong hingin ng client na walang idinedeklarang scope, at ang request para dito ay dapat magbigay ng `dpop_jkt` at gumamit ng code flow (tinatanggihan kung hindi, STS-OAUTH-0704 at 0705); pinangangalanan ng ID Token ang DPoP key (`cnf.jwk`, `typ: dpop+id_token`), dapat itong patunayan ng token request gamit ang `c_s256`, at bawat refresh ay dapat manggaling sa parehong key. **Kapag naka-off, wala ito, at ang serbisyo ay OpenID Connect Core lamang**: hindi ina-advertise ang `bound_key`, hindi tinatanggihan ang request na may dala nito — binabalewala ang scope at hindi ibinibigay, gaya ng pagtrato ng Core sa scope na hindi kinikilos ng OP — at walang ID Token na naka-bind. I-off ito kung saan humihingi ang mga relying party ng bawat ina-advertise na scope at walang alam sa Key Binding (#315). Ang grant na naka-bind na bago ito i-off ay patuloy na sinusuri ang key nito sa refresh."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -4303,6 +4311,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "Gaano katagal hinahawakan ang isang AuthnRequest habang nasa sign-in screen ang browser, o sa pagitan ng POST-binding request at ng GET na pinagbabaguhan nito. Lampas dito, tinatanggihan ang pagbalik na may pahinang nagpapangalan sa value na ito. Ito dati ang constant na REQUEST_TTL_MS sa saml2_sso.js."
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Mga hindi pa nare-resolve na artifact na itinatago"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "Ilang SAML 2.0 artifact ang maaaring maghintay na ma-resolve, bawat trust realm. Inaalis muna ang mga expired; ang store na puno pa rin ay TINATANGGIHAN ang susunod na sign-in sa HTTP-Artifact binding gamit ang isang page (HTTP 503) sa halip na kalimutan ang artifact na hindi pa nare-resolve ng service provider."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Babala sa haba ng redirect-binding (character)"
@@ -4438,6 +4454,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "Ilang iniisyung assertion ang itinatago ng SAML responder, bawat trust realm, para mahingi ulit ng relying party ang isa sa pamamagitan ng AssertionIDReference. Unang lumalabas ang pinakaluma. Ito dati ang constant na ASSERTION_CACHE_MAX sa saml11_sso.js."
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "Tagal ng itinatagong assertion na walang NotOnOrAfter (segundo)"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "Gaano katagal maaaring hingin sa pamamagitan ng AssertionIDReference ang isang iniisyung assertion kapag wala itong NotOnOrAfter. Ang mayroon — bawat assertion na binubuo ng serbisyong ito — ay itinatago hanggang sa NotOnOrAfter nito at hindi na lalampas."
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Mga hindi pa nare-resolve na artifact na itinatago"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "Ilang SAML 1.1 artifact ang maaaring maghintay na ma-resolve, bawat trust realm. Inaalis muna ang mga expired; ang store na puno pa rin ay TINATANGGIHAN ang susunod na Browser/Artifact sign-in gamit ang isang page (HTTP 503) sa halip na kalimutan ang artifact na hindi pa nare-resolve ng relying party."
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
@@ -5976,12 +6008,12 @@
     "text": "Gaano kalaki ang maaaring paglaki ng directory. Isang kisame sa halip na target: lumilitaw ang mga entry para sa sinumang nag-a-authenticate sa anumang protocol dito. Binibilang sa bawat realm na hawak ng process na ito; sa request worker na may ldap.workerDirectory=postgres-lru, sa mga row ng realm sa store sa halip."
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "Directory sa mga request worker"
+    "en": "d0f2a4d1725d58e0",
+    "text": "Direktoryo sa memorya, o bilang window"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "Paano hinahawakan ng request o surface worker ang directory. memory (ang default): bawat entry, sa bawat process. postgres-lru: ang mga tao at device bilang window ng hindi hihigit sa ldap.workerCacheEntries na entry, ang iba ay binabasa mula sa PostgreSQL kapag hiningi — hindi na lumalaki ang memory ng worker kasabay ng directory, at ang isang miss ay nagkakahalaga ng isang database round trip. Kailangan ang persistence.mode=postgres at iisang cell; laging hawak ng front process ang buong directory."
+    "en": "af2208b6228d6f59",
+    "text": "Kung paano hawak ng bawat proseso — ang front process at bawat request o surface worker — ang direktoryo. auto (ang default, #320): postgres-lru saanman ito gagana — persistence.mode=postgres at iisang cell — at memory sa lahat ng iba pa. memory: bawat entry, sa bawat proseso. postgres-lru: ang mga tao at device bilang window na hindi hihigit sa ldap.workerCacheEntries na entry bawat proseso, ang iba ay binabasa mula sa PostgreSQL kapag hiningi — hindi na lumalaki ang memorya kasabay ng dami ng tao, at ang isang miss ay nagkakahalaga ng isang round trip sa database kung saan walang ibang ginagawa ang prosesong iyon. Kailangan ang persistence.mode=postgres at iisang cell."
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",
@@ -6010,6 +6042,14 @@
   "ldap.sizeLimit|description": {
     "en": "0c2877143f2fb6ec",
     "text": "Ang server-side na size limit para sa isang search, na siyang nagbubunga ng LDAP_SIZE_LIMIT_EXCEEDED."
+  },
+  "ldap.timeLimit|label": {
+    "en": "9c041bfdb05c473c",
+    "text": "Time limit ng search (s)"
+  },
+  "ldap.timeLimit|description": {
+    "en": "b74ec7b68f9251f2",
+    "text": "Ang server-side na time limit para sa isang search, sa segundo, na siyang nagbubunga ng LDAP_TIME_LIMIT_EXCEEDED; nananaig ang sariling timeLimit ng client kapag mas maikli ito. Ang mga entry na naipadala bago ito ang sagot, na minarkahang hindi kumpleto."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",

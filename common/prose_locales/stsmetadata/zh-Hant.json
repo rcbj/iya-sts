@@ -380,8 +380,8 @@
     "text": "full（#150，2026-09-26），在 oauth2.deviceAuthorization 開啟時（預設關閉）：裝置授權端點，以與權杖端點相同的方式驗證用戶端，需已註冊的授權類型並套用範圍原則，使用取自二十個字母之字母表的八字母使用者代碼，以及 verification_uri_complete；驗證 URI 是該人的 /portal/device，在那裡代碼只會帶出請求——用戶端與範圍——而核准是第二個動作（第 5.4 節），輸入錯誤代碼五次後工作階段會被拒絕十分鐘（第 5.1 節）；device_code 授權類型附第 3.5 節的每種錯誤，slow_down 會將間隔延長五秒，每次核准一個權杖回應且在整個叢集中只能領取一次，代碼由 oauth2.device-code-sweep 工作清除；第 4 節中繼資料。裝置請求上的 DPoP 證明會將裝置代碼繫結至其金鑰。"
   },
   "stsmetadata.specs.oidc-key-binding.coverage": {
-    "en": "01ba22045f843762",
-    "text": "full（#150，2026-09-26），在每種模式下：bound_key 範圍，僅在 response_type=code 與 dpop_jkt 時遵循；權杖端點的 DPoP 證明，其 c_s256 為授權碼或裝置代碼的雜湊；帶有 cnf.jwk 及 JOSE 標頭 typ dpop+id_token 的 ID Token；無論 RFC 9449 是否繫結了重新整理權杖，重新整理都受限於同一把金鑰；以及第 7 節——已繫結的 ID Token 在權杖交換時（包括 Native SSO）只有搭配其金鑰的證明才能出示。接受 ML-DSA-44、-65 與 -87 金鑰，與任何 DPoP 證明相同。id_token_hint 是提示而非認證資料，不受該金鑰限制。"
+    "en": "07b7a5b60cf9a369",
+    "text": "full（#150，2026-09-26），在每種模式下，只要 oauth2.keyBinding 處於開啟狀態（預設開啟；關閉時，#315，該範圍既不公布也不授予，請求該範圍也不會被拒絕）：bound_key 範圍，僅在 response_type=code 與 dpop_jkt 時遵循；權杖端點的 DPoP 證明，其 c_s256 為授權碼或裝置代碼的雜湊；帶有 cnf.jwk 及 JOSE 標頭 typ dpop+id_token 的 ID Token；無論 RFC 9449 是否繫結了重新整理權杖，重新整理都受限於同一把金鑰；以及第 7 節——已繫結的 ID Token 在權杖交換時（包括 Native SSO）只有搭配其金鑰的證明才能出示。接受 ML-DSA-44、-65 與 -87 金鑰，與任何 DPoP 證明相同。id_token_hint 是提示而非認證資料，不受該金鑰限制。"
   },
   "stsmetadata.specs.oidc-native-sso.coverage": {
     "en": "2455f5c160afb595",
@@ -848,8 +848,8 @@
     "text": "DER，`application/pkix-cert`。這是該授權單位所簽署的每張憑證中授權資訊存取（Authority Information Access）擴充欄位的 `caIssuers` 位址，讓收到不完整鏈的用戶端能完成鏈的建立。接受 `.cer` 後綴並予以忽略。這是本服務唯一以快取標頭而非 `no-store` 發布憑證的地方：CA 憑證本質上是持久的——改變了的授權單位會是一個名稱不同的另一個授權單位——而 `caIssuers` 擷取本來就只應發生一次。在任何範圍中都無法透過它取得私密金鑰。"
   },
   "stsmetadata.endpoints./pki/chain/:scope/:certificate.what": {
-    "en": "7e1cc8b6d4142b39",
-    "text": "RFC 7515 第 4.1.5 節：簽署 JWS 之金鑰的 X.509 鏈，PEM 格式，葉憑證在前、服務 Root 在後，以 `application/pem-certificate-chain` 提供。本服務以經認證金鑰簽署的每個 JWT——存取權杖、ID Token、重新整理權杖內的 JWS、已簽署的 UserInfo、兩份 signed_metadata 文件、OpenID4VCI 憑證、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 與 GNAP JWT 存取權杖——都可依其協定頁面上自己的設定攜帶指向此處的 `x5u`（預設為 `x5u`，或內嵌的 `x5c`、`both` 或 `none`），讓只持有權杖的依賴方也能取得鏈中所指名的每個 CRL 發布點、OCSP 回應程式與 caIssuers 位址。{scope} 為 `default` 或領域 id，置於路徑中的理由與 CRL 相同；{certificate} 是葉憑證的 SHA-256 十六進位值，可帶選用的 `.pem` 後綴，與登錄比對而非解析。以憑證而非金鑰命名，因此一個 URL 永遠指名同一張憑證：權杖簽署後已輪替的金鑰會得到 404，而不是另一把金鑰的鏈。與每份發布本服務金鑰資料的文件一樣為 `no-store`。不設閘門，因為它傳回的內容早已由權杖指名。"
+    "en": "a2406b55a956eeb5",
+    "text": "RFC 7515 第 4.1.5 節：簽署 JWS 之金鑰的 X.509 鏈，PEM 格式，葉憑證在前、服務 Root 在後，以 `application/pem-certificate-chain` 提供。本服務以經認證金鑰簽署的每個 JWT——存取權杖、ID Token、重新整理權杖內的 JWS、已簽署的 UserInfo、兩份 signed_metadata 文件、OpenID4VCI 憑證、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 與 GNAP JWT 存取權杖——都可依其協定頁面上自己的設定攜帶指向此處的 `x5u`（預設為 `x5u`，或內嵌的 `x5c`、`both` 或 `none`），讓只持有權杖的依賴方也能取得鏈中所指名的每個 CRL 發布點、OCSP 回應程式與 caIssuers 位址。{scope} 為 `default` 或領域 id，置於路徑中的理由與 CRL 相同；{certificate} 是葉憑證的 SHA-256 十六進位值，可帶選用的 `.pem` 後綴，與登錄比對而非解析。以憑證而非金鑰命名，因此一個 URL 永遠指名同一張憑證，絕不會是另一把金鑰的鏈。槽位不再持有的憑證——在同一金鑰上重新簽發，或其金鑰已輪替——仍會連同簽發時的鏈一起提供，直到過期（#318；每個槽位最新的八張）；之後會得到 404。與每份發布本服務金鑰資料的文件一樣為 `no-store`。不設閘門，因為它傳回的內容早已由權杖指名。"
   },
   "stsmetadata.endpoints./crypto/metadata.what": {
     "en": "13e4dff652360fb0",
@@ -1407,6 +1407,10 @@
     "en": "8ad5e9e21c752f8d",
     "text": "非規格端點（#329）。/admin/node-health 所繪製的一切，以 JSON 提供：來自 cgroup 的容器 CPU 使用率與記憶體、此節點每個程序的 Node.js 記憶體及其總和、有 ECS 工作中繼資料端點時的數據，以及標示為機器本身的數據；在叢集中則依名稱列出每個節點及總計，?node= 取得單一節點（#332）。對應 GET /admin/node-health。"
   },
+  "stsmetadata.endpoints./admin-api/node-health/:action.what": {
+    "en": "62b2176bf51425d1",
+    "text": "非規格端點（#611）。collect-garbage，參數為 { target? }：在此節點的前端程序（front）、其某個工作執行緒（其 threadId）或全部（all，預設）中執行一次完整的 V8 垃圾回收，傳回每個 isolate 回收前後的堆積及其暫停時間。完整回收會停止其所在的執行緒。即頁面上的「回收」按鈕。對應 POST /admin/node-health。"
+  },
   "stsmetadata.endpoints./admin-api/encryption.what": {
     "en": "324a164de72ee943",
     "text": "非規格端點。/admin/encryption 所繪製的一切，以 JSON 提供：模式、金鑰加密金鑰（是否存在、為持久或暫時，以及從五個提供者中的哪一個讀取）、從 common/crypto.js 自己的參數表讀出的演算法、存放區、六種已密封資料類別與三種刻意未密封的類別（各附原因），以及操作計數。兩個金鑰旗標是不同的問題，兩者都會回答：開發模式「有」金鑰加密金鑰——一把每次執行產生的暫時金鑰，讓請求工作程序集區能共享產生的資料列——但不持久化任何東西，因此只讀取 `present` 的用戶端會將一個金鑰隨程序消失的服務回報為「已加密」。`unclassified` 指名計數器產生、但表中沒有對應資料列的任何標籤，予以回報而非丟棄，讓未加資料列就新增的呼叫位置會顯現出來，而不是悄悄地對不上帳。回覆中沒有任何密文與明文，任何地方都沒有操作會依請求開啟已密封的值。對應 GET /admin/encryption。"
@@ -1558,6 +1562,14 @@
   "stsmetadata.endpoints./admin-api/service-accounts.what": {
     "en": "764048d53b74b4a3",
     "text": "非規格端點（#221）。以 JSON 提供的 GET /admin/service-accounts：每個服務帳戶（帶有 stsServiceAccount 的人員項目）及其推送目的地、其密碼上次輪替的時間與下次到期的時間，以及連續失敗的輪替次數；此領域的輪替設定與總計。不含任何機密值。"
+  },
+  "stsmetadata.endpoints./admin-api/ownership.what": {
+    "en": "aa1836b0ebf1b52c",
+    "text": "非規範（#607）。一個角色、群組、服務帳號或應用程式：其擁有者、是否對他們關閉——即他們不能使用 owner:read 與 owner:write 讀取或變更它——以及原因，管理員的標記也在其中。access-control 原則的擁有者規則據以決定的事實。"
+  },
+  "stsmetadata.endpoints./admin-api/ownership/:action.what": {
+    "en": "1174a16b434c87e6",
+    "text": "非規範（#607）。set-protected：管理員的標記，即物件自身項目上的 stsOwnerProtected——主控台每個「擁有者」索引標籤上的「對擁有者關閉」核取方塊。"
   },
   "stsmetadata.endpoints./admin-api/devices/monitor.what": {
     "en": "6e620f81ddb227b5",

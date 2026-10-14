@@ -98,6 +98,9 @@ config.registerLogger(log);
 const TIER_MEMBERS = ['root', 'intermediate'];
 const TIER_MAP_MEMBERS = ['issuing'];
 
+// The use case whose displaced certificates stay published (#318).
+const PUBLISHED_USE_CASE = 'jose';
+
 // ---------------------------------------------------------------------------
 // A CANONICAL SPELLING, for "did this member change". `JSON.stringify` keeps
 // insertion order, and the same certificate record built by two code paths —
@@ -191,28 +194,106 @@ function keysOf(...objects) {
 
 // A record displaced from a certificate slot, as the issued register keeps
 // one: serial, subject, expiry, what it was — never a key.
+//
+// **AND, FOR A JOSE CERTIFICATE, THE CERTIFICATE ITSELF (#318).** A token
+// signed while the slot held it names it by `x5u` — `/pki/chain/{scope}/
+// {sha256}.pem`, the leaf's SHA-256 — and stays valid after the slot is
+// certified again over the SAME key (the realm's Issuing CA re-issued, a
+// chain that no longer reaches the Root). The register already kept the
+// serial, so OCSP answered `good` for it (#185); the chain document answered
+// 404 (STS-PKI-0162), so a relying party holding a valid token could not
+// fetch the chain it names. Keeping `thumbprint`, `certificatePem` and
+// `chainPem` lets `jose_certificate_header.js`'s `chainPemFor()` serve it,
+// with the chain it was ISSUED with, until it expires — which is when the
+// register drops the record anyway. Public material only. Only `jose`: it is
+// the one use case an `x5u` names; an XML signature carries its certificate
+// in KeyInfo and has no address to keep answering. `trimPublished()` below
+// bounds how many keep it.
 /**
  * Builds the issued-register record for a certificate displaced from a slot.
  *
  * It carries serial, subject, expiry and what the certificate was, never a
- * key.
+ * key — and, for a JOSE certificate, the certificate and its chain, so the
+ * `x5u` address a token names keeps answering until it expires (#318).
  * @param slot - the certificate slot the record was displaced from
  * @param record - the displaced certificate record
  * @returns the issued-register record
  */
 function displacedRecord(slot, record) {
   log.debug("Entering displacedRecord().");
-  log.debug("Leaving displacedRecord().");
-  return {
+  const useCase = record.useCase || String(slot).split(':')[0];
+  const out = {
     serialHex: record.serialHex,
     subject: record.subject || '',
     notAfter: record.notAfter || '',
     identifier: String(slot),
     subjectKind: 'displaced',
     purpose: 'displaced:' + String(slot),
-    useCase: record.useCase || String(slot).split(':')[0],
+    useCase: useCase,
     issuedAt: new Date(Number(record.createdAt) || Date.now()).toISOString()
   };
+  if (useCase === PUBLISHED_USE_CASE && record.certificatePem &&
+      record.thumbprint) {
+    out.thumbprint = String(record.thumbprint).toLowerCase();
+    out.certificatePem = record.certificatePem;
+    out.chainPem = (record.chainPem || []).slice();
+    out.slot = record.slot || String(slot).split(':').slice(1).join(':');
+  }
+  log.debug("Leaving displacedRecord().");
+  return out;
+}
+
+// HOW MANY DISPLACED CERTIFICATES OF ONE SLOT GO ON BEING PUBLISHED (#318).
+// A slot is certified again over the same key only when its chain changes,
+// which is rare in a deployment and frequent in a suite that rebuilds the
+// realm's CAs, and every one would otherwise keep a certificate and its chain
+// in the row for up to `pki.leafLifetimeDays`. The newest keep their PEMs; an
+// older one keeps its serial (OCSP still answers for it) and its `x5u`
+// answers 404 again, as every displaced certificate's did before #318.
+const PUBLISHED_PER_SLOT = 8;
+
+/**
+ * Bounds the displaced JOSE certificates an issued register keeps PEMs for:
+ * the newest `PUBLISHED_PER_SLOT` of each slot keep them, older records keep
+ * only their serial, subject and expiry (#318).
+ *
+ * @param register - the issued register
+ * @returns the register, trimmed (a new array; records are copied when
+ *   trimmed, never mutated)
+ */
+function trimPublished(register) {
+  log.debug("Entering trimPublished().");
+  const kept = Object.create(null);
+  const order = (register || []).map(function (one, i) {
+    return { one: one, i: i };
+  }).filter(function (x) {
+    return x.one && x.one.certificatePem;
+  }).sort(function (a, b) {
+    return String(b.one.issuedAt || '').localeCompare(
+      String(a.one.issuedAt || ''));
+  });
+  const strip = Object.create(null);
+  order.forEach(function (x) {
+    const slot = String(x.one.identifier || '');
+    kept[slot] = (kept[slot] || 0) + 1;
+    if (kept[slot] > PUBLISHED_PER_SLOT) {
+      strip[x.i] = true;
+    }
+  });
+  const out = (register || []).map(function (one, i) {
+    if (!strip[i]) {
+      return one;
+    }
+    const copy = Object.assign({}, one);
+    delete copy.thumbprint;
+    delete copy.certificatePem;
+    delete copy.chainPem;
+    delete copy.slot;
+    return copy;
+  });
+  log.debug("Leaving trimPublished(). " + Object.keys(strip).length +
+            " trimmed.");
+  return out;
 }
 
 // A map of CA tiers or of certificate records, keyed; first writer wins on a
@@ -273,18 +354,24 @@ function mergeIssued(mine, theirs, extra, nowMs) {
         return;
       }
       const key = normalSerial(one.serialHex) + '/' + String(one.useCase || '');
-      if (seen[key]) {
+      if (seen[key] !== undefined) {
+        // The copy that still carries the certificate wins (#318): a writer
+        // that trimmed it, or built the record before #318, must not take
+        // the published chain away from the one that kept it.
+        if (one.certificatePem && !out[seen[key]].certificatePem) {
+          out[seen[key]] = one;
+        }
         return;
       }
       if (one.notAfter && new Date(one.notAfter).getTime() <= nowMs) {
         return;
       }
-      seen[key] = true;
+      seen[key] = out.length;
       out.push(one);
     });
   });
   log.debug("Leaving mergeIssued(). " + out.length + " record(s).");
-  return out;
+  return trimPublished(out);
 }
 
 // ONE AUTHORITY'S REVOCATION LIST: a union, less a hold one side released.
@@ -675,5 +762,9 @@ module.exports = {
   normalSerial: normalSerial,
   // The issued-register record for a certificate a slot no longer holds, for
   // `pki.js`'s `certify()` (#185): one shape for both callers.
-  displacedRecord: displacedRecord
+  displacedRecord: displacedRecord,
+  // The bound on how many of them stay published (#318), for the same two
+  // writers.
+  trimPublished: trimPublished,
+  PUBLISHED_PER_SLOT: PUBLISHED_PER_SLOT
 };

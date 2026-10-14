@@ -53,7 +53,7 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
-        LEGACY_SUBJECT_PREFIX } = require('./helpers');
+        namesForSubjects, LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -206,7 +206,11 @@ const nums = realms.obj(function () {
            // identifier anybody can quote, so without this there would be
            // nothing to address the row by, and /admin/tokens/set could not
            // open one.
-           artifactsRecorded: 0 };
+           artifactsRecorded: 0,
+           // Successful liveness probes (#312): counted here and NOWHERE
+           // else — not in `callTotal`, not in the call table. See
+           // recordCall().
+           healthProbes: 0 };
 }, { persist: 'admin_stats.nums', merge: 'own' });
 
 
@@ -242,6 +246,35 @@ function callRow(method, path) {
 function recordCall(call) {
   log.debug("Entering recordCall(). " + call.method + " " + call.path + " -> " +
             call.status);
+  // -------------------------------------------------------------------------
+  // A LIVENESS PROBE THAT SUCCEEDED IS NOT A CALL (#312, 2026-10-13).
+  //
+  // Behind a load balancer it is most of them. On testidp the NLB's two HTTP
+  // target groups (8081 and the revocation listener's 8082) asked each of
+  // three nodes every ten seconds from each of three zones — over a hundred a
+  // minute before the compose healthcheck and the launchers — and the metrics
+  // page reported 18,000 calls in a few hours, nearly all `/healthcheck`.
+  // Every number an operator opened the page for was a rounding error beside
+  // it.
+  //
+  // THE RULE IS THE AUDIT LOG'S, READ FROM THERE: `audit.quietWhenOk()` and
+  // its `QUIET_WHEN_OK`, so the two cannot drift into disagreeing about which
+  // paths are probes. A probe answered anything but 200 is still a call — it
+  // is a node saying it is unhealthy, which is exactly what should show —
+  // and so is a `POST`, which Express refuses.
+  //
+  // COUNTED, NOT DROPPED: `healthProbes` is one number of its own, summed
+  // across processes like `callTotal`, and the page shows it beside the
+  // totals rather than inside them. Every process and every listener comes
+  // through here — the front, both worker pools, and `pki_service.ts`'s
+  // plain-HTTP listener, which hands the path to the same app.
+  // -------------------------------------------------------------------------
+  if (audit.quietWhenOk(call.method, call.path, call.status)) {
+    nums.healthProbes++;
+    log.debug("Leaving recordCall(). A successful liveness probe; counted " +
+              "apart from the calls.");
+    return;
+  }
   let path = call.path;
   let matched = !!call.matched;
   if (!matched && calls.size >= MAX_CALL_PATHS) {
@@ -1350,6 +1383,11 @@ function recordSvid(kind, detail) {
 // not here. That is the conservative direction for this caller — it refuses an
 // enrolment it could have allowed, rather than allowing one that creates
 // somebody — and the refusal names the fix.
+//
+// **SINCE #613 THE DOOR ASKS THE DIRECTORY AS WELL** (`authn.ts`'s
+// `knownPerson()`): the restore no longer puts every restored person here, and
+// a register capped at `MAX_USERS` never held a large directory's people
+// anyway, so this answer alone refused most of them.
 /**
  * Says whether this register already holds an identity by a name; asked by the
  * WebAuthn enrolment door in product mode.
@@ -2296,6 +2334,89 @@ const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 // validating a DID.
 const DID_SHAPED = /^did:[a-z0-9]+:/i;
 
+// ---------------------------------------------------------------------------
+// THE SUBJECTS OF EVERY HELD TOKEN AND ARTIFACT, RESOLVED TOGETHER
+// (2026-10-14).
+//
+// `userKeys()`, `buildUserRows()` and `holdingsOf()` file every token and
+// artifact under its holder, and a `urn:uuid:` subject is resolved through the
+// directory to do it — `nameForSubject()`, one lookup per record. In a process
+// holding the whole directory that is an index read; in one whose directory is
+// a WINDOW onto the store (#320's `ldap.workerDirectory=auto`, every request
+// worker and the front on postgres) a person is not resident, so each was a
+// synchronous `byUuid` round trip, and one naming nobody — a person a test
+// deleted, whose tokens are still held — was asked again on every call. With
+// thousands of records `GET /admin-api/audit` (whose `knownUserKeys()` is
+// `userKeys()`) took over a second, and `sts_admin_closed_sets`, asking it
+// once per audit category and action, was killed by its watchdog in the
+// postgres modes.
+//
+// So each of the three asks `helpers.namesForSubjects()` once for every
+// subject it will meet — one statement per batch — and `identityOf()` reads
+// the answer while the walk runs. The answers are the ones each lookup would
+// have given; a subject not gathered (nothing should be) is still looked up
+// alone. Synchronous, so nothing else runs while the answer is held, and it
+// is dropped when the walk ends: a later call asks again.
+// ---------------------------------------------------------------------------
+let resolvedSubjects = null;
+
+// Hot path: called for every token and artifact on every users page view,
+// as identityOf() is, so no Entering/Leaving pair would drown the log.
+function subjectNameOf(subject) {
+  if (resolvedSubjects) {
+    const held = resolvedSubjects.get(subject.toLowerCase());
+    if (held !== undefined) {
+      return held;
+    }
+  }
+  return nameForSubject(subject);
+}
+
+/**
+ * Runs `fn` with the `urn:uuid:` subject of every held token and artifact
+ * resolved in one question to the directory, which `identityOf()` reads.
+ *
+ * @param fn - the walk
+ * @returns what `fn` returns
+ */
+function withSubjectsResolved(fn) {
+  log.debug("Entering withSubjectsResolved().");
+  if (resolvedSubjects) {
+    // Already inside one: the subjects are resolved.
+    const inner = fn();
+    log.debug("Leaving withSubjectsResolved(). Nested.");
+    return inner;
+  }
+  const subjects = new Set();
+  const note = function (value) {
+    let text = String(value == null ? '' : value).trim();
+    if (text.indexOf(SUBJECT_PREFIX) === 0) {
+      text = text.slice(SUBJECT_PREFIX.length);
+    }
+    if (/^urn:uuid:/i.test(text)) {
+      subjects.add(text);
+    }
+  };
+  tokens.forEach(function (record) {
+    note(record.sub);
+  });
+  allArtifacts().forEach(function (record) {
+    note(record.subject);
+    note(record.person);
+  });
+  resolvedSubjects = subjects.size
+    ? namesForSubjects(Array.from(subjects)) : null;
+  let value;
+  try {
+    value = fn();
+  } finally {
+    resolvedSubjects = null;
+  }
+  log.debug("Leaving withSubjectsResolved(). " + subjects.size +
+            " subject(s).");
+  return value;
+}
+
 // A presented identity, split into the part that identifies a person here and
 // the parts that merely say where it was presented. Without entering/leaving
 // logs: it is called for every token and artifact on every users page view, so
@@ -2323,7 +2444,7 @@ function identityOf(value) {
   if (rest.indexOf(SUBJECT_PREFIX) === 0) rest = rest.slice(
       SUBJECT_PREFIX.length);
   if (/^urn:uuid:/i.test(rest)) {
-    const named = nameForSubject(rest);
+    const named = subjectNameOf(rest);
     if (!named) {
       log.debug("Leaving identityOf(). A subject naming nobody here.");
       return { key: rest, name: rest, realm: '', form: text,
@@ -2690,6 +2811,27 @@ function userRecord(identity) {
 // What persists is what somebody typed; what resets is what this process
 // counted. Restoring the counts would make `/admin/metrics` disagree with
 // `/admin/users` about how many authentications this process has seen.
+//
+// **AND SINCE #613 (2026-10-13) THE RESTORE CALLS THIS FOR NOBODY.** Filling
+// the register with every restored person was one synchronous pass per
+// process, linear in the directory — 16 s of blocked event loop per process
+// at 131,546 people — and every note and every eviction past `MAX_USERS` was
+// journalled into this minted store, so each start then wrote ~131K rows to
+// the store and the change log. `/admin/users` has read the DIRECTORY's
+// people itself since #610 (`peopleRows()`), so a restored person is listed
+// as `directory` without a record here. What calls this now is a door that
+// CREATED somebody, and nothing else. `restored` is still understood: a
+// record persisted by an earlier build carries it.
+//
+// **AND SINCE #618 PHASE 2 (2026-10-14) NOT THE APPLIERS OF ANOTHER
+// PROCESS'S CREATE EITHER.** `ldap_server.js`'s `applyEntry()` and
+// `forgetEntry()` noted every replicated person here, in every process, so
+// one add cost every OTHER process a journalled note and, past `MAX_USERS`,
+// a journalled eviction and a `usersForgotten` bump — about four of the 9.7
+// change rows each LDAP add wrote on 8081. The creating process's own record
+// reaches every other process through the fan-in (`everyUserRecord()`), so
+// `knownBy` reads the same whichever process answers, and
+// `tests/change_rows_per_add.js` holds the bound.
 // ---------------------------------------------------------------------------
 /**
  * Adds a person who exists but has not authenticated in this process, such as
@@ -5954,6 +6096,14 @@ function userRow(key) {
  */
 function userKeys() {
   log.debug("Entering userKeys().");
+  const keys = withSubjectsResolved(collectUserKeys);
+  log.debug("Leaving userKeys().");
+  return keys;
+}
+
+// `userKeys()`'s walk, the subjects resolved.
+function collectUserKeys() {
+  log.debug("Entering collectUserKeys().");
   const keys = new Set();
   users.forEach(function (record) {
     keys.add(record.key);
@@ -5980,13 +6130,23 @@ function userKeys() {
   allArtifacts().forEach(function (record) {
     add(record.subject);
   });
-  log.debug("Leaving userKeys(). " + keys.size + " key(s).");
+  log.debug("Leaving collectUserKeys(). " + keys.size + " key(s).");
   return keys;
 }
 
 // `userRows()`, or with `onlyKey` the one row it would hold under that key.
 function buildUserRows(onlyKey) {
   log.debug("Entering buildUserRows().");
+  const rows = withSubjectsResolved(function () {
+    return buildUserRowsResolved(onlyKey);
+  });
+  log.debug("Leaving buildUserRows().");
+  return rows;
+}
+
+// `buildUserRows()`'s walk, the subjects resolved.
+function buildUserRowsResolved(onlyKey) {
+  log.debug("Entering buildUserRowsResolved().");
   const wanted = onlyKey === undefined ? null : String(onlyKey);
   const nowMs = Date.now();
   const rows = new Map();
@@ -6091,9 +6251,13 @@ function buildUserRows(onlyKey) {
   // Most recently active first, which on a mock is nearly always the person
   // being debugged right now.
   out.sort(function (a, b) { return b.lastActivityAt - a.lastActivityAt; });
-  log.debug("Leaving buildUserRows(). " + out.length + " user(s), " +
-            out.filter(function (r) { return r.authenticated; }).length + " " +
-                "authenticated here.");
+  // A second pass over every row, made only when it will be written (#627).
+  if (log.debug()) {
+    log.debug("Leaving buildUserRowsResolved(). " + out.length +
+              " user(s), " + out.filter(function (r) {
+                return r.authenticated;
+              }).length + " authenticated here.");
+  }
   return out;
 }
 
@@ -6161,6 +6325,16 @@ function holdingsOf(keys) {
     log.debug("Leaving holdingsOf(). Nobody asked.");
     return out;
   }
+  withSubjectsResolved(function () {
+    fileHoldings(out);
+  });
+  log.debug("Leaving holdingsOf().");
+  return out;
+}
+
+// `holdingsOf()`'s walk into `out`, the subjects resolved.
+function fileHoldings(out) {
+  log.debug("Entering fileHoldings().");
   const nowMs = Date.now();
   tokens.forEach(function (record) {
     const held = out.get(holderKeyOf(record.username, record.sub));
@@ -6191,8 +6365,7 @@ function holdingsOf(keys) {
     held.tokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
     held.artifacts.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   });
-  log.debug("Leaving holdingsOf().");
-  return out;
+  log.debug("Leaving fileHoldings().");
 }
 
 // The session a token was issued under, by jti. The refresh grant is what needs
@@ -6510,6 +6683,9 @@ function snapshot() {
              byStatusClass: statusTotals,
              pathsCollapsed: nums.callPathsDropped +
                              alsoElsewhere('callPathsDropped'),
+             // NOT in `total` and NOT in `rows` (#312): see recordCall().
+             healthProbes: nums.healthProbes +
+                           alsoElsewhere('healthProbes'),
              rows: mergedRows },
     // TOKENS ARE `merge: 'replace'` AND ARE THEREFORE ALREADY MERGED — a token
     // is minted by one process and the register is keyed by jti, so the row IS

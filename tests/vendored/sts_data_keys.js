@@ -104,14 +104,20 @@ async function until(what, fn, limitMs) {
   }
 }
 
-async function finished(runId) {
+// A PASS OVER THE WHOLE STORE IS GIVEN TEN MINUTES (2026-10-13): the
+// re-encryption and the count read every sealed value of every realm the
+// suite has made by now. That took 60 s on a local single-node run and
+// outran the two-minute default on CI's two nodes (cluster, d2221e6f).
+const WHOLE_STORE_MS = 600000;
+
+async function finished(runId, limitMs) {
   log.debug("Entering finished(). " + runId);
   const detail = await until("run " + runId + " to finish", async function () {
     const r = await api("GET", "/admin-api/scheduler?run=" +
                                encodeURIComponent(runId));
     const d = r.body && r.body.detail;
     return d && (d.state === "succeeded" || d.state === "failed") ? d : null;
-  });
+  }, limitMs);
   log.debug("Leaving finished(). " + detail.state);
   return detail;
 }
@@ -243,7 +249,7 @@ async function main() {
   check("a re-encryption pass answers 202", function () {
     assert.strictEqual(re.status, 202, re.text.slice(0, 300));
   });
-  const reRun = await finished(re.body.runId);
+  const reRun = await finished(re.body.runId, WHOLE_STORE_MS);
   check("and its run succeeds", function () {
     assert.strictEqual(reRun.state, "succeeded", JSON.stringify(reRun));
   });
@@ -272,7 +278,7 @@ async function main() {
     check("a count answers 202", function () {
       assert.strictEqual(cnt.status, 202, cnt.text.slice(0, 300));
     });
-    const cntRun = await finished(cnt.body.runId);
+    const cntRun = await finished(cnt.body.runId, WHOLE_STORE_MS);
     check("and its run succeeds", function () {
       assert.strictEqual(cntRun.state, "succeeded", JSON.stringify(cntRun));
     });

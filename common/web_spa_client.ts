@@ -333,7 +333,7 @@ class SpaClient extends WebPage {
       params.response_mode = modes.indexOf('jwt') >= 0 ? 'jwt' : 'query.jwt';
     }
     if (meta.require_pushed_authorization_requests !== true) {
-      return authorize + '?' + new URLSearchParams(params).toString();
+      return authorize + '?' + SpaClient.formOf(params);
     }
     const endpoint = String(meta.pushed_authorization_request_endpoint ||
                             this.url('/oauth2/par'));
@@ -345,7 +345,7 @@ class SpaClient extends WebPage {
     const res = await this.env.fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params).toString() });
+      body: SpaClient.formOf(params) });
     const json = await res.json().catch(function () {
       return {};
     });
@@ -356,7 +356,26 @@ class SpaClient extends WebPage {
     }
     // A REFUSED PUSH: the ordinary request, which the authorization endpoint
     // then refuses with the reason, drawn where the person can read it.
-    return authorize + '?' + new URLSearchParams(params).toString();
+    return authorize + '?' + SpaClient.formOf(params);
+  }
+
+  /**
+   * Form-encodes parameters, a value that is an array as the parameter
+   * repeated — RFC 8707's `resource`, which a client asking for two
+   * resources sends twice (#607). `URLSearchParams(object)` would join the
+   * array with commas into one value naming no resource.
+   *
+   * @param params - the parameters
+   * @returns the encoded form
+   */
+  static formOf(params: Json): string {
+    const form = new URLSearchParams();
+    Object.keys(params || {}).forEach(function (name) {
+      [].concat(params[name]).forEach(function (one) {
+        form.append(name, String(one));
+      });
+    });
+    return form.toString();
   }
 
   // ---------------------------------------------------------------------------

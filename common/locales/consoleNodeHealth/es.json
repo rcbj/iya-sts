@@ -56,7 +56,7 @@
   "ecsCpuWhy": "{pct} de las vCPU de la tarea, entre las dos últimas muestras del agente",
   "na": "n/d",
   "tileResident": "Residente, todos los procesos",
-  "about": "La CPU y la memoria del contenedor se leen de su cgroup (v2), las de cada proceso e hilo worker del propio proceso o hilo, cuando se dibuja la página; no se guarda nada salvo la muestra de CPU anterior. Esta página no cambia nada.",
+  "about": "La CPU y la memoria del contenedor se leen de su cgroup (v2), las de cada proceso e hilo worker del propio proceso o hilo, cuando se dibuja la página; no se guarda nada salvo la muestra de CPU anterior. Su único control ejecuta una recolección de basura completa bajo demanda; nada más aquí cambia nada.",
   "whatThisPageIs": "Qué es esta página",
   "headMachine": "La máquina, no el contenedor",
   "loadAverage": "Carga media",
@@ -74,5 +74,17 @@
   "thState": "Estado",
   "thAge": "Antigüedad",
   "thisNode": "(este nodo)",
-  "nodeNamed": "Nodo {name}"
+  "nodeNamed": "Nodo {name}",
+  "thCollect": "Recolección de basura",
+  "collect": "Recolectar",
+  "collectAll": "Recolectar basura en cada proceso e hilo worker",
+  "notCollectable": "no es el proceso frontal de este nodo ni uno de sus hilos worker",
+  "gcWarning": "Una recolección de basura completa detiene el hilo en el que se ejecuta hasta que termina, y en el proceso frontal eso pausa cada listener de este nodo. Es un diagnóstico: V8 recolecta según su propio calendario, y la memoria que una recolección forzada no libera está retenida, no es basura. Cada pulsación queda auditada.",
+  "gcResultHead": "Basura recolectada",
+  "gcResultSummary": "{n} isolate(s) recolectado(s), {freed} liberado(s) en total, la pausa más larga {pause} ms. La tabla de abajo se leyó antes de la recolección; recargue la página para leerla de nuevo.",
+  "thIsolate": "Isolate",
+  "thHeapBefore": "Heap antes",
+  "thHeapAfter": "Heap después",
+  "thFreed": "Liberado",
+  "thPause": "Pausa"
 }

@@ -37,7 +37,10 @@
 //                                 SUPERSEDED DEK, then DESTROYS each
 //                                 superseded DEK nothing is sealed under any
 //                                 longer and that has been superseded for
-//                                 `keys.dataKeyRetireAfterDays`.
+//                                 `keys.dataKeyRetireAfterDays`. A pass with
+//                                 nothing to do — every superseded key last
+//                                 counted at 0, none due — reads no sealed
+//                                 table at all (#623).
 //
 // AND TWO MORE SINCE P5:
 //
@@ -95,6 +98,23 @@ const DAY_MS = 86400000;
 // rows behind is followed by the next, an hour later; the bound keeps one
 // pass from holding a database connection for minutes.
 const RESEAL_BATCH = 500;
+// How long one pass of either job may spend bringing the directory's
+// data-key index up to date for the entries written before it existed
+// (#623, schema version 17): those are opened on this process's thread, a
+// page at a time with a yield between pages, so the bound is what one pass
+// may cost the front process. Once every entry is indexed — after a few
+// passes, once — a pass spends nothing here but one indexed probe.
+const INDEX_BUDGET_MS = 10000;
+// HOW SOON THE RE-ENCRYPTION JOB RUNS AGAIN WHILE THAT INDEX IS INCOMPLETE
+// (#618, 2026-10-14). On 8081 one pass indexed about 46,500 entries in its
+// ten seconds and the job ran hourly, so the 2.93M entries written before
+// version 17 would have taken about 62 hours, and every count in between is
+// refused (STS-STORE-0080) — and a store with no superseded key indexed
+// nothing on that job at all, leaving the daily count's ten seconds. So the
+// job indexes on every pass, and comes back every five minutes until the
+// index is complete: ten seconds of the front process in every three
+// hundred, about 3%, for some five hours at 2.9M, then hourly again.
+const INDEX_CATCHUP_MS = 5 * 60 * 1000;
 
 interface DataKeyRotationDeps {
   log: typeof helpers.log;
@@ -128,6 +148,17 @@ class DataKeyRotation {
    * The module's `REENCRYPT_JOB`.
    */
   static readonly REENCRYPT_JOB = REENCRYPT_JOB;
+  /**
+   * The re-encryption job's interval while the directory's data-key index is
+   * still being built (#618).
+   */
+  static readonly INDEX_CATCHUP_MS = INDEX_CATCHUP_MS;
+
+  /**
+   * Whether the last index pass left entries unindexed: the re-encryption
+   * job then comes back in INDEX_CATCHUP_MS rather than an hour.
+   */
+  indexPending = false;
 
   /**
    * Builds the instance over its dependencies.
@@ -285,6 +316,19 @@ class DataKeyRotation {
   }
 
   /**
+   * The re-encryption job's interval: an hour, and INDEX_CATCHUP_MS while
+   * the directory's data-key index is incomplete (#618).
+   *
+   * @returns the interval in ms
+   */
+  reencryptIntervalMs(): number {
+    const { log } = this.deps;
+    log.debug("Entering DataKeyRotation.reencryptIntervalMs().");
+    log.debug("Leaving DataKeyRotation.reencryptIntervalMs().");
+    return this.indexPending ? INDEX_CATCHUP_MS : HOUR_MS;
+  }
+
+  /**
    * One pass of the re-encryption job: re-seals this process's own rows,
    * then what the store holds under a superseded DEK, then destroys each
    * superseded DEK nothing is sealed under any longer and that has been
@@ -303,14 +347,37 @@ class DataKeyRotation {
     await ks.settleDeks();
     const ownRows = ks.resealOwnRows();
     await ks.settleAll();
+    const store = ks.sealedStore();
+    let indexing: Json = null;
+    try {
+      // THE DIRECTORY'S DATA-KEY INDEX FIRST (#623), for the entries written
+      // before it existed; bounded, and nothing but a probe once complete.
+      // On EVERY pass (#618), superseded keys or none: the count needs it
+      // whole, and a store that never rotated would otherwise build it only
+      // on the daily count's budget.
+      if (store && typeof store.index === 'function') {
+        indexing = await store.index({ budgetMs: INDEX_BUDGET_MS });
+        this.indexPending = !!(indexing && indexing.remaining);
+      }
+    } catch (e) {
+      const why = (e && (e as Error).message) || String(e);
+      log.error(errorCodes.tag('STS-KEYS-0099') + 'data keys: the ' +
+                're-encryption pass failed and nothing was destroyed: ' + why);
+      log.debug("Leaving DataKeyRotation.reencrypt(). Index failed.");
+      throw errorCodes.mark(new Error('the re-encryption pass failed: ' + why),
+                            'STS-KEYS-0099');
+    }
     const superseded: Json[] = ks.supersededDeks();
     if (!superseded.length) {
       log.debug("Leaving DataKeyRotation.reencrypt(). Nothing superseded.");
       return { superseded: 0, ownRows: ownRows, resealed: 0, destroyed: 0,
-               remaining: 0, summary: 'no superseded data encryption key' +
-               (ownRows ? '; ' + ownRows + ' own row(s) re-sealed' : '') };
+               remaining: 0,
+               indexed: indexing ? Number(indexing.indexed) || 0 : 0,
+               summary: 'no superseded data encryption key' +
+               (ownRows ? '; ' + ownRows + ' own row(s) re-sealed' : '') +
+               (this.indexPending ? '; the directory\'s data-key index is ' +
+                'still being built' : '') };
     }
-    const store = ks.sealedStore();
     if (!store) {
       log.debug("Leaving DataKeyRotation.reencrypt(). No counting store.");
       return { superseded: superseded.length, ownRows: ownRows, resealed: 0,
@@ -322,16 +389,58 @@ class DataKeyRotation {
     const ids = superseded.map(function (d: Json): string {
       return d.id;
     });
+    const retireMs = Math.max(1, Number(config.value(
+      'keys.dataKeyRetireAfterDays')) || 1) * DAY_MS;
     let tally: Json;
-    let counts: Json;
+    let counts: Json = null;
+    // -----------------------------------------------------------------------
+    // NOTHING TO DO IS NOT A PASS (#623). The re-seal and the count read the
+    // sealed tables — on 8081, at 1.5M entries, every directory row twice,
+    // about 90 s of the front process each hour — and for the week after a
+    // rotation, while the replaced keys wait out keys.dataKeyRetireAfterDays,
+    // every hourly pass found nothing. So a pass is skipped when every
+    // superseded key's last count says nothing is sealed under it, that
+    // count was taken AFTER the key was superseded (before that, the key was
+    // still sealing), and no key is due to be destroyed. A key that IS due
+    // is counted again, in this pass, after its re-seal: a key is destroyed
+    // only on a count of zero taken in the pass that destroys it (#391), so
+    // a value written back under it after the zero was recorded — a stale
+    // copy flushed by a process — is re-sealed then, and stops it.
+    // -----------------------------------------------------------------------
+    const startedAt = now();
+    const due = superseded.filter(function (d: Json): boolean {
+      return startedAt - d.supersededAt >= retireMs;
+    });
+    const quiet = superseded.every(function (d: Json): boolean {
+      return d.values === 0 && Number(d.countedAt) >= Number(d.supersededAt);
+    });
+    if (quiet && !due.length) {
+      log.info('data keys: ' + superseded.length + ' superseded, each last ' +
+               'counted at 0 and none due to be destroyed; nothing re-sealed ' +
+               'or counted this pass.');
+      log.debug("Leaving DataKeyRotation.reencrypt(). Nothing to do.");
+      return { superseded: superseded.length, ownRows: ownRows, resealed: 0,
+               destroyed: 0, remaining: 0, skipped: true,
+               summary: superseded.length + ' superseded data encryption ' +
+                        'key(s), each counted at 0 and none due to be ' +
+                        'destroyed: nothing to re-seal' +
+                        (ownRows ? '; ' + ownRows + ' own row(s) re-sealed'
+                          : '') };
+    }
+    // Entries not yet in the data-key index cannot be counted, so nothing
+    // is counted or destroyed until the index is complete: the store
+    // refuses such a count rather than answer it short.
+    const indexed = !(indexing && indexing.remaining);
     try {
       tally = await store.reseal(ids, function (cipher: string): Json {
         return ks.reseal(cipher);
       }, { limit: RESEAL_BATCH });
-      counts = await store.count(ids);
-      // The superseded keys' counts were taken anyway; the console shows
-      // them until the daily count replaces them.
-      ks.recordCounts(counts, { at: now() });
+      if (indexed) {
+        counts = await store.count(ids);
+        // The superseded keys' counts were taken anyway; the console shows
+        // them until the daily count replaces them.
+        ks.recordCounts(counts, { at: now() });
+      }
     } catch (e) {
       const why = (e && (e as Error).message) || String(e);
       log.error(errorCodes.tag('STS-KEYS-0099') + 'data keys: the ' +
@@ -343,17 +452,16 @@ class DataKeyRotation {
     const resealed = (Number(tally.minted) || 0) +
                      (Number(tally.entries) || 0) +
                      (Number(tally.secrets) || 0);
-    const retireMs = Math.max(1, Number(config.value(
-      'keys.dataKeyRetireAfterDays')) || 1) * DAY_MS;
     const at = now();
-    const doomed = superseded.filter(function (d: Json): boolean {
+    const doomed = counts ? superseded.filter(function (d: Json): boolean {
       return Number(counts[d.id]) === 0 && at - d.supersededAt >= retireMs;
     }).map(function (d: Json): string {
       return d.id;
-    });
-    const remaining = ids.reduce(function (sum: number, id: string): number {
+    }) : [];
+    const remaining = counts ? ids.reduce(function (sum: number,
+                                                    id: string): number {
       return sum + (Number(counts[id]) || 0);
-    }, 0);
+    }, 0) : null;
     const destroyed = doomed.length ? ks.destroyDeks(doomed) : 0;
     if (destroyed) {
       await ks.settleDeks();
@@ -380,14 +488,20 @@ class DataKeyRotation {
         detail: { destroyed: doomed }
       });
     }
+    const notCounted = counts ? '' : '; nothing counted or destroyed: ' +
+      'the directory\'s data-key index is still being built (' +
+      (Number(indexing && indexing.indexed) || 0) + ' entries indexed this ' +
+      'pass)';
     log.info('data keys: ' + superseded.length + ' superseded, ' + resealed +
-             ' value(s) re-sealed, ' + remaining + ' still under a ' +
-             'superseded key, ' + destroyed + ' key(s) destroyed.');
+             ' value(s) re-sealed, ' +
+             (counts ? remaining + ' still under a superseded key, '
+               : '') + destroyed + ' key(s) destroyed' + notCounted + '.');
     log.debug("Leaving DataKeyRotation.reencrypt().");
     return { superseded: superseded.length, ownRows: ownRows,
              resealed: resealed, destroyed: destroyed, remaining: remaining,
-             summary: resealed + ' re-sealed, ' + remaining + ' remaining, ' +
-                      destroyed + ' destroyed' };
+             summary: resealed + ' re-sealed, ' +
+                      (counts ? remaining + ' remaining, ' : '') +
+                      destroyed + ' destroyed' + notCounted };
   }
 
   /**
@@ -530,6 +644,25 @@ class DataKeyRotation {
     try {
       // Everything queued first, so a value sealed a moment ago is counted.
       await ks.settleAll();
+      // The directory's data-key index brought up to date first (#623): an
+      // entry not yet in it cannot be counted, and the store refuses a
+      // count it would answer short.
+      if (typeof store.index === 'function') {
+        const indexing = await store.index({ budgetMs: INDEX_BUDGET_MS });
+        this.indexPending = !!(indexing && indexing.remaining);
+        if (indexing && indexing.remaining) {
+          log.info('data keys: not counted this pass — the directory\'s ' +
+                   'data-key index is still being built (' +
+                   (Number(indexing.indexed) || 0) + ' entries indexed).');
+          log.debug("Leaving DataKeyRotation.countAll(). Indexing.");
+          return { keys: 0, values: null,
+                   trigger: String((ctx && ctx.trigger) || ''),
+                   summary: 'not counted: the directory\'s data-key index ' +
+                            'is still being built (' +
+                            (Number(indexing.indexed) || 0) +
+                            ' entries indexed this pass)' };
+        }
+      }
       counts = await store.countAll();
     } catch (e) {
       const why = (e && (e as Error).message) || String(e);
@@ -755,7 +888,7 @@ class DataKeyRotation {
       owner: 'common/data_key_rotation.ts',
       kind: 'cluster', scope: 'service',
       everyMs: function (): number {
-        return HOUR_MS;
+        return self.reencryptIntervalMs();
       },
       off: function (): string {
         return self.offReason();

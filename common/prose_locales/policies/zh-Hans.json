@@ -963,6 +963,14 @@
     "en": "474a843b37cbf2dc",
     "text": "默认开启。开启时，登录界面提供 *使用通行密钥登录* 以及用户名字段的自动填充，它们会向浏览器请求此领域的任何可发现凭据（WebAuthn Level 3 第 5.4 节，`allowCredentials` 为空），并登录其用户句柄所指明的账户，要求并检查用户验证。关闭时，两者都不提供，登录总是先指明此人。取代设置 webauthn.usernameless。"
   },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "要求不输入用户名的通行密钥登录"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "默认关闭。开启时，身份验证机制只有通行密钥（仅 appAuthnMechanism `webauthn`）的应用会得到一个没有用户名字段的登录界面：*使用通行密钥登录* 是唯一的入口，指明某人的登录会被拒绝。需要上一行开启。领域的 `default` 配置文件不会将其应用于管理控制台、调试器或用户门户；选择该应用的命名配置文件则会。"
+  },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
     "text": "无用户名登录开启时“使用安全密钥”所请求的内容"
@@ -1087,6 +1095,10 @@
     "en": "474a843b37cbf2dc",
     "text": "默认开启。开启时，登录界面提供 *使用通行密钥登录* 以及用户名字段的自动填充，它们会向浏览器请求此领域的任何可发现凭据（WebAuthn Level 3 第 5.4 节，`allowCredentials` 为空），并登录其用户句柄所指明的账户，要求并检查用户验证。关闭时，两者都不提供，登录总是先指明此人。取代设置 webauthn.usernameless。"
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "默认关闭。开启时，身份验证机制只有通行密钥（仅 appAuthnMechanism `webauthn`）的应用会得到一个没有用户名字段的登录界面：*使用通行密钥登录* 是唯一的入口，指明某人的登录会被拒绝。需要上一行开启。领域的 `default` 配置文件不会将其应用于管理控制台、调试器或用户门户；选择该应用的命名配置文件则会。"
+  },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",
     "text": "在无用户名登录开启期间，通过 *使用安全密钥*（或未指明类型的注册）进行注册时发送的 `residentKey`。关闭期间，该按钮总是请求 `required`，因此它会像 *创建通行密钥*（总是请求 `required`）一样生成可发现凭据。`discouraged` 或 `preferred` 可节省安全密钥为数不多的常驻存储槽，代价是该密钥登录时需要用户名。取代设置 webauthn.residentKey。"
@@ -1178,6 +1190,10 @@
   "passkey.sentences.noUsernameless": {
     "en": "1152c46cd0b86b19",
     "text": "每次登录都先指明此人：不允许不输入用户名的通行密钥登录"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "只用通行密钥登录的应用不要求用户名：不输入用户名的通行密钥登录是唯一的入口"
   },
   "passkey.sentences.createPasskey": {
     "en": "69c8c2e4b8f32675",

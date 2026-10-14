@@ -243,7 +243,49 @@ const ISSUANCE_ATTRIBUTE = {
   // it; an empty bag asks nothing. The management API's console operations
   // name ADMIN_CONSOLE in REQUIRED_ROLE and, where a page shows realm data,
   // ADMIN_READ here — the two kinds of role mixed in one decision.
-  REQUIRED_ALL_ROLE: 'urn:sts:xacml:required-all-role'
+  REQUIRED_ALL_ROLE: 'urn:sts:xacml:required-all-role',
+  // -------------------------------------------------------------------------
+  // THE OWNER RULE'S VOCABULARY (#607, 2026-10-13): delegated
+  // administration of the four kinds of object a person may own, through
+  // `/admin-api`. The PEP — the management API's gate — states WHAT is
+  // reached; `xacml_pip.ts` answers WHO owns it, WHETHER it is closed to its
+  // owners and WHO the person is as an owner, out of the directory
+  // (`common/ownership.ts`), so `/admin/xacml/decide` and a remote PEP asking
+  // the same question get the same answer.
+  //
+  // On the RESOURCE: the owner role the operation would need — OWNER_READ
+  // for a read, OWNER_WRITE for anything else. Absent, the request is not an
+  // owner's question at all and the owner rule cannot permit it.
+  OWNER_REQUIRED_ROLE: 'urn:sts:xacml:owner-required-role',
+  // On the RESOURCE: the kind of object — `role`, `group`,
+  // `service-account` or `application`.
+  OBJECT_KIND: 'urn:sts:xacml:object-kind',
+  // On the RESOURCE: the object, as the request names it — a role's name, a
+  // group's cn or DN, a service account's username, an application's
+  // identifier. What the PIP looks the next two up by.
+  OBJECT_ID: 'urn:sts:xacml:object-id',
+  // On the RESOURCE, FROM THE PIP: the object's owner DNs as stored,
+  // compared (lower case, no space around a comma).
+  OBJECT_OWNER: 'urn:sts:xacml:object-owner',
+  // On the RESOURCE, FROM THE PIP: whether the object is closed to its
+  // owners — a native or protected role, a group or application this
+  // service grants through, an administrator's mark. Boolean; the rule
+  // demands `false`, so an object the PIP cannot answer for stays closed.
+  OBJECT_PROTECTED: 'urn:sts:xacml:object-protected',
+  // On the RESOURCE: the attributes an application action would write
+  // (`set`, `add`, `remove`, `update-fields`), by name. Empty for every
+  // other action.
+  OBJECT_ATTRIBUTE: 'urn:sts:xacml:object-attribute',
+  // On the ACTION: what is done to the object — `read`, or the management
+  // API action's own name (`add-member`, `remove-owner`, ...).
+  ADMIN_ACTION: 'urn:sts:xacml:admin-action',
+  // On the SUBJECT: the PERSON the token is for, by username. Not
+  // `subject-id`, which the gate sets to the client a person's token was
+  // issued to; the PIP resolves the next one from this.
+  OWNER_SUBJECT: 'urn:sts:xacml:owner-subject',
+  // On the SUBJECT, FROM THE PIP: the person's own DN and every group they
+  // are in, compared as OBJECT_OWNER is.
+  OWNER_IDENTITY: 'urn:sts:xacml:owner-identity'
 };
 
 // ---------------------------------------------------------------------------
@@ -3437,7 +3479,12 @@ const TEMPLATES: TemplateRow[] = [
           'the requirement and the owner both travel in the REQUEST, one ' +
           'document decides for every surface — and adding a helpdesk role ' +
           'that may manage somebody else\'s account is a SECOND RULE in this ' +
-          'policy rather than a change to this one or to any handler.',
+          'policy rather than a change to this one or to any handler. Since ' +
+          '#607 there is such a second rule: an OWNER holding OWNER_READ or ' +
+          'OWNER_WRITE may administer, through the management API, a role, ' +
+          'group, service account or application they own, within the ' +
+          'actions listed for its kind, never one closed to its owners and ' +
+          'never removing its last owner.',
     parameters: [
       { name: 'permitOwner',
         label: 'Permit a subject to act on a resource they own',
@@ -3463,7 +3510,67 @@ const TEMPLATES: TemplateRow[] = [
         help: 'yes or no. An unauthenticated session — the sign-in screen\'s ' +
               '"continue without signing in" — is a real subject here, and ' +
               'this conjunct keeps it out of every gated surface without ' +
-              'anybody having to name it in a role.' }
+              'anybody having to name it in a role.' },
+      // THE OWNER RULE (#607): delegated administration of what a person
+      // owns, through the management API. Each kind's actions are a
+      // parameter, so a realm's override widens or narrows them without a
+      // rebuild; the protections and the last-owner rule are not, because
+      // they are what keeps owning something from becoming Admin.
+      { name: 'permitOwnerAdministration',
+        label: 'Permit an owner to administer what they own',
+        dflt: 'yes', type: 'string',
+        help: 'yes or no. The SECOND rule (#607): a person holding ' +
+              'OWNER_READ or OWNER_WRITE may read or change, through ' +
+              '/admin-api, a role, group, service account or application ' +
+              'whose owner values name them or a group they are in — only ' +
+              'with the actions listed below for its kind, never one closed ' +
+              'to its owners, and never removing its last owner. No builds ' +
+              'only the first rule, and an owner\'s token then reaches ' +
+              'nothing.' },
+      { name: 'ownerRoleActions', label: 'What an owner may do to a role',
+        dflt: 'read, describe-role, add-member, remove-member, add-owner, ' +
+              'remove-owner',
+        type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
+              '/admin-api/roles/{action}. Never create-role or delete-role, ' +
+              'and add-permission would let an owner make the role ' +
+              'authorize more.' },
+      { name: 'ownerGroupActions', label: 'What an owner may do to a group',
+        dflt: 'read, add-member, add-owner, remove-owner', type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
+              '/admin-api/groups/{action}. Never create.' },
+      { name: 'ownerServiceAccountActions',
+        label: 'What an owner may do to a service account',
+        dflt: 'read, add-service-account-owner, ' +
+              'remove-service-account-owner, set-service-account-destination, ' +
+              'rotate-password',
+        type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the service-account ' +
+              'actions of POST /admin-api/users/{action}. Never ' +
+              'set-service-account, which could make the account a person ' +
+              'again or replace its owners whole.' },
+      { name: 'ownerApplicationActions',
+        label: 'What an owner may do to an application',
+        dflt: 'read, set, add, remove, update-fields, add-owner, ' +
+              'remove-owner, regenerate-secret, rotate-secret, add-secret, ' +
+              'remove-secret',
+        type: 'list',
+        help: 'Comma- or newline-separated: `read`, or the actions of POST ' +
+              '/admin-api/applications/{action}. The four that write ' +
+              'attributes are held to the next list. Never create or ' +
+              'forget, and never reveal-secret.' },
+      { name: 'ownerApplicationAttributes',
+        label: 'The application attributes an owner may write',
+        dflt: 'appName, description, appHomePageUrl, appCorsOrigin, ' +
+              'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
+              'oauthFrontchannelLogoutUri, oauthBackchannelLogoutUri, ' +
+              'samlAssertionConsumerService, samlSingleLogoutService',
+        type: 'list',
+        help: 'Comma- or newline-separated attribute names. set, add, remove ' +
+              'and update-fields are permitted only when EVERY attribute ' +
+              'they write is listed. Leave out what turns an application ' +
+              'into a bigger credential: its scopes, roles, grant types, ' +
+              'keys and delegation.' }
     ],
     build: function (answers, options) {
       log.debug('Entering buildAccessControl().');
@@ -3606,8 +3713,146 @@ const TEMPLATES: TemplateRow[] = [
         ? conjuncts[0]
         : B.apply(F1 + 'and', conjuncts);
 
+      // ---------------------------------------------------------------------
+      // THE SECOND RULE: AN OWNER ADMINISTERS WHAT THEY OWN (#607).
+      //
+      // **A RULE OF ITS OWN, NOT AN ARM OF THE FIRST** — the template's own
+      // argument for a helpdesk role: under deny-unless-permit a new kind of
+      // access is a new Permit rule, and the first rule is untouched, so an
+      // administrator reaches everything they did and an owner reaches only
+      // what this rule says. The management API asks one question carrying
+      // both: ADMIN_READ or ADMIN_WRITE as the required role (the first
+      // rule's), and OWNER_READ or OWNER_WRITE as the owner-required role
+      // (this one's).
+      //
+      // EVERY CONJUNCT NARROWS, and each fails closed on an empty bag:
+      //   * the subject authenticated, and holds the owner role the
+      //     operation names (held ∩ carried, so a token without owner:write
+      //     is not OWNER_WRITE);
+      //   * the object is NOT protected — `false` asked for, not the absence
+      //     of `true`, so an object the PIP could not answer for is closed;
+      //   * one of the object's owners is the person or a group of theirs;
+      //   * the action is one this kind's list names;
+      //   * every attribute it writes is one an owner may write (vacuous for
+      //     an action that writes none);
+      //   * and it does not take the LAST owner off (rcbj's decision 3: only
+      //     an administrator may leave an object with no owner).
+      // ---------------------------------------------------------------------
+      const permitOwnerAdministration =
+        B.yes(given.permitOwnerAdministration, true);
+      const listedOr = function (name: string, dflt: string): string[] {
+        log.debug("Entering listedOr(). " + name);
+        log.debug("Leaving listedOr().");
+        return B.listOf(given[name] === undefined ? dflt : given[name]);
+      };
+      const stringBag = function (values: string[]): any {
+        log.debug("Entering stringBag().");
+        log.debug("Leaving stringBag().");
+        return B.apply(F1 + 'string-bag', values.map(function (one) {
+          return B.value(TYPE.STRING, one);
+        }));
+      };
+      const R = model.CATEGORY.RESOURCE;
+      const ownerActions: Record<string, string[]> = {
+        'role': listedOr('ownerRoleActions',
+          'read, describe-role, add-member, remove-member, add-owner, ' +
+          'remove-owner'),
+        'group': listedOr('ownerGroupActions',
+          'read, add-member, add-owner, remove-owner'),
+        'service-account': listedOr('ownerServiceAccountActions',
+          'read, add-service-account-owner, remove-service-account-owner, ' +
+          'set-service-account-destination, rotate-password'),
+        'application': listedOr('ownerApplicationActions',
+          'read, set, add, remove, update-fields, add-owner, remove-owner, ' +
+          'regenerate-secret, rotate-secret, add-secret, remove-secret')
+      };
+      const ownerAttributes = listedOr('ownerApplicationAttributes',
+        'appName, description, appHomePageUrl, appCorsOrigin, ' +
+        'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
+        'oauthFrontchannelLogoutUri, oauthBackchannelLogoutUri, ' +
+        'samlAssertionConsumerService, samlSingleLogoutService');
+      // One arm per kind with an action list: the object is of that kind
+      // AND the action is on its list.
+      const actionArms = Object.keys(ownerActions).filter(function (kind) {
+        return ownerActions[kind].length > 0;
+      }).map(function (kind) {
+        return B.apply(F1 + 'and', [
+          B.apply(F1 + 'string-is-in', [
+            B.value(TYPE.STRING, kind),
+            B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_KIND, TYPE.STRING)]),
+          B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACTION,
+                         ISSUANCE_ATTRIBUTE.ADMIN_ACTION, TYPE.STRING),
+            stringBag(ownerActions[kind])])]);
+      });
+      const ownerConjuncts = [
+        B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          B.value(TYPE.BOOLEAN, 'true'),
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.AUTHENTICATED, TYPE.BOOLEAN)]),
+        B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.ROLE, TYPE.STRING),
+          B.designator(R, ISSUANCE_ATTRIBUTE.OWNER_REQUIRED_ROLE,
+                       TYPE.STRING)]),
+        B.apply(F3 + 'any-of', [
+          { kind: 'function', functionId: F1 + 'boolean-equal' },
+          B.value(TYPE.BOOLEAN, 'false'),
+          B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_PROTECTED,
+                       TYPE.BOOLEAN)]),
+        B.apply(F3 + 'any-of-any', [
+          { kind: 'function', functionId: F1 + 'string-equal' },
+          B.designator(model.CATEGORY.ACCESS_SUBJECT,
+                       ISSUANCE_ATTRIBUTE.OWNER_IDENTITY, TYPE.STRING),
+          B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_OWNER, TYPE.STRING)]),
+        actionArms.length === 1 ? actionArms[0]
+          : (actionArms.length ? B.apply(F1 + 'or', actionArms)
+                               : B.value(TYPE.BOOLEAN, 'false')),
+        ownerAttributes.length
+          ? B.apply(F1 + 'all-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_ATTRIBUTE, TYPE.STRING),
+            stringBag(ownerAttributes)])
+          : B.apply(F1 + 'integer-equal', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_ATTRIBUTE,
+                           TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '0')]),
+        // NEVER THE LAST OWNER (rcbj's decision 3 on #607).
+        B.apply(F1 + 'or', [
+          B.apply(F1 + 'not', [B.apply(F3 + 'any-of-any', [
+            { kind: 'function', functionId: F1 + 'string-equal' },
+            B.designator(model.CATEGORY.ACTION,
+                         ISSUANCE_ATTRIBUTE.ADMIN_ACTION, TYPE.STRING),
+            stringBag(['remove-owner', 'remove-service-account-owner'])])]),
+          B.apply(F1 + 'integer-greater-than', [
+            B.apply(F1 + 'string-bag-size', [
+              B.designator(R, ISSUANCE_ATTRIBUTE.OBJECT_OWNER,
+                           TYPE.STRING)]),
+            B.value(TYPE.INTEGER, '1')])])
+      ];
+      const ownerRule = {
+        id: options.idBase + ':rule:owner-administers-what-they-own',
+        effect: model.EFFECT.PERMIT,
+        description: 'Permit an OWNER (#607) to read or change, through ' +
+                     'the management API, a role, group, service account ' +
+                     'or application whose owners name them or a group ' +
+                     'they are in: holding the owner role the operation ' +
+                     'names, the object not closed to its owners, the ' +
+                     'action one this kind allows, every attribute written ' +
+                     'one an owner may write, and never the last owner ' +
+                     'taken off.',
+        target: null,
+        condition: B.apply(F1 + 'and', ownerConjuncts),
+        obligations: [], advice: []
+      };
+
       log.debug('Leaving buildAccessControl(). ' + conjuncts.length +
-                ' conjunct(s), ' + roleArms.length + ' role arm(s).');
+                ' conjunct(s), ' + roleArms.length + ' role arm(s)' +
+                (permitOwnerAdministration ? ', and the owner rule.' : '.'));
       return {
         kind: 'Policy',
         id: options.idBase,
@@ -3628,6 +3873,11 @@ const TEMPLATES: TemplateRow[] = [
                                     'account and nobody else\'s' : '') +
                      (requireAuth ? '. A subject that did not authenticate ' +
                                     'is refused whatever else is true' : '') +
+                     (permitOwnerAdministration
+                       ? '. A second rule (#607) permits an OWNER to ' +
+                         'administer what they own through the management ' +
+                         'API, within the actions its kind allows'
+                       : '') +
                      '. Everything else is denied: the combining algorithm ' +
                      'is deny-unless-permit, so an access decision does not ' +
                      'depend on a PEP\'s bias.',
@@ -3650,7 +3900,7 @@ const TEMPLATES: TemplateRow[] = [
           target: null,
           condition: condition,
           obligations: [], advice: []
-        }],
+        }].concat(permitOwnerAdministration ? [ownerRule] : []),
         obligations: [], advice: []
       };
     }

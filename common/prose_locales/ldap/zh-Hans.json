@@ -568,8 +568,12 @@
     "text": "人们登录此应用时不会被询问的作用域。每个作用域一个值，完全按照客户端放入 `scope` 参数的形式书写——`openid`、`profile`，或完整的委托权限标识符，例如 `https://example.com/write`。\n\n**它是覆盖项而不是记录。**当 `oauth2.consentRequired` 开启时（这是默认值），对于此人尚未就此应用同意过的任何作用域，授权端点都会绘制 /oauth2/consent；在这里指明的作用域对所有人都会跳过，并且不会向任何人的条目写入任何内容。因此移除一个值会再次询问所有人——包括本会同意的人——而移除某人自己的 `oauthConsent` 只会询问此人。\n\n**它以配对为键，而不仅以作用域为键。**在这里同意 `read` 是为此应用同意它；五分钟后注册的、拼写相同单词的另一个应用仍会被询问。\n\n不指明任何应用所定义权限的值不是错误，也不会被隐藏——大多数作用域都不是权限。它必须是合法的 RFC 6749 第 3.3 节作用域令牌，因为带空格的值永远无法匹配一个作用域；`ldapmodify` 与对其他属性一样也能访问此属性，并且不会被检查，/admin/consent 会显示它写入了什么。"
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "对该应用程序负责的本领域人员或组（#604），以 DN 表示，与组和角色的所有者相同。多值，最多 25 个。所有者不授予任何权限：此服务中没有任何部分读取它来做决定。用户门户列出一个人所拥有的内容。"
+    "en": "9c53dd774f6667e3",
+    "text": "对该应用负责的本领域中的某个人或某个组（#604），以 DN 表示，与组和角色的所有者相同。多值，最多 25 个。自 #607 起，所有者可以通过 /admin-api 使用 owner:read 和 owner:write 管理该应用，范围以 access-control 策略的所有者规则所允许的为限。用户门户会列出一个人拥有的内容。"
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE：该应用的所有者不能通过 /admin-api 管理它（#607）——这是管理员的标记，access-control 策略的所有者规则将其读作 urn:sts:xacml:object-protected。缺省为 FALSE。"
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",
@@ -1423,6 +1427,18 @@
     "en": "a40bdc8ff019b288",
     "text": "由集群调度器对整个范围进行对账的频率，以分钟计：范围内的每个人和每个组都会被推送，服务提供方以本领域的 externalId 持有、但已不在范围内的内容会被取消配置。0（默认）表示仅在管理员要求时对账。"
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "服务提供方所在的位置，以单元映射中的司法辖区代码表示（us、eu、ca……）。在以单元方式部署的服务中，每个人的归属单元在推送此人之前，都会询问签发策略此人的数据能否去往该处（release-attributes，用途 scim-provision）；若被拒绝，此人即不在范围内——不会被推送，若之前已推送则会被取消预配。留空表示司法辖区未知，严格默认规则从不向其释放数据。服务只有一个单元时忽略此项。"
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "哪些单元向服务提供方推送，每项为一个单元 ID；为空（默认）表示所有单元。未列出的单元不会为此客户端发送任何内容，因此归属该单元的人员不会被推送。服务只有一个单元时忽略此项。"
+  },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "每秒最多向服务提供方发送多少个请求：每次投递、查找、发现读取和对账分页都会等待轮到自己，而不是失败。留空或 0（默认）表示不限制。在以单元方式部署的服务中，每个推送的单元可发送的数量为此值除以这些单元的数量，向上取整。"
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "Shared Signals 接收方的名称——即它在 /ssf/stream 创建流时进行身份验证所用的身份，也是该流所携带的每个 Security Event Token 的 `aud`。与它上面四个仅用于声明的标识符不同，这个标识符确实由协议写入：创建流会记录一次观察，因为接收方完成身份验证并获准建立流，正是此注册表存在所要保存的那类事件。它仍然不授予任何东西——决定接收方获得什么的是流，而流携带它自己的受众。"
@@ -1666,6 +1682,10 @@
   "devices.schema.attributes.stsDeviceCredentialId.what": {
     "en": "5c367d4336aa3edd",
     "text": "每个已关联 WebAuthn 密钥的凭据 id，每次写入时由 stsDeviceKey 派生，以便登录时通过索引找到其设备。"
+  },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "每个由 Android 证书链证明、且其序列号已保留的密钥的 id，每次写入时由 stsDeviceKey 推导，使 Android 证明复查只读取持有此类密钥的设备（#615）。"
   },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",

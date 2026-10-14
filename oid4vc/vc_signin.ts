@@ -379,7 +379,8 @@ class VcSignin {
     const { log } = this.deps;
     log.debug("Entering VcSignin.hashOf().");
     log.debug("Leaving VcSignin.hashOf().");
-    return stsCrypto.digest('sha256', String(value || ''), 'base64url');
+    // The one credential digest (#614); the same SHA-256 it always was.
+    return stsCrypto.credentialDigest(String(value || ''));
   }
 
   // A TRANSACTION AS A LOG LINE NAMES IT (#574): the first characters of its

@@ -18,7 +18,7 @@ provider for each of them**.
 | `saml_cells.ts` | **Where a SAML back-channel request is answered in a service deployed as cells** (#98 D10, 2026-09-28): the cell tag inside an artifact's handle, and the peer holding the session a query names (the `saml-session-holder` inter-cell operation). Registers no route. See *IN A SERVICE DEPLOYED AS CELLS*, at the end. |
 | `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
-## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG
+## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG — rule 4b
 
 This is the first thing to know before reading either file, because everything
 else follows from it and because "surely most of that is shared" is the change
@@ -141,7 +141,7 @@ implementation:
 
 ---
 
-## Six decisions in `saml2_sso.ts`, and the two most likely to be undone
+## Six decisions in `saml2_sso.ts`, and the two most likely to be undone — rule 4a
 
 The file's own header argues all six at length. Two of them are the ones somebody
 will try to "fix":
@@ -235,6 +235,54 @@ now asynchronous at that point. What is decided, and why:
 still holding a resolved artifact is refused, the same restore against an empty
 claim store resolves (the control), a store that throws refuses, and two
 concurrent resolutions answer once.
+
+### The artifact stores keep digests, are bounded, and refuse when full (2026-10-13, #614)
+
+* **The key is `credentialDigest(artifact)`** (`common/crypto.js`), in both
+  `saml2_sso.artifacts` and `saml11_sso.artifacts`, computed in
+  `stashArtifact()` and again where the artifact is presented. The
+  MessageHandle / AssertionHandle is the bearer secret and the store only
+  looks it up and spends it, so no copy of it is in the map, a heap
+  snapshot, an `sts_minted` row or an `sts_changes` name. **The VALUE stays
+  whole** — resolution hands the message (2.0) or the assertion (1.1) back.
+  No migration: a row under the old key is not found and expires.
+* **What still sees the artifact**: the 303 to the service provider (that is
+  the binding), the cluster claim (`cluster_claims.digestOf()` digests it), the
+  first twelve base64 characters on the info/warn lines (TypeCode,
+  EndpointIndex and the start of the SourceID — public, no handle byte), and
+  the debug-level whole-message log of the ArtifactResolve, which logs the
+  ASSERTIONS themselves at the same level by design.
+* **`saml2.maxArtifacts` / `saml11.maxArtifacts` (10000 per realm)**: the
+  expired go first, then `cacheRegistry.makeRoom(..., { policy: 'refuse' })`.
+  A store full of live artifacts REFUSES the next one rather than evict an
+  unresolved one — `used_assertions`' stance: an artifact dropped before its
+  party resolved it is a sign-in lost after it succeeded. **The refusal is a
+  503 page (`samlError()`), `STS-SAML-0110`, and nothing goes to the service
+  provider**: a Responder `<samlp:Response>` (section 3.2.2) would itself have
+  to travel as an artifact on that binding, and switching to another binding
+  at an endpoint declared for HTTP-Artifact is not the identity provider's
+  choice. SAML 1.1's browser profiles have no failure message at all.
+* **Expired is refused AT THE READ** in both resolvers (`STS-SAML-0018`,
+  `0037`) and deleted. Until #614 only the sweep in `stashArtifact()` removed
+  one, so an artifact past its lifetime resolved until the next stash.
+* **Both are on `/admin/caches`** (`saml2.artifacts`, `saml11.artifacts`,
+  kind `replay`, keys drawn by `digestKey()`), with an `eject` on the
+  `caches.eject-expired` scheduler job.
+* **A resolved artifact is deleted on every node already**: the delete
+  journals the digest key, the minted flush DELETEs the `sts_minted` row and
+  logs a change, and every other process's `persistence_minted.applyChange()`
+  finds the row gone and calls the store's `remove()` (`persistence/CLAUDE.md`,
+  *A MINTED WRITE ASKS FOR A FLUSH*). Nothing needed changing; `tombstone`
+  was not added, because nothing writes an artifact's key a second time.
+* **`saml11_sso.assertionsById` holds `{ xml, expires }`** and expires at the
+  assertion's `<saml:Conditions NotOnOrAfter>` — or `saml11.assertionCacheTtlS`
+  (3600) after it was kept when it carries none, which no assertion this
+  service builds does. Checked at the read (`STS-SAML-0038`, and the entry is
+  deleted), ejected by the scheduler job, still capped by
+  `saml11.assertionCacheMax`. A row of the old shape (a bare string) is not
+  found.
+
+`tests/saml_artifact_digests.js` holds all of it.
 
 ---
 
@@ -695,6 +743,8 @@ enforced for these two, because `exp` collides with nothing in an assertion.
 `authn_context.ts` — none of which requires them back, so they cannot join a
 cycle and their position is not a position at all.
 
+### 4a. `saml2_sso.ts` comes after `authn/authn.ts`, and has no screen of its own
+
 **`saml2_sso.ts` is position 10a in `common/protocol_stack.ts` (the require
 order `server.js` loads) and has one real constraint**: it
 must come after `../authn/authn.ts`, and it is a STRONGER dependency than
@@ -709,6 +759,8 @@ read together in the route order and on `/admin/sts-metadata`.
 direction — a plain require, not another inverted slot — and rule 3e's test is
 why: `common/protocol_stack.ts` requires this module at 10a and those at 18 or
 later, so a require from there closes no cycle and moves no route.
+
+### 4b. `saml11_sso.ts` comes after `authn/authn.ts` and after `saml2_sso.ts`
 
 **`saml11_sso.ts` is position 10b and has TWO constraints**, the second of which
 is the only require between the two profiles. It must come after
@@ -732,8 +784,8 @@ somebody's relying party will post a form at it anyway.
 
 ## `/saml2/autopost.js` IS THE FIFTH SCRIPTED PAGE
 
-`../common/app.js` sets `script-src 'none'` on every response. The HTTP POST
-binding (bindings section 3.5) **is** a self-submitting form — that is what keeps
+`../common/app.js` sets `script-src 'none'` as the service-wide default. The
+HTTP POST binding (bindings section 3.5) **is** a self-submitting form — that is what keeps
 a response of several kilobytes of signed XML out of a URL, a log and a Referer
 header — so there is no version of this binding without a script. The exception
 is the same shape as the other four and no wider: `script-src 'self'` naming ONE
@@ -883,7 +935,9 @@ unregistered `shire` has no mock fallback.
 `saml2.requestTtlMin` (10), `saml2.mockSpContextTtlMin` (30, deleted with the
 mock service provider by #592),
 `saml2.redirectWarnLength` (8000), `saml2.spMetadataMaxBytes` (524288),
-`saml11.requestTtlMin` (10), `saml11.assertionCacheMax` (500),
+`saml11.requestTtlMin` (10), `saml11.assertionCacheMax` (500) — and, new
+rather than converted, `saml2.maxArtifacts` / `saml11.maxArtifacts` (10000) and
+`saml11.assertionCacheTtlS` (3600) (#614, above),
 `saml.organizationName` / `saml.organizationDisplayName` / `saml.organizationUrl`
 — an emptied name OMITS `<md:Organization>` in either mode, because half an
 Organization is schema-invalid and a setting silently ignored in one mode would

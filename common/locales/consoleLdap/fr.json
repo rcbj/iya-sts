@@ -169,6 +169,7 @@
   "directory.placeholder": "un DN, un nom d’attribut ou une valeur",
   "directory.cameFrom": "Provenance",
   "directory.searchNote": "Le champ recherche dans le DN, dans tout NOM d’attribut et dans toute VALEUR d’attribut, sans tenir compte de la casse. Les valeurs sont incluses parce que la personne qui en a le plus besoin a souvent une empreinte ou un secret en main sans savoir quelle entrée le porte, ce qu’une recherche sur les seuls DN ne peut pas dire.",
+  "directory.searchLimited": "<strong>La zone a cherché dans les {scanned} premières entrées dans l’ordre des clés, pas dans toutes.</strong> Les valeurs des attributs sont scellées dans le stockage, qui ne peut donc pas les chercher lui-même, et une requête en lit au plus {limit}. Choisissez une origine, ou saisissez une plus grande partie du DN, pour restreindre ce qui est examiné.",
   "directory.thAttributes": "Attributs",
   "directory.noMatch": "Aucune entrée ne correspond.",
   "directory.filterHiding": "Le filtre ci-dessus en masque peut-être certaines.",

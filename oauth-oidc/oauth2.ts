@@ -664,7 +664,16 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-// code -> the authorization request it came from
+// credentialDigest(code) -> the authorization request it came from
+//
+// KEYED BY THE CODE'S DIGEST, NEVER BY THE CODE (#614). A code is a bearer
+// value for its five minutes, and every use of this store is a lookup or a
+// delete by the code a request PRESENTS: so the store holds
+// `crypto.credentialDigest(code)`, computed at the moment the code is minted
+// or presented, and the code itself is in no row, no replicated change and no
+// heap snapshot. The cluster claim on a code (`cluster_claims.digestOf()`)
+// hashes on its own and is still handed the code. A row of the old shape is
+// simply not found under its new key and goes on its own `expires`.
 // TOMBSTONED (2026-09-14, #46): a redeemed or expired code's delete leaves a
 // tombstone in the store, so a node holding an older copy of the row cannot
 // write it back. `persistence/persistence_minted.js` carries the mechanism.
@@ -717,16 +726,33 @@ const authzCodes = realms.map({ persist: 'oauth2.authzCodes', retain: 'age',
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-// code -> the token set it was redeemed for
+// credentialDigest(code) -> what became of it
+//
+// KEYED BY THE CODE'S DIGEST, for `authzCodes`' reason (#614), and HOLDING
+// THE ISSUED JTIS, NOT THE TOKENS. A replay is refused and what the code
+// bought revoked BY JTI (RFC 6749 section 10.5), which is all the refusal
+// needs; until #614 every row held the whole token response — an access JWT,
+// an encrypted refresh token and an ID Token, 3–15 KB a row at a bound of
+// `oauth2.redeemedCodeCacheSize` per realm, replicated into every process.
+// `jtis` is null while the code is presented and nothing is issued for it
+// yet, and the list once something is.
+//
+// THE ONE EXCEPTION IS `oauth2.codeReplayIdempotent`: an identical repeat is
+// answered with the SAME response, byte for byte, which cannot be rebuilt
+// from jtis. So the whole `response` is kept only where that relaxation is
+// in force when the code is redeemed (`bcp.codeRedemptionRelaxed()`), and
+// the setting's description says so. A row written while it was off has no
+// response to replay, and a repeat of it is refused (STS-OAUTH-0958).
 const redeemedCodes = realms.map({ persist: 'oauth2.redeemedCodes',
                                    retain: 'age',
                                    // #333: the sweep's `forget`, ms.
                                    expiresAt: realms.expiryField('forget',
                                                                  1) });
 
-// Described to `/admin/caches` (#74, rule 3ap). The key is an authorization
-// code and the value holds the tokens it produced, so a row is the code's
-// digest, the client and when the record is dropped — nothing else.
+// Described to `/admin/caches` (#74, rule 3ap). The key is already the
+// code's digest (#614) and the value holds the jtis it produced (and the
+// tokens, under `oauth2.codeReplayIdempotent`), so a row is that digest
+// shortened again, the client and when the record is dropped — nothing else.
 const redeemedCodesCount = cacheRegistry.register({
   name: 'oauth2.redeemed-codes',
   title: 'Redeemed authorization codes',
@@ -1993,9 +2019,10 @@ class OAuth2Server {
       scopes_supported: ['openid', 'profile', 'email', 'address', 'phone',
                          'offline_access',
                          // Native SSO section 5 (#130).
-                         'device_sso',
-                         // OpenID Connect Key Binding (#150).
-                         'bound_key'].concat(
+                         'device_sso'].concat(
+        // OpenID Connect Key Binding (#150), unless `oauth2.keyBinding` is
+        // off (#315).
+        self.keyBindingOn() ? ['bound_key'] : []).concat(
         config.value('scim.enabled') !== false
           ? [String(config.value('scim.scopeRead') || 'scim:read'),
              String(config.value('scim.scopeWrite') || 'scim:write')]
@@ -4483,7 +4510,8 @@ class OAuth2Server {
       // because RFC 9449 section 5 leaves a confidential client's refresh
       // token unbound (#176), and a bound ID Token must stay with ONE key.
       kb_jkt: opts.kb_jkt ? String(opts.kb_jkt) :
-        (this.deps.hasScope(opts.scope, 'bound_key') && opts.dpopJwk
+        (this.keyBindingOn() &&
+         this.deps.hasScope(opts.scope, 'bound_key') && opts.dpopJwk
           ? this.deps.stsCrypto.jwkThumbprint(opts.dpopJwk) : undefined)
     };
     if (opts.request) {
@@ -4956,8 +4984,10 @@ class OAuth2Server {
     // OPENID CONNECT KEY BINDING SECTION 4 (#150): with `bound_key` granted
     // and a DPoP key proved, the ID Token names that key in `cnf.jwk`, and
     // its JOSE header says so (`typ: dpop+id_token`, below).
-    const boundKey = String(opts.scope || '').split(/\s+/)
-      .indexOf('bound_key') >= 0 && opts.dpopJwk ? opts.dpopJwk : null;
+    // Not with `oauth2.keyBinding` off (#315).
+    const boundKey = this.keyBindingOn() && String(opts.scope || '')
+      .split(/\s+/).indexOf('bound_key') >= 0 && opts.dpopJwk
+      ? opts.dpopJwk : null;
     if (boundKey) {
       payload.cnf = { jwk: boundKey };
     }
@@ -5385,6 +5415,18 @@ class OAuth2Server {
       { grant: opts.grant, defaults: self.credentialScopes() });
     if (allowedScope !== String(opts.scope == null ? '' : opts.scope)) {
       opts.scope = allowedScope;
+    }
+    // `bound_key` IS NOT GRANTED WHILE KEY BINDING IS OFF (#315), whatever
+    // the grant. The authorization endpoint drops it from the request
+    // (vetAuthorizationRequest()); this is the backstop for every other door
+    // — the device flow, CIBA, a token exchange, and a refresh of a grant
+    // made while it was on — so the `scope` member never reports a binding
+    // nothing performed. A grant already bound keeps its key check on
+    // refresh: that reads `kb_jkt`, not the scope.
+    if (!self.keyBindingOn() && hasScope(opts.scope, 'bound_key')) {
+      opts.scope = String(opts.scope).split(/\s+/).filter(function (one) {
+        return one && one !== 'bound_key';
+      }).join(' ');
     }
     // THE EMBEDDED DEBUGGER'S PERMISSION IS A CONSOLE ADMINISTRATOR'S AND
     // NOBODY ELSE'S (2026-09-13). Here, the one function every grant mints
@@ -6130,6 +6172,22 @@ class OAuth2Server {
     return { claims: out, ignored: ignored };
   }
 
+  // WHETHER OPENID CONNECT KEY BINDING IS PERFORMED in the ambient realm
+  // (#315): `oauth2.keyBinding`, on by default. Every place that advertises,
+  // refuses for, binds to or checks `bound_key` asks this.
+  /**
+   * Whether OpenID Connect Key Binding is performed (`oauth2.keyBinding`).
+   *
+   * @returns true unless the setting is off
+   */
+  keyBindingOn(): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering OAuth2Server.keyBindingOn().");
+    const on = config.value('oauth2.keyBinding') !== false;
+    log.debug("Leaving OAuth2Server.keyBindingOn(). " + on);
+    return on;
+  }
+
   // The names one member of a parsed claims request asks for, in the order the
   // client wrote them. A helper rather than an inline Object.keys() because
   // three call sites need it and one of them is the console.
@@ -6149,7 +6207,8 @@ class OAuth2Server {
   boundKeyProofRefusal(scope: Json, code: string, proof: Json): Json {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.boundKeyProofRefusal().");
-    if (String(scope || '').split(/\s+/).indexOf('bound_key') < 0) {
+    if (!this.keyBindingOn() ||
+        String(scope || '').split(/\s+/).indexOf('bound_key') < 0) {
       log.debug("Leaving OAuth2Server.boundKeyProofRefusal(). Not bound.");
       return null;
     }
@@ -8512,8 +8571,36 @@ class OAuth2Server {
     // connect to this request. The same plan mints the implicit and hybrid
     // token below, and tokenSet() asks it again when the code is redeemed. In
     // every mode — see `jwt_access_token.ts`'s header.
-    const audiencePlan = self.accessTokenPlan(base, scope, query.client_id,
-                                         resources, authorizationDetails);
+    //
+    // **SEVERAL RESOURCES ON A CODE, AND THE TOKEN REQUEST PICKS ONE (#607,
+    // 2026-10-13).** RFC 8707 section 2 lets an authorization request name
+    // more than one resource, and section 2.2 lets each Token Request name
+    // the one its access token is for; RFC 9068 section 3's "MUST NOT
+    // issue" is about the token, not the grant. So where this endpoint
+    // mints no access token itself (no `token` in the response type) and
+    // the request names several resources, it is refused only when NO one of
+    // them could be issued a token unambiguously — the user portal's two,
+    // `/account-api` and `/admin-api`, are each fine alone and ambiguous
+    // together. The code's exchange, and every refresh, is planned against
+    // the resource it names, by `tokenSet()`, which still refuses a request
+    // naming none or several. Implicit and hybrid mint here, so they keep
+    // the whole request's plan.
+    let audiencePlan = self.accessTokenPlan(base, scope, query.client_id,
+                                            resources, authorizationDetails);
+    if (audiencePlan.refusal && types.indexOf('token') < 0 &&
+        resources.length > 1) {
+      const one = resources.map(function (resource: string) {
+        return self.accessTokenPlan(base, scope, query.client_id, [resource],
+                                    authorizationDetails);
+      }).filter(function (plan: Json) {
+        return !plan.refusal;
+      })[0];
+      if (one) {
+        log.debug("OAuth2Server.issueAuthorizationResponse(): several " +
+                  "resources, each issuable alone; the token request picks.");
+        audiencePlan = one;
+      }
+    }
     if (audiencePlan.refusal) {
       log.debug("Leaving OAuth2Server.issueAuthorizationResponse(). RFC 9068 " +
                 "refused the audience.");
@@ -8869,7 +8956,9 @@ class OAuth2Server {
       // Stamped with the minting cell (#98 D10): the client redeems it at
       // the cell nearest ITS server, which relays the token request here.
       const code = cellLocator.stamp(randomId(24));
-      authzCodes.set(code, {
+      // Under its digest (#614): the code goes to the client and nowhere
+      // else.
+      authzCodes.set(stsCrypto.credentialDigest(code), {
         client_id: String(query.client_id), redirect_uri: redirectUri,
         // A merged grant's whole scope (#142), the request's otherwise.
         scope: plan ? plan.scope : scope,
@@ -10251,6 +10340,21 @@ class OAuth2Server {
     // ID Token bound to the client's DPoP key, which the authorization
     // request must name up front (`dpop_jkt`), and which only the code flow
     // can carry — a front-channel ID Token has no proof to bind to.
+    //
+    // WITH `oauth2.keyBinding` OFF (#315) THE SCOPE IS IGNORED, NOT REFUSED.
+    // It was advertised and refused, so an OpenID Connect Core relying party
+    // that asks for every advertised scope (the idptools.com debugger, on
+    // testidp) could not sign in at all. Off, it is neither advertised nor
+    // granted: it is dropped from the request here, before anything is
+    // issued from `q`, as Core treats a scope the OP does not act on.
+    if (!self.keyBindingOn() &&
+        String(q.scope || '').split(/\s+/).indexOf('bound_key') >= 0) {
+      q.scope = String(q.scope).split(/\s+/).filter(function (one) {
+        return one && one !== 'bound_key';
+      }).join(' ');
+      log.debug("OAuth2Server.vetAuthorizationRequest(): bound_key ignored, " +
+                "oauth2.keyBinding is off.");
+    }
     if (String(q.scope || '').split(/\s+/).indexOf('bound_key') >= 0) {
       if (!q.dpop_jkt) {
         log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). bound_key " +
@@ -11872,6 +11976,9 @@ class OAuth2Server {
     const wanted = String(key || '');
     const at = Date.now();
     const out: Json[] = [];
+    // The key is the code's DIGEST (#614), and it is what `code` below
+    // carries: the logout model shows a handle of it and hands it back to
+    // `dropCode()`, so nothing here needs, or has, the code.
     authzCodes.forEach(function (record, code) {
       const username = (record.user && record.user.username) || '';
       if (stats.identityKeyOf(username) !== wanted) return;
@@ -11903,7 +12010,8 @@ class OAuth2Server {
   /**
    * Ends one authorization code in both stores.
    *
-   * @param code - the code
+   * @param code - the code's digest, as `outstandingCodesFor()` lists it
+   *   (#614)
    * @returns true when there was anything to end
    */
   dropCode(code: Json): Json {
@@ -12445,7 +12553,10 @@ class OAuth2Server {
     const parts = {
       client_id: String((client && client.client_id) || ''),
       redirect_uri: String(body.redirect_uri || ''),
-      code_verifier: String(body.code_verifier || ''),
+      // Only ever compared, so kept as its digest (#614): with the code
+      // it would be what redeems one.
+      code_verifier: body.code_verifier
+        ? stsCrypto.credentialDigest(String(body.code_verifier)) : '',
       dpop_jkt: String(dpopJkt || '')
     };
     log.debug("Leaving OAuth2Server.redemptionFingerprint(). client_id=" +
@@ -12472,7 +12583,10 @@ class OAuth2Server {
     return '';
   }
 
-  private rememberRedemption(code: Json, record: Json, fingerprint: Json,
+  // `key` is the code's digest (#614). What is kept of the token set is
+  // its jtis, and the whole response only where an identical repeat is to
+  // be answered with it — see where `redeemedCodes` is declared.
+  private rememberRedemption(key: string, record: Json, fingerprint: Json,
                              issued: Json): Json {
     const { log } = this.deps;
     const self = this;
@@ -12481,19 +12595,20 @@ class OAuth2Server {
     // Presented again while this redemption was being answered (#424): what
     // it issues is revoked as it is recorded — two holders, and this server
     // cannot tell which is the client (RFC 6749 section 10.5).
-    const prior = redeemedCodes.get(code);
+    const prior = redeemedCodes.get(key);
     const presentedAgain = !!(prior && prior.presentedAgainAt);
     // The bound (oauth2.redeemedCodeCacheSize). What this remembers is a
     // courtesy — the same request answered with the same tokens — and not the
     // refusal, which the code's own removal at redemption already makes, so
     // at the bound the OLDEST goes rather than the redemption being refused.
-    if (!redeemedCodes.has(code)) {
+    if (!redeemedCodes.has(key)) {
       cacheRegistry.makeRoom(redeemedCodes,
                              Number(self.deps.config.value(
                                'oauth2.redeemedCodeCacheSize')),
                              { counter: redeemedCodesCount });
     }
-    redeemedCodes.set(code, {
+    const jtis = self.issuedJtis(issued).filter(Boolean);
+    redeemedCodes.set(key, {
       when: Date.now(),
       // The code's OWN expiry, not a fresh one: the replay window is the rest
       // of the life the code already had, so this relaxation cannot outlive the
@@ -12503,10 +12618,13 @@ class OAuth2Server {
       ttlMs: record.ttlMs || AUTH_CODE_TTL_MS,
       client_id: fingerprint.client_id,
       fingerprint: fingerprint,
-      response: issued
+      jtis: jtis,
+      // Only under `oauth2.codeReplayIdempotent` (#614): nothing else reads
+      // the tokens again, and the replay refusal revokes by jti.
+      ...(self.deps.bcp.codeRedemptionRelaxed() ? { response: issued } : {})
     });
     if (presentedAgain) {
-      self.issuedJtis(issued).forEach(function (jti) {
+      jtis.forEach(function (jti) {
         self.deps.stats.revoke(jti, 'RFC 9700 section 4.5: an authorization ' +
                                'code was presented twice',
                                { initiatingEntity: 'policy',
@@ -12577,7 +12695,9 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.spendPresentedCode(). Nothing spent.");
       return null;
     }
-    const record = authzCodes.get(code) || null;
+    // Hashed as it is presented (#614): both stores are keyed by the digest.
+    const key = stsCrypto.credentialDigest(code);
+    const record = authzCodes.get(key) || null;
     if (!record) {
       log.debug("Leaving OAuth2Server.spendPresentedCode(). No live code.");
       return { code: code, record: null, claim: null };
@@ -12586,18 +12706,18 @@ class OAuth2Server {
     // tick, before the claim is awaited: a second request arriving while the
     // claim is asked must find it, or it would see neither the code nor the
     // presentation, and what the first goes on to issue would not be revoked.
-    authzCodes.delete(code);
-    if (!redeemedCodes.has(code)) {
+    authzCodes.delete(key);
+    if (!redeemedCodes.has(key)) {
       self.forgetStaleRedemptions();
       cacheRegistry.makeRoom(redeemedCodes,
                              Number(self.deps.config.value(
                                'oauth2.redeemedCodeCacheSize')),
                              { counter: redeemedCodesCount });
-      redeemedCodes.set(code, {
+      redeemedCodes.set(key, {
         when: Date.now(), expires: record.expires,
         forget: record.expires + (record.ttlMs || AUTH_CODE_TTL_MS),
         ttlMs: record.ttlMs || AUTH_CODE_TTL_MS,
-        client_id: record.client_id || '', fingerprint: null, response: null
+        client_id: record.client_id || '', fingerprint: null, jtis: null
       });
     }
     const claim = await clusterClaims.claim({
@@ -12608,10 +12728,10 @@ class OAuth2Server {
     return { code: code, record: record, claim: claim };
   }
 
-  // The jtis of a token set this service issued, to revoke it: `jwt.decode`
-  // rather than `jwt.verify`, because these are this service's own tokens read
-  // back out of its own store and the signature was made two lines after
-  // they were minted.
+  // The jtis of a token set this service issued, to revoke it later: read
+  // once, as the set is recorded (#614), with `jwt.decode` rather than
+  // `jwt.verify`, because these are this service's own tokens and the
+  // signature was made two lines before.
   private issuedJtis(response: Json): string[] {
     const { log, jwt, errorCodes, refreshTokenCrypto } = this.deps;
     log.debug("Entering OAuth2Server.issuedJtis().");
@@ -12647,7 +12767,9 @@ class OAuth2Server {
   // case the same request gets the same tokens back and a different one is
   // refused with the difference named — or this server never issued it, which
   // is its own sentence and not "already used".
-  private replayOrRefuseRedemption(res: Res, code: Json, fingerprint: Json,
+  // `code` is the code's digest (#614), which is what both stores are keyed
+  // by; the code itself is not needed past its presentation.
+  private replayOrRefuseRedemption(res: Res, code: string, fingerprint: Json,
                                    respond: Json): Json {
     const { jwt, log, STS, mode, stats, bcp, errorCodes,
             refreshTokenCrypto } = this.deps;
@@ -12678,7 +12800,7 @@ class OAuth2Server {
     // PRESENTED, AND NOTHING ISSUED FOR IT (#424): the first presentation was
     // refused — or is still being answered. A code is presented once, so this
     // one is refused too, and the flow starts over.
-    if (!done.response) {
+    if (!done.jtis) {
       // A SECOND PRESENTATION WHILE THE FIRST IS STILL BEING ANSWERED: noted
       // on the record, so that a first presentation which goes on to redeem
       // the code revokes what it issued (RFC 6749 section 10.5), as a replay
@@ -12739,16 +12861,25 @@ class OAuth2Server {
     // are both worth their own sentence, and both are already refusals in
     // either mode. This is the one case the setting changes.
     //
-    // The jtis come off the token set that was issued: `jwt.decode` rather than
-    // `jwt.verify`, because these are this service's own tokens read back out
-    // of its own store and the signature was made two lines after they were
-    // minted.
+    // The jtis were read off the token set when it was issued and are all
+    // the record keeps of it (#614).
     const replay = bcp.checkCodeReplay({
       clientId: done.client_id, secondsAgo: ago,
-      issuedJtis: self.issuedJtis(done.response)
+      issuedJtis: done.jtis
     });
-    if (!replay.ok) {
-      (replay.revoke || []).forEach(function (jti) {
+    // RELAXED, AND NOTHING TO REPLAY (#614): the code was redeemed while
+    // `oauth2.codeReplayIdempotent` was not in force, so only its jtis were
+    // kept. A response cannot be rebuilt from them and a new one would not
+    // be a replay, so the repeat is refused as it would have been then.
+    const nothingToReplay = replay.ok && !done.response;
+    if (nothingToReplay) {
+      log.warn('oauth2: an authorization code redeemed while ' +
+               'oauth2.codeReplayIdempotent was off was presented again ' +
+               'after it was turned on; there is no response to replay, so ' +
+               'the repeat is refused and what the code bought revoked.');
+    }
+    if (!replay.ok || nothingToReplay) {
+      (replay.ok ? done.jtis : (replay.revoke || [])).forEach(function (jti) {
         // A POLICY's act and a security event (#239): the grant is reported
         // ended by `policy`, with the risk it was replayed under.
         stats.revoke(jti, 'RFC 9700 section 4.5: an authorization code was ' +
@@ -12756,6 +12887,19 @@ class OAuth2Server {
                      { initiatingEntity: 'policy',
                        replay: 'authorization-code-replay' });
       });
+      if (nothingToReplay) {
+        log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). No " +
+                  "response was kept to replay.");
+        errorCodes.mark(res, 'STS-OAUTH-0958');
+        return self.oauthError(res, 400, 'invalid_grant',
+          'This authorization code was redeemed ' + ago + ' second(s) ago ' +
+          'by client "' + (done.client_id || '(none)') + '", before ' +
+          'identical repeats were answered with the same tokens, so no ' +
+          'token response was kept to answer this one with. An ' +
+          'authorization code is single use (RFC 6749 section 4.1.2), and ' +
+          'the tokens it bought have been revoked (section 10.5). Start a ' +
+          'new authorization request.');
+      }
       log.debug("Leaving OAuth2Server.replayOrRefuseRedemption(). RFC 9700 " +
                 "mode refused the " +
                 "replay.");
@@ -12791,7 +12935,8 @@ class OAuth2Server {
 
   // The winner's redemption record, once it can be seen from here, or null when
   // the bound runs out first.
-  private async awaitRedemptionRecord(code: Json): Promise<Json> {
+  // `code` is the code's digest (#614).
+  private async awaitRedemptionRecord(code: string): Promise<Json> {
     const { log, clusterBarrier } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.awaitRedemptionRecord().");
@@ -12814,7 +12959,8 @@ class OAuth2Server {
   }
 
   // The code's claim was refused. `store` fails closed; `used` is a replay.
-  private async refuseConcurrentRedemption(res: Res, code: Json,
+  // `code` is the code's digest (#614), the key of `redeemedCodes`.
+  private async refuseConcurrentRedemption(res: Res, code: string,
                                            fingerprint: Json, respond: Json,
                                            answer: Json): Promise<Json> {
     const { log, STS, errorCodes } = this.deps;
@@ -14441,17 +14587,20 @@ class OAuth2Server {
 
     if (grant === 'authorization_code') {
       const code = String(body.code || '');
+      // What both stores are keyed by (#614); `code` itself goes no further
+      // than the cluster claim, which hashes it on its own.
+      const codeKey = stsCrypto.credentialDigest(code);
       const fingerprint = self.redemptionFingerprint(client, body, dpopJkt);
       // Already taken out of the live map where the code was spent at its
       // presentation (#424); looked up here only where redemption is relaxed.
-      const record = spentCode && spentCode.code === code ? spentCode.record
-                                                          : authzCodes.get(code);
+      const record = spentCode && spentCode.code === code
+        ? spentCode.record : authzCodes.get(codeKey);
       if (spentCode && spentCode.code === code && spentCode.claim &&
           !spentCode.claim.ok) {
         log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
                   "refused at its presentation.");
-        return self.refuseConcurrentRedemption(res, code, fingerprint, respond,
-                                               spentCode.claim);
+        return self.refuseConcurrentRedemption(res, codeKey, fingerprint,
+                                               respond, spentCode.claim);
       }
       if (!record) {
         // Not necessarily an error: this is also where a second, identical
@@ -14459,10 +14608,11 @@ class OAuth2Server {
         // it got the first time. See `redeemedCodes` above.
         log.debug("Leaving the token endpoint. No live code by that value; " +
                   "what became of it decides the answer.");
-        return self.replayOrRefuseRedemption(res, code, fingerprint, respond);
+        return self.replayOrRefuseRedemption(res, codeKey, fingerprint,
+                                             respond);
       }
       if (record.expires < Date.now()) {
-        authzCodes.delete(code);
+        authzCodes.delete(codeKey);
         log.debug("Leaving the token endpoint. The code had expired.");
         errorCodes.mark(res, 'STS-OAUTH-0199');
         log.debug("Leaving OAuth2Server.tokenGrant().");
@@ -14686,7 +14836,7 @@ class OAuth2Server {
         if (!codeClaim.ok) {
           log.debug("Leaving OAuth2Server.tokenGrant(). The code's claim was " +
                     "refused.");
-          return self.refuseConcurrentRedemption(res, code, fingerprint,
+          return self.refuseConcurrentRedemption(res, codeKey, fingerprint,
                                                  respond, codeClaim);
         }
         // Kept when the response is 2xx; given back otherwise, because under
@@ -14694,7 +14844,7 @@ class OAuth2Server {
         // not been used.
         clusterClaims.releaseUnlessSucceeded(res, codeClaim.handle);
       } else {
-        authzCodes.delete(code);
+        authzCodes.delete(codeKey);
       }
       const issued = await issue({
         jkt: dpopJkt,
@@ -14710,6 +14860,20 @@ class OAuth2Server {
         // Onto the refresh token as well as into the access token's audience,
         // so that a refresh cannot widen what this grant authorized.
         resources: forResources,
+        // AND THE REFRESH TOKEN KEEPS EVERY RESOURCE THE AUTHORIZATION
+        // REQUEST NAMED (#607, rcbj 2026-10-13), as the refresh grant's
+        // `grantResources` always kept them: a Token Request naming one of
+        // them picks the AUDIENCE of the access token it mints, and the
+        // grant behind the refresh token is still the one the person
+        // approved. Until then a code redeemed for one resource left a
+        // refresh token for that one alone, so a client that asked for two
+        // could never be issued a token for the second — the user portal,
+        // which holds a token for `/account-api` and one for `/admin-api`
+        // off one sign-in. It still cannot widen: the refresh grant refuses
+        // a resource the grant does not carry (STS-OAUTH-0217). Only where
+        // the request named resources: a grant whose audience a scope
+        // derived keeps `tokenSet()`'s own reading.
+        ...(granted.length ? { grantResources: granted } : {}),
         user: record.user, client_id: record.client_id, scope: record.scope,
         nonce: record.nonce, auth_time: record.auth_time, amr: record.amr,
         acr: record.acr,
@@ -14752,8 +14916,8 @@ class OAuth2Server {
       // Single use — and remembered as used, with what it bought, so that the
       // same request arriving again gets that answer back instead of a sentence
       // about a code nobody can look up any more.
-      authzCodes.delete(code);
-      self.rememberRedemption(code, record, fingerprint, issued);
+      authzCodes.delete(codeKey);
+      self.rememberRedemption(codeKey, record, fingerprint, issued);
       // The transaction this code_challenge and this nonce belonged to is over,
       // so presenting either of them at the authorization endpoint again is a
       // second transaction reusing a first one's value rather than this one
@@ -17962,8 +18126,24 @@ class OAuth2Server {
     // RFC 9396: details whose type belongs to one API beside a scope or
     // resource naming another are refused here, at the push, rather than when
     // the request_uri is used.
-    const plan = self.accessTokenPlan(base, scope, clientId,
-                                      resources.resources, details.details);
+    let plan = self.accessTokenPlan(base, scope, clientId,
+                                    resources.resources, details.details);
+    // SEVERAL RESOURCES ON A CODE (#607): the authorization endpoint's rule
+    // (`issueAuthorizationResponse()`) — refused only where no one of them
+    // could be issued a token alone, because the token request picks one.
+    const pushedTypes = String(q.response_type || '').split(/\s+/);
+    if (plan.refusal && pushedTypes.indexOf('token') < 0 &&
+        resources.resources.length > 1) {
+      const one = resources.resources.map(function (resource: string) {
+        return self.accessTokenPlan(base, scope, clientId, [resource],
+                                    details.details);
+      }).filter(function (each: Json) {
+        return !each.refusal;
+      })[0];
+      if (one) {
+        plan = one;
+      }
+    }
     if (plan.refusal) {
       log.debug("Leaving OAuth2Server.parRequest(). RFC 9068 refused the " +
                 "audience.");
@@ -19202,7 +19382,8 @@ class OAuth2Server {
       acr: record.approval.acr || undefined, grant: 'ciba',
       // The approving sign-on session, as the poll's issue passes it (#239).
       session_id: record.approval.sessionId || undefined,
-      ciba_auth_req_id: record.id,
+      // Still on the row: it leaves once this push is queued (#614).
+      ciba_auth_req_id: record.authReqId,
       grant_id: plan ? plan.id : undefined,
       grant_gen: plan ? plan.gen : undefined
     };
@@ -20972,6 +21153,7 @@ export = {
   // Key Binding's two checks (#150), for tests/device_key_binding.js.
   boundKeyProofRefusal: slot.forward('boundKeyProofRefusal'),
   sendRedirectInterstitial: slot.forward('sendRedirectInterstitial'),
+  keyBindingOn: slot.forward('keyBindingOn'),
   boundIdTokenRefusal: slot.forward('boundIdTokenRefusal'),
   exchangeTypeProblem: slot.forward('exchangeTypeProblem'),
   requestedClaimNames: slot.forward('requestedClaimNames'),

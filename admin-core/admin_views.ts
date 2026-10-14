@@ -1911,6 +1911,8 @@ class AdminViews {
    * @param name - the directory page's name
    * @param req - the request
    * @returns the page's JSON, or a no-directory answer when none is loaded
+   *   — or a PROMISE of the JSON where the page is asked of the store
+   *   asynchronously (`/admin/ldap/directory` in a windowed process, #616)
    */
   directoryPageJson(name, req) {
     const { log } = this.deps;
@@ -1925,6 +1927,12 @@ class AdminViews {
                         'this reader when it is required.' };
     }
     const view = directoryPages[name](req);
+    if (view && typeof view.then === 'function') {
+      log.debug('Leaving AdminViews.directoryPageJson(). Asynchronous.');
+      return view.then(function (done) {
+        return done.json;
+      });
+    }
     log.debug('Leaving AdminViews.directoryPageJson().');
     return view.json;
   }
@@ -2182,6 +2190,8 @@ class AdminViews {
       found: true,
       owners: roles.ownersOf(row),
       maxOwners: roles.MAX_OWNERS,
+      // Closed to its owners, and why (#607).
+      ownership: this.ownershipOf('role', row.name),
       requiredBy: requiredBy,
       holderCount: row.users.length + row.groups.length +
                    row.applications.length,
@@ -3540,6 +3550,37 @@ class AdminViews {
     }
     log.debug("Leaving AdminViews.scimClientsView().");
     return out;
+  }
+
+  /**
+   * `scimJson()` with every cell's state of each outbound SCIM client laid
+   * over its Clients tab (#553 section 7) — what `GET /admin-api/scim`
+   * answers. Never rejects: a failure to ask the other cells leaves this
+   * cell's view as it is.
+   *
+   * @param req - the request
+   * @returns a promise of the JSON
+   */
+  scimJsonAcrossCells(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.scimJsonAcrossCells().");
+    const out = this.scimJson(req);
+    if (!out.scimClients) {
+      log.debug("Leaving AdminViews.scimJsonAcrossCells(). No clients.");
+      return Promise.resolve(out);
+    }
+    log.debug("Leaving AdminViews.scimJsonAcrossCells().");
+    return Promise.resolve().then(function () {
+      return require('../scim/scim_client').acrossCells(
+        out.scimClients, (req && req.query) || {});
+    }).then(function (view) {
+      out.scimClients = view;
+      return out;
+    }, function (e) {
+      log.debug("Caught in AdminViews.scimJsonAcrossCells(): " +
+                ((e && e.message) || e));
+      return out;
+    });
   }
 
   scimJson(req) {
@@ -9363,6 +9404,8 @@ class AdminViews {
       json: Object.assign({ found: true }, info, {
         canWrite: !!groupWriter,
         group: pagedGroup,
+        // Closed to its owners, and why (#607).
+        ownership: this.ownershipOf('group', group.dn),
         membersPaging: this.pagingJson(memberPage.paging),
         claimedPaging: this.pagingJson(claimedPage.paging),
         known: knownHere,
@@ -9763,6 +9806,50 @@ class AdminViews {
     return out;
   }
 
+  // #609: the named passkey policies whose applications list names this
+  // application — by its identifier or a client_id, as a sign-in names it —
+  // in precedence order with the one that applies marked, for the Every
+  // protocol sub-tab's read-only card. Nothing is stored on the entry: the
+  // relation is the policies' `stsPasskeySelectApplication`. A view must
+  // still draw, so a policy that cannot be asked answers none.
+  /**
+   * The named passkey policies that name an application, and which applies.
+   *
+   * @param row - the application's registry row
+   * @returns `passkeyPolicy.forApplication()`'s answer, with `names` (what
+   *   the application was matched by) and `link` (the Policies page's tab)
+   */
+  applicationPasskeyPolicies(row) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.applicationPasskeyPolicies().");
+    const fields = (row && row.fields) || {};
+    const names = [String((row && row.identifier) || '')]
+      .concat([].concat(fields.oauthClientId || []).map(String))
+      .filter(function (one, n, all) {
+        return one !== '' && all.indexOf(one) === n;
+      });
+    let out;
+    try {
+      out = require('../common/passkey_policy').forApplication(names);
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationPasskeyPolicies(): " +
+                ((e && e.message) || e));
+      out = { policies: [], applies: 'default', appliesBy: {},
+              groupPolicies: 0 };
+    }
+    log.debug("Leaving AdminViews.applicationPasskeyPolicies(). " +
+              out.policies.length + " policy(ies).");
+    // Each policy's own place on Directory > Policies, the named profile's
+    // heading on the Passkey policy tab's Named policies sub-tab.
+    const policies = out.policies.map(function (one) {
+      return Object.assign({}, one, {
+        link: '/admin/policies#passkey-profile-' + one.name });
+    });
+    return Object.assign({ names: names,
+                           link: '/admin/policies#passkey' }, out,
+                         { policies: policies });
+  }
+
   applicationPageData(req, row, states) {
     const { log, applications, mode, baseUrlOf } = this.deps;
     const self = this;
@@ -9831,6 +9918,9 @@ class AdminViews {
         // (#459): `applications` or `groups`.
         fieldSearches: applications.FIELD_SEARCHES || {}
       },
+      // #609: the named passkey policies naming this application, read-only
+      // on the Every protocol sub-tab.
+      passkeyPolicies: self.applicationPasskeyPolicies(row),
       cors: listOf('appCorsOrigin').map(function (stored) {
         return { stored: stored,
                  canonical: applications.corsOriginsOf(
@@ -9911,6 +10001,8 @@ class AdminViews {
     // ITS OWNERS (#604), resolved, for the Owners tab.
     (out as any).owners = applications.ownersOf(row);
     (out as any).maxOwners = applications.MAX_OWNERS;
+    // Closed to its owners, and why (#607).
+    (out as any).ownership = self.ownershipOf('application', row.identifier);
     (out.config as any).fieldWarnings = scopeWarnings.length
       ? { wstrustJwtScope: scopeWarnings } : {};
     log.debug("Leaving AdminViews.applicationPageData().");
@@ -11645,9 +11737,12 @@ class AdminViews {
    * second-factor roster.
    *
    * @param req - the request
+   * @param opts - optional; `directoryFirst`, as `peopleRows()` takes it,
+   *   or `population` and `census` asked already (#621,
+   *   `peopleAndCensusAsync()`)
    * @returns the JSON
    */
-  usersListJson(req) {
+  usersListJson(req, opts?) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersListJson().");
     const wantedText = String(req.query.q || '').trim();
@@ -11657,7 +11752,7 @@ class AdminViews {
     // been bulk loaded this is the difference between a page that answers *who
     // holds no second factor* and one that answers it for the first two
     // thousand people it happens to remember.
-    const population = this.peopleRows();
+    const population = (opts && opts.population) || this.peopleRows(opts);
     const all = population.rows;
     const self = this;
     // The second-factor filter, which arrived with the roster on 2026-09-10. It
@@ -11699,8 +11794,15 @@ class AdminViews {
     // the directory, each sealed TOTP secret opened at most once per process.
     // The census gives the same facts `mechanismsFor()` would, folded across
     // spellings by the same `mergeFactors()`, so the numbers do not move.
+    //
+    // **ASKED ALREADY, ASYNCHRONOUSLY, by a caller that could wait (#621)**:
+    // the API's two doors hand in the census `peopleCensusAsync()` built over
+    // this same population, so no store question is asked here for it. Only
+    // the rows' keys are read, and the lines above add flags to the rows,
+    // never keys, so a census of `population.rows` is a census of `all`.
     // -----------------------------------------------------------------------
-    const census = this.peopleCensus(population, all);
+    const census = (opts && opts.population === population && opts.census)
+      || this.peopleCensus(population, all);
     const factorsOf = function (row) {
       return census.get(row.key) || null;
     };
@@ -11789,6 +11891,45 @@ class AdminViews {
       const key = stats.identityKeyOf(session.username || session.sub);
       liveByUser[key] = (liveByUser[key] || 0) + 1;
     });
+    // -----------------------------------------------------------------------
+    // THE TILES, OVER THE WHOLE DIRECTORY (#610, 2026-10-13).
+    //
+    // `factorCounts` and `authenticatedHere` above are over the LIST, which
+    // is capped at `scanLimit` directory people, and the tiles drew them —
+    // so on a bulk-loaded realm every tile described the first five
+    // thousand people. These are the same questions over every person the
+    // realm's directory defines, without listing them
+    // (`credentials.directoryFactorCounts()`, which says how), and:
+    //
+    //   signedInHere       of those people, how many the register has seen
+    //                      authenticate — asked per register NAME, never per
+    //                      person (`directoryPeopleNamed()`). The register
+    //                      keeps the most recent `stats.MAX_USERS`
+    //                      identities, so a sign-in it has forgotten counts
+    //                      as never.
+    //   neverSignedInHere  people less signedInHere.
+    //
+    // Null where the directory offers no tally (no store, a test's stub);
+    // the page then draws the list's counts, as it always did.
+    // -----------------------------------------------------------------------
+    const { credentials } = this.deps;
+    let directoryCounts = null;
+    const tallied = credentials.directoryFactorCounts();
+    if (tallied) {
+      const named = credentials.directoryPeopleNamed(
+        all.filter(function (row) {
+          return row.authenticated;
+        }).map(function (row) {
+          return row.key;
+        }));
+      const signedIn = named === null ? null
+        : Math.min(named, tallied.people);
+      directoryCounts = Object.assign({}, tallied, {
+        signedInHere: signedIn,
+        neverSignedInHere: signedIn === null ? null
+          : tallied.people - signedIn
+      });
+    }
     const pagingJson = this.pagingJson(paging);
     log.debug("Leaving AdminViews.usersListJson().");
     return {
@@ -11814,6 +11955,20 @@ class AdminViews {
           // it the credential columns are absent rather than false.
           store: population.store, scanned: population.scanned,
           capped: population.capped, scanLimit: population.limit,
+          // HOW MANY PEOPLE THE DIRECTORY DEFINES (#610), counted by the
+          // directory — the store's `count(*)` in a windowed process — and
+          // never the length of this list, which is capped at `scanLimit`
+          // of them (`scanned` read, `capped` when there were more) and
+          // united with everybody the register has seen. Null where the
+          // directory offers no count.
+          // The same reading as the tiles' where the directory tallied,
+          // so the first tile and the ones after it are one count.
+          directoryPeople: directoryCounts ? directoryCounts.people
+            : population.directoryPeople,
+          // THE TILES (#610): every person the directory defines, counted
+          // — see above. `factors` and `authenticatedHere` stay the LIST's,
+          // for the `?factor=` filter and for a caller that asked them.
+          directoryCounts: directoryCounts,
           registryCap: population.registryCap,
           filter: { q: wantedText || null, protocol: wantedProtocol || null,
                     factor: wantedFactor || null, kind: wantedKind || null },
@@ -11897,10 +12052,14 @@ class AdminViews {
   // NOT A ONE-LINE CHANGE.
   //
   // Most directory people are ALREADY on `stats.userRows()`: every door that
-  // creates one — the console, `POST /admin-api/users/create`, a SCIM create,
-  // an LDAP add, a restore from the persistence store — calls
-  // `stats.noteKnownIdentity()`, which is what put `knownBy` on a row. So on a
-  // small service the union adds nothing at all.
+  // creates one — the console, `POST /admin-api/users/create`, a SCIM create
+  // — calls `stats.noteKnownIdentity()`, which is what put `knownBy` on a
+  // row. So on a small service that has not restarted the union adds nothing
+  // at all. A RESTORE no longer does (#613), an LDAP add over the socket
+  // never did, and since #618 phase 2 neither does another process's create
+  // applied here (the creator's record arrives through the fan-in): such a
+  // person not seen since is a row of the directory side, `knownBy:
+  // 'directory'`.
   //
   // **THE REGISTRY IS CAPPED AT `stats.MAX_USERS` AND THE DIRECTORY IS NOT.**
   // Two thousand against `ldap.maxEntries`, so a realm with five thousand
@@ -11947,9 +12106,11 @@ class AdminViews {
    * factors are united later, for the rows shown (`decoratePerson()`) and in
    * one pass for the counts (`peopleCensus()`).
    *
+   * @param opts - optional; `directoryFirst`, the directory's first names
+   *   asked already (#616), handed to `secondFactorPopulation()`
    * @returns the rows, the population's reporting, and `spellings`
    */
-  peopleRows() {
+  peopleRows(opts?) {
     const { log, credentials, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.peopleRows().");
@@ -11969,7 +12130,7 @@ class AdminViews {
     const holders = credentials.secondFactorPopulation(
       seen.map(function (row) {
         return row.key;
-      }));
+      }), { directoryFirst: (opts && opts.directoryFirst) || null });
     // Row key -> the population rows (spellings) folded into it, in the order
     // the fold meets them, which is the order `mergeFactors()` used to be
     // applied in — so decorating later unites them exactly as this did.
@@ -12021,6 +12182,7 @@ class AdminViews {
               holders.scanned + " scanned in the directory.");
     return { rows: rows, store: holders.store, scanned: holders.scanned,
              capped: holders.capped, limit: holders.limit,
+             directoryPeople: holders.directoryPeople,
              registryCap: stats.MAX_USERS, spellings: spellings };
   }
 
@@ -12073,9 +12235,43 @@ class AdminViews {
    */
   peopleCensus(population, rows) {
     const { log, credentials } = this.deps;
-    const self = this;
     log.debug("Entering AdminViews.peopleCensus(). " + rows.length +
               " row(s).");
+    const facts = credentials.factorCensus(this.censusNamesOf(population,
+                                                              rows));
+    const out = this.peopleCensusOf(population, rows, facts);
+    log.debug("Leaving AdminViews.peopleCensus().");
+    return out;
+  }
+
+  // `peopleCensus()` WITH THE DIRECTORY ASKED ASYNCHRONOUSLY (#621):
+  // `credentials.factorCensusAsync()`, which in a windowed process reads the
+  // people a page at a time without holding the event loop, united per row
+  // by the same `peopleCensusOf()`.
+  /**
+   * `peopleCensus()`, with the directory asked asynchronously.
+   *
+   * @param population - what `peopleRows()` returned
+   * @param rows - the rows to answer for
+   * @returns a promise of the Map `peopleCensus()` answers
+   */
+  async peopleCensusAsync(population, rows) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.peopleCensusAsync(). " + rows.length +
+              " row(s).");
+    const names = this.censusNamesOf(population, rows);
+    const facts = typeof credentials.factorCensusAsync === 'function'
+      ? await credentials.factorCensusAsync(names)
+      : credentials.factorCensus(names);
+    const out = this.peopleCensusOf(population, rows, facts);
+    log.debug("Leaving AdminViews.peopleCensusAsync().");
+    return out;
+  }
+
+  // Every spelling's name of the rows, in the order the census is asked.
+  censusNamesOf(population, rows) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.censusNamesOf().");
     const spellings = population.spellings || new Map();
     const names = [];
     rows.forEach(function (row) {
@@ -12083,7 +12279,16 @@ class AdminViews {
         names.push(holder.username);
       });
     });
-    const facts = credentials.factorCensus(names);
+    log.debug("Leaving AdminViews.censusNamesOf(). " + names.length + ".");
+    return names;
+  }
+
+  // Each row's facts, united across its spellings with `mergeFactors()`.
+  peopleCensusOf(population, rows, facts) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.peopleCensusOf().");
+    const spellings = population.spellings || new Map();
     const out = new Map();
     rows.forEach(function (row) {
       let merged = null;
@@ -12093,8 +12298,30 @@ class AdminViews {
       });
       out.set(row.key, merged);
     });
-    log.debug("Leaving AdminViews.peopleCensus().");
+    log.debug("Leaving AdminViews.peopleCensusOf().");
     return out;
+  }
+
+  // THE POPULATION AND ITS CENSUS, FOR A CALLER THAT CAN WAIT (#616, #621):
+  // the directory's first names asked asynchronously, the population built
+  // from them (the registry and the names: no store question), and the
+  // census of every row asked asynchronously — so `usersListJson()`, handed
+  // both, asks the store nothing for either.
+  /**
+   * The users list's population and census, the directory asked
+   * asynchronously.
+   *
+   * @returns a promise of `{ population, census }`, as `usersListJson()`
+   *   takes them in its options
+   */
+  async peopleAndCensusAsync() {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.peopleAndCensusAsync().");
+    const first = await this.directoryFirstNames();
+    const population = this.peopleRows({ directoryFirst: first });
+    const census = await this.peopleCensusAsync(population, population.rows);
+    log.debug("Leaving AdminViews.peopleAndCensusAsync().");
+    return { population: population, census: census };
   }
 
   // ---------------------------------------------------------------------------
@@ -12373,6 +12600,39 @@ class AdminViews {
    * @param key - the person
    * @returns the description, or null for an ordinary person
    */
+  // ---------------------------------------------------------------------------
+  // CLOSED TO ITS OWNERS (#607): what the Owners tabs draw beside their
+  // checkbox — whether an administrator's mark is set, and every reason the
+  // object is closed, the mark among them. `common/ownership.ts`'s answer,
+  // the same facts the access-control policy's owner rule reads; reached
+  // lazily, a library.
+  // ---------------------------------------------------------------------------
+  /**
+   * An object's owner-protection facts, for its Owners tab.
+   *
+   * @param kind - `role`, `group`, `service-account` or `application`
+   * @param name - the object
+   * @returns `{ kind, name, marked, protected, reasons }`
+   */
+  ownershipOf(kind, name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.ownershipOf().");
+    let facts: any = null;
+    try {
+      facts = require('../common/ownership').objectOf(kind, name);
+    } catch (e) {
+      // Unreadable: drawn as closed, as the owner rule reads it.
+      log.debug("Caught in AdminViews.ownershipOf(): " +
+                ((e && e.message) || e));
+      facts = null;
+    }
+    log.debug("Leaving AdminViews.ownershipOf().");
+    return { kind: String(kind), name: String(name),
+             marked: !!(facts && facts.marked),
+             protected: facts ? !!facts.protected : true,
+             reasons: facts ? facts.reasons.slice(0) : [] };
+  }
+
   serviceAccountJson(key) {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
     log.debug("Entering AdminViews.serviceAccountJson().");
@@ -12393,6 +12653,8 @@ class AdminViews {
       // EVERY OWNER (#600), each `{ dn, kind, name }`; `kind` '' for a value
       // that no longer names a person or a group.
       owners: facts.owners,
+      // Closed to its owners, and why (#607).
+      ownership: this.ownershipOf('service-account', facts.username),
       destination: facts.destination || null,
       secretName: facts.secretName || null,
       rotatedAt: facts.rotatedAt || null,
@@ -12808,6 +13070,63 @@ class AdminViews {
     }
   }
 
+  // THE DIRECTORY'S FIRST NAMES, ASKED ASYNCHRONOUSLY (#616), for the two
+  // views drawn from the users list: `credentials.directoryFirstNames()`,
+  // or null where no credential store offers it (the view then asks the
+  // synchronous question).
+  /**
+   * The directory's first names for the users list, asked asynchronously.
+   *
+   * @returns a promise of `{ names, more }`, or of null
+   */
+  async directoryFirstNames() {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.directoryFirstNames().");
+    const first = credentials &&
+      typeof credentials.directoryFirstNames === 'function'
+      ? await credentials.directoryFirstNames() : null;
+    log.debug("Leaving AdminViews.directoryFirstNames().");
+    return first;
+  }
+
+  /**
+   * `mfaRosterJson()`, with the directory's first names asked
+   * asynchronously.
+   *
+   * @param req - the request
+   * @returns a promise of the JSON
+   */
+  async mfaRosterJsonAsync(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.mfaRosterJsonAsync().");
+    // The population AND its census (#621): the census was 5,000
+    // synchronous store questions here in a windowed process.
+    const asked = await this.peopleAndCensusAsync();
+    log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
+    return this.mfaRosterJson(req, asked);
+  }
+
+  // `usersJson()` FOR A CALLER THAT CAN WAIT (#616): the list's directory
+  // names are asked of the directory first, asynchronously — in a windowed
+  // process the store, on the driver's read pool — and the synchronous view
+  // is built from them. One person (`?user=`) needs no list.
+  /**
+   * `usersJson()`, with the directory's first names asked asynchronously.
+   *
+   * @param req - the request
+   * @param risk - the person's risk standing, for the drill-down
+   * @returns a promise of the JSON
+   */
+  async usersJsonAsync(req, risk?: any) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.usersJsonAsync().");
+    const wanted = String((req.query || {}).user || '').trim();
+    // The population AND its census (#621), asked asynchronously.
+    const asked = wanted ? null : await this.peopleAndCensusAsync();
+    log.debug("Leaving AdminViews.usersJsonAsync().");
+    return this.usersJson(req, risk, asked);
+  }
+
   /**
    * Builds `/admin/users`'s JSON: the list, or one person.
    *
@@ -12815,13 +13134,13 @@ class AdminViews {
    * @param risk - the person's risk standing, for the drill-down
    * @returns the JSON
    */
-  usersJson(req, risk?: any) {
+  usersJson(req, risk?: any, opts?: any) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.usersJson().");
     const wanted = String((req.query || {}).user || '').trim();
     if (!wanted) {
       log.debug("Leaving AdminViews.usersJson().");
-      return this.usersListJson(req).json;
+      return this.usersListJson(req, opts).json;
     }
     const detail = this.userDetailJson(req, wanted, risk);
     if (!detail) {
@@ -13277,12 +13596,13 @@ class AdminViews {
    * Builds the second-factor roster, in the shape `/admin/mfa` always had.
    *
    * @param req - the request
+   * @param opts - optional; `directoryFirst`, as `peopleRows()` takes it
    * @returns the JSON
    */
-  mfaRosterJson(req) {
+  mfaRosterJson(req, opts?) {
     const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJson().");
-    const list = this.usersListJson(req);
+    const list = this.usersListJson(req, opts);
     const people = (list.json.users || []).map(function (row) {
       const f = row.factors || {};
       return {
@@ -13329,6 +13649,8 @@ class AdminViews {
       counts: Object.assign({ people: list.json.known }, list.json.factors),
       store: list.json.store, scanned: list.json.scanned,
       capped: list.json.capped, scanLimit: list.json.scanLimit,
+      directoryPeople: list.json.directoryPeople,
+      directoryCounts: list.json.directoryCounts,
       filter: list.json.filter,
       page: list.json.page, pages: list.json.pages, perPage: list.json.perPage,
       firstRow: list.json.firstRow, lastRow: list.json.lastRow,
@@ -13556,6 +13878,9 @@ export = {
   peopleRows: slot.forward('peopleRows'),
   mergeFactors: slot.forward('mergeFactors'),
   usersListJson: slot.forward('usersListJson'),
+  usersJsonAsync: slot.forward('usersJsonAsync'),
+  mfaRosterJsonAsync: slot.forward('mfaRosterJsonAsync'),
+  peopleAndCensusAsync: slot.forward('peopleAndCensusAsync'),
   federationRow: slot.forward('federationRow'),
   federationDetailJson: slot.forward('federationDetailJson'),
   federationJson: slot.forward('federationJson'),
@@ -13741,6 +14066,7 @@ export = {
   samlAssertionSeconds: slot.forward('samlAssertionSeconds'),
   samlAssertionsJson: slot.forward('samlAssertionsJson'),
   scimJson: slot.forward('scimJson'),
+  scimJsonAcrossCells: slot.forward('scimJsonAcrossCells'),
   scimMappingRow: slot.forward('scimMappingRow'),
   scimMonitorJson: slot.forward('scimMonitorJson')
 };

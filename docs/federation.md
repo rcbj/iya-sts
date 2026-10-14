@@ -694,7 +694,8 @@ relationship refuses until it is filled.
   of them over HTTP, and `federation/CLAUDE.md` lists the ones still open.
 * **The outbound HTTP-POST binding is a real form with a real button.** A
   person leaving this service for a foreign identity provider is the moment a
-  deliberate click is worth having, so federation adds no script to any page.
+  deliberate click is worth having, so that page has a button rather than a
+  script that submits it.
 * **Federated identities share the local namespace unless told otherwise.**
   `federation.usernamePrefix` is empty so a development service pointed at a partner returns
   familiar names; set it when the question is whether the two namespaces

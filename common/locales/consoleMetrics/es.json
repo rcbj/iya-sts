@@ -4,6 +4,7 @@
   "state.active": "activa",
   "tile.calls": "llamadas a endpoints",
   "tile.routes": "rutas llamadas",
+  "tile.healthProbes": "sondeos de estado correctos, no contados como llamadas",
   "tile.tokensIssued": "tokens emitidos",
   "tile.tokensRevoked": "tokens revocados",
   "tile.artifacts": "aserciones, tickets, credenciales",

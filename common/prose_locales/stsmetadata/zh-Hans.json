@@ -380,8 +380,8 @@
     "text": "full（#150，2026-09-26），在 oauth2.deviceAuthorization 开启时（默认关闭）：设备授权端点，客户端身份验证与令牌端点相同，需已注册的授权类型并遵循范围策略，从二十个字母的字母表中生成八个字母的用户代码，以及 verification_uri_complete；验证 URI 是此人的 /portal/device，在那里输入代码只会显示请求——客户端和范围——批准是第二个动作（第 5.4 节），输错五次代码会使会话在十分钟内被拒绝（第 5.1 节）；device_code 授权，带第 3.5 节的每个错误，slow_down 每次将间隔增加五秒，每次批准一个令牌响应，在集群中只认领一次，代码由 oauth2.device-code-sweep 作业清理；第 4 节的元数据。设备请求上的 DPoP 证明会将设备代码绑定到其密钥。"
   },
   "stsmetadata.specs.oidc-key-binding.coverage": {
-    "en": "01ba22045f843762",
-    "text": "full（#150，2026-09-26），在每种模式下：bound_key 范围，仅在 response_type=code 和 dpop_jkt 时认可；令牌端点上的 DPoP 证明，其 c_s256 是授权码或设备代码的哈希；带 cnf.jwk 且 JOSE 标头 typ 为 dpop+id_token 的 ID 令牌；无论 RFC 9449 是否绑定了刷新令牌，刷新都受限于同一密钥；以及第 7 节——在令牌交换时（包括 Native SSO）出示的绑定 ID 令牌，只有带上来自其密钥的证明才被接受。接受 ML-DSA-44、-65 和 -87 密钥，与任何 DPoP 证明相同。id_token_hint 是提示而不是凭据，不受该密钥约束。"
+    "en": "07b7a5b60cf9a369",
+    "text": "full（#150，2026-09-26），在每种模式下，只要 oauth2.keyBinding 处于开启状态（默认开启；关闭时，#315，该范围既不公布也不授予，请求该范围也不会被拒绝）：bound_key 范围，仅在 response_type=code 和 dpop_jkt 时认可；令牌端点上的 DPoP 证明，其 c_s256 是授权码或设备代码的哈希；带 cnf.jwk 且 JOSE 标头 typ 为 dpop+id_token 的 ID 令牌；无论 RFC 9449 是否绑定了刷新令牌，刷新都受限于同一密钥；以及第 7 节——在令牌交换时（包括 Native SSO）出示的绑定 ID 令牌，只有带上来自其密钥的证明才被接受。接受 ML-DSA-44、-65 和 -87 密钥，与任何 DPoP 证明相同。id_token_hint 是提示而不是凭据，不受该密钥约束。"
   },
   "stsmetadata.specs.oidc-native-sso.coverage": {
     "en": "2455f5c160afb595",
@@ -848,8 +848,8 @@
     "text": "DER，`application/pkix-cert`。这是该颁发机构签名的每张证书的 Authority Information Access 扩展中的 `caIssuers` 地址，它能让收到不完整证书链的客户端补全证书链。接受并忽略 `.cer` 后缀。这是本服务唯一一处发布证书时使用缓存头部而不是 `no-store` 的地方：CA 证书在设计上是持久的——发生变化的颁发机构将是一个具有不同名称的不同颁发机构——而 `caIssuers` 获取本来就只应发生一次。在任何范围内都无法通过它获取私钥。"
   },
   "stsmetadata.endpoints./pki/chain/:scope/:certificate.what": {
-    "en": "7e1cc8b6d4142b39",
-    "text": "RFC 7515 第 4.1.5 节：签署 JWS 的密钥的 X.509 证书链，PEM 格式，叶证书在前，服务根证书在后，以 `application/pem-certificate-chain` 提供。本服务用已认证密钥签名的每个 JWT——访问令牌、ID 令牌、刷新令牌内部的 JWS、已签名的 UserInfo、两种 signed_metadata 文档、OpenID4VCI 凭证、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 和 GNAP JWT 访问令牌——都可以携带指向此处的 `x5u`，由其协议页面上各自的设置决定（默认 `x5u`，或内联的 `x5c`、`both` 或 `none`），这样只持有令牌的依赖方就能找到证书链中指明的每个 CRL 分发点、OCSP 响应方和 caIssuers 地址。{scope} 为 `default` 或领域 id，位于路径中的理由与 CRL 相同；{certificate} 是叶证书的十六进制 SHA-256，可带 `.pem` 后缀，与登记册比对而不是解析。以证书而非密钥命名，因此一个 URL 永远只指向一张证书：令牌签名之后已轮换的密钥返回 404，而不是另一个密钥的证书链。与发布本服务密钥材料的每个文档一样为 `no-store`。不设关卡，因为它返回的内容已由令牌指明。"
+    "en": "a2406b55a956eeb5",
+    "text": "RFC 7515 第 4.1.5 节：签署 JWS 的密钥的 X.509 证书链，PEM 格式，叶证书在前，服务根证书在后，以 `application/pem-certificate-chain` 提供。本服务用已认证密钥签名的每个 JWT——访问令牌、ID 令牌、刷新令牌内部的 JWS、已签名的 UserInfo、两种 signed_metadata 文档、OpenID4VCI 凭证、OpenID4VP Request Object、Security Event Token、WS-Trust JWT 和 GNAP JWT 访问令牌——都可以携带指向此处的 `x5u`，由其协议页面上各自的设置决定（默认 `x5u`，或内联的 `x5c`、`both` 或 `none`），这样只持有令牌的依赖方就能找到证书链中指明的每个 CRL 分发点、OCSP 响应方和 caIssuers 地址。{scope} 为 `default` 或领域 id，位于路径中的理由与 CRL 相同；{certificate} 是叶证书的十六进制 SHA-256，可带 `.pem` 后缀，与登记册比对而不是解析。以证书而非密钥命名，因此一个 URL 永远只指向一张证书，绝不会是另一个密钥的证书链。槽位不再持有的证书——在同一密钥上重新签发，或其密钥已轮换——仍会连同签发时的证书链一起提供，直至过期（#318；每个槽位最新的八张）；此后返回 404。与发布本服务密钥材料的每个文档一样为 `no-store`。不设关卡，因为它返回的内容已由令牌指明。"
   },
   "stsmetadata.endpoints./crypto/metadata.what": {
     "en": "13e4dff652360fb0",
@@ -1407,6 +1407,10 @@
     "en": "8ad5e9e21c752f8d",
     "text": "非规范（#329）。/admin/node-health 绘制的所有内容，以 JSON 形式提供：来自容器 cgroup 的 CPU 利用率和内存、本节点每个进程的 Node.js 内存及其总和、ECS 任务元数据端点（如果有）的数据，以及明确标注的主机自身数据；在集群中按名称列出每个节点及总数，?node= 获取单个节点（#332）。对应 GET /admin/node-health。"
   },
+  "stsmetadata.endpoints./admin-api/node-health/:action.what": {
+    "en": "62b2176bf51425d1",
+    "text": "非规范（#611）。collect-garbage，参数为 { target? }：在本节点的前端进程（front）、其某个工作线程（其 threadId）或全部（all，默认）中执行一次完整的 V8 垃圾回收，返回每个 isolate 回收前后的堆及其暂停时间。完整回收会停止其所在的线程。即页面上的“回收”按钮。对应 POST /admin/node-health。"
+  },
   "stsmetadata.endpoints./admin-api/encryption.what": {
     "en": "324a164de72ee943",
     "text": "非规范。/admin/encryption 绘制的所有内容，以 JSON 形式提供：模式、密钥加密密钥（是否存在、持久还是临时，以及从五个提供方中的哪一个读取）、从 common/crypto.js 自身参数表中读出的算法、存储、六个被密封的数据类别和三个刻意不密封的类别（各附原因），以及操作计数。两个密钥标志是不同的问题，并且两者都会回答：开发模式拥有密钥加密密钥——一个每次运行生成的临时密钥，以便请求工作线程池能够共享生成的行——但不持久化任何内容，因此只读取 `present` 的客户端会把一个密钥随进程消亡的服务报告为 “已加密”。`unclassified` 指明计数器产生的、表中没有对应行的任何标签，会被报告而不是丢弃，这样新增但没有对应行的调用点会显现出来，而不是悄悄地对不上账。回复中没有密文也没有明文，任何地方都没有操作会应请求打开密封值。对应 GET /admin/encryption。"
@@ -1558,6 +1562,14 @@
   "stsmetadata.endpoints./admin-api/service-accounts.what": {
     "en": "764048d53b74b4a3",
     "text": "非规范（#221）。以 JSON 形式提供的 GET /admin/service-accounts：每个服务账户（携带 stsServiceAccount 的人员条目）及其推送目标、其密码上次轮换的时间和下次到期时间，以及连续失败的轮换次数；本领域的轮换设置和总数。不包含任何秘密值。"
+  },
+  "stsmetadata.endpoints./admin-api/ownership.what": {
+    "en": "aa1836b0ebf1b52c",
+    "text": "非规范（#607）。一个角色、组、服务账号或应用：其所有者、是否对他们关闭——即他们不能使用 owner:read 和 owner:write 读取或更改它——以及原因，管理员的标记也在其中。access-control 策略的所有者规则据以决定的事实。"
+  },
+  "stsmetadata.endpoints./admin-api/ownership/:action.what": {
+    "en": "1174a16b434c87e6",
+    "text": "非规范（#607）。set-protected：管理员的标记，即对象自身条目上的 stsOwnerProtected——控制台每个“所有者”选项卡上的“对所有者关闭”复选框。"
   },
   "stsmetadata.endpoints./admin-api/devices/monitor.what": {
     "en": "6e620f81ddb227b5",

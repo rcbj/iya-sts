@@ -487,15 +487,21 @@ walk could not drive. Every operation this API documents now answers JSON and
 every one of them is driven; the table is kept, empty, because the next
 operation that cannot be driven needs somewhere to say why.
 
-The section below is the argument for the script itself, which is unchanged by
-the move and is why the page is still the only scripted one in either surface.
+The section below is the argument for the script itself, which was unchanged by
+the move and made the page the only scripted one in either surface — until #446
+(2026-10-05) made the whole console a static application under `script-src
+'self'`, and #568 (2026-10-12) the portal; the console's runtime now loads the
+explorer's script when that page is drawn (the root `CLAUDE.md`, *Pages with a
+script*).
 
 ## The explorer's script relaxes `script-src 'none'`, as each scripted page does
 
 `app.js` sets `script-src 'none'` for the whole service, and the reason is in its
 own comment: it is what makes the family of reflected-content problems moot rather
-than merely unlikely. The API explorer needs a script, so it is one of the seven
-pages the root `CLAUDE.md` lists that relax that header — on two routes, in
+than merely unlikely. The API explorer needs a script, so it was one of the seven
+pages the root `CLAUDE.md` then listed that relax that header (since #446 it is
+a page of the static console, whose shell carries the relaxation) — on two
+routes, in
 exactly two clauses (`script-src 'self'`
 and an added `connect-src 'self'`), with `default-src 'none'` and everything else
 untouched.
@@ -544,6 +550,8 @@ the action needs — so what this surface demands is stated where every other
 access decision in this service is stated, and `admin_api.ts` decides the
 QUESTION rather than the outcome.
 
+### Who may be issued those scopes (#302 and #303, 2026-09-27) — rule 3bq
+
 **WHO MAY BE ISSUED THOSE SCOPES IS ASKED AT ISSUANCE AND ON EVERY CALL,
 SINCE 2026-09-27 (#302 and #303, parts A and B of #88).** Until then the only
 question was the CLIENT's — does it declare them (#110) — so a client
@@ -572,6 +580,8 @@ holds NOW in the realm that issued the token, less any whose permission the
 token does not carry. A role revoked after a token was minted stops working at
 once (403, `STS-API-0125`), and an `admin:read` token is not Admin Write
 because its subject also holds that. The XACML document is unchanged.
+
+### The audience, and why the credential is not the console's
 
 **THE AUDIENCE DEFAULTS TO THIS API'S BASE URL SINCE 2026-09-13, AND THE GATE
 ACCEPTS TWO AT THAT DEFAULT.** `adminApi.audience` was `''`, meaning
@@ -1443,6 +1453,33 @@ the rest; `tests/tls_connection_page.js` and
 (#597): the open `POST /tls/trust` and `/tls/trust/clear` were deleted, and
 `tests/tools/pep-credential.js` has no fallback.
 
+## `POST /admin-api/node-health/collect-garbage` — NODE HEALTH'S ONE CONTROL (#611, 2026-10-13)
+
+Rule 7's twin of Monitoring → Node Health's Collect buttons, which post to
+it (`mirrors: 'POST /admin/node-health'`): a full V8 garbage collection in
+the answering node's front process (`target: 'front'`), one of its worker
+threads (a `threadId`), or all of them (`all`, the default), answered with
+each isolate's heap before and after and its pause. The handler calls
+`nodeHealthAdmin.collectGarbage()` and nothing else, passes
+`callerNameOf(res)` as the audit row's actor, and turns its `status` and
+`errorCode` into the reply's status and `mark()`. Nothing else it needed was
+new:
+
+* **IT REACHES THE FRONT PROCESS** because its path is under
+  `/admin-api/node-health`, which `request_pool.js`'s `NEVER_DISPATCHED`
+  already names (a segment-boundary prefix).
+* **ADMIN WRITE**, because it is a POST; **A SERVICE OPERATION**, because its
+  `mirrors` is a page in `admin_scope.ts`'s `SERVICE_PAGES`, so a realm's own
+  token is refused (`STS-API-0112`) by `realmTokenRefusal()` as every other
+  service operation is.
+* **ITS EXAMPLE IS RUN** by `sts_admin_api_operations`, which replays every
+  example: `{ target: 'all' }` collects every isolate of the node it reaches,
+  a pause of milliseconds on a test stack.
+
+`admin-ui/CLAUDE.md` (*A full garbage collection, on demand*) argues the
+rest; `tests/node_health_page.js` section 10 and
+`tests/vendored/sts_node_health.js` section 6 hold it.
+
 ## `/admin-api/tls/trust` — THE TRUSTSTORE'S GATED RUNTIME DOOR (2026-09-12)
 
 `GET /admin-api/tls/trust` (paged with `page` / `per`) and `POST
@@ -2190,6 +2227,27 @@ safe", and not by giving an operation a components table of its own. A
 second shared copy costs 170 KB once; a per-validator one costs it 363
 times, in every process (#339).
 
+## THE VALIDATORS ARE COMPILED ON FIRST USE (#617, 2026-10-14)
+
+Compiling all of them was the bulk of what the management API cost every
+process at start: about 3 s between the console modules' banners and this
+API's on 8081, of which **`compileRequestSchemas()` was 1,144 ms** in the tests
+image against 4 ms for `buildRoutes()` and 2 ms for the closed sets — for 363
+validators (427 with the action rows) a given process mostly never reaches.
+`wire()` now only RECORDS each schema under its validator key, and
+`validatorFor()` compiles one the first time a request reaches its operation
+and keeps it (a schema that will not compile is remembered as null, logged
+once). The components copy above is made with the first validator. **What
+did not move:** the gate and every route are registered where they were (rule
+1), the console's closed sets are registered at wiring as before, and what a
+validator accepts and refuses — and the words — are unchanged. **What did:**
+STS-API-0010 for a broken schema is said at that operation's first request
+rather than at start, so `compileAllRequestSchemas()` compiles the lot on
+demand and `tests/admin_api_lazy_validators.js` holds that wiring compiles
+none, a request compiles its own and is held to it, and every schema still
+compiles. The OpenAPI document was already built per request
+(`admin_api_spec.ts`) and is not part of this.
+
 ## `updateApplicationFields` — THE FIELD GRID'S SAVE (2026-09-30)
 
 `POST /admin-api/applications/update-fields`, body `{ application, fields,
@@ -2215,7 +2273,7 @@ override's value in force and its source. That is the same view model the
 console's Shared Signals section draws. Pausing and enabling a stream is
 `POST /admin-api/ssf/status`, as it always was.
 
-## THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
+## 3cc. THE CONSOLE'S OWN OPERATIONS ARE A SECOND KIND (#454, 2026-10-06)
 
 **Since #446 the console is a static application whose one data source is
 this API, and to draw itself it added operations that exist only for it** —
@@ -2242,7 +2300,7 @@ from that field** (`withConsoleRoutes()`):
 * **The scope is `admin:console`.** It is the permission of the native role
   ADMIN_CONSOLE, which nobody holds as a member: it is CONFERRED by the
   console's client on everybody who signs in through it
-  (`roleConferredBy`, `common/CLAUDE.md` 3bq). A console operation asks
+  (`roleConferredBy`, `common/CLAUDE.md` 3cc). A console operation asks
   `requiredRoles: [ADMIN_CONSOLE]` and, unless it is the frame or the
   operation list, `requiredAllRoles: [ADMIN_READ]` (a form helper
   ADMIN_WRITE) — the access-control document's every-one-of conjunct
@@ -2384,3 +2442,69 @@ administrator's door to ask. **Since #595 it is the only door**: that
 demonstration document was deleted, and its principal rows are this
 operation's `database` (`?databasePage=`), which `sts_kerberos_samba.js` reads
 for the salts and kvnos it hands Samba.
+
+## OWNERS: `owner:read` AND `owner:write` (#607, 2026-10-13)
+
+rcbj: a person may update the roles, groups, service accounts and
+applications they own, from the user portal, through THIS API — and the check
+that they own the object is XACML policy, in one place, never repeated in
+`/account-api`. So this API takes a fourth pair of scopes, and its gate asks
+the access-control policy a second kind of question.
+
+**WHAT AN OWNER'S TOKEN IS.** One carrying `owner:read` or `owner:write` and
+NOT the admin scope the operation needs (`ownerPath` in the gate). The scopes
+are protected (#110) — declared on the client, held to it on every call
+(`declaredAdminScopes()` holds them too) — and authorized by the computed
+OWNER_READ and OWNER_WRITE (`common/CLAUDE.md` 3cn), so held ∩ carried
+applies: an owner:read token is OWNER_READ only, and a person taken off the
+last thing they owned is refused at once (`STS-API-0125`, said in an owner's
+words).
+
+**WHICH OPERATIONS AN OWNER MAY ASK — `OWNER_OPERATIONS`.** One object of the
+four kinds, named by the request: `GET /roles?role=`, `/groups?group=`,
+`/applications?application=`, `/service-accounts?account=` (a one-account
+read added for it), and `POST /roles/{action}`, `/groups/{action}`,
+`/applications/{action}`, `/users/{action}` naming the object in the body.
+`ownedOperationOf()` reads the request against the table (the body through
+`parseBody()`, which is pure), and for an application act every attribute it
+would write — the one of `set`, `add`, `remove`; `update-fields`' through
+`admin_actions.fieldsCoveredBy()`, the handler's own reading, and
+`appAllowedProtocol` where it carries families. Anything else on an owner's
+token — a LIST among them (rcbj's decision 6: the portal lists through
+`/account-api/owned/*`), and an object in a realm other than the token's — is
+refused in words (`STS-API-0132`), since the policy would only say a role was
+missing. The table names the object; it decides nothing.
+
+**THE QUESTION.** The administrator's requirement stays as it was
+(`requiredRoles` ADMIN_READ / ADMIN_WRITE, the first rule's), and
+`ownedObject` is added: `{ kind, id, action, attributes, requiredRole:
+OWNER_READ | OWNER_WRITE, person }`. The person goes by username in its own
+attribute because `subject-id` here is the token's client
+(`claims.client_id`), and putting the person there would add their
+configured roles to the decision outside held ∩ carried. Who owns the object,
+whether it is closed to its owners and who the person is as an owner are the
+PIP's (`xacml/CLAUDE.md`). A refusal by the owner rule is `STS-API-0133`.
+
+**WHAT AN OWNER IS ANSWERED.** A read whose answer is more than the one object
+is narrowed in `sendJson()` (`res.locals.ownerProjection`, the row's
+`project`): a role's read is `{ role }` (the register around it is the whole
+realm's); a group's the group, its members and owners (the drill-down also
+carries every group); an application's its identity, the attributes an owner
+may write (`OWNER_APPLICATION_FIELDS`, the template's defaults) and its
+owners (the drill-down carries what the console draws its tabs from, other
+applications' permissions among them). An administrator's read is untouched.
+
+**THE AUDIT ROW SAYS SO**: `res.locals.apiCaller.owner`, read by
+`common/audit.js`'s HTTP row — `as an owner` on the summary, `via: owner` in
+the detail.
+
+**`/admin-api/ownership`** answers one object's facts (`GET`, `kind` and
+`name`: owners, `protected` with `reasons`, `marked`) and writes the
+administrator's mark (`POST /ownership/set-protected`, `kind`, `name`,
+`protected`) — rcbj's decision 4, `stsOwnerProtected` on the object's own
+entry. Its console control (rcbj, 2026-10-13) is a checkbox on each object's
+Owners tab, posting `set-protected` to that tab's route — which is why the
+operation `mirrors` the four routes, `/admin/roles/owners`,
+`/admin/groups/owners`, `/admin/applications/owners` and
+`/admin/users/service-account` — and an `ldapmodify` reaches the attribute
+too. Admin Read and Admin Write, as everything here.

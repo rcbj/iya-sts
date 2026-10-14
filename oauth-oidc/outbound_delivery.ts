@@ -51,6 +51,17 @@
 // finishes (`onFinish`), and this file writes at most one line per kind per
 // realm per summary interval.
 //
+// **6. WHAT WAS SENT LEAVES THE ROW ONCE IT LANDS (#614).** Until a delivery
+// is `sent`, its `token` and `body` are on the row because a retry has to
+// send the SAME bytes — the same signed Logout Token or Command Token, the
+// same CIBA push with its tokens in it. Once it is `sent` nothing sends them
+// again (an operator's retry is of a dead letter only), so `finish()` puts
+// their digests (`tokenDigest`, `bodyDigest`, `crypto.credentialDigest()`)
+// in their place and the row keeps its jti, its status and its history. A
+// DEAD LETTER keeps both, because an operator's retry resends it. Until #614
+// every landed row kept a whole token — a CIBA push's whole token response
+// — for the kind's retention.
+//
 // WHAT A KIND SUPPLIES (`DeliveryKind`): its store, its claim scope, the
 // address attribute the outbound policy reads, whether the body is a form or
 // JSON, its settings' keys, its error codes, `prepare()` (the body, signing
@@ -64,6 +75,9 @@
 
 import os = require('os');
 import helpers = require('../common/helpers');
+// `credentialDigest()` for what a landed delivery keeps of what it sent
+// (#614). A leaf library.
+import stsCrypto = require('../common/crypto');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
@@ -162,6 +176,11 @@ interface DeliveryKind {
   // after `at` holds it. The outbound SCIM client holds a paused client's
   // rows (#552). An operator's retry is not held.
   holdUntil?(row: Json, at: number): number;
+  // A LANE a row is attempted in, with its own limit inside the kind's
+  // concurrency (#553): the outbound SCIM client's per-client budget in a
+  // service deployed as cells, `scimClient.concurrency` split across the
+  // cells pushing to that client. null, or no hook, is no lane.
+  laneOf?(row: Json): { key: string; limit: number } | null;
   onFinish?(row: Json, state: string, code: string, why: string): void;
   // Before an operator's retry: a refusal, or fields to refresh.
   onRetry?(row: Json): { problem?: string; patch?: Json };
@@ -282,6 +301,8 @@ class OutboundDelivery {
   private readonly lastSummaryAt = new Map<string, number>();
   // Attempts in flight in this process for this kind.
   private inFlightHere = 0;
+  // Attempts in flight in this process per lane (`laneOf`).
+  private readonly laneInFlight = new Map<string, number>();
 
   /**
    * Builds a queue for one kind of delivery.
@@ -463,6 +484,23 @@ class OutboundDelivery {
     log.debug("Leaving OutboundDelivery.tally().");
   }
 
+  // Header point 6 (#614): a landed row's token and body become their
+  // digests. Replaced rather than mutated, so a caller still holding the
+  // body object it sent keeps it.
+  private static forgetSent(row: Json): void {
+    helpers.log.debug("Entering OutboundDelivery.forgetSent().");
+    if (row.token !== undefined && row.token !== null) {
+      row.tokenDigest = stsCrypto.credentialDigest(String(row.token));
+      delete row.token;
+    }
+    if (row.body !== undefined && row.body !== null) {
+      row.bodyDigest = stsCrypto.credentialDigest(
+        typeof row.body === 'string' ? row.body : JSON.stringify(row.body));
+      delete row.body;
+    }
+    helpers.log.debug("Leaving OutboundDelivery.forgetSent().");
+  }
+
   // A delivery reaches its final state: the row changes and the kind's
   // `onFinish` writes its one audit row. Answers the row as written.
   /**
@@ -484,6 +522,9 @@ class OutboundDelivery {
     row.finishedAt = now();
     row.inFlight = 0;
     row.nextAttemptAt = 0;
+    if (state === 'sent') {
+      OutboundDelivery.forgetSent(row);
+    }
     const written = this.writeRow(row);
     if (written.state !== state || written.updatedAt !== row.updatedAt) {
       log.debug("Leaving OutboundDelivery.finish(). A newer copy stood; " +
@@ -884,6 +925,7 @@ class OutboundDelivery {
     const cap = Math.max(1, this.setting(kind.settings.maxRows));
     const store = kind.store.realmMap(realmId);
     const due: string[] = [];
+    const laneOfId = new Map<string, { key: string; limit: number }>();
     const finished: Json[] = [];
     const stale: Json[] = [];
     let dead = 0;
@@ -897,6 +939,10 @@ class OutboundDelivery {
         } else if (!(Number(row.nextAttemptAt) > at) &&
                    !(kind.holdUntil && kind.holdUntil(row, at) > at)) {
           due.push(id);
+          const lane = kind.laneOf ? kind.laneOf(row) : null;
+          if (lane) {
+            laneOfId.set(id, lane);
+          }
         }
         return;
       }
@@ -921,14 +967,33 @@ class OutboundDelivery {
     });
     const limit = Math.max(1, this.setting(kind.settings.concurrency));
     let attempted = 0;
+    // The next due row whose lane has room; a row whose lane is full waits
+    // for the next sweep.
+    const take = function (): string | undefined {
+      log.debug("Entering take().");
+      for (let i = 0; i < due.length; i++) {
+        const lane = laneOfId.get(due[i]);
+        if (!lane || (self.laneInFlight.get(lane.key) || 0) < lane.limit) {
+          log.debug("Leaving take().");
+          return due.splice(i, 1)[0];
+        }
+      }
+      log.debug("Leaving take(). Every lane is full.");
+      return undefined;
+    };
     const next = function (): Promise<void> {
       log.debug("Entering next().");
-      const id = due.shift();
-      if (id === undefined || self.inFlightHere >= limit) {
+      const id = self.inFlightHere >= limit ? undefined : take();
+      if (id === undefined) {
         log.debug("Leaving next(). Nothing more this sweep.");
         return Promise.resolve();
       }
+      const lane = laneOfId.get(id);
       self.inFlightHere++;
+      if (lane) {
+        self.laneInFlight.set(lane.key,
+                              (self.laneInFlight.get(lane.key) || 0) + 1);
+      }
       attempted++;
       log.debug("Leaving next().");
       return self.attempt(realmId, id).catch(function (e) {
@@ -936,6 +1001,10 @@ class OutboundDelivery {
         return 'error';
       }).then(function () {
         self.inFlightHere--;
+        if (lane) {
+          self.laneInFlight.set(lane.key,
+                                (self.laneInFlight.get(lane.key) || 1) - 1);
+        }
         return next();
       });
     };

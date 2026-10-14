@@ -60,8 +60,8 @@
     "text": "Android 证明重新检查"
   },
   "sched.jobs.devices.android-status-recheck.describe": {
-    "en": "f918ea71421d9df1",
-    "text": "就每条已存储的 Android 链——每个领域中的设备密钥和 WebAuthn 凭据——查询当前生效的 Android 证明状态列表，并将其吊销或暂停的链降级：改为自我声明、记录审计、发送 CAEP credential-change。在列表激活时运行，并且每天运行一次。"
+    "en": "610a48914c017400",
+    "text": "向当前生效的 Android 证明状态列表查询每条已存储的 Android 证书链——每个域中的设备密钥和 WebAuthn 凭据——并降级被其吊销或暂停的项：改为自声明、记录审计、发送 CAEP credential-change。只读取被标记为持有此类链的人员和设备，每次一页；若自上次复查以来列表和注册都未变化，则跳过该域。在激活列表时运行，并且每天运行。"
   },
   "sched.jobs.devices.android-status-refresh.title": {
     "en": "95d19bd56eac78af",

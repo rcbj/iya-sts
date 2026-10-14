@@ -103,6 +103,8 @@ const AGREEMENT_SETTINGS = [
 let driver = null;
 let resolved = null;          // { mode, why }
 let nodeId = '';
+// The id `gate()` will join under, chosen early by `plannedNodeId()` (#617).
+let plannedId = '';
 let role = 'none';            // 'front' | 'worker' | 'none'
 let joinedAt = 0;
 let heartbeatTimer = null;
@@ -459,7 +461,9 @@ function gate(theDriver) {
   }
   install(theDriver);
   role = 'front';
-  nodeId = stsCrypto.randomUuid();
+  // The id the origin claim was taken under, when one was planned (#617).
+  nodeId = plannedId || stsCrypto.randomUuid();
+  plannedId = '';
   log.debug("Leaving gate(). Joining.");
   return join().then(function () {
     if (resolved.mode === 'active-passive') {
@@ -1432,6 +1436,39 @@ function currentNodeId() {
   return nodeId;
 }
 
+// ---------------------------------------------------------------------------
+// THE MEMBERSHIP THIS PROCESS IS PART OF, BEFORE IT JOINS (#617). The store
+// adopts this process's origin before `gate()` joins, and the origin claim
+// records the membership that took it so a successor can take over a claim
+// whose membership has gone (`persistence_postgres.js`, `adoptOrigin()`). So
+// a front process's id is chosen here, on first asking, and `gate()` joins
+// under the same one; a worker answers the id its front joined under, which
+// it inherited. Still random per start: a membership that lapsed must never
+// come back as itself.
+// ---------------------------------------------------------------------------
+/**
+ * Returns the node id this process's membership has or will have: the joined
+ * id, a worker's inherited one, or one chosen now that `gate()` will use.
+ *
+ * @returns the node id
+ */
+function plannedNodeId() {
+  log.debug("Entering plannedNodeId().");
+  if (nodeId) {
+    log.debug("Leaving plannedNodeId(). Joined.");
+    return nodeId;
+  }
+  if (process.env.STS_REQUEST_WORKER && process.env[ENV_NODE]) {
+    log.debug("Leaving plannedNodeId(). Inherited.");
+    return String(process.env[ENV_NODE]);
+  }
+  if (!plannedId) {
+    plannedId = stsCrypto.randomUuid();
+  }
+  log.debug("Leaving plannedNodeId(). Planned.");
+  return plannedId;
+}
+
 // For tests.
 /**
  * Resets every piece of state. For tests.
@@ -1450,6 +1487,7 @@ function reset(options) {
   driver = null;
   resolved = null;
   nodeId = '';
+  plannedId = '';
   role = 'none';
   joinedAt = 0;
   lastRenewOk = 0;
@@ -1493,6 +1531,7 @@ module.exports = {
   resolve: resolve,
   mode: mode,
   enabled: enabled,
+  plannedNodeId: plannedNodeId,
   isActiveActive: isActiveActive,
   gate: gate,
   agree: agree,

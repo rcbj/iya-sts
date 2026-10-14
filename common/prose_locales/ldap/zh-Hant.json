@@ -568,8 +568,12 @@
     "text": "「登入此應用程式時不會詢問任何人的範圍」。每個範圍一個值，寫法與用戶端放在 `scope` 參數中的完全相同——`openid`、`profile`，或完整的委派權限識別碼，例如 `https://example.com/write`。\n\n**它是「覆寫」而不是記錄。**當 `oauth2.consentRequired` 開啟（預設值）時，授權端點會針對此人尚未為此應用程式同意的任何範圍繪製 /oauth2/consent；此處指名的範圍會對「每個人」略過，而且不會寫入任何人的項目。因此移除一個值會再次詢問每個人——包括本來會同意的人——而移除某人自己的 `oauthConsent` 只會詢問那個人。\n\n**它以配對為鍵，而不是只以範圍為鍵。**在此同意 `read`，是為「此」應用程式同意它；五分鐘後註冊、拼寫相同字詞的應用程式仍會被詢問。\n\n未指名任何應用程式所定義之權限的值不是錯誤，也不會被隱藏——大多數範圍都不是權限。它必須是合法的 RFC 6749 section 3.3 範圍權杖，因為含有空格的值永遠無法比對到單一範圍；`ldapmodify` 與其他屬性一樣可寫入此屬性且不會被檢查，而 /admin/consent 會顯示它放了什麼。"
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "對該應用程式負責的本領域人員或群組（#604），以 DN 表示，與群組和角色的擁有者相同。多值，最多 25 個。擁有者不授予任何權限：此服務中沒有任何部分讀取它來做決定。使用者入口網站列出一個人所擁有的內容。"
+    "en": "9c53dd774f6667e3",
+    "text": "對該應用程式負責的本領域中的某個人或某個群組（#604），以 DN 表示，與群組和角色的擁有者相同。多值，最多 25 個。自 #607 起，擁有者可以透過 /admin-api 使用 owner:read 與 owner:write 管理該應用程式，範圍以 access-control 原則的擁有者規則所允許者為限。使用者入口網站會列出一個人擁有的內容。"
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE：該應用程式的擁有者不能透過 /admin-api 管理它（#607）——這是管理員的標記，access-control 原則的擁有者規則將其讀作 urn:sts:xacml:object-protected。未設定即為 FALSE。"
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",
@@ -1423,6 +1427,18 @@
     "en": "a40bdc8ff019b288",
     "text": "叢集排程器調和整個範圍的頻率，以分鐘計：範圍內的每個人與群組都會被推送，而服務提供者以此領域之 externalId 保存、但已不在範圍內的內容會被取消佈建。0（預設）表示只在管理員要求時調和。"
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "服務提供者所在的位置，以單元對應表中的司法管轄區代碼表示（us、eu、ca……）。在以單元方式部署的服務中，每個人的歸屬單元在推送此人之前，都會詢問簽發原則此人的資料能否前往該處（release-attributes，用途 scim-provision）；若被拒絕，此人即不在範圍內——不會被推送，若先前已推送則會被取消佈建。留空表示司法管轄區未知，嚴格的預設規則從不向其釋出資料。服務只有一個單元時忽略此項。"
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "哪些單元向服務提供者推送，每項為一個單元 ID；留空（預設）表示所有單元。未列出的單元不會為此用戶端傳送任何內容，因此歸屬該單元的人員不會被推送。服務只有一個單元時忽略此項。"
+  },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "每秒最多向服務提供者傳送多少個請求：每次傳遞、查詢、探索讀取和對帳分頁都會等待輪到自己，而不是失敗。留空或 0（預設）表示不限制。在以單元方式部署的服務中，每個推送的單元可傳送的數量為此值除以這些單元的數量，無條件進位。"
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "Shared Signals 接收者的名稱——它在 /ssf/stream 建立串流時用以驗證的身分，也是該串流所攜帶之每個 Security Event Token 的 `aud`。與上方四個僅供宣告的識別碼不同，這一個「會」由協定寫入：建立串流會記錄一次觀察，因為接收者通過驗證並獲同意建立串流，正是此登錄存在所要保存的那類事件。它仍不授予任何東西——決定接收者取得什麼的是串流，而串流攜帶自己的對象。"
@@ -1666,6 +1682,10 @@
   "devices.schema.attributes.stsDeviceCredentialId.what": {
     "en": "5c367d4336aa3edd",
     "text": "每把已連結之 WebAuthn 金鑰的認證 ID，每次寫入時從 stsDeviceKey 推導，讓登入能依索引找到其裝置。"
+  },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "每個由 Android 憑證鏈證明、且其序號已保留的金鑰的 id，每次寫入時由 stsDeviceKey 推導，使 Android 證明複查只讀取持有此類金鑰的裝置（#615）。"
   },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",

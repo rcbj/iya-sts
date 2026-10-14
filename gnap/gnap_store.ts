@@ -647,7 +647,38 @@ class GnapStore {
   // URI, and a user code. Both are ONE-TIME-USE and short-lived (section 4);
   // the grant holds the expiry and the "which mode was used" state, and these
   // rows are only the lookup.
+  //
+  // KEYED BY DIGEST (#614, `crypto.credentialDigest()`), hashed inside these
+  // methods so every caller passes what it minted or was presented with: a
+  // handle or a user code is only ever looked up and spent. The interaction
+  // id keeps its mode prefix outside the digest, `redirect:<digest>`, so a
+  // row still says what kind it is. The grant record itself still carries
+  // each handle and code (`interaction.modes`), because a continuation
+  // response repeats them to the client (section 3.3), so these rows are one
+  // copy fewer rather than none. A short user code's digest can be reversed
+  // by trying every code, as the device flow's can; it is hashed anyway.
   // -------------------------------------------------------------------------
+  // `mode:handle` -> `mode:<digest of handle>`; a value with no prefix is
+  // hashed whole. Public for `gnap_cells.ts`, whose record of a moved grant
+  // is keyed by the rows' own keys.
+  /**
+   * Returns the key an interaction start handle is held under: its mode
+   * prefix and the digest of the handle (#614).
+   *
+   * @param id - `mode:handle`
+   * @returns `mode:` and the handle's digest
+   */
+  static handleKey(id: string): string {
+    helpers.log.debug("Entering GnapStore.handleKey().");
+    const text = String(id || '');
+    const colon = text.indexOf(':');
+    helpers.log.debug("Leaving GnapStore.handleKey().");
+    return colon > 0
+      ? text.slice(0, colon + 1) +
+        stsCrypto.credentialDigest(text.slice(colon + 1))
+      : stsCrypto.credentialDigest(text);
+  }
+
   /**
    * Records an interaction start handle — the unique path segment of a redirect
    * or app URI — for a grant.
@@ -659,7 +690,8 @@ class GnapStore {
     const { log, nowSec } = this.deps;
     const { interactions } = this.deps.stores;
     log.debug("Entering GnapStore.putInteraction().");
-    interactions.set(id, { grantId: grantId, at: nowSec() });
+    interactions.set(GnapStore.handleKey(id),
+                     { grantId: grantId, at: nowSec() });
     log.debug("Leaving GnapStore.putInteraction().");
   }
 
@@ -673,7 +705,7 @@ class GnapStore {
     const { log } = this.deps;
     const { interactions } = this.deps.stores;
     log.debug("Entering GnapStore.grantByInteraction().");
-    const row = id ? interactions.get(id) : null;
+    const row = id ? interactions.get(GnapStore.handleKey(id)) : null;
     log.debug("Leaving GnapStore.grantByInteraction().");
     return row ? this.getGrant(row.grantId) : null;
   }
@@ -687,7 +719,7 @@ class GnapStore {
     const { log } = this.deps;
     const { interactions } = this.deps.stores;
     log.debug("Entering GnapStore.dropInteraction().");
-    interactions.delete(id);
+    interactions.delete(GnapStore.handleKey(id));
     log.debug("Leaving GnapStore.dropInteraction().");
   }
 
@@ -701,7 +733,8 @@ class GnapStore {
     const { log, nowSec } = this.deps;
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.putUserCode().");
-    userCodes.set(code, { grantId: grantId, at: nowSec() });
+    userCodes.set(stsCrypto.credentialDigest(code),
+                  { grantId: grantId, at: nowSec() });
     log.debug("Leaving GnapStore.putUserCode().");
   }
 
@@ -715,7 +748,8 @@ class GnapStore {
     const { log } = this.deps;
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.grantByUserCode().");
-    const row = code ? userCodes.get(code) : null;
+    const row = code ? userCodes.get(stsCrypto.credentialDigest(code))
+      : null;
     log.debug("Leaving GnapStore.grantByUserCode().");
     return row ? this.getGrant(row.grantId) : null;
   }
@@ -729,7 +763,7 @@ class GnapStore {
     const { log } = this.deps;
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.dropUserCode().");
-    userCodes.delete(code);
+    userCodes.delete(stsCrypto.credentialDigest(code));
     log.debug("Leaving GnapStore.dropUserCode().");
   }
 
@@ -744,7 +778,7 @@ class GnapStore {
     const { userCodes } = this.deps.stores;
     log.debug("Entering GnapStore.userCodeTaken().");
     log.debug("Leaving GnapStore.userCodeTaken().");
-    return userCodes.has(code);
+    return userCodes.has(stsCrypto.credentialDigest(code));
   }
 
   // -------------------------------------------------------------------------
@@ -1459,6 +1493,7 @@ export = {
   grantByUserCode: slot.forward('grantByUserCode'),
   dropUserCode: slot.forward('dropUserCode'),
   userCodeTaken: slot.forward('userCodeTaken'),
+  handleKey: GnapStore.handleKey,
   putToken: slot.forward('putToken'),
   saveToken: slot.forward('saveToken'),
   biscuitRevocationIds: slot.forward('biscuitRevocationIds'),

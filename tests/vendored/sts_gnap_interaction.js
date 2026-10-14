@@ -299,7 +299,13 @@ async function test() {
   // =========================================================================
   log.info("=== 5. approval by an absent owner ===");
   await h.setting("gnap.ownerApproval", true);
-  await h.setting("gnap.ownerApprovalLifetimeS", 60);
+  // A WAIT LONG ENOUGH TO POLL INSIDE (2026-10-13). The wait while an owner
+  // is away is the lifetime spread over gnap.maxPolls (60): at 60 s that is
+  // ceil(60 / 59) = 2 s, counted in whole seconds, so as little as one second
+  // in fact — and on two nodes behind the balancer the poll in 5b arrived
+  // after it and was answered 200 (CI, cluster, d2221e6f). 300 s makes it
+  // 6 s; the polls that must NOT be too fast (5f, 5j) wait it out first.
+  await h.setting("gnap.ownerApprovalLifetimeS", 300);
   const absent = new gnap.Client({ key: gnap.newKey("ES256") });
   const naming = { user: { sub_ids: [{ format: "email",
                                        email: OWNER + "@gnap.test" }] } };
@@ -337,6 +343,7 @@ async function test() {
     assert.strictEqual(r.status, 200, r.text.slice(0, 300));
     assert.ok(/Approved/.test(String(r.json && r.json.message)), r.text);
   });
+  await pause((Number(cont.wait) || 0) * 1000 + 200);
   r = await absent.send("POST", cont.uri, { token: cont.access_token.value });
   check("5f. the client's next poll collects a token carrying what the " +
         "owner left ticked", function () {
@@ -387,6 +394,7 @@ async function test() {
   r = await answer(OWNER, { action: "gnap-approve", id: third.id,
                             right: "t0r0" });
   assert.strictEqual(r.status, 200, r.text.slice(0, 300));
+  await pause((Number(cont.wait) || 0) * 1000 + 200);
   r = await named.send("POST", cont.uri, { token: cont.access_token.value });
   check("5j. and the owner's approval releases it", function () {
     assert.strictEqual(r.status, 200, r.text);

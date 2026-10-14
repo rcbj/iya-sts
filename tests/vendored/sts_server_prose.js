@@ -137,13 +137,51 @@ function shapeOf(value, path, out) {
 // so even folded to `[]` their shape is the data's, not the page's. None of
 // them is translated — an event is what happened, in the words it was
 // recorded in — so leaving them out loses nothing this job asks.
-const DATA = { "/audit": ["events"] };
+//
+// A NESTED MEMBER IS A DOTTED PATH, `[]` FOLDING AN ARRAY (2026-10-13): a
+// node-health answer lists the processes that did not answer it, and whether
+// a worker answered differs between the two reads on a busy cluster —
+// `nodes[].view.processes.unanswered` appeared in one and not the other.
+// `/audit`'s `knownActors` and `byAction` are maps KEYED BY DATA — who has
+// acted, which actions ran — so a key appears between the reads whenever a
+// new actor or action does (cluster, ccf5741a: knownActors.sts-management-api
+// in one read only).
+const DATA = { "/audit": ["events", "knownActors", "byAction"],
+               "/node-health": ["nodes[].view.processes.unanswered"] };
+
+// Deletes `path` (dotted, `name[]` descending into every item) from `value`.
+function dropPath(value, path) {
+  log.debug("Entering dropPath(). " + path);
+  const parts = path.split(".");
+  const walk = function (node, i) {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    const part = parts[i];
+    const many = /\[\]$/.test(part);
+    const name = many ? part.slice(0, -2) : part;
+    if (i === parts.length - 1) {
+      delete node[name];
+      return;
+    }
+    const next = node[name];
+    if (many && Array.isArray(next)) {
+      next.forEach(function (one) {
+        walk(one, i + 1);
+      });
+    } else {
+      walk(next, i + 1);
+    }
+  };
+  walk(value, 0);
+  log.debug("Leaving dropPath().");
+}
 
 function withoutData(page, body) {
   log.debug("Entering withoutData().");
   (DATA[page] || []).forEach(function (name) {
     if (body && typeof body === "object") {
-      delete body[name];
+      dropPath(body, name);
     }
   });
   log.debug("Leaving withoutData().");

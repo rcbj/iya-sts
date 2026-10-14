@@ -631,6 +631,10 @@
     "en": "6a14636c8aef5de3",
     "text": "Nodhälsa"
   },
+  "endpoints.route./admin-api/node-health/:action.name": {
+    "en": "00f328f6105fa2a9",
+    "text": "Åtgärder för nodens hälsa"
+  },
   "endpoints.route./admin-api/encryption.name": {
     "en": "eb626f73d72649aa",
     "text": "Kryptering i vila"
@@ -730,6 +734,14 @@
   "endpoints.route./admin-api/service-accounts.name": {
     "en": "330b2e1630d653b8",
     "text": "Tjänstekonton och deras rotation"
+  },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Vem som äger ett objekt, och om dess ägare får administrera det"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Stäng ett objekt för sina ägare, eller öppna det igen"
   },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",

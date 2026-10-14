@@ -277,6 +277,76 @@ The refusals are in the `STS-API-*` rows of [error codes](error-codes.md).
 The code is recorded in the audit log and the service log, and is never sent
 to the caller.
 
+## Owners
+
+A person who owns a role, group, service account or application can read and
+change it through this API, within limits. The user portal does this for them;
+any client can, if an administrator declares the two scopes on it.
+
+| Scope | Lets the token |
+|---|---|
+| `owner:read` | read one object the person owns |
+| `owner:write` | change one object the person owns |
+
+The authorization server issues these scopes only to a person who owns
+something, in the realm that issues the token, directly or through a group.
+They are checked again on every call, so a person who stops owning anything is
+refused at once.
+
+**What an owner's token reaches.** It reaches one named object only:
+
+* reads: `GET /admin-api/roles?role=`, `/groups?group=`,
+  `/applications?application=` and `/service-accounts?account=`;
+* changes: `POST /admin-api/roles/{action}`, `/groups/{action}`,
+  `/applications/{action}` and `/users/{action}`, naming the object in the
+  body.
+
+A list, or any other operation, is refused with 403 (`STS-API-0132`). A read
+answers the one object, not the register around it.
+
+**The access-control policy decides.** Its owner rule permits a call only when
+all of these hold:
+
+* the object names the person, or a group they are in, as an owner;
+* the object is not closed to its owners;
+* the action is one an owner may take on that kind of object;
+* for an application, every attribute written is one an owner may write;
+* the call does not remove the object's last owner.
+
+Otherwise the answer is 403 (`STS-API-0133`). The actions and attributes are
+parameters of the built-in `access-control` policy, so a realm can narrow or
+widen them with an override on `/admin/xacml`.
+
+| Kind | Actions an owner may take by default |
+|---|---|
+| Role | `describe-role`, `add-member`, `remove-member`, `add-owner`, `remove-owner` |
+| Group | `add-member`, `add-owner`, `remove-owner` |
+| Service account | `add-service-account-owner`, `remove-service-account-owner`, `set-service-account-destination`, `rotate-password` |
+| Application | `set`, `add`, `remove` and `update-fields` (on `appName`, `description`, `appHomePageUrl`, `appCorsOrigin`, `oauthRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthBackchannelLogoutUri`, `samlAssertionConsumerService`, `samlSingleLogoutService`), `add-owner`, `remove-owner`, `regenerate-secret`, `rotate-secret`, `add-secret`, `remove-secret` |
+
+**Closed to its owners.** Some objects are closed to their owners, whoever
+they are:
+
+* the built-in and native roles;
+* any role that authorizes one of this service's own permissions;
+* the groups this service grants something through by name (the console's
+  administrator groups, the remote PEP and XACML user groups), and any group
+  that is a member of a protected role;
+* this service's own applications;
+* any application that is a member of a protected role, or that declares one
+  of this service's protected scopes;
+* any service account that holds a protected role.
+
+An administrator can also close any object: the **Closed to its owners**
+checkbox on its Owners tab in the console (roles, groups, applications, and a
+service account's section of the person page),
+`POST /admin-api/ownership/set-protected` with `kind`, `name` and `protected`,
+or `stsOwnerProtected: TRUE` on the entry. `GET /admin-api/ownership?kind=&name=`
+says whether an object is closed and why.
+
+A call made with an owner's token is recorded in the audit log as made "as an
+owner".
+
 ## Who a call is recorded as
 
 Every call is written to the audit log, and the row names **the subject of the
@@ -354,7 +424,10 @@ cover:
   persistence, the database, encryption at rest, secrets, caches, the worker
   pools, node health, the scheduler, the cluster, the error-code table and
   the audit log. `GET /admin-api/worker-pools` and `GET /admin-api/node-health`
-  answer every cluster node by name, with `?node=<name>` for one.
+  answer every cluster node by name, with `?node=<name>` for one;
+  `POST /admin-api/node-health/collect-garbage` runs a full V8 garbage
+  collection in the answering node's front process and worker threads, and
+  stops each thread while it runs (#611).
 * **Identities.** People and groups in the directory, second factors (TOTP,
   WebAuthn, recovery codes), password policies, sessions and sign-out. Each
   security key on `GET /admin-api/users?user=` carries `attestation` — what
@@ -465,22 +538,19 @@ roles grant (`admin:read` for Admin Read, `admin:write` for Admin Write). The
 API still checks it on every call, so a reader with only Admin Read who tries
 a `POST` gets the same 403 as from a terminal.
 
-The explorer mints a default-realm token, which is a service credential, so a
-realm's own administrators cannot see it. It also stops working while
-`oauth2.accessTokenRequireDpop` is on, because its script sends a plain Bearer
-header and has no DPoP key to prove. With that setting on, use `curl` and a
-proof.
+The explorer sends every call with the console's own access token and a DPoP
+proof by the console's own key, so it acts as the person signed in to the
+console, in the realm they signed in through, and it keeps working while
+`oauth2.accessTokenRequireDpop` is on.
 
-**The explorer is the one console page with a script.** The console is
-`script-src 'none'` like the rest of the service, which is what makes the whole
-family of reflected-content problems moot rather than merely unlikely. The
-explorer relaxes that on its own two routes and in exactly two clauses:
-`script-src 'self'`, and `connect-src 'self'` so the page can call the API it
-documents. Everything else, `default-src 'none'` included, stays as it is, and
-the console next door is still `script-src 'none'` — which the tests assert.
-The script is a **separate file** because `'self'` is enough for a file where an
-inline block would need `'unsafe-inline'`, the clause that would make the
-relaxation matter. It is served verbatim from disk, is not a node module, and
+**The explorer's script is a file of this service's own.** The console runs
+under `script-src 'self'` and `connect-src 'self'`, never `'unsafe-inline'`,
+and the console's script loads the explorer's own script
+(`/admin/api-explorer/explorer.js`) when the page is drawn. Everything else,
+`default-src 'none'` included, stays as it is. The script is a **separate
+file** because `'self'` is enough for a file where an inline block would need
+`'unsafe-inline'`, the clause that would make the policy matter. It is served
+verbatim from disk, is not a node module, and
 builds every element with `createElement` rather than assigning `innerHTML`,
 because it renders response bodies that are not always this service's own.
 

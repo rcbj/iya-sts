@@ -1022,6 +1022,15 @@ class LdapPage {
           t.html('consoleLdap.common.clear') + '</a>' : '') +
       '</div></form>' +
       kit.note(t.html('consoleLdap.directory.searchNote')) +
+      // A WINDOWED DIRECTORY'S `q` LOOKS INSIDE A BOUNDED NUMBER OF ENTRIES
+      // (#616): the values are sealed in the store, so the search cannot be
+      // asked of it. The answer says when the bound was reached, and so
+      // does the page.
+      ((json.search && !json.search.complete)
+        ? kit.note(t.html('consoleLdap.directory.searchLimited',
+                          { scanned: json.search.scanned,
+                            limit: json.search.scanLimit }))
+        : '') +
       nav.head +
       '<table><tr><th class="dn">DN</th><th class="from">' +
       t.html('consoleLdap.directory.cameFrom') + '</th><th>' +

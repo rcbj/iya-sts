@@ -391,7 +391,9 @@ async function test() {
     assert.strictEqual(headerOf(s.jwt).typ, "oauth-authz-req+jwt");
     assert.strictEqual(s.request.response_type, "id_token");
     assert.strictEqual(s.request.scope, "openid");
-    assert.strictEqual(s.request.response_mode, "direct_post");
+    // `direct_post.jwt`, a sign-in's default since 2026-10-12
+    // (`oid4vp.signInResponseMode`): the ID Token goes back encrypted.
+    assert.strictEqual(s.request.response_mode, "direct_post.jwt");
     assert.strictEqual(s.request.dcql_query, undefined);
     assert.ok(s.request.client_metadata.subject_syntax_types_supported
       .indexOf("urn:ietf:params:oauth:jwk-thumbprint") >= 0);

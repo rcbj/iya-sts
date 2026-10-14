@@ -1771,7 +1771,9 @@ class ScimAuth {
     }
     const nonce = stsCrypto.randomBytes(18).toString('base64');
     // `{ at }` only — the counts are not in the row (see the declaration).
-    digestNonces.set(nonce, { at: now });
+    // Under its digest (#614): the nonce itself goes out on the challenge and
+    // is in no store.
+    digestNonces.set(stsCrypto.credentialDigest(nonce), { at: now });
     log.debug("Leaving ScimAuth.issueDigestNonce(). " + digestNonces.size +
               " nonce(s) " +
         "outstanding.");
@@ -1888,7 +1890,12 @@ class ScimAuth {
         'and nc as well. What arrived is missing one of them.'));
     }
 
-    const record = digestNonces.get(String(params.nonce));
+    // THE NONCE IS KEPT AS ITS DIGEST (#614): it is only looked up, counted
+    // and forgotten, never sent again from the store, so the four Digest and
+    // HOBA stores hold `credentialDigest()` of what they issued — hashed
+    // here, at the moment the nonce is presented — and never the value.
+    const nonceKey = stsCrypto.credentialDigest(String(params.nonce));
+    const record = digestNonces.get(nonceKey);
     if (record) {
       digestNoncesCount.hit();
     } else {
@@ -1906,7 +1913,7 @@ class ScimAuth {
         { stale: true }));
     }
     if (Date.now() - record.at > this.digestNonceSeconds() * 1000) {
-      this.forgetDigestNonce(String(params.nonce));
+      this.forgetDigestNonce(nonceKey);
       log.debug("Leaving ScimAuth.attemptDigest(). The nonce is stale.");
       return this.coded('STS-SCIM-0043', this.unauthenticated(req,
         'This nonce is older than ' + this.digestNonceSeconds() + ' seconds ' +
@@ -1931,7 +1938,7 @@ class ScimAuth {
           'stop the same credential being replayed, which is most of what ' +
           'the nonce is for.'));
       }
-      if (this.countsOf(String(params.nonce)).has(nc)) {
+      if (this.countsOf(nonceKey).has(nc)) {
         log.debug("Leaving ScimAuth.attemptDigest(). nc=" + nc +
                   " has been used already.");
         return this.coded('STS-SCIM-0045', this.unauthenticated(req,
@@ -1997,11 +2004,11 @@ class ScimAuth {
           : ' (scim.digestPassword). It is not repeated here.')));
     }
     if (qop === 'auth') {
-      const held = this.addCount(String(params.nonce), String(params.nc));
+      const held = this.addCount(nonceKey, String(params.nc));
       if (held >= MAX_COUNTS_PER_NONCE) {
         // The per-nonce bound (see the declaration): this credential is
         // accepted, and the nonce is retired so the next one is stale.
-        this.forgetDigestNonce(String(params.nonce));
+        this.forgetDigestNonce(nonceKey);
         digestCountsCount.evicted(1);
       }
     }
@@ -2107,7 +2114,8 @@ class ScimAuth {
       hobaChallenges.delete(hobaChallenges.keys().next().value);
     }
     const challenge = stsCrypto.randomBytes(16).toString('base64url');
-    hobaChallenges.set(challenge, now);
+    // Under its digest (#614); the challenge itself goes out on the header.
+    hobaChallenges.set(stsCrypto.credentialDigest(challenge), now);
     log.debug("Leaving ScimAuth.issueHobaChallenge(). " + hobaChallenges.size +
               " " +
         "outstanding.");
@@ -2231,13 +2239,20 @@ class ScimAuth {
   // Find the entry that registered this key id. A scan, because a key id is
   // chosen by the client and there is nothing to index it by — the directory is
   // schemaless and this service does not maintain indexes on invented
-  // attributes. Bounded by ldap.maxEntries like every other sweep here.
+  // attributes. **A scan of the people HOLDING a HOBA key (#616)**, not of
+  // everybody: `personsHolding()` asks the directory for the holders of the
+  // attribute (in a windowed process the store's `attr_names` holders), where
+  // `allPersons()` paged and copied every person in the realm on each
+  // HOBA-authenticated request. A directory without it is walked as before.
   private entryForHobaKid(kid) {
     const { log, directory } = this.deps;
     log.debug("Entering ScimAuth.entryForHobaKid(). kid=" + kid);
     const wanted = String(kid) + ' ';
     let found = null;
-    directory.allPersons().forEach((entry) => {
+    const candidates = typeof directory.personsHolding === 'function'
+      ? directory.personsHolding(ScimAuth.HOBA_ATTRIBUTE)
+      : directory.allPersons();
+    candidates.forEach((entry) => {
       if (found) {
         return;
       }
@@ -2291,7 +2306,10 @@ class ScimAuth {
                         'The signature field is not base64url: ' + e.message));
     }
 
-    const issuedAt = hobaChallenges.get(challenge);
+    // THE CHALLENGE AND THE TRIPLE ARE KEPT AS DIGESTS (#614), hashed here
+    // at the moment they are presented; `attemptDigest()` says why.
+    const challengeKey = stsCrypto.credentialDigest(challenge);
+    const issuedAt = hobaChallenges.get(challengeKey);
     if (issuedAt === undefined) {
       hobaChallengesCount.miss();
     } else {
@@ -2310,7 +2328,7 @@ class ScimAuth {
             'seconds.'));
     }
     if (Date.now() - issuedAt > this.hobaMaxAgeSeconds() * 1000) {
-      hobaChallenges.delete(challenge);
+      hobaChallenges.delete(challengeKey);
       log.debug("Leaving ScimAuth.attemptHoba(). The challenge has expired.");
       return this.coded('STS-SCIM-0051', this.unauthenticated(req,
         'This challenge is older than its max-age ' +
@@ -2324,7 +2342,8 @@ class ScimAuth {
     // clients. A repeated (kid, challenge, nonce) is a copied credential, which
     // is a different thing and is what a nonce is for.
     const triple = kid + '.' + challenge + '.' + nonce;
-    const seenBefore = hobaSeen.has(triple);
+    const tripleKey = stsCrypto.credentialDigest(triple);
+    const seenBefore = hobaSeen.has(tripleKey);
     if (seenBefore) {
       hobaSeenCount.hit();
     } else {
@@ -2424,7 +2443,9 @@ class ScimAuth {
       hobaChallenges.delete(hobaSeen.get(oldest));
       hobaSeen.delete(oldest);
     }
-    hobaSeen.set(triple, challenge);
+    // The triple's digest, naming its challenge's digest — the key the
+    // challenge is held under, so the two die together.
+    hobaSeen.set(tripleKey, challengeKey);
 
     const username = this.usernameOfEntry(registered.entry);
     log.debug("Leaving ScimAuth.attemptHoba(). " + username + " is accepted.");

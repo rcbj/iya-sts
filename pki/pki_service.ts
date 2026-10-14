@@ -576,9 +576,13 @@ class PkiService {
     //
     // **NAMED BY THE LEAF'S SHA-256, NOT BY A `kid` OR A SLOT.** The address is
     // written into a token that outlives the key that signed it, so it must
-    // name one certificate for ever: a key rotated since is a 404, never a
-    // chain over a different key. The value is matched against the register,
-    // not parsed.
+    // name one certificate for ever: never a chain over a different key. The
+    // value is matched against the register, not parsed. **A certificate the
+    // slot no longer holds is still served until it expires (#318)**, with
+    // the chain it was issued with — the token naming it is still valid, and
+    // OCSP already answered `good` for it; a 404 is a certificate this scope
+    // never issued, one expired, or one of the oldest few a slot displaced
+    // (`pki_merge.js`'s `PUBLISHED_PER_SLOT`).
     //
     // **`no-store`**, for the rule every document that publishes this service's
     // key material follows: in development mode the keys behind these
@@ -598,8 +602,9 @@ class PkiService {
                     'There is no JOSE signing certificate with that SHA-256 ' +
                     'in the "' +
                     scopeSegment +
-                    '" scope of this service. A certificate replaced ' +
-                    'since a token named it is no longer published here.');
+                    '" scope of this service that is still valid. A ' +
+                    'replaced certificate is published here until it ' +
+                    'expires.');
         log.debug("Leaving the certificate chain endpoint. Not found.");
         return;
       }

@@ -521,6 +521,19 @@ rule is enforced in code, not in policy.
   ended, observed, or failed (`STS-SSF-0111`). A policy that cannot be
   loaded is `STS-SSF-0110`.
 
+**AN INBOX ROW KEEPS THE SET'S DIGEST, NEVER THE SET (#614).** A row is
+`tokenDigest` (`crypto.credentialDigest()` of the compact SET), the header
+and the claims read when it arrived, and the verdict and reactions decided
+then. It kept the whole signed token until #614 — 1–4 kB a row, up to
+`ssf.maxReceivedEvents` per surface per realm, replicated into every process
+— for a `describeEntry()` option, `withToken`, that no page, operation or
+test ever passed. The option is gone and every described row carries
+`tokenDigest`, which matches a row against the SET a transmitter logged.
+The OUTBOUND stores stay whole, and that is the exception the issue names:
+`ssf_streams.queued` and `ssf_streams.deadLetters` hold the SET until the
+receiver acknowledges it, because a poll (RFC 8936) or a re-push sends those
+exact bytes. `tests/vc_store_digests.js` section 7 holds the inbox's shape.
+
 `tests/signal_response.js` covers the policy, its decisions, and a real
 signed SET through `accept()`: development observes; the person's own
 console session is ended, once; somebody else's event, an unverified SET
@@ -727,6 +740,24 @@ issued at create sends nothing. `tests/risc_identifiers_recovery.js`,
 holder opted out and never the row just added. When nothing else is left to
 drop, the register stays over its cap and logs `STS-SSF-0130` rather than
 choose whose choice to lose. `tests/risc_register.js` section O.
+
+**A DIRECTORY WRITE KEEPS A ROW ONLY WHEN IT LEAVES THE REGISTER SOMETHING TO
+REMEMBER (#618 phase 2, 2026-10-14).** `observe()` made a row for every
+account any write touched, so a bulk load wrote one blank row per person and,
+past the cap, journalled the eviction of the oldest — about 2.3 of the 9.7
+change-log rows each LDAP add cost on 8081, for a register that holds the
+last two hundred accounts anyway. A row the write would make is now kept
+(`keepsFreshRow()`) when the write produced an act — which covers every write
+that releases an identifier, the history `identifier-recycled` is read from
+— or names a service account, which the opt-out gate reads off the row. A
+row the register already holds is updated as before. Every reader answers an
+absent row with the row's defaults (`opt-in`, the gate applies, `get()` is
+null), and the next write that matters makes the row from its own snapshot.
+**What is given up**: `/admin/risc-accounts` listing accounts nothing has
+happened to, and a hand-sent event naming such an account's address or
+number being matched to it rather than to the identifier — what every
+account past the cap already got. `tests/change_rows_per_add.js` section 3,
+`tests/risc_acts_units.js` G (its row is made by hand now).
 
 ---
 

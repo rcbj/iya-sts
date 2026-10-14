@@ -480,6 +480,14 @@ const JOBS = [
   // The portal's /portal/certificates page: a person's own enrollment
   // credentials and certificates, driven with two signed-in browsers.
   { file: 'sts_portal_certificates.js',  browser: false, local: true },
+  // AN OWNER ADMINISTERS WHAT THEY OWN (#607): signed in as the portal with
+  // both resources and the owner scopes, the owner token refreshed for
+  // /admin-api; a role, a group, an application and a service account read
+  // and changed within the access-control policy's owner rule, and refused
+  // outside it — a list, another's object, the last owner, an application's
+  // scopes, an administrator's mark, a person taken off everything, and a
+  // person who owns nothing issued no owner scope.
+  { file: 'sts_portal_owner_edits.js',   browser: false, local: true },
   // THE REAL CLIENTS (#207-#211, 2026-09-26): certbot and lego against
   // ACME, libest's estclient against EST, sscep and micromdm's scepclient
   // against SCEP — each at the version tests/Dockerfile pins, driven as an
@@ -678,7 +686,8 @@ const JOBS = [
   // answers the container's CPU and memory (read, or unavailable in a
   // sentence) and every process's memory, the totals the rows' sum, the
   // workers of /admin-api/worker-pools each listed; the page and its
-  // ?format=json; a realm's token is refused. `local: true`: this
+  // ?format=json; a full garbage collection on demand, front, all and one
+  // thread (#611); a realm's token is refused both. `local: true`: this
   // repository's own /admin and /admin-api.
   { file: 'sts_node_health.js',          browser: false, local: true },
   // RISK DATASETS AND THE FAILURE HISTORY (#62 P1, 2026-09-22): an operator
@@ -726,8 +735,11 @@ const JOBS = [
   // two acts followed to their runs' ends, or their 400 where the data keys
   // are derived per run. It rotates one class of the default realm's keys,
   // which changes nothing another job can see: a value sealed under either
-  // key opens. `local: true`: this repository's own /admin-api.
-  { file: 'sts_data_keys.js',            browser: false, local: true },
+  // key opens. `local: true`: this repository's own /admin-api. Its own
+  // watchdog (2026-10-13): two whole-store passes may take ten minutes each
+  // on two nodes, past the 300 s default.
+  { file: 'sts_data_keys.js',            browser: false, local: true,
+    timeoutMs: 1500000 },
   { file: 'sts_signer_groups.js',        browser: false, local: true },
   // THE CONSOLE AND THE PORTAL RENEW THEIR TOKENS INSIDE THE SAME SESSION
   // (2026-09-12). Both surfaces are this repository's own, and section 5 waits
@@ -953,6 +965,14 @@ const JOBS = [
   // another lane loads.
   // `local: true`: this repository's own sign-in screen and API.
   { file: 'sts_passkey_usernameless.js', browser: false, local: true },
+  // AN APPLICATION'S PASSKEY POLICY (#609): the named passkey policies
+  // naming an application, read back through `GET /admin-api/applications`'s
+  // `page.passkeyPolicies` in precedence order with the one that applies
+  // marked, and the policy page's application search over the Applications
+  // list, its Add saved by identifier. `local: true`: this repository's own
+  // API. In a throwaway realm, because named policies change what a sign-in
+  // gets.
+  { file: 'sts_passkey_policy_application.js', browser: false, local: true },
   // A SECURITY KEY'S ATTESTATION, VERIFIED (#105): keys enrolled at
   // /portal/keys in a throwaway realm with statements this job makes — an
   // x5c packed statement under a root minted at run time and configured as
@@ -1218,6 +1238,14 @@ const JOBS = [
   // exception. `local: true`: this repository's SCIM surface.
   { file: 'sts_scim_conformance.js',     browser: false, local: true,
     timeoutMs: 900000 },
+  // THE OUTBOUND SCIM CLIENT (#552, 2026-10-13): a scim-client in one
+  // throwaway realm provisioning into ANOTHER realm's own /scim/v2 on this
+  // service — OAuth 2.0 client_credentials at the target's token endpoint,
+  // the service's certificate trusted through the client's own CA
+  // certificates (the job's anchor) — a person and a group pushed, a change
+  // and a disable propagated, the queue drained with no dead letter.
+  // `local: true`: this repository's SCIM client and service provider.
+  { file: 'sts_scim_client.js',          browser: false, local: true },
   // TLSFUZZER (#212, 2026-09-26): every applicable tlsfuzzer script, pinned
   // and fetched into the tests image by tests/tlsfuzzer/build-tlsfuzzer.sh,
   // against the main HTTPS port and LDAPS 636 through
@@ -1408,6 +1436,29 @@ const JOBS = [
   // (and on an application's override), ignored where they are read once a
   // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
   { file: 'sts_mode_weak_settings.js',   browser: false, local: true },
+  // #293 WP1 (2026-10-13): clients an administrator created through
+  // /admin-api, in a development and a product realm — the device grant
+  // for a client declaring it (and refused one that does not), PAR required
+  // on one client's entry, and `id_token token` / `code token` refused in
+  // product (STS-OAUTH-0126).
+  { file: 'sts_admin_client_policies.js', browser: false, local: true },
+  // #293 WP4 (2026-10-13): client_secret_jwt issued and (in product)
+  // refused, and RFC 8705's tls_client_auth and self_signed_tls_client_auth
+  // over a real handshake on the main port, for clients created through
+  // /admin-api, in a development and a product realm.
+  { file: 'sts_client_authentication.js', browser: false, local: true },
+  // #293 WP2 (2026-10-13): a JAR client created through /admin-api, its
+  // request objects and key set served by this job — registered request_uri
+  // and jwks_uri, the registered algorithm, signed objects required; product
+  // refusing a plain-http request_uri at registration, and the https flow
+  // where a directory is shared with the service.
+  { file: 'sts_jar_admin_client.js',     browser: false, local: true },
+  // #293 WP3 (2026-10-13): OpenID Connect Back-Channel Logout delivered to
+  // the test peer's `bcl` role (tests/peer/peer_bcl.js), which verifies each
+  // Logout Token as a relying party must; a product realm refusing the
+  // peer's private address (STS-OAUTH-0534). Needs the peer (`testPeer`).
+  { file: 'sts_backchannel_logout.js',   browser: false, local: true,
+    testPeer: true },
   // The mail channel (#63): delivery to the Mailpit the stack runs, a
   // product realm of its own, verification, a self-service reset, a dead
   // letter. Skips its delivery sections where there is no catcher.
@@ -1481,6 +1532,14 @@ const JOBS = [
   //   sts_cells_kerberos.js   an AS and a TGS exchange at cell B's TCP 88
   //                           for a person homed at A are answered at home,
   //                           a sign-out at A included (#588)
+  //   sts_cells_scim_client.js  one outbound SCIM client across both cells
+  //                           (#553): a refused transfer pushes nothing,
+  //                           both cells' people pushed from home, a group
+  //                           keeping both cells' members, a shared pause, a
+  //                           move that is not a deactivation, and a group
+  //                           deleted only when both cells answer (it cuts
+  //                           and restores the link, so it runs before
+  //                           sts_cells_unreachable.js)
   //   sts_cells_unreachable.js  cell B cut off from A (tests/tools/
   //                           cell_link.js): fail-closed refuses a refresh,
   //                           a sign-in and a bind; fail-open refreshes a
@@ -1497,6 +1556,7 @@ const JOBS = [
   { file: 'sts_cells_console.js',        browser: false, local: true },
   { file: 'sts_cells_ldap.js',           browser: false, local: true },
   { file: 'sts_cells_kerberos.js',       browser: false, local: true },
+  { file: 'sts_cells_scim_client.js',    browser: false, local: true },
   { file: 'sts_cells_unreachable.js',    browser: false, local: true },
   // ---------------------------------------------------------------------
   // LAST, ALL THREE OF THEM, AND THE ORDER IS THE WHOLE OF WHY IT IS SAFE

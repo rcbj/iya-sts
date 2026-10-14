@@ -36,6 +36,11 @@
 //      row carries them across a restart and its merge keeps the newer
 //      count; a KEK read into the process is not rotated from here
 //      (STS-KEYS-0104); a store that cannot count turns the job off.
+//   K. (#623) a pass whose superseded keys were all last counted at 0, and
+//      none due, asks the store for nothing; a key due is re-sealed and
+//      counted again in that pass; while the directory's data-key index is
+//      being built, nothing is counted or destroyed; a zero counted before
+//      the key was superseded does not skip a pass.
 //   I. `keys.directoryCipher=aes-256-siv` seals the directory's classes with
 //      AES-256-SIV and nothing else; changing it back makes the class due a
 //      rotation, and the re-encryption moves the value to AES-256-GCM.
@@ -79,6 +84,9 @@ function childMain() {
   const rows = new Map();
   const table = new Map();
   const SEALED = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+  // Every pass over the sealed table, counted (#623): a pass with nothing
+  // to do must ask for none.
+  const calls = { count: 0, countAll: 0, reseal: 0 };
   const store = {
     loadKeys: function () {
       return Promise.resolve(Array.from(rows.entries()).map(function (p) {
@@ -109,6 +117,7 @@ function childMain() {
       });
     },
     countSealed: function (ids) {
+      calls.count += 1;
       const out = {};
       ids.forEach(function (id) {
         out[id] = 0;
@@ -122,6 +131,7 @@ function childMain() {
     },
     // One pass, every key: postgres's `countAllSealed()` (#391 P5).
     countAllSealed: function () {
+      calls.countAll += 1;
       const out = {};
       table.forEach(function (v) {
         (v.match(SEALED) || []).forEach(function (one) {
@@ -132,6 +142,7 @@ function childMain() {
       return Promise.resolve(out);
     },
     resealSealed: function (ids, reseal) {
+      calls.reseal += 1;
       let n = 0;
       table.forEach(function (v, k) {
         let changed = false;
@@ -241,10 +252,33 @@ function childMain() {
          'keys.dataKeyRetireAfterDays', JSON.stringify(pass1));
     note(table.get('a').indexOf('$' + fresh + '$') > 0,
          'C2. the stored value now names the current key');
+    // ---------------------------------------------------------------- K
+    // NOTHING TO DO IS NOT A PASS (#623): the superseded key was counted at
+    // 0 after it was superseded and is not due, so the hourly pass asks the
+    // store for no re-seal and no count — no walk of anything.
+    const beforeQuiet = Object.assign({}, calls);
+    const quiet = await job(3600000).reencrypt({ trigger: 'test' });
+    note(quiet.skipped === true && quiet.destroyed === 0 &&
+         calls.reseal === beforeQuiet.reseal &&
+         calls.count === beforeQuiet.count,
+         'K1. a pass whose superseded keys were all last counted at 0, none ' +
+         'due, asks the store for no re-seal and no count',
+         JSON.stringify({ pass: quiet, before: beforeQuiet, after: calls }));
+    // A value written back under the superseded key after its zero — a
+    // stale copy flushed by some process — waits for the pass that is due
+    // to destroy the key, which re-seals and counts it first (C3).
+    table.set('stale', v1);
+    const beforeDue = Object.assign({}, calls);
     const pass2 = await job(8 * DAY).reencrypt({ trigger: 'test' });
     note(pass2.destroyed === 1,
          'C3. once superseded long enough and nothing names it, it is ' +
          'destroyed', JSON.stringify(pass2));
+    note(!pass2.skipped && calls.reseal === beforeDue.reseal + 1 &&
+         calls.count === beforeDue.count + 1 &&
+         table.get('stale').indexOf('$' + fresh + '$') > 0,
+         'K2. a key due to be destroyed is re-sealed and counted again in ' +
+         'that pass, so a value written back under it after its zero count ' +
+         'is moved before the key goes', JSON.stringify(calls));
     note(audited.some(function (r) {
       return r.action === 'keys.data-key-destroy';
     }) && audited.some(function (r) {
@@ -437,6 +471,135 @@ function childMain() {
       .countOffReason()),
          'J6. where the store cannot count, the count job is off and says ' +
          'why');
+
+    // ---------------------------------------------------------------- K
+    // AN INDEX STILL BEING BUILT (#623): where the store's data-key index of
+    // the directory still lacks entries written before it existed, nothing
+    // is counted and nothing destroyed — neither job asks for a count the
+    // store would refuse.
+    // A year on (E rotated every slot with a successor due then), so keys
+    // are superseded; back to now afterwards.
+    shift = 401 * DAY;
+    const indexing = rotation.DataKeyRotation.defaultDeps();
+    let indexAsked = 0;
+    indexing.keystore = function () {
+      return Object.assign({}, keystore, { sealedStore: function () {
+        return Object.assign({}, keystore.sealedStore(), {
+          index: function () {
+            indexAsked += 1;
+            return Promise.resolve({ indexed: 5, remaining: true });
+          } });
+      } });
+    };
+    indexing.now = function () { return Date.now() + 30 * DAY; };
+    const beforeIndex = Object.assign({}, calls);
+    const unindexed = await new rotation.DataKeyRotation(indexing)
+      .reencrypt({ trigger: 'test' });
+    const uncounted = await new rotation.DataKeyRotation(indexing)
+      .countAll({ trigger: 'test' });
+    shift = 0;
+    note(unindexed.superseded > 0 && indexAsked === 2 &&
+         unindexed.destroyed === 0 &&
+         unindexed.remaining === null && calls.count === beforeIndex.count &&
+         calls.countAll === beforeIndex.countAll && uncounted.values === null,
+         'K3. while the directory\'s data-key index is being built, the ' +
+         're-encryption destroys nothing and neither job asks for a count',
+         JSON.stringify({ reencrypt: unindexed, count: uncounted }));
+
+    // A ZERO COUNTED BEFORE THE KEY WAS SUPERSEDED IS NOT A ZERO (#623):
+    // the key was still sealing then. Only a zero taken after it skips.
+    const stubbed = function (countedAt) {
+      const deps = rotation.DataKeyRotation.defaultDeps();
+      const asked = { reseal: 0, count: 0 };
+      deps.keystore = function () {
+        return {
+          settleDeks: function () { return Promise.resolve(); },
+          settleAll: function () { return Promise.resolve(); },
+          resealOwnRows: function () { return 0; },
+          supersededDeks: function () {
+            return [{ id: 'k-stubbed-1', supersededAt: 1000000, values: 0,
+                      countedAt: countedAt }];
+          },
+          sealedStore: function () {
+            return {
+              reseal: function () {
+                asked.reseal += 1;
+                return Promise.resolve({ minted: 0, entries: 0, secrets: 0,
+                                         skipped: 0, changed: [] });
+              },
+              count: function () {
+                asked.count += 1;
+                return Promise.resolve({ 'k-stubbed-1': 0 });
+              }
+            };
+          },
+          recordCounts: function () { return 1; },
+          destroyDeks: function () { return 0; },
+          reseal: function () { return null; }
+        };
+      };
+      deps.now = function () { return 1000000 + DAY; };
+      return { job: new rotation.DataKeyRotation(deps), asked: asked };
+    };
+    const early = stubbed(999999);
+    const earlyPass = await early.job.reencrypt({ trigger: 'test' });
+    const late = stubbed(1000001);
+    const latePass = await late.job.reencrypt({ trigger: 'test' });
+    note(!earlyPass.skipped && early.asked.reseal === 1 &&
+         early.asked.count === 1 && latePass.skipped === true &&
+         late.asked.reseal === 0 && late.asked.count === 0,
+         'K4. a zero counted before the key was superseded does not skip ' +
+         'the pass; one counted after it does',
+         JSON.stringify({ early: early.asked, late: late.asked }));
+
+    // THE INDEX IS BUILT ON EVERY RE-ENCRYPTION PASS, AND THE JOB COMES
+    // BACK SOONER UNTIL IT IS COMPLETE (#618): on 8081 an hourly ten-second
+    // pass would have taken ~62 hours over 2.9M entries, and a store with
+    // no superseded key built it only on the daily count.
+    const catchUp = function (remainingAfter) {
+      const deps = rotation.DataKeyRotation.defaultDeps();
+      const asked = { index: 0 };
+      deps.keystore = function () {
+        return {
+          settleDeks: function () { return Promise.resolve(); },
+          settleAll: function () { return Promise.resolve(); },
+          resealOwnRows: function () { return 0; },
+          supersededDeks: function () { return []; },
+          sealedStore: function () {
+            return {
+              index: function () {
+                asked.index += 1;
+                return Promise.resolve({ indexed: 46500,
+                  remaining: asked.index < remainingAfter ? 1 : 0 });
+              }
+            };
+          }
+        };
+      };
+      return { job: new rotation.DataKeyRotation(deps), asked: asked };
+    };
+    const building = catchUp(3);
+    const s1 = await building.job.reencrypt({ trigger: 'test' });
+    const pendingAfterFirst = building.job.indexPending;
+    await building.job.reencrypt({ trigger: 'test' });
+    await building.job.reencrypt({ trigger: 'test' });
+    note(building.asked.index === 3 && s1.superseded === 0 &&
+         s1.indexed === 46500 && pendingAfterFirst === true &&
+         building.job.indexPending === false &&
+         rotation.DataKeyRotation.INDEX_CATCHUP_MS === 5 * 60 * 1000,
+         'K5. with no superseded key the re-encryption pass still builds ' +
+         'the data-key index, and says when it is still incomplete',
+         JSON.stringify({ asked: building.asked, s1: s1 }));
+    const catching = catchUp(2);
+    const hourly = catching.job.reencryptIntervalMs();
+    await catching.job.reencrypt({ trigger: 'test' });
+    const soon = catching.job.reencryptIntervalMs();
+    await catching.job.reencrypt({ trigger: 'test' });
+    note(hourly === 3600000 && soon === 5 * 60 * 1000 &&
+         catching.job.reencryptIntervalMs() === 3600000,
+         'K6. the job comes back in five minutes while the index is ' +
+         'incomplete, and hourly once it is',
+         JSON.stringify({ hourly: hourly, soon: soon }));
 
     // ---------------------------------------------------------------- G
     const deps = rotation.DataKeyRotation.defaultDeps();

@@ -169,6 +169,7 @@
   "directory.placeholder": "ett DN, ett attributnamn eller ett värde",
   "directory.cameFrom": "Kom från",
   "directory.searchNote": "Rutan matchar DN, alla attributNAMN och alla attributVÄRDEN, utan hänsyn till skiftläge. Värden söks eftersom den som behöver detta mest ofta har ett fingeravtryck eller en hemlighet i handen och ingen aning om vilken post som bär den, något som en sökning enbart på DN inte kan svara på.",
+  "directory.searchLimited": "<strong>Rutan sökte i de första {scanned} posterna i nyckelordning, inte i alla.</strong> Attributvärdena är förseglade i lagret, så det kan inte självt söka i dem, och en begäran läser högst {limit}. Välj ett ursprung, eller skriv mer av DN:et i rutan, för att begränsa vad som genomsöks.",
   "directory.thAttributes": "Attribut",
   "directory.noMatch": "Ingen post matchar.",
   "directory.filterHiding": "Filtret ovan kanske döljer några.",

@@ -2005,6 +2005,84 @@ class SpiffeServer {
   }
 
   // ---------------------------------------------------------------------------
+  // A REALM'S FEDERATION CHANGED: ITS TWO TCP LISTENERS' TRUST FOLLOWS (#438).
+  //
+  // The SPIRE Server API and the Broker API trust the realm's federated trust
+  // domains' X.509 authorities at the handshake (`spiffe_grpc.ts`'s
+  // `listenerTrustPem()`), and the sockets are this process's. `spiffe_ca.ts`
+  // announces a change however it arrived — a write here, a request worker's,
+  // another node's through the change log — and this re-applies the trust to
+  // the next handshake, in place: the listener keeps its certificate, its
+  // policy and request-but-not-require. A realm with no TCP listener here (a
+  // request worker, a realm whose SPIFFE is off) has nothing to do. Never
+  // thrown: a listener that could not take its new trust still verifies every
+  // SVID in `spiffe_auth.ts`, by reading the certificate off the socket.
+  // ---------------------------------------------------------------------------
+  /**
+   * Re-applies a realm's TCP listeners' TLS trust after its federated bundles
+   * changed.
+   *
+   * @param realmId - the realm's id, '' for the default
+   */
+  refreshFederatedTrust(realmId: string): void {
+    const { log, rpc, errorCodes } = this.deps;
+    log.debug('Entering SpiffeServer.refreshFederatedTrust(). realm=' +
+              (realmId || 'default'));
+    const entry = listeners.get(String(realmId || ''));
+    if (!entry || (!entry.apiCredentials && !entry.brokerCredentials)) {
+      log.debug('Leaving SpiffeServer.refreshFederatedTrust(). Nothing ' +
+                'bound here.');
+      return;
+    }
+    try {
+      this.inRealm(realmId, function () {
+        [entry.apiCredentials, entry.brokerCredentials].filter(Boolean)
+          .forEach(function (credentials) {
+            rpc.refreshListenerTrust(credentials);
+          });
+      });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-SPIFFE-0147') +
+                'spiffe: the "' + (realmId || 'default') + '" realm\'s ' +
+                'SPIFFE TCP listeners could not take its federated trust ' +
+                'domains\' authorities; a federated SVID is still verified ' +
+                'against the bundle, read off the socket: ' +
+                ((e && e.message) || e));
+    }
+    log.debug('Leaving SpiffeServer.refreshFederatedTrust().');
+  }
+
+  // For `tests/spiffe_broker.js` (#438): what a realm's two TCP listeners
+  // trust at the handshake now, as the number of certificates in each one's
+  // `ca`. A claim about a bound socket's secure context cannot be read from
+  // the client's side of a TLS 1.3 handshake.
+  /**
+   * Returns how many certificates each of a realm's TCP listeners trusts.
+   *
+   * @param realmId - the realm's id, '' for the default
+   * @returns `{ api, broker }`, each a count or null where none is bound
+   */
+  listenerTrustOf(realmId: string): { api: number | null,
+                                      broker: number | null } {
+    const { log } = this.deps;
+    log.debug('Entering SpiffeServer.listenerTrustOf().');
+    const entry = listeners.get(String(realmId || '')) || {};
+    const count = function (credentials) {
+      const options = credentials &&
+        typeof credentials._getSecureContextOptions === 'function'
+        ? credentials._getSecureContextOptions() : null;
+      if (!options || !options.ca) {
+        return null;
+      }
+      return (String(options.ca).match(/-----BEGIN CERTIFICATE-----/g) ||
+              []).length;
+    };
+    log.debug('Leaving SpiffeServer.listenerTrustOf().');
+    return { api: count(entry.apiCredentials),
+             broker: count(entry.brokerCredentials) };
+  }
+
+  // ---------------------------------------------------------------------------
   // THE REALM'S BRANCH UNDER THE NEW ROOT BEFORE ANYTHING IS ISSUED FROM IT
   // (2026-09-21). The listener certificate changes the moment a replaced Root
   // arrives here — often from ANOTHER process, whose build-root then rebuilds
@@ -2083,6 +2161,14 @@ class SpiffeServer {
     if (typeof tlsServer.onServerCertificateChange === 'function') {
       tlsServer.onServerCertificateChange(function () {
         instance.refreshServerCredentials();
+      });
+    }
+
+    // A realm's federated bundles changed, here or anywhere: its two TCP
+    // listeners' trust follows (#438). See refreshFederatedTrust().
+    if (typeof ca.onFederationChange === 'function') {
+      ca.onFederationChange(function (realmId) {
+        instance.refreshFederatedTrust(realmId);
       });
     }
 
@@ -2194,5 +2280,6 @@ export = {
     log.debug("Leaving realmsListening().");
     return Array.from(listeners.keys());
   },
+  listenerTrustOf: slot.forward('listenerTrustOf'),
   reconcile: slot.forward('reconcile')
 };

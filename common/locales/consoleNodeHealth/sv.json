@@ -56,7 +56,7 @@
   "ecsCpuWhy": "{pct} av uppgiftens vCPU:er, mellan agentens två senaste mätvärden",
   "na": "e/t",
   "tileResident": "Residentminne, alla processer",
-  "about": "Containerns CPU och minne läses från dess cgroup (v2), varje process och arbetstråds från processen eller tråden själv, när sidan ritas; inget sparas utom föregående CPU-mätvärde. Den här sidan ändrar ingenting.",
+  "about": "Containerns CPU och minne läses från dess cgroup (v2), varje process och arbetstråds från processen eller tråden själv, när sidan ritas; inget sparas utom föregående CPU-mätvärde. Dess enda kontroll kör en fullständig skräpinsamling på begäran; inget annat här ändrar någonting.",
   "whatThisPageIs": "Vad sidan är",
   "headMachine": "Maskinen, inte containern",
   "loadAverage": "Belastningsmedel",
@@ -74,5 +74,17 @@
   "thState": "Tillstånd",
   "thAge": "Ålder",
   "thisNode": "(den här noden)",
-  "nodeNamed": "Nod {name}"
+  "nodeNamed": "Nod {name}",
+  "thCollect": "Skräpinsamling",
+  "collect": "Samla",
+  "collectAll": "Samla skräp i varje process och arbetstråd",
+  "notCollectable": "inte den här nodens frontprocess eller en av dess arbetstrådar",
+  "gcWarning": "En fullständig skräpinsamling stoppar tråden den körs i tills den är klar, och i frontprocessen pausar det varje lyssnare på den här noden. Det är ett diagnosverktyg: V8 samlar enligt sitt eget schema, och minne som en framtvingad insamling inte frigör är upptaget, inte skräp. Varje tryck granskas.",
+  "gcResultHead": "Skräp insamlat",
+  "gcResultSummary": "{n} isolat insamlade, {freed} frigjort totalt, längsta paus {pause} ms. Tabellen nedan lästes före insamlingen; ladda om sidan för att läsa den igen.",
+  "thIsolate": "Isolat",
+  "thHeapBefore": "Heap före",
+  "thHeapAfter": "Heap efter",
+  "thFreed": "Frigjort",
+  "thPause": "Paus"
 }

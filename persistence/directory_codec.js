@@ -21,8 +21,10 @@
 //
 //   name_keys   the `uid` values, lower-cased      — `byName()`
 //   mail_keys   `mail`, lower-cased                — `byMail()`
-//   uuid_keys   `entryUUID` and its aliases        — `byUuid()`
-//   class_keys  `objectClass`, lower-cased         — `classesUnder()`
+//   uuid_keys   `entryUUID` and its aliases        — `byUuid()`,
+//                                                   `withUuids()`
+//   class_keys  the GROUP `objectClass` values     — `classesUnder()`
+//               (CLASS_INDEXED), lower-cased; none for anything else
 //   value_keys  `name=value` of VALUE_INDEXED       — `byAttribute()`
 //   attr_names  the attribute NAMES, in the clear  — `withAttribute()`
 //
@@ -59,6 +61,24 @@ const DIGEST_LABEL = 'directory-index';
 // ID, a certificate subject, a login name, a federation link).
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
                        'federationlink'];
+
+// THE OBJECT CLASSES `class_keys` HOLDS: THE GROUP CLASSES, AND ONLY THOSE
+// (#618 phase 2, schema version 18). `classesUnder()` is the one question
+// asked of the column, and it is only ever asked for a group class
+// (`ldap_server.js`'s GROUP_CLASSES, which `tests/directory_queries.js` holds
+// to this list): "the groups placed under `ou=users` or `ou=devices`". Until
+// version 18 the column held every class, so every person wrote four GIN
+// entries — `top`, `person`, `organizationalPerson`, `inetOrgPerson`, each
+// in more than 99% of 8081's rows — that narrowed nothing. A person now
+// writes `[]`, which the partial index leaves out. An entry written before
+// version 18 still holds all its classes until it is next written, and the
+// question answers the same over either: a group class is in both.
+//
+// The database cannot narrow the column itself — each value is a keyed
+// digest it cannot read — which is why this is done where the digests are
+// made rather than by a generated column or an index expression.
+const CLASS_INDEXED = Object.freeze(['groupofnames', 'groupofuniquenames',
+                                     'posixgroup', 'groupofurls']);
 
 function keystore() {
   log.debug("Entering keystore().");
@@ -156,13 +176,53 @@ function indexOf(attrs) {
     mailKeys: keyed('mail', lowered(valuesOf(a, 'mail'))),
     uuidKeys: keyed('uuid', lowered(valuesOf(a, 'entryuuid')
       .concat(valuesOf(a, 'stsentryuuidalias')))),
-    classKeys: keyed('class', lowered(valuesOf(a, 'objectclass'))),
+    classKeys: keyed('class', lowered(valuesOf(a, 'objectclass'))
+      .filter(function (one) {
+        return CLASS_INDEXED.indexOf(one) >= 0;
+      })),
     valueKeys: valueKeys,
     attrNames: unique(Object.keys(a).map(function (one) {
       return one.toLowerCase();
     }))
   };
   log.debug("Leaving indexOf().");
+  return out;
+}
+
+// A value sealed under a data key: `$aesgcm$2$<dek id>$…` or the same with
+// `aessiv` (persistence_postgres.js's SEALED_VALUE, which re-seals by it).
+const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+
+/**
+ * The data keys an entry holds values under, for `sts_ldap_entries.dek_keys`
+ * (#623): `{ <dek id>: <values> }` — the stored blob's own key, once, and the
+ * key of every value sealed INSIDE the attributes, once per value. What the
+ * re-encryption job finds an entry by and what `sts_ldap_dek_counts` sums,
+ * so it counts what the directory walk it replaced counted.
+ *
+ * @param attrs - the attributes as text (their JSON) or as an object; a
+ *   blob that did not open is passed as null and counts for its own key only
+ * @param stored - the `attrs` column value: the sealed blob, or the plain
+ *   attributes where nothing seals
+ * @returns the map, `{}` for an entry holding nothing sealed
+ */
+function dekKeysOf(attrs, stored) {
+  log.debug("Entering dekKeysOf().");
+  const out = {};
+  const add = function (id) {
+    if (id) {
+      out[id] = (out[id] || 0) + 1;
+    }
+  };
+  if (typeof stored === 'string') {
+    add(require('../common/crypto').dekIdOf(stored));
+  }
+  const text = typeof attrs === 'string' ? attrs
+    : (attrs === null || attrs === undefined ? '' : JSON.stringify(attrs));
+  (text.match(SEALED_VALUE) || []).forEach(function (one) {
+    add(one.split('$')[3]);
+  });
+  log.debug("Leaving dekKeysOf().");
   return out;
 }
 
@@ -233,7 +293,8 @@ function create(tier) {
       log.debug("Leaving codec.openAttributes().");
       return parsed.a || {};
     },
-    index: indexOf
+    index: indexOf,
+    dekKeys: dekKeysOf
   };
   log.debug("Leaving create().");
   return codec;
@@ -256,15 +317,35 @@ function keyArgs(name, args) {
   if (name === 'byName') {
     const wanted = lower(a[2]);
     a[2] = { key: lookupOf('name', wanted), rdn: wanted };
+  } else if (name === 'withNames') {
+    a[2] = (a[2] || []).map(function (one) {
+      const wanted = lower(one);
+      return { key: lookupOf('name', wanted), rdn: wanted };
+    });
   } else if (name === 'byUuid') {
     a[1] = { key: lookupOf('uuid', lower(a[1])) };
+  } else if (name === 'withUuids') {
+    a[1] = (a[1] || []).map(function (one) {
+      return { key: lookupOf('uuid', lower(one)) };
+    });
   } else if (name === 'byMail') {
     a[1] = { key: lookupOf('mail', lower(a[1])) };
+  } else if (name === 'equalUnder') {
+    a[3] = { key: lookupOf(String(a[2]), lower(a[3])) };
   } else if (name === 'byAttribute') {
     a[2] = { key: lookupOf('attr:' + lower(a[1]), String(a[2])) };
   } else if (name === 'classesUnder') {
     a[2] = (a[2] || []).map(function (one) {
-      return { key: lookupOf('class', lower(one)) };
+      const wanted = lower(one);
+      // A class the column does not hold would be answered "nobody" by a
+      // question that looks right, so it is refused where it is asked.
+      if (CLASS_INDEXED.indexOf(wanted) < 0) {
+        log.debug("Leaving keyArgs(). A class that is not indexed.");
+        throw new Error('directory_codec: classesUnder is asked only for ' +
+                        'the group classes (' + CLASS_INDEXED.join(', ') +
+                        '), not ' + wanted);
+      }
+      return { key: lookupOf('class', wanted) };
     });
   }
   log.debug("Leaving keyArgs().");
@@ -283,8 +364,9 @@ function keyArgs(name, args) {
  */
 function openAnswer(codec, name, answer) {
   log.debug("Entering openAnswer(). " + name);
-  if (!Array.isArray(answer)) {
-    log.debug("Leaving openAnswer(). Not rows.");
+  // KEYS AND DNs ONLY (`keysUnder`, #616): nothing sealed to open.
+  if (!Array.isArray(answer) || name === 'keysUnder') {
+    log.debug("Leaving openAnswer(). Not entries.");
     return answer;
   }
   const out = [];
@@ -316,12 +398,14 @@ function openAnswer(codec, name, answer) {
 module.exports = {
   LABEL: LABEL,
   VALUE_INDEXED: VALUE_INDEXED,
+  CLASS_INDEXED: CLASS_INDEXED,
   create: create,
   // The same, for the postgres driver, whose own factory is `create()`: a
   // `create(` in its body reads to tests/no_periodic_timers.js as the
   // factory calling itself.
   codecFor: create,
   indexOf: indexOf,
+  dekKeysOf: dekKeysOf,
   lookupOf: lookupOf,
   keyArgs: keyArgs,
   openAnswer: openAnswer

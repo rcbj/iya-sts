@@ -467,6 +467,7 @@ var config = {
     stepUpAcrValues: "",                           // Step-up: acr values this service's resource server requires
     stepUpMaxAgeS: -1,                             // Step-up: oldest authentication this service's resource server accepts (s)
     errorPageAutoRedirectS: 0,                     // Error page: continue to the client after (seconds)
+    keyBinding: true,                              // OpenID Connect Key Binding
     sessionManagement: false,                      // OpenID Connect Session Management
     frontchannelLogout: true,                      // OpenID Connect Front-Channel Logout
     frontchannelLogoutWaitS: 3,                    // Front-channel logout: seconds before returning
@@ -685,6 +686,7 @@ var config = {
     unsolicitedSso: true,                                                  // Identity-provider-initiated sign-in
     defaultSingleLogoutService: "",                                        // Fallback logout return address
     requestTtlMin: 10,                                                     // Held AuthnRequest lifetime (minutes)
+    maxArtifacts: 10000,                                                   // Unresolved artifacts kept
     redirectWarnLength: 8000,                                              // Redirect-binding length warning (characters)
     spMetadataMaxBytes: 524288,                                            // Largest SP metadata document fetched (bytes)
     spMetadataRefresh: true,                                               // Refresh stale SP metadata in the background
@@ -705,7 +707,9 @@ var config = {
     artifactTtlS: 300,                                                     // Artifact lifetime (seconds)
     autocreateApplications: true,                                          // Register relying parties on sight
     requestTtlMin: 10,                                                     // Held flow lifetime (minutes)
-    assertionCacheMax: 500                                                 // Assertions kept for AssertionIDReference
+    assertionCacheMax: 500,                                                // Assertions kept for AssertionIDReference
+    assertionCacheTtlS: 3600,                                              // Kept assertion lifetime without NotOnOrAfter (seconds)
+    maxArtifacts: 10000                                                    // Unresolved artifacts kept
   },
 
   // --- WS-Trust --------------------------------------------------------
@@ -757,10 +761,11 @@ var config = {
     tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
     autocreateUsers: true,                                                                                                                      // Auto-create users
     maxEntries: 2000,                                                                                                                           // Maximum entries
-    workerDirectory: "memory",                                                                                                                  // Directory in request workers; restart to apply
+    workerDirectory: "auto",                                                                                                                    // Directory held in memory, or as a window; restart to apply
     workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
     workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
     sizeLimit: 500,                                                                                                                             // Search size limit
+    timeLimit: 30,                                                                                                                              // Search time limit (s)
     plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
     selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
     directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people

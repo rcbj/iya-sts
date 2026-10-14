@@ -883,7 +883,9 @@ survived the over-HTTP job, which is the third time this repository has recorded
 WebAuthn ceremony needs script and every portal page was `script-src 'none'`.
 **`/portal/keys` became the seventh scripted page later the same day** (reusing
 `/authn/webauthn.js`), so a person can now enrol keys there, up to
-`webauthn.maxKeysPerPerson`. What is still open on the activation flow's *a
+`webauthn.maxKeysPerPerson`. (Since #568, 2026-10-12, the whole portal is a
+static application under `script-src 'self'`, and its runtime runs the
+ceremony on `/portal/keys`, `/portal/activate` and `/portal/devices`.) What is still open on the activation flow's *a
 security key instead of a password* is recorded in `portal/CLAUDE.md`.
 
 ## `setSessionObserver()` — the one INVERTED HOOK this module offers
@@ -2122,6 +2124,26 @@ from before #474 has no handle on its row and was created under the name; it
 still answers where the username is typed (its handle must then be the
 name's bytes), and never where it is not (`STS-AUTHN-0304`, rcbj's decision:
 no migration — the person registers it again).
+
+**Required, for one kind of application** (#608, rcbj 2026-10-13): the
+passkey policy's `requireUsernameless` takes the username field and Sign In
+off the screen (`screenView()`'s `usernameless`) and refuses a POST naming a
+person (`STS-AUTHN-0333`, in `screenAct()` after the passkey branch). One
+method decides, `usernamelessRequired()`, and it asks four things: the
+record is passwordless by the APPLICATION's own declaration of `webauthn`
+alone (a relationship's `webauthn`, or a demand for two factors that
+overrode it, is not this case); a usernameless passkey is offered at all
+(`passkeyOffered()`); the profile that selects the APPLICATION — chosen by
+the application alone and read by name, never the ambient selection — has
+the row on; and the application is not a hosted surface
+(`applications.HOSTED_SURFACE_CLIENT_IDS`) under the `default` profile. That
+last is rcbj's: a realm-wide switch must not change how an administrator
+gets into the console, the debugger or the portal; a named profile that
+selects one of them does.
+
+**A disabled box is drawn greyed** (#608): `web_authn_login.ts` gives its
+label `off` beside `chk`, and `/web/card.css` greys it. A box checked AND
+disabled by a demand is in force, not unavailable, and is not greyed.
 
 **The usernameless sign-in** (the passkey policy's `allowUsernameless`, ON
 by default since 2026-10-10, off before — `webauthn.usernameless` until #527; `common/CLAUDE.md` 3ch) is

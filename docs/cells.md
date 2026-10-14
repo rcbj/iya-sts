@@ -208,9 +208,11 @@ Every refusal is an `STS-CELL-020x` code, and the exit status is non-zero.
 ## The decisions are policy
 
 Whether a session may be held away from home, whether a request may be
-served at all, and whether a cell's people may be listed from another
-jurisdiction are all questions to the realm's **issuance policy**. The facts
-it receives are:
+served at all, whether a cell's people may be listed from another
+jurisdiction, and whether a person may be pushed to an outbound SCIM client's
+service provider in another jurisdiction (purpose `scim-provision`; see
+[SCIM](scim.md#in-a-service-deployed-as-cells)) are all questions to the
+realm's **issuance policy**. The facts it receives are:
 
 * the home and serving jurisdictions;
 * the client's country;

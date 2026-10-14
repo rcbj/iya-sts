@@ -140,9 +140,34 @@ portal through single sign-on, with no screen.
 
 **Resources I own** is a section of the portal's column with four pages. Each
 lists the roles, groups, service accounts or applications whose owners name
-the person, or a group the person is in, and says which. The pages are
-read-only: an owner answers for a resource but gains no access through it, and
-an administrator sets owners on the console's Owners tabs.
+the person, or a group the person is in, and says which, twenty to a page with
+a pager under the list. An administrator sets owners on the console's Owners
+tabs.
+
+**An owner can change what they own.** Each name opens that object's page,
+where an owner can:
+
+| Kind | What an owner can change |
+|---|---|
+| Role | its display name and description; its members (people, groups, applications); its owners |
+| Group | its members (add); its owners |
+| Service account | where its rotated password is pushed; rotate the password now; its owners |
+| Application | its name, home page, CORS origins, redirect and logout addresses, SAML endpoints; a new client secret (shown once); its owners |
+
+An owner can add and remove other owners, but not the last one; an
+administrator can. Nobody can create, delete or rename an object here.
+
+The page reads and writes through the [management API](management-api.md#owners)
+with a second access token the portal gets from the same sign-in. The
+access-control policy decides every read and change, so the page refuses
+whatever the policy refuses and says why. A person who owns nothing is not
+issued that token.
+
+**Some objects are closed to their owners**, and their row says so. These are
+the service's own roles, the console's administrator groups, the service's own
+applications, anything that holds or grants one of the service's own
+permissions, and anything an administrator has marked. An administrator
+changes those.
 
 ## The admin console
 
@@ -229,8 +254,8 @@ before turning them into static pages:
 | SCIM 2.0 | `/scim` | The base URL and whether SCIM is on; that the endpoints require a credential and what is checked of it, per mode; what `active: false` does; the directory it provisions into and its counts; why the `id` is the DN; every authentication scheme and the access-control policy; the endpoints; what it does not do; the things that can be made to fail; the User mapping | `scim/scim.ts`, `GET /scim` (`description()` and `pageShell()`) | none (not `/scim/v2`) | `?format=json` (any case) → the description as JSON; anything else HTML |
 | SPIFFE | `/spiffe` | The trust domain; whether SPIFFE is on and the issuing authority is ready; what is attested and what is not; whether the SPIRE Server API authenticates; the bundle endpoint; the authorities and the trust anchors; the Workload API, SPIRE Server API and Broker API listeners and methods; who may call the SPIRE Server API and SPIRE's per-method table; what is not checked and what is refused; the registry; links elsewhere | `spiffe/spiffe_server.ts`, `GET /spiffe` (`description()` and `page()`) | none | `?format=json` (exactly) → the description as JSON; anything else HTML |
 
-Every one answered 200, `Cache-Control: no-store`, `text/html`, drawn by the
-server under the service's `script-src 'none'`, in English only.
+Before #584 every one answered 200, `Cache-Control: no-store`, `text/html`,
+drawn by the server under the service's `script-src 'none'`, in English only.
 
 **What is not a page here, and is unchanged by #584**, because a
 specification defines it: every SAML 2.0 and SAML 1.1 endpoint — the bare

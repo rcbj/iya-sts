@@ -59,14 +59,20 @@ type Json = any;
 
 // The portal's client: public, DPoP-bound (`sender_constraints.js`).
 const CLIENT_ID = 'sts-user-portal';
-// An ID Token for who signed in, and the one scope the account API takes.
-const SCOPE = 'openid account:manage';
+// An ID Token for who signed in, the one scope the account API takes, and an
+// owner's two on the management API (#607) — issued only to a person who
+// owns something, so a token without them is the ordinary case.
+const SCOPE = 'openid account:manage owner:read owner:write';
 // The key the sign-in's one-use values cross the redirect under.
 const SIGNIN_KEY = 'sts-portal-signin';
 // How long before an access token's expiry it is refreshed, in seconds.
 const REFRESH_EARLY = 30;
 // The account API's base.
 const API = '/account-api';
+// THE MANAGEMENT API'S (#607): what a person administers what they own
+// through, with a token of its own — the same grant, refreshed with this as
+// its `resource` (RFC 8707), so one sign-in serves both.
+const ADMIN_API = '/admin-api';
 // What `sendOnce()` answers when the request needs a sign-in first.
 const NEEDS_SIGN_IN = { needsSignIn: true };
 
@@ -86,6 +92,12 @@ class PortalRuntime extends SpaClient {
   // The path and query of the page last drawn: a `popstate` that changes
   // neither is a fragment's, which the browser has already answered.
   private drawnAt: string;
+  // THE OWNER TOKEN (#607): an access token for `/admin-api`, when it runs
+  // out, and the scopes it was issued — owner:read and owner:write only for
+  // a person who owns something.
+  private ownerToken: string;
+  private ownerExpiresAt: number;
+  private ownerScopes: string[];
 
   /**
    * Makes the runtime.
@@ -96,8 +108,12 @@ class PortalRuntime extends SpaClient {
   constructor(env: Json) {
     super(env, PortalRuntime.prefixOf(env.location.pathname), {
       clientId: CLIENT_ID, scope: SCOPE,
-      elsewhere: { '/oauth2': 'data-sts-oauth', '/logout': 'data-sts-authn' }
+      elsewhere: { '/oauth2': 'data-sts-oauth', '/admin-api': 'data-sts-api',
+                   '/logout': 'data-sts-authn' }
     });
+    this.ownerToken = '';
+    this.ownerExpiresAt = 0;
+    this.ownerScopes = [];
     this.me = null;
     this.nobody = null;
     this.t = WebMessages.WebTranslator.fromData(null);
@@ -154,6 +170,16 @@ class PortalRuntime extends SpaClient {
     return this.url(API);
   }
 
+  /**
+   * The management API, the second resource the portal's sign-in names
+   * (#607).
+   *
+   * @returns the resource indicator
+   */
+  ownerResource(): string {
+    return this.url(ADMIN_API);
+  }
+
   // --- signing in ----------------------------------------------------------
 
   /**
@@ -170,7 +196,11 @@ class PortalRuntime extends SpaClient {
       response_type: 'code', client_id: CLIENT_ID,
       redirect_uri: this.url(kit.BASE + '/callback'), scope: SCOPE,
       state: state, code_challenge: await this.sha256(verifier),
-      code_challenge_method: 'S256', resource: this.resource(),
+      // BOTH RESOURCES (#607, RFC 8707): the account API's token is redeemed
+      // from the code, and the management API's is refreshed from the same
+      // grant when an owner's page asks for it.
+      code_challenge_method: 'S256',
+      resource: [this.resource(), this.ownerResource()],
       // OpenID Connect's nonce, which FAPI 1.0 requires (`SpaClient`).
       nonce: await this.nonceFor(verifier)
     };
@@ -271,6 +301,115 @@ class PortalRuntime extends SpaClient {
     }
     this.keepTokens(answer.json);
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE OWNER TOKEN (#607): the management API's access token, refreshed from
+  // the one grant with `/admin-api` as its resource. The refresh token it
+  // answers replaces the one in hand — rotation is one chain, whichever
+  // resource a refresh names — and the account API's token is untouched.
+  // ---------------------------------------------------------------------------
+  /**
+   * The owner token, refreshed when it is missing or running out.
+   *
+   * @returns `{ token, signIn }`: the token ('' where none is to be had), and
+   *   whether the grant itself is gone, so signing in again is the way
+   */
+  async ownerAccess(): Promise<Json> {
+    const now = this.env.now ? this.env.now() : Date.now();
+    if (this.ownerToken && now < this.ownerExpiresAt - REFRESH_EARLY * 1000) {
+      return { token: this.ownerToken, signIn: false };
+    }
+    if (!this.refreshToken) {
+      return { token: '', signIn: true };
+    }
+    const answer = await this.tokenRequest({
+      grant_type: 'refresh_token', refresh_token: this.refreshToken,
+      client_id: CLIENT_ID, resource: this.ownerResource()
+    });
+    if (answer.status !== 200 || !answer.json.access_token) {
+      this.ownerToken = '';
+      this.ownerScopes = [];
+      // A REFUSED REFRESH spent nothing, unless the grant is gone — an
+      // `invalid_grant` — and then the account API's refresh will fail too.
+      return { token: '', signIn: answer.json.error === 'invalid_grant' };
+    }
+    if (answer.json.refresh_token) {
+      this.refreshToken = String(answer.json.refresh_token);
+    }
+    this.ownerToken = String(answer.json.access_token);
+    this.ownerExpiresAt = now + (Number(answer.json.expires_in) || 300) * 1000;
+    this.ownerScopes = String(answer.json.scope || '').split(/\s+/)
+      .filter(Boolean);
+    return { token: this.ownerToken, signIn: false };
+  }
+
+  /**
+   * Calls the management API with the owner token (#607) and reads its JSON.
+   * A token the authorization server would not issue — the person owns
+   * nothing now — answers 403 with the reason, drawn on the page; a grant
+   * that is gone sends the window to sign in again.
+   *
+   * @param method - GET or POST
+   * @param path - `/admin-api/...` with its query
+   * @param body - for a POST, an object
+   * @returns `{ status, json }`, or null when a sign-in began
+   */
+  async ownerJson(method: string, path: string, body?: Json): Promise<Json> {
+    const target = this.url(path);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const access = await this.ownerAccess();
+      if (!access.token) {
+        if (access.signIn) {
+          await this.beginSignIn(this.here());
+          return null;
+        }
+        return { status: 403, json: { ok: false, errors: [
+          this.t.text('portalOwned.edit.noToken')] } };
+      }
+      const headers: Json = {
+        'Authorization': 'DPoP ' + access.token,
+        'DPoP': await this.proof(method, target, access.token),
+        'Accept': 'application/json',
+        'Accept-Language': this.t.lang
+      };
+      if (body !== undefined && body !== null) {
+        headers['Content-Type'] = 'application/json';
+      }
+      const res = await this.env.fetch(target, { method: method,
+        headers: headers,
+        body: body !== undefined && body !== null ? JSON.stringify(body)
+                                                  : undefined });
+      this.keepNonce(res);
+      if (res.status === 401) {
+        const challenge = String((res.headers && res.headers.get &&
+                                  res.headers.get('WWW-Authenticate')) || '');
+        if (/use_dpop_nonce/.test(challenge) && attempt === 0) {
+          continue;
+        }
+        // A token that stopped being one: drop it, and refresh once.
+        this.ownerToken = '';
+        if (attempt < 2) {
+          continue;
+        }
+      }
+      const json = await res.json().catch(function () {
+        return null;
+      });
+      return { status: res.status, json: json };
+    }
+    return { status: 401, json: { ok: false, errors: [
+      this.t.text('portalOwned.edit.noToken')] } };
+  }
+
+  /**
+   * Tells whether the owner token carries a scope.
+   *
+   * @param scope - `owner:read` or `owner:write`
+   * @returns whether it does
+   */
+  ownerMay(scope: string): boolean {
+    return this.ownerScopes.indexOf(scope) >= 0;
   }
 
   // --- the account API -----------------------------------------------------
@@ -507,6 +646,20 @@ class PortalRuntime extends SpaClient {
         this.me && this.me.version));
       return;
     }
+    // A PAGE DRAWN FROM THE MANAGEMENT API (#607): one object a person
+    // owns, read with the owner token.
+    const adminPath = page.admin ? page.admin(query) : null;
+    if (adminPath) {
+      const loaded = await this.ownerJson('GET', adminPath);
+      if (!loaded) {
+        return;
+      }
+      this.view = { page: page, query: query, json: { owned: {
+        status: loaded.status, answer: loaded.json || {},
+        canWrite: this.ownerMay('owner:write'), query: query } } };
+      this.drawView();
+      return;
+    }
     const qs = new URLSearchParams(query).toString();
     const target = page.operation + (qs ? '?' + qs : '');
     const answer = forNobody ? await this.publicJson('GET', target)
@@ -564,6 +717,15 @@ class PortalRuntime extends SpaClient {
    * @returns nothing
    */
   async submit(form: Json, submitter: Json): Promise<void> {
+    // A FORM ON AN OWNER'S PAGE (#607) goes to the management API operation
+    // it names, with the owner token, and the page is drawn again with what
+    // it answered.
+    const adminOp = form.getAttribute && form.getAttribute('data-admin');
+    if (adminOp) {
+      await this.submitOwned(String(adminOp), this.formFields(form,
+                                                              submitter));
+      return;
+    }
     const posted = (submitter && submitter.getAttribute &&
                     submitter.getAttribute('formaction')) ||
                    form.getAttribute('action') || this.here();
@@ -595,6 +757,52 @@ class PortalRuntime extends SpaClient {
       return;
     }
     await this.answered(path, answer);
+  }
+
+  /**
+   * Sends an owner's form to the management API (#607) and draws the page
+   * again, with the answer's message — and a secret it answered once, said
+   * once — or its errors.
+   *
+   * @param path - `/admin-api/<kind>/<action>`
+   * @param fields - the form's fields
+   * @returns nothing
+   */
+  async submitOwned(path: string, fields: Json): Promise<void> {
+    // A field named `fields.<attribute>` is one of an update's attributes,
+    // and `lines.<attribute>` one whose values are a box's lines.
+    const body: Json = {};
+    Object.keys(fields).forEach(function (name: string) {
+      const value = fields[name];
+      const each = /^(fields|lines)\.(.+)$/.exec(name);
+      if (!each) {
+        body[name] = value;
+        return;
+      }
+      body.fields = body.fields || {};
+      body.fields[each[2]] = each[1] === 'lines'
+        ? String(value || '').split(/\r?\n/).map(function (line: string) {
+          return line.trim();
+        }).filter(Boolean)
+        : value;
+    });
+    const answer = await this.ownerJson('POST', path, body);
+    if (!answer) {
+      return;
+    }
+    const json = answer.json || {};
+    const secret = json.clientSecret || json.client_secret ||
+                   (json.secret && json.secret.value) || '';
+    this.flash = json.ok === false || answer.status >= 400
+      ? { error: (json.errors || []).join(' ') ||
+                 this.t.text('portalOwned.edit.refused',
+                             { status: answer.status }) }
+      : { message: String(json.message ||
+                          this.t.text('portalOwned.edit.saved')) +
+                   (secret ? ' ' + this.t.text('portalOwned.edit.secretOnce',
+                                               { secret: String(secret) })
+                           : '') };
+    await this.route();
   }
 
   // WHAT AN ACT ANSWERED, AND WHAT IS DRAWN FOR IT — the conventions every
@@ -744,6 +952,7 @@ class PortalRuntime extends SpaClient {
   signOut(): void {
     this.accessToken = '';
     this.refreshToken = '';
+    this.ownerToken = '';
     this.env.location.assign(this.url('/logout'));
   }
 

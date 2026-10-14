@@ -2188,8 +2188,8 @@
     "text": "对重复兑换授权码返回相同令牌"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "0f31c5227700295a",
-    "text": "**弱于规范——请保持关闭。** 关闭时（默认），授权码只能出示一次：它的第一个令牌请求即会将其用掉，无论该请求的结果如何——错误的 code_verifier、失败的客户端身份验证或其他任何情况——第二次出示会被拒绝，并吊销第一次所换得的一切（RFC 6749 第 4.1.2 和 10.5 节；#424）。开启时，被拒绝的请求会让授权码保持可兑换，以便客户端修正后重试，而在授权码的剩余有效期内，完全相同的重复兑换会以已获得的令牌应答。RFC 9700、OAuth 2.1、FAPI 和产品模式会忽略它。它的存在是为了父项目中仍在断言旧有宽容行为的开发模式作业（#187）。"
+    "en": "77b14590b7ee604f",
+    "text": "**弱于规范——请保持关闭。** 关闭时（默认），授权码只能出示一次：它的第一个令牌请求即会将其用掉，无论该请求的结果如何——错误的 code_verifier、失败的客户端身份验证或其他任何情况——第二次出示会被拒绝，并吊销第一次所换得的一切（RFC 6749 第 4.1.2 和 10.5 节；#424）。开启时，被拒绝的请求会让授权码保持可兑换，以便客户端修正后重试，而在授权码的剩余有效期内，完全相同的重复兑换会以已获得的令牌应答。RFC 9700、OAuth 2.1、FAPI 和产品模式会忽略它。它的存在是为了父项目中仍在断言旧有宽容行为的开发模式作业（#187）。开启时，每个已兑换授权码的完整令牌响应——访问令牌、刷新令牌和 ID 令牌——会在其剩余生命周期内保留，以便再次发送；关闭时，只保留所签发令牌的 jti 值（#614）。"
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -3687,6 +3687,14 @@
     "en": "37d7c47a629e2f87",
     "text": "当用户尚未在此登录时（RFC 9700 第 4.11.2 节），授权错误不会被重定向到客户端，而是显示一个页面，其中有一个继续前往的链接。0（默认值）就到此为止：由用户自行决定。大于 0 时，页面还会在这么多秒后自动继续（使用 meta refresh，不用脚本），并加以说明。**这会削弱该页面所要提供的保护**：定时重定向仍然是对一个未在此认证的浏览器的自动重定向，RFC 9700 第 4.11.2 节警告说，这会让本服务器被用作跳板，在未经用户同意的情况下将其送往客户端的地址。该地址已经与客户端的注册信息相匹配，这限制了风险。form_post 错误保留其按钮：没有脚本就无法发出 POST。（#317）"
   },
+  "oauth2.keyBinding|label": {
+    "en": "a7dcb6104de02166",
+    "text": "OpenID Connect 密钥绑定"
+  },
+  "oauth2.keyBinding|description": {
+    "en": "2394ee67a689920d",
+    "text": "执行 OpenID Connect Key Binding 1.0（#150）。开启时：发现文档列出 `bound_key` 范围，未声明任何范围的客户端可以请求它，请求它时必须提供 `dpop_jkt` 并使用授权码流程（否则拒绝，STS-OAUTH-0704 和 0705）；随后 ID Token 指明 DPoP 密钥（`cnf.jwk`，`typ: dpop+id_token`），令牌请求必须用 `c_s256` 证明该密钥，且每次刷新都必须来自同一密钥。**关闭时，它不存在，服务仅为 OpenID Connect Core**：不公布 `bound_key`，携带它的请求不会被拒绝——该范围被忽略且不授予，正如 Core 对待 OP 不处理的范围——也不绑定任何 ID Token。若依赖方会请求所有已公布的范围且不了解 Key Binding，请将其关闭（#315）。关闭前已绑定的授权在刷新时仍检查其密钥。"
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -4303,6 +4311,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "在浏览器停留在登录界面期间，或在 POST 绑定请求与其转换成的 GET 之间，AuthnRequest 被保留的时长。超过此时长，返回时会被拒绝，并显示一个指明此值的页面。原为 saml2_sso.js 中的常量 REQUEST_TTL_MS。"
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "保留的未解析工件数"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "每个信任领域中可以等待解析的 SAML 2.0 工件数量。先清除已过期的工件；仍然满的存储会以一个页面（HTTP 503）拒绝 HTTP-Artifact 绑定上的下一次登录，而不会遗忘服务提供方尚未解析的工件。"
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Redirect 绑定长度警告（字符）"
@@ -4438,6 +4454,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "SAML 响应方按信任领域保留多少个已签发的断言，以便依赖方可以通过 AssertionIDReference 再次请求。最旧的最先移除。原为 saml11_sso.js 中的常量 ASSERTION_CACHE_MAX。"
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "无 NotOnOrAfter 的保留断言有效期（秒）"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "已签发的断言在未携带 NotOnOrAfter 时，可通过 AssertionIDReference 获取的时长。携带 NotOnOrAfter 的断言——本服务构建的每个断言都携带——保留到其 NotOnOrAfter 为止，不再延长。"
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "保留的未解析工件数"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "每个信任领域中可以等待解析的 SAML 1.1 工件数量。先清除已过期的工件；仍然满的存储会以一个页面（HTTP 503）拒绝下一次 Browser/Artifact 登录，而不会遗忘依赖方尚未解析的工件。"
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
@@ -5976,12 +6008,12 @@
     "text": "目录最多可以增长到多大。这是上限而不是目标：任何通过此处任何协议进行身份验证的人都会出现条目。按此进程持有的所有领域计数；在 ldap.workerDirectory=postgres-lru 的请求工作线程中，则改为按存储中该领域的行计数。"
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "请求工作线程中的目录"
+    "en": "d0f2a4d1725d58e0",
+    "text": "目录保存在内存中，或作为窗口"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "请求或界面工作线程如何持有目录。memory（默认值）：每个条目，在每个进程中。postgres-lru：人员和设备以最多 ldap.workerCacheEntries 个条目的窗口保存，其余在需要时从 PostgreSQL 读取——工作线程的内存不再随目录增长，一次未命中需要一次数据库往返。需要 persistence.mode=postgres 和单个单元；前端进程始终持有整个目录。"
+    "en": "af2208b6228d6f59",
+    "text": "每个进程——前端进程以及每个请求或界面 worker——如何保存目录。auto（默认值，#320）：在能工作的地方使用 postgres-lru——persistence.mode=postgres 且只有一个单元——其他地方使用 memory。memory：每个条目，在每个进程中。postgres-lru：人员和设备作为每个进程最多 ldap.workerCacheEntries 个条目的窗口，其余在需要时从 PostgreSQL 读取——内存不再随人员数量增长，一次未命中需要一次数据库往返，期间该进程不做任何其他事情。需要 persistence.mode=postgres 且只有一个单元。"
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",
@@ -6010,6 +6042,14 @@
   "ldap.sizeLimit|description": {
     "en": "0c2877143f2fb6ec",
     "text": "服务器端对搜索结果数量的限制，LDAP_SIZE_LIMIT_EXCEEDED 正是由此产生。"
+  },
+  "ldap.timeLimit|label": {
+    "en": "9c041bfdb05c473c",
+    "text": "搜索时间限制（秒）"
+  },
+  "ldap.timeLimit|description": {
+    "en": "b74ec7b68f9251f2",
+    "text": "服务器端对搜索的时间限制，以秒为单位，LDAP_TIME_LIMIT_EXCEEDED 正是由此产生；客户端自己的 timeLimit 更短时以其为准。在此之前已发送的条目即为答复，并标记为不完整。"
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
