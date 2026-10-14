@@ -2907,7 +2907,27 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // A first run has an empty store and a seeded directory, so everything is
     // new and has to be written. A restored run's diff is empty and this
     // costs one no-op flush.
+    //
+    // **AND IT IS A WHOLE WALK, SAID IN SO MANY WORDS (#631, 2026-10-14).**
+    // The seed ran at require time, before the store was enabled, so
+    // `directoryChanged()` journalled none of it — and this used to set
+    // `directoryDirty` alone and leave the first flush to infer "walk
+    // everything" from an EMPTY journal. Two things defeat that inference.
+    // In a windowed process (#320's default on postgres) the window's pinned
+    // seed — the people — makes `windowWrites` true, and an empty journal
+    // beside window writes is read as "nothing RESIDENT to walk" (`wanted`
+    // becomes an empty Set): the people were written and the base DN, every
+    // container, the groups and the applications were not — 6 rows of 42
+    // for a bare directory, 24 of 59 on the whole stack. And in any process
+    // a write journalled between this line and that flush would narrow the
+    // first flush to the journal, with the same loss. `dirtyEverything` says
+    // it outright: the first flush diffs every realm against the shadow
+    // `primeShadow()` just built — empty for a seeded realm, equal for a
+    // restored one — and asks the window for everything it holds
+    // (`collect(null)`). It walks what the empty journal made it walk
+    // before wherever nothing narrowed it, so a start costs no more.
     directoryDirty = true;
+    dirtyEverything = true;
     dirGeneration += 1;
     realmsDirty = persistsRealms();
     configDirty = false;

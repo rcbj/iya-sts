@@ -474,6 +474,9 @@ async function realDatabase(t, dir) {
 
     // SEEDED BY A WHOLE-DIRECTORY PROCESS: a windowed one on an empty store
     // was seen to write the people of the seed and not its containers.
+    // That was #631, fixed in `persistence.js`'s `openStore()` and held by
+    // `tests/directory_window.js` section M; the seed stays whole here so
+    // this file tests the import and not the first start.
     const seeded = runChild('seed', Object.assign({}, env, {
       LDAP_WORKER_DIRECTORY: 'memory' }));
     if (!t.check(seeded.report && seeded.report.ok, 'D0. the service ' +
