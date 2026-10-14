@@ -1371,12 +1371,14 @@ function createReplication(label) {
       // An origin no longer held needs no clock.
       const heldSet = new Set(held);
       absentSince.forEach(function (since, o) {
-        if (!heldSet.has(o) || live.has(o)) {
+        if (!heldSet.has(o)) {
           absentSince.delete(o);
         }
       });
       held.forEach(function (o) {
+        // Live now: whatever clock it had stops.
         if (live.has(o)) {
+          absentSince.delete(o);
           return;
         }
         if (!absentSince.has(o)) {
