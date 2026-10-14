@@ -44,6 +44,7 @@ const forge = require('node-forge');
 
 const config = require('../common/config');
 const realms = require('../common/realms');
+const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
 const pqJose = require('../common/pq_jose');
 const attestation = require('../oauth-oidc/client_attestation');
@@ -502,6 +503,15 @@ async function challengesAndReplay(t, world) {
   t.check(retried.ok, 'leaves its challenge unspent: a request that bought ' +
           'nothing has not used it (the used-assertion history\'s rule)',
           retried);
+  // #614: the store holds each challenge's digest and never the challenge.
+  const unused = attestation.issueChallenge();
+  const held = JSON.stringify(realms.handleFor('oauth2.attestationChallenges')
+    .dump(realms.currentId()));
+  t.check(held.indexOf(challenge) < 0 && held.indexOf(released) < 0 &&
+          held.indexOf(unused) < 0 &&
+          held.indexOf(stsCrypto.credentialDigest(unused)) >= 0,
+          'the challenges are held under their digests, and none of them ' +
+          'as itself (#614)', held.slice(0, 300));
   log.debug("Leaving challengesAndReplay().");
 }
 
