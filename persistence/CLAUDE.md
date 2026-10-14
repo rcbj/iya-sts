@@ -1393,6 +1393,23 @@ five processes per node, a three-node cluster has fifteen origins, and a
 random origin left by a process that could not take its stable one is never
 aged out. That is kept as it is here and reported on #333.
 
+**A removal from the fan-in takes its empty levels with it (#618,
+2026-10-14).** `contribute(handle, realm, key, origin, null)` deleted the
+origin and left the key's Map behind, empty, for ever; a removal of something
+never held MADE the levels to empty them. `admin_stats.users` notes every
+replicated create in every process and journals the eviction of each note past
+its `MAX_USERS` cap, so a bulk load left one empty Map, its table and its key
+string per person ever added in every process. A heap snapshot of a request
+worker on 8081 at about 974K people held 798,858 keys under
+`admin_stats.users`, 796,728 of them empty: about 300 bytes a person per
+isolate, the live-heap growth #618 measured, and `everyUserRecord()` walked
+them all on every read of the users register. Now a removal looks up without
+creating and deletes each level it empties, all O(1), so what is held is
+bounded by what the other processes HOLD (origins x the store's own cap).
+`contributionCounts()` counts it; `tests/replication_fan_in_bounded.js` drives
+thirty thousand notes and evictions through three origins and holds the count
+at the cap.
+
 `tests/minted_persistence.js` sections 6 and 6b hold it against a stub driver
 that applies the same WHERE: the filter's realms, cutoff and short-lived
 handles; an expired row not restored, a live one and a non-expiring one

@@ -1014,30 +1014,85 @@ function createReplication(label) {
    */
   function contribute(handle, realmId, key, origin, value) {
     log.debug("Entering contribute().");
+    const id = String(realmId || '');
+    const k = String(key === undefined || key === null ? '' : key);
+    if (value === null || value === undefined) {
+      // A REMOVAL TAKES ITS EMPTY LEVELS WITH IT, AND MAKES NONE (#618,
+      // 2026-10-14). Until then a removal first made any level it lacked,
+      // deleted the origin, and left the key's empty Map behind for ever.
+      // `admin_stats.users` notes every replicated create in every process
+      // and journals the eviction of a note past its MAX_USERS cap, so each
+      // person ever added left an empty Map, its backing table and its key
+      // string in every other process: 796,728 of 798,858 keys held EMPTY
+      // in a request worker's heap at about 974K people on 8081, about 300
+      // bytes a person per isolate, and `everyUserRecord()` walked every
+      // one of them on each read. A removal whose row was gone before this
+      // process read it (an eviction that overtook its note) made the levels
+      // just to empty them. Each step below is one lookup, so a removal is
+      // still O(1); what is held is bounded by what the other processes
+      // HOLD now, not by everything they ever held.
+      const holding = contributions.get(handle);
+      const keysHeld = holding ? holding.get(id) : undefined;
+      const originsHeld = keysHeld ? keysHeld.get(k) : undefined;
+      if (!originsHeld) {
+        log.debug("Leaving contribute(). Nothing held to remove.");
+        return;
+      }
+      originsHeld.delete(origin);
+      if (originsHeld.size === 0) {
+        keysHeld.delete(k);
+        if (keysHeld.size === 0) {
+          holding.delete(id);
+          if (holding.size === 0) {
+            contributions.delete(handle);
+          }
+        }
+      }
+      log.debug("Leaving contribute(). Removed.");
+      return;
+    }
     let byRealm = contributions.get(handle);
     if (!byRealm) {
       byRealm = new Map();
       contributions.set(handle, byRealm);
     }
-    const id = String(realmId || '');
     let byKey = byRealm.get(id);
     if (!byKey) {
       byKey = new Map();
       byRealm.set(id, byKey);
     }
-    const k = String(key === undefined || key === null ? '' : key);
     let byOrigin = byKey.get(k);
     if (!byOrigin) {
       byOrigin = new Map();
       byKey.set(k, byOrigin);
     }
-    if (value === null || value === undefined) {
-      byOrigin.delete(origin);
-      log.debug("Leaving contribute().");
-      return;
-    }
     byOrigin.set(origin, value);
     log.debug("Leaving contribute().");
+  }
+
+  // How much the fan-in holds: handles, realms, keys and values. For the
+  // tests (#618), which count ENTRIES rather than trusting the heap: a
+  // removal that leaves an empty level behind holds no value and still costs
+  // a Map. Linear in what is held, so never called on a request path.
+  /**
+   * Counts what the fan-in holds, for the tests.
+   * @returns the number of handles, realm maps, key maps and values
+   */
+  function contributionCounts() {
+    log.debug("Entering contributionCounts().");
+    const out = { handles: contributions.size, realms: 0, keys: 0,
+                  values: 0 };
+    contributions.forEach(function (byRealm) {
+      out.realms += byRealm.size;
+      byRealm.forEach(function (byKey) {
+        out.keys += byKey.size;
+        byKey.forEach(function (byOrigin) {
+          out.values += byOrigin.size;
+        });
+      });
+    });
+    log.debug("Leaving contributionCounts().");
+    return out;
   }
 
   // What every OTHER process has contributed under this handle, realm and key,
@@ -1611,6 +1666,7 @@ function createReplication(label) {
     reportPosition: reportPosition,
     purgeOnce: purgeOnce,
     contribute: contribute,
+    contributionCounts: contributionCounts,
     remoteRows: remoteRows,
     remoteSegmentedRows: remoteSegmentedRows,
     remoteKeys: remoteKeys,
