@@ -659,8 +659,12 @@ async function tallies(db) {
     '(WHERE e.attr_names ? \'userpassword\')::bigint AS h FROM ' +
     'sts_ldap_entries e CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key)' +
     ' AS b(base_key) GROUP BY 1, 2 ORDER BY 1, 2');
-  const kept = await db.query('SELECT realm, base_key, attribute, n FROM ' +
-                              'sts_ldap_counts WHERE n <> 0 ORDER BY 1, 2, 3');
+  // SUMMED OVER THE SHARDS (#630): a key's count is the sum of its rows,
+  // one per connection's shard that folded into it.
+  const kept = await db.query('SELECT realm, base_key, attribute, ' +
+                              'sum(n)::bigint AS n FROM sts_ldap_counts ' +
+                              'GROUP BY 1, 2, 3 HAVING sum(n) <> 0 ORDER BY ' +
+                              '1, 2, 3');
   const want = [];
   fresh.rows.forEach(function (r) {
     want.push([r.realm, r.base_key, '', String(r.n)].join('|'));
@@ -678,8 +682,9 @@ async function tallies(db) {
     'sts_ldap_entries e CROSS JOIN LATERAL jsonb_each_text(CASE WHEN ' +
     'jsonb_typeof(e.dek_keys) = \'object\' THEN e.dek_keys END) AS d GROUP ' +
     'BY 1 ORDER BY 1');
-  const dekKept = await db.query('SELECT dek_id AS k, n FROM ' +
-                                 'sts_ldap_dek_counts WHERE n <> 0 ORDER BY 1');
+  const dekKept = await db.query('SELECT dek_id AS k, sum(n)::bigint AS ' +
+                                 'n FROM sts_ldap_dek_counts GROUP BY 1 ' +
+                                 'HAVING sum(n) <> 0 ORDER BY 1');
   const deltas = await db.query('SELECT (SELECT count(*) FROM ' +
     'sts_ldap_count_deltas)::int AS a, (SELECT count(*) FROM ' +
     'sts_ldap_dek_deltas)::int AS b');
