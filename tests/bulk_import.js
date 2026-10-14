@@ -45,8 +45,9 @@
 //        D6 a running service (a fresh change reader) is refused
 //           (STS-LDAP-0153); `ldap.maxEntries` stops the import
 //           (STS-LDAP-0157) and a re-run with a raised ceiling resumes;
-//        D7 two imports at once (#637): disjoint files both land whole,
-//           and two files proposing the same usernames admit each once;
+//        D7 two imports at once (#637): disjoint files both land whole;
+//           two files proposing the same usernames admit each once; the
+//           same people in opposite orders land once, without deadlock;
 //           no username is held twice and the counters stay exact.
 //      The database is dropped afterwards. Skipped (and said) otherwise.
 // ===========================================================================
@@ -434,7 +435,8 @@ async function batchOrder(t, dir) {
   const file = path.join(dir, 'e.ldif');
   const gen = require('./tools/generate-people-ldif');
   const parts = ['version: 1', ''];
-  for (let i = 1; i <= 6; i++) {
+  // In REVERSE, so that the insert's DN order is the import's doing.
+  for (let i = 6; i >= 1; i--) {
     parts.push(gen.recordOf('e', i, BASE));
   }
   fs.writeFileSync(file, parts.join('\n'));
@@ -1144,6 +1146,44 @@ async function realDatabase(t, dir) {
               one.stderr.slice(-1500)];
             })).slice(0, 4000));
     sameTallies(t, 'D7 (overlap)', await tallies(db));
+    // The SAME people in two files, one reversed: every DN in both, asked
+    // for in opposite orders — what the insert's DN order keeps from
+    // deadlocking on the primary key.
+    const same = path.join(dir, 'same.ldif');
+    const reversed = path.join(dir, 'reversed.ldif');
+    const people = [];
+    for (let i = 1; i <= m; i++) {
+      people.push(gen.recordOf('sd' + stamp, i, BASE));
+    }
+    fs.writeFileSync(same, people.join('\n'));
+    fs.writeFileSync(reversed, people.slice(0).reverse().join('\n'));
+    const after9 = (await db.query('SELECT count(*)::int AS n FROM ' +
+                                   'sts_ldap_entries')).rows[0].n;
+    const both = await Promise.all([
+      importAsync(env, ['--file=' + same, '--batch=29',
+                        '--report=' + path.join(dir, 'r5.json')]),
+      importAsync(env, ['--file=' + reversed, '--batch=29',
+                        '--report=' + path.join(dir, 'r6.json')])]);
+    const after10 = (await db.query('SELECT count(*)::int AS n FROM ' +
+                                    'sts_ldap_entries')).rows[0].n;
+    const total = function (field) {
+      return both.reduce(function (acc, one) {
+        return acc + Number(((one.report || {})[field]) || 0);
+      }, 0);
+    };
+    t.check(both.every(function (one) {
+      return one.status === 0;
+    }) && total('imported') === m && total('present') === m &&
+            after10 - after9 === m && (await heldTwice(db)) === 0,
+            'D7. two imports at once of the same people in opposite orders ' +
+            'both finish, with no deadlock: each person is in once and ' +
+            'present for the other import', JSON.stringify(both.map(
+              function (one) {
+                return [one.status, one.report && {
+                  imported: one.report.imported,
+                  present: one.report.present }, one.stderr.slice(-1500)];
+              })).slice(0, 4000));
+    sameTallies(t, 'D7 (same people)', await tallies(db));
   } finally {
     if (db) {
       await db.end().catch(function (e) {
