@@ -217,25 +217,39 @@ function byMail(realm, mail, limit) {
 
 /**
  * The entries holding exactly this value of an attribute (case as stored),
- * through the GIN index over `attrs`. For the lookups that compare a value
- * as written — a DID, a SPIFFE ID, a federation link.
+ * through the GIN index over `value_keys`. For the lookups that compare a
+ * value as written — a DID, a SPIFFE ID, a federation link, a device's key
+ * thumbprint or owner.
+ *
+ * `parentKey`, when given, keeps only the entries directly under that DN
+ * (#636): a device's `owner` is also a group's and a service account's, and
+ * the devices of an owner are the rows under `ou=devices` — so the limit
+ * cannot be spent on the others first.
  *
  * @param realm - the realm id
  * @param attribute - the attribute name, lower-cased as the store holds it
  * @param value - the value
  * @param limit - at most this many rows
+ * @param parentKey - optional: the normalised DN the entries are directly
+ *   under
  * @returns the statement
  */
-function byAttribute(realm, attribute, value, limit) {
+function byAttribute(realm, attribute, value, limit, parentKey) {
   log.debug("Entering byAttribute().");
   const name = String(attribute).toLowerCase();
+  const values = [String(realm),
+                  JSON.stringify([keyed(value, 'attr:' + name, false)]),
+                  pageSize(limit)];
+  let under = '';
+  if (parentKey) {
+    values.push(String(parentKey));
+    under = 'parent_key = $4 AND ';
+  }
   log.debug("Leaving byAttribute().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND value_keys @> $2::jsonb ORDER BY dn_key ' +
-                 'LIMIT $3',
-           values: [String(realm),
-                    JSON.stringify([keyed(value, 'attr:' + name, false)]),
-                    pageSize(limit)] };
+                 'realm = $1 AND ' + under + 'value_keys @> $2::jsonb ' +
+                 'ORDER BY dn_key LIMIT $3',
+           values: values };
 }
 
 // THE COLUMN EACH `equalUnder()` KIND READS (#320): only the two whose index
@@ -532,8 +546,21 @@ function withNames(realm, parentKey, names) {
            values: [String(realm), String(parentKey), rdns, keys] };
 }
 
+// WHETHER ANYTHING IS UNDER A KEY ASKS FOR A CHILD, NOT A DESCENDANT (#636,
+// 2026-10-14). It was `underClause()` — `right(dn_key, n) = ',' || key` —
+// which no index narrows, and for a LEAF (every person an LDAP delete, a
+// rename or `deletePerson()` asks about) `LIMIT 1` is never met, so the
+// database read every key of the realm: at 6.4M people, a synchronous
+// question on the request's event loop past the bridge's 2 s. A direct
+// child is `parent_key = key`, the `(realm, parent_key, dn_key)` index's
+// first probe. The two answers agree on every tree this service writes: an
+// entry is added only under an entry that exists, and a non-leaf cannot be
+// deleted or renamed, so nothing has a descendant and no child. An orphan
+// made some other way (rows written into the table by hand) would read as a
+// leaf here, and its parent could then be deleted, which leaves it the
+// orphan it already was.
 /**
- * Whether anything is under a key: `hasChildren()`'s question.
+ * Whether anything is directly under a key: `hasChildren()`'s question.
  *
  * @param realm - the realm id
  * @param key - the entry's normalised DN
@@ -543,8 +570,8 @@ function hasChild(realm, key) {
   log.debug("Entering hasChild().");
   log.debug("Leaving hasChild().");
   return { text: 'SELECT 1 AS one FROM sts_ldap_entries WHERE realm = $1 ' +
-                 'AND ' + underClause(2, 3, false) + ' LIMIT 1',
-           values: [String(realm), String(key), suffixLength(key)] };
+                 'AND parent_key = $2 LIMIT 1',
+           values: [String(realm), String(key)] };
 }
 
 /**

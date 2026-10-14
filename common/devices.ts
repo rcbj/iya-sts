@@ -182,9 +182,13 @@
 // (a WebAuthn sign-in's, by the derived `stsDeviceCredentialId`) and
 // `holdsAny()` (risk scoring's "does this person own a device", by `owner`,
 // which several entries share — so the index answers ONE of them, which is
-// all that question needs). `listForOwner()` still walks: it wants every
-// device of an owner, the index keeps one entry per value, and its callers
-// are pages and a Native SSO grant, not a per-request path.
+// all that question needs). `listForOwner()` walked until #636 — every
+// device, to keep an owner's — and its callers include a Native SSO grant
+// on a token request and the console's person page, which answered 503 at
+// 6.4M people in a windowed process: it now asks the directory's
+// `deviceEntriesOwnedBy()`, the store's `owner` index there. In a windowed
+// process none of these build the index: each asks the store one indexed
+// question (`ldap_server.js`, `windowedDeviceEntries()`).
 // `ldap_server.js` argues why the index is safe across processes and nodes:
 // it holds nothing the directory does not, and is validated against the
 // directory on every hit.
@@ -990,10 +994,34 @@ class Devices {
     const { log } = this.deps;
     log.debug("Entering Devices.listForOwner().");
     const dn = String(ownerDn || '');
-    const out = dn ? this.all().filter(function (one) {
+    const out = dn ? this.ownedEntries(dn).filter(function (one) {
       return Devices.sameDn(one.owner, dn);
     }).sort(Devices.byRecency) : [];
     log.debug("Leaving Devices.listForOwner(). " + out.length + ".");
+    return out;
+  }
+
+  // THE DEVICES THAT MAY BE AN OWNER'S (#636): the directory's
+  // `deviceEntriesOwnedBy()` — in a windowed process the store's `owner`
+  // index under `ou=devices`, one question — and `all()` where the
+  // directory offers no such hook (an in-process test's stand-in). The
+  // caller still filters by owner, so the answer is `all()`'s either way.
+  // `all()` in a windowed process paged every device through the
+  // synchronous bridge, and a page under `ou=devices` costs the whole
+  // directory (`ldap_server.js`, `windowedDeviceEntries()`): the person
+  // page answered 503 at 6.4M people.
+  private ownedEntries(ownerDn: string): Device[] {
+    const { log, credentials } = this.deps;
+    log.debug("Entering Devices.ownedEntries().");
+    const indexed = typeof credentials.deviceStore === 'function' &&
+      credentials.deviceStore('hasHook', ['deviceEntriesOwnedBy']);
+    if (!indexed) {
+      log.debug("Leaving Devices.ownedEntries(). Every device.");
+      return this.all();
+    }
+    const out = (this.store('deviceEntriesOwnedBy', ownerDn) || [])
+      .map(Devices.fromEntry);
+    log.debug("Leaving Devices.ownedEntries(). " + out.length + ".");
     return out;
   }
 
@@ -1057,7 +1085,11 @@ class Devices {
         : String(this.store('applicationDnOf', text(f.application)) || ''))
       : '';
     const needle = text(f.q).toLowerCase();
-    const out = this.all().filter(function (d) {
+    // An owner named: only that owner's devices are read (#636), the
+    // store's `owner` index in a windowed process, where `all()` paged the
+    // whole register.
+    const pool = text(f.owner) ? this.ownedEntries(ownerDn) : this.all();
+    const out = pool.filter(function (d) {
       if (text(f.ownerKind) && d.ownerKind !== text(f.ownerKind)) {
         return false;
       }

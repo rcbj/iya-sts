@@ -59,8 +59,23 @@ const DIGEST_LABEL = 'directory-index';
 // The attributes whose values `byAttribute()` looks up — as written, not
 // lower-cased, because those lookups compare a value exactly (a DID, a SPIFFE
 // ID, a certificate subject, a login name, a federation link).
+//
+// **AND THE FOUR A DEVICE IS RECOGNISED BY (#636, 2026-10-14)**: a device's
+// derived key thumbprint, its Native SSO secret's hash, a linked WebAuthn
+// credential's id, and its `owner` (the DN of the person or application that
+// owns it). `ldap_server.js`'s `deviceEntryByIndex()` and
+// `deviceEntriesOwnedBy()` ask them in a windowed process, where until #636
+// recognition built an index by walking `ou=devices` — on a token request,
+// through the synchronous bridge, and a `page()` under `ou=devices` reads the
+// realm's keys past the last device, so it cost the whole directory however
+// few devices there were. `owner` is also on a group or a service account;
+// the callers keep the rows under `ou=devices`. A row written before #636
+// carries none of the four until it is next written, and nothing migrates
+// it (rcbj: every install is rebuilt).
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
-                       'federationlink'];
+                       'federationlink', 'stsdevicekeythumbprint',
+                       'stsdevicesecrethash', 'stsdevicecredentialid',
+                       'owner'];
 
 // THE OBJECT CLASSES `class_keys` HOLDS: THE GROUP CLASSES, AND ONLY THOSE
 // (#618 phase 2, schema version 18). `classesUnder()` is the one question
@@ -333,6 +348,14 @@ function keyArgs(name, args) {
   } else if (name === 'equalUnder') {
     a[3] = { key: lookupOf(String(a[2]), lower(a[3])) };
   } else if (name === 'byAttribute') {
+    // An attribute `value_keys` does not hold would be answered "nobody" by
+    // a question that looks right — `classesUnder`'s reason, below (#636).
+    if (VALUE_INDEXED.indexOf(lower(a[1])) < 0) {
+      log.debug("Leaving keyArgs(). An attribute that is not indexed.");
+      throw new Error('directory_codec: byAttribute is asked only for the ' +
+                      'value-indexed attributes (' +
+                      VALUE_INDEXED.join(', ') + '), not ' + lower(a[1]));
+    }
     a[2] = { key: lookupOf('attr:' + lower(a[1]), String(a[2])) };
   } else if (name === 'classesUnder') {
     a[2] = (a[2] || []).map(function (one) {

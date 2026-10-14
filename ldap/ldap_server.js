@@ -11738,6 +11738,96 @@ function noteDeviceIndexWrite(stored, wasCurrent) {
   log.debug('Leaving noteDeviceIndexWrite(). ' + cache.index.size + '.');
 }
 
+// ---------------------------------------------------------------------------
+// IN A WINDOWED PROCESS THE STORE IS ASKED, AND NO INDEX IS BUILT (#636,
+// 2026-10-14).
+//
+// The index above is a whole process's bargain: it is built from
+// `entriesUnder(devicesDn())`, and in a windowed process that is the
+// container PAGED THROUGH THE SYNCHRONOUS BRIDGE — and a `page()` under
+// `ou=devices` is `right(dn_key, n) = ',ou=devices,…'`, which no index
+// narrows, so its last page reads the realm's keys past the last device:
+// the whole directory, however few devices there are. Every device write in
+// any process moves the subtree clock (a recognition moves `lastUsed`), so
+// the next miss rebuilt it. On the local stack at 6.4M people that was
+// STS-DEVICE-0029 on a token request, and the person page's devices
+// (`listForOwner()`, the same walk) answered 503 from `/admin-api/users`.
+//
+// So a windowed process asks the store one indexed question per lookup and
+// keeps nothing: `cn` is the device's own DN (`deviceDn()`, a key read), and
+// the other four are `byAttribute` against `value_keys`, which holds them
+// since #636 (`persistence/directory_codec.js`'s `VALUE_INDEXED`), narrowed
+// to the entries directly under `ou=devices` (`parentKey`). Each answer is
+// read back through the window with this process's unwritten changes
+// (`windowedFind()`) and asked the same rule the index's hit is — under the
+// container, carrying the value — so the answer is the index's, first by key.
+// One synchronous round trip per lookup, whatever the directory holds; the
+// lookups are synchronous because `common/devices.ts`' are.
+// ---------------------------------------------------------------------------
+const DEVICE_OWNER_LIMIT = 1000;
+
+// The entries directly under `ou=devices` holding `wanted` in `name`, asked
+// of the store, at most `limit` (a windowed process only).
+function windowedDeviceEntries(name, wanted, limit) {
+  log.debug('Entering windowedDeviceEntries(). ' + name);
+  const container = normalizeDn(devicesDn());
+  const holds = function (entry) {
+    return normalizeDn(parentDn(entry.dn)) === container &&
+      (entry.attributes[name] || []).some(function (one) {
+        return String(one) === wanted;
+      });
+  };
+  if (name === 'cn') {
+    const stored = getEntry(deviceDn(wanted));
+    log.debug('Leaving windowedDeviceEntries(). By its DN.');
+    return stored && holds(stored) ? [stored] : [];
+  }
+  const found = windowedFind('byAttribute',
+                             [name, wanted, limit, container], holds) || [];
+  log.debug('Leaving windowedDeviceEntries(). ' + found.length + '.');
+  return found;
+}
+
+// A device entry copied for a caller, as `deviceEntryByIndex()` and
+// `listDeviceEntries()` hand them out.
+function copiedDeviceEntry(stored) {
+  log.debug('Entering copiedDeviceEntry().');
+  const attributes = {};
+  Object.keys(stored.attributes).forEach(function (one) {
+    attributes[one] = stored.attributes[one].slice(0);
+  });
+  log.debug('Leaving copiedDeviceEntry().');
+  return { dn: stored.dn, attributes: attributes };
+}
+
+// EVERY DEVICE AN OWNER HOLDS (#636), copied: what `devices.listForOwner()`
+// asks — the person page, the portal's devices, a Native SSO grant's room
+// for a new device, the per-owner cap. In a windowed process the store's
+// `owner` index under `ou=devices`, at most DEVICE_OWNER_LIMIT (a person's
+// cap is far below it: `devices.maxPerPerson`); otherwise the container's
+// kept listing, filtered, which is memory. The owner is compared as
+// written, as the index compares it: a device's `owner` is the DN of the
+// owner's entry (`devices.ts` resolves it from the entry), and so is what
+// every caller asks with.
+function deviceEntriesOwnedBy(ownerDn) {
+  log.debug('Entering deviceEntriesOwnedBy().');
+  const wanted = String(ownerDn || '');
+  if (!wanted) {
+    log.debug('Leaving deviceEntriesOwnedBy(). Nobody asked.');
+    return [];
+  }
+  const rows = directoryWindow
+    ? windowedDeviceEntries('owner', wanted, DEVICE_OWNER_LIMIT)
+    : entriesUnder(devicesDn()).filter(function (stored) {
+      return (stored.attributes.owner || []).some(function (one) {
+        return String(one) === wanted;
+      });
+    });
+  const out = rows.map(copiedDeviceEntry);
+  log.debug('Leaving deviceEntriesOwnedBy(). ' + out.length + '.');
+  return out;
+}
+
 // The map, rebuilt from the container listing.
 function buildDeviceIndex(container) {
   log.debug('Entering buildDeviceIndex().');
@@ -11764,6 +11854,14 @@ function deviceEntryByIndex(attribute, value) {
   if (DEVICE_INDEXED.indexOf(name) < 0 || !wanted) {
     log.debug('Leaving deviceEntryByIndex(). Not an indexed lookup.');
     return null;
+  }
+  if (directoryWindow) {
+    // Asked of the store, never walked (#636, above).
+    const asked = windowedDeviceEntries(name, wanted,
+                                        name === 'owner' ? 1 : 2)[0];
+    log.debug('Leaving deviceEntryByIndex(). ' +
+              (asked ? asked.dn : 'None, asked of the store.'));
+    return asked ? copiedDeviceEntry(asked) : null;
   }
   const container = devicesDn();
   const cache = deviceIndexes();
@@ -11795,12 +11893,8 @@ function deviceEntryByIndex(attribute, value) {
     log.debug('Leaving deviceEntryByIndex(). None.');
     return null;
   }
-  const attributes = {};
-  Object.keys(found.attributes).forEach(function (one) {
-    attributes[one] = found.attributes[one].slice(0);
-  });
   log.debug('Leaving deviceEntryByIndex(). ' + found.dn);
-  return { dn: found.dn, attributes: attributes };
+  return copiedDeviceEntry(found);
 }
 
 // THE OPENID FEDERATION REGISTER (#132): every entry under ou=oidfed,
@@ -12045,6 +12139,8 @@ if (typeof credentials.setDirectory === 'function') {
     // One device by its id, a key thumbprint or its secret's hash (#164
     // phase 3), without copying the register.
     deviceEntryByIndex: deviceEntryByIndex,
+    // Every device one owner holds (#636), without copying the register.
+    deviceEntriesOwnedBy: deviceEntriesOwnedBy,
     // The OpenID Federation register (#132), checked where it is used.
     listOidfedEntries: listOidfedEntries,
     writeOidfedEntry: writeOidfedEntry,
