@@ -475,7 +475,7 @@ function timed(fn) {
   return { value: value, ms: Math.round(ms) };
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const made = realms.create({ id: REALM, name: REALM,
                                description: 'Created by ' + __filename });
@@ -486,11 +486,12 @@ function run(t) {
   }
   const restore = installSpies();
   try {
-    realms.run(made.realm, function () {
+    await realms.run(made.realm, async function () {
       config.setOverride('ldap.maxEntries', '100000');
       config.setOverride('credentials.factorScanLimit', String(SCAN_LIMIT));
       try {
         body(t, seed(t));
+        await asynchronousDoors(t);
       } finally {
         config.clearOverride('ldap.maxEntries');
         config.clearOverride('credentials.factorScanLimit');
@@ -659,6 +660,43 @@ function body(t, tally) {
   t.equal(JSON.stringify(roster8.directoryCounts), JSON.stringify(wanted),
           '7i. /admin-api/mfa carries the same tiles');
   log.debug("Leaving body().");
+}
+
+// --- 8. the API's doors, asynchronous (#621) -------------------------------
+// `GET /admin-api/users` and `/admin-api/mfa` answer through
+// `usersJsonAsync()` and `mfaRosterJsonAsync()`, which ask the population
+// and its census first (`peopleAndCensusAsync()`, the census through
+// `credentials.factorCensusAsync()`) and hand both to the synchronous view.
+// They must answer what the synchronous views answer, and decorate no more.
+async function asynchronousDoors(t) {
+  log.debug("Entering asynchronousDoors().");
+  const queries = [{}, { factor: 'totp' }, { factor: 'none' },
+                   { q: '-' + STAMP + '-00' }];
+  for (const query of queries) {
+    const req = { query: Object.assign({ per: String(PER) }, query) };
+    reset();
+    const got = await adminViews.usersJsonAsync(req);
+    const mechanisms = counts.mechanisms;
+    same(t, got, adminViews.usersJson(req),
+         '8a. usersJsonAsync(' + JSON.stringify(query) + ') answers what ' +
+         'usersJson() answers');
+    t.check(mechanisms <= PER, '8b. and asks mechanismsFor() at most once ' +
+            'per row shown', String(mechanisms));
+  }
+  const roster = await adminViews.mfaRosterJsonAsync({ query:
+    { per: String(PER) } });
+  const rosterBefore = adminViews.mfaRosterJson({ query:
+    { per: String(PER) } });
+  t.check(JSON.stringify(roster) === JSON.stringify(rosterBefore),
+          '8c. mfaRosterJsonAsync() answers what mfaRosterJson() answers',
+          (roster.people || []).length + ' row(s)');
+  const raws = await ldap.credentialCensusAsync([nameOf(1), nameOf(2),
+                                                 'nobody-' + STAMP]);
+  t.equal(JSON.stringify(raws), JSON.stringify(ldap.credentialCensus(
+    [nameOf(1), nameOf(2), 'nobody-' + STAMP])),
+          '8d. outside a window the asynchronous census is the synchronous ' +
+          'one');
+  log.debug("Leaving asynchronousDoors().");
 }
 
 module.exports = {

@@ -21,6 +21,10 @@
 //   D. DEVELOPMENT MODE screens nothing; `risk.breachCheck` off screens
 //      nothing.
 //   E. A GENERATED password is not asked about.
+//   F. A DISPATCHED LDAP MODIFY carrying a clear password (#622): the screen
+//      makes it asynchronous, and `performOperation()` — what a request
+//      worker runs — answers with the screened handler's real result, not an
+//      operation that "ended nothing" before the handler had run.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -39,6 +43,8 @@ const log = require('bunyan').createLogger({ name: 'breached_passwords',
 const BREACHED = 'Correct-Horse-Battery-9';
 const CLEAN = 'Unlisted-Passphrase-731';
 const DECOY = 'Padding-Decoy-Passw0rd';
+// F2's: unlisted, and never set before, so the history refuses nothing.
+const FRESH = 'Fresh-Unlisted-Phrase-604';
 
 async function run(t) {
   log.debug("Entering run().");
@@ -47,6 +53,9 @@ async function run(t) {
   const bad = stsCrypto.pwnedPasswordDigest(BREACHED);
   const decoy = stsCrypto.pwnedPasswordDigest(DECOY);
   let answering = true;
+  // F: the API answers on a LATER tick, as a real one does, so a caller that
+  // read the operation's outcome at once would read it before the handler.
+  let late = false;
   const original = federationHttp.fetchPublished;
   federationHttp.fetchPublished = function (url) {
     asked.push(String(url));
@@ -62,8 +71,16 @@ async function run(t) {
     if (prefix === decoy.slice(0, 5)) {
       lines.push(decoy.slice(5) + ':0');
     }
-    return Promise.resolve({ ok: true, status: 200,
-                             body: Buffer.from(lines.join('\r\n')) });
+    const answer = { ok: true, status: 200,
+                     body: Buffer.from(lines.join('\r\n')) };
+    if (!late) {
+      return Promise.resolve(answer);
+    }
+    return new Promise(function (resolve) {
+      setImmediate(function () {
+        resolve(answer);
+      });
+    });
   };
   config.setOverride('global.mode', 'product');
   config.setOverride('risk.breachCheck', 'on');
@@ -125,7 +142,37 @@ async function run(t) {
     t.check(credentials.setPassword('bp-carol', BREACHED,
                                     { generated: true }).ok,
             'E1. a password the service generated is not asked about');
+
+    // --- F. a dispatched LDAP modify (#622) ------------------------------
+    breached.forget();
+    late = true;
+    const dn = ldap.objectFor('bp-carol').entry.dn;
+    const modify = function (password) {
+      log.debug("Entering modify().");
+      log.debug("Leaving modify().");
+      return ldap.performOperation('modify', {
+        dn: dn, boundDn: dn, channel: 'ldaps',
+        changes: [{ operation: 'replace',
+                    modification: { type: 'userPassword',
+                                    values: [password] } }] });
+    };
+    const askedBefore = asked.length;
+    const breachedModify = await Promise.resolve(modify(BREACHED));
+    t.check(breachedModify.ok === false && asked.length > askedBefore &&
+            breachedModify.errorName !== 'OperationsError' &&
+            !/without sending a result/.test(String(breachedModify.error)),
+            'F1. a dispatched modify setting a breached password is ' +
+            'answered with the screened handler\'s refusal, not an ' +
+            'operation that ended nothing',
+            JSON.stringify(breachedModify));
+    const cleanModify = await Promise.resolve(modify(FRESH));
+    t.check(cleanModify.ok === true &&
+            credentials.verify('bp-carol', FRESH).ok,
+            'F2. a dispatched modify setting a clean password is answered ' +
+            'success once the screened handler has applied it',
+            JSON.stringify(cleanModify));
   } finally {
+    late = false;
     federationHttp.fetchPublished = original;
     config.clearOverride('global.mode');
     config.clearOverride('risk.breachCheck');
@@ -140,6 +187,7 @@ module.exports = {
             'five-character SHA-1 prefix sent to the Pwned Passwords range ' +
             'API (stubbed), refused in product mode, set when unanswered or ' +
             'unscreened, nothing screened in development or when off, and a ' +
-            'generated password not asked about',
+            'generated password not asked about, and a dispatched LDAP ' +
+            'modify answered only after its screen (#622)',
   run: run
 };

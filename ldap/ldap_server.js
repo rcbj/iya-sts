@@ -3661,6 +3661,22 @@ function entryByUuid(uuid) {
     log.debug("Leaving entryByUuid(). Not a UUID.");
     return null;
   }
+  let found = residentEntryByUuid(wanted);
+  if (!found && directoryWindow) {
+    // A PERSON OR A DEVICE, ASKED OF THE STORE (#349): a primary value
+    // before an alias, as the index ranks them.
+    found = uuidHolderOf(windowedFind('byUuid', [wanted],
+                                      holdsUuid(wanted)) || [], wanted);
+  }
+  log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
+  return found;
+}
+
+// The entry the UUID index names (the RESIDENT entries in a windowed
+// process), rebuilt first when the store has changed: `entryByUuid()`'s
+// first half, and `locateStoredAsync()`'s (#621).
+function residentEntryByUuid(wanted) {
+  log.debug("Entering residentEntryByUuid().");
   const cache = uuidIndexes();
   const lookup = function () {
     const key = cache.index ? cache.index.get(wanted) : null;
@@ -3703,19 +3719,28 @@ function entryByUuid(uuid) {
     // nobody holds that UUID.
     uuidIndexCount.hit();
   }
-  if (!found && directoryWindow) {
-    // A PERSON OR A DEVICE, ASKED OF THE STORE (#349): a primary value
-    // before an alias, as the index ranks them.
-    const hits = windowedFind('byUuid', [wanted], function (entry) {
-      return entryUuidOf(entry) === wanted ||
-        entryUuidAliasesOf(entry).indexOf(wanted) >= 0;
-    }) || [];
-    found = hits.filter(function (entry) {
-      return entryUuidOf(entry) === wanted;
-    })[0] || hits[0] || null;
-  }
-  log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
+  log.debug("Leaving residentEntryByUuid(). " + (found ? found.dn : 'None.'));
   return found;
+}
+
+// The rule the store's candidates for a UUID are asked.
+function holdsUuid(wanted) {
+  log.debug("Entering holdsUuid().");
+  log.debug("Leaving holdsUuid().");
+  return function (entry) {
+    return entryUuidOf(entry) === wanted ||
+      entryUuidAliasesOf(entry).indexOf(wanted) >= 0;
+  };
+}
+
+// Of the store's holders of a UUID, the one holding it as its primary
+// value, else the first holding it as an alias — the index's ranking.
+function uuidHolderOf(hits, wanted) {
+  log.debug("Entering uuidHolderOf().");
+  log.debug("Leaving uuidHolderOf().");
+  return hits.filter(function (entry) {
+    return entryUuidOf(entry) === wanted;
+  })[0] || hits[0] || null;
 }
 
 // A NEW PERSON IS GIVEN A LANGUAGE (#539). rcbj: "add a policy default per
@@ -5265,25 +5290,54 @@ function entryByDidSubject(did) {
     log.debug('Leaving entryByDidSubject().');
     return null;
   }
-  let found = null;
   // Resident entries walked; a person or device asked of the store (#349).
-  const asked = windowedFind('byAttribute', ['didsubject', wanted, 2],
-    function (entry) {
-      return (entry.attributes.didsubject || []).indexOf(wanted) >= 0;
-    });
-  if (asked && asked.length) {
-    found = asked[0];
-  }
+  const found = firstRecording('didsubject', wanted,
+    windowedFind('byAttribute', ['didsubject', wanted, 2],
+                 recordsValue('didsubject', wanted)));
+  log.debug('Leaving entryByDidSubject().');
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// THE ENTRY THAT RECORDED AN IDENTIFIER, the second half of the three
+// look-ups by a recorded value (a certificate subject, a DID, a SPIFFE ID).
+// The store's answer comes first (`asked`, in a windowed process: the
+// people and devices holding the value), then the resident entries; with no
+// window (`asked` null) every entry of the realm is walked, as it always
+// was. One function, so `locateEntry()` and its asynchronous twin
+// `locateStoredAsync()` (#621) cannot come to rank the two halves
+// differently.
+// ---------------------------------------------------------------------------
+/**
+ * The first entry recording a value in an attribute.
+ *
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param wanted - the value, as written
+ * @param asked - the store's matching entries, or null outside a window
+ * @returns the entry, or null
+ */
+function firstRecording(attribute, wanted, asked) {
+  log.debug('Entering firstRecording(). ' + attribute);
+  let found = asked && asked.length ? asked[0] : null;
   (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
     if (found) {
       return;
     }
-    if ((entry.attributes.didsubject || []).indexOf(wanted) >= 0) {
+    if ((entry.attributes[attribute] || []).indexOf(wanted) >= 0) {
       found = entry;
     }
   });
-  log.debug('Leaving entryByDidSubject().');
+  log.debug('Leaving firstRecording().');
   return found;
+}
+
+// The rule the store's candidates for `firstRecording()` are asked.
+function recordsValue(attribute, wanted) {
+  log.debug('Entering recordsValue().');
+  log.debug('Leaving recordsValue().');
+  return function (entry) {
+    return (entry.attributes[attribute] || []).indexOf(wanted) >= 0;
+  };
 }
 
 // The entry that already records this SPIFFE identity, wherever it is and
@@ -5299,23 +5353,10 @@ function entryBySpiffeSubject(id) {
     log.debug('Leaving entryBySpiffeSubject().');
     return null;
   }
-  let found = null;
   // Resident entries walked; a person or device asked of the store (#349).
-  const asked = windowedFind('byAttribute', ['spiffesubject', wanted, 2],
-    function (entry) {
-      return (entry.attributes.spiffesubject || []).indexOf(wanted) >= 0;
-    });
-  if (asked && asked.length) {
-    found = asked[0];
-  }
-  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
-    if (found) {
-      return;
-    }
-    if ((entry.attributes.spiffesubject || []).indexOf(wanted) >= 0) {
-      found = entry;
-    }
-  });
+  const found = firstRecording('spiffesubject', wanted,
+    windowedFind('byAttribute', ['spiffesubject', wanted, 2],
+                 recordsValue('spiffesubject', wanted)));
   log.debug('Leaving entryBySpiffeSubject().');
   return found;
 }
@@ -5365,6 +5406,110 @@ function existingUserEntry(name) {
   const found = key ? (entries.get(key) || null) : null;
   log.debug('Leaving existingUserEntry().');
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// `existingUserEntry()` FOR MANY NAMES, ASKED ASYNCHRONOUSLY (#621).
+//
+// The same two steps, for every name, in the same order and with the same
+// rule — the entry at `uid=<name>,ou=users` if there is one, else the first
+// by key of the entries directly under `ou=users` that answer to the name
+// (`byName`: a `uid` or the RDN value, either case), with what this process
+// changed and has not written added last — so a name resolves to the entry
+// the synchronous lookup would have handed back. What differs is HOW the
+// store is asked in a windowed process: the direct keys as ONE `byKeys`
+// question per five hundred names (`entriesAtAsync()`), and a `byName` for
+// each name that missed, all through the bridge's `queryAsync()` with the
+// event loop given back between them, each row taken as the store answered
+// it unless this process holds a newer copy, and nothing handed out or put
+// in the window. Outside a window there is no store to wait for: each name
+// is `existingUserEntry()`, a lookup in the username index.
+//
+// **A `byName` PER MISS AND NOT ONE `withNames` FOR ALL OF THEM.** One
+// statement would be fewer questions, and `countPeopleNamed()` asks it that
+// way; but `withNames` ORs a GIN containment over an array, which postgres
+// cannot answer from either index, so it filters every row under
+// `ou=users` — linear in the people, the cost rcbj has ruled out of every
+// request path. `byName` is answered from the two indexes, and a miss is
+// rare where it matters: this service names everybody it creates
+// `uid=<name>`, so only an entry named otherwise (`cn=` from a certificate)
+// or a name nobody holds reaches it. They are asked `BY_NAME_AT_ONCE` at a
+// time, so a page of registry names with no entry is a handful of round
+// trips of the driver's read pool rather than one after another.
+// ---------------------------------------------------------------------------
+const BY_NAME_AT_ONCE = 8;
+
+/**
+ * Finds each name's entry as `existingUserEntry()` does, asking the store
+ * asynchronously in a windowed process.
+ *
+ * @param names - the usernames
+ * @param counter - optional; `pages` and `rows` of the `byKeys` questions
+ *   are added to, and `byName` to how many names were asked by name
+ * @returns a promise of one element per name: the entry, or null
+ */
+async function existingUserEntriesAsync(names, counter) {
+  log.debug('Entering existingUserEntriesAsync(). ' + (names || []).length +
+            ' name(s).');
+  const list = (names || []).map(function (one) {
+    return String(one == null ? '' : one);
+  });
+  if (!directoryWindow) {
+    log.debug('Leaving existingUserEntriesAsync(). No window.');
+    return list.map(existingUserEntry);
+  }
+  const realmId = realms.currentId();
+  const users = normalizeDn(usersDn());
+  const wanted = list.map(function (name) {
+    return name.trim().toLowerCase();
+  });
+  // The DN namePlan() gives a name — built exactly as `existingUserEntry()`
+  // builds it, from the name as given.
+  const direct = list.map(function (name) {
+    return normalizeDn('uid=' + name + ',' + usersDn());
+  });
+  const at = await directoryWindow.entriesAtAsync(realmId,
+    direct.filter(function (key, i) {
+      return !!wanted[i];
+    }), counter);
+  const out = list.map(function (name, i) {
+    return wanted[i] ? (at.get(direct[i]) || null) : null;
+  });
+  // Each name that missed, ONCE: an add proposes its RDN value and its
+  // `uid`, which are usually the same name, and a list may repeat one. The
+  // direct key was the same for both, so the answer is too.
+  const missed = [];
+  const firstOf = new Map();
+  out.forEach(function (found, i) {
+    if (!found && wanted[i] && !firstOf.has(list[i])) {
+      firstOf.set(list[i], i);
+      missed.push(i);
+    }
+  });
+  if (counter) {
+    counter.byName = (counter.byName || 0) + missed.length;
+  }
+  for (let from = 0; from < missed.length; from += BY_NAME_AT_ONCE) {
+    const batch = missed.slice(from, from + BY_NAME_AT_ONCE);
+    const answers = await Promise.all(batch.map(function (i) {
+      return directoryWindow.findWindowedAsync(realmId, 'byName',
+        [realmId, users, wanted[i]], function (entry) {
+          return normalizeDn(parentDn(entry.dn)) === users &&
+            usernameKeysOf(entry).indexOf(wanted[i]) >= 0;
+        });
+    }));
+    batch.forEach(function (i, k) {
+      out[i] = answers[k][0] ? answers[k][0].entry : null;
+    });
+  }
+  out.forEach(function (found, i) {
+    if (!found && wanted[i] && firstOf.get(list[i]) !== i) {
+      out[i] = out[firstOf.get(list[i])];
+    }
+  });
+  log.debug('Leaving existingUserEntriesAsync(). ' + missed.length +
+            ' asked by name.');
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -7603,23 +7748,10 @@ function locateEntry(key) {
                 'directly.');
       return { dn: direct.dn, stored: direct };
     }
-    let found = null;
     // Resident entries walked; a person asked of the store (#349).
-    const asked = windowedFind('byAttribute', ['x509subject', key, 2],
-      function (entry) {
-        return (entry.attributes.x509subject || []).indexOf(key) >= 0;
-      });
-    if (asked && asked.length) {
-      found = asked[0];
-    }
-    (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
-      if (found) {
-        return;
-      }
-      if ((entry.attributes.x509subject || []).indexOf(key) >= 0) {
-        found = entry;
-      }
-    });
+    const found = firstRecording('x509subject', key,
+      windowedFind('byAttribute', ['x509subject', key, 2],
+                   recordsValue('x509subject', key)));
     if (found) {
       log.debug('Leaving locateEntry(). Found by x509subject: ' + found.dn);
       return { dn: found.dn, stored: found };
@@ -7673,6 +7805,82 @@ function locateEntry(key) {
   log.debug('Leaving locateEntry(). A name, so ' + dn +
             ' (nothing there yet).');
   return { dn: dn, stored: null };
+}
+
+// ---------------------------------------------------------------------------
+// `locateEntry()`'s ENTRY, ASKED ASYNCHRONOUSLY (#621), for a caller that
+// can wait and needs only the entry — the credential census. The four
+// identifier shapes in `locateEntry()`'s order, each resolved by the same
+// halves it uses (`residentEntryByUuid()` and `uuidHolderOf()`,
+// `firstRecording()`), with the store's half asked through
+// `findWindowedAsync()`; a NAME is `existingUserEntriesAsync()`. Outside a
+// window it is `locateEntry()` itself, which asks no store.
+// ---------------------------------------------------------------------------
+/**
+ * The entry `locateEntry()` would find for a key, or null.
+ *
+ * @param key - a name, `urn:uuid:` subject, DN, DID or SPIFFE ID
+ * @returns a promise of the entry, or null
+ */
+async function locateStoredAsync(key) {
+  log.debug('Entering locateStoredAsync(). key=' + key);
+  const text = String(key == null ? '' : key);
+  if (!directoryWindow) {
+    log.debug('Leaving locateStoredAsync(). No window.');
+    return locateEntry(text).stored;
+  }
+  const realmId = realms.currentId();
+  const recorded = async function (attribute, wanted) {
+    log.debug('Entering locateStoredAsync()\'s recorded(). ' + attribute);
+    const asked = await directoryWindow.findWindowedAsync(realmId,
+      'byAttribute', [realmId, attribute, wanted, 2],
+      recordsValue(attribute, wanted));
+    log.debug('Leaving locateStoredAsync()\'s recorded().');
+    return firstRecording(attribute, wanted, asked.map(function (hit) {
+      return hit.entry;
+    }));
+  };
+  let found = null;
+  if (/^urn:uuid:/i.test(text)) {
+    const wanted = text.trim().toLowerCase().replace(/^urn:uuid:/, '');
+    if (UUID_SHAPED.test(wanted)) {
+      found = residentEntryByUuid(wanted);
+      if (!found) {
+        const hits = await directoryWindow.findWindowedAsync(realmId,
+          'byUuid', [realmId, wanted], holdsUuid(wanted));
+        found = uuidHolderOf(hits.map(function (hit) {
+          return hit.entry;
+        }), wanted);
+      }
+    }
+  } else if (DN_SHAPED.test(text)) {
+    const at = normalizeDn(text);
+    found = (await directoryWindow.entriesAtAsync(realmId, [at])).get(at) ||
+      null;
+    if (!found) {
+      found = await recorded('x509subject', text);
+    }
+  } else if (DID_SHAPED.test(text) || SPIFFE_SHAPED.test(text)) {
+    const wanted = text.trim();
+    if (wanted) {
+      found = await recorded(DID_SHAPED.test(text) ? 'didsubject'
+                                                  : 'spiffesubject', wanted);
+    }
+  } else {
+    found = (await existingUserEntriesAsync([text]))[0];
+  }
+  log.debug('Leaving locateStoredAsync(). ' + (found ? found.dn : 'None.'));
+  return found || null;
+}
+
+// Whether `locateEntry()` resolves a key as an identifier rather than a
+// name: its first four branches.
+function identifierShaped(key) {
+  log.debug('Entering identifierShaped().');
+  const text = String(key == null ? '' : key);
+  log.debug('Leaving identifierShaped().');
+  return /^urn:uuid:/i.test(text) || DN_SHAPED.test(text) ||
+    DID_SHAPED.test(text) || SPIFFE_SHAPED.test(text);
 }
 
 /**
@@ -12214,9 +12422,15 @@ if (typeof personAssertions.setDirectory === 'function') {
 // only an identifier-shaped key (a subject, a DN, a DID, a SPIFFE ID) costs
 // what it always cost, once rather than nine times.
 //
-// **IN #349's WINDOW** each name is one `locateEntry()`, so a person the
-// worker does not hold costs one synchronous round trip; batching the names
-// into one `byKeys()` question is left for the prefetch rcbj deferred.
+// **IN #349's WINDOW THIS IS NOT WHAT A REQUEST ASKS (#621, 2026-10-14).**
+// Each name here is one `locateEntry()`, so a person the window does not
+// hold costs one SYNCHRONOUS round trip: 5,000 of them for `GET
+// /admin-api/users` at `credentials.factorScanLimit`, a request worker
+// frozen for 10 s on 8081 at 382,000 people. The requests ask
+// `credentialCensusAsync()`, below, which resolves every name by the same
+// rule and reads the store a page at a time without holding the event loop;
+// this one is what a synchronous caller (and every caller outside a window,
+// where it asks no store) still gets.
 // ---------------------------------------------------------------------------
 /**
  * Reads the credential attributes of each named person, raw, in one call.
@@ -12234,6 +12448,79 @@ function credentialCensus(names) {
     return stored ? censusOfEntry(stored) : null;
   });
   log.debug('Leaving credentialCensus().');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE CENSUS, ASKED ASYNCHRONOUSLY (#621, 2026-10-14; rcbj: "minimize full
+// directory scans and use asynchronous javascript operations, not blocking
+// operations").
+//
+// `credentialCensus()`'s answer — one element per name, the same raw values
+// from `censusOfEntry()` — with each name found as `locateEntry()` finds it,
+// and NOT ONE synchronous question to the store in a windowed process:
+//
+//   * a NAME, which is nearly every name the users list hands over, is
+//     `existingUserEntriesAsync()`: the direct keys as one `byKeys` per five
+//     hundred names, and a `byName` for each that missed, all through the
+//     bridge's `queryAsync()` with the event loop given back between them.
+//     So 5,000 people are ten asynchronous statements, not 5,000 blocking
+//     ones.
+//   * an IDENTIFIER — a `urn:uuid:` subject, a certificate's DN, a DID, a
+//     SPIFFE ID, which reach the list from the identity register — is
+//     `locateStoredAsync()`: `locateEntry()`'s own resolution, its store
+//     question asked asynchronously. They are few (the register keeps at
+//     most `stats.MAX_USERS` identities, and most are names).
+//
+// Each row is taken as the store answered it unless this process holds a
+// newer copy (`heldOrRow()`), which is `locateEntry()`'s answer too: the
+// window's copy is what the synchronous read hands back when it holds one.
+// Nothing is handed out or put in the window, so a census of five thousand
+// people does not evict the people this process is busy with.
+//
+// Outside a window there is nothing to wait for — the username index is a
+// Map — and this is `credentialCensus()`.
+// ---------------------------------------------------------------------------
+/**
+ * `credentialCensus()`, asked asynchronously.
+ *
+ * @param names - the names, as `locateEntry()` takes them
+ * @param counter - optional; what the store was asked, for a test
+ * @returns a promise of one element per name, as `credentialCensus()`
+ */
+async function credentialCensusAsync(names, counter) {
+  log.debug('Entering credentialCensusAsync(). ' + (names || []).length +
+            ' name(s).');
+  const list = (names || []).map(function (name) {
+    return String(name == null ? '' : name);
+  });
+  if (!directoryWindow) {
+    log.debug('Leaving credentialCensusAsync(). No window.');
+    return credentialCensus(list);
+  }
+  const out = list.map(function () {
+    return null;
+  });
+  const plain = [];
+  const shaped = [];
+  list.forEach(function (name, i) {
+    (identifierShaped(name) ? shaped : plain).push(i);
+  });
+  const found = await existingUserEntriesAsync(plain.map(function (i) {
+    return list[i];
+  }), counter);
+  plain.forEach(function (i, at) {
+    out[i] = found[at] ? censusOfEntry(found[at]) : null;
+  });
+  for (const i of shaped) {
+    const stored = await locateStoredAsync(list[i]);
+    out[i] = stored ? censusOfEntry(stored) : null;
+  }
+  if (counter) {
+    counter.identifiers = (counter.identifiers || 0) + shaped.length;
+  }
+  log.debug('Leaving credentialCensusAsync(). ' + plain.length +
+            ' name(s), ' + shaped.length + ' identifier(s).');
   return out;
 }
 
@@ -12522,6 +12809,7 @@ function applicationMatcher() {
 if (typeof credentials.addDirectoryHooks === 'function') {
   credentials.addDirectoryHooks({
     credentialCensus: credentialCensus,
+    credentialCensusAsync: credentialCensusAsync,
     applicationMatcher: applicationMatcher,
     // How many people the realm DEFINES, counted rather than listed, and
     // the first names of them without listing the rest (#610) — the
@@ -15934,18 +16222,17 @@ function ldapAddNow(req, res, next) {
   // hands it.
   // ---------------------------------------------------------------------
   if (normalizeDn(parentDn(dn)) === normalizeDn(usersDn())) {
-    const proposed = [usernameOfEntry({ dn: dn })].concat(
-      req.attributes.filter(function (attr) {
-        return String(attr.type).toLowerCase() === 'uid';
-      }).reduce(function (all, attr) {
-        return all.concat(attr.values);
-      }, []));
+    const proposed = proposedUsernames(req, dn);
     let clash = null;
     proposed.forEach(function (candidate) {
       if (clash) {
         return;
       }
-      clash = existingUserEntry(candidate);
+      // ASKED ALREADY, where the add asked the store first (#621,
+      // `askBeforeTheAdd()`) and nothing under `ou=users` has moved since;
+      // the synchronous lookup otherwise, as always.
+      const held = heldUserEntry(req, candidate);
+      clash = held === undefined ? existingUserEntry(candidate) : held;
     });
     if (clash) {
       log.info('ldap: refusing to add ' + dn + '; ' + clash.dn + ' already ' +
@@ -16102,7 +16389,29 @@ function clearPasswordsIn(attributes) {
   return out;
 }
 
-function screenedThen(passwords, run) {
+// ---------------------------------------------------------------------------
+// SCREENING MAKES THE OPERATION ASYNCHRONOUS, AND IT SAYS SO (#622).
+//
+// With nothing to screen the handler runs in this tick, exactly as before.
+// With something to screen it runs once the screen has answered, a tick or
+// a round trip later — and `performOperation()`, the function a request
+// worker runs, reads an operation's outcome AT ONCE unless the request is
+// marked `stsAsyncOperation` (the bind's arrangement, and
+// `answerAfterCommit()`'s). Unmarked, a dispatched modify carrying a clear
+// password was answered with an operation that "ended nothing" before its
+// handler had run at all, and the change landed after the client was told.
+//
+// So the flag is set HERE, where the asynchrony begins, rather than at each
+// caller: the next handler wrapped in a screen is marked without anybody
+// remembering to. `run` is handed the `next` it must answer through, which
+// is called once whichever path answers — so a body that throws after it
+// has answered sends nothing more — and a body that throws before it has
+// answered is answered here, since inside the promise neither ldapjs nor
+// `performOperation()`'s catch can see the throw: a store the window could
+// not read is `unavailable` (52), as it is there, and anything else an
+// operations error (STS-LDAP-0143).
+// ---------------------------------------------------------------------------
+function screenedThen(req, next, passwords, run) {
   log.debug('Entering screenedThen().');
   let breached = null;
   try {
@@ -16114,23 +16423,231 @@ function screenedThen(passwords, run) {
   }
   if (!breached || !passwords.length || !breached.enabled()) {
     log.debug('Leaving screenedThen(). Nothing to screen.');
-    return run();
+    return run(next);
   }
+  req.stsAsyncOperation = true;
+  let answered = false;
+  const answerOnce = function (err) {
+    log.debug('Entering answerOnce().');
+    answered = true;
+    log.debug('Leaving answerOnce().');
+    return next(err);
+  };
+  const runOnce = function () {
+    log.debug('Entering runOnce().');
+    log.debug('Leaving runOnce().');
+    return run(answerOnce);
+  };
   log.debug('Leaving screenedThen(). Screening.');
   return Promise.all(passwords.map(function (one) {
     return breached.screen(one);
-  })).then(run, function (e) {
+  })).then(runOnce, function (e) {
     log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
     // screen() never rejects; this is its belt and braces.
-    return run();
+    return runOnce();
+  }).catch(function (e) {
+    const code = errorCodes.codeOf(e);
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131';
+    log.error(errorCodes.tag(store ? code : 'STS-LDAP-0143') + 'ldap: a ' +
+              'screened write to ' + (req.dn ? req.dn.toString() : '') +
+              ' could not be completed: ' + ((e && e.stack) || e));
+    if (answered) {
+      return undefined;
+    }
+    return answerOnce(store
+      ? coded(code, new ldap.UnavailableError('the directory could not be ' +
+                                              'read'))
+      : coded('STS-LDAP-0143', new ldap.OperationsError('the write could ' +
+                                                        'not be completed')));
   });
 }
 
 server.add('', function (req, res, next) {
-  return screenedThen(clearPasswordsIn(req.attributes), function () {
-    return ldapAddNow(req, res, next);
+  const run = function () {
+    return screenedThen(req, next, clearPasswordsIn(req.attributes),
+      function (answer) {
+        return ldapAddNow(req, res, answer);
+      });
+  };
+  if (!addAsksFirst(req)) {
+    return run();
+  }
+  // ASYNCHRONOUS FROM HERE, and said so (`performOperation()` waits for
+  // `next`). `next` is called once, whichever path answers — the bind's
+  // arrangement — so a throw after the body has answered sends nothing
+  // more.
+  req.stsAsyncOperation = true;
+  let answered = false;
+  const answerOnce = next;
+  next = function (err) {
+    answered = true;
+    return answerOnce(err);
+  };
+  return askBeforeTheAdd(req).then(function () {
+    return run();
+  }, function (e) {
+    // NOTHING WAS ASKED THAT THE BODY NEEDS: it asks the store itself,
+    // synchronously, as it did before #621, and reports the store's
+    // failure in its own words if the store is what failed.
+    log.debug('Caught in the LDAP add handler: ' + ((e && e.message) || e));
+    delete req.stsHeldNames;
+    return run();
+  }).catch(function (e) {
+    // THE BODY THREW once the add had gone asynchronous: inside a promise,
+    // where `performOperation()`'s catch cannot see it. A store the window
+    // could not read is `unavailable` (52) as it is there; anything else
+    // is an operations error. Either way the client gets one result.
+    const code = errorCodes.codeOf(e);
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131';
+    log.error(errorCodes.tag(store ? code : 'STS-LDAP-0142') + 'ldap: an ' +
+              'add of ' + (req.dn ? req.dn.toString() : '') + ' could not ' +
+              'be completed: ' + ((e && e.stack) || e));
+    if (answered) {
+      return undefined;
+    }
+    return next(store
+      ? coded(code, new ldap.UnavailableError('the directory could not be ' +
+                                              'read'))
+      : coded('STS-LDAP-0142', new ldap.OperationsError('the add could ' +
+                                                        'not be completed')));
   });
 });
+
+// ---------------------------------------------------------------------------
+// AN ADD ASKS THE STORE FIRST, ASYNCHRONOUSLY, IN A WINDOWED PROCESS (#621).
+//
+// The add handler's body is synchronous, and in a window two of its reads
+// were synchronous round trips on every add: `getEntry(dn)` (a new entry is
+// never held, so `slotFor()` asks `byKeys`) and the one-entry-per-person
+// check's `existingUserEntry()` (whose `byName` is asked on every create,
+// since a person not here yet cannot be at the DN tried first). On 8081 at
+// about sixty adds a second they held a request worker 3–6 s of every 30.
+// The handler can wait — it is answered after the commit already
+// (`answeredAfterCommit`) — so it asks both first, through `queryAsync()`:
+//
+//   * THE DN AND THE DIRECT KEYS are read into the window
+//     (`DirectoryWindow.warmAsync()`), so `getEntry(dn)`, the direct half of
+//     `existingUserEntry()` and the write's own `slotFor()` find them held.
+//     A key this process changed, adopted, forgot or flushed while the
+//     question was out is left alone, so the window never holds an answer
+//     older than its own state.
+//   * THE NAMES are resolved by `existingUserEntriesAsync()` — the same rule
+//     as `existingUserEntry()` — and kept on the request with the subtree
+//     clock of `ou=users` as it stood BEFORE the question was asked
+//     (`req.stsHeldNames`). The body uses an answer only while that clock
+//     has not moved (`heldUserEntry()`): any write under `ou=users` here,
+//     or any row another process wrote that this one applied, sends it back
+//     to the synchronous lookup.
+//
+// **WHY THAT IS AS SAFE AS THE SYNCHRONOUS CHECK.** The answer is a moment
+// older than one asked in the body; what could have happened in that moment
+// is (a) a write in THIS process, which moves the clock, or (b) a commit by
+// ANOTHER process this one has not applied yet. (b) is a create of one of
+// these names only where several processes write one store — and there
+// `claimingTheAdd()`, outermost and before this runs, holds the DN and every
+// one of these names across the cluster until the add is flushed
+// (`directory_create_claims.ts`), so no other create of them can commit. A
+// MODIFY or a rename elsewhere that gives an existing entry one of the
+// names is not claimed; it was not before either — the synchronous check
+// and the flush that follows it are not atomic across processes — and the
+// store's merge is what answers it, as it always did.
+//
+// Only an add of a WINDOWED entry asks (a person or a device): anything
+// else is resident, and its reads never reach the store.
+// ---------------------------------------------------------------------------
+/**
+ * Whether an LDAP add asks the store before its body runs.
+ *
+ * @param req - the add request
+ * @returns true in a windowed process, for a windowed DN
+ */
+function addAsksFirst(req) {
+  log.debug('Entering addAsksFirst().');
+  if (!directoryWindow || !directoryWindow.attached() || !req || !req.dn) {
+    log.debug('Leaving addAsksFirst(). No window.');
+    return false;
+  }
+  const asks = directoryWindow.isWindowed(realms.currentId(),
+                                          normalizeDn(req.dn.toString()));
+  log.debug('Leaving addAsksFirst(). ' + asks);
+  return asks;
+}
+
+/**
+ * The usernames an add of a person proposes: its naming RDN's value, and
+ * every `uid` it carries — what the one-entry-per-person check asks about.
+ *
+ * @param req - the add request
+ * @param dn - its DN
+ * @returns the names
+ */
+function proposedUsernames(req, dn) {
+  log.debug('Entering proposedUsernames().');
+  const proposed = [usernameOfEntry({ dn: dn })].concat(
+    (req.attributes || []).filter(function (attr) {
+      return String(attr.type).toLowerCase() === 'uid';
+    }).reduce(function (all, attr) {
+      return all.concat(attr.values);
+    }, []));
+  log.debug('Leaving proposedUsernames(). ' + proposed.length + '.');
+  return proposed;
+}
+
+/**
+ * Asks the store, asynchronously, what an add's body is about to read: its
+ * DN and, for a person, the entries its usernames resolve to.
+ *
+ * @param req - the add request; `stsHeldNames` is set on it
+ * @returns a promise, resolved when the answers are held
+ */
+async function askBeforeTheAdd(req) {
+  log.debug('Entering askBeforeTheAdd().');
+  const dn = req.dn.toString();
+  const realmId = realms.currentId();
+  const person = normalizeDn(parentDn(dn)) === normalizeDn(usersDn());
+  const names = person ? proposedUsernames(req, dn).map(function (one) {
+    return String(one == null ? '' : one);
+  }) : [];
+  // THE CLOCK FIRST, before anything is asked: a write during the questions
+  // must make their answers unusable, never the other way round.
+  const version = subtreeVersion(usersDn());
+  await directoryWindow.warmAsync(realmId, [normalizeDn(dn)].concat(
+    names.map(function (name) {
+      return normalizeDn('uid=' + name + ',' + usersDn());
+    })));
+  if (names.length) {
+    const found = await existingUserEntriesAsync(names);
+    const answers = new Map();
+    names.forEach(function (name, i) {
+      answers.set(name, found[i] || null);
+    });
+    req.stsHeldNames = { realm: realmId, version: version,
+                         answers: answers };
+  }
+  log.debug('Leaving askBeforeTheAdd(). ' + names.length + ' name(s).');
+}
+
+/**
+ * What `askBeforeTheAdd()` found for a name, while it still holds.
+ *
+ * @param req - the add request
+ * @param name - a proposed username
+ * @returns the entry, null for nobody, or undefined when not held (never
+ *   asked, another realm, or something under `ou=users` moved since)
+ */
+function heldUserEntry(req, name) {
+  log.debug('Entering heldUserEntry().');
+  const held = req && req.stsHeldNames;
+  const key = String(name == null ? '' : name);
+  if (!held || held.realm !== realms.currentId() ||
+      held.version !== subtreeVersion(usersDn()) ||
+      !held.answers.has(key)) {
+    log.debug('Leaving heldUserEntry(). Not held.');
+    return undefined;
+  }
+  log.debug('Leaving heldUserEntry(). Held.');
+  return held.answers.get(key);
+}
 
 
 // --- delete ----------------------------------------------------------------
@@ -16483,13 +17000,13 @@ function ldapModifyNow(req, res, next) {
 }
 
 server.modify('', function (req, res, next) {
-  return screenedThen(clearPasswordsIn((req.changes || [])
+  return screenedThen(req, next, clearPasswordsIn((req.changes || [])
     .filter(function (change) {
       return change.operation !== 'delete';
     }).map(function (change) {
       return change.modification;
-    })), function () {
-    return ldapModifyNow(req, res, next);
+    })), function (answer) {
+    return ldapModifyNow(req, res, answer);
   });
 });
 
@@ -23789,6 +24306,14 @@ module.exports = {
   autoCreateUser: autoCreateUser,
   createUser: createUser,
   existingUserEntry: existingUserEntry,
+  // The census's asynchronous resolution and the census itself (#621), for
+  // tests/credential_census_async.js, which compares each with its
+  // synchronous twin and counts what the store was asked.
+  existingUserEntriesAsync: existingUserEntriesAsync,
+  locateStoredAsync: locateStoredAsync,
+  credentialCensus: credentialCensus,
+  credentialCensusAsync: credentialCensusAsync,
+  locateEntry: locateEntry,
   objectFor: objectFor,
   groupsFor: groupsFor,
   groupsOfUser: groupsOfUser,

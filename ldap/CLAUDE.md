@@ -734,6 +734,51 @@ ldif or multi-cell service is unchanged.
       at `ldap.timeLimit` or the client's shorter `timeLimit`
       (`timeLimitExceeded`, 3, STS-LDAP-0140, the entries sent kept); a page
       that fails ends it `unavailable` (52, STS-LDAP-0141).
+    - **THE CREDENTIAL CENSUS AND AN LDAP ADD (#621, 2026-10-14).** Not
+      walks, and still blocking: `/admin-api/users`' census asked
+      `locateEntry()` of each of up to `credentials.factorScanLimit`
+      (5,000) names, one synchronous round trip per person the window did
+      not hold — a request worker frozen 10 s on 8081 at 382,000 people —
+      and every LDAP add asked `getEntry(dn)` and the one-entry-per-person
+      `byName` synchronously, 3–6 s of every 30 at sixty adds a second.
+      Two read-only questions of the window, asked through `queryAsync()`
+      and taking each row as `heldOrRow()` does: `entriesAtAsync(keys)`
+      (held keys from what is held, the rest `byKeys` five hundred at a
+      time with a yield between) and `findWindowedAsync()` (`findWindowed()`'s
+      answer, in its order, local changes last). On them:
+      `existingUserEntriesAsync(names)` is `existingUserEntry()`'s rule for
+      many names — the direct keys in pages, then ONE `byName` per name that
+      missed, eight at a time; NOT `withNames`, whose OR over a GIN array
+      containment filters every row under `ou=users` — and
+      `locateStoredAsync()` is `locateEntry()`'s entry for the four
+      identifier shapes, sharing its halves (`firstRecording()`,
+      `residentEntryByUuid()`, `uuidHolderOf()`) so the two cannot rank
+      differently. **`credentialCensusAsync()`** is the census on them —
+      5,006 names were ten `byKeys`, six `byName` and four identifier
+      questions, none synchronous, where the synchronous census asked
+      5,015 — and `credentials.factorCensusAsync()`,
+      `adminViews.peopleAndCensusAsync()`, `usersJsonAsync()` and
+      `mfaRosterJsonAsync()` carry it to both API doors.
+      **An LDAP add of a windowed DN asks first** (`askBeforeTheAdd()`,
+      `req.stsAsyncOperation`): `DirectoryWindow.warmAsync()` reads the DN
+      and the names' direct keys into the window — a key this process
+      wrote, adopted, forgot, flushed or came to hold while the question
+      was out is left alone (`watched`), so no slot is older than the
+      process — and the names are resolved and kept on the request with
+      `ou=users`' subtree clock from BEFORE the questions; the body uses an
+      answer only while that clock stands (`heldUserEntry()`). A commit by
+      another process of one of the names is what the clock cannot see, and
+      `claimingTheAdd()` holds every one of them across the cluster first
+      (`directory_create_claims.ts`); with no claims only this process
+      writes. An add now asks one `byKeys` and one `byName`,
+      asynchronously, and the body neither; a throw from the body once
+      asynchronous is answered (52 for the store, else STS-LDAP-0142).
+      `count` may still be asked synchronously, `ldap.maxEntries`' reading
+      at most once in ten seconds per realm. Still synchronous and O(page)
+      on `/admin-api/users`: the shown rows' decoration
+      (`mechanismsFor()` per row, about nine `locateEntry()`s, most held
+      after the first), and the tiles' `credentialTallies()` and
+      `countPeopleNamed()` — counts, the holders, and one `withNames`.
     - **Still whole walks on a request path**, recorded as `owed` in
       `tests/no_full_directory_walk_in_requests.js` with what would remove
       each: the role screen's candidates (`personDns()`), the cells page's
@@ -751,7 +796,9 @@ ldif or multi-cell service is unchanged.
 
 `tests/directory_window.js`, section H loading this file as a windowed worker;
 `tests/directory_window_requests.js` counts #616's questions (synchronous and
-asynchronous, by name, and the rows answered) over thousands of people, and
+asynchronous, by name, and the rows answered) over thousands of people —
+and #621's census and LDAP add (sections E and F), with each answer
+compared with the synchronous path's — and
 `tests/no_full_directory_walk_in_requests.js` holds the request handlers to
 no synchronous walk of every person or device but its argued exemptions.
 
@@ -2149,6 +2196,16 @@ handler runs; it holds `res.end()` and the handler's `next()` and sets
 compare is held only for directory or key changes, never for its audit rows.
 `persistence/CLAUDE.md`, *A write is answered after its commit*, argues the
 rest; `tests/answer_after_commit.js` section C drives an add both ways.
+
+**Anything that makes a handler asynchronous marks the request, where the
+asynchrony begins** (#622). `screenedThen()` — the breach screen an add or
+modify carrying a clear `userPassword` runs first (#62 P6) — did not, so a
+dispatched modify was answered "ended nothing" before its handler ran, and
+the change landed after the client was told. It now sets
+`req.stsAsyncOperation` itself, hands the body a `next` that answers once,
+and answers a body that throws inside the promise (`unavailable` for an
+unreadable store, otherwise STS-LDAP-0143). With nothing to screen the
+handler still runs in the same tick. `tests/breached_passwords.js` section F.
 
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 
