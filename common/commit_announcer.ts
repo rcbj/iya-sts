@@ -210,6 +210,66 @@ class CommitAnnouncer {
   }
 
   // ---------------------------------------------------------------------
+  // ONE DISPATCHED RESPONSE, ANNOUNCED FROM WHICHEVER TERMINAL STATE IT
+  // REACHES FIRST (moved here from `request_worker.ts` by #624).
+  //
+  // `finish`: the answer left whole. Where the store holds a writing answer
+  // until its commit, the ticket goes out in this tick (#620).
+  //
+  // `close` before `finish` — the front process went away — was ALWAYS sent
+  // to the flush, on the ground that the response "may have been cut off
+  // inside that hold". **That is true only while `end()` has not run**, and
+  // `writableEnded` is exactly that question: `cluster_barrier.js`'s
+  // holdUntilCommitted() wraps `res.end()` and calls the real one only once
+  // the commit has landed, so a response whose real `end()` ran was released
+  // by its hold, and everything it was held for is in the store. Its peer
+  // leaving before the bytes were flushed takes nothing back. So it is
+  // announced at once, like a finished one; only a response closed BEFORE
+  // its `end()` — a handler still running, or held — waits for the flush,
+  // because its handler may yet write.
+  //
+  // It matters because the flush-gated announcement is only as prompt as
+  // this worker's next two flushes, and under a continuous write load with
+  // the event loop blocked for seconds at a time (STS-STORE-0068) that is
+  // how long the front process's readers on every OTHER worker wait at the
+  // 2,000 ms bound for a ticket the answer had already earned.
+  // ---------------------------------------------------------------------
+  watchResponse(req: http.IncomingMessage & { stsPoolTicket?: unknown },
+                res: http.ServerResponse): void {
+    const { log } = this.deps;
+    log.debug("Entering CommitAnnouncer.watchResponse().");
+    let announcedFor = false;
+    const announceOnce = (answered: boolean): void => {
+      log.debug("Entering CommitAnnouncer.watchResponse() announceOnce().");
+      if (announcedFor || !this.announcesWrites(req)) {
+        log.debug("Leaving CommitAnnouncer.watchResponse() announceOnce().");
+        return;
+      }
+      announcedFor = true;
+      // THE TICKET THE FRONT PROCESS DISPATCHED THIS UNDER, recorded in THIS
+      // process's finish order — which is the order its flush covers them
+      // in, and the only order that can be compared with anything.
+      const ticket = Number(req.stsPoolTicket) || 0;
+      if (!(answered && this.announceAnswered(ticket))) {
+        this.noteTicket(ticket);
+      }
+      this.announceWhenCommitted();
+      log.debug("Leaving CommitAnnouncer.watchResponse() announceOnce().");
+    };
+    res.on('finish', () => {
+      this.countFinished();
+      announceOnce(true);
+    });
+    res.on('close', () => {
+      // AND ANNOUNCED ANYWAY. The request may well have written before the
+      // peer went away, and the front process has a ticket for it either
+      // way. See the block above for which of the two ways.
+      announceOnce(!!res.writableEnded);
+    });
+    log.debug("Leaving CommitAnnouncer.watchResponse().");
+  }
+
+  // ---------------------------------------------------------------------
   // FLUSH, THEN TELL THE FRONT PROCESS WHAT SEQUENCE THIS WORKER REACHED.
   //
   // Called AFTER the response has gone out, so nothing waits on it. The flush
