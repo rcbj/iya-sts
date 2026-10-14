@@ -218,6 +218,10 @@ function checkTheRoutinesAgree(t, sql) {
           all.indexOf(normalize(driver.LOCK_FOR_BACKFILL)) <
             all.indexOf(normalize(driver.COUNTS_BACKFILL)),
           'under the lock that keeps every writer out, taken first');
+  t.check(all.indexOf(normalize(driver.DEK_COUNTS_BACKFILL)) >
+            all.indexOf(normalize(driver.LOCK_FOR_BACKFILL)),
+          'and starts the per-data-key counters with the driver\'s ' +
+          'statement, under the same lock (#623)');
   log.debug("Leaving checkTheRoutinesAgree().");
 }
 

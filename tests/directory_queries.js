@@ -239,10 +239,10 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 16 ===');
-  t.equal(postgres.SCHEMA_VERSION, 16,
-          'C1. the driver writes schema version 16 (#222, #391 phase 6, ' +
-          '#432 phase 5, #618)');
+  t.log.info('=== C. schema version 17 ===');
+  t.equal(postgres.SCHEMA_VERSION, 17,
+          'C1. the driver writes schema version 17 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618, #623)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -250,10 +250,24 @@ async function schema(t) {
     return c.table === 'sts_ldap_entries';
   });
   const names = ['parent_key', 'rdn_value', 'name_keys', 'mail_keys',
-                 'uuid_keys', 'class_keys', 'value_keys', 'attr_names'];
+                 'uuid_keys', 'class_keys', 'value_keys', 'attr_names',
+                 'dek_keys'];
   t.equal(columns.map(function (c) { return c.column; }).join(','),
-          names.join(','), 'C2. SCHEMA_COLUMNS adds the eight lookup columns');
-  columns.forEach(function (c) {
+          names.join(','), 'C2. SCHEMA_COLUMNS adds the eight lookup ' +
+          'columns, and the data keys (#623)');
+  // `dek_keys` (#623) is NULLABLE with no default: NULL is an entry whose
+  // keys are not yet known, which '{}' would claim it held none of.
+  const dekKeys = columns.filter(function (c) {
+    return c.column === 'dek_keys';
+  })[0];
+  t.check(dekKeys && /ADD COLUMN IF NOT EXISTS dek_keys jsonb$/
+    .test(dekKeys.statement) &&
+          table.statement.indexOf('dek_keys jsonb,') >= 0,
+          'C2b. dek_keys is a nullable jsonb with no default, in the CREATE ' +
+          'TABLE and the ALTER alike', dekKeys && dekKeys.statement);
+  columns.filter(function (c) {
+    return c.column !== 'dek_keys';
+  }).forEach(function (c) {
     const definition = c.statement.replace(
       'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ', '');
     // Only the two read from the DN are generated since #391 phase 6; the
@@ -313,14 +327,14 @@ async function schema(t) {
   const firstIndex = ddl.findIndex(function (sql) {
     return /^CREATE INDEX/.test(sql);
   });
-  t.check(ddl.length === 16 && lastAlter === 7 && firstIndex === 8,
-          'C5. against an old table open() adds the eight columns, THEN ' +
+  t.check(ddl.length === 17 && lastAlter === 8 && firstIndex === 9,
+          'C5. against an old table open() adds the nine columns, THEN ' +
           'builds the eight indexes', ddl.map(function (sql) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 16;
-  }), 'C6. and records version 16');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 17;
+  }), 'C6. and records version 17');
   log.debug("Leaving schema().");
 }
 

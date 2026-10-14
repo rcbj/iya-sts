@@ -166,6 +166,43 @@ function indexOf(attrs) {
   return out;
 }
 
+// A value sealed under a data key: `$aesgcm$2$<dek id>$…` or the same with
+// `aessiv` (persistence_postgres.js's SEALED_VALUE, which re-seals by it).
+const SEALED_VALUE = /\$aes(?:gcm|siv)\$2\$[A-Za-z0-9_.-]+\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*\$[A-Za-z0-9+/=]*/g;
+
+/**
+ * The data keys an entry holds values under, for `sts_ldap_entries.dek_keys`
+ * (#623): `{ <dek id>: <values> }` — the stored blob's own key, once, and the
+ * key of every value sealed INSIDE the attributes, once per value. What the
+ * re-encryption job finds an entry by and what `sts_ldap_dek_counts` sums,
+ * so it counts what the directory walk it replaced counted.
+ *
+ * @param attrs - the attributes as text (their JSON) or as an object; a
+ *   blob that did not open is passed as null and counts for its own key only
+ * @param stored - the `attrs` column value: the sealed blob, or the plain
+ *   attributes where nothing seals
+ * @returns the map, `{}` for an entry holding nothing sealed
+ */
+function dekKeysOf(attrs, stored) {
+  log.debug("Entering dekKeysOf().");
+  const out = {};
+  const add = function (id) {
+    if (id) {
+      out[id] = (out[id] || 0) + 1;
+    }
+  };
+  if (typeof stored === 'string') {
+    add(require('../common/crypto').dekIdOf(stored));
+  }
+  const text = typeof attrs === 'string' ? attrs
+    : (attrs === null || attrs === undefined ? '' : JSON.stringify(attrs));
+  (text.match(SEALED_VALUE) || []).forEach(function (one) {
+    add(one.split('$')[3]);
+  });
+  log.debug("Leaving dekKeysOf().");
+  return out;
+}
+
 /**
  * Builds the codec one driver uses: `tier` is the data-key tier its entries
  * are sealed under — `cell` for a store of people (a cell's own database, or
@@ -233,7 +270,8 @@ function create(tier) {
       log.debug("Leaving codec.openAttributes().");
       return parsed.a || {};
     },
-    index: indexOf
+    index: indexOf,
+    dekKeys: dekKeysOf
   };
   log.debug("Leaving create().");
   return codec;
@@ -330,6 +368,7 @@ module.exports = {
   // factory calling itself.
   codecFor: create,
   indexOf: indexOf,
+  dekKeysOf: dekKeysOf,
   lookupOf: lookupOf,
   keyArgs: keyArgs,
   openAnswer: openAnswer

@@ -34,7 +34,8 @@
 // realm, or every directory row of the store — `persons()`, `personNames()`,
 // `allPersons()`, `personRows()`, `eachEntryInRealm()`,
 // `listDeviceEntries()`, `attributeSourcePeople()` (the refresh's old
-// page), `walkDirectory()` and `countDirectory()` (the store's), and
+// page), `walkDirectory()` and `countDirectory()` (the store's, gone since
+// #623 and kept here so neither comes back), and
 // `entriesUnder()` of `usersDn()` or `devicesDn()`. A holder query
 // (`eachHolderOfAny()`, `holdersAsync()`, `withAttribute()`) is not one.
 //
@@ -138,17 +139,26 @@ const EXEMPT = {
 // registered). They reach the walk through an object handed over at run
 // time — the keystore's sealed store, implemented by the store's driver —
 // which no name leads to.
+//
+// EMPTY SINCE #623. It held `keys.data-key-reencrypt` (store.reseal() ->
+// resealSealed() -> walkDirectory(), every row of the store opened on the
+// front process, hourly while any data key was superseded: about 90 s of
+// the thread at 1.5M entries on 8081) and `keys.data-key-count` (the same
+// walk through countDirectory()). Both now read the directory's data-key
+// index — `dek_keys` and the counters its triggers keep — and the walk is
+// gone from the driver; `SEALED_HOOKS` below holds that it stays gone,
+// since the name-following cannot see this path either.
 // ---------------------------------------------------------------------------
-const INDIRECT = {
-  'keys.data-key-reencrypt': 'store.reseal() -> the postgres driver\'s ' +
-    'resealSealed() -> walkDirectory(): every sts_ldap_entries row of every ' +
-    'realm, opened to find the blobs sealed under the retiring data key. ' +
-    'Asynchronous and paged on the driver\'s maintenance pool, so it does ' +
-    'not hold the event loop; it reads every row because a sealed blob ' +
-    'names its key only inside. Removing it needs the data-key ids in an ' +
-    'indexed column, which a holder query cannot stand in for',
-  'keys.data-key-count': 'store.countAll() -> countAllSealed() -> ' +
-    'countDirectory() -> walkDirectory(), for the reason above'
+const INDIRECT = {};
+
+// THE SEALED-STORE HOOKS OF THE POSTGRES DRIVER (#623): what the two jobs
+// above reach through `keystore.sealedStore()`. None may name a walk, and
+// the directory's part of each must ask the data-key index.
+const SEALED_HOOKS = {
+  countSealed: /directoryDekCounts\(/,
+  countAllSealed: /directoryDekCounts\(/,
+  resealSealed: /dek_keys \?\| \$1/,
+  indexSealed: /indexSealedEntries\(/
 };
 
 // The job ids a file's `register({ … })` objects carry, with their `run`'s
@@ -295,6 +305,45 @@ function audit() {
   return { jobs: jobs, hits: hits };
 }
 
+// The postgres driver's sealed-store hooks, read as code (#623): each one,
+// and every function of the driver's it calls by name, names no walk.
+function checkSealedHooks(t) {
+  log.debug('Entering checkSealedHooks().');
+  const rel = 'persistence/persistence_postgres.js';
+  const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  const s = reader.blank(src);
+  const fns = new Map();
+  reader.functionsOf(s).forEach(function (f) {
+    fns.set(f.name, f);
+  });
+  t.check(!fns.has('walkDirectory') && !fns.has('countDirectory'),
+          'the postgres driver defines no directory walk any more (#623)',
+          Array.from(fns.keys()).filter(function (name) {
+            return /walk|countDirectory/i.test(name);
+          }).join(', '));
+  Object.keys(SEALED_HOOKS).forEach(function (hook) {
+    const re = new RegExp('\\b' + hook + '\\s*:\\s*function\\b');
+    const at = s.search(re);
+    const open = at < 0 ? -1 : s.indexOf('{', at);
+    const body = open < 0 ? ''
+      : src.slice(open, reader.matching(s, open, '{', '}') + 1);
+    const blanked = open < 0 ? ''
+      : s.slice(open, reader.matching(s, open, '{', '}') + 1);
+    // The hook, and one level of the driver's own functions it calls.
+    const reach = [blanked].concat(callsIn(blanked).filter(function (name) {
+      return fns.has(name);
+    }).map(function (name) {
+      const f = fns.get(name);
+      return s.slice(f.start, f.end + 1);
+    })).join('\n');
+    t.check(!!body && SEALED_HOOKS[hook].test(body) &&
+            sinksIn(reach).length === 0,
+            'the driver\'s ' + hook + '() asks the data-key index and ' +
+            'reaches no walk (#623)', JSON.stringify(sinksIn(reach)));
+  });
+  log.debug('Leaving checkSealedHooks().');
+}
+
 function run(t) {
   log.debug('Entering run().');
   const result = audit();
@@ -335,6 +384,7 @@ function run(t) {
   t.check(lost.length === 0,
           'every hand-audited indirect walk names a job still registered',
           lost.join('; '));
+  checkSealedHooks(t);
   t.check(Object.keys(EXEMPT).every(function (key) {
     const row = EXEMPT[key];
     return !!(row.fallback || row.inherent) &&

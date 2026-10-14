@@ -68,8 +68,9 @@ function statementsShape(t) {
   t.check(/count\(\*\)/.test(other.text) && /sts_ldap_entries/.test(
     other.text), 'A5. an attribute no counter keeps is COUNTED, as before ' +
     '— the one linear path left, and no caller takes it', other.text);
+  // #618's own functions: #623's per-data-key ones count no attribute.
   const functions = postgres.SCHEMA_ROUTINES.filter(function (one) {
-    return one.kind === 'function';
+    return one.kind === 'function' && /^sts_ldap_count_/.test(one.name);
   }).map(function (one) { return one.statement; }).join('\n');
   const named = (functions.match(/'[a-z]+'/g) || []).map(function (q) {
     return q.slice(1, -1);
@@ -310,7 +311,8 @@ async function realDatabase(t) {
                       'attrs) VALUES (\'default\', $1, \'x\', \'{}\'), ' +
                       '(\'default\', $2, \'x\', \'{}\')', [BASE, USERS]);
     for (const object of postgres.SCHEMA_OBJECTS) {
-      if (/^sts_ldap_count/.test(object.name)) {
+      // #618's tables, and #623's per-data-key ones its triggers write.
+      if (/^sts_ldap_(count|dek)/.test(object.name)) {
         await admin.query(object.statement);
       }
     }
