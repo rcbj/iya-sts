@@ -1932,6 +1932,43 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin/listeners', '/admin-api/listeners',
                           '/admin/scheduler', '/admin-api/scheduler'];
 
+// ---------------------------------------------------------------------------
+// THE LIVENESS PROBE IS ANSWERED HERE, AT ONCE, AND WAITS FOR NOTHING (#624,
+// 2026-10-14).
+//
+// `GET /healthcheck` was dispatched like any other path (`workers.dispatch`
+// defaults to `*`), so a probe paid everything a dispatched read pays before
+// a worker even saw it: the ticket wait (awaitCommitConfirmations(), 2,000 ms
+// at most), the worker's read barrier (barrier(), 5,000 ms at most), a place
+// in that worker's `workers.maxSockets` queue, and whatever the worker's event
+// loop was doing. The compose healthcheck gives up at 5 s. Under the 1M → 10M
+// LDAP bulk load on 8081 two probes were held about 5 s at the front — worker
+// 4 missed a read barrier (STS-WORKER-0027) at the very moment each was
+// finally sent — so their clients had gone before proxy() ran, and proxy()'s
+// own block on that says what it then cost.
+//
+// **WHAT THE PATH IS DOCUMENTED TO MEAN DECIDES WHERE IT IS ANSWERED.**
+// `sts_metadata.ts` and `docs/docker-compose.md` both say *liveness only*: it
+// answers 200 with a JSON message and reads no state. A question that reads no
+// state has nothing to be stale about, so it needs neither barrier, and the
+// process that answers it should be the one a restart would replace — the
+// one holding the listener. That is this process. So it is never dispatched
+// (dispatched() below) and, kept here, it skips the catch-up every other kept
+// request runs (middleware()). What it still proves is that this process
+// accepts a connection and its event loop turns, which is what liveness is.
+//
+// **IT DOES NOT REPORT ON THE WORKERS, AND THAT IS DELIBERATE.** A worker that
+// dies is replaced by reap(); a pool that has given up refuses its paths with
+// STS-WORKER-0028 and says why in the log; a busy one is Monitoring → Node
+// Health's business. Restarting the container because one worker was slow is
+// the outcome the 10-retry healthcheck exists to avoid.
+//
+// Matched like every other list here: at a segment boundary, after a realm
+// prefix, so `/realm/<id>/healthcheck` is answered the same way. The cluster
+// barrier (`cluster/cluster_barrier.js`) is not this file's and still runs.
+// ---------------------------------------------------------------------------
+const ANSWERED_AT_ONCE = ['/healthcheck'];
+
 /**
  * Tells whether a request is handled in a request worker rather than here.
  *
@@ -1952,7 +1989,8 @@ function dispatched(url) {
     log.debug("Leaving dispatched().");
     return false;
   }
-  if (matchesAny(url, NEVER_DISPATCHED)) {
+  if (matchesAny(url, NEVER_DISPATCHED) ||
+      matchesAny(url, ANSWERED_AT_ONCE)) {
     log.debug("Leaving dispatched().");
     return false;
   }
@@ -4849,6 +4887,14 @@ function middleware(options) {
         next();
         return;
       }
+      // THE LIVENESS PROBE CATCHES UP ON NOTHING (#624): it reads no state,
+      // and the wait below is up to 2,000 ms plus a store round trip, which a
+      // probe with a 5 s timeout cannot afford on a busy node. See
+      // ANSWERED_AT_ONCE.
+      if (matchesAny(req.originalUrl || req.url, ANSWERED_AT_ONCE)) {
+        next();
+        return;
+      }
       // Required HERE rather than at the top of the file, for the reason
       // start() gives below: this file is loaded by app.js, above every
       // protocol module, so a top-level require would pull the store into the
@@ -5020,6 +5066,54 @@ let replayCount = 0;
 function proxy(entry, req, res, atGeneration, ticket) {
   log.debug('Entering proxy(). pid=' + entry.pid + ' ' + req.method + ' ' +
             req.url);
+  // -------------------------------------------------------------------------
+  // A CLIENT THAT LEFT WHILE THE REQUEST WAITED IS NOT SENT TO THE WORKER AT
+  // ALL (#624, 2026-10-14).
+  //
+  // The middleware holds a request for the ticket wait and the read barrier
+  // BEFORE calling this — up to 2,000 ms and 5,000 ms — and the handlers at
+  // the foot of this function, which are what notice a client going away,
+  // are hung only here. A client that left during the wait had already
+  // emitted every event they listen for: the response's `close`, and the
+  // request's `end`, which a destroyed request never emits (measured on node
+  // 22: a GET whose client left before anything read it is `destroyed` and
+  // `complete`, and `end` never comes). So, before this check:
+  //
+  //   * `upstream.end()` was never called, and node sends a client request's
+  //     headers only with its first write or its end — the worker was handed
+  //     a connection with NOTHING on it;
+  //   * the worker's HTTP parser, not its app, answered it: a 408 when
+  //     `headersTimeout` (70 s, request_worker.ts) ran out, noticed on node's
+  //     30 s connection check — so 70 to 100 s later, holding one of the
+  //     worker's `workers.maxSockets` places and an `inFlight` all that time;
+  //   * that 408 arrived here as an answer, so finish() ARMED the ticket — and
+  //     the worker, which never saw a request, never ran a handler and had no
+  //     `finish` or `close` to announce it from, never named it.
+  //
+  // That is exactly the pair STS-WORKER-0008 reported twice on 8081 under the
+  // 10M LDAP load (#624): `GET /healthcheck … answered 31.0s ago (dispatched
+  // 132.0s ago); that worker has announced 6 commit(s) since without naming
+  // it: LOST`, each dispatched as worker 4 missed a read barrier, answered
+  // 93 to 96 s after it was finally sent, and every read on the other worker
+  // paying the 2,000 ms bound until it was dropped thirty seconds later.
+  //
+  // **A REQUEST NOBODY IS WAITING FOR IS ONE NOBODY IS OWED**, which is
+  // ticketAbandoned()'s argument and why the ticket is dropped rather than
+  // armed: no byte of it reaches a worker, so no handler runs and nothing can
+  // have been written. `res.destroyed` and `res.closed` are what node sets
+  // when the client's socket went; a response this process already ended is
+  // not proxied either.
+  // -------------------------------------------------------------------------
+  if (res.destroyed || res.closed || res.writableEnded) {
+    if (ticket) {
+      ticketAbandoned(entry, ticket);
+    }
+    log.debug('request_pool: ' + req.method + ' ' + req.url + ' was not ' +
+              'sent to worker ' + entry.pid + ': its client went away while ' +
+              'it waited for the read barrier.');
+    log.debug('Leaving proxy(). The client had gone.');
+    return;
+  }
   const wrote = mayWrite(req.method);
   entry.inFlight++;
   // For the pool's response time (#327); see noteAnswered().

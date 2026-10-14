@@ -852,47 +852,28 @@ class RequestWorker {
       // `finish` and `close` between them cover every way a response can end,
       // and announceWhenCommitted() is idempotent-by-coalescing, so being
       // called from both is not a second announcement.
+      //
+      // **THE ANNOUNCING HALF IS CommitAnnouncer.watchResponse() SINCE #624**,
+      // so that a test can end a response the way a departed peer does and
+      // see what is announced; this worker keeps only its own counts. Hung
+      // AFTER these two, so `inFlight` has moved before anything is sent.
       // ---------------------------------------------------------------------
-      let announcedFor = false;
-      function announceOnce(finished: boolean) {
-        log.debug("Entering announceOnce().");
-        if (announcedFor || !announcer.announcesWrites(req)) {
-          log.debug("Leaving announceOnce().");
-          return;
-        }
-        announcedFor = true;
-        // THE TICKET THE FRONT PROCESS DISPATCHED THIS UNDER, recorded in THIS
-        // process's finish order — which is the order its flush covers them
-        // in, and the only order that can be compared with anything.
-        const ticket = Number(req.stsPoolTicket) || 0;
-        // A RESPONSE THAT FINISHED WAS HELD FOR ITS COMMIT, where the store
-        // holds one (#620): its ticket goes out now, in this tick, rather
-        // than after a later flush this worker may not reach for a while.
-        // One the front process abandoned (`close` before `finish`) may have
-        // been cut off inside that hold, so it waits for the flush.
-        if (!(finished && announcer.announceAnswered(ticket))) {
-          announcer.noteTicket(ticket);
-        }
-        announcer.announceWhenCommitted();
-        log.debug("Leaving announceOnce().");
-      }
       res.on('finish', () => {
         this.inFlight--;
         this.served++;
-        announcer.countFinished();
-        announceOnce(true);
       });
       res.on('close', () => {
         // A response the front process abandoned. Counted the same way,
         // because what this number is for is knowing whether a worker is busy.
-        if (!res.writableEnded) {
+        // `writableFinished` and not `writableEnded` (#624): a response whose
+        // `end()` ran and whose peer left before the bytes were flushed never
+        // emits `finish`, so testing `writableEnded` here left it counted in
+        // flight for the life of the worker.
+        if (!res.writableFinished) {
           this.inFlight--;
         }
-        // AND ANNOUNCED ANYWAY. The request may well have written before the
-        // peer went away, and the front process has a ticket for it either
-        // way.
-        announceOnce(false);
       });
+      announcer.watchResponse(req, res);
     });
 
     this.startTimer = setTimeout(() => {
