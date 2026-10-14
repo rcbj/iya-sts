@@ -16094,7 +16094,29 @@ function clearPasswordsIn(attributes) {
   return out;
 }
 
-function screenedThen(passwords, run) {
+// ---------------------------------------------------------------------------
+// SCREENING MAKES THE OPERATION ASYNCHRONOUS, AND IT SAYS SO (#622).
+//
+// With nothing to screen the handler runs in this tick, exactly as before.
+// With something to screen it runs once the screen has answered, a tick or
+// a round trip later — and `performOperation()`, the function a request
+// worker runs, reads an operation's outcome AT ONCE unless the request is
+// marked `stsAsyncOperation` (the bind's arrangement, and
+// `answerAfterCommit()`'s). Unmarked, a dispatched modify carrying a clear
+// password was answered with an operation that "ended nothing" before its
+// handler had run at all, and the change landed after the client was told.
+//
+// So the flag is set HERE, where the asynchrony begins, rather than at each
+// caller: the next handler wrapped in a screen is marked without anybody
+// remembering to. `run` is handed the `next` it must answer through, which
+// is called once whichever path answers — so a body that throws after it
+// has answered sends nothing more — and a body that throws before it has
+// answered is answered here, since inside the promise neither ldapjs nor
+// `performOperation()`'s catch can see the throw: a store the window could
+// not read is `unavailable` (52), as it is there, and anything else an
+// operations error (STS-LDAP-0143).
+// ---------------------------------------------------------------------------
+function screenedThen(req, next, passwords, run) {
   log.debug('Entering screenedThen().');
   let breached = null;
   try {
@@ -16106,22 +16128,50 @@ function screenedThen(passwords, run) {
   }
   if (!breached || !passwords.length || !breached.enabled()) {
     log.debug('Leaving screenedThen(). Nothing to screen.');
-    return run();
+    return run(next);
   }
+  req.stsAsyncOperation = true;
+  let answered = false;
+  const answerOnce = function (err) {
+    log.debug('Entering answerOnce().');
+    answered = true;
+    log.debug('Leaving answerOnce().');
+    return next(err);
+  };
+  const runOnce = function () {
+    log.debug('Entering runOnce().');
+    log.debug('Leaving runOnce().');
+    return run(answerOnce);
+  };
   log.debug('Leaving screenedThen(). Screening.');
   return Promise.all(passwords.map(function (one) {
     return breached.screen(one);
-  })).then(run, function (e) {
+  })).then(runOnce, function (e) {
     log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
     // screen() never rejects; this is its belt and braces.
-    return run();
+    return runOnce();
+  }).catch(function (e) {
+    const code = errorCodes.codeOf(e);
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131';
+    log.error(errorCodes.tag(store ? code : 'STS-LDAP-0143') + 'ldap: a ' +
+              'screened write to ' + (req.dn ? req.dn.toString() : '') +
+              ' could not be completed: ' + ((e && e.stack) || e));
+    if (answered) {
+      return undefined;
+    }
+    return answerOnce(store
+      ? coded(code, new ldap.UnavailableError('the directory could not be ' +
+                                              'read'))
+      : coded('STS-LDAP-0143', new ldap.OperationsError('the write could ' +
+                                                        'not be completed')));
   });
 }
 
 server.add('', function (req, res, next) {
-  return screenedThen(clearPasswordsIn(req.attributes), function () {
-    return ldapAddNow(req, res, next);
-  });
+  return screenedThen(req, next, clearPasswordsIn(req.attributes),
+    function (answer) {
+      return ldapAddNow(req, res, answer);
+    });
 });
 
 
@@ -16475,13 +16525,13 @@ function ldapModifyNow(req, res, next) {
 }
 
 server.modify('', function (req, res, next) {
-  return screenedThen(clearPasswordsIn((req.changes || [])
+  return screenedThen(req, next, clearPasswordsIn((req.changes || [])
     .filter(function (change) {
       return change.operation !== 'delete';
     }).map(function (change) {
       return change.modification;
-    })), function () {
-    return ldapModifyNow(req, res, next);
+    })), function (answer) {
+    return ldapModifyNow(req, res, answer);
   });
 });
 

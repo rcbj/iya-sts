@@ -12768,6 +12768,14 @@ const CODES = [
       'sent; the search ends unavailable rather than answering as though ' +
       'the rest of the directory were empty.',
     spec: 'RFC 4511: unavailable (52)' },
+  { code: 'STS-LDAP-0143',
+    summary: 'An LDAP add or modify carrying a clear password was screened ' +
+      'for a data breach (#622), which made it asynchronous, and its ' +
+      'handler then threw where neither ldapjs nor a request worker could ' +
+      'see it. The client is answered once rather than never: an ' +
+      'operations error, or unavailable (52) when the store could not be ' +
+      'read (STS-LDAP-0130, STS-LDAP-0131).',
+    spec: 'RFC 4511: operationsError (1)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
