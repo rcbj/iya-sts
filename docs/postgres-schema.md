@@ -50,6 +50,7 @@ which shape is on disk.
 | 11 | `sts_node_snapshots`: each cluster node's latest Worker Pools and Node Health views (#332); on develop the same number is #98's `sts_cell_routing` — both tables are created by name |
 | 12 | the column `sts_minted.expires_at` and its partial index `sts_minted_expires` (#333) |
 | 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349) |
+| 19 | the counters sharded (`shard` in the keys of `sts_ldap_counts` and `sts_ldap_dek_counts`), a BRIN in place of the btree on `sts_minted.written_at`, fillfactor 80 on `sts_minted`, autovacuum settings on `sts_changes` and `sts_ldap_entries`, and the `pg_stat_statements` extension (#630). Run `postgres/schema.sql` again as the owner to upgrade |
 
 ### The application role
 
@@ -175,10 +176,13 @@ read of `sts_ldap_counts`:
 | `realm` | text | the trust realm |
 | `base_key` | text | a normalised DN, or `''` for the whole realm. The count is of the entries **strictly under** it, so every ancestor of a row's DN has a row of its own |
 | `attribute` | text | `''` for every entry, or a counted attribute (`userpassword`) for the entries that hold it |
-| `n` | bigint | the count |
+| `shard` | smallint | which of sixteen rows of this counter (schema version 19, #630) |
+| `n` | bigint | this shard's part of the count; one shard may be negative |
 
-Primary key `(realm, base_key, attribute)`. A base with no row has nothing
-under it.
+Primary key `(realm, base_key, attribute, shard)`. **A count is the sum of
+its shards**: each commit adds to the shard of its own server connection
+(`pg_backend_pid() % 16`), so two commits of one realm rarely wait on the
+same row, and every reader sums. A base with no row has nothing under it.
 
 **The database keeps the counts, not the service.** Triggers on
 `sts_ldap_entries` see every write in the transaction that makes it,
@@ -216,8 +220,10 @@ out. Now:
 * every write of an entry also writes its `dek_keys`;
 * a re-encryption pass reads only the entries whose `dek_keys` name a
   retiring key (a GIN index on `dek_keys`);
-* `sts_ldap_dek_counts` holds, per data key (`dek_id`, primary key), the
-  number of values (`n`) the directory holds under it.
+* `sts_ldap_dek_counts` holds, per data key (`dek_id`) and shard
+  (`shard`, primary key `(dek_id, shard)` since version 19), the number of
+  values (`n`) the directory holds under it; the count is the sum of the
+  key's shards.
 
 The counts are kept by triggers, exactly as `sts_ldap_counts` is: each
 statement appends its net per key to `sts_ldap_dek_deltas`, and a deferred
@@ -288,7 +294,13 @@ only, and `persistence.minted` turns it off.
 | `expires_at` | bigint | **the record's own expiry**, in epoch milliseconds, as the store computed it when it wrote the row, or NULL for a record that does not expire (and for a tombstone). A start reads no row whose expiry has passed, and the `persistence.minted-expiry-purge` job deletes such rows in batches (schema version 12, #333) |
 
 Primary key `(handle, realm, key)`, with indexes on `(handle, realm)`,
-`written_at`, and `expires_at` where it is not NULL.
+`written_at`, and `expires_at` where it is not NULL. Since schema version
+19 (#630) the `written_at` index is a BRIN (`sts_minted_written_brin`) and
+the table's fillfactor is 80: every write of a row sets `written_at`, and a
+btree on it made every update copy the row to a new page and add an entry
+to every index. A BRIN does not, on PostgreSQL 16 and later. Only the
+clean-up jobs read `written_at`; they may read more of the table than they
+did.
 
 A start reads only the rows of the realms that exist: `''` (the shared
 stores), the default realm, and every realm in `sts_realms`. Rows of a realm
@@ -371,7 +383,14 @@ describes**, so "I have applied up to N" means "I have seen everything
 committed before N". `LISTEN`/`NOTIFY` on the channel `sts_ldap_change` only
 wakes the poll early. Losing a notification costs latency, never correctness.
 The payload is only a pointer, so neither the 8000-byte `NOTIFY` limit nor
-encryption applies to it.
+encryption applies to it. Since #630 the notification is sent **after** the
+transaction commits, and at most once every 25 ms per process for all the
+commits in that window. A notification sent inside the writing transaction
+made every writer wait for a lock at commit.
+
+Autovacuum runs on this table at 2% dead rows
+(`autovacuum_vacuum_scale_factor=0.02`) with ten times the default cost
+limit, because the trim deletes from it all the time.
 
 ### `sts_change_readers`
 

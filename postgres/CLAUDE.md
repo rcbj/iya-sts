@@ -64,6 +64,51 @@ them all.
   building it from the parts would make an override of the whole string
   ambiguous. `tests/postgres_schema.js` notices when they disagree.
 
+## The server's settings, on the command line (#630, 2026-10-14)
+
+**From measuring 8081 under the LDAP bulk load** (`load-users/dbperf/` on
+the host). `docker-compose.yml` passes them after `max_connections`; it
+carries no comments, so the reasons are here. `docs/docker-compose.md`
+lists them for a user.
+
+* **`shared_buffers=2GB`** (`STS_POSTGRES_SHARED_BUFFERS`): the default 128 MB
+  against a 9.4 GB database read at a 96.9% hit ratio. A variable because
+  the test stacks run up to three of these on one machine (the cells layer
+  `extends` this service); it is a ceiling, not memory taken at start.
+  Launchers set nothing, so no `COMPOSE_ENV` row is owed.
+* **`max_wal_size=8GB`, `checkpoint_timeout=15min`**: every checkpoint was
+  a REQUESTED one (the WAL filled), each followed by a burst of full-page
+  images.
+* **`wal_compression=lz4`**: 4.4 full-page images an add.
+* **`max_parallel_workers_per_gather=0`**: the batched directory lookups
+  went parallel and tripled the server's CPU for nothing; the service's
+  statements are small and many.
+* **`track_io_timing=on`, `log_lock_waits=on`**: what the analysis had to
+  infer from wait sampling, recorded.
+* **`pg_stat_statements` and `auto_explain` preloaded**, with the analysis's
+  exact settings (`track=all`, `max=10000`; plans over 200 ms logged with
+  `analyze`, `buffers` and nested statements, without per-node timing,
+  which is the expensive part of `analyze`). `schema.sql` creates the
+  extension, in `public`, only where the running role may — a superuser
+  here, RDS's master user there — and warns and goes on otherwise. **The
+  application role gets no `pg_read_all_stats`**, as it gets no
+  `pg_monitor` (`persistence/CLAUDE.md`, the metrics page): the view is for
+  the owner, and the service reads none of it.
+
+**THEY TAKE EFFECT AT THE CONTAINER'S NEXT START** (every one is a server
+start parameter, and `shared_preload_libraries` cannot change any other way);
+nothing in the `sts-db` volume changes, and a stack started before this keeps
+the old values until it is restarted.
+
+**RDS IS NOT DONE**: `deploy/aws/environment/rds.tf` and
+`deploy/aws/global/database.tf` still set only the TLS parameters. RDS's own
+defaults already size `shared_buffers` from the instance's memory and load
+`pg_stat_statements`, but `auto_explain`, `wal_compression`,
+`max_parallel_workers_per_gather`, `checkpoint_timeout`, `max_wal_size` and
+`log_lock_waits` would be parameters of those groups (`pending-reboot` for
+the preload), and want a reboot window and an instance-sized
+`max_wal_size` — a decision for the next AWS apply, not a change made blind.
+
 ## The schema is built by an OWNER and used by somebody who cannot change it
 
 **Until 2026-09-06 the service's own database role had to be able to `CREATE
@@ -131,6 +176,16 @@ tables and no `sts_app`, and the service container then restart-loops on
 what it throws away is the directory, the realm registry and the appconfig
 overrides — and, in product mode (the compose stack's default), the sealed
 signing keys and what this service minted under them.
+
+**VERSION 19 (#630) IS THE SAME UPGRADE, AND MORE THAN COLUMNS.** It shards
+the two counter tables (a `shard` column, then a primary key that holds it —
+a `DO` block, because the swap must happen once), replaces the two fold
+routines under new names and drops the old ones, swaps `sts_minted`'s
+`written_at` btree for a BRIN, and sets storage parameters on three tables.
+Every statement is idempotent; checked against a real version-17 database
+with rows and counters in it, and re-run on it and on a fresh one. The
+driver's `SCHEMA_UPGRADES` holds the same statements under the same
+conditions (`persistence/CLAUDE.md`).
 
 **`tests/postgres_schema.js` is what keeps `schema.sql` and the driver from
 drifting**, since the DDL is now written down twice: it fails on a `CREATE`
