@@ -10,6 +10,7 @@
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
 | **`directory_merge.js`** | **One directory entry written by two nodes** (2026-09-14, #46 section 3): the three-way merge (base = the shadow, mine = live, theirs = the row under `FOR UPDATE`) the postgres driver writes a directory upsert through, and `persistence.js` applies again to a write that raced the flush or a replicated row. A LEAF with no requires. See *Several nodes writing one row* below. |
 | **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
+| **`bulk_import.js`**, **`ldif_stream.js`** | **The bulk directory import** (#629, 2026-10-14): people from an LDIF file straight into `sts_ldap_entries`, offline, thousands a second. A TOOL — no route, nothing requires it. See *THE BULK IMPORT* below; `docs/bulk-import.md` is the operator's page. |
 
 ## THE METRICS SURFACE, AND THE PROCESS EXIT IT EXPOSED (2026-09-11)
 
@@ -1178,6 +1179,71 @@ falls back to its configured value. Both columns are on the postgres driver's
 `EXTRA_SEALED` list, so the re-encryption job counts and re-seals them — **a
 column that holds sealed values and is not on that list is one whose data key
 the job destroys with the values still in it**.
+
+## THE BULK IMPORT (#629, 2026-10-14)
+
+`node persistence/bulk_import.js --file=… [--realm] [--batch] [--skip]
+[--report]`, in the image, with the service's own settings, **with the
+service stopped**. rcbj asked for it to take the directory from 10M to 50M
+and on toward 200M; an LDAP add is hundreds a second at best. The design is
+on #629 (the comment of 2026-10-14). What a maintainer needs:
+
+* **OFFLINE, AND REFUSED WHILE THE SERVICE RUNS (STS-LDAP-0153).** A running
+  window holds ABSENCES, and a whole-directory process sees nothing it was
+  not told through the change log — one change row an entry would be 200M
+  rows. Every postgres process reports into `sts_change_readers` every 15 s
+  and a clean stop deletes its row, so a report in the last 60 s is a
+  running service; asked after `open()` and before every batch.
+* **A ROW IS EXACTLY WHAT AN ADMIN WRITE BINDER'S LDAP ADD WRITES**:
+  `putEntry()`'s attributes in its order (timestamps, the locale policy's
+  `preferredlanguage` through `localePolicy.populationFor('')` fed the
+  realm's `ou=localePolicies` rows from the store, a random v4 `entryuuid`,
+  `stsmailverified`), sealed and indexed by `directory_codec`'s
+  `sealAttributes()`, `index()` and `dekKeys()` — the three calls
+  `entryParams()` makes — origin `bulk import`. **A change to what `putEntry()`
+  or `entryParams()` writes is owed here too**; `tests/bulk_import.js` D1
+  opens rows and recomputes their columns, and A5 pins the order.
+* **THE CHECK IS THREE STATEMENTS A BATCH, NEVER A CORRELATED EXISTS A ROW.**
+  The first version guarded the insert with `EXISTS (… name_keys @>
+  jsonb_build_array(x))` per row; the planner prices jsonb containment at a
+  default selectivity, chose a scan per row, and one 5,000-row batch took
+  79 s against 30,000 entries. Now: `dn_key = ANY()`, `rdn_value = ANY()`
+  and `name_keys @> ANY($::jsonb[])` (a bitmap scan, one GIN probe a digest),
+  matched in JavaScript — `byName()`'s rule for every name of every record.
+  **Two more planner traps, both measured:** with `realm`/`parent_key` in
+  the same WHERE as `@> ANY()` the planner walked the `(realm, parent_key,
+  rdn_value)` btree and compared every person with every digest (14.7 s a
+  batch at 20,000 entries), so the digests go through a MATERIALIZED CTE on
+  the GIN index alone, with `SET LOCAL enable_seqscan = off` in the batch;
+  and on schema 17 the name index's `fastupdate` pending list is read whole
+  by every probe (25.8 s for 5,000 probes at 25,000 entries, 13 ms merged),
+  so it is merged after every batch where permitted (`namePendingMerger()`;
+  schema 18 has `fastupdate = off` and nothing to merge).
+* **ONE TRANSACTION A BATCH UNDER `SHARE ROW EXCLUSIVE`** from the check to
+  the commit: readers go on, no other writer can make a checked name taken.
+  The insert is `INSERT … SELECT FROM unnest($n::text[]…) ON CONFLICT DO
+  NOTHING RETURNING dn_key`, and a count short of what was checked free
+  rolls back (STS-LDAP-0159). No `COPY`: the image has no COPY client, and
+  the application role cannot create a staging table.
+* **THE #618 AND #623 COUNTERS NEED NOTHING.** Their triggers are statement
+  level over transition tables, so one insert of N rows writes one delta per
+  parent and per data key, folded at commit. D2/D4/D6 compare every counter
+  with a fresh count.
+* **DATA KEYS**: a seal that makes the realm's `directory` DEK queues its row;
+  `keystore.settleDeks()` is awaited before the insert (the order rule). The
+  keystore is handed the driver's own key functions, as `persistence.js`
+  hands them.
+* **AFTER THE LAST BATCH** it merges the GIN pending lists
+  (`gin_clean_pending_list()` on each GIN index of the table) and ANALYZEs
+  it: forty million rows in `fastupdate` pending lists make every lookup scan
+  them. Both need the owner or MAINTAIN; refused, it is STS-LDAP-0161 with
+  the `VACUUM (ANALYZE)` to run, and the import is still done.
+* **IT DOES NOT REQUIRE `ou=users` AS A ROW.** Every process seeds the
+  containers in memory at start. **A windowed front process on an EMPTY
+  store was seen to write the seed's people and not its containers** (the
+  base, `ou=users`, the groups): 24 rows where a whole-directory process
+  writes 59. Not this tool's to fix, and recorded here because the test's
+  seed child uses `ldap.workerDirectory=memory` to get a whole tree.
 
 ## A WINDOWED WORKER'S DIRECTORY (#349, 2026-09-29)
 
