@@ -398,6 +398,16 @@ class RequestWorker {
   // reach one of those, because the front process only sends to a worker it
   // has had a ready report from.
   private announcer: CommitAnnouncer | null = null;
+  // ---------------------------------------------------------------------
+  // THE DIRECTORY ROWS AN OPERATION WAS HANDED IN PLACE OF A PULL (#626),
+  // still being applied: every operation that arrives after one that carried
+  // `staleKeys` waits for them, whether or not it carried any itself. The
+  // front process counts this worker current for those keys from the moment
+  // it SENDS them, so a later operation on any connection may arrive with
+  // none — and must not run against the copies they were sent to replace.
+  // Null when nothing is being applied.
+  // ---------------------------------------------------------------------
+  private applyingStaleKeys: Promise<void> | null = null;
 
   // ---------------------------------------------------------------------------
   // THE OPERATION TABLE: what a worker will do that is not an HTTP request.
@@ -1176,6 +1186,34 @@ class RequestWorker {
     log.debug('Entering RequestWorker.handleOperation(). kind=' +
               message.kind);
     const ticket = Number(message.ticket) || 0;
+    // THE KEYS FIRST (#626), whatever the operation turns out to be: the
+    // front process counted them sent. It sent this write without the read
+    // barrier's pull, and named instead the windowed directory rows other
+    // processes committed since this worker last caught up: they are
+    // applied as the pull would apply them, and where they cannot be (no
+    // window here, an unreadable store) the pull runs after all. Every
+    // operation behind them waits — see `applyingStaleKeys`.
+    if (Array.isArray(message.staleKeys) && message.staleKeys.length) {
+      const persistence = require('../persistence/persistence');
+      const keys = message.staleKeys;
+      const before = this.applyingStaleKeys || Promise.resolve();
+      const applying: Promise<void> = before.then(function () {
+        return persistence.applyStaleKeys(keys);
+      }).then(function (applied: boolean) {
+        return applied ? null : persistence.syncNow();
+      }).catch(function (e: any) {
+        // applyStaleKeys() and syncNow() resolve rather than reject; this is
+        // a defect, and the operation still runs, as it would have after a
+        // pull that failed.
+        log.debug("Caught in RequestWorker.handleOperation(): " +
+                  ((e && e.message) || e));
+      }).then(() => {
+        if (this.applyingStaleKeys === applying) {
+          this.applyingStaleKeys = null;
+        }
+      });
+      this.applyingStaleKeys = applying;
+    }
     const fn = this.operations.get(message.kind);
     if (!fn) {
       // NOT ANNOUNCED, and this is the one path that must not be: no handler
@@ -1194,6 +1232,24 @@ class RequestWorker {
                 'operation.');
       return;
     }
+    if (this.applyingStaleKeys) {
+      const waitFor = this.applyingStaleKeys;
+      log.debug('Leaving RequestWorker.handleOperation(). After the keys.');
+      waitFor.then(() => {
+        this.runOperation(message, fn, ticket);
+      });
+      return;
+    }
+    this.runOperation(message, fn, ticket);
+    log.debug('Leaving RequestWorker.handleOperation(). Running.');
+  }
+
+  // The operation's handler, and its answer on the channel: the second half
+  // of handleOperation(), run at once or once the keys it waits for are in.
+  private runOperation(message: any, fn: OperationHandler,
+                       ticket: number): void {
+    const { log } = this.deps;
+    log.debug('Entering RequestWorker.runOperation(). kind=' + message.kind);
     let result;
     // A PART, ahead of the answer, on the same channel and so in order
     // before it (#616). The front process hands it to whoever is waiting
@@ -1212,7 +1268,7 @@ class RequestWorker {
       WorkerChannel.send({ operation: true, id: message.id, ok: false,
                            ran: true,
                      error: e.message, errorName: e.name || 'Error' });
-      log.debug('Leaving RequestWorker.handleOperation(). It threw.');
+      log.debug('Leaving RequestWorker.runOperation(). It threw.');
       return;
     }
     Promise.resolve(result).then((value) => {
@@ -1227,7 +1283,7 @@ class RequestWorker {
                            ran: true,
                      error: e.message, errorName: e.name || 'Error' });
     });
-    log.debug('Leaving RequestWorker.handleOperation(). Running.');
+    log.debug('Leaving RequestWorker.runOperation(). Running.');
   }
 
   // ---------------------------------------------------------------------------

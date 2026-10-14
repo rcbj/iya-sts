@@ -4988,43 +4988,20 @@ const directoryHooks = {
     if (isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
     }
-    // AND THE IDENTITY REGISTER, one row at a time: a person another process
-    // just made through a door was OBSERVED by this service, and the register
-    // is what `/admin/users` reads for who was seen and how (`knownBy`).
-    // Seeded entries are skipped: being seeded is not an interaction. (The
-    // startup restore no longer fills the register at all — #613, see
-    // `replaceRealm()` below.)
-    if (stored.origin !== 'seed') {
-      realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-        if (!isPersonEntry(stored)) {
-          return;
-        }
-        const uid = (stored.attributes.uid || [])[0];
-        // ---------------------------------------------------------------
-        // `created`, NOT `restored` (2026-09-08). Those are two different
-        // provenances and this applier had been reporting the wrong one.
-        //
-        // `restored` meant "this person was in a store when this service
-        // started and nobody here saw how they got there" — what the STARTUP
-        // restore reported until #613 stopped it reporting anybody. THIS
-        // function is the replication applier: the entry was written by a
-        // DOOR, in another process, moments ago, in this run. The service
-        // watched it happen; only this process did not.
-        //
-        // The consequence was visible on `/admin/users` and through the
-        // management API: a person created through `POST
-        // /admin-api/users/create` read back as `knownBy: "created"` on the
-        // worker that made them and `"restored"` on the other two, so the
-        // answer depended on which worker replied.
-        // `sts_admin_api_operations` caught it — "the register should say
-        // this entry is known because it was CREATED".
-        //
-        // `noteKnownIdentity()` never overwrites an existing record, so this
-        // cannot downgrade somebody who has actually signed in here.
-        // ---------------------------------------------------------------
-        stats.noteKnownIdentity(uid || stored.dn, 'created');
-      });
-    }
+    // NOT THE IDENTITY REGISTER (#618 phase 2, 2026-10-14). Until then a
+    // person another process made through a door was noted here as
+    // `created` — in EVERY process, so each add cost every other process a
+    // journalled row of `admin_stats.users` and, past `MAX_USERS`, a
+    // journalled eviction and a `usersForgotten` bump: about four change rows
+    // per add on 8081, each sealed, inserted, pulled and applied by every
+    // process again. Nothing needs it. The register is `merge: 'own'`, so the
+    // CREATING process's own `created` record reaches every other process
+    // through the replication fan-in (`everyUserRecord()`), which is how a
+    // person made through `POST /admin-api/users/create` reads back
+    // `knownBy: "created"` whichever worker answers; and `/admin/users` has
+    // listed the directory's people itself since #610, so a person made over
+    // the LDAP socket — which no door notes — is listed as `directory`.
+    // `forgetEntry()` below is the same for a windowed worker.
     log.debug('Leaving applyEntry().');
   },
 
@@ -5119,10 +5096,10 @@ const directoryHooks = {
   // `row` is the entry the store now holds (null for a delete), read by the
   // applier as `applyEntry()`'s caller reads it; `keep` is true for a key
   // this process is busy with, which is marked stale by the caller and not
-  // forgotten here. Either way a PERSON the store now holds is noted in the
-  // identity register as `created`, exactly as `applyEntry()` notes one a
-  // process holding the whole directory applies: `/admin/users` in a
-  // windowed worker must list who another process just made.
+  // forgotten here. A person the store now holds is NOT noted in the
+  // identity register, exactly as `applyEntry()` notes nobody (#618 phase
+  // 2): `/admin/users` in a windowed worker lists who another process just
+  // made from the directory and the creator's own record.
   forgetEntry: function (realmId, key, row, keep) {
     log.debug('Entering forgetEntry(). realmId=' + realmId + ', key=' + key);
     // In the row's realm, for applyEntry()'s reason (#352), and with the row
@@ -5150,14 +5127,8 @@ const directoryHooks = {
         noteHeldNamesTouched(key, after);
       }
     });
-    if (row && row.dn && row.origin !== 'seed') {
-      realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-        if (isPersonEntry(row)) {
-          const uid = ((row.attributes || {}).uid || [])[0];
-          stats.noteKnownIdentity(uid || row.dn, 'created');
-        }
-      });
-    }
+    // No identity-register note for a person another process made: see
+    // `applyEntry()` above (#618 phase 2).
     log.debug('Leaving forgetEntry().');
   },
 

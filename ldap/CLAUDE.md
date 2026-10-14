@@ -628,10 +628,17 @@ ldif or multi-cell service is unchanged.
   2026-10-13; rcbj's 2026-09-29 rule that it was is reversed by the issue).
   `replaceRealm()` filled it from the store in a windowed worker, a page of
   NAMES at a time through the synchronous bridge, and that pass is gone
-  (*Restoring*, below). `forgetEntry()`, handed the row the applier read,
-  still notes a person another process made as `created`, as `applyEntry()`
-  does. Section K of the test compares the two modes: the same register,
-  with no restored person in either.
+  (*Restoring*, below). **Since #618 phase 2 (2026-10-14) neither
+  `forgetEntry()` nor `applyEntry()` notes a person another process made**:
+  that note cost every other process a journalled `admin_stats.users` row
+  and, past `MAX_USERS`, a journalled eviction and a `usersForgotten` bump
+  for every add anywhere (about 3 of the 9.7 change rows an LDAP add wrote
+  on 8081). The register is `merge: 'own'`, so the CREATING process's
+  `created` record reaches every other process through the fan-in
+  (`everyUserRecord()`), and `/admin/users` lists the directory's people
+  itself (#610). Section K of the test compares the two modes: the same
+  register, with neither a restored nor a replicated person in either;
+  `tests/change_rows_per_add.js` counts the rows.
 * **The hooks** use `adopt()` (a row the store holds, not a write) in
   `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
   `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
@@ -2278,6 +2285,28 @@ a dispatched write visible is the read barrier — `runOperation()` takes a tick
 and waits on the generation exactly as a dispatched path does, which it did not
 until 2026-09-12: the barrier was built for HTTP and nothing took an operation
 through it, so a dispatched operation was outside read-your-write entirely.
+
+**A WRITE (add, modify, delete, modifyDN) SKIPS THE PULL WHERE IT COULD NOT
+CHANGE ITS ANSWER (#626, 2026-10-14).** When everything its worker has not
+caught up on is windowed directory rows (people, devices), the write is sent
+without the sync round and carries those rows' keys, and the worker applies
+them first — `persistence.applyStaleKeys()`, the pull's own windowed applier
+key for key — so a copy this worker held of a key another worker changed (an
+absence remembered, an entry since renamed, deleted or given a `uid`) is
+dropped and read from the store, exactly as the pull would have dropped it. A
+key it does not hold was always read from the store. Anything shared pending
+(a group, a policy, a setting, a realm) sends the write through the whole
+barrier; reads always take it. Three things decide an add's answer and each is
+held: **uniqueness** by `claimingTheAdd()` across processes and the store's
+`byName` after the stale copies are gone; **a parent or referenced entry**
+another connection created and was answered for, by its key being applied;
+**the same connection's order** by affinity and the worker's queue behind the
+keys. The add path in this file is unchanged — the keys are applied before the
+handler runs, in `request_worker.ts`, so `askBeforeTheAdd()` (#621, #625) asks
+the store about keys nothing stale is held for. `common/CLAUDE.md` (#626) has
+the mechanism and the argument; `tests/request_write_barrier.js` section B
+shows each hazard with nothing applied and the barrier's answer once the keys
+are.
 
 ### What is asserted, and what is not
 
