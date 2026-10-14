@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 17**: 39 tables in a schema of their own, `sts`.
+**Schema version 18**: 39 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -125,7 +125,8 @@ The [LDAP directory](ldap.md) has one row per entry, for every realm. The
 | `name_keys` | jsonb, generated | the `uid` values, lower-cased, as a JSON array |
 | `mail_keys` | jsonb, generated | the `mail` values, lower-cased |
 | `uuid_keys` | jsonb, generated | the `entryUUID` and `stsEntryUuidAlias` values, lower-cased |
-| `class_keys` | jsonb, generated | the `objectClass` values, lower-cased — how a group placed under `ou=users` is found |
+| `class_keys` | jsonb, written | the entry's **group** classes (`groupOfNames`, `groupOfUniqueNames`, `posixGroup`, `groupOfURLs`) as keyed digests, `[]` for anything else (schema version 18) — how a group placed under `ou=users` is found. An entry written before version 18 holds all its classes until it is next written |
+| `attr_names` | jsonb, written | every attribute name the entry holds, lower-cased, in the clear: who holds a credential, and the counts' `userpassword` |
 | `dek_keys` | jsonb, nullable | the data keys the entry holds values under, `{ "<key id>": <values> }`: the entry's own key and the key of each sealed value inside it (schema version 17). NULL for an entry written before version 17, until the service indexes it |
 
 Primary key `(realm, dn_key)`, with an index on `realm`.
@@ -141,6 +142,43 @@ container's children, `(realm, parent_key, rdn_value)` for a login name, GIN
 operator class, for `?|`) over `class_keys`. Adding the columns to a
 table that already has rows rewrites it once; running `postgres/schema.sql`
 again as the owner does it.
+
+**Two of those indexes are partial since schema version 18 (#618).** A GIN
+index takes an entry for every key of every row it covers, and a person
+carries about fifteen attribute names and four object classes, nearly all
+of them shared by every other person. So:
+
+* `sts_ldap_entries_asked_names` indexes an expression of `attr_names` that
+  keeps only the names the service asks "who holds this" about (the
+  credential, consent, delegation, key and enrollment attributes;
+  `ASKED_ATTRIBUTES` in `persistence/directory_queries.js`), and only rows
+  that hold one of them;
+* `sts_ldap_entries_group_classes` indexes `class_keys` only where it is not
+  empty, and the service writes only group classes into it.
+
+A person who holds none of those attributes writes no entry to either index.
+On a copy of a 1.2M-entry store, version 17's two indexes cost about two WAL
+records and 1.1 KB of WAL per person inserted; version 18's cost nothing
+measurable, and the attribute-name index went from 23 MB to 16 kB. They
+replace `sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, which
+`postgres/schema.sql` drops.
+
+**Every GIN index on this table except the data keys' has `fastupdate = off`
+(schema version 18).** With PostgreSQL's default, inserts are queued in a
+pending list that every search reads in full until a vacuum merges it; on a
+busy directory that made each login-name or UUID lookup read hundreds of
+pages. With it off, each insert updates the index at once and a lookup reads
+a handful of pages.
+
+**Upgrading a store from version 17.** Run `postgres/schema.sql` as the owner.
+It builds the two new indexes, which reads the table once and holds writers
+off while it does (seconds at a million entries), then drops the two old
+ones, switches the existing GIN indexes to `fastupdate = off` and flushes
+what each has queued. Nothing is rewritten. Entries written before the upgrade keep all their
+object classes in `class_keys`, so they stay in the classes index until they
+are next written; that changes no answer. The service refuses to start
+against a version 17 store whose role cannot build the new indexes, and says
+to run the script.
 
 **It is the one table you can query with SQL, and that is deliberate.** An
 entry is a document without a fixed schema, and JSONB lets Postgres index into

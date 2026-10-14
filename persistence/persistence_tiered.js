@@ -262,9 +262,28 @@ function create(options) {
         toCell.deletes.push(row);
       }
     });
+    // THE CREATES' CLAIMS (#628) go with the half of the tier each claim is
+    // kept in, which commits after the global half — so a claim is never
+    // given back before the entry it guarded is in the store.
+    const releasing = splitReleases(change.releaseClaims);
+    toGlobal.releaseClaims = releasing.global;
+    toCell.releaseClaims = releasing.cell;
     log.debug("Leaving splitChange().");
     return { toGlobal: toGlobal, toCell: toCell, groups: groups,
              projected: projected };
+  }
+
+  // Claim rows (`{ scope, realm, key, reservation }`), by the tier their
+  // scope is claimed in (`tiers.claimTierOf()`).
+  function splitReleases(rows) {
+    log.debug("Entering splitReleases().");
+    const out = { global: [], cell: [] };
+    (rows || []).forEach(function (row) {
+      out[tiers.claimTierOf(row.scope) === 'global' ? 'global' : 'cell']
+        .push(row);
+    });
+    log.debug("Leaving splitReleases().");
+    return out;
   }
 
   // The outcomes of the two halves of a group, as one outcome about the
@@ -546,6 +565,28 @@ function create(options) {
       return target[key].apply(target, arguments);
     };
   });
+  // SEVERAL CLAIMS, AND SEVERAL RELEASES, IN ONE STATEMENT (#628): a claim
+  // set goes to the tier of its FIRST row's scope — a caller claims one kind
+  // of thing at a time, and a directory create's DN and username are both
+  // cell scopes — and release rows are split by their own.
+  driver.claimMany = function (rows) {
+    log.debug("Entering tiered claimMany().");
+    const first = (rows || [])[0] || {};
+    const target = tiers.claimTierOf(first.scope) === 'global' ? globalDriver
+                                                                : cellDriver;
+    log.debug("Leaving tiered claimMany().");
+    return target.claimMany.apply(target, arguments);
+  };
+  driver.releaseClaims = function (rows) {
+    log.debug("Entering tiered releaseClaims().");
+    const split = splitReleases(rows);
+    log.debug("Leaving tiered releaseClaims().");
+    return Promise.all([globalDriver.releaseClaims(split.global),
+                        cellDriver.releaseClaims(split.cell)])
+      .then(function (both) {
+        return (Number(both[0]) || 0) + (Number(both[1]) || 0);
+      });
+  };
   driver.purgeClaims = function () {
     log.debug("Entering tiered purgeClaims().");
     log.debug("Leaving tiered purgeClaims().");

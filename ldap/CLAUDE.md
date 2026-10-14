@@ -659,7 +659,8 @@ ldif or multi-cell service is unchanged.
     `allGroupEntries()`, `membershipsNaming()`, `dropMemberships()`,
     `logBatchDangling()`): the resident entries, and the windowed
     containers' entries with a group class, asked of the store
-    (`classesUnder`, the GIN index over the generated `class_keys`) and read
+    (`classesUnder`, the partial GIN index over `class_keys`, which holds
+    an entry's group classes only since schema version 18, #618) and read
     back through the window. `groupRuleFor()` is placement-blind, so **a
     group under `ou=users` or `ou=devices` is seen**, and the membership
     lookups, the group index, the listings and a search answer as a whole
@@ -1205,6 +1206,17 @@ used to write `undefined` into it, and every SCIM list after that threw
 `tests/stable_subject.js` is the contract, in two processes for the determinism claims;
 sixteen mutants across this file and the others the change touched, all caught, and
 twenty more for the race, the rename and the timestamp.
+
+## A DOOR THAT IS NOT THIS FILE: THE BULK IMPORT (#629, 2026-10-14)
+
+`persistence/bulk_import.js` writes people into `ou=users` without this
+file running — offline, with the service stopped — and promises the rows are
+what an LDAP add by an Admin Write binder would have left. So **a change to
+what `putEntry()`, `fillPreferredLanguage()`, `verifyWrittenMail()` or the
+one-entry-per-person rule (`existingUserEntry()`, `byName`) does on a create
+is owed there too**, in `storedOf()` and `classify()`. Its normalizeDn is
+this file's rule, spelt again. `persistence/CLAUDE.md` (*THE BULK IMPORT*)
+has the rest.
 
 ## A CREATE WAS A FUNCTION OF DIRECTORY SIZE, AND THE USERNAME INDEX IS WHY IT IS NOT (2026-09-07)
 
@@ -3326,6 +3338,62 @@ the handler), a SCIM create of a User or a Group, and `POST
   dispatched request workers on a shared store): no round trip on a single node,
   so a bulk load is as fast as it was, and the console's and admin API's create
   answer synchronously as before.
+* **Two arbiters, one rule (#628, 2026-10-14).** It was 2 INSERTs, a
+  catch-up, and 2 DELETEs after the commit, each its own transaction — the
+  most frequent statements on 8081's postgres under a bulk load. Now
+  (`directory_create_claims.ts`, `arbitratedHere()`):
+  * **One node — cluster `off` or `active-passive` — is decided by its FRONT
+    PROCESS in memory** (`directory_create_arbiter.ts`): a worker asks over
+    the worker channel (`{ createClaim }`, routed by `request_pool.js`), the
+    front asks itself. **No claim statement at all.** The line is the cluster
+    mode because only `active-active` lets another NODE write: a standby
+    restores and binds nothing until it holds the lease and a node that lost
+    it cannot commit, and `off` is one container by `cluster.js`'s own
+    statement. An unknown mode is the store's.
+  * **`active-active` is decided by the store in ONE statement**
+    (`cluster_claims.claimMany()`, `persistence_postgres.js`): the DN and the
+    username together, all or none — a partial take (overlapping, different
+    sets) is aborted INSIDE the statement by casting a sentence built from the
+    CTE's count to an integer, which PostgreSQL logs as an ERROR naming
+    `sts_cluster_claims: a partial claim`; it is only ever a collision. **The
+    release is a statement of the flush transaction that writes the entry**
+    (`persistence.releaseClaimsAtCommit()`), so a waiting create sees the
+    entry the instant the claim goes; where the write has committed already
+    (a door that answers after its commit, an LDAP add claimed in the front
+    and run in a worker) it is one DELETE of its own. **The claim statement
+    and a DELETE of its own commit with `synchronous_commit` off** (a
+    `set_config(…, true)` CTE in the statement; `NO_FLUSH_WAIT` in the
+    driver): they were about 60% of 8081's WAL-flush waits, and a replay went
+    from 120 to 318 adds a second. Safe because the claim is visible at
+    commit whether flushed or not, the entry's own synchronous commit flushes
+    the claim's WAL before it, and a DELETE lost in a crash only leaves the
+    claim until its lifetime. The release inside the flush stays synchronous
+    — it is the entry's commit.
+  * **Both keep the claim's semantics**: all or none; wait and ask again
+    until `CLAIM_WAIT_MS`; given back at once on a refusal, after the commit
+    on a success; a flush that FAILS keeps the claim until it expires (two
+    minutes) — the accepted cost of releasing in the commit, logged
+    `STS-CLUSTER-0164`, a create of that name meanwhile being
+    `STS-LDAP-0092`. **A worker that dies gives back everything it held at
+    once** (`reap()` → `workerExited()`).
+  * **The winner's catch-up.** The store path still pulls on every win (a
+    deleted row cannot say who held it). The front remembers, per key, who
+    last gave it back after a COMMITTED create, and says `catchUp` only to a
+    winner that has not FINISHED a pull since — a holder is current only once
+    it reports its pull done (`op: 'caughtUp'`); counting it current when it
+    was told to pull let a second create in the same worker look before the
+    pull landed (23 duplicates of 24 in the first test run). A name nobody has
+    created costs no pull. It is the pull a read barrier would make in that
+    worker, made here because the barrier runs only with
+    `workers.readYourWrite` on.
+  * **Bounded**: 16,384 live claims (`STS-LDAP-0144`, fail closed — only a
+    leak reaches it) and 8,192 remembered keys, the oldest forgotten first;
+    forgetting one makes every holder that has not pulled since pull once.
+    A worker's question unanswered for 10s is `STS-LDAP-0145`.
+  * `tests/directory_create_cluster_claims.js` holds all of it: the
+    statements counted (B1 two against B2's control of four, B5 none), the
+    same names raced by two node processes on one store (C) and by two
+    workers on one node (D), a refused create, a failed flush, a dead worker.
 * **Claimed since 2026-09-14 too**: a SCIM Bulk create (in the ingress, which
   scimmy awaits — `scim/CLAUDE.md`) and the console's own forms, `POST
   /admin/users` and `/admin/users/new` and `POST /admin/groups` with

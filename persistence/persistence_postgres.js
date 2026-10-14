@@ -237,7 +237,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // and `sts_ldap_dek_counts`, `sts_ldap_dek_deltas` and the triggers that
 // keep them (#623): which data keys each entry holds values under, so the
 // re-encryption job and the data-key count never open the directory.
-// 19 SINCE 2026-10-14 (#630, after #618 phase 2's 18): the counters SHARDED
+// 18 SINCE 2026-10-14, for the two narrowed directory indexes (#618 phase
+// 2): `sts_ldap_entries_asked_names` (the attribute names a holder question
+// asks, an expression of `attr_names`) and `sts_ldap_entries_group_classes`
+// (`class_keys`, which holds the group classes only), both PARTIAL, in place
+// of `sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, which
+// indexed every name and every class of every entry (SCHEMA_RETIRED).
+// 19 SINCE 2026-10-14 (#630): the counters SHARDED
 // (`shard` in both counter tables' keys, folded by the `_sharded` routines),
 // `sts_minted_written_brin` in place of the btree `sts_minted_written`, and
 // the storage parameters of SCHEMA_UPGRADES.
@@ -249,6 +255,63 @@ const SCHEMA_VERSION = 19;
 // and a lease checked late in a long transaction must be checked against when
 // the check ran.
 const DB_NOW = '(extract(epoch from clock_timestamp()) * 1000)::bigint';
+
+// ---------------------------------------------------------------------------
+// GIVING CLAIMS BACK, SEVERAL AT ONCE (#628, 2026-10-14): each row pinned to
+// its own reservation, as `releaseClaim()` pins one. One statement for a
+// directory create's DN and username, sent on its own by `releaseClaims()`
+// for a create that was refused, and INSIDE the transaction that writes the
+// created entry by `saveDirectory()` for one that succeeded — so the entry
+// and the release commit together, and a create waiting on the name sees the
+// entry exactly when the claim is gone.
+// ---------------------------------------------------------------------------
+const RELEASE_CLAIMS_SQL =
+  'DELETE FROM sts_cluster_claims c USING unnest($1::text[], $2::text[], ' +
+  '$3::text[], $4::text[]) AS r(scope, realm, key, reservation) WHERE ' +
+  'c.scope = r.scope AND c.realm = r.realm AND c.key = r.key AND ' +
+  'c.reservation = r.reservation';
+
+// ---------------------------------------------------------------------------
+// A CLAIM STATEMENT OF ITS OWN COMMITS WITHOUT WAITING FOR THE WAL FLUSH
+// (#628, 2026-10-14) — `synchronous_commit = off` for that statement's own
+// implicit transaction, set by `set_config(…, true)` in a CTE the statement
+// reads (the transaction is the statement, so the setting is LOCAL to it and
+// in force at its commit; `SET LOCAL` would need a BEGIN and a COMMIT round
+// trip of its own). Measured on 8081 the same day: the claim INSERTs and
+// DELETEs were about 60% of the WAL-flush waits under a bulk load, and a
+// replay with them asynchronous went from 120 to 318 adds a second.
+//
+// **WHY IT IS SAFE.** An asynchronous commit is visible to every other
+// session at once — what the claim decides, it decides at commit, flushed or
+// not. What it gives up is durability across a CRASH of the database inside
+// the flush delay, and both directions of that are already survived: the
+// create's own entry commit is synchronous and flushes all the WAL before
+// it, the claim's included, so no created entry stands on a claim that could
+// be lost; a lost DELETE only leaves the claim until its lifetime; a lost
+// INSERT is a claim whose create had not committed either. (A failover to a
+// standby that had not received the record is the same crash.)
+//
+// **NOT THE RELEASE INSIDE THE FLUSH**: `saveDirectory()` sends
+// RELEASE_CLAIMS_SQL in the entry's own transaction, whose commit must stay
+// synchronous, and it costs no flush of its own. Only `claimMany()` and the
+// standalone `releaseClaims()` are asynchronous; `claimOnce()` and
+// `releaseClaim()`, which every other single-use value spends through, are
+// not changed.
+// ---------------------------------------------------------------------------
+const NO_FLUSH_WAIT =
+  'quiet AS (SELECT set_config(\'synchronous_commit\', \'off\', ' +
+  'true) AS was)';
+
+// RELEASE_CLAIMS_SQL as a statement of its own, committed without waiting for
+// the WAL flush (above).
+const RELEASE_CLAIMS_ALONE_SQL =
+  'WITH ' + NO_FLUSH_WAIT + ' DELETE FROM sts_cluster_claims c USING ' +
+  'unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS r(scope, ' +
+  'realm, key, reservation), quiet WHERE c.scope = r.scope AND c.realm = ' +
+  'r.realm AND c.key = r.key AND c.reservation = r.reservation';
+
+// The sentence `claimMany()` aborts a partial claim with, and recognises.
+const PARTIAL_CLAIM = 'sts_cluster_claims: a partial claim';
 
 // The advisory lock two joining nodes serialise on, so that "is every live
 // node configured the same as me" and "write my row" are one decision. An
@@ -378,6 +441,29 @@ const LDAP_GENERATED = {
 // `postgres/schema.sql` holds the same statements for the owner to run, and
 // `tests/postgres_schema.js` fails if the two lists disagree.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S GIN INDEXES TAKE EVERY INSERT DIRECTLY (#618 phase 2,
+// schema version 18): `fastupdate = off`.
+//
+// With PostgreSQL's default a GIN insert goes to the index's PENDING LIST,
+// which is merged into the tree only when it reaches
+// `gin_pending_list_limit` (4 MB) or a vacuum runs — and EVERY SEARCH READS
+// THE WHOLE PENDING LIST, whatever it asks. On 8081 under the bulk load the
+// lists of the names, uuids, mails and values indexes each held about
+// 205,000 tuples (503 pages), so every `byName()` and `byUuid()` probe —
+// a login, a uniqueness check, a holder's subject — scanned 500 buffers and
+// took 8.9–17.6 ms where the RDN branch beside it took 0.02 ms; when
+// autovacuum flushed them, the add rate went from 45 to 73 a second and the
+// database CPU per add halved. With the list off, an insert pays its GIN
+// entries at once (about 0.04 ms a person on the 1.2M-entry copy for the
+// four, 20,000 inserts alternated) and a probe reads only the tree: 4
+// buffers and 0.008 ms against 152 and 2.1 ms behind a 60,000-tuple list.
+// The two partial indexes of version 18 take it too: a person writes
+// nothing to either, so the list buys nothing there and would only be read.
+// An existing index is switched by SCHEMA_RELOPTIONS and its list flushed.
+// ---------------------------------------------------------------------------
+const GIN_DIRECT = 'WITH (fastupdate = off)';
+
 /**
  * Every table and index of the schema, each `{ name, statement }`.
  *
@@ -432,29 +518,46 @@ const SCHEMA_OBJECTS = [
   '(realm, parent_key, rdn_value)' },
   { name: 'sts_ldap_entries_names', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
-  'USING gin (name_keys jsonb_path_ops)' },
+  'USING gin (name_keys jsonb_path_ops) ' + GIN_DIRECT },
   { name: 'sts_ldap_entries_mails', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries ' +
-  'USING gin (mail_keys jsonb_path_ops)' },
+  'USING gin (mail_keys jsonb_path_ops) ' + GIN_DIRECT },
   { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
-  'USING gin (uuid_keys jsonb_path_ops)' },
+  'USING gin (uuid_keys jsonb_path_ops) ' + GIN_DIRECT },
   // The attribute values `byAttribute()` asks for, as keyed digests (#391
   // phase 6) — where the GIN over `attrs` was, which a sealed blob makes
   // nothing to index.
   { name: 'sts_ldap_entries_values', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries ' +
-  'USING gin (value_keys jsonb_path_ops)' },
-  // The attribute NAMES, GIN with the default operator class for `?`.
-  { name: 'sts_ldap_entries_attr_names', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON ' +
-  'sts_ldap_entries USING gin (attr_names)' },
-  // The object classes, GIN with the DEFAULT operator class: `?|` (any of
-  // the group classes) is what it is asked, and `jsonb_path_ops` answers
-  // only containment.
-  { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
-  'USING gin (class_keys)' },
+  'USING gin (value_keys jsonb_path_ops) ' + GIN_DIRECT },
+  // -------------------------------------------------------------------------
+  // THE ATTRIBUTE NAMES A HOLDER QUESTION ASKS, AND THE GROUP CLASSES — AND
+  // NOTHING ELSE (#618 phase 2, schema version 18). Both GIN with the
+  // DEFAULT operator class (`?` and `?|`; `jsonb_path_ops` answers only
+  // containment), and both PARTIAL, so an entry that is neither a holder of
+  // an asked attribute nor a group — nearly every person — writes no GIN
+  // entry to either. Until version 18 they indexed every attribute name
+  // (about fifteen a person, twelve of them in 99.9% of rows) and every
+  // object class (four a person, each in more than 99%): about nineteen GIN
+  // entries a person insert that narrowed nothing.
+  //   * the names: an IMMUTABLE expression of `attr_names` keeping only
+  //     `directory_queries.js`'s ASKED_ATTRIBUTES, which every query that
+  //     reads it repeats character for character (`ASKED_NAMES`), because
+  //     the planner uses an expression index only for its own expression;
+  //   * the classes: `class_keys` itself, which the service writes with the
+  //     group classes only since this version (`directory_codec.js`'s
+  //     CLASS_INDEXED) — the column holds keyed digests the database cannot
+  //     read, so it cannot be narrowed by an expression here.
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_asked_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON ' +
+  'sts_ldap_entries USING gin ((' + directoryQueries.ASKED_NAMES + ')) ' +
+  GIN_DIRECT + ' WHERE ' + directoryQueries.ASKED_NAMES_HELD },
+  { name: 'sts_ldap_entries_group_classes', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON ' +
+  'sts_ldap_entries USING gin (class_keys) ' + GIN_DIRECT + ' WHERE ' +
+  directoryQueries.GROUP_CLASSES_HELD },
   // -------------------------------------------------------------------------
   // WHICH ENTRIES HOLD A VALUE UNDER A DATA KEY (#623, schema version 17).
   // Until this, the re-encryption job and the data-key count WALKED every
@@ -1203,6 +1306,50 @@ const SCHEMA_OBJECTS = [
   '  version int PRIMARY KEY,' +
   '  applied_at timestamptz NOT NULL DEFAULT now())' }
 ];
+
+// OBJECTS A LATER VERSION REPLACED (#618 phase 2, schema version 18). An
+// index that is no longer read is still WRITTEN on every insert, which is the
+// cost version 18 exists to remove, so leaving one behind on an older
+// database would keep the cost and lose the reason. Each is probed by name
+// like SCHEMA_OBJECTS and dropped where present — by `postgres/schema.sql`,
+// which the owner runs for the version, and by this driver when its role may
+// (a local database it built itself); the least-privileged role finds none to
+// drop once the script has run. `tests/postgres_schema.js` holds the script
+// to this list.
+/**
+ * The objects a later schema version replaced, each `{ name, statement }`,
+ * dropped where they are still present.
+ */
+const SCHEMA_RETIRED = [
+  // Every attribute name of every entry: `sts_ldap_entries_asked_names`.
+  { name: 'sts_ldap_entries_attr_names', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_attr_names' },
+  // Every object class of every entry: `sts_ldap_entries_group_classes`.
+  { name: 'sts_ldap_entries_classes', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_classes' }
+];
+
+// AN INDEX'S STORAGE PARAMETER, SET ON ONE THAT ALREADY EXISTS (#618 phase
+// 2, schema version 18). `CREATE INDEX IF NOT EXISTS` does nothing to an
+// index that is there, so the four GIN indexes an older store built with the
+// pending list on are switched by these, and the list they hold is flushed
+// once (`gin_clean_pending_list()`): turning it off stops it growing and
+// does not empty it, and every search goes on reading what is in it.
+// `open()` probes `pg_class.reloptions` and issues them only where the
+// option is missing; `postgres/schema.sql` carries the same statements.
+/**
+ * The storage parameters set on existing indexes, each `{ name, statement,
+ * flush }`, issued where `pg_class.reloptions` lacks the option.
+ */
+const SCHEMA_RELOPTIONS = ['names', 'mails', 'uuids', 'values',
+                           'asked_names', 'group_classes'].map(
+  function (suffix) {
+    const name = 'sts_ldap_entries_' + suffix;
+    return { name: name, option: 'fastupdate=off',
+             statement: 'ALTER INDEX ' + name + ' SET (fastupdate = off)',
+             flush: 'SELECT gin_clean_pending_list(\'' + name +
+                    '\'::regclass)' };
+  });
 
 // COLUMNS ADDED TO A TABLE THAT MAY ALREADY EXIST (2026-09-18). A table in
 // SCHEMA_OBJECTS is created whole when it is missing, and `CREATE TABLE IF NOT
@@ -2199,6 +2346,20 @@ function dialOptions(url, verifyTls, ca) {
 function create(options) {
   const url = options.url;
   const log = options.log;
+
+  // The four parameter arrays of RELEASE_CLAIMS_SQL (above, at module level),
+  // for `[{ scope, realm, key, reservation }]` (#628). Here for the driver's
+  // logger.
+  function releaseClaimsParams(rows) {
+    log.debug("Entering releaseClaimsParams().");
+    const pick = function (name) {
+      return rows.map(function (row) {
+        return String(row[name] || '');
+      });
+    };
+    log.debug("Leaving releaseClaimsParams().");
+    return [pick('scope'), pick('realm'), pick('key'), pick('reservation')];
+  }
 
   // The two helpers of SEALED_VALUE (above, at module level), here for the
   // driver's logger.
@@ -3861,6 +4022,75 @@ function create(options) {
           });
           return chain;
         }).then(function () {
+          // THE STORAGE PARAMETERS (SCHEMA_RELOPTIONS), set where an index
+          // lacks one, and its pending list flushed once.
+          return client.query(
+            'SELECT c.relname AS name, c.reloptions AS options FROM ' +
+            'pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace ' +
+            'WHERE n.nspname = current_schema() AND c.relname = ' +
+            'ANY($1::text[])',
+            [SCHEMA_RELOPTIONS.map(function (one) { return one.name; })])
+            .then(function (result) {
+              const lacking = ((result && result.rows) || [])
+                .filter(function (row) {
+                  const options = Array.isArray(row.options) ? row.options
+                    : [];
+                  const wanted = SCHEMA_RELOPTIONS.filter(function (one) {
+                    return one.name === row.name;
+                  })[0];
+                  return wanted && options.indexOf(wanted.option) < 0;
+                }).map(function (row) { return row.name; });
+              let chain = Promise.resolve();
+              SCHEMA_RELOPTIONS.forEach(function (one) {
+                if (lacking.indexOf(one.name) < 0) {
+                  return;
+                }
+                chain = chain.then(function () {
+                  return client.query(one.statement);
+                }).then(function () {
+                  return client.query(one.flush);
+                }).then(function () {
+                  log.info('persistence: ' + one.name + ' now takes every ' +
+                           'insert directly (fastupdate off) and its ' +
+                           'pending list was flushed (#618).');
+                });
+              });
+              return chain;
+            });
+        }).then(function () {
+          // WHAT A LATER VERSION REPLACED (SCHEMA_RETIRED), dropped where it
+          // is still there — after its replacement exists, so no question
+          // is ever without an index — and probed first, in the catalogue
+          // by name as the routines are, so a store the script has brought
+          // level issues no DROP.
+          return client.query(
+            'SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ' +
+            'ON n.oid = c.relnamespace WHERE n.nspname = current_schema() ' +
+            'AND c.relname = ANY($1::text[])',
+            [SCHEMA_RETIRED.map(function (object) {
+              return object.name;
+            })]).then(function (result) {
+            const present = new Set(((result && result.rows) || [])
+              .map(function (row) { return row.name; }));
+            let chain = Promise.resolve();
+            SCHEMA_RETIRED.forEach(function (object) {
+              if (!present.has(object.name)) {
+                return;
+              }
+              chain = chain.then(function () {
+                return client.query(object.statement).then(function () {
+                  log.info('persistence: dropped ' + object.name + ', which ' +
+                           'schema version ' + SCHEMA_VERSION + ' replaced ' +
+                           '(#618).');
+                });
+              });
+            });
+            return chain;
+          });
+        }).then(function () {
+          // WHAT AN OLDER STORE IS OWED BEYOND THE ABOVE (#630): the
+          // counters' keys, the old folds, the minted btree, the tables'
+          // storage parameters — before the routines below.
           return upgradeSchema(client, created);
         }).then(function () {
           // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
@@ -4596,6 +4826,19 @@ function create(options) {
                                 [realmId]);
           });
         });
+
+        // THE CREATES' CLAIMS, GIVEN BACK IN THIS TRANSACTION (#628): the
+        // claims `persistence.js` was handed for writes this flush (or an
+        // earlier one) carries, so a create waiting on the name finds the
+        // entry committed in the same instant the claim goes. A transaction
+        // that rolls back keeps them: they stay until they expire.
+        const releasing = change.releaseClaims || [];
+        if (releasing.length) {
+          chain = chain.then(function () {
+            return client.query(RELEASE_CLAIMS_SQL,
+                                releaseClaimsParams(releasing));
+          });
+        }
 
         return chain.then(function () {
           // ONE LOG ROW PER MOVED ENTRY, and the old 50-entry `capped` flag is
@@ -6133,6 +6376,100 @@ function create(options) {
       });
     },
 
+    // -----------------------------------------------------------------------
+    // SEVERAL CLAIMS IN ONE STATEMENT, ALL OR NONE (#628, 2026-10-14).
+    //
+    // A directory create claims its DN and its username together
+    // (`ldap/directory_create_claims.ts`), and it was two `claimOnce()`s —
+    // two statements, and two DELETEs to give a partial set back. This is one
+    // INSERT of every row under one reservation, with `claimOnce()`'s
+    // conflict rule per row: an expired row is taken over, a live one is not.
+    //
+    // **ALL OR NONE, INSIDE THE STATEMENT.** A statement takes every row, or
+    // none — a live row on every key, the ordinary refusal, and nothing was
+    // written — or SOME, which happens only when two creates want
+    // overlapping but different sets (one DN, two usernames). A partial take
+    // must never be seen to hold anything, so the final SELECT turns it into
+    // an ERROR, which aborts the statement and every row it inserted: a
+    // sentence cast to an integer, built from the count the CTE returned so
+    // that the planner cannot fold it at plan time. PostgreSQL logs that
+    // ERROR with the sentence; it is only ever a collision. The rows go in in
+    // (scope, key) order, which every claimant uses, so two claimants of one
+    // set queue on its first row rather than deadlocking.
+    //
+    // `rows` is `[{ scope, key }]`, all in `realmId`. Resolves
+    // `{ claimed: true, claimedAt }` or `{ claimed: false, refused }`, where
+    // `refused` is the index in `rows` of a row somebody else holds.
+    // -----------------------------------------------------------------------
+    claimMany: function (rows, realmId, opts) {
+      log.debug('Entering claimMany(). rows=' + (rows || []).length);
+      const o = opts || {};
+      const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
+      const reservation = String(o.reservation || '');
+      const claimant = o.origin ? String(o.origin) : processId;
+      const list = (rows || []).map(function (row) {
+        return { scope: String(row.scope), key: String(row.key) };
+      });
+      log.debug("Leaving claimMany().");
+      return pool.query(
+        'WITH wanted AS (SELECT w.scope, w.key, w.ord FROM ' +
+        'unnest($1::text[], $2::text[]) WITH ORDINALITY AS w(scope, key, ' +
+        'ord)), ' + NO_FLUSH_WAIT + ', taken AS (INSERT INTO ' +
+        'sts_cluster_claims (scope, realm, ' +
+        'key, reservation, origin, claimed_at, expires_at) SELECT ' +
+        'w.scope, $3, w.key, $4, $5, ' + DB_NOW + ', ' + DB_NOW + ' + $6 ' +
+        'FROM wanted w ORDER BY w.scope, w.key ON CONFLICT (scope, realm, ' +
+        'key) DO UPDATE SET reservation = EXCLUDED.reservation, origin = ' +
+        'EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, expires_at = ' +
+        'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
+        'EXCLUDED.claimed_at RETURNING scope, key, claimed_at), counted AS ' +
+        '(SELECT count(*)::int AS n, max(claimed_at) AS claimed_at, ' +
+        '(SELECT min(w.ord) FROM wanted w WHERE NOT EXISTS (SELECT 1 FROM ' +
+        'taken t WHERE t.scope = w.scope AND t.key = w.key))::int AS ' +
+        'refused FROM taken) SELECT n, claimed_at, refused, CASE WHEN n > 0 ' +
+        'AND n < $7::int THEN (\'' + PARTIAL_CLAIM + ' of \' || n || ' +
+        '\' of \' || $7::int || \' rows is rolled back; first refused ' +
+        'row \' || refused)::int ELSE 0 END AS partial FROM counted, quiet',
+        [list.map(function (row) { return row.scope; }),
+         list.map(function (row) { return row.key; }),
+         String(realmId || ''), reservation, claimant, ttlMs, list.length]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || {};
+        if (Number(row.n) === list.length) {
+          return { claimed: true, claimedAt: Number(row.claimed_at) };
+        }
+        return { claimed: false,
+                 refused: Math.max(0, (Number(row.refused) || 1) - 1) };
+      }, function (e) {
+        const message = String((e && e.message) || e);
+        if (message.indexOf(PARTIAL_CLAIM) < 0) {
+          throw e;
+        }
+        log.debug("Caught in claimMany(): " + message);
+        const first = /first refused row (\d+)/.exec(message);
+        return { claimed: false, partial: true,
+                 refused: Math.max(0, (first ? Number(first[1]) : 1) - 1) };
+      });
+    },
+
+    // Several claims given back in ONE statement (#628), each pinned to its
+    // reservation as `releaseClaim()` pins one. `rows` is
+    // `[{ scope, realm, key, reservation }]`; resolves the count released.
+    releaseClaims: function (rows) {
+      log.debug("Entering releaseClaims(). rows=" + (rows || []).length);
+      const list = rows || [];
+      if (!list.length) {
+        log.debug("Leaving releaseClaims(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving releaseClaims().");
+      // Committed without waiting for the WAL flush: see NO_FLUSH_WAIT.
+      return pool.query(RELEASE_CLAIMS_ALONE_SQL, releaseClaimsParams(list))
+        .then(function (r) {
+          return r.rowCount || 0;
+        });
+    },
+
     purgeClaims: function () {
       log.debug("Entering purgeClaims().");
       log.debug("Leaving purgeClaims().");
@@ -6358,6 +6695,35 @@ function create(options) {
       return pool.query('DELETE FROM sts_change_readers WHERE origin = $1',
                         [processId]).then(function (r) {
         return (r.rowCount || 0) > 0;
+      });
+    },
+
+    // THE READERS STILL LIVE (#618 phase 2): every origin that has reported
+    // within `readerTtlMs` and, by membership, names no node that left —
+    // the trim's own test of "not gone", asked without deleting anything.
+    // What the fan-in of `merge: 'own'` stores keeps (`persistence_replication
+    // .js`, `pruneFanIn()`): a contribution from an origin not in this list
+    // is a dead process's. One row per process that coordinates, so the
+    // answer is as small as the cluster.
+    liveChangeReaders: function (opts) {
+      log.debug("Entering liveChangeReaders().");
+      const o = opts || {};
+      const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
+      const byMembership = o.nodeLiveness !== false;
+      log.debug("Leaving liveChangeReaders().");
+      return pool.query(
+        'SELECT r.origin FROM sts_change_readers r WHERE r.reported_at >= ' +
+        DB_NOW + ' - $1::bigint' +
+        (byMembership
+          ? ' AND (r.node_id = \'\' OR EXISTS (SELECT 1 FROM ' +
+            'sts_cluster_nodes n WHERE n.node_id = r.node_id AND ' +
+            'n.left_at = 0 AND n.expires_at > ' + DB_NOW + '))'
+          : ''),
+        [readerTtlMs]
+      ).then(function (r) {
+        return ((r && r.rows) || []).map(function (row) {
+          return String(row.origin);
+        });
       });
     },
 
@@ -8296,6 +8662,9 @@ module.exports = {
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
   SCHEMA_UPGRADES: SCHEMA_UPGRADES,
   COUNT_SHARDS: COUNT_SHARDS,
+  SCHEMA_RETIRED: SCHEMA_RETIRED,
+  SCHEMA_RELOPTIONS: SCHEMA_RELOPTIONS,
+  GIN_DIRECT: GIN_DIRECT,
   SCHEMA_VERSION: SCHEMA_VERSION,
   poolMax: poolMax,
   // What `pg` is given for a connection string (#98): for

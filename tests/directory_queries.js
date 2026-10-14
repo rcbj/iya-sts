@@ -160,11 +160,12 @@ function builders(t) {
           'A13. residentOnly leaves out what is strictly under each windowed ' +
           'container, per realm', JSON.stringify(r.values));
   const cls = queries.classesUnder('r', users, ['groupOfNames', 'posixGroup']);
-  t.check(/class_keys \?\| \$3::text\[\]/.test(cls.text) &&
+  t.check(/class_keys \?\| \$3::text\[\] AND class_keys <> '\[\]'::jsonb/
+    .test(cls.text) &&
           JSON.stringify(cls.values[2]) ===
             JSON.stringify(['class\ngroupofnames', 'class\nposixgroup']),
           'A12b. classesUnder asks class_keys for any of the classes, ' +
-          'lower-cased', cls.text);
+          'lower-cased, with the partial index\'s predicate (#618)', cls.text);
   const names = queries.namesUnder('r', users, 'uid=a', 10);
   // The entry is a sealed blob since #391 phase 6: its `uid` is read out of
   // it by the codec on the thread that holds the keys.
@@ -281,7 +282,7 @@ async function schema(t) {
               ? 'GENERATED … STORED' : 'written jsonb') + ' definition, in ' +
             'the CREATE TABLE and the ALTER alike', definition);
   });
-  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|attr_names|classes)$/;
+  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|asked_names|group_classes)$/;
   const indexes = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return INDEXES.test(o.name);
   });
@@ -335,6 +336,64 @@ async function schema(t) {
   t.check(statements.some(function (s) {
     return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 19;
   }), 'C6. and records version 19');
+  // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
+  // catalogue still lists them, after the indexes that replace them.
+  const retired = [];
+  const dropping = driverWith(retired, function (sql) {
+    if (/to_regclass/.test(sql)) {
+      return [{}];
+    }
+    if (/FROM pg_class c JOIN pg_namespace/.test(sql)) {
+      return [{ name: 'sts_ldap_entries_attr_names' }];
+    }
+    return undefined;
+  });
+  await dropping.open();
+  const order = retired.map(function (s) {
+    return s.sql;
+  });
+  const dropAt = order.indexOf(
+    'DROP INDEX IF EXISTS sts_ldap_entries_attr_names');
+  const askedAt = order.findIndex(function (sql) {
+    return /^CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names /
+      .test(sql);
+  });
+  t.check(dropAt > askedAt && askedAt >= 0 && !order.some(function (sql) {
+    return /DROP INDEX IF EXISTS sts_ldap_entries_classes/.test(sql);
+  }), 'C7. a retired index still in the catalogue is dropped after its ' +
+          'replacement is built, and one that is not is left alone',
+          JSON.stringify({ dropAt: dropAt, askedAt: askedAt }));
+    // AN INDEX STILL TAKING ITS INSERTS THROUGH A PENDING LIST (#618) is
+  // switched and flushed; one already switched is left alone.
+  const switched = [];
+  const switching = driverWith(switched, function (sql) {
+    if (/to_regclass/.test(sql)) {
+      return [{}];
+    }
+    if (/c\.reloptions AS options/.test(sql)) {
+      return [{ name: 'sts_ldap_entries_names', options: null },
+              { name: 'sts_ldap_entries_uuids',
+                options: ['fastupdate=off'] }];
+    }
+    return undefined;
+  });
+  await switching.open();
+  const issued = switched.map(function (s) {
+    return s.sql;
+  });
+  const alterNames = issued.indexOf(
+    'ALTER INDEX sts_ldap_entries_names SET (fastupdate = off)');
+  t.check(alterNames >= 0 && issued[alterNames + 1] ===
+            'SELECT gin_clean_pending_list(\'sts_ldap_entries_names\'' +
+            '::regclass)' &&
+          !issued.some(function (sql) {
+            return /ALTER INDEX sts_ldap_entries_uuids/.test(sql);
+          }),
+          'C8. an index without fastupdate off is switched and its pending ' +
+          'list flushed; one with it is left alone',
+          JSON.stringify(issued.filter(function (sql) {
+            return /ALTER INDEX|gin_clean/.test(sql);
+          })));
   log.debug("Leaving schema().");
 }
 

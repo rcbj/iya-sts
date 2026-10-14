@@ -132,7 +132,10 @@ merged on 2026-09-29 and both tables are created by name — and version
 them, for a request worker that holds the people and devices as a window
 (`persistence/directory_queries.js`) — and version 15 (#432 phase 5)
 `sts_cluster_budgets`, a GNAP right's limits spent with one conditional
-upsert (`cluster/cluster_counters.js`); `sts_app` holds
+upsert (`cluster/cluster_counters.js`) — and version 18 (#618 phase 2) two
+partial indexes in place of two whole ones, and no table
+(`persistence/CLAUDE.md`, *Only the asked names and the group classes are
+indexed*); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.
@@ -157,6 +160,25 @@ that `ALTER`, and the driver's own `open()` does the same: an object marked
 `afterColumns` in `SCHEMA_OBJECTS` is created after `SCHEMA_COLUMNS`, because
 an index on a column an older table does not have yet cannot be built before
 it.
+
+**AN INDEX A LATER VERSION REPLACED IS DROPPED BY THE SAME RUN (#618,
+version 18).** `schema.sql` builds `sts_ldap_entries_asked_names` and
+`sts_ldap_entries_group_classes` and only then drops
+`sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, the driver's
+`SCHEMA_RETIRED`, so no question is ever without an index; leaving one
+behind would keep its write cost, which is what the version removes. Both
+builds read the whole table once under the `SHARE` lock `CREATE INDEX` takes
+(seconds at 1.2M entries), inside the script's transaction. **Run it before
+the version-18 image starts**, which cannot build the indexes as `sts_app`
+and is refused; a version-17 process still running meanwhile answers its
+holder and group questions without an index until it is replaced.
+`tests/postgres_schema.js` holds the drops to `SCHEMA_RETIRED` and their
+order. **The same run switches the directory's six GIN indexes to
+`fastupdate = off` and flushes each one's pending list once**
+(`gin_clean_pending_list()`, which only the owner may call):
+`persistence/CLAUDE.md`, *The directory's GIN indexes have no pending list*.
+On 8081 the four lists held ~205,000 tuples each, so the flush is a few
+seconds of index writes inside the script's transaction.
 
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that

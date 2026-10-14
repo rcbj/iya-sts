@@ -209,6 +209,9 @@ ALTER TABLE sts_ldap_entries SET (autovacuum_vacuum_insert_scale_factor=0.01);
 -- SPIFFE ID, a certificate subject, a federation link) — and `attr_names`,
 -- the attribute NAMES in the clear. A database built before version 14 has
 -- them generated and is refused at start (STS-STORE-0074): recreate it.
+-- Since version 18 `class_keys` holds an entry's GROUP classes only (#618).
+-- An entry written before then holds all its classes until it is next
+-- written, which the one question asked of the column answers the same.
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS parent_key text GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS rdn_value text GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED;
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS name_keys jsonb NOT NULL DEFAULT '[]'::jsonb;
@@ -228,19 +231,51 @@ ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS attr_names jsonb NOT NULL 
 ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS dek_keys jsonb;
 
 -- The children of a container in key order, and the RDN value there (a login
--- name); the `uid`, `mail` and entryUUID digests; the digests of the values
--- looked up as written (a DID, a SPIFFE ID, a federation link); and the
--- attribute names, with the default operator class for `?`.
+-- name); the `uid`, `mail` and entryUUID digests; and the digests of the
+-- values looked up as written (a DID, a SPIFFE ID, a federation link).
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_parent ON sts_ldap_entries (realm, parent_key, dn_key);
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_rdn ON sts_ldap_entries (realm, parent_key, rdn_value);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops);
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON sts_ldap_entries USING gin (attr_names);
--- The object classes, with the default GIN operator class, for `?|`: a group
--- placed under `ou=users` or `ou=devices` found without a walk.
-CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries USING gin (class_keys);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries USING gin (name_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries USING gin (mail_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries USING gin (uuid_keys jsonb_path_ops) WITH (fastupdate = off);
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin (value_keys jsonb_path_ops) WITH (fastupdate = off);
+
+-- THE ATTRIBUTE NAMES A HOLDER QUESTION ASKS, AND THE GROUP CLASSES (#618
+-- phase 2, schema version 18), each a PARTIAL GIN index with the default
+-- operator class (`?`, `?|`), so an entry that holds none of the asked
+-- names and is not a group — nearly every person — writes no entry to
+-- either. The names are an expression of `attr_names` keeping only
+-- `persistence/directory_queries.js`'s ASKED_ATTRIBUTES, which every query
+-- repeats character for character; `class_keys` holds the group classes
+-- only, as the service writes it from this version (an entry written before
+-- still holds all its classes, which answers the same question). They
+-- replace the two below, which indexed every name and every class of every
+-- entry — about nineteen GIN entries a person insert that narrowed nothing.
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON sts_ldap_entries USING gin ((jsonb_path_query_array(attr_names, '$[*] ? (@ == "federationlink" || @ == "hobapublickey" || @ == "memberof" || @ == "oauthconsent" || @ == "stsacmeeabkey" || @ == "stsandroidattestedcredential" || @ == "stsassertionissuer" || @ == "stsassertionjwks" || @ == "stscertificatehostname" || @ == "stsclaimsourcetokens" || @ == "stsdefaultdelegationsemantics" || @ == "stsdelegationsemantics" || @ == "stsdeviceandroidkey" || @ == "stsdevicekey" || @ == "stsenrolledcertificate" || @ == "stsenrolledprivatekey" || @ == "stskrb5keyinfo" || @ == "stskrb5keys" || @ == "stsmailfactor" || @ == "stsmayact" || @ == "stsnotdelegated" || @ == "stssamlassertioncertificate" || @ == "stssamlassertionissuer" || @ == "stsscepchallenge" || @ == "stsselfissuedsubject" || @ == "stsserviceaccount" || @ == "ststotpcredential" || @ == "stswebauthncredential" || @ == "stswebauthnuserhandle")'))) WITH (fastupdate = off) WHERE attr_names ?| ARRAY['federationlink', 'hobapublickey', 'memberof', 'oauthconsent', 'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer', 'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens', 'stsdefaultdelegationsemantics', 'stsdelegationsemantics', 'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate', 'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor', 'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate', 'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject', 'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential', 'stswebauthnuserhandle'];
+CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON sts_ldap_entries USING gin (class_keys) WITH (fastupdate = off) WHERE class_keys <> '[]'::jsonb;
+DROP INDEX IF EXISTS sts_ldap_entries_attr_names;
+DROP INDEX IF EXISTS sts_ldap_entries_classes;
+
+-- EVERY GIN INDEX OF THE DIRECTORY TAKES ITS INSERTS DIRECTLY (#618, schema
+-- version 18): `fastupdate = off`, so no search reads a pending list. On
+-- 8081 the names', uuids', mails' and values' lists held about 205,000
+-- tuples each and every login-name and UUID probe read all 500 pages of
+-- one (8.9-17.6 ms, against 0.02 ms for the RDN). The CREATEs above say it
+-- for a new store; these switch an existing one, and flush the list it
+-- already holds, once — turning the option off does not empty it. The
+-- driver's SCHEMA_RELOPTIONS argues it.
+ALTER INDEX sts_ldap_entries_names SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_mails SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_uuids SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_values SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_asked_names SET (fastupdate = off);
+ALTER INDEX sts_ldap_entries_group_classes SET (fastupdate = off);
+SELECT gin_clean_pending_list('sts_ldap_entries_names'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_mails'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_uuids'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_values'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_asked_names'::regclass);
+SELECT gin_clean_pending_list('sts_ldap_entries_group_classes'::regclass);
 -- The entries holding a value under any of a set of data keys (`?|`, the
 -- default GIN operator class): what a re-seal reads, and all it reads
 -- (#623). And the entries whose keys are not known yet, found without a

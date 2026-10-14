@@ -105,6 +105,16 @@ const RESEAL_BATCH = 500;
 // may cost the front process. Once every entry is indexed — after a few
 // passes, once — a pass spends nothing here but one indexed probe.
 const INDEX_BUDGET_MS = 10000;
+// HOW SOON THE RE-ENCRYPTION JOB RUNS AGAIN WHILE THAT INDEX IS INCOMPLETE
+// (#618, 2026-10-14). On 8081 one pass indexed about 46,500 entries in its
+// ten seconds and the job ran hourly, so the 2.93M entries written before
+// version 17 would have taken about 62 hours, and every count in between is
+// refused (STS-STORE-0080) — and a store with no superseded key indexed
+// nothing on that job at all, leaving the daily count's ten seconds. So the
+// job indexes on every pass, and comes back every five minutes until the
+// index is complete: ten seconds of the front process in every three
+// hundred, about 3%, for some five hours at 2.9M, then hourly again.
+const INDEX_CATCHUP_MS = 5 * 60 * 1000;
 
 interface DataKeyRotationDeps {
   log: typeof helpers.log;
@@ -138,6 +148,17 @@ class DataKeyRotation {
    * The module's `REENCRYPT_JOB`.
    */
   static readonly REENCRYPT_JOB = REENCRYPT_JOB;
+  /**
+   * The re-encryption job's interval while the directory's data-key index is
+   * still being built (#618).
+   */
+  static readonly INDEX_CATCHUP_MS = INDEX_CATCHUP_MS;
+
+  /**
+   * Whether the last index pass left entries unindexed: the re-encryption
+   * job then comes back in INDEX_CATCHUP_MS rather than an hour.
+   */
+  indexPending = false;
 
   /**
    * Builds the instance over its dependencies.
@@ -295,6 +316,19 @@ class DataKeyRotation {
   }
 
   /**
+   * The re-encryption job's interval: an hour, and INDEX_CATCHUP_MS while
+   * the directory's data-key index is incomplete (#618).
+   *
+   * @returns the interval in ms
+   */
+  reencryptIntervalMs(): number {
+    const { log } = this.deps;
+    log.debug("Entering DataKeyRotation.reencryptIntervalMs().");
+    log.debug("Leaving DataKeyRotation.reencryptIntervalMs().");
+    return this.indexPending ? INDEX_CATCHUP_MS : HOUR_MS;
+  }
+
+  /**
    * One pass of the re-encryption job: re-seals this process's own rows,
    * then what the store holds under a superseded DEK, then destroys each
    * superseded DEK nothing is sealed under any longer and that has been
@@ -313,14 +347,37 @@ class DataKeyRotation {
     await ks.settleDeks();
     const ownRows = ks.resealOwnRows();
     await ks.settleAll();
+    const store = ks.sealedStore();
+    let indexing: Json = null;
+    try {
+      // THE DIRECTORY'S DATA-KEY INDEX FIRST (#623), for the entries written
+      // before it existed; bounded, and nothing but a probe once complete.
+      // On EVERY pass (#618), superseded keys or none: the count needs it
+      // whole, and a store that never rotated would otherwise build it only
+      // on the daily count's budget.
+      if (store && typeof store.index === 'function') {
+        indexing = await store.index({ budgetMs: INDEX_BUDGET_MS });
+        this.indexPending = !!(indexing && indexing.remaining);
+      }
+    } catch (e) {
+      const why = (e && (e as Error).message) || String(e);
+      log.error(errorCodes.tag('STS-KEYS-0099') + 'data keys: the ' +
+                're-encryption pass failed and nothing was destroyed: ' + why);
+      log.debug("Leaving DataKeyRotation.reencrypt(). Index failed.");
+      throw errorCodes.mark(new Error('the re-encryption pass failed: ' + why),
+                            'STS-KEYS-0099');
+    }
     const superseded: Json[] = ks.supersededDeks();
     if (!superseded.length) {
       log.debug("Leaving DataKeyRotation.reencrypt(). Nothing superseded.");
       return { superseded: 0, ownRows: ownRows, resealed: 0, destroyed: 0,
-               remaining: 0, summary: 'no superseded data encryption key' +
-               (ownRows ? '; ' + ownRows + ' own row(s) re-sealed' : '') };
+               remaining: 0,
+               indexed: indexing ? Number(indexing.indexed) || 0 : 0,
+               summary: 'no superseded data encryption key' +
+               (ownRows ? '; ' + ownRows + ' own row(s) re-sealed' : '') +
+               (this.indexPending ? '; the directory\'s data-key index is ' +
+                'still being built' : '') };
     }
-    const store = ks.sealedStore();
     if (!store) {
       log.debug("Leaving DataKeyRotation.reencrypt(). No counting store.");
       return { superseded: superseded.length, ownRows: ownRows, resealed: 0,
@@ -334,23 +391,8 @@ class DataKeyRotation {
     });
     const retireMs = Math.max(1, Number(config.value(
       'keys.dataKeyRetireAfterDays')) || 1) * DAY_MS;
-    let indexing: Json = null;
     let tally: Json;
     let counts: Json = null;
-    try {
-      // THE DIRECTORY'S DATA-KEY INDEX FIRST (#623), for the entries written
-      // before it existed; bounded, and nothing but a probe once complete.
-      if (typeof store.index === 'function') {
-        indexing = await store.index({ budgetMs: INDEX_BUDGET_MS });
-      }
-    } catch (e) {
-      const why = (e && (e as Error).message) || String(e);
-      log.error(errorCodes.tag('STS-KEYS-0099') + 'data keys: the ' +
-                're-encryption pass failed and nothing was destroyed: ' + why);
-      log.debug("Leaving DataKeyRotation.reencrypt(). Index failed.");
-      throw errorCodes.mark(new Error('the re-encryption pass failed: ' + why),
-                            'STS-KEYS-0099');
-    }
     // -----------------------------------------------------------------------
     // NOTHING TO DO IS NOT A PASS (#623). The re-seal and the count read the
     // sealed tables — on 8081, at 1.5M entries, every directory row twice,
@@ -607,6 +649,7 @@ class DataKeyRotation {
       // count it would answer short.
       if (typeof store.index === 'function') {
         const indexing = await store.index({ budgetMs: INDEX_BUDGET_MS });
+        this.indexPending = !!(indexing && indexing.remaining);
         if (indexing && indexing.remaining) {
           log.info('data keys: not counted this pass — the directory\'s ' +
                    'data-key index is still being built (' +
@@ -845,7 +888,7 @@ class DataKeyRotation {
       owner: 'common/data_key_rotation.ts',
       kind: 'cluster', scope: 'service',
       everyMs: function (): number {
-        return HOUR_MS;
+        return self.reencryptIntervalMs();
       },
       off: function (): string {
         return self.offReason();

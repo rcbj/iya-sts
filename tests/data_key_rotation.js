@@ -552,6 +552,55 @@ function childMain() {
          'the pass; one counted after it does',
          JSON.stringify({ early: early.asked, late: late.asked }));
 
+    // THE INDEX IS BUILT ON EVERY RE-ENCRYPTION PASS, AND THE JOB COMES
+    // BACK SOONER UNTIL IT IS COMPLETE (#618): on 8081 an hourly ten-second
+    // pass would have taken ~62 hours over 2.9M entries, and a store with
+    // no superseded key built it only on the daily count.
+    const catchUp = function (remainingAfter) {
+      const deps = rotation.DataKeyRotation.defaultDeps();
+      const asked = { index: 0 };
+      deps.keystore = function () {
+        return {
+          settleDeks: function () { return Promise.resolve(); },
+          settleAll: function () { return Promise.resolve(); },
+          resealOwnRows: function () { return 0; },
+          supersededDeks: function () { return []; },
+          sealedStore: function () {
+            return {
+              index: function () {
+                asked.index += 1;
+                return Promise.resolve({ indexed: 46500,
+                  remaining: asked.index < remainingAfter ? 1 : 0 });
+              }
+            };
+          }
+        };
+      };
+      return { job: new rotation.DataKeyRotation(deps), asked: asked };
+    };
+    const building = catchUp(3);
+    const s1 = await building.job.reencrypt({ trigger: 'test' });
+    const pendingAfterFirst = building.job.indexPending;
+    await building.job.reencrypt({ trigger: 'test' });
+    await building.job.reencrypt({ trigger: 'test' });
+    note(building.asked.index === 3 && s1.superseded === 0 &&
+         s1.indexed === 46500 && pendingAfterFirst === true &&
+         building.job.indexPending === false &&
+         rotation.DataKeyRotation.INDEX_CATCHUP_MS === 5 * 60 * 1000,
+         'K5. with no superseded key the re-encryption pass still builds ' +
+         'the data-key index, and says when it is still incomplete',
+         JSON.stringify({ asked: building.asked, s1: s1 }));
+    const catching = catchUp(2);
+    const hourly = catching.job.reencryptIntervalMs();
+    await catching.job.reencrypt({ trigger: 'test' });
+    const soon = catching.job.reencryptIntervalMs();
+    await catching.job.reencrypt({ trigger: 'test' });
+    note(hourly === 3600000 && soon === 5 * 60 * 1000 &&
+         catching.job.reencryptIntervalMs() === 3600000,
+         'K6. the job comes back in five minutes while the index is ' +
+         'incomplete, and hourly once it is',
+         JSON.stringify({ hourly: hourly, soon: soon }));
+
     // ---------------------------------------------------------------- G
     const deps = rotation.DataKeyRotation.defaultDeps();
     deps.keystore = function () {

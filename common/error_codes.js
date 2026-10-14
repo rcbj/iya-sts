@@ -283,9 +283,9 @@ const SUBSYSTEMS = [
     what: 'The KDC on TCP/UDP 88 and MS-KKDCP, the Kerberos service, SPNEGO ' +
           'and the SPNEGO sign-in.' },
   { id: 'LDAP', label: 'LDAP directory',
-    where: 'ldap/',
-    what: 'The embedded directory on 389 and 636 and the console pages that ' +
-          'show it.' },
+    where: 'ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161)',
+    what: 'The embedded directory on 389 and 636, the console pages that ' +
+          'show it, and the offline bulk import of people into it (#629).' },
   { id: 'ATTR', label: 'Attribute sources',
     where: 'attribute-sources/attribute_sources.ts, ' +
            'attribute-sources/attribute_source_drivers.ts, ' +
@@ -1714,8 +1714,12 @@ const CODES = [
       'in place of the read barrier\'s change-log pull (#626), so it ' +
       'pulled the whole change log instead, as every write did before.',
     spec: 'none — the write waits for the pull and is answered as before' },
-  // STS-STORE-0082 is #618 phase 2's (feature/618-gin), numbered before
-  // this; left out here so the merge keeps every number once.
+  { code: 'STS-STORE-0082',
+    summary: 'The live readers of the change log could not be read, so no ' +
+      'dead process was dropped from the fan-in of merge-own stores this ' +
+      'time; nothing is dropped on a failed read, and the next change-log ' +
+      'pull tries again a minute later (#618).',
+    spec: 'none — the fan-in keeps what it held' },
   { code: 'STS-STORE-0083',
     summary: 'The store is owed a tuning of schema version 19 (#630) — a ' +
       'table\'s storage parameters, or the retired btree on ' +
@@ -1855,6 +1859,14 @@ const CODES = [
   { code: 'STS-CLUSTER-0163',
     summary: 'A spend against a shared budget could not be refunded: the ' +
       'store could not be asked (#432 phase 5).',
+    spec: '' },
+  { code: 'STS-CLUSTER-0164',
+    summary: 'The flush that was to give back a directory create\'s ' +
+      'claims (its DN and username) failed, so they stay held until they ' +
+      'expire (two minutes): the release is a statement of the transaction ' +
+      'that writes the entry, or follows that flush on one node, and goes ' +
+      'back with it (#628). A create of one of those names before then ' +
+      'waits and is refused as in progress (STS-LDAP-0092).',
     spec: '' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
@@ -12806,6 +12818,100 @@ const CODES = [
       'operations error, or unavailable (52) when the store could not be ' +
       'read (STS-LDAP-0130, STS-LDAP-0131).',
     spec: 'RFC 4511: operationsError (1)' },
+  { code: 'STS-LDAP-0144',
+    summary: 'A directory create was refused because this node\'s front ' +
+      'process, which decides its own workers\' create claims in memory ' +
+      '(#628), already holds as many claims as it may. That many creates ' +
+      'are never in flight at once, so something is not giving its claims ' +
+      'back; logged once when the ceiling is reached (fail closed).',
+    spec: 'LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM' },
+  { code: 'STS-LDAP-0145',
+    summary: 'A directory create in a request worker was refused because ' +
+      'the front process did not answer its create claim in time, or could ' +
+      'not be asked (#628). A grant that arrives later is given straight ' +
+      'back (fail closed).',
+    spec: 'LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM' },
+  // THE BULK IMPORT (#629): an operator's offline tool, so no code here is
+  // ever a protocol's answer. 0144 to 0149 are left for the branches that
+  // were in flight when these were numbered.
+  { code: 'STS-LDAP-0150',
+    summary: 'The bulk import (persistence/bulk_import.js) was refused ' +
+      'before it read anything: an unknown argument, no --file or no file ' +
+      'there, or a --batch or --skip out of range. Nothing is changed and ' +
+      'it exits 2.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0151',
+    summary: 'The bulk import was refused for the service\'s settings: ' +
+      'persistence.mode is not postgres, or the service is deployed as ' +
+      'cells, whose people are claimed in the global routing index the ' +
+      'import does not write.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0152',
+    summary: 'The bulk import could not open the store the way the service ' +
+      'does: the connection could not be made or would be in the clear ' +
+      '(#273), or the schema is older than version 17 (#623).',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0153',
+    summary: 'The bulk import was refused because the service is running: ' +
+      'a process reported into sts_change_readers within the last 60 ' +
+      'seconds. The import runs with every node and request worker ' +
+      'stopped, and it asks again before every batch, so a service started ' +
+      'during an import stops it at a batch boundary.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0154',
+    summary: 'The bulk import named a realm the store does not hold, or ' +
+      'one whose stored row could not be read back as a realm.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0155',
+    summary: 'The bulk import did not import a record: its DN is not ' +
+      'directly under the realm\'s ou=users, its RDN is not a plain ' +
+      'uid=<name> (no escape, no multi-valued RDN), its uid values do not ' +
+      'include the RDN value, or a blank line between two records is ' +
+      'missing. The rest of the file is imported; the report names the ' +
+      'first twenty.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0156',
+    summary: 'The bulk import did not import a record: it carries an ' +
+      'attribute outside the person allowlist (a credential such as ' +
+      'userPassword, an operational or sts attribute, or one that is not a ' +
+      'person\'s), an objectClass other than top, person, ' +
+      'organizationalPerson and inetOrgPerson, an empty value or a NUL ' +
+      'byte, a URL value (name:< url), or a changetype other than add.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0157',
+    summary: 'The bulk import stopped because the realm reached ' +
+      'ldap.maxEntries, read against its counter row as an add reads it. ' +
+      'What fitted was committed; raise the setting and run it again with ' +
+      'the --skip the log line gives.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0158',
+    summary: 'The bulk import could not seal: the key-encryption key could ' +
+      'not be read or does not open the stored keys, or the store seals its ' +
+      'directory and no blob came back sealed. Nothing of the batch was ' +
+      'written.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0159',
+    summary: 'A batch of the bulk import failed in the database, or ' +
+      'inserted fewer rows than its check found free (something else wrote ' +
+      'the directory meanwhile), and was rolled back; the import stopped. ' +
+      'Every batch before it is committed: run it again, with the --skip ' +
+      'the last progress line gave, to resume.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0160',
+    summary: 'The bulk import did not import a record because one of its ' +
+      'usernames (its RDN value or a uid) is already held by another ' +
+      'entry under ou=users, in the store or earlier in the file — the one ' +
+      'entry per person rule, as STS-LDAP-0005 refuses an add.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0161',
+    summary: 'The bulk import could not merge a GIN pending list ' +
+      '(gin_clean_pending_list) or ANALYZE the table: both need its owner ' +
+      'or MAINTAIN, which the application role may not hold. After a batch ' +
+      '(schema 17, whose name index has fastupdate on) the import goes on, ' +
+      'slowing as the list grows; at the end nothing is lost, and lookups ' +
+      'scan the lists until an autovacuum or the owner\'s VACUUM (ANALYZE) ' +
+      'sts_ldap_entries.',
+    spec: 'none — an operator tool' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

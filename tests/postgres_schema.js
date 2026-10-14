@@ -314,6 +314,93 @@ function checkTheUpgradesAgree(t, sql) {
   log.debug("Leaving checkTheUpgradesAgree().");
 }
 
+// WHAT A LATER VERSION REPLACED (#618 phase 2, schema version 18): the
+// script drops every index the driver retired, and nothing else — an index
+// left behind is still written on every insert, which is the cost the
+// version exists to remove — and drops each only AFTER the index that
+// replaces it is built, so no question is ever without one.
+function checkTheRetiredAgree(t, sql) {
+  log.debug("Entering checkTheRetiredAgree().");
+  const all = statementsIn(sql);
+  const drops = all.filter(function (statement) {
+    return /^DROP INDEX/i.test(statement);
+  });
+  const retired = (driver.SCHEMA_RETIRED || []).map(function (one) {
+    return normalize(one.statement);
+  });
+  t.check(retired.length === 2 &&
+          retired.indexOf('DROP INDEX IF EXISTS ' +
+                          'sts_ldap_entries_attr_names') >= 0 &&
+          retired.indexOf('DROP INDEX IF EXISTS sts_ldap_entries_classes') >=
+            0,
+          'the driver retires the two indexes version 18 replaced',
+          JSON.stringify(retired));
+  // And the advisory drop of #630's SCHEMA_UPGRADES (the minted btree), a
+  // retirement a role that does not own the table may skip.
+  const upgraded = [].concat.apply([], (driver.SCHEMA_UPGRADES || [])
+    .map(function (step) {
+      return step.statements.filter(function (statement) {
+        return /^DROP INDEX/i.test(statement);
+      }).map(normalize);
+    }));
+  t.equal(JSON.stringify(drops.slice().sort()),
+          JSON.stringify(retired.concat(upgraded).sort()),
+          'postgres/schema.sql drops exactly the indexes the driver retired');
+  const at = function (pattern) {
+    return all.findIndex(function (statement) {
+      return pattern.test(statement);
+    });
+  };
+  const askedAt = at(/^CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names /);
+  const groupsAt = at(/^CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes /);
+  t.check(askedAt >= 0 && groupsAt >= 0 &&
+          at(/sts_ldap_entries_attr_names$/) > askedAt &&
+          at(/sts_ldap_entries_classes$/) > groupsAt,
+          'and drops each after the index that replaces it is built');
+  log.debug("Leaving checkTheRetiredAgree().");
+}
+
+// THE DIRECTORY'S GIN INDEXES TAKE EVERY INSERT DIRECTLY (#618, version 18):
+// each is created `WITH (fastupdate = off)`, an existing one is switched by
+// the driver's SCHEMA_RELOPTIONS — the same statements in the script, after
+// the CREATE — and its pending list flushed once, after the switch.
+function checkTheReloptionsAgree(t, sql) {
+  log.debug("Entering checkTheReloptionsAgree().");
+  const all = statementsIn(sql);
+  const wanted = driver.SCHEMA_RELOPTIONS || [];
+  t.equal(wanted.map(function (one) { return one.name; }).sort().join(','),
+          ['sts_ldap_entries_asked_names', 'sts_ldap_entries_group_classes',
+           'sts_ldap_entries_mails', 'sts_ldap_entries_names',
+           'sts_ldap_entries_uuids', 'sts_ldap_entries_values'].join(','),
+          'the driver turns the pending list off on the directory\'s six ' +
+          'GIN indexes');
+  wanted.forEach(function (one) {
+    const createAt = all.findIndex(function (statement) {
+      return statement.indexOf('CREATE INDEX IF NOT EXISTS ' + one.name +
+                               ' ') === 0;
+    });
+    const alterAt = all.indexOf(normalize(one.statement));
+    const flushAt = all.indexOf(normalize(one.flush));
+    t.check(createAt >= 0 &&
+            all[createAt].indexOf(' WITH (fastupdate = off)') > 0 &&
+            alterAt > createAt && flushAt > alterAt &&
+            one.option === 'fastupdate=off',
+            one.name + ' is created with fastupdate off, switched on an ' +
+            'existing store and its pending list flushed, in that order',
+            JSON.stringify({ createAt: createAt, alterAt: alterAt,
+                             flushAt: flushAt }));
+  });
+  const gins = driver.SCHEMA.filter(function (statement) {
+    return /ON sts_ldap_entries USING gin/.test(statement) &&
+      !/sts_ldap_entries_dek_keys /.test(statement);
+  });
+  t.check(gins.length === 6 && gins.every(function (statement) {
+    return statement.indexOf('WITH (fastupdate = off)') > 0;
+  }), 'every directory GIN index but the data keys\' is created with it',
+          String(gins.length));
+  log.debug("Leaving checkTheReloptionsAgree().");
+}
+
 function checkTheVersionAgrees(t, sql) {
   log.debug("Entering checkTheVersionAgrees().");
   // The script writes the version row so that a database built by an owner
@@ -446,6 +533,8 @@ function run(t) {
   checkTheDdlAgrees(t, sql);
   checkTheRoutinesAgree(t, sql);
   checkTheUpgradesAgree(t, sql);
+  checkTheRetiredAgree(t, sql);
+  checkTheReloptionsAgree(t, sql);
   checkTheVersionAgrees(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);

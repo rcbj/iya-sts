@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4344** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4360** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -53,8 +53,8 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 92
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 49
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 82
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 83
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 31
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 101
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 115
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -389,6 +389,7 @@ Raised from: persistence/.
 | `STS-STORE-0079` | persistence.databaseTlsCaFile names a file that could not be read, or that holds no PEM certificate, so the database connection has no trust anchor anybody chose. Fatal at persistence.start(); the out-of-process tools that dial the database refuse the same way. | none — fatal at start |
 | `STS-STORE-0080` | What the directory holds under a data key was asked for while some entries, written before schema version 17, are not yet in its data-key index: the count is refused rather than given short, so no key is destroyed on it. The jobs index those entries a bounded batch per pass, once (#623). | none — the count job and the re-encryption job wait |
 | `STS-STORE-0081` | A request worker could not read, by key, the directory rows another worker had written that a dispatched LDAP write was handed in place of the read barrier's change-log pull (#626), so it pulled the whole change log instead, as every write did before. | none — the write waits for the pull and is answered as before |
+| `STS-STORE-0082` | The live readers of the change log could not be read, so no dead process was dropped from the fan-in of merge-own stores this time; nothing is dropped on a failed read, and the next change-log pull tries again a minute later (#618). | none — the fan-in keeps what it held |
 | `STS-STORE-0083` | The store is owed a tuning of schema version 19 (#630) — a table's storage parameters, or the retired btree on sts_minted.written_at — and the role this service dials with does not own the table to make it. Nothing is wrong without it, only slower: run postgres/schema.sql as the owner. | none — the store opens without it |
 
 ## STS-CLUSTER
@@ -429,6 +430,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
 | `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
 | `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
+| `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
 
 ## STS-CELL
 
@@ -2828,9 +2830,9 @@ Raised from: kerberos/.
 
 ## STS-LDAP
 
-**LDAP directory.** The embedded directory on 389 and 636 and the console pages that show it.
+**LDAP directory.** The embedded directory on 389 and 636, the console pages that show it, and the offline bulk import of people into it (#629).
 
-Raised from: ldap/.
+Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -2935,6 +2937,20 @@ Raised from: ldap/.
 | `STS-LDAP-0141` | An LDAP search read from the store asynchronously (#616) and a page of the read failed part way. The entries already sent stay sent; the search ends unavailable rather than answering as though the rest of the directory were empty. | RFC 4511: unavailable (52) |
 | `STS-LDAP-0142` | An LDAP add asked the store its questions asynchronously before its body ran (#621), and the body then threw something other than a store it could not read (which keeps STS-LDAP-0130/0131 and is answered unavailable). Thrown inside a promise, it would have left the add without a result; it is answered operationsError instead, and logged with the stack. | RFC 4511: operationsError (1) |
 | `STS-LDAP-0143` | An LDAP add or modify carrying a clear password was screened for a data breach (#622), which made it asynchronous, and its handler then threw where neither ldapjs nor a request worker could see it. The client is answered once rather than never: an operations error, or unavailable (52) when the store could not be read (STS-LDAP-0130, STS-LDAP-0131). | RFC 4511: operationsError (1) |
+| `STS-LDAP-0144` | A directory create was refused because this node's front process, which decides its own workers' create claims in memory (#628), already holds as many claims as it may. That many creates are never in flight at once, so something is not giving its claims back; logged once when the ceiling is reached (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
+| `STS-LDAP-0145` | A directory create in a request worker was refused because the front process did not answer its create claim in time, or could not be asked (#628). A grant that arrives later is given straight back (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
+| `STS-LDAP-0150` | The bulk import (persistence/bulk_import.js) was refused before it read anything: an unknown argument, no --file or no file there, or a --batch or --skip out of range. Nothing is changed and it exits 2. | none — an operator tool |
+| `STS-LDAP-0151` | The bulk import was refused for the service's settings: persistence.mode is not postgres, or the service is deployed as cells, whose people are claimed in the global routing index the import does not write. | none — an operator tool |
+| `STS-LDAP-0152` | The bulk import could not open the store the way the service does: the connection could not be made or would be in the clear (#273), or the schema is older than version 17 (#623). | none — an operator tool |
+| `STS-LDAP-0153` | The bulk import was refused because the service is running: a process reported into sts_change_readers within the last 60 seconds. The import runs with every node and request worker stopped, and it asks again before every batch, so a service started during an import stops it at a batch boundary. | none — an operator tool |
+| `STS-LDAP-0154` | The bulk import named a realm the store does not hold, or one whose stored row could not be read back as a realm. | none — an operator tool |
+| `STS-LDAP-0155` | The bulk import did not import a record: its DN is not directly under the realm's ou=users, its RDN is not a plain uid=<name> (no escape, no multi-valued RDN), its uid values do not include the RDN value, or a blank line between two records is missing. The rest of the file is imported; the report names the first twenty. | none — an operator tool |
+| `STS-LDAP-0156` | The bulk import did not import a record: it carries an attribute outside the person allowlist (a credential such as userPassword, an operational or sts attribute, or one that is not a person's), an objectClass other than top, person, organizationalPerson and inetOrgPerson, an empty value or a NUL byte, a URL value (name:< url), or a changetype other than add. | none — an operator tool |
+| `STS-LDAP-0157` | The bulk import stopped because the realm reached ldap.maxEntries, read against its counter row as an add reads it. What fitted was committed; raise the setting and run it again with the --skip the log line gives. | none — an operator tool |
+| `STS-LDAP-0158` | The bulk import could not seal: the key-encryption key could not be read or does not open the stored keys, or the store seals its directory and no blob came back sealed. Nothing of the batch was written. | none — an operator tool |
+| `STS-LDAP-0159` | A batch of the bulk import failed in the database, or inserted fewer rows than its check found free (something else wrote the directory meanwhile), and was rolled back; the import stopped. Every batch before it is committed: run it again, with the --skip the last progress line gave, to resume. | none — an operator tool |
+| `STS-LDAP-0160` | The bulk import did not import a record because one of its usernames (its RDN value or a uid) is already held by another entry under ou=users, in the store or earlier in the file — the one entry per person rule, as STS-LDAP-0005 refuses an add. | none — an operator tool |
+| `STS-LDAP-0161` | The bulk import could not merge a GIN pending list (gin_clean_pending_list) or ANALYZE the table: both need its owner or MAINTAIN, which the application role may not hold. After a batch (schema 17, whose name index has fastupdate on) the import goes on, slowing as the list grows; at the end nothing is lost, and lookups scan the lists until an autovacuum or the owner's VACUUM (ANALYZE) sts_ldap_entries. | none — an operator tool |
 
 ## STS-ATTR
 
