@@ -9639,8 +9639,24 @@ class AdminApi {
           'The roster, the counts, and the RFC 6238 settings.',
         handler: function (req, res) {
           log.debug("Entering the management API multi-factor endpoint.");
-          self.sendJson(res, 200, adminViews.mfaRosterJson(req));
-          log.debug("Leaving the management API multi-factor endpoint.");
+          // The list's directory names asked asynchronously (#616), as
+          // `GET /admin-api/users` asks them.
+          adminViews.mfaRosterJsonAsync(req).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API multi-factor endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API multi-factor " +
+                      "endpoint: " + ((e && e.message) || e));
+            const code = errorCodes.codeOf(e) || 'STS-LDAP-0139';
+            log.error(errorCodes.tag(code) + 'admin-api: the roster could ' +
+                      'not be read from the store: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, code);
+            res.setHeader('Retry-After', '5');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
+          });
         } },
 
       { method: 'POST', route: BASE + '/mfa/:action',

@@ -12994,6 +12994,40 @@ class AdminViews {
     }
   }
 
+  // THE DIRECTORY'S FIRST NAMES, ASKED ASYNCHRONOUSLY (#616), for the two
+  // views drawn from the users list: `credentials.directoryFirstNames()`,
+  // or null where no credential store offers it (the view then asks the
+  // synchronous question).
+  /**
+   * The directory's first names for the users list, asked asynchronously.
+   *
+   * @returns a promise of `{ names, more }`, or of null
+   */
+  async directoryFirstNames() {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.directoryFirstNames().");
+    const first = credentials &&
+      typeof credentials.directoryFirstNames === 'function'
+      ? await credentials.directoryFirstNames() : null;
+    log.debug("Leaving AdminViews.directoryFirstNames().");
+    return first;
+  }
+
+  /**
+   * `mfaRosterJson()`, with the directory's first names asked
+   * asynchronously.
+   *
+   * @param req - the request
+   * @returns a promise of the JSON
+   */
+  async mfaRosterJsonAsync(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.mfaRosterJsonAsync().");
+    const first = await this.directoryFirstNames();
+    log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
+    return this.mfaRosterJson(req, { directoryFirst: first });
+  }
+
   // `usersJson()` FOR A CALLER THAT CAN WAIT (#616): the list's directory
   // names are asked of the directory first, asynchronously — in a windowed
   // process the store, on the driver's read pool — and the synchronous view
@@ -13006,12 +13040,10 @@ class AdminViews {
    * @returns a promise of the JSON
    */
   async usersJsonAsync(req, risk?: any) {
-    const { log, credentials } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AdminViews.usersJsonAsync().");
     const wanted = String((req.query || {}).user || '').trim();
-    const first = wanted || !credentials ||
-      typeof credentials.directoryFirstNames !== 'function'
-      ? null : await credentials.directoryFirstNames();
+    const first = wanted ? null : await this.directoryFirstNames();
     log.debug("Leaving AdminViews.usersJsonAsync().");
     return this.usersJson(req, risk, { directoryFirst: first });
   }
@@ -13485,12 +13517,13 @@ class AdminViews {
    * Builds the second-factor roster, in the shape `/admin/mfa` always had.
    *
    * @param req - the request
+   * @param opts - optional; `directoryFirst`, as `peopleRows()` takes it
    * @returns the JSON
    */
-  mfaRosterJson(req) {
+  mfaRosterJson(req, opts?) {
     const { log, totp, webauthnPolicy } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJson().");
-    const list = this.usersListJson(req);
+    const list = this.usersListJson(req, opts);
     const people = (list.json.users || []).map(function (row) {
       const f = row.factors || {};
       return {
@@ -13767,6 +13800,7 @@ export = {
   mergeFactors: slot.forward('mergeFactors'),
   usersListJson: slot.forward('usersListJson'),
   usersJsonAsync: slot.forward('usersJsonAsync'),
+  mfaRosterJsonAsync: slot.forward('mfaRosterJsonAsync'),
   federationRow: slot.forward('federationRow'),
   federationDetailJson: slot.forward('federationDetailJson'),
   federationJson: slot.forward('federationJson'),

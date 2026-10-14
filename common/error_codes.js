@@ -12750,10 +12750,11 @@ const CODES = [
       'an owner (#603).',
     spec: 'HTTP 400 (API) or a refusal on the group page' },
   { code: 'STS-LDAP-0139',
-    summary: 'GET /admin-api/ldap/directory in a process holding the ' +
-      'directory as a window (#616) asked the store for its counts or its ' +
-      'page asynchronously and the store failed to answer. The page is ' +
-      'refused rather than drawn out of what this process happens to hold.',
+    summary: 'GET /admin-api/ldap/directory, /admin-api/users or ' +
+      '/admin-api/mfa in a process holding the directory as a window (#616) ' +
+      'asked the store for its counts, its page or its first names ' +
+      'asynchronously and the store failed to answer. The page is refused ' +
+      'rather than drawn out of what this process happens to hold.',
     spec: 'HTTP 503 with Retry-After' },
   { code: 'STS-LDAP-0140',
     summary: 'An LDAP search reached its time limit (#616) — the client\'s ' +
