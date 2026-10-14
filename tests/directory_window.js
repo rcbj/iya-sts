@@ -1382,11 +1382,14 @@ function sameAnswers(t) {
                                       lru: lru.teamMembers }));
   t.check(!memory.register.some(function (row) {
             return /:restored$/.test(row);
-          }) && memory.register.indexOf('dee:created') >= 0 &&
+          }) && !memory.register.some(function (row) {
+            return /^dee:/.test(row);
+          }) &&
           !memory.register.some(function (row) { return /^ben:/.test(row); }),
           'K1. (whole directory) THE RESTORE PUTS NOBODY IN THE IDENTITY ' +
           'REGISTER (#613) — not ann, not the person with no uid, not the ' +
-          'seeded one — and one another process made is there as created',
+          'seeded one — and NOR DOES APPLYING ONE ANOTHER PROCESS MADE ' +
+          '(#618 phase 2: the creator\'s record arrives through the fan-in)',
           JSON.stringify(memory.register));
   t.equal(JSON.stringify(lru.register), JSON.stringify(memory.register),
           'K2. THE IDENTITY REGISTER IS THE SAME in a windowed worker, ' +

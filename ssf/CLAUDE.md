@@ -741,6 +741,24 @@ holder opted out and never the row just added. When nothing else is left to
 drop, the register stays over its cap and logs `STS-SSF-0130` rather than
 choose whose choice to lose. `tests/risc_register.js` section O.
 
+**A DIRECTORY WRITE KEEPS A ROW ONLY WHEN IT LEAVES THE REGISTER SOMETHING TO
+REMEMBER (#618 phase 2, 2026-10-14).** `observe()` made a row for every
+account any write touched, so a bulk load wrote one blank row per person and,
+past the cap, journalled the eviction of the oldest — about 2.3 of the 9.7
+change-log rows each LDAP add cost on 8081, for a register that holds the
+last two hundred accounts anyway. A row the write would make is now kept
+(`keepsFreshRow()`) when the write produced an act — which covers every write
+that releases an identifier, the history `identifier-recycled` is read from
+— or names a service account, which the opt-out gate reads off the row. A
+row the register already holds is updated as before. Every reader answers an
+absent row with the row's defaults (`opt-in`, the gate applies, `get()` is
+null), and the next write that matters makes the row from its own snapshot.
+**What is given up**: `/admin/risc-accounts` listing accounts nothing has
+happened to, and a hand-sent event naming such an account's address or
+number being matched to it rather than to the identifier — what every
+account past the cap already got. `tests/change_rows_per_add.js` section 3,
+`tests/risc_acts_units.js` G (its row is made by hand now).
+
 ---
 
 ## A BURST OF RISC EVENTS IS ONE LINE (#351, 2026-09-29)

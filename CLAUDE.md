@@ -925,7 +925,10 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   `node -e` child is exempt, and `common/config_file.js` (no logger exists yet)
   says why in its header; `mgmt-api/admin_api_explorer.js` carries a
   console-backed `log` of bunyan's shape instead, the parent's arrangement for
-  files that cannot reach bunyan.
+  files that cannot reach bunyan. A line below the level costs one comparison
+  (#627), but its argument is still built, so on a hot path a debug line whose
+  message is computed is guarded with `if (log.debug())` — `common/CLAUDE.md`,
+  *Disabled debug lines*.
 * **No swallowed exception.** Every `catch` does something with what it caught:
   `log.debug("Caught in NAME(): " + ((e && e.message) || e))` at the least, and
   a promise `.catch()` or `.then(ok, fail)` handler the same. A catch that runs

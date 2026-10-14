@@ -315,6 +315,10 @@ class ScimClients {
   // Per client, in this process: when the next request may leave (the
   // request rate, scimClientMaxRequestsPerSecond).
   private readonly nextSlot = new Map<string, number>();
+  // Per realm, the clients a directory change is observed for (#625): the
+  // rows of `list()`, kept by the applications listing's clock
+  // (`applications.listingVersion()`). See `observedClients()`.
+  private readonly observing: Json;
 
   /**
    * Builds the client from its dependencies, and its delivery queue.
@@ -332,6 +336,10 @@ class ScimClients {
     this.links = stores.links;
     this.states = stores.states;
     this.pauses = stores.pauses;
+    this.observing = typeof deps.realms.keyed === 'function'
+      ? deps.realms.keyed(function (): Json {
+        return { version: null, clients: null };
+      }) : null;
     const deliveryDeps = Object.assign(outbound.OutboundDelivery.defaultDeps(),
       { now: deps.now,
         // NO TIMER OF THE QUEUE'S OWN: a retry is sent by the
@@ -1579,7 +1587,7 @@ class ScimClients {
     log.debug("Entering ScimClients.observeInRealm().");
     // A CELL THAT DOES NOT PUSH TO A CLIENT QUEUES NOTHING FOR IT (#553
     // section 2): `scimClientCells` lists the cells that do.
-    const clients = this.list().filter((c: Json) => {
+    const clients = this.observedClients().filter((c: Json) => {
       return c.enabled && this.pushesHere(c);
     });
     if (!clients.length) {
@@ -1621,6 +1629,47 @@ class ScimClients {
     });
     log.debug("Leaving ScimClients.observeInRealm(). " + clients.length +
               " client(s).");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE CLIENTS A DIRECTORY CHANGE IS OBSERVED FOR, KEPT (#625).
+  //
+  // `observeInRealm()` runs on EVERY directory change, and it asked `list()`
+  // each time — a copy of every application view in the realm built, and
+  // each turned into a row, to find the few declared for scim-client: half
+  // a second of every thirty on a request worker of 8081 during an LDAP bulk
+  // load, whether the realm had a client or not. The rows change only when
+  // something under ou=applications does, so they are kept per realm by
+  // `applications.listingVersion()`, the clock `list()`'s own parse is kept
+  // by — moved by every write there, every write naming no DN, and every row
+  // another process wrote that this one applied — and a change to a person
+  // costs a comparison. A store with no clock (a test's stub) keeps nothing.
+  //
+  // What is kept is read, never written: a row is handed to `pushesHere()`,
+  // `wantsDelivery()` and `enqueue()`, which read it. Whether this cell
+  // pushes is still asked per change, since the cells' settings are not on
+  // the applications clock.
+  // -------------------------------------------------------------------------
+  private observedClients(): Json[] {
+    const { log, applications } = this.deps;
+    log.debug("Entering ScimClients.observedClients().");
+    const apps = applications();
+    const version = this.observing &&
+      typeof apps.listingVersion === 'function'
+      ? apps.listingVersion() : null;
+    if (version === null || version === undefined) {
+      log.debug("Leaving ScimClients.observedClients(). No clock.");
+      return this.list();
+    }
+    const held = this.observing();
+    if (held.clients && held.version === version) {
+      log.debug("Leaving ScimClients.observedClients(). Kept.");
+      return held.clients;
+    }
+    held.clients = this.list();
+    held.version = version;
+    log.debug("Leaving ScimClients.observedClients(). Listed.");
+    return held.clients;
   }
 
   // Whether a change to a person is a delivery for a client (#553 section

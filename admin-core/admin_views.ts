@@ -12052,10 +12052,12 @@ class AdminViews {
   // NOT A ONE-LINE CHANGE.
   //
   // Most directory people are ALREADY on `stats.userRows()`: every door that
-  // creates one — the console, `POST /admin-api/users/create`, a SCIM create,
-  // an LDAP add — calls `stats.noteKnownIdentity()`, which is what put
-  // `knownBy` on a row. So on a small service that has not restarted the
-  // union adds nothing at all. A RESTORE no longer does (#613): a restored
+  // creates one — the console, `POST /admin-api/users/create`, a SCIM create
+  // — calls `stats.noteKnownIdentity()`, which is what put `knownBy` on a
+  // row. So on a small service that has not restarted the union adds nothing
+  // at all. A RESTORE no longer does (#613), an LDAP add over the socket
+  // never did, and since #618 phase 2 neither does another process's create
+  // applied here (the creator's record arrives through the fan-in): such a
   // person not seen since is a row of the directory side, `knownBy:
   // 'directory'`.
   //
