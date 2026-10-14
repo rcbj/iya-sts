@@ -1811,6 +1811,15 @@ function poolFor(url) {
 // every process of the node, and only the front process knows the workers and
 // can ask them. A worker drawing it would list itself alone.
 //
+// **AND THE SCHEDULER'S (#617, 2026-10-14).** `/admin/scheduler` and
+// `GET /admin-api/scheduler` (with its `/run` and `/step-down` acts) read
+// `scheduler.runs` whole — every run of every job — and a request worker no
+// longer reads that store back at its start: it was 42,740 of the 52,234 rows
+// each of 8081's processes restored, for a page only an administrator opens.
+// So the page is the front process's, which restores the store as before and
+// catches up (the barrier below) before it answers. `cluster/scheduler.ts`
+// and `common/realms.js` (`restoreInWorkers`) carry the rest.
+//
 // **AND MONITORING → TLS CONNECTION'S (#597, 2026-10-12)**, `/tls`'s own
 // argument moved with the view `GET /tls` and `GET /tls/forwarded` drew:
 // what the SERVER saw of the connection the request arrived on. Answered
@@ -1824,7 +1833,8 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
                           '/admin-api/spiffe/brokers',
                           '/admin/worker-pools', '/admin-api/worker-pools',
                           '/admin/node-health', '/admin-api/node-health',
-                          '/admin/listeners', '/admin-api/listeners'];
+                          '/admin/listeners', '/admin-api/listeners',
+                          '/admin/scheduler', '/admin-api/scheduler'];
 
 /**
  * Tells whether a request is handled in a request worker rather than here.

@@ -287,6 +287,12 @@ const currentResponse = new asyncHooks.AsyncLocalStorage<http.ServerResponse>();
  */
 const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 
+// How long a stopping worker gives its origin's release before it exits
+// anyway (#617): well inside the front process's 8 s drain
+// (`request_pool.js`, `stop()`), and a claim left behind only costs the
+// successor the wait it always had.
+const RELEASE_WAIT_MS = 2000;
+
 // The header the front process TELLS a hosted-surface worker on, at module
 // scope rather than beside the three in start() so that it can be exported and
 // compared with the pool's spelling, as LDAP_DROP_HEADER is.
@@ -1256,7 +1262,7 @@ class RequestWorker {
     log.debug('Entering RequestWorker.stop(). inFlight=' + this.inFlight);
     if (!this.server) {
       this.cleanup();
-      process.exit(0);
+      this.releaseThenExit();
       log.debug("Leaving RequestWorker.stop().");
       return;
     }
@@ -1264,7 +1270,7 @@ class RequestWorker {
       this.cleanup();
       log.info('request_worker ' + WorkerChannel.id() + ': served ' +
                this.served + ' request(s); exiting.');
-      process.exit(0);
+      this.releaseThenExit();
     });
     // `close()` waits for open keep-alive connections, and the front process
     // holds them open on purpose. They are ended so that a drain finishes in
@@ -1274,6 +1280,44 @@ class RequestWorker {
       this.server.closeIdleConnections();
     }
     log.debug('Leaving RequestWorker.stop().');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE ORIGIN GIVEN BACK BEFORE THE THREAD ENDS (#617, 2026-10-14). A worker
+  // held its persistence origin's claim until it lapsed, so after a container
+  // restart the worker that took its slot waited for it (2 s on 8081, up to
+  // 30 s). `persistence.releaseOrigin()` writes what is owed and gives the
+  // claim back; it is given RELEASE_WAIT_MS and no more, because the front
+  // process kills a worker that has not exited within its drain time, and a
+  // claim left behind only costs the successor the wait it always had.
+  // ---------------------------------------------------------------------------
+  private releaseThenExit(): void {
+    const { log } = this.deps;
+    log.debug("Entering RequestWorker.releaseThenExit().");
+    let done = false;
+    const exit = (): void => {
+      log.debug("Entering exit().");
+      if (done) {
+        log.debug("Leaving exit(). Already exiting.");
+        return;
+      }
+      done = true;
+      log.debug("Leaving exit().");
+      process.exit(0);
+    };
+    const timer = setTimeout(exit, RELEASE_WAIT_MS);
+    Promise.resolve().then(function (): any {
+      return require('../persistence/persistence').releaseOrigin();
+    }).then(function (): void {
+      clearTimeout(timer);
+      exit();
+    }, function (e: any): void {
+      log.debug("Caught in RequestWorker.releaseThenExit(): " +
+                ((e && e.message) || e));
+      clearTimeout(timer);
+      exit();
+    });
+    log.debug("Leaving RequestWorker.releaseThenExit().");
   }
 
   private cleanup(): void {

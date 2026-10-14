@@ -14,8 +14,10 @@
 //   docker run --rm iya-sts-npm-test:<tag> node tests/tools/startup_profile.js
 //
 // Environment: PROFILE_PEOPLE (131546, what 8081 held), PROFILE_MINTED
-// (48000, what 8081's processes restored). Three figures, each with the
-// longest the event loop was held while it ran:
+// (48000, what 8081's processes restored), PROFILE_RUNS (42740) and
+// PROFILE_OTHER (9494), the split of 8081's 52,234 rows on 2026-10-14
+// between `scheduler.runs` and every other store. Four figures, each with
+// the longest the event loop was held while it ran:
 //
 //   prefill   what `replaceRealm()` did until #613 for every restored
 //             person — `noteKnownIdentity(name, 'restored')` — and the
@@ -26,6 +28,12 @@
 //   flush     that flush alone: rows written, rows deleted, milliseconds.
 //   restore   `persistence_minted.restore()` over PROFILE_MINTED sealed
 //             rows of one store, as a worker's start does it.
+//   split     (#617) the same restore over PROFILE_RUNS rows of a store
+//             declared `restoreInWorkers: false` (as `scheduler.runs` is),
+//             of 8081's average size (~800 bytes), and PROFILE_OTHER rows of
+//             an ordinary store: once as the front process, which restores
+//             both, and once as a request worker, which leaves the first
+//             out of the query and the loop.
 //
 // It drives `persistence_minted.js` over a driver that keeps rows in a Map,
 // as `tests/minted_persistence.js` does, so what it measures is the work
@@ -58,10 +66,14 @@ function mapDriver() {
       log.debug("Leaving origin().");
       return 'profile-origin';
     },
-    loadMinted: function () {
+    loadMinted: function (filter) {
       log.debug("Entering loadMinted().");
+      // The postgres driver's `skipHandles` clause (#617).
+      const skip = (filter && filter.skipHandles) || [];
       log.debug("Leaving loadMinted().");
-      return Promise.resolve(Array.from(rows.values()));
+      return Promise.resolve(Array.from(rows.values()).filter(function (row) {
+        return skip.indexOf(row.handle) < 0;
+      }));
     },
     purgeExpiredMinted: function () {
       log.debug("Entering purgeExpiredMinted().");
@@ -200,6 +212,45 @@ async function main() {
   out.restore = { tookMs: restored.tookMs, heldMs: restored.heldMs,
                   restored: (restored.result || {}).restored,
                   stored: driver.rows.size };
+
+  // 3. THE SAME RESTORE, SPLIT AS 8081'S ROWS WERE (#617): front vs worker.
+  const runRows = Number(process.env.PROFILE_RUNS || 42740);
+  const otherRows = Number(process.env.PROFILE_OTHER || 9494);
+  driver = mapDriver();
+  minted.reset();
+  minted.setDriver(driver, 'postgres');
+  const runs = realms.map({ persist: 'test.profile.runs',
+                            restoreInWorkers: false });
+  const other = realms.map({ persist: 'test.profile.other' });
+  const filler = 'x'.repeat(600);
+  for (let i = 0; i < runRows; i++) {
+    runs.set('run-' + i, { runId: 'run-' + i, jobId: 'job-' + (i % 60),
+                           state: 'succeeded', at: Date.now(), pad: filler });
+  }
+  for (let i = 0; i < otherRows; i++) {
+    other.set('row-' + i, { n: i, who: 'person' + (i % 1000),
+                            at: Date.now(), pad: filler });
+  }
+  await minted.flush();
+  const split = {};
+  for (const role of ['front', 'worker']) {
+    runs.clear();
+    other.clear();
+    minted.reset();
+    minted.setDriver(driver, 'postgres');
+    if (role === 'worker') {
+      process.env.STS_REQUEST_WORKER = '1';
+    } else {
+      delete process.env.STS_REQUEST_WORKER;
+    }
+    const one = await heldWhile(function () {
+      return minted.restore();
+    });
+    delete process.env.STS_REQUEST_WORKER;
+    split[role] = { tookMs: one.tookMs, heldMs: one.heldMs,
+                    restored: (one.result || {}).restored };
+  }
+  out.split = split;
   process.stdout.write(JSON.stringify(out, null, 2) + '\n');
   fs.rmSync(dir, { recursive: true, force: true });
   log.debug("Leaving main().");

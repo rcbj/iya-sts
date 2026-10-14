@@ -2442,6 +2442,33 @@ function create(options) {
   }
 
   // ---------------------------------------------------------------------
+  // AN ORIGIN CLAIM TAKEN OVER FROM A MEMBERSHIP THAT HAS GONE (#617) — see
+  // `adoptOrigin()`. One statement: the row is replaced only while it still
+  // names, after its `@`, a membership other than `nodeId` whose row in
+  // `sts_cluster_nodes` has left or expired by the database's clock, under
+  // the row lock a concurrent claimant or a fenced write also takes. True
+  // when this process now holds the claim.
+  // ---------------------------------------------------------------------
+  function takeOverFromGone(key, reservation, holder, nodeId, ttlMs) {
+    log.debug("Entering takeOverFromGone().");
+    log.debug("Leaving takeOverFromGone().");
+    return pool.query(
+      'UPDATE sts_cluster_claims c SET reservation = $3, origin = $4, ' +
+      'claimed_at = ' + DB_NOW + ', expires_at = ' + DB_NOW + ' + $5 ' +
+      'WHERE c.scope = $1 AND c.realm = \'\' AND c.key = $2 ' +
+      'AND position(\'@\' in c.origin) > 0 ' +
+      'AND split_part(c.origin, \'@\', 2) <> $6 ' +
+      'AND EXISTS (SELECT 1 FROM sts_cluster_nodes n WHERE n.node_id = ' +
+      'split_part(c.origin, \'@\', 2) AND (n.left_at > 0 OR n.expires_at <= ' +
+      DB_NOW + ')) RETURNING c.claimed_at',
+      [ORIGIN_SCOPE, key, reservation, holder,
+       Math.max(1000, Number(ttlMs) || 30000), nodeId]
+    ).then(function (r) {
+      return (r.rowCount || 0) > 0;
+    });
+  }
+
+  // ---------------------------------------------------------------------
   // THE ORIGIN FENCE (2026-09-18). A process that ADOPTED a stable origin
   // holds a claim on it (`adoptOrigin()`), and every transaction checks the
   // claim is still its own — under a SHARE lock held to COMMIT, so a
@@ -3844,19 +3871,28 @@ function create(options) {
       const shortLived = Array.isArray(filter.ageHandles)
         ? filter.ageHandles.map(String) : [];
       const aged = staleBefore > 0 && shortLived.length > 0;
+      // The stores a request worker does not read back (#617; see
+      // `persistence_minted.js`, notInWorkers()).
+      const skipped = Array.isArray(filter.skipHandles)
+        ? filter.skipHandles.map(String) : [];
+      const binds = [TOMBSTONE, filter.realms.map(String),
+                     Number(filter.nowMs) || Date.now()];
+      let where = 'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
+        '(expires_at IS NULL OR expires_at > $3)';
+      if (aged) {
+        binds.push(shortLived, staleBefore);
+        where += ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
+                 'AND written_at < to_timestamp($5 / 1000.0))';
+      }
+      if (skipped.length) {
+        binds.push(skipped);
+        where += ' AND NOT (handle = ANY($' + binds.length + '::text[]))';
+      }
       log.debug("Leaving loadMinted().");
       return readPool.query(
         'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
         '* 1000)::bigint AS written_ms, expires_at, key_sealed ' +
-        'FROM sts_minted ' +
-        'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
-        '(expires_at IS NULL OR expires_at > $3)' +
-        (aged ? ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
-                'AND written_at < to_timestamp($5 / 1000.0))' : ''),
-        aged ? [TOMBSTONE, filter.realms.map(String),
-                Number(filter.nowMs) || Date.now(), shortLived, staleBefore]
-             : [TOMBSTONE, filter.realms.map(String),
-                Number(filter.nowMs) || Date.now()]
+        'FROM sts_minted ' + where, binds
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
@@ -4215,6 +4251,28 @@ function create(options) {
     // claim (`checkOriginFence()`).
     //
     // Must be called after `open()` and before anything reads `origin()`.
+    //
+    // **A HOLDER WHOSE NODE HAS GONE IS NOT WAITED OUT (#617, 2026-10-14).**
+    // A request worker is a thread of its front process, and on 8081 a
+    // restarted container's first worker waited 2 s — and could have waited
+    // the claim's whole 30 s — for the claim its own predecessor took, from
+    // a process that had already left the cluster. So a claim records WHICH
+    // NODE MEMBERSHIP took it: `o.nodeId` (the front's own membership id, or
+    // for a worker the front's it inherited), written after an `@` in the
+    // row's informational `origin` column, so the table and its schema
+    // version are unchanged. A claim that is refused is then TAKEN OVER,
+    // in one statement, when the membership that took it is GONE: its row in
+    // `sts_cluster_nodes` has left (a clean stop) or expired (a node whose
+    // row expired is dead for good — its heartbeat cannot renew it, and it
+    // must exit). Only that. A claim taken by a LIVE membership — another
+    // container running under this node name, or a sibling worker of this
+    // very front still draining in the same slot — names a live row and is
+    // waited for as before; one that names no membership (cluster off, or a
+    // front that has adopted and not yet joined) has no row and is waited for
+    // too, because absence proves nothing. Fencing is unchanged: the
+    // takeover replaces the reservation under the row lock, so a holder that
+    // was in fact still writing finds its next transaction fenced
+    // (`checkOriginFence()`), exactly as after a lapse.
     // -----------------------------------------------------------------
     adoptOrigin: function (opts) {
       log.debug("Entering the postgres driver adoptOrigin().");
@@ -4230,17 +4288,41 @@ function create(options) {
       const waitMs = Math.max(0, Number(o.waitMs) || 0);
       const pollMs = Math.max(100, Number(o.pollMs) || 2000);
       const reservation = require('../common/crypto').randomUuid();
+      const nodeId = String(o.nodeId || '').trim();
+      // `<process>@<membership>` — what `origin` holds for a claim taken by a
+      // process that knows its node's membership; the process alone else.
+      const holder = nodeId ? processId + '@' + nodeId : processId;
       const started = Date.now();
       const self = this;
+      function adopted(tookOverFrom) {
+        log.debug("Entering adopted().");
+        processId = key;
+        originClaim = { key: key, reservation: reservation, ttlMs: ttlMs };
+        log.debug("Leaving adopted().");
+        return { adopted: true, origin: key, waitedMs: Date.now() - started,
+                 tookOverFrom: tookOverFrom || '' };
+      }
       function attempt() {
         return self.claimOnce(ORIGIN_SCOPE, '', key, {
-          ttlMs: ttlMs, reservation: reservation
+          ttlMs: ttlMs, reservation: reservation, origin: holder
         }).then(function (answer) {
           if (answer.claimed) {
-            processId = key;
-            originClaim = { key: key, reservation: reservation, ttlMs: ttlMs };
-            return { adopted: true, origin: key,
-                     waitedMs: Date.now() - started };
+            return adopted('');
+          }
+          if (!nodeId) {
+            return answer;
+          }
+          return takeOverFromGone(key, reservation, holder, nodeId, ttlMs)
+            .then(function (taken) {
+              if (taken) {
+                return adopted((answer.existing && answer.existing.origin) ||
+                               '?');
+              }
+              return answer;
+            });
+        }).then(function (answer) {
+          if (answer.adopted) {
+            return answer;
           }
           if (Date.now() - started + pollMs > waitMs) {
             return { adopted: false, origin: processId,
@@ -4977,6 +5059,9 @@ function create(options) {
       const o = opts || {};
       const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
       const reservation = String(o.reservation || '');
+      // What the row's informational `origin` says took it: this process,
+      // or (an origin claim, #617) this process and its node's membership.
+      const claimant = o.origin ? String(o.origin) : processId;
       log.debug("Leaving claimOnce().");
       return pool.query(
         'INSERT INTO sts_cluster_claims (scope, realm, key, reservation, ' +
@@ -4987,7 +5072,7 @@ function create(options) {
         'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
         'EXCLUDED.claimed_at RETURNING claimed_at, expires_at',
         [String(scope), String(realmId || ''), String(key), reservation,
-         processId, ttlMs]
+         claimant, ttlMs]
       ).then(function (r) {
         if (r.rowCount) {
           const row = r.rows[0];

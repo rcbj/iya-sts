@@ -111,8 +111,9 @@
 // table's `registerRoutes()`; `common/protocol_stack.ts` calls it at 19,
 // where requiring this module used to register both (#50, R1), so the route
 // order is unchanged. Requiring the module registers nothing. (The schemas
-// are therefore compiled BEFORE the gate is registered rather than after it;
-// neither reads the other.)
+// are therefore recorded BEFORE the gate is registered rather than after it,
+// and since #617 each is compiled only when a request first reaches its
+// operation; neither reads the other.)
 //
 // `PROTOCOL_SETTINGS_OPERATIONS` and `ROUTES` are typed `any[]`, as the
 // JavaScript's JSDoc typed the second: a union of a few hundred object
@@ -748,8 +749,9 @@ class AdminApi {
    * fresh deep copy of the whole components table (about 170 KB) for each of
    * the 363 validators — and ajv keeps every root it compiled in its cache
    * for the life of the process, so the copies were never collected: about
-   * 60 MB of every process's heap. The copy is made once, in
-   * `compileRequestSchemas()`, and each root points at it. ajv reads a schema
+   * 60 MB of every process's heap. The copy is made once, with the first
+   * validator `validatorFor()` compiles (#617), and each root points at it.
+   * ajv reads a schema
    * and never writes to it, so a shared subtree is exactly what the copies
    * were, 363 times fewer; what each validator accepts and refuses, and the
    * words it refuses in, are unchanged.
@@ -780,22 +782,38 @@ class AdminApi {
     return route + '\u0000' + (action || '');
   }
 
+  // ---------------------------------------------------------------------------
+  // THE REQUEST SCHEMAS ARE COMPILED ON FIRST USE (#617, 2026-10-14).
+  //
+  // Every one of the 363 was compiled by ajv when the instance was wired —
+  // in every process, at every start, ~1.2 s of the ~3 s the management
+  // API's load cost on 8081 (measured in the tests image: 1144 ms for
+  // `compileRequestSchemas()` against 4 ms to build the whole route table),
+  // and almost none of them is ever reached by a given process. Now `wire()`
+  // only RECORDS each operation's schema under its validator key, and
+  // `validatorFor()` compiles one the first time a request reaches it and
+  // keeps it. What a validator accepts and refuses, and the words it refuses
+  // in, are unchanged; the routes, the gate and the console's closed sets are
+  // registered exactly where and when they were (rule 1). The one thing that
+  // moves is WHEN a schema this repository wrote that ajv will not compile is
+  // reported (STS-API-0010): at its operation's first request rather than at
+  // start — so `compileAllRequestSchemas()` compiles the lot on demand, and
+  // `tests/admin_api_lazy_validators.js` asks it to and holds that none fails.
+  // ---------------------------------------------------------------------------
   /**
-   * Compiles every request schema in the route table into a validator.
+   * Records every request schema in the route table under its validator key,
+   * to be compiled by `validatorFor()` when first needed.
    *
-   * A schema that will not compile is logged under `STS-API-0010` and its
-   * operation goes on unvalidated.
-   *
-   * @returns how many validators were built
+   * @returns how many schemas were recorded
    */
   compileRequestSchemas() {
-    const { log, errorCodes, spec } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.compileRequestSchemas().");
-    let built = 0;
-    // ONE copy of the enforced components for every root below (#365; see
-    // `compilable()`).
-    const components = { schemas: self.structureOnly(spec.SCHEMAS) };
+    let recorded = 0;
+    validators.clear();
+    validatorSources.clear();
+    sharedComponents = null;
     ROUTES.forEach(function (entry) {
       const route = entry.route || entry.path;
       const rows = entry.actions || [];
@@ -803,40 +821,105 @@ class AdminApi {
         if (!action.requestBody) {
           return;
         }
-        try {
-          validators.set(self.validatorKeyOf(route, action.action),
-                         ajv.compile(self.compilable(action.requestBody,
-                                                     components)));
-          built = built + 1;
-        } catch (e) {
-          // A schema this repository wrote that ajv will not compile. Logged by
-          // operation so it names the row to fix; the operation goes on working
-          // unvalidated, because a management API that would not start is worse
-          // than one operation whose body is unchecked.
-          log.error(errorCodes.tag('STS-API-0010') +
-                    'admin-api: the request schema for ' + action.operationId +
-                    ' would not compile and that operation is unvalidated: ' +
-                    e.message);
-        }
+        validatorSources.set(self.validatorKeyOf(route, action.action),
+                             { schema: action.requestBody,
+                               name: action.operationId });
+        recorded = recorded + 1;
       });
       if (entry.requestBody) {
-        try {
-          validators.set(self.validatorKeyOf(route, ''),
-                         ajv.compile(self.compilable(entry.requestBody,
-                                                     components)));
-          built = built + 1;
-        } catch (e) {
-          log.error(errorCodes.tag('STS-API-0010') +
-                    'admin-api: the request schema for ' +
-                    (entry.operationId || route) +
-                    ' would not compile and that operation is unvalidated: ' +
-                    e.message);
-        }
+        validatorSources.set(self.validatorKeyOf(route, ''),
+                             { schema: entry.requestBody,
+                               name: entry.operationId || route });
+        recorded = recorded + 1;
       }
     });
-    log.debug("Leaving AdminApi.compileRequestSchemas(). " + built +
-              " validator(s).");
-    return built;
+    log.debug("Leaving AdminApi.compileRequestSchemas(). " + recorded +
+              " schema(s) recorded, none compiled yet.");
+    return recorded;
+  }
+
+  /**
+   * Returns the compiled validator for a validator key, compiling it the
+   * first time; null when the operation has no schema or its schema would
+   * not compile (logged once under `STS-API-0010`).
+   *
+   * @param key - the key from `validatorKeyOf()`
+   * @returns the validator, or null
+   */
+  validatorFor(key) {
+    const { log, errorCodes, spec } = this.deps;
+    log.debug("Entering AdminApi.validatorFor().");
+    if (validators.has(key)) {
+      log.debug("Leaving AdminApi.validatorFor(). Compiled already.");
+      return validators.get(key);
+    }
+    const source = validatorSources.get(key);
+    if (!source) {
+      log.debug("Leaving AdminApi.validatorFor(). No schema.");
+      return null;
+    }
+    // ONE copy of the enforced components for every root (#365; see
+    // `compilable()`), made with the first validator.
+    if (!sharedComponents) {
+      sharedComponents = { schemas: this.structureOnly(spec.SCHEMAS) };
+    }
+    let compiled = null;
+    try {
+      compiled = ajv.compile(this.compilable(source.schema,
+                                             sharedComponents));
+    } catch (e) {
+      // A schema this repository wrote that ajv will not compile. Logged by
+      // operation so it names the row to fix; the operation goes on working
+      // unvalidated, because a management API that would not answer is worse
+      // than one operation whose body is unchecked. Remembered as null, so it
+      // is said once rather than on every request.
+      log.error(errorCodes.tag('STS-API-0010') +
+                'admin-api: the request schema for ' + source.name +
+                ' would not compile and that operation is unvalidated: ' +
+                e.message);
+    }
+    validators.set(key, compiled);
+    log.debug("Leaving AdminApi.validatorFor(). " +
+              (compiled ? "Compiled." : "Would not compile."));
+    return compiled;
+  }
+
+  /**
+   * Compiles every recorded request schema now, for a test or a caller that
+   * wants every one checked at once.
+   *
+   * @returns `{ built, failed }`, the operations' names that would not
+   *   compile in `failed`
+   */
+  compileAllRequestSchemas() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.compileAllRequestSchemas().");
+    let built = 0;
+    const failed = [];
+    validatorSources.forEach(function (source, key) {
+      if (self.validatorFor(key)) {
+        built = built + 1;
+      } else {
+        failed.push(source.name);
+      }
+    });
+    log.debug("Leaving AdminApi.compileAllRequestSchemas(). " + built +
+              " built, " + failed.length + " failed.");
+    return { built: built, failed: failed };
+  }
+
+  /**
+   * Says how many request validators this process has compiled so far, and
+   * how many schemas are recorded.
+   *
+   * @returns `{ compiled, recorded }`
+   */
+  validatorCounts() {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.validatorCounts().");
+    log.debug("Leaving AdminApi.validatorCounts().");
+    return { compiled: validators.size, recorded: validatorSources.size };
   }
 
   // ---------------------------------------------------------------------------
@@ -1020,8 +1103,8 @@ class AdminApi {
                 "body.");
       return { ok: true };
     }
-    const validate = validators.get(this.validatorKeyOf(route, action)) ||
-                     validators.get(this.validatorKeyOf(route, ''));
+    const validate = this.validatorFor(this.validatorKeyOf(route, action)) ||
+                     this.validatorFor(this.validatorKeyOf(route, ''));
     if (!validate) {
       // No schema for this operation — a GET, an unknown action the handler is
       // about to refuse by name, or a row that carries none. Not this
@@ -25361,12 +25444,17 @@ class AdminApi {
   }
 }
 
-// Compiled once at require time, keyed by the operation the request will reach.
-// A schema that will not compile is a MAINTAINER's mistake rather than a
+// Compiled on first use (#617; `validatorFor()`), keyed by the operation the
+// request will reach, from the schemas `compileRequestSchemas()` records. A
+// schema that will not compile is a MAINTAINER's mistake rather than a
 // caller's, so it is logged loudly and that operation is left unvalidated
-// rather than taking the whole service down at require time — the same
-// judgement `ldap_server.js` makes about a listener that will not bind.
+// rather than refusing every request — the same judgement `ldap_server.js`
+// makes about a listener that will not bind.
 const validators = new Map();
+const validatorSources = new Map();
+// The one `{ schemas: structureOnly(spec.SCHEMAS) }` every validator's root
+// points at (#365), made with the first validator compiled.
+let sharedComponents: any = null;
 import docs = require('./admin_api_docs');
 // `docs` is required for its place in the require order and nothing of it is
 // read here; this reference keeps TypeScript from eliding the require.
@@ -25805,5 +25893,15 @@ export = {
    * Forwards to `AdminApi.checkRequestBody()` on the installed instance: a
    * test asks it what a body sent to an operation would be refused for.
    */
-  checkRequestBody: slot.forward('checkRequestBody')
+  checkRequestBody: slot.forward('checkRequestBody'),
+  /**
+   * Forwards to `AdminApi.compileAllRequestSchemas()` on the installed
+   * instance: every request schema compiled now (#617), for a test.
+   */
+  compileAllRequestSchemas: slot.forward('compileAllRequestSchemas'),
+  /**
+   * Forwards to `AdminApi.validatorCounts()` on the installed instance: how
+   * many request validators are compiled and how many recorded (#617).
+   */
+  validatorCounts: slot.forward('validatorCounts')
 };
