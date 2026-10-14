@@ -264,7 +264,12 @@ function authorizeUrl(client, extra) {
   const q = new URLSearchParams(Object.assign({
     response_type: "code", client_id: client.client_id,
     redirect_uri: RP_REDIRECT, scope: "openid", state: "s-" + TAG,
-    nonce: "n-" + TAG, code_challenge: crypto.createHash("sha256")
+    // A FRESH NONCE PER REQUEST (2026-10-13): in RFC 9700 mode, which product
+    // implies, a nonce that went with a redeemed code is refused as a second
+    // transaction reusing the first's (section 2.1.1) — section 7's plain
+    // flow met exactly that in single-node.
+    nonce: "n-" + TAG + "-" + crypto.randomBytes(6).toString("hex"),
+    code_challenge: crypto.createHash("sha256")
       .update(verifier).digest("base64url"),
     code_challenge_method: "S256" }, extra || {}));
   log.debug("Leaving authorizeUrl().");
