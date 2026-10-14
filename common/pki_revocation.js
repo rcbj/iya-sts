@@ -1339,9 +1339,15 @@ function publishSoon(scopeId, caId) {
   log.debug("Leaving publishSoon().");
 }
 
+// **IT YIELDS BETWEEN LISTS (#617, 2026-10-14).** Each list is signed and
+// written into the directory synchronously, and 279 of them were 4 s of
+// 8081's front-process start with no other turn of the event loop between
+// them — the turns the cluster heartbeat and the origin-claim renewal need.
+// A `setImmediate()` between lists lets those, and a request, run; the total
+// is unchanged.
 /**
  * Builds and publishes the CRL of every authority in the given scopes, and
- * the Root's, into the directory.
+ * the Root's, into the directory, yielding to the event loop between lists.
  *
  * @param scopeIds - the scopes to publish
  * @returns how many CRLs were published; 0 when there is no directory
@@ -1356,6 +1362,11 @@ async function publishAll(scopeIds) {
   let done = 0;
   for (let i = 0; i < all.length; i++) {
     const one = all[i];
+    if (i > 0) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
     try {
       const made = await buildCrl(one.scope, one.ca);
       if (made.ok && directory.publishCrl(one.scope, one.ca, made.der)) {
