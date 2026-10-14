@@ -51,6 +51,8 @@
 // business (`persistence/CLAUDE.md`, *A write is answered after its commit*).
 // ---------------------------------------------------------------------------
 
+// For the request type announcesWrites() takes; elided once compiled.
+import http = require('http');
 import WorkerChannel = require('./worker_channel');
 
 // What a `CommitAnnouncer` needs: the store, and what the worker has.
