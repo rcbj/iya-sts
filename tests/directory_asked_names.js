@@ -275,15 +275,15 @@ function schema(t) {
   const names = byName('sts_ldap_entries_asked_names');
   t.equal(names && names.statement,
           'CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON ' +
-          'sts_ldap_entries USING gin ((' + queries.ASKED_NAMES + ')) WHERE ' +
-          queries.ASKED_NAMES_HELD,
+          'sts_ldap_entries USING gin ((' + queries.ASKED_NAMES + ')) ' +
+          'WITH (fastupdate = off) WHERE ' + queries.ASKED_NAMES_HELD,
           'D1. the names\' index is a partial GIN, default operator class, ' +
           'on exactly the builders\' expression and predicate');
   const groups = byName('sts_ldap_entries_group_classes');
   t.equal(groups && groups.statement,
           'CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON ' +
-          'sts_ldap_entries USING gin (class_keys) WHERE ' +
-          queries.GROUP_CLASSES_HELD,
+          'sts_ldap_entries USING gin (class_keys) WITH (fastupdate = off) ' +
+          'WHERE ' + queries.GROUP_CLASSES_HELD,
           'D2. the classes\' index is a partial GIN on the builders\' ' +
           'predicate');
   t.check(names && names.afterColumns === true && groups &&

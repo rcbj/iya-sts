@@ -590,13 +590,13 @@ function childMain() {
          'K5. with no superseded key the re-encryption pass still builds ' +
          'the data-key index, and says when it is still incomplete',
          JSON.stringify({ asked: building.asked, s1: s1 }));
-    const fresh = catchUp(2);
-    const hourly = fresh.job.reencryptIntervalMs();
-    await fresh.job.reencrypt({ trigger: 'test' });
-    const soon = fresh.job.reencryptIntervalMs();
-    await fresh.job.reencrypt({ trigger: 'test' });
+    const catching = catchUp(2);
+    const hourly = catching.job.reencryptIntervalMs();
+    await catching.job.reencrypt({ trigger: 'test' });
+    const soon = catching.job.reencryptIntervalMs();
+    await catching.job.reencrypt({ trigger: 'test' });
     note(hourly === 3600000 && soon === 5 * 60 * 1000 &&
-         fresh.job.reencryptIntervalMs() === 3600000,
+         catching.job.reencryptIntervalMs() === 3600000,
          'K6. the job comes back in five minutes while the index is ' +
          'incomplete, and hourly once it is',
          JSON.stringify({ hourly: hourly, soon: soon }));
