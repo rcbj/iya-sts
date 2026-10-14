@@ -2150,6 +2150,16 @@ compare is held only for directory or key changes, never for its audit rows.
 `persistence/CLAUDE.md`, *A write is answered after its commit*, argues the
 rest; `tests/answer_after_commit.js` section C drives an add both ways.
 
+**Anything that makes a handler asynchronous marks the request, where the
+asynchrony begins** (#622). `screenedThen()` — the breach screen an add or
+modify carrying a clear `userPassword` runs first (#62 P6) — did not, so a
+dispatched modify was answered "ended nothing" before its handler ran, and
+the change landed after the client was told. It now sets
+`req.stsAsyncOperation` itself, hands the body a `next` that answers once,
+and answers a body that throws inside the promise (`unavailable` for an
+unreadable store, otherwise STS-LDAP-0143). With nothing to screen the
+handler still runs in the same tick. `tests/breached_passwords.js` section F.
+
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 
 For that wrapper's reason, stated one section up: seven bodies each remembering
