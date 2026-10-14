@@ -409,10 +409,21 @@ async function thePageAndTheApiAgree(consoleClient) {
             // after. So one whole interval apart, the earlier of the two
             // already past when the reads ended, is agreement at any
             // interval (a 5-minute job met it at 17:50:00 in memory mode).
+            // AND SEVERAL WHOLE INTERVALS (2026-10-13): a job already
+            // overdue by more than one interval when the first read was made
+            // — a per-realm job the leader had not reached yet, with the
+            // hundreds of throwaway realms single-node holds by then — runs
+            // its overdue slot between the reads, and the scheduler then
+            // skips the slots it missed, so the second read names the next
+            // future slot: two intervals apart (oauth2.device-code-sweep,
+            // 23:55 and 00:05, single-node on b6568346). Lateness itself is
+            // the page's overdue mark, not this check's business.
             const earlier = Math.min(Date.parse(j.nextRunAt),
                                      Date.parse(other.nextRunAt));
-            const ranBetween = every > 0 &&
-              Math.abs(delta - every) < 1000 && earlier <= readEndedMs;
+            const intervals = every > 0 ? Math.round(delta / every) : 0;
+            const ranBetween = every > 0 && intervals >= 1 &&
+              Math.abs(delta - intervals * every) < 1000 &&
+              earlier <= readEndedMs;
             assert.ok(delta < 1000 || wholeSlots || ranBetween,
                       j.id + ": " + j.nextRunAt + " and " +
                       other.nextRunAt + " (the reads took " + readGapMs +
