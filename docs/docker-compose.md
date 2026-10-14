@@ -324,6 +324,9 @@ variable.
   service. An outage while it is running is recorded and survived.
 * **The health check is liveness only**: `GET /healthcheck` answers 200. It
   picks HTTP or HTTPS from `STS_HTTPS` and does not verify the certificate.
+  The process holding the listener answers it at once, never a request
+  worker, so a busy worker cannot make the probe time out; it says nothing
+  about the workers' health (Monitoring → Node Health does).
 
 ## Related
 
