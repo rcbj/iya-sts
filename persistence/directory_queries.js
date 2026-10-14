@@ -313,9 +313,10 @@ function page(realm, baseKey, afterKey, limit, options) {
 // SCHEMA_ROUTINES). So `count` and `countHolding` are one primary-key read
 // whatever the size of the directory, where each was a `count(*)` linear in
 // the realm's rows — a range of it since #630, which shards each counter
-// (up to COUNT_SHARDS rows a key) and has every reader `sum()` them. A base with no counter row has nothing under it: the
-// counters are started from one count of the table, under a lock, when the
-// triggers are created, and a missing row is a zero from then on.
+// (up to COUNT_SHARDS rows a key) and has every reader `sum()` them. A
+// base with no counter row has nothing under it: the counters are started
+// from one count of the table, under a lock, when the triggers are created,
+// and a missing row is a zero from then on.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE ATTRIBUTE NAMES A HOLDER QUESTION IS ASKED ABOUT, AND ONLY THOSE, ARE
