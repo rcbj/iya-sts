@@ -2810,8 +2810,21 @@ show hot, such a call is guarded** with bunyan's own check:
 and only where the argument costs something: a constant string, or one
 concatenated with a name already in hand, is left as it is, because the
 wrapper already makes it nearly free and a guard on every line would bury
-the rule the pairs exist for. The `Entering`/`Leaving` pairs themselves are
-never guarded or removed: the rule is unchanged, only its cost.
+the rule the pairs exist for. The `Entering`/`Leaving` pairs are never
+removed: the rule is unchanged, only its cost. Where a pair's own line
+carries a computed message it is guarded in place, and stays where the rule
+puts it.
+
+The sites guarded on 2026-10-14, each because the profiles (or the issue's
+list of hot paths) put it on a per-operation path and its argument allocates:
+`ldap_server.js`'s `ldapAddNow()` and `attributeSnapshot()` (an
+`Object.keys()` per add), `request_pool.js`'s `leastLoaded()` (a `map` and
+`join` over the pool per routed request) and `workerFor()` (a `split` per
+routed request), `admin_rbac.ts`'s `rolesOf()` (a `join` per console and API
+request) and `admin_stats.js`'s `buildUserRowsResolved()` (a second pass
+over every row). The remaining computed messages on those paths are a
+`.length` or a name already in hand, which costs a concatenation and nothing
+else.
 
 `tests/debug_level_cost.js` holds all of it, counting entries into bunyan's
 emitter through a getter on a logger's `_emit` (the emitter's first read).
