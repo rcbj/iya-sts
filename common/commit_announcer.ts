@@ -73,6 +73,10 @@ interface CommitAnnouncerDeps {
     // store, open and not restoring. Optional because a test double, or a
     // store that predates #351, has no such thing; absent means "no".
     answersAfterCommit?(): boolean;
+    // What was committed, by kind (#626): absent on a store that keeps no
+    // such counts, which every announcement then reports as "shared".
+    committedChangeMark?(): any;
+    committedChangesSince?(mark: any): { mark: any; windowedKeys: any };
   };
   // How an announcement reaches the front process. `WorkerChannel.send` in a
   // worker; a test passes a function that hands it to the pool directly.
@@ -103,11 +107,44 @@ class CommitAnnouncer {
   // when this worker came up, because that was written before the pool forked
   // it and every other process has it.
   private announcedWritten: number;
+  // WHERE THE LAST ANNOUNCEMENT'S KINDS WERE READ UP TO (#626), moved with
+  // `announcedWritten` by both announcements, so a row is classified once.
+  private changeMark: any;
 
   constructor(private readonly deps: CommitAnnouncerDeps) {
     deps.log.debug("Entering CommitAnnouncer.constructor().");
     this.announcedWritten = deps.persistence.changeRowsWritten();
+    this.changeMark =
+      typeof deps.persistence.committedChangeMark === 'function'
+        ? deps.persistence.committedChangeMark() : null;
     deps.log.debug("Leaving CommitAnnouncer.constructor().");
+  }
+
+  // -------------------------------------------------------------------
+  // WHAT THE ROWS AN ANNOUNCEMENT COVERS WERE (#626).
+  //
+  // `request_pool.js` lets a dispatched LDAP write skip the change-log pull
+  // when everything its worker has not caught up on is a WINDOWED directory
+  // row, handing it those keys instead — and only the process that wrote
+  // knows what it wrote. So an announcement carries `windowedKeys`, the
+  // realm and key of each windowed directory row committed since the last
+  // one, when that is all that was committed (bar the per-process tallies),
+  // and leaves it out otherwise: absent is "shared", and the pool sends the
+  // next write through the whole barrier. Read beside `written`, at the
+  // same moment, from counts the store moves at the same commit.
+  // -------------------------------------------------------------------
+  private kindsSince(): any[] | undefined {
+    const { log, persistence } = this.deps;
+    log.debug("Entering CommitAnnouncer.kindsSince().");
+    if (typeof persistence.committedChangesSince !== 'function' ||
+        !this.changeMark) {
+      log.debug("Leaving CommitAnnouncer.kindsSince(). Not kept.");
+      return undefined;
+    }
+    const since = persistence.committedChangesSince(this.changeMark);
+    this.changeMark = since.mark || this.changeMark;
+    log.debug("Leaving CommitAnnouncer.kindsSince().");
+    return Array.isArray(since.windowedKeys) ? since.windowedKeys : undefined;
   }
 
   // The one door an announcement leaves by: the channel to the front process,
@@ -160,7 +197,8 @@ class CommitAnnouncer {
     this.announcedWritten = Math.max(this.announcedWritten, committedNow);
     const tickets = Number(ticket) > 0 ? [Number(ticket)] : [];
     this.post({ committed: { wrote: wrote, through: this.finishedCount,
-                             tickets: tickets, answered: true } });
+                             tickets: tickets, answered: true,
+                             windowedKeys: this.kindsSince() } });
     log.debug("Leaving CommitAnnouncer.announceAnswered(). wrote=" + wrote);
     return true;
   }
@@ -332,7 +370,8 @@ class CommitAnnouncer {
       this.announcedWritten = Math.max(this.announcedWritten, committedNow);
       try {
         this.post({ committed: { wrote: wrote, through: through,
-                                 tickets: covered } });
+                                 tickets: covered,
+                                 windowedKeys: this.kindsSince() } });
       } catch (e) {
         // The front process has gone; this worker is about to be told so.
         log.debug("Caught in a callback in " +

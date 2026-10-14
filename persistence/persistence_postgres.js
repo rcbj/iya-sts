@@ -3106,6 +3106,81 @@ function create(options) {
   let written = 0;
   const uncommittedRows = new WeakMap();
 
+  // -------------------------------------------------------------------------
+  // AND WHAT KIND OF ROWS THEY WERE, COUNTED AT THE SAME COMMIT (#626).
+  //
+  // `request_pool.js` lets a dispatched LDAP write skip the read barrier's
+  // change-log pull when everything the target worker has not caught up on
+  // is a DIRECTORY row it can re-read by key — and only this process knows
+  // what it committed. So beside `written`, and moved at the same moment:
+  //
+  //   * `otherWritten`: committed rows of every kind but `directory` and
+  //     `minted-own`. Any of them makes the next announcement "shared", and
+  //     the pool sends the next write through the whole barrier.
+  //     `minted-own` is left out for the reason latestBlockingChangeSeq()
+  //     leaves it out of the barrier's own target: per-process tallies that
+  //     nobody's correctness waits on.
+  //   * `directoryWritten` and `committedDirectory`: every committed
+  //     directory row's realm and key, the last COMMITTED_DIRECTORY_LIMIT of
+  //     them kept. A reader whose mark has fallen off the front is told
+  //     "unknown" (null) and treats it as shared.
+  //
+  // Nothing here decides which keys are windowed — that is the directory's
+  // rule (`persistence.js`'s committedChangesSince() asks it).
+  // -------------------------------------------------------------------------
+  const COMMITTED_DIRECTORY_LIMIT = 4096;
+  let otherWritten = 0;
+  let directoryWritten = 0;
+  const committedDirectory = [];
+
+  // A transaction's rows, before COMMIT: how many, how many of another kind,
+  // and the directory rows' realm and key.
+  function freshUncommitted() {
+    log.debug("Entering freshUncommitted().");
+    log.debug("Leaving freshUncommitted().");
+    return { rows: 0, other: 0, directory: [] };
+  }
+
+  // Adds a batch of rows to `into` (a transaction's record), or — with
+  // `into` null — to the committed counts at once.
+  function classifyRows(into, rows) {
+    log.debug("Entering classifyRows().");
+    const target = into || freshUncommitted();
+    rows.forEach(function (row) {
+      target.rows += 1;
+      if (row.kind === 'directory') {
+        target.directory.push({ realm: String(row.realm || ''),
+                                key: String(row.key || '') });
+      } else if (row.kind !== 'minted-own') {
+        target.other += 1;
+      }
+    });
+    if (!into) {
+      commitClassified(target);
+    }
+    log.debug("Leaving classifyRows().");
+  }
+
+  // A transaction's rows, now COMMITTED: added to every count together.
+  function commitClassified(held) {
+    log.debug("Entering commitClassified().");
+    if (!held) {
+      log.debug("Leaving commitClassified(). Nothing held.");
+      return;
+    }
+    written += held.rows;
+    otherWritten += held.other;
+    held.directory.forEach(function (one) {
+      committedDirectory.push(one);
+      directoryWritten += 1;
+    });
+    if (committedDirectory.length > COMMITTED_DIRECTORY_LIMIT) {
+      committedDirectory.splice(0, committedDirectory.length -
+                                   COMMITTED_DIRECTORY_LIMIT);
+    }
+    log.debug("Leaving commitClassified().");
+  }
+
   function recordChanges(client, rows) {
     log.debug("Entering recordChanges().");
     if (!rows || !rows.length) {
@@ -3113,11 +3188,11 @@ function create(options) {
       return Promise.resolve();
     }
     if (uncommittedRows.has(client)) {
-      uncommittedRows.set(client, uncommittedRows.get(client) + rows.length);
+      classifyRows(uncommittedRows.get(client), rows);
     } else {
       // Not inside withTransaction(): every caller today is, and a statement
       // outside one commits as it runs, so it is counted as it is sent.
-      written += rows.length;
+      classifyRows(null, rows);
     }
     // ONE STATEMENT PER CHUNK. A directory flush can carry hundreds of moved
     // entries and a round trip each would make the log more expensive than
@@ -3275,7 +3350,7 @@ function create(options) {
       // see `written` above. Keyed by the client, which is what
       // recordChanges() is handed, and removed on both endings so that a
       // client the pool hands to the next transaction starts at nothing.
-      uncommittedRows.set(client, 0);
+      uncommittedRows.set(client, freshUncommitted());
       return client.query('BEGIN').then(function () {
         // THE FENCE FIRST, before the transaction has written anything. See
         // `fence` above.
@@ -3284,7 +3359,7 @@ function create(options) {
         return fn(client);
       }).then(function (result) {
         return client.query('COMMIT').then(function () {
-          written += uncommittedRows.get(client) || 0;
+          commitClassified(uncommittedRows.get(client));
           uncommittedRows.delete(client);
           unguard();
           client.release();
@@ -4666,6 +4741,32 @@ function create(options) {
       log.debug("Entering changeRowsWritten().");
       log.debug("Leaving changeRowsWritten().");
       return written;
+    },
+
+    // WHERE THIS PROCESS'S COMMITTED ROWS STAND, BY KIND (#626): a mark to
+    // hand back to committedSince(). See `otherWritten` above.
+    committedMark: function () {
+      log.debug("Entering committedMark().");
+      log.debug("Leaving committedMark().");
+      return { other: otherWritten, directory: directoryWritten };
+    },
+
+    // What was committed since `mark`: whether any row of another kind was
+    // (`other`), and the directory rows' realm and key — null when some of
+    // them are no longer kept, which a caller must read as "unknown".
+    committedSince: function (mark) {
+      log.debug("Entering committedSince().");
+      const now = { other: otherWritten, directory: directoryWritten };
+      const from = mark || now;
+      const kept = directoryWritten - committedDirectory.length;
+      const directory = Number(from.directory) < kept ? null
+        : committedDirectory.slice(Number(from.directory) - kept)
+          .map(function (one) {
+            return { realm: one.realm, key: one.key };
+          });
+      log.debug("Leaving committedSince().");
+      return { mark: now, other: otherWritten > Number(from.other),
+               directory: directory };
     },
 
     latestBlockingChangeSeq: function () {
