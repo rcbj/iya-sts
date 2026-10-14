@@ -7191,7 +7191,8 @@ class Credentials {
       log.debug('Leaving Credentials.deviceStore(). hasHook ' + offered);
       return offered;
     }
-    const empty = operation === 'listDeviceEntries' ? [] :
+    const empty = (operation === 'listDeviceEntries' ||
+                   operation === 'deviceEntriesOwnedBy') ? [] :
       (operation === 'personDnOf' || operation === 'applicationDnOf') ? '' :
       (operation === 'ownerOf' || operation === 'deviceEntryByIndex')
         ? null : false;

@@ -217,25 +217,39 @@ function byMail(realm, mail, limit) {
 
 /**
  * The entries holding exactly this value of an attribute (case as stored),
- * through the GIN index over `attrs`. For the lookups that compare a value
- * as written — a DID, a SPIFFE ID, a federation link.
+ * through the GIN index over `value_keys`. For the lookups that compare a
+ * value as written — a DID, a SPIFFE ID, a federation link, a device's key
+ * thumbprint or owner.
+ *
+ * `parentKey`, when given, keeps only the entries directly under that DN
+ * (#636): a device's `owner` is also a group's and a service account's, and
+ * the devices of an owner are the rows under `ou=devices` — so the limit
+ * cannot be spent on the others first.
  *
  * @param realm - the realm id
  * @param attribute - the attribute name, lower-cased as the store holds it
  * @param value - the value
  * @param limit - at most this many rows
+ * @param parentKey - optional: the normalised DN the entries are directly
+ *   under
  * @returns the statement
  */
-function byAttribute(realm, attribute, value, limit) {
+function byAttribute(realm, attribute, value, limit, parentKey) {
   log.debug("Entering byAttribute().");
   const name = String(attribute).toLowerCase();
+  const values = [String(realm),
+                  JSON.stringify([keyed(value, 'attr:' + name, false)]),
+                  pageSize(limit)];
+  let under = '';
+  if (parentKey) {
+    values.push(String(parentKey));
+    under = 'parent_key = $4 AND ';
+  }
   log.debug("Leaving byAttribute().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND value_keys @> $2::jsonb ORDER BY dn_key ' +
-                 'LIMIT $3',
-           values: [String(realm),
-                    JSON.stringify([keyed(value, 'attr:' + name, false)]),
-                    pageSize(limit)] };
+                 'realm = $1 AND ' + under + 'value_keys @> $2::jsonb ' +
+                 'ORDER BY dn_key LIMIT $3',
+           values: values };
 }
 
 // THE COLUMN EACH `equalUnder()` KIND READS (#320): only the two whose index
