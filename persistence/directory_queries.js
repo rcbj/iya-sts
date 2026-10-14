@@ -451,6 +451,96 @@ function namesUnder(realm, baseKey, afterKey, limit) {
                     pageSize(limit), suffixLength(baseKey)] };
 }
 
+// ---------------------------------------------------------------------------
+// THE WHOLE REALM, A PAGE AT A TIME, FOR `/admin/ldap/directory` (#616).
+//
+// That page lists EVERY entry of a realm — the resident containers and the
+// windowed ones alike — and the store holds all of them, so one statement
+// over the realm answers a page in the store's key order where the page used
+// to walk every row through the synchronous bridge to draw twenty-five.
+// What it can push down, it does: the ORIGIN (a plain column), the ORDER (the
+// primary key, `(realm, dn_key)`), the page (a key cursor, or an OFFSET for
+// a numbered page — linear in the offset, in the database and off the
+// service's event loop) and the counts. What it cannot is the page's `q`,
+// which matches attribute VALUES the database holds sealed
+// (`directory_codec.js`): the caller scans a bounded number of rows for it
+// and says so.
+//
+// An origin of `unstated` is an entry with none, which is how the page names
+// it (`directoryRowOf()`).
+// ---------------------------------------------------------------------------
+// The origin condition, and the value it binds (none for `unstated`).
+function originClause(origin, at) {
+  log.debug("Entering originClause().");
+  const wanted = origin === undefined || origin === null ? '' :
+    String(origin);
+  if (!wanted) {
+    log.debug("Leaving originClause(). Any origin.");
+    return { text: '', values: [] };
+  }
+  if (wanted === 'unstated') {
+    log.debug("Leaving originClause(). None stated.");
+    return { text: ' AND (origin IS NULL OR origin = \'\')', values: [] };
+  }
+  log.debug("Leaving originClause().");
+  return { text: ' AND origin = $' + at, values: [wanted] };
+}
+
+/**
+ * One page of a whole realm's entries in key order, after `afterKey` and
+ * past `offset` rows, optionally of one origin.
+ *
+ * @param realm - the realm id
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @param options - `offset` (rows to skip after the cursor), `origin`
+ * @returns the statement
+ */
+function realmPage(realm, afterKey, limit, options) {
+  log.debug("Entering realmPage().");
+  const o = options || {};
+  const offset = Math.max(0, Math.floor(Number(o.offset) || 0));
+  const origin = originClause(o.origin, 5);
+  log.debug("Leaving realmPage().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND dn_key > $2' + origin.text + ' ORDER BY ' +
+                 'dn_key LIMIT $3 OFFSET $4',
+           values: [String(realm), String(afterKey || ''), pageSize(limit),
+                    offset].concat(origin.values) };
+}
+
+/**
+ * How many entries a realm holds, optionally of one origin.
+ *
+ * @param realm - the realm id
+ * @param origin - an origin, `unstated`, or '' for any
+ * @returns the statement; its one row's `n` is the count
+ */
+function realmCount(realm, origin) {
+  log.debug("Entering realmCount().");
+  const clause = originClause(origin, 2);
+  log.debug("Leaving realmCount().");
+  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
+                 'WHERE realm = $1' + clause.text,
+           values: [String(realm)].concat(clause.values) };
+}
+
+/**
+ * How many entries of a realm came from each origin, `unstated` for none:
+ * one pass, `GROUP BY`.
+ *
+ * @param realm - the realm id
+ * @returns the statement; its rows are `{ origin, n }`
+ */
+function originCounts(realm) {
+  log.debug("Entering originCounts().");
+  log.debug("Leaving originCounts().");
+  return { text: 'SELECT COALESCE(NULLIF(origin, \'\'), \'unstated\') AS ' +
+                 'origin, count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 GROUP BY 1',
+           values: [String(realm)] };
+}
+
 /**
  * Every entry EXCEPT those strictly under the given containers, for the
  * restore of a worker that holds those containers as a window.
@@ -489,8 +579,9 @@ function rowOf(row) {
 
 /**
  * The answer to a named query from its result rows: rows in the directory's
- * shape, except `count` (a number), `countHolding` (`{ n, holding }`) and
- * `hasChild` (a boolean).
+ * shape, except `count` and `realmCount` (a number), `countHolding`
+ * (`{ n, holding }`), `originCounts` (`{ origin: n }`) and `hasChild` (a
+ * boolean).
  *
  * @param name - the query's name
  * @param rows - the result rows
@@ -499,7 +590,7 @@ function rowOf(row) {
 function answerOf(name, rows) {
   log.debug("Entering answerOf().");
   const list = Array.isArray(rows) ? rows : [];
-  if (name === 'count') {
+  if (name === 'count' || name === 'realmCount') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
   }
@@ -507,6 +598,17 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf(). Two counts.");
     return { n: Number((list[0] || {}).n || 0),
              holding: Number((list[0] || {}).holding || 0) };
+  }
+  if (name === 'originCounts') {
+    // AN OBJECT, NOT AN ARRAY: `directory_codec.openAnswer()` opens the
+    // entries of an array answer and passes anything else through, and
+    // these rows hold no entry.
+    const counted = {};
+    list.forEach(function (row) {
+      counted[String(row.origin)] = Number(row.n || 0);
+    });
+    log.debug("Leaving answerOf(). Counts by origin.");
+    return counted;
   }
   if (name === 'hasChild' || name === 'anyWithAttribute') {
     log.debug("Leaving answerOf(). A yes or a no.");
@@ -548,6 +650,9 @@ const QUERIES = {
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
+  realmPage: realmPage,
+  realmCount: realmCount,
+  originCounts: originCounts,
   residentOnly: residentOnly
 };
 
@@ -593,5 +698,8 @@ module.exports = {
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
+  realmPage: realmPage,
+  realmCount: realmCount,
+  originCounts: originCounts,
   residentOnly: residentOnly
 };

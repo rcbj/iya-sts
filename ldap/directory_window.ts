@@ -1000,6 +1000,251 @@ class DirectoryWindow {
     return out;
   }
 
+  // ---------------------------------------------------------------------
+  // THE STORE ASKED WITHOUT HOLDING THE EVENT LOOP (#616, 2026-10-14).
+  //
+  // `walk()` and the request paths built on it — `/admin-api/ldap/directory`,
+  // an LDAP search the index could not narrow, `/admin-api/users`' first
+  // names — paged every person out of the store through the synchronous
+  // bridge on a request worker's event loop: 38–45 s for one row of the
+  // directory page at 200,000 people, every request dispatched to that
+  // worker waiting behind it. rcbj's direction on #616: fewer whole scans,
+  // and what must read many rows reads them ASYNCHRONOUSLY. These are
+  // `holdersAsync()`'s arrangement for the rest: the driver's read pool
+  // through the bridge's `queryAsync()` (a bridge without it — a test's — is
+  // asked synchronously, one statement a page), the event loop given back
+  // between pages, each row taken as the store answered it unless this
+  // process holds a newer one, nothing handed out or put in the LRU.
+  // ---------------------------------------------------------------------
+  /**
+   * Asks the store one of `directory_queries.js`'s questions, on the
+   * driver's read pool where the bridge offers it.
+   *
+   * @param name - the query's name
+   * @param args - its arguments
+   * @returns a promise of the answer (null before `attach()`)
+   */
+  async askAsync(name: string, args: unknown[]): Promise<unknown> {
+    log.debug("Entering DirectoryWindow.askAsync(). " + name);
+    const bridge = this.bridge;
+    if (!bridge) {
+      log.debug("Leaving DirectoryWindow.askAsync(). No store yet.");
+      return null;
+    }
+    const answer = typeof bridge.queryAsync === 'function'
+      ? await bridge.queryAsync(name, args)
+      : bridge.query(name, args);
+    log.debug("Leaving DirectoryWindow.askAsync().");
+    return answer;
+  }
+
+  // The event loop given back: what runs between two pages.
+  private static yieldToLoop(): Promise<void> {
+    return new Promise<void>(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+
+  // A row the store answered, as this process holds it: what it holds when
+  // it holds the key (a local change wins; null for a delete made here), the
+  // row otherwise. Nothing is handed out or put in the LRU.
+  private heldOrRow(realmId: string, row: Row): Entry | null {
+    const ck = slotKey(realmId, row.key);
+    const slot = this.lru.peek(ck) || this.touched.get(ck) ||
+      this.liveGhost(ck) || this.slotFromRow(realmId, row);
+    return slot.entry;
+  }
+
+  // The entries created here under `container` and at or under `base` that
+  // the store has not yet answered with (`seen`), as `walk()` adds them.
+  private localUnder(realmId: string, container: string, base: string,
+                     seen: Set<string>): Array<[string, Entry]> {
+    const local: Array<[string, Entry]> = [];
+    this.dirty.forEach((ck) => {
+      const cut = ck.indexOf('\n');
+      const key = ck.slice(cut + 1);
+      if (ck.slice(0, cut) !== realmId || seen.has(key) ||
+          !(key.length > container.length + 1 &&
+            key.endsWith(',' + container)) ||
+          !DirectoryWindow.within(key, base)) {
+        return;
+      }
+      const slot = this.lru.peek(ck);
+      if (slot && slot.entry) {
+        local.push([key, slot.entry]);
+      }
+    });
+    return local;
+  }
+
+  /**
+   * `walk()`, read-only, with every page asked asynchronously and the event
+   * loop given back between pages: a realm's entries at or under a base,
+   * lazily, so a consumer that stops (a size or time limit) pages no
+   * further.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN, or '' for the whole realm
+   * @param counter - optional; `pages` and `rows` are added to as the store
+   *   is asked, for a caller (or a test) that reports what it read
+   * @returns an async iterator of `[key, entry]`
+   */
+  async *walkAsync(realmId: string, base: string,
+                   counter?: { pages: number; rows: number }):
+      AsyncGenerator<[string, Entry]> {
+    log.debug("Entering DirectoryWindow.walkAsync(). " + realmId + ' ' +
+              base);
+    const resident = Array.from(this.residentOf(realmId).entries());
+    let visited = 0;
+    for (const pair of resident) {
+      if (DirectoryWindow.within(pair[0], base)) {
+        yield pair;
+      }
+      visited += 1;
+      if (visited % PAGE === 0) {
+        await DirectoryWindow.yieldToLoop();
+      }
+    }
+    for (const container of this.deps.windowedContainers(realmId)) {
+      // `walk()`'s three cases: all of the container, the base's own
+      // subtree inside it, or none of it.
+      let from = '';
+      let self = false;
+      if (DirectoryWindow.within(container, base)) {
+        from = container;
+      } else if (base.endsWith(',' + container)) {
+        from = base;
+        self = true;
+      } else {
+        continue;
+      }
+      const seen = new Set<string>();
+      let after = '';
+      while (this.bridge) {
+        const rows = await this.askAsync('page', [realmId, from, after, PAGE,
+                                                  { self: self }]) as Row[];
+        if (counter) {
+          counter.pages += 1;
+          counter.rows += rows ? rows.length : 0;
+        }
+        if (!rows || !rows.length) {
+          break;
+        }
+        for (const row of rows) {
+          seen.add(row.key);
+          const entry = this.heldOrRow(realmId, row);
+          if (entry) {
+            yield [row.key, entry];
+          }
+        }
+        after = rows[rows.length - 1].key;
+        if (rows.length < PAGE) {
+          break;
+        }
+        await DirectoryWindow.yieldToLoop();
+      }
+      for (const pair of this.localUnder(realmId, container, base, seen)) {
+        yield pair;
+      }
+    }
+    log.debug("Leaving DirectoryWindow.walkAsync().");
+  }
+
+  /**
+   * The windowed entries strictly under a base holding any of some object
+   * classes (`classesUnder`, the GIN index over `class_keys`), asked once
+   * and asynchronously, as this process holds them: `findWindowed()`'s
+   * answer for a caller that can wait — an LDAP search for groups.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN (a windowed container)
+   * @param classes - the object classes, lower-cased
+   * @param predicate - the service's own rule, asked of each candidate
+   * @returns a promise of `[{ key, entry }]`, local additions last
+   */
+  async classesUnderAsync(realmId: string, base: string, classes: string[],
+                          predicate: (entry: Entry, key: string) => boolean):
+      Promise<Array<{ key: string; entry: Entry }>> {
+    log.debug("Entering DirectoryWindow.classesUnderAsync().");
+    const out: Array<{ key: string; entry: Entry }> = [];
+    const seen = new Set<string>();
+    const rows = (await this.askAsync('classesUnder',
+                                      [realmId, base, classes]) as Row[]) ||
+      [];
+    rows.forEach((row) => {
+      if (seen.has(row.key) || !this.isWindowed(realmId, row.key)) {
+        return;
+      }
+      seen.add(row.key);
+      const entry = this.heldOrRow(realmId, row);
+      if (entry && predicate(entry, row.key)) {
+        out.push({ key: row.key, entry: entry });
+      }
+    });
+    this.dirty.forEach((ck) => {
+      const cut = ck.indexOf('\n');
+      const key = ck.slice(cut + 1);
+      if (ck.slice(0, cut) !== realmId || seen.has(key) ||
+          !DirectoryWindow.within(key, base) || key === base) {
+        return;
+      }
+      const slot = this.lru.peek(ck);
+      if (slot && slot.entry && predicate(slot.entry, key)) {
+        out.push({ key: key, entry: slot.entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.classesUnderAsync(). " + out.length +
+              '.');
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // ONE PAGE OF THE WHOLE REALM, FOR `/admin/ldap/directory` (#616).
+  //
+  // The store holds every entry of a realm, resident and windowed, so a page
+  // of all of them in key order is one statement (`realmPage`), with the
+  // origin filter and the offset pushed down. Each row is answered as this
+  // process holds it: a RESIDENT key from the resident Map (current here,
+  // and absent when deleted here), a windowed key as `heldOrRow()` says. An
+  // entry created here and not yet flushed is not in the store's page and
+  // is not here — the next flush puts it there, as `pageAfter()` says of
+  // its own pages.
+  // ---------------------------------------------------------------------
+  /**
+   * One page of a realm's entries in the store's key order, asked
+   * asynchronously.
+   *
+   * @param realmId - the realm id
+   * @param afterKey - the last key of the previous page, or ''
+   * @param limit - the page size (at most 1,000)
+   * @param options - `offset` (rows past the cursor to skip) and `origin`
+   * @returns a promise of `{ rows: [{ key, entry }], more, asked }` —
+   *   `asked` how many rows the store answered, `more` when that was a full
+   *   page
+   */
+  async realmPageAsync(realmId: string, afterKey: string, limit: number,
+                       options?: { offset?: number; origin?: string }):
+      Promise<{ rows: Array<{ key: string; entry: Entry }>; more: boolean;
+                asked: number }> {
+    log.debug("Entering DirectoryWindow.realmPageAsync().");
+    const asked = (await this.askAsync('realmPage',
+      [realmId, String(afterKey || ''), limit, options || {}]) as Row[]) ||
+      [];
+    const resident = this.residentOf(realmId);
+    const out: Array<{ key: string; entry: Entry }> = [];
+    asked.forEach((row) => {
+      const entry = this.isWindowed(realmId, row.key)
+        ? this.heldOrRow(realmId, row)
+        : resident.get(row.key) || null;
+      if (entry) {
+        out.push({ key: row.key, entry: entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.realmPageAsync(). " + out.length +
+              ' of ' + asked.length + '.');
+    return { rows: out, more: asked.length >= limit, asked: asked.length };
+  }
+
   /**
    * Whether any windowed entry of a realm holds an attribute: a change made
    * here first, then the store.
