@@ -198,11 +198,19 @@ module.exports = {
     const g = spiedLogger('info');
     const unbound = g.logger.debug;
     let threw = null;
+    // Bunyan's warning prints `util.inspect(this)` — the whole global object
+    // here — so it is kept out of the run's output while the call is made.
+    const write = process.stderr.write;
+    process.stderr.write = function () {
+      return true;
+    };
     try {
       unbound('unbound');
     } catch (err) {
       log.debug('Caught in run(): ' + ((err && err.message) || err));
       threw = err;
+    } finally {
+      process.stderr.write = write;
     }
     t.equal(threw, null, 'G: an unbound debug call does not throw');
     log.debug('Leaving run().');
