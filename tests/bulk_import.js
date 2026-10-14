@@ -243,23 +243,26 @@ function statements(t) {
   log.debug("Entering statements().");
   t.log.info('=== C. the statements ===');
   const s = importer().STATEMENTS;
-  t.check(/WHERE NOT EXISTS \(SELECT 1 FROM sts_ldap_entries e WHERE e\.realm = \$1 AND e\.dn_key = s\.k\)/
-    .test(s.INSERT), 'C1. the insert is guarded by the DN');
-  t.check(/e\.parent_key = \$2 AND e\.name_keys @> jsonb_build_array\(d\.d::text\)/
-    .test(s.INSERT) && /e\.parent_key = \$2 AND e\.rdn_value = n\.n/
-    .test(s.INSERT), 'C2. and by both of byName()\'s lookups, for every ' +
-          'name the record proposes');
+  t.check(/WHERE realm = \$1 AND dn_key = ANY\(\$2::text\[\]\)/
+    .test(s.PRESENT_KEYS), 'C1. the batch is checked by DN, one statement');
+  t.check(/parent_key = \$2 AND rdn_value = ANY\(\$3::text\[\]\)/
+    .test(s.HELD_RDNS) &&
+          /parent_key = \$2 AND name_keys @> ANY\(\$3::jsonb\[\]\)/
+            .test(s.HELD_NAME_KEYS),
+          'C2. and by both of byName()\'s lookups, for every name, one ' +
+          'statement each and no correlated EXISTS');
   t.check(/ON CONFLICT \(realm, dn_key\) DO NOTHING RETURNING dn_key/
     .test(s.INSERT) && !/parent_key,|rdn_value,/.test(
-    s.INSERT.split('SELECT')[0]),
-          'C3. it returns what it inserted, and never writes a generated ' +
-          'column');
+    s.INSERT.split('SELECT')[0]) && !/EXISTS/.test(s.INSERT),
+          'C3. the insert returns what it inserted, and never writes a ' +
+          'generated column');
+  t.check(/SHARE ROW EXCLUSIVE/.test(s.LOCK),
+          'C4. the check and the insert are one transaction holding the ' +
+          'table against other writers');
   const byName = require('../persistence/directory_queries')
     .byName('r', 'p', 'n').text;
-  t.check(/name_keys @> \$3::jsonb OR rdn_value = \$4/.test(byName) &&
-          /e\.name_keys @> jsonb_build_array\(n\.d::text\)/.test(
-            s.CLASSIFY) && /e\.rdn_value = n\.n/.test(s.CLASSIFY),
-          'C4. the classification asks what byName() asks');
+  t.check(/parent_key = \$2 AND \(name_keys @> \$3::jsonb OR rdn_value = \$4\)/
+    .test(byName), 'C5. which is what byName() asks of one name');
   log.debug("Leaving statements().");
 }
 

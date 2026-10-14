@@ -290,54 +290,110 @@ function storedOf(candidate, now, language, uuid) {
 // image has none) or a staging table (the application role may not CREATE).
 // ---------------------------------------------------------------------------
 
-// The name lookup of `directory_queries.byName()`, for a name `n` and its
-// keyed digest `d` beside it: two EXISTS so each rides its own index (the
-// GIN over `name_keys`, the btree over `(realm, parent_key, rdn_value)`).
-const NAME_HELD =
-  '(EXISTS (SELECT 1 FROM sts_ldap_entries e WHERE e.realm = $1 AND ' +
-  'e.parent_key = $2 AND e.name_keys @> jsonb_build_array(%d::text)) OR ' +
-  'EXISTS (SELECT 1 FROM sts_ldap_entries e WHERE e.realm = $1 AND ' +
-  'e.parent_key = $2 AND e.rdn_value = %n))';
+// THE THREE HALVES OF THE CHECK, each ONE statement for the whole batch and
+// each on its own index — the question `directory_queries.byName()` asks of
+// one name, asked of thousands: the DN (the primary key), the RDN value (the
+// btree over `(realm, parent_key, rdn_value)`) and the `uid` digest (the GIN
+// over `name_keys`, an `@> ANY()` the bitmap scan answers one probe a
+// digest). The answers are matched in JavaScript.
+//
+// **NOT ONE CORRELATED EXISTS A ROW, WHICH IS WHAT THIS WAS FIRST AND WHAT
+// MADE IT QUADRATIC.** The planner prices `name_keys @> jsonb_build_array(x)`
+// at a default selectivity (hundreds of rows a probe), and for a batch of
+// thousands it chose to scan the table once a row instead: a 5,000-row batch
+// took 79 s against 30,000 entries. The `ANY()` forms leave it nothing to
+// choose.
+const PRESENT_KEYS =
+  'SELECT dn_key FROM sts_ldap_entries WHERE realm = $1 AND ' +
+  'dn_key = ANY($2::text[])';
+const HELD_RDNS =
+  'SELECT rdn_value FROM sts_ldap_entries WHERE realm = $1 AND ' +
+  'parent_key = $2 AND rdn_value = ANY($3::text[])';
+const HELD_NAME_KEYS =
+  'SELECT name_keys FROM sts_ldap_entries WHERE realm = $1 AND ' +
+  'parent_key = $2 AND name_keys @> ANY($3::jsonb[])';
 
-function nameHeld(nameExpr, digestExpr) {
-  log.debug("Entering nameHeld().");
-  log.debug("Leaving nameHeld().");
-  return NAME_HELD.replace('%d', digestExpr).replace('%n', nameExpr);
-}
-
-// Which candidates are already there, and which name one somebody else
-// holds. $3 index, $4 dn_key; $5 index, $6 name, $7 digest (one row a name).
-const CLASSIFY =
-  'SELECT \'present\' AS why, c.i AS i FROM unnest($3::int[], $4::text[]) ' +
-  'AS c(i, k) WHERE EXISTS (SELECT 1 FROM sts_ldap_entries e WHERE ' +
-  'e.realm = $1 AND e.dn_key = c.k) ' +
-  'UNION ALL SELECT DISTINCT \'taken\', n.i FROM unnest($5::int[], ' +
-  '$6::text[], $7::text[]) AS n(i, n, d) WHERE ' + nameHeld('n.n', 'n.d');
-
-// Who holds a name, for the report.
+// Who holds a name, for the report (the first twenty only).
 const HOLDER =
   'SELECT e.dn FROM sts_ldap_entries e WHERE e.realm = $1 AND ' +
   'e.parent_key = $2 AND (e.name_keys @> jsonb_build_array($3::text) OR ' +
   'e.rdn_value = $4) ORDER BY e.dn_key LIMIT 1';
 
-// The insert, guarded again by the DN and by every name, so it is correct
-// whatever the classification answered. $3 the origin.
+// The batch's transaction holds the table against every other WRITER (reads
+// go on) from before the check to the commit, so what the check found free
+// is still free when the insert runs: no correlated guard is needed in the
+// insert, and none would be cheap (above).
+const LOCK = 'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';
+
+// The insert. $2 the origin. `ON CONFLICT` and the count of what it returned
+// are the last word on the DN.
 const INSERT =
   'INSERT INTO sts_ldap_entries (realm, dn_key, dn, attrs, origin, ' +
   'created_at, modified_at, name_keys, mail_keys, uuid_keys, class_keys, ' +
   'value_keys, attr_names, dek_keys) ' +
-  'SELECT $1, s.k, s.dn, s.a::jsonb, $3, s.t, s.t, s.nk::jsonb, ' +
+  'SELECT $1, s.k, s.dn, s.a::jsonb, $2, s.t, s.t, s.nk::jsonb, ' +
   's.mk::jsonb, s.uk::jsonb, s.ck::jsonb, s.vk::jsonb, s.an::jsonb, ' +
-  's.dk::jsonb FROM unnest($4::text[], $5::text[], $6::text[], ' +
-  '$7::text[], $8::text[], $9::text[], $10::text[], $11::text[], ' +
-  '$12::text[], $13::text[], $14::text[], $15::text[], $16::text[]) AS ' +
-  's(k, dn, a, t, nk, mk, uk, ck, vk, an, dk, names, digests) ' +
-  'WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_entries e WHERE e.realm = $1 ' +
-  'AND e.dn_key = s.k) AND NOT EXISTS (SELECT 1 FROM ' +
-  'jsonb_array_elements_text(s.names::jsonb) WITH ORDINALITY AS n(n, o) ' +
-  'JOIN jsonb_array_elements_text(s.digests::jsonb) WITH ORDINALITY AS ' +
-  'd(d, o) USING (o) WHERE ' + nameHeld('n.n', 'd.d') + ') ' +
+  's.dk::jsonb FROM unnest($3::text[], $4::text[], $5::text[], ' +
+  '$6::text[], $7::text[], $8::text[], $9::text[], $10::text[], ' +
+  '$11::text[], $12::text[], $13::text[]) AS ' +
+  's(k, dn, a, t, nk, mk, uk, ck, vk, an, dk) ' +
   'ON CONFLICT (realm, dn_key) DO NOTHING RETURNING dn_key';
+
+/**
+ * Which of a batch's candidates are present (their DN is there) and which
+ * propose a name another entry holds, asked in three statements.
+ *
+ * @param db - a client inside the batch's transaction
+ * @param realmId - the realm
+ * @param usersKey - its `ou=users`, normalised
+ * @param fresh - the candidates, each with `c.dnKey`, `c.names` and
+ *   `digests`
+ * @returns a promise of `{ present: Set<index>, taken: Set<index> }`
+ */
+async function classify(db, realmId, usersKey, fresh) {
+  log.debug("Entering classify(). " + fresh.length);
+  const out = { present: new Set(), taken: new Set() };
+  if (!fresh.length) {
+    log.debug("Leaving classify(). Nothing.");
+    return out;
+  }
+  const names = [];
+  const digests = [];
+  fresh.forEach(function (one) {
+    one.c.names.forEach(function (n, j) {
+      names.push(n);
+      digests.push(JSON.stringify([one.digests[j]]));
+    });
+  });
+  const keys = await db.query(PRESENT_KEYS, [realmId, fresh.map(
+    function (one) { return one.c.dnKey; })]);
+  const rdns = await db.query(HELD_RDNS, [realmId, usersKey, names]);
+  const held = await db.query(HELD_NAME_KEYS, [realmId, usersKey, digests]);
+  const presentKeys = new Set((keys.rows || []).map(function (row) {
+    return row.dn_key;
+  }));
+  const heldNames = new Set((rdns.rows || []).map(function (row) {
+    return row.rdn_value;
+  }));
+  const heldDigests = new Set();
+  (held.rows || []).forEach(function (row) {
+    (row.name_keys || []).forEach(function (one) {
+      heldDigests.add(one);
+    });
+  });
+  fresh.forEach(function (one, i) {
+    if (presentKeys.has(one.c.dnKey)) {
+      out.present.add(i);
+    } else if (one.c.names.some(function (n, j) {
+      return heldNames.has(n) || heldDigests.has(one.digests[j]);
+    })) {
+      out.taken.add(i);
+    }
+  });
+  log.debug("Leaving classify(). " + out.present.size + " present, " +
+            out.taken.size + " taken.");
+  return out;
+}
 
 // The realm's own count, the one `ldap.maxEntries` is read against in a
 // windowed process (`capCount()`): the #618 counter row of its whole tree.
@@ -455,117 +511,109 @@ async function importFile(options) {
       });
       fresh.push(one);
     }
-    // AGAINST THE STORE, before anything is sealed: a re-run seals nothing.
-    const flat = { i: [], n: [], d: [] };
-    fresh.forEach(function (one, i) {
-      one.c.names.forEach(function (n, j) {
-        flat.i.push(i);
-        flat.n.push(n);
-        flat.d.push(one.digests[j]);
-      });
-    });
-    const classified = fresh.length ? await o.db.query(CLASSIFY, [
-      realmId, usersKey, fresh.map(function (one, i) { return i; }),
-      fresh.map(function (one) { return one.c.dnKey; }),
-      flat.i, flat.n, flat.d]) : { rows: [] };
-    const present = new Set();
-    const taken = new Set();
-    (classified.rows || []).forEach(function (row) {
-      (row.why === 'present' ? present : taken).add(Number(row.i));
-    });
-    const free = [];
-    for (let i = 0; i < fresh.length; i++) {
-      const one = fresh[i];
-      if (present.has(i)) {
-        report.present += 1;
-      } else if (taken.has(i)) {
-        report.taken += 1;
-        let holder = '';
-        if (report.examples.length < EXAMPLES) {
-          for (let j = 0; j < one.c.names.length && !holder; j++) {
-            const h = await o.db.query(HOLDER, [realmId, usersKey,
-                                                one.digests[j],
-                                                one.c.names[j]]);
-            holder = ((h.rows || [])[0] || {}).dn || '';
-          }
-        }
-        example(one.r, 'STS-LDAP-0160', 'a username of ' + one.c.dn +
-                ' is held by ' + (holder || 'another entry'));
-      } else {
-        free.push(one);
-      }
-    }
+    // AGAINST THE STORE, IN THE BATCH'S TRANSACTION, before anything is
+    // sealed: a re-run seals nothing, and the lock keeps the answer true
+    // until the commit.
+    const client = await o.db.connect();
     let cut = false;
-    if (max > 0 && count + free.length > max) {
-      free.length = Math.max(0, max - count);
-      cut = true;
-    }
-    if (free.length) {
-      // SEALED IN THE REALM, as the flush seals: `sealing()` follows the
-      // ambient realm's mode.
-      const cols = { k: [], dn: [], a: [], t: [], nk: [], mk: [], uk: [],
-                     ck: [], vk: [], an: [], dk: [], names: [], digests: [] };
-      const now = generalizedTime(o.now ? o.now() : new Date());
-      o.seal(function () {
-        for (const one of free) {
-          const stored = storedOf(one.c, now, o.language, o.uuid());
-          const attrs = stored.attributes;
-          const sealed = o.codec.sealAttributes(realmId, one.c.dnKey, attrs);
-          if (o.sealing && typeof sealed !== 'string') {
-            throw refusal('STS-LDAP-0158', 'the store seals its directory ' +
-                          'and nothing was sealed for ' + one.c.dn + ': no ' +
-                          'key-encryption key or no directory data key is ' +
-                          'held. Nothing of this batch was written.');
+    try {
+      await client.query('BEGIN');
+      await client.query(LOCK);
+      // THE INDEXES, NOT A SCAN: the planner prices `name_keys @> ANY()`
+      // per row as one comparison, and on a table of tens of thousands it
+      // chose a parallel scan doing thousands of jsonb containments a row
+      // (4 s a batch at 50,000 entries). Local to the batch's transaction.
+      await client.query('SET LOCAL enable_seqscan = off');
+      const found = await classify(client, realmId, usersKey, fresh);
+      const free = [];
+      for (let i = 0; i < fresh.length; i++) {
+        const one = fresh[i];
+        if (found.present.has(i)) {
+          report.present += 1;
+        } else if (found.taken.has(i)) {
+          report.taken += 1;
+          let holder = '';
+          if (report.examples.length < EXAMPLES) {
+            for (let j = 0; j < one.c.names.length && !holder; j++) {
+              const h = await client.query(HOLDER, [realmId, usersKey,
+                                                    one.digests[j],
+                                                    one.c.names[j]]);
+              holder = ((h.rows || [])[0] || {}).dn || '';
+            }
           }
-          const index = o.codec.index(attrs);
-          cols.k.push(one.c.dnKey);
-          cols.dn.push(stored.dn);
-          cols.a.push(JSON.stringify(sealed));
-          cols.t.push(now);
-          cols.nk.push(JSON.stringify(index.nameKeys));
-          cols.mk.push(JSON.stringify(index.mailKeys));
-          cols.uk.push(JSON.stringify(index.uuidKeys));
-          cols.ck.push(JSON.stringify(index.classKeys));
-          cols.vk.push(JSON.stringify(index.valueKeys));
-          cols.an.push(JSON.stringify(index.attrNames));
-          cols.dk.push(JSON.stringify(o.codec.dekKeys(attrs, sealed)));
-          cols.names.push(JSON.stringify(one.c.names));
-          cols.digests.push(JSON.stringify(one.digests));
+          example(one.r, 'STS-LDAP-0160', 'a username of ' + one.c.dn +
+                  ' is held by ' + (holder || 'another entry'));
+        } else {
+          free.push(one);
         }
-      });
-      // A DATA KEY MADE BY THAT SEAL IS WRITTEN BEFORE ANYTHING SEALED UNDER
-      // IT (the keystore's order rule).
-      await o.settle();
-      const client = await o.db.connect();
-      try {
-        await client.query('BEGIN');
-        const r = await client.query(INSERT, [realmId, usersKey, ORIGIN,
-          cols.k, cols.dn, cols.a, cols.t, cols.nk, cols.mk, cols.uk,
-          cols.ck, cols.vk, cols.an, cols.dk, cols.names, cols.digests]);
+      }
+      if (max > 0 && count + free.length > max) {
+        free.length = Math.max(0, max - count);
+        cut = true;
+      }
+      if (free.length) {
+        // SEALED IN THE REALM, as the flush seals: `sealing()` follows the
+        // ambient realm's mode.
+        const cols = { k: [], dn: [], a: [], t: [], nk: [], mk: [], uk: [],
+                       ck: [], vk: [], an: [], dk: [] };
+        const now = generalizedTime(o.now ? o.now() : new Date());
+        o.seal(function () {
+          for (const one of free) {
+            const stored = storedOf(one.c, now, o.language, o.uuid());
+            const attrs = stored.attributes;
+            const sealed = o.codec.sealAttributes(realmId, one.c.dnKey,
+                                                  attrs);
+            if (o.sealing && typeof sealed !== 'string') {
+              throw refusal('STS-LDAP-0158', 'the store seals its ' +
+                            'directory and nothing was sealed for ' +
+                            one.c.dn + ': no key-encryption key or no ' +
+                            'directory data key is held. Nothing of this ' +
+                            'batch was written.');
+            }
+            const index = o.codec.index(attrs);
+            cols.k.push(one.c.dnKey);
+            cols.dn.push(stored.dn);
+            cols.a.push(JSON.stringify(sealed));
+            cols.t.push(now);
+            cols.nk.push(JSON.stringify(index.nameKeys));
+            cols.mk.push(JSON.stringify(index.mailKeys));
+            cols.uk.push(JSON.stringify(index.uuidKeys));
+            cols.ck.push(JSON.stringify(index.classKeys));
+            cols.vk.push(JSON.stringify(index.valueKeys));
+            cols.an.push(JSON.stringify(index.attrNames));
+            cols.dk.push(JSON.stringify(o.codec.dekKeys(attrs, sealed)));
+          }
+        });
+        // A DATA KEY MADE BY THAT SEAL IS WRITTEN BEFORE ANYTHING SEALED
+        // UNDER IT (the keystore's order rule) — `sts_keys`, on the driver's
+        // own connection, which the lock above does not touch.
+        await o.settle();
+        const r = await client.query(INSERT, [realmId, ORIGIN, cols.k,
+          cols.dn, cols.a, cols.t, cols.nk, cols.mk, cols.uk, cols.ck,
+          cols.vk, cols.an, cols.dk]);
         const inserted = (r.rows || []).length;
         if (inserted !== free.length) {
           throw refusal('STS-LDAP-0159', 'the batch ending at record ' +
                         records[records.length - 1].r.ordinal + ' inserted ' +
                         inserted + ' of ' + free.length + ' rows its ' +
-                        'classification found free: something else wrote ' +
-                        'the directory meanwhile. Rolled back.');
+                        'check found free. Rolled back.');
         }
-        await client.query('COMMIT');
-      } catch (e) {
-        log.debug("Caught in flushBatch(): " + ((e && e.message) || e));
-        await client.query('ROLLBACK').catch(function (r) {
-          log.debug("Caught in flushBatch()'s rollback: " +
-                    ((r && r.message) || r));
-        });
-        throw errorCodes.codeOf(e) ? e : refusal('STS-LDAP-0159', 'the ' +
-          'batch ending at record ' + records[records.length - 1].r.ordinal +
-          ' was rolled back: ' + ((e && e.message) || e) + '. Run the ' +
-          'import again (with --skip=' + report.committedThrough +
-          ') to resume.');
-      } finally {
-        client.release();
+        report.imported += free.length;
       }
-      report.imported += free.length;
+      await client.query('COMMIT');
+    } catch (e) {
+      log.debug("Caught in flushBatch(): " + ((e && e.message) || e));
+      await client.query('ROLLBACK').catch(function (r) {
+        log.debug("Caught in flushBatch()'s rollback: " +
+                  ((r && r.message) || r));
+      });
+      throw errorCodes.codeOf(e) ? e : refusal('STS-LDAP-0159', 'the ' +
+        'batch ending at record ' + records[records.length - 1].r.ordinal +
+        ' was rolled back: ' + ((e && e.message) || e) + '. Run the ' +
+        'import again (with --skip=' + report.committedThrough +
+        ') to resume.');
+    } finally {
+      client.release();
     }
     report.batches += 1;
     if (cut) {
@@ -623,6 +671,55 @@ async function importFile(options) {
   });
   log.debug("Leaving importFile().");
   return report;
+}
+
+// ---------------------------------------------------------------------------
+// AFTER THE LAST BATCH: THE GIN PENDING LISTS, AND THE PLANNER'S STATISTICS.
+//
+// Every lookup column is a GIN index, and a GIN index with `fastupdate` (the
+// default) takes an insert into an unsorted PENDING LIST that every lookup
+// then scans, until a vacuum or `gin_work_mem` merges it. Forty million rows
+// arriving at once leave lists a first sign-in pays for, so the import
+// merges them itself (`gin_clean_pending_list()`) and ANALYZEs the table,
+// whose statistics are otherwise those of a directory a fraction its size.
+// Both need the table's owner or MAINTAIN, which the application role may
+// not hold: refused, it says what the owner should run (STS-LDAP-0161) and
+// the import is still done — the next autovacuum does the same work later.
+// ---------------------------------------------------------------------------
+const GIN_INDEXES =
+  'SELECT c.relname AS name FROM pg_index i JOIN pg_class c ON c.oid = ' +
+  'i.indexrelid JOIN pg_am a ON a.oid = c.relam WHERE i.indrelid = ' +
+  '\'sts_ldap_entries\'::regclass AND a.amname = \'gin\' ORDER BY 1';
+
+/**
+ * Merges the directory's GIN pending lists and refreshes its statistics.
+ *
+ * @param db - something with `query()`
+ * @returns a promise of `{ indexes, pagesMerged, analyzed, refused }`
+ */
+async function settleIndexes(db) {
+  log.debug("Entering settleIndexes().");
+  const out = { indexes: 0, pagesMerged: 0, analyzed: false, refused: '' };
+  try {
+    const r = await db.query(GIN_INDEXES);
+    for (const row of r.rows || []) {
+      const merged = await db.query('SELECT gin_clean_pending_list($1::' +
+                                    'regclass)::bigint AS n', [row.name]);
+      out.indexes += 1;
+      out.pagesMerged += Number(((merged.rows || [])[0] || {}).n) || 0;
+    }
+    await db.query('ANALYZE sts_ldap_entries');
+    out.analyzed = true;
+  } catch (e) {
+    log.debug("Caught in settleIndexes(): " + ((e && e.message) || e));
+    out.refused = String((e && e.message) || e);
+    log.warn(errorCodes.tag('STS-LDAP-0161') + 'bulk_import: the import is ' +
+             'done, and its GIN pending lists could not be merged or the ' +
+             'table analyzed (' + out.refused + '). As the table\'s owner, ' +
+             'run: VACUUM (ANALYZE) sts_ldap_entries;');
+  }
+  log.debug("Leaving settleIndexes().");
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -851,7 +948,6 @@ async function main(argv) {
       log.warn('bulk_import: an idle connection errored: ' +
                ((err && err.message) || err));
     });
-    await refuseWhileRunning(pool);
     driver = postgres.create({ url: connection.url, log: log,
                                verifyTls: connection.verifyTls,
                                tlsCa: connection.tlsCa,
@@ -871,6 +967,9 @@ async function main(argv) {
                     'schema version ' + MIN_SCHEMA + ' or later: ' +
                     ((e && e.message) || e));
     }
+    // Asked once the schema is known to be there, and again before every
+    // batch.
+    await refuseWhileRunning(pool);
     const saved = await driver.loadOverrides();
     if (saved && Object.keys(saved).length) {
       config.applyPersistedOverrides(saved);
@@ -928,6 +1027,9 @@ async function main(argv) {
         return require('../common/crypto').randomUuid();
       }
     });
+    if (report.imported > 0) {
+      report.indexes = await settleIndexes(pool);
+    }
     const text = JSON.stringify(report, null, 2) + '\n';
     if (options.report) {
       fs.writeFileSync(path.resolve(options.report), text);
@@ -983,6 +1085,7 @@ if (require.main === module) {
 module.exports = {
   main: main,
   importFile: importFile,
+  settleIndexes: settleIndexes,
   candidateOf: candidateOf,
   storedOf: storedOf,
   normalizeDn: normalizeDn,
@@ -990,6 +1093,9 @@ module.exports = {
   ALLOWED_ATTRIBUTES: ALLOWED_ATTRIBUTES,
   PERSON_CLASSES: PERSON_CLASSES,
   ORIGIN: ORIGIN,
-  STATEMENTS: { CLASSIFY: CLASSIFY, INSERT: INSERT, HOLDER: HOLDER,
+  classify: classify,
+  STATEMENTS: { PRESENT_KEYS: PRESENT_KEYS, HELD_RDNS: HELD_RDNS,
+                HELD_NAME_KEYS: HELD_NAME_KEYS, LOCK: LOCK, INSERT: INSERT,
+                HOLDER: HOLDER,
                 REALM_COUNT: REALM_COUNT, LIVE_READERS: LIVE_READERS }
 };

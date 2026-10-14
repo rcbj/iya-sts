@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4353** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4354** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 112
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 113
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -2828,7 +2828,7 @@ Raised from: kerberos/.
 
 **LDAP directory.** The embedded directory on 389 and 636, the console pages that show it, and the offline bulk import of people into it (#629).
 
-Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0160).
+Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 
 | Code | What failed | Client sees |
 |---|---|---|
@@ -2944,6 +2944,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0160).
 | `STS-LDAP-0158` | The bulk import could not seal: the key-encryption key could not be read or does not open the stored keys, or the store seals its directory and no blob came back sealed. Nothing of the batch was written. | none — an operator tool |
 | `STS-LDAP-0159` | A batch of the bulk import failed in the database, or inserted fewer rows than its check found free (something else wrote the directory meanwhile), and was rolled back; the import stopped. Every batch before it is committed: run it again, with the --skip the last progress line gave, to resume. | none — an operator tool |
 | `STS-LDAP-0160` | The bulk import did not import a record because one of its usernames (its RDN value or a uid) is already held by another entry under ou=users, in the store or earlier in the file — the one entry per person rule, as STS-LDAP-0005 refuses an add. | none — an operator tool |
+| `STS-LDAP-0161` | The bulk import finished, and could not merge the directory's GIN pending lists (gin_clean_pending_list) or ANALYZE the table: both need its owner or MAINTAIN, which the application role may not hold. Nothing is lost; until an autovacuum or the owner's VACUUM (ANALYZE) sts_ldap_entries does it, lookups scan the pending lists. | none — an operator tool |
 
 ## STS-ATTR
 

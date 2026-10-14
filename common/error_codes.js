@@ -283,7 +283,7 @@ const SUBSYSTEMS = [
     what: 'The KDC on TCP/UDP 88 and MS-KKDCP, the Kerberos service, SPNEGO ' +
           'and the SPNEGO sign-in.' },
   { id: 'LDAP', label: 'LDAP directory',
-    where: 'ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0160)',
+    where: 'ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161)',
     what: 'The embedded directory on 389 and 636, the console pages that ' +
           'show it, and the offline bulk import of people into it (#629).' },
   { id: 'ATTR', label: 'Attribute sources',
@@ -12862,6 +12862,13 @@ const CODES = [
       'usernames (its RDN value or a uid) is already held by another ' +
       'entry under ou=users, in the store or earlier in the file — the one ' +
       'entry per person rule, as STS-LDAP-0005 refuses an add.',
+    spec: 'none — an operator tool' },
+  { code: 'STS-LDAP-0161',
+    summary: 'The bulk import finished, and could not merge the directory\'s ' +
+      'GIN pending lists (gin_clean_pending_list) or ANALYZE the table: both ' +
+      'need its owner or MAINTAIN, which the application role may not hold. ' +
+      'Nothing is lost; until an autovacuum or the owner\'s VACUUM (ANALYZE) ' +
+      'sts_ldap_entries does it, lookups scan the pending lists.',
     spec: 'none — an operator tool' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
