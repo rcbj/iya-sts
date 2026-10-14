@@ -2287,6 +2287,28 @@ and waits on the generation exactly as a dispatched path does, which it did not
 until 2026-09-12: the barrier was built for HTTP and nothing took an operation
 through it, so a dispatched operation was outside read-your-write entirely.
 
+**A WRITE (add, modify, delete, modifyDN) SKIPS THE PULL WHERE IT COULD NOT
+CHANGE ITS ANSWER (#626, 2026-10-14).** When everything its worker has not
+caught up on is windowed directory rows (people, devices), the write is sent
+without the sync round and carries those rows' keys, and the worker applies
+them first — `persistence.applyStaleKeys()`, the pull's own windowed applier
+key for key — so a copy this worker held of a key another worker changed (an
+absence remembered, an entry since renamed, deleted or given a `uid`) is
+dropped and read from the store, exactly as the pull would have dropped it. A
+key it does not hold was always read from the store. Anything shared pending
+(a group, a policy, a setting, a realm) sends the write through the whole
+barrier; reads always take it. Three things decide an add's answer and each is
+held: **uniqueness** by `claimingTheAdd()` across processes and the store's
+`byName` after the stale copies are gone; **a parent or referenced entry**
+another connection created and was answered for, by its key being applied;
+**the same connection's order** by affinity and the worker's queue behind the
+keys. The add path in this file is unchanged — the keys are applied before the
+handler runs, in `request_worker.ts`, so `askBeforeTheAdd()` (#621, #625) asks
+the store about keys nothing stale is held for. `common/CLAUDE.md` (#626) has
+the mechanism and the argument; `tests/request_write_barrier.js` section B
+shows each hazard with nothing applied and the barrier's answer once the keys
+are.
+
 ### What is asserted, and what is not
 
 `tests/ldap_operations.js` is the in-process half: it drives both sides of the
