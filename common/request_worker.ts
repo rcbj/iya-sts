@@ -134,7 +134,8 @@
 //     `common/protocol_stack.ts`, which this process loads rather than being
 //     loaded by.
 //   * **`CommitAnnouncer`** is the commit-announcement state `start()` used to
-//     keep in closure variables, built at the same point `start()` built them.
+//     keep in closure variables, built at the same point `start()` built them
+//     — in `common/commit_announcer.ts` since #620.
 //   * **`WorkerWire`** is a static utility class for the one pure helper, the
 //     forwarded certificate's decoding.
 //   * **The exports keep every name and shape**: `LDAP_DROP_HEADER`,
@@ -196,6 +197,9 @@ import lingeringClose = require('./lingering_close');
 // THE CHANNEL TO THE FRONT PROCESS (#364): `parentPort`, since a worker is a
 // thread. A leaf; see common/worker_channel.ts.
 import WorkerChannel = require('./worker_channel');
+// The commit announcements, a class of their own since #620 so that a test can
+// drive them without building a worker. See its header.
+import CommitAnnouncer = require('./commit_announcer');
 // Requires only the error-code table above: an unexpected error in this
 // worker is logged and contained rather than ending it (#355).
 import faultBoundary = require('./fault_boundary');
@@ -325,18 +329,6 @@ interface RequestWorkerDeps {
   errorCodes: { tag(code: string): string };
 }
 
-// What a `CommitAnnouncer` needs: the store, and what the worker has.
-interface CommitAnnouncerDeps {
-  log: RequestWorkerDeps['log'];
-  config: RequestWorkerDeps['config'];
-  errorCodes: RequestWorkerDeps['errorCodes'];
-  persistence: {
-    flush(): any;
-    flushMinted(): any;
-    changeRowsWritten(): number;
-  };
-}
-
 // ---------------------------------------------------------------------------
 // THE SMALL PURE HELPER, AS A STATIC UTILITY CLASS (#50).
 // ---------------------------------------------------------------------------
@@ -369,211 +361,6 @@ class WorkerWire {
     });
     log.debug('Leaving WorkerWire.decodePeer().');
     return flat;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// THE COMMIT ANNOUNCEMENT'S STATE, which `start()` kept in closure variables
-// until #50. Built by `start()` at the point it built them — after the stack
-// and the store are loaded — so `announcedWritten` starts where it did.
-// ---------------------------------------------------------------------------
-class CommitAnnouncer {
-  // The tickets of responses that have finished and whose flush has not been
-  // announced yet. Bounded by the number of requests between two
-  // announcements, and every request announces.
-  private finishedTickets: number[] = [];
-  // HOW MANY RESPONSES THIS WORKER HAS FINISHED. An announcement carries the
-  // count taken BEFORE its flush started, which is exactly what that flush
-  // covers: a request's writes all happen before its response finishes, so
-  // everything counted here is in the store once the flush returns. The front
-  // process clears tickets against this number rather than clearing whatever
-  // the worker happens to owe — see receiveCommitted().
-  private finishedCount = 0;
-  private announcing = false;
-  private again = false;
-  // The committed change-row count the last announcement reported up to. See
-  // announceWhenCommitted(). Starts at what the store had already committed
-  // when this worker came up, because that was written before the pool forked
-  // it and every other process has it.
-  private announcedWritten: number;
-
-  constructor(private readonly deps: CommitAnnouncerDeps) {
-    deps.log.debug("Entering CommitAnnouncer.constructor().");
-    this.announcedWritten = deps.persistence.changeRowsWritten();
-    deps.log.debug("Leaving CommitAnnouncer.constructor().");
-  }
-
-  // Whether this request's commit has to be announced. The METHOD is the test,
-  // conservatively — this process cannot know whether a POST changed anything,
-  // and an announcement for a request that wrote nothing costs one extra
-  // sequence read, where a missing one costs a stale answer.
-  // **EVERY REQUEST, NOT EVERY WRITE METHOD (2026-09-07).**
-  //
-  // This tested the METHOD, which is the test `request_pool.js` uses on its
-  // side and is wrong here for a reason particular to this service: GETs mint
-  // state. `GET /oauth2/authorize` creates the pending authentication record
-  // the sign-in form posts back to; the SAML and WS-Federation front doors do
-  // the same; and every cookie-less request to a front door mints an arrival
-  // session. A GET that wrote set no marker, moved no generation, and left the
-  // POST that followed it free to land on a worker that had never heard of the
-  // record — measured as `the sign-in form should redirect, got 400` across
-  // five jobs, which is `pendingFor()` missing.
-  //
-  // Announcing after every request is affordable because BOTH halves are cheap
-  // when nothing was written: `persistence.flush()` computes no diff unless a
-  // dirty bit is set, and the sequence read is one indexed query. What it buys
-  // is that "did this request write" stops being a guess made from the method
-  // by the process that did not run the handler.
-  announcesWrites(req: http.IncomingMessage): boolean {
-    const { log, config } = this.deps;
-    log.debug("Entering CommitAnnouncer.announcesWrites().");
-    log.debug("Leaving CommitAnnouncer.announcesWrites().");
-    return !!config.value('workers.readYourWrite');
-  }
-
-  // One more finished response, counted whether or not it is announced.
-  countFinished(): void {
-    this.deps.log.debug("Entering CommitAnnouncer.countFinished().");
-    this.finishedCount++;
-    this.deps.log.debug("Leaving CommitAnnouncer.countFinished().");
-  }
-
-  // A finished response's ticket, remembered for the next announcement.
-  noteTicket(ticket: number): void {
-    this.deps.log.debug("Entering CommitAnnouncer.noteTicket().");
-    if (ticket > 0) {
-      this.finishedTickets.push(ticket);
-    }
-    this.deps.log.debug("Leaving CommitAnnouncer.noteTicket().");
-  }
-
-  // ---------------------------------------------------------------------
-  // FLUSH, THEN TELL THE FRONT PROCESS WHAT SEQUENCE THIS WORKER REACHED.
-  //
-  // Called AFTER the response has gone out, so nothing waits on it. The flush
-  // is the one already scheduled — awaiting it here coalesces with it rather
-  // than forcing a second — and only when it has committed is the sequence
-  // read and announced.
-  //
-  // **COALESCED, because a burst of writes must not become a burst of
-  // announcements.** One is in flight at a time; a write that lands while one
-  // is running sets `again`, and the next round covers it. The sequence
-  // announced is therefore always at least as new as every write that had
-  // finished when it was read, which is the property the pool needs.
-  // ---------------------------------------------------------------------
-  announceWhenCommitted(): void {
-    const { log, persistence, errorCodes } = this.deps;
-    log.debug("Entering CommitAnnouncer.announceWhenCommitted().");
-    if (this.announcing) {
-      this.again = true;
-      log.debug("Leaving CommitAnnouncer.announceWhenCommitted().");
-      return;
-    }
-    this.announcing = true;
-    // THE TICKETS THIS FLUSH WILL COVER, taken BEFORE it starts: a response
-    // that finishes while the flush is in flight belongs to the NEXT
-    // announcement, which the `again` coalescing above guarantees there will
-    // be. They are named rather than counted for the reason
-    // `request_pool.js`'s ticketFinished() gives: a count only works if both
-    // processes complete the same responses in the same order, and they do
-    // not.
-    const covered = this.finishedTickets;
-    this.finishedTickets = [];
-    const through = this.finishedCount;
-    // WHETHER THIS FLUSH ACTUALLY WROTE ANYTHING, read either side of it from a
-    // local counter. It matters a great deal: the front process bumps the
-    // read-your-write generation on every announcement, and a generation that
-    // moves for a request that wrote nothing makes every OTHER worker look
-    // stale and forces a barrier sync it has no work to do. With every request
-    // announcing, that was almost every request — measured as 100ms per SCIM
-    // create in the dispatch mode against 2.35ms in one process.
-    //
-    // The seq query that used to be here is gone with it: the front process
-    // clears tickets by `through` and never read the sequence.
-    //
-    // **SINCE THE LAST ANNOUNCEMENT, NOT SINCE THIS FLUSH STARTED
-    // (2026-09-13).** Sampled either side of this flush, a commit made by a
-    // DIFFERENT flush in this process — the scheduled one `persistence.js`
-    // runs a tick after every write, which this one waits behind — could land
-    // before the first sample and be announced by nobody: this flush then
-    // found nothing new and reported `wrote: false`, and no other worker was
-    // ever marked stale for rows it had not fetched. The count is of rows
-    // COMMITTED (see `written` in persistence_postgres.js), so everything
-    // above the last announced value is something no other process has been
-    // told about.
-    Promise.all([
-      Promise.resolve().then(() => persistence.flush()),
-      Promise.resolve().then(() => persistence.flushMinted())
-    ]).then(() => {
-      const committedNow = persistence.changeRowsWritten();
-      const wrote = committedNow > this.announcedWritten;
-      this.announcedWritten = Math.max(this.announcedWritten, committedNow);
-      try {
-        WorkerChannel.send({ committed: { wrote: wrote, through: through,
-                                          tickets: covered } });
-      } catch (e) {
-        // The front process has gone; this worker is about to be told so.
-        log.debug("Caught in a callback in " +
-                  "CommitAnnouncer.announceWhenCommitted(): " +
-                  ((e && e.message) || e));
-      }
-    }).catch((e) => {
-      // PUT THEM BACK. A flush that failed has covered nothing, and tickets
-      // dropped here are tickets the front process waits the full barrier
-      // bound for and then gives up on — a stale read reported as a timeout,
-      // which is the most misleading pair of symptoms this mechanism can
-      // produce.
-      this.finishedTickets = covered.concat(this.finishedTickets);
-      log.warn(errorCodes.tag('STS-WORKER-0032') +
-               'request_worker: could not announce a commit: ' + e.message +
-               '. A reader may be told it is current before this write is ' +
-               'visible.');
-    }).then(() => {
-      this.announcing = false;
-      if (this.again) {
-        this.again = false;
-        this.announceWhenCommitted();
-      }
-    });
-    log.debug("Leaving CommitAnnouncer.announceWhenCommitted().");
-  }
-
-  // ---------------------------------------------------------------------
-  // AND THE SAME ANNOUNCEMENT FOR AN OPERATION, WHICH IS NOT A RESPONSE
-  // (2026-09-12).
-  //
-  // Everything above this line counts HTTP responses, because until operations
-  // were wired up an HTTP response was the only thing a worker finished. **An
-  // LDAP add is a write with no response in this process** — the front process
-  // holds the socket and writes the reply — so nothing here would have counted
-  // it, its ticket would never have been announced, and the front process would
-  // have waited the full barrier bound for it and then served stale.
-  //
-  // That is the exact wedge `request_pool.js`'s ticketAbandoned() documents,
-  // reached by a different road: there the worker never ran the handler, here
-  // the worker ran it and had no way to say so. So an operation takes the same
-  // two steps a response does — count it, remember its ticket, announce when
-  // the flush covers it — through the one function both paths call.
-  //
-  // It is reached through the worker's `announcer` field rather than a require
-  // because this object holds this worker's store handle, and
-  // `handleOperation()` answers whatever arrives once the `begin` message has
-  // brought the service up. Filled by start(), which is after the store is open
-  // and before any operation can arrive.
-  // ---------------------------------------------------------------------
-  noteOperationFinished(ticket: unknown): void {
-    const { log, config } = this.deps;
-    log.debug("Entering CommitAnnouncer.noteOperationFinished().");
-    if (!config.value('workers.readYourWrite')) {
-      log.debug("Leaving CommitAnnouncer.noteOperationFinished().");
-      return;
-    }
-    this.finishedCount++;
-    if (Number(ticket) > 0) {
-      this.finishedTickets.push(Number(ticket));
-    }
-    this.announceWhenCommitted();
-    log.debug("Leaving CommitAnnouncer.noteOperationFinished().");
   }
 }
 
@@ -1067,7 +854,7 @@ class RequestWorker {
       // called from both is not a second announcement.
       // ---------------------------------------------------------------------
       let announcedFor = false;
-      function announceOnce() {
+      function announceOnce(finished: boolean) {
         log.debug("Entering announceOnce().");
         if (announcedFor || !announcer.announcesWrites(req)) {
           log.debug("Leaving announceOnce().");
@@ -1078,7 +865,14 @@ class RequestWorker {
         // process's finish order — which is the order its flush covers them
         // in, and the only order that can be compared with anything.
         const ticket = Number(req.stsPoolTicket) || 0;
-        announcer.noteTicket(ticket);
+        // A RESPONSE THAT FINISHED WAS HELD FOR ITS COMMIT, where the store
+        // holds one (#620): its ticket goes out now, in this tick, rather
+        // than after a later flush this worker may not reach for a while.
+        // One the front process abandoned (`close` before `finish`) may have
+        // been cut off inside that hold, so it waits for the flush.
+        if (!(finished && announcer.announceAnswered(ticket))) {
+          announcer.noteTicket(ticket);
+        }
         announcer.announceWhenCommitted();
         log.debug("Leaving announceOnce().");
       }
@@ -1086,7 +880,7 @@ class RequestWorker {
         this.inFlight--;
         this.served++;
         announcer.countFinished();
-        announceOnce();
+        announceOnce(true);
       });
       res.on('close', () => {
         // A response the front process abandoned. Counted the same way,
@@ -1097,7 +891,7 @@ class RequestWorker {
         // AND ANNOUNCED ANYWAY. The request may well have written before the
         // peer went away, and the front process has a ticket for it either
         // way.
-        announceOnce();
+        announceOnce(false);
       });
     });
 
@@ -1370,7 +1164,7 @@ class RequestWorker {
   // row — the refusal is exactly what that row records. Announcing only on
   // success would leave the ticket for a refused operation outstanding for
   // ever, which is the wedge again.
-  private operationFinished(ticket: number): void {
+  private operationFinished(ticket: number, settled?: boolean): void {
     const { log, errorCodes } = this.deps;
     log.debug("Entering RequestWorker.operationFinished().");
     if (!this.announcer) {
@@ -1378,7 +1172,7 @@ class RequestWorker {
       return;
     }
     try {
-      this.announcer.noteOperationFinished(ticket);
+      this.announcer.noteOperationFinished(ticket, settled);
     } catch (e) {
       // Bookkeeping must not fail the operation the client is waiting on —
       // the same guard publishConnections() makes on the other side of this
@@ -1441,7 +1235,9 @@ class RequestWorker {
       return;
     }
     Promise.resolve(result).then((value) => {
-      this.operationFinished(ticket);
+      // SETTLED: the handler reached its answer, after any commit it was
+      // held for, so the ticket is announced with it (#620).
+      this.operationFinished(ticket, true);
       WorkerChannel.send({ operation: true, id: message.id, ok: true, ran: true,
                      result: value });
     }, (e) => {
