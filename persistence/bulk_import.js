@@ -326,11 +326,45 @@ const HOLDER =
   'e.parent_key = $2 AND (e.name_keys @> jsonb_build_array($3::text) OR ' +
   'e.rdn_value = $4) ORDER BY e.dn_key LIMIT 1';
 
-// The batch's transaction holds the table against every other WRITER (reads
-// go on) from before the check to the commit, so what the check found free
-// is still free when the insert runs: no correlated guard is needed in the
-// insert, and none would be cheap (above).
-const LOCK = 'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';
+// THE CHECK UNDER THE LOCK, AFTER THE INSERT (#637), IS THE SAME THREE
+// STATEMENTS ON A SECOND CONNECTION. It cannot see the batch's own rows (not
+// committed) and sees every other import's committed rows (each commits
+// before it releases the lock this batch now holds). Asked in the batch's
+// own transaction the lookups found the batch's own rows — each of its
+// thousands of digests matched its own row — and the name check alone took
+// ~580 ms a batch under the lock where it takes ~60 ms finding nothing
+// (measured, postgres 18, 5,000 a batch). What it finds is a name another
+// import committed first; those rows of the batch are deleted again
+// (DROP_OWN) before the commit.
+const DROP_OWN =
+  'DELETE FROM sts_ldap_entries WHERE realm = $1 AND dn_key = ANY($2::text[])';
+
+// THE BATCH'S TRANSACTION HOLDS THE REALM'S IMPORT LOCK from the
+// authoritative check to the commit. The batch is INSERTED FIRST, without
+// it — the insert, the indexes' upkeep, is most of a batch's time in the
+// database, and several imports insert side by side — and then, under the
+// lock, its names are checked on a second connection (which sees every
+// committed row and not the batch's own), the losers deleted, and the
+// transaction committed. Every import of the realm commits
+// that way, ONE AT A TIME, and a commit becomes visible before its lock is
+// released, so each check sees every other import's committed rows: two
+// files that overlap cannot both admit a name (`docs/bulk-import.md`,
+// *Several imports at once*). No correlated guard is needed in the insert,
+// and none would be cheap (above).
+//
+// **AN ADVISORY LOCK, NOT `LOCK TABLE` (#637, 2026-10-14).** It was `LOCK
+// TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE`, and every mode that
+// keeps writers out also conflicts with autovacuum's SHARE UPDATE EXCLUSIVE:
+// a batch's lock request waited `deadlock_timeout` behind a running
+// autovacuum of the table and then CANCELLED it (measured on postgres 18:
+// `ERROR: canceling autovacuum task` one second after the request), so
+// during a long import the directory table was never vacuumed. The table
+// lock never held a RUNNING service's add out in any case — a running
+// process checks names against its own window before its flush — and a
+// running service is refused before every batch (STS-LDAP-0153). An
+// advisory lock needs no privilege. The pair form (629, the realm) is a key
+// space of its own, apart from the cluster's single-key JOIN_LOCK.
+const LOCK = 'SELECT pg_advisory_xact_lock(629, hashtext($1))';
 
 // The insert. $2 the origin. `ON CONFLICT` and the count of what it returned
 // are the last word on the DN.
@@ -355,9 +389,11 @@ const INSERT =
  * @param usersKey - its `ou=users`, normalised
  * @param fresh - the candidates, each with `c.dnKey`, `c.names` and
  *   `digests`
+ * @param inserted - true under the lock, after the insert: the DN needs no
+ *   asking
  * @returns a promise of `{ present: Set<index>, taken: Set<index> }`
  */
-async function classify(db, realmId, usersKey, fresh) {
+async function classify(db, realmId, usersKey, fresh, inserted) {
   log.debug("Entering classify(). " + fresh.length);
   const out = { present: new Set(), taken: new Set() };
   if (!fresh.length) {
@@ -372,8 +408,9 @@ async function classify(db, realmId, usersKey, fresh) {
       digests.push(JSON.stringify([one.digests[j]]));
     });
   });
-  const keys = await db.query(PRESENT_KEYS, [realmId, fresh.map(
-    function (one) { return one.c.dnKey; })]);
+  // After the insert the DN needs no asking: the primary key settled it.
+  const keys = inserted ? { rows: [] } : await db.query(PRESENT_KEYS,
+    [realmId, fresh.map(function (one) { return one.c.dnKey; })]);
   const rdns = await db.query(HELD_RDNS, [realmId, usersKey, names]);
   const held = await db.query(HELD_NAME_KEYS, [realmId, usersKey, digests]);
   const presentKeys = new Set((keys.rows || []).map(function (row) {
@@ -403,10 +440,13 @@ async function classify(db, realmId, usersKey, fresh) {
 }
 
 // The realm's own count, the one `ldap.maxEntries` is read against in a
-// windowed process (`capCount()`): the #618 counter row of its whole tree.
+// windowed process (`capCount()`): the #618 counter rows of its whole tree,
+// SUMMED OVER THEIR SHARDS (#630 made them sixteen rows; this read one of
+// them until #637). Read under the import lock, so a second import's
+// committed batch is in it and the ceiling is exact across imports.
 const REALM_COUNT =
-  'SELECT n FROM sts_ldap_counts WHERE realm = $1 AND base_key = \'\' AND ' +
-  'attribute = \'\'';
+  'SELECT coalesce(sum(n), 0)::bigint AS n FROM sts_ldap_counts WHERE ' +
+  'realm = $1 AND base_key = \'\' AND attribute = \'\'';
 
 const LIVE_READERS =
   'SELECT count(*)::int AS n FROM sts_change_readers WHERE reported_at > ' +
@@ -445,32 +485,95 @@ async function refuseWhileRunning(db) {
 // entries, where the same probes with the list merged took 13 ms — and the
 // import slowed batch by batch to 400 a second. Version 18 (#618) builds the
 // index with `fastupdate = off` and there is nothing to merge. On 17 the
-// merge needs the table's owner or MAINTAIN: refused, it is said once
-// (STS-LDAP-0161) and the import goes on, slowly — run it as the owner.
+// merge needs the INDEX'S OWNER (MAINTAIN on the table is not enough:
+// measured on postgres 18). Without it, it is said once (STS-LDAP-0161)
+// and never asked, and the import goes on, slowly — run it as the owner.
 // ---------------------------------------------------------------------------
 const NAME_INDEX_OPTIONS =
   'SELECT coalesce(array_to_string(c.reloptions, \',\'), \'\') AS o FROM ' +
   'pg_class c WHERE c.oid = to_regclass(\'sts_ldap_entries_names\')';
 
+// ---------------------------------------------------------------------------
+// WHAT THIS ROLE MAY DO TO THE TABLE, ASKED BEFORE IT IS DONE (#637).
+//
+// `gin_clean_pending_list()` needs the index's owner (a member of the
+// owning role), and `ANALYZE` the table's owner or, on postgres 17 and
+// later, MAINTAIN on it (or `pg_maintain`). The import used to ASK for both
+// and read the refusal: a refused request is an ERROR in postgres's log on
+// every run, and #637 reported it as cancelling autovacuum. Measured on
+// postgres 18, the refused calls themselves cancel nothing — the per-batch
+// `LOCK TABLE` did (LOCK, above) — but a call this role cannot make is
+// still not made: the catalog is asked, and what is not permitted is
+// skipped with one line. `has_table_privilege(…, 'MAINTAIN')` is an error
+// before 17, so it is asked only from 17 on.
+// ---------------------------------------------------------------------------
+const TABLE_OWNERSHIP =
+  'SELECT pg_has_role(current_user, c.relowner, \'USAGE\') AS owner, ' +
+  'current_setting(\'server_version_num\')::int AS version FROM pg_class c ' +
+  'WHERE c.oid = to_regclass(\'sts_ldap_entries\')';
+const TABLE_MAINTAIN =
+  'SELECT has_table_privilege(current_user, to_regclass(' +
+  '\'sts_ldap_entries\')::oid, \'MAINTAIN\') AS maintain';
+
 /**
- * Returns the function that merges the name index's pending list after a
- * batch: a no-op where the index has none to merge, or once refused.
+ * What this role may do to `sts_ldap_entries`: merge its GIN pending lists
+ * (`owner`) and ANALYZE it (`analyze`: the owner, or MAINTAIN on 17+).
  *
  * @param db - something with `query()`
+ * @returns a promise of `{ owner, analyze }`
+ */
+async function maintenanceRights(db) {
+  log.debug("Entering maintenanceRights().");
+  const r = await db.query(TABLE_OWNERSHIP);
+  const row = (r.rows || [])[0] || {};
+  const owner = row.owner === true;
+  let analyze = owner;
+  if (!owner && Number(row.version) >= 170000) {
+    const m = await db.query(TABLE_MAINTAIN);
+    analyze = ((m.rows || [])[0] || {}).maintain === true;
+  }
+  log.debug("Leaving maintenanceRights(). owner=" + owner + " analyze=" +
+            analyze);
+  return { owner: owner, analyze: analyze };
+}
+
+/**
+ * Returns the function that merges the name index's pending list after a
+ * batch: a no-op where the index has none to merge, where this role does
+ * not own it (said once, never asked), or once refused.
+ *
+ * @param db - something with `query()`
+ * @param rights - `maintenanceRights()`' answer, asked when absent
  * @returns a promise of `{ merge, mode }`, `merge()` a promise of pages
  */
-async function namePendingMerger(db) {
+async function namePendingMerger(db, rights) {
   log.debug("Entering namePendingMerger().");
   const r = await db.query(NAME_INDEX_OPTIONS);
   const row = (r.rows || [])[0];
+  // Nothing to merge, or nothing this role may merge: the same no-op.
+  const none = function (mode) {
+    log.debug("Entering none(). " + mode);
+    log.debug("Leaving none().");
+    return { mode: mode, merge: function () {
+      log.debug("Entering merge(). Nothing to merge.");
+      log.debug("Leaving merge().");
+      return Promise.resolve(0);
+    } };
+  };
   if (!row || /fastupdate=(off|false)/i.test(String(row.o))) {
     log.debug("Leaving namePendingMerger(). Nothing to merge.");
-    return { mode: row ? 'fastupdate off' : 'no index',
-             merge: function () {
-               log.debug("Entering merge(). Nothing to merge.");
-               log.debug("Leaving merge().");
-               return Promise.resolve(0);
-             } };
+    return none(row ? 'fastupdate off' : 'no index');
+  }
+  const may = rights || await maintenanceRights(db);
+  if (!may.owner) {
+    log.warn(errorCodes.tag('STS-LDAP-0161') + 'bulk_import: the name ' +
+             'index keeps a pending list (fastupdate on, schema version ' +
+             '17) and this role does not own it, so it is not merged: ' +
+             'every batch\'s name check reads it whole and the import slows ' +
+             'as it grows. Run the import as the table\'s owner, or on ' +
+             'schema version 18, whose index has fastupdate off.');
+    log.debug("Leaving namePendingMerger(). Not the owner.");
+    return none('not merged: this role does not own the index');
   }
   let refused = false;
   const out = { mode: 'merged after every batch', merge: async function () {
@@ -527,7 +630,10 @@ async function importFile(options) {
     realm: realmId, file: o.file, usersDn: o.usersDn, origin: ORIGIN,
     batchSize: batchSize, records: 0, skipped: 0, imported: 0, present: 0,
     taken: 0, refused: 0, refusals: {}, examples: [], batches: 0,
-    committedThrough: skip, stopped: '', seconds: 0, perSecond: 0
+    committedThrough: skip, stopped: '', seconds: 0, perSecond: 0,
+    // Seconds spent waiting for the realm's import lock and holding it: the
+    // share of a batch several imports at once cannot overlap (#637).
+    lockWaitSeconds: 0, lockSeconds: 0
   };
   // A record not imported, counted and (the first EXAMPLES) named. Once a
   // refused record: a hot path's helper, so no Entering/Leaving pair.
@@ -540,6 +646,92 @@ async function importFile(options) {
   };
   let pending = [];
   let lastOrdinal = skip;
+  // THE STORE'S ANSWER FOR A LIST OF CANDIDATES: each the store holds by DN
+  // is present, each whose name it holds is taken (counted and, the first
+  // EXAMPLES, named with who holds it), and the rest come back.
+  const sortOut = async function (db, list, inserted) {
+    log.debug("Entering sortOut(). " + list.length);
+    const found = await classify(db, realmId, usersKey, list, inserted);
+    const free = [];
+    for (let i = 0; i < list.length; i++) {
+      const one = list[i];
+      if (found.present.has(i)) {
+        report.present += 1;
+      } else if (found.taken.has(i)) {
+        report.taken += 1;
+        let holder = '';
+        if (report.examples.length < EXAMPLES) {
+          for (let j = 0; j < one.c.names.length && !holder; j++) {
+            const h = await db.query(HOLDER, [realmId, usersKey,
+                                              one.digests[j],
+                                              one.c.names[j]]);
+            holder = ((h.rows || [])[0] || {}).dn || '';
+          }
+        }
+        example(one.r, 'STS-LDAP-0160', 'a username of ' + one.c.dn +
+                ' is held by ' + (holder || 'another entry'));
+      } else {
+        free.push(one);
+      }
+    }
+    log.debug("Leaving sortOut(). " + free.length + " free.");
+    return free;
+  };
+  // SEALED IN THE REALM, as the flush seals: `sealing()` follows the
+  // ambient realm's mode. Each candidate gets `one.row`, its columns.
+  const sealAll = function (list) {
+    log.debug("Entering sealAll(). " + list.length);
+    const now = generalizedTime(o.now ? o.now() : new Date());
+    o.seal(function () {
+      for (const one of list) {
+        const stored = storedOf(one.c, now, o.language, o.uuid());
+        const attrs = stored.attributes;
+        const sealed = o.codec.sealAttributes(realmId, one.c.dnKey, attrs);
+        if (o.sealing && typeof sealed !== 'string') {
+          throw refusal('STS-LDAP-0158', 'the store seals its directory ' +
+                        'and nothing was sealed for ' + one.c.dn + ': no ' +
+                        'key-encryption key or no directory data key is ' +
+                        'held. Nothing of this batch was written.');
+        }
+        const index = o.codec.index(attrs);
+        one.row = {
+          k: one.c.dnKey, dn: stored.dn, a: JSON.stringify(sealed), t: now,
+          nk: JSON.stringify(index.nameKeys),
+          mk: JSON.stringify(index.mailKeys),
+          uk: JSON.stringify(index.uuidKeys),
+          ck: JSON.stringify(index.classKeys),
+          vk: JSON.stringify(index.valueKeys),
+          an: JSON.stringify(index.attrNames),
+          dk: JSON.stringify(o.codec.dekKeys(attrs, sealed))
+        };
+      }
+    });
+    log.debug("Leaving sealAll().");
+  };
+  // THE CHECK UNDER THE LOCK, on a connection of its own (DROP_OWN above
+  // says why), in a transaction of its own for the planner setting.
+  const checkElsewhere = async function (list) {
+    log.debug("Entering checkElsewhere(). " + list.length);
+    const checker = await o.db.connect();
+    try {
+      await checker.query('BEGIN');
+      await checker.query('SET LOCAL enable_seqscan = off');
+      const free = await sortOut(checker, list, true);
+      await checker.query('COMMIT');
+      log.debug("Leaving checkElsewhere().");
+      return free;
+    } catch (e) {
+      log.debug("Caught in checkElsewhere(): " + ((e && e.message) || e));
+      await checker.query('ROLLBACK').catch(function (r) {
+        log.debug("Caught in checkElsewhere()'s rollback: " +
+                  ((r && r.message) || r));
+      });
+      log.debug("Leaving checkElsewhere(). Failed.");
+      throw e;
+    } finally {
+      checker.release();
+    }
+  };
   const flushBatch = async function () {
     log.debug("Entering flushBatch(). " + pending.length);
     const records = pending;
@@ -548,14 +740,11 @@ async function importFile(options) {
       log.debug("Leaving flushBatch(). Empty.");
       return true;
     }
+    // A RUNNING SERVICE IS REFUSED before anything is sealed, and again
+    // under the lock, just before the insert.
     if (o.liveCheck !== false) {
       await refuseWhileRunning(o.db);
     }
-    // THE CEILING, read in the realm as an add reads it, against the
-    // realm's counter row.
-    const max = Number(o.maxEntries()) || 0;
-    const countRow = await o.db.query(REALM_COUNT, [realmId]);
-    const count = Number(((countRow.rows || [])[0] || {}).n) || 0;
     // WITHIN THE BATCH, IN JAVASCRIPT: the first record with a DN or a name
     // wins; a repeat of the same DN is present, a new DN with a held name is
     // taken.
@@ -586,96 +775,107 @@ async function importFile(options) {
       });
       fresh.push(one);
     }
-    // AGAINST THE STORE, IN THE BATCH'S TRANSACTION, before anything is
-    // sealed: a re-run seals nothing, and the lock keeps the answer true
-    // until the commit.
+    // AGAINST THE STORE, TWICE (#637). The FIRST LOOK, without the lock and
+    // before anything is sealed, so that a re-run seals nothing; the seal,
+    // which is most of a batch's CPU; the INSERT, which is most of its time
+    // in the database — all three side by side with other imports. Then,
+    // UNDER THE LOCK, the check that counts, on a second connection: it
+    // sees every other import's committed rows and not the batch's own; a
+    // row whose name another import committed first is deleted again, the
+    // ceiling is applied, and the batch commits.
     const client = await o.db.connect();
     let cut = false;
     try {
-      await client.query('BEGIN');
-      await client.query(LOCK);
       // THE INDEXES, NOT A SCAN: the planner prices `name_keys @> ANY()`
       // per row as one comparison, and on a table of tens of thousands it
       // chose a parallel scan doing thousands of jsonb containments a row
-      // (4 s a batch at 50,000 entries). Local to the batch's transaction.
+      // (4 s a batch at 50,000 entries). Local to each transaction.
+      await client.query('BEGIN');
       await client.query('SET LOCAL enable_seqscan = off');
-      const found = await classify(client, realmId, usersKey, fresh);
-      const free = [];
-      for (let i = 0; i < fresh.length; i++) {
-        const one = fresh[i];
-        if (found.present.has(i)) {
-          report.present += 1;
-        } else if (found.taken.has(i)) {
-          report.taken += 1;
-          let holder = '';
-          if (report.examples.length < EXAMPLES) {
-            for (let j = 0; j < one.c.names.length && !holder; j++) {
-              const h = await client.query(HOLDER, [realmId, usersKey,
-                                                    one.digests[j],
-                                                    one.c.names[j]]);
-              holder = ((h.rows || [])[0] || {}).dn || '';
-            }
-          }
-          example(one.r, 'STS-LDAP-0160', 'a username of ' + one.c.dn +
-                  ' is held by ' + (holder || 'another entry'));
-        } else {
-          free.push(one);
-        }
-      }
-      if (max > 0 && count + free.length > max) {
-        free.length = Math.max(0, max - count);
-        cut = true;
-      }
-      if (free.length) {
-        // SEALED IN THE REALM, as the flush seals: `sealing()` follows the
-        // ambient realm's mode.
-        const cols = { k: [], dn: [], a: [], t: [], nk: [], mk: [], uk: [],
-                       ck: [], vk: [], an: [], dk: [] };
-        const now = generalizedTime(o.now ? o.now() : new Date());
-        o.seal(function () {
-          for (const one of free) {
-            const stored = storedOf(one.c, now, o.language, o.uuid());
-            const attrs = stored.attributes;
-            const sealed = o.codec.sealAttributes(realmId, one.c.dnKey,
-                                                  attrs);
-            if (o.sealing && typeof sealed !== 'string') {
-              throw refusal('STS-LDAP-0158', 'the store seals its ' +
-                            'directory and nothing was sealed for ' +
-                            one.c.dn + ': no key-encryption key or no ' +
-                            'directory data key is held. Nothing of this ' +
-                            'batch was written.');
-            }
-            const index = o.codec.index(attrs);
-            cols.k.push(one.c.dnKey);
-            cols.dn.push(stored.dn);
-            cols.a.push(JSON.stringify(sealed));
-            cols.t.push(now);
-            cols.nk.push(JSON.stringify(index.nameKeys));
-            cols.mk.push(JSON.stringify(index.mailKeys));
-            cols.uk.push(JSON.stringify(index.uuidKeys));
-            cols.ck.push(JSON.stringify(index.classKeys));
-            cols.vk.push(JSON.stringify(index.valueKeys));
-            cols.an.push(JSON.stringify(index.attrNames));
-            cols.dk.push(JSON.stringify(o.codec.dekKeys(attrs, sealed)));
-          }
-        });
-        // A DATA KEY MADE BY THAT SEAL IS WRITTEN BEFORE ANYTHING SEALED
-        // UNDER IT (the keystore's order rule) — `sts_keys`, on the driver's
-        // own connection, which the lock above does not touch.
-        await o.settle();
-        const r = await client.query(INSERT, [realmId, ORIGIN, cols.k,
-          cols.dn, cols.a, cols.t, cols.nk, cols.mk, cols.uk, cols.ck,
-          cols.vk, cols.an, cols.dk]);
-        const inserted = (r.rows || []).length;
-        if (inserted !== free.length) {
-          throw refusal('STS-LDAP-0159', 'the batch ending at record ' +
-                        records[records.length - 1].r.ordinal + ' inserted ' +
-                        inserted + ' of ' + free.length + ' rows its ' +
-                        'check found free. Rolled back.');
-        }
-        report.imported += free.length;
-      }
+      const looked = await sortOut(client, fresh);
       await client.query('COMMIT');
+      if (looked.length) {
+        sealAll(looked);
+        // A DATA KEY MADE BY THAT SEAL IS WRITTEN BEFORE ANYTHING SEALED
+        // UNDER IT (the keystore's order rule) — `sts_keys`, on the
+        // driver's own connection, and before the batch's transaction.
+        await o.settle();
+      }
+      // IN DN ORDER: the primary key is the one index an insert can wait on
+      // (another import's uncommitted row of the same DN, where two files
+      // overlap), and two batches that ask for the same keys in the same
+      // order cannot wait on each other in a cycle.
+      looked.sort(function (x, y) {
+        return x.c.dnKey < y.c.dnKey ? -1 : (x.c.dnKey > y.c.dnKey ? 1 : 0);
+      });
+      await client.query('BEGIN');
+      await client.query('SET LOCAL enable_seqscan = off');
+      let mine = [];
+      if (looked.length) {
+        const column = function (name) {
+          log.debug("Entering column(). " + name);
+          log.debug("Leaving column().");
+          return looked.map(function (one) {
+            return one.row[name];
+          });
+        };
+        const r = await client.query(INSERT, [realmId, ORIGIN,
+          column('k'), column('dn'), column('a'), column('t'),
+          column('nk'), column('mk'), column('uk'), column('ck'),
+          column('vk'), column('an'), column('dk')]);
+        const inserted = new Set((r.rows || []).map(function (row) {
+          return row.dn_key;
+        }));
+        // A DN NOT INSERTED is one another import inserted since the first
+        // look (`ON CONFLICT DO NOTHING`, after waiting for it): present.
+        mine = looked.filter(function (one) {
+          if (inserted.has(one.c.dnKey)) {
+            return true;
+          }
+          report.present += 1;
+          return false;
+        });
+      }
+      const asked = Date.now();
+      await client.query(LOCK, [realmId]);
+      const held = Date.now();
+      report.lockWaitSeconds += (held - asked) / 1000;
+      try {
+        if (o.liveCheck !== false) {
+          await refuseWhileRunning(client);
+        }
+        const free = mine.length ? await checkElsewhere(mine) : [];
+        // THE CEILING, read in the realm as an add reads it, against the
+        // realm's counter rows, under the lock: every other import's batch
+        // is either committed and in the count or not yet committed.
+        const max = Number(o.maxEntries()) || 0;
+        const countRow = await client.query(REALM_COUNT, [realmId]);
+        const count = Number(((countRow.rows || [])[0] || {}).n) || 0;
+        if (max > 0 && count + free.length > max) {
+          free.length = Math.max(0, max - count);
+          cut = true;
+        }
+        if (free.length < mine.length) {
+          const kept = new Set(free);
+          const drop = mine.filter(function (one) {
+            return !kept.has(one);
+          }).map(function (one) {
+            return one.c.dnKey;
+          });
+          const d = await client.query(DROP_OWN, [realmId, drop]);
+          if (Number(d.rowCount) !== drop.length) {
+            throw refusal('STS-LDAP-0159', 'the batch ending at record ' +
+                          records[records.length - 1].r.ordinal +
+                          ' removed ' + d.rowCount + ' of the ' +
+                          drop.length + ' rows it inserted and may not ' +
+                          'keep. Rolled back.');
+          }
+        }
+        await client.query('COMMIT');
+        report.imported += free.length;
+      } finally {
+        report.lockSeconds += (Date.now() - held) / 1000;
+      }
     } catch (e) {
       log.debug("Caught in flushBatch(): " + ((e && e.message) || e));
       await client.query('ROLLBACK').catch(function (r) {
@@ -733,6 +933,8 @@ async function importFile(options) {
     report.committedThrough = Math.max(report.committedThrough, lastOrdinal);
   }
   report.seconds = Math.round((Date.now() - started) / 10) / 100;
+  report.lockWaitSeconds = Math.round(report.lockWaitSeconds * 100) / 100;
+  report.lockSeconds = Math.round(report.lockSeconds * 100) / 100;
   report.perSecond = Math.round(report.imported /
                                 Math.max(report.seconds, 0.001));
   if (report.stopped === 'STS-LDAP-0157') {
@@ -758,36 +960,67 @@ async function importFile(options) {
 // default) takes an insert into an unsorted PENDING LIST that every lookup
 // then scans, until a vacuum or `gin_work_mem` merges it. Forty million rows
 // arriving at once leave lists a first sign-in pays for, so the import
-// merges them itself (`gin_clean_pending_list()`) and ANALYZEs the table,
-// whose statistics are otherwise those of a directory a fraction its size.
-// Both need the table's owner or MAINTAIN, which the application role may
-// not hold: refused, it says what the owner should run (STS-LDAP-0161) and
-// the import is still done — the next autovacuum does the same work later.
+// merges them itself (`gin_clean_pending_list()`, on the indexes that keep
+// one) and ANALYZEs the table, whose statistics are otherwise those of a
+// directory a fraction its size. The merge needs the index's owner and the
+// ANALYZE the owner or MAINTAIN, which the application role may not hold:
+// ASKED FIRST (`maintenanceRights()`, #637), what is not permitted is not
+// issued, and one line (STS-LDAP-0161) says what the owner should run; the
+// import is still done, and the next autovacuum does the same work later.
+//
+// **`ANALYZE (SKIP_LOCKED)`.** ANALYZE takes SHARE UPDATE EXCLUSIVE, which a
+// running autovacuum of the table holds: waiting for it would cancel it
+// after `deadlock_timeout` (#637's mechanism), so where it is running the
+// import leaves the statistics to it rather than throw its work away. So
+// does another import's ANALYZE, finishing at the same moment.
 // ---------------------------------------------------------------------------
 const GIN_INDEXES =
   'SELECT c.relname AS name FROM pg_index i JOIN pg_class c ON c.oid = ' +
   'i.indexrelid JOIN pg_am a ON a.oid = c.relam WHERE i.indrelid = ' +
-  '\'sts_ldap_entries\'::regclass AND a.amname = \'gin\' ORDER BY 1';
+  '\'sts_ldap_entries\'::regclass AND a.amname = \'gin\' AND ' +
+  'coalesce(array_to_string(c.reloptions, \',\'), \'\') !~* ' +
+  '\'fastupdate=(off|false)\' ORDER BY 1';
+const ANALYZE = 'ANALYZE (SKIP_LOCKED) sts_ldap_entries';
 
 /**
- * Merges the directory's GIN pending lists and refreshes its statistics.
+ * Merges the directory's GIN pending lists and refreshes its statistics,
+ * each only where this role may.
  *
  * @param db - something with `query()`
+ * @param rights - `maintenanceRights()`' answer, asked when absent
  * @returns a promise of `{ indexes, pagesMerged, analyzed, refused }`
  */
-async function settleIndexes(db) {
+async function settleIndexes(db, rights) {
   log.debug("Entering settleIndexes().");
   const out = { indexes: 0, pagesMerged: 0, analyzed: false, refused: '' };
   try {
-    const r = await db.query(GIN_INDEXES);
-    for (const row of r.rows || []) {
-      const merged = await db.query('SELECT gin_clean_pending_list($1::' +
-                                    'regclass)::bigint AS n', [row.name]);
-      out.indexes += 1;
-      out.pagesMerged += Number(((merged.rows || [])[0] || {}).n) || 0;
+    const may = rights || await maintenanceRights(db);
+    const skipped = [];
+    if (may.owner) {
+      const r = await db.query(GIN_INDEXES);
+      for (const row of r.rows || []) {
+        const merged = await db.query('SELECT gin_clean_pending_list($1::' +
+                                      'regclass)::bigint AS n', [row.name]);
+        out.indexes += 1;
+        out.pagesMerged += Number(((merged.rows || [])[0] || {}).n) || 0;
+      }
+    } else {
+      skipped.push('the GIN pending lists were not merged (this role does ' +
+                   'not own the indexes)');
     }
-    await db.query('ANALYZE sts_ldap_entries');
-    out.analyzed = true;
+    if (may.analyze) {
+      await db.query(ANALYZE);
+      out.analyzed = true;
+    } else {
+      skipped.push('the table was not analyzed (this role is not its ' +
+                   'owner and holds no MAINTAIN on it)');
+    }
+    if (skipped.length) {
+      out.refused = skipped.join('; ');
+      log.warn(errorCodes.tag('STS-LDAP-0161') + 'bulk_import: the import ' +
+               'is done; ' + out.refused + '. Neither was asked for. As ' +
+               'the table\'s owner, run: VACUUM (ANALYZE) sts_ldap_entries;');
+    }
   } catch (e) {
     log.debug("Caught in settleIndexes(): " + ((e && e.message) || e));
     out.refused = String((e && e.message) || e);
@@ -1077,7 +1310,9 @@ async function main(argv) {
     const sealing = inRealm(function () {
       return keystore.persists() && keystore.sealed();
     });
-    const merger = await namePendingMerger(pool);
+    // Asked once: what this role may do to the table (#637).
+    const rights = await maintenanceRights(pool);
+    const merger = await namePendingMerger(pool, rights);
     const report = await importFile({
       db: pool, realmId: realm.record.id, usersDn: usersDn,
       file: options.file, batch: options.batch, skip: options.skip,
@@ -1109,7 +1344,7 @@ async function main(argv) {
     });
     report.nameIndex = merger.mode;
     if (report.imported > 0) {
-      report.indexes = await settleIndexes(pool);
+      report.indexes = await settleIndexes(pool, rights);
     }
     const text = JSON.stringify(report, null, 2) + '\n';
     if (options.report) {
@@ -1167,6 +1402,7 @@ module.exports = {
   main: main,
   importFile: importFile,
   settleIndexes: settleIndexes,
+  maintenanceRights: maintenanceRights,
   namePendingMerger: namePendingMerger,
   candidateOf: candidateOf,
   storedOf: storedOf,
@@ -1179,5 +1415,9 @@ module.exports = {
   STATEMENTS: { PRESENT_KEYS: PRESENT_KEYS, HELD_RDNS: HELD_RDNS,
                 HELD_NAME_KEYS: HELD_NAME_KEYS, LOCK: LOCK, INSERT: INSERT,
                 HOLDER: HOLDER,
-                REALM_COUNT: REALM_COUNT, LIVE_READERS: LIVE_READERS }
+                REALM_COUNT: REALM_COUNT, LIVE_READERS: LIVE_READERS,
+                DROP_OWN: DROP_OWN,
+                TABLE_OWNERSHIP: TABLE_OWNERSHIP,
+                TABLE_MAINTAIN: TABLE_MAINTAIN, GIN_INDEXES: GIN_INDEXES,
+                ANALYZE: ANALYZE }
 };

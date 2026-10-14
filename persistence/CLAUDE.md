@@ -1263,12 +1263,81 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   by every probe (25.8 s for 5,000 probes at 25,000 entries, 13 ms merged),
   so it is merged after every batch where permitted (`namePendingMerger()`;
   schema 18 has `fastupdate = off` and nothing to merge).
-* **ONE TRANSACTION A BATCH UNDER `SHARE ROW EXCLUSIVE`** from the check to
-  the commit: readers go on, no other writer can make a checked name taken.
-  The insert is `INSERT … SELECT FROM unnest($n::text[]…) ON CONFLICT DO
-  NOTHING RETURNING dn_key`, and a count short of what was checked free
-  rolls back (STS-LDAP-0159). No `COPY`: the image has no COPY client, and
-  the application role cannot create a staging table.
+* **ONE TRANSACTION A BATCH, COMMITTED UNDER THE REALM'S IMPORT LOCK** —
+  `pg_advisory_xact_lock(629, hashtext(realm))` — taken AFTER the insert,
+  held through the authoritative check to the commit (see *THE INSERT AND
+  THE SEAL ARE OUTSIDE THE LOCK*, below). The insert is `INSERT … SELECT
+  FROM unnest($n::text[]…) ON CONFLICT DO NOTHING RETURNING dn_key`; a DN it
+  did not insert is one another import inserted meanwhile, and counts as
+  present. No `COPY`: the image has no COPY client, and the application
+  role cannot create a staging table.
+* **IT WAS `LOCK TABLE … SHARE ROW EXCLUSIVE` UNTIL #637, AND THAT IS WHAT
+  KEPT AUTOVACUUM OFF THE TABLE.** Every table lock mode that keeps writers
+  out conflicts with autovacuum's SHARE UPDATE EXCLUSIVE, and a lock request
+  that waits `deadlock_timeout` behind an autovacuum CANCELS it. Measured on
+  postgres 18 against a crawling autovacuum: the `LOCK TABLE` request, then
+  `ERROR: canceling autovacuum task` one second later. During a multi-file
+  import the table's autovacuum never finished (#637: 12M rows inserted
+  since the last vacuum at 22M). #637 blamed the end-of-run
+  `gin_clean_pending_list()` and `ANALYZE`; the same probe, as a role that
+  owns neither, cancelled NOTHING — neither waits on a lock autovacuum holds
+  (`ANALYZE` as a non-owner is a WARNING and a skip on 18). **Do not put
+  a table lock back** for any reason that a lock between imports serves.
+  What the table lock seemed to add — holding a RUNNING service's add out —
+  it never did: a running process decides an add against its own window
+  before its flush, so a duplicate could arise on its side with or without
+  the lock. The guard against a running service is the refusal
+  (STS-LDAP-0153), asked before every batch and again under the lock.
+* **THE INSERT AND THE SEAL ARE OUTSIDE THE LOCK (#637), SO SEVERAL IMPORTS
+  PAY.** A batch: (1) a FIRST LOOK, the three statements without the lock —
+  present and taken records dropped and reported, so a re-run still seals
+  nothing; (2) the seal and `settleDeks()`; (3) `BEGIN`, the INSERT in
+  `dn_key` order; (4) the lock; the live check; the three statements AGAIN
+  ON A SECOND CONNECTION; `DROP_OWN` of the batch's rows whose name another
+  import committed first, and of any past the ceiling; `COMMIT`. **Why it
+  holds:** every import commits under the lock and a commit is visible
+  before its lock is released, so a batch holding the lock sees every other
+  import's committed rows; their uncommitted rows will see this one's once
+  it commits. Two batches never both commit a name. **Why a second
+  connection:** it cannot see the batch's own uncommitted rows. Asked in the
+  batch's own transaction, every one of its digests matched its own row and
+  the name check took ~580 ms a batch under the lock against ~60 ms finding
+  nothing, and a WHERE `NOT (dn_key = ANY($own))` compared each own row with
+  the whole array (both measured; a lone import fell to 2,600 a second).
+  **Why `dn_key` order:** the primary key is the one unique index, so the
+  only wait between two inserts is on another import's uncommitted row of
+  the same DN (overlapping files), and two batches taking the same keys in
+  the same order cannot wait on each other in a cycle; D7 runs the same
+  people in opposite orders. **Measured** (postgres 18 with 4 cores, 5,000 a
+  batch, as a non-owner): one import 4,200 a second holding the lock 14% of
+  its run (develop's: 4,750, since it checks once); two 6,400; four 10,500;
+  six 11,800, the database the limit. Under the old table lock, with the
+  seal and the insert inside, four ran at 1.6 times one. The report's
+  `lockSeconds` and `lockWaitSeconds` say how much of a run could not
+  overlap. **Mixing builds is NOT safe**: an older import takes the table
+  lock, does not take this one, and checks before it inserts, so it and a
+  new one over overlapping files could both admit a name.
+  `docs/bulk-import.md` (*Several imports at once*) is the operator's half.
+* **WHAT ELSE SEVERAL IMPORTS SHARE, AND WHY EACH IS SAFE** (read for #637):
+  `sts_change_readers` — an import never reports there (only
+  `persistence_replication.js` does, and the import does not start it), so
+  imports never refuse one another; the #618/#623 counters — the deltas are
+  keyed by `txid` and folded at COMMIT into this connection's shard, and
+  batches of one realm commit one at a time anyway; `REALM_COUNT` — summed
+  over the sixteen shards (it read ONE shard from #630 until #637, so the
+  ceiling was checked against a fraction of the realm — D6 fails with the
+  old statement) and read under the lock, so the ceiling is exact across
+  imports, the rows past it deleted before the commit; the realm's `directory`
+  data key — two imports making the first one at once each queue a row
+  write, and `mergeKeys()` UNIONS the row under `FOR UPDATE`, so both keys
+  are kept and each process seals under its own (no key lost; the service
+  then picks one by `chooseActive()`); the digest key — made at most once at
+  `keystore.start()`, first writer wins and the loser adopts and prunes
+  before any digest is taken; `entryuuid` — `crypto.randomUUID()`, random
+  rather than process-local; `createtimestamp` — a clock reading, which
+  need not be unique; `sts_changes` — written only by a data-key row write,
+  through the `seq` sequence, which readers already treat as having holes;
+  the realm's row — read once, never written.
 * **THE #618 AND #623 COUNTERS NEED NOTHING.** Their triggers are statement
   level over transition tables, so one insert of N rows writes one delta per
   parent and per data key, folded at commit. D2/D4/D6 compare every counter
@@ -1278,10 +1347,17 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   keystore is handed the driver's own key functions, as `persistence.js`
   hands them.
 * **AFTER THE LAST BATCH** it merges the GIN pending lists
-  (`gin_clean_pending_list()` on each GIN index of the table) and ANALYZEs
-  it: forty million rows in `fastupdate` pending lists make every lookup scan
-  them. Both need the owner or MAINTAIN; refused, it is STS-LDAP-0161 with
-  the `VACUUM (ANALYZE)` to run, and the import is still done.
+  (`gin_clean_pending_list()` on each GIN index of the table that keeps one)
+  and ANALYZEs it: forty million rows in `fastupdate` pending lists make
+  every lookup scan them. **ASKED BEFORE IT IS ISSUED (#637)**:
+  `maintenanceRights()` asks `pg_has_role(current_user, relowner, 'USAGE')`
+  (the merge needs the index's OWNER — MAINTAIN on the table is not enough,
+  measured on 18) and, from postgres 17, `has_table_privilege(…,
+  'MAINTAIN')` (enough to ANALYZE); what the role may not do is skipped with
+  one STS-LDAP-0161 line naming the owner's `VACUUM (ANALYZE)`, and the
+  import is still done. The per-batch merge on schema 17 asks the same, once.
+  `ANALYZE (SKIP_LOCKED)`, so that the owner's ANALYZE never waits for, and
+  so cancels, an autovacuum of the table already running.
 * **IT DOES NOT REQUIRE `ou=users` AS A ROW.** Every process seeds the
   containers in memory at start. **A windowed front process on an EMPTY
   store was seen to write the seed's people and not its containers** (the
