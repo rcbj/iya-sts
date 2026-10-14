@@ -104,15 +104,14 @@ function artOf(res) {
 }
 
 // Everything a realm's partition of a store holds, keys and values, as text.
+// `store` is the store's registry row (`realms.handleFor()`), whose `dump()`
+// answers the live rows.
 function everything(store, realmId) {
   log.debug("Entering everything().");
   const out = [];
-  const map = store.realmMap(realmId);
-  if (map) {
-    map.forEach(function (value, key) {
-      out.push(String(key), JSON.stringify(value));
-    });
-  }
+  store.dump(realmId).forEach(function (row) {
+    out.push(String(row.key), JSON.stringify(row.value));
+  });
   log.debug("Leaving everything().");
   return out.join('\n');
 }
@@ -144,21 +143,28 @@ async function run(t) {
     log.debug("Leaving codeOf().");
     return errorCodes.codeOf(res) || '';
   };
+  // A snapshot of the default realm's partition, as a Map whose VALUES are
+  // the live records — so a test may age one in place.
+  const mapOf = function (store) {
+    log.debug("Entering mapOf().");
+    const out = new Map();
+    store.dump(DEFAULT).forEach(function (row) {
+      out.set(row.key, row.value);
+    });
+    log.debug("Leaving mapOf().");
+    return out;
+  };
   const clear = function (store) {
     log.debug("Entering clear().");
-    const map = store.realmMap(DEFAULT);
-    if (map) {
-      Array.from(map.keys()).forEach(function (k) {
-        map.delete(k);
-      });
-    }
+    store.dump(DEFAULT).forEach(function (row) {
+      store.remove(DEFAULT, row.key);
+    });
     log.debug("Leaving clear().");
   };
   const sizeOf = function (store) {
     log.debug("Entering sizeOf().");
-    const map = store.realmMap(DEFAULT);
     log.debug("Leaving sizeOf().");
-    return map ? map.size : 0;
+    return store.dump(DEFAULT).length;
   };
   const deliver2 = function (marker) {
     log.debug("Entering deliver2().");
@@ -222,7 +228,7 @@ async function run(t) {
     t.check(sent.statusCode === 303 && art.length === 60,
             'a delivery on HTTP-Artifact redirects with a 44-byte artifact',
             sent.statusCode + ' ' + art);
-    const map2 = artifacts2.realmMap(DEFAULT);
+    const map2 = mapOf(artifacts2);
     t.check(map2 && map2.size === 1 &&
             map2.has(stsCrypto.credentialDigest(art)),
             'the store holds ONE entry, keyed by credentialDigest(artifact)');
@@ -288,7 +294,7 @@ async function run(t) {
               /_cap-1/.test(everything(artifacts2, DEFAULT)),
               'and nothing was evicted to make room: the unresolved ' +
               'artifacts are both still held');
-      const map = artifacts2.realmMap(DEFAULT);
+      const map = mapOf(artifacts2);
       map.forEach(function (held) {
         held.expires = Date.now() - 1;
       });
@@ -304,7 +310,7 @@ async function run(t) {
     clear(artifacts2);
     const stale = deliver2('_stale');
     const staleArt = artOf(stale);
-    artifacts2.realmMap(DEFAULT).forEach(function (held) {
+    mapOf(artifacts2).forEach(function (held) {
       held.expires = Date.now() - 1;
     });
     const late = await resolve2(staleArt);
@@ -322,7 +328,7 @@ async function run(t) {
     t.check(sent11.statusCode === 303 && art11.length === 56,
             'a Browser/Artifact delivery redirects with a 42-byte artifact',
             sent11.statusCode + ' ' + art11);
-    const map11 = artifacts11.realmMap(DEFAULT);
+    const map11 = mapOf(artifacts11);
     t.check(map11 && map11.size === 1 &&
             map11.has(stsCrypto.credentialDigest(art11)) &&
             everything(artifacts11, DEFAULT).indexOf(art11) < 0 &&
@@ -351,7 +357,7 @@ async function run(t) {
     });
     clear(artifacts11);
     const stale11 = artOf(deliver11('_s11'));
-    artifacts11.realmMap(DEFAULT).forEach(function (held) {
+    mapOf(artifacts11).forEach(function (held) {
       held.expires = Date.now() - 1;
     });
     const late11 = await resolve11('<samlp:AssertionArtifact>' + stale11 +
@@ -368,7 +374,7 @@ async function run(t) {
     const future = new Date(Date.now() + 600000).toISOString()
       .replace(/\.\d+Z$/, 'Z');
     direct11.rememberAssertion(assertion11('_kept-live', future));
-    const kept = byId.realmMap(DEFAULT).get('_kept-live');
+    const kept = mapOf(byId).get('_kept-live');
     t.check(kept && typeof kept.xml === 'string' &&
             kept.expires === Date.parse(future),
             'an entry is { xml, expires }, expiring at the assertion\'s ' +
@@ -378,7 +384,7 @@ async function run(t) {
       function () {
         direct11.rememberAssertion(assertion11('_kept-bare', ''));
       });
-    const bare = byId.realmMap(DEFAULT).get('_kept-bare');
+    const bare = mapOf(byId).get('_kept-bare');
     t.check(bare && bare.expires >= before + 120000 &&
             bare.expires <= Date.now() + 120000,
             'one with no NotOnOrAfter expires saml11.assertionCacheTtlS ' +
@@ -392,11 +398,11 @@ async function run(t) {
             /_kept-live/.test(liveRef.body),
             'a live assertion is answered by AssertionIDReference',
             codeOf(liveRef));
-    byId.realmMap(DEFAULT).get('_kept-live').expires = Date.now() - 1;
+    mapOf(byId).get('_kept-live').expires = Date.now() - 1;
     const deadRef = await resolve11(ref('_kept-live'));
     t.check(!/<saml:Assertion\b/.test(deadRef.body) &&
             codeOf(deadRef) === 'STS-SAML-0038' &&
-            !byId.realmMap(DEFAULT).has('_kept-live'),
+            !mapOf(byId).has('_kept-live'),
             'one past its NotOnOrAfter is NOT answered (STS-SAML-0038), and ' +
             'is deleted', codeOf(deadRef));
     byId.restore(DEFAULT, '_old-shape', '<saml:Assertion/>');
@@ -410,21 +416,21 @@ async function run(t) {
     clear(artifacts11);
     direct11.rememberAssertion(assertion11('_eject-me', future));
     direct11.rememberAssertion(assertion11('_keep-me', future));
-    byId.realmMap(DEFAULT).get('_eject-me').expires = Date.now() - 1;
+    mapOf(byId).get('_eject-me').expires = Date.now() - 1;
     artOf(deliver2('_eject2'));
-    artifacts2.realmMap(DEFAULT).forEach(function (held) {
+    mapOf(artifacts2).forEach(function (held) {
       held.expires = Date.now() - 1;
     });
     artOf(deliver11('_eject11'));
-    artifacts11.realmMap(DEFAULT).forEach(function (held) {
+    mapOf(artifacts11).forEach(function (held) {
       held.expires = Date.now() - 1;
     });
     const ejected = cacheRegistry.ejectExpired();
     t.check((ejected.byCache['saml11.assertions'] || 0) >= 1 &&
             (ejected.byCache['saml2.artifacts'] || 0) >= 1 &&
             (ejected.byCache['saml11.artifacts'] || 0) >= 1 &&
-            !byId.realmMap(DEFAULT).has('_eject-me') &&
-            byId.realmMap(DEFAULT).has('_keep-me') &&
+            !mapOf(byId).has('_eject-me') &&
+            mapOf(byId).has('_keep-me') &&
             sizeOf(artifacts2) === 0 && sizeOf(artifacts11) === 0,
             'cacheRegistry.ejectExpired() (the caches.eject-expired job) ' +
             'ejects the expired from all three stores and nothing live',

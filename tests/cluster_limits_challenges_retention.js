@@ -448,7 +448,8 @@ function childMain() {
       pend(alice);
       pend(bob);
       const present = function (n) {
-        return pendingHandle.read('', DOOR + '|' + n.id).present;
+        return pendingHandle.read('', DOOR + '|' +
+          require(ROOT + '/common/crypto').credentialDigest(n.id)).present;
       };
       note(present(alice) && present(bob),
            'D1. TWO NEGOTIATIONS PENDING FROM ONE ADDRESS COEXIST — behind a ' +
@@ -486,7 +487,11 @@ function childMain() {
       // the real continuation does since SPNEGO became per trust realm
       // (2026-09-15). It read `realm: ''` while the store was shared, and a
       // claim in a realm nothing claims in would no longer collide with it.
-      await claims.claim({ scope: 'spnego.continuation', value: carol.id,
+      // The claim's value is the row's id, the cookie's digest since #614 —
+      // the same on every node.
+      await claims.claim({ scope: 'spnego.continuation',
+                           value: require(ROOT + '/common/crypto')
+                             .credentialDigest(carol.id),
                            ttlMs: 60000 });
       const carolAgain = await exchange.negotiate(
         await continuationFor(carol, carol.id, false), { door: DOOR });
