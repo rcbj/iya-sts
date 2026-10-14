@@ -17227,6 +17227,33 @@ function listing() {
   return held.listing;
 }
 
+// ---------------------------------------------------------------------------
+// THE CLOCK THE LISTING IS KEPT BY, FOR A CALLER THAT KEEPS SOMETHING OF ITS
+// OWN BUILT FROM `list()` (#625): the store's `applicationsVersion()` — the
+// subtree clock of ou=applications in the ambient realm, moved by every write
+// there, by a write that names no DN, and by a row another process wrote
+// that this one applied — or null where the store has no such hook (a
+// test's stub), which means "keep nothing". The outbound SCIM client asked
+// `list()` on every directory change, a view of every application built per
+// change, and keeps its own clients by this instead.
+// ---------------------------------------------------------------------------
+/**
+ * The version `list()`'s answer is kept by in the ambient realm.
+ *
+ * @returns the version, or null when nothing may be kept
+ */
+function listingVersion() {
+  log.debug("Entering listingVersion().");
+  const backing = store();
+  if (!backing || typeof backing.applicationsVersion !== 'function') {
+    log.debug("Leaving listingVersion(). No version.");
+    return null;
+  }
+  const version = backing.applicationsVersion();
+  log.debug("Leaving listingVersion(). " + version);
+  return version;
+}
+
 /**
  * Lists every application in the ambient realm, most recently seen first.
  *
@@ -19518,6 +19545,8 @@ module.exports = {
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
+  // The clock `list()` is kept by (#625).
+  listingVersion: listingVersion,
   // OpenID Federation registrations (#134).
   federatedRegistrations: federatedRegistrations,
   federationExpired: federationExpired,

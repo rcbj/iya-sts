@@ -1390,6 +1390,20 @@ let directoryVersion = 0;
 let groupsVersion = 0;
 
 // ---------------------------------------------------------------------------
+// WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
+//
+// One watch per add whose names are out being asked (`askBeforeTheAdd()`),
+// from the moment before the question until its body has run: the DNs every
+// write since then landed on, and the usernames (`usernameKeysOf()`: every
+// `uid` and the RDN value, lower-cased) of an entry at such a DN under
+// `ou=users`. `noteHeldNamesTouched()`, from `touchDirectory()`, fills them.
+// Empty except while an add is between its question and its body, so the
+// cost to every other write is one `size` test. Declared here, beside the
+// clocks, for `touchDirectory()`'s temporal dead zone.
+// ---------------------------------------------------------------------------
+const heldNameWatches = new Set();
+
+// ---------------------------------------------------------------------------
 // A NUL BYTE IN A DIRECTORY VALUE, WHICH IS THE ONE THING THIS SOCKET REFUSES
 // ABOUT WHAT A VALUE CONTAINS (2026-09-06).
 //
@@ -1460,6 +1474,9 @@ function touchDirectory(dn, after) {
   log.debug("Entering touchDirectory().");
   directoryVersion++;
   noteGroupsTouched(dn, after);
+  // And any add holding names it asked first is told what this write
+  // touched (#625).
+  noteHeldNamesTouched(dn, after);
   // WHERE IT LANDED, when the caller said so. See subtreeClocks() below: a
   // caller that names the DN it wrote lets a listing of some OTHER container
   // survive this write, and a caller that says nothing invalidates every
@@ -2455,6 +2472,81 @@ function noteGroupsTouched(dn, after) {
     return;
   }
   log.debug('Leaving noteGroupsTouched(). Not a group; the index stands.');
+}
+
+// ---------------------------------------------------------------------------
+// A WRITE, TOLD TO EVERY ADD HOLDING NAMES IT ASKED FIRST (#625).
+//
+// #621 kept an add's answers only while `subtreeVersion(ou=users)` had not
+// moved, and under a bulk load from several connections another add always
+// moved it: the body asked `existingUserEntry()` synchronously again on
+// almost every add — 12 s of every 30 s on a request worker of 8081, the
+// add rate down from about 65/s to 47/s. The answer to "who holds name N"
+// can be changed only by a write to an entry that holds or held N, so that
+// is what is recorded, per watch (`heldNameWatches`):
+//
+//   * EVERY DN WRITTEN, wherever it is. An entry the answer named (it held N
+//     then) can only stop holding N by a write at its DN, and the add's own
+//     DN is checked the same way.
+//   * THE NAMES OF THE ENTRY NOW AT THAT DN, when it is directly under
+//     `ou=users` — its RDN value and every `uid`, lower-cased, the keys
+//     `existingUserEntry()` and the username index match by — so an entry
+//     that has come to hold N, by an add, a modify that gave it a `uid`, or
+//     a row another process wrote and this one applied, is seen. A delete
+//     contributes the RDN value of the DN it emptied.
+//   * EVERYTHING, for a write that names no DN (a rename, a restore, a realm
+//     dropped) or whose entry this process cannot see without asking the
+//     store. Neither is on an add's path; a rename costs the adds in flight
+//     one synchronous question each, as every write did before.
+//
+// The DNs a watch may record are bounded (`HELD_NAMES_TOUCH_LIMIT`); past
+// that it records "everything", the conservative answer.
+// ---------------------------------------------------------------------------
+const HELD_NAMES_TOUCH_LIMIT = 4096;
+
+// Hot path (every write): no Entering/Leaving pair, the exception the code
+// style allows, stated as it requires — with no add between its question
+// and its body this is one `size` test.
+function noteHeldNamesTouched(dn, after) {
+  if (!heldNameWatches.size) {
+    return;
+  }
+  const realmId = realms.currentId();
+  let key = null;
+  let names = null;
+  if (dn !== undefined && dn !== null && dn !== '') {
+    key = normalizeDn(dn);
+    names = [];
+    if (normalizeDn(parentDn(String(dn))) === normalizeDn(usersDn())) {
+      let now = after;
+      if (now === undefined) {
+        if (directoryWindow) {
+          const held = directoryWindow.heldIn(realmId, key);
+          now = held.known ? held.entry : undefined;
+        } else {
+          now = entries.get(key) || null;
+        }
+      }
+      // Unknown: what is at the DN cannot be seen without asking the store,
+      // so any name may now be held there.
+      names = now === undefined ? null
+        : usernameKeysOf(now || { dn: String(dn), attributes: {} });
+    }
+  }
+  heldNameWatches.forEach(function (watch) {
+    if (watch.realm !== realmId || watch.everything) {
+      return;
+    }
+    if (key === null || names === null ||
+        watch.dns.size >= HELD_NAMES_TOUCH_LIMIT) {
+      watch.everything = true;
+      return;
+    }
+    watch.dns.add(key);
+    names.forEach(function (name) {
+      watch.names.add(name);
+    });
+  });
 }
 
 // THE NAMING CONTEXTS THIS SOCKET SERVES: the root, and one per defined realm.
@@ -5053,6 +5145,9 @@ const directoryHooks = {
         // process changed must not leave this index current, so the group
         // clock is asked on its own.
         noteGroupsTouched(key, after);
+        // And an add holding names it asked first (#625): a row naming one
+        // of them is news to it whether or not this key is busy here.
+        noteHeldNamesTouched(key, after);
       }
     });
     if (row && row.dn && row.origin !== 'seed') {
@@ -16456,8 +16551,11 @@ function ldapAddNow(req, res, next) {
     noteAccountChange('created', addedEntry.dn, {},
                       attributeSnapshot(addedEntry));
   }
-  log.debug('ldap: added ' + dn + ' with ' + Object.keys(attributes).length +
-            ' attribute(s).');
+  // Hot (#627): once per add, and the count is a list built to be logged.
+  if (log.debug()) {
+    log.debug('ldap: added ' + dn + ' with ' +
+              Object.keys(attributes).length + ' attribute(s).');
+  }
   // What KIND of thing was created is decided by PLACEMENT and not by the
   // objectClass the client sent, and that is not a shortcut. This directory is
   // schemaless: a client can add a `groupOfNames` under ou=users or an entry
@@ -16633,6 +16731,10 @@ server.add('', function (req, res, next) {
                                               'read'))
       : coded('STS-LDAP-0142', new ldap.OperationsError('the add could ' +
                                                         'not be completed')));
+  }).finally(function () {
+    // THE WATCH GOES WITH THE ADD (#625), however it ended: a watch left
+    // behind would record every write of this process for nothing.
+    releaseHeldNames(req);
   });
 });
 
@@ -16655,17 +16757,26 @@ server.add('', function (req, res, next) {
 //     question was out is left alone, so the window never holds an answer
 //     older than its own state.
 //   * THE NAMES are resolved by `existingUserEntriesAsync()` — the same rule
-//     as `existingUserEntry()` — and kept on the request with the subtree
-//     clock of `ou=users` as it stood BEFORE the question was asked
-//     (`req.stsHeldNames`). The body uses an answer only while that clock
-//     has not moved (`heldUserEntry()`): any write under `ou=users` here,
-//     or any row another process wrote that this one applied, sends it back
-//     to the synchronous lookup.
+//     as `existingUserEntry()` — and kept on the request
+//     (`req.stsHeldNames`) with a WATCH opened BEFORE the question was asked
+//     (`heldNameWatches`), which records every DN written and every name an
+//     entry written under `ou=users` holds, here or applied from another
+//     process, until the body has run. The body uses an answer only while
+//     nothing written since could have changed it (`heldUserEntry()`): no
+//     write at the add's DN or at the entry the answer named, and no entry
+//     written that holds the name. Otherwise that one name goes back to the
+//     synchronous lookup. **PER NAME, NOT PER CONTAINER (#625)**: #621 kept
+//     the answers while `subtreeVersion(ou=users)` stood still, and under a
+//     bulk load from several connections another add always moved it, so
+//     almost every add asked `byName` twice.
 //
 // **WHY THAT IS AS SAFE AS THE SYNCHRONOUS CHECK.** The answer is a moment
 // older than one asked in the body; what could have happened in that moment
-// is (a) a write in THIS process, which moves the clock, or (b) a commit by
-// ANOTHER process this one has not applied yet. (b) is a create of one of
+// is (a) a write in THIS process, or a row another process wrote that this
+// one APPLIED (`forgetEntry()` -> `touchDirectory(key, row)`, which hands
+// the row, so its names are seen without asking the store, busy key or
+// not), both of which the watch records, or (b) a commit by ANOTHER process
+// this one has not applied yet. (b) is a create of one of
 // these names only where several processes write one store — and there
 // `claimingTheAdd()`, outermost and before this runs, holds the DN and every
 // one of these names across the cluster until the add is flushed
@@ -16731,9 +16842,16 @@ async function askBeforeTheAdd(req) {
   const names = person ? proposedUsernames(req, dn).map(function (one) {
     return String(one == null ? '' : one);
   }) : [];
-  // THE CLOCK FIRST, before anything is asked: a write during the questions
-  // must make their answers unusable, never the other way round.
-  const version = subtreeVersion(usersDn());
+  // THE WATCH FIRST, before anything is asked: a write during the questions
+  // must make their answers unusable, never the other way round. It stays
+  // open until the add has run (`releaseHeldNames()`).
+  let watch = null;
+  if (names.length) {
+    watch = { realm: realmId, everything: false, dns: new Set(),
+              names: new Set() };
+    heldNameWatches.add(watch);
+    req.stsHeldWatch = watch;
+  }
   await directoryWindow.warmAsync(realmId, [normalizeDn(dn)].concat(
     names.map(function (name) {
       return normalizeDn('uid=' + name + ',' + usersDn());
@@ -16744,32 +16862,56 @@ async function askBeforeTheAdd(req) {
     names.forEach(function (name, i) {
       answers.set(name, found[i] || null);
     });
-    req.stsHeldNames = { realm: realmId, version: version,
+    req.stsHeldNames = { realm: realmId, dn: normalizeDn(dn), watch: watch,
                          answers: answers };
   }
   log.debug('Leaving askBeforeTheAdd(). ' + names.length + ' name(s).');
 }
 
 /**
- * What `askBeforeTheAdd()` found for a name, while it still holds.
+ * Closes the watch an add opened when it asked its names (#625).
+ *
+ * @param req - the add request
+ */
+function releaseHeldNames(req) {
+  log.debug('Entering releaseHeldNames().');
+  if (req && req.stsHeldWatch) {
+    heldNameWatches.delete(req.stsHeldWatch);
+    delete req.stsHeldWatch;
+  }
+  log.debug('Leaving releaseHeldNames(). ' + heldNameWatches.size +
+            ' open.');
+}
+
+/**
+ * What `askBeforeTheAdd()` found for a name, while it still holds: while
+ * nothing written since the question went out could have changed it.
  *
  * @param req - the add request
  * @param name - a proposed username
  * @returns the entry, null for nobody, or undefined when not held (never
- *   asked, another realm, or something under `ou=users` moved since)
+ *   asked, another realm, or a write since touched the add's DN, the entry
+ *   the answer named, or an entry that holds the name)
  */
 function heldUserEntry(req, name) {
   log.debug('Entering heldUserEntry().');
   const held = req && req.stsHeldNames;
   const key = String(name == null ? '' : name);
-  if (!held || held.realm !== realms.currentId() ||
-      held.version !== subtreeVersion(usersDn()) ||
-      !held.answers.has(key)) {
+  if (!held || held.realm !== realms.currentId() || !held.watch ||
+      held.watch.everything || !held.answers.has(key)) {
     log.debug('Leaving heldUserEntry(). Not held.');
     return undefined;
   }
+  const watch = held.watch;
+  const answer = held.answers.get(key);
+  // The name as the username index and `existingUserEntry()` match it.
+  if (watch.names.has(key.trim().toLowerCase()) || watch.dns.has(held.dn) ||
+      (answer && watch.dns.has(normalizeDn(answer.dn)))) {
+    log.debug('Leaving heldUserEntry(). Touched since it was asked.');
+    return undefined;
+  }
   log.debug('Leaving heldUserEntry(). Held.');
-  return held.answers.get(key);
+  return answer;
 }
 
 
@@ -21155,8 +21297,11 @@ function attributeSnapshot(stored) {
       out[name] = (stored.attributes[name] || []).slice(0);
     });
   }
-  log.debug('Leaving attributeSnapshot(). ' + Object.keys(out).length +
-            ' attribute(s).');
+  // Hot (#627): once per add. The count is a list built only to be logged.
+  if (log.debug()) {
+    log.debug('Leaving attributeSnapshot(). ' + Object.keys(out).length +
+              ' attribute(s).');
+  }
   return out;
 }
 
@@ -24635,7 +24780,15 @@ module.exports = {
   // this module's own lookups to what they answer through a window; nothing
   // in the service reads it from here (persistence.js has it through the
   // directory slot).
-  directoryWindow: directoryWindow
+  directoryWindow: directoryWindow,
+  // HOW MANY ADDS HOLD NAMES THEY ASKED FIRST (#625), for
+  // `tests/directory_window_requests.js`: a watch is open from an add's
+  // question until its body has run, and none is left behind.
+  openHeldNameWatches: function () {
+    log.debug('Entering openHeldNameWatches().');
+    log.debug('Leaving openHeldNameWatches().');
+    return heldNameWatches.size;
+  }
 };
 
 // Loaded: from here on a membership note can read what it needs (see

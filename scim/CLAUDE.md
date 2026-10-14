@@ -813,7 +813,14 @@ included — for the secrets.
 
 **A CHANGE IS A ROW, AND THE ROW IS THE RESOURCE.** The directory's account
 observer (`ldap_server.js`'s `addAccountObserver()`) tells this module of
-every write to a person and every membership change; for each ENABLED client
+every write to a person and every membership change (**the realm's clients
+kept, not listed per change** — #625: `applications.list()` built a view of
+every application on every change, half a second of every thirty on a
+request worker during an LDAP bulk load; `observedClients()` keeps the rows
+per realm by `applications.listingVersion()`, the ou=applications clock
+`list()`'s own parse is kept by, moved by every write there, every write
+naming no DN and every applied row; a store with no clock keeps nothing,
+and whether this cell pushes is still asked per change); for each ENABLED client
 a row is queued under `<client>|User|<uuid>` or `<client>|Group|<uuid>` in
 `oauth-oidc/outbound_delivery.ts`'s queue — the claims, fences, retries and
 dead letters every outbound delivery kind here shares — and **the row carries
