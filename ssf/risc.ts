@@ -2269,10 +2269,10 @@ class RiscRegister {
   // snapshot. So a fresh row is kept when the write:
   //   * produced an act (an account created disabled, a purge, an
   //     identifier moved or recycled, recovery information changed) — the
-  //     row is where its state and its audit-visible notes live;
-  //   * released an identifier — `identifier-recycled` is read from the
-  //     register's own history, and dropping it would be forgetting the one
-  //     fact this register exists to remember;
+  //     row is where its state and its audit-visible notes live. That
+  //     includes every write that RELEASES an identifier, which
+  //     `identifier-recycled` is read from: a purge is an act, and so is
+  //     every move `identifierMoves()` releases;
   //   * named a SERVICE ACCOUNT — the opt-out gate reads that off the row,
   //     and an absent row would offer its holder an opt-out it has none of.
   // What is given up is `/admin/risc-accounts` listing accounts nothing has
@@ -2283,9 +2283,7 @@ class RiscRegister {
   private keepsFreshRow(row: RiscRow, acts: RiscAct[]): boolean {
     const { log } = this.deps;
     log.debug("Entering RiscRegister.keepsFreshRow().");
-    const keep = acts.length > 0 ||
-      (row.releasedIdentifiers || []).length > 0 ||
-      row.serviceAccount === true;
+    const keep = acts.length > 0 || row.serviceAccount === true;
     log.debug("Leaving RiscRegister.keepsFreshRow(). " + keep);
     return keep;
   }
