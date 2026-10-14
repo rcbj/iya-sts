@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4333** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4335** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -64,8 +64,8 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 713
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 110
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 23
 * [Federation (`STS-FED`)](#sts-fed) — 141
@@ -2181,6 +2181,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0955` | A token exchange presented an actor_token that was not issued to the exchanging client: its client_id (or azp) names another client, a token carrying neither does not name the client in aud, or a client_credentials token is about another client. Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0956` | A token exchange presented an actor_token whose aud names neither this authorization server (its issuer or token endpoint) nor the exchanging client (its client_id, identifier or oauthAudience). Refused in every mode (#550). | invalid_request (RFC 8693 section 2.2.2) |
 | `STS-OAUTH-0957` | A client asked, on a token whose subject is an application (client_credentials), for an application permission no role it holds authorizes (rolePermission), and the issuance policy left it off the tokens. A delegated permission (oauthDelegatedPermission) needs a person and does not count here (#551). | none — issued without that scope (RFC 6749 section 3.3); invalid_scope when nothing else was asked for |
+| `STS-OAUTH-0958` | An authorization code was presented again under oauth2.codeReplayIdempotent, and the record of its redemption holds no response to replay: it was redeemed while the relaxation was not in force, and only its jtis were kept (#614). Refused, and what it bought is revoked. | 400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5) |
 
 ## STS-SAML
 
@@ -2299,6 +2300,7 @@ Raised from: saml/.
 | `STS-SAML-0107` | A SAML 2.0 request back from its one sign-in trip, or with IsPassive, still rested on a second factor the service provider does not allow (appMfaMechanism, #475). | Responder / RequestDenied |
 | `STS-SAML-0108` | A SAML 1.1 sign-in reached a session whose second factor the relying party does not allow (appMfaMechanism, #475); the person was sent to sign in again with one it does, once. | HTTP 303 to the sign-in screen |
 | `STS-SAML-0109` | A SAML 1.1 flow back from its one sign-in trip still rested on a second factor the relying party does not allow (appMfaMechanism, #475). | HTTP 403 page |
+| `STS-SAML-0110` | A SAML 2.0 or SAML 1.1 artifact could not be issued: the realm already holds saml2.maxArtifacts (saml11.maxArtifacts) unresolved artifacts, and a full store refuses rather than forget one (#614). Nothing was sent to the service provider. | HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 Browser/Artifact profile can carry no failure without an artifact |
 
 ## STS-WSTRUST
 
@@ -4472,9 +4474,9 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0650` | A software statement could not be issued because there was no issuer to name: no request address reached the action and oauth2.issuer is not set. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-ADMIN-0700` | The query string of /admin/oauth2/monitor did not match the shape the page accepts (state, client_id, page, per, clientsPage, offset, limit, format) and was refused before anything was read. | HTTP 400 text/plain |
 | `STS-ADMIN-0701` | An OAuth 2.0 monitoring action named an action the page does not have; the refusal names the one it does. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0702` | A withdrawal of a pushed authorization request carried no request_uri, or one longer than the store could ever hold. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0703` | A withdrawal of a pushed authorization request named a value that is not in the urn:ietf:params:oauth:request_uri: namespace this service issues pushed request_uris from (RFC 9126 section 2.2). | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
-| `STS-ADMIN-0704` | A withdrawal named a request_uri this realm does not hold: it was never pushed here, it expired and was swept, or it was already withdrawn. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
+| `STS-ADMIN-0702` | A withdrawal of a pushed authorization request carried no request_uri_digest (the handle it is listed by), or one longer than a handle could ever be. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
+| `STS-ADMIN-0703` | A withdrawal of a pushed authorization request named a value that is not a handle: the base64url SHA-256 of a request_uri, 43 characters, which is all the store keeps of one (#614). | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
+| `STS-ADMIN-0704` | A withdrawal named a pushed request this realm does not hold: it was never pushed here, it expired and was swept, or it was already withdrawn. | the caller's refusal (a 303 with error= on the console, HTTP 400 { ok: false, errors } on /admin-api) |
 | `STS-ADMIN-0705` *(retired)* | An OAuth 2.0 monitoring console action threw; nothing is known to have changed and the log line carries the stack. | a 303 back to /admin/oauth2/monitor with error= |
 | `STS-ADMIN-0706` | The bootstrap administrator could not be created in the default realm, or could not be given both console roles, at startup. | none — logged |
 | `STS-ADMIN-0720` | Issuing an application a TLS client certificate was refused with no more specific code (the key algorithm, the label or the realm's certificate authority). | the caller's refusal (errors on a console or /admin-api reply) |

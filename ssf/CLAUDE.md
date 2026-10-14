@@ -521,6 +521,19 @@ rule is enforced in code, not in policy.
   ended, observed, or failed (`STS-SSF-0111`). A policy that cannot be
   loaded is `STS-SSF-0110`.
 
+**AN INBOX ROW KEEPS THE SET'S DIGEST, NEVER THE SET (#614).** A row is
+`tokenDigest` (`crypto.credentialDigest()` of the compact SET), the header
+and the claims read when it arrived, and the verdict and reactions decided
+then. It kept the whole signed token until #614 — 1–4 kB a row, up to
+`ssf.maxReceivedEvents` per surface per realm, replicated into every process
+— for a `describeEntry()` option, `withToken`, that no page, operation or
+test ever passed. The option is gone and every described row carries
+`tokenDigest`, which matches a row against the SET a transmitter logged.
+The OUTBOUND stores stay whole, and that is the exception the issue names:
+`ssf_streams.queued` and `ssf_streams.deadLetters` hold the SET until the
+receiver acknowledges it, because a poll (RFC 8936) or a re-push sends those
+exact bytes. `tests/vc_store_digests.js` section 7 holds the inbox's shape.
+
 `tests/signal_response.js` covers the policy, its decisions, and a real
 signed SET through `accept()`: development observes; the person's own
 console session is ended, once; somebody else's event, an unverified SET

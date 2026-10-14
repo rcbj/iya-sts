@@ -8260,6 +8260,13 @@ under `/admin/users`.
 produce** — a person who opens the page and never scans it would be locked out
 by a form they abandoned.
 
+**`credentials.pendingBackupCodes` is keyed by `credentialDigest(handle)`
+since #614** (`pendingCodesKey()`): the handle is what lets a form confirm the
+set and is only looked up and spent. The CODES stay whole in the record — the
+page shows them again until they are confirmed, and they are scrypt-hashed
+then. `pendingTotp` and `pendingKeys` are keyed by a username, which is not a
+credential; the TOTP seed and the WebAuthn options in them are re-drawn.
+
 **The three pending stores are persisted since 2026-09-14 (#46)** —
 `credentials.pendingTotp`, `credentials.pendingBackupCodes` and
 `credentials.pendingKeys`. They were deliberately undeclared, on the argument
@@ -9146,6 +9153,17 @@ session's `derivedFromRealm`, where its adopted children live (`derivedFrom()`'s
 `alsoRealm`). That makes the recursion two levels deep for the first time.
 `portal/CLAUDE.md` argues the rest. `authn.adoptRelyingPartySession()` is the
 function, and the portal is its only caller.
+
+**WHAT IT KEEPS OF A CREDENTIAL (#614, 2026-10-13).** A flow in progress
+(`oidc_rp.flows`) is keyed by the DIGEST of its `state`
+(`crypto.credentialDigest()`), hashed as it is minted and as the callback
+presents it, so no row holds a state; the PKCE verifier and the nonce stay on
+the row, the first because it is sent to the token endpoint. `rpTokens` keeps
+its access token WHOLE: the issue asked whether it is only compared (the
+renewal's race check) so that a digest would do, and it is not — the embedded
+debugger, the one surface still a relying party here, verifies it on every
+request at its gate. The refresh token is redeemed and the ID Token re-read,
+so neither can be a digest.
 
 ## `version.js`: M.N.O, and why the build number is not computed at startup (2026-09-06)
 
@@ -10821,6 +10839,14 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   what `tests/no_periodic_timers.js` holds.
 - **A SENT message loses its body.** A dead letter keeps its body for the
   retry, and a captured one keeps it because the body is all it is for.
+  **#614 asked whether a dead letter should, and the answer is yes**: the
+  body holds the reset and verification links and codes, which is why a
+  sent row drops it, but `retry()` re-sends exactly that body and a row
+  without one is refused (`STS-MAIL-0018`, "kept no body"). So a dead
+  letter keeps it until it is retried — after which the retry's own `sent`
+  drops it — or until retention removes the row (`mail.retentionS`,
+  `mail.maxRows`), which is the only way a dead letter is dropped. The
+  links it carries expire on their own lifetimes either way.
 
 **Three rules keep it from being an open relay or a phishing kit:**
 

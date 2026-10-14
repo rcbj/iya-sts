@@ -1539,7 +1539,10 @@ is configured to mint.
   realm, newest first: what each asked for, when it expires, and whether the
   wallet's answer was accepted or refused, with the disclosed claims' names
   and any failed checks — never a value. One whole verdict is
-  `GET /admin-api/verifications?state=`. A wallet sign-in is not listed.
+  `GET /admin-api/verifications?state=`: the checks, the claims that
+  verified and the names disclosed, with the presentation named by
+  `presentationDigest` (its SHA-256, base64url). The presentation itself is
+  not kept, so it cannot be read back. A wallet sign-in is not listed.
 
 **This page admits nobody.** A presentation to the Verifier starts no session
 and issues no token. Signing in with a wallet is `/authn/wallet`, which asks for

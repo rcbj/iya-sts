@@ -358,8 +358,10 @@ function childMain() {
       // issueDigestNonce(), put in the store the way replication restores a
       // row.
       const foreignNonce = nodeCrypto.randomBytes(18).toString('base64');
-      realms.handleFor('scim.digestNonces').restore('', foreignNonce,
-                                                    { at: Date.now() });
+      // Under its digest, as the store keeps it since #614.
+      realms.handleFor('scim.digestNonces').restore('',
+        require(ROOT + '/common/crypto').credentialDigest(foreignNonce),
+        { at: Date.now() });
       const first = await scimAuth.authenticateSpent(
         digestRequest(foreignNonce, '00000001'), 'read');
       note(first.ok && first.scheme === 'digest',
@@ -416,8 +418,10 @@ function childMain() {
                  client: client };
       };
       const pend = function (n) {
-        pendingHandle.restore('', DOOR + '|' + n.id, {
-          at: Date.now(), id: n.id, door: DOOR, address: BALANCER,
+        // Keyed by the cookie value's digest since #614.
+        const idKey = require(ROOT + '/common/crypto').credentialDigest(n.id);
+        pendingHandle.restore('', DOOR + '|' + idKey, {
+          at: Date.now(), id: idKey, door: DOOR, address: BALANCER,
           mechListDer: prim.toHex(n.mechListDer),
           selected: spnego.KRB5_MECH_OID,
           initiatorKey: { etype: 18, key: prim.toHex(n.key) },
@@ -444,7 +448,8 @@ function childMain() {
       pend(alice);
       pend(bob);
       const present = function (n) {
-        return pendingHandle.read('', DOOR + '|' + n.id).present;
+        return pendingHandle.read('', DOOR + '|' +
+          require(ROOT + '/common/crypto').credentialDigest(n.id)).present;
       };
       note(present(alice) && present(bob),
            'D1. TWO NEGOTIATIONS PENDING FROM ONE ADDRESS COEXIST — behind a ' +
@@ -482,7 +487,11 @@ function childMain() {
       // the real continuation does since SPNEGO became per trust realm
       // (2026-09-15). It read `realm: ''` while the store was shared, and a
       // claim in a realm nothing claims in would no longer collide with it.
-      await claims.claim({ scope: 'spnego.continuation', value: carol.id,
+      // The claim's value is the row's id, the cookie's digest since #614 —
+      // the same on every node.
+      await claims.claim({ scope: 'spnego.continuation',
+                           value: require(ROOT + '/common/crypto')
+                             .credentialDigest(carol.id),
                            ttlMs: 60000 });
       const carolAgain = await exchange.negotiate(
         await continuationFor(carol, carol.id, false), { door: DOOR });

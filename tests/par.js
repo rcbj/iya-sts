@@ -137,8 +137,8 @@ function library(t) {
   got = par.resolve(uri, 'lib1', { req: { __asProfile: 'default' } });
   t.check(got.ok, '1g. read a second time — a read does not spend, and the ' +
           'authorization server may come off the request');
-  t.check(par.get(uri).reads === 2, '1h. and both reads are counted',
-          JSON.stringify(par.get(uri)));
+  t.check(par.get(par.keyOf(uri)).reads === 2, '1h. and both reads are counted',
+          JSON.stringify(par.get(par.keyOf(uri))));
 
   const refusedAs = function (answer, code) {
     return answer && !answer.ok && answer.error === 'invalid_request_uri' &&
@@ -171,7 +171,7 @@ function library(t) {
     t.check(refusedAs(par.resolve(later.requestUri, 'lib2'), 'STS-OAUTH-0411'),
             '1p. past its expires_in a request_uri is refused, STS-OAUTH-0411');
     const swept = par.sweep();
-    t.check(swept >= 1 && par.get(later.requestUri) === null &&
+    t.check(swept >= 1 && par.get(par.keyOf(later.requestUri)) === null &&
             refusedAs(par.resolve(later.requestUri, 'lib2'), 'STS-OAUTH-0410'),
             '1q. a sweep drops it, and it is then simply unknown', swept);
   } finally {
@@ -231,14 +231,31 @@ function library(t) {
           par.list({ state: 'spent' }).total === 1 &&
           par.list({ state: 'live' }).total === 4,
           '1w. filtered by client and by state');
-  const row = par.get(rows[1]);
+  const row = par.get(par.keyOf(rows[1]));
   t.check(row && row.client_id === 'list-a' && row.state === 'live' &&
           row.redirect_uri === 'https://rp.example/cb' &&
           row.parameters.request === undefined,
           '1x. a row names the client, the state and the redirect_uri, and ' +
           'never a request or request_uri', JSON.stringify(row).slice(0, 200));
-  t.check(par.remove(rows[1]) === true && par.remove(rows[1]) === false &&
-          par.get(rows[1]) === null, '1y. a delete removes it once');
+  t.check(par.remove(par.keyOf(rows[1])) === true &&
+          par.remove(par.keyOf(rows[1])) === false &&
+          par.get(par.keyOf(rows[1])) === null &&
+          par.remove(rows[2]) === false && par.get(rows[2]) === null,
+          '1y. a delete by the handle removes it once, and the request_uri ' +
+          'itself names nothing (#614)');
+  // #614: the store is keyed by the digest of the whole request_uri and
+  // holds no request_uri; a row is listed by its handle.
+  const parRows = JSON.stringify(require('../common/realms')
+    .handleFor('oauth2.pushedRequests').dump('default'));
+  t.check(rows.every(function (one) {
+    return parRows.indexOf(one.slice(par.REQUEST_URI_PREFIX.length)) < 0;
+  }) && parRows.indexOf(par.keyOf(rows[2])) >= 0 &&
+          row.request_uri === undefined &&
+          row.request_uri_digest === par.keyOf(rows[1]) &&
+          /^sha256:[0-9a-f]{12}…$/.test(row.request_uri_shown),
+          '1y-ii. held under the request_uri\'s digest, no request_uri in ' +
+          'the store, and a row names its handle (#614)',
+          parRows.slice(0, 300));
 
   // The counters.
   const snap = monitor.snapshot();
@@ -513,7 +530,7 @@ function childMain() {
          '3b1. a push is 201 { request_uri, expires_in }, JSON, no-store',
          r.status + ' ' + r.text.slice(0, 200));
     let uri = r.json.request_uri;
-    let listed = par.get(uri);
+    let listed = par.get(par.keyOf(uri));
     note(listed && listed.client_authenticated &&
          listed.authentication_method === 'client_secret_basic' &&
          listed.parameters.client_id === 'par-a' &&
@@ -541,7 +558,7 @@ function childMain() {
     note(r.status === 200 && r.json.access_token && r.json.id_token,
          '3b6. the code redeems with the pushed PKCE challenge\'s verifier',
          r.status + ' ' + r.text.slice(0, 200));
-    note(par.get(uri) && par.get(uri).state === 'spent',
+    note(par.get(par.keyOf(uri)) && par.get(par.keyOf(uri)).state === 'spent',
          '3b7. the request_uri is spent by the response');
     r = await authorize({ client_id: 'par-a', request_uri: uri });
     note(refused(r, 400, 'invalid_request_uri', /already used/),
@@ -583,7 +600,8 @@ function childMain() {
       raw: new URLSearchParams(pushForm()).toString() +
            '&resource=https%3A%2F%2Fapi1.par.example%2F' +
            '&resource=https%3A%2F%2Fapi2.par.example%2F' });
-    const twoResources = r.status === 201 ? par.get(r.json.request_uri) : null;
+    const twoResources = r.status === 201 ?
+      par.get(par.keyOf(r.json.request_uri)) : null;
     note(twoResources && Array.isArray(twoResources.parameters.resource) &&
          twoResources.parameters.resource.length === 2,
          '3c8. resource may repeat (RFC 8707), and both are kept',
@@ -651,13 +669,13 @@ function childMain() {
 
     // --- e. client authentication as at the token endpoint -------------------
     r = await push('par-a', {}, { secret: 'wrong-secret' });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.client_authenticated === false,
          '3e1. development: a wrong secret is observed, not refused — the ' +
          'token endpoint\'s own behaviour — and the push is not authenticated',
          r.status + ' ' + JSON.stringify(listed || {}).slice(0, 120));
     r = await push('par-public', {}, { basic: false });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.client_authenticated === false,
          '3e2. a public client pushes with client_id alone',
          r.status + ' ' + r.text.slice(0, 120));
@@ -676,23 +694,23 @@ function childMain() {
     };
     r = await push('par-jwt', {}, { basic: false,
                                     form: assertionForm(BASE + '/oauth2/par') });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.client_authenticated &&
          listed.authentication_method === 'private_key_jwt',
          '3e3. private_key_jwt with the PAR endpoint URL as its audience ' +
          'authenticates (section 2)', r.status + ' ' + r.text.slice(0, 160));
     r = await push('par-jwt', {}, { basic: false, form: assertionForm(BASE) });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.client_authenticated,
          '3e4. and with the issuer', r.status);
     r = await push('par-jwt', {}, { basic: false,
       form: assertionForm(BASE + '/oauth2/token') });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.client_authenticated,
          '3e5. and with the token endpoint URL', r.status);
     r = await push('par-jwt', {}, { basic: false,
       form: assertionForm('https://somebody-else.example/token') });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && !listed.client_authenticated,
          '3e6. another audience does not authenticate (development observes)',
          r.status);
@@ -735,7 +753,7 @@ function childMain() {
                        return f;
                      }()) });
     listed = r.status === 201 ? realms.run(realms.get('par21'), function () {
-      return par.get(r.json.request_uri);
+      return par.get(par.keyOf(r.json.request_uri));
     }) : null;
     note(listed && listed.redirect_uri === REDIRECT,
          '3e11. OAuth 2.1 mode: a push with no redirect_uri takes the one ' +
@@ -821,7 +839,7 @@ function childMain() {
                    { prefix: '/realm/par9700' });
     const relaxedUri = r.status === 201 ? r.json.request_uri : '';
     listed = relaxedUri ? realms.run(realms.get('par9700'), function () {
-      return par.get(relaxedUri);
+      return par.get(par.keyOf(relaxedUri));
     }) : null;
     note(listed && listed.redirect_uri_unregistered === true,
          '3g2. setting on: an AUTHENTICATED client may push one, and the row ' +
@@ -962,7 +980,7 @@ function childMain() {
     r = await request(port, 'POST', '/oauth2/par', {
       headers: { authorization: basicFor('par-a') },
       form: { request: object({ state: 'from-object' }) } });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.source === 'request' &&
          listed.request_object_alg === 'ES256' &&
          listed.parameters.state === 'from-object',
@@ -1033,7 +1051,7 @@ function childMain() {
     };
     r = await push('par-a', {}, {
       headers: { dpop: proof('POST', BASE + '/oauth2/par') } });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.dpop_jkt === thumbprint(dpopJwk) &&
          listed.parameters.dpop_jkt === thumbprint(dpopJwk),
          '3j1. a DPoP proof at the push binds the request to its key',
@@ -1077,7 +1095,7 @@ function childMain() {
     // --- k. this service's own markers are not the client's -------------------
     r = await push('par-a', { authn_error: 'access_denied',
                               consent_error: 'access_denied' });
-    listed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    listed = r.status === 201 ? par.get(par.keyOf(r.json.request_uri)) : null;
     note(listed && listed.parameters.authn_error === undefined &&
          listed.parameters.consent_error === undefined,
          '3k1. a push cannot pre-load the sign-in or consent screens\' own ' +

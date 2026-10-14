@@ -1903,7 +1903,9 @@ function childMain() {
       return section.id === 'par';
     })[0];
     parSection.pushedRequests.items = [{
-      request_uri: 'urn:ietf:params:oauth:request_uri:abcdefghijklmnop',
+      // A handle, not a request_uri: the store keeps none (#614).
+      request_uri_digest: 'Q2dS8m6k1nVv3zJ0bYQm9vX0kq3w8yQ7Zr0aLx5tP2E',
+      request_uri_shown: 'sha256:43676752f26e…',
       client_id: 'client-<1>', authorization_server: '', state: 'live',
       created_at: '2026-10-05T00:00:00Z', expires_at: '2026-10-05T00:01:00Z',
       expires_in: 60, reads: 1, client_authenticated: true,
@@ -1923,7 +1925,10 @@ function childMain() {
          backField.indexOf('client_id=a%26b') >= 0 &&
          backField.indexOf('notAListParameter') < 0 &&
          heldPage.indexOf('client-&lt;1&gt;') > 0 &&
-         heldPage.indexOf('value="delete-pushed-request"') > 0,
+         heldPage.indexOf('value="delete-pushed-request"') > 0 &&
+         heldPage.indexOf('name="request_uri_digest" value="Q2dS8m6k1nVv3' +
+                          'zJ0bYQm9vX0kq3w8yQ7Zr0aLx5tP2E"') > 0 &&
+         heldPage.indexOf('sha256:43676752f26e…') > 0,
          'D4. the render context is the query and a boolean and nothing ' +
          'else, and a page that takes it draws from it — a Withdraw on ' +
          'the OAuth activity page carries back the list parameters of the ' +

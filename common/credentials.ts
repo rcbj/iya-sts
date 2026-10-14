@@ -350,10 +350,23 @@ const pendingTotp = realms.map({ persist: 'credentials.pendingTotp',
 // generate the set stores nothing. The codes are in the clear in the RECORD —
 // they have to be, the page shows them — and sealed in the ROW, which is gone
 // when the set is confirmed, discarded, replaced or swept.
+//
+// **KEYED BY `credentialDigest(handle)` (#614).** The handle is what lets a
+// form confirm the set, and the store only looks it up and spends it, so it
+// holds the digest — hashed when the handle is minted and when the form
+// brings it back (`pendingCodesKey()`). The CODES stay whole in the record,
+// because the page shows them again until they are confirmed.
 const pendingBackupCodes = realms.map({
   persist: 'credentials.pendingBackupCodes', retain: 'age',
   // #333: the pending set's `expires`, ms.
   expiresAt: realms.expiryField('expires', 1) });
+
+// The key a pending set's handle is held under (#614).
+function pendingCodesKey(handle: unknown): string {
+  helpers.log.debug("Entering pendingCodesKey().");
+  helpers.log.debug("Leaving pendingCodesKey().");
+  return crypto.credentialDigest(String(handle || ''));
+}
 
 // The attribute is the same one `addKey()` writes; this register holds only
 // what has been ASKED FOR and not yet proved. Per realm, like every other
@@ -6052,7 +6065,7 @@ class Credentials {
     // service's crypto module's (#453): node's `crypto` is required nowhere
     // but there.
     const handle = crypto.randomBytes(24).toString('base64url');
-    pendingBackupCodes.set(handle, {
+    pendingBackupCodes.set(pendingCodesKey(handle), {
       username: name,
       codes: minted,
       begunAt: Date.now(),
@@ -6081,7 +6094,7 @@ class Credentials {
     const { log } = this.deps;
     log.debug("Entering Credentials.pendingBackupCodesFor().");
     this.forgetExpiredPending();
-    const record = pendingBackupCodes.get(String(handle || ''));
+    const record = pendingBackupCodes.get(pendingCodesKey(handle));
     if (!record || record.username !== String(username || '').trim()) {
       log.debug("Leaving Credentials.pendingBackupCodesFor().");
       return null;
@@ -6152,7 +6165,7 @@ class Credentials {
                    { ok: false, reason: 'store', retryable: true,
                errors: written.errors });
     }
-    pendingBackupCodes.delete(handle);
+    pendingBackupCodes.delete(pendingCodesKey(handle));
     log.info('credentials: ' + name + ' confirmed a set of ' + written.total +
              ' recovery codes. Only the hashes are stored — this service can ' +
              'never show them again.');
@@ -6179,7 +6192,7 @@ class Credentials {
       log.debug("Leaving Credentials.discardBackupCodes().");
       return { ok: true, discarded: false };
     }
-    pendingBackupCodes.delete(handle);
+    pendingBackupCodes.delete(pendingCodesKey(handle));
     log.info('credentials: a pending set of recovery codes for ' +
              String(username) + ' was discarded without being stored.');
     log.debug("Leaving Credentials.discardBackupCodes().");

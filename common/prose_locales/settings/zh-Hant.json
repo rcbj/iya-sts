@@ -2188,8 +2188,8 @@
     "text": "以相同權杖回應重複的授權碼兌換"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "0f31c5227700295a",
-    "text": "**比規格更寬鬆——請保持關閉。**關閉（預設）時，授權碼只能出示「一次」：其第一個權杖請求就會用掉它，無論該請求的結果為何——錯誤的 code_verifier、用戶端驗證失敗或任何情況——第二次出示會被拒絕，並撤銷第一次換得的一切（RFC 6749 第 4.1.2 與 10.5 節；#424）。開啟時，被拒絕的請求會讓授權碼保持可兌換，讓用戶端可以修正後重試，而在授權碼剩餘的有效期內，與某次兌換「完全相同」的重複請求會以其已取得的權杖回應。RFC 9700、OAuth 2.1、FAPI 與產品模式會忽略它。它的存在是為了上層專案中仍斷言舊有寬容行為的開發模式工作（#187）。"
+    "en": "77b14590b7ee604f",
+    "text": "**比規格更寬鬆——請保持關閉。**關閉（預設）時，授權碼只能出示「一次」：其第一個權杖請求就會用掉它，無論該請求的結果為何——錯誤的 code_verifier、用戶端驗證失敗或任何情況——第二次出示會被拒絕，並撤銷第一次換得的一切（RFC 6749 第 4.1.2 與 10.5 節；#424）。開啟時，被拒絕的請求會讓授權碼保持可兌換，讓用戶端可以修正後重試，而在授權碼剩餘的有效期內，與某次兌換「完全相同」的重複請求會以其已取得的權杖回應。RFC 9700、OAuth 2.1、FAPI 與產品模式會忽略它。它的存在是為了上層專案中仍斷言舊有寬容行為的開發模式工作（#187）。開啟時，每個已兌換授權碼的完整權杖回應——存取權杖、更新權杖與 ID 權杖——會在其剩餘有效期內保留，以便再次傳送；關閉時，只保留所簽發權杖的 jti 值（#614）。"
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -4311,6 +4311,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "瀏覽器停留在登入畫面期間，或在 POST 繫結要求與其轉換成的 GET 之間，AuthnRequest 會保存多久。超過時返回行程會被拒絕，並顯示指出此值的頁面。原為 saml2_sso.js 中的常數 REQUEST_TTL_MS。"
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "保留的未解析成品數"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "每個信任領域中可等待解析的 SAML 2.0 成品數量。先清除已過期的成品；仍然滿的儲存區會以一個頁面（HTTP 503）拒絕 HTTP-Artifact 繫結上的下一次登入，而不會遺忘服務提供者尚未解析的成品。"
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Redirect 繫結長度警告（字元）"
@@ -4446,6 +4454,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "SAML 回應程式依信任領域保留多少個已簽發的斷言，讓依賴方可以透過 AssertionIDReference 再次要求。最舊的先移除。原為 saml11_sso.js 中的常數 ASSERTION_CACHE_MAX。"
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "無 NotOnOrAfter 的保留斷言有效期（秒）"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "已簽發的斷言在未攜帶 NotOnOrAfter 時，可透過 AssertionIDReference 取得的時間。攜帶 NotOnOrAfter 的斷言——本服務建立的每個斷言都攜帶——保留到其 NotOnOrAfter 為止，不再延長。"
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "保留的未解析成品數"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "每個信任領域中可等待解析的 SAML 1.1 成品數量。先清除已過期的成品；仍然滿的儲存區會以一個頁面（HTTP 503）拒絕下一次 Browser/Artifact 登入，而不會遺忘依賴方尚未解析的成品。"
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",

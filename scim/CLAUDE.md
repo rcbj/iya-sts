@@ -666,6 +666,14 @@ The capability row `scim.challenge-state` is provided by `scim_auth.ts`.
   worker, and HOBA's `STS-SCIM-0050`. Found by reading, not by a run; the test
   below reproduces the shape (a nonce that reached this process only as a
   restored row).
+* **All four stores hold DIGESTS (#614)**: `digestNonces` and `digestCounts`
+  are keyed by `credentialDigest(nonce)`, `hobaChallenges` by the challenge's,
+  and `hobaSeen` by the `kid.challenge.nonce` triple's, its value the
+  challenge's digest (the key it evicts with). Each is hashed where the value
+  is issued and again where it is presented; the nonce and the challenge go out
+  on the `WWW-Authenticate` header and are in no store. The Digest response
+  hash is still computed from the PRESENTED nonce, which is the only one it
+  ever used.
 * **`scim.digestNonces` and `scim.hobaChallenges` are persisted stores now**, so
   the read barrier carries a challenge to whichever process the answer lands
   on. The Digest row is `{ at }` only: the nonce COUNTS were a `Set` on the row,

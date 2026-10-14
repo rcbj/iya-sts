@@ -1087,6 +1087,26 @@
     "en": "8d6fb31ae90a70a5",
     "text": "une situation conservée et encore valide, si bien que l’émission a été décidée avec elle"
   },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "Artefacts SAML 1.1"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "Les assertions que représentent les artefacts SAML 1.1, jusqu’à ce que chacun soit résolu une fois au répondeur SAML. Indexés par le SHA-256 de l’artefact, jamais par l’artefact."
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "Appliquée : saml11.maxArtifacts par domaine. Les artefacts expirés sont effacés à la limite ; un magasin encore plein REFUSE l’artefact suivant plutôt que d’en oublier un non résolu."
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "Jusqu’à sa résolution unique, ou jusqu’à l’écoulement de saml11.artifactTtlS."
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "un artefact résolu"
+  },
   "caches.store.saml11.assertions.title": {
     "en": "8dd27dfb9529ae0c",
     "text": "Assertions SAML 1.1"
@@ -1100,12 +1120,32 @@
     "text": "Appliquée : saml11.assertionCacheMax par domaine, la plus ancienne étant supprimée ; un artefact désignant une assertion supprimée reçoit la réponse « inconnue »."
   },
   "caches.store.saml11.assertions.lifetime": {
-    "en": "4397e5b8b411e7a8",
-    "text": "Aucune expiration : la plus ancienne est supprimée au-delà de saml11.assertionCacheMax."
+    "en": "b163f4a46cb87b30",
+    "text": "Jusqu’au NotOnOrAfter de l’assertion, ou saml11.assertionCacheTtlS si elle n’en porte pas ; la plus ancienne est supprimée au-delà de saml11.assertionCacheMax."
   },
   "caches.store.saml11.assertions.hitMeaning": {
     "en": "b7e393c624057aea",
     "text": "une AssertionIDReference a reçu une réponse"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "Artefacts SAML 2.0"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "Les messages que représentent les artefacts SAML 2.0, jusqu’à ce que chacun soit résolu une fois au service de résolution d’artefacts. Indexés par le SHA-256 de l’artefact, jamais par l’artefact."
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "Appliquée : saml2.maxArtifacts par domaine. Les artefacts expirés sont effacés à la limite ; un magasin encore plein REFUSE l’artefact suivant plutôt que d’en oublier un non résolu."
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "Jusqu’à sa résolution unique, ou jusqu’à l’écoulement de saml2.artifactTtlS."
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "un artefact résolu"
   },
   "caches.store.scim.digest-nonce-counts.title": {
     "en": "96cc15215936464e",

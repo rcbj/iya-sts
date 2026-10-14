@@ -51,6 +51,17 @@
 // finishes (`onFinish`), and this file writes at most one line per kind per
 // realm per summary interval.
 //
+// **6. WHAT WAS SENT LEAVES THE ROW ONCE IT LANDS (#614).** Until a delivery
+// is `sent`, its `token` and `body` are on the row because a retry has to
+// send the SAME bytes — the same signed Logout Token or Command Token, the
+// same CIBA push with its tokens in it. Once it is `sent` nothing sends them
+// again (an operator's retry is of a dead letter only), so `finish()` puts
+// their digests (`tokenDigest`, `bodyDigest`, `crypto.credentialDigest()`)
+// in their place and the row keeps its jti, its status and its history. A
+// DEAD LETTER keeps both, because an operator's retry resends it. Until #614
+// every landed row kept a whole token — a CIBA push's whole token response
+// — for the kind's retention.
+//
 // WHAT A KIND SUPPLIES (`DeliveryKind`): its store, its claim scope, the
 // address attribute the outbound policy reads, whether the body is a form or
 // JSON, its settings' keys, its error codes, `prepare()` (the body, signing
@@ -64,6 +75,9 @@
 
 import os = require('os');
 import helpers = require('../common/helpers');
+// `credentialDigest()` for what a landed delivery keeps of what it sent
+// (#614). A leaf library.
+import stsCrypto = require('../common/crypto');
 // This thread's identity (#364): a request worker is a thread of this
 // process, so the pid alone no longer tells two of them apart.
 import WorkerChannel = require('../common/worker_channel');
@@ -470,6 +484,23 @@ class OutboundDelivery {
     log.debug("Leaving OutboundDelivery.tally().");
   }
 
+  // Header point 6 (#614): a landed row's token and body become their
+  // digests. Replaced rather than mutated, so a caller still holding the
+  // body object it sent keeps it.
+  private static forgetSent(row: Json): void {
+    helpers.log.debug("Entering OutboundDelivery.forgetSent().");
+    if (row.token !== undefined && row.token !== null) {
+      row.tokenDigest = stsCrypto.credentialDigest(String(row.token));
+      delete row.token;
+    }
+    if (row.body !== undefined && row.body !== null) {
+      row.bodyDigest = stsCrypto.credentialDigest(
+        typeof row.body === 'string' ? row.body : JSON.stringify(row.body));
+      delete row.body;
+    }
+    helpers.log.debug("Leaving OutboundDelivery.forgetSent().");
+  }
+
   // A delivery reaches its final state: the row changes and the kind's
   // `onFinish` writes its one audit row. Answers the row as written.
   /**
@@ -491,6 +522,9 @@ class OutboundDelivery {
     row.finishedAt = now();
     row.inFlight = 0;
     row.nextAttemptAt = 0;
+    if (state === 'sent') {
+      OutboundDelivery.forgetSent(row);
+    }
     const written = this.writeRow(row);
     if (written.state !== state || written.updatedAt !== row.updatedAt) {
       log.debug("Leaving OutboundDelivery.finish(). A newer copy stood; " +

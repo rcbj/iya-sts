@@ -358,7 +358,8 @@ class GnapCells {
       log.debug("Leaving GnapCells.placeInteraction(). Here.");
       return false;
     }
-    const moved = this.movedTo(key);
+    // Recorded under the rows' own keys, the handle's digest (#614).
+    const moved = this.movedTo(store.handleKey(key));
     if (moved && moved !== cells.id() && cells.get(moved)) {
       if (req.stsCellRelay) {
         // Pinned to a cell that is not where the grant went: this cell

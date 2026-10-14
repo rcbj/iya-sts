@@ -2188,8 +2188,8 @@
     "text": "Besvara en upprepad kodinlösen med samma tokener"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "0f31c5227700295a",
-    "text": "**SVAGARE ÄN SPECIFIKATIONEN — låt den vara av.** Av (standard) visas en auktoriseringskod upp EN gång: dess första tokenbegäran förbrukar den, vilket utfall den begäran än får — en felaktig code_verifier, en misslyckad klientautentisering, vad som helst — och en andra uppvisning vägras och återkallar det som den första gav (RFC 6749 avsnitt 4.1.2 och 10.5; #424). På lämnar en vägrad begäran koden inlösbar så att klienten kan rätta och försöka igen, och en IDENTISK upprepning av en inlösen besvaras med de tokener den redan fått, under resten av kodens livslängd. RFC 9700, OAuth 2.1, FAPI och produktionsläget ignorerar den. Den finns för moderprojektets jobb i utvecklingsläge som fortfarande förutsätter den gamla artigheten (#187)."
+    "en": "77b14590b7ee604f",
+    "text": "**SVAGARE ÄN SPECIFIKATIONEN — låt den vara av.** Av (standard) visas en auktoriseringskod upp EN gång: dess första tokenbegäran förbrukar den, vilket utfall den begäran än får — en felaktig code_verifier, en misslyckad klientautentisering, vad som helst — och en andra uppvisning vägras och återkallar det som den första gav (RFC 6749 avsnitt 4.1.2 och 10.5; #424). På lämnar en vägrad begäran koden inlösbar så att klienten kan rätta och försöka igen, och en IDENTISK upprepning av en inlösen besvaras med de tokener den redan fått, under resten av kodens livslängd. RFC 9700, OAuth 2.1, FAPI och produktionsläget ignorerar den. Den finns för moderprojektets jobb i utvecklingsläge som fortfarande förutsätter den gamla artigheten (#187). På behålls HELA tokensvaret för varje inlöst kod — åtkomsttoken, uppdateringstoken och ID-token — under resten av dess livstid så att det kan skickas igen; av behålls bara de utfärdade tokenernas jti-värden (#614)."
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -4311,6 +4311,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "Hur länge en AuthnRequest hålls kvar medan webbläsaren är på inloggningssidan, eller mellan en begäran i POST-bindningen och den GET den görs om till. Därefter avvisas returresan med en sida som anger detta värde. Var konstanten REQUEST_TTL_MS i saml2_sso.js."
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Sparade ej upplösta artefakter"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "Hur många SAML 2.0-artefakter som får vänta på att lösas upp, per förtroendesfär. Utgångna artefakter rensas först; ett lager som fortfarande är fullt AVVISAR nästa inloggning på HTTP-Artifact-bindningen med en sida (HTTP 503) hellre än att glömma en artefakt som en tjänsteleverantör ännu inte har löst upp."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Längdvarning för Redirect-bindning (tecken)"
@@ -4446,6 +4454,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "Hur många utfärdade intyg SAML-svararen sparar, per förtroendesfär, så att en förlitande part kan begära ett igen via AssertionIDReference. Äldst ut först. Var konstanten ASSERTION_CACHE_MAX i saml11_sso.js."
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "Livslängd för sparat intyg utan NotOnOrAfter (sekunder)"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "Hur länge ett utfärdat intyg kan hämtas via AssertionIDReference när det saknar NotOnOrAfter. Ett som har ett — varje intyg som den här tjänsten bygger — sparas till sitt NotOnOrAfter och inte längre."
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Sparade ej upplösta artefakter"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "Hur många SAML 1.1-artefakter som får vänta på att lösas upp, per förtroendesfär. Utgångna artefakter rensas först; ett lager som fortfarande är fullt AVVISAR nästa Browser/Artifact-inloggning med en sida (HTTP 503) hellre än att glömma en artefakt som en förlitande part ännu inte har löst upp."
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",

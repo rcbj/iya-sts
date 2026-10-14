@@ -44,6 +44,11 @@ signature, exactly as a receiver you wrote would have to (SSF 1.0 sections
 4.1.1 and 4.1.6). A SET that fails one of those is still listed, marked as
 refused.
 
+What a row keeps is the SET's header and claims and the verdict on it, with
+the SET itself named by `tokenDigest`, its SHA-256 in base64url. The signed
+token is not kept, so neither page nor `/admin-api` can show it. To match a
+row against a SET a transmitter logged, hash that SET.
+
 **The consequence worth knowing:** these two pages are the only surfaces here
 that go EMPTY when delivery is broken. `/admin/ssf` will still show the streams,
 `/admin/caep-sessions` will still show the sessions, and both will be perfectly

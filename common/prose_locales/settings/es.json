@@ -2188,8 +2188,8 @@
     "text": "Responder a un canje repetido de código con los mismos tokens"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "0f31c5227700295a",
-    "text": "**MÁS DÉBIL QUE LA ESPECIFICACIÓN — déjelo desactivado.** Desactivado (el valor predeterminado), un código de autorización se presenta UNA SOLA VEZ: su primera solicitud de token lo consume sea cual sea el resultado de esa solicitud — un code_verifier incorrecto, una autenticación de cliente fallida, cualquier cosa — y una segunda presentación se rechaza, revocando lo que obtuvo la primera (RFC 6749 secciones 4.1.2 y 10.5; #424). Activado, una solicitud rechazada deja el código canjeable para que el cliente pueda corregirla y reintentar, y una repetición IDÉNTICA de un canje se responde con los tokens que ya obtuvo, durante el resto de la vigencia del código. RFC 9700, OAuth 2.1, FAPI y el modo producto lo ignoran. Existe para la tarea en modo de desarrollo del proyecto padre que todavía comprueba la antigua cortesía (#187)."
+    "en": "77b14590b7ee604f",
+    "text": "**MÁS DÉBIL QUE LA ESPECIFICACIÓN — déjelo desactivado.** Desactivado (el valor predeterminado), un código de autorización se presenta UNA SOLA VEZ: su primera solicitud de token lo consume sea cual sea el resultado de esa solicitud — un code_verifier incorrecto, una autenticación de cliente fallida, cualquier cosa — y una segunda presentación se rechaza, revocando lo que obtuvo la primera (RFC 6749 secciones 4.1.2 y 10.5; #424). Activado, una solicitud rechazada deja el código canjeable para que el cliente pueda corregirla y reintentar, y una repetición IDÉNTICA de un canje se responde con los tokens que ya obtuvo, durante el resto de la vigencia del código. RFC 9700, OAuth 2.1, FAPI y el modo producto lo ignoran. Existe para la tarea en modo de desarrollo del proyecto padre que todavía comprueba la antigua cortesía (#187). Activado, la respuesta de token COMPLETA de cada código canjeado — token de acceso, token de actualización e ID Token — se conserva durante el resto de su vigencia para poder enviarse de nuevo; desactivado, solo se conservan los valores jti de los tokens emitidos (#614)."
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -4311,6 +4311,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "Cuánto tiempo se retiene un AuthnRequest mientras el navegador está en la pantalla de inicio de sesión, o entre una solicitud con binding POST y el GET en que se convierte. Pasado ese tiempo el regreso se rechaza con una página que nombra este valor. Era la constante REQUEST_TTL_MS en saml2_sso.js."
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Artefactos sin resolver conservados"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "Cuántos artefactos SAML 2.0 pueden esperar a ser resueltos, por dominio de confianza. Primero se eliminan los caducados; un almacén que sigue lleno RECHAZA el siguiente inicio de sesión en el enlace HTTP-Artifact con una página (HTTP 503) en lugar de olvidar un artefacto que un proveedor de servicios aún no ha resuelto."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Aviso de longitud del binding Redirect (caracteres)"
@@ -4446,6 +4454,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "Cuántas aserciones emitidas conserva el respondedor SAML, por dominio de confianza, para que una parte que confía pueda volver a pedir una mediante AssertionIDReference. Primero sale la más antigua. Era la constante ASSERTION_CACHE_MAX en saml11_sso.js."
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "Vigencia de una aserción conservada sin NotOnOrAfter (segundos)"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "Durante cuánto tiempo una aserción emitida sigue disponible mediante AssertionIDReference cuando no lleva NotOnOrAfter. Una que sí lo lleva —todas las que construye este servicio— se conserva hasta su NotOnOrAfter y no más."
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Artefactos sin resolver conservados"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "Cuántos artefactos SAML 1.1 pueden esperar a ser resueltos, por dominio de confianza. Primero se eliminan los caducados; un almacén que sigue lleno RECHAZA el siguiente inicio de sesión Browser/Artifact con una página (HTTP 503) en lugar de olvidar un artefacto que una parte que confía aún no ha resuelto."
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",

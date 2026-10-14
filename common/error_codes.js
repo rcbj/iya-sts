@@ -9505,6 +9505,13 @@ const CODES = [
       'needs a person and does not count here (#551).',
     spec: 'none — issued without that scope (RFC 6749 section 3.3); ' +
       'invalid_scope when nothing else was asked for' },
+  { code: 'STS-OAUTH-0958',
+    summary: 'An authorization code was presented again under ' +
+      'oauth2.codeReplayIdempotent, and the record of its redemption holds ' +
+      'no response to replay: it was redeemed while the relaxation was not ' +
+      'in force, and only its jtis were kept (#614). Refused, and what it ' +
+      'bought is revoked.',
+    spec: '400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -10065,6 +10072,13 @@ const CODES = [
       'on a second factor the relying party does not allow ' +
       '(appMfaMechanism, #475).',
     spec: 'HTTP 403 page' },
+  { code: 'STS-SAML-0110',
+    summary: 'A SAML 2.0 or SAML 1.1 artifact could not be issued: the ' +
+      'realm already holds saml2.maxArtifacts (saml11.maxArtifacts) ' +
+      'unresolved artifacts, and a full store refuses rather than forget ' +
+      'one (#614). Nothing was sent to the service provider.',
+    spec: 'HTTP 503 page — the HTTP-Artifact binding and the SAML 1.1 ' +
+      'Browser/Artifact profile can carry no failure without an artifact' },
   // ===== WSTRUST ===========================================================
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
@@ -19328,17 +19342,19 @@ const CODES = [
       '{ ok: false, errors } on /admin-api)' },
   { code: 'STS-ADMIN-0702',
     summary: 'A withdrawal of a pushed authorization request carried no ' +
-      'request_uri, or one longer than the store could ever hold.',
+      'request_uri_digest (the handle it is listed by), or one longer than ' +
+      'a handle could ever be.',
     spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
       '{ ok: false, errors } on /admin-api)' },
   { code: 'STS-ADMIN-0703',
     summary: 'A withdrawal of a pushed authorization request named a value ' +
-      'that is not in the urn:ietf:params:oauth:request_uri: namespace this ' +
-      'service issues pushed request_uris from (RFC 9126 section 2.2).',
+      'that is not a handle: the base64url SHA-256 of a request_uri, 43 ' +
+      'characters, which is all the store keeps of one (#614).',
     spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
       '{ ok: false, errors } on /admin-api)' },
   { code: 'STS-ADMIN-0704',
-    summary: 'A withdrawal named a request_uri this realm does not hold: it ' +
+    summary: 'A withdrawal named a pushed request this realm does not hold: ' +
+      'it ' +
       'was never pushed here, it expired and was swept, or it was already ' +
       'withdrawn.',
     spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +

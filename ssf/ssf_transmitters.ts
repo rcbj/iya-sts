@@ -255,7 +255,8 @@ class SsfTransmitters {
   static digest(text: string): string {
     helpers.log.debug("Entering SsfTransmitters.digest().");
     helpers.log.debug("Leaving SsfTransmitters.digest().");
-    return stsCrypto.digest('sha256', String(text), 'base64url');
+    // The one credential digest (#614); the same SHA-256 it always was.
+    return stsCrypto.credentialDigest(String(text));
   }
 
   // SSF 1.0 section 7: the configuration document's address for an issuer —

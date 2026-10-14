@@ -287,6 +287,17 @@ line each that matters:
    denial of service the cap exists to bound arriving through the door it was
    meant to close.
 
+   **The Map holds the handle's DIGEST, not the handle (#614).** The handle is
+   the flow's bearer and is only looked up and spent, so `putContext()` keys
+   by `credentialDigest(handle)` and the row carries no `handle` field;
+   `takeContext()` hashes what it is handed and answers the record with that
+   handle put back on, and `heldContext()` does the same, unspent, for the two
+   OpenID Connect paths that build an authorization request (`state`) from a
+   context just stored. What stays whole in the row, and why: the `nonce`
+   and `pkceVerifier` are sent to the partner later, and a linking
+   `result.idToken` becomes the session's `id_token_hint`. The cell stamp is
+   read from the presented handle, never from the store.
+
 4. **The return is always a path on this service**, checked the way
    `beginAuthentication()` checks its own AND stored server-side. Both, because
    they fail differently: the check catches a caller's bug and the storage

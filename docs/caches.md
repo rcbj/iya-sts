@@ -197,7 +197,7 @@ not use this cache: it decrypts the secret every time.
 | Federation release policy | which attributes each application releases to its partner | per realm | the setting | `federation.releaseIndexTtlMs` (5000) |
 | SPIFFE authorities | a realm's X.509 SVID authorities, unpacked | per process | until the stored authorities change | — |
 | Kerberos keys | long-term keys derived for each principal | per trust realm, in the realm's own principal database | until the principal changes; at most 4,096 principals hold keys at once, least recently used first, and the keys are derived or read again at the next ticket; never persisted | — |
-| SAML 1.1 assertions | issued assertions, kept so a Browser/Artifact request can be answered | per realm, persisted | the oldest is dropped past the limit | `saml11.assertionCacheMax` (500) |
+| SAML 1.1 assertions | issued assertions, kept so an `AssertionIDReference` can be answered | per realm, persisted | until the assertion's own `NotOnOrAfter` (or `saml11.assertionCacheTtlS` when it carries none); the oldest is dropped past the limit | `saml11.assertionCacheMax` (500), `saml11.assertionCacheTtlS` (3600) |
 | SAML SP metadata | a service provider's metadata, stored as received, and what consuming it registered | the application entry | until refreshed (the application's page, an upload on `/admin/saml2`, an MDQ import, or the background refresher once its `cacheDuration` has elapsed); past its effective `validUntil` it is EXPIRED and every request from that service provider is refused | — |
 | Dead-letter counts | an estimate of each Shared Signals stream's dead letters | per realm | recounted at each sweep | — |
 | Remote PEP policy | the policy set a remote PEP last pulled | the PEP container | until the next successful pull | — |
@@ -250,6 +250,8 @@ something be used twice, which is why none of them has a control.
 | DPoP nonces | server-issued DPoP nonces | per realm, persisted | `oauth2.dpopNonceCacheSize` (10000), oldest first | after `oauth2.dpopNonceTtlS` (300) |
 | GNAP signatures | each signed GNAP request | per realm, persisted | `gnap.replayCacheSize` (10000); **refuses new signatures when full** | after twice `gnap.signatureMaxAgeS` (300) |
 | ACME nonces | spent ACME `Replay-Nonce` values | per realm, persisted | `acme.maxSpentNonces` (10000); **refuses when full of live nonces** (answered `badNonce`) | expired ones are cleared when the limit is reached |
+| SAML 2.0 artifacts | the message each unresolved artifact stands for, keyed by the SHA-256 of the artifact and never by the artifact (#614) | per realm, persisted | `saml2.maxArtifacts` (10000); **refuses the next artifact when full of live ones** (a 503 page, `STS-SAML-0110`) | when resolved, once; or after `saml2.artifactTtlS` (300) |
+| SAML 1.1 artifacts | the assertion each unresolved artifact stands for, keyed by the SHA-256 of the artifact (#614) | per realm, persisted | `saml11.maxArtifacts` (10000); **refuses the next artifact when full of live ones** (a 503 page, `STS-SAML-0110`) | when resolved, once; or after `saml11.artifactTtlS` (300) |
 | SCIM Digest nonces | Digest challenges handed out | per realm | `scim.maxDigestNonces` (2000) | after `scim.digestNonceSeconds` (300), then oldest first |
 | SCIM HOBA challenges | HOBA challenges handed out | per realm | `scim.maxHobaChallenges` (2000) | after `scim.hobaMaxAgeSeconds` (600), then oldest first |
 | SCIM HOBA signatures | HOBA signatures already seen | per realm | `scim.maxHobaSeen` (5000) | oldest first |

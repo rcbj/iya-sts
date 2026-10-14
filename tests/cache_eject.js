@@ -131,13 +131,16 @@ function childMain() {
       'gnap.biscuit-revocations',
       // A resource server's owner lookups (#432 phase 5), each for
       // gnap.ownerLookupCacheS.
-      'gnap.owner-lookups'
+      'gnap.owner-lookups',
+      // The SAML artifacts awaiting resolution, and SAML 1.1's assertions
+      // held for an AssertionIDReference, each until it expires (#614).
+      'saml2.artifacts', 'saml11.artifacts', 'saml11.assertions'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the thirty-eight stores whose entries expire eject them',
+         'B1. exactly the forty-one stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

@@ -92,6 +92,8 @@ async function run(t) {
   const config = require('../common/config');
   const errorCodes = require('../common/error_codes');
   const stsCrypto = require('../common/crypto');
+  // The artifact stores are keyed by the artifact's digest (#614).
+  const artKey = stsCrypto.credentialDigest;
   const helpers = require('../common/helpers');
   const realms = require('../common/realms');
   const app = require('../common/app');
@@ -203,7 +205,8 @@ async function run(t) {
       return kit.signEnveloped(stsCrypto, xml, key);
     };
 
-    artifacts2.restore(realms.DEFAULT_ID, 'ART-UNSIGNED', held2(sp, '_m1'));
+    artifacts2.restore(realms.DEFAULT_ID, artKey('ART-UNSIGNED'),
+                       held2(sp, '_m1'));
     const unsigned = await kit.withSettings(config, required, function () {
       return resolve2(soap(artifactResolve(sp, 'ART-UNSIGNED', '_a1')));
     });
@@ -259,7 +262,8 @@ async function run(t) {
             'SAME answer — no oracle for whether an artifact exists',
             neverMinted.body.slice(0, 300));
 
-    artifacts2.restore(realms.DEFAULT_ID, 'ART-SHA1', held2(sp, '_m2'));
+    artifacts2.restore(realms.DEFAULT_ID, artKey('ART-SHA1'),
+                       held2(sp, '_m2'));
     applications.updateApplication(sp, { attribute: 'samlSigningCertificate',
       mode: 'add', value: sha1.cert.b64 });
     const sha1On = await kit.withSettings(config,
@@ -271,7 +275,7 @@ async function run(t) {
     t.check(sha1On.success, 'with saml.allowSha1Signatures on, a SHA-1 ' +
             'ArtifactResolve resolves', codeOf(sha1On));
 
-    artifacts2.restore(realms.DEFAULT_ID, 'ART-TLS', held2(sp, '_m3'));
+    artifacts2.restore(realms.DEFAULT_ID, artKey('ART-TLS'), held2(sp, '_m3'));
     const foreignTls = await kit.withSettings(config, required, function () {
       return resolve2(soap(artifactResolve(sp, 'ART-TLS', '_c1')),
                       tlsSocket(other.cert));
@@ -288,12 +292,12 @@ async function run(t) {
             'authenticates an unsigned ArtifactResolve',
             codeOf(mappedTls) + ' ' + mappedTls.body.slice(0, 200));
 
-    artifacts2.restore(realms.DEFAULT_ID, 'ART-DEV', held2(sp, '_m4'));
+    artifacts2.restore(realms.DEFAULT_ID, artKey('ART-DEV'), held2(sp, '_m4'));
     const devUnsigned = await resolve2(soap(artifactResolve(sp, 'ART-DEV',
                                                             '_d1')));
     t.check(devUnsigned.success, 'development, by default: an unsigned ' +
             'caller is accepted (and recorded)', codeOf(devUnsigned));
-    artifacts2.restore(realms.DEFAULT_ID, 'ART-PROD', held2(sp, '_m5'));
+    artifacts2.restore(realms.DEFAULT_ID, artKey('ART-PROD'), held2(sp, '_m5'));
     const prodUnsigned = await kit.withSettings(config,
       { 'global.mode': 'product' },
       function () {
@@ -315,7 +319,8 @@ async function run(t) {
     applications.replaceSamlMetadataFields(spOld, {
       samlSpMetadataValidUntil: new Date(Date.now() - 1000).toISOString()
     }, { how: 'test' });
-    artifacts2.restore(realms.DEFAULT_ID, 'ART-OLD', held2(spOld, '_m6'));
+    artifacts2.restore(realms.DEFAULT_ID, artKey('ART-OLD'),
+                       held2(spOld, '_m6'));
     const expired = await resolve2(soap(sign(
       artifactResolve(spOld, 'ART-OLD', '_e1'), ec)));
     t.equal(codeOf(expired), 'STS-SAML-0074',
@@ -345,7 +350,7 @@ async function run(t) {
     };
     const ownIdp = direct.idpEntityId();
     const foreign = direct['mintArtifact']('urn:another:entity:idp', 0);
-    artifacts2.restore(realms.DEFAULT_ID, foreign,
+    artifacts2.restore(realms.DEFAULT_ID, artKey(foreign),
                        Object.assign(held2(sp, '_m7'), { issuer: ownIdp }));
     const atUnscoped = await resolve2(soap(artifactResolve(sp, foreign,
                                                            '_f1')));
@@ -359,11 +364,11 @@ async function run(t) {
       soap(artifactResolve(sp, foreign, '_f2')));
     t.check(atScoped.empty && !/_m7/.test(atScoped.body) &&
             codeOf(atScoped) === 'STS-SAML-0098' &&
-            artifacts2.read(realms.DEFAULT_ID, foreign).present,
+            artifacts2.read(realms.DEFAULT_ID, artKey(foreign)).present,
             'and so it is at the service provider\'s own resolver, and NEITHER ' +
             'SPENT IT', codeOf(atScoped));
     const mine = direct['mintArtifact'](ownIdp, 0);
-    artifacts2.restore(realms.DEFAULT_ID, mine,
+    artifacts2.restore(realms.DEFAULT_ID, artKey(mine),
                        Object.assign(held2(sp, '_m8'), { issuer: ownIdp }));
     const atOwn = await resolveScoped(direct.slugOf(sp),
       soap(artifactResolve(sp, mine, '_f3')));
@@ -374,7 +379,7 @@ async function run(t) {
             'service provider\'s resolver, under an ArtifactResponse naming ' +
             'that issuer (#523)', codeOf(atOwn) + ' ' + atOwn.body.slice(0, 300));
     const mineToo = direct['mintArtifact'](ownIdp, 0);
-    artifacts2.restore(realms.DEFAULT_ID, mineToo, held2(sp, '_m9'));
+    artifacts2.restore(realms.DEFAULT_ID, artKey(mineToo), held2(sp, '_m9'));
     const atShared = await resolve2(soap(artifactResolve(sp, mineToo,
                                                          '_f4')));
     t.check(atShared.success && /_m9/.test(atShared.body),
@@ -416,7 +421,7 @@ async function run(t) {
       log.debug("Leaving resolve11().");
       return res;
     };
-    artifacts11.restore(realms.DEFAULT_ID, 'ART11-A', held11('_s1'));
+    artifacts11.restore(realms.DEFAULT_ID, artKey('ART11-A'), held11('_s1'));
     const unsigned11 = await kit.withSettings(config, required, function () {
       return resolve11(soap(request11('ART11-A', '_q1')));
     });
@@ -439,7 +444,7 @@ async function run(t) {
     t.check(good11.success && /_s1/.test(good11.body),
             'SAML 1.1: the relying party\'s own EC-signed Request resolves ' +
             'the artifact none of those spent', good11.body.slice(0, 200));
-    artifacts11.restore(realms.DEFAULT_ID, 'ART11-B', held11('_s2'));
+    artifacts11.restore(realms.DEFAULT_ID, artKey('ART11-B'), held11('_s2'));
     const tls11 = await kit.withSettings(config, required, function () {
       return resolve11(soap(request11('ART11-B', '_q5')), '',
                        tlsSocket(ec.cert));
@@ -447,7 +452,7 @@ async function run(t) {
     t.check(tls11.success, 'SAML 1.1: the registered certificate as the TLS ' +
             'client certificate authenticates an unsigned Request',
             codeOf(tls11));
-    artifacts11.restore(realms.DEFAULT_ID, 'ART11-C', held11('_s3'));
+    artifacts11.restore(realms.DEFAULT_ID, artKey('ART11-C'), held11('_s3'));
     const dev11 = await resolve11(soap(request11('ART11-C', '_q6')));
     t.check(dev11.success, 'SAML 1.1: development accepts an unsigned ' +
             'caller by default', codeOf(dev11));
@@ -460,19 +465,19 @@ async function run(t) {
     const direct11 = new saml11sso.Saml11Sso(
       saml11sso.Saml11Sso.defaultDeps());
     const foreign11 = direct11['mintArtifact']('urn:another:entity:idp');
-    artifacts11.restore(realms.DEFAULT_ID, foreign11, held11('_s6'));
+    artifacts11.restore(realms.DEFAULT_ID, artKey(foreign11), held11('_s6'));
     const unscoped11 = await resolve11(soap(request11(foreign11, '_q6c')));
     const scoped11 = await resolve11(soap(request11(foreign11, '_q6d')),
                                      saml2sso.slugOf(rp));
     t.check(unscoped11.empty && codeOf(unscoped11) === 'STS-SAML-0098' &&
             scoped11.empty && codeOf(scoped11) === 'STS-SAML-0098' &&
-            artifacts11.read(realms.DEFAULT_ID, foreign11).present,
+            artifacts11.read(realms.DEFAULT_ID, artKey(foreign11)).present,
             'SAML 1.1: an artifact whose SourceID names ANOTHER entity is ' +
             'answered with no assertion at the unscoped and the scoped ' +
             'responder, STS-SAML-0098, and NOT SPENT',
             codeOf(unscoped11) + ' ' + codeOf(scoped11));
     const mine11 = direct11['mintArtifact'](direct11.providerId());
-    artifacts11.restore(realms.DEFAULT_ID, mine11, held11('_s7'));
+    artifacts11.restore(realms.DEFAULT_ID, artKey(mine11), held11('_s7'));
     const own11Res = await resolve11(soap(request11(mine11, '_q6e')),
                                      saml2sso.slugOf(rp));
     t.check(own11Res.success && /_s7/.test(own11Res.body),
@@ -509,14 +514,16 @@ async function run(t) {
       log.debug("Leaving heldTwoNames().");
       return one;
     };
-    artifacts11.restore(realms.DEFAULT_ID, 'ART11-D', heldTwoNames('_s4'));
+    artifacts11.restore(realms.DEFAULT_ID, artKey('ART11-D'),
+                       heldTwoNames('_s4'));
     const twoNames = await resolve11(soap(request11('ART11-D', '_q7')),
                                      saml2sso.slugOf(rp));
     t.check(twoNames.success && /_s4/.test(twoNames.body),
             'SAML 1.1: an artifact whose audience is a providerId resolves ' +
             'at the responder of the path segment it was minted on',
             codeOf(twoNames) + ' ' + twoNames.body.slice(0, 120));
-    artifacts11.restore(realms.DEFAULT_ID, 'ART11-E', heldTwoNames('_s5'));
+    artifacts11.restore(realms.DEFAULT_ID, artKey('ART11-E'),
+                       heldTwoNames('_s5'));
     const twoNamesElsewhere = await resolve11(
       soap(request11('ART11-E', '_q8')), saml2sso.slugOf(rpOther));
     t.check(twoNamesElsewhere.empty &&

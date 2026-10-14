@@ -193,6 +193,16 @@ SURFACES.forEach(function (one) {
 // ---------------------------------------------------------------------------
 // THE INBOXES. `<surface id>|<jti>` -> entry, one partition per trust realm.
 // See the header for why it is a map rather than a list.
+//
+// **AN ENTRY KEEPS THE SET'S DIGEST, ITS HEADER AND ITS CLAIMS — NEVER THE
+// SET (#614).** It kept the whole signed token, 1–4 kB per row and up to
+// `ssf.maxReceivedEvents` rows per surface per realm, replicated into every
+// process, and the only reader was a `withToken` option nobody passed. What
+// a page draws is the header and the claims, read when the SET arrived and
+// kept, and the verdict on its signature, decided then; the token itself is
+// named by `tokenDigest`, which is enough to match a row against the SET a
+// transmitter logged. A row from before #614 still carries `token` until the
+// inbox cap pushes it out; nothing reads it.
 // ---------------------------------------------------------------------------
 const inbox = realms.map({ persist: 'ssf_receivers.inbox' });
 
@@ -854,7 +864,8 @@ class SsfReceivers {
       surface: surface.id,
       jti: String(claims.jti || ('no-jti-' + randomId(8))),
       at: iso(),
-      token: token,
+      // Its digest and never the SET (#614): see `inbox`.
+      tokenDigest: stsCrypto.credentialDigest(token),
       contentType: contentType,
       // RECORDED AND NOT REFUSED, which was `/ssf/receive`'s decision (#593
       // deleted it) and is made here on its own terms: a transmitter that sends a SET
@@ -1578,28 +1589,27 @@ class SsfReceivers {
     return out;
   }
 
-  // One entry as the pages and `/admin-api` draw it — the SET opened out, with
-  // the token itself left off unless it is asked for. The token is the whole
-  // document and is 1–4kB of base64url per row; a list of two hundred of them
-  // is a page nobody can read and an API response nobody wanted.
+  // One entry as the pages and `/admin-api` draw it — the SET opened out, and
+  // named by its digest. There was a `withToken` option that added the token
+  // itself; nobody passed it, and since #614 the inbox does not hold the
+  // token to add, so the digest is what every caller gets.
   /**
-   * Opens one inbox entry out as the pages and `/admin-api` draw it, with the
-   * token itself left off unless asked for.
+   * Opens one inbox entry out as the pages and `/admin-api` draw it, naming
+   * the SET by its digest (`tokenDigest`).
    *
    * @param entry - the inbox entry
-   * @param options - `withToken`, to include the SET
    * @returns the described entry
    */
-  describeEntry(entry?, options?): Loose {
+  describeEntry(entry?): Loose {
     const { log, events, subjects } = this.deps;
     log.debug("Entering SsfReceivers.describeEntry().");
-    const asked = options || {};
     const claims = entry.claims || {};
     const uris = Object.keys(claims.events || {});
     const row = uris.length ? events.EVENT_BY_URI[uris[0]] : null;
     const out: Loose = {
       jti: entry.jti,
       at: entry.at,
+      tokenDigest: String(entry.tokenDigest || ''),
       surface: entry.surface,
       stream: entry.stream,
       name: row ? row.name : (uris[0] || '(no event)'),
@@ -1618,9 +1628,6 @@ class SsfReceivers {
       correctMediaType: !!entry.correctMediaType,
       problem: entry.problem || ''
     };
-    if (asked.withToken) {
-      out.token = entry.token;
-    }
     log.debug("Leaving SsfReceivers.describeEntry(). " + out.name);
     return out;
   }
@@ -1651,8 +1658,7 @@ class SsfReceivers {
    * which both the page's JSON form and `GET /admin-api/signals` answer with.
    *
    * @param surfaceId - the surface's id
-   * @param options - `person` and `withToken`, as `listFor()` and
-   * `describeEntry()` take them
+   * @param options - `person`, as `listFor()` takes it
    * @returns the view
    */
   view(surfaceId?, options?) {
@@ -1663,7 +1669,7 @@ class SsfReceivers {
     const out = {
       status: this.status(surfaceId),
       received: rows.map((entry) => {
-        return this.describeEntry(entry, { withToken: !!asked.withToken });
+        return this.describeEntry(entry);
       })
     };
     log.debug("Leaving SsfReceivers.view(). " + out.received.length +

@@ -83,7 +83,9 @@ import config = require('../common/config');
 // credentials (the Transaction Code's attempts). A LEAF requiring only
 // `config`.
 import mode = require('../common/mode');
-// Constant-time comparison, for the Transaction Code. A leaf.
+// Constant-time comparison, for the Transaction Code, and
+// `credentialDigest()`, the name every store below keys a credential by
+// (#614). A leaf.
 import stsCrypto = require('../common/crypto');
 // The error codes (common/error_codes.js). A LEAF that requires nothing; a code
 // is marked on the response object and never written into a response.
@@ -107,6 +109,185 @@ interface Store {
   size: number;
 }
 
+// ---------------------------------------------------------------------------
+// A STORE KEYED BY THE DIGEST OF A CREDENTIAL, NEVER BY THE CREDENTIAL (#614).
+//
+// Four of the stores below are keyed by a value somebody PRESENTS and this
+// service only ever looks up, spends or deletes: the pre-authorized code a
+// wallet redeems at the token endpoint, the `issuer_state` it hands back on
+// an authorization request, the id an offer passed by reference is fetched
+// by, and the `transaction_id` a deferred credential is collected with. Each
+// is a bearer value — whoever holds it gets what it names — and a declared
+// store is journalled, replicated into every request worker and every node,
+// and written to `sts_minted` in product mode. So the store holds
+// `crypto.credentialDigest()` of the value and never the value: a heap
+// snapshot, a `sts_changes` row or a dump of `sts_minted` yields nothing a
+// wallet could redeem. The precedent is `deferredAccessTokens` below, keyed
+// the same way since 2026-09-12.
+//
+// **THE KEY IS HASHED WHERE THE VALUE IS PRESENTED, BY THIS FACADE**, so the
+// callers that are not this module's — `oauth-oidc/oauth2.ts` reads the
+// codes and the issuer states, `vc_issuer.ts` the deferred transactions —
+// keep calling `get(code)` with what arrived and never learn that the store
+// underneath changed. That is `deferredAccessTokens`' argument again, and
+// the reason this is a facade rather than a `keyOf()` every caller must
+// remember: a caller that forgot would find nothing and fail closed, but a
+// caller that SET a raw key would put the credential back in the store.
+//
+// **ITERATION HANDS OUT THE DIGEST, AND SAYS SO IN ITS NAME** —
+// `forEachDigest()` and `deleteDigest()`, never a `forEach()` whose key a
+// reader would take for the presented value and hand back to `delete()`,
+// which would hash it a second time and delete nothing. `logout.ts` is the
+// one outside reader that walks a store, to end a person's codes.
+//
+// **NO MIGRATION.** A row persisted before #614 is under the raw value, is
+// never found under its digest, and expires on its own `expires`.
+// ---------------------------------------------------------------------------
+/**
+ * A `realms.map()` store keyed by `crypto.credentialDigest()` of a presented
+ * credential: every keyed call hashes what it is given, and iteration hands
+ * out the digest (#614).
+ */
+class DigestKeyedStore {
+  /**
+   * Wraps a declared store.
+   *
+   * @param store - the per-realm store the digests key
+   */
+  constructor(private readonly store: Store) {
+    helpers.log.debug("Entering DigestKeyedStore.constructor().");
+    helpers.log.debug("Leaving DigestKeyedStore.constructor().");
+  }
+
+  /**
+   * The key a presented value is stored under.
+   *
+   * @param presented - the credential as it arrived
+   * @returns its SHA-256, base64url
+   */
+  static keyOf(presented: unknown): string {
+    helpers.log.debug("Entering DigestKeyedStore.keyOf().");
+    helpers.log.debug("Leaving DigestKeyedStore.keyOf().");
+    return stsCrypto.credentialDigest(String(presented || ''));
+  }
+
+  /**
+   * The record a presented value names.
+   *
+   * @param presented - the credential as it arrived
+   * @returns the record, or undefined
+   */
+  get(presented: unknown): any {
+    helpers.log.debug("Entering DigestKeyedStore.get().");
+    helpers.log.debug("Leaving DigestKeyedStore.get().");
+    return this.store.get(DigestKeyedStore.keyOf(presented));
+  }
+
+  /**
+   * Records a value under the digest of the credential it is for.
+   *
+   * @param presented - the credential, as it will be presented
+   * @param value - the record
+   * @returns this store
+   */
+  set(presented: unknown, value: any): DigestKeyedStore {
+    helpers.log.debug("Entering DigestKeyedStore.set().");
+    this.store.set(DigestKeyedStore.keyOf(presented), value);
+    helpers.log.debug("Leaving DigestKeyedStore.set().");
+    return this;
+  }
+
+  /**
+   * Says whether a presented value names a record.
+   *
+   * @param presented - the credential as it arrived
+   * @returns true when it does
+   */
+  has(presented: unknown): boolean {
+    helpers.log.debug("Entering DigestKeyedStore.has().");
+    helpers.log.debug("Leaving DigestKeyedStore.has().");
+    return this.store.has(DigestKeyedStore.keyOf(presented));
+  }
+
+  /**
+   * Removes the record a presented value names.
+   *
+   * @param presented - the credential as it arrived
+   * @returns true when there was one
+   */
+  delete(presented: unknown): boolean {
+    helpers.log.debug("Entering DigestKeyedStore.delete().");
+    helpers.log.debug("Leaving DigestKeyedStore.delete().");
+    return this.store.delete(DigestKeyedStore.keyOf(presented));
+  }
+
+  /**
+   * Walks the realm's records with the DIGEST each is keyed by — never the
+   * credential, which this store does not hold.
+   *
+   * @param fn - called with each record and its digest
+   */
+  forEachDigest(fn: (value: any, digest: string) => void): void {
+    helpers.log.debug("Entering DigestKeyedStore.forEachDigest().");
+    this.store.forEach(fn);
+    helpers.log.debug("Leaving DigestKeyedStore.forEachDigest().");
+  }
+
+  /**
+   * Removes a record by the digest `forEachDigest()` handed out.
+   *
+   * @param digest - the key, already a digest
+   * @returns true when there was one
+   */
+  deleteDigest(digest: string): boolean {
+    helpers.log.debug("Entering DigestKeyedStore.deleteDigest().");
+    helpers.log.debug("Leaving DigestKeyedStore.deleteDigest().");
+    return this.store.delete(digest);
+  }
+
+  /**
+   * Removes every record whose `expires` is before `now`.
+   *
+   * @param now - the instant, ms
+   * @returns how many went
+   */
+  sweepExpired(now: number): number {
+    helpers.log.debug("Entering DigestKeyedStore.sweepExpired().");
+    const gone: string[] = [];
+    this.store.forEach(function (v: any, k: string): void {
+      if (v && v.expires < now) {
+        gone.push(k);
+      }
+    });
+    gone.forEach((k) => {
+      this.store.delete(k);
+    });
+    helpers.log.debug("Leaving DigestKeyedStore.sweepExpired(). " +
+                      gone.length + " gone.");
+    return gone.length;
+  }
+
+  /**
+   * Removes every record in the realm.
+   */
+  clear(): void {
+    helpers.log.debug("Entering DigestKeyedStore.clear().");
+    this.store.clear();
+    helpers.log.debug("Leaving DigestKeyedStore.clear().");
+  }
+
+  /**
+   * The number of records in the realm.
+   *
+   * @returns the count
+   */
+  get size(): number {
+    helpers.log.debug("Entering DigestKeyedStore.size().");
+    helpers.log.debug("Leaving DigestKeyedStore.size().");
+    return this.store.size;
+  }
+}
+
 interface VcOffersDeps {
   log: typeof helpers.log;
   logArtifact: typeof helpers.logArtifact;
@@ -124,10 +305,10 @@ interface VcOffersDeps {
   // The authentication service, required when first needed — see the offer
   // page.
   loadAuthn(): any;
-  credentialOffers: Store;
-  issuerStates: Store;
-  preAuthorizedCodes: Store;
-  deferredTransactions: Store;
+  credentialOffers: DigestKeyedStore;
+  issuerStates: DigestKeyedStore;
+  preAuthorizedCodes: DigestKeyedStore;
+  deferredTransactions: DigestKeyedStore;
   deferredAccessTokenStore: Store;
 }
 
@@ -136,32 +317,39 @@ interface VcOffersDeps {
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-// id -> { offer, issuerState, expires }
+// digest(id) -> { offer, expires }
+//
+// THE KEY IS A DIGEST (#614): the id is the bearer half of the
+// `credential_offer_uri`, and fetching it hands over the offer and its code.
+// THE VALUE IS THE OFFER, WHOLE, PRE-AUTHORIZED CODE AND ALL, and that is
+// the documented exception: OpenID4VCI section 4.1.3 has the wallet fetch
+// the offer BY REFERENCE, so the exact document has to be here to be
+// served. It lives `oid4vci.offerTtlS`, as the code it carries does.
 /**
- * Credential Offers served by reference, per trust realm: id to `{ offer,
- * issuerState, expires }`.
+ * Credential Offers served by reference, per trust realm: the digest of the
+ * id to `{ offer, expires }`.
  */
-const credentialOffers = realms.map({ persist: 'vc_offers.credentialOffers',
-                                      retain: 'age',
-                                      // #333: the offer's `expires`, ms.
-                                      expiresAt: realms.expiryField('expires',
-                                                                    1) });
+const credentialOffers = new DigestKeyedStore(
+  realms.map({ persist: 'vc_offers.credentialOffers', retain: 'age',
+               // #333: the offer's `expires`, ms.
+               expiresAt: realms.expiryField('expires', 1) }));
 
 // PER TRUST REALM. `realms.map()` is a Map that holds a separate one for each
 // realm and hands out the ambient realm's — so every reader below is
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-// issuer_state -> { configurationIds, expires }
+// digest(issuer_state) -> { configurationIds, expires }. The key is a
+// digest (#614): the value is only ever looked up, by the authorization
+// endpoint, with what the wallet handed back.
 /**
- * Issuer states of same-device offers, per trust realm: `issuer_state` to `{
- * configurationIds, expires }`.
+ * Issuer states of same-device offers, per trust realm: the digest of the
+ * `issuer_state` to `{ configurationIds, expires }`.
  */
-const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
-                                  retain: 'age',
-                                  // #333: its `expires`, ms.
-                                  expiresAt: realms.expiryField('expires',
-                                                                1) });
+const issuerStates = new DigestKeyedStore(
+  realms.map({ persist: 'vc_offers.issuerStates', retain: 'age',
+               // #333: its `expires`, ms.
+               expiresAt: realms.expiryField('expires', 1) }));
 
 // Pre-authorized codes (OID4VCI Appendix H.2 / H.3): the End-User authorized
 // the issuance out of band, so there is no authorization request at all — the
@@ -174,15 +362,21 @@ const issuerStates = realms.map({ persist: 'vc_offers.issuerStates',
 // realm, and in a service with no realms defined, there is exactly one
 // partition and this behaves as the plain Map it replaced. See
 // common/realms.js.
-// code -> { configurationIds, txCode, user, deferred, expires }
+// digest(code) -> { configurationIds, txCodeDigest, txCodeFailures, user,
+//                   deferred, expires }
+//
+// BOTH CREDENTIALS ARE DIGESTS (#614): the code keys the row by its digest,
+// and the Transaction Code is kept as `txCodeDigest` — see checkTxCode() for
+// what that does and does not buy for a five-digit value.
 /**
- * Pre-authorized codes (OID4VCI Appendix H.2 and H.3), per trust realm: code to
- * `{ configurationIds, txCode, user, deferred, expires }`.
+ * Pre-authorized codes (OID4VCI Appendix H.2 and H.3), per trust realm: the
+ * digest of the code to `{ configurationIds, txCodeDigest, txCodeFailures,
+ * user, deferred, expires }`.
  */
-const preAuthorizedCodes =
-    realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age',
-                 // #333: the code's `expires`, ms.
-                 expiresAt: realms.expiryField('expires', 1) });
+const preAuthorizedCodes = new DigestKeyedStore(
+  realms.map({ persist: 'vc_offers.preAuthorizedCodes', retain: 'age',
+               // #333: the code's `expires`, ms.
+               expiresAt: realms.expiryField('expires', 1) }));
 
 // Deferred issuance transactions (OID4VCI section 9): the credential endpoint
 // answered 202 with one of these instead of a credential.
@@ -191,15 +385,25 @@ const preAuthorizedCodes =
 // unchanged and every one of them is now realm-correct. In the default realm,
 // and in a service with no realms defined, there is exactly one partition and
 // this behaves as the plain Map it replaced. See common/realms.js.
-// transaction_id -> { claims, holderJwk, readyAt, expires }
+// digest(transaction_id) -> { claims, holderJwk, readyAt, expires }
+//
+// THE KEY IS A DIGEST (#614): a `transaction_id` collects a credential at
+// the Deferred Credential Endpoint, which asks for a token this issuer
+// signed but not the one that started the transaction, so the id is the
+// bearer half. **AND THE ACCESS TOKEN IS NOT KEPT**: the row carried it
+// whole until #614, and it was read only to be copied onto the
+// notification row, where nothing read it either — what the credential
+// needs from the token (its claims, the holder's name, whom it may sign in)
+// is read off it when the 202 is answered and kept instead.
 /**
- * Deferred issuance transactions (OID4VCI section 9), per trust realm:
- * `transaction_id` to `{ claims, holderJwk, readyAt, expires }`.
+ * Deferred issuance transactions (OID4VCI section 9), per trust realm: the
+ * digest of the `transaction_id` to `{ claims, holderJwk, readyAt, expires
+ * }`.
  */
-const deferredTransactions =
-    realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age',
-                 // #333: the transaction's `expires`, ms.
-                 expiresAt: realms.expiryField('expires', 1) });
+const deferredTransactions = new DigestKeyedStore(
+  realms.map({ persist: 'vc_offers.deferredTransactions', retain: 'age',
+               // #333: the transaction's `expires`, ms.
+               expiresAt: realms.expiryField('expires', 1) }));
 
 // Access tokens minted from a deferred offer: the credential endpoint answers
 // 202 for these instead of issuing straight away.
@@ -369,7 +573,8 @@ class VcOffers {
     const { log } = this.deps;
     log.debug("Entering VcOffers.deferredTokenKey().");
     log.debug("Leaving VcOffers.deferredTokenKey().");
-    return stsCrypto.digest('sha256', String(token || ''), 'base64url');
+    // The same SHA-256 it always was, through the one helper (#614).
+    return DigestKeyedStore.keyOf(token);
   }
 
   // How long a deferred issuance "takes". Short enough for a test to wait for
@@ -460,6 +665,20 @@ class VcOffers {
   // many leading digits a guess got right, which turns a hundred thousand
   // guesses into fifty.
   //
+  // **THE RECORD HOLDS ITS DIGEST, NOT THE CODE (#614)**: `txCodeDigest`,
+  // compared with the digest of what was presented, byte for byte in constant
+  // time. Be clear what that buys. A Transaction Code is five digits by
+  // default (`oid4vci.txCodeLength`), so its SHA-256 is NOT a secret against
+  // anybody holding the row: ninety thousand hashes recover it in well under
+  // a second, offline, and no salt or slow hash changes that order of
+  // magnitude for a value this small. What it does buy is that the row no
+  // longer CARRIES the code — a heap snapshot, a replication record or a
+  // sealed `sts_minted` row read by somebody casually is not the code beside
+  // the pre-authorized code it unlocks, and a log line or a console view
+  // that ever printed the record would print a digest. The protection that
+  // matters against guessing is the attempt limit below, which is online,
+  // and the offer's short life.
+  //
   // **THE ATTEMPT LIMIT IS PRODUCT MODE'S**, asked through
   // `mode.verifiesCredentials()`: a Transaction Code is a credential this
   // service verifies, and five digits inside a ten-minute offer are guessable
@@ -490,9 +709,11 @@ class VcOffers {
    * wrong ones across the cluster and spending the code when its attempts run
    * out.
    *
-   * @param code - the pre-authorized code
+   * @param code - the pre-authorized code, as presented (its digest keys
+   *   the record)
    * @param record - its record in `preAuthorizedCodes`
-   * @param presented - the Transaction Code the wallet sent
+   * @param presented - the Transaction Code the wallet sent, compared by its
+   *   digest with the record's `txCodeDigest`
    * @returns `{ ok }`, or `{ ok: false, missing | spent | store, attemptsLeft
    *   }`
    */
@@ -500,7 +721,7 @@ class VcOffers {
     const { log, config, mode, stsCrypto, errorCodes,
             preAuthorizedCodes } = this.deps;
     log.debug("Entering VcOffers.checkTxCode().");
-    if (!record.txCode) {
+    if (!record.txCodeDigest) {
       log.debug("Leaving VcOffers.checkTxCode(). This offer carries no " +
                 "Transaction Code.");
       return { ok: true };
@@ -510,7 +731,9 @@ class VcOffers {
       log.debug("Leaving VcOffers.checkTxCode(). None was presented.");
       return { ok: false, missing: true };
     }
-    if (stsCrypto.constantTimeEquals(given, record.txCode)) {
+    if (stsCrypto.bytesEqualConstantTime(
+          Buffer.from(stsCrypto.credentialDigest(given), 'utf8'),
+          Buffer.from(String(record.txCodeDigest), 'utf8'))) {
       log.debug("Leaving VcOffers.checkTxCode(). It matches.");
       return { ok: true };
     }
@@ -723,9 +946,12 @@ class VcOffers {
       // in the offer — only its shape does — because the whole point is that it
       // reaches the End-User by a different channel.
       txCodeValue = this.newTxCode();
+      // Keyed by the code's digest, and holding the Transaction Code's
+      // digest (#614): the plain values leave this function in its answer,
+      // for the page that shows them, and are not kept.
       preAuthorizedCodes.set(preAuthorizedCode, {
         configurationIds: configurationIds,
-        txCode: txCodeValue,
+        txCodeDigest: stsCrypto.credentialDigest(txCodeValue),
         txCodeFailures: 0,
         user: opts.user || userFor(this.vciOfferUsername()),
         deferred: mode === 'deferred',
@@ -830,15 +1056,13 @@ class VcOffers {
     const built = this.buildCredentialOffer(req, ask.configurationIds,
                                             ask.mode,
                                             { user: ask.user || null });
-    // Sweep expired offers, states, codes and transactions while here.
+    // Sweep expired offers, states, codes and transactions while here. Each
+    // is keyed by a digest (#614), so the sweep removes by the key it walks
+    // rather than through `delete()`, which would hash it again.
     const now = Date.now();
     [credentialOffers, issuerStates, preAuthorizedCodes,
-     deferredTransactions].forEach(function (store: Store): void {
-      store.forEach(function (v: any, k: string): void {
-        if (v.expires < now) {
-          store.delete(k);
-        }
-      });
+     deferredTransactions].forEach(function (store: DigestKeyedStore): void {
+      store.sweepExpired(now);
     });
     const wallet = String(ask.wallet || '');
     // THE SCHEME A WALLET APP IS HANDED THE OFFER UNDER (2026-10-12):
@@ -925,6 +1149,7 @@ class VcOffers {
     app.get('/oid4vci/credential-offer/:id', (req, res) => {
       log.debug("Entering the credential offer retrieval endpoint. id=" +
                 req.params.id);
+      // By the id's digest (#614): the store never held the id.
       const record = credentialOffers.get(req.params.id);
       if (!record || record.expires < Date.now()) {
         credentialOffers.delete(req.params.id);
@@ -1069,5 +1294,9 @@ export = {
   // #589: the maker of an offer, for the portal's `POST
   // /account-api/credentials/offers`; and the configured wallet.
   makeOffer: slot.forward('makeOffer'),
-  configuredWalletUrl: slot.forward('configuredWalletUrl')
+  configuredWalletUrl: slot.forward('configuredWalletUrl'),
+  // #614: the facade the four credential-keyed stores are, for a reader that
+  // must name its type, and the key a presented value is stored under.
+  DigestKeyedStore: DigestKeyedStore,
+  credentialKeyOf: DigestKeyedStore.keyOf
 };

@@ -44,7 +44,15 @@
 // **THE REQUEST IS A ROW** in `oauth2.cibaRequests`, per realm, persisted and
 // shared where this service persists what it mints, keyed by its
 // `auth_req_id` — 256 random bits, so the id is also the only credential the
-// token request needs beside the client's. Its states: `pending` →
+// token request needs beside the client's. KEYED BY ITS DIGEST, never by the
+// id (#614, `crypto.credentialDigest()`): a poll hashes the `auth_req_id` it
+// presents. The row's `key` is that digest, and it is the HANDLE the portal,
+// the console and a delivery row name the request by. The id itself stays
+// on the row (`authReqId`) only in ping and push mode, and only until the
+// notification that has to carry it is queued (sections 10.2 and 10.3, and
+// the push ID Token's `urn:openid:params:jwt:claim:auth_req_id`); a poll
+// client's row never holds it. `client_notification_token` stays whole: it
+// is sent back to the client as a Bearer token. Its states: `pending` →
 // `approved` or `denied` → `redeemed`, and `expired` once `expiresAt` passes.
 // Redemption is a cluster claim (`oauth.ciba`), so one approval is one token
 // response however many nodes are polled.
@@ -359,16 +367,37 @@ class Ciba {
   // THE REQUESTS
   // -------------------------------------------------------------------------
 
+  // The digest a request is held under (#614).
   /**
-   * Returns one request by its `auth_req_id`.
+   * Returns the key a request is held under: the digest of its
+   * `auth_req_id`.
    *
    * @param id - the `auth_req_id`
-   * @returns the request row, or undefined
+   * @returns the key
+   */
+  static keyOf(id: unknown): string {
+    helpers.log.debug("Entering Ciba.keyOf().");
+    helpers.log.debug("Leaving Ciba.keyOf().");
+    return stsCrypto.credentialDigest(String(id || ''));
+  }
+
+  // BY THE `auth_req_id`, OR BY THE ROW'S HANDLE (its `key`, #614). The
+  // handle is what the portal and the console name a request by, and every
+  // caller of this checks that the request is waiting for the person asking
+  // — so a handle answers nothing a person could not answer anyway. The
+  // CLIENT's door, `poll()`, takes the `auth_req_id` and nothing else: a
+  // digest is never a credential there.
+  /**
+   * Returns one request by its `auth_req_id` or by its handle.
+   *
+   * @param id - the `auth_req_id`, or the row's `key`
+   * @returns the request row, or null
    */
   get(id: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering Ciba.get().");
-    const found = requests.get(String(id || '')) || null;
+    const found = requests.get(Ciba.keyOf(id)) ||
+                  requests.get(String(id || '')) || null;
     log.debug("Leaving Ciba.get(). " + !!found);
     return found;
   }
@@ -382,7 +411,7 @@ class Ciba {
   save(record: Json): Json {
     const { log } = this.deps;
     log.debug("Entering Ciba.save(). " + record.state);
-    requests.set(String(record.id), record);
+    requests.set(String(record.key), record);
     log.debug("Leaving Ciba.save().");
     return record;
   }
@@ -427,8 +456,9 @@ class Ciba {
    * id, expiry and interval, within the person's pending limit.
    *
    * @param spec - what the endpoint checked of the request
-   * @returns `{ ok: true, record }`, or `{ ok: false, error, code, description
-   *   }`
+   * @returns `{ ok: true, record }` — the record a copy carrying the new
+   *   `auth_req_id` as `id`, for the acknowledgement; the stored row holds
+   *   its digest (#614) — or `{ ok: false, error, code, description }`
    */
   create(spec: Json): Json {
     const { log, now } = this.deps;
@@ -446,10 +476,16 @@ class Ciba {
     const asked = Number(spec.requestedExpiry);
     const expiresIn = asked > 0 ? Math.min(Math.floor(asked), maxExpiry) :
       Math.min(this.setting('oauth2.cibaDefaultExpiryS'), maxExpiry);
-    const record = {
-      // Stamped with the minting cell (#98 D10): the client polls the cell
-      // nearest it, which relays here.
-      id: cellLocator.stamp(stsCrypto.randomBytes(32).toString('base64url')),
+    // Stamped with the minting cell (#98 D10): the client polls the cell
+    // nearest it, which relays here.
+    const id = cellLocator.stamp(stsCrypto.randomBytes(32)
+                                   .toString('base64url'));
+    const mode = String(spec.mode);
+    const record: Json = {
+      key: Ciba.keyOf(id),
+      // Only where a notification will have to carry it (#614); dropped
+      // once that notification is queued.
+      ...(mode === 'poll' ? {} : { authReqId: id }),
       state: 'pending',
       clientId: String(spec.clientId),
       clientName: String(spec.clientName || spec.clientId),
@@ -464,7 +500,7 @@ class Ciba {
       // Grant Management (#142): what the grant will be when this request's
       // tokens are claimed — `grant_management.ts`'s plan, or null.
       grantManagement: spec.grantManagement || null,
-      mode: String(spec.mode),
+      mode: mode,
       notificationToken: String(spec.notificationToken || ''),
       notificationEndpoint: String(spec.notificationEndpoint || ''),
       base: String(spec.base || ''),
@@ -479,7 +515,8 @@ class Ciba {
              record.username + ' (' + record.mode + ', expires in ' +
              expiresIn + ' s).');
     log.debug("Leaving Ciba.create().");
-    return { ok: true, record: record, expiresIn: expiresIn };
+    return { ok: true, record: Object.assign({}, record, { id: id }),
+             expiresIn: expiresIn };
   }
 
   private expire(record: Json): void {
@@ -489,10 +526,25 @@ class Ciba {
     record.finishedAt = this.deps.now();
     this.save(record);
     if (record.mode === 'push') {
-      this.queue(record, { auth_req_id: record.id, error: 'expired_token',
+      this.queue(record, { auth_req_id: record.authReqId,
+        error: 'expired_token',
         error_description: 'The person did not answer in time.' });
     }
+    this.forgetId(record);
     log.debug("Leaving Ciba.expire().");
+  }
+
+  // The `auth_req_id` leaves the row once nothing will send it again (#614):
+  // the notification that carries it is queued, and the delivery row holds
+  // it in its body until it is sent.
+  private forgetId(record: Json): void {
+    const { log } = this.deps;
+    log.debug("Entering Ciba.forgetId().");
+    if (record.authReqId !== undefined) {
+      delete record.authReqId;
+      this.save(record);
+    }
+    log.debug("Leaving Ciba.forgetId().");
   }
 
   // -------------------------------------------------------------------------
@@ -600,9 +652,10 @@ class Ciba {
     log.debug("Entering Ciba.notifyAnswered(). " + record.mode);
     const approve = record.state === 'approved';
     if (record.mode === 'ping') {
-      this.queue(record, { auth_req_id: record.id });
+      this.queue(record, { auth_req_id: record.authReqId });
     } else if (record.mode === 'push' && !approve) {
-      this.queue(record, { auth_req_id: record.id, error: 'access_denied',
+      this.queue(record, { auth_req_id: record.authReqId,
+        error: 'access_denied',
         error_description: 'The person denied the request.' });
     } else if (record.mode === 'push') {
       let tokens: Json = null;
@@ -618,10 +671,11 @@ class Ciba {
       record.redeemedAt = this.deps.now();
       this.save(record);
       this.queue(record, tokens
-        ? Object.assign({ auth_req_id: record.id }, tokens)
-        : { auth_req_id: record.id, error: 'transaction_failed',
+        ? Object.assign({ auth_req_id: record.authReqId }, tokens)
+        : { auth_req_id: record.authReqId, error: 'transaction_failed',
             error_description: 'The tokens could not be issued.' });
     }
+    this.forgetId(record);
     log.debug("Leaving Ciba.notifyAnswered(). " + record.state);
   }
 
@@ -640,7 +694,9 @@ class Ciba {
   poll(id: unknown, clientId: unknown): Json {
     const { log, now } = this.deps;
     log.debug("Entering Ciba.poll().");
-    const record = this.get(id);
+    // The client's door: the `auth_req_id`, hashed as it is presented, and
+    // never a handle (#614).
+    const record = requests.get(Ciba.keyOf(id)) || null;
     if (!record || record.clientId !== String(clientId || '')) {
       log.debug("Leaving Ciba.poll(). Unknown.");
       return { state: 'unknown', record: null };
@@ -678,7 +734,7 @@ class Ciba {
     const { log, claims } = this.deps;
     log.debug("Entering Ciba.redeem().");
     const claimed: Json = await claims.claim({
-      scope: REDEEM_SCOPE, value: record.id,
+      scope: REDEEM_SCOPE, value: record.key,
       ttlMs: Math.max(0, record.expiresAt - this.deps.now()) + RETENTION_MS });
     if (!claimed.ok) {
       log.debug("Leaving Ciba.redeem(). " + claimed.reason);
@@ -708,8 +764,11 @@ class Ciba {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering Ciba.queue(). " + record.mode);
+    // `authReqId` on a delivery row is the request's KEY, its digest (#614):
+    // the console, the audit row and `deliveryViews()` name the request by
+    // it, and the id itself is in the body only until it is sent.
     const queued = this.outbox.queue({
-      authReqId: record.id, clientId: record.clientId, mode: record.mode,
+      authReqId: record.key, clientId: record.clientId, mode: record.mode,
       uri: record.notificationEndpoint, token: record.notificationToken,
       username: record.username || '', body: body
     });
@@ -837,7 +896,8 @@ class Ciba {
   /**
    * Lists the notification deliveries, never with the token or the body.
    *
-   * @param authReqId - only this request's deliveries
+   * @param authReqId - only this request's deliveries: its `auth_req_id`
+   *   or its handle
    * @returns the delivery views
    */
   deliveryViews(authReqId?: unknown): Json[] {
@@ -846,7 +906,8 @@ class Ciba {
     log.debug("Entering Ciba.deliveryViews().");
     const rows = this.outbox.rows({
       where: authReqId === undefined ? undefined : function (row: Json) {
-        return row.authReqId === String(authReqId);
+        return row.authReqId === Ciba.keyOf(authReqId) ||
+               row.authReqId === String(authReqId);
       }
     }).map(function (row: Json) {
       return self.outbox.view(row);
@@ -894,7 +955,9 @@ class Ciba {
   static view(record: Json): Json {
     helpers.log.debug("Entering Ciba.view().");
     helpers.log.debug("Leaving Ciba.view().");
-    return { id: record.id, state: record.state, clientId: record.clientId,
+    // `id` is the handle, the row's key (#614): what the console answers
+    // the request by, and never the `auth_req_id`.
+    return { id: record.key, state: record.state, clientId: record.clientId,
              clientName: record.clientName, username: record.username,
              scope: record.scope, acrValues: record.acrValues,
              bindingMessage: record.bindingMessage, mode: record.mode,
