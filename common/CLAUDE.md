@@ -2765,6 +2765,70 @@ would call the DEFAULT realm's API: the page would look right, the call would
 succeed, and it would have changed the wrong service. Another page that builds
 URLs in a script would need the same treatment and would not get it for free.
 
+## Disabled debug lines: one comparison, and a guard where the MESSAGE costs (#627, 2026-10-14)
+
+**The root style rule makes every named function log its entry and exit at
+debug, and every appconfig file runs at info**, so nearly all of those calls
+write nothing. They were not free: bunyan's emitter (`mkLogEmitter()`) copies
+its arguments into a new array and fires the level's dtrace probe (the stub
+on Linux) BEFORE it compares the level. The live all-thread profiles of an
+LDAP bulk load put `(anon)@lib/bunyan.js:1013` at 250–1040 ms per 30 s under
+`realmFor`, `isUnder`, `settingFor`, `partitionId`, the keystore's
+`sealed()`/`dekFor()`, the applications register and the minted applier.
+
+**The mechanism is in `config.js`, just after its `require('bunyan')`, and it
+is two lines**: `quietBelowLevel()` replaces `debug` and `trace` ON BUNYAN'S
+SHARED PROTOTYPE with a wrapper that returns at once when `this._level` is
+above the method's level and there are arguments, and otherwise hands the
+call to bunyan's own emitter unchanged. Why each property holds:
+
+* **Every logger, no call-site edit.** A method is looked up on the prototype
+  at each call, so the shared `sts` logger, the hundred-odd module loggers,
+  child loggers, the vendored and krb5 codec loggers, and a logger made before
+  `config.js` loaded are all covered. A request worker is its own isolate and
+  loads `config.js` too.
+* **A runtime level change works both ways**, because the level is read at the
+  call: `applyLogLevel()`, `STS_LOG_LEVEL`, a console write of
+  `global.logLevel`. A child bunyan gave its own level is judged by it.
+* **`log.debug()` with no arguments is still bunyan's "is debug enabled?"**,
+  answering bunyan's boolean, because a call without arguments is not
+  intercepted. So is a call whose `this` is not a logger (bunyan's warning).
+* **Installed once**: the wrapper carries `quietBelowLevel` and
+  `bunyanEmitter` (bunyan's own function), and a second load of `config.js`
+  over the same bunyan (a test clearing the require cache) leaves it alone.
+* **Why `config.js`**: it is the first module every process loads that holds
+  bunyan, and it is already in the parent project's Kerberos COPY closure
+  (`kerberos/CLAUDE.md`), so no new require and no new COPY line.
+* **Given up**: a real dtrace consumer would not see probes for lines below
+  the level. Linux has none.
+
+**What it cannot do is skip the caller's ARGUMENT**, which JavaScript evaluates
+before entering any function. `'Entering f(). ' + list.length + ' names.'` or
+a `JSON.stringify()` is still built and thrown away. **On a path the profiles
+show hot, such a call is guarded** with bunyan's own check:
+`if (log.debug()) { log.debug('… ' + JSON.stringify(x)); }`. Only there,
+and only where the argument costs something: a constant string, or one
+concatenated with a name already in hand, is left as it is, because the
+wrapper already makes it nearly free and a guard on every line would bury
+the rule the pairs exist for. The `Entering`/`Leaving` pairs are never
+removed: the rule is unchanged, only its cost. Where a pair's own line
+carries a computed message it is guarded in place, and stays where the rule
+puts it.
+
+The sites guarded on 2026-10-14, each because the profiles (or the issue's
+list of hot paths) put it on a per-operation path and its argument allocates:
+`ldap_server.js`'s `ldapAddNow()` and `attributeSnapshot()` (an
+`Object.keys()` per add), `request_pool.js`'s `leastLoaded()` (a `map` and
+`join` over the pool per routed request) and `workerFor()` (a `split` per
+routed request), `admin_rbac.ts`'s `rolesOf()` (a `join` per console and API
+request) and `admin_stats.js`'s `buildUserRowsResolved()` (a second pass
+over every row). The remaining computed messages on those paths are a
+`.length` or a name already in hand, which costs a concatenation and nothing
+else.
+
+`tests/debug_level_cost.js` holds all of it, counting entries into bunyan's
+emitter through a getter on a logger's `_emit` (the emitter's first read).
+
 ## `config.js` is the only place a setting is read
 
 Configuration used to be forty-odd `process.env.X || 'a default'` expressions spread

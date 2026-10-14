@@ -47,7 +47,9 @@
 //      asks neither synchronously; and an answer asked first is never older
 //      than this process — a name or a DN created here, or applied from
 //      another process, while the questions were out still refuses the
-//      add.
+//      add. F9–F14 (#625): under a stream of adds of OTHER names an add
+//      asks `byName` synchronously never; a name another add or an
+//      applied row took while it was asking still refuses it.
 //
 // A and the parent's checks run here; B–F run in a child that loads the
 // directory as a windowed request worker (`tests/directory_window.js`'s
@@ -773,7 +775,7 @@ async function addQuestions(t, ldap, w, rows, users, bridge) {
   t.check(one && one.ok && raced && raced.ok === false &&
           raced.errorName === 'EntryAlreadyExistsError',
           'F5. A NAME TAKEN HERE WHILE THE ADD WAS ASKING refuses the add: ' +
-          'the clock moved and the body asked again',
+          'the name was touched and the body asked again',
           JSON.stringify({ created: !!(one && one.ok), raced: raced,
                            counts: slow.counts }));
   t.check(two && two.ok && racedDn && racedDn.ok === false &&
@@ -828,10 +830,125 @@ async function addQuestions(t, ldap, w, rows, users, bridge) {
           asked(bridge.counts.sync, 'byKeys') +
             asked(bridge.counts.sync, 'byName') > 0,
           'F8. and a NAME another process took while the add was asking ' +
-          'refuses it: the clock moved, and the body asked again',
+          'refuses it: the name was touched, and the body asked again',
           JSON.stringify({ named: named, counts: bridge.counts }));
   bridge.afterAnswer = null;
+  await streamQuestions(t, ldap, w, rows, users, add);
+  w.attach(bridge);
   log.debug('Leaving addQuestions().');
+}
+
+// --- F9–F13. adds under a stream of other adds (#625) ----------------------
+//
+// #621 kept an add's answers only while nothing under `ou=users` moved, so
+// under a bulk load from several connections — another add landing between
+// every add's question and its body — almost every add asked `byName`
+// synchronously again. The answers are now kept per NAME and per DN: an add
+// asks synchronously only when a write since its question touched one of
+// its own names or its DN.
+async function streamQuestions(t, ldap, w, rows, users, add) {
+  log.debug('Entering streamQuestions().');
+  const slow = countingBridge(rows, { delayMs: 20 });
+  w.attach(slow);
+  // F9–F11: two overlapping waves of eight adds of DIFFERENT names, as
+  // eight connections send them: every question of a wave is out together,
+  // so each body but the first runs after other adds have written, and the
+  // second wave asks while the first is still writing.
+  const wave = function (tag, n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const uid = 'stream-' + tag + '-' + i;
+      out.push(add('uid=' + uid + ',' + users, uid));
+    }
+    return out;
+  };
+  const allOk = function (list) {
+    return list.every(function (one) {
+      return one && one.ok === true;
+    });
+  };
+  const first = wave('a', 8);
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 10);
+  });
+  const second = wave('b', 8);
+  const answers = await Promise.all(first.concat(second));
+  const streamCounts = JSON.parse(JSON.stringify(slow.counts));
+  t.log.info('AFTER (#625): sixteen interleaved adds asked byName ' +
+             asked(streamCounts.sync, 'byName') + ' time(s) ' +
+             'synchronously and ' + asked(streamCounts.async, 'byName') +
+             ' asynchronously: ' + JSON.stringify(streamCounts));
+  t.check(allOk(answers), 'F9. sixteen interleaved adds of different ' +
+          'names all succeed', JSON.stringify(answers));
+  t.check(asked(streamCounts.sync, 'byName') === 0 &&
+          asked(streamCounts.async, 'byName') === 16,
+          'F10. PER NAME, NOT PER CONTAINER (#625): under a stream of ' +
+          'adds of other names, no add asks byName synchronously — each ' +
+          'one\'s answer asked first is kept',
+          JSON.stringify(streamCounts));
+  t.equal(ldap.openHeldNameWatches(), 0, 'F11. and no add leaves its ' +
+          'watch behind');
+
+  // F12: two adds of the SAME name, at different DNs, among adds of other
+  // names: one is made and the other refused, and only that name is ever
+  // asked again. (Which door refuses depends on timing: a write in THIS
+  // process before the later add's `byName` resolves is in that answer —
+  // `findWindowedAsync()` adds what is held here — and one after it is in
+  // the watch; F8 and F13 are the cases only the watch can catch.)
+  slow.reset();
+  const dupes = await Promise.all(wave('c', 3).concat([
+    add('cn=dupe-one,' + users, 'stream-dupe'),
+    add('uid=dupe-two,' + users, 'stream-dupe')]).concat(wave('d', 3)));
+  const pair = dupes.slice(3, 5);
+  const made = pair.filter(function (one) {
+    return one && one.ok === true;
+  });
+  const refused = pair.filter(function (one) {
+    return one && one.ok === false &&
+      one.errorName === 'EntryAlreadyExistsError';
+  });
+  t.check(made.length === 1 && refused.length === 1 &&
+          allOk(dupes.slice(0, 3).concat(dupes.slice(5))) &&
+          asked(slow.counts.sync, 'byName') <= 1,
+          'F12. TWO ADDS OF ONE NAME in a stream of others: one is made, ' +
+          'the other refused, and at most that name is asked again ' +
+          'synchronously — the adds of other names around it ask nothing',
+          JSON.stringify({ pair: pair, counts: slow.counts }));
+
+  // F13: a row another process wrote, applied while a stream of adds is
+  // asking, that GIVES AN EXISTING ENTRY one of the names (a modify
+  // elsewhere adding a `uid`), refuses the add of that name and no other.
+  slow.reset();
+  const holder = 'uid=p000010,' + users;
+  const holderKey = holder.toLowerCase();
+  slow.afterAnswer = function (name, args) {
+    if (name !== 'byName' || args[2] !== 'stream-given') {
+      return;
+    }
+    slow.afterAnswer = null;
+    const was = rows.get('default\n' + holderKey);
+    const attrs = Object.assign({}, was.attrs,
+                                { uid: ['p000010', 'stream-given'] });
+    rows.set('default\n' + holderKey,
+             Object.assign({}, was, { attrs: attrs }));
+    ldap.directoryHooks.forgetEntry('default', holderKey,
+      { dn: holder, attributes: attrs, origin: 'test' });
+  };
+  const given = await Promise.all(wave('e', 3).concat([
+    add('uid=stream-given,' + users, 'stream-given')]).concat(wave('f', 3)));
+  slow.afterAnswer = null;
+  const taken = given[3];
+  t.check(taken && taken.ok === false &&
+          taken.errorName === 'EntryAlreadyExistsError' &&
+          allOk(given.slice(0, 3).concat(given.slice(4))) &&
+          asked(slow.counts.sync, 'byName') === 1,
+          'F13. A ROW APPLIED FROM ANOTHER PROCESS that gave an existing ' +
+          'entry the name refuses the add of it, asked again ' +
+          'synchronously; the adds around it ask nothing',
+          JSON.stringify({ taken: taken, counts: slow.counts }));
+  t.equal(ldap.openHeldNameWatches(), 0, 'F14. and, refused or made, no ' +
+          'add leaves its watch behind');
+  log.debug('Leaving streamQuestions().');
 }
 
 async function childMain() {
@@ -904,7 +1021,7 @@ async function run(t) {
   log.debug('Entering run().');
   await windowQuestions(t);
   t.log.info('=== B–F. through the directory, as a windowed worker ===');
-  inChild(t, 36);
+  inChild(t, 42);
   log.debug('Leaving run().');
 }
 

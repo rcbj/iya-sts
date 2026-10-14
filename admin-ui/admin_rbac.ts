@@ -1166,9 +1166,13 @@ class AdminRbac {
     out.roles = ROLE_IDS.filter(function (id) { return !!held[id]; });
     out.read = !!held.read;
     out.write = !!held.write;
-    log.debug("Leaving AdminRbac.rolesOf(). " + name + " holds " +
-              (out.roles.join(', ') || 'no role') +
-              (out.open ? " (empty roster)." : "."));
+    // Asked on every console and API request (#627): the join is built only
+    // when the line will be written.
+    if (log.debug()) {
+      log.debug("Leaving AdminRbac.rolesOf(). " + name + " holds " +
+                (out.roles.join(', ') || 'no role') +
+                (out.open ? " (empty roster)." : "."));
+    }
     return out;
   }
 

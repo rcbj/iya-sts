@@ -17,7 +17,9 @@
 //      no id, meta or groups, the core schema first, application/scim+json),
 //      the member named by the service provider's id;
 //   C. a change is a PUT to the linked id; a 412 re-reads and tries again
-//      with If-Match (RFC 7644 section 3.14);
+//      with If-Match (RFC 7644 section 3.14); the clients a change is
+//      observed for are kept by the applications clock, listed again only
+//      after an application changed (#625);
 //   D. a 409 uniqueness ADOPTS the resource found by userName;
 //   E. a disabled person is deactivated (PATCH active false), and without
 //      PATCH support by GET then PUT; deprovision=delete DELETEs, and a 404
@@ -614,6 +616,7 @@ async function changes(t) {
           !!puts[puts.length - 1].headers['if-match'],
           'C1. a change is a PUT to the linked id, and a 412 re-reads and ' +
           'tries again with If-Match', JSON.stringify(bob.body));
+  await observedClientsKept(t, dn);
   // D: a resource already there under the userName, with no externalId.
   sp.users['sp-pre'] = { id: 'sp-pre', v: 1, body: {
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
@@ -637,6 +640,56 @@ async function changes(t) {
           'E1. a disabled person is deactivated there (active false)',
           JSON.stringify(sp.users['sp-pre'].body));
   log.debug('Leaving changes().');
+}
+
+// C2–C3 (#625): the clients a directory change is observed for are kept by
+// the applications listing's clock — no `applications.list()` per change
+// while nothing under ou=applications changed, and one after it did.
+async function observedClientsKept(t, dn) {
+  log.debug('Entering observedClientsKept().');
+  const listed = applications.list;
+  let listings = 0;
+  applications.list = function () {
+    listings += 1;
+    return listed.apply(applications, arguments);
+  };
+  const retitle = function (title) {
+    const entry = ldap.readPerson(dn);
+    ldap.writePerson(dn, Object.assign({}, entry.attributes,
+                                       { title: title }));
+  };
+  let unchanged = -1;
+  let afterChange = -1;
+  let settled = -1;
+  try {
+    retitle('Engineer I');
+    listings = 0;
+    retitle('Engineer II');
+    retitle('Engineer III');
+    unchanged = listings;
+    const result = applications.updateApplication('basic-' + RUN, {
+      attribute: 'scimClientMaxRequestsPerSecond', mode: 'set', value: '0',
+      actor: 'tester' });
+    t.check(result && result.ok, 'C2a. the client entry is changed',
+            JSON.stringify(result));
+    listings = 0;
+    retitle('Engineer IV');
+    afterChange = listings;
+    listings = 0;
+    retitle('Engineer');
+    settled = listings;
+  } finally {
+    applications.list = listed;
+  }
+  await drain();
+  t.check(unchanged === 0, 'C2. KEPT (#625): two changes to a person with ' +
+          'ou=applications unchanged list no application', 'listed ' +
+          unchanged + ' time(s)');
+  t.check(afterChange >= 1 && settled === 0, 'C3. and a change to an ' +
+          'application is seen by the next change to a person, which ' +
+          'lists them once', JSON.stringify({ afterChange: afterChange,
+                                              settled: settled }));
+  log.debug('Leaving observedClientsKept().');
 }
 
 async function scopeAndDeprovision(t) {
