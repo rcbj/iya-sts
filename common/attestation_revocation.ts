@@ -55,11 +55,56 @@
 // reaches it reaches lazily — the risk datasets, the device register and the
 // credentials are built in other places in the composition root — and every
 // certificate question is `pki.js`'s (rcbj's rule).
+//
+// THE RECHECK READS ONLY THE HOLDERS, WITHOUT BLOCKING, AND ONLY WHEN
+// SOMETHING CHANGED (#615, 2026-10-13). It used to ask
+// `credentials.androidAttestedCredentials()`, which is `persons()` and a
+// `keysOf()` per person — on 8081, about 191,000 synchronous store reads on
+// the serving front process at 17:00, every listener stopped for minutes, to
+// find one person holding a security key. rcbj's decision on #615 was all
+// five of:
+//
+//   1. **THE HOLDERS ONLY.** A key the recheck asks about is MARKED on its
+//      entry — `stsAndroidAttestedCredential` on a person, naming the
+//      credential ids; `stsDeviceAndroidKey` on a device, naming the key ids
+//      — derived from the keys on every write of them, by the rule that
+//      decides what a recheckable key is (`credentials.ts`'s and
+//      `devices.ts`'s `isAndroidRecheckable()`). The recheck asks the
+//      directory's `holdersAsync()` for the entries holding the marker,
+//      which in a windowed process is `withAttribute()` against the store's
+//      `attr_names` index; the keys are still interpreted by those two
+//      files, so the marker decides who is READ, never what is rechecked.
+//   2. **ASYNCHRONOUS AND YIELDING.** The holders are asked on the driver's
+//      read pool, a page at a time, and the chains are asked about in
+//      batches of `RECHECK_BATCH` with the event loop given back and
+//      `ctx.stillOwner()` asked between them.
+//   3. **SKIPPED WHEN NOTHING MOVED.** Every key was asked about the list
+//      active when it was registered, so a recheck can only change
+//      something when a different list is active, or a key was registered
+//      since the last recheck. What the last complete recheck of a realm
+//      covered — the list's version and the registration mark — is kept in
+//      `devices.androidRecheck`, a persisted store every node restores (the
+//      job is a cluster job: the next run may be on another node), and a
+//      scheduled run that finds neither moved does nothing and says so. A
+//      run asked for — Run now, or a list's activation (`requestRecheck()`)
+//      — always runs. No list, or a stale one, rechecks nothing: every
+//      verdict would be `unchecked`, which downgrades nothing.
+//   4. **THE MARKER BACKFILLED** on the first run in each realm
+//      (`MARKER_BACKFILL`), from the holders of the keys themselves —
+//      everybody with a security key, every device with a key — never from
+//      everybody.
+//   5. **AND THE AUDIT OF EVERY OTHER JOB**, held by
+//      `tests/no_full_directory_walk_in_jobs.js`.
+//
+// Where the directory offers no `holdersAsync()` (a test's stub, an older
+// `ldap_server.js`) the two lists are the old walks, which is the old cost
+// and the same answer.
 // ===========================================================================
 
 import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+import realmStores = require('./realms');
 
 const { log } = helpers;
 
@@ -81,6 +126,24 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // leaf, one or two intermediates and the root.
 const MAX_CHAIN = 10;
 
+// How many stored chains are asked about between two turns of the event
+// loop (and two `stillOwner()` questions).
+const RECHECK_BATCH = 50;
+
+// The marker's backfill, by version: a realm whose last recheck recorded an
+// older one (or none) is backfilled before it is rechecked. Raised if what
+// the marker means ever changes.
+const MARKER_BACKFILL = 1;
+
+// WHAT THE LAST RECHECK OF EACH REALM COVERED, AND THE LATEST REGISTRATION
+// (#615). Per realm, persisted: `covered` is `{ listVersion, mark, backfill,
+// at }` of the last complete recheck, `registered` is `{ mark, at }` of the
+// last Android-attested registration. Two keys rather than one row, so a
+// registration on one node and a recheck's record on another never write the
+// same key: each is last-writer-wins on its own. Cell tier
+// (`persistence/tiers.js`): it describes this cell's people.
+const recheckState = realmStores.map({ persist: 'devices.androidRecheck' });
+
 interface RevocationDeps {
   log: typeof helpers.log;
   errorCodes: typeof errorCodes;
@@ -94,6 +157,10 @@ interface RevocationDeps {
   scheduler(): Json;
   accountSignals(): Json | null;
   audit(): Json;
+  // The ambient realm's recheck state (#615): `get(key)` and `set(key, v)`.
+  state(): Json;
+  // A fresh, unguessable registration mark.
+  newMark(): string;
 }
 
 /**
@@ -173,6 +240,12 @@ class AttestationRevocation {
       },
       audit: function (): Json {
         return require('./audit');
+      },
+      state: function (): Json {
+        return recheckState;
+      },
+      newMark: function (): string {
+        return require('./crypto').randomToken(128);
       }
     };
   }
@@ -297,23 +370,30 @@ class AttestationRevocation {
   }
 
   // -------------------------------------------------------------------------
-  // THE RECHECK (decision 2): every stored chain asked again, in every realm.
+  // THE RECHECK (decision 2): every stored chain asked again, in every realm
+  // — the holders only, in batches, and only when something moved (#615).
   // -------------------------------------------------------------------------
   /**
    * Rechecks every stored Android chain — device keys and WebAuthn
    * credentials, in every realm — and downgrades the ones the active list
-   * revokes or suspends.
+   * revokes or suspends; a realm where neither the list nor the
+   * registrations moved since its last complete recheck is skipped, unless
+   * the run was asked for.
    *
    * @param ctx - the scheduler's run context; `stillOwner()` is asked
-   *   between realms
-   * @returns counts: `checked`, `downgraded`, `unchecked`, `failed`
+   *   between realms and between batches, and a `manual` trigger (or
+   *   `force`) rechecks whatever moved
+   * @returns counts: `realms`, `checked`, `downgraded`, `unchecked`,
+   *   `failed`, `skipped`, `backfilled`, `holders`, and `summary`
    */
   async recheckAll(ctx?: Json): Promise<Json> {
     const { log } = this.deps;
     log.debug("Entering AttestationRevocation.recheckAll().");
     const c = ctx || {};
-    const out = { realms: 0, checked: 0, downgraded: 0, unchecked: 0,
-                  failed: 0 };
+    const forced = c.trigger === 'manual' || c.force === true;
+    const out: Json = { realms: 0, checked: 0, downgraded: 0, unchecked: 0,
+                        failed: 0, skipped: 0, backfilled: 0, holders: 0,
+                        walked: 0, stopped: false, why: [] };
     const realms = this.deps.realms();
     const list = [realms.DEFAULT_REALM].concat((realms.list() || [])
       .filter(function (one: Json): boolean {
@@ -321,36 +401,157 @@ class AttestationRevocation {
       }));
     for (const realm of list) {
       if (c.stillOwner && !c.stillOwner()) {
+        out.stopped = true;
         break;
       }
       out.realms += 1;
       await realms.run(realm, async () => {
-        await this.recheckRealm(out);
+        await this.recheckRealm(out, c, forced);
       });
+      if (out.stopped) {
+        break;
+      }
     }
-    log.info('devices: the Android attestation recheck asked about ' +
-             out.checked + ' stored chain(s) in ' + out.realms + ' realm(s): ' +
-             out.downgraded + ' downgraded, ' + out.unchecked + ' unchecked.');
+    out.summary = 'asked about ' + out.checked + ' stored chain(s) of ' +
+      out.holders + ' holder(s) in ' + out.realms + ' realm(s): ' +
+      out.downgraded + ' downgraded, ' + out.unchecked + ' unchecked, ' +
+      out.failed + ' failed; ' + out.skipped + ' realm(s) skipped (' +
+      (out.why.length ? Array.from(new Set(out.why)).join('; ')
+                      : 'none') + ')' +
+      (out.backfilled ? '; ' + out.backfilled + ' marker(s) backfilled' : '') +
+      (out.walked ? '; ' + out.walked + ' realm(s) WALKED, the directory ' +
+                    'offering no holder query' : '') +
+      (out.stopped ? '; stopped, this node no longer owns the run' : '');
+    delete out.why;
+    log.info('devices: the Android attestation recheck ' + out.summary + '.');
     log.debug("Leaving AttestationRevocation.recheckAll().");
     return out;
   }
 
-  // One realm's device keys and WebAuthn credentials.
-  private async recheckRealm(out: Json): Promise<void> {
+  // One realm: the backfill if it is owed, the skip if nothing moved, then
+  // the device keys and the WebAuthn credentials of the marked holders.
+  private async recheckRealm(out: Json, ctx: Json, forced: boolean):
+      Promise<void> {
     const { log } = this.deps;
     log.debug("Entering AttestationRevocation.recheckRealm().");
     const devices = this.deps.devices();
     const credentials = this.deps.credentials();
-    for (const one of devices.androidAttestedKeys()) {
-      out.checked += 1;
-      const verdict = await this.verdictOf(one.chainSerials);
-      if (verdict.status === 'unchecked') {
-        out.unchecked += 1;
-        continue;
+    const state = this.deps.state();
+    const stillOwner = function (): boolean {
+      return !ctx.stillOwner || !!ctx.stillOwner();
+    };
+    const covered = state.get('covered') || {};
+    // The mark as it was BEFORE anything was read: a key registered while
+    // this recheck runs moves it past what is recorded, and the next run
+    // reads that key.
+    const mark = String((state.get('registered') || {}).mark || '');
+    let backfill = Number(covered.backfill) || 0;
+    if (backfill !== MARKER_BACKFILL) {
+      const people = typeof credentials.backfillAndroidMarkers === 'function'
+        ? await credentials.backfillAndroidMarkers(stillOwner)
+        : { written: 0, stopped: false };
+      const kit = typeof devices.backfillAndroidMarkers === 'function'
+        ? await devices.backfillAndroidMarkers(stillOwner)
+        : { written: 0, stopped: false };
+      out.backfilled += Number(people.written || 0) + Number(kit.written || 0);
+      if (people.stopped || kit.stopped) {
+        out.stopped = true;
+        log.debug("Leaving AttestationRevocation.recheckRealm(). Stopped " +
+                  "in the backfill.");
+        return;
       }
-      if (verdict.status === 'good') {
-        continue;
+      backfill = MARKER_BACKFILL;
+    }
+    let snapshot: Json = null;
+    try {
+      snapshot = await this.deps.datasets().androidStatusSnapshot();
+    } catch (e) {
+      log.debug("Caught in AttestationRevocation.recheckRealm(): " +
+                ((e && e.message) || e));
+      // Asked as no list: nothing can be downgraded against a list that
+      // cannot be read, and the next run asks again.
+      snapshot = null;
+    }
+    const listVersion = String((snapshot && snapshot.active) || '');
+    if (!listVersion || (snapshot && snapshot.stale)) {
+      // No verdict could be `revoked` or `suspended`, so nothing is read.
+      // The backfill is recorded; a list version is NOT — and one recorded
+      // before is forgotten — so the first current list rechecks everything,
+      // the keys registered while their revocation was `unchecked` with it.
+      out.skipped += 1;
+      out.why.push(listVersion ? 'the list ' + listVersion + ' is stale'
+                               : 'no list is active');
+      state.set('covered', { listVersion: '', mark: '', backfill: backfill,
+                             at: this.deps.now() });
+      log.debug("Leaving AttestationRevocation.recheckRealm(). No list.");
+      return;
+    }
+    if (!forced && covered.listVersion === listVersion &&
+        String(covered.mark || '') === mark &&
+        Number(covered.backfill) === MARKER_BACKFILL) {
+      out.skipped += 1;
+      out.why.push('the list ' + listVersion + ' and the registrations are ' +
+                   'as the last recheck found them');
+      log.debug("Leaving AttestationRevocation.recheckRealm(). Unchanged.");
+      return;
+    }
+    const keys = typeof devices.androidAttestedKeysAsync === 'function'
+      ? await devices.androidAttestedKeysAsync()
+      : { rows: devices.androidAttestedKeys(), holders: null,
+          viaHolders: false };
+    const creds = typeof credentials.androidAttestedCredentialsAsync ===
+        'function'
+      ? await credentials.androidAttestedCredentialsAsync()
+      : { rows: credentials.androidAttestedCredentials(), holders: null,
+          viaHolders: false };
+    out.holders += Number(keys.holders || 0) + Number(creds.holders || 0);
+    if (!keys.viaHolders || !creds.viaHolders) {
+      out.walked += 1;
+    }
+    const work: Json[] = (keys.rows || []).map(function (one: Json): Json {
+      return { kind: 'device', one: one };
+    }).concat((creds.rows || []).map(function (one: Json): Json {
+      return { kind: 'credential', one: one };
+    }));
+    for (let i = 0; i < work.length; i += 1) {
+      if (i > 0 && i % RECHECK_BATCH === 0) {
+        if (!stillOwner()) {
+          out.stopped = true;
+          log.debug("Leaving AttestationRevocation.recheckRealm(). Stopped.");
+          return;
+        }
+        await new Promise<void>(function (resolve) {
+          setImmediate(resolve);
+        });
       }
+      await this.recheckOne(out, work[i].kind, work[i].one, devices,
+                            credentials);
+    }
+    // COMPLETE: what it covered is recorded, so the next scheduled run can
+    // skip. A run stopped above records nothing and the next one repeats it.
+    state.set('covered', { listVersion: listVersion, mark: mark,
+                           backfill: backfill, at: this.deps.now() });
+    log.debug("Leaving AttestationRevocation.recheckRealm().");
+  }
+
+  // One stored chain asked about again, and downgraded where the list now
+  // revokes or suspends it.
+  private async recheckOne(out: Json, kind: string, one: Json, devices: Json,
+                           credentials: Json): Promise<void> {
+    const { log } = this.deps;
+    log.debug("Entering AttestationRevocation.recheckOne(). " + kind);
+    out.checked += 1;
+    const verdict = await this.verdictOf(one.chainSerials);
+    if (verdict.status === 'unchecked') {
+      out.unchecked += 1;
+      log.debug("Leaving AttestationRevocation.recheckOne(). Unchecked.");
+      return;
+    }
+    if (verdict.status === 'good') {
+      log.debug("Leaving AttestationRevocation.recheckOne(). Good.");
+      return;
+    }
+    if (kind === 'device') {
       const done = devices.downgradeKeyAttestation(one.deviceId, one.keyId,
                                                    verdict);
       if (done && done.ok && done.changed) {
@@ -358,26 +559,31 @@ class AttestationRevocation {
       } else if (!done || !done.ok) {
         out.failed += 1;
       }
+    } else if (credentials.untrustKeyAttestation(one.username,
+                                                 one.credentialId, verdict)) {
+      out.downgraded += 1;
+      this.credentialDowngraded(one.username, one.credentialId, verdict);
+    } else {
+      out.failed += 1;
     }
-    for (const one of credentials.androidAttestedCredentials()) {
-      out.checked += 1;
-      const verdict = await this.verdictOf(one.chainSerials);
-      if (verdict.status === 'unchecked') {
-        out.unchecked += 1;
-        continue;
-      }
-      if (verdict.status === 'good') {
-        continue;
-      }
-      if (credentials.untrustKeyAttestation(one.username, one.credentialId,
-                                            verdict)) {
-        out.downgraded += 1;
-        this.credentialDowngraded(one.username, one.credentialId, verdict);
-      } else {
-        out.failed += 1;
-      }
-    }
-    log.debug("Leaving AttestationRevocation.recheckRealm().");
+    log.debug("Leaving AttestationRevocation.recheckOne(). " +
+              verdict.status);
+  }
+
+  /**
+   * Moves the ambient realm's registration mark: an Android-attested key was
+   * registered, so the next recheck must not skip as "nothing changed"
+   * (#615). Called by `credentials.ts` and `devices.ts` after the write.
+   *
+   * @param what - what was registered, for the log
+   */
+  noteRegistration(what: string): void {
+    const { log } = this.deps;
+    log.debug("Entering AttestationRevocation.noteRegistration().");
+    this.deps.state().set('registered', { mark: this.deps.newMark(),
+                                          at: this.deps.now() });
+    log.debug("Leaving AttestationRevocation.noteRegistration(). " +
+              String(what || ''));
   }
 
   // A WebAuthn credential's statement made untrusted: the log, the audit row
@@ -486,7 +692,10 @@ class AttestationRevocation {
                 'stored Android chain — device keys and WebAuthn ' +
                 'credentials, in every realm — and downgrades the ones it ' +
                 'revokes or suspends: self-asserted, audited, CAEP ' +
-                'credential-change. Run when a list is activated, and daily.',
+                'credential-change. Reads only the people and devices ' +
+                'marked as holding one, a page at a time, and skips a realm ' +
+                'where neither the list nor the registrations moved since ' +
+                'its last recheck. Run when a list is activated, and daily.',
       owner: 'common/attestation_revocation.ts',
       kind: 'cluster',
       everyMs: function (): number {
@@ -536,6 +745,7 @@ export = {
   untrusts: slot.forward('untrusts'),
   describe: slot.forward('describe'),
   recheckAll: slot.forward('recheckAll'),
+  noteRegistration: slot.forward('noteRegistration'),
   requestRecheck: slot.forward('requestRecheck'),
   registerJobs: slot.forward('registerJobs')
 };
