@@ -21,7 +21,8 @@
 //
 //   name_keys   the `uid` values, lower-cased      — `byName()`
 //   mail_keys   `mail`, lower-cased                — `byMail()`
-//   uuid_keys   `entryUUID` and its aliases        — `byUuid()`
+//   uuid_keys   `entryUUID` and its aliases        — `byUuid()`,
+//                                                   `withUuids()`
 //   class_keys  `objectClass`, lower-cased         — `classesUnder()`
 //   value_keys  `name=value` of VALUE_INDEXED       — `byAttribute()`
 //   attr_names  the attribute NAMES, in the clear  — `withAttribute()`
@@ -263,6 +264,10 @@ function keyArgs(name, args) {
     });
   } else if (name === 'byUuid') {
     a[1] = { key: lookupOf('uuid', lower(a[1])) };
+  } else if (name === 'withUuids') {
+    a[1] = (a[1] || []).map(function (one) {
+      return { key: lookupOf('uuid', lower(one)) };
+    });
   } else if (name === 'byMail') {
     a[1] = { key: lookupOf('mail', lower(a[1])) };
   } else if (name === 'equalUnder') {

@@ -172,6 +172,31 @@ function byUuid(realm, uuid) {
 }
 
 /**
+ * The entries holding ANY of a list of `entryUUID` values or aliases, lower-
+ * cased: `byUuid()`'s question for many subjects at once. A page that names
+ * the holder of every token it holds (`admin_stats.js`'s `userKeys()`) asked
+ * `byUuid` once per token in a windowed process, a synchronous round trip
+ * each, and thousands of them made one `GET /admin-api/audit` take a second.
+ * `@> ANY` is answered by a bitmap scan of the same GIN index, one probe per
+ * value.
+ *
+ * @param realm - the realm id
+ * @param uuids - the UUIDs, bare; each `{ key }` once keyed
+ * @returns the statement
+ */
+function withUuids(realm, uuids) {
+  log.debug("Entering withUuids().");
+  const keys = (Array.isArray(uuids) ? uuids : []).map(function (one) {
+    return JSON.stringify([keyed(one, 'uuid', true)]);
+  });
+  log.debug("Leaving withUuids().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND uuid_keys @> ANY($2::jsonb[]) ORDER BY ' +
+                 'dn_key',
+           values: [String(realm), keys] };
+}
+
+/**
  * The entries holding a mail address, compared lower-cased.
  *
  * @param realm - the realm id
@@ -692,6 +717,7 @@ const QUERIES = {
   byKeys: byKeys,
   byName: byName,
   byUuid: byUuid,
+  withUuids: withUuids,
   byMail: byMail,
   byAttribute: byAttribute,
   equalUnder: equalUnder,
@@ -742,6 +768,7 @@ module.exports = {
   byKeys: byKeys,
   byName: byName,
   byUuid: byUuid,
+  withUuids: withUuids,
   byMail: byMail,
   byAttribute: byAttribute,
   equalUnder: equalUnder,

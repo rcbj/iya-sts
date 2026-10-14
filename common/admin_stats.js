@@ -53,7 +53,7 @@
 // ---------------------------------------------------------------------------
 
 const { log, setJwtRecorder, userFor, nameForSubject, subjectForName,
-        LEGACY_SUBJECT_PREFIX } = require('./helpers');
+        namesForSubjects, LEGACY_SUBJECT_PREFIX } = require('./helpers');
 // TRUST REALMS: the stores below are partitioned by realm. It requires
 // config.js and the error-code table and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
@@ -2334,6 +2334,89 @@ const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 // validating a DID.
 const DID_SHAPED = /^did:[a-z0-9]+:/i;
 
+// ---------------------------------------------------------------------------
+// THE SUBJECTS OF EVERY HELD TOKEN AND ARTIFACT, RESOLVED TOGETHER
+// (2026-10-14).
+//
+// `userKeys()`, `buildUserRows()` and `holdingsOf()` file every token and
+// artifact under its holder, and a `urn:uuid:` subject is resolved through the
+// directory to do it — `nameForSubject()`, one lookup per record. In a process
+// holding the whole directory that is an index read; in one whose directory is
+// a WINDOW onto the store (#320's `ldap.workerDirectory=auto`, every request
+// worker and the front on postgres) a person is not resident, so each was a
+// synchronous `byUuid` round trip, and one naming nobody — a person a test
+// deleted, whose tokens are still held — was asked again on every call. With
+// thousands of records `GET /admin-api/audit` (whose `knownUserKeys()` is
+// `userKeys()`) took over a second, and `sts_admin_closed_sets`, asking it
+// once per audit category and action, was killed by its watchdog in the
+// postgres modes.
+//
+// So each of the three asks `helpers.namesForSubjects()` once for every
+// subject it will meet — one statement per batch — and `identityOf()` reads
+// the answer while the walk runs. The answers are the ones each lookup would
+// have given; a subject not gathered (nothing should be) is still looked up
+// alone. Synchronous, so nothing else runs while the answer is held, and it
+// is dropped when the walk ends: a later call asks again.
+// ---------------------------------------------------------------------------
+let resolvedSubjects = null;
+
+// Hot path: called for every token and artifact on every users page view,
+// as identityOf() is, so no Entering/Leaving pair would drown the log.
+function subjectNameOf(subject) {
+  if (resolvedSubjects) {
+    const held = resolvedSubjects.get(subject.toLowerCase());
+    if (held !== undefined) {
+      return held;
+    }
+  }
+  return nameForSubject(subject);
+}
+
+/**
+ * Runs `fn` with the `urn:uuid:` subject of every held token and artifact
+ * resolved in one question to the directory, which `identityOf()` reads.
+ *
+ * @param fn - the walk
+ * @returns what `fn` returns
+ */
+function withSubjectsResolved(fn) {
+  log.debug("Entering withSubjectsResolved().");
+  if (resolvedSubjects) {
+    // Already inside one: the subjects are resolved.
+    const inner = fn();
+    log.debug("Leaving withSubjectsResolved(). Nested.");
+    return inner;
+  }
+  const subjects = new Set();
+  const note = function (value) {
+    let text = String(value == null ? '' : value).trim();
+    if (text.indexOf(SUBJECT_PREFIX) === 0) {
+      text = text.slice(SUBJECT_PREFIX.length);
+    }
+    if (/^urn:uuid:/i.test(text)) {
+      subjects.add(text);
+    }
+  };
+  tokens.forEach(function (record) {
+    note(record.sub);
+  });
+  allArtifacts().forEach(function (record) {
+    note(record.subject);
+    note(record.person);
+  });
+  resolvedSubjects = subjects.size
+    ? namesForSubjects(Array.from(subjects)) : null;
+  let value;
+  try {
+    value = fn();
+  } finally {
+    resolvedSubjects = null;
+  }
+  log.debug("Leaving withSubjectsResolved(). " + subjects.size +
+            " subject(s).");
+  return value;
+}
+
 // A presented identity, split into the part that identifies a person here and
 // the parts that merely say where it was presented. Without entering/leaving
 // logs: it is called for every token and artifact on every users page view, so
@@ -2361,7 +2444,7 @@ function identityOf(value) {
   if (rest.indexOf(SUBJECT_PREFIX) === 0) rest = rest.slice(
       SUBJECT_PREFIX.length);
   if (/^urn:uuid:/i.test(rest)) {
-    const named = nameForSubject(rest);
+    const named = subjectNameOf(rest);
     if (!named) {
       log.debug("Leaving identityOf(). A subject naming nobody here.");
       return { key: rest, name: rest, realm: '', form: text,
@@ -6003,6 +6086,14 @@ function userRow(key) {
  */
 function userKeys() {
   log.debug("Entering userKeys().");
+  const keys = withSubjectsResolved(collectUserKeys);
+  log.debug("Leaving userKeys().");
+  return keys;
+}
+
+// `userKeys()`'s walk, the subjects resolved.
+function collectUserKeys() {
+  log.debug("Entering collectUserKeys().");
   const keys = new Set();
   users.forEach(function (record) {
     keys.add(record.key);
@@ -6029,13 +6120,23 @@ function userKeys() {
   allArtifacts().forEach(function (record) {
     add(record.subject);
   });
-  log.debug("Leaving userKeys(). " + keys.size + " key(s).");
+  log.debug("Leaving collectUserKeys(). " + keys.size + " key(s).");
   return keys;
 }
 
 // `userRows()`, or with `onlyKey` the one row it would hold under that key.
 function buildUserRows(onlyKey) {
   log.debug("Entering buildUserRows().");
+  const rows = withSubjectsResolved(function () {
+    return buildUserRowsResolved(onlyKey);
+  });
+  log.debug("Leaving buildUserRows().");
+  return rows;
+}
+
+// `buildUserRows()`'s walk, the subjects resolved.
+function buildUserRowsResolved(onlyKey) {
+  log.debug("Entering buildUserRowsResolved().");
   const wanted = onlyKey === undefined ? null : String(onlyKey);
   const nowMs = Date.now();
   const rows = new Map();
@@ -6140,7 +6241,7 @@ function buildUserRows(onlyKey) {
   // Most recently active first, which on a mock is nearly always the person
   // being debugged right now.
   out.sort(function (a, b) { return b.lastActivityAt - a.lastActivityAt; });
-  log.debug("Leaving buildUserRows(). " + out.length + " user(s), " +
+  log.debug("Leaving buildUserRowsResolved(). " + out.length + " user(s), " +
             out.filter(function (r) { return r.authenticated; }).length + " " +
                 "authenticated here.");
   return out;
@@ -6210,6 +6311,16 @@ function holdingsOf(keys) {
     log.debug("Leaving holdingsOf(). Nobody asked.");
     return out;
   }
+  withSubjectsResolved(function () {
+    fileHoldings(out);
+  });
+  log.debug("Leaving holdingsOf().");
+  return out;
+}
+
+// `holdingsOf()`'s walk into `out`, the subjects resolved.
+function fileHoldings(out) {
+  log.debug("Entering fileHoldings().");
   const nowMs = Date.now();
   tokens.forEach(function (record) {
     const held = out.get(holderKeyOf(record.username, record.sub));
@@ -6240,8 +6351,7 @@ function holdingsOf(keys) {
     held.tokens.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
     held.artifacts.sort(function (a, b) { return b.issuedAt - a.issuedAt; });
   });
-  log.debug("Leaving holdingsOf().");
-  return out;
+  log.debug("Leaving fileHoldings().");
 }
 
 // The session a token was issued under, by jti. The refresh grant is what needs
