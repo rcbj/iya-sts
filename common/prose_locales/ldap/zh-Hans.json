@@ -1683,6 +1683,10 @@
     "en": "5c367d4336aa3edd",
     "text": "每个已关联 WebAuthn 密钥的凭据 id，每次写入时由 stsDeviceKey 派生，以便登录时通过索引找到其设备。"
   },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "每个由 Android 证书链证明、且其序列号已保留的密钥的 id，每次写入时由 stsDeviceKey 推导，使 Android 证明复查只读取持有此类密钥的设备（#615）。"
+  },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",
     "text": "当任一密钥的证明已通过验证时为 attested，否则为 self-asserted。每次写入时派生。"

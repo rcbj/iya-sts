@@ -1683,6 +1683,10 @@
     "en": "5c367d4336aa3edd",
     "text": "Credential-id för varje länkad WebAuthn-nyckel, härlett från stsDeviceKey vid varje skrivning så att en inloggning hittar sin enhet via index."
   },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "Id för varje nyckel som intygats av en Android-kedja vars serienummer sparades, härlett från stsDeviceKey vid varje skrivning så att omkontrollen av Android-intyg bara läser de enheter som har en (#615)."
+  },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",
     "text": "attested när någon nyckels attestering verifierades, annars self-asserted. Härleds vid varje skrivning."

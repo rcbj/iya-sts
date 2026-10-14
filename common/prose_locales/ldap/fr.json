@@ -1683,6 +1683,10 @@
     "en": "5c367d4336aa3edd",
     "text": "L’identifiant d’identifiant WebAuthn de chaque clé liée, dérivé de stsDeviceKey à chaque écriture afin qu’une connexion trouve son appareil par index."
   },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "L'identifiant de chaque clé attestée par une chaîne Android dont les numéros de série ont été conservés, dérivé de stsDeviceKey à chaque écriture afin que la revérification de l'attestation Android ne lise que les appareils qui en détiennent une (#615)."
+  },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",
     "text": "attested lorsque l’attestation d’une clé quelconque a été vérifiée, sinon self-asserted. Dérivé à chaque écriture."

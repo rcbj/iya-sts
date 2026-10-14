@@ -1683,6 +1683,10 @@
     "en": "5c367d4336aa3edd",
     "text": "每把已連結之 WebAuthn 金鑰的認證 ID，每次寫入時從 stsDeviceKey 推導，讓登入能依索引找到其裝置。"
   },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "每個由 Android 憑證鏈證明、且其序號已保留的金鑰的 id，每次寫入時由 stsDeviceKey 推導，使 Android 證明複查只讀取持有此類金鑰的裝置（#615）。"
+  },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",
     "text": "任何金鑰的證明已通過驗證時為 attested，否則為 self-asserted。每次寫入時推導。"

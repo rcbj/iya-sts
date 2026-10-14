@@ -14,7 +14,7 @@
   "sched.jobs.cluster.rate-window-purge.title": "Finished rate-limit windows sweep",
   "sched.jobs.cluster.rate-window-purge.describe": "Deletes the rate-limit windows that have passed from the table every node shares.",
   "sched.jobs.devices.android-status-recheck.title": "Android attestation recheck",
-  "sched.jobs.devices.android-status-recheck.describe": "Asks the active Android attestation status list about every stored Android chain — device keys and WebAuthn credentials, in every realm — and downgrades the ones it revokes or suspends: self-asserted, audited, CAEP credential-change. Run when a list is activated, and daily.",
+  "sched.jobs.devices.android-status-recheck.describe": "Asks the active Android attestation status list about every stored Android chain — device keys and WebAuthn credentials, in every realm — and downgrades the ones it revokes or suspends: self-asserted, audited, CAEP credential-change. Reads only the people and devices marked as holding one, a page at a time, and skips a realm where neither the list nor the registrations moved since its last recheck. Run when a list is activated, and daily.",
   "sched.jobs.devices.android-status-refresh.title": "Android attestation status list download",
   "sched.jobs.devices.android-status-refresh.describe": "Downloads Google's Android key attestation status list from devices.androidStatusUrl and loads it as the risk dataset android.attestation-status: which attestation certificates are revoked or suspended. Daily (devices.androidStatusRefreshS); a list identical to the active one loads nothing.",
   "sched.jobs.federation.encryption-key-retire.title": "Federation encryption key retirement",

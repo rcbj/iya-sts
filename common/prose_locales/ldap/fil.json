@@ -1683,6 +1683,10 @@
     "en": "5c367d4336aa3edd",
     "text": "Ang credential id ng bawat naka-link na WebAuthn key, hinango mula sa stsDeviceKey sa bawat pagsulat para mahanap ng sign-in ang device nito ayon sa index."
   },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "Ang id ng bawat susi na pinatunayan ng isang Android chain na ang mga serial ay itinago, hinango mula sa stsDeviceKey sa bawat pagsulat upang ang muling pagsusuri ng Android attestation ay magbasa lamang ng mga device na mayroon nito (#615)."
+  },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",
     "text": "attested kapag na-verify ang attestation ng anumang key, kung hindi ay self-asserted. Hinahango sa bawat pagsulat."

@@ -1683,6 +1683,10 @@
     "en": "5c367d4336aa3edd",
     "text": "El id de credencial de cada clave WebAuthn vinculada, derivado de stsDeviceKey en cada escritura para que un inicio de sesión encuentre su dispositivo por índice."
   },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "El identificador de cada clave atestiguada por una cadena Android cuyos números de serie se conservaron, derivado de stsDeviceKey en cada escritura para que la nueva comprobación de la atestación Android lea solo los dispositivos que tienen una (#615)."
+  },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",
     "text": "attested cuando se verificó la atestación de alguna clave; si no, self-asserted. Derivado en cada escritura."

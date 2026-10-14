@@ -420,6 +420,7 @@
   "devices.schema.attributes.stsDeviceKey.what": "One JSON value per key: id, kind (x509, jwk, webauthn), thumbprint, label, added, addedBy, proof, attestation and the public material. Never a secret.",
   "devices.schema.attributes.stsDeviceKeyThumbprint.what": "<kind>:<thumbprint> per key, derived from stsDeviceKey on every write so an LDAP filter can find a device by its key.",
   "devices.schema.attributes.stsDeviceCredentialId.what": "The credential id of each linked WebAuthn key, derived from stsDeviceKey on every write so a sign-in finds its device by index.",
+  "devices.schema.attributes.stsDeviceAndroidKey.what": "The id of each key attested by an Android chain whose serials were kept, derived from stsDeviceKey on every write so the Android attestation recheck reads only the devices holding one (#615).",
   "devices.schema.attributes.stsDeviceAttestation.what": "attested when any key's attestation was verified, else self-asserted. Derived on every write.",
   "devices.schema.attributes.stsDeviceCompliance.what": "compliant or not-compliant; absent is unknown.",
   "devices.schema.attributes.stsDeviceComplianceChange.what": "JSON: the last compliance change — status, previous, at, source (admin, mdm, test-control, caep), actor, reason.",
