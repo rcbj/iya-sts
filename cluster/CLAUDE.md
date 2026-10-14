@@ -15,7 +15,7 @@ the barrier that makes one node see what another committed.
 |---|---|
 | `cluster.js` | Membership, heartbeat, leases, the fence provider, fail-stop, the settings agreement, and `gate()` — which `persistence.js` calls before anything is restored. |
 | `cluster_capabilities.js` | The table of what active-active mode depends on, one row per failure #46 describes, each `provide()`d by the module that fixed it. |
-| `cluster_claims.js` | `claim()` / `release()`: an atomic "once" in the store for every single-use value. Memory on a store that cannot be shared. |
+| `cluster_claims.js` | `claim()` / `release()`: an atomic "once" in the store for every single-use value; `claimMany()` / `releaseMany()` / `releaseAtCommit()` for several at once, released in the writer's commit (#628). Memory on a store that cannot be shared. |
 | `cluster_counters.js` | `advance()`: a value that may only go UP, agreed by every node — a WebAuthn signature counter, the last RFC 6238 step spent. One conditional upsert in the store. Memory on a store that cannot be shared. And `countInWindow()`: a rate-limit bucket's count inside a fixed window, one budget for every node. |
 | `cluster_secrets.ts` | The secrets every node must agree on (the CSRF key, the ACME nonce key, the SSF receiver secret, and the BBS key pair), sealed in the store, first writer wins. |
 | `cluster_barrier.js` | The middleware that makes a request wait for other nodes' commits, and holds a writing response until its own commit lands. Active-active only. |
@@ -451,6 +451,27 @@ stalled past its lease cannot overwrite the outcome of the one that took over
 (`oauth-oidc/CLAUDE.md`, 3aq). `releaseUnlessSucceeded(res, handle)` gives a claim back when the
 response is not 2xx/3xx. On memory or ldif it is this process's map, which is
 exactly as atomic as the map it replaces.
+
+**Several values at once, and a release in the writer's commit (#628,
+2026-10-14).** `claimMany({ entries, ttlMs, realm })` claims every value or
+none under one reservation, in ONE statement on postgres (the driver's
+`claimMany()`: a multi-row `INSERT … ON CONFLICT` in (scope, key) order, whose
+final SELECT turns a PARTIAL take into an ERROR so the statement aborts with
+every row it took — PostgreSQL logs it, naming `sts_cluster_claims: a partial
+claim`); `releaseMany(handles)` is one DELETE; and `releaseAtCommit(handles)`
+hands the rows to `persistence.releaseClaimsAtCommit()`, which deletes them
+AS A STATEMENT OF the flush transaction that commits this process's directory
+writes made so far — or alone, at once, when those have committed already. A
+transaction that fails rolls the release back with the entry, so the claims
+stay until they expire (`STS-CLUSTER-0164`). `claimMany()` and a `releaseMany()` of its own commit
+with `synchronous_commit` off (the driver's `NO_FLUSH_WAIT`, argued there);
+`claim()` and `release()` are unchanged. A store without `claimMany` /
+`releaseClaims` (a test's double) is asked row by row. The caller is a
+directory create (`ldap/CLAUDE.md`, *SEVERAL NODES: A CREATE CLAIMS ITS
+NAME*), and **only in `active-active`**: on one node — cluster `off` or
+`active-passive` — its front process decides those claims in memory over the
+worker channel (`ldap/directory_create_arbiter.ts`) and the table is not
+touched.
 
 `cluster_secrets`: values are TEXT (callers derive with the string, as before).
 The front process reads the store's value (sealed; first writer wins) and puts

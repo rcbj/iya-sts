@@ -2727,6 +2727,15 @@ function maxSocketsPerWorker() {
 // the same stream as everything else (forwarded through this thread's event
 // loop, which is node's design for worker threads).
 // ---------------------------------------------------------------------------
+// The front process's arbiter of its workers' directory create claims
+// (#628). Required at its first use, for the reason every require of a
+// protocol module in this file is lazy: this file loads above them.
+function createArbiter() {
+  log.debug("Entering createArbiter().");
+  log.debug("Leaving createArbiter().");
+  return require('../ldap/directory_create_arbiter').arbiter;
+}
+
 function startThread(file, socket, options) {
   log.debug("Entering startThread().");
   const worker = new workerThreads.Worker(file, {
@@ -2991,6 +3000,12 @@ function fork(pool, slot) {
         receiveOperation(entry, message);
         return;
       }
+      // A DIRECTORY CREATE'S CLAIM, decided by this process for its own
+      // workers (#628): `ldap/directory_create_arbiter.ts`.
+      if (message && message.createClaim) {
+        createArbiter().receive(entry, message);
+        return;
+      }
       if (message && message.poolStatus) {
         receivePoolStatus(entry, message);
         return;
@@ -3025,6 +3040,10 @@ function fork(pool, slot) {
 function reap(entry, code, reason) {
   log.debug('Entering reap(). pid=' + entry.pid);
   workers = workers.filter(function (one) { return one !== entry; });
+  // ITS DIRECTORY CREATE CLAIMS GO BACK NOW (#628): it will never give them
+  // back itself, and a name it held would otherwise wait out the claim's
+  // lifetime.
+  createArbiter().workerExited(entry);
   // ITS AGENT GOES WITH IT. The agent holds sockets to a socket PATH that has
   // just stopped being served, and a worker replaced often enough — a crash
   // loop is the case — would otherwise leave one agent per dead worker for

@@ -123,6 +123,34 @@ class WorkerChannel {
   }
 
   /**
+   * Listens for ONE KIND of message from the front process: those carrying
+   * `key` as a true field, tested BEFORE the message is revived, so a second
+   * listener does not walk every message the first one already walks
+   * (#628). For messages that carry no Buffer.
+   *
+   * @param key - the field that marks the kind
+   * @param listener - called with each message of that kind
+   * @returns the installed listener, or null outside a worker thread
+   */
+  static onKind(key: string, listener: Listener): Listener | null {
+    log.debug('Entering WorkerChannel.onKind(). key=' + key);
+    const port = workerThreads.parentPort;
+    if (workerThreads.isMainThread || !port) {
+      log.debug('Leaving WorkerChannel.onKind(). Not a worker thread.');
+      return null;
+    }
+    // HOT PATH: once per message on the channel; no Entering/Leaving pair.
+    const installed = function (message: any): void {
+      if (message && message[key] === true) {
+        listener(message);
+      }
+    };
+    port.on('message', installed);
+    log.debug('Leaving WorkerChannel.onKind().');
+    return installed;
+  }
+
+  /**
    * Removes a listener `on()` installed.
    *
    * @param installed - what `on()` returned
