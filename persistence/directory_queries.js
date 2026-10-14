@@ -542,6 +542,27 @@ function originCounts(realm) {
 }
 
 /**
+ * One page of the KEYS and DNs under a base — no attributes, so nothing is
+ * read out of a sealed blob or opened (#616): what a list of names asks
+ * when a name is the entry's RDN (`personNamesUpTo()`).
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function keysUnder(realm, baseKey, afterKey, limit) {
+  log.debug("Entering keysUnder().");
+  log.debug("Leaving keysUnder().");
+  return { text: 'SELECT dn_key, dn FROM sts_ldap_entries WHERE realm = $1 ' +
+                 'AND ' + underClause(2, 5, false) + ' AND dn_key > $3 ' +
+                 'ORDER BY dn_key LIMIT $4',
+           values: [String(realm), String(baseKey), String(afterKey || ''),
+                    pageSize(limit), suffixLength(baseKey)] };
+}
+
+/**
  * Every entry EXCEPT those strictly under the given containers, for the
  * restore of a worker that holds those containers as a window.
  *
@@ -614,6 +635,12 @@ function answerOf(name, rows) {
     log.debug("Leaving answerOf(). A yes or a no.");
     return list.length > 0;
   }
+  if (name === 'keysUnder') {
+    log.debug("Leaving answerOf(). Keys.");
+    return list.map(function (row) {
+      return { key: row.dn_key, dn: row.dn };
+    });
+  }
   if (name === 'namesUnder') {
     log.debug("Leaving answerOf(). Names.");
     return list.map(function (row) {
@@ -653,6 +680,7 @@ const QUERIES = {
   realmPage: realmPage,
   realmCount: realmCount,
   originCounts: originCounts,
+  keysUnder: keysUnder,
   residentOnly: residentOnly
 };
 
@@ -701,5 +729,6 @@ module.exports = {
   realmPage: realmPage,
   realmCount: realmCount,
   originCounts: originCounts,
+  keysUnder: keysUnder,
   residentOnly: residentOnly
 };

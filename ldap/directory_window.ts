@@ -127,6 +127,91 @@ function slotKey(realmId: string, key: string): string {
   return realmId + '\n' + key;
 }
 
+// THE PAGING OF `keysUnder()` AND `keysUnderAsync()` (#616), once for both:
+// the question for the next page, each page's rows taken as this process
+// holds them (a key deleted here left out, the DN as held), and — below the
+// cap — the entries created here and not yet written added at the end.
+class KeysUnder {
+  private readonly out: Array<{ key: string; dn: string }> = [];
+  private readonly seen = new Set<string>();
+  private after = '';
+  private more = false;
+  private done = false;
+  private want = 0;
+
+  constructor(private readonly window: DirectoryWindow,
+              private readonly realmId: string,
+              private readonly base: string,
+              private readonly limit: number) {
+    log.debug("Entering KeysUnder.constructor().");
+    log.debug("Leaving KeysUnder.constructor().");
+  }
+
+  // Whether another page is to be asked for.
+  wants(): boolean {
+    log.debug("Entering KeysUnder.wants().");
+    log.debug("Leaving KeysUnder.wants().");
+    return !this.done && !this.more;
+  }
+
+  // The next page's arguments.
+  question(): unknown[] {
+    log.debug("Entering KeysUnder.question().");
+    this.want = Math.min(1000, this.limit + 1 - this.out.length);
+    log.debug("Leaving KeysUnder.question().");
+    return [this.realmId, this.base, this.after, this.want];
+  }
+
+  // One page's answer.
+  take(answer: unknown, counter?: { pages: number; rows: number }): void {
+    log.debug("Entering KeysUnder.take().");
+    const rows = (answer as Array<{ key: string; dn: string }>) || [];
+    if (counter) {
+      counter.pages += 1;
+      counter.rows += rows.length;
+    }
+    for (const row of rows) {
+      this.seen.add(row.key);
+      const slot = this.window.heldSlotOf(this.realmId, row.key);
+      if (slot && !slot.entry) {
+        continue;
+      }
+      if (this.out.length === this.limit) {
+        this.more = true;
+        log.debug("Leaving KeysUnder.take(). Past the cap.");
+        return;
+      }
+      this.out.push({ key: row.key, dn: slot && slot.entry
+        ? String(slot.entry.dn) : row.dn });
+    }
+    if (rows.length < this.want) {
+      this.done = true;
+      log.debug("Leaving KeysUnder.take(). The last page.");
+      return;
+    }
+    this.after = rows[rows.length - 1].key;
+    log.debug("Leaving KeysUnder.take().");
+  }
+
+  // The answer.
+  finish(): { rows: Array<{ key: string; dn: string }>; more: boolean } {
+    log.debug("Entering KeysUnder.finish().");
+    if (!this.more) {
+      for (const pair of this.window.createdHereUnder(this.realmId,
+                                                      this.base,
+                                                      this.seen)) {
+        if (this.out.length === this.limit) {
+          this.more = true;
+          break;
+        }
+        this.out.push({ key: pair[0], dn: String(pair[1].dn) });
+      }
+    }
+    log.debug("Leaving KeysUnder.finish().");
+    return { rows: this.out, more: this.more };
+  }
+}
+
 /**
  * The directory as a bounded window onto the store, in the shape of
  * `realms.map()` (#349).
@@ -1040,6 +1125,8 @@ class DirectoryWindow {
 
   // The event loop given back: what runs between two pages.
   private static yieldToLoop(): Promise<void> {
+    log.debug("Entering DirectoryWindow.yieldToLoop().");
+    log.debug("Leaving DirectoryWindow.yieldToLoop().");
     return new Promise<void>(function (resolve) {
       setImmediate(resolve);
     });
@@ -1048,6 +1135,8 @@ class DirectoryWindow {
   // A row the store answered, as this process holds it: what it holds when
   // it holds the key (a local change wins; null for a delete made here), the
   // row otherwise. Nothing is handed out or put in the LRU.
+  // Hot path (once per row paged): no Entering/Leaving pair, the exception
+  // the code style allows, stated as it requires.
   private heldOrRow(realmId: string, row: Row): Entry | null {
     const ck = slotKey(realmId, row.key);
     const slot = this.lru.peek(ck) || this.touched.get(ck) ||
@@ -1059,6 +1148,7 @@ class DirectoryWindow {
   // the store has not yet answered with (`seen`), as `walk()` adds them.
   private localUnder(realmId: string, container: string, base: string,
                      seen: Set<string>): Array<[string, Entry]> {
+    log.debug("Entering DirectoryWindow.localUnder().");
     const local: Array<[string, Entry]> = [];
     this.dirty.forEach((ck) => {
       const cut = ck.indexOf('\n');
@@ -1074,6 +1164,7 @@ class DirectoryWindow {
         local.push([key, slot.entry]);
       }
     });
+    log.debug("Leaving DirectoryWindow.localUnder().");
     return local;
   }
 
@@ -1196,6 +1287,76 @@ class DirectoryWindow {
     log.debug("Leaving DirectoryWindow.classesUnderAsync(). " + out.length +
               '.');
     return out;
+  }
+
+  /**
+   * The first keys strictly under a base, with their DNs and nothing else,
+   * asked asynchronously a page at a time (`keysUnder`: no attribute is read
+   * or opened) until `limit` + 1 are found — as this process holds them: a
+   * key deleted here is left out, and below the cap the entries created
+   * here and not yet written are added.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN (a windowed container)
+   * @param limit - how many at most
+   * @param counter - optional; `pages` and `rows` are added to
+   * @returns a promise of `{ rows: [{ key, dn }], more }`, `more` when
+   *   there were more than `limit`
+   */
+  async keysUnderAsync(realmId: string, base: string, limit: number,
+                       counter?: { pages: number; rows: number }):
+      Promise<{ rows: Array<{ key: string; dn: string }>; more: boolean }> {
+    log.debug("Entering DirectoryWindow.keysUnderAsync(). " + limit);
+    const keys = new KeysUnder(this, realmId, base, limit);
+    while (keys.wants()) {
+      const rows = await this.askAsync('keysUnder', keys.question());
+      keys.take(rows, counter);
+      if (keys.wants()) {
+        await DirectoryWindow.yieldToLoop();
+      }
+    }
+    const answer = keys.finish();
+    log.debug("Leaving DirectoryWindow.keysUnderAsync(). " +
+              answer.rows.length + (answer.more ? ', and more.' : '.'));
+    return answer;
+  }
+
+  /**
+   * `keysUnderAsync()`, asked synchronously: for a caller that cannot wait.
+   * At most `limit` + 1 keys and no attribute, so a bounded handful of
+   * statements (one per thousand keys), never a walk.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN (a windowed container)
+   * @param limit - how many at most
+   * @returns `{ rows: [{ key, dn }], more }`
+   */
+  keysUnder(realmId: string, base: string, limit: number):
+      { rows: Array<{ key: string; dn: string }>; more: boolean } {
+    log.debug("Entering DirectoryWindow.keysUnder(). " + limit);
+    const keys = new KeysUnder(this, realmId, base, limit);
+    while (keys.wants() && this.bridge) {
+      keys.take(this.bridge.query('keysUnder', keys.question()));
+    }
+    const answer = keys.finish();
+    log.debug("Leaving DirectoryWindow.keysUnder(). " + answer.rows.length +
+              (answer.more ? ', and more.' : '.'));
+    return answer;
+  }
+
+  // What `KeysUnder` reads of the window: whether a key is held deleted or
+  // held at all, and the entries created here under a base.
+  // Hot path (once per key paged): no Entering/Leaving pair, the exception
+  // the code style allows, stated as it requires.
+  heldSlotOf(realmId: string, key: string): Slot | null {
+    return this.lru.peek(slotKey(realmId, key)) || null;
+  }
+
+  createdHereUnder(realmId: string, base: string, seen: Set<string>):
+      Array<[string, Entry]> {
+    log.debug("Entering DirectoryWindow.createdHereUnder().");
+    log.debug("Leaving DirectoryWindow.createdHereUnder().");
+    return this.localUnder(realmId, base, base, seen);
   }
 
   // ---------------------------------------------------------------------

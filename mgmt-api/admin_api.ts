@@ -6155,8 +6155,25 @@ class AdminApi {
           log.debug("Entering the management API users endpoint.");
           // The person's current risk, read first (#62) — the console's
           // route does the same, so the two answers agree.
+          // The list's directory names are asked of the store
+          // asynchronously (#616: `usersJsonAsync()`), which held a request
+          // worker's event loop for seconds at 200,000 people.
           return adminViews.riskFor(req.query).then(function (risk) {
-            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+            return adminViews.usersJsonAsync(req, risk);
+          }).then(function (json) {
+            self.sendJson(res, 200, json);
+          }, function (e) {
+            log.debug("Caught in the management API users endpoint: " +
+                      ((e && e.message) || e));
+            const code = errorCodes.codeOf(e) || 'STS-LDAP-0139';
+            log.error(errorCodes.tag(code) + 'admin-api: the users list ' +
+                      'could not be read from the store: ' +
+                      ((e && e.message) || e));
+            errorCodes.mark(res, code);
+            res.setHeader('Retry-After', '5');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
           });
           log.debug("Leaving the management API users endpoint.");
         } },

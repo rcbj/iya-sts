@@ -5121,7 +5121,9 @@ class Credentials {
    * reading anything per name.
    *
    * @param alsoKnown - names the caller has seen
-   * @param opts - `limit`; `credentials.factorScanLimit` when omitted
+   * @param opts - `limit`; `credentials.factorScanLimit` when omitted;
+   *   `directoryFirst`, the `{ names, more }` a caller already asked for
+   *   (`directoryFirstNames()`, #616), so the directory is not asked again
    * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
    *   limit, directoryPeople, store, isApplication }`
    */
@@ -5160,7 +5162,12 @@ class Credentials {
     if (directory && (upTo || typeof directory.persons === 'function')) {
       let people = [];
       try {
-        if (upTo) {
+        if (options.directoryFirst) {
+          // Asked already, asynchronously, by a caller that could wait
+          // (#616): `directoryFirstNames()`.
+          people = options.directoryFirst.names || [];
+          capped = !!options.directoryFirst.more;
+        } else if (upTo) {
           // The first `limit` names and whether there were more, without
           // listing the rest.
           const first = upTo(limit) || { names: [], more: false };
@@ -5223,6 +5230,41 @@ class Credentials {
              directoryPeople: directoryPeople, store: !!directory,
              isApplication: typeof isApplication === 'function'
                ? isApplication : null };
+  }
+
+  // ---------------------------------------------------------------------
+  // THE DIRECTORY'S FIRST NAMES, ASKED WITHOUT HOLDING THE EVENT LOOP
+  // (#616). `secondFactorPopulation()` is synchronous and asks the
+  // directory's `personNamesUpTo` hook, which in a windowed process is a
+  // handful of synchronous statements to the store; a caller that can wait
+  // — `GET /admin-api/users` — asks this first, through the hook's
+  // asynchronous twin, and hands the answer over as `directoryFirst`. A
+  // directory without the twin is asked the synchronous question.
+  // ---------------------------------------------------------------------
+  /**
+   * The first `credentials.factorScanLimit` (or `limit`) people's names
+   * and whether there were more, asked of the directory asynchronously.
+   *
+   * @param limit - optional; how many at most
+   * @returns a promise of `{ names, more }`, or of null where no directory
+   *   offers the question
+   */
+  async directoryFirstNames(limit?) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryFirstNames().');
+    const most = Math.max(1, Number(limit || this.factorScanLimit()));
+    const asyncUpTo = this.directoryHook('personNamesUpToAsync');
+    const upTo = this.directoryHook('personNamesUpTo');
+    let first = null;
+    if (asyncUpTo) {
+      first = await asyncUpTo(most);
+    } else if (upTo) {
+      first = upTo(most);
+    }
+    log.debug('Leaving Credentials.directoryFirstNames(). ' +
+              (first ? (first.names || []).length + ' name(s).'
+                : 'No directory.'));
+    return first || null;
   }
 
   /**
@@ -9586,6 +9628,7 @@ export = {
   // THE USERS LIST'S THREE STEPS (#352): list, then decorate the shown rows,
   // and count everybody in one pass — see `secondFactorPopulation()`.
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
+  directoryFirstNames: slot.forward('directoryFirstNames'),
   factorHolderRow: slot.forward('factorHolderRow'),
   factorCensus: slot.forward('factorCensus'),
   directoryFactorCounts: slot.forward('directoryFactorCounts'),

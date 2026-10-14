@@ -12378,6 +12378,7 @@ if (typeof credentials.addDirectoryHooks === 'function') {
     // headline and the capped list of `/admin/users`.
     personCount: personCount,
     personNamesUpTo: personNamesUpTo,
+    personNamesUpToAsync: personNamesUpToAsync,
     // The whole directory's credential tiles, and how many names are
     // people here (#610).
     credentialTallies: credentialTallies,
@@ -20007,15 +20008,19 @@ function personNames() {
 //     memory (where `personRows()` is one walk and sort kept until
 //     `ou=users` is written), its first `limit` names — `persons()`'s
 //     prefix, exactly;
-//   * in a windowed process, the first `limit` + 1 entries of `ou=users` in
-//     the STORE's key order, paged read-only and the paging stopped there,
-//     then sorted as `personRows()` sorts. **A capped list is therefore a
+//   * in a windowed process, the first `limit` + 1 KEYS of `ou=users` in
+//     the STORE's key order — since #616 the keys and DNs alone
+//     (`keysUnder`), a thousand to a statement, no entry read or opened, in
+//     at most `limit` / 1,000 + 1 statements where it used to page and
+//     decode `limit` + 1 entries five hundred at a time (about 3 s of a
+//     request worker at 200,000 people; `/admin-api/users` now asks
+//     `personNamesUpToAsync()`, below). **A capped list is therefore a
 //     different subset from `persons()`'s prefix** where the database's
 //     collation orders keys differently from JavaScript (8081's is
 //     en_US.utf8), and the same subset on every request while nothing
 //     moves — it is a capped subset either way, the page says so, and what
-//     it costs is `limit` rows rather than the realm. Below the cap the
-//     walk reaches the end and the names are everybody, entries this
+//     it costs is `limit` keys rather than the realm. Below the cap the
+//     paging reaches the end and the names are everybody, entries this
 //     process has not yet written included.
 // ---------------------------------------------------------------------------
 /**
@@ -20035,33 +20040,62 @@ function personNamesUpTo(limit) {
     log.debug('Leaving personNamesUpTo(). From the kept rows.');
     return { names: names.slice(0, most), more: names.length > most };
   }
-  const base = normalizeDn(usersDn());
-  const suffix = ',' + base;
-  const rows = [];
-  let more = false;
-  for (const pair of directoryWindow.walk(realms.currentId(), base, true)) {
-    const key = pair[0];
-    if (key === base || !key.endsWith(suffix)) {
-      continue;
+  const first = directoryWindow.keysUnder(realms.currentId(),
+                                          normalizeDn(usersDn()), most);
+  log.debug('Leaving personNamesUpTo(). ' + first.rows.length + ' keyed' +
+            (first.more ? ', and more.' : '.'));
+  return namesOfKeys(first);
+}
+
+// The names of `keysUnder()`'s answer, in key order — a person's name is
+// their entry's RDN value (`usernameOfEntry()`), so the DN is all it reads —
+// with the empty ones dropped.
+function namesOfKeys(answer) {
+  log.debug('Entering namesOfKeys().');
+  const names = [];
+  answer.rows.forEach(function (row) {
+    const name = usernameOfEntry({ dn: row.dn });
+    if (name) {
+      names.push(name);
     }
-    const name = usernameOfEntry(pair[1]);
-    if (!name) {
-      continue;
-    }
-    if (rows.length === most) {
-      more = true;
-      break;
-    }
-    rows.push({ key: key, name: name });
-  }
-  rows.sort(function (a, b) {
-    return a.key < b.key ? -1 : 1;
   });
-  log.debug('Leaving personNamesUpTo(). ' + rows.length + ' paged' +
-            (more ? ', and more.' : '.'));
-  return { names: rows.map(function (row) {
-    return row.name;
-  }), more: more };
+  log.debug('Leaving namesOfKeys(). ' + names.length + '.');
+  return { names: names, more: !!answer.more };
+}
+
+// ---------------------------------------------------------------------------
+// AND ASYNCHRONOUSLY, FOR A REQUEST THAT CAN WAIT (#616, 2026-10-14).
+//
+// `/admin-api/users` asks for the first `credentials.factorScanLimit` (5,000)
+// names; `personNamesUpTo()` above is that question asked synchronously, and
+// on 8081 its walk held a request worker's event loop for about 3 s at
+// 200,000 people. This asks the store the same question — the KEYS and DNs
+// under `ou=users`, a thousand to a statement, no attribute read or opened
+// (`keysUnder`) — on the driver's read pool, the event loop given back
+// between pages, and stops at `limit` + 1. Outside a window it is the
+// synchronous answer, which is the people already held in memory.
+// ---------------------------------------------------------------------------
+/**
+ * `personNamesUpTo()`, asked of the store asynchronously in a windowed
+ * process.
+ *
+ * @param limit - how many names at most
+ * @returns a promise of `{ names, more }`
+ */
+async function personNamesUpToAsync(limit) {
+  log.debug('Entering personNamesUpToAsync(). limit=' + limit);
+  const most = Math.max(1, Math.floor(Number(limit) || 1));
+  const held = personRowsMemo();
+  if (!directoryWindow ||
+      (held.rows && held.version === subtreeVersion(usersDn()))) {
+    log.debug('Leaving personNamesUpToAsync(). Not asked of the store.');
+    return personNamesUpTo(most);
+  }
+  const first = await directoryWindow.keysUnderAsync(realms.currentId(),
+    normalizeDn(usersDn()), most);
+  log.debug('Leaving personNamesUpToAsync(). ' + first.rows.length +
+            ' keyed' + (first.more ? ', and more.' : '.'));
+  return namesOfKeys(first);
 }
 
 // ---------------------------------------------------------------------------
