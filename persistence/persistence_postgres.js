@@ -119,7 +119,7 @@
 const errorCodes = require('../common/error_codes');
 // The process origin's UUID, a jitter and a reservation are drawn from
 // `common/crypto.js` (#453), required where each is drawn rather than here,
-// as `walkDirectory()` already does: requiring this driver loads no setting,
+// as `indexSealedEntries()` does: requiring this driver loads no setting,
 // so an out-of-process tool (`risk/risk_install.ts`) may load it.
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
@@ -226,7 +226,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 16 SINCE 2026-10-14, for `sts_ldap_counts`, `sts_ldap_count_deltas` and
 // the triggers that keep them (#618): the directory's counts kept rather
 // than counted.
-const SCHEMA_VERSION = 16;
+// 17 SINCE 2026-10-14, for `sts_ldap_entries.dek_keys` and its two indexes,
+// and `sts_ldap_dek_counts`, `sts_ldap_dek_deltas` and the triggers that
+// keep them (#623): which data keys each entry holds values under, so the
+// re-encryption job and the data-key count never open the directory.
+const SCHEMA_VERSION = 17;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -311,7 +315,17 @@ const LDAP_GENERATED = {
   uuid_keys: 'uuid_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
   class_keys: 'class_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
   value_keys: 'value_keys jsonb NOT NULL DEFAULT \'[]\'::jsonb',
-  attr_names: 'attr_names jsonb NOT NULL DEFAULT \'[]\'::jsonb'
+  attr_names: 'attr_names jsonb NOT NULL DEFAULT \'[]\'::jsonb',
+  // ---------------------------------------------------------------------
+  // `dek_keys` (#623, schema version 17): the DATA KEYS the entry holds
+  // values under, `{ "<dek id>": <values> }` — the blob's own key, and the
+  // key of every value sealed inside it (a TOTP secret, Kerberos keys, a
+  // client secret), which SQL cannot see. Written by the service beside the
+  // blob, as the lookups above are. NULL, and not '{}', is an entry written
+  // before the column existed: one whose keys are NOT KNOWN, which no count
+  // may read as "none" (see `indexSealed()`).
+  // ---------------------------------------------------------------------
+  dek_keys: 'dek_keys jsonb'
 };
 
 // The schema, created if it is not there. `IF NOT EXISTS` throughout rather
@@ -378,6 +392,7 @@ const SCHEMA_OBJECTS = [
   '  ' + LDAP_GENERATED.class_keys + ',' +
   '  ' + LDAP_GENERATED.value_keys + ',' +
   '  ' + LDAP_GENERATED.attr_names + ',' +
+  '  ' + LDAP_GENERATED.dek_keys + ',' +
   '  PRIMARY KEY (realm, dn_key))' },
   // The one index worth having beyond the primary key: every enumerator in
   // this service walks one realm.
@@ -429,6 +444,41 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
   'USING gin (class_keys)' },
+  // -------------------------------------------------------------------------
+  // WHICH ENTRIES HOLD A VALUE UNDER A DATA KEY (#623, schema version 17).
+  // Until this, the re-encryption job and the data-key count WALKED every
+  // row of the directory and opened each on the front process to read the
+  // keys inside it — every hour while any key was superseded, about 90 s of
+  // the thread at 1.5M entries, hours at 200M. Now:
+  //   * the entries a re-seal must touch are `dek_keys ?| <superseded ids>`,
+  //     GIN with the default operator class (for `?|`), and only those are
+  //     opened;
+  //   * the entries written before the column, whose keys are not known,
+  //     are the partial index's (`dek_keys IS NULL`), found without a scan
+  //     and indexed a bounded batch at a time (`indexSealed()`), once;
+  //   * what is sealed under each key is KEPT, in `sts_ldap_dek_counts`, by
+  //     triggers — #618's design for `sts_ldap_counts`, for #618's reason
+  //     (SCHEMA_ROUTINES below) — so a count is a read of a few rows.
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_dek_keys', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_dek_keys ON sts_ldap_entries ' +
+  'USING gin (dek_keys)' },
+  { name: 'sts_ldap_entries_dek_unknown', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_dek_unknown ON ' +
+  'sts_ldap_entries (realm, dn_key) WHERE dek_keys IS NULL' },
+  { name: 'sts_ldap_dek_counts', statement:
+  'CREATE TABLE IF NOT EXISTS sts_ldap_dek_counts (' +
+  '  dek_id text   PRIMARY KEY,' +
+  '  n      bigint NOT NULL DEFAULT 0)' },
+  { name: 'sts_ldap_dek_deltas', statement:
+  'CREATE TABLE IF NOT EXISTS sts_ldap_dek_deltas (' +
+  '  txid   xid8    NOT NULL DEFAULT pg_current_xact_id(),' +
+  '  dek_id text    NOT NULL,' +
+  '  n      bigint  NOT NULL,' +
+  '  fold   boolean NOT NULL DEFAULT false)' },
+  { name: 'sts_ldap_dek_deltas_txid', statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_dek_deltas_txid ON ' +
+  'sts_ldap_dek_deltas (txid)' },
   // -------------------------------------------------------------------------
   // THE DIRECTORY'S COUNTS, KEPT RATHER THAN COUNTED (#618, schema version
   // 16). A request worker holding the directory as a window asked the store
@@ -1169,7 +1219,14 @@ const SCHEMA_COLUMNS = [
   LDAP_GENERATED.value_keys },
   { table: 'sts_ldap_entries', column: 'attr_names', statement:
   'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.attr_names }
+  LDAP_GENERATED.attr_names },
+  // The data keys an entry holds values under (#623, schema version 17).
+  // Nullable and with no default, so adding it rewrites nothing: every
+  // existing row reads NULL — keys not known — until `indexSealed()` reaches
+  // it or the entry is next written.
+  { table: 'sts_ldap_entries', column: 'dek_keys', statement:
+  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
+  LDAP_GENERATED.dek_keys }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1279,10 +1336,90 @@ const COUNT_TRUNCATE_FUNCTION =
   'RETURN NULL; ' +
   'END $$';
 
+// ---------------------------------------------------------------------------
+// THE FUNCTIONS AND TRIGGERS THAT KEEP `sts_ldap_dek_counts` (#623, schema
+// version 17): per data key, the values the directory holds under it — the
+// sum of every entry's `dek_keys` entry for the key. #618's arrangement
+// exactly, and for its reason: each statement's net per key appended to
+// `sts_ldap_dek_deltas` (insert only — every write of a realm adds to its
+// `directory` key's row, and a lock on that row held to the commit would
+// serialise the realm's flushes), and one deferred constraint trigger
+// folding the transaction's deltas in at COMMIT, in key order. Names of
+// their own rather than more statements in #618's functions: the routines
+// are probed by NAME, so a changed body under an old name would never reach
+// a store that already has it.
+//
+// An entry whose `dek_keys` is NULL (written before the column) adds
+// nothing; `indexSealed()` setting it is an UPDATE like any other, and adds
+// its keys then. A value that is not a JSON object is read as no keys.
+// ---------------------------------------------------------------------------
+// The keys of one row's `dek_keys`, as a set-returning call. No Entering/
+// Leaving pair: it builds statement text at load, where this module has no
+// logger (the driver's is `create()`'s), as `poolMax()` above.
+const DEK_KEYS_OF = function (alias) {
+  return 'jsonb_each_text(CASE WHEN jsonb_typeof(' + alias + '.dek_keys) = ' +
+         '\'object\' THEN ' + alias + '.dek_keys END)';
+};
+
+const DEK_NOTE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_dek_note() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'DECLARE added bigint; ' +
+  'BEGIN ' +
+  'IF TG_OP = \'INSERT\' THEN ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n) ' +
+  'SELECT d.key, sum(d.value::bigint) FROM new_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d GROUP BY d.key; ' +
+  'ELSIF TG_OP = \'DELETE\' THEN ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n) ' +
+  'SELECT d.key, -sum(d.value::bigint) FROM old_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d GROUP BY d.key; ' +
+  'ELSE ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n) ' +
+  'SELECT k, sum(n) FROM (' +
+  'SELECT d.key AS k, d.value::bigint AS n FROM new_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d ' +
+  'UNION ALL SELECT d.key, -d.value::bigint FROM old_rows AS r CROSS JOIN ' +
+  'LATERAL ' + DEK_KEYS_OF('r') + ' AS d) AS c ' +
+  'GROUP BY k HAVING sum(n) <> 0; ' +
+  'END IF; ' +
+  'GET DIAGNOSTICS added = ROW_COUNT; ' +
+  'IF added > 0 AND NOT EXISTS (SELECT 1 FROM sts_ldap_dek_deltas WHERE ' +
+  'txid = pg_current_xact_id() AND fold) THEN ' +
+  'INSERT INTO sts_ldap_dek_deltas (dek_id, n, fold) VALUES (\'\', 0, ' +
+  'true); ' +
+  'END IF; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+const DEK_FOLD_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_dek_fold() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'WITH folded AS (DELETE FROM sts_ldap_dek_deltas WHERE txid = ' +
+  'pg_current_xact_id() RETURNING dek_id, n) ' +
+  'INSERT INTO sts_ldap_dek_counts AS c (dek_id, n) ' +
+  'SELECT dek_id, sum(n) FROM folded WHERE dek_id <> \'\' GROUP BY dek_id ' +
+  'HAVING sum(n) <> 0 ORDER BY dek_id ' +
+  'ON CONFLICT (dek_id) DO UPDATE SET n = c.n + EXCLUDED.n; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+const DEK_TRUNCATE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_dek_truncate() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'DELETE FROM sts_ldap_dek_counts; ' +
+  'DELETE FROM sts_ldap_dek_deltas; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
 /**
- * The functions and triggers that keep the directory's counts (#618), each
- * `{ kind, name, table?, statement }`, probed by name and created where
- * missing, functions first.
+ * The functions and triggers that keep the directory's counts (#618) and
+ * its per-data-key counts (#623), each `{ kind, name, table?, statement,
+ * counts? }`, probed by name and created where missing, functions first.
+ * `counts` names the counters a created trigger starts: `entries` (#618's
+ * COUNTS_BACKFILL) or `deks` (#623's DEK_COUNTS_BACKFILL).
  */
 const SCHEMA_ROUTINES = [
   { kind: 'function', name: 'sts_ldap_count_bases',
@@ -1293,6 +1430,12 @@ const SCHEMA_ROUTINES = [
     statement: COUNT_FOLD_FUNCTION },
   { kind: 'function', name: 'sts_ldap_count_truncate',
     statement: COUNT_TRUNCATE_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_dek_note',
+    statement: DEK_NOTE_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_dek_fold',
+    statement: DEK_FOLD_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_dek_truncate',
+    statement: DEK_TRUNCATE_FUNCTION },
   { kind: 'trigger', name: 'sts_ldap_entries_count_insert',
     table: 'sts_ldap_entries', statement:
     'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_insert AFTER INSERT ' +
@@ -1317,7 +1460,32 @@ const SCHEMA_ROUTINES = [
     table: 'sts_ldap_count_deltas', statement:
     'CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold AFTER INSERT ON ' +
     'sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ' +
-    '(NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold()' }
+    '(NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_insert', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_insert AFTER INSERT ' +
+    'ON sts_ldap_entries REFERENCING NEW TABLE AS new_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_dek_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_update', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_update AFTER UPDATE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS ' +
+    'new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_delete', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_delete AFTER DELETE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_dek_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_dek_truncate', counts: 'deks',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_truncate AFTER ' +
+    'TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION ' +
+    'sts_ldap_dek_truncate()' },
+  { kind: 'trigger', name: 'sts_ldap_dek_deltas_fold', counts: 'deks',
+    table: 'sts_ldap_dek_deltas', statement:
+    'CREATE CONSTRAINT TRIGGER sts_ldap_dek_deltas_fold AFTER INSERT ON ' +
+    'sts_ldap_dek_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ' +
+    '(NEW.fold) EXECUTE FUNCTION sts_ldap_dek_fold()' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -1332,6 +1500,16 @@ const SCHEMA_ROUTINES = [
 // ---------------------------------------------------------------------------
 const LOCK_FOR_BACKFILL =
   'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';
+// The per-data-key counters started from the rows already there (#623),
+// under the same lock and on the same condition: only when they hold
+// nothing. On the start that ADDS `dek_keys` every row reads NULL and this
+// adds nothing; the rows join the counters as `indexSealed()` reaches them.
+const DEK_COUNTS_BACKFILL =
+  'INSERT INTO sts_ldap_dek_counts (dek_id, n) ' +
+  'SELECT d.key, sum(d.value::bigint) FROM sts_ldap_entries AS e ' +
+  'CROSS JOIN LATERAL ' + DEK_KEYS_OF('e') + ' AS d ' +
+  'WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_dek_counts) ' +
+  'GROUP BY d.key';
 const COUNTS_BACKFILL =
   'INSERT INTO sts_ldap_counts (realm, base_key, attribute, n) ' +
   'SELECT e.realm, b.base_key, a.attribute, count(*) ' +
@@ -1969,18 +2147,22 @@ function create(options) {
 
   // The thirteen values an entry is written with: the seven columns it
   // always had, `attrs` now the sealed blob, then the six lookups.
+  // The fourteenth, `dek_keys` (#623): the data keys the row holds values
+  // under, from the attributes as written and the blob they were sealed in
+  // — so every writer of an entry keeps the re-encryption job's index.
   function entryParams(realmId, dnKey, entry) {
     log.debug("Entering entryParams().");
     const attrs = (entry && entry.attributes) || {};
     const index = entryCodec.index(attrs);
+    const sealed = entryCodec.sealAttributes(realmId, dnKey, attrs);
     log.debug("Leaving entryParams().");
-    return [realmId, dnKey, entry.dn,
-            JSON.stringify(entryCodec.sealAttributes(realmId, dnKey, attrs)),
+    return [realmId, dnKey, entry.dn, JSON.stringify(sealed),
             entry.origin || null, entry.createdAt || null,
             entry.modifiedAt || null,
             JSON.stringify(index.nameKeys), JSON.stringify(index.mailKeys),
             JSON.stringify(index.uuidKeys), JSON.stringify(index.classKeys),
-            JSON.stringify(index.valueKeys), JSON.stringify(index.attrNames)];
+            JSON.stringify(index.valueKeys), JSON.stringify(index.attrNames),
+            JSON.stringify(entryCodec.dekKeys(attrs, sealed))];
   }
 
   // A stored row's entry, its attributes opened. THROWS where the blob does
@@ -2008,20 +2190,19 @@ function create(options) {
   }
 
   // ---------------------------------------------------------------------------
-  // WHAT A SEALED ENTRY HOLDS UNDER WHICH DATA KEY, which SQL can no longer
-  // see (#391 phase 6). An entry's blob is under the realm's `directory` key,
-  // and INSIDE it are the per-attribute values sealed under their own keys
-  // (a TOTP secret, Kerberos keys, a client secret) — a LIKE over the column
-  // finds only the outer one, and the re-encryption job would count the
-  // inner keys as unused and destroy them with the values still in the
-  // entries. So the directory is walked HERE, a page at a time, and each
-  // entry opened.
+  // WHAT A SEALED ENTRY HOLDS UNDER WHICH DATA KEY, which SQL cannot see
+  // (#391 phase 6): an entry's blob is under the realm's `directory` key, and
+  // INSIDE it are the per-attribute values sealed under their own keys (a
+  // TOTP secret, Kerberos keys, a client secret). Until #623 the directory
+  // was WALKED for it — every row, opened on the front process, twice an
+  // hour while any key was superseded. Since #623 (schema version 17) every
+  // writer records the keys beside the blob, in `dek_keys`, and the counts
+  // are kept by triggers; what is left to open is a row written before the
+  // column existed (`dek_keys IS NULL`), once, a bounded batch at a time.
   // ---------------------------------------------------------------------------
-  const WALK_PAGE = 500;
-
-  // Every entry, in key order: `visit(row, opened)`, where `opened` is the
-  // text holding the entry's attributes (the blob opened, or the plain
-  // JSON) and null for a blob that does not open. Resolves the row count.
+  // How many rows one statement of the index's catch-up, or of a re-seal,
+  // reads.
+  const SEALED_PAGE = 500;
   // -------------------------------------------------------------------------
   // THE MAINTENANCE PASSES WAIT FOR A CONNECTION RATHER THAN FAIL (2026-10-02).
   // The pool's five-second wait is for a REQUEST, which is answered 503 rather
@@ -2106,76 +2287,151 @@ function create(options) {
     });
   }
 
-  function walkDirectory(visit) {
-    log.debug("Entering walkDirectory().");
+  // The text of a stored row's attributes, its blob opened (#623), for
+  // `dek_keys`. A blob that does not open counts for its own key only — it
+  // is still sealed under it, and what is inside cannot be known here —
+  // which is what the walk this replaced counted.
+  // Null where the blob does not open, so the caller may first read the
+  // data-key rows again (a realm created a moment ago elsewhere).
+  function openedOfRow(row) {
+    log.debug("Entering openedOfRow().");
     const crypto = require('../common/crypto');
     const keystore = require('../common/keystore');
-    let seen = 0;
-    const page = function (afterRealm, afterKey) {
-      return maintenanceQuery('the directory walk',
-        'SELECT realm, dn_key, dn, attrs FROM sts_ldap_entries ' +
-        'WHERE (realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $3',
-        [afterRealm, afterKey, WALK_PAGE]
-      ).then(function (r) {
-        const rows = r.rows || [];
-        let chain = Promise.resolve();
-        rows.forEach(function (row) {
-          chain = chain.then(function () {
-            const stored = row.attrs;
-            const opened = typeof stored === 'string' &&
-              crypto.isEncryptedWithKek(stored)
-              ? keystore.open(stored, 'directory')
-              : JSON.stringify(stored || {});
-            seen += 1;
-            return visit(row, opened === undefined ? null : opened);
-          });
-        });
-        return chain.then(function () {
-          if (rows.length < WALK_PAGE) {
-            return seen;
-          }
-          const last = rows[rows.length - 1];
-          return page(last.realm, last.dn_key);
-        });
-      });
-    };
-    log.debug("Leaving walkDirectory().");
-    return page('', '');
-  }
-
-  // The data keys an entry names: its blob's own, and every value inside it.
-  function deksOfEntry(row, opened) {
-    log.debug("Entering deksOfEntry().");
-    const crypto = require('../common/crypto');
-    const out = [];
-    if (typeof row.attrs === 'string' && crypto.isEncryptedWithKek(row.attrs)) {
-      out.push(crypto.dekIdOf(row.attrs));
+    const stored = row.attrs;
+    if (typeof stored === 'string' && crypto.isEncryptedWithKek(stored)) {
+      const text = keystore.open(stored, 'directory');
+      log.debug("Leaving openedOfRow(). Sealed.");
+      return text === undefined ? null : text;
     }
-    (String(opened || '').match(SEALED_VALUE) || []).forEach(function (one) {
-      out.push(one.split('$')[3]);
-    });
-    log.debug("Leaving deksOfEntry().");
-    return out;
+    log.debug("Leaving openedOfRow(). Plain.");
+    return JSON.stringify(stored || {});
   }
 
-  // Counts, by data key, what the directory holds; an entry that does not
-  // open counts for its blob's key (it is still sealed under it).
-  function countDirectory(wanted) {
-    log.debug("Entering countDirectory().");
-    const counts = {};
-    log.debug("Leaving countDirectory().");
-    return walkDirectory(function (row, opened) {
-      deksOfEntry(row, opened).forEach(function (id) {
-        if (!wanted || wanted.has(id)) {
-          counts[id] = (counts[id] || 0) + 1;
-        }
+  // Whether any entry's data keys are not yet known: one probe of the
+  // partial index, whatever the directory's size. ORDER BY the index's own
+  // key and LIMIT 1, not EXISTS: the planner drops an EXISTS's ordering, and
+  // with statistics from before the catch-up (most rows NULL) it chose a
+  // sequential scan — which, once none is NULL, reads the whole table.
+  function unindexedRemain() {
+    log.debug("Entering unindexedRemain().");
+    log.debug("Leaving unindexedRemain().");
+    return maintenanceQuery('the data-key index',
+      'SELECT 1 AS remain FROM sts_ldap_entries WHERE dek_keys IS NULL ' +
+      'ORDER BY realm, dn_key LIMIT 1', []).then(function (r) {
+      return ((r && r.rows) || []).length > 0;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE DATA-KEY INDEX CAUGHT UP (#623): the entries written before
+  // `dek_keys` existed, read through the partial index in key order, opened,
+  // and given their keys — a page at a time, yielding to the event loop
+  // between pages, until the page is short or `budgetMs` is spent. Every
+  // entry written since has its keys already, so on a store built at
+  // version 17 this is one probe; on an older store it is the walk the jobs
+  // did every hour, done ONCE, spread over a few passes.
+  //
+  // COMPARE AND SET: a row is given its keys only while it still reads NULL
+  // and still holds the blob they were read from — a writer that changed
+  // it in between has written its own keys (or, an older build of this
+  // service, a blob these keys do not describe), and wins.
+  // ---------------------------------------------------------------------------
+  async function indexSealedEntries(budgetMs) {
+    log.debug("Entering indexSealedEntries().");
+    const started = Date.now();
+    const budget = Math.max(0, Number(budgetMs) || 0);
+    let afterRealm = '';
+    let afterKey = '';
+    let indexed = 0;
+    let more = true;
+    let reread = false;
+    while (more && Date.now() - started < budget) {
+      const r = await maintenanceQuery('the data-key index',
+        'SELECT realm, dn_key, attrs FROM sts_ldap_entries WHERE dek_keys ' +
+        'IS NULL AND (realm, dn_key) > ($1, $2) ORDER BY realm, dn_key ' +
+        'LIMIT $3', [afterRealm, afterKey, SEALED_PAGE]);
+      const rows = (r && r.rows) || [];
+      more = rows.length === SEALED_PAGE;
+      if (!rows.length) {
+        break;
+      }
+      const last = rows[rows.length - 1];
+      afterRealm = last.realm;
+      afterKey = last.dn_key;
+      let opened = rows.map(openedOfRow);
+      if (opened.indexOf(null) >= 0 && !reread) {
+        // A blob that does not open may be under a data key this process
+        // has not read yet; read them once a pass, and try again.
+        reread = true;
+        await require('../common/keystore').refreshDekRows();
+        opened = rows.map(openedOfRow);
+      }
+      const u = await maintenanceQuery('the data-key index',
+        'UPDATE sts_ldap_entries AS e SET dek_keys = u.k::jsonb FROM ' +
+        'unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS ' +
+        'u(r, d, a, k) WHERE e.realm = u.r AND e.dn_key = u.d AND ' +
+        'e.dek_keys IS NULL AND e.attrs = u.a::jsonb',
+        [rows.map(function (row) { return String(row.realm); }),
+         rows.map(function (row) { return String(row.dn_key); }),
+         rows.map(function (row) { return JSON.stringify(row.attrs); }),
+         rows.map(function (row, i) {
+           return JSON.stringify(entryCodec.dekKeys(opened[i], row.attrs));
+         })]);
+      indexed += Number(u && u.rowCount) || 0;
+      // The opening above is this process's CPU: a page, then the event
+      // loop, so a request is never behind more than one page of it.
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
       });
-    }).then(function () {
+    }
+    const remaining = await unindexedRemain();
+    if (indexed) {
+      log.info('persistence: the directory\'s data-key index caught up ' +
+               indexed + ' entr' + (indexed === 1 ? 'y' : 'ies') +
+               ' written before it existed (#623)' +
+               (remaining ? '; more remain for the next pass.' : '; it is ' +
+                'complete.'));
+    }
+    log.debug("Leaving indexSealedEntries(). " + indexed + ".");
+    return { indexed: indexed, remaining: remaining };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT THE DIRECTORY HOLDS UNDER EACH DATA KEY, READ (#623): the counters
+  // the triggers keep, for the keys asked (`wanted`, a Set) or every key.
+  // REFUSED while any entry's keys are not known: a count missing them
+  // could read 0 for a key still in use, and a key is destroyed on 0.
+  // ---------------------------------------------------------------------------
+  function directoryDekCounts(wanted) {
+    log.debug("Entering directoryDekCounts().");
+    const ids = wanted ? Array.from(wanted).map(String) : null;
+    log.debug("Leaving directoryDekCounts().");
+    return unindexedRemain().then(function (remain) {
+      if (remain) {
+        log.debug("directoryDekCounts(): entries are not yet indexed.");
+        throw errorCodes.mark(new Error(errorCodes.tag('STS-STORE-0080') +
+          'the directory holds entries whose data keys are not yet known ' +
+          '(written before schema version 17); they are being indexed, and ' +
+          'until they are, what is sealed under a data key is not counted.'),
+          'STS-STORE-0080');
+      }
+      return maintenanceQuery('the data-key count',
+        ids ? 'SELECT dek_id, n FROM sts_ldap_dek_counts WHERE dek_id = ' +
+              'ANY($1::text[])'
+            : 'SELECT dek_id, n FROM sts_ldap_dek_counts',
+        ids ? [ids] : []);
+    }).then(function (r) {
+      const counts = {};
+      ((r && r.rows) || []).forEach(function (row) {
+        counts[String(row.dek_id)] = Number(row.n) || 0;
+      });
       return counts;
     }, function (e) {
-      log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
-                'directory could not be walked to count its data keys: ' +
-                ((e && e.message) || e));
+      if (errorCodes.codeOf(e) !== 'STS-STORE-0080') {
+        log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
+                  'directory\'s data-key counts could not be read: ' +
+                  ((e && e.message) || e));
+      }
       throw e;
     });
   }
@@ -3217,21 +3473,41 @@ function create(options) {
                 });
               });
             });
-            const startsCounting = missing.some(function (one) {
-              return one.kind === 'trigger';
-            });
-            if (!startsCounting) {
+            // Which counters a created trigger starts: #618's, or the
+            // per-data-key ones (#623) — each backfilled only when one of
+            // its own triggers was created here.
+            const starts = function (counts) {
+              return missing.some(function (one) {
+                return one.kind === 'trigger' &&
+                  (one.counts || 'entries') === counts;
+              });
+            };
+            const startsCounting = starts('entries');
+            const startsDekCounting = starts('deks');
+            if (!startsCounting && !startsDekCounting) {
               return chain;
             }
             return chain.then(function () {
               return client.query(LOCK_FOR_BACKFILL);
             }).then(function () {
-              return client.query(COUNTS_BACKFILL);
+              return startsCounting ? client.query(COUNTS_BACKFILL) : null;
             }).then(function (r) {
-              log.info('persistence: the directory\'s counts start here ' +
-                       '(#618): ' + ((r && r.rowCount) || 0) + ' counter ' +
-                       'row(s) written from one count of sts_ldap_entries, ' +
-                       'under a lock; the triggers keep them from now on.');
+              if (startsCounting) {
+                log.info('persistence: the directory\'s counts start here ' +
+                         '(#618): ' + ((r && r.rowCount) || 0) + ' counter ' +
+                         'row(s) written from one count of ' +
+                         'sts_ldap_entries, under a lock; the triggers keep ' +
+                         'them from now on.');
+              }
+              return startsDekCounting
+                ? client.query(DEK_COUNTS_BACKFILL) : null;
+            }).then(function (r) {
+              if (startsDekCounting) {
+                log.info('persistence: the per-data-key counts start here ' +
+                         '(#623): ' + ((r && r.rowCount) || 0) + ' counter ' +
+                         'row(s) from the entries whose data keys are ' +
+                         'known; the rest join as they are indexed.');
+              }
             });
           });
         }).then(function () {
@@ -3669,7 +3945,8 @@ function create(options) {
             'origin = $5, created_at = $6, modified_at = $7, ' +
             'name_keys = $8::jsonb, mail_keys = $9::jsonb, ' +
             'uuid_keys = $10::jsonb, class_keys = $11::jsonb, ' +
-            'value_keys = $12::jsonb, attr_names = $13::jsonb ' +
+            'value_keys = $12::jsonb, attr_names = $13::jsonb, ' +
+            'dek_keys = $14::jsonb ' +
             'WHERE realm = $1 AND dn_key = $2', params(row, entry));
         };
         // What the merge decided, turned into a statement and an outcome.
@@ -3694,9 +3971,10 @@ function create(options) {
             'INSERT INTO sts_ldap_entries ' +
             '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
             '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
-            '   attr_names) ' +
+            '   attr_names, dek_keys) ' +
             'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
-            '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
+            '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, ' +
+            '$14::jsonb) ' +
             'ON CONFLICT (realm, dn_key) DO NOTHING',
             params(row, verdict.entry)
           ).then(function (r) {
@@ -3804,9 +4082,10 @@ function create(options) {
               'INSERT INTO sts_ldap_entries ' +
               '  (realm, dn_key, dn, attrs, origin, created_at, modified_at, ' +
               '   name_keys, mail_keys, uuid_keys, class_keys, value_keys, ' +
-              '   attr_names) ' +
+              '   attr_names, dek_keys) ' +
               'VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8::jsonb, ' +
-              '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb) ' +
+              '$9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb, $13::jsonb, ' +
+              '$14::jsonb) ' +
               'ON CONFLICT (realm, dn_key) DO UPDATE SET ' +
               '  dn = EXCLUDED.dn, attrs = EXCLUDED.attrs, ' +
               '  origin = EXCLUDED.origin, created_at = EXCLUDED.created_at, ' +
@@ -3816,7 +4095,8 @@ function create(options) {
               '  uuid_keys = EXCLUDED.uuid_keys, ' +
               '  class_keys = EXCLUDED.class_keys, ' +
               '  value_keys = EXCLUDED.value_keys, ' +
-              '  attr_names = EXCLUDED.attr_names',
+              '  attr_names = EXCLUDED.attr_names, ' +
+              '  dek_keys = EXCLUDED.dek_keys',
               params(row, row.entry));
           });
         });
@@ -6954,9 +7234,10 @@ function create(options) {
           return { id: id, count: Number(((r.rows || [])[0] || {}).n) || 0 };
         });
       }).then(function (rows) {
-        // AND THE DIRECTORY, walked: its entries are sealed blobs (#391
-        // phase 6), and what is inside one is not visible to LIKE.
-        return countDirectory(new Set(ids)).then(function (inDirectory) {
+        // AND THE DIRECTORY: its entries are sealed blobs (#391 phase 6),
+        // and what is inside one is not visible to LIKE — so it is read
+        // from the counters its triggers keep (#623), never walked.
+        return directoryDekCounts(new Set(ids)).then(function (inDirectory) {
           const out = {};
           rows.forEach(function (one) {
             out[one.id] = one.count + (Number(inDirectory[one.id]) || 0);
@@ -6997,14 +7278,24 @@ function create(options) {
         (r.rows || []).forEach(function (row) {
           out[String(row.id)] = Number(row.n) || 0;
         });
-        // AND THE DIRECTORY, walked (#391 phase 6).
-        return countDirectory(null).then(function (inDirectory) {
+        // AND THE DIRECTORY, from its kept counters (#623).
+        return directoryDekCounts(null).then(function (inDirectory) {
           Object.keys(inDirectory).forEach(function (id) {
             out[id] = (out[id] || 0) + inDirectory[id];
           });
           return out;
         });
       });
+    },
+
+    // THE DIRECTORY'S DATA-KEY INDEX CAUGHT UP (#623): `indexSealedEntries()`
+    // for at most `options.budgetMs`, answering `{ indexed, remaining }`.
+    // The re-encryption job and the count job call it first; while
+    // `remaining`, the directory is not counted (`directoryDekCounts()`).
+    indexSealed: function (options) {
+      log.debug("Entering indexSealed().");
+      log.debug("Leaving indexSealed().");
+      return indexSealedEntries(options && options.budgetMs);
     },
 
     resealSealed: function (dekIds, reseal, options) {
@@ -7090,25 +7381,44 @@ function create(options) {
           }, Promise.resolve());
         });
       }, Promise.resolve()).then(function () {
-        // THE DIRECTORY, walked once for every key (#391 phase 6): an entry
-        // holding anything under one of them — its blob, or a value inside
-        // it — is opened, every inner value re-sealed, and the blob sealed
-        // again under the current `directory` key; compare and swap, with a
-        // change-log row, as before.
-        const wanted = new Set(ids);
+        // THE DIRECTORY (#391 phase 6), BY ITS DATA-KEY INDEX (#623): only
+        // the entries whose `dek_keys` name one of the keys — its blob, or
+        // a value inside it — are read and opened, in key order after a
+        // cursor; every inner value is re-sealed, and the blob sealed again
+        // under the current `directory` key with its new keys beside it;
+        // compare and swap, with a change-log row, as before. Until #623
+        // this walked and opened every entry of the store to find them.
+        // An entry not yet in the index (written before it existed) is
+        // reached once `indexSealed()` has given it its keys.
         const crypto = require('../common/crypto');
         let budget = limit;
-        return walkDirectory(function (row, opened) {
-          if (budget <= 0 || opened === null) {
-            if (opened === null) {
-              tally.skipped += 1;
+        let afterRealm = '';
+        let afterKey = '';
+        const page = function () {
+          return maintenanceQuery('the re-encryption pass',
+            'SELECT realm, dn_key, dn, attrs FROM sts_ldap_entries WHERE ' +
+            'dek_keys ?| $1::text[] AND (realm, dn_key) > ($2, $3) ' +
+            'ORDER BY realm, dn_key LIMIT $4',
+            [ids, afterRealm, afterKey, Math.min(budget, SEALED_PAGE)]
+          ).then(function (r) {
+            const rows = (r && r.rows) || [];
+            if (rows.length) {
+              afterRealm = rows[rows.length - 1].realm;
+              afterKey = rows[rows.length - 1].dn_key;
             }
-            return null;
-          }
-          const holds = deksOfEntry(row, opened).some(function (id) {
-            return wanted.has(id);
+            return rows.reduce(function (chain, row) {
+              return chain.then(function () {
+                return resealEntry(row);
+              });
+            }, Promise.resolve()).then(function () {
+              return rows.length && budget > 0 ? page() : null;
+            });
           });
-          if (!holds) {
+        };
+        const resealEntry = function (row) {
+          const opened = openedOfRow(row);
+          if (opened === null) {
+            tally.skipped += 1;
             return null;
           }
           const inner = resealText(opened, reseal) || opened;
@@ -7122,16 +7432,18 @@ function create(options) {
             tally.skipped += 1;
             return null;
           }
-          const next = JSON.stringify(entryCodec.sealAttributes(row.realm,
-                                                                row.dn_key,
-                                                                attrs || {}));
+          const sealed = entryCodec.sealAttributes(row.realm, row.dn_key,
+                                                   attrs || {});
+          const next = JSON.stringify(sealed);
           budget -= 1;
           return maintenanceTransaction('the re-encryption pass',
                                         function (client) {
             return client.query(
-              'UPDATE sts_ldap_entries SET attrs = $3::jsonb ' +
+              'UPDATE sts_ldap_entries SET attrs = $3::jsonb, ' +
+              'dek_keys = $5::jsonb ' +
               'WHERE realm = $1 AND dn_key = $2 AND attrs = $4::jsonb',
-              [row.realm, row.dn_key, next, JSON.stringify(row.attrs)]
+              [row.realm, row.dn_key, next, JSON.stringify(row.attrs),
+               JSON.stringify(entryCodec.dekKeys(attrs || {}, sealed))]
             ).then(function (u) {
               if (!u.rowCount) {
                 return null;
@@ -7143,9 +7455,10 @@ function create(options) {
                                               key: row.dn }]);
             });
           });
-        }).catch(function (e) {
+        };
+        return page().catch(function (e) {
           log.error(errorCodes.tag('STS-STORE-0073') + 'persistence: the ' +
-                    'directory could not be walked to re-seal it: ' +
+                    'directory could not be read to re-seal it: ' +
                     ((e && e.message) || e));
           throw e;
         });
@@ -7509,6 +7822,7 @@ module.exports = {
   SCHEMA_ROUTINES: SCHEMA_ROUTINES,
   LOCK_FOR_BACKFILL: LOCK_FOR_BACKFILL,
   COUNTS_BACKFILL: COUNTS_BACKFILL,
+  DEK_COUNTS_BACKFILL: DEK_COUNTS_BACKFILL,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
   SCHEMA_VERSION: SCHEMA_VERSION,

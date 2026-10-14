@@ -1701,6 +1701,13 @@ const CODES = [
       'has no trust anchor anybody chose. Fatal at persistence.start(); ' +
       'the out-of-process tools that dial the database refuse the same way.',
     spec: 'none — fatal at start' },
+  { code: 'STS-STORE-0080',
+    summary: 'What the directory holds under a data key was asked for while ' +
+      'some entries, written before schema version 17, are not yet in its ' +
+      'data-key index: the count is refused rather than given short, so ' +
+      'no key is destroyed on it. The jobs index those entries a bounded ' +
+      'batch per pass, once (#623).',
+    spec: 'none — the count job and the re-encryption job wait' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

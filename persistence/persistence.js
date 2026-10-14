@@ -2711,6 +2711,15 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           return driver.countAllSealed();
         }
         : undefined,
+      // The directory's data-key index caught up for the entries written
+      // before it existed (#623), `{ indexed, remaining }`.
+      indexSealed: typeof driver.indexSealed === 'function'
+        ? function (options) {
+          log.debug("Entering indexSealed().");
+          log.debug("Leaving indexSealed().");
+          return driver.indexSealed(options);
+        }
+        : undefined,
       resealSealed: typeof driver.resealSealed === 'function'
         ? function (dekIds, reseal, options) {
           log.debug("Entering resealSealed().");

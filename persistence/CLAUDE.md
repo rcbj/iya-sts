@@ -1860,6 +1860,49 @@ checks exactness against a real postgres under eight concurrent writers (run
 on #618 against a scratch postgres:18). `tests/postgres_schema.js` holds the
 script and the driver together, functions and triggers included.
 
+### What the directory holds under each data key (#623, schema version 17)
+
+`sts_ldap_entries.dek_keys` is `{ "<dek id>": <values> }` — the sealed
+blob's own data key once, and the key of every value sealed INSIDE the blob
+(a TOTP secret, Kerberos keys) once per value: `directory_codec.js`'s
+`dekKeysOf()`, written by `entryParams()` beside the lookups, by the
+re-seal's UPDATE and by `cell_convert.js`. It replaced the directory WALK of
+the re-encryption job and the data-key count (`walkDirectory()`, every row
+opened on the front process, twice an hour while any key was superseded:
+about 90 s of the thread at 1.5M entries on 8081), so:
+
+* **A re-seal reads `dek_keys ?| <superseded ids>`** (GIN, default operator
+  class), in key order after a cursor, and opens only those rows.
+* **A count reads `sts_ldap_dek_counts`**, kept by triggers on
+  `sts_ldap_entries` exactly as `sts_ldap_counts` is, for the same two
+  reasons above (every writer, and deltas folded at COMMIT so no flush holds
+  the realm's `directory`-key row): `sts_ldap_dek_note()` appends each
+  statement's net per key to `sts_ldap_dek_deltas`, `sts_ldap_dek_fold()`
+  folds it in. Functions and triggers with NAMES OF THEIR OWN rather than more
+  statements in #618's: `open()` probes routines by name, so a changed body
+  under an old name would never reach a store that has the old one.
+  `DEK_COUNTS_BACKFILL` runs under the same lock, on the same condition.
+* **NULL IS "NOT KNOWN", NOT "NONE"**, which is why the column has no
+  default: adding it rewrites nothing, and every row written before it reads
+  NULL. `indexSealed()` (both jobs call it first, through
+  `keystore.sealedStore().index`) reads those through the partial index
+  `sts_ldap_entries_dek_unknown`, opens them a page at a time with a yield
+  between pages, and sets their keys COMPARE-AND-SET (still NULL, same blob),
+  for at most the budget the job gives it. Until none is left the driver
+  REFUSES a count (`STS-STORE-0080`): a count missing them could read 0 for a
+  key still in use, and a key is destroyed on 0. A blob that does not open,
+  after the data-key rows are read again once a pass, gets its own key only,
+  which is what the walk counted.
+* **A NODE ON AN OLDER BUILD** writes `attrs` and leaves `dek_keys` as it
+  was, so a cluster upgrades whole (as with every schema version). The
+  catch-up's compare-and-set on `attrs` keeps it from stamping keys on a
+  blob another writer changed under it.
+
+`tests/data_key_index.js` holds it counted (no statement of either job reads
+`sts_ldap_entries` without naming `dek_keys`) and, with
+`STS_TEST_POSTGRES_URL`, the triggers' exactness against a real database;
+`tests/no_full_directory_walk_in_jobs.js` holds that the walk stays gone.
+
 ### The schema version moved to 2
 
 `sts_keys` is the fourth table and the first with a `PRIMARY KEY` that is a realm

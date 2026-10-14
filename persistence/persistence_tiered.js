@@ -83,7 +83,9 @@ const BOTH_METHODS = ['open', 'close', 'loadDirectory', 'saveDirectory',
                       'releaseOrigin', 'setOriginLost',
                       // What is sealed under a data encryption key (#391):
                       // counted and re-sealed in both databases.
-                      'countSealed', 'countAllSealed', 'resealSealed'];
+                      'countSealed', 'countAllSealed', 'resealSealed',
+                      // The directory's data-key index (#623), in both.
+                      'indexSealed'];
 
 // The login name of a person's entry: the `uid` RDN of its DN, which is how
 // this directory names a person, or its `uid` attribute.
@@ -778,6 +780,20 @@ function create(options) {
         });
       });
       return out;
+    });
+  };
+  // The data-key index caught up in BOTH databases (#623), each with the
+  // whole budget, one after the other; `remaining` while either has more.
+  driver.indexSealed = function (options) {
+    log.debug("Entering tiered indexSealed().");
+    log.debug("Leaving tiered indexSealed().");
+    return globalDriver.indexSealed(options).then(function (first) {
+      return cellDriver.indexSealed(options).then(function (second) {
+        return { indexed: (Number(first && first.indexed) || 0) +
+                          (Number(second && second.indexed) || 0),
+                 remaining: !!((first && first.remaining) ||
+                               (second && second.remaining)) };
+      });
     });
   };
   driver.resealSealed = function (dekIds, reseal, options) {

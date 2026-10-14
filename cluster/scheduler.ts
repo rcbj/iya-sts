@@ -278,8 +278,14 @@ interface SchedulerDeps {
     claim(opts: Json): Promise<Json>;
     release(handle: Json): Promise<Json>;
   };
-  // The runs: a `realms.map`, or a test's stand-in with the same two members.
-  store: { realmMap(realmId: string): Map<string, Json> };
+  // The runs: a `realms.map`, or a test's stand-in with the same members.
+  // `watch(fn)` (#623), where the store offers it, calls `fn(realmId, row)`
+  // for every row it admits from another process — the change log's, and
+  // a start's restore — so the scheduler's index of the rows a tick must
+  // see learns of them. A store without it is one this process alone
+  // writes (a test's), whose rows all pass through `writeRow()`.
+  store: { realmMap(realmId: string): Map<string, Json>;
+           watch?: (fn: (realmId: string, row: Json) => void) => void };
   // The database's clock, where there is one; this process's otherwise.
   dbNow: () => Promise<number>;
   now: () => number;
@@ -334,6 +340,11 @@ function compareRows(a: Json, b: Json): number {
   return 0;
 }
 
+// WHO IS TOLD OF A RUN ROW ADMITTED FROM OUTSIDE THIS PROCESS (#623): each
+// scheduler built over `runStore` (the process's one, in practice). See
+// `Scheduler.notePending()`.
+const runWatchers = new Set<(realmId: string, row: Json) => void>();
+
 // PER TRUST REALM, AT ITS DECLARATION (root CLAUDE.md, trust realms rule 2),
 // PERSISTED where this service persists what it mints, TOMBSTONED — a
 // removed run must not be brought back by a node holding an old copy — and
@@ -345,6 +356,22 @@ function compareRows(a: Json, b: Json): number {
 const runStore = realms.map({
   persist: 'scheduler.runs',
   tombstone: true,
+  // EVERY ROW THE STORE ADMITS FROM OUTSIDE THIS PROCESS — read back at a
+  // start, or brought by the change log from another process — is shown to
+  // the watchers (#623): the leader's index of the rows a tick has to see
+  // (`Scheduler.notePending()`). The row is admitted unchanged, exactly as
+  // a store with no reconciler admits it.
+  // A hot path (every run row restored or replicated): no Entering/Leaving
+  // pair.
+  reconcile: {
+    restore: function (key: string, incoming: Json, held: Json,
+                       realmId: string): Json {
+      runWatchers.forEach(function (fn): void {
+        fn(realmId, incoming);
+      });
+      return incoming;
+    }
+  },
   // NOT READ BACK BY A REQUEST WORKER (#617): the run history was 42,740 of
   // the 52,234 rows each of 8081's processes restored at every start, and in
   // a worker nothing reads it whole — /admin/scheduler and its API are
@@ -492,6 +519,27 @@ class Scheduler {
   // The database clock's offset from this process's, at the last reading.
   private clockOffset = 0;
   private lastClockAt = 0;
+  // -------------------------------------------------------------------------
+  // THE ROWS A TICK HAS TO SEE, INDEXED (#623): every queued or running
+  // MANUAL run and every queued COMMAND, `realm\nrunId` -> `{ realm, runId }`.
+  // A tick read every row of `scheduler.runs` in every realm to find the
+  // few a person had queued — 13–19 s of the front process's thread at some
+  // ticks on 8081, whose history was some 42,000 rows — and the step-down
+  // commands by reading the default realm's whole partition. Now a tick
+  // reads the index and one row per entry: O(queued), not O(history).
+  //
+  // KEPT ON WRITE, CHECKED ON READ. An entry is ADDED wherever a row enters
+  // the store — `writeRow()`, this process's only writer of run rows, and
+  // the store's `watch()`, for a row read back at a start or brought by the
+  // change log from another process (a manual run queued by a request
+  // worker or by another node). It is never removed on write: `pending()`
+  // reads each entry's row from the store and drops the entry whose row has
+  // gone (the history purge, a tombstone, a removed realm) or has left the
+  // pending states (it ran, it was obeyed). So no path that ENDS a row —
+  // and there are several, some in other processes — needs to know the
+  // index exists, and a stale entry costs one Map read.
+  // -------------------------------------------------------------------------
+  private readonly pendingRows = new Map<string, Json>();
 
   /**
    * Builds a scheduler from its dependencies.
@@ -501,6 +549,12 @@ class Scheduler {
    */
   constructor(private readonly deps: SchedulerDeps) {
     deps.log.debug("Entering Scheduler.constructor().");
+    const self = this;
+    if (deps.store && typeof deps.store.watch === 'function') {
+      deps.store.watch(function (realmId: string, row: Json): void {
+        self.notePending(realmId, row);
+      });
+    }
     deps.log.debug("Leaving Scheduler.constructor().");
   }
 
@@ -520,7 +574,14 @@ class Scheduler {
       audit: audit,
       cluster: cluster,
       claims: clusterClaims,
-      store: runStore,
+      store: {
+        realmMap: function (realmId: string): Map<string, Json> {
+          return runStore.realmMap(realmId);
+        },
+        watch: function (fn: (realmId: string, row: Json) => void): void {
+          runWatchers.add(fn);
+        }
+      },
       dbNow: Scheduler.databaseNow,
       settle: function (): Promise<Json> {
         // LAZILY, for storeConnections()'s reason. With nothing persisted
@@ -1135,8 +1196,64 @@ class Scheduler {
       return Object.assign({}, held);
     }
     map.set(row.runId, Object.assign({}, row));
+    this.notePending(realmId, row);
     log.debug("Leaving Scheduler.writeRow().");
     return row;
+  }
+
+  // Whether a row is one a tick has to see: a manual run not yet ended, or
+  // a command not yet obeyed (#623).
+  // A hot path (every row written or admitted): no Entering/Leaving pair.
+  private static isPending(row: Json): boolean {
+    if (!row) {
+      return false;
+    }
+    if (row.kind === 'run') {
+      return row.trigger === 'manual' &&
+        (row.state === 'queued' || row.state === 'running');
+    }
+    return row.kind === 'command' && row.state === 'queued';
+  }
+
+  // ADDS a row to the index of the rows a tick has to see, if it is one
+  // (#623; see `pendingRows`). Never removes: `pending()` does that.
+  // A hot path (every row written, and every run row a start reads back or
+  // the change log brings): no Entering/Leaving pair.
+  private notePending(realmId: string, row: Json): void {
+    if (!Scheduler.isPending(row) || !row.runId) {
+      return;
+    }
+    const realm = String(realmId || realms.DEFAULT_ID);
+    this.pendingRows.set(realm + '\n' + String(row.runId),
+                         { realm: realm, runId: String(row.runId) });
+  }
+
+  // THE ROWS A TICK HAS TO SEE, read through the index (#623): each entry's
+  // row as the store holds it now, copied, as `{ realm, row }`. An entry
+  // whose row has gone or is no longer pending is dropped here; one whose
+  // realm is not defined in this process is kept and skipped — its realm
+  // may be a new one whose row has not arrived yet (a removed realm's are
+  // dropped by `forgetRealm()`). Linear in the entries, never in the
+  // history.
+  private pending(): Json[] {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.pending().");
+    const out: Json[] = [];
+    Array.from(this.pendingRows.entries()).forEach(function (pair: Json[]) {
+      const entry = pair[1];
+      if (!self.realmDefined(entry.realm)) {
+        return;
+      }
+      const row = self.storeOf(entry.realm).get(entry.runId);
+      if (!Scheduler.isPending(row)) {
+        self.pendingRows.delete(pair[0]);
+        return;
+      }
+      out.push({ realm: entry.realm, row: Object.assign({}, row) });
+    });
+    log.debug("Leaving Scheduler.pending(). " + out.length + ".");
+    return out;
   }
 
   // Whether a realm is defined in this process: the default one always.
@@ -1178,6 +1295,13 @@ class Scheduler {
       }
     });
     const suffix = '|' + id;
+    const prefix = id + '\n';
+    const pendingRows = this.pendingRows;
+    Array.from(pendingRows.keys()).forEach(function (key: string): void {
+      if (key.startsWith(prefix)) {
+        pendingRows.delete(key);
+      }
+    });
     [this.processSlots, this.quietRecorded].forEach(function (m) {
       Array.from(m.keys()).forEach(function (key: string): void {
         if (key.endsWith(suffix)) {
@@ -1539,19 +1663,13 @@ class Scheduler {
     log.debug("Leaving Scheduler.tickOnce().");
   }
 
-  // Every queued manual run in every realm, oldest first.
+  // Every queued manual run in every realm, oldest first — from the index
+  // of the rows a tick has to see (#623), never a read of the history.
   private queuedManualRuns(): Json[] {
-    const { log, realms } = this.deps;
-    const self = this;
+    const { log } = this.deps;
     log.debug("Entering Scheduler.queuedManualRuns().");
-    const out: Json[] = [];
-    realms.list().forEach(function (realm: Json): void {
-      self.storeOf(String(realm.id)).forEach(function (row: Json): void {
-        if (row && row.kind === 'run' && row.trigger === 'manual' &&
-            (row.state === 'queued' || row.state === 'running')) {
-          out.push({ realm: String(realm.id), row: Object.assign({}, row) });
-        }
-      });
+    const out: Json[] = this.pending().filter(function (pair: Json): boolean {
+      return pair.row.kind === 'run';
     });
     out.sort(function (a: Json, b: Json): number {
       return Number(a.row.queuedAt) - Number(b.row.queuedAt);
@@ -1985,10 +2103,14 @@ class Scheduler {
     }
     const params = o.params && typeof o.params === 'object' ? o.params : null;
     const paramsText = JSON.stringify(params);
+    // The index of the rows a tick has to see (#623) holds every queued
+    // manual run, so this is not a read of the realm's whole history either.
     let existing: Json = null;
-    this.storeOf(realmId).forEach(function (row: Json): void {
-      if (!existing && row && row.kind === 'run' && row.trigger === 'manual' &&
-          row.jobId === job.id && row.state === 'queued' &&
+    this.pending().forEach(function (pair: Json): void {
+      const row = pair.row;
+      if (!existing && pair.realm === String(realmId || realms.DEFAULT_ID) &&
+          row.kind === 'run' && row.jobId === job.id &&
+          row.state === 'queued' &&
           JSON.stringify(row.params || null) === paramsText) {
         existing = row;
       }
@@ -2068,11 +2190,12 @@ class Scheduler {
     const { log, cluster } = this.deps;
     const self = this;
     log.debug("Entering Scheduler.obeyCommands().");
-    const queued: Json[] = [];
-    this.storeOf(realms.DEFAULT_ID).forEach(function (row: Json): void {
-      if (row && row.kind === 'command' && row.state === 'queued') {
-        queued.push(Object.assign({}, row));
-      }
+    // From the index (#623): this read the default realm's whole partition
+    // — every service job's run history — at every tick.
+    const queued: Json[] = this.pending().filter(function (pair: Json) {
+      return pair.realm === realms.DEFAULT_ID && pair.row.kind === 'command';
+    }).map(function (pair: Json): Json {
+      return pair.row;
     });
     if (!queued.length) {
       log.debug("Leaving Scheduler.obeyCommands(). None.");

@@ -6286,10 +6286,11 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   replaces is SUPERSEDED: it opens, nothing new is sealed under it.
 * **RE-SEALING NEEDS NO KNOWLEDGE OF THE VALUE**: a DEK records its scope,
   realm and class, so `reseal(cipher)` opens under the old DEK and seals under
-  that slot's current one. The store does the walk (`countSealed()` and
+  that slot's current one. The store finds the rows (`countSealed()` and
   `resealSealed()` in `persistence_postgres.js`, a compare-and-set UPDATE per
   row with a change-log row, over `sts_keys`, `sts_minted`,
-  `sts_ldap_entries` and `sts_cluster_secrets`); `resealOwnRows()` rewrites
+  `sts_ldap_entries` and `sts_cluster_secrets` — the directory by its
+  data-key index since #623, below); `resealOwnRows()` rewrites
   this file's own key and PKI rows. **The process running the pass applies the
   directory rows it re-sealed to its own copy** (`persistence.js`'s hook,
   through `applyDirectoryChange()`): the applier skips a process's own change
@@ -6317,6 +6318,32 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   is kept — nothing a digest names outlives the process there.
 * **The settings are per process** (`perProcess`): the jobs run once for the
   service, and a realm cannot carry them.
+* **A PASS WITH NOTHING TO DO READS NOTHING (#623).** On 8081, at 1.5M
+  entries, every hourly pass walked the whole directory twice (re-seal, then
+  count), opening every row on the front process — about 90 s of its thread
+  — for the week after a rotation while the replaced keys waited out the
+  retire period, and re-sealed nothing. Two changes:
+  * `reencrypt()` SKIPS the re-seal and the count when every superseded key's
+    last recorded count (`supersededDeks()` carries `values` and
+    `countedAt`) is 0, that count was taken AFTER the key was superseded
+    (before, the key was still sealing), and no key is due to be destroyed.
+    A key that IS due is re-sealed and counted again in the pass that would
+    destroy it — the #391 rule, a key destroyed only on a zero taken in that
+    pass, is untouched, and a value written back under the key after its
+    zero (a stale copy flushed by some process) is moved then.
+  * THE DIRECTORY HAS A DATA-KEY INDEX (schema version 17,
+    `persistence/CLAUDE.md`): every writer records the keys an entry holds
+    values under in `sts_ldap_entries.dek_keys` (`directory_codec.js`'s
+    `dekKeysOf()`: the blob's key and each inner value's), triggers keep
+    `sts_ldap_dek_counts`, a re-seal reads only `dek_keys ?| <ids>`, and a
+    count reads the counters. Entries written before the column read NULL —
+    keys NOT KNOWN — and both jobs first catch the index up
+    (`store.index()`, the driver's `indexSealed()`: a page at a time through
+    a partial index, opened, yielding between pages, for at most
+    `INDEX_BUDGET_MS`, 10 s, per pass). Until it is complete the store
+    REFUSES a count (`STS-STORE-0080`) rather than answer it short, so the
+    re-encryption job re-seals what the index finds and destroys nothing,
+    and the count job records nothing.
 
 ### WHAT THE CONSOLE AND THE API SHOW AND DO (#391 P5)
 
@@ -6330,7 +6357,10 @@ forms go through one `dataKeysAction()` with FOUR acts (`ACTIONS`):
 * **A VALUE COUNT IS A JOB, NEVER A PAGE VIEW.** `countSealed()` is a pattern
   scan per key; `countAllSealed()` (postgres) is ONE pass per table that pulls
   every DEK id out with `regexp_matches()` and groups — a count of VALUES, so
-  a row holding two counts two. `keys.data-key-count` runs it daily and by
+  a row holding two counts two. The directory's part of both is a read of
+  `sts_ldap_dek_counts` since #623, never a walk; the other tables' LIKE and
+  regexp scans are still linear in those tables (`sts_minted` above all),
+  which is what the re-encryption pass's skip spares the hourly run. `keys.data-key-count` runs it daily and by
   hand and records each count ON THE KEY (`keystore.recordCounts()`: `values`
   and `countedAt` on the record and its row, merged newest-count-wins in
   `unionDekRows()` and `adoptDekRow()`), so every node draws the same figure.

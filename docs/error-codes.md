@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4341** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4342** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 92
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 49
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 79
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 80
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
@@ -387,6 +387,7 @@ Raised from: persistence/.
 | `STS-STORE-0077` | A block of sequence numbers could not be leased from the store; the next half-spent block asks again (#465). | — |
 | `STS-STORE-0078` | A postgres connection string (persistence.databaseUrl, the read or global database, or cell_convert's) was not dialled: its sslmode is disable or allow, or it is not a postgres:// URL, so it would or might connect in the clear. Every connection is TLS (#273). Fatal at persistence.start(). | — |
 | `STS-STORE-0079` | persistence.databaseTlsCaFile names a file that could not be read, or that holds no PEM certificate, so the database connection has no trust anchor anybody chose. Fatal at persistence.start(); the out-of-process tools that dial the database refuse the same way. | none — fatal at start |
+| `STS-STORE-0080` | What the directory holds under a data key was asked for while some entries, written before schema version 17, are not yet in its data-key index: the count is refused rather than given short, so no key is destroyed on it. The jobs index those entries a bounded batch per pass, once (#623). | none — the count job and the re-encryption job wait |
 
 ## STS-CLUSTER
 
