@@ -35,8 +35,21 @@
 //      index and paging no person at all.
 //   D. THE FIRST NAMES: `personNamesUpTo()` asks `keysUnder` (no `page`, no
 //      entry), `personNamesUpToAsync()` only asynchronously.
+//   E. THE CREDENTIAL CENSUS (#621): `/admin-api/users`' census of about
+//      5,000 names asked 5,000 synchronous round trips; `credentialCensus-
+//      Async()` asks none — `byKeys` a page of five hundred at a time, a
+//      `byName` only for a name not at `uid=<name>`, one question per
+//      identifier — and answers exactly what the synchronous census does,
+//      a copy held here and a delete made here included, each identifier
+//      shape resolved as `locateEntry()` resolves it.
+//   F. AN LDAP ADD ASKS FIRST (#621): its existence and one-entry-per-person
+//      questions are asked asynchronously before the body runs, which then
+//      asks neither synchronously; and an answer asked first is never older
+//      than this process — a name or a DN created here, or applied from
+//      another process, while the questions were out still refuses the
+//      add.
 //
-// A and the parent's checks run here; B–D run in a child that loads the
+// A and the parent's checks run here; B–F run in a child that loads the
 // directory as a windowed request worker (`tests/directory_window.js`'s
 // section H arrangement).
 // ===========================================================================
@@ -132,6 +145,11 @@ function countingBridge(rows, opts) {
     },
     queryAsync: function (name, args) {
       const value = tally(counts.async, name, answer(name, args));
+      // What happens while the answer is on its way (#621): the store
+      // changes after it answered, and this process hears of it.
+      if (typeof bridge.afterAnswer === 'function') {
+        bridge.afterAnswer(name, args);
+      }
       if (!options.delayMs) {
         return Promise.resolve(value);
       }
@@ -479,7 +497,341 @@ async function throughTheDirectory(t) {
           asked(bridge.counts.async) === 0,
           'D3. and handed the names asked already, asks the directory ' +
           'nothing more for them', JSON.stringify(bridge.counts));
+
+  // E. the credential census (#621).
+  await censusQuestions(t, ldap, w, rows, users, bridge);
+  // F. an LDAP add asks first.
+  await addQuestions(t, ldap, w, rows, users, bridge);
   log.debug('Leaving throughTheDirectory().');
+}
+
+// --- E. the credential census (#621) ---------------------------------------
+
+// What the census is handed besides the five thousand `p` names: a person
+// named otherwise (`cn=quill`, found by `byName`), a name nobody holds, and
+// the four identifier shapes `locateEntry()` resolves by what an entry
+// RECORDED.
+const IDENTIFIERS = {
+  uuid: 'urn:uuid:0f8fad5b-d9cb-469f-a165-70867728950e',
+  dn: 'CN=dave,O=Example Corp,C=US',
+  did: 'did:example:erin',
+  spiffe: 'spiffe://example.org/frank'
+};
+
+// Adds the census's people to the stand-in store: credentials on some of
+// the `p` people, and the five named above.
+function censusPeople(rows, users) {
+  log.debug('Entering censusPeople().');
+  const put = function (dn, attrs) {
+    rows.set('default\n' + dn.toLowerCase(), shared.row('default', dn,
+      Object.assign({ objectclass: ['inetOrgPerson'] }, attrs)));
+  };
+  for (let i = 0; i < 60; i++) {
+    const uid = 'p' + String(i).padStart(6, '0');
+    const r = rows.get('default\nuid=' + uid + ',' + users);
+    if (i % 2 === 0) {
+      r.attrs.userpassword = ['{SCRYPT}p' + i];
+    }
+    if (i % 3 === 0) {
+      r.attrs.stswebauthncredential = ['{"id":"k' + i + '"}'];
+    }
+    if (i % 5 === 0) {
+      r.attrs.ststotpcredential = ['sealed-' + i];
+      r.attrs.mail = [uid + '@example.com'];
+      r.attrs.stsmailverified = ['TRUE'];
+    }
+  }
+  // NOT a name the development seed gives anybody (it seeds a `carol`),
+  // so the only entry answering to it is this one, at `cn=`.
+  put('cn=quill,' + users, { cn: ['quill'], uid: ['quill'],
+                             userpassword: ['{SCRYPT}q'],
+                             ststotpcredential: ['sealed-quill'] });
+  put('cn=dave,' + users, { cn: ['dave'],
+                            x509subject: [IDENTIFIERS.dn],
+                            stswebauthncredential: ['{"id":"dave"}'] });
+  put('uid=erin-digest,' + users, { uid: ['erin-digest'],
+                                    didsubject: [IDENTIFIERS.did],
+                                    userpassword: ['{SCRYPT}e'] });
+  put('uid=frank-digest,' + users, { uid: ['frank-digest'],
+                                     spiffesubject: [IDENTIFIERS.spiffe] });
+  put('uid=gina,' + users, { uid: ['gina'],
+    entryuuid: [IDENTIFIERS.uuid.slice('urn:uuid:'.length)],
+    userpassword: ['{SCRYPT}g'] });
+  log.debug('Leaving censusPeople().');
+}
+
+async function censusQuestions(t, ldap, w, rows, users, bridge) {
+  log.debug('Entering censusQuestions().');
+  censusPeople(rows, users);
+  // THE NAMES THE USERS LIST HANDS OVER: the directory's first five
+  // thousand, as `directoryFirstNames()` asks them, and the rest.
+  const credentials = require('../common/credentials');
+  const first = await credentials.directoryFirstNames(5000);
+  const names = first.names.concat(['quill', 'nobody-here',
+    IDENTIFIERS.uuid, IDENTIFIERS.dn, IDENTIFIERS.did, IDENTIFIERS.spiffe]);
+  // A NEWER COPY HELD HERE, and a DELETE made here: the census must answer
+  // what this process holds, as `locateEntry()` does, not the store's row.
+  const held = ldap.existingUserEntry('p000011');
+  held.attributes.userpassword = ['{SCRYPT}changed-here'];
+  ldap.entries.delete('uid=p000013,' + users);
+  t.check(names.indexOf('p000011') >= 0 && names.indexOf('p000013') >= 0,
+          'E0. (precondition) the held and deleted people are on the list');
+
+  bridge.reset();
+  const counter = { pages: 0, rows: 0 };
+  const after = await turnsDuring(function () {
+    return ldap.credentialCensusAsync(names, counter);
+  });
+  const asyncCounts = JSON.parse(JSON.stringify(bridge.counts));
+  t.log.info('AFTER (#621): a census of ' + names.length + ' names asked ' +
+             asked(asyncCounts.sync) + ' synchronous and ' +
+             asked(asyncCounts.async) + ' asynchronous question(s): ' +
+             JSON.stringify(asyncCounts) + ', ' + after.turns + ' turn(s)');
+  t.check(asked(asyncCounts.sync) === 0,
+          'E1. THE CENSUS ASKS THE STORE NOTHING SYNCHRONOUSLY: ' +
+          names.length + ' names, no blocking round trip',
+          JSON.stringify(asyncCounts));
+  // A `byName` for each name that is not at `uid=<name>`: the `cn=`
+  // entries among the first names (quill, dave, the two teams), the name
+  // nobody holds and the person deleted here.
+  t.check(asked(asyncCounts.async, 'byKeys') <= Math.ceil(names.length /
+                                                          500) + 1 &&
+          asked(asyncCounts.async, 'byName') === counter.byName &&
+          counter.byName >= 3 && counter.byName <= 10 &&
+          asked(asyncCounts.async) <= Math.ceil(names.length / 500) + 15,
+          'E2. and about one asynchronous question per five hundred names: ' +
+          'byKeys pages, a byName only for a name not at uid=<name>, one ' +
+          'question per identifier', JSON.stringify({ counts: asyncCounts,
+            counter: counter }));
+  t.check(after.turns >= counter.pages - 1 && counter.pages >= 10,
+          'E3. giving the event loop back between pages', after.turns +
+          ' turn(s) for ' + counter.pages + ' page(s)');
+
+  // THE OLD PATH, ON THE SAME DATA: every name a `locateEntry()`.
+  bridge.reset();
+  const before = ldap.credentialCensus(names);
+  const syncCounts = JSON.parse(JSON.stringify(bridge.counts));
+  t.log.info('BEFORE: the synchronous census asked ' +
+             asked(syncCounts.sync) + ' synchronous question(s): ' +
+             JSON.stringify(syncCounts.sync));
+  t.check(asked(syncCounts.sync) >= 5000,
+          'E4. (the cost #621 removes) the synchronous census asks the ' +
+          'store once per person it does not hold',
+          String(asked(syncCounts.sync)));
+  // Compared name by name, and only the first difference printed: the
+  // whole answer is megabytes, and a detail that size loses the report's
+  // tail to the exiting child.
+  const differs = names.filter(function (name, i) {
+    return JSON.stringify(after.value[i]) !== JSON.stringify(before[i]);
+  });
+  t.check(after.value.length === before.length && differs.length === 0,
+          'E5. AND ANSWERS EXACTLY WHAT IT DID: every name\'s raw values ' +
+          'equal the synchronous census\'s', differs.length ? differs.length +
+          ' differ, first ' + differs[0] + ': ' + JSON.stringify([
+            after.value[names.indexOf(differs[0])],
+            before[names.indexOf(differs[0])]]) : names.length + ' alike');
+  const at = function (name) {
+    return after.value[names.indexOf(name)];
+  };
+  t.check(at('p000011') && at('p000011').password === true &&
+          at('p000013') === null && at('p000012') &&
+          at('p000012').password === true && at('p000001') &&
+          at('p000001').password === false,
+          'E6. the copy held here wins over the store\'s row, a delete made ' +
+          'here is nobody, and the store\'s rows are read',
+          JSON.stringify([at('p000011'), at('p000013'), at('p000012')]));
+  t.check(at('quill') && at('quill').password === true &&
+          at('quill').totp === 'sealed-quill' && at('nobody-here') === null,
+          'E7. a person named cn=quill is found by name, and a name nobody ' +
+          'holds is nobody', JSON.stringify([at('quill'),
+                                             at('nobody-here')]));
+  t.check(at(IDENTIFIERS.uuid) && at(IDENTIFIERS.uuid).password === true &&
+          at(IDENTIFIERS.dn) && at(IDENTIFIERS.dn).webauthn.length === 1 &&
+          at(IDENTIFIERS.did) && at(IDENTIFIERS.did).password === true &&
+          at(IDENTIFIERS.spiffe) !== null,
+          'E8. each identifier shape resolves to the entry that recorded it',
+          JSON.stringify(Object.keys(IDENTIFIERS).map(function (k) {
+            return at(IDENTIFIERS[k]);
+          })));
+  const located = [];
+  for (const key of ['quill', 'p000011', 'p000013', 'nobody-here']
+    .concat(Object.keys(IDENTIFIERS).map(function (k) {
+      return IDENTIFIERS[k];
+    }))) {
+    const one = await ldap.locateStoredAsync(key);
+    const two = ldap.locateEntry(key).stored;
+    located.push([key, one ? one.dn : null, two ? two.dn : null]);
+  }
+  t.check(located.every(function (one) {
+    return one[1] === one[2];
+  }), 'E9. locateStoredAsync() finds, for each shape, the entry ' +
+      'locateEntry() finds', JSON.stringify(located));
+
+  // THROUGH credentials.ts, as /admin-api/users and /admin-api/mfa ask it.
+  bridge.reset();
+  const facts = await credentials.factorCensusAsync(names.slice(0, 600));
+  t.check(asked(bridge.counts.sync) === 0 && facts.size === 600,
+          'E10. credentials.factorCensusAsync() asks nothing synchronously',
+          JSON.stringify(bridge.counts));
+  const factsBefore = credentials.factorCensus(names.slice(0, 600));
+  t.check(JSON.stringify(Array.from(facts.entries())) ===
+          JSON.stringify(Array.from(factsBefore.entries())),
+          'E11. and answers the facts factorCensus() answers',
+          facts.size + ' name(s)');
+
+  // A PERSON CHANGED HERE WHILE THEIR PAGE WAS BEING ASKED FOR: the store
+  // answered the page before the change, so the row is older than what
+  // this process holds by the time it arrives — and what it holds wins.
+  // Two people past the first names, whom nothing above has read (an entry
+  // read before may still be held, and is then never asked about).
+  let fired = false;
+  bridge.afterAnswer = function (name, args) {
+    if (name !== 'byKeys' ||
+        (args[1] || []).indexOf('uid=p004997,' + users) < 0) {
+      return;
+    }
+    bridge.afterAnswer = null;
+    fired = true;
+    const changed = ldap.existingUserEntry('p004997');
+    changed.attributes.userpassword = ['{SCRYPT}changed-meanwhile'];
+  };
+  const midway = await ldap.credentialCensusAsync(['p004997', 'p004998']);
+  bridge.afterAnswer = null;
+  t.check(fired && midway[0] && midway[0].password === true &&
+          midway[1] && midway[1].password === false &&
+          JSON.stringify(midway) === JSON.stringify(ldap.credentialCensus(
+            ['p004997', 'p004998'])),
+          'E12. an entry changed here while its page was asked for is ' +
+          'answered as this process now holds it', JSON.stringify({
+            fired: fired, midway: midway }));
+  log.debug('Leaving censusQuestions().');
+}
+
+// --- F. an LDAP add asks first (#621) ---------------------------------------
+
+// An add of a person, as the socket hands it to a worker.
+function addShape(dn, uid) {
+  log.debug('Entering addShape().');
+  log.debug('Leaving addShape().');
+  return { dn: dn, boundDn: '', channel: 'ldap', remoteAddress: '',
+           attributes: [{ type: 'objectClass', values: ['inetOrgPerson'] },
+                        { type: 'uid', values: [uid] },
+                        { type: 'cn', values: [uid] },
+                        { type: 'sn', values: ['Added'] }] };
+}
+
+async function addQuestions(t, ldap, w, rows, users, bridge) {
+  log.debug('Entering addQuestions().');
+  const add = function (dn, uid) {
+    return Promise.resolve(ldap.performOperation('add', addShape(dn, uid)));
+  };
+  bridge.reset();
+  const made = await add('uid=newbie,' + users, 'newbie');
+  const madeCounts = JSON.parse(JSON.stringify(bridge.counts));
+  t.log.info('AFTER (#621): an LDAP add asked ' + asked(madeCounts.sync) +
+             ' synchronous and ' + asked(madeCounts.async) +
+             ' asynchronous question(s): ' + JSON.stringify(madeCounts));
+  t.check(made && made.ok === true, 'F1. an LDAP add of a new person ' +
+          'succeeds', JSON.stringify(made));
+  // (`count` may be asked synchronously: `ldap.maxEntries`' reading of
+  // the store's count, at most once in ten seconds per realm.)
+  t.check(asked(madeCounts.sync, 'byKeys') === 0 &&
+          asked(madeCounts.sync, 'byName') === 0 &&
+          asked(madeCounts.async, 'byKeys') === 1 &&
+          asked(madeCounts.async, 'byName') === 1,
+          'F2. ASKED FIRST: its existence and one-entry-per-person ' +
+          'questions are one byKeys and one byName, asynchronous, and the ' +
+          'body asks neither synchronously', JSON.stringify(madeCounts));
+  bridge.reset();
+  const taken = await add('cn=other,' + users, 'quill');
+  t.check(taken && taken.ok === false &&
+          taken.errorName === 'EntryAlreadyExistsError' &&
+          asked(bridge.counts.sync, 'byName') === 0,
+          'F3. an add whose uid is quill\'s (held at cn=quill) is refused ' +
+          'by the answer asked first', JSON.stringify({ taken: taken,
+            counts: bridge.counts }));
+  bridge.reset();
+  const again = await add('uid=p000005,' + users, 'p000005');
+  t.check(again && again.ok === false &&
+          again.errorName === 'EntryAlreadyExistsError' &&
+          asked(bridge.counts.sync) === 0,
+          'F4. and an add of an entry the store holds is refused with ' +
+          'nothing asked synchronously', JSON.stringify({ again: again,
+            counts: bridge.counts }));
+
+  // THE ANSWER ASKED FIRST IS NEVER OLDER THAN THIS PROCESS: a person
+  // created here while the add's questions are out must refuse it.
+  const slow = countingBridge(rows, { delayMs: 50 });
+  w.attach(slow);
+  const pendingName = add('uid=racer-one-b,' + users, 'racer-one');
+  const pendingDn = add('uid=racer-two,' + users, 'racer-two');
+  const one = ldap.createUser('racer-one', { invent: false, origin: 'test' });
+  const two = ldap.createUser('racer-two', { invent: false, origin: 'test' });
+  const raced = await pendingName;
+  const racedDn = await pendingDn;
+  w.attach(bridge);
+  t.check(one && one.ok && raced && raced.ok === false &&
+          raced.errorName === 'EntryAlreadyExistsError',
+          'F5. A NAME TAKEN HERE WHILE THE ADD WAS ASKING refuses the add: ' +
+          'the clock moved and the body asked again',
+          JSON.stringify({ created: !!(one && one.ok), raced: raced,
+                           counts: slow.counts }));
+  t.check(two && two.ok && racedDn && racedDn.ok === false &&
+          racedDn.errorName === 'EntryAlreadyExistsError',
+          'F6. and A DN CREATED HERE WHILE IT WAS ASKING is not hidden by ' +
+          'the store\'s older absence', JSON.stringify({ created:
+            !!(two && two.ok), raced: racedDn }));
+
+  // AND NEVER OLDER THAN WHAT THIS PROCESS HAS APPLIED: another process
+  // commits a person after the store answered the add's question, and this
+  // one applies the row (`forgetEntry()`, as the change log does) before
+  // the answer arrives. The answer asked first is then stale, and must not
+  // be what the body believes — neither the window's slot for the key
+  // (`warmAsync()`), nor the name's resolution (`heldUserEntry()`).
+  const elsewhere = function (uid, when) {
+    log.debug('Entering elsewhere().');
+    const dn = 'uid=' + uid + ',' + users;
+    const key = dn.toLowerCase();
+    bridge.afterAnswer = function (name, args) {
+      if (!when(name, args)) {
+        return;
+      }
+      bridge.afterAnswer = null;
+      const made = shared.row('default', dn, { uid: [uid],
+        objectclass: ['inetOrgPerson'], cn: [uid], sn: ['Elsewhere'] });
+      rows.set('default\n' + key, made);
+      ldap.directoryHooks.forgetEntry('default', key,
+        { dn: dn, attributes: made.attrs, origin: 'test' });
+    };
+    log.debug('Leaving elsewhere().');
+  };
+  // F7: the DN itself, while `warmAsync()` asks `byKeys` about it.
+  elsewhere('racer-three', function (name, args) {
+    return name === 'byKeys' &&
+      (args[1] || []).indexOf('uid=racer-three,' + users) >= 0;
+  });
+  bridge.reset();
+  const warmed = await add('uid=racer-three,' + users, 'racer-three');
+  t.check(warmed && warmed.ok === false &&
+          warmed.errorName === 'EntryAlreadyExistsError',
+          'F7. A ROW APPLIED WHILE THE ADD WAS ASKING about its DN is not ' +
+          'hidden by the store\'s older absence in the window',
+          JSON.stringify({ warmed: warmed, counts: bridge.counts }));
+  // F8: a name, while `byName` is asked about it.
+  elsewhere('racer-four', function (name, args) {
+    return name === 'byName' && args[2] === 'racer-four';
+  });
+  bridge.reset();
+  const named = await add('uid=racer-four-b,' + users, 'racer-four');
+  t.check(named && named.ok === false &&
+          named.errorName === 'EntryAlreadyExistsError' &&
+          asked(bridge.counts.sync, 'byKeys') +
+            asked(bridge.counts.sync, 'byName') > 0,
+          'F8. and a NAME another process took while the add was asking ' +
+          'refuses it: the clock moved, and the body asked again',
+          JSON.stringify({ named: named, counts: bridge.counts }));
+  bridge.afterAnswer = null;
+  log.debug('Leaving addQuestions().');
 }
 
 async function childMain() {
@@ -551,8 +903,8 @@ function inChild(t, minimum) {
 async function run(t) {
   log.debug('Entering run().');
   await windowQuestions(t);
-  t.log.info('=== B–D. through the directory, as a windowed worker ===');
-  inChild(t, 15);
+  t.log.info('=== B–F. through the directory, as a windowed worker ===');
+  inChild(t, 36);
   log.debug('Leaving run().');
 }
 
@@ -564,6 +916,7 @@ module.exports = {
   name: 'directory_window_requests',
   describe: 'the requests that walked a windowed directory, counted (#616): ' +
             'the window\'s asynchronous questions, the directory page, an ' +
-            'LDAP search no index narrows, and the first names',
+            'LDAP search no index narrows, the first names, the credential ' +
+            'census and an LDAP add (#621)',
   run: run
 };

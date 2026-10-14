@@ -981,7 +981,9 @@ class Credentials {
   //
   //   * `credentialCensus(names)` — for each name, the RAW values of the
   //     credential attributes this file reads, off the entry it names; see
-  //     `factorCensus()` for what it replaced and why it is raw.
+  //     `factorCensus()` for what it replaced and why it is raw. And
+  //     `credentialCensusAsync(names)` (#621), the same answer with the
+  //     store read asynchronously, for `factorCensusAsync()`.
   //   * `applicationMatcher()` — a function that says whether a key names an
   //     application registered in this realm, built from one listing, for the
   //     people list's *an application is not a person* rule.
@@ -5356,10 +5358,7 @@ class Credentials {
   factorCensus(names) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering Credentials.factorCensus().');
-    const list = (names || []).map((name) => {
-      return String(name == null ? '' : name).trim();
-    });
-    const out = new Map();
+    const list = this.censusNames(names);
     const census = this.directoryHook('credentialCensus');
     let raws = null;
     if (census) {
@@ -5372,11 +5371,82 @@ class Credentials {
         raws = null;
       }
     }
+    const out = this.censusFacts(list, raws);
+    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+              ' name(s).');
+    return out;
+  }
+
+  // ===========================================================================
+  // THE CENSUS FOR A CALLER THAT CAN WAIT (#621, 2026-10-14).
+  //
+  // `GET /admin-api/users` and `/admin-api/mfa` asked `factorCensus()` for
+  // up to `factorScanLimit` names, and in a windowed process the directory
+  // answered each with a synchronous round trip to the store — 5,000 of them
+  // and a request worker frozen for 10 s on 8081 at 382,000 people. The
+  // directory's `credentialCensusAsync()` reads the same raw values for the
+  // same names, resolved by the same rule, a page at a time without holding
+  // the event loop (`ldap_server.js` argues it), and they are interpreted
+  // here by the SAME code (`censusFacts()`), so the two doors cannot give
+  // different facts. Where the directory offers no asynchronous census — a
+  // test's stub, an older `ldap_server.js` — this is `factorCensus()`. A
+  // census that FAILED (the store could not be read) is the synchronous
+  // census's failure: logged under STS-AUTHN-0293 and answered one person at
+  // a time.
+  // ===========================================================================
+  /**
+   * `factorCensus()`, with the directory asked asynchronously.
+   *
+   * @param names - the names, as the population lists them
+   * @returns a promise of a Map from each name (trimmed) to its facts
+   */
+  async factorCensusAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.factorCensusAsync().');
+    const census = this.directoryHook('credentialCensusAsync');
+    if (!census) {
+      log.debug('Leaving Credentials.factorCensusAsync(). No asynchronous ' +
+                'census; asked synchronously.');
+      return this.factorCensus(names);
+    }
+    const list = this.censusNames(names);
+    let raws = null;
+    try {
+      raws = await census(list);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0293') +
+                'credentials: the directory\'s credential census threw, so ' +
+                'each person is asked on their own: ' + e.message);
+      raws = null;
+    }
+    const out = this.censusFacts(list, raws);
+    log.debug('Leaving Credentials.factorCensusAsync(). ' + out.size +
+              ' name(s).');
+    return out;
+  }
+
+  // The names a census is asked about, as both doors trim them.
+  private censusNames(names) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.censusNames().');
+    log.debug('Leaving Credentials.censusNames().');
+    return (names || []).map((name) => {
+      return String(name == null ? '' : name).trim();
+    });
+  }
+
+  // The census's facts from the directory's raw values — or, where it gave
+  // none that fit, from `mechanismsFor()` one name at a time. Both doors'
+  // second half, so they interpret the values identically.
+  private censusFacts(list, raws) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.censusFacts().');
+    const out = new Map();
     if (!Array.isArray(raws) || raws.length !== list.length) {
       list.forEach((name) => {
         out.set(name, this.factsOf(this.mechanismsFor(name)));
       });
-      log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+      log.debug('Leaving Credentials.censusFacts(). ' + out.size +
                 ' name(s), one at a time.');
       return out;
     }
@@ -5384,7 +5454,7 @@ class Credentials {
     try {
       mailFactor = require('./mail_factor');
     } catch (e) {
-      log.debug('Caught in Credentials.factorCensus(): ' +
+      log.debug('Caught in Credentials.censusFacts(): ' +
                 ((e && e.message) || e));
       // Not held, for `mailFactorOf()`'s reason.
       mailFactor = null;
@@ -5392,7 +5462,7 @@ class Credentials {
     list.forEach((name, index) => {
       out.set(name, this.factsFromValues(raws[index], name, mailFactor));
     });
-    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+    log.debug('Leaving Credentials.censusFacts(). ' + out.size +
               ' name(s), in one pass.');
     return out;
   }
@@ -9631,6 +9701,7 @@ export = {
   directoryFirstNames: slot.forward('directoryFirstNames'),
   factorHolderRow: slot.forward('factorHolderRow'),
   factorCensus: slot.forward('factorCensus'),
+  factorCensusAsync: slot.forward('factorCensusAsync'),
   directoryFactorCounts: slot.forward('directoryFactorCounts'),
   directoryPeopleNamed: slot.forward('directoryPeopleNamed'),
   issueActivation: slot.forward('issueActivation'),

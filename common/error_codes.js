@@ -12768,6 +12768,14 @@ const CODES = [
       'sent; the search ends unavailable rather than answering as though ' +
       'the rest of the directory were empty.',
     spec: 'RFC 4511: unavailable (52)' },
+  { code: 'STS-LDAP-0142',
+    summary: 'An LDAP add asked the store its questions asynchronously ' +
+      'before its body ran (#621), and the body then threw something other ' +
+      'than a store it could not read (which keeps STS-LDAP-0130/0131 and ' +
+      'is answered unavailable). Thrown inside a promise, it would have ' +
+      'left the add without a result; it is answered operationsError ' +
+      'instead, and logged with the stack.',
+    spec: 'RFC 4511: operationsError (1)' },
   { code: 'STS-LDAP-0143',
     summary: 'An LDAP add or modify carrying a clear password was screened ' +
       'for a data breach (#622), which made it asynchronous, and its ' +
