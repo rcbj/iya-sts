@@ -25,8 +25,18 @@
 // approves on the code alone.
 //
 // THE STORE is `oauth2.deviceCodes`, per realm and persisted: the device
-// polls whichever node the balancer picks. `d|<device_code>` holds the
-// record and `u|<user_code>` the index a person's typing is looked up by.
+// polls whichever node the balancer picks. `d|<digest of the device_code>`
+// holds the record and `u|<digest of the user_code>` the index a person's
+// typing is looked up by. BOTH ARE DIGESTS (#614,
+// `crypto.credentialDigest()`), computed as a code is minted or presented,
+// and the record repeats neither code — it carries the two digests, which
+// are what its own keys are made of. The device code is a bearer value for
+// its lifetime and nothing here needs it back. The user code is the weaker
+// case and is hashed anyway: at about 34.6 bits its SHA-256 is invertible
+// offline by trying every code, so the digest keeps it out of a heap
+// snapshot or a replicated row as text but is NOT a secret against anybody
+// willing to enumerate — what bounds that attack is the code's short
+// lifetime and the signed-in click the approval page demands, as before.
 // Section 6.1: the user code is eight characters from twenty consonants
 // (BCDFGHJKLMNPQRSTVWXZ, about 34.6 bits), shown `XXXX-XXXX` and compared
 // with case and hyphens ignored; it lives `oauth2.deviceCodeLifetimeS`, and
@@ -164,9 +174,17 @@ class DeviceAuthorization {
     return out;
   }
 
+  // The digest a code is held under (#614). The user code is normalised
+  // first by the caller, so `abcd-efgh` and `ABCDEFGH` hash alike.
+  private static keyOf(code: Json): string {
+    helpers.log.debug("Entering DeviceAuthorization.keyOf().");
+    helpers.log.debug("Leaving DeviceAuthorization.keyOf().");
+    return stsCrypto.credentialDigest(String(code || ''));
+  }
+
   private save(record: Json): void {
     this.deps.log.debug("Entering DeviceAuthorization.save().");
-    codes.set('d|' + record.deviceCode, record);
+    codes.set('d|' + record.deviceKey, record);
     this.deps.log.debug("Leaving DeviceAuthorization.save().");
   }
 
@@ -179,23 +197,27 @@ class DeviceAuthorization {
    * @param clientName - its name, shown on the approval page
    * @param scope - the scope requested
    * @param dpopJkt - the DPoP key thumbprint the request was bound to, or ''
-   * @returns the new record
+   * @returns the new record, with `deviceCode` and `userCode` beside it for
+   *   the response — the stored record holds only their digests (#614)
    */
   create(clientId: string, clientName: string, scope: string,
          dpopJkt: string): Json {
     const { log, config, now } = this.deps;
     log.debug("Entering DeviceAuthorization.create(). " + clientId);
     let userCode = this.newUserCode();
-    for (let i = 0; i < 5 && codes.get('u|' + userCode); i++) {
+    for (let i = 0;
+         i < 5 && codes.get('u|' + DeviceAuthorization.keyOf(userCode));
+         i++) {
       userCode = this.newUserCode();
     }
     const lifetime = Number(config.value('oauth2.deviceCodeLifetimeS'));
+    // Stamped with the minting cell (#98 D10): a device polls the cell
+    // nearest IT, which relays to this one.
+    const deviceCode = cellLocator.stamp(stsCrypto.randomBytes(32)
+                                           .toString('base64url'));
     const record = {
-      // Stamped with the minting cell (#98 D10): a device polls the cell
-      // nearest IT, which relays to this one.
-      deviceCode: cellLocator.stamp(stsCrypto.randomBytes(32)
-                                      .toString('base64url')),
-      userCode: userCode, clientId: clientId,
+      deviceKey: DeviceAuthorization.keyOf(deviceCode),
+      userCodeKey: DeviceAuthorization.keyOf(userCode), clientId: clientId,
       clientName: clientName || clientId, scope: scope,
       dpopJkt: dpopJkt || '', state: 'pending', createdAt: now(),
       expiresAt: now() + lifetime * 1000,
@@ -203,9 +225,10 @@ class DeviceAuthorization {
       lastPolledAt: 0, username: '', approval: null
     };
     this.save(record);
-    codes.set('u|' + userCode, record.deviceCode);
+    codes.set('u|' + record.userCodeKey, record.deviceKey);
     log.debug("Leaving DeviceAuthorization.create().");
-    return record;
+    return Object.assign({}, record, { deviceCode: deviceCode,
+                                       userCode: userCode });
   }
 
   // The pending request a person's typed user code names, or null.
@@ -213,18 +236,23 @@ class DeviceAuthorization {
    * Finds the pending request a typed user code names.
    *
    * @param typed - the user code as typed
-   * @returns the pending record, or null
+   * @returns the pending record, with the normalised `userCode` the person
+   *   typed beside it for the page (the store holds only its digest), or
+   *   null
    */
   byUserCode(typed: Json): Json {
     const { log, now } = this.deps;
     log.debug("Entering DeviceAuthorization.byUserCode().");
-    const deviceCode = codes.get('u|' + DeviceAuthorization.normalize(typed));
-    const record = deviceCode ? codes.get('d|' + deviceCode) : null;
+    // Normalised, THEN hashed (#614): section 6.1's leniency is applied to
+    // what was typed, and the digest of the canonical form is the key.
+    const userCode = DeviceAuthorization.normalize(typed);
+    const deviceKey = codes.get('u|' + DeviceAuthorization.keyOf(userCode));
+    const record = deviceKey ? codes.get('d|' + deviceKey) : null;
     const live = record && record.state === 'pending' &&
                  record.expiresAt > now() ? record : null;
     log.debug("Leaving DeviceAuthorization.byUserCode(). " +
               (live ? 'Found.' : 'None.'));
-    return live;
+    return live ? Object.assign({}, live, { userCode: userCode }) : null;
   }
 
   // The person's answer on /portal/device, with what their session proved.
@@ -241,7 +269,10 @@ class DeviceAuthorization {
          approval: Json): Json {
     const { log, now } = this.deps;
     log.debug("Entering DeviceAuthorization.answer().");
-    const record = this.byUserCode(typed);
+    const found = this.byUserCode(typed);
+    // The stored record, not the copy carrying the typed code: what is
+    // saved back must hold only the digests (#614).
+    const record = found ? codes.get('d|' + found.deviceKey) : null;
     if (!record) {
       log.debug("Leaving DeviceAuthorization.answer(). None.");
       return { ok: false, why: 'no pending sign-in has that code; it may ' +
@@ -252,7 +283,7 @@ class DeviceAuthorization {
     record.approval = approve ? approval : null;
     record.finishedAt = now();
     this.save(record);
-    codes.delete('u|' + record.userCode);
+    codes.delete('u|' + record.userCodeKey);
     log.debug("Leaving DeviceAuthorization.answer(). " + record.state);
     return { ok: true, record: record };
   }
@@ -271,7 +302,8 @@ class DeviceAuthorization {
   poll(deviceCode: Json, clientId: Json): Json {
     const { log, now } = this.deps;
     log.debug("Entering DeviceAuthorization.poll().");
-    const record = codes.get('d|' + String(deviceCode || ''));
+    // Hashed as it is presented (#614).
+    const record = codes.get('d|' + DeviceAuthorization.keyOf(deviceCode));
     if (!record || record.clientId !== String(clientId || '')) {
       log.debug("Leaving DeviceAuthorization.poll(). Unknown.");
       return { state: 'unknown', record: null };
@@ -311,7 +343,9 @@ class DeviceAuthorization {
     const { log, claims, now } = this.deps;
     log.debug("Entering DeviceAuthorization.redeem().");
     const claimed: Json = await claims.claim({
-      scope: REDEEM_SCOPE, value: record.deviceCode,
+      // The digest: the claim hashes again on its own, and the record no
+      // longer holds the code (#614).
+      scope: REDEEM_SCOPE, value: record.deviceKey,
       ttlMs: Math.max(0, record.expiresAt - now()) + RETENTION_MS });
     if (!claimed.ok) {
       log.debug("Leaving DeviceAuthorization.redeem(). " + claimed.reason);
@@ -346,13 +380,13 @@ class DeviceAuthorization {
         row.state = 'expired';
         row.finishedAt = now();
         self.save(row);
-        gone.push('u|' + row.userCode);
+        gone.push('u|' + row.userCodeKey);
         expired++;
       } else if (row.state !== 'pending' &&
                  Number(row.finishedAt || row.redeemedAt || row.expiresAt) <
                    now() - RETENTION_MS) {
         gone.push(key);
-        gone.push('u|' + row.userCode);
+        gone.push('u|' + row.userCodeKey);
       }
     });
     gone.forEach(function (key: string): void {
