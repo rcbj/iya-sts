@@ -1579,6 +1579,8 @@ class RiscRegister {
       return [];
     }
     let row = register.get(accountId);
+    // True while `row` is one this write made and the register does not hold.
+    let fresh = false;
     // A RENAMED ACCOUNT KEEPS ITS ROW (2026-09-14). The register is keyed by
     // the name, and a rename arrives here as an update naming the NEW one; the
     // entry's subject is what says it is the row already held under the old
@@ -1619,8 +1621,9 @@ class RiscRegister {
         phone: this.valuesOf(deleted ? before : after,
                              PHONE_ATTRIBUTES)[0] || ''
       });
-      register.set(accountId, row);
-      this.trim();
+      // NOT YET IN THE REGISTER (#618 phase 2): whether it is kept is
+      // decided once the write has been read — see `keepsFreshRow()`.
+      fresh = true;
     }
     if (asked.issuer && !row.iss) {
       row.iss = String(asked.issuer);
@@ -1676,6 +1679,15 @@ class RiscRegister {
       this.identifierMoves(before, after).forEach((move) => {
         this.releaseIdentifier(row, move.from, move.format);
       });
+    }
+    if (fresh) {
+      if (!this.keepsFreshRow(row, acts)) {
+        log.debug("Leaving RiscRegister.observe(). Nothing RISC has a word " +
+                  "for, and nothing for the register to remember.");
+        return [];
+      }
+      register.set(accountId, row);
+      this.trim();
     }
     if (!acts.length) {
       this.followEntry(row, deleted, after);
@@ -2239,6 +2251,43 @@ class RiscRegister {
   // identifier events above move them too, but only for the value each
   // names; a write that removed the first of two addresses leaves the second
   // as the one the account is known by, and only the entry says so.
+  // ---------------------------------------------------------------------------
+  // A ROW A DIRECTORY WRITE WOULD MAKE, AND WHETHER IT IS WORTH KEEPING
+  // (#618 phase 2, 2026-10-14).
+  //
+  // `observe()` made a row for EVERY account any write touched, so a bulk
+  // load wrote one blank row per person created and — past
+  // `risc.maxAccountsTracked` — journalled the eviction of the oldest: about
+  // 2.3 of the 9.7 change-log rows each LDAP add cost on 8081, each sealed,
+  // inserted, pulled and applied by every other process, for a register
+  // that holds the last two hundred accounts anyway.
+  //
+  // **A ROW IS KEPT WHEN IT SAYS SOMETHING AN ABSENT ROW DOES NOT.** Every
+  // reader answers an absent row with the row's defaults — `optOutOf()` says
+  // `opt-in`, `optOutApplies()` says it applies, `get()` says null and the
+  // next write that matters makes the row then, from that write's own
+  // snapshot. So a fresh row is kept when the write:
+  //   * produced an act (an account created disabled, a purge, an
+  //     identifier moved or recycled, recovery information changed) — the
+  //     row is where its state and its audit-visible notes live. That
+  //     includes every write that RELEASES an identifier, which
+  //     `identifier-recycled` is read from: a purge is an act, and so is
+  //     every move `identifierMoves()` releases;
+  //   * named a SERVICE ACCOUNT — the opt-out gate reads that off the row,
+  //     and an absent row would offer its holder an opt-out it has none of.
+  // What is given up is `/admin/risc-accounts` listing accounts nothing has
+  // happened to, and a hand-sent event naming such an account's ADDRESS
+  // being matched to it rather than filed under the address — the same
+  // answer every account past the register's cap already gets.
+  // ---------------------------------------------------------------------------
+  private keepsFreshRow(row: RiscRow, acts: RiscAct[]): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.keepsFreshRow().");
+    const keep = acts.length > 0 || row.serviceAccount === true;
+    log.debug("Leaving RiscRegister.keepsFreshRow(). " + keep);
+    return keep;
+  }
+
   private followEntry(row: RiscRow, deleted: boolean,
                       after?: Record<string, any>): void {
     const { log } = this.deps;
