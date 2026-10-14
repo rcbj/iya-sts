@@ -31,9 +31,10 @@
 //      test may build a schema in (an owner): rows written before the
 //      counters exist are counted once, then eight concurrent connections
 //      insert, upsert, update, delete, roll back and roll back to a
-//      savepoint, and every counter equals a fresh count with no delta left
-//      behind. Skipped (and said) otherwise; the in-process suite has no
-//      database.
+//      savepoint, and every counter — its shards summed (#630) — equals a
+//      fresh count with no delta left behind, the folds landed in more than
+//      one shard, and `count()` reads the sum. Skipped (and said)
+//      otherwise; the in-process suite has no database.
 // ===========================================================================
 
 const postgres = require('../persistence/persistence_postgres');
@@ -340,8 +341,9 @@ async function realDatabase(t) {
       const wrong = await admin.query(
         'SELECT coalesce(c.base_key, x.base_key) AS base, ' +
         'coalesce(c.attribute, x.attribute) AS attr, c.n AS kept, ' +
-        'x.n AS counted FROM (SELECT realm, base_key, attribute, n FROM ' +
-        'sts_ldap_counts WHERE n <> 0) AS c FULL JOIN (SELECT e.realm, ' +
+        'x.n AS counted FROM (SELECT realm, base_key, attribute, sum(n) ' +
+        'AS n FROM sts_ldap_counts GROUP BY 1, 2, 3 HAVING sum(n) <> 0) ' +
+        'AS c FULL JOIN (SELECT e.realm, ' +
         'b.base_key, a.attribute, count(*) AS n FROM sts_ldap_entries AS e ' +
         'CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key) AS ' +
         'b(base_key) CROSS JOIN LATERAL (SELECT \'\' AS attribute UNION ALL ' +
@@ -428,6 +430,22 @@ async function realDatabase(t) {
     }));
     await verify('D3. after eight concurrent connections wrote, deleted, ' +
                  'upserted, rolled back');
+    // THE SHARDS (#630): eight connections folded into the shards of their
+    // own process ids, and what a reader asks is their sum.
+    const spread = await admin.query(
+      'SELECT count(DISTINCT shard)::int AS shards, max(shard)::int AS top ' +
+      'FROM sts_ldap_counts');
+    t.check(spread.rows[0].shards > 1 &&
+            spread.rows[0].top < postgres.COUNT_SHARDS,
+            'D3a. the folds landed in more than one shard, each below ' +
+            postgres.COUNT_SHARDS, JSON.stringify(spread.rows[0]));
+    const fresh = await admin.query(
+      'SELECT count(*)::int AS n FROM sts_ldap_entries WHERE realm = ' +
+      '\'default\' AND parent_key = $1', [USERS]);
+    const read = await admin.query(queries.count('default', USERS).text,
+                                   queries.count('default', USERS).values);
+    t.equal(Number(read.rows[0].n), fresh.rows[0].n,
+            'D3b. count() — the summed shards — equals a fresh count');
     await admin.query('DELETE FROM sts_ldap_entries WHERE realm = \'acme\'');
     await verify('D4. after a realm\'s rows were deleted');
   } finally {

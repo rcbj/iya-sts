@@ -188,6 +188,13 @@ function poolMax(workers) {
  * The LISTEN/NOTIFY channel a committed change is announced on.
  */
 const CHANNEL = 'sts_ldap_change';
+// THE NUDGE'S WINDOW (#630): at most one `pg_notify` per process this often,
+// sent after the commits it announces. 25 ms is inside the ticket's 20–50:
+// short beside the poll it shortens (`persistence.pollInterval`, 5 s), and
+// long enough that a busy process's notifies — each of which takes the
+// server's notify-queue lock through a WAL flush — fall from one per
+// transaction to forty a second at most.
+const NOTIFY_COALESCE_MS = 25;
 // How many change-log rows go in one INSERT. Four bind parameters a row, and
 // the protocol's limit is 65,535, so 5,000 leaves room and still makes a large
 // flush a handful of statements. See recordChanges().
@@ -230,7 +237,11 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // and `sts_ldap_dek_counts`, `sts_ldap_dek_deltas` and the triggers that
 // keep them (#623): which data keys each entry holds values under, so the
 // re-encryption job and the data-key count never open the directory.
-const SCHEMA_VERSION = 17;
+// 19 SINCE 2026-10-14 (#630, after #618 phase 2's 18): the counters SHARDED
+// (`shard` in both counter tables' keys, folded by the `_sharded` routines),
+// `sts_minted_written_brin` in place of the btree `sts_minted_written`, and
+// the storage parameters of SCHEMA_UPGRADES.
+const SCHEMA_VERSION = 19;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -466,10 +477,15 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_dek_unknown', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_dek_unknown ON ' +
   'sts_ldap_entries (realm, dn_key) WHERE dek_keys IS NULL' },
+  // SHARDED SINCE #630 (schema version 19): `shard` in the key, as
+  // `sts_ldap_counts` below — one row per data key per shard, and a reader
+  // sums them.
   { name: 'sts_ldap_dek_counts', statement:
   'CREATE TABLE IF NOT EXISTS sts_ldap_dek_counts (' +
-  '  dek_id text   PRIMARY KEY,' +
-  '  n      bigint NOT NULL DEFAULT 0)' },
+  '  dek_id text     NOT NULL,' +
+  '  shard  smallint NOT NULL DEFAULT 0,' +
+  '  n      bigint   NOT NULL DEFAULT 0,' +
+  '  PRIMARY KEY (dek_id, shard))' },
   { name: 'sts_ldap_dek_deltas', statement:
   'CREATE TABLE IF NOT EXISTS sts_ldap_dek_deltas (' +
   '  txid   xid8    NOT NULL DEFAULT pg_current_xact_id(),' +
@@ -504,14 +520,29 @@ const SCHEMA_OBJECTS = [
   // `sts_ldap_counts` at COMMIT — one statement, in key order, after every
   // entry lock is held: the counter rows are locked only for the commit's
   // tail. A committed transaction leaves no delta behind.
+  //
+  // AND THE TAIL IS SHARDED (#630, schema version 19). Every add still
+  // updated the same four counter rows (the realm's '', `dc=…`, `ou=users`,
+  // and `userpassword` under them) and one data-key row at its COMMIT, so
+  // once the notify queue's lock was gone those rows were the ceiling: two
+  // commits of one realm queued on each other's row lock
+  // (`Lock:transactionid`, 4.4 backends at 104 adds/s in a replay; 326 with
+  // sixteen shards). So `shard` is part of the key and the fold adds to
+  // shard `pg_backend_pid() % COUNT_SHARDS` — two connections meet on a row
+  // only when their process ids fall in one shard — and every reader SUMS a
+  // key's shards (`directory_queries.count()`, `countHolding()`,
+  // `directoryDekCounts()`). One shard's `n` may be negative (an entry added
+  // through one connection and deleted through another); only the sum means
+  // anything, and it is what is read.
   // -------------------------------------------------------------------------
   { name: 'sts_ldap_counts', statement:
   'CREATE TABLE IF NOT EXISTS sts_ldap_counts (' +
-  '  realm     text   NOT NULL,' +
-  '  base_key  text   NOT NULL,' +
-  '  attribute text   NOT NULL,' +
-  '  n         bigint NOT NULL DEFAULT 0,' +
-  '  PRIMARY KEY (realm, base_key, attribute))' },
+  '  realm     text     NOT NULL,' +
+  '  base_key  text     NOT NULL,' +
+  '  attribute text     NOT NULL,' +
+  '  shard     smallint NOT NULL DEFAULT 0,' +
+  '  n         bigint   NOT NULL DEFAULT 0,' +
+  '  PRIMARY KEY (realm, base_key, attribute, shard))' },
   { name: 'sts_ldap_count_deltas', statement:
   'CREATE TABLE IF NOT EXISTS sts_ldap_count_deltas (' +
   '  txid       xid8    NOT NULL DEFAULT pg_current_xact_id(),' +
@@ -595,8 +626,24 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_minted_handle', statement:
   'CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, ' +
   'realm)' },
-  { name: 'sts_minted_written', statement:
-  'CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at)' },
+  // `written_at` FOR THE SWEEPS, AS A BRIN (#630, schema version 19), where
+  // it was a btree (`sts_minted_written`). Nothing on a request reads it —
+  // only `purgeTombstones()`, `purgeMinted()` and `purgeExpiredMinted()`'s
+  // 'orphan' and 'stale' batches — and every upsert sets `written_at =
+  // now()`, so a btree on it made EVERY update of this, the busiest table,
+  // a non-HOT update: a new index entry in all four indexes and a new heap
+  // page. 2.2 updates an add, 0% HOT on 8081. A BRIN is a SUMMARIZING index,
+  // which PostgreSQL 16 and later leave out of the HOT decision, so with
+  // the table's fillfactor at 80 (SCHEMA_UPGRADES) an update of a row stays
+  // on its page: 99% HOT in the replay, and about nine fewer WAL records an
+  // add. What the sweeps give up: a range's summary only WIDENS as its rows
+  // are rewritten, so on a churned table `written_at < x` reads most ranges
+  // and the sweep tends towards a scan of the table — off the request path,
+  // in batches, on the scheduler. `autosummarize` so a filled range is
+  // summarised by autovacuum without waiting for a VACUUM.
+  { name: 'sts_minted_written_brin', statement:
+  'CREATE INDEX IF NOT EXISTS sts_minted_written_brin ON sts_minted USING ' +
+  'brin (written_at) WITH (autosummarize = on)' },
   // `expires_at` (#333, schema version 12) IS THE RECORD'S OWN EXPIRY, in
   // epoch milliseconds, as its store's `expiresAt` hook answered it — NULL
   // for a record that does not expire, and for a tombstone. A restore reads
@@ -1226,7 +1273,125 @@ const SCHEMA_COLUMNS = [
   // it or the entry is next written.
   { table: 'sts_ldap_entries', column: 'dek_keys', statement:
   'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.dek_keys }
+  LDAP_GENERATED.dek_keys },
+  // The counters' shard (#630, schema version 19). An existing row gets 0:
+  // what it held is shard 0's, and the sums are unchanged. The key that
+  // takes it in is SCHEMA_UPGRADES' (`*_shard_key`).
+  { table: 'sts_ldap_counts', column: 'shard', statement:
+  'ALTER TABLE sts_ldap_counts ADD COLUMN IF NOT EXISTS shard smallint NOT ' +
+  'NULL DEFAULT 0' },
+  { table: 'sts_ldap_dek_counts', column: 'shard', statement:
+  'ALTER TABLE sts_ldap_dek_counts ADD COLUMN IF NOT EXISTS shard smallint ' +
+  'NOT NULL DEFAULT 0' }
+];
+
+// ---------------------------------------------------------------------------
+// WHAT A STORE BUILT BY AN EARLIER VERSION NEEDS DONE TO IT BEYOND A MISSING
+// OBJECT OR COLUMN (#630, schema version 19): a primary key that takes in a
+// new column, routines replaced under new names, an index retired, and
+// storage parameters. Each step is `{ name, table, when, statements,
+// advisory? }`: `when` is a boolean SQL expression, true while the step is
+// still owed, probed for every step in one query, so a store already level
+// — one `postgres/schema.sql` built or upgraded — issues none of it. Run
+// after the columns (a key over `shard` needs the column) and before the
+// routines (the old fold triggers go before the new ones arrive), in the
+// one transaction of open(), so no other connection ever sees a store with
+// both folds or neither.
+//
+// A REQUIRED step owed to a role that may not take it fails the open with
+// STS-STORE-0029, as a missing object does: the counts would be wrong. An
+// ADVISORY step (`advisory: true` — the storage parameters and the retired
+// btree) is a cost and never a wrong answer, so a role that does not own
+// the table is told (STS-STORE-0083) and the open goes on. The script
+// carries every statement and every condition; `tests/postgres_schema.js`
+// holds the two together.
+// ---------------------------------------------------------------------------
+// Whether a table's primary key holds `shard`. No Entering/Leaving pair: it
+// builds statement text at load, where this module has no logger.
+const KEY_LACKS_SHARD = function (table) {
+  return 'NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_attribute a ON ' +
+    'a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey) WHERE ' +
+    'i.indrelid = to_regclass(\'' + table + '\') AND i.indisprimary AND ' +
+    'a.attname = \'shard\')';
+};
+// Whether a table's storage parameters lack any of `options` (`name=value`,
+// as `pg_class.reloptions` spells them). Load-time text, as above.
+const RELOPTIONS_LACK = function (table, options) {
+  return 'NOT coalesce((SELECT c.reloptions FROM pg_class c WHERE c.oid = ' +
+    'to_regclass(\'' + table + '\')), \'{}\'::text[]) @> ARRAY[' +
+    options.map(function (one) {
+      return '\'' + one + '\'';
+    }).join(', ') + ']::text[]';
+};
+/**
+ * The upgrades a store from an earlier schema version is owed beyond a
+ * missing object or column, each `{ name, table, when, statements,
+ * advisory? }`, probed by `when` and run where it is true.
+ */
+const SCHEMA_UPGRADES = [
+  // The counters' keys take in `shard` (#630). Two statements, as the
+  // script's DO block runs them: the new key takes the old one's name.
+  { name: 'sts_ldap_counts_shard_key', table: 'sts_ldap_counts',
+    when: KEY_LACKS_SHARD('sts_ldap_counts'), statements: [
+      'ALTER TABLE sts_ldap_counts DROP CONSTRAINT sts_ldap_counts_pkey',
+      'ALTER TABLE sts_ldap_counts ADD PRIMARY KEY (realm, base_key, ' +
+      'attribute, shard)'] },
+  { name: 'sts_ldap_dek_counts_shard_key', table: 'sts_ldap_dek_counts',
+    when: KEY_LACKS_SHARD('sts_ldap_dek_counts'), statements: [
+      'ALTER TABLE sts_ldap_dek_counts DROP CONSTRAINT ' +
+      'sts_ldap_dek_counts_pkey',
+      'ALTER TABLE sts_ldap_dek_counts ADD PRIMARY KEY (dek_id, shard)'] },
+  // The unsharded folds (#618, #623), replaced by the `_sharded` routines:
+  // left in place, each would fold a transaction's deltas into a key the
+  // table no longer has, or race the new one for them.
+  { name: 'sts_ldap_count_deltas_fold', table: 'sts_ldap_count_deltas',
+    when: 'EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = ' +
+          'to_regclass(\'sts_ldap_count_deltas\') AND t.tgname = ' +
+          '\'sts_ldap_count_deltas_fold\')', statements: [
+      'DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON ' +
+      'sts_ldap_count_deltas'] },
+  { name: 'sts_ldap_count_fold', table: 'sts_ldap_count_deltas',
+    when: 'to_regprocedure(\'sts_ldap_count_fold()\') IS NOT NULL',
+    statements: ['DROP FUNCTION IF EXISTS sts_ldap_count_fold()'] },
+  { name: 'sts_ldap_dek_deltas_fold', table: 'sts_ldap_dek_deltas',
+    when: 'EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgrelid = ' +
+          'to_regclass(\'sts_ldap_dek_deltas\') AND t.tgname = ' +
+          '\'sts_ldap_dek_deltas_fold\')', statements: [
+      'DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold ON ' +
+      'sts_ldap_dek_deltas'] },
+  { name: 'sts_ldap_dek_fold', table: 'sts_ldap_dek_deltas',
+    when: 'to_regprocedure(\'sts_ldap_dek_fold()\') IS NOT NULL',
+    statements: ['DROP FUNCTION IF EXISTS sts_ldap_dek_fold()'] },
+  // The btree the BRIN replaced (`sts_minted_written_brin` above): while it
+  // is there, no update of `sts_minted` is HOT.
+  { name: 'sts_minted_written', table: 'sts_minted', advisory: true,
+    when: 'to_regclass(\'sts_minted_written\') IS NOT NULL',
+    statements: ['DROP INDEX IF EXISTS sts_minted_written'] },
+  // Room on each page for a row's next version, so an update stays HOT:
+  // `sts_minted` is upserted about twice an add and its rows are rewritten
+  // in place. Applies to pages written from now on.
+  { name: 'sts_minted_fillfactor', table: 'sts_minted', advisory: true,
+    when: RELOPTIONS_LACK('sts_minted', ['fillfactor=80']), statements: [
+      'ALTER TABLE sts_minted SET (fillfactor=80)'] },
+  // THE CHANGE LOG'S AUTOVACUUM: the trim deletes its tail continuously,
+  // and at the default 20% a vacuum waited for hundreds of thousands of
+  // dead rows (287,263 on 8081) and then sat in `VacuumDelay` at the
+  // default cost limit. 2% and ten times the limit.
+  { name: 'sts_changes_autovacuum', table: 'sts_changes', advisory: true,
+    when: RELOPTIONS_LACK('sts_changes', [
+      'autovacuum_vacuum_scale_factor=0.02',
+      'autovacuum_vacuum_cost_limit=2000']), statements: [
+      'ALTER TABLE sts_changes SET (autovacuum_vacuum_scale_factor=0.02, ' +
+      'autovacuum_vacuum_cost_limit=2000)'] },
+  // THE DIRECTORY'S INSERT VACUUM: an insert-only load is vacuumed (its
+  // pages set all-visible, its GIN pending lists cleaned) every 20% of the
+  // table by default — about 600,000 inserts at 2.9M entries. 1%.
+  { name: 'sts_ldap_entries_autovacuum', table: 'sts_ldap_entries',
+    advisory: true,
+    when: RELOPTIONS_LACK('sts_ldap_entries', [
+      'autovacuum_vacuum_insert_scale_factor=0.01']), statements: [
+      'ALTER TABLE sts_ldap_entries SET ' +
+      '(autovacuum_vacuum_insert_scale_factor=0.01)'] }
 ];
 
 // THE STATEMENTS ALONE, which is what this module exported before the pairing
@@ -1257,8 +1422,10 @@ const SCHEMA =
 //     deltas; the transaction's first delta also appends the one row whose
 //     `fold` arms the commit-time fold. The count over a TRANSITION table is
 //     of the statement's own rows, never the directory's.
-//   * `sts_ldap_count_fold()`: at COMMIT, the transaction's deltas deleted
-//     and added to the counters, expanded to every base, in key order.
+//   * `sts_ldap_count_fold_sharded()`: at COMMIT, the transaction's deltas
+//     deleted and added to the counters, expanded to every base, in key
+//     order, into this connection's shard (#630; `sts_ldap_count_fold()`
+//     until then, without the shard).
 //   * `sts_ldap_count_truncate()`: a TRUNCATE (an owner's; the service's role
 //     has none) fires no row trigger, so it empties the counters too.
 //
@@ -1307,9 +1474,21 @@ const COUNT_NOTE_FUNCTION =
   'RETURN NULL; ' +
   'END $$';
 
+// THE SHARD A FOLD ADDS TO (#630): this connection's, by its server
+// process id. See `sts_ldap_counts` in SCHEMA_OBJECTS. Sixteen, the
+// replay's figure: a busy node opens a few tens of connections, and two
+// committing at one instant meet on a row one time in sixteen.
+const COUNT_SHARDS = 16;
+const SHARD_OF_THIS_CONNECTION =
+  '(pg_backend_pid() % ' + COUNT_SHARDS + ')::smallint';
+
+// The folds under NAMES OF THEIR OWN since #630, the shard in the key: the
+// routines are probed by name, so a new body under `sts_ldap_count_fold`
+// would never reach a store that has the old one — whose ON CONFLICT names a
+// key the table no longer has. The old names are SCHEMA_UPGRADES' to drop.
 const COUNT_FOLD_FUNCTION =
-  'CREATE OR REPLACE FUNCTION sts_ldap_count_fold() RETURNS trigger ' +
-  'LANGUAGE plpgsql AS $$ ' +
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_fold_sharded() RETURNS ' +
+  'trigger LANGUAGE plpgsql AS $$ ' +
   'BEGIN ' +
   'WITH folded AS (DELETE FROM sts_ldap_count_deltas WHERE txid = ' +
   'pg_current_xact_id() RETURNING realm, parent_key, n, holding), ' +
@@ -1317,12 +1496,13 @@ const COUNT_FOLD_FUNCTION =
   'holding FROM folded AS f CROSS JOIN LATERAL ' +
   'sts_ldap_count_bases(f.parent_key) AS b(base_key) WHERE f.n <> 0 OR ' +
   'f.holding <> 0 GROUP BY f.realm, b.base_key) ' +
-  'INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, n) ' +
-  'SELECT realm, base_key, attribute, n FROM (' +
+  'INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, shard, ' +
+  'n) SELECT realm, base_key, attribute, ' + SHARD_OF_THIS_CONNECTION +
+  ', n FROM (' +
   'SELECT realm, base_key, \'\' AS attribute, n FROM bases WHERE n <> 0 ' +
   'UNION ALL SELECT realm, base_key, \'userpassword\', holding FROM bases ' +
   'WHERE holding <> 0) AS d ORDER BY realm, base_key, attribute ' +
-  'ON CONFLICT (realm, base_key, attribute) DO UPDATE SET n = c.n + ' +
+  'ON CONFLICT (realm, base_key, attribute, shard) DO UPDATE SET n = c.n + ' +
   'EXCLUDED.n; ' +
   'RETURN NULL; ' +
   'END $$';
@@ -1392,16 +1572,18 @@ const DEK_NOTE_FUNCTION =
   'RETURN NULL; ' +
   'END $$';
 
+// Sharded and renamed for COUNT_FOLD_FUNCTION's reasons (#630).
 const DEK_FOLD_FUNCTION =
-  'CREATE OR REPLACE FUNCTION sts_ldap_dek_fold() RETURNS trigger ' +
+  'CREATE OR REPLACE FUNCTION sts_ldap_dek_fold_sharded() RETURNS trigger ' +
   'LANGUAGE plpgsql AS $$ ' +
   'BEGIN ' +
   'WITH folded AS (DELETE FROM sts_ldap_dek_deltas WHERE txid = ' +
   'pg_current_xact_id() RETURNING dek_id, n) ' +
-  'INSERT INTO sts_ldap_dek_counts AS c (dek_id, n) ' +
-  'SELECT dek_id, sum(n) FROM folded WHERE dek_id <> \'\' GROUP BY dek_id ' +
+  'INSERT INTO sts_ldap_dek_counts AS c (dek_id, shard, n) ' +
+  'SELECT dek_id, ' + SHARD_OF_THIS_CONNECTION + ', sum(n) FROM folded ' +
+  'WHERE dek_id <> \'\' GROUP BY dek_id ' +
   'HAVING sum(n) <> 0 ORDER BY dek_id ' +
-  'ON CONFLICT (dek_id) DO UPDATE SET n = c.n + EXCLUDED.n; ' +
+  'ON CONFLICT (dek_id, shard) DO UPDATE SET n = c.n + EXCLUDED.n; ' +
   'RETURN NULL; ' +
   'END $$';
 
@@ -1426,13 +1608,13 @@ const SCHEMA_ROUTINES = [
     statement: COUNT_BASES_FUNCTION },
   { kind: 'function', name: 'sts_ldap_count_note',
     statement: COUNT_NOTE_FUNCTION },
-  { kind: 'function', name: 'sts_ldap_count_fold',
+  { kind: 'function', name: 'sts_ldap_count_fold_sharded',
     statement: COUNT_FOLD_FUNCTION },
   { kind: 'function', name: 'sts_ldap_count_truncate',
     statement: COUNT_TRUNCATE_FUNCTION },
   { kind: 'function', name: 'sts_ldap_dek_note',
     statement: DEK_NOTE_FUNCTION },
-  { kind: 'function', name: 'sts_ldap_dek_fold',
+  { kind: 'function', name: 'sts_ldap_dek_fold_sharded',
     statement: DEK_FOLD_FUNCTION },
   { kind: 'function', name: 'sts_ldap_dek_truncate',
     statement: DEK_TRUNCATE_FUNCTION },
@@ -1456,11 +1638,11 @@ const SCHEMA_ROUTINES = [
     'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_truncate AFTER ' +
     'TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION ' +
     'sts_ldap_count_truncate()' },
-  { kind: 'trigger', name: 'sts_ldap_count_deltas_fold',
+  { kind: 'trigger', name: 'sts_ldap_count_deltas_fold_sharded',
     table: 'sts_ldap_count_deltas', statement:
-    'CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold AFTER INSERT ON ' +
-    'sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ' +
-    '(NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold()' },
+    'CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold_sharded AFTER ' +
+    'INSERT ON sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ' +
+    'ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold_sharded()' },
   { kind: 'trigger', name: 'sts_ldap_entries_dek_insert', counts: 'deks',
     table: 'sts_ldap_entries', statement:
     'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_insert AFTER INSERT ' +
@@ -1481,11 +1663,11 @@ const SCHEMA_ROUTINES = [
     'CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_truncate AFTER ' +
     'TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION ' +
     'sts_ldap_dek_truncate()' },
-  { kind: 'trigger', name: 'sts_ldap_dek_deltas_fold', counts: 'deks',
-    table: 'sts_ldap_dek_deltas', statement:
-    'CREATE CONSTRAINT TRIGGER sts_ldap_dek_deltas_fold AFTER INSERT ON ' +
-    'sts_ldap_dek_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ' +
-    '(NEW.fold) EXECUTE FUNCTION sts_ldap_dek_fold()' }
+  { kind: 'trigger', name: 'sts_ldap_dek_deltas_fold_sharded',
+    counts: 'deks', table: 'sts_ldap_dek_deltas', statement:
+    'CREATE CONSTRAINT TRIGGER sts_ldap_dek_deltas_fold_sharded AFTER ' +
+    'INSERT ON sts_ldap_dek_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ' +
+    'ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_dek_fold_sharded()' }
 ];
 
 // ---------------------------------------------------------------------------
@@ -2416,9 +2598,11 @@ function create(options) {
           'STS-STORE-0080');
       }
       return maintenanceQuery('the data-key count',
-        ids ? 'SELECT dek_id, n FROM sts_ldap_dek_counts WHERE dek_id = ' +
-              'ANY($1::text[])'
-            : 'SELECT dek_id, n FROM sts_ldap_dek_counts',
+        // A key's shards SUMMED (#630): one shard alone is not a count.
+        ids ? 'SELECT dek_id, sum(n) AS n FROM sts_ldap_dek_counts WHERE ' +
+              'dek_id = ANY($1::text[]) GROUP BY dek_id'
+            : 'SELECT dek_id, sum(n) AS n FROM sts_ldap_dek_counts GROUP BY ' +
+              'dek_id',
         ids ? [ids] : []);
     }).then(function (r) {
       const counts = {};
@@ -3084,9 +3268,22 @@ function create(options) {
   // that matters — a committed change with no log entry is a change no other
   // process will ever hear about.
   //
-  // The NOTIFY goes out in the same transaction too. Postgres holds notifies
-  // until commit by definition, so a rolled-back transaction wakes nobody,
-  // which is exactly right and costs nothing to arrange.
+  // **THE NOTIFY GOES OUT AFTER THE COMMIT, AND AT MOST ONE A WINDOW
+  // (#630).** It went out in the same transaction until 2026-10-14, which
+  // looked free — Postgres holds a notify until commit, so a rolled-back
+  // transaction woke nobody — and was not: a transaction that has notified
+  // takes the notify queue's lock at COMMIT and holds it through its WAL
+  // flush, so every writing transaction of every process committed one at a
+  // time behind it. On 8081 under the LDAP bulk load that lock
+  // (`Lock:object`) held 0.34–0.58 backends on average, and in a replay
+  // moving `pg_notify` out of the writing transaction took 42 adds/s to 108.
+  // So a transaction's kinds are held against its client, like its row
+  // count, and handed to `announce()` once COMMIT has returned: a rolled-back
+  // transaction still wakes nobody, and one notify a NOTIFY_COALESCE_MS
+  // window carries every commit in it. Correctness does not move — the
+  // change log is the contract, written in the transaction as before, and
+  // the poll is the backstop for a nudge that never comes (a process that
+  // dies between its COMMIT and its notify is exactly a lost nudge).
   // ---------------------------------------------------------------------
   // HOW MANY CHANGE ROWS THIS PROCESS HAS WRITTEN. A local counter and not a
   // query: `common/request_worker.ts` needs to know whether its flush actually
@@ -3105,6 +3302,86 @@ function create(options) {
   // rows are held against its CLIENT and added only once COMMIT has returned.
   let written = 0;
   const uncommittedRows = new WeakMap();
+  // The KINDS each open transaction recorded, announced once it commits
+  // (#630). Keyed by the client, set and removed with `uncommittedRows`.
+  const uncommittedKinds = new WeakMap();
+
+  // -------------------------------------------------------------------------
+  // THE NUDGE, COALESCED (#630): at most one `pg_notify` per process per
+  // NOTIFY_COALESCE_MS. The first commit after a quiet window is announced at
+  // once (a lone write reaches the other processes as promptly as before);
+  // every commit inside the window joins ONE notify sent when it closes,
+  // carrying the union of their kinds and the sum of their rows. A timer
+  // here is a debounce, which the scheduler rule leaves alone (root
+  // CLAUDE.md, *Anything periodic is a scheduler job*): it is armed by a
+  // commit and never re-arms itself.
+  //
+  // Sent on the pool, outside every transaction, and every failure is a
+  // debug line: the notify is lossy by design (the header), so a database
+  // gone between a commit and its nudge costs latency and nothing else.
+  // `notifiesSent` counts what went, for `tests/notify_after_commit.js` and
+  // the replication page's reader.
+  // -------------------------------------------------------------------------
+  let notifyPending = null;
+  let notifyTimer = null;
+  let notifyLastAt = 0;
+  let notifyClosed = false;
+  let notifiesSent = 0;
+
+  function sendNotify() {
+    log.debug("Entering sendNotify().");
+    notifyTimer = null;
+    const pending = notifyPending;
+    notifyPending = null;
+    if (!pending || notifyClosed) {
+      log.debug("Leaving sendNotify(). Nothing to send.");
+      return Promise.resolve();
+    }
+    notifyLastAt = Date.now();
+    notifiesSent += 1;
+    log.debug("Leaving sendNotify().");
+    return pool.query('SELECT pg_notify($1, $2)', [CHANNEL,
+      JSON.stringify({ from: processId, kinds: pending.kinds,
+                       rows: pending.rows })]).then(function () {
+      return null;
+    }, function (e) {
+      // Lossy by design: the poll converges without it (see above).
+      log.debug("Caught in sendNotify(): " + ((e && e.message) || e));
+      return null;
+    });
+  }
+
+  function announce(kinds, rows) {
+    log.debug("Entering announce().");
+    if (notifyClosed || !kinds || !kinds.length) {
+      log.debug("Leaving announce(). Nothing to announce.");
+      return;
+    }
+    if (!notifyPending) {
+      notifyPending = { kinds: [], rows: 0 };
+    }
+    kinds.forEach(function (kind) {
+      if (notifyPending.kinds.indexOf(kind) < 0) {
+        notifyPending.kinds.push(kind);
+      }
+    });
+    notifyPending.rows += Number(rows) || 0;
+    if (notifyTimer) {
+      log.debug("Leaving announce(). Joins the notify already due.");
+      return;
+    }
+    const wait = notifyLastAt + NOTIFY_COALESCE_MS - Date.now();
+    if (wait <= 0) {
+      sendNotify();
+      log.debug("Leaving announce(). Sent at once.");
+      return;
+    }
+    notifyTimer = setTimeout(sendNotify, wait);
+    if (notifyTimer.unref) {
+      notifyTimer.unref();
+    }
+    log.debug("Leaving announce(). Due in " + wait + " ms.");
+  }
 
   function recordChanges(client, rows) {
     log.debug("Entering recordChanges().");
@@ -3112,8 +3389,26 @@ function create(options) {
       log.debug("Leaving recordChanges().");
       return Promise.resolve();
     }
-    if (uncommittedRows.has(client)) {
+    // THE NUDGE'S KINDS. It carries the origin and the kinds and NOT the
+    // rows — the receiver reads `sts_changes` for what actually moved, so it
+    // can be lossy, coalesced and missed entirely without costing anything
+    // but latency. See the header.
+    const kinds = [];
+    rows.forEach(function (row) {
+      if (kinds.indexOf(row.kind) < 0) {
+        kinds.push(row.kind);
+      }
+    });
+    const inTransaction = uncommittedRows.has(client);
+    if (inTransaction) {
       uncommittedRows.set(client, uncommittedRows.get(client) + rows.length);
+      const held = uncommittedKinds.get(client) || [];
+      kinds.forEach(function (kind) {
+        if (held.indexOf(kind) < 0) {
+          held.push(kind);
+        }
+      });
+      uncommittedKinds.set(client, held);
     } else {
       // Not inside withTransaction(): every caller today is, and a statement
       // outside one commits as it runs, so it is counted as it is sent.
@@ -3150,16 +3445,13 @@ function create(options) {
     }
     log.debug("Leaving recordChanges().");
     return chain.then(function () {
-      // THE NUDGE. It carries the origin and the kinds and NOT the rows —
-      // the receiver reads `sts_changes` for what actually moved, so this
-      // can be lossy, can be truncated and can be missed entirely without
-      // costing anything but latency. See the header.
-      const kinds = [];
-      rows.forEach(function (row) {
-        if (kinds.indexOf(row.kind) < 0) kinds.push(row.kind);
-      });
-      return client.query('SELECT pg_notify($1, $2)', [CHANNEL,
-        JSON.stringify({ from: processId, kinds: kinds, rows: rows.length })]);
+      // Outside a transaction the rows committed as they were sent, so the
+      // nudge may go now; inside one it waits for transactionOnce()'s
+      // COMMIT (#630).
+      if (!inTransaction) {
+        announce(kinds, rows.length);
+      }
+      return null;
     });
   }
 
@@ -3237,6 +3529,53 @@ function create(options) {
     return !(err && err.fenced) && (code === '40P01' || code === '40001');
   }
 
+  // ---------------------------------------------------------------------------
+  // SCHEMA_UPGRADES, in open()'s transaction (#630): one probe for every
+  // step — is it owed, and does this role own the table — and the owed
+  // steps run in order. A required step runs whoever we are, and a role
+  // that may not take it fails the open (STS-STORE-0029, from open()'s
+  // catch); an advisory one is skipped, and said, when the role does not
+  // own the table.
+  // ---------------------------------------------------------------------------
+  function upgradeSchema(client, created) {
+    log.debug("Entering upgradeSchema().");
+    const columns = SCHEMA_UPGRADES.map(function (step, i) {
+      return '(' + step.when + ') AS u' + i + ', pg_has_role(current_user, ' +
+        '(SELECT c.relowner FROM pg_class c WHERE c.oid = to_regclass($' +
+        (i + 1) + ')), \'USAGE\') AS o' + i;
+    }).join(', ');
+    log.debug("Leaving upgradeSchema().");
+    return client.query('SELECT ' + columns, SCHEMA_UPGRADES.map(function (s) {
+      return s.table;
+    })).then(function (result) {
+      const row = (result && result.rows && result.rows[0]) || {};
+      let chain = Promise.resolve();
+      SCHEMA_UPGRADES.forEach(function (step, i) {
+        if (row['u' + i] !== true) {
+          return;
+        }
+        if (step.advisory && row['o' + i] !== true) {
+          log.warn(errorCodes.tag('STS-STORE-0083') + 'persistence: the ' +
+                   'store is owed ' + step.name + ' (schema version ' +
+                   SCHEMA_VERSION + ', #630), a tuning this role does not ' +
+                   'own ' + step.table + ' to make. Nothing is wrong ' +
+                   'without it, only slower; run postgres/schema.sql as ' +
+                   'the owner.');
+          return;
+        }
+        step.statements.forEach(function (statement) {
+          chain = chain.then(function () {
+            return client.query(statement);
+          });
+        });
+        chain = chain.then(function () {
+          created.push(step.name);
+        });
+      });
+      return chain;
+    });
+  }
+
   async function withTransaction(fn) {
     log.debug('Entering withTransaction().');
     for (let attempt = 0; ; attempt++) {
@@ -3276,6 +3615,7 @@ function create(options) {
       // recordChanges() is handed, and removed on both endings so that a
       // client the pool hands to the next transaction starts at nothing.
       uncommittedRows.set(client, 0);
+      uncommittedKinds.set(client, []);
       return client.query('BEGIN').then(function () {
         // THE FENCE FIRST, before the transaction has written anything. See
         // `fence` above.
@@ -3284,8 +3624,13 @@ function create(options) {
         return fn(client);
       }).then(function (result) {
         return client.query('COMMIT').then(function () {
-          written += uncommittedRows.get(client) || 0;
+          const rows = uncommittedRows.get(client) || 0;
+          const kinds = uncommittedKinds.get(client) || [];
+          written += rows;
           uncommittedRows.delete(client);
+          uncommittedKinds.delete(client);
+          // THE NUDGE, NOW THAT THERE IS SOMETHING TO FETCH (#630).
+          announce(kinds, rows);
           unguard();
           client.release();
           log.debug('Leaving transactionOnce(). Committed.');
@@ -3293,8 +3638,10 @@ function create(options) {
         });
       }).catch(function (err) {
         // NOTHING THIS TRANSACTION RECORDED WAS COMMITTED, so none of it is
-        // counted — including a COMMIT that itself failed.
+        // counted — including a COMMIT that itself failed — and nothing is
+        // announced.
         uncommittedRows.delete(client);
+        uncommittedKinds.delete(client);
         return client.query('ROLLBACK').catch(function (rollbackErr) {
           // The rollback itself failed, which means the connection is gone.
           // Logged and swallowed: the original error is the one worth
@@ -3437,6 +3784,8 @@ function create(options) {
             });
           });
           return chain;
+        }).then(function () {
+          return upgradeSchema(client, created);
         }).then(function () {
           // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
           // function or a trigger is not a relation `to_regclass()` knows —
@@ -3738,7 +4087,17 @@ function create(options) {
       liveClosed = true;
       const live = liveClient;
       liveClient = null;
-      return pool.end().then(function () {
+      // A NUDGE STILL DUE goes before the pool closes (#630): its commits
+      // are in, and another process need not wait for its poll to see them.
+      if (notifyTimer) {
+        clearTimeout(notifyTimer);
+        notifyTimer = null;
+      }
+      const lastNudge = sendNotify();
+      notifyClosed = true;
+      return lastNudge.then(function () {
+        return pool.end();
+      }).then(function () {
         // The read replica's pool, when it is a pool of its own (#98).
         return readPool !== pool ? readPool.end() : null;
       }).then(function () {
@@ -4666,6 +5025,14 @@ function create(options) {
       log.debug("Entering changeRowsWritten().");
       log.debug("Leaving changeRowsWritten().");
       return written;
+    },
+
+    // How many coalesced nudges this process has sent (#630): fewer than
+    // its committed transactions under load, by design.
+    notifiesSent: function () {
+      log.debug("Entering notifiesSent().");
+      log.debug("Leaving notifiesSent().");
+      return notifiesSent;
     },
 
     latestBlockingChangeSeq: function () {
@@ -7825,6 +8192,8 @@ module.exports = {
   DEK_COUNTS_BACKFILL: DEK_COUNTS_BACKFILL,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
+  SCHEMA_UPGRADES: SCHEMA_UPGRADES,
+  COUNT_SHARDS: COUNT_SHARDS,
   SCHEMA_VERSION: SCHEMA_VERSION,
   poolMax: poolMax,
   // What `pg` is given for a connection string (#98): for

@@ -312,7 +312,8 @@ function page(realm, baseKey, afterKey, limit, options) {
 // triggers in the transaction that wrote (`persistence_postgres.js`,
 // SCHEMA_ROUTINES). So `count` and `countHolding` are one primary-key read
 // whatever the size of the directory, where each was a `count(*)` linear in
-// the realm's rows. A base with no counter row has nothing under it: the
+// the realm's rows — a range of it since #630, which shards each counter
+// (up to COUNT_SHARDS rows a key) and has every reader `sum()` them. A base with no counter row has nothing under it: the
 // counters are started from one count of the table, under a lock, when the
 // triggers are created, and a missing row is a zero from then on.
 // ---------------------------------------------------------------------------
@@ -334,9 +335,11 @@ const COUNTED_ATTRIBUTES = ['userpassword'];
 function count(realm, baseKey) {
   log.debug("Entering count().");
   log.debug("Leaving count().");
-  return { text: 'SELECT COALESCE((SELECT n FROM sts_ldap_counts WHERE ' +
-                 'realm = $1 AND base_key = $2 AND attribute = \'\'), 0)' +
-                 '::bigint AS n',
+  // The key's SHARDS, summed (#630): the fold adds to one shard per
+  // connection, and only the sum is a count.
+  return { text: 'SELECT COALESCE((SELECT sum(n) FROM sts_ldap_counts ' +
+                 'WHERE realm = $1 AND base_key = $2 AND attribute = ' +
+                 '\'\'), 0)::bigint AS n',
            values: [String(realm), String(baseKey || '')] };
 }
 

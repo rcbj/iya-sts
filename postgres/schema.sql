@@ -138,6 +138,22 @@ SELECT format('ALTER DATABASE %I SET search_path = %I, public',
 -- ALTER DATABASE takes effect on the NEXT session, so this one says it too.
 SET search_path TO :"sts_schema", public;
 
+-- WHAT THE DATABASE SPENDS ITS TIME ON (#630): `pg_stat_statements`, the
+-- view an operator asks which statements cost what. The library is loaded
+-- by the SERVER (`shared_preload_libraries`, the compose stack's postgres
+-- command; postgres/CLAUDE.md); this creates the view. In `public`, beside
+-- whatever else is installed there, not in this service's schema. Only a
+-- role that may create it does — a superuser, RDS's master user — and any
+-- other is told and goes on: a store without the view is a store an
+-- operator cannot profile, not a store that is wrong. The application
+-- role is granted nothing for it (it is not `pg_read_all_stats`, as it is
+-- not `pg_monitor`): reading other roles' statements is the owner's.
+DO $ext$ BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
+EXCEPTION WHEN insufficient_privilege OR feature_not_supported OR undefined_file THEN
+  RAISE WARNING 'sts-schema: pg_stat_statements not created (%); the store works without it', SQLERRM;
+END $ext$;
+
 -- ---------------------------------------------------------------------------
 -- THE TABLES. `persistence/persistence_postgres.js`'s SCHEMA, verbatim.
 -- ---------------------------------------------------------------------------
@@ -162,6 +178,12 @@ CREATE TABLE IF NOT EXISTS sts_ldap_entries (
   PRIMARY KEY (realm, dn_key));
 
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_realm ON sts_ldap_entries (realm);
+
+-- AUTOVACUUM FOR AN INSERT-HEAVY DIRECTORY (#630, schema version 19): an
+-- insert-only load is vacuumed every 20% of the table by default — about
+-- 600,000 inserts at 2.9M entries, with the GIN pending lists and the
+-- visibility map waiting that long. 1%.
+ALTER TABLE sts_ldap_entries SET (autovacuum_vacuum_insert_scale_factor=0.01);
 
 -- THE DIRECTORY'S LOOKUP COLUMNS (#349, schema version 13, 2026-09-29): what
 -- a request worker holding the people and devices as a bounded window asks
@@ -234,11 +256,23 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_dek_unknown ON sts_ldap_entries (rea
 -- transaction's deltas into `sts_ldap_counts` at COMMIT. The driver's
 -- SCHEMA_ROUTINES carries the argument.
 CREATE TABLE IF NOT EXISTS sts_ldap_counts (
-  realm     text   NOT NULL,
-  base_key  text   NOT NULL,
-  attribute text   NOT NULL,
-  n         bigint NOT NULL DEFAULT 0,
-  PRIMARY KEY (realm, base_key, attribute));
+  realm     text     NOT NULL,
+  base_key  text     NOT NULL,
+  attribute text     NOT NULL,
+  shard     smallint NOT NULL DEFAULT 0,
+  n         bigint   NOT NULL DEFAULT 0,
+  PRIMARY KEY (realm, base_key, attribute, shard));
+
+-- SHARDED (#630, schema version 19): `shard` in the key, so two commits of
+-- one realm fold into different rows unless their server process ids fall
+-- in one of sixteen shards, and every reader sums a key's shards. An
+-- existing row is shard 0, so the sums are unchanged. The key takes the
+-- column in only where it does not hold it yet.
+ALTER TABLE sts_ldap_counts ADD COLUMN IF NOT EXISTS shard smallint NOT NULL DEFAULT 0;
+DO $upgrade$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey) WHERE i.indrelid = to_regclass('sts_ldap_counts') AND i.indisprimary AND a.attname = 'shard') THEN
+  ALTER TABLE sts_ldap_counts DROP CONSTRAINT sts_ldap_counts_pkey;
+  ALTER TABLE sts_ldap_counts ADD PRIMARY KEY (realm, base_key, attribute, shard);
+END IF; END $upgrade$;
 
 CREATE TABLE IF NOT EXISTS sts_ldap_count_deltas (
   txid       xid8    NOT NULL DEFAULT pg_current_xact_id(),
@@ -256,8 +290,17 @@ CREATE INDEX IF NOT EXISTS sts_ldap_count_deltas_txid ON sts_ldap_count_deltas (
 -- `sts_ldap_dek_deltas`, folded in at COMMIT — so the data-key count and the
 -- re-encryption job read a few rows instead of walking the directory.
 CREATE TABLE IF NOT EXISTS sts_ldap_dek_counts (
-  dek_id text   PRIMARY KEY,
-  n      bigint NOT NULL DEFAULT 0);
+  dek_id text     NOT NULL,
+  shard  smallint NOT NULL DEFAULT 0,
+  n      bigint   NOT NULL DEFAULT 0,
+  PRIMARY KEY (dek_id, shard));
+
+-- Sharded as `sts_ldap_counts` is (#630, schema version 19).
+ALTER TABLE sts_ldap_dek_counts ADD COLUMN IF NOT EXISTS shard smallint NOT NULL DEFAULT 0;
+DO $upgrade$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY (i.indkey) WHERE i.indrelid = to_regclass('sts_ldap_dek_counts') AND i.indisprimary AND a.attname = 'shard') THEN
+  ALTER TABLE sts_ldap_dek_counts DROP CONSTRAINT sts_ldap_dek_counts_pkey;
+  ALTER TABLE sts_ldap_dek_counts ADD PRIMARY KEY (dek_id, shard);
+END IF; END $upgrade$;
 
 CREATE TABLE IF NOT EXISTS sts_ldap_dek_deltas (
   txid   xid8    NOT NULL DEFAULT pg_current_xact_id(),
@@ -302,15 +345,18 @@ BEGIN
   RETURN NULL;
 END $$;
 
-CREATE OR REPLACE FUNCTION sts_ldap_count_fold() RETURNS trigger LANGUAGE plpgsql AS $$
+-- The fold adds to this connection's shard (#630), under a name of its own:
+-- the driver probes routines by name, so the old body under the old name
+-- would never be replaced on a store that has it.
+CREATE OR REPLACE FUNCTION sts_ldap_count_fold_sharded() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   WITH folded AS (DELETE FROM sts_ldap_count_deltas WHERE txid = pg_current_xact_id() RETURNING realm, parent_key, n, holding),
   bases AS (SELECT f.realm, b.base_key, sum(f.n) AS n, sum(f.holding) AS holding FROM folded AS f CROSS JOIN LATERAL sts_ldap_count_bases(f.parent_key) AS b(base_key) WHERE f.n <> 0 OR f.holding <> 0 GROUP BY f.realm, b.base_key)
-  INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, n)
-  SELECT realm, base_key, attribute, n FROM (SELECT realm, base_key, '' AS attribute, n FROM bases WHERE n <> 0
+  INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, shard, n)
+  SELECT realm, base_key, attribute, (pg_backend_pid() % 16)::smallint, n FROM (SELECT realm, base_key, '' AS attribute, n FROM bases WHERE n <> 0
     UNION ALL SELECT realm, base_key, 'userpassword', holding FROM bases WHERE holding <> 0) AS d
   ORDER BY realm, base_key, attribute
-  ON CONFLICT (realm, base_key, attribute) DO UPDATE SET n = c.n + EXCLUDED.n;
+  ON CONFLICT (realm, base_key, attribute, shard) DO UPDATE SET n = c.n + EXCLUDED.n;
   RETURN NULL;
 END $$;
 
@@ -325,9 +371,13 @@ CREATE OR REPLACE TRIGGER sts_ldap_entries_count_insert AFTER INSERT ON sts_ldap
 CREATE OR REPLACE TRIGGER sts_ldap_entries_count_update AFTER UPDATE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
 CREATE OR REPLACE TRIGGER sts_ldap_entries_count_delete AFTER DELETE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
 CREATE OR REPLACE TRIGGER sts_ldap_entries_count_truncate AFTER TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_truncate();
--- A constraint trigger has no OR REPLACE.
+-- A constraint trigger has no OR REPLACE. The unsharded fold (#618) goes
+-- first: left beside the new one, the two would race for a transaction's
+-- deltas, and the old one's ON CONFLICT names a key the table no longer has.
 DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON sts_ldap_count_deltas;
-CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold AFTER INSERT ON sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold();
+DROP FUNCTION IF EXISTS sts_ldap_count_fold();
+DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold_sharded ON sts_ldap_count_deltas;
+CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold_sharded AFTER INSERT ON sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold_sharded();
 
 -- AND PER DATA KEY (#623): the same arrangement over `dek_keys`. A value
 -- that is not a JSON object, and NULL, is read as no keys.
@@ -353,13 +403,15 @@ BEGIN
   RETURN NULL;
 END $$;
 
-CREATE OR REPLACE FUNCTION sts_ldap_dek_fold() RETURNS trigger LANGUAGE plpgsql AS $$
+-- Sharded and renamed as the count fold is (#630).
+CREATE OR REPLACE FUNCTION sts_ldap_dek_fold_sharded() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
   WITH folded AS (DELETE FROM sts_ldap_dek_deltas WHERE txid = pg_current_xact_id() RETURNING dek_id, n)
-  INSERT INTO sts_ldap_dek_counts AS c (dek_id, n)
-  SELECT dek_id, sum(n) FROM folded WHERE dek_id <> '' GROUP BY dek_id
+  INSERT INTO sts_ldap_dek_counts AS c (dek_id, shard, n)
+  SELECT dek_id, (pg_backend_pid() % 16)::smallint, sum(n) FROM folded
+  WHERE dek_id <> '' GROUP BY dek_id
   HAVING sum(n) <> 0 ORDER BY dek_id
-  ON CONFLICT (dek_id) DO UPDATE SET n = c.n + EXCLUDED.n;
+  ON CONFLICT (dek_id, shard) DO UPDATE SET n = c.n + EXCLUDED.n;
   RETURN NULL;
 END $$;
 
@@ -375,7 +427,9 @@ CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_update AFTER UPDATE ON sts_ldap_e
 CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_delete AFTER DELETE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_note();
 CREATE OR REPLACE TRIGGER sts_ldap_entries_dek_truncate AFTER TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_dek_truncate();
 DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold ON sts_ldap_dek_deltas;
-CREATE CONSTRAINT TRIGGER sts_ldap_dek_deltas_fold AFTER INSERT ON sts_ldap_dek_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_dek_fold();
+DROP FUNCTION IF EXISTS sts_ldap_dek_fold();
+DROP TRIGGER IF EXISTS sts_ldap_dek_deltas_fold_sharded ON sts_ldap_dek_deltas;
+CREATE CONSTRAINT TRIGGER sts_ldap_dek_deltas_fold_sharded AFTER INSERT ON sts_ldap_dek_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_dek_fold_sharded();
 
 -- THE ONE COUNT OF THE DIRECTORY: the counters started from the rows already
 -- there, under the lock above, and only when they hold nothing — running this
@@ -487,7 +541,14 @@ ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint;
 ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS sts_minted_handle ON sts_minted (handle, realm);
-CREATE INDEX IF NOT EXISTS sts_minted_written ON sts_minted (written_at);
+-- `written_at` for the sweeps as a BRIN (#630, schema version 19), where it
+-- was the btree `sts_minted_written`: every upsert sets `written_at`, so the
+-- btree made every update of this table a non-HOT one. A BRIN summarizes
+-- and leaves HOT alone (PostgreSQL 16 and later); the driver argues the
+-- cost to the sweeps. And room on each page for a row's next version.
+CREATE INDEX IF NOT EXISTS sts_minted_written_brin ON sts_minted USING brin (written_at) WITH (autosummarize = on);
+DROP INDEX IF EXISTS sts_minted_written;
+ALTER TABLE sts_minted SET (fillfactor=80);
 -- Partial: the purge looks rows up by it only where there is an expiry, and
 -- every INSERT into this, the busiest table, pays for an index.
 CREATE INDEX IF NOT EXISTS sts_minted_expires ON sts_minted (expires_at) WHERE expires_at IS NOT NULL;
@@ -526,6 +587,11 @@ CREATE TABLE IF NOT EXISTS sts_changes (
   at     timestamptz NOT NULL DEFAULT now());
 
 CREATE INDEX IF NOT EXISTS sts_changes_at ON sts_changes (at);
+
+-- AUTOVACUUM FOR THE CHANGE LOG (#630, schema version 19): the trim deletes
+-- its tail all the time, and the defaults let dead rows reach a fifth of the
+-- table and then vacuumed at the default cost limit, mostly asleep.
+ALTER TABLE sts_changes SET (autovacuum_vacuum_scale_factor=0.02, autovacuum_vacuum_cost_limit=2000);
 
 -- ---------------------------------------------------------------------------
 -- THE USED-ASSERTION HISTORY (2026-09-13): every RFC 7523 JWT and RFC 7522
@@ -952,7 +1018,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (17) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (19) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

@@ -1708,6 +1708,16 @@ const CODES = [
       'no key is destroyed on it. The jobs index those entries a bounded ' +
       'batch per pass, once (#623).',
     spec: 'none — the count job and the re-encryption job wait' },
+  // STS-STORE-0081 is #626's and STS-STORE-0082 #618 phase 2's
+  // (feature/618-gin), numbered before this; left out here so the merge
+  // keeps every number once.
+  { code: 'STS-STORE-0083',
+    summary: 'The store is owed a tuning of schema version 19 (#630) — a ' +
+      'table\'s storage parameters, or the retired btree on ' +
+      'sts_minted.written_at — and the role this service dials with does ' +
+      'not own the table to make it. Nothing is wrong without it, only ' +
+      'slower: run postgres/schema.sql as the owner.',
+    spec: 'none — the store opens without it' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

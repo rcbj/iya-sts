@@ -239,10 +239,10 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 17 ===');
-  t.equal(postgres.SCHEMA_VERSION, 17,
-          'C1. the driver writes schema version 17 (#222, #391 phase 6, ' +
-          '#432 phase 5, #618, #623)');
+  t.log.info('=== C. schema version 19 ===');
+  t.equal(postgres.SCHEMA_VERSION, 19,
+          'C1. the driver writes schema version 19 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618, #623, #630)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -333,8 +333,8 @@ async function schema(t) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 17;
-  }), 'C6. and records version 17');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 19;
+  }), 'C6. and records version 19');
   log.debug("Leaving schema().");
 }
 
