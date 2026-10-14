@@ -495,22 +495,25 @@ function childMain() {
       const id = appPath.split('/').pop();
       const grants = realms.handleFor('gnap.grants');
       const interactionsRow = realms.handleFor('gnap.interactions');
-      const grantId = interactionsRow.read(DEFAULT, 'app:' + id).value.grantId;
+      // The handle is held under its digest, the mode prefix kept (#614).
+      const appKey = 'app:' + require(ROOT + '/common/crypto')
+        .credentialDigest(id);
+      const grantId = interactionsRow.read(DEFAULT, appKey).value.grantId;
       const grantBefore = JSON.parse(JSON.stringify(
           grants.read(DEFAULT, grantId).value));
       const interactionBefore = JSON.parse(JSON.stringify(
-          interactionsRow.read(DEFAULT, 'app:' + id).value));
+          interactionsRow.read(DEFAULT, appKey).value));
       r = await request(port, 'GET', appPath);
       note(r.status === 303, '3h. the app start link is followed once',
            r.status + ' ' + r.text.slice(0, 200));
       grants.restore(DEFAULT, grantId, JSON.parse(JSON.stringify(grantBefore)));
-      interactionsRow.restore(DEFAULT, 'app:' + id, interactionBefore);
+      interactionsRow.restore(DEFAULT, appKey, interactionBefore);
       r = await request(port, 'GET', appPath);
       note(r.status === 400, '3i. A NODE STILL HOLDING THE UNUSED LINK ' +
            'REFUSES IT (the claim)', r.status + ' ' + r.text.slice(0, 200));
       store = sharedStore();
       grants.restore(DEFAULT, grantId, JSON.parse(JSON.stringify(grantBefore)));
-      interactionsRow.restore(DEFAULT, 'app:' + id, interactionBefore);
+      interactionsRow.restore(DEFAULT, appKey, interactionBefore);
       r = await request(port, 'GET', appPath);
       note(r.status === 303, '3j. the control: against an empty claim store ' +
            'the same restore is followed', r.status);

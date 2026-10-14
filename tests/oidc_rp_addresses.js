@@ -199,6 +199,17 @@ function run(t) {
               res.location.indexOf('evil.example') < 0,
               'with the pinned callback as redirect_uri and no trace of the ' +
               'invented Host');
+      // #614: the flow is held under its state's digest, never the state.
+      const flowState = new URL(res.location).searchParams.get('state') || '';
+      const realmsModule = require('../common/realms');
+      const flowRows = JSON.stringify(realmsModule.list().map(function (r) {
+        return realmsModule.handleFor('oidc_rp.flows').dump(r.id);
+      }));
+      t.check(!!flowState && flowRows.indexOf(flowState) < 0 &&
+              flowRows.indexOf(require('../common/crypto')
+                .credentialDigest(flowState)) >= 0,
+              'and the flow is held under its state\'s digest, never the ' +
+              'state (#614)', flowRows.slice(0, 200));
       t.check(redirectUris().indexOf('https://idp.example.test/admin/callback') < 0,
               'and the pinned callback was NOT written onto the entry — a ' +
               'pinned address is configuration, and learning is for an ' +
