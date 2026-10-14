@@ -710,6 +710,75 @@ async function driverCounts(t) {
   log.debug("Leaving driverCounts().");
 }
 
+// ---------------------------------------------------------------------------
+// E. THE ANNOUNCEMENT CARRIES IT: `commit_announcer.ts` puts the windowed
+// keys committed since its last announcement on the next one, and leaves
+// them off — "shared" — when the store says anything else.
+// ---------------------------------------------------------------------------
+function announcerCarriesKinds(t) {
+  log.debug("Entering announcerCarriesKinds().");
+  t.log.info('=== E. the announcement says what was committed ===');
+  const CommitAnnouncer = require('../common/commit_announcer');
+  const sent = [];
+  let written = 0;
+  let next = null;
+  const marks = [];
+  const quiet = function () {};
+  const announcer = new CommitAnnouncer({
+    log: { debug: quiet, info: quiet, warn: quiet, error: quiet },
+    config: { value: function () {
+      return true;
+    } },
+    errorCodes: { tag: function () {
+      return '';
+    } },
+    persistence: {
+      flush: function () {
+        return Promise.resolve();
+      },
+      flushMinted: function () {
+        return Promise.resolve();
+      },
+      changeRowsWritten: function () {
+        return written;
+      },
+      answersAfterCommit: function () {
+        return true;
+      },
+      committedChangeMark: function () {
+        return { at: 0 };
+      },
+      committedChangesSince: function (mark) {
+        marks.push(mark.at);
+        return { mark: { at: mark.at + 1 }, windowedKeys: next };
+      }
+    },
+    send: function (message) {
+      sent.push(message);
+    }
+  });
+  written = 1;
+  next = [person('announced1')];
+  announcer.announceAnswered(7);
+  written = 2;
+  next = null;
+  announcer.announceAnswered(8);
+  const first = sent[0] && sent[0].committed;
+  const second = sent[1] && sent[1].committed;
+  t.check(first && first.wrote === true &&
+          keyNames(first.windowedKeys) === 'announced1',
+          'E1. an announcement of people only carries their keys',
+          JSON.stringify(first));
+  t.check(second && second.wrote === true &&
+          second.windowedKeys === undefined,
+          'E2. and one of anything else carries none: shared',
+          JSON.stringify(second));
+  t.check(marks.join(',') === '0,1',
+          'E3. each announcement reads from where the last one stopped',
+          marks.join(','));
+  log.debug("Leaving announcerCarriesKinds().");
+}
+
 async function childMain() {
   log.debug('Entering childMain().');
   const seen = [];
@@ -792,6 +861,7 @@ async function run(t) {
     }
   }
   await driverCounts(t);
+  announcerCarriesKinds(t);
   t.log.info('=== B, C. the worker: the keys applied, the answers ===');
   inChild(t, 21);
   log.debug('Leaving run().');
