@@ -71,6 +71,15 @@ the host). `docker-compose.yml` passes them after `max_connections`; it
 carries no comments, so the reasons are here. `docs/docker-compose.md`
 lists them for a user.
 
+**THE SAME LIST IS IN `docker-compose-quick.yml` AND
+`docker-compose-run-tests.yml` (#633)**, and in the copy of the quick file
+that `docs/getting-started.md` prints. #630 changed only the first file, so
+the quick start and the suite ran the defaults it had measured against, the
+quick start with 100 connections. `tests/postgres_schema.js` now holds all
+four to one list, name and value, so a setting changes in every file or the
+test fails. The cells layer's two extra databases `extends` the suite's, so
+they carry it too.
+
 * **`shared_buffers=2GB`** (`STS_POSTGRES_SHARED_BUFFERS`): the default 128 MB
   against a 9.4 GB database read at a 96.9% hit ratio. A variable because
   the test stacks run up to three of these on one machine (the cells layer

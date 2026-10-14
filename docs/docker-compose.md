@@ -301,7 +301,9 @@ variable.
 The `postgres` service starts the server with these settings, on its command
 line. They come from measuring the service under an LDAP bulk load (#630).
 They apply when the container starts, so an existing stack takes them at its
-next restart; nothing in the volume changes.
+next restart; nothing in the volume changes. The quick start in
+[Getting started](getting-started.md#with-postgresql-and-openbao-from-published-images)
+and the containerized test suite start the database with the same settings.
 
 | Setting | Value | Why |
 |---|---|---|
