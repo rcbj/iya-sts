@@ -76,9 +76,12 @@ interface Slot {
   base: string | null;
 }
 
-// The bridge: a synchronous question to the store.
+// The bridge: a synchronous question to the store — and, where the store
+// offers one, the same question asked asynchronously on the driver's read
+// pool, for a caller that can wait (`holdersAsync()`, #615).
 interface Bridge {
   query(name: string, args: unknown[]): unknown;
+  queryAsync?(name: string, args: unknown[]): Promise<unknown>;
 }
 
 // A row as `persistence/directory_queries.js` answers.
@@ -859,6 +862,99 @@ class DirectoryWindow {
       }
     });
     log.debug("Leaving DirectoryWindow.holders(). " + out.length + '.');
+    return out;
+  }
+
+  // `holders()` FOR A BACKGROUND JOB (#615, 2026-10-13). The scheduler's
+  // Android attestation recheck read every person through the synchronous
+  // bridge, one entry at a time, on the serving front process — 191,000
+  // round trips with every listener stopped. What it needs is the handful
+  // of people the store says hold one attribute, and it can wait for them.
+  //
+  // Three differences from `holders()`, and each is the point:
+  //
+  //   * **EACH PAGE IS ASKED ASYNCHRONOUSLY** where the bridge offers
+  //     `queryAsync()` — the driver's read pool, the statement and the
+  //     keyed/opened values exactly the synchronous door's — and the event
+  //     loop is given back between pages (`setImmediate`) either way. A
+  //     bridge without it (a test's) is asked synchronously, one statement a
+  //     page, which is the same cost `holders()` has.
+  //   * **A ROW IS TAKEN AS THE STORE ANSWERED IT** when the window holds
+  //     nothing newer, as `walk()` takes it, rather than read again by key:
+  //     `holders()`' `getIn()` is a second synchronous round trip per row
+  //     the window does not hold, which is O(holders) bridge questions on
+  //     top of the page.
+  //   * **NOTHING IS HANDED OUT OR PUT IN THE LRU** (`walk()`'s `readOnly`):
+  //     the caller reads, and one that then writes reaches the entry through
+  //     the directory's own lookup, which holds it then.
+  //
+  // What this process changed and has not written is added from the window,
+  // as `holders()` adds it.
+  /**
+   * The windowed entries under a base that hold an attribute, as this
+   * process holds them, asked a page at a time without blocking the event
+   * loop between pages.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN (a windowed container, usually)
+   * @param attribute - the attribute name, lower-cased as stored
+   * @param predicate - the service's own rule, asked of each candidate
+   * @returns a promise of `[{ key, entry }]`
+   */
+  async holdersAsync(realmId: string, base: string, attribute: string,
+                     predicate: (entry: Entry, key: string) => boolean):
+      Promise<Array<{ key: string; entry: Entry }>> {
+    log.debug("Entering DirectoryWindow.holdersAsync(). " + attribute);
+    const out: Array<{ key: string; entry: Entry }> = [];
+    const seen = new Set<string>();
+    let after = '';
+    let pages = 0;
+    while (this.bridge) {
+      const bridge = this.bridge;
+      const args = [realmId, base, attribute, after, PAGE];
+      const rows = (typeof bridge.queryAsync === 'function'
+        ? await bridge.queryAsync('withAttribute', args)
+        : bridge.query('withAttribute', args)) as Row[];
+      pages += 1;
+      if (!rows || !rows.length) {
+        break;
+      }
+      rows.forEach((row) => {
+        if (seen.has(row.key) || !this.isWindowed(realmId, row.key)) {
+          return;
+        }
+        seen.add(row.key);
+        const ck = slotKey(realmId, row.key);
+        const slot = this.lru.peek(ck) || this.touched.get(ck) ||
+          this.liveGhost(ck) || this.slotFromRow(realmId, row);
+        if (slot.entry && predicate(slot.entry, row.key)) {
+          out.push({ key: row.key, entry: slot.entry });
+        }
+      });
+      after = rows[rows.length - 1].key;
+      if (rows.length < PAGE) {
+        break;
+      }
+      await new Promise<void>(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+    this.dirty.forEach((ck) => {
+      const cut = ck.indexOf('\n');
+      const key = ck.slice(cut + 1);
+      if (ck.slice(0, cut) !== realmId || seen.has(key) ||
+          !DirectoryWindow.within(key, base) || key === base) {
+        return;
+      }
+      const slot = this.lru.peek(ck);
+      if (slot && slot.entry &&
+          (slot.entry.attributes || {})[attribute] &&
+          predicate(slot.entry, key)) {
+        out.push({ key: key, entry: slot.entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.holdersAsync(). " + out.length +
+              ' in ' + pages + ' page(s).');
     return out;
   }
 
