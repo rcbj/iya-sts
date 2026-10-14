@@ -956,6 +956,47 @@ async function frontChild() {
        JSON.stringify({ stats: forgot, mustPull: mustPull.catchUp,
                         afterPull: afterPull.catchUp }));
 
+  // A holder is caught up only once its pull has FINISHED: a second create
+  // granted while the first one's pull is still running must pull too.
+  const gated = new Arbiter(Arbiter.defaultDeps());
+  const other = gated.decide('worker:9', ['default\u0000directory.dn\u0000' +
+    dnOf('p1'), 'default\u0000directory.username\u0000p1'], 60000);
+  gated.settle('worker:9', other.reservation,
+               ['default\u0000directory.dn\u0000' + dnOf('p1'),
+                'default\u0000directory.username\u0000p1'], true);
+  const another = gated.decide('worker:9', ['default\u0000directory.dn\u0000' +
+    dnOf('p2'), 'default\u0000directory.username\u0000p2'], 60000);
+  gated.settle('worker:9', another.reservation,
+               ['default\u0000directory.dn\u0000' + dnOf('p2'),
+                'default\u0000directory.username\u0000p2'], true);
+  let openGate = null;
+  const pulling = new Promise(function (resolve) {
+    openGate = resolve;
+  });
+  const slow = new DCC(Object.assign(DCC.defaultDeps(), {
+    isActiveActive: function () { return false; },
+    clusterMode: function () { return 'off'; },
+    loadArbiter: function () { return gated; },
+    loadPersistence: function () {
+      return { clusterStore: function () { return {}; },
+               flush: function () { return Promise.resolve({}); },
+               syncNow: function () { return pulling; } };
+    }
+  }));
+  const firstPull = slow.claim({ realm: 'default', dns: [dnOf('p1')],
+                                 usernames: ['p1'], waitMs: 0 });
+  await pause(20);
+  const secondPull = slow.claim({ realm: 'default', dns: [dnOf('p2')],
+                                  usernames: ['p2'], waitMs: 0 });
+  await pause(20);
+  openGate();
+  const pulls = await Promise.all([firstPull, secondPull]);
+  note(pulls[0].catchUp === true && pulls[1].catchUp === true,
+       'D11. A HOLDER IS CAUGHT UP ONLY WHEN ITS PULL HAS FINISHED: a second ' +
+       'create granted while the first one\'s pull is still running is told ' +
+       'to pull too (the first version said otherwise: 23 duplicates of 24)',
+       JSON.stringify(pulls.map(function (one) { return one.catchUp; })));
+
   // A worker that dies gives back what it held.
   const holding = await command(0, 'hold', ['zed']);
   const whileHeld = await tryNow('zed');
