@@ -709,6 +709,8 @@ function awaitCommitConfirmations(servedBy) {
       log.debug("Leaving resolve().");
     } };
     ticketWaiters.push(waiter);
+    // Counted (#626): a reader that actually waited, for stats().
+    ticketWaits++;
     setTimeout(function () {
       if (!done) {
         // SETTLED BEFORE ANYTHING ELSE, so that the release reapStuckTickets()
@@ -4719,6 +4721,8 @@ let keyLogFloor = 0;
 let writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
 // Sync rounds started, every kind of caller, for stats().
 let syncRounds = 0;
+// Readers that waited on a ticket at all (#626), for stats().
+let ticketWaits = 0;
 // Where this process's own committed rows were last classified up to.
 let localChangeMark = null;
 let localChangeMarked = false;
@@ -6746,7 +6750,10 @@ function stats() {
                // READERS HELD RIGHT NOW. A number that stays large once
                // nothing is being written is the waiter leak
                // releaseTicketWaiters() describes, come back.
-               waiters: ticketWaiters.length - settledWaiters },
+               waiters: ticketWaiters.length - settledWaiters,
+               // READERS THAT WAITED AT ALL, ever (#626): a reader with
+               // nothing blocking it is not counted.
+               waited: ticketWaits },
     dispatch: dispatchPrefixes(),
     affinities: affinities[PROTOCOL_POOL].size,
     socketDir: socketDir,
@@ -6806,6 +6813,7 @@ function reset() {
   keyLogFloor = 0;
   writeBarriers = { current: 0, keyed: 0, synced: 0, keysSent: 0 };
   syncRounds = 0;
+  ticketWaits = 0;
   localChangeMark = null;
   localChangeMarked = false;
   // And the batch lane's counts and queue, for the same reason.

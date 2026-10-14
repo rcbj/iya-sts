@@ -3577,16 +3577,19 @@ function committedChangeMark() {
  * when that is ALL it committed (bar per-process tallies), or null.
  *
  * @param mark - from `committedChangeMark()` or a previous answer
+ * @param counts - optional; what answers `committedSince(mark)` in the
+ *   driver's place, for a test
  * @returns `{ mark, windowedKeys }`; `windowedKeys` is an array of
  *   `{ realm, key }`, or null for "something else, or unknown"
  */
-function committedChangesSince(mark) {
+function committedChangesSince(mark, counts) {
   log.debug("Entering committedChangesSince().");
-  if (!mark || !driver || typeof driver.committedSince !== 'function') {
+  const source = counts || driver;
+  if (!mark || !source || typeof source.committedSince !== 'function') {
     log.debug("Leaving committedChangesSince(). Unknown.");
     return { mark: committedChangeMark(), windowedKeys: null };
   }
-  const since = driver.committedSince(mark);
+  const since = source.committedSince(mark);
   const window = directory && directory.window;
   if (since.other || !Array.isArray(since.directory) || !window) {
     log.debug("Leaving committedChangesSince(). Shared.");
