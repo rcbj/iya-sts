@@ -204,7 +204,7 @@ let ticketWaiters = [];
 // answered is stalled or stuck in a flush; one that has announced since
 // without naming the ticket has lost it.
 //
-// ticket -> { what, pid, pool, dispatchedAt, answeredAt, heardAtAnswer }.
+// ticket -> { what, entry, dispatchedAt, answeredAt, heardAtAnswer }.
 // Written at dispatch and forgotten wherever the ticket is, so it holds what
 // `outstanding` holds and no more. `what` is the method and path (no query
 // string) or the operation's kind — never a body, an identity or a header.
@@ -219,7 +219,15 @@ function forgetTicket(ticket) {
 }
 
 // One dropped ticket, in a phrase: what it was, which worker answered it, how
-// long ago, and whether that worker has announced anything since.
+// long ago, and whether that worker has announced anything since. `now` is
+// reapStuckTickets()' clock, which a test moves; absent, it is the time.
+/**
+ * Describes one outstanding ticket for STS-WORKER-0008.
+ *
+ * @param ticket - the ticket number
+ * @param now - optional; the current time in milliseconds
+ * @returns the description
+ */
 function describeTicket(ticket, now) {
   log.debug("Entering describeTicket().");
   const info = ticketInfo.get(ticket);
@@ -227,17 +235,17 @@ function describeTicket(ticket, now) {
     log.debug("Leaving describeTicket(). Nothing recorded.");
     return 'ticket ' + ticket + ' (not recorded)';
   }
-  const owner = workers.find(function (one) {
-    return one.pid === info.pid;
-  });
+  // THE ENTRY ITSELF, not a pid looked up in the table: a worker that died
+  // has had its tickets released by reap(), so the owner of a ticket reaped
+  // here is one that is still running.
+  const owner = info.entry;
+  const at = now || Date.now();
   const secs = function (since) {
-    return since ? ((now - since) / 1000).toFixed(1) + 's' : '?';
+    return since ? ((at - since) / 1000).toFixed(1) + 's' : '?';
   };
-  const heard = owner ? (owner.announcements || 0) - info.heardAtAnswer : 0;
+  const heard = (owner.announcements || 0) - info.heardAtAnswer;
   let state;
-  if (!owner) {
-    state = 'that worker has gone';
-  } else if (heard > 0) {
+  if (heard > 0) {
     state = 'that worker has announced ' + heard + ' commit(s) since without ' +
       'naming it (last ' + secs(owner.lastAnnouncedAt) + ' ago): LOST';
   } else {
@@ -248,8 +256,8 @@ function describeTicket(ticket, now) {
       ', ' + (owner.inFlight || 0) + ' in flight): STALLED or a slow flush';
   }
   log.debug("Leaving describeTicket().");
-  return 'ticket ' + ticket + ' ' + info.what + ' on ' + info.pool +
-    ' worker ' + info.pid + ', answered ' + secs(info.answeredAt) +
+  return 'ticket ' + ticket + ' ' + info.what + ' on ' +
+    (owner.pool || PROTOCOL_POOL) + ' worker ' + owner.pid + ', answered ' + secs(info.answeredAt) +
     ' ago (dispatched ' + secs(info.dispatchedAt) + ' ago); ' + state;
 }
 
@@ -413,8 +421,7 @@ function dispatchTicket(entry, what) {
   outstanding.add(issuedTickets);
   // What it is, for STS-WORKER-0008 should it ever be dropped (#620).
   ticketInfo.set(issuedTickets, { what: String(what || 'a request'),
-                                  pid: entry.pid,
-                                  pool: entry.pool || PROTOCOL_POOL,
+                                  entry: entry,
                                   dispatchedAt: Date.now(),
                                   answeredAt: 0, heardAtAnswer: 0 });
   if (!entry.tickets) { entry.tickets = new Set(); }
@@ -6483,6 +6490,9 @@ module.exports = {
   ticketFinished: ticketFinished,
   ticketAbandoned: ticketAbandoned,
   reapStuckTickets: reapStuckTickets,
+  // What STS-WORKER-0008 says about one ticket (#620), exported so that
+  // `tests/request_ticket_announce.js` can hold the two causes apart.
+  describeTicket: describeTicket,
   awaitCommitConfirmations: awaitCommitConfirmations,
   receiveCommitted: receiveCommitted,
   // THE SYNC HALF OF THE BARRIER AND THE PROXY, exported for the same file

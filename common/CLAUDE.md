@@ -1734,6 +1734,30 @@ whose client left is released instead of staying queued behind
 `workers.maxSockets`, and the two barrier timeouts log once a second with a
 count. `tests/request_barrier.js` sections 6–9.
 
+**AND AN ANSWER ALREADY COMMITTED WAITED FOR ONE MORE FLUSH TO BE ANNOUNCED
+(#620, 2026-10-14).** Under an LDAPS bulk load on 8081 (two protocol workers,
+postgres, `workers.readYourWrite` on) STS-WORKER-0008 dropped six tickets in
+forty minutes, each answered and unannounced for thirty seconds, and every read
+on the other worker paid the 2,000 ms bound until it went. Since #351 a postgres
+worker answers a write only after its commit, yet the worker's announcement
+still named a ticket only once a LATER flush had finished — so a ticket whose
+write was in the store stayed armed for as long as that flush took or the
+worker's loop was blocked before finishing it. The first drop has its cause in
+the log: worker 2 missed two read barriers (STS-WORKER-0027) and a thread
+reported its loop blocked for 61.7 s (STS-STORE-0068) around it — a
+synchronous walk, which is #616 and #618. Now, where the store holds answers
+for their commit, a finished response and a settled operation are announced
+IN THE SAME TICK as the answer (`common/commit_announcer.ts`,
+`announceAnswered()`, with a truthful `wrote` so a released reader is still
+synced); a response cut off before `finish`, a handler that threw, and every
+answer on ldif or memory still wait for the flush. The flush-gated announcement
+runs beside it for the rows no answer is held for (the call log's success row,
+a search's audit rows) — never the barrier's business. **STS-WORKER-0008 now
+names each ticket it drops** — method and path or operation kind, worker, ages,
+and whether that worker has announced anything since: nothing means STALLED
+or a slow flush, something means the announcement was LOST.
+`tests/request_ticket_announce.js`.
+
 **THE WORKERS HAD THE OTHER HALF OF IT, AND SO DID EVERY POSTGRES PROCESS.**
 `persistence.flush()` answered a caller arriving during a flush with a waiter of
 its own, and a postgres store has a caller per WRITE — so waiters re-chained on
