@@ -631,6 +631,10 @@
     "en": "6a14636c8aef5de3",
     "text": "Santé des nœuds"
   },
+  "endpoints.route./admin-api/node-health/:action.name": {
+    "en": "00f328f6105fa2a9",
+    "text": "Actions de santé du nœud"
+  },
   "endpoints.route./admin-api/encryption.name": {
     "en": "eb626f73d72649aa",
     "text": "Chiffrement au repos"
@@ -730,6 +734,14 @@
   "endpoints.route./admin-api/service-accounts.name": {
     "en": "330b2e1630d653b8",
     "text": "Comptes de service et leur renouvellement"
+  },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Qui est propriétaire d’un objet, et si ses propriétaires peuvent l’administrer"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Fermer un objet à ses propriétaires, ou le rouvrir"
   },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",

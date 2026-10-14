@@ -589,6 +589,30 @@ password to. Its location appears in the application's configuration; its
 write credential is set on **Directory → Secret destinations**, where it is
 never shown again. See [Secret push destinations](secret-destinations.md).
 
+### An outbound SCIM client
+
+An application declared for **SCIM client (outbound provisioning)**
+(`scim-client`) is not a client of this service either: it is a remote SCIM
+2.0 service provider this service PUSHES the realm's people and groups to
+(#552). Its address, authentication, scope, groups and deprovisioning are
+attributes of the entry (`scimClientBaseUrl`, `scimClientAuthMethod`,
+`scimClientScopeMode` and the rest), and its three credentials
+(`scimClientPassword`, `scimClientOAuthClientSecret`,
+`scimClientTlsPrivateKey`) are sealed on it and never shown. Create and edit
+one on Protocols → SCIM → **Clients**, or with
+`POST /admin-api/scim/clients/add-client`, rather than by hand: that form
+checks the definition as a whole. Nothing is issued through this family. See
+[The outbound SCIM client](scim.md#the-outbound-scim-client).
+
+In a service deployed as [cells](cells.md) two more attributes apply (#553):
+`scimClientJurisdiction`, the jurisdiction the service provider is in, which
+each person's home cell puts to the issuance policy before it pushes them;
+and `scimClientCells`, the cells that push to it (empty is every cell). Both
+are ignored in a service that is one cell. `scimClientMaxRequestsPerSecond`
+holds any client to a request rate (empty or 0 is no limit), split across the
+cells that push. See
+[In a service deployed as cells](scim.md#in-a-service-deployed-as-cells).
+
 ### Certificate enrollment (ACME, EST, SCEP)
 
 ACME, EST and SCEP are three protocol families an application may be
@@ -961,6 +985,45 @@ Browser authentication only, as for sign-in mechanisms. Set it from the
 application's page, `POST /admin-api/applications/update-fields`, or `add` /
 `remove` with `attribute: appMfaMechanism`. A value that is not a second
 factor is refused (`STS-REG-0203`).
+
+### The passkey policy that applies to it
+
+An application's Configuration tab, *Every protocol*, ends with a
+**Passkey policy** card (#609). It is read-only, and it lists every named
+passkey policy of the realm whose applications list names this application,
+by its identifier or by one of its client_ids, matched in any case as a
+sign-in is. For each it shows:
+
+- its precedence;
+- the value that named the application;
+- any groups it selects as well;
+- whether it is the one that applies.
+
+The one that applies is the lowest precedence among them. Where none names the
+application, the card says the `default` passkey policy applies. Each name
+links to that policy on Directory → Policies.
+
+A sign-in names the application by one of its names: an OAuth or OpenID
+Connect sign-in by its client_id, SAML by its entity ID. Where policies name
+the application by different names, a sign-in gets the policy that names the
+name it used, and the card says so for each name that gets a different one.
+
+**A policy selecting by group can still win for a given person.** Where a
+named policy lists one of the person's groups and has a lower precedence,
+it applies to them instead; the card says how many named policies select by
+group.
+
+Nothing is stored on the application. Which applications a passkey policy
+covers is the policy's `stsPasskeySelectApplication`, edited on
+Directory → Policies (see the
+[passkey policy](authentication.md#the-passkey-policy)). Several policies may
+name one application; precedence decides between them.
+
+The API answer is `page.passkeyPolicies` on
+`GET /admin-api/applications?application=<id>`: `policies` (each `name`,
+`dn`, `precedence`, `selectApplications`, `selectGroups`, `matched`,
+`applies` and `link`), `applies`, `appliesBy` (the policy per name),
+`groupPolicies`, `names` and `link`.
 
 ## Development and product mode
 

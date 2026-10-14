@@ -2188,8 +2188,8 @@
     "text": "Responder a un canje repetido de código con los mismos tokens"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "0f31c5227700295a",
-    "text": "**MÁS DÉBIL QUE LA ESPECIFICACIÓN — déjelo desactivado.** Desactivado (el valor predeterminado), un código de autorización se presenta UNA SOLA VEZ: su primera solicitud de token lo consume sea cual sea el resultado de esa solicitud — un code_verifier incorrecto, una autenticación de cliente fallida, cualquier cosa — y una segunda presentación se rechaza, revocando lo que obtuvo la primera (RFC 6749 secciones 4.1.2 y 10.5; #424). Activado, una solicitud rechazada deja el código canjeable para que el cliente pueda corregirla y reintentar, y una repetición IDÉNTICA de un canje se responde con los tokens que ya obtuvo, durante el resto de la vigencia del código. RFC 9700, OAuth 2.1, FAPI y el modo producto lo ignoran. Existe para la tarea en modo de desarrollo del proyecto padre que todavía comprueba la antigua cortesía (#187)."
+    "en": "77b14590b7ee604f",
+    "text": "**MÁS DÉBIL QUE LA ESPECIFICACIÓN — déjelo desactivado.** Desactivado (el valor predeterminado), un código de autorización se presenta UNA SOLA VEZ: su primera solicitud de token lo consume sea cual sea el resultado de esa solicitud — un code_verifier incorrecto, una autenticación de cliente fallida, cualquier cosa — y una segunda presentación se rechaza, revocando lo que obtuvo la primera (RFC 6749 secciones 4.1.2 y 10.5; #424). Activado, una solicitud rechazada deja el código canjeable para que el cliente pueda corregirla y reintentar, y una repetición IDÉNTICA de un canje se responde con los tokens que ya obtuvo, durante el resto de la vigencia del código. RFC 9700, OAuth 2.1, FAPI y el modo producto lo ignoran. Existe para la tarea en modo de desarrollo del proyecto padre que todavía comprueba la antigua cortesía (#187). Activado, la respuesta de token COMPLETA de cada código canjeado — token de acceso, token de actualización e ID Token — se conserva durante el resto de su vigencia para poder enviarse de nuevo; desactivado, solo se conservan los valores jti de los tokens emitidos (#614)."
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",
@@ -3687,6 +3687,14 @@
     "en": "37d7c47a629e2f87",
     "text": "La página que se muestra en lugar de redirigir un error de autorización al cliente, cuando la persona no ha iniciado sesión aquí (RFC 9700 sección 4.11.2), tiene un enlace para continuar. 0 (el predeterminado) lo deja así: decide la persona. Por encima de 0, la página TAMBIÉN continúa por sí sola tras esta cantidad de segundos (un meta refresh, sin script) y lo indica. **Esto debilita la protección para la que existe la página**: una redirección temporizada sigue siendo una redirección automática de un navegador que no se ha autenticado aquí, lo que según advierte RFC 9700 sección 4.11.2 permite usar este servidor como salto para enviar a alguien a la dirección de un cliente sin su consentimiento. La dirección ya se ha comparado con el registro del cliente, lo que acota el riesgo. Un error form_post conserva su botón: no se puede hacer un POST sin script. (#317)"
   },
+  "oauth2.keyBinding|label": {
+    "en": "a7dcb6104de02166",
+    "text": "Vinculación de claves de OpenID Connect"
+  },
+  "oauth2.keyBinding|description": {
+    "en": "2394ee67a689920d",
+    "text": "Aplica OpenID Connect Key Binding 1.0 (#150). Activado: el documento de descubrimiento incluye el ámbito `bound_key`, un cliente que no declara ámbitos puede pedirlo, y una solicitud que lo pida debe indicar `dpop_jkt` y usar el flujo de código (si no, se rechaza, STS-OAUTH-0704 y 0705); el ID Token nombra entonces la clave DPoP (`cnf.jwk`, `typ: dpop+id_token`), la solicitud de token debe probarla con `c_s256`, y cada actualización debe venir de la misma clave. **Desactivado, no existe, y el servicio es solo OpenID Connect Core**: `bound_key` no se anuncia, una solicitud que lo incluya no se rechaza — el ámbito se ignora y no se concede, como Core trata un ámbito sobre el que un OP no actúa — y ningún ID Token queda vinculado. Desactívelo donde las partes de confianza pidan todos los ámbitos anunciados y no sepan nada de Key Binding (#315). Una concesión ya vinculada antes de desactivarlo conserva la comprobación de su clave al actualizarse."
+  },
   "oauth2.sessionManagement|label": {
     "en": "9b2a882aa3250c63",
     "text": "OpenID Connect Session Management"
@@ -4303,6 +4311,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "Cuánto tiempo se retiene un AuthnRequest mientras el navegador está en la pantalla de inicio de sesión, o entre una solicitud con binding POST y el GET en que se convierte. Pasado ese tiempo el regreso se rechaza con una página que nombra este valor. Era la constante REQUEST_TTL_MS en saml2_sso.js."
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Artefactos sin resolver conservados"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "Cuántos artefactos SAML 2.0 pueden esperar a ser resueltos, por dominio de confianza. Primero se eliminan los caducados; un almacén que sigue lleno RECHAZA el siguiente inicio de sesión en el enlace HTTP-Artifact con una página (HTTP 503) en lugar de olvidar un artefacto que un proveedor de servicios aún no ha resuelto."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Aviso de longitud del binding Redirect (caracteres)"
@@ -4438,6 +4454,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "Cuántas aserciones emitidas conserva el respondedor SAML, por dominio de confianza, para que una parte que confía pueda volver a pedir una mediante AssertionIDReference. Primero sale la más antigua. Era la constante ASSERTION_CACHE_MAX en saml11_sso.js."
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "Vigencia de una aserción conservada sin NotOnOrAfter (segundos)"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "Durante cuánto tiempo una aserción emitida sigue disponible mediante AssertionIDReference cuando no lleva NotOnOrAfter. Una que sí lo lleva —todas las que construye este servicio— se conserva hasta su NotOnOrAfter y no más."
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Artefactos sin resolver conservados"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "Cuántos artefactos SAML 1.1 pueden esperar a ser resueltos, por dominio de confianza. Primero se eliminan los caducados; un almacén que sigue lleno RECHAZA el siguiente inicio de sesión Browser/Artifact con una página (HTTP 503) en lugar de olvidar un artefacto que una parte que confía aún no ha resuelto."
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",
@@ -5976,12 +6008,12 @@
     "text": "Cuánto puede crecer el directorio. Un techo más que un objetivo: aparecen entradas para cualquiera que se autentique aquí mediante cualquier protocolo. Se cuenta sobre todos los dominios que tiene este proceso; en un worker de solicitudes con ldap.workerDirectory=postgres-lru, sobre las filas del dominio en el almacén."
   },
   "ldap.workerDirectory|label": {
-    "en": "1856d210a6491cae",
-    "text": "Directorio en los workers de solicitudes"
+    "en": "d0f2a4d1725d58e0",
+    "text": "Directorio en memoria o como ventana"
   },
   "ldap.workerDirectory|description": {
-    "en": "4fb4e7e328521df6",
-    "text": "Cómo mantiene el directorio un worker de solicitudes o de superficie. memory (el predeterminado): todas las entradas, en cada proceso. postgres-lru: las personas y los dispositivos como una ventana de como máximo ldap.workerCacheEntries entradas, y el resto se lee de PostgreSQL cuando se pide — la memoria de un worker ya no crece con el directorio, y un fallo de caché cuesta un viaje de ida y vuelta a la base de datos. Requiere persistence.mode=postgres y una sola celda; el proceso frontal siempre mantiene el directorio completo."
+    "en": "af2208b6228d6f59",
+    "text": "Cómo cada proceso — el proceso frontal y cada worker de solicitudes o de superficie — mantiene el directorio. auto (el valor predeterminado, #320): postgres-lru donde puede funcionar — persistence.mode=postgres y una sola celda — y memory en todos los demás casos. memory: cada entrada, en cada proceso. postgres-lru: las personas y los dispositivos como una ventana de como máximo ldap.workerCacheEntries entradas por proceso; el resto se lee de PostgreSQL cuando se pide — la memoria ya no crece con el número de personas, y un fallo cuesta un viaje de ida y vuelta a la base de datos durante el cual ese proceso no hace nada más. Requiere persistence.mode=postgres y una sola celda."
   },
   "ldap.workerDirectory|restartReason": {
     "en": "6fad6c6ace897221",
@@ -6010,6 +6042,14 @@
   "ldap.sizeLimit|description": {
     "en": "0c2877143f2fb6ec",
     "text": "El límite de tamaño del lado del servidor para una búsqueda, que es lo que produce LDAP_SIZE_LIMIT_EXCEEDED."
+  },
+  "ldap.timeLimit|label": {
+    "en": "9c041bfdb05c473c",
+    "text": "Límite de tiempo de las búsquedas (s)"
+  },
+  "ldap.timeLimit|description": {
+    "en": "b74ec7b68f9251f2",
+    "text": "El límite de tiempo del lado del servidor para una búsqueda, en segundos, que es lo que produce LDAP_TIME_LIMIT_EXCEEDED; gana el timeLimit propio de un cliente cuando es más corto. Las entradas enviadas antes de alcanzarlo son la respuesta, marcada como incompleta."
   },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",

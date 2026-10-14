@@ -209,6 +209,16 @@ entries and then `sizeLimitExceeded` (4). The entries already sent are a valid
 partial answer, and the result code is how the client knows the answer is
 partial. Page through a large directory with a narrower filter or base.
 
+### Search time limit
+
+A search also stops at `ldap.timeLimit` seconds (30), or at the client's own
+`timeLimit` when that is shorter, and ends with `timeLimitExceeded` (3) after
+the entries it had already sent. Where the service holds its people as a
+window onto PostgreSQL, a search that no index can narrow (an equality on
+`uid` or `mail`, or a search for groups) reads the store a page at a time
+without holding up anything else, sends each entry as it is found, and stops
+paging as soon as it reaches either limit.
+
 ### Size of the directory
 
 `ldap.maxEntries` (2000) caps how many entries the process holds, counted across
@@ -319,6 +329,7 @@ provisioning client must.
 | `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through any protocol. |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |
+| `ldap.timeLimit` | `LDAP_TIME_LIMIT` | `30` | yes | The server-side search time limit in seconds (a client's shorter `timeLimit` wins), past which a search ends with `timeLimitExceeded` and the entries already sent. |
 | `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
 | `ldap.directoryReadableAttributes` | `LDAP_DIRECTORY_READABLE_ATTRIBUTES` | empty | yes | In product mode, the attributes a person may read on **other** people's entries; empty (the default) means they read only their own. See the warning above before widening it. |
 | `ldap.groupMembersReadable` | `LDAP_GROUP_MEMBERS_READABLE` | `false` | yes | In product mode, whether a person may read the member list of a group they are in. See the warning above. |
@@ -629,6 +640,24 @@ schema — through one function, and a **second spelling of a name already known
 is logged as a warning** naming both, first spelling winning. It is a warning
 and not a failure, because a table of capitalisations must never stop the
 service starting.
+
+## How a filter value is matched
+
+A search filter's equality and substring assertions are matched by **the
+attribute's own equality rule**, as the standard schema defines it. The
+attributes whose rule ignores case — RFC 4519's `uid`, `cn`, `sn`, `givenName`,
+`ou`, `o`, `dc` and the rest of its directory strings, RFC 4524's `mail` and
+COSINE strings, and RFC 2798's `displayName`, `employeeNumber` and the other
+inetOrgPerson strings — match in any case: `(uid=ALICE)` and `(uid=Ali*)` find
+`uid=alice`, and `(mail=Alice@Example.COM)` finds `alice@example.com`. Every
+other attribute — `memberUid` (caseExactIA5Match), the octet strings, and this
+service's own `sts*` attributes — is compared exactly, as it always was, and
+`objectClass` ignores case as it always did. Case is the whole of it: the
+insignificant-space handling of RFC 4518's string preparation is not done.
+
+Until 2026-10-14 (#632) every value but `objectClass`'s was compared exactly,
+so a search for a person in a case other than the one stored found nobody,
+while a sign-in, the console and SCIM found them.
 
 ## Two ldapjs defects this service routes around
 

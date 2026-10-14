@@ -75,7 +75,7 @@ Route-free libraries, each require-able from an in-process test:
 | `gnap_access.ts` | access rights: covers, intersect, the RFC 9767 token model and its presentation checks |
 | `token_macaroon.ts`, `token_biscuit.ts`, `token_zcap.ts` | the three library formats |
 | `gnap_tokens.ts` | the format dispatcher; the two JWT formats go through `helpers.signJwt` and `common/crypto.js` |
-| `gnap_store.ts` | twelve `realms.map({ persist })` stores — grants, continuations, interactions, user codes, tokens and their value index, management handles, instances, user references, resource sets, replay |
+| `gnap_store.ts` | twelve `realms.map({ persist })` stores — grants, continuations, interactions, user codes, tokens and their value index, management handles, instances, user references, resource sets, replay. **Interaction handles and user codes are keyed by digest since #614** (`mode:<digest>`, and the code's digest), hashed inside the store's own methods so every caller passes what it minted or was shown; `handleKey()` is exported for `gnap_cells.ts`'s moved-grant record. The grant record still carries each handle and code (`interaction.modes`), because a continuation response repeats them |
 | `gnap_subject.ts` | sub_ids and the `id_token` / `saml2` assertions |
 | `gnap_http.ts` | the push finish, the only outbound request here, modelled on `ssf/ssf_http.ts` |
 | `gnap_monitor.ts` | per-application counters (`merge: 'own'`), the `xacml_monitor.js` model |
@@ -286,7 +286,7 @@ Rotation and modification keep the chain (`grant.actorChain`, and the rotated
 model copies `act`), introspection returns it, and `gnap.maxDerivationDepth`
 (default 2: a three-tier call path) caps it in every mode (0782).
 
-## Each right a policy question, read against one catalogue (#432 phases 3 and 4, 2026-10-03)
+## 3bz. Each right a policy question, read against one catalogue (#432 phases 3 and 4, 2026-10-03)
 
 Until #432 the engine decided who may be granted what in code
 (`protectedAccessProblem()`, `accessProblem()` and an inline bearer check in

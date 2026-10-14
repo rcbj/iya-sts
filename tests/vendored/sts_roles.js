@@ -576,7 +576,11 @@ async function anUnconfiguredRealmRefusesNobody() {
     // EIGHT SINCE #309 (2026-09-28): DEVICE_COMPLIANCE followed them, the
     // last role read off a scope, and is asserted above among the native
     // ones.
-    assert.strictEqual(register.body.builtIn.length, 8,
+    //
+    // TEN SINCE #607 (2026-10-13): OWNER_READ and OWNER_WRITE, computed from
+    // the owner attributes, and the first built-ins that authorize a
+    // permission (owner:read, owner:write).
+    assert.strictEqual(register.body.builtIn.length, 10,
       "the built-in roles are computed rather than stored, so an empty " +
       "container has them; this realm reports " +
       register.body.builtIn.length + " (" +

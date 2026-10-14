@@ -568,8 +568,12 @@
     "text": "UN ÁMBITO SOBRE EL QUE NO SE PREGUNTA A NADIE CUANDO INICIA SESIÓN EN ESTA APLICACIÓN. Un valor por ámbito, escrito exactamente como un cliente lo pone en un parámetro `scope` — `openid`, `profile`, o un identificador completo de permiso delegado como `https://example.com/write`.\n\n**Es una ANULACIÓN y no un registro.** Con `oauth2.consentRequired` activado (que es el valor predeterminado), el endpoint de autorización dibuja /oauth2/consent para cualquier ámbito que esta persona no haya aceptado para esta aplicación; un ámbito nombrado aquí se omite para TODOS, y no se escribe nada en la entrada de nadie. Así que quitar un valor vuelve a preguntar a todos — incluidas las personas que habrían dicho que sí —, mientras que quitar el `oauthConsent` propio de una persona solo le pregunta a ella.\n\n**Se indexa por el par y no solo por el ámbito.** Dar consentimiento a `read` aquí lo da para ESTA aplicación; a una aplicación registrada cinco minutos después que escriba la misma palabra se le sigue preguntando.\n\nUn valor que no nombra ningún permiso que defina alguna aplicación no es un error y no se oculta — la mayoría de los ámbitos no son permisos. Debe ser un token de ámbito válido según RFC 6749 sección 3.3, porque un valor con un espacio nunca podría coincidir con un ámbito; un `ldapmodify` llega a este atributo como a cualquier otro y no se comprueba, y /admin/consent muestra lo que puso allí."
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "Una persona o un grupo de este dominio que responde por la aplicación (#604), por DN, como los propietarios de un grupo y de un rol. Multivalor, como máximo 25. Un propietario NO CONCEDE NADA: nada en este servicio lo lee para decidir algo. El portal de usuario lista lo que posee una persona."
+    "en": "9c53dd774f6667e3",
+    "text": "Una persona o un grupo de este dominio que responde de la aplicación (#604), por DN, como los propietarios de un grupo y de un rol. Multivalor, como máximo 25. Desde #607 un propietario puede ADMINISTRAR la aplicación a través de /admin-api con owner:read y owner:write, dentro de lo que permite la regla de propietarios de la política access-control. El portal de usuario lista lo que posee una persona."
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE: los propietarios de la aplicación no pueden administrarla a través de /admin-api (#607) — una marca del administrador, que la regla de propietarios de la política access-control lee como urn:sts:xacml:object-protected. Ausente es FALSE."
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",
@@ -1423,6 +1427,18 @@
     "en": "a40bdc8ff019b288",
     "text": "CADA CUÁNTO SE RECONCILIA TODO EL ÁMBITO, en minutos, mediante el planificador del clúster: se envían todas las personas y grupos dentro del ámbito, y lo que el proveedor de servicios tiene bajo un externalId de este dominio y ya no está dentro del ámbito se desaprovisiona. 0 (el valor predeterminado) solo reconcilia cuando lo pide un administrador."
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "DÓNDE ESTÁ EL PROVEEDOR DE SERVICIOS, como código de jurisdicción del mapa de celdas (us, eu, ca, …). En un servicio desplegado en celdas, la celda de origen de cada persona pregunta a la política de emisión si los datos de esa persona pueden ir allí (release-attributes, propósito scim-provision) antes de enviarla; una negativa la deja fuera del ámbito: no se envía y se desaprovisiona si ya se había enviado. Vacío es una jurisdicción desconocida, a la que el valor predeterminado estricto nunca libera nada. Se ignora cuando el servicio es una sola celda."
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "QUÉ CELDAS ENVÍAN AL PROVEEDOR DE SERVICIOS, cada una por su id de celda; ninguna (el valor predeterminado) significa todas las celdas. Una celda que no figura no envía nada para este cliente, así que las personas con origen en ella no se envían. Se ignora cuando el servicio es una sola celda."
+  },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "CUÁNTAS SOLICITUDES POR SEGUNDO se envían como máximo al proveedor de servicios: cada entrega, búsqueda, lectura de descubrimiento y página de conciliación espera su turno en lugar de fallar. Vacío o 0 (el valor predeterminado) significa sin límite. En un servicio desplegado en celdas, cada celda que envía puede enviar este valor dividido entre el número de esas celdas, redondeado hacia arriba."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "CÓMO SE LLAMA UN RECEPTOR DE SHARED SIGNALS — aquello como lo que se autenticó cuando creó un flujo en /ssf/stream, que es también el `aud` de cada Security Event Token que lleva ese flujo. A diferencia de los cuatro identificadores solo declarativos de encima, este SÍ lo escribe el protocolo: crear un flujo registra un avistamiento, porque un receptor que se autentica y obtiene un flujo es exactamente el tipo de evento que este registro existe para guardar. Aun así no concede nada — un flujo es lo que decide qué recibe un receptor, y lleva su propia audiencia."
@@ -1666,6 +1682,10 @@
   "devices.schema.attributes.stsDeviceCredentialId.what": {
     "en": "5c367d4336aa3edd",
     "text": "El id de credencial de cada clave WebAuthn vinculada, derivado de stsDeviceKey en cada escritura para que un inicio de sesión encuentre su dispositivo por índice."
+  },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "El identificador de cada clave atestiguada por una cadena Android cuyos números de serie se conservaron, derivado de stsDeviceKey en cada escritura para que la nueva comprobación de la atestación Android lea solo los dispositivos que tienen una (#615)."
   },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",

@@ -384,7 +384,11 @@ async function finish(b, r) {
   return r;
 }
 
-async function sessionOf(who) {
+// A PERSON MAY HOLD SEVERAL SESSIONS — test 1 signs in on a password alone
+// before it turns the emailed code on — and the API lists them in no order a
+// test may rely on (single-node answered the password-only one first), so a
+// caller that wants one of them says which with `wanted`.
+async function sessionOf(who, wanted) {
   log.debug("Entering sessionOf().");
   const r = await call("GET", realmBase() + "/admin-api/sessions?q=" +
                        encodeURIComponent(who));
@@ -393,7 +397,8 @@ async function sessionOf(who) {
     return String(row.username || row.who || row.user || "") === who ||
            JSON.stringify(row).indexOf('"' + who + '"') >= 0;
   }).filter(function (row) {
-    return Array.isArray(row.amr) && row.amr.length;
+    return Array.isArray(row.amr) && row.amr.length &&
+           (!wanted || wanted(row));
   })[0] || null;
   log.debug("Leaving sessionOf().");
   return found;
@@ -539,7 +544,9 @@ async function aCodeAsTheSecondFactor(fields) {
   });
   await finish(c, r);
   const session = await until("the session", function () {
-    return sessionOf(who);
+    return sessionOf(who, function (row) {
+      return row.amr.indexOf("otp") >= 0;
+    });
   }, 10000);
   check("1. the session says amr [\"pwd\",\"otp\"] and acr \"mfa\"",
         function () {

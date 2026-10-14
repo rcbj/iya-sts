@@ -210,6 +210,88 @@ const path = require('path');
 const bunyan = require('bunyan');
 
 // ---------------------------------------------------------------------------
+// A DISABLED `debug` OR `trace` LINE COSTS ONE COMPARISON (#627).
+//
+// The style rule makes every named function log its entry and exit at debug,
+// and every appconfig file runs at info, so nearly every one of those calls
+// is a line nobody will see. Bunyan's own emitter (`mkLogEmitter()`) still
+// did work for each: it copied its arguments into a fresh array and fired the
+// level's dtrace probe — a stub on Linux, but a call — BEFORE it compared the
+// level, and under a bulk load that was 250–480 ms per 30 s on the front
+// process's operation path and as much on the request workers' add path.
+//
+// So the two methods are wrapped ONCE, on bunyan's shared prototype, by the
+// first module every process loads that holds bunyan — this one, which
+// helpers.js, realms.js, persistence and nearly every module that makes a
+// logger require before they make it. Being on the PROTOTYPE is what makes it
+// central rather than a call-site edit, and it is in this file rather than a
+// new one because this file is already in the parent project's Kerberos COPY
+// closure (kerberos/CLAUDE.md), which a new require would have grown:
+//
+// * every logger is covered: the shared `sts` logger, the hundred or so that
+//   modules make for themselves, child loggers, and the vendored and
+//   parent-owned modules' loggers (the eight krb5 codecs included), none of
+//   which is edited. A method is looked up on the prototype at each call, so
+//   a logger made BEFORE this ran is covered as well;
+// * the level is read at the CALL, not cached, so `logger.level()` at runtime
+//   (applyLogLevel() below, STS_LOG_LEVEL, the console) takes effect at once in
+//   both directions, and a child that bunyan gave a level of its own is judged
+//   by that level;
+// * each request worker is its own V8 isolate with its own module cache, and
+//   loads this file before any route module, so it installs its own copy.
+//
+// What it preserves: `log.debug()` with NO arguments is bunyan's documented
+// "is this level enabled?" and still answers bunyan's boolean, because a call
+// without arguments is handed to bunyan untouched; so is any call whose
+// `this` is not a logger (bunyan's own "unbound log method" warning); and
+// every enabled call reaches bunyan exactly as before. What it gives up: a
+// real dtrace consumer would no longer see probes fire for lines below the
+// level — on Linux the provider is the stub (dtrace-provider has no USDT
+// support there) and nothing can watch them.
+//
+// What it CANNOT do is stop the caller building the message: an argument is
+// evaluated before any function is entered. Where a hot path builds an
+// expensive one, the call site asks `log.debug()` first (common/CLAUDE.md,
+// *Disabled debug lines*).
+//
+// No logger exists yet, so the installer logs nothing (common/config_file.js
+// has the same exemption); the wrapper is the hottest function in the service
+// and is itself what an Entering/Leaving pair would call, so it carries none —
+// a line inside log.debug() would be infinite recursion.
+// ---------------------------------------------------------------------------
+/**
+ * Wraps one of bunyan's level methods so a call below the logger's level
+ * returns before bunyan does any work (#627).
+ *
+ * @param {any} Logger - bunyan's Logger class (the module's export)
+ * @param {number} minLevel - the method's level (bunyan.DEBUG, bunyan.TRACE)
+ * @param {string} name - the method's name
+ */
+function quietBelowLevel(Logger, minLevel, name) {
+  const emit = Logger.prototype[name];
+  if (emit.quietBelowLevel === true) {
+    // Already installed: a test that clears the require cache loads this file
+    // again over the same bunyan, and a second wrapper would only add a call.
+    return;
+  }
+  // Hot path: every disabled debug line in the service runs this, so it has
+  // no Entering/Leaving pair (and one would recurse).
+  /** @this {any} */
+  const quiet = function () {
+    if (this && this._level > minLevel && arguments.length !== 0) {
+      return undefined;
+    }
+    return emit.apply(this, arguments);
+  };
+  quiet.quietBelowLevel = true;
+  quiet.bunyanEmitter = emit;
+  Logger.prototype[name] = quiet;
+}
+
+quietBelowLevel(bunyan, bunyan.TRACE, 'trace');
+quietBelowLevel(bunyan, bunyan.DEBUG, 'debug');
+
+// ---------------------------------------------------------------------------
 // THE APPCONFIG LAYER, which is TWO FILES unioned rather than one.
 //
 // env/defaults.js is the base and is not selected by anything: it carries the
@@ -5181,7 +5263,11 @@ const SETTINGS = [
                  'the rest of the code\'s lifetime. RFC 9700, OAuth 2.1, ' +
                  'FAPI and product mode ignore it. It exists for the parent ' +
                  'project\'s development-mode job that still asserts the ' +
-                 'old courtesy (#187).' },
+                 'old courtesy (#187). On, each redeemed code\'s WHOLE ' +
+                 'token response — access token, refresh token and ID ' +
+                 'Token — is kept for the rest of its lifetime so that it ' +
+                 'can be sent again; off, only the issued tokens\' jti ' +
+                 'values are kept (#614).' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',
@@ -7414,6 +7500,26 @@ const SETTINGS = [
                  'registration, which bounds the risk. A form_post error ' +
                  'keeps its button: a POST cannot be made without a ' +
                  'script. (#317)' },
+  { key: 'oauth2.keyBinding', group: 'OAuth 2.0 / OIDC',
+    label: 'OpenID Connect Key Binding',
+    env: 'STS_OAUTH2_KEY_BINDING', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Perform OpenID Connect Key Binding 1.0 (#150). With it on: ' +
+                 'the discovery document lists the `bound_key` scope, a ' +
+                 'client that declares no scopes may ask for it, and a ' +
+                 'request for it must name `dpop_jkt` and use the code flow ' +
+                 '(refused otherwise, STS-OAUTH-0704 and 0705); the ID Token ' +
+                 'then names the DPoP key (`cnf.jwk`, `typ: dpop+id_token`), ' +
+                 'the token request must prove it with `c_s256`, and every ' +
+                 'refresh must come from the same key. **Off, it does not ' +
+                 'exist, and the service is OpenID Connect Core alone**: ' +
+                 '`bound_key` is not advertised, a request carrying it is ' +
+                 'not refused — the scope is ignored and not granted, as ' +
+                 'Core treats a scope an OP does not act on — and no ID ' +
+                 'Token is bound. Turn it off where relying parties request ' +
+                 'every advertised scope and know nothing of Key Binding ' +
+                 '(#315). A grant already bound before it was turned off ' +
+                 'keeps its key check on refresh.' },
   { key: 'oauth2.sessionManagement', group: 'OAuth 2.0 / OIDC',
     label: 'OpenID Connect Session Management',
     env: 'STS_OAUTH2_SESSION_MANAGEMENT', type: 'bool', dflt: false,
@@ -8659,6 +8765,17 @@ const SETTINGS = [
                  'refused with a page naming this value. Was the constant ' +
                  'REQUEST_TTL_MS in saml2_sso.js.' },
 
+  // #614: the artifact store had a lifetime and no count.
+  { key: 'saml2.maxArtifacts', group: 'SAML 2.0',
+    label: 'Unresolved artifacts kept',
+    env: 'STS_SAML2_MAX_ARTIFACTS', type: 'int', dflt: 10000, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many SAML 2.0 artifacts may wait to be resolved, per ' +
+                 'trust realm. Expired artifacts are cleared first; a store ' +
+                 'still full REFUSES the next sign-in on the HTTP-Artifact ' +
+                 'binding with a page (HTTP 503) rather than forget an ' +
+                 'artifact a service provider has not resolved yet.' },
+
   { key: 'saml2.redirectWarnLength', group: 'SAML 2.0',
     label: 'Redirect-binding length warning (characters)',
     env: 'STS_SAML2_REDIRECT_WARN_LENGTH', type: 'int', dflt: 8000,
@@ -8944,6 +9061,27 @@ const SETTINGS = [
                  'trust realm, so a relying party can ask for one again by ' +
                  'AssertionIDReference. Oldest out first. Was the constant ' +
                  'ASSERTION_CACHE_MAX in saml11_sso.js.' },
+
+  // #614: an assertion kept for AssertionIDReference expires with itself.
+  { key: 'saml11.assertionCacheTtlS', group: 'SAML 1.1',
+    label: 'Kept assertion lifetime without NotOnOrAfter (seconds)',
+    env: 'STS_SAML11_ASSERTION_CACHE_TTL_S', type: 'int', dflt: 3600, min: 1,
+    max: 604800, runtime: true,
+    description: 'How long an issued assertion stays answerable by ' +
+                 'AssertionIDReference when it carries no NotOnOrAfter. One ' +
+                 'that does — every assertion this service builds — is kept ' +
+                 'until its NotOnOrAfter and no longer.' },
+
+  // #614: the artifact store had a lifetime and no count.
+  { key: 'saml11.maxArtifacts', group: 'SAML 1.1',
+    label: 'Unresolved artifacts kept',
+    env: 'STS_SAML11_MAX_ARTIFACTS', type: 'int', dflt: 10000, min: 1,
+    max: 1000000, runtime: true,
+    description: 'How many SAML 1.1 artifacts may wait to be resolved, per ' +
+                 'trust realm. Expired artifacts are cleared first; a store ' +
+                 'still full REFUSES the next Browser/Artifact sign-in ' +
+                 'with a page (HTTP 503) rather than forget an artifact a ' +
+                 'relying party has not resolved yet.' },
 
   // --- WS-Trust ------------------------------------------------------------
 
@@ -11323,27 +11461,39 @@ const SETTINGS = [
 
   // THE DIRECTORY AS A WINDOW IN A REQUEST OR SURFACE WORKER (#349, rcbj's
   // decisions of 2026-09-29): `memory` holds the whole directory in every
-  // process, as always; `postgres-lru` has each worker hold the people and
+  // process, as always; `postgres-lru` has each process hold the people and
   // devices as a bounded window and ask the store for the rest, through a
-  // synchronous bridge. The front process holds the whole directory either
-  // way. Restart-only: the store's shape is chosen when `ldap_server.js`
+  // synchronous bridge — the front process too since #320. Restart-only: the store's shape is chosen when `ldap_server.js`
   // loads. `persistence.start()` refuses postgres-lru without a postgres
   // store or in a multi-cell deployment (STS-LDAP-0133).
+  //
+  // `auto` IS THE DEFAULT SINCE #320 (rcbj, 2026-10-13): a whole copy of the
+  // directory in every worker isolate was the largest memory cost on a node,
+  // and `memory` was the default only because #349 left the decision open.
+  // `auto` is the window wherever the window can work and the whole directory
+  // everywhere else, so a memory, ldif or multi-cell service starts as it did
+  // and only an explicit postgres-lru is refused. The one reading is
+  // `persistence.directoryWindowWanted()`.
   { key: 'ldap.workerDirectory', group: 'LDAP',
-    label: 'Directory in request workers',
+    label: 'Directory held in memory, or as a window',
     env: 'LDAP_WORKER_DIRECTORY', type: 'enum',
-    enumValues: ['memory', 'postgres-lru'], dflt: 'memory', runtime: false,
+    enumValues: ['auto', 'memory', 'postgres-lru'], dflt: 'auto',
+    runtime: false,
     restartReason: 'the directory\'s store is chosen when the process loads ' +
                    'it',
-    description: 'How a request or surface worker holds the directory. ' +
-                 'memory (the default): every entry, in every process. ' +
+    description: 'How every process — the front process and each request ' +
+                 'or surface worker — holds the directory. ' +
+                 'auto (the default, #320): postgres-lru wherever it can ' +
+                 'work — persistence.mode=postgres and a single cell — and ' +
+                 'memory everywhere else. ' +
+                 'memory: every entry, in every process. ' +
                  'postgres-lru: the people and devices as a window of at ' +
-                 'most ldap.workerCacheEntries entries, the rest read from ' +
-                 'PostgreSQL when asked for — a worker\'s memory no longer ' +
-                 'grows with the directory, and a miss costs one database ' +
-                 'round trip. Requires persistence.mode=postgres and a ' +
-                 'single cell; the front process always holds the whole ' +
-                 'directory.' },
+                 'most ldap.workerCacheEntries entries per process, the ' +
+                 'rest read from PostgreSQL when asked for — memory no ' +
+                 'longer grows with the number of people, and a miss costs ' +
+                 'one database round trip during which that process does ' +
+                 'nothing else. Requires persistence.mode=postgres and a ' +
+                 'single cell.' },
 
   // THE WINDOW'S BOUND (#349): entries, about 2.5 KB each with the JSON it
   // keeps for the merge. Read at every insert, so a change applies at once.
@@ -11375,6 +11525,20 @@ const SETTINGS = [
     env: 'LDAP_SIZE_LIMIT', type: 'int', dflt: 500, runtime: true,
     description: 'The server-side size limit for a search, which is what ' +
                  'produces LDAP_SIZE_LIMIT_EXCEEDED.' },
+
+  // THE SERVER'S OWN TIME LIMIT ON A SEARCH (#616). A search the store's
+  // indexes cannot narrow pages the store asynchronously in a windowed
+  // process and stops at the first of this, the client's own timeLimit and
+  // ldap.sizeLimit — so a filter matching almost nothing in a realm of
+  // hundreds of thousands ends with a partial answer and result code 3
+  // rather than reading every row. Read per search.
+  { key: 'ldap.timeLimit', group: 'LDAP', label: 'Search time limit (s)',
+    env: 'LDAP_TIME_LIMIT', type: 'int', dflt: 30, min: 1, max: 3600,
+    runtime: true,
+    description: 'The server-side time limit for a search, in seconds, ' +
+                 'which is what produces LDAP_TIME_LIMIT_EXCEEDED; a ' +
+                 'client\'s own shorter timeLimit wins. The entries sent ' +
+                 'before it are the answer, marked incomplete.' },
 
   { key: 'ldap.plainListener', group: 'LDAP', label: 'Plain LDAP listener',
     env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: true, runtime: false,

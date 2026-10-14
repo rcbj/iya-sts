@@ -460,6 +460,13 @@ The profile is chosen by the `profile` parameter first. If there is none, the
 binding of the registered `shire` decides. Failing both,
 `saml11.defaultProfile` applies.
 
+The Shibboleth SP 1.3 form is accepted as it is sent: `providerId`, `shire`,
+a lower-case `target` (returned as `TARGET`) and `time`, which is accepted
+and ignored, so a stale value does not refuse the request. The job
+`sts_saml11.js` sends that form with no `profile` to a relying party whose
+metadata names a `browser-post` endpoint, and to one whose metadata names an
+`artifact-01` endpoint, and checks that each binding selects its profile.
+
 In product mode, the `shire` must exactly match a registered
 `samlAssertionConsumerService`, and a request that names no registered
 relying party is refused.

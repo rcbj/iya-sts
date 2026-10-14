@@ -155,6 +155,8 @@ function childMain() {
     const app = require(ROOT + '/common/app');
     const config = require(ROOT + '/common/config');
     const realms = require(ROOT + '/common/realms');
+    // The artifact stores are keyed by the artifact's digest (#614).
+    const artifactKey = require(ROOT + '/common/crypto').credentialDigest;
     const persistence = require(ROOT + '/persistence/persistence');
     const capabilities = require(ROOT + '/cluster/cluster_capabilities');
     const ldap = require(ROOT + '/ldap/ldap_server');
@@ -210,7 +212,7 @@ function childMain() {
                xml: '<samlp:Response ID="_csu-held-message"/>' };
     };
     const success2 = /status:Success/;
-    artifacts2.restore(DEFAULT, 'CSU-A2', held2());
+    artifacts2.restore(DEFAULT, artifactKey('CSU-A2'), held2());
     let r = await resolve2('CSU-A2');
     note(success2.test(r.text) && /_csu-held-message/.test(r.text),
          '1a. a SAML 2.0 artifact resolves', r.text.slice(0, 300));
@@ -218,7 +220,7 @@ function childMain() {
     note(!/_csu-held-message/.test(r.text), '1b. and a second resolution ' +
          'on the same ' +
          'node is refused by the map, as always', r.text.slice(0, 200));
-    artifacts2.restore(DEFAULT, 'CSU-A2', held2());
+    artifacts2.restore(DEFAULT, artifactKey('CSU-A2'), held2());
     r = await resolve2('CSU-A2');
     // A refusal is the EMPTY response saml-core-2.0-os 3.5.3 requires (#160):
     // Success, nothing embedded, no StatusMessage.
@@ -228,21 +230,21 @@ function childMain() {
          'node already resolved it (the claim) — the empty response',
          r.text.slice(0, 300));
     store = sharedStore();
-    artifacts2.restore(DEFAULT, 'CSU-A2', held2());
+    artifacts2.restore(DEFAULT, artifactKey('CSU-A2'), held2());
     r = await resolve2('CSU-A2');
     note(/_csu-held-message/.test(r.text), '1d. the control: the same ' +
          'restore against ' +
          'an empty claim store resolves — the refusal was the claim\'s',
          r.text.slice(0, 200));
     store = brokenStore();
-    artifacts2.restore(DEFAULT, 'CSU-B2', held2());
+    artifacts2.restore(DEFAULT, artifactKey('CSU-B2'), held2());
     r = await resolve2('CSU-B2');
     note(success2.test(r.text) && !/_csu-held-message/.test(r.text),
          '1e. a claim store that cannot be asked REFUSES (fail closed) — ' +
          'the empty response',
          r.text.slice(0, 300));
     store = sharedStore();
-    artifacts2.restore(DEFAULT, 'CSU-C2', held2());
+    artifacts2.restore(DEFAULT, artifactKey('CSU-C2'), held2());
     const both = await Promise.all([resolve2('CSU-C2'), resolve2('CSU-C2')]);
     note(both.filter(function (one) {
       return /_csu-held-message/.test(one.text);
@@ -267,11 +269,11 @@ function childMain() {
                  'AssertionID="_csu-held-assertion"/>' };
     };
     const success11 = /samlp:Success/;
-    artifacts11.restore(DEFAULT, 'CSU-A11', held11());
+    artifacts11.restore(DEFAULT, artifactKey('CSU-A11'), held11());
     r = await resolve11('CSU-A11');
     note(success11.test(r.text) && /_csu-held-assertion/.test(r.text),
          '1g. a SAML 1.1 artifact resolves', r.text.slice(0, 400));
-    artifacts11.restore(DEFAULT, 'CSU-A11', held11());
+    artifacts11.restore(DEFAULT, artifactKey('CSU-A11'), held11());
     r = await resolve11('CSU-A11');
     note(success11.test(r.text) && !/_csu-held-assertion/.test(r.text) &&
          !/StatusMessage/.test(r.text),
@@ -279,13 +281,13 @@ function childMain() {
          '— no assertions, Success (saml-bindings-1.1 4.1.1.6, #160)',
          r.text.slice(0, 300));
     store = sharedStore();
-    artifacts11.restore(DEFAULT, 'CSU-A11', held11());
+    artifacts11.restore(DEFAULT, artifactKey('CSU-A11'), held11());
     r = await resolve11('CSU-A11');
     note(/_csu-held-assertion/.test(r.text), '1i. the control: against an ' +
          'empty claim ' +
          'store it resolves', r.text.slice(0, 200));
     store = brokenStore();
-    artifacts11.restore(DEFAULT, 'CSU-B11', held11());
+    artifacts11.restore(DEFAULT, artifactKey('CSU-B11'), held11());
     r = await resolve11('CSU-B11');
     note(success11.test(r.text) && !/_csu-held-assertion/.test(r.text),
          '1j. and a claim store that cannot be asked refuses', r.text.slice(0,
@@ -394,22 +396,26 @@ function childMain() {
         .toString('base64url') + '.y';
     };
     await realms.run(realms.DEFAULT_REALM, async function () {
-      vcIssuer.vciNonces.set('csu-nonce', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce'),
+                             Date.now() + 60000);
       let spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce'),
                                                    proofWith('csu-nonce')]);
       note(spent.ok === true, '2j. a c_nonce quoted by every proof in a ' +
            'batch is spent once', JSON.stringify(spent));
-      vcIssuer.vciNonces.set('csu-nonce', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce'),
+                             Date.now() + 60000);
       spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce')]);
       note(spent.ok === false && spent.errorCode === 'STS-VC-0050',
            '2k. A NODE STILL HOLDING THE c_nonce IS REFUSED (the claim)',
            JSON.stringify(spent));
       store = sharedStore();
-      vcIssuer.vciNonces.set('csu-nonce', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce'),
+                             Date.now() + 60000);
       spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce')]);
       note(spent.ok === true, '2l. the control: against an empty store it is ' +
            'spent', JSON.stringify(spent));
-      vcIssuer.vciNonces.set('csu-nonce-2', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce-2'),
+                             Date.now() + 60000);
       const racing = await Promise.all([
         vcIssuer.spendProofNonces([proofWith('csu-nonce-2')]),
         vcIssuer.spendProofNonces([proofWith('csu-nonce-2')])]);
@@ -417,7 +423,8 @@ function childMain() {
            '2m. two concurrent Credential Requests quoting one c_nonce: ' +
            'exactly one spends it', JSON.stringify(racing));
       store = brokenStore();
-      vcIssuer.vciNonces.set('csu-nonce-3', Date.now() + 60000);
+      vcIssuer.vciNonces.set(vcIssuer.nonceKey('csu-nonce-3'),
+                             Date.now() + 60000);
       spent = await vcIssuer.spendProofNonces([proofWith('csu-nonce-3')]);
       note(spent.ok === false && spent.errorCode === 'STS-VC-0051',
            '2n. and a store that cannot be asked refuses',
@@ -495,22 +502,25 @@ function childMain() {
       const id = appPath.split('/').pop();
       const grants = realms.handleFor('gnap.grants');
       const interactionsRow = realms.handleFor('gnap.interactions');
-      const grantId = interactionsRow.read(DEFAULT, 'app:' + id).value.grantId;
+      // The handle is held under its digest, the mode prefix kept (#614).
+      const appKey = 'app:' + require(ROOT + '/common/crypto')
+        .credentialDigest(id);
+      const grantId = interactionsRow.read(DEFAULT, appKey).value.grantId;
       const grantBefore = JSON.parse(JSON.stringify(
           grants.read(DEFAULT, grantId).value));
       const interactionBefore = JSON.parse(JSON.stringify(
-          interactionsRow.read(DEFAULT, 'app:' + id).value));
+          interactionsRow.read(DEFAULT, appKey).value));
       r = await request(port, 'GET', appPath);
       note(r.status === 303, '3h. the app start link is followed once',
            r.status + ' ' + r.text.slice(0, 200));
       grants.restore(DEFAULT, grantId, JSON.parse(JSON.stringify(grantBefore)));
-      interactionsRow.restore(DEFAULT, 'app:' + id, interactionBefore);
+      interactionsRow.restore(DEFAULT, appKey, interactionBefore);
       r = await request(port, 'GET', appPath);
       note(r.status === 400, '3i. A NODE STILL HOLDING THE UNUSED LINK ' +
            'REFUSES IT (the claim)', r.status + ' ' + r.text.slice(0, 200));
       store = sharedStore();
       grants.restore(DEFAULT, grantId, JSON.parse(JSON.stringify(grantBefore)));
-      interactionsRow.restore(DEFAULT, 'app:' + id, interactionBefore);
+      interactionsRow.restore(DEFAULT, appKey, interactionBefore);
       r = await request(port, 'GET', appPath);
       note(r.status === 303, '3j. the control: against an empty claim store ' +
            'the same restore is followed', r.status);

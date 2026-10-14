@@ -788,5 +788,20 @@
   "ldif.import": "I-import ang LDIF",
   "owners.tab": "Mga may-ari",
   "owners.lead": "Ang mga tao at grupong nananagot para sa application na ito. Maghanap ng isa sa ibaba at pindutin ang <strong>Idagdag</strong>, o alisin ang isa gamit ang <strong>Alisin</strong>: nase-save ang bawat isa sa sandaling pindutin mo. Walang ibinibigay ang may-ari: walang bahagi ng serbisyong ito ang bumabasa nito upang magpasya.",
-  "owners.leadRead": "Ang mga tao at grupong nananagot para sa application na ito, mula sa mga value nitong <code>appOwner</code>. Walang ibinibigay ang may-ari."
+  "owners.leadRead": "Ang mga tao at grupong nananagot para sa application na ito, mula sa mga value nitong <code>appOwner</code>. Walang ibinibigay ang may-ari.",
+  "passkey.heading": "Patakaran sa passkey",
+  "passkey.lead": "{n} pinangalanang patakaran sa passkey ang nagbabanggit sa application na ito sa kanilang listahan ng mga application, ayon sa identifier nito o isang client_id. Read-only ang card na ito: ang mga application ng isang patakaran ay ine-edit sa <strong>Directory → Policies</strong>, at walang anumang tungkol dito ang naka-store sa application na ito.",
+  "passkey.none": "Walang pinangalanang patakaran sa passkey ang nagbabanggit sa application na ito, ayon sa identifier nito o isang client_id. Read-only ang card na ito: ang mga application ng isang patakaran ay ine-edit sa <strong>Directory → Policies</strong>.",
+  "passkey.policy": "Patakaran",
+  "passkey.precedence": "Precedence",
+  "passkey.namedAs": "Binanggit bilang",
+  "passkey.groups": "Pumipili rin ng mga grupo",
+  "passkey.applies": "Nalalapat",
+  "passkey.appliesYes": "nalalapat",
+  "passkey.appliesNo": "nalampasan",
+  "passkey.winner": "Ang pag-sign in para sa application na ito ay nakakakuha ng patakarang <strong>{name}</strong>: ang may pinakamababang precedence sa mga nagbabanggit dito.",
+  "passkey.default": "Ang pag-sign in para sa application na ito ay nakakakuha ng <strong>default</strong> na patakaran sa passkey.",
+  "passkey.byName": "Ang pag-sign in na bumabanggit dito bilang <code>{value}</code> ay nakakakuha ng <strong>{name}</strong> sa halip.",
+  "passkey.open": "Buksan sa Directory → Policies",
+  "passkey.groupNote": "Ang isang pinangalanang patakaran na pumipili ayon sa grupo ay maaari pa ring manalo para sa isang partikular na tao: kung ang isang patakarang nagbabanggit sa isa sa mga grupo ng tao ay may mas mababang precedence, iyon ang nalalapat sa kanila. May {n} pinangalanang patakaran sa passkey ang realm na ito na pumipili ayon sa grupo."
 }

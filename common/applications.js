@@ -1496,9 +1496,19 @@ const SCHEMA = {
       from: 'the application page\'s Owners tab',
       what: 'A person or a group of this realm who answers for the ' +
             'application (#604), by DN, as a group\'s and a role\'s ' +
-            'owners are. Multi-valued, at most 25. An owner GRANTS ' +
-            'NOTHING: nothing in this service reads it to decide anything. ' +
-            'The user portal lists what a person owns.' },
+            'owners are. Multi-valued, at most 25. Since #607 an owner may ' +
+            'ADMINISTER the application through /admin-api with owner:read ' +
+            'and owner:write, within what the access-control policy\'s ' +
+            'owner rule allows. The user portal lists what a person owns.' },
+    // CLOSED TO ITS OWNERS (#607, rcbj's decision 4): an administrator's
+    // mark, written by `setOwnerProtected()` alone, so it is in no EDITABLE
+    // row either.
+    { name: 'stsOwnerProtected', kind: 'single',
+      from: 'POST /admin-api/ownership/set-protected',
+      what: 'TRUE: the application\'s owners may not administer it through ' +
+            '/admin-api (#607) — an administrator\'s mark, read by the ' +
+            'access-control policy\'s owner rule as ' +
+            'urn:sts:xacml:object-protected. Absent is FALSE.' },
     { name: 'oauthGlobalConsentWithdrawn', kind: 'multi',
       from: 'the consent register, when a global consent is withdrawn',
       what: 'WHEN A GLOBAL CONSENT WAS WITHDRAWN, as `<when> <scope>` with ' +
@@ -3819,6 +3829,37 @@ const SCHEMA = {
             'and what the service provider holds under an externalId of ' +
             'this realm\'s and no longer in scope is deprovisioned. 0 (the ' +
             'default) reconciles only when an administrator asks.' },
+    // A SERVICE DEPLOYED AS CELLS (#553): where the service provider is,
+    // which the home cell puts to the issuance policy before it pushes a
+    // person (`cell_transfer.ts`, purpose `scim-provision`), and which cells
+    // push to it at all. Read only when the service is deployed as cells.
+    { name: 'scimClientJurisdiction', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHERE THE SERVICE PROVIDER IS, as a jurisdiction code of the ' +
+            'cell map (us, eu, ca, …). In a service deployed as cells, each ' +
+            'person\'s home cell asks the issuance policy whether that ' +
+            'person\'s data may go there (release-attributes, purpose ' +
+            'scim-provision) before it pushes them; a refusal leaves them ' +
+            'out of scope — not pushed, and deprovisioned if they were. ' +
+            'Empty is an unknown jurisdiction, which the strict default ' +
+            'never releases to. Ignored when the service is one cell.' },
+    { name: 'scimClientCells', kind: 'multi',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'WHICH CELLS PUSH TO THE SERVICE PROVIDER, each a cell id; none ' +
+            '(the default) means every cell. A cell not listed sends ' +
+            'nothing for this client, so the people homed there are not ' +
+            'pushed. Ignored when the service is one cell.' },
+    { name: 'scimClientMaxRequestsPerSecond', kind: 'single',
+      from: 'Protocols → SCIM → Clients, or by hand',
+      families: ['scim-client'],
+      what: 'HOW MANY REQUESTS A SECOND the service provider is sent, at ' +
+            'most: every delivery, lookup, discovery read and ' +
+            'reconciliation page waits for its turn rather than failing. ' +
+            'Empty or 0 (the default) is no limit. In a service deployed as ' +
+            'cells each cell that pushes may send this divided by the ' +
+            'number of such cells, rounded up.' },
     { name: 'ssfReceiverId', kind: 'multi',
       from: 'SSF, the console, or by hand',
       identifier: true,
@@ -4713,6 +4754,9 @@ const EDITABLE = {
   scimClientGroups: 'multi',
   scimClientDeprovision: 'set',
   scimClientReconcileMinutes: 'set',
+  scimClientJurisdiction: 'set',
+  scimClientCells: 'multi',
+  scimClientMaxRequestsPerSecond: 'set',
   ssfAllowedEvents: 'multi',
   // The per-receiver Shared Signals overrides, each one value an empty
   // write clears (the setting then decides); see their SCHEMA rows.
@@ -6158,6 +6202,9 @@ const FIELD_EXAMPLES = {
   scimClientScopeFilter: '(department=Sales)',
   scimClientGroups: 'staff',
   scimClientReconcileMinutes: '0',
+  scimClientJurisdiction: 'eu',
+  scimClientCells: 'euc1',
+  scimClientMaxRequestsPerSecond: '10',
   ssfAllowedEvents: 'https://schemas.openid.net/secevent/caep/event-type/' +
                     'session-revoked',
   ssfCaepReasonLanguage: 'en',
@@ -17180,6 +17227,33 @@ function listing() {
   return held.listing;
 }
 
+// ---------------------------------------------------------------------------
+// THE CLOCK THE LISTING IS KEPT BY, FOR A CALLER THAT KEEPS SOMETHING OF ITS
+// OWN BUILT FROM `list()` (#625): the store's `applicationsVersion()` — the
+// subtree clock of ou=applications in the ambient realm, moved by every write
+// there, by a write that names no DN, and by a row another process wrote
+// that this one applied — or null where the store has no such hook (a
+// test's stub), which means "keep nothing". The outbound SCIM client asked
+// `list()` on every directory change, a view of every application built per
+// change, and keeps its own clients by this instead.
+// ---------------------------------------------------------------------------
+/**
+ * The version `list()`'s answer is kept by in the ambient realm.
+ *
+ * @returns the version, or null when nothing may be kept
+ */
+function listingVersion() {
+  log.debug("Entering listingVersion().");
+  const backing = store();
+  if (!backing || typeof backing.applicationsVersion !== 'function') {
+    log.debug("Leaving listingVersion(). No version.");
+    return null;
+  }
+  const version = backing.applicationsVersion();
+  log.debug("Leaving listingVersion(). " + version);
+  return version;
+}
+
 /**
  * Lists every application in the ambient realm, most recently seen first.
  *
@@ -17552,6 +17626,82 @@ function removeOwner(identifier, owner) {
            owner: wanted, owners: ownersOf(record.identifier),
            message: wanted + ' is no longer an owner of ' +
                     record.identifier + '.' };
+}
+
+/**
+ * Tells whether an application is closed to its owners (#607).
+ *
+ * @param identifier - the application's identifier
+ * @returns true where `stsOwnerProtected` is TRUE on its entry
+ */
+function ownerProtected(identifier) {
+  log.debug("Entering ownerProtected().");
+  const loaded = load(String(identifier || ''));
+  const answer = loaded.known &&
+    String(valuesOf(loaded.record.fields.stsOwnerProtected)[0] || '')
+      .toUpperCase() === 'TRUE';
+  log.debug("Leaving ownerProtected().");
+  return answer;
+}
+
+/**
+ * Marks an application closed to its owners, or opens it again (#607,
+ * rcbj's decision 4), writing at once.
+ *
+ * @param identifier - the application's identifier
+ * @param flag - true closes it to its owners
+ * @returns `{ ok: true, changed, application, ownerProtected }`, or
+ *   `{ ok: false, errors }` carrying an error code
+ */
+function setOwnerProtected(identifier, flag) {
+  log.debug("Entering setOwnerProtected().");
+  const loaded = load(String(identifier || ''));
+  if (!loaded.known) {
+    log.debug("Leaving setOwnerProtected(). No such application.");
+    return errorCodes.mark({ ok: false, errors: ['There is no application ' +
+             '"' + identifier + '".'] }, 'STS-REG-0353');
+  }
+  const record = loaded.record;
+  const wanted = flag === true;
+  if (ownerProtected(record.identifier) === wanted) {
+    log.debug("Leaving setOwnerProtected(). Unchanged.");
+    return { ok: true, changed: false, application: record.identifier,
+             ownerProtected: wanted };
+  }
+  record.fields.stsOwnerProtected = wanted ? ['TRUE'] : [];
+  if (!save(record, { quiet: true })) {
+    log.debug("Leaving setOwnerProtected(). Not written.");
+    return errorCodes.mark({ ok: false, errors: ['The mark could not be ' +
+             'written onto ' + record.identifier + '.'] }, 'STS-REG-0358');
+  }
+  log.debug("Leaving setOwnerProtected(). Written.");
+  return { ok: true, changed: true, application: record.identifier,
+           ownerProtected: wanted };
+}
+
+// THIS SERVICE'S OWN APPLICATIONS' IDENTIFIERS (#607), which the
+// access-control policy's owner rule closes to their owners: the console's,
+// the portal's, the management API's and the debugger's clients. Read off
+// `internalApplications()` once — its rows mint secrets, so it is not asked
+// per decision — because the identifiers are fixed by this file.
+let internalIdentifierList = null;
+
+/**
+ * Tells whether an identifier is one of this service's own seeded
+ * applications (#607).
+ *
+ * @param identifier - an application identifier
+ * @returns true for a seeded application's identifier
+ */
+function isInternalIdentifier(identifier) {
+  log.debug("Entering isInternalIdentifier().");
+  if (!internalIdentifierList) {
+    internalIdentifierList = internalApplications().map(function (one) {
+      return String(one.identifier);
+    });
+  }
+  log.debug("Leaving isInternalIdentifier().");
+  return internalIdentifierList.indexOf(String(identifier || '')) >= 0;
 }
 
 /**
@@ -18894,11 +19044,15 @@ function internalApplications() {
       // `account:manage` (#568) beside the OpenID scopes: the portal asks
       // for it on every sign-in, and asking a person whether their own
       // account page may show them their own account is the question this
-      // row's argument already answered.
+      // row's argument already answered. `owner:read` and `owner:write`
+      // (#607) for the same reason: what a person owns is theirs to
+      // administer, and the policy's owner rule — not a consent screen —
+      // is what bounds it.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
                     oauthGlobalConsent: ['openid', 'profile', 'email',
                                          'offline_access',
-                                         'account:manage'] },
+                                         'account:manage', 'owner:read',
+                                         'owner:write'] },
       registration: {
         client_id: 'sts-user-portal',
         client_name: 'User portal',
@@ -18914,8 +19068,12 @@ function internalApplications() {
         grant_types: ['authorization_code', 'refresh_token'],
         response_types: ['code'],
         // `account:manage` (#568): the one scope `/account-api` takes,
-        // declared by this client alone among the seeded ones.
-        scope: 'openid profile email offline_access account:manage',
+        // declared by this client alone among the seeded ones — and an
+        // owner's two on `/admin-api` (#607), which the authorization server
+        // issues only to a person who owns something (OWNER_READ,
+        // OWNER_WRITE).
+        scope: 'openid profile email offline_access account:manage ' +
+               'owner:read owner:write',
         // A PUBLIC CLIENT SINCE #568 (rcbj's decision 1, the console's
         // #446 pattern): the portal is a static application signing in in
         // the browser with PKCE, so it holds no credential — and every token
@@ -19322,6 +19480,10 @@ module.exports = {
   ownersOf: ownersOf,
   addOwner: addOwner,
   removeOwner: removeOwner,
+  // Closed to its owners (#607).
+  ownerProtected: ownerProtected,
+  setOwnerProtected: setOwnerProtected,
+  isInternalIdentifier: isInternalIdentifier,
   FIELD_GROUPS: FIELD_GROUPS,
   FAMILY_CHOICES: FAMILY_CHOICES,
   CHOICE_IDS: CHOICE_IDS,
@@ -19383,6 +19545,8 @@ module.exports = {
   discardReturnAddress: discardReturnAddress,
   deleteApplication: deleteApplication,
   list: list,
+  // The clock `list()` is kept by (#625).
+  listingVersion: listingVersion,
   // OpenID Federation registrations (#134).
   federatedRegistrations: federatedRegistrations,
   federationExpired: federationExpired,

@@ -1198,6 +1198,8 @@ const ACTIONS = [
     label: 'An owner was added to a group' },
   { action: 'group.remove-owner', category: 'directory',
     label: 'An owner was taken off a group' },
+  { action: 'group.owner-protected', category: 'directory',
+    label: 'A group was closed to its owners, or opened to them again' },
   { action: 'krb5.keytab.person', category: 'authentication',
     label: 'A person\'s keytab was made from a password in hand' },
   { action: 'logout.backchannel.retry', category: 'session',
@@ -1325,6 +1327,11 @@ const ACTIONS = [
     label: 'A role was deleted' },
   { action: 'roles.describe', category: 'admin',
     label: 'A role\'s description, display name or member types were set' },
+  // MONITORING → NODE HEALTH'S COLLECT BUTTONS (#611): one row per press,
+  // however many isolates it reached. `admin-ui/node_health_admin.ts`.
+  { action: 'node-health.collect-garbage', category: 'admin',
+    label: 'A full garbage collection was run in a process or worker ' +
+           'thread of a node' },
   { action: 'saml2.authnrequest', category: 'protocol',
     label: 'A SAML 2.0 AuthnRequest was refused' },
   { action: 'saml2.artifact.resolve', category: 'protocol',
@@ -1949,18 +1956,38 @@ function httpActionFor(path, method) {
 // than 200 is exactly the event somebody hunting a start-up failure wants to
 // find, and it happens once rather than every five seconds.
 //
-// THE COUNTERS ARE UNTOUCHED. `/admin/metrics` counts this call as it always
-// did, because a counter is one row however often it goes up — this is a rule
-// about the event LOG, where one act is one line, and not about how much the
-// service was asked to do.
+// AND THE COUNTERS FOLLOW THE SAME RULE SINCE #312 (2026-10-13). They did
+// not until then, on the argument that a counter is one row however often it
+// goes up. That held for the table's length and not for what it SAYS: behind a
+// load balancer the probes are the traffic — testidp's two HTTP target groups
+// asked every node every ten seconds from every zone, 18,000 calls in a few
+// hours and nearly all of them this one — and every other row on
+// `/admin/metrics` read as noise beside it. `common/admin_stats.js` asks
+// `quietWhenOk()` below, so the list is this one and there is no second copy;
+// a quiet probe goes up a counter of its own there, `calls.healthProbes`,
+// rather than vanishing.
 const QUIET_WHEN_OK = ['/healthcheck'];
+
+// A hot path (every answered request, twice): no Entering/Leaving pair.
+/**
+ * Whether an answered request is a liveness probe that succeeded: a `GET` or
+ * `HEAD` of a path in `QUIET_WHEN_OK` answered 200. Neither the audit log nor
+ * the metrics' request counts record one.
+ *
+ * @param method - the request method
+ * @param path - the path, without its query string
+ * @param status - the status answered
+ */
+function quietWhenOk(method, path, status) {
+  const m = String(method || '').toUpperCase();
+  return QUIET_WHEN_OK.indexOf(String(path || '')) >= 0 &&
+      (m === 'GET' || m === 'HEAD') &&
+      parseInt(status, 10) === 200;
+}
 
 function isQuietProbe(req, res, path) {
   log.debug("Entering isQuietProbe(). " + path);
-  const method = String(req.method || '').toUpperCase();
-  const quiet = QUIET_WHEN_OK.indexOf(path) >= 0 &&
-      (method === 'GET' || method === 'HEAD') &&
-      parseInt(res.statusCode, 10) === 200;
+  const quiet = quietWhenOk(req.method, path, res.statusCode);
   log.debug("Leaving isQuietProbe(). " + quiet);
   return quiet;
 }
@@ -2038,7 +2065,10 @@ function recordHttp(req, res, detail) {
     // /admin/metrics can be lined up without guessing.
     protocol: '',
     summary: req.method + ' ' + path + ' → ' + res.statusCode +
-             (posted ? ' (' + posted + ')' : ''),
+             (posted ? ' (' + posted + ')' : '') +
+             // AS AN OWNER (#607): the management API's gate let the call
+             // through on the owner rule, so a delegated change reads as one.
+             (caller && caller.owner ? ' as an owner' : ''),
     detail: {
       method: req.method,
       status: res.statusCode,
@@ -2046,7 +2076,8 @@ function recordHttp(req, res, detail) {
       matched: !!info.matched,
       durationMs: info.durationMs || 0,
       query: queryText(req.query),
-      postedAction: posted
+      postedAction: posted,
+      via: caller && caller.owner ? 'owner' : ''
     }
   });
   log.debug("Leaving recordHttp(). Recorded as " + action + ".");
@@ -2433,6 +2464,7 @@ module.exports = {
   audit: audit,
   record: audit,
   recordHttp: recordHttp,
+  quietWhenOk: quietWhenOk,
   recordDirectory: recordDirectory,
   failure: failure,
   directoryActionFor: directoryActionFor,

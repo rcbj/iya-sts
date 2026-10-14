@@ -317,9 +317,9 @@ function hasSubjectResolver() {
  * fills it.
  *
  * An object without both `subjectFor()` and `nameFor()` is ignored
- * (STS-CORE-0090).
+ * (STS-CORE-0090). `namesFor(subs)`, many subjects at once, is optional.
  *
- * @param resolver - `{ subjectFor(name), nameFor(sub) }`
+ * @param resolver - `{ subjectFor(name), nameFor(sub), namesFor?(subs) }`
  */
 function setSubjectResolver(resolver) {
   log.debug("Entering setSubjectResolver().");
@@ -397,6 +397,62 @@ function nameForSubject(sub) {
     log.debug("Leaving nameForSubject(). The resolver threw.");
     return '';
   }
+}
+
+// MANY SUBJECTS AT ONCE (2026-10-14): `nameForSubject()` for each, asked of
+// the resolver together where it offers `namesFor()` — in a windowed process
+// one statement per batch rather than a synchronous round trip per subject,
+// which is what made a page naming the holder of every held token slow
+// (`admin_stats.js`'s `withSubjectsResolved()`). The same answers, and never
+// throws: a resolver that fails answers each subject alone.
+/**
+ * Returns the username each of a list of subjects names, as
+ * `nameForSubject()` would, asking the directory once for them all.
+ *
+ * @param subjects - the subjects
+ * @returns a Map from each subject, trimmed and lower-cased, to its username
+ *   or ''
+ */
+function namesForSubjects(subjects) {
+  log.debug("Entering namesForSubjects().");
+  const out = new Map();
+  const uuids = [];
+  (subjects || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    const key = text.toLowerCase();
+    if (out.has(key)) {
+      return;
+    }
+    if (text.indexOf(LEGACY_SUBJECT_PREFIX) === 0 ||
+        !/^urn:uuid:/i.test(text) || !subjectResolver) {
+      out.set(key, nameForSubject(text));
+      return;
+    }
+    out.set(key, '');
+    uuids.push(key);
+  });
+  if (uuids.length && typeof subjectResolver.namesFor === 'function') {
+    try {
+      const named = subjectResolver.namesFor(uuids);
+      uuids.forEach(function (key) {
+        out.set(key, String((named && named.get(key)) || ''));
+      });
+      log.debug("Leaving namesForSubjects(). " + uuids.length +
+                " asked together.");
+      return out;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-CORE-0091') +
+                'helpers: the subject resolver threw looking up ' +
+                uuids.length + ' subjects together, and each was asked ' +
+                'alone: ' + ((e && e.message) || e));
+    }
+  }
+  uuids.forEach(function (key) {
+    out.set(key, nameForSubject(key));
+  });
+  log.debug("Leaving namesForSubjects(). " + uuids.length +
+            " asked one at a time.");
+  return out;
 }
 
 // Read once, because the listener is bound with it before anything can ask
@@ -7989,6 +8045,7 @@ module.exports = {
   hasSubjectResolver: hasSubjectResolver,
   subjectForName: subjectForName,
   nameForSubject: nameForSubject,
+  namesForSubjects: namesForSubjects,
   LEGACY_SUBJECT_PREFIX: LEGACY_SUBJECT_PREFIX,
   hasScope: hasScope,
   escapeRdnValue: escapeRdnValue,

@@ -117,7 +117,10 @@ const CALLBACK_PATH = '/portal/claim-sources/callback';
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,39}$/;
 const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
 
-// Setup flows in progress: state -> { username, provider, verifier, at }.
+// Setup flows in progress: credentialDigest(state) -> { username, provider,
+// verifier, at }. The STATE'S DIGEST and never the state (#614): it is only
+// looked up and spent by the value a callback presents. The verifier stays
+// whole — it is sent to the provider's token endpoint.
 // PERSISTED: the provider may send the person back to another node.
 // `expiresAt` (#333): a link request lives FLOW_TTL_MS from its `at`.
 const flows = realms.map({
@@ -730,7 +733,8 @@ class ClaimsProviders {
     // hands the browser a binding cookie of its own and the flow keeps its
     // digest, with the sign-on session the token was issued on; the callback
     // asks for both (`flowFor()`, `portal_claim_sources.ts`).
-    flows.set(state, { username: String(username), provider: id,
+    flows.set(stsCrypto.credentialDigest(state), {
+                       username: String(username), provider: id,
                        verifier: verifier, redirectUri: redirectUri,
                        session: String(sessionId || ''),
                        binding: String(binding || ''), at: now() });
@@ -761,7 +765,8 @@ class ClaimsProviders {
   flowFor(state: string): Json {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.flowFor().");
-    const flow = state ? flows.get(String(state)) : null;
+    const flow = state
+      ? flows.get(stsCrypto.credentialDigest(String(state))) : null;
     if (!flow || now() - Number(flow.at || 0) > FLOW_TTL_MS) {
       log.debug("Leaving ClaimsProviders.flowFor(). None.");
       return null;
@@ -786,9 +791,11 @@ class ClaimsProviders {
     const { log, now } = this.deps;
     log.debug("Entering ClaimsProviders.finishLink().");
     const state = String(query.state || '');
-    const flow = state ? flows.get(state) : null;
+    // Hashed as it is presented (#614).
+    const flowKey = stsCrypto.credentialDigest(state);
+    const flow = state ? flows.get(flowKey) : null;
     if (flow) {
-      flows.delete(state);
+      flows.delete(flowKey);
     }
     if (!flow || now() - Number(flow.at || 0) > FLOW_TTL_MS ||
         flow.username !== String(username)) {

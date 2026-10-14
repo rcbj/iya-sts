@@ -6225,6 +6225,33 @@ function issuedKeyPairsFor(scopeId, useCaseId) {
   });
 }
 
+// THE JOSE CERTIFICATES A SLOT NO LONGER HOLDS AND THAT ARE STILL PUBLISHED
+// (#318): the issued register's displaced records that kept their
+// certificate (`pki_merge.js`'s `displacedRecord()`), unexpired. A token
+// signed under one names it by `x5u` and is still valid; the key it is over
+// may well be the slot's current key. Newest first, as `certificatesFor()`.
+/**
+ * Lists the certificates displaced from one use case's slots that are still
+ * published: the issued-register records carrying their certificate and
+ * chain, not yet expired (#318).
+ *
+ * @param scopeId - a realm id or `PROCESS_SCOPE`
+ * @param useCaseId - the use case
+ * @returns records with `thumbprint`, `certificatePem`, `chainPem`, `slot`
+ */
+function displacedCertificatesFor(scopeId, useCaseId) {
+  log.debug("Entering displacedCertificatesFor().");
+  const nowMs = Date.now();
+  const out = issuedKeyPairsFor(scopeId, useCaseId).filter(function (one) {
+    return one.subjectKind === 'displaced' && !!one.certificatePem &&
+      !!one.thumbprint && new Date(one.notAfter).getTime() > nowMs;
+  }).sort(function (a, b) {
+    return String(b.issuedAt || '').localeCompare(String(a.issuedAt || ''));
+  });
+  log.debug("Leaving displacedCertificatesFor(). " + out.length + ".");
+  return out;
+}
+
 // `kid`, where given, asks for that key generation's own slot first, and the
 // plain slot only when the certificate there is over the same key — so a
 // caller naming a key never gets a certificate over another one.
@@ -6633,7 +6660,8 @@ async function certify(scopeId, useCaseId, spec) {
     })) {
       register.push(pkiMerge.displacedRecord(uc.id + ':' + record.slot,
                                              displaced));
-      fresh.issuedKeyPairs = register;
+      // Bounded (#318): the newest few of a slot keep their PEMs.
+      fresh.issuedKeyPairs = pkiMerge.trimPublished(register);
     }
   }
   fresh.certs[slotName] = record;
@@ -8587,7 +8615,8 @@ function adoptGenerationCertificate(id, useCaseId, slot, kid, publicKeyPem) {
     })) {
       register.push(pkiMerge.displacedRecord(useCaseId + ':' + slot,
                                              displaced));
-      fresh.issuedKeyPairs = register;
+      // Bounded (#318): the newest few of a slot keep their PEMs.
+      fresh.issuedKeyPairs = pkiMerge.trimPublished(register);
     }
   }
   fresh.certs[plainKey] = own;
@@ -10941,6 +10970,61 @@ let keySetProvider = null;
 // ---------------------------------------------------------------------------
 let keySetHeldProvider = null;
 
+// Is this a request worker (#613)? A function of its own because `start()`
+// below names a local `process` (the process branch), which shadows node's.
+function inRequestWorker() {
+  log.debug("Entering inRequestWorker().");
+  log.debug("Leaving inRequestWorker().");
+  return !!process.env.STS_REQUEST_WORKER;
+}
+
+// The scopes whose CRLs `start()` left for `publishStartupCrls()` (#617):
+// set by a front process's start, taken by the first publish after it.
+let startupCrlScopes = null;
+
+// ---------------------------------------------------------------------------
+// THE START'S CRL PUBLICATION, ONCE THE LISTENER IS BOUND (#617). Called by
+// `server.js`'s `announce()`, not awaited: every authority's list of the
+// scopes `start()` remembered, signed and written into the directory one at
+// a time with a turn of the event loop between lists (`publishAll()`), so a
+// request arriving meanwhile is answered between two of them. A failure is
+// logged and never fatal, as it was inside `start()`.
+// ---------------------------------------------------------------------------
+/**
+ * Publishes into the directory the CRL of every authority `start()` built or
+ * found, once; called after the listener binds.
+ *
+ * @returns a promise of how many lists were published; 0 when `start()` left
+ *   nothing (a request worker, `pki.autoBuild` off) or it already ran
+ */
+async function publishStartupCrls() {
+  log.debug("Entering publishStartupCrls().");
+  const scopes = startupCrlScopes;
+  startupCrlScopes = null;
+  if (!scopes) {
+    log.debug("Leaving publishStartupCrls(). Nothing was left for it.");
+    return 0;
+  }
+  try {
+    const published = await require('./pki_revocation').publishAll(scopes);
+    if (published) {
+      log.info('pki: ' + published + ' certificate revocation ' +
+               'list(s) were published into the directory, one per ' +
+               'authority, at the `ldap://` address every ' +
+               'certificate this service issues names.');
+    }
+    log.debug("Leaving publishStartupCrls(). " + published + " list(s).");
+    return published;
+  } catch (e) {
+    log.error(errorCodes.tag('STS-PKI-0052') + 'pki: the revocation lists ' +
+              'could not be published into the ' +
+              'directory: ' + e.message + '. The HTTP distribution point ' +
+              'still answers; the LDAP one does not.');
+    log.debug("Leaving publishStartupCrls(). It failed.");
+    return 0;
+  }
+}
+
 /**
  * Builds the certificate hierarchy at startup, where there is none, and
  * certifies the keys this service already holds.
@@ -11088,25 +11172,35 @@ async function start(opts) {
   // module requires this one, so a require at load time would close a cycle
   // (rule 2) — and a failure is logged and never fatal: a service whose
   // directory would not take a CRL is a service that still issues.
+  //
+  // **AND ONCE A NODE, NOT ONCE A PROCESS (#613, 2026-10-13).** A request
+  // worker started here as well, and every one of them signed and wrote the
+  // same lists into the same shared directory — 279 on 8081, about 2 s of
+  // each worker's start, and 279 change-log rows that every other process
+  // then applied. A worker publishes none; what the front process or the
+  // `pki.crl-directory-refresh` job writes reaches it through the change log
+  // like every other directory write. The refresh job is still registered
+  // here: it is a cluster job and runs on the leader alone.
+  //
+  // **AND AFTER THE LISTENER BINDS, NOT BEFORE IT (#617, 2026-10-14).** The
+  // front process published here, inside `pki.start()`, and that was 4 s of
+  // 8081's 18 s to its listener (279 lists) — before the first worker was
+  // even forked. Nothing on the way to the socket reads the directory copy:
+  // the HTTP distribution point signs on demand, the copy a restart finds is
+  // the one the last run (or its refresh job) wrote, and a branch built at
+  // this start is published by `publishScopeSoon()` from `saveRow()`. So the
+  // scopes are only REMEMBERED here, and `server.js`'s `announce()` — the
+  // listener's callback, where the post-quantum keys are warmed for the
+  // same reason — calls `publishStartupCrls()`, not awaited. A worker that
+  // starts meanwhile restores the previous lists and gets the new ones
+  // through the change log.
   // -------------------------------------------------------------------------
-  try {
-    const published = await require('./pki_revocation')
-      .publishAll([PROCESS_SCOPE].concat(realmIds));
-    if (published) {
-      log.info('pki: ' + published + ' certificate revocation ' +
-               'list(s) were published into the directory, one per ' +
-               'authority, at the `ldap://` address every ' +
-               'certificate this service issues names.');
-    }
-    // ONCE was the word above and it was the defect: every list expires after
-    // `pki.crlLifetimeMinutes`, and the directory copy was never replaced.
-    // See `keepDirectoryCurrent()`.
-    require('./pki_revocation').keepDirectoryCurrent();
-  } catch (e) {
-    log.error(errorCodes.tag('STS-PKI-0052') + 'pki: the revocation lists ' +
-              'could not be published into the ' +
-              'directory: ' + e.message + '. The HTTP distribution point ' +
-              'still answers; the LDAP one does not.');
+  require('./pki_revocation').keepDirectoryCurrent();
+  if (inRequestWorker()) {
+    log.debug('pki: a request worker publishes no CRL into the directory at ' +
+              'start; the front process does, once its listener is bound.');
+  } else {
+    startupCrlScopes = [PROCESS_SCOPE].concat(realmIds);
   }
   reportPinsWithSignersOff(realmIds);
   log.debug('Leaving pki.start(). ' + branches + ' realm branch(es), ' +
@@ -13448,6 +13542,9 @@ module.exports = {
   PINNED_SIGNER_USE_CASES: PINNED_SIGNER_USE_CASES,
   certificatesFor: certificatesFor,
   issuedKeyPairsFor: issuedKeyPairsFor,
+  // The displaced JOSE certificates an `x5u` may still name (#318), for
+  // `jose_certificate_header.js`'s `chainPemFor()`.
+  displacedCertificatesFor: displacedCertificatesFor,
   certificateFor: certificateFor,
   describeCertificate: describeCertificate,
   pinnedKeyFor: pinnedKeyFor,
@@ -13469,6 +13566,7 @@ module.exports = {
   // Startup. `common/service_state.ts` calls it, for `server.js` and a
   // request worker, after `keystore.start()` and before anything binds.
   start: start,
+  publishStartupCrls: publishStartupCrls,
   SUBJECT_KINDS: SUBJECT_KINDS,
   SUBJECT_KIND_IDS: SUBJECT_KIND_IDS,
   subjectKindFor: subjectKindFor,

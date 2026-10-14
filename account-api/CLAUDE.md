@@ -1,6 +1,6 @@
 # CLAUDE.md — `account-api/`
 
-## THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
+## 3ck. THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
 
 `/account-api` is what the user portal draws every page from and sends every
 form to, since the portal became a static application on the admin console's
@@ -148,3 +148,15 @@ not one.
 `tests/vendored/portal_signin.js` signs in as the portal (PKCE, DPoP) and is a
 client of these operations — `page()`, `draw()`, `act()`, `api()`, and
 `nobody()` for a link's.
+
+## WHAT A PERSON OWNS IS CHANGED ELSEWHERE (#607, 2026-10-13)
+
+`GET /account-api/owned/<kind>` lists what a person owns, and each row now
+says which name opens it (`id`) and whether it is closed to its owners
+(`closed`). CHANGING one is NOT an operation here: rcbj wanted the check that
+the person owns the object in one place, the access-control policy's owner
+rule, so the portal's owner pages go to the MANAGEMENT API with a second
+token from the same sign-in (`owner:read`, `owner:write`; `portal/CLAUDE.md`,
+`mgmt-api/CLAUDE.md` *OWNERS*). This API's gate and `account:manage` are
+unchanged; the portal's sign-in names this API and `/admin-api` as its two
+resources, and the code is redeemed for this one.

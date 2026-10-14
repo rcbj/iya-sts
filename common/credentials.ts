@@ -350,10 +350,23 @@ const pendingTotp = realms.map({ persist: 'credentials.pendingTotp',
 // generate the set stores nothing. The codes are in the clear in the RECORD —
 // they have to be, the page shows them — and sealed in the ROW, which is gone
 // when the set is confirmed, discarded, replaced or swept.
+//
+// **KEYED BY `credentialDigest(handle)` (#614).** The handle is what lets a
+// form confirm the set, and the store only looks it up and spends it, so it
+// holds the digest — hashed when the handle is minted and when the form
+// brings it back (`pendingCodesKey()`). The CODES stay whole in the record,
+// because the page shows them again until they are confirmed.
 const pendingBackupCodes = realms.map({
   persist: 'credentials.pendingBackupCodes', retain: 'age',
   // #333: the pending set's `expires`, ms.
   expiresAt: realms.expiryField('expires', 1) });
+
+// The key a pending set's handle is held under (#614).
+function pendingCodesKey(handle: unknown): string {
+  helpers.log.debug("Entering pendingCodesKey().");
+  helpers.log.debug("Leaving pendingCodesKey().");
+  return crypto.credentialDigest(String(handle || ''));
+}
 
 // The attribute is the same one `addKey()` writes; this register holds only
 // what has been ASKED FOR and not yet proved. Per realm, like every other
@@ -888,6 +901,17 @@ class Credentials {
   /** The attribute that holds a person's security keys. */
   static readonly WEBAUTHN_ATTRIBUTE = 'stsWebauthnCredential';
 
+  // THE ANDROID MARKER (#615): the credential id of every key on the entry
+  // whose trusted `android-key` attestation kept its chain's serials — the
+  // keys the Android attestation recheck asks about. DERIVED, never written
+  // by hand: `ldap_server.js` recomputes it from `androidMarkerOf()` on every
+  // write of `stsWebauthnCredential`, so a removal and an untrusting take it
+  // off as surely as a registration puts it on. It exists so that the
+  // recheck's question is "who holds this attribute" — one statement against
+  // the store's `attr_names` index — rather than "read everybody's keys".
+  /** The derived attribute naming a person's Android-attested keys. */
+  static readonly ANDROID_MARKER_ATTRIBUTE = 'stsAndroidAttestedCredential';
+
   // WHAT A KEY IS FOR. Two roles and no third, because a key can do exactly two
   // things here (this was written when a key was the only second factor; an
   // authenticator app and recovery codes joined it on 2026-09-10, and neither
@@ -957,10 +981,17 @@ class Credentials {
   //
   //   * `credentialCensus(names)` — for each name, the RAW values of the
   //     credential attributes this file reads, off the entry it names; see
-  //     `factorCensus()` for what it replaced and why it is raw.
+  //     `factorCensus()` for what it replaced and why it is raw. And
+  //     `credentialCensusAsync(names)` (#621), the same answer with the
+  //     store read asynchronously, for `factorCensusAsync()`.
   //   * `applicationMatcher()` — a function that says whether a key names an
   //     application registered in this realm, built from one listing, for the
   //     people list's *an application is not a person* rule.
+  //   * `personCount()` and `personNamesUpTo(limit)` (#610) — how many people
+  //     the realm defines, COUNTED (the store's `count(*)` in a windowed
+  //     process), and the first `limit` names with whether there were more,
+  //     so the roster neither lists everybody to cap the list nor reports
+  //     the length of a capped list as the size of the directory.
   //
   // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
   // installs a stub directory with `setDirectory()` and no census must not be
@@ -974,7 +1005,8 @@ class Credentials {
   /**
    * Adds the population hooks to the directory slot already filled.
    *
-   * @param hooks - `credentialCensus` and `applicationMatcher`
+   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`
+   *   and `personNamesUpTo`
    * @returns true when added, false when no directory is installed
    */
   addDirectoryHooks(hooks) {
@@ -3208,6 +3240,13 @@ class Credentials {
     }
     log.info('credentials: a security key was enrolled for ' + name +
              ' as a ' + role + ' credential.');
+    // AN ANDROID-ATTESTED KEY MOVES THE RECHECK'S REGISTRATION MARK (#615),
+    // so the next recheck does not skip as "nothing changed". The key was
+    // asked about at registration, so this is the belt to that brace; the
+    // marker itself is derived by the directory on the write above.
+    if (Credentials.androidMarkerOf([JSON.stringify(record)]).length) {
+      Credentials.noteAndroidRegistration('a security key of ' + name);
+    }
     // THE HANDLE ADOPTED (#474): a ceremony for somebody whose entry did not
     // exist yet (the sign-in screen's first use, in development) created the
     // key under a handle nobody stored. It becomes theirs if they hold none.
@@ -3494,20 +3533,251 @@ class Credentials {
     }
     people.forEach((name) => {
       this.keysOf(name).forEach(function (key) {
-        const att = key && key.attestation;
-        if (att && att.format === 'android-key' && att.trusted === true &&
-            att.androidRevocation &&
-            Array.isArray(att.androidRevocation.chainSerials) &&
-            att.androidRevocation.chainSerials.length) {
+        if (Credentials.isAndroidRecheckable(key)) {
           out.push({ username: String(name),
                      credentialId: String(key.credentialId),
-                     chainSerials: att.androidRevocation.chainSerials
-                       .slice() });
+                     chainSerials: key.attestation.androidRevocation
+                       .chainSerials.slice() });
         }
       });
     });
     log.debug('Leaving Credentials.androidAttestedCredentials(). ' +
               out.length + '.');
+    return out;
+  }
+
+  /**
+   * Says whether a stored key is one the Android attestation recheck asks
+   * about: a trusted `android-key` statement whose chain's serials were kept.
+   *
+   * @param key - a stored key row
+   * @returns true for such a key
+   */
+  static isAndroidRecheckable(key: any): boolean {
+    helpers.log.debug("Entering Credentials.isAndroidRecheckable().");
+    const att = key && key.attestation;
+    const out = !!(att && att.format === 'android-key' &&
+      att.trusted === true && att.androidRevocation &&
+      Array.isArray(att.androidRevocation.chainSerials) &&
+      att.androidRevocation.chainSerials.length && key.credentialId);
+    helpers.log.debug("Leaving Credentials.isAndroidRecheckable(). " + out);
+    return out;
+  }
+
+  /**
+   * The Android marker's values for a person's stored
+   * `stsWebauthnCredential` values: the credential id of each key
+   * `isAndroidRecheckable()` says yes to, sorted. What `ldap_server.js`
+   * writes as `stsAndroidAttestedCredential` on every write of the keys
+   * (#615); a value that is not JSON this service wrote is skipped, and
+   * `keysOf()` is what warns about it.
+   *
+   * @param values - the stored values
+   * @returns the credential ids, sorted; empty for none
+   */
+  static androidMarkerOf(values: unknown[]): string[] {
+    helpers.log.debug("Entering Credentials.androidMarkerOf().");
+    const out: string[] = [];
+    (Array.isArray(values) ? values : []).forEach(function (value) {
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(String(value));
+      } catch (e) {
+        helpers.log.debug("Caught in Credentials.androidMarkerOf(): " +
+                          ((e && e.message) || e));
+        // Not a key this service wrote: not a key the recheck can ask
+        // about, and `keysOf()` reports it where it is read.
+        parsed = null;
+      }
+      if (parsed && Credentials.isAndroidRecheckable(parsed)) {
+        out.push(String(parsed.credentialId));
+      }
+    });
+    out.sort();
+    helpers.log.debug("Leaving Credentials.androidMarkerOf(). " + out.length +
+                      ".");
+    return out;
+  }
+
+  // ===========================================================================
+  // THE RECHECK'S POPULATION, READ FROM THE HOLDERS ONLY (#615, 2026-10-13).
+  //
+  // `androidAttestedCredentials()` above asks `persons()` for every name in
+  // the realm and then `keysOf()` for each — in a windowed process a
+  // synchronous store read per person. At about 191,000 people on 8081 the
+  // daily recheck held the front process's event loop for minutes, every
+  // listener with it, to find the one person who held a security key.
+  //
+  // **THE DIRECTORY HANDS OVER RAW VALUES OF ITS HOLDERS AND THIS FILE
+  // INTERPRETS THEM**, the census's rule (`factorCensus()`): the directory's
+  // `holdersAsync()` answers the people holding the Android marker — one
+  // statement a page against the store's `attr_names` index, asked on the
+  // driver's read pool, the event loop given back between pages — with
+  // their `stsWebauthnCredential` values, and `keysFromValues()` and
+  // `isAndroidRecheckable()` decide which of those are the keys asked
+  // about, exactly as for one person. The marker narrows WHO is read; it
+  // never decides WHAT is rechecked — a marked id whose key no longer
+  // qualifies is not rechecked, and every qualifying key of a marked
+  // person is.
+  //
+  // **WHERE THE DIRECTORY OFFERS NO `holdersAsync()`** (a test's stub, an
+  // older `ldap_server.js`) the old walk answers, which is the old cost and
+  // the same answer; `viaHolders` says which happened.
+  // ===========================================================================
+  /**
+   * Lists every WebAuthn credential in the realm whose trusted `android-key`
+   * attestation kept its chain's serials, reading only the people the
+   * directory says carry the Android marker.
+   *
+   * @returns a promise of `{ rows: [{ username, credentialId, chainSerials
+   *   }], holders, viaHolders }`
+   */
+  async androidAttestedCredentialsAsync(): Promise<any> {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, ANDROID_MARKER_ATTRIBUTE } = Credentials;
+    const directory = this.directory;
+    log.debug('Entering Credentials.androidAttestedCredentialsAsync().');
+    if (!directory || typeof directory.holdersAsync !== 'function') {
+      const walked = this.androidAttestedCredentials();
+      log.debug('Leaving Credentials.androidAttestedCredentialsAsync(). ' +
+                'Walked: no holder query.');
+      return { rows: walked, holders: null, viaHolders: false };
+    }
+    const webauthn = WEBAUTHN_ATTRIBUTE.toLowerCase();
+    const holders = await directory.holdersAsync('person',
+      ANDROID_MARKER_ATTRIBUTE, [webauthn]) || [];
+    const rows = [];
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const name = String(holder.id);
+      const raw = (holder.attributes || {})[webauthn] || [];
+      this.keysFromValues(raw, name).forEach(function (key) {
+        if (Credentials.isAndroidRecheckable(key)) {
+          rows.push({ username: name,
+                      credentialId: String(key.credentialId),
+                      chainSerials: key.attestation.androidRevocation
+                        .chainSerials.slice() });
+        }
+      });
+      if ((i + 1) % Credentials.HOLDER_BATCH === 0) {
+        await Credentials.yieldToLoop();
+      }
+    }
+    log.debug('Leaving Credentials.androidAttestedCredentialsAsync(). ' +
+              rows.length + ' key(s) of ' + holders.length + ' holder(s).');
+    return { rows: rows, holders: holders.length, viaHolders: true };
+  }
+
+  // How many holders are interpreted between two yields to the event loop.
+  private static readonly HOLDER_BATCH = 200;
+
+  // Tells `attestation_revocation.ts` an Android-attested key was registered
+  // (#615). Reached lazily, as every other module here reaches it: it is
+  // built later in the composition root, and a registration must not fail
+  // because the recheck's bookkeeping could not be reached — the daily run
+  // after a list change reaches the key regardless.
+  /**
+   * Moves the Android recheck's registration mark.
+   *
+   * @param what - what was registered, for the log
+   */
+  static noteAndroidRegistration(what: string): void {
+    helpers.log.debug("Entering Credentials.noteAndroidRegistration().");
+    try {
+      const revocation = require('./attestation_revocation');
+      if (typeof revocation.noteRegistration === 'function') {
+        revocation.noteRegistration(what);
+      }
+    } catch (e) {
+      helpers.log.warn(errorCodes.tag('STS-DEVICE-0051') + 'credentials: ' +
+                       'the Android recheck was not told of ' + what + ': ' +
+                       ((e && e.message) || e) + '. A recheck after the ' +
+                       'next status list reaches it regardless.');
+    }
+    helpers.log.debug("Leaving Credentials.noteAndroidRegistration().");
+  }
+
+  // The event loop's turn, between two batches of a background job's work.
+  private static yieldToLoop(): Promise<void> {
+    helpers.log.debug("Entering Credentials.yieldToLoop().");
+    helpers.log.debug("Leaving Credentials.yieldToLoop().");
+    return new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE MARKER'S BACKFILL (#615): a key registered before the marker existed
+  // carries none, so the first recheck after the upgrade puts it where it
+  // belongs. It reads the holders of `stsWebauthnCredential` itself — every
+  // person with a security key, which is the population the marker is a
+  // subset of, never everybody — and rewrites the keys of each whose marker
+  // is not what `androidMarkerOf()` says, so `ldap_server.js` derives it.
+  //
+  // **THE REWRITE READS THE KEYS AGAIN, SYNCHRONOUSLY, IN THE SAME TICK AS
+  // THE WRITE**, never the values the holder query answered: those are as
+  // old as the page, and a sign-in between the two moves a key's signature
+  // counter, which writing the old values back would undo. One lookup per
+  // person whose marker is wrong, which after the first run is nobody.
+  // ---------------------------------------------------------------------------
+  /**
+   * Puts the Android marker on every person whose security keys say it
+   * belongs there and takes it off where they do not.
+   *
+   * @param stillOwner - asked between batches; false stops the backfill
+   * @returns a promise of `{ available, holders, written, failed, stopped }`
+   */
+  async backfillAndroidMarkers(stillOwner?: () => boolean): Promise<any> {
+    const { log, errorCodes } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, ANDROID_MARKER_ATTRIBUTE } = Credentials;
+    const directory = this.directory;
+    log.debug('Entering Credentials.backfillAndroidMarkers().');
+    const out = { available: false, holders: 0, written: 0, failed: 0,
+                  stopped: false };
+    if (!directory || typeof directory.holdersAsync !== 'function' ||
+        typeof directory.readWebauthn !== 'function' ||
+        typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.backfillAndroidMarkers(). No holder ' +
+                'query.');
+      return out;
+    }
+    out.available = true;
+    const webauthn = WEBAUTHN_ATTRIBUTE.toLowerCase();
+    const marker = ANDROID_MARKER_ATTRIBUTE.toLowerCase();
+    const holders = await directory.holdersAsync('person', WEBAUTHN_ATTRIBUTE,
+                                                 [webauthn, marker]) || [];
+    out.holders = holders.length;
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const attrs = holder.attributes || {};
+      const want = Credentials.androidMarkerOf(attrs[webauthn] || []);
+      const have = (attrs[marker] || []).map(String).sort();
+      if (want.join('\n') !== have.join('\n')) {
+        try {
+          const name = String(holder.id);
+          const fresh = directory.readWebauthn(name) || [];
+          if (directory.replaceWebauthn(name, fresh)) {
+            out.written += 1;
+          } else {
+            out.failed += 1;
+          }
+        } catch (e) {
+          out.failed += 1;
+          log.error(errorCodes.tag('STS-AUTHN-0336') + 'credentials: the ' +
+                    'Android marker of ' + holder.id + ' could not be ' +
+                    'written: ' + ((e && e.message) || e));
+        }
+      }
+      if ((i + 1) % Credentials.HOLDER_BATCH === 0) {
+        if (stillOwner && !stillOwner()) {
+          out.stopped = true;
+          break;
+        }
+        await Credentials.yieldToLoop();
+      }
+    }
+    log.debug('Leaving Credentials.backfillAndroidMarkers(). ' +
+              out.written + ' written of ' + out.holders + '.');
     return out;
   }
 
@@ -4814,6 +5084,7 @@ class Credentials {
               ' person/people.');
     return { rows: rows, scanned: population.scanned,
              capped: population.capped, limit: population.limit,
+             directoryPeople: population.directoryPeople,
              store: population.store };
   }
 
@@ -4852,9 +5123,11 @@ class Credentials {
    * reading anything per name.
    *
    * @param alsoKnown - names the caller has seen
-   * @param opts - `limit`; `credentials.factorScanLimit` when omitted
+   * @param opts - `limit`; `credentials.factorScanLimit` when omitted;
+   *   `directoryFirst`, the `{ names, more }` a caller already asked for
+   *   (`directoryFirstNames()`, #616), so the directory is not asked again
    * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
-   *   limit, store, isApplication }`
+   *   limit, directoryPeople, store, isApplication }`
    */
   secondFactorPopulation(alsoKnown, opts?) {
     const { log, errorCodes } = this.deps;
@@ -4877,23 +5150,56 @@ class Credentials {
       seen.get(key)[source] = true;
       log.debug("Leaving add().");
     };
+    // `scanned` is how many of the directory's names the list read, and
+    // `capped` whether the directory held more than that (#610: it used to
+    // be the length of a listing of everybody, which was also the only
+    // count of the people there was). `directoryPeople` is that count now,
+    // asked of the directory rather than read off a list; null where the
+    // directory offers no count, and the caller then has only the list.
     let scanned = 0;
     let capped = false;
-    if (directory && typeof directory.persons === 'function') {
+    let directoryPeople = null;
+    const upTo = this.directoryHook('personNamesUpTo');
+    const counter = this.directoryHook('personCount');
+    if (directory && (upTo || typeof directory.persons === 'function')) {
       let people = [];
       try {
-        people = directory.persons() || [];
+        if (options.directoryFirst) {
+          // Asked already, asynchronously, by a caller that could wait
+          // (#616): `directoryFirstNames()`.
+          people = options.directoryFirst.names || [];
+          capped = !!options.directoryFirst.more;
+        } else if (upTo) {
+          // The first `limit` names and whether there were more, without
+          // listing the rest.
+          const first = upTo(limit) || { names: [], more: false };
+          people = first.names || [];
+          capped = !!first.more;
+        } else {
+          people = directory.persons() || [];
+          directoryPeople = people.length;
+          if (people.length > limit) {
+            capped = true;
+            people = people.slice(0, limit);
+          }
+        }
       } catch (e) {
         log.error(errorCodes.tag('STS-AUTHN-0079') +
                   'credentials: listing this realm\'s people threw: ' +
                   e.message);
       }
       scanned = people.length;
-      if (people.length > limit) {
-        capped = true;
-        people = people.slice(0, limit);
-      }
       people.forEach((name) => { add(name, 'inDirectory'); });
+    }
+    if (counter) {
+      try {
+        directoryPeople = Number(counter()) || 0;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0334') +
+                  'credentials: counting this realm\'s people threw: ' +
+                  ((e && e.message) || e));
+        directoryPeople = null;
+      }
     }
     (alsoKnown || []).forEach((name) => { add(name, 'known'); });
 
@@ -4923,9 +5229,44 @@ class Credentials {
     log.debug('Leaving Credentials.secondFactorPopulation(). ' + rows.length +
               ' name(s).');
     return { rows: rows, scanned: scanned, capped: capped, limit: limit,
-             store: !!directory,
+             directoryPeople: directoryPeople, store: !!directory,
              isApplication: typeof isApplication === 'function'
                ? isApplication : null };
+  }
+
+  // ---------------------------------------------------------------------
+  // THE DIRECTORY'S FIRST NAMES, ASKED WITHOUT HOLDING THE EVENT LOOP
+  // (#616). `secondFactorPopulation()` is synchronous and asks the
+  // directory's `personNamesUpTo` hook, which in a windowed process is a
+  // handful of synchronous statements to the store; a caller that can wait
+  // — `GET /admin-api/users` — asks this first, through the hook's
+  // asynchronous twin, and hands the answer over as `directoryFirst`. A
+  // directory without the twin is asked the synchronous question.
+  // ---------------------------------------------------------------------
+  /**
+   * The first `credentials.factorScanLimit` (or `limit`) people's names
+   * and whether there were more, asked of the directory asynchronously.
+   *
+   * @param limit - optional; how many at most
+   * @returns a promise of `{ names, more }`, or of null where no directory
+   *   offers the question
+   */
+  async directoryFirstNames(limit?) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.directoryFirstNames().');
+    const most = Math.max(1, Number(limit || this.factorScanLimit()));
+    const asyncUpTo = this.directoryHook('personNamesUpToAsync');
+    const upTo = this.directoryHook('personNamesUpTo');
+    let first = null;
+    if (asyncUpTo) {
+      first = await asyncUpTo(most);
+    } else if (upTo) {
+      first = upTo(most);
+    }
+    log.debug('Leaving Credentials.directoryFirstNames(). ' +
+              (first ? (first.names || []).length + ' name(s).'
+                : 'No directory.'));
+    return first || null;
   }
 
   /**
@@ -5017,10 +5358,7 @@ class Credentials {
   factorCensus(names) {
     const { log, errorCodes } = this.deps;
     log.debug('Entering Credentials.factorCensus().');
-    const list = (names || []).map((name) => {
-      return String(name == null ? '' : name).trim();
-    });
-    const out = new Map();
+    const list = this.censusNames(names);
     const census = this.directoryHook('credentialCensus');
     let raws = null;
     if (census) {
@@ -5033,11 +5371,82 @@ class Credentials {
         raws = null;
       }
     }
+    const out = this.censusFacts(list, raws);
+    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+              ' name(s).');
+    return out;
+  }
+
+  // ===========================================================================
+  // THE CENSUS FOR A CALLER THAT CAN WAIT (#621, 2026-10-14).
+  //
+  // `GET /admin-api/users` and `/admin-api/mfa` asked `factorCensus()` for
+  // up to `factorScanLimit` names, and in a windowed process the directory
+  // answered each with a synchronous round trip to the store — 5,000 of them
+  // and a request worker frozen for 10 s on 8081 at 382,000 people. The
+  // directory's `credentialCensusAsync()` reads the same raw values for the
+  // same names, resolved by the same rule, a page at a time without holding
+  // the event loop (`ldap_server.js` argues it), and they are interpreted
+  // here by the SAME code (`censusFacts()`), so the two doors cannot give
+  // different facts. Where the directory offers no asynchronous census — a
+  // test's stub, an older `ldap_server.js` — this is `factorCensus()`. A
+  // census that FAILED (the store could not be read) is the synchronous
+  // census's failure: logged under STS-AUTHN-0293 and answered one person at
+  // a time.
+  // ===========================================================================
+  /**
+   * `factorCensus()`, with the directory asked asynchronously.
+   *
+   * @param names - the names, as the population lists them
+   * @returns a promise of a Map from each name (trimmed) to its facts
+   */
+  async factorCensusAsync(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.factorCensusAsync().');
+    const census = this.directoryHook('credentialCensusAsync');
+    if (!census) {
+      log.debug('Leaving Credentials.factorCensusAsync(). No asynchronous ' +
+                'census; asked synchronously.');
+      return this.factorCensus(names);
+    }
+    const list = this.censusNames(names);
+    let raws = null;
+    try {
+      raws = await census(list);
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0293') +
+                'credentials: the directory\'s credential census threw, so ' +
+                'each person is asked on their own: ' + e.message);
+      raws = null;
+    }
+    const out = this.censusFacts(list, raws);
+    log.debug('Leaving Credentials.factorCensusAsync(). ' + out.size +
+              ' name(s).');
+    return out;
+  }
+
+  // The names a census is asked about, as both doors trim them.
+  private censusNames(names) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.censusNames().');
+    log.debug('Leaving Credentials.censusNames().');
+    return (names || []).map((name) => {
+      return String(name == null ? '' : name).trim();
+    });
+  }
+
+  // The census's facts from the directory's raw values — or, where it gave
+  // none that fit, from `mechanismsFor()` one name at a time. Both doors'
+  // second half, so they interpret the values identically.
+  private censusFacts(list, raws) {
+    const { log } = this.deps;
+    log.debug('Entering Credentials.censusFacts().');
+    const out = new Map();
     if (!Array.isArray(raws) || raws.length !== list.length) {
       list.forEach((name) => {
         out.set(name, this.factsOf(this.mechanismsFor(name)));
       });
-      log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+      log.debug('Leaving Credentials.censusFacts(). ' + out.size +
                 ' name(s), one at a time.');
       return out;
     }
@@ -5045,7 +5454,7 @@ class Credentials {
     try {
       mailFactor = require('./mail_factor');
     } catch (e) {
-      log.debug('Caught in Credentials.factorCensus(): ' +
+      log.debug('Caught in Credentials.censusFacts(): ' +
                 ((e && e.message) || e));
       // Not held, for `mailFactorOf()`'s reason.
       mailFactor = null;
@@ -5053,9 +5462,133 @@ class Credentials {
     list.forEach((name, index) => {
       out.set(name, this.factsFromValues(raws[index], name, mailFactor));
     });
-    log.debug('Leaving Credentials.factorCensus(). ' + out.size +
+    log.debug('Leaving Credentials.censusFacts(). ' + out.size +
               ' name(s), in one pass.');
     return out;
+  }
+
+  // ===========================================================================
+  // THE TILES OVER THE WHOLE DIRECTORY (#610, 2026-10-13).
+  //
+  // The tiles on `/admin/users` counted the CAPPED list. These are the same
+  // facts over every person the realm's directory defines, without listing
+  // them: the directory COUNTS its people and those holding a password, and
+  // hands over, raw, only the people holding one of the attributes named
+  // here — the ones without any of them hold no key, no authenticator and
+  // no emailed factor by this file's own rules, so their facts are known
+  // without reading them: a password or nothing. The holders are
+  // interpreted by `factsFromValues()`, the census's function, so a key's
+  // role, the sealed TOTP verdict (`sealedSecretVerdict()`, each secret
+  // opened at most once per process and key set) and the emailed factor
+  // under the realm's policy are decided exactly as for one person.
+  // **Nothing here is approximated by presence** except the password, which
+  // the directory counts by the attribute holding a value — the census
+  // reads its first value as well, so an empty first value counts there as
+  // no password and here as one.
+  //
+  // The definitions, over the realm's people (`ou=users`):
+  //   people        everybody there;
+  //   withSecond    holds a second factor (`mfaRequired`);
+  //   withTotp, withKeys, primaryKeys, unreadable — as the census's own;
+  //   passwordOnly  holds a password and no second factor;
+  //   noWayIn       holds neither a password nor a sign-in key (`usable`).
+  // Null where the directory offers no tally; the caller then has only the
+  // list.
+  // ===========================================================================
+  /**
+   * Counts the census's facts over every person the realm's directory
+   * defines, reading only the people who hold a credential attribute.
+   *
+   * @returns `{ people, withPassword, withSecond, withTotp, withKeys,
+   *   primaryKeys, passwordOnly, unreadable, noWayIn }`, or null
+   */
+  directoryFactorCounts() {
+    const { log, errorCodes } = this.deps;
+    const { PASSWORD_ATTRIBUTE, WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE } =
+      Credentials;
+    log.debug('Entering Credentials.directoryFactorCounts().');
+    const tallies = this.directoryHook('credentialTallies');
+    if (!tallies) {
+      log.debug('Leaving Credentials.directoryFactorCounts(). No tally.');
+      return null;
+    }
+    let mailFactor = null;
+    try {
+      mailFactor = require('./mail_factor');
+    } catch (e) {
+      log.debug('Caught in Credentials.directoryFactorCounts(): ' +
+                ((e && e.message) || e));
+      // Not held, for `mailFactorOf()`'s reason.
+      mailFactor = null;
+    }
+    const holding = [WEBAUTHN_ATTRIBUTE, TOTP_ATTRIBUTE];
+    if (mailFactor && mailFactor.OPT_IN_ATTRIBUTE) {
+      holding.push(mailFactor.OPT_IN_ATTRIBUTE);
+    }
+    let tally = null;
+    try {
+      tally = tallies({ password: PASSWORD_ATTRIBUTE, holding: holding });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0335') +
+                'credentials: counting this realm\'s credential holders ' +
+                'threw: ' + ((e && e.message) || e));
+      tally = null;
+    }
+    if (!tally) {
+      log.debug('Leaving Credentials.directoryFactorCounts(). No answer.');
+      return null;
+    }
+    const out = { people: Number(tally.people) || 0,
+                  withPassword: Number(tally.withPassword) || 0,
+                  withSecond: 0, withTotp: 0, withKeys: 0, primaryKeys: 0,
+                  passwordOnly: 0, unreadable: 0, noWayIn: 0 };
+    // The holders with a password and a second factor come off
+    // `passwordOnly`, and those with no password and a sign-in key off
+    // `noWayIn`; everybody else is a password or nothing.
+    let passwordAndSecond = 0;
+    let keyWithoutPassword = 0;
+    (tally.holders || []).forEach((holder) => {
+      const f = this.factsFromValues(holder.raw, holder.name, mailFactor);
+      out.withSecond += f.mfaRequired ? 1 : 0;
+      out.withTotp += f.totp ? 1 : 0;
+      out.withKeys += f.mfaKeys > 0 ? 1 : 0;
+      out.primaryKeys += f.primaryKeys > 0 ? 1 : 0;
+      out.unreadable += f.totp && !f.totpUsable ? 1 : 0;
+      passwordAndSecond += f.password && f.mfaRequired ? 1 : 0;
+      keyWithoutPassword += !f.password && f.primaryKeys > 0 ? 1 : 0;
+    });
+    out.passwordOnly = Math.max(0, out.withPassword - passwordAndSecond);
+    out.noWayIn = Math.max(0, out.people - out.withPassword -
+                           keyWithoutPassword);
+    log.debug('Leaving Credentials.directoryFactorCounts(). ' + out.people +
+              ' people, ' + (tally.holders || []).length + ' read.');
+    return out;
+  }
+
+  /**
+   * Counts how many of the given names answer to a person in the realm's
+   * directory — the register's names, asked per name, never per person.
+   *
+   * @param names - the names
+   * @returns the count, or null where the directory offers no such count
+   */
+  directoryPeopleNamed(names) {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleNamed().');
+    const hook = this.directoryHook('countPeopleNamed');
+    let n = null;
+    if (hook) {
+      try {
+        n = Number(hook(names || [])) || 0;
+      } catch (e) {
+        log.error(errorCodes.tag('STS-AUTHN-0335') +
+                  'credentials: counting which names are people here ' +
+                  'threw: ' + ((e && e.message) || e));
+        n = null;
+      }
+    }
+    log.debug('Leaving Credentials.directoryPeopleNamed(). ' + n);
+    return n;
   }
 
   // `mechanismsFor()`'s answer cut down to the census's members, for the
@@ -5644,7 +6177,7 @@ class Credentials {
     // service's crypto module's (#453): node's `crypto` is required nowhere
     // but there.
     const handle = crypto.randomBytes(24).toString('base64url');
-    pendingBackupCodes.set(handle, {
+    pendingBackupCodes.set(pendingCodesKey(handle), {
       username: name,
       codes: minted,
       begunAt: Date.now(),
@@ -5673,7 +6206,7 @@ class Credentials {
     const { log } = this.deps;
     log.debug("Entering Credentials.pendingBackupCodesFor().");
     this.forgetExpiredPending();
-    const record = pendingBackupCodes.get(String(handle || ''));
+    const record = pendingBackupCodes.get(pendingCodesKey(handle));
     if (!record || record.username !== String(username || '').trim()) {
       log.debug("Leaving Credentials.pendingBackupCodesFor().");
       return null;
@@ -5744,7 +6277,7 @@ class Credentials {
                    { ok: false, reason: 'store', retryable: true,
                errors: written.errors });
     }
-    pendingBackupCodes.delete(handle);
+    pendingBackupCodes.delete(pendingCodesKey(handle));
     log.info('credentials: ' + name + ' confirmed a set of ' + written.total +
              ' recovery codes. Only the hashes are stored — this service can ' +
              'never show them again.');
@@ -5771,7 +6304,7 @@ class Credentials {
       log.debug("Leaving Credentials.discardBackupCodes().");
       return { ok: true, discarded: false };
     }
-    pendingBackupCodes.delete(handle);
+    pendingBackupCodes.delete(pendingCodesKey(handle));
     log.info('credentials: a pending set of recovery codes for ' +
              String(username) + ' was discarded without being stored.');
     log.debug("Leaving Credentials.discardBackupCodes().");
@@ -9165,8 +9698,12 @@ export = {
   // THE USERS LIST'S THREE STEPS (#352): list, then decorate the shown rows,
   // and count everybody in one pass — see `secondFactorPopulation()`.
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
+  directoryFirstNames: slot.forward('directoryFirstNames'),
   factorHolderRow: slot.forward('factorHolderRow'),
   factorCensus: slot.forward('factorCensus'),
+  factorCensusAsync: slot.forward('factorCensusAsync'),
+  directoryFactorCounts: slot.forward('directoryFactorCounts'),
+  directoryPeopleNamed: slot.forward('directoryPeopleNamed'),
   issueActivation: slot.forward('issueActivation'),
   checkActivation: slot.forward('checkActivation'),
   consumeActivation: slot.forward('consumeActivation'),
@@ -9206,6 +9743,13 @@ export = {
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   androidAttestedCredentials: slot.forward('androidAttestedCredentials'),
+  androidAttestedCredentialsAsync:
+    slot.forward('androidAttestedCredentialsAsync'),
+  backfillAndroidMarkers: slot.forward('backfillAndroidMarkers'),
+  androidMarkerOf: Credentials.androidMarkerOf,
+  noteAndroidRegistration: Credentials.noteAndroidRegistration,
+  isAndroidRecheckable: Credentials.isAndroidRecheckable,
+  ANDROID_MARKER_ATTRIBUTE: Credentials.ANDROID_MARKER_ATTRIBUTE,
   untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
   noteKeyAttestationRefused: slot.forward('noteKeyAttestationRefused'),
   noteKeyCloned: slot.forward('noteKeyCloned'),

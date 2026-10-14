@@ -1139,6 +1139,10 @@
     "en": "e5e65ad85891ab58",
     "text": "En ägare togs bort från en grupp"
   },
+  "audit.actions.group.owner-protected.label": {
+    "en": "872bbc2dca2a5974",
+    "text": "En grupp stängdes för sina ägare, eller öppnades för dem igen"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "En persons keytab skapades från ett lösenord som fanns till hands"
@@ -1366,6 +1370,10 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "En rolls beskrivning, visningsnamn eller medlemstyper sattes"
+  },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "En fullständig skräpinsamling kördes i en process eller arbetstråd på en nod"
   },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",

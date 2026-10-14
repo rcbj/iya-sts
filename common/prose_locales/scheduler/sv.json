@@ -60,8 +60,8 @@
     "text": "Omkontroll av Android-attestering"
   },
   "sched.jobs.devices.android-status-recheck.describe": {
-    "en": "f918ea71421d9df1",
-    "text": "Frågar den aktiva statuslistan för Android-attestering om varje lagrad Android-kedja — enhetsnycklar och WebAuthn-autentiseringsuppgifter, i varje sfär — och nedgraderar de som den återkallar eller spärrar: självdeklarerade, granskade, CAEP credential-change. Körs när en lista aktiveras, och dagligen."
+    "en": "610a48914c017400",
+    "text": "Frågar den aktiva Android-intygsstatuslistan om varje lagrad Android-kedja — enhetsnycklar och WebAuthn-autentiseringsuppgifter, i varje realm — och nedgraderar dem den återkallar eller spärrar: självdeklarerade, granskade, CAEP credential-change. Läser bara de personer och enheter som är markerade som innehavare, en sida i taget, och hoppar över en realm där varken listan eller registreringarna ändrats sedan den senaste omkontrollen. Körs när en lista aktiveras, och dagligen."
   },
   "sched.jobs.devices.android-status-refresh.title": {
     "en": "95d19bd56eac78af",

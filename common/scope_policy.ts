@@ -104,6 +104,16 @@ const OIDC_SCOPES = Object.freeze(['openid', 'profile', 'email', 'address',
 const ADMIN_SCOPES = Object.freeze(['admin:read', 'admin:write',
                                     'admin:console']);
 
+// AN OWNER'S TWO (#607): `/admin-api` for the objects a person owns, read
+// and changed within the access-control policy's owner rule. Protected like
+// the admin scopes — a client must declare them, in both modes, and the API
+// asks again on every call — and `common/roles.js` maps them to the computed
+// OWNER_READ and OWNER_WRITE. `sts-user-portal` is seeded declaring both.
+/**
+ * The owner scopes on the management API (#607).
+ */
+const OWNER_SCOPES = Object.freeze(['owner:read', 'owner:write']);
+
 // Grant Management for OAuth 2.0's two (#142): the grant management API is
 // this service's own resource server, so its scopes are protected like the
 // rest — a client must declare them, and the API asks again on every call.
@@ -295,7 +305,7 @@ class ScopePolicy {
      String(config.value('ssf.authScopeRead') || 'ssf:read'),
      String(config.value('ssf.authScopeWrite') || 'ssf:write'),
      DEBUGGER_PERMISSION, DEVICE_COMPLIANCE_SCOPE, ACCOUNT_SCOPE]
-      .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES)
+      .concat(GRANT_MANAGEMENT_SCOPES, VC_API_SCOPES, OWNER_SCOPES)
       .forEach(function (one) {
       if (names.indexOf(one) < 0) {
         names.push(one);
@@ -374,7 +384,12 @@ class ScopePolicy {
   defaultScopes(opts?: JudgeOptions): string[] {
     const { log } = this.deps;
     log.debug("Entering ScopePolicy.defaultScopes().");
-    const out = OIDC_SCOPES.slice(0);
+    // `bound_key` only while OpenID Connect Key Binding is performed (#315):
+    // off, a client that declares nothing is not granted it by default.
+    const keyBinding = this.deps.config.value('oauth2.keyBinding') !== false;
+    const out = OIDC_SCOPES.filter(function (one) {
+      return keyBinding || one !== 'bound_key';
+    });
     ((opts && opts.defaults) || []).forEach(function (one) {
       if (one && out.indexOf(String(one)) < 0) {
         out.push(String(one));
@@ -741,6 +756,7 @@ export = {
   instanceOrigin: (): string => slot.origin(),
   OIDC_SCOPES: OIDC_SCOPES,
   ADMIN_SCOPES: ADMIN_SCOPES,
+  OWNER_SCOPES: OWNER_SCOPES,
   DEBUGGER_PERMISSION: DEBUGGER_PERMISSION,
   DEVICE_COMPLIANCE_SCOPE: DEVICE_COMPLIANCE_SCOPE,
   PROTECTED_CODE: PROTECTED_CODE,

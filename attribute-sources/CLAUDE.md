@@ -120,6 +120,15 @@ assertion is minted on the next request:
   people after the source's cursor.
 * **The cursor** is on the source's status row (`attribute_sources.status`,
   persisted, `retain: 'age'`), and a pass ends when a page comes back short.
+* **A page is ONE store question since #615** — the directory's
+  `peoplePage()`: a `page()` after the last entry KEY of the previous page
+  (the normalised DN, opaque here; `cursorKind: 'key'`). It used to be
+  `people()`, which listed and sorted every person of the realm to answer
+  two hundred names — in a windowed process the whole of `ou=users` paged
+  through the synchronous bridge on the front process, every minute while a
+  pass was open (#615's audit of every job). A cursor of the older kind (a
+  username) starts the pass again; a pass now reaches people in DN-key order
+  rather than by name.
 * **`ctx.stillOwner()`** is asked between sources.
 
 ## What has no test yet

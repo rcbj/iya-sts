@@ -182,7 +182,11 @@ library. `rsa-sha256` needs a key of at least 2048 bits (RFC 8301), and
    `mail.retentionS` removes it. A retry goes to the address the entry holds
    *now*.
 5. **A sent message keeps no body.** The outbox and the audit log say who, which
-   message and when, and never what it said.
+   message and when, and never what it said. The body holds reset and
+   verification links and codes, so it is dropped the moment the message is
+   sent. A dead letter keeps its body, because a retry sends that body; it
+   loses it when the retry succeeds, or with the row when `mail.retentionS`
+   removes it.
 
 ### Ceilings and duplicates
 

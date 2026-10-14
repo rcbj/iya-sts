@@ -718,6 +718,123 @@ function directoryThrough(target) {
   return waiting;
 }
 
+// ---------------------------------------------------------------------------
+// A CREATE'S CLAIMS, GIVEN BACK IN THE TRANSACTION THAT COMMITS IT (#628,
+// 2026-10-14).
+//
+// A directory create claims its DN and username across the nodes that share
+// this store (`ldap/directory_create_claims.ts`) and gives them back once its
+// entry has committed. That was a flush and then a DELETE per claim, each a
+// transaction of its own; now `cluster_claims.releaseAtCommit()` hands the
+// claim rows here with the directory generation of the moment — every write
+// the create made is at or below it — and the first directory transaction
+// whose take covers that generation deletes them as one of its statements.
+// So the entry and the end of its claim commit together, and a create
+// waiting on the name sees the entry in the same instant the claim goes.
+//
+// * **A transaction that fails keeps them.** The DELETE rolls back with the
+//   entry, and the claims stay held until they expire (two minutes): a
+//   create of the same name in that window waits and is refused as in
+//   progress (STS-LDAP-0092). rcbj accepted that cost on #628;
+//   STS-CLUSTER-0164 says when it is paid.
+// * **Writes already committed have no transaction to ride** — the usual
+//   case where a door answers after its commit (#351), as an LDAP add does
+//   — and are given back by one statement of their own, at once.
+// * Claims that a running transaction did not take wait for the next flush,
+//   which the call asks for.
+//
+// `{ rows, through, resolve }`, oldest first.
+// ---------------------------------------------------------------------------
+let claimReleases = [];
+
+/**
+ * Gives a create's claims back in the flush transaction that commits this
+ * process's directory writes made so far, or at once when they have all
+ * committed. A transaction that fails leaves them held until they expire.
+ *
+ * @param rows - `[{ scope, realm, key, reservation }]`, as
+ *   `cluster/cluster_claims.js` holds them
+ * @returns a promise of `{ released }`, with `error` when the transaction
+ *   that carried them failed; it never rejects
+ */
+function releaseClaimsAtCommit(rows) {
+  log.debug("Entering releaseClaimsAtCommit().");
+  const list = rows || [];
+  if (!list.length || !enabled() || !driver ||
+      typeof driver.releaseClaims !== 'function') {
+    log.debug("Leaving releaseClaimsAtCommit(). No store to release in.");
+    return Promise.resolve({ released: false,
+                             error: list.length ? 'no claims store' : '' });
+  }
+  const answer = new Promise(function (resolve) {
+    claimReleases.push({ rows: list, through: dirGeneration,
+                         resolve: resolve });
+  });
+  flush().catch(function (e) {
+    log.debug("Caught in releaseClaimsAtCommit(): " +
+              ((e && e.message) || e));
+  });
+  log.debug("Leaving releaseClaimsAtCommit().");
+  return answer;
+}
+
+// The waiting releases whose writes are covered by generation `takenAt`,
+// taken off the list.
+function takeClaimReleases(takenAt) {
+  log.debug("Entering takeClaimReleases().");
+  if (!claimReleases.length) {
+    log.debug("Leaving takeClaimReleases(). None waiting.");
+    return [];
+  }
+  const taken = [];
+  const kept = [];
+  claimReleases.forEach(function (one) {
+    (one.through <= takenAt ? taken : kept).push(one);
+  });
+  claimReleases = kept;
+  log.debug("Leaving takeClaimReleases(). " + taken.length + " taken.");
+  return taken;
+}
+
+// Every claim row of several waiting releases, as one list.
+function claimReleaseRows(list) {
+  log.debug("Entering claimReleaseRows().");
+  const rows = [];
+  list.forEach(function (one) {
+    one.rows.forEach(function (row) {
+      rows.push(row);
+    });
+  });
+  log.debug("Leaving claimReleaseRows().");
+  return rows;
+}
+
+function settleClaimReleases(list, answer) {
+  log.debug("Entering settleClaimReleases().");
+  list.forEach(function (one) {
+    one.resolve(answer);
+  });
+  log.debug("Leaving settleClaimReleases().");
+}
+
+// Releases whose writes have committed, given back by one statement of their
+// own. Never rejects: a failure leaves the claims held until they expire.
+function releaseClaimsAlone(list) {
+  log.debug("Entering releaseClaimsAlone().");
+  log.debug("Leaving releaseClaimsAlone().");
+  return Promise.resolve().then(function () {
+    return driver.releaseClaims(claimReleaseRows(list));
+  }).then(function () {
+    settleClaimReleases(list, { released: true });
+  }, function (e) {
+    log.warn(errorCodes.tag('STS-CLUSTER-0014') + 'persistence: giving ' +
+             'back ' + list.length + ' create claim set(s) failed: ' +
+             ((e && e.message) || e) + '. They stay held until they expire.');
+    settleClaimReleases(list, { released: false,
+                                error: (e && e.message) || String(e) });
+  });
+}
+
 /**
  * Reports that a directory entry changed, and schedules a flush.
  * @param dn - the entry's DN; empty or undefined marks the whole directory
@@ -1429,6 +1546,17 @@ function flush() {
     // its failure put a dirty bit back.
     dirCommittedAt = dirGeneration;
     settleDirWaiters(null);
+    // A CREATE'S CLAIMS (#628) whose writes have all committed already —
+    // the ordinary case for a door that answers after its commit — have no
+    // transaction to ride, and are given back on their own.
+    const committedReleases = takeClaimReleases(dirGeneration);
+    if (committedReleases.length) {
+      log.debug('Leaving flush(). Nothing is dirty; releasing ' +
+                committedReleases.length + ' claim set(s).');
+      return releaseClaimsAlone(committedReleases).then(function () {
+        return { written: false };
+      });
+    }
     log.debug('Leaving flush(). Nothing is dirty.');
     return Promise.resolve({ written: false });
   }
@@ -1471,6 +1599,10 @@ function flush() {
   // reason: what is sent is what the shadows are advanced by.
   const realmChanges = wantRealms ? realmsDelta(removals) : null;
   const configChanges = wantConfig ? appconfigDelta() : null;
+
+  // The claims this flush's directory transaction gives back (#628): taken
+  // when the transaction is sent, and answered when it settles.
+  let carriedReleases = [];
 
   // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
   // sealed under a data encryption key made since the last flush must not
@@ -1530,19 +1662,34 @@ function flush() {
         windowed.upserts.concat(windowed.deletes).map(function (row) {
           return row.realm;
         })))) : changes.touched;
+    // THE CLAIMS OF THE CREATES THIS TRANSACTION COMMITS (#628), every one
+    // whose writes were made at or before `takenAt` — so in this
+    // transaction or an earlier one — given back by a statement of it.
+    carriedReleases = typeof driver.releaseClaims === 'function'
+      ? takeClaimReleases(takenAt) : [];
     return driver.saveDirectory({
       upserts: sentUpserts,
       deletes: sentDeletes,
       touched: sentTouched,
       removedRealms: changes.removedRealms,
+      releaseClaims: claimReleaseRows(carriedReleases),
       all: live
     }).then(function (result) {
+      settleClaimReleases(carriedReleases, { released: true });
+      carriedReleases = [];
       advanceShadow(changes, changes.removedRealms);
       if (windowWrites) {
         win.committed(windowed, result && result.outcomes);
       }
       applyDirectoryOutcomes(changes, result && result.outcomes);
     });
+  }).then(function () {
+    // THE CLAIMS WHOSE WRITES HAVE COMMITTED AND WHICH NO DIRECTORY
+    // TRANSACTION CARRIED (#628): this flush wrote no entry, or they were
+    // handed over while its transaction ran. Given back on their own, and a
+    // failure to do so is not this flush's failure.
+    const alone = takeClaimReleases(takenAt);
+    return alone.length ? releaseClaimsAlone(alone) : null;
   }).then(function () {
     if (!wantRealms) {
       return null;
@@ -1615,6 +1762,19 @@ function flush() {
     // and nothing is lost. Logged below as STS-STORE-0002.
     failures++;
     lastError = err.message;
+    // THE CLAIMS THE FAILED TRANSACTION CARRIED (#628) were rolled back with
+    // it, so they are still held, and they stay held until they expire: the
+    // accepted cost of releasing in the commit (STS-CLUSTER-0164).
+    if (carriedReleases.length) {
+      log.warn(errorCodes.tag('STS-CLUSTER-0164') + 'persistence: the ' +
+               'flush that was to give back ' + carriedReleases.length +
+               ' create claim set(s) failed, so they stay held until they ' +
+               'expire; a create of one of those names before then waits ' +
+               'and is refused as in progress (STS-LDAP-0092).');
+      settleClaimReleases(carriedReleases,
+                          { released: false, error: err.message });
+      carriedReleases = [];
+    }
     if (windowWrites) {
       // The window's keys are still changed; the next flush takes them.
       win.failed(windowed);
@@ -2437,9 +2597,18 @@ function adoptStableOrigin() {
   if (typeof driver.setOriginLost === 'function') {
     driver.setOriginLost(originLost);
   }
+  // WHICH MEMBERSHIP THIS PROCESS IS PART OF (#617): the id its front
+  // process joins the cluster under — chosen here, before the join, for a
+  // front, and inherited by a worker — so a claim its predecessor's
+  // membership took, and that membership has since left, is taken over at
+  // once rather than waited out (the driver's `adoptOrigin()` argues it).
+  // '' with clustering off, where nothing is taken over.
+  const nodeId = slot && cluster.mode() !== 'off' ? cluster.plannedNodeId()
+                                                    : '';
   log.debug("Leaving adoptStableOrigin().");
   return driver.adoptOrigin({ name: name, ttlMs: ORIGIN_TTL_MS,
-                              waitMs: ORIGIN_WAIT_MS }).then(function (a) {
+                              waitMs: ORIGIN_WAIT_MS,
+                              nodeId: nodeId }).then(function (a) {
     originAdoption = a;
     if (!a.adopted) {
       log.warn(errorCodes.tag('STS-STORE-0060') + 'persistence: this ' +
@@ -2450,6 +2619,8 @@ function adoptStableOrigin() {
       return;
     }
     log.info('persistence: this process writes as origin ' + a.origin +
+             (a.tookOverFrom ? ', taken over from ' + a.tookOverFrom +
+              ', whose node membership has left or expired' : '') +
              (a.waitedMs > 1000 ? ', after waiting ' +
               Math.round(a.waitedMs / 1000) + ' s for the previous ' +
               'holder\'s claim to lapse' : '') + '; what that origin wrote ' +
@@ -2700,6 +2871,15 @@ function openStore(chosen, resolvedUrl, globalUrls) {
           return driver.countAllSealed();
         }
         : undefined,
+      // The directory's data-key index caught up for the entries written
+      // before it existed (#623), `{ indexed, remaining }`.
+      indexSealed: typeof driver.indexSealed === 'function'
+        ? function (options) {
+          log.debug("Entering indexSealed().");
+          log.debug("Leaving indexSealed().");
+          return driver.indexSealed(options);
+        }
+        : undefined,
       resealSealed: typeof driver.resealSealed === 'function'
         ? function (dekIds, reseal, options) {
           log.debug("Entering resealSealed().");
@@ -2766,14 +2946,32 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       const codec = typeof driver.entryCodec === 'function'
         ? driver.entryCodec() : codecModule.create('cell');
       const asked = bridge;
-      directory.window.attach({
+      /** @type {{ query: (name: string, args: unknown[]) => unknown,
+       *    queryAsync?: (name: string, args: unknown[]) => Promise<unknown> }}
+       */
+      const answering = {
         query: function (name, args) {
           log.debug("Entering the keyed bridge query(). " + name);
           log.debug("Leaving the keyed bridge query().");
           return codecModule.openAnswer(codec, name,
             asked.query(name, codecModule.keyArgs(name, args)));
         }
-      });
+      };
+      // AND THE SAME QUESTION ASKED ASYNCHRONOUSLY (#615), for a caller that
+      // can wait — a scheduler job reading the holders of an attribute
+      // (`DirectoryWindow.holdersAsync()`). The driver's `directoryQuery()`
+      // builds the same statement from `directory_queries.js`, keys the
+      // values and opens the answer with the same codec, on the read pool,
+      // so the event loop runs while the store answers. Absent from a driver
+      // without it, and the window then asks synchronously.
+      if (typeof driver.directoryQuery === 'function') {
+        answering.queryAsync = function (name, args) {
+          log.debug("Entering the asynchronous directory query(). " + name);
+          log.debug("Leaving the asynchronous directory query().");
+          return driver.directoryQuery(name, args);
+        };
+      }
+      directory.window.attach(answering);
       log.info('persistence: this worker reads the people and devices it ' +
                'does not hold from the store, through the directory bridge ' +
                '(ldap.workerDirectory=postgres-lru).');
@@ -2869,7 +3067,27 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // A first run has an empty store and a seeded directory, so everything is
     // new and has to be written. A restored run's diff is empty and this
     // costs one no-op flush.
+    //
+    // **AND IT IS A WHOLE WALK, SAID IN SO MANY WORDS (#631, 2026-10-14).**
+    // The seed ran at require time, before the store was enabled, so
+    // `directoryChanged()` journalled none of it — and this used to set
+    // `directoryDirty` alone and leave the first flush to infer "walk
+    // everything" from an EMPTY journal. Two things defeat that inference.
+    // In a windowed process (#320's default on postgres) the window's pinned
+    // seed — the people — makes `windowWrites` true, and an empty journal
+    // beside window writes is read as "nothing RESIDENT to walk" (`wanted`
+    // becomes an empty Set): the people were written and the base DN, every
+    // container, the groups and the applications were not — 6 rows of 42
+    // for a bare directory, 24 of 59 on the whole stack. And in any process
+    // a write journalled between this line and that flush would narrow the
+    // first flush to the journal, with the same loss. `dirtyEverything` says
+    // it outright: the first flush diffs every realm against the shadow
+    // `primeShadow()` just built — empty for a seeded realm, equal for a
+    // restored one — and asks the window for everything it holds
+    // (`collect(null)`). It walks what the empty journal made it walk
+    // before wherever nothing narrowed it, so a start costs no more.
     directoryDirty = true;
+    dirtyEverything = true;
     dirGeneration += 1;
     realmsDirty = persistsRealms();
     configDirty = false;
@@ -3181,6 +3399,53 @@ function primeShadow(loadedRealmIds) {
 }
 
 // ---------------------------------------------------------------------------
+// A REQUEST WORKER'S ORIGIN, GIVEN BACK AS IT EXITS (#617, 2026-10-14).
+//
+// `stop()` below gives the origin back at a clean stop, and only the front
+// process ever called it: a request worker drained its server and exited,
+// holding its claim, so the worker that replaced it after a container
+// restart found the claim live and waited for it to lapse (2 s on 8081, up to
+// the claim's 30 s). `common/request_worker.ts` calls this once its server
+// has closed: what this process still owes is written first — the directory's
+// and the minted journal, which commit-before-answer has normally already
+// written — and then the claim is released, so nothing is written under the
+// origin after it is given back. The worker exits straight afterwards.
+// Never rejects; a failure leaves the claim to lapse, as before.
+// ---------------------------------------------------------------------------
+/**
+ * Writes what this process owes and releases its origin claim, for a request
+ * worker about to exit.
+ *
+ * @returns a promise of true when a claim was released
+ */
+function releaseOrigin() {
+  log.debug("Entering releaseOrigin().");
+  if (originTimer) {
+    clearInterval(originTimer);
+    originTimer = null;
+  }
+  if (!enabled() || !driver || typeof driver.releaseOrigin !== 'function') {
+    log.debug("Leaving releaseOrigin(). The store has no origins.");
+    return Promise.resolve(false);
+  }
+  log.debug("Leaving releaseOrigin().");
+  return Promise.resolve().then(function () {
+    return flush();
+  }).then(function () {
+    return minted.flush();
+  }).then(function () {
+    return driver.releaseOrigin();
+  }).then(function (released) {
+    log.debug('persistence: this process gave back origin ' + originId() +
+              (released ? '' : ' (it held no claim)') + '.');
+    return !!released;
+  }).catch(function (err) {
+    log.debug("Caught in releaseOrigin(): " + ((err && err.message) || err));
+    return false;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // STOPPING. One last flush, then close. Called from the SIGTERM and SIGINT
 // handlers in server.js — the two signals a container stop and a Ctrl-C send —
 // and from nowhere else. `kill -9` cannot be trapped and is what `writeDelay`
@@ -3443,6 +3708,192 @@ function applyDirectoryChange(change) {
     return true;
   });
 }
+
+// ---------------------------------------------------------------------------
+// WHAT THIS PROCESS COMMITTED, BY KIND, AND ANOTHER PROCESS'S DIRECTORY ROWS
+// APPLIED BY KEY (#626).
+//
+// `common/request_pool.js` sends a dispatched LDAP write through the read
+// barrier — a ticket wait and a change-log pull in the worker — so that
+// anything answered before it is visible to it. Under a bulk add from
+// several connections every add found the other workers ahead and paid a
+// pull first. But what those workers wrote was, almost always, PEOPLE: rows
+// of a windowed key, which a worker holding a window reads from the store
+// whenever it does not hold them. The pull mattered only for a key the
+// worker DID hold, a copy that may be older than the store's.
+//
+// So the pool is told what each announced commit was, and when everything
+// a worker has not caught up on is windowed directory rows, it hands the
+// write those KEYS instead of a pull, and the worker applies just them —
+// `applyStaleKeys()`, the windowed branch of applyDirectoryChange() for each
+// one, so the held copy is dropped (or marked stale when busy here) and the
+// indexes are told exactly as the pull would have told them. Anything else
+// committed — a realm, a setting, a key set, a group, a policy, a minted
+// session — is "shared", and the next write takes the whole barrier.
+//
+// `committedChangesSince()` is the writer's half: it reads the driver's
+// counts by kind (`persistence_postgres.js`, `otherWritten`) and asks the
+// directory which keys are windowed. A driver without the counts (ldif,
+// memory, the tiered driver) answers null, which is "shared".
+// ---------------------------------------------------------------------------
+/**
+ * Where this process's committed change rows stand, by kind, for
+ * `committedChangesSince()`.
+ *
+ * @returns an opaque mark, or null when the driver keeps no such counts
+ */
+function committedChangeMark() {
+  log.debug("Entering committedChangeMark().");
+  if (!driver || typeof driver.committedMark !== 'function') {
+    log.debug("Leaving committedChangeMark(). Not kept.");
+    return null;
+  }
+  log.debug("Leaving committedChangeMark().");
+  return driver.committedMark();
+}
+
+/**
+ * What this process committed since a mark: the windowed directory keys
+ * when that is ALL it committed (bar per-process tallies), or null.
+ *
+ * @param mark - from `committedChangeMark()` or a previous answer
+ * @param counts - optional; what answers `committedSince(mark)` in the
+ *   driver's place, for a test
+ * @returns `{ mark, windowedKeys }`; `windowedKeys` is an array of
+ *   `{ realm, key }`, or null for "something else, or unknown"
+ */
+function committedChangesSince(mark, counts) {
+  log.debug("Entering committedChangesSince().");
+  const source = counts || driver;
+  if (!mark || !source || typeof source.committedSince !== 'function') {
+    log.debug("Leaving committedChangesSince(). Unknown.");
+    return { mark: committedChangeMark(), windowedKeys: null };
+  }
+  const since = source.committedSince(mark);
+  const window = directory && directory.window;
+  if (since.other || !Array.isArray(since.directory) || !window) {
+    log.debug("Leaving committedChangesSince(). Shared.");
+    return { mark: since.mark, windowedKeys: null };
+  }
+  const seen = new Set();
+  const keys = [];
+  for (let i = 0; i < since.directory.length; i++) {
+    const one = since.directory[i];
+    if (!window.isWindowed(one.realm, one.key)) {
+      log.debug("Leaving committedChangesSince(). A resident key.");
+      return { mark: since.mark, windowedKeys: null };
+    }
+    const ck = one.realm + '\n' + one.key;
+    if (!seen.has(ck)) {
+      seen.add(ck);
+      keys.push({ realm: one.realm, key: one.key });
+    }
+  }
+  log.debug("Leaving committedChangesSince(). " + keys.length +
+            " windowed key(s).");
+  return { mark: since.mark, windowedKeys: keys };
+}
+
+// The rows at some keys of one realm, read from the store: one `byKeys`
+// where the driver answers the directory's queries, a `readEntry()` each
+// otherwise. Each row is `{ key, entry }`.
+function readStaleRows(realmId, keys) {
+  log.debug("Entering readStaleRows(). " + keys.length);
+  if (typeof driver.directoryQuery === 'function') {
+    log.debug("Leaving readStaleRows(). One byKeys.");
+    return Promise.resolve(driver.directoryQuery('byKeys', [realmId, keys]));
+  }
+  log.debug("Leaving readStaleRows(). One readEntry() each.");
+  return Promise.all(keys.map(function (key) {
+    return driver.readEntry(realmId, key);
+  })).then(function (rows) {
+    return rows.filter(function (row) {
+      return !!row;
+    });
+  });
+}
+
+/**
+ * Applies another process's directory rows at some windowed keys, as the
+ * change log's pull would: each key's row is read from the store, and the
+ * held copy is forgotten — or marked stale, when this process is busy with
+ * it — with the directory's indexes told (`forgetEntry()`).
+ *
+ * Answers false, having applied nothing, where it cannot stand in for a pull:
+ * no window here, a key that is not windowed here, no driver, or a store
+ * that could not be read. The caller then pulls (`syncNow()`).
+ * @param keys - `[{ realm, key }]`, normalised DNs
+ * @param reader - optional; `(realmId, keys)` resolving to the rows, for a
+ *   test; the store otherwise
+ * @returns a promise of whether they were applied
+ */
+function applyStaleKeys(keys, reader) {
+  log.debug("Entering applyStaleKeys().");
+  const list = Array.isArray(keys) ? keys : [];
+  if (!list.length) {
+    log.debug("Leaving applyStaleKeys(). Nothing to apply.");
+    return Promise.resolve(true);
+  }
+  const window = directory && directory.window;
+  const read = reader || (driver && (typeof driver.directoryQuery ===
+    'function' || typeof driver.readEntry === 'function') ? readStaleRows
+    : null);
+  if (!window || typeof directory.forgetEntry !== 'function' || !read ||
+      !list.every(function (one) {
+        return one && window.isWindowed(String(one.realm), String(one.key));
+      })) {
+    log.debug("Leaving applyStaleKeys(). Not here; the caller pulls.");
+    return Promise.resolve(false);
+  }
+  const byRealm = new Map();
+  list.forEach(function (one) {
+    const realmId = String(one.realm);
+    const held = byRealm.get(realmId) || [];
+    if (held.indexOf(String(one.key)) < 0) {
+      held.push(String(one.key));
+    }
+    byRealm.set(realmId, held);
+  });
+  log.debug("Leaving applyStaleKeys(). Reading " + list.length + ".");
+  return Promise.all(Array.from(byRealm.keys()).map(function (realmId) {
+    const realmKeys = byRealm.get(realmId);
+    return Promise.resolve(read(realmId, realmKeys)).then(function (rows) {
+      const found = new Map();
+      (rows || []).forEach(function (row) {
+        if (row && row.key) {
+          found.set(String(row.key), row);
+        }
+      });
+      realmKeys.forEach(function (key) {
+        const row = found.get(key) || null;
+        // applyDirectoryChange()'s windowed branch, key for key.
+        const busy = window.busy(realmId, key);
+        if (busy) {
+          window.markStale(realmId, key);
+        }
+        const was = restoring;
+        restoring = true;
+        try {
+          directory.forgetEntry(realmId, key, row ? row.entry : null, busy);
+        } finally {
+          restoring = was;
+        }
+      });
+    });
+  })).then(function () {
+    return true;
+  }, function (e) {
+    // NOT A REFUSAL: the caller pulls instead, which is what it did before
+    // #626 on every write. Some keys may have been applied; applying them
+    // again in the pull is what the pull does to every row anyway.
+    log.warn(errorCodes.tag('STS-STORE-0081') + 'persistence: the ' +
+             'directory rows another process wrote could not be read by ' +
+             'key (' + ((e && e.message) || e) + '); this process is ' +
+             'catching up with the whole change log instead.');
+    return false;
+  });
+}
+
 
 function applyRealmsChange() {
   log.debug("Entering applyRealmsChange().");
@@ -4259,7 +4710,35 @@ function currentDriver() {
   return enabled() ? driver : null;
 }
 
+// WHETHER THIS SERVICE'S DIRECTORY IS A WINDOW ONTO THE STORE (#349, #320):
+// `ldap.workerDirectory` read once, with `auto` decided — the window where it
+// can work (a postgres store, one cell) and the whole directory elsewhere. An
+// explicit `postgres-lru` answers yes wherever it is set, so `start()` can
+// refuse it where it cannot work (STS-LDAP-0133); `auto` is never refused.
+/**
+ * Answers whether the directory is held as a window onto the store
+ * (`ldap.workerDirectory`, with `auto` decided).
+ *
+ * @returns true for a window
+ */
+function directoryWindowWanted() {
+  log.debug("Entering directoryWindowWanted().");
+  const chosen = String(config.value('ldap.workerDirectory'));
+  let wanted;
+  if (chosen === 'postgres-lru') {
+    wanted = true;
+  } else if (chosen === 'auto') {
+    wanted = String(config.value('persistence.mode')) === 'postgres' &&
+      !cells.isMulti();
+  } else {
+    wanted = false;
+  }
+  log.debug("Leaving directoryWindowWanted(). " + wanted);
+  return wanted;
+}
+
 module.exports = {
+  directoryWindowWanted: directoryWindowWanted,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   originId: originId,
@@ -4312,7 +4791,11 @@ module.exports = {
   },
   start: start,
   stop: stop,
+  releaseOrigin: releaseOrigin,
   flush: flush,
+  // A create's claims, given back in the transaction that commits it (#628);
+  // see the note above `releaseClaimsAtCommit()`.
+  releaseClaimsAtCommit: releaseClaimsAtCommit,
   directoryChanged: directoryChanged,
   realmsChanged: realmsChanged,
   configChanged: configChanged,
@@ -4653,6 +5136,11 @@ module.exports = {
    * Waits until everything committed before the call is applied here.
    * @returns `persistence_replication.syncNow()`'s promise
    */
+  // #626: what this process committed by kind, and another's directory
+  // rows applied by key. See committedChangesSince().
+  committedChangeMark: committedChangeMark,
+  committedChangesSince: committedChangesSince,
+  applyStaleKeys: applyStaleKeys,
   syncNow: function () {
     log.debug("Entering syncNow().");
     log.debug("Leaving syncNow().");

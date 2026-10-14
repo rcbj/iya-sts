@@ -120,5 +120,13 @@
   "owners.isOwnerTip": "Ya está en la tabla de arriba.",
   "owners.itself": "este grupo",
   "owners.itselfTip": "Un grupo no puede ser su propio propietario.",
-  "owners.addTip": "Hacer propietario a {value} ahora. Se guarda al instante."
+  "owners.addTip": "Hacer propietario a {value} ahora. Se guarda al instante.",
+  "ownerProtection.heading": "Cerrado a sus propietarios",
+  "ownerProtection.lead": "Sus propietarios pueden leerlo y modificarlo a través del portal de usuario y de la API de gestión, dentro de lo que permite la regla de propietarios de la política access-control. Si está cerrado, no pueden, y lo modifica un administrador.",
+  "ownerProtection.checkbox": "Cerrado a sus propietarios",
+  "ownerProtection.checkboxTip": "Marcado, sus propietarios no pueden leerlo ni modificarlo a través del portal ni de la API de gestión. Siguen siendo sus propietarios.",
+  "ownerProtection.save": "Guardar",
+  "ownerProtection.closedAnyway": "Está cerrado a sus propietarios diga lo que diga la casilla:",
+  "ownerProtection.isMarked": "Un administrador lo ha cerrado a sus propietarios.",
+  "ownerProtection.notMarked": "Ningún administrador lo ha cerrado a sus propietarios."
 }

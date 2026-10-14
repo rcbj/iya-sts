@@ -965,12 +965,16 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
           assert.ok(verifyJws(s.requestObjectJwt, roKey),
                     "the request object's signature does not verify");
         });
-  check("it asks for a vp_token by direct_post to this service, with a " +
+  // A SIGN-IN asks for `direct_post.jwt` by default since 2026-10-12
+  // (`oid4vp.signInResponseMode`, HAIP 1.0): the answer is encrypted to the
+  // request's keys. A verification an administrator starts keeps
+  // `direct_post` (section 7, below).
+  check("it asks for a vp_token by direct_post.jwt to this service, with a " +
         "fresh nonce, the client_id the wallet link names, and a DCQL " +
         "query for this issuer's credential in the formats configured",
         function () {
           assert.strictEqual(ro.response_type, "vp_token");
-          assert.strictEqual(ro.response_mode, "direct_post");
+          assert.strictEqual(ro.response_mode, "direct_post.jwt");
           assert.strictEqual(new URL(ro.response_uri).origin,
                              new URL(base).origin);
           assert.ok(ro.nonce && String(ro.nonce).length >= 16, ro.nonce);

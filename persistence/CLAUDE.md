@@ -10,6 +10,7 @@
 | **`persistence_minted.js`** | **What this process MINTS, written down — in product mode, and nowhere else** (2026-09-06). The registry of declared stores, the journal, the seal, the restore. A LIBRARY that is HANDED its driver, which is what lets `tests/minted_persistence.js` drive the whole of it against a stub. |
 | **`directory_merge.js`** | **One directory entry written by two nodes** (2026-09-14, #46 section 3): the three-way merge (base = the shadow, mine = live, theirs = the row under `FOR UPDATE`) the postgres driver writes a directory upsert through, and `persistence.js` applies again to a write that raced the flush or a replicated row. A LEAF with no requires. See *Several nodes writing one row* below. |
 | **`persistence_replication.js`** | **Several processes against one store** (2026-09-06). The change-log poller, the `LISTEN` client, and the fan-in for the counters. A LIBRARY, handed its driver and its appliers; `tests/replication.js` drives it against a stub. |
+| **`bulk_import.js`**, **`ldif_stream.js`** | **The bulk directory import** (#629, 2026-10-14): people from an LDIF file straight into `sts_ldap_entries`, offline, thousands a second. A TOOL — no route, nothing requires it. See *THE BULK IMPORT* below; `docs/bulk-import.md` is the operator's page. |
 
 ## THE METRICS SURFACE, AND THE PROCESS EXIT IT EXPOSED (2026-09-11)
 
@@ -309,6 +310,23 @@ The shadow is now primed only for realms whose contents actually came OUT of the
 store. A realm that was seeded rather than loaded gets an empty shadow, so every
 one of its entries is new and is written.
 
+### And the second, which was the same loss through the JOURNAL (#631, 2026-10-14)
+
+An empty shadow is only half of it: the first flush must also LOOK at every
+entry, and it was left to infer that from an empty journal (the seed runs
+before the store is enabled, so `directoryChanged()` journals none of it). In
+a windowed process — every postgres process since #320 — the window's pinned
+seed (the people) made the flush read "empty journal beside window writes" as
+"nothing resident to walk": the people reached the table and the base DN, the
+containers, the groups and the applications did not (24 rows of 59 on the
+whole stack; the bulk import's own test seeded with
+`LDAP_WORKER_DIRECTORY=memory` to dodge it). `openStore()` now sets
+`dirtyEverything` beside `directoryDirty`, so the first flush is a whole diff
+and the window's `collect(null)` in every process, whatever was journalled
+before it ran. It walks what an empty journal already made it walk; nothing
+new is paid at start. `tests/directory_window.js` section M starts the real
+directory over an empty store double in both modes and compares the rows.
+
 ## When the flush happens
 
 Both modes schedule; they differ only in the delay.
@@ -606,6 +624,15 @@ early return in that function is load-bearing on the authentication path:
 and `autoCreateUser()`, so without it somebody signing in for the first time
 would be marked as not having signed in.
 
+**THE RESTORE HALF WAS TAKEN OUT AGAIN BY #613 (2026-10-13); the create half
+stays.** `/admin/users` has listed the directory's people from the directory
+since #610 (`admin-core/admin_views.ts`'s `peopleRows()`: a capped listing and
+the store's count), so the `known: 0` page this section describes cannot
+recur without the register's help, and the help had become the most expensive
+thing a start did: `ldap/CLAUDE.md`, *Restoring*, has the figures. A restored
+person is a `directory` row now, and the register holds what this service
+observed.
+
 ## The seam is closed (2026-09-06)
 
 **This section was a checklist of what a later phase would need. Every item on
@@ -623,7 +650,9 @@ everything after it. That single fact makes every hard part easy: a listener
 that dropped for four seconds misses nothing, the 8000-byte `pg_notify` limit
 stops mattering because the payload is a POINTER and never a row, and the
 database can restart underneath it. So `LISTEN`/`NOTIFY` stays exactly what it
-was — a nudge that wakes the poll early — and is allowed to be lossy.
+was — a nudge that wakes the poll early — and is allowed to be lossy. Since
+#630 it is sent after the COMMIT and coalesced, one a 25 ms window per
+process (*What the write path waited on*, below).
 
 **THAT IS THE ARGUMENT `xacml-pep/` ALREADY MAKES ABOUT ITS OWN PULL**, and
 citing it is the point rather than a flourish: this repository has run that
@@ -822,6 +851,18 @@ containers against this store need, and three things changed here for it:
 `persistence.clusterStore()` hands the driver to `cluster/cluster_claims.js` and
 `cluster/cluster_secrets.ts`. The four `sts_cluster_*` tables are schema version
 5.
+
+**A CREATE'S CLAIMS GO BACK IN THE FLUSH THAT COMMITS IT (#628, 2026-10-14).**
+`releaseClaimsAtCommit(rows)` queues claim rows with the directory generation
+of the moment; the first `saveDirectory()` whose take covers that generation
+carries them as `change.releaseClaims`, and the driver deletes them as the
+last statement before COMMIT (the tiered driver sends each to the tier its
+scope is claimed in). Rows whose writes committed earlier are deleted alone
+— on the "nothing is dirty" path, or after a directory step that carried
+none. **A transaction that fails rolls them back, and they are not queued
+again**: the claims stay until they expire (`STS-CLUSTER-0164`), the cost
+rcbj accepted. `cluster/CLAUDE.md`, *Claims and shared secrets*, and
+`ldap/CLAUDE.md`, *SEVERAL NODES: A CREATE CLAIMS ITS NAME*, have the rest.
 
 **WHAT THE CLUSTER BARRIER HOLDS A RESPONSE ON (2026-09-14, #46 follow-up).** It
 was `persistence.pendingWrites()` — anything dirty, journalled, scheduled or in
@@ -1170,6 +1211,71 @@ falls back to its configured value. Both columns are on the postgres driver's
 column that holds sealed values and is not on that list is one whose data key
 the job destroys with the values still in it**.
 
+## THE BULK IMPORT (#629, 2026-10-14)
+
+`node persistence/bulk_import.js --file=… [--realm] [--batch] [--skip]
+[--report]`, in the image, with the service's own settings, **with the
+service stopped**. rcbj asked for it to take the directory from 10M to 50M
+and on toward 200M; an LDAP add is hundreds a second at best. The design is
+on #629 (the comment of 2026-10-14). What a maintainer needs:
+
+* **OFFLINE, AND REFUSED WHILE THE SERVICE RUNS (STS-LDAP-0153).** A running
+  window holds ABSENCES, and a whole-directory process sees nothing it was
+  not told through the change log — one change row an entry would be 200M
+  rows. Every postgres process reports into `sts_change_readers` every 15 s
+  and a clean stop deletes its row, so a report in the last 60 s is a
+  running service; asked after `open()` and before every batch.
+* **A ROW IS EXACTLY WHAT AN ADMIN WRITE BINDER'S LDAP ADD WRITES**:
+  `putEntry()`'s attributes in its order (timestamps, the locale policy's
+  `preferredlanguage` through `localePolicy.populationFor('')` fed the
+  realm's `ou=localePolicies` rows from the store, a random v4 `entryuuid`,
+  `stsmailverified`), sealed and indexed by `directory_codec`'s
+  `sealAttributes()`, `index()` and `dekKeys()` — the three calls
+  `entryParams()` makes — origin `bulk import`. **A change to what `putEntry()`
+  or `entryParams()` writes is owed here too**; `tests/bulk_import.js` D1
+  opens rows and recomputes their columns, and A5 pins the order.
+* **THE CHECK IS THREE STATEMENTS A BATCH, NEVER A CORRELATED EXISTS A ROW.**
+  The first version guarded the insert with `EXISTS (… name_keys @>
+  jsonb_build_array(x))` per row; the planner prices jsonb containment at a
+  default selectivity, chose a scan per row, and one 5,000-row batch took
+  79 s against 30,000 entries. Now: `dn_key = ANY()`, `rdn_value = ANY()`
+  and `name_keys @> ANY($::jsonb[])` (a bitmap scan, one GIN probe a digest),
+  matched in JavaScript — `byName()`'s rule for every name of every record.
+  **Two more planner traps, both measured:** with `realm`/`parent_key` in
+  the same WHERE as `@> ANY()` the planner walked the `(realm, parent_key,
+  rdn_value)` btree and compared every person with every digest (14.7 s a
+  batch at 20,000 entries), so the digests go through a MATERIALIZED CTE on
+  the GIN index alone, with `SET LOCAL enable_seqscan = off` in the batch;
+  and on schema 17 the name index's `fastupdate` pending list is read whole
+  by every probe (25.8 s for 5,000 probes at 25,000 entries, 13 ms merged),
+  so it is merged after every batch where permitted (`namePendingMerger()`;
+  schema 18 has `fastupdate = off` and nothing to merge).
+* **ONE TRANSACTION A BATCH UNDER `SHARE ROW EXCLUSIVE`** from the check to
+  the commit: readers go on, no other writer can make a checked name taken.
+  The insert is `INSERT … SELECT FROM unnest($n::text[]…) ON CONFLICT DO
+  NOTHING RETURNING dn_key`, and a count short of what was checked free
+  rolls back (STS-LDAP-0159). No `COPY`: the image has no COPY client, and
+  the application role cannot create a staging table.
+* **THE #618 AND #623 COUNTERS NEED NOTHING.** Their triggers are statement
+  level over transition tables, so one insert of N rows writes one delta per
+  parent and per data key, folded at commit. D2/D4/D6 compare every counter
+  with a fresh count.
+* **DATA KEYS**: a seal that makes the realm's `directory` DEK queues its row;
+  `keystore.settleDeks()` is awaited before the insert (the order rule). The
+  keystore is handed the driver's own key functions, as `persistence.js`
+  hands them.
+* **AFTER THE LAST BATCH** it merges the GIN pending lists
+  (`gin_clean_pending_list()` on each GIN index of the table) and ANALYZEs
+  it: forty million rows in `fastupdate` pending lists make every lookup scan
+  them. Both need the owner or MAINTAIN; refused, it is STS-LDAP-0161 with
+  the `VACUUM (ANALYZE)` to run, and the import is still done.
+* **IT DOES NOT REQUIRE `ou=users` AS A ROW.** Every process seeds the
+  containers in memory at start. **A windowed front process on an EMPTY
+  store was seen to write the seed's people and not its containers** (the
+  base, `ou=users`, the groups): 24 rows where a whole-directory process
+  writes 59. Not this tool's to fix, and recorded here because the test's
+  seed child uses `ldap.workerDirectory=memory` to get a whole tree.
+
 ## A WINDOWED WORKER'S DIRECTORY (#349, 2026-09-29)
 
 With `ldap.workerDirectory=postgres-lru` the directory slot carries a
@@ -1180,7 +1286,11 @@ does four things differently. `ldap/CLAUDE.md` argues the window itself.
   (`STS-LDAP-0133`), in every process, before anything is opened; and on
   postgres it hands the window its bridge (`common/sync_query.ts`, dialled
   with the driver's `bridgeConnection()`) BEFORE the restore. `stop()` ends
-  the bridge's thread after the last flush.
+  the bridge's thread after the last flush. **The bridge also carries
+  `queryAsync()` since #615**: the same question through the driver's
+  `directoryQuery()` (same builder, same keyed values, same opened answer)
+  on the read pool, for a scheduler job that can wait —
+  `DirectoryWindow.holdersAsync()`, the Android recheck's holders.
 * **The flush asks the window first** — `collect()`, with the journal or null
   for a write that named nothing — before deciding whether anything is dirty:
   an entry edited in place is found only by comparison, and the window lets go
@@ -1205,10 +1315,11 @@ does four things differently. `ldap/CLAUDE.md` argues the window itself.
   the `residentOnly` question with each realm's windowed containers from the
   slot's `windowedContainers()`): the people and devices are read when first
   asked for, which takes the directory out of a worker's start (#333 measured
-  it at a fifth of a sixty-eight-second start). The identity register is
-  still filled with every restored person: `replaceRealm()` reads their
-  NAMES from the store a page at a time (`ldap/CLAUDE.md`). A realm's seed is
-  still built at require time in every process.
+  it at a fifth of a sixty-eight-second start). The identity register was
+  still filled with every restored person, from their NAMES read a page at
+  a time, until #613 removed that pass (`ldap/CLAUDE.md`): nothing under a
+  windowed container is read at start now. A realm's seed is still built at
+  require time in every process.
 
 `tests/directory_window.js` section F drives all of it through this module
 over a `pg` double, including a change made here and one made there to the
@@ -1263,7 +1374,10 @@ where it was:
   for two renewals, the claim lapsed with no other process anywhere, and
   the process exited saying another one held it
   (`tests/persistence_origin.js` section B2). The membership node id is still random per start: a node whose
-  membership lapsed must not come back as itself. A platform that gives each
+  membership lapsed must not come back as itself. **Since #617 a request
+  worker gives its claim back as it exits, and a claim whose node membership
+  has LEFT or EXPIRED is taken over rather than waited out** — see *What a
+  start waits on*, below. A platform that gives each
   container a random host name needs `cluster.nodeName` set for any of this
   to apply.
 * **TWO ACCUMULATORS WERE NEVER FANNED IN** — `admin_stats.scimCounts`
@@ -1376,12 +1490,234 @@ five processes per node, a three-node cluster has fifteen origins, and a
 random origin left by a process that could not take its stable one is never
 aged out. That is kept as it is here and reported on #333.
 
+**A removal from the fan-in takes its empty levels with it (#618,
+2026-10-14).** `contribute(handle, realm, key, origin, null)` deleted the
+origin and left the key's Map behind, empty, for ever; a removal of something
+never held MADE the levels to empty them. `admin_stats.users` notes every
+replicated create in every process and journals the eviction of each note past
+its `MAX_USERS` cap, so a bulk load left one empty Map, its table and its key
+string per person ever added in every process. A heap snapshot of a request
+worker on 8081 at about 974K people held 798,858 keys under
+`admin_stats.users`, 796,728 of them empty: about 300 bytes a person per
+isolate, the live-heap growth #618 measured, and `everyUserRecord()` walked
+them all on every read of the users register. Now a removal looks up without
+creating and deletes each level it empties, all O(1), so what is held is
+bounded by what the other processes HOLD (origins x the store's own cap).
+`contributionCounts()` counts it; `tests/replication_fan_in_bounded.js` drives
+thirty thousand notes and evictions through three origins and holds the count
+at the cap.
+
+**And a dead process's contributions go (#618 phase 2, 2026-10-14)**, which
+closes the "never aged out" above for the fan-in in memory. The cap is per
+ORIGIN, and a random origin, or a node that left the cluster, never removes
+its rows — so every such process left up to a cap of each store in every
+other process until that one restarted, and the restart read them back.
+`pruneFanIn()` drops an origin that has not been a LIVE READER of the change
+log (`liveChangeReaders()`: `sts_change_readers`, reported within the reader
+TTL and naming no node that left — the trim's own test, read without
+deleting) for the grace, `max(reader TTL, 15 minutes)`. The floor is because
+most origins are stable since 2026-09-18: a process restarting under its
+name takes its origin back, and anything dropped while it was away returns
+only as it is rewritten (a counter on its next change, an audit segment
+never) or when the reading process restarts. **It is not a job of its own**:
+the change-log pull's per-process job runs it after a pull, at most once a
+minute, one read of a table with a row per process, and a walk of the fan-in
+only when an origin is dropped. A failed read drops nothing
+(`STS-STORE-0082`): an origin is dropped on the readers' evidence, never on
+its absence. Only memory is dropped; the rows stay in `sts_minted` under
+`mintedRetention`. `tests/replication_fan_in_bounded.js` section 6.
+
+**The second map the heap snapshot saw growing** (4K to 6.4K slots in 21
+minutes, mostly deleted-entry slots) is THIS process's own
+`admin_stats.users` partition (`realms.map`, the one `userRecord()` caps):
+the same 3,987 live records in both snapshots of 8081's worker, and 4,840
+holes in the second. The holes are V8's: an ordered hash table marks a
+deleted entry and reclaims it at its next rehash, so note-then-evict churn
+fills the table with holes up to its capacity, which is bounded by about
+twice the live count. It is bounded, and nothing was changed for it. (Why a
+worker holds 3,987 records under a cap of 2,000 was not settled: `restore`
+writes a row without the cap, and a row whose origin is this process's is
+restored rather than fanned in.)
+
 `tests/minted_persistence.js` sections 6 and 6b hold it against a stub driver
 that applies the same WHERE: the filter's realms, cutoff and short-lived
 handles; an expired row not restored, a live one and a non-expiring one
 restored; the undefined realm's row left out and purged; the hook's value
 written, NULL for a hook that throws; the job a cluster
 job; one run bounded at 100,000 rows with `more`, the next finishing.
+
+## WHAT A START COSTS THAT GROWS WITH THE DATA (#613, 2026-10-13)
+
+Measured on 8081 (product, postgres, the window on, 131,546 people in the
+default realm, front + 2 protocol workers): about 1 m 35 s from the first log
+line to the second worker ready, each process's event loop held 14–18 s at
+once, a heartbeat 15 s late (STS-CLUSTER-0025) and an origin-claim renewal
+that took 22.5 s of a 30 s claim (STS-STORE-0069). A larger directory would
+have cost the node its membership. Four costs, and what became of each;
+`tests/tools/startup_profile.js` measures the first three above the SQL
+(`docker run --rm <tests image> node tests/tools/startup_profile.js`):
+
+| Cost on 8081 | Cause | Now |
+|---|---|---|
+| 14–18 s held, per process, in `replaceRealm()` | the identity register pre-fill: every restored person's name read through the synchronous bridge (263 pages of 500) and noted | **gone** — `ldap/CLAUDE.md`, *Restoring*. The notes alone are 0.43 s for 131,546 names in the profile; the rest was the bridge |
+| the 11.2 s gap after `sts: persistence is postgres` | the same pass's journal: the register is a minted store capped at `MAX_USERS`, so the pre-fill journalled 131,546 keys (2,000 writes, 129,546 deletes of rows that never existed), and the bootstrap's `flushMinted()` (`credentials.bootstrapOnce()`) waited for them to be sealed, written and appended to the change log — which moved ~132K positions per process start and was then pulled by every other process | **gone** with it. The profile holds the loop 2.6 s for that flush against a `Map`; on postgres it was the gap. Attributed from the change log's movement and the profile, not re-measured on 8081, which was not restarted |
+| ~4–5 s per process restoring ~48K minted rows | `restore()`'s loop — open, parse and restore every row — was one synchronous `forEach` | **sliced**: `restoreInSlices()` in `persistence_minted.js` yields every 50 ms; writes between slices are kept aside like the writes made while the rows were loading, and flushed after. 48K small rows: 0.60 s in one piece before, under 60 ms at a time now. The total is unchanged and still linear in the rows (the #333 filter is what bounds the rows) |
+| ~2 s per process publishing 279 CRLs | every process signed and wrote every authority's CRL into the shared directory at start | **once a node**: a request worker publishes none (`common/pki.js`, `start()`); the front did before forking it — and since #617 after its listener binds (next section) |
+
+**The workers still start one after another** (`workers.startConcurrency`,
+default 1): #342's reason is the node's memory, not time, and it has not
+changed — each start restores the store into its own heap. With the pre-fill
+and the CRLs gone a worker's start loses ~18 s, and the listener already binds
+after the first worker of each pool (`common/CLAUDE.md`, *Workers start one at
+a time*). An operator with memory to spare raises the setting.
+
+**What is still linear and was left**, and why: a store WITHOUT the window
+(memory, ldif, cells, or `ldap.workerDirectory=memory`) restores every entry in
+`replaceRealm()` in one pass — the directory is the data there, held whole by
+choice (40,000 people: ~0.2 s in `tests/startup_large_directory.js`). The
+replication appliers' note of a person ANOTHER process created, which was the
+next candidate named here, is gone (#618 phase 2, *WHAT ONE ADD WRITES TO THE
+CHANGE LOG*, below).
+
+`tests/startup_large_directory.js` holds the fix: 40,000 people behind a
+window restore with the loop held under 250 ms, no person read from the store
+and the register the same size as with 400; the whole directory in memory
+leaves the register empty; 40,000 minted rows restore with the loop never held
+250 ms.
+
+## WHAT A START WAITS ON (#617, 2026-10-14)
+
+Measured on 8081 (product, postgres, 23 realms, ~200K entries, 52K minted
+rows, two request workers): 31.7 s from container start to the listener —
+about 18 s in the front process before its first worker was forked, then 13.5
+s of that worker, because the listener binds once the first worker of each
+pool is ready. Four things on that path were not needed there, and each moved:
+
+* **The CRLs** (4.2 s of the front, 279 lists): published after the listener
+  binds, from `server.js`'s `announce()`, yielding between lists —
+  `common/pki.js` (`publishStartupCrls()`) argues why nothing before the socket
+  needs them.
+* **The origin claim** (2 s of the first worker, and up to the claim's 30 s):
+  a worker held its claim until it lapsed, because only the front process
+  ever released one (`stop()`). Now `common/request_worker.ts` calls
+  `persistence.releaseOrigin()` once its server has closed — the journals
+  written first, the claim given back last, the thread exiting at once — and
+  the postgres driver's `adoptOrigin()` TAKES OVER a claim whose node
+  membership has gone: a claim records the membership that took it (after an
+  `@` in the row's informational `origin` column, so the schema version is
+  unchanged), and one whose membership's `sts_cluster_nodes` row has left or
+  expired is replaced in one statement. A claim of a LIVE membership —
+  another container under this node name, a sibling worker of the same front
+  still draining — and one naming no membership (clustering off, or a front
+  that has not joined yet) are waited for exactly as before, and the old
+  holder is fenced as after a lapse. A front process joins under the id it
+  took its claim with (`cluster.plannedNodeId()`). `tests/persistence_origin.js`
+  section B3.
+* **`scheduler.runs` in a request worker** (42,740 of the 52,234 rows): not
+  restored — `restoreInWorkers: false` at its declaration, the page and its
+  API pinned to the front process (`cluster/CLAUDE.md`, *A request worker does
+  not read the history back*). Why not lazily, or every store: a minted store
+  is a synchronous `Map` every request reads in memory, so a row a worker did
+  not restore is a row it answers WITHOUT — the change log brings only what
+  is written after the worker's start. A store can be left out only where
+  nothing a worker answers reads it whole, and the run history is the one
+  that is true of and worth it; `admin_stats.users` (8,177 rows) and
+  `audit.events` (594 rows, 13.6 MB, the fan-in) are read by console pages a
+  worker answers, and stay.
+* **The management API's request validators** (~1.3 s of every process's
+  module load): compiled on first use (`mgmt-api/CLAUDE.md`).
+
+| Process, phase | 8081 before (log) | After | How the after was got |
+|---|---|---|---|
+| front: module load | 5.7 s | ~4.4 s | management API load and wire 1,250–1,431 ms → 37–49 ms, tests image, three runs each |
+| front: open, origin, join | 0.1 s | 0.1 s | unchanged (its predecessor's `stop()` released the claim) |
+| front: keys | 2.0 s | 2.0 s | unchanged |
+| front: directory | 1.4 s | 1.4 s | unchanged |
+| front: minted restore (52,234 rows) | 3.0 s | 3.0 s | unchanged: the front restores every store |
+| front: PKI | 0.4 s | 0.4 s | unchanged |
+| front: CRLs into the directory | 4.2 s | 0 before the listener | after it, yielding (`tests/crl_directory_publication.js` F) |
+| **front: to the first fork** | **~18 s** | **~12.5 s** | sum |
+| worker 1: module load | 5.3 s | ~4.0 s | as the front's |
+| worker 1: waiting for its origin claim | 2.0 s (up to 30 s) | 0 | `waitedMs: 0`, B3 |
+| worker 1: keys | 1.7 s | 1.7 s | unchanged |
+| worker 1: directory | 1.3 s | 1.3 s | unchanged |
+| worker 1: minted restore | 2.5 s (52,234 rows) | ~0.5–0.9 s (9,494 rows) | above the SQL, `tests/tools/startup_profile.js` `split`: 900 ms → 161 ms; the query reads 18% of the rows and about 37% of the bytes |
+| **worker 1: to ready** | **13.5 s** | **~8.5 s** | sum |
+| **container start to listener** | **31.7 s** | **~21 s** | front + worker 1 |
+
+**The after column is measured in process and summed, not measured on a
+stack**: the 8081 container was not restarted, and a private product stack
+with 52K minted rows and 200K entries was not built for this. A second worker
+(and every worker the pool forks later) saves the same ~5 s, behind the
+listener.
+
+**Found on the way and left, with why:**
+
+* **The change log's starting point is taken AFTER the restore.**
+  `coordinate()` asks `latestChangeSeq()` once every store is restored, and
+  `replication.start()` treats everything at or below it as applied — so a
+  change committed after a restore's own read and before that call is in
+  neither, and a process that starts behind a live listener (every worker
+  after the first) can answer without it. Taking the mark BEFORE the minted
+  restore's read would close the minted half (re-applying a minted change is
+  idempotent: the applier reads the current row) and shrink the rest; it was
+  not changed here because it moves the replication contract every process
+  starts on, and wants the full suite.
+* **The keystore's start** (2.0 s front, 1.7 s each worker: 25 authorities,
+  204 data encryption keys) and **each process writing the default realm's
+  certificate authority back to the store at every start** ("written to the
+  store, encrypted", and "built by worker 2; every process here now agrees"
+  eight times on 8081) — not looked into.
+* **`audit.events`' 594 rows (13.6 MB)** decrypted into every process's fan-in
+  at every start — the next-largest cost, read by the console's audit pages,
+  which workers answer.
+
+## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
+
+**Every minted row a flush writes is a row of `sts_changes` too**: sealed,
+inserted, NOTIFY'd, and then pulled, opened and applied by every other
+process. On 8081 (about 3M entries, 55 LDAP adds a second) one LDAP add cost
+about 9.7 of them, and PostgreSQL spent about 1.6 cores on it.
+
+| Store | Before | After | Why it was written |
+|---|---|---|---|
+| directory | 1 | 1 | the entry |
+| `admin_stats.users` (own) | 4.0 | 0 | every OTHER process noted the replicated create in its identity register, and past `MAX_USERS` journalled the eviction |
+| `risc.register` | 2.3 | 0 | a blank row per account created, and past `risc.maxAccountsTracked` the eviction of the oldest |
+| `admin_stats.nums` (own) | 0.9 | 0 | `usersForgotten`, bumped by those evictions |
+| `audit.events` (own) | 0.8 | ≤ 1 | the add's audit event |
+| `audit.nums` (own) | 0.7 | ≤ 1 | its counter |
+
+The two fixes are argued where they live: the appliers' note in
+`ldap/CLAUDE.md` (the creator's record reaches every process through the
+fan-in) and the RISC row in `ssf/CLAUDE.md` (a row is kept when it says
+something an absent row does not).
+
+**A COUNTER IS ALREADY ONE ROW PER FLUSH**: the journal is a Set of keys, and
+a `realms.obj()` store journals its one key, so ten audit events in one flush
+write `audit.nums` once. What makes it one row per ADD is the cadence — in
+postgres mode the flush delay is 0 and a request worker flushes at every
+commit announcement — and that cadence is the read-your-write barrier's, so
+it stays. `audit.nums` could leave the change log only by being derived from
+the ring (its `recorded` is the ring's absolute end); that is not done.
+
+**AN EVICTION FROM A CAPPED STORE IS STILL JOURNALLED AS A DELETE**, and has to
+be: a row not deleted stays in `sts_minted` and in every other process's
+fan-in for ever, which is the store and the heap growing with the directory
+— the defect `tests/replication_fan_in_bounded.js` holds. The fix was to stop
+writing the rows that were evicted, not to stop deleting them. What still
+pays it: a person made through a DOOR (`createUser()`: the console,
+`/admin-api/users/create`, SCIM) is noted `created` in the creating process's
+register, and past `MAX_USERS` that is a note and an eviction — two rows, in
+that one process only.
+
+`tests/change_rows_per_add.js` counts what the stores journal (a persist
+observer) with a flush after every operation, past both caps, in a process
+holding the whole directory and in a windowed worker: a replicated create
+journals nothing, a local LDAP add at most the audit event and its counter,
+ten adds in one flush the counter once; a door create is still `created`, and
+an account created disabled, a service account and an update of a held
+account still have their RISC rows. Seven mutants, all caught.
 
 ## Adding a driver
 
@@ -1657,6 +1993,272 @@ and the heartbeat is what a node's life depends on. The write is not fenced:
 it is a report, not state anything acts on, and its age is drawn.
 `schema.sql` adds it with `CREATE TABLE IF NOT EXISTS`, and the grants on
 every table in the schema cover it.
+
+### The directory's counts are kept by the database (#618, schema version 16)
+
+`sts_ldap_counts` holds, per realm and per base (every ancestor of a row's
+DN, and `''` for the realm), the entries strictly under it and those holding
+a counted attribute (`directory_queries.COUNTED_ATTRIBUTES`: `userpassword`,
+the one the #610 tiles ask). `count` and `countHolding` read it — one
+primary-key read where each was a `count(*)` linear in the realm's rows, on
+`DirectoryWindow.capCount()`/`sizeIn()`/`exactCount()` (`ldap.maxEntries`),
+`recentCountUnder()`/`countUnder()` and `countHolding()`.
+
+**TRIGGERS, NOT THE DRIVER**, because the driver is not the only writer: the
+flush's per-row statements, the merge, a removed realm's DELETE, a cell
+conversion's upserts and a hand-run statement all land in the same table, and
+a counter kept by one of them is wrong the first time another writes. Each
+statement-level trigger reads its transition tables, so it counts its own
+rows, never the directory.
+
+**AND NOT DIRECTLY INTO THE COUNTERS.** Every write of a realm touches the
+same rows (`''`, the base DN, `ou=users`). A trigger updating them would hold
+that lock from a flush's first statement to its commit, serialising every
+flush of the realm across processes, and would close a deadlock with the
+entry locks the flush takes in key order (`saveDirectory()`'s *one lock order*).
+So a statement appends its net per parent to `sts_ldap_count_deltas`
+(insert only), the transaction's first delta also appends a row with `fold`
+set, and that row's deferred constraint trigger folds the transaction's
+deltas into the counters at COMMIT: one statement, in key order, after every
+entry lock is taken. A rollback (whole, or to a savepoint) takes its deltas
+with it. Nothing periodic is involved, so there is no scheduler job.
+
+**ONE COUNT, ONCE.** `open()` probes the functions and triggers by name
+(`pg_proc`, `pg_trigger`: `to_regclass()` knows only relations) and creates
+what is missing. When it created a trigger, it LOCKs `sts_ldap_entries`
+(SHARE ROW EXCLUSIVE, which every writer waits on) and runs `COUNTS_BACKFILL`
+while the counters are empty. `postgres/schema.sql` does the same. That is
+the only count of the directory, and an operator upgrading a large store pays
+for it once. `tests/directory_counts.js` holds the statements, the window's
+arithmetic and the one count in process. With `STS_TEST_POSTGRES_URL` it also
+checks exactness against a real postgres under eight concurrent writers (run
+on #618 against a scratch postgres:18). `tests/postgres_schema.js` holds the
+script and the driver together, functions and triggers included.
+
+### What the directory holds under each data key (#623, schema version 17)
+
+`sts_ldap_entries.dek_keys` is `{ "<dek id>": <values> }` — the sealed
+blob's own data key once, and the key of every value sealed INSIDE the blob
+(a TOTP secret, Kerberos keys) once per value: `directory_codec.js`'s
+`dekKeysOf()`, written by `entryParams()` beside the lookups, by the
+re-seal's UPDATE and by `cell_convert.js`. It replaced the directory WALK of
+the re-encryption job and the data-key count (`walkDirectory()`, every row
+opened on the front process, twice an hour while any key was superseded:
+about 90 s of the thread at 1.5M entries on 8081), so:
+
+* **A re-seal reads `dek_keys ?| <superseded ids>`** (GIN, default operator
+  class), in key order after a cursor, and opens only those rows.
+* **A count reads `sts_ldap_dek_counts`**, kept by triggers on
+  `sts_ldap_entries` exactly as `sts_ldap_counts` is, for the same two
+  reasons above (every writer, and deltas folded at COMMIT so no flush holds
+  the realm's `directory`-key row): `sts_ldap_dek_note()` appends each
+  statement's net per key to `sts_ldap_dek_deltas`, `sts_ldap_dek_fold()`
+  folds it in. Functions and triggers with NAMES OF THEIR OWN rather than more
+  statements in #618's: `open()` probes routines by name, so a changed body
+  under an old name would never reach a store that has the old one.
+  `DEK_COUNTS_BACKFILL` runs under the same lock, on the same condition.
+* **NULL IS "NOT KNOWN", NOT "NONE"**, which is why the column has no
+  default: adding it rewrites nothing, and every row written before it reads
+  NULL. `indexSealed()` (both jobs call it first, through
+  `keystore.sealedStore().index`) reads those through the partial index
+  `sts_ldap_entries_dek_unknown`, opens them a page at a time with a yield
+  between pages, and sets their keys COMPARE-AND-SET (still NULL, same blob),
+  for at most the budget the job gives it. Until none is left the driver
+  REFUSES a count (`STS-STORE-0080`): a count missing them could read 0 for a
+  key still in use, and a key is destroyed on 0. A blob that does not open,
+  after the data-key rows are read again once a pass, gets its own key only,
+  which is what the walk counted.
+* **A NODE ON AN OLDER BUILD** writes `attrs` and leaves `dek_keys` as it
+  was, so a cluster upgrades whole (as with every schema version). The
+  catch-up's compare-and-set on `attrs` keeps it from stamping keys on a
+  blob another writer changed under it.
+
+`tests/data_key_index.js` holds it counted (no statement of either job reads
+`sts_ldap_entries` without naming `dek_keys`) and, with
+`STS_TEST_POSTGRES_URL`, the triggers' exactness against a real database;
+`tests/no_full_directory_walk_in_jobs.js` holds that the walk stays gone.
+
+### Only the asked names and the group classes are indexed (#618, schema version 18)
+
+**Two GIN indexes took a key for every name and every class of every entry,
+and nothing asked about most of them.** On a copy of 8081's 1.2M-entry store:
+`attr_names` averaged 15.2 names a row, twelve of them in 99.9% of rows and
+fourteen more in a sixth; `class_keys` held four classes a row, each in more
+than 99%. So a person insert wrote about nineteen GIN entries that no
+question could narrow by — nobody asks "who holds a `mail`" or "who is an
+`inetOrgPerson`". Version 18 replaces both, PARTIAL, with nothing a person
+writes to:
+
+* **`sts_ldap_entries_asked_names`** is a GIN over
+  `directory_queries.ASKED_NAMES`, an IMMUTABLE `jsonb_path_query_array()`
+  of `attr_names` keeping only `ASKED_ATTRIBUTES` — the names
+  `withAttribute()` and `anyWithAttribute()` are asked about, read from their
+  callers — `WHERE directory_queries.ASKED_NAMES_HELD`
+  (`attr_names ?| ARRAY[…]`).
+  Every query spells both from those two constants, because the planner uses
+  an expression index only for its own expression and a partial one only
+  where the query repeats its predicate. **The predicate is `?|` and not
+  `<expression> <> '[]'`, and that was measured**: the database checks a
+  partial index's predicate on every insert and computes the expression only
+  for a row that passes, and the jsonpath cost about 30 µs a row where `?|`
+  over the same names cost about 2. **A name not in the list is still
+  answered**, by `attr_names ? $n` with no index (said once in the log),
+  because a holder question that answered "nobody" would be worse than a
+  slow one; a new caller adds its name to the list, which changes the index
+  expression and so is a schema version. `tests/directory_asked_names.js`
+  reads the names out of the call sites and fails on one the list lacks, or a
+  listed name nobody asks.
+* **`userpassword` is not in the list**: nearly every person holds one. The
+  two questions asked about it are the counters' — `countHolding()` already,
+  and `anyWithAttribute()` (`anybodyHoldsACredential()`) now reads the
+  realm's counter row instead of the index.
+* **`sts_ldap_entries_group_classes`** is a GIN over `class_keys` `WHERE
+  class_keys <> '[]'`, and `directory_codec.js` writes into `class_keys`
+  only the GROUP classes (`CLASS_INDEXED`, which is `ldap_server.js`'s
+  `GROUP_CLASSES`): `classesUnder()`, the one question asked of the column,
+  is only ever asked for those. **It is the column that is narrowed, not an
+  expression**, because the values are keyed digests the database cannot
+  read. `keyArgs()` refuses `classesUnder` for any other class rather than
+  answer "nobody". An entry written before version 18 holds all its classes
+  until it is next written; the question answers the same over either, so
+  nothing is migrated — it only stays in the index until then.
+* **The two indexes they replace are RETIRED** (`SCHEMA_RETIRED`): an index
+  nothing reads is still written on every insert. `schema.sql` drops them
+  after building their replacements, and `open()` drops any still in the
+  catalogue (probed through `pg_class`, so a fake `pg` answering every
+  `to_regclass` as present issues no DROP) — which only a role that may
+  will; the least-privileged role finds none once the script has run, and
+  is refused with `STS-STORE-0029` on a version-17 store, whose new indexes
+  it cannot build.
+
+Measured on the 1.2M-entry copy (EXPLAIN ANALYZE of a 20,000-person INSERT
+inside a rolled-back transaction, alternated): about 265K WAL records and
+80 MB for version 17's indexes, about 222K and 58 MB for version 18's — the
+same as with neither index — so about 2.1 WAL records and 1.1 KB of WAL less
+per person. The names' index went from 23 MB to 16 kB; the classes' stays at
+6 MB until the old rows are rewritten. Every query still plans on its index
+(bitmap scans on `sts_ldap_entries_asked_names` and
+`sts_ldap_entries_group_classes`, custom and generic plans), and the
+password question is a primary-key read of `sts_ldap_counts`. The figures
+are on #618.
+
+### The directory's GIN indexes have no pending list (#618, schema version 18)
+
+**Every directory GIN index but `dek_keys`' is `WITH (fastupdate = off)`.**
+With the default, an insert lands in the index's pending list, merged only at
+`gin_pending_list_limit` (4 MB) or by a vacuum, and EVERY SEARCH READS THE
+WHOLE LIST. On 8081 under the bulk load the names', uuids', mails' and
+values' lists held about 205,000 tuples (503 pages) each, so every `byName()`
+and `byUuid()` probe read ~500 buffers, 8.9–17.6 ms, beside 0.02 ms for the
+RDN branch of the same query; when autovacuum flushed them the add rate went
+from 45 to 73 a second and the database CPU per add halved
+(`load-users/dbperf/`). Off, an insert pays its entries at once — about
+0.04 ms a person for the four on the 1.2M-entry copy — and a probe after
+60,000 committed inserts read 4 buffers in 0.01 ms with no pending tuple.
+The two partial indexes above take it too: a person writes nothing to them,
+so a list there would buy nothing and only be read. `dek_keys`' keeps the
+default: one or two keys a row, searched only by the hourly job.
+
+An existing store is switched by `SCHEMA_RELOPTIONS` — `ALTER INDEX … SET
+(fastupdate = off)` and one `gin_clean_pending_list()`, because turning the
+option off stops the list growing and does not empty it. `open()` probes
+`pg_class.reloptions` and issues them only where the option is missing (so
+the least-privileged role issues none once `schema.sql` has run);
+`schema.sql` carries the same statements after the CREATEs.
+`tests/postgres_schema.js` and `tests/directory_queries.js` (C8) hold it.
+
+### The data-key index catches up in hours, not days (#618)
+
+On 8081 `sts_ldap_entries_dek_unknown` (#623) was 245 MB over 2.93M entries
+still NULL. The catch-up WAS running — the 13:00Z re-encryption pass logged
+46,500 entries indexed in its ten seconds — but the job was hourly, so the
+rest would have taken about 62 hours, every data-key count refused
+(`STS-STORE-0080`) meanwhile; and the pass returned before indexing at all
+when no key was superseded, leaving a store that never rotated the daily
+count's ten seconds (~60 days at that size). `data_key_rotation.ts` now
+indexes on every re-encryption pass, superseded keys or none, and the job's
+interval is `INDEX_CATCHUP_MS` (five minutes) while the last pass left
+entries unindexed — ten seconds of the front process in every three hundred,
+about five hours at 2.9M — and an hour again once it is complete.
+`tests/data_key_rotation.js` K5 and K6.
+
+### What the write path waited on, measured, and taken out (#630, schema version 19)
+
+From 8081 under the LDAP bulk load (`load-users/dbperf/` on the host; a
+pgbench replay of one add's statements against a copy of that database).
+Each item is a lock or a write every add paid that bought nothing:
+
+* **THE NOTIFY GOES OUT AFTER THE COMMIT, AND AT MOST ONE A 25 MS WINDOW.**
+  A transaction that has called `pg_notify` takes the server's notify-queue
+  lock at COMMIT and holds it through its WAL flush, so every writing
+  transaction of every process committed one after another: `Lock:object`
+  at COMMIT held 0.34–0.58 backends, and the replay went from 42 to 108
+  adds/s with the notify moved out. `recordChanges()` now holds a
+  transaction's kinds against its client beside its rows (`written`'s
+  arrangement, counted at commit), and `transactionOnce()` hands them to
+  `announce()` once COMMIT returns. `announce()` sends at once when the
+  last notify is a window old, and otherwise joins the one notify the
+  window's end sends (the union of kinds, the sum of rows), on the pool.
+  **Nothing about correctness moved**: the change-log row is still written
+  in the transaction, a rolled-back transaction still wakes nobody, and a
+  nudge lost between a COMMIT and its notify (the process died, the pool
+  refused) is a lost nudge, which the poll was always the answer to. The
+  timer is a debounce armed by a commit — never self-re-arming, so not a
+  scheduler job — and `close()` sends a nudge still due before the pool
+  ends. `tests/notify_after_commit.js` counts it.
+* **THE COUNTERS ARE SHARDED.** With the notify gone, every add still
+  updated four `sts_ldap_counts` rows and one `sts_ldap_dek_counts` row at
+  its COMMIT, the same rows for every add of a realm, and the replay's
+  ceiling was those row locks (`Lock:transactionid` at 4.4 backends, 104
+  adds/s; 326 with sixteen shards). `shard` is in both keys and the folds
+  (`sts_ldap_count_fold_sharded()`, `sts_ldap_dek_fold_sharded()`) add to
+  `pg_backend_pid() % 16`; `count()`, `countHolding()` and
+  `directoryDekCounts()` sum. **New routine NAMES, because routines are
+  probed by name**: a new body under `sts_ldap_count_fold` would never reach
+  a store that has the old one. The old trigger and function are
+  SCHEMA_UPGRADES' to drop, in the same transaction that creates the new
+  ones, so no commit ever sees both folds (which would race for a
+  transaction's deltas) or neither.
+* **`sts_minted` UPDATES ARE HOT.** 2.2 updates an add, 0% HOT: every upsert
+  sets `written_at = now()`, and the btree on it made each update a new row
+  version on a new page with an entry in every index. The btree is a BRIN
+  now (`sts_minted_written_brin`) — a summarizing index, which PostgreSQL 16
+  and later leave out of the HOT decision — and the fillfactor is 80, so
+  the next version fits on the page: 99% HOT in the replay and about nine
+  fewer WAL records an add. **What it costs the sweeps** (`purgeTombstones()`,
+  `purgeMinted()`, the 'orphan' and 'stale' batches of the expiry purge, the
+  only readers of `written_at`): a BRIN range only widens as its rows are
+  rewritten, so on a churned table `written_at < x` reads most ranges, and a
+  sweep tends towards a scan of the table — off the request path, in
+  batches, on the scheduler. `sts_minted_expires` is still a btree; an
+  `expires_at` that moves (a sliding session) makes that update non-HOT,
+  and the purge it serves needs the ordered index.
+* **AUTOVACUUM PER TABLE**: `sts_changes` at a 2% scale factor and a cost
+  limit of 2000 (its workers sat in `VacuumDelay` with 287,263 dead rows
+  waiting), and `sts_ldap_entries` at an insert scale factor of 1% (it
+  waited for about 600,000 inserts at 2.9M rows).
+
+**SCHEMA_UPGRADES** (new with this version) is how an older store is owed
+more than a missing object or column: a primary key that takes in `shard`,
+routines replaced under new names, an index retired, storage parameters.
+Each step is probed by a SQL condition in one query and run where owed,
+after the columns and before the routines, in `open()`'s one transaction. A
+required step a role may not take fails the open (STS-STORE-0029, as a
+missing object does); an advisory one (the storage parameters and the
+retired btree) is skipped and logged (STS-STORE-0083), because it is a cost
+and never a wrong answer. `postgres/schema.sql` carries every statement and
+condition, and `tests/postgres_schema.js` holds the two together. It runs
+after #618's SCHEMA_RELOPTIONS and SCHEMA_RETIRED, which it is the general
+form of: `sts_minted_written` is retired here rather than there because
+dropping it is a tuning a non-owner may skip, where #618's retired GIN
+indexes are dropped by whoever may — so `checkTheRetiredAgree()` counts the
+script's `DROP INDEX` statements against both lists.
+
+**An existing store needs two things**: `postgres/schema.sql` run again as
+the owner (the shards, the routines, the BRIN, the storage parameters and
+`pg_stat_statements`; the service's own role is refused at start with
+STS-STORE-0029 until then), and the compose stack's postgres restarted for
+its new server settings (`postgres/CLAUDE.md`).
 
 ### The schema version moved to 2
 

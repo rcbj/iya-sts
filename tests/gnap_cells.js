@@ -30,6 +30,7 @@
 delete process.env.CONFIG_FILE;
 
 const crypto = require('crypto');
+const stsCrypto = require('../common/crypto');
 
 const log = require('bunyan').createLogger({ name: 'gnap_cells',
   level: process.env.LOG_LEVEL || 'info' });
@@ -248,9 +249,14 @@ async function run(t) {
                                             to: 'b' });
   t.check(handed && handed.bundle && handed.bundle.grant.id === moving.id,
           'a waiting grant is surrendered with its rows');
-  t.check(handed.bundle.interactions['approve:appr'] &&
-          handed.bundle.userCodes.ABCDEFGH, 'its interaction handle and ' +
-          'user code travel with it');
+  // Each under its digest (#614): the bundle carries the store's keys.
+  t.check(handed.bundle.interactions['approve:' +
+                                     stsCrypto.credentialDigest('appr')] &&
+          handed.bundle.userCodes[stsCrypto.credentialDigest('ABCDEFGH')] &&
+          !handed.bundle.interactions['approve:appr'] &&
+          !handed.bundle.userCodes.ABCDEFGH,
+          'its interaction handle and user code travel with it, as the ' +
+          'digests they are held under');
   t.equal(store.getGrant(moving.id), null, 'and it is forgotten here');
   relays.length = 0;
   t.equal(await gnapCells.placeContinuation(request({}), response(),
@@ -278,10 +284,12 @@ async function run(t) {
                         state: store.STATE.PENDING, tokens: [],
                         interaction: { approvalId: remote } };
   const approveKey = 'approve:' + remote;
+  // What the minting cell's store holds and sends: the digested key (#614).
+  const approveRow = 'approve:' + stsCrypto.credentialDigest(remote);
   answer = function (cellId, name) {
     return name === 'gnap-surrender-grant'
       ? { bundle: { grant: pulledGrant, continuation: null,
-                    interactions: { [approveKey]: { grantId: pulledGrant.id,
+                    interactions: { [approveRow]: { grantId: pulledGrant.id,
                                                     at: 1 } },
                     userCodes: {} } } : {};
   };

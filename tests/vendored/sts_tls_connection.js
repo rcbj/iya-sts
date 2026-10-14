@@ -212,9 +212,26 @@ async function test() {
               "Root this job minted; it answered " + added.status + " " +
               String(added.body || added.why || "").slice(0, 300));
     try {
-      const withCert = await send("GET", OPERATION,
-                                  { cert: cred.certPem, key: cred.keyPem });
-      const cc = (withCert.json && withCert.json.clientCertificate) || {};
+      // EVERY NODE APPLIES THE ANCHOR ON ITS NEXT CHANGE PULL (2026-10-13).
+      // It is a row in ou=trustAnchors, and a node reloads its handshake
+      // truststore when it applies the row — but the handshake comes before
+      // any HTTP barrier, so on two nodes the connection straight after the
+      // add reached the one that had not pulled yet and was told
+      // UNABLE_TO_GET_ISSUER_CERT_LOCALLY (CI, cluster, d2221e6f). Each try
+      // is a new connection (`agent: false`), for up to twenty seconds.
+      let withCert = null;
+      let cc = {};
+      const deadline = Date.now() + 20000;
+      do {
+        if (withCert) {
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 500);
+          });
+        }
+        withCert = await send("GET", OPERATION,
+                              { cert: cred.certPem, key: cred.keyPem });
+        cc = (withCert.json && withCert.json.clientCertificate) || {};
+      } while (cc.verified !== true && Date.now() < deadline);
       const leaf = new crypto.X509Certificate(cred.certPem);
       check("the certificate the connection presented is reported " +
             "presented and VERIFIED, with its subject and fingerprint",

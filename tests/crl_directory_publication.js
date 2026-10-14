@@ -343,6 +343,90 @@ async function run(t) {
             'pki.start() armed the refresh timer, and arming it again does ' +
             'nothing — without it every ldap:// list was past its nextUpdate ' +
             'an hour after start');
+
+    t.log.info('=== F. nothing is published on the way to the listener; ' +
+               'the front publishes after it binds (#613, #617) ===');
+
+    // A worker re-signing and re-writing every list cost ~2 s of each
+    // worker's start on 8081 (279 lists, #613), and the front process doing
+    // it inside `pki.start()` 4 s of its way to the socket (#617). Now
+    // `pki.start()` publishes nothing in either; the front's lists are
+    // written by `publishStartupCrls()`, which `server.js` calls once the
+    // listener is bound — one at a time, yielding between them.
+    // The first `pki.start()` above, in this (front) process, left its lists
+    // for publishStartupCrls(); published here, before anything is counted.
+    await pki.publishStartupCrls();
+    const installed = revocation.currentDirectory();
+    let writes = 0;
+    let turns = 0;
+    let interleaved = false;
+    revocation.setDirectory({
+      publishCrl: function (scope, ca, der) {
+        log.debug("Entering publishCrl().");
+        writes += 1;
+        if (turns > 0 && writes > 1) {
+          interleaved = true;
+        }
+        log.debug("Leaving publishCrl().");
+        return installed.publishCrl(scope, ca, der);
+      },
+      baseDnFor: function (scope) {
+        log.debug("Entering baseDnFor().");
+        log.debug("Leaving baseDnFor().");
+        return installed.baseDnFor(scope);
+      }
+    });
+    const wasWorker = process.env.STS_REQUEST_WORKER;
+    try {
+      process.env.STS_REQUEST_WORKER = '1';
+      const asWorker = await pki.start({ realmIds: ['', REALM] });
+      t.check(asWorker.ok && writes === 0,
+              'pki.start() in a request worker builds nothing new and writes ' +
+              'no CRL into the directory', JSON.stringify({
+                ok: asWorker.ok, writes: writes }));
+      t.equal(await pki.publishStartupCrls(), 0,
+              'and leaves nothing for publishStartupCrls() to publish');
+      delete process.env.STS_REQUEST_WORKER;
+      const asFront = await pki.start({ realmIds: ['', REALM] });
+      t.check(asFront.ok && writes === 0,
+              'pki.start() in the front process writes no CRL either — the ' +
+              'start no longer waits on 279 signatures before the listener ' +
+              'binds', JSON.stringify({ ok: asFront.ok, writes: writes }));
+      // A turn of the event loop counted while the publication runs: it
+      // must hand the loop back between lists, so a `setImmediate()`
+      // callback runs before the last one is written. (The signature is
+      // WebCrypto and yields by itself; `publishAll()` also yields after
+      // each synchronous directory write, so this holds whatever a
+      // signature does — it is the property, not that one line, held here.)
+      let ticking = true;
+      const tick = function () {
+        if (!ticking) {
+          return;
+        }
+        turns += 1;
+        setImmediate(tick);
+      };
+      setImmediate(tick);
+      const published = await pki.publishStartupCrls();
+      ticking = false;
+      t.check(published >= all.length && writes >= all.length,
+              'publishStartupCrls() then writes every authority\'s list, so ' +
+              'the checks above are not ones that cannot fail',
+              published + ' published, ' + writes + ' of ' + all.length);
+      t.check(interleaved,
+              'and other work runs between two lists — the publication ' +
+              'yields to the event loop rather than holding it for all of ' +
+              'them', JSON.stringify({ turns: turns, writes: writes }));
+      t.equal(await pki.publishStartupCrls(), 0,
+              'and it runs once: a second call publishes nothing');
+    } finally {
+      if (wasWorker === undefined) {
+        delete process.env.STS_REQUEST_WORKER;
+      } else {
+        process.env.STS_REQUEST_WORKER = wasWorker;
+      }
+      revocation.restoreDirectory(installed);
+    }
   } finally {
     realms.remove(REALM);
     restoreAuthority(pki, keystore, before);

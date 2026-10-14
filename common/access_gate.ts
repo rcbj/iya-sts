@@ -220,8 +220,19 @@ interface AccessRequest {
   owner?: unknown;
   requiredRoles?: string[];
   requiredAllRoles?: string[];
+  ownedObject?: OwnedObject | null;
   context?: Record<string, unknown>;
   [key: string]: unknown;
+}
+
+// The object an owner would administer (#607). See `check()`.
+interface OwnedObject {
+  kind: string;
+  id: string;
+  action: string;
+  requiredRole: string;
+  attributes?: string[];
+  person: string;
 }
 
 // What it answers. A decider's answer may carry more (an error code under a
@@ -362,6 +373,15 @@ class AccessGate {
   //                (#454): the management API's console operations ask for
   //                ADMIN_CONSOLE and, where they show realm data, ADMIN_READ
   //                too. Absent or empty, it asks nothing.
+  //     ownedObject
+  //                the object an OWNER would administer (#607), where the
+  //                management API's operation is one an owner may ask:
+  //                `{ kind, id, action, requiredRole, attributes, person }`
+  //                — the kind of object, how the request names it, the
+  //                action, OWNER_READ or OWNER_WRITE, the attributes it
+  //                would write, and the person by username. The policy's
+  //                owner rule decides on it beside `requiredRoles`; absent,
+  //                that rule cannot permit.
   //     context    anything else worth deciding on: the method, the path. For
   //                the log and for a policy that wants it. }
   //

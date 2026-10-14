@@ -10280,13 +10280,17 @@ const PROTOCOL_SETTINGS_PAGES = [
            'process refused is accepted by another. Sticky sessions at the ' +
            'load balancer close it; nothing here does.',
            '<strong>A restored person shows on ' +
-           '<a href="/admin/users">Users</a> as restored rather than as ' +
+           '<a href="/admin/users">Users</a> as a directory person, not as ' +
            'having authenticated.</strong> They exist — an entry, searchable ' +
            'over 389, readable over SCIM, and a token issued to them carries ' +
-           'their attributes — and they have not signed in during THIS ' +
-           'process, so they are not counted among the sign-ins. The counts, ' +
-           'the protocols and the per-person event list are statistics and ' +
-           'start at zero with everything else.',
+           'their attributes — and the page lists them from the directory ' +
+           'itself. The restore does not walk them into the register of ' +
+           'people this service has SEEN (#613): at a hundred thousand ' +
+           'people that walk held every process for seconds at start. What ' +
+           'the register saw in earlier runs comes back with the minted ' +
+           'rows in product mode on postgres; in every other configuration ' +
+           'the counts, the protocols and the per-person event list are ' +
+           'statistics and start at zero with everything else.',
            '<strong>A write that fails is logged and never thrown.</strong> ' +
            'If the database goes away, the LDAP operation that triggered the ' +
            'write still succeeds, this service keeps answering out of ' +

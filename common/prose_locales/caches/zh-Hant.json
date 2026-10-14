@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "不會過期：隨主體一併捨棄、在其記錄被取代時（密碼變更或還原）捨棄，或在超過上限時作為最久未使用者被捨棄；從不持久保存。"
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "人員與認證持有者計數"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "本領域定義了多少人、多少人持有密碼、所有持有認證屬性的人（原始值），以及登入時見過的名稱中有多少是這裡的人員：即 /admin/users 在不列出整個目錄的情況下對整個目錄的統計格（#610）。"
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "結構性：每個領域一份計數與一份名稱計數；計數保存的是持有認證的人，而不是所有人。"
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "直到本領域的 ou=users 下有任何寫入為止；在把目錄當作儲存區窗口持有的程序中，最多十秒。"
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "目錄裝置索引"
@@ -1071,6 +1087,26 @@
     "en": "8d6fb31ae90a70a5",
     "text": "保存中且仍有效的風險狀況，因此簽發依其決定"
   },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "SAML 1.1 成品"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "SAML 1.1 成品所代表的斷言，直到每個成品在 SAML 回應程式被解析一次。以成品的 SHA-256 為鍵，絕不以成品本身為鍵。"
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "強制：每個領域 saml11.maxArtifacts 個。達到上限時清除已過期的成品；仍然滿的儲存區會拒絕下一個成品，而不會遺忘尚未解析的成品。"
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "直到被解析一次，或直到 saml11.artifactTtlS 過去。"
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "一個已解析的成品"
+  },
   "caches.store.saml11.assertions.title": {
     "en": "8dd27dfb9529ae0c",
     "text": "SAML 1.1 斷言"
@@ -1084,12 +1120,32 @@
     "text": "強制：每個領域 saml11.assertionCacheMax 個，捨棄最舊者；指名已捨棄斷言的成品會被回應為未知。"
   },
   "caches.store.saml11.assertions.lifetime": {
-    "en": "4397e5b8b411e7a8",
-    "text": "不會過期：超過 saml11.assertionCacheMax 時捨棄最舊者。"
+    "en": "b163f4a46cb87b30",
+    "text": "直到斷言的 NotOnOrAfter，若斷言未攜帶則為 saml11.assertionCacheTtlS；超過 saml11.assertionCacheMax 時捨棄最舊者。"
   },
   "caches.store.saml11.assertions.hitMeaning": {
     "en": "b7e393c624057aea",
     "text": "已回答的 AssertionIDReference"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "SAML 2.0 成品"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "SAML 2.0 成品所代表的訊息，直到每個成品在成品解析服務被解析一次。以成品的 SHA-256 為鍵，絕不以成品本身為鍵。"
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "強制：每個領域 saml2.maxArtifacts 個。達到上限時清除已過期的成品；仍然滿的儲存區會拒絕下一個成品，而不會遺忘尚未解析的成品。"
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "直到被解析一次，或直到 saml2.artifactTtlS 過去。"
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "一個已解析的成品"
   },
   "caches.store.scim.digest-nonce-counts.title": {
     "en": "96cc15215936464e",

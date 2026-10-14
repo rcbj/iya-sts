@@ -137,11 +137,21 @@ function builders(t) {
   const self = queries.page('default', users, '', 10, { self: true });
   t.check(/dn_key = \$2 OR/.test(self.text),
           'A10. a page may include the base itself');
-  t.check(/count\(\*\)/.test(queries.count('r', '').text) &&
-          queries.count('r', '').values.length === 1,
-          'A11. count with no base counts the realm');
-  t.check(/right\(dn_key, \$3\)/.test(queries.count('r', users).text),
-          'A12. count under a base counts strictly under it');
+  // Since #618 a count is READ from the counter the triggers keep — no
+  // `count(*)`, and nothing of `sts_ldap_entries` is touched.
+  const realmCount = queries.count('r', '');
+  t.check(/FROM sts_ldap_counts/.test(realmCount.text) &&
+          !/count\(/i.test(realmCount.text) &&
+          !/sts_ldap_entries/.test(realmCount.text) &&
+          JSON.stringify(realmCount.values) === JSON.stringify(['r', '']),
+          'A11. count with no base reads the realm\'s counter (base \'\')',
+          realmCount.text);
+  const underCount = queries.count('r', users);
+  t.check(/base_key = \$2/.test(underCount.text) &&
+          !/count\(/i.test(underCount.text) &&
+          underCount.values[1] === users,
+          'A12. count under a base reads that base\'s counter',
+          underCount.text);
   const r = queries.residentOnly([{ realm: 'default', baseKey: users },
                                   { realm: 'acme', baseKey: 'ou=devices,x' }]);
   t.check(/NOT EXISTS/.test(r.text) &&
@@ -150,11 +160,12 @@ function builders(t) {
           'A13. residentOnly leaves out what is strictly under each windowed ' +
           'container, per realm', JSON.stringify(r.values));
   const cls = queries.classesUnder('r', users, ['groupOfNames', 'posixGroup']);
-  t.check(/class_keys \?\| \$3::text\[\]/.test(cls.text) &&
+  t.check(/class_keys \?\| \$3::text\[\] AND class_keys <> '\[\]'::jsonb/
+    .test(cls.text) &&
           JSON.stringify(cls.values[2]) ===
             JSON.stringify(['class\ngroupofnames', 'class\nposixgroup']),
           'A12b. classesUnder asks class_keys for any of the classes, ' +
-          'lower-cased', cls.text);
+          'lower-cased, with the partial index\'s predicate (#618)', cls.text);
   const names = queries.namesUnder('r', users, 'uid=a', 10);
   // The entry is a sealed blob since #391 phase 6: its `uid` is read out of
   // it by the codec on the thread that holds the keys.
@@ -198,7 +209,8 @@ async function driverDoor(t) {
                 dn: 'uid=alice,ou=users,dc=x', attrs: { uid: ['alice'] },
                 origin: 'seed', created_at: 'c', modified_at: 'm' }];
     }
-    if (/count\(\*\)/.test(sql)) {
+    // A counter read since #618, no longer a count(*).
+    if (/FROM sts_ldap_counts/.test(sql)) {
       return [{ n: 7 }];
     }
     return undefined;
@@ -228,10 +240,10 @@ async function driverDoor(t) {
 
 async function schema(t) {
   log.debug("Entering schema().");
-  t.log.info('=== C. schema version 15 ===');
-  t.equal(postgres.SCHEMA_VERSION, 15,
-          'C1. the driver writes schema version 15 (#222, #391 phase 6, ' +
-          '#432 phase 5)');
+  t.log.info('=== C. schema version 19 ===');
+  t.equal(postgres.SCHEMA_VERSION, 19,
+          'C1. the driver writes schema version 19 (#222, #391 phase 6, ' +
+          '#432 phase 5, #618, #623, #630)');
   const table = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return o.name === 'sts_ldap_entries';
   })[0];
@@ -239,10 +251,24 @@ async function schema(t) {
     return c.table === 'sts_ldap_entries';
   });
   const names = ['parent_key', 'rdn_value', 'name_keys', 'mail_keys',
-                 'uuid_keys', 'class_keys', 'value_keys', 'attr_names'];
+                 'uuid_keys', 'class_keys', 'value_keys', 'attr_names',
+                 'dek_keys'];
   t.equal(columns.map(function (c) { return c.column; }).join(','),
-          names.join(','), 'C2. SCHEMA_COLUMNS adds the eight lookup columns');
-  columns.forEach(function (c) {
+          names.join(','), 'C2. SCHEMA_COLUMNS adds the eight lookup ' +
+          'columns, and the data keys (#623)');
+  // `dek_keys` (#623) is NULLABLE with no default: NULL is an entry whose
+  // keys are not yet known, which '{}' would claim it held none of.
+  const dekKeys = columns.filter(function (c) {
+    return c.column === 'dek_keys';
+  })[0];
+  t.check(dekKeys && /ADD COLUMN IF NOT EXISTS dek_keys jsonb$/
+    .test(dekKeys.statement) &&
+          table.statement.indexOf('dek_keys jsonb,') >= 0,
+          'C2b. dek_keys is a nullable jsonb with no default, in the CREATE ' +
+          'TABLE and the ALTER alike', dekKeys && dekKeys.statement);
+  columns.filter(function (c) {
+    return c.column !== 'dek_keys';
+  }).forEach(function (c) {
     const definition = c.statement.replace(
       'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ', '');
     // Only the two read from the DN are generated since #391 phase 6; the
@@ -256,7 +282,7 @@ async function schema(t) {
               ? 'GENERATED … STORED' : 'written jsonb') + ' definition, in ' +
             'the CREATE TABLE and the ALTER alike', definition);
   });
-  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|attr_names|classes)$/;
+  const INDEXES = /^sts_ldap_entries_(parent|rdn|names|mails|uuids|values|asked_names|group_classes)$/;
   const indexes = postgres.SCHEMA_OBJECTS.filter(function (o) {
     return INDEXES.test(o.name);
   });
@@ -302,14 +328,72 @@ async function schema(t) {
   const firstIndex = ddl.findIndex(function (sql) {
     return /^CREATE INDEX/.test(sql);
   });
-  t.check(ddl.length === 16 && lastAlter === 7 && firstIndex === 8,
-          'C5. against an old table open() adds the eight columns, THEN ' +
+  t.check(ddl.length === 17 && lastAlter === 8 && firstIndex === 9,
+          'C5. against an old table open() adds the nine columns, THEN ' +
           'builds the eight indexes', ddl.map(function (sql) {
             return sql.slice(0, 60);
           }).join(' | '));
   t.check(statements.some(function (s) {
-    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 15;
-  }), 'C6. and records version 15');
+    return /INSERT INTO sts_schema/.test(s.sql) && s.params[0] === 19;
+  }), 'C6. and records version 19');
+  // THE TWO INDEXES VERSION 18 REPLACED (#618) are dropped where the
+  // catalogue still lists them, after the indexes that replace them.
+  const retired = [];
+  const dropping = driverWith(retired, function (sql) {
+    if (/to_regclass/.test(sql)) {
+      return [{}];
+    }
+    if (/FROM pg_class c JOIN pg_namespace/.test(sql)) {
+      return [{ name: 'sts_ldap_entries_attr_names' }];
+    }
+    return undefined;
+  });
+  await dropping.open();
+  const order = retired.map(function (s) {
+    return s.sql;
+  });
+  const dropAt = order.indexOf(
+    'DROP INDEX IF EXISTS sts_ldap_entries_attr_names');
+  const askedAt = order.findIndex(function (sql) {
+    return /^CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names /
+      .test(sql);
+  });
+  t.check(dropAt > askedAt && askedAt >= 0 && !order.some(function (sql) {
+    return /DROP INDEX IF EXISTS sts_ldap_entries_classes/.test(sql);
+  }), 'C7. a retired index still in the catalogue is dropped after its ' +
+          'replacement is built, and one that is not is left alone',
+          JSON.stringify({ dropAt: dropAt, askedAt: askedAt }));
+    // AN INDEX STILL TAKING ITS INSERTS THROUGH A PENDING LIST (#618) is
+  // switched and flushed; one already switched is left alone.
+  const switched = [];
+  const switching = driverWith(switched, function (sql) {
+    if (/to_regclass/.test(sql)) {
+      return [{}];
+    }
+    if (/c\.reloptions AS options/.test(sql)) {
+      return [{ name: 'sts_ldap_entries_names', options: null },
+              { name: 'sts_ldap_entries_uuids',
+                options: ['fastupdate=off'] }];
+    }
+    return undefined;
+  });
+  await switching.open();
+  const issued = switched.map(function (s) {
+    return s.sql;
+  });
+  const alterNames = issued.indexOf(
+    'ALTER INDEX sts_ldap_entries_names SET (fastupdate = off)');
+  t.check(alterNames >= 0 && issued[alterNames + 1] ===
+            'SELECT gin_clean_pending_list(\'sts_ldap_entries_names\'' +
+            '::regclass)' &&
+          !issued.some(function (sql) {
+            return /ALTER INDEX sts_ldap_entries_uuids/.test(sql);
+          }),
+          'C8. an index without fastupdate off is switched and its pending ' +
+          'list flushed; one with it is left alone',
+          JSON.stringify(issued.filter(function (sql) {
+            return /ALTER INDEX|gin_clean/.test(sql);
+          })));
   log.debug("Leaving schema().");
 }
 

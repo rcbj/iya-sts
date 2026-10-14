@@ -963,6 +963,14 @@
     "en": "474a843b37cbf2dc",
     "text": "PÅSLAGEN SOM STANDARD. Påslagen erbjuder inloggningsskärmen *Logga in med en nyckel* och autofyllning i användarnamnsfältet, som ber webbläsaren om valfri upptäckbar inloggningsuppgift för den här sfären (WebAuthn Level 3 avsnitt 5.4, `allowCredentials` tom) och loggar in det konto som dess användarhandtag anger, med användarverifiering krävd och kontrollerad. Avstängd erbjuds ingetdera och en inloggning anger alltid personen först. Ersätter inställningen webauthn.usernameless."
   },
+  "passkey.FIELDS.requireUsernameless.label": {
+    "en": "c49fdea33dcb88d9",
+    "text": "Kräv inloggning med nyckel utan användarnamn"
+  },
+  "passkey.FIELDS.requireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (appAuthnMechanism `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
+  },
   "passkey.FIELDS.securityKeyResidentKey.label": {
     "en": "d2b810facc1c57f0",
     "text": "Vad ”Använd en säkerhetsnyckel” ber om när inloggning utan användarnamn är påslagen"
@@ -1087,6 +1095,10 @@
     "en": "474a843b37cbf2dc",
     "text": "PÅSLAGEN SOM STANDARD. Påslagen erbjuder inloggningsskärmen *Logga in med en nyckel* och autofyllning i användarnamnsfältet, som ber webbläsaren om valfri upptäckbar inloggningsuppgift för den här sfären (WebAuthn Level 3 avsnitt 5.4, `allowCredentials` tom) och loggar in det konto som dess användarhandtag anger, med användarverifiering krävd och kontrollerad. Avstängd erbjuds ingetdera och en inloggning anger alltid personen först. Ersätter inställningen webauthn.usernameless."
   },
+  "passkey.SCHEMA.attributes.stsPasskeyRequireUsernameless.what": {
+    "en": "c1be5d9eef41e055",
+    "text": "AVSTÄNGD SOM STANDARD. Påslagen får ett program vars autentiseringsmekanism är en nyckel och inget annat (appAuthnMechanism `webauthn` ensam) en inloggningsskärm utan användarnamnsfält: *Logga in med en nyckel* är vägen in, och en inloggning som anger en person avvisas. Kräver raden ovan. Sfärens `default`-profil tillämpar den inte på administrationskonsolen, felsökaren eller användarportalen; en namngiven profil som väljer det programmet gör det."
+  },
   "passkey.SCHEMA.attributes.stsPasskeySecurityKeyResidentKey.what": {
     "en": "cccca16315fbaa97",
     "text": "Det `residentKey` som en registrering via *Använd en säkerhetsnyckel* (eller en som inte anger någon typ) skickar MEDAN inloggning utan användarnamn är PÅSLAGEN. När den är avstängd ber knappen alltid om `required`, så den skapar en upptäckbar inloggningsuppgift som *Skapa en nyckel* gör (som alltid ber om `required`). `discouraged` eller `preferred` sparar en säkerhetsnyckels få lagringsplatser, till priset av en nyckel som behöver användarnamnet för att logga in. Ersätter inställningen webauthn.residentKey."
@@ -1178,6 +1190,10 @@
   "passkey.sentences.noUsernameless": {
     "en": "1152c46cd0b86b19",
     "text": "varje inloggning anger personen först: ingen inloggning med nyckel utan användarnamn"
+  },
+  "passkey.sentences.requireUsernameless": {
+    "en": "16511f23383d8dec",
+    "text": "ett program som loggar in med enbart en nyckel ber inte om något användarnamn: inloggning med nyckel utan användarnamn är den enda vägen in"
   },
   "passkey.sentences.createPasskey": {
     "en": "69c8c2e4b8f32675",

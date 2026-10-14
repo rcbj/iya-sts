@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "Sin caducidad: se descartan con el principal, cuando se reemplaza su registro (un cambio de contraseña o una restauración), o cuando es el usado menos recientemente por encima del límite; nunca se persisten."
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "Personas y titulares de credenciales, contados"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "Cuántas personas define el dominio, cuántas tienen una contraseña, todas las que tienen un atributo de credencial (en bruto) y cuántos de los nombres vistos al iniciar sesión son personas de aquí: los indicadores de /admin/users sobre todo el directorio sin listarlo (#610)."
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "Estructural: un recuento y un recuento de nombres por dominio; el recuento guarda a las personas que tienen una credencial, no a todas."
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "Hasta que se escriba cualquier cosa bajo el ou=users del dominio y, en un proceso que tiene el directorio como una ventana al almacén, como mucho diez segundos."
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "Índice de dispositivos del directorio"
@@ -1071,6 +1087,26 @@
     "en": "8d6fb31ae90a70a5",
     "text": "una situación guardada y todavía válida, por lo que la emisión se decidió con ella"
   },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "Artefactos SAML 1.1"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "Las aserciones que representan los artefactos SAML 1.1, hasta que cada uno se resuelve una vez en el respondedor SAML. Indexados por el SHA-256 del artefacto, nunca por el artefacto."
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "Aplicado: saml11.maxArtifacts por dominio. Los artefactos caducados se eliminan al alcanzar el límite; un almacén que sigue lleno RECHAZA el siguiente artefacto en lugar de olvidar uno sin resolver."
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "Hasta que se resuelve una vez, o hasta que pasa saml11.artifactTtlS."
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "un artefacto resuelto"
+  },
   "caches.store.saml11.assertions.title": {
     "en": "8dd27dfb9529ae0c",
     "text": "Aserciones SAML 1.1"
@@ -1084,12 +1120,32 @@
     "text": "Aplicado: saml11.assertionCacheMax por dominio; la más antigua se descarta; un artefacto que nombre una aserción descartada se responde como desconocido."
   },
   "caches.store.saml11.assertions.lifetime": {
-    "en": "4397e5b8b411e7a8",
-    "text": "Sin caducidad: la más antigua se descarta al superar saml11.assertionCacheMax."
+    "en": "b163f4a46cb87b30",
+    "text": "Hasta el NotOnOrAfter de la aserción, o saml11.assertionCacheTtlS si no lo lleva; la más antigua se descarta al superar saml11.assertionCacheMax."
   },
   "caches.store.saml11.assertions.hitMeaning": {
     "en": "b7e393c624057aea",
     "text": "un AssertionIDReference respondido"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "Artefactos SAML 2.0"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "Los mensajes que representan los artefactos SAML 2.0, hasta que cada uno se resuelve una vez en el servicio de resolución de artefactos. Indexados por el SHA-256 del artefacto, nunca por el artefacto."
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "Aplicado: saml2.maxArtifacts por dominio. Los artefactos caducados se eliminan al alcanzar el límite; un almacén que sigue lleno RECHAZA el siguiente artefacto en lugar de olvidar uno sin resolver."
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "Hasta que se resuelve una vez, o hasta que pasa saml2.artifactTtlS."
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "un artefacto resuelto"
   },
   "caches.store.scim.digest-nonce-counts.title": {
     "en": "96cc15215936464e",

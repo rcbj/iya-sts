@@ -35,6 +35,13 @@
 //      `knownUserKeys()` the keys, without building the rows;
 //   6. `stats.issuedArtifactsOfKind()` answers the Kerberos tickets
 //      `issuedList()` would have, in the same order.
+//   7. (#610) `directoryPeople` is the number of people the directory
+//      DEFINES — more than the scan cap here — counted without the
+//      directory's `persons()` being asked, `scanned` is how many names the
+//      capped list read, and a person created moves the count at once; and
+//      every tile in `directoryCounts` is what a brute-force count over the
+//      whole directory gives — each person asked on their own — not over
+//      the capped list.
 //
 // The timings printed are information only; nothing here asserts a clock.
 //
@@ -72,7 +79,7 @@ const PER = 50;
 // texts only (anything else goes to the real one), so the enrolments need no
 // key-encryption key and the count is exact.
 // ---------------------------------------------------------------------------
-const counts = { mechanisms: 0, opens: 0 };
+const counts = { mechanisms: 0, opens: 0, persons: 0 };
 const SEALED = 'test-sealed:' + STAMP + ':';
 const BROKEN = 'test-broken:' + STAMP + ':';
 
@@ -84,6 +91,26 @@ function installSpies() {
   proto.mechanismsFor = function () {
     counts.mechanisms += 1;
     return realMechanisms.apply(this, arguments);
+  };
+  // The directory's `persons()` — every name in the realm — counted for
+  // section 7: the users view must count and cap its people without it.
+  const realPopulation = proto.secondFactorPopulation;
+  proto.secondFactorPopulation = function () {
+    const directory = this.directory;
+    const realPersons = directory && directory.persons;
+    if (realPersons) {
+      directory.persons = function () {
+        counts.persons += 1;
+        return realPersons.apply(this, arguments);
+      };
+    }
+    try {
+      return realPopulation.apply(this, arguments);
+    } finally {
+      if (realPersons) {
+        directory.persons = realPersons;
+      }
+    }
   };
   keystore.open = function (ciphertext, label) {
     const text = String(ciphertext);
@@ -101,6 +128,7 @@ function installSpies() {
   return function restore() {
     log.debug("Entering restore().");
     proto.mechanismsFor = realMechanisms;
+    proto.secondFactorPopulation = realPopulation;
     keystore.open = realOpen;
     log.debug("Leaving restore().");
   };
@@ -110,6 +138,7 @@ function reset() {
   log.debug("Entering reset().");
   counts.mechanisms = 0;
   counts.opens = 0;
+  counts.persons = 0;
   log.debug("Leaving reset().");
 }
 
@@ -252,7 +281,9 @@ function oldHolders(known) {
   let people = ldap.allPersons().map(function (entry) {
     return ldap.usernameOfEntry(entry);
   }).filter(function (name) { return !!name; });
-  const scanned = people.length;
+  // How many names the capped list READ (#610), no longer how many there
+  // were: that is `directoryPeople`, asserted in section 7.
+  const scanned = Math.min(people.length, SCAN_LIMIT);
   const capped = people.length > SCAN_LIMIT;
   people = people.slice(0, SCAN_LIMIT);
   people.forEach(function (name) { add(name, 'inDirectory'); });
@@ -275,6 +306,42 @@ function oldHolders(known) {
   });
   log.debug("Leaving oldHolders().");
   return { rows: rows, scanned: scanned, capped: capped };
+}
+
+// THE TILES OVER THE WHOLE DIRECTORY, the slow way (#610): every person
+// `allPersons()` lists, asked on their own through `mechanismsFor()` and
+// `totpOf()`, which really opens the secret; and the register's
+// authenticated names checked one by one against the directory.
+function bruteForceTiles() {
+  log.debug("Entering bruteForceTiles().");
+  const out = { people: 0, withPassword: 0, withSecond: 0, withTotp: 0,
+                withKeys: 0, primaryKeys: 0, passwordOnly: 0, unreadable: 0,
+                noWayIn: 0, signedInHere: 0, neverSignedInHere: 0 };
+  ldap.allPersons().forEach(function (entry) {
+    const name = ldap.usernameOfEntry(entry);
+    const m = credentials.mechanismsFor(name);
+    const opened = credentials.totpOf(name);
+    out.people += 1;
+    out.withPassword += m.password ? 1 : 0;
+    out.withSecond += m.mfaRequired ? 1 : 0;
+    out.withTotp += opened ? 1 : 0;
+    out.withKeys += m.mfaKeys > 0 ? 1 : 0;
+    out.primaryKeys += m.primaryKeys > 0 ? 1 : 0;
+    out.passwordOnly += m.password && !m.mfaRequired ? 1 : 0;
+    out.unreadable += opened && opened.unusable ? 1 : 0;
+    out.noWayIn += m.usable ? 0 : 1;
+  });
+  const people = new Set();
+  stats.userRows().forEach(function (row) {
+    const entry = row.authenticated ? ldap.existingUserEntry(row.key) : null;
+    if (entry) {
+      people.add(entry.dn.toLowerCase());
+    }
+  });
+  out.signedInHere = people.size;
+  out.neverSignedInHere = out.people - people.size;
+  log.debug("Leaving bruteForceTiles().");
+  return out;
 }
 
 function oldView(query) {
@@ -408,7 +475,7 @@ function timed(fn) {
   return { value: value, ms: Math.round(ms) };
 }
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   const made = realms.create({ id: REALM, name: REALM,
                                description: 'Created by ' + __filename });
@@ -419,11 +486,12 @@ function run(t) {
   }
   const restore = installSpies();
   try {
-    realms.run(made.realm, function () {
+    await realms.run(made.realm, async function () {
       config.setOverride('ldap.maxEntries', '100000');
       config.setOverride('credentials.factorScanLimit', String(SCAN_LIMIT));
       try {
         body(t, seed(t));
+        await asynchronousDoors(t);
       } finally {
         config.clearOverride('ldap.maxEntries');
         config.clearOverride('credentials.factorScanLimit');
@@ -545,7 +613,90 @@ function body(t, tally) {
           })),
           '6. issuedArtifactsOfKind() answers the tickets issuedList() ' +
           'would, in its order', String(tickets.length));
+
+  // --- 7. the directory's count (#610) ----------------------------------
+  const defined = ldap.allPersons().length;
+  reset();
+  const counted = view({});
+  t.check(defined > SCAN_LIMIT && counted.directoryPeople === defined,
+          '7a. directoryPeople is the number of people the directory ' +
+          'defines, past the scan cap', counted.directoryPeople + ' / ' +
+          defined + ' (cap ' + SCAN_LIMIT + ')');
+  t.equal(counts.persons, 0,
+          '7b. and neither it nor the capped list asked persons() for ' +
+          'every name');
+  t.check(counted.capped === true && counted.scanned === SCAN_LIMIT &&
+          counted.scanLimit === SCAN_LIMIT,
+          '7c. the list says it is capped and read scanLimit names',
+          'capped=' + counted.capped + ' scanned=' + counted.scanned);
+  t.equal(ldap.personCount(), defined,
+          '7d. ldap.personCount() is the same count');
+  const extra = 'upbd-' + STAMP + '-extra';
+  const madeExtra = ldap.createUser(extra, { invent: false, origin: 'test' });
+  const after = view({});
+  t.check(!!(madeExtra && madeExtra.ok) &&
+          after.directoryPeople === defined + 1,
+          '7e. a person created is counted at once',
+          String(after.directoryPeople));
+  const roster7 = adminViews.mfaRosterJson({ query: { per: String(PER) } });
+  t.equal(roster7.directoryPeople, defined + 1,
+          '7f. /admin-api/mfa carries the same count');
+
+  // The tiles, against every person in the directory asked on their own.
+  reset();
+  const tiled = view({});
+  const wanted = bruteForceTiles();
+  t.equal(counts.persons, 0,
+          '7g. the tiles are counted without persons() being asked');
+  t.equal(JSON.stringify(tiled.directoryCounts), JSON.stringify(wanted),
+          '7h. every tile counts the whole directory, as a brute-force ' +
+          'count of every person gives it');
+  t.check(wanted.withSecond > 0 && wanted.passwordOnly > 0 &&
+          wanted.noWayIn > 0 && wanted.unreadable > 0 &&
+          wanted.people > SCAN_LIMIT,
+          '(precondition) a mix of credentials, past the scan cap',
+          JSON.stringify(wanted));
+  const roster8 = adminViews.mfaRosterJson({ query: { per: String(PER) } });
+  t.equal(JSON.stringify(roster8.directoryCounts), JSON.stringify(wanted),
+          '7i. /admin-api/mfa carries the same tiles');
   log.debug("Leaving body().");
+}
+
+// --- 8. the API's doors, asynchronous (#621) -------------------------------
+// `GET /admin-api/users` and `/admin-api/mfa` answer through
+// `usersJsonAsync()` and `mfaRosterJsonAsync()`, which ask the population
+// and its census first (`peopleAndCensusAsync()`, the census through
+// `credentials.factorCensusAsync()`) and hand both to the synchronous view.
+// They must answer what the synchronous views answer, and decorate no more.
+async function asynchronousDoors(t) {
+  log.debug("Entering asynchronousDoors().");
+  const queries = [{}, { factor: 'totp' }, { factor: 'none' },
+                   { q: '-' + STAMP + '-00' }];
+  for (const query of queries) {
+    const req = { query: Object.assign({ per: String(PER) }, query) };
+    reset();
+    const got = await adminViews.usersJsonAsync(req);
+    const mechanisms = counts.mechanisms;
+    same(t, got, adminViews.usersJson(req),
+         '8a. usersJsonAsync(' + JSON.stringify(query) + ') answers what ' +
+         'usersJson() answers');
+    t.check(mechanisms <= PER, '8b. and asks mechanismsFor() at most once ' +
+            'per row shown', String(mechanisms));
+  }
+  const roster = await adminViews.mfaRosterJsonAsync({ query:
+    { per: String(PER) } });
+  const rosterBefore = adminViews.mfaRosterJson({ query:
+    { per: String(PER) } });
+  t.check(JSON.stringify(roster) === JSON.stringify(rosterBefore),
+          '8c. mfaRosterJsonAsync() answers what mfaRosterJson() answers',
+          (roster.people || []).length + ' row(s)');
+  const raws = await ldap.credentialCensusAsync([nameOf(1), nameOf(2),
+                                                 'nobody-' + STAMP]);
+  t.equal(JSON.stringify(raws), JSON.stringify(ldap.credentialCensus(
+    [nameOf(1), nameOf(2), 'nobody-' + STAMP])),
+          '8d. outside a window the asynchronous census is the synchronous ' +
+          'one');
+  log.debug("Leaving asynchronousDoors().");
 }
 
 module.exports = {

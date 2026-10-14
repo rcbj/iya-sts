@@ -4,6 +4,7 @@
   "state.active": "aktiv",
   "tile.calls": "anrop till slutpunkter",
   "tile.routes": "anropade vägar",
+  "tile.healthProbes": "lyckade hälsokontroller, inte räknade som anrop",
   "tile.tokensIssued": "utfärdade token",
   "tile.tokensRevoked": "återkallade token",
   "tile.artifacts": "intyg, biljetter, autentiseringsuppgifter",

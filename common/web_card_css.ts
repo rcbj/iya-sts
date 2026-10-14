@@ -204,6 +204,10 @@ class WebCardCss {
     '.8em;margin:8px 0;padding-left:18px}.checks .bad{color:#b00020}button.f' +
     'edbtn{display:block;width:100%;margin:6px 0}button.fedbtn span{display:' +
     'block;font-size:.75em}' +
+    // A BOX THE SCREEN DISABLED (#608): its sentence greyed with it, so
+    // "not available" reads as unavailable before it is read at all.
+    'label.chk.off{color:#9a9aa3;cursor:not-allowed}label.chk.off code{colo' +
+    'r:inherit}' +
     WebCardCss.CHOOSER_CSS + WebCardCss.STEP_CSS + WebCardCss.FOLD_CSS +
     // The steps' rules BEFORE the wide card's, which win where both speak.
     WebCardCss.WIDE_CSS + WebCardCss.CONSENT_CSS +

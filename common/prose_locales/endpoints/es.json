@@ -631,6 +631,10 @@
     "en": "6a14636c8aef5de3",
     "text": "Estado de los nodos"
   },
+  "endpoints.route./admin-api/node-health/:action.name": {
+    "en": "00f328f6105fa2a9",
+    "text": "Acciones del estado del nodo"
+  },
   "endpoints.route./admin-api/encryption.name": {
     "en": "eb626f73d72649aa",
     "text": "Cifrado en reposo"
@@ -730,6 +734,14 @@
   "endpoints.route./admin-api/service-accounts.name": {
     "en": "330b2e1630d653b8",
     "text": "Cuentas de servicio y su rotación"
+  },
+  "endpoints.route./admin-api/ownership.name": {
+    "en": "8b5da1078c1dadb6",
+    "text": "Quién es propietario de un objeto y si sus propietarios pueden administrarlo"
+  },
+  "endpoints.route./admin-api/ownership/:action.name": {
+    "en": "b32834788957fcc7",
+    "text": "Cerrar un objeto a sus propietarios, o volver a abrirlo"
   },
   "endpoints.route./admin-api/devices/monitor.name": {
     "en": "8a3269dd4401ce60",

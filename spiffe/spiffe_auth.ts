@@ -973,11 +973,14 @@ class SpiffeAuth {
   // **SINCE grpc-js 1.14.5 THE AUTH CONTEXT IS EMPTY FOR A CERTIFICATE OPENSSL
   // DID NOT AUTHORIZE** (GHSA-m9gg-hp2v-232j: `getAuthContext()` returns `{}`
   // when `socket.authorized` is false), so it can no longer tell this function
-  // what was presented — and every certificate OpenSSL cannot chain to this
-  // realm's anchors is unauthorized there: a FEDERATED broker's or agent's
-  // SVID, which `verifyPresentedCertificate()` exists to verify against the
-  // federated bundle, and one that is expired or signed by nothing here,
-  // which must be refused as THAT rather than as "none was presented". The
+  // what was presented. Since #438 the listener trusts the realm's anchors AND
+  // its federated trust domains' authorities at the handshake
+  // (`spiffe_grpc.ts`'s `listenerTrustPem()`), so a federated SVID is
+  // authorized there and arrives in the context. What OpenSSL still cannot
+  // chain is unauthorized: one that is expired or signed by nothing here,
+  // which must be refused as THAT rather than as "none was presented", and
+  // one under a federated authority that is not self-signed, which node
+  // cannot make an anchor on a server (`listenerTrustPem()` says why). The
   // advisory is about a caller that believed grpc-js's verdict; this one never
   // did (see VERIFYING THE CERTIFICATE, below). So when the context carries
   // no certificate, `tlsPeerCertificateOf()` reads it off the call's TLS

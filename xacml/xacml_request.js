@@ -107,8 +107,10 @@ const VOCABULARY = Object.freeze({
   // reader at another cell, #98 D11). The design's "data category".
   DATA_CATEGORY: 'urn:sts:xacml:data-category',
   // environment: WHY attributes are released (#98 D11) —
-  // `directory-list` (an administrator listing another cell's residents)
-  // or `api` (a management-API call relayed with ?cell=).
+  // `directory-list` (an administrator listing another cell's residents),
+  // `api` (a management-API call relayed with ?cell=), `attributes` (a
+  // projection fetched for a token) or `scim-provision` (one person pushed
+  // by their home cell to an outbound SCIM client's service provider, #553).
   PURPOSE: 'urn:sts:xacml:purpose',
   // environment: the trust realm the question is asked in.
   REALM: 'urn:sts:xacml:realm',

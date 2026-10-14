@@ -167,6 +167,8 @@ remote PIP is *no PIP*, reported on `GET /`, rather than a PEP that stops
 deciding. Same rule `sync.rs` follows about a failed pull: this component
 enforces with what it has.
 
+### It builds its requests with the service's builder (#306) — rule 3br
+
 **IT BUILDS ITS REQUESTS WITH THE SERVICE'S BUILDER (#306).**
 `xacml/xacml_request.js` is ported into the engine crate
 (`sts-xacml::builder`) and `service.rs` makes its request through it, so this

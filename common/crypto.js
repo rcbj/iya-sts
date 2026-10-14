@@ -13330,6 +13330,29 @@ function digest(algorithm, data, encoding) {
   return encoding ? hash.digest(encoding) : hash.digest();
 }
 
+// The name a store keeps for a credential it only looks up, spends or
+// compares (#614): a bearer value an authorization code, a device code, a
+// `request_uri`, an artifact handle, a nonce or a token is held as its SHA-256
+// and never as itself, so a heap snapshot, a replicated change or a sealed
+// row yields nothing that can be presented. Plain SHA-256 is enough because
+// every value hashed here is a high-entropy random value or a signed token;
+// a guessable secret (a password, a PIN) is never a credential in this sense
+// and goes through scrypt. `used_assertions.keyOf()`, GNAP's `digest()` and
+// `vc_offers.deferredTokenKey()` predate it and say the same thing.
+/**
+ * Returns the base64url SHA-256 a store keeps in place of a credential.
+ *
+ * @param value - the credential as presented or issued
+ * @returns {string} 43 characters of base64url
+ */
+function credentialDigest(value) {
+  log.debug("Entering credentialDigest().");
+  const out = digest('sha256', String(value === undefined || value === null
+    ? '' : value), 'base64url');
+  log.debug("Leaving credentialDigest().");
+  return out;
+}
+
 // RFC 5869 HKDF in one call, for a caller deriving a purpose-bound key from a
 // realm secret (GNAP's macaroon and biscuit root keys, `gnap_tokens.ts`). The
 // extract and expand steps above are JWE's, kept apart because HPKE calls
@@ -16141,6 +16164,7 @@ module.exports = {
   // --- section 15: digests, key derivation and key import (#178) ---
   DIGESTS: DIGESTS,
   digest: digest,
+  credentialDigest: credentialDigest,
   hkdf: hkdf,
   publicKeyFromJwk: publicKeyFromJwk,
   publicKeyOf: publicKeyOf,

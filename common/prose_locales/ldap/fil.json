@@ -568,8 +568,12 @@
     "text": "ISANG SCOPE NA WALANG TINATANONG KAPAG NAG-SIGN IN SILA SA APPLICATION NA ITO. Isang value bawat scope, isinulat nang eksakto gaya ng paglalagay ng client sa isang `scope` parameter — `openid`, `profile`, o isang buong delegated permission identifier gaya ng `https://example.com/write`.\n\n**OVERRIDE ito at hindi record.** Kapag naka-on ang `oauth2.consentRequired` (na siyang default), iginuguhit ng authorization endpoint ang /oauth2/consent para sa anumang scope na hindi pa pinayagan ng taong ito para sa application na ito; ang scope na pinangalanan dito ay nilalaktawan para sa LAHAT, at walang isinusulat sa entry ng sinuman. Kaya ang pag-alis ng value ay nagtatanong muli sa lahat — kasama ang mga taong papayag sana — samantalang ang pag-alis ng sariling `oauthConsent` ng isang tao ay siya lang ang tinatanong.\n\n**Naka-key ito sa pares at hindi sa scope lang.** Ang pag-consent sa `read` dito ay nag-consent dito para sa application NA ITO; ang application na nairehistro limang minuto pagkatapos na bumabaybay ng parehong salita ay tinatanong pa rin.\n\nAng value na walang pinangangalanang permission na dine-define ng anumang application ay hindi error at hindi itinatago — karamihan ng scope ay hindi permission. Dapat legal na RFC 6749 section 3.3 scope token ito, dahil ang value na may space ay hindi kailanman tutugma sa iisang scope; naaabot ng isang `ldapmodify` ang attribute na ito gaya ng iba at hindi sinusuri, at ipinapakita ng /admin/consent kung ano ang inilagay nito roon."
   },
   "applications.schema.attributes.appOwner.what": {
-    "en": "a86634b10a7034de",
-    "text": "Isang tao o grupo ng realm na ito na nananagot para sa application (#604), ayon sa DN, gaya ng mga may-ari ng isang grupo at isang role. Maraming value, hanggang 25. WALANG IBINIBIGAY ang may-ari: walang bahagi ng serbisyong ito ang bumabasa nito upang magpasya. Inililista ng user portal ang pag-aari ng isang tao."
+    "en": "9c53dd774f6667e3",
+    "text": "Isang tao o isang grupo ng realm na ito na nananagot para sa application (#604), ayon sa DN, gaya ng mga may-ari ng isang grupo at ng isang role. Maraming value, hanggang 25. Mula #607, maaaring PANGASIWAAN ng isang may-ari ang application sa pamamagitan ng /admin-api gamit ang owner:read at owner:write, sa loob ng pinapayagan ng owner rule ng access-control policy. Inililista ng user portal ang pag-aari ng isang tao."
+  },
+  "applications.schema.attributes.stsOwnerProtected.what": {
+    "en": "32a72fcde5ac65eb",
+    "text": "TRUE: hindi maaaring pangasiwaan ng mga may-ari ng application ito sa pamamagitan ng /admin-api (#607) — isang marka ng administrator, na binabasa ng owner rule ng access-control policy bilang urn:sts:xacml:object-protected. Kapag wala, FALSE."
   },
   "applications.schema.attributes.oauthGlobalConsentWithdrawn.what": {
     "en": "2d52b0e0fe8e25ca",
@@ -1423,6 +1427,18 @@
     "en": "a40bdc8ff019b288",
     "text": "GAANO KADALAS NIRE-RECONCILE ANG BUONG SCOPE, sa minuto, ng cluster scheduler: pinu-push ang bawat tao at grupong nasa scope, at dine-deprovision ang hawak ng service provider sa ilalim ng externalId ng realm na ito na wala na sa scope. Ang 0 (ang default) ay nagre-reconcile lang kapag humiling ang administrator."
   },
+  "applications.schema.attributes.scimClientJurisdiction.what": {
+    "en": "095f8704e2ccc7c7",
+    "text": "KUNG NASAAN ANG SERVICE PROVIDER, bilang jurisdiction code ng cell map (us, eu, ca, …). Sa isang serbisyong naka-deploy bilang mga cell, tinatanong ng home cell ng bawat tao ang issuance policy kung maaaring pumunta roon ang data ng taong iyon (release-attributes, layuning scim-provision) bago ito i-push; ang pagtanggi ay nag-iiwan sa kanya sa labas ng scope — hindi pinu-push, at dine-deprovision kung na-push na dati. Ang walang laman ay isang hindi kilalang jurisdiction, na hindi kailanman pinaglalabasan ng mahigpit na default. Hindi pinapansin kapag iisang cell lang ang serbisyo."
+  },
+  "applications.schema.attributes.scimClientCells.what": {
+    "en": "dbdcb711fcb44848",
+    "text": "ALING MGA CELL ANG NAGPU-PUSH SA SERVICE PROVIDER, bawat isa ay isang cell id; kapag wala (ang default) ay lahat ng cell. Ang cell na hindi nakalista ay walang ipinapadala para sa client na ito, kaya hindi pinu-push ang mga taong may home cell doon. Hindi pinapansin kapag iisang cell lang ang serbisyo."
+  },
+  "applications.schema.attributes.scimClientMaxRequestsPerSecond.what": {
+    "en": "2a50a1b3f4d743fe",
+    "text": "ILANG REQUEST BAWAT SEGUNDO ang pinakamaraming ipinapadala sa service provider: bawat delivery, lookup, pagbasa ng discovery at pahina ng reconciliation ay naghihintay ng kanyang pagkakataon sa halip na mabigo. Ang walang laman o 0 (ang default) ay walang limitasyon. Sa isang serbisyong naka-deploy bilang mga cell, ang bawat cell na nagpu-push ay maaaring magpadala nito na hinati sa bilang ng mga ganoong cell, na ini-round up."
+  },
   "applications.schema.attributes.ssfReceiverId.what": {
     "en": "25f9e6acd671b643",
     "text": "ANG PANGALAN NG ISANG SHARED SIGNALS RECEIVER — kung ano man ang ginamit nito sa pag-authenticate nang gumawa ito ng stream sa /ssf/stream, na siya ring `aud` ng bawat Security Event Token na dala ng stream na iyon. Hindi tulad ng apat na declaration-only na identifier sa itaas nito, ISINUSULAT ito ng protocol: ang paggawa ng stream ay nagtatala ng pagkakita, dahil ang receiver na nag-a-authenticate at pinagkakasunduan ng stream ay eksaktong uri ng pangyayaring umiiral ang registry na ito para hawakan. Wala pa rin itong ipinagkakaloob — ang stream ang nagpapasya kung ano ang nakukuha ng receiver, at may dala itong sariling audience."
@@ -1666,6 +1682,10 @@
   "devices.schema.attributes.stsDeviceCredentialId.what": {
     "en": "5c367d4336aa3edd",
     "text": "Ang credential id ng bawat naka-link na WebAuthn key, hinango mula sa stsDeviceKey sa bawat pagsulat para mahanap ng sign-in ang device nito ayon sa index."
+  },
+  "devices.schema.attributes.stsDeviceAndroidKey.what": {
+    "en": "6beba6aabf1f1b2c",
+    "text": "Ang id ng bawat susi na pinatunayan ng isang Android chain na ang mga serial ay itinago, hinango mula sa stsDeviceKey sa bawat pagsulat upang ang muling pagsusuri ng Android attestation ay magbasa lamang ng mga device na mayroon nito (#615)."
   },
   "devices.schema.attributes.stsDeviceAttestation.what": {
     "en": "c06a57ab13bda511",

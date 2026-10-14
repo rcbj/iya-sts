@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 12**: 27 tables in a schema of their own, `sts`.
+**Schema version 18**: 39 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -50,6 +50,7 @@ which shape is on disk.
 | 11 | `sts_node_snapshots`: each cluster node's latest Worker Pools and Node Health views (#332); on develop the same number is #98's `sts_cell_routing` — both tables are created by name |
 | 12 | the column `sts_minted.expires_at` and its partial index `sts_minted_expires` (#333) |
 | 13 | six generated lookup columns on `sts_ldap_entries` and seven indexes over them (#349) |
+| 19 | the counters sharded (`shard` in the keys of `sts_ldap_counts` and `sts_ldap_dek_counts`), a BRIN in place of the btree on `sts_minted.written_at`, fillfactor 80 on `sts_minted`, autovacuum settings on `sts_changes` and `sts_ldap_entries`, and the `pg_stat_statements` extension (#630). Run `postgres/schema.sql` again as the owner to upgrade |
 
 ### The application role
 
@@ -124,7 +125,9 @@ The [LDAP directory](ldap.md) has one row per entry, for every realm. The
 | `name_keys` | jsonb, generated | the `uid` values, lower-cased, as a JSON array |
 | `mail_keys` | jsonb, generated | the `mail` values, lower-cased |
 | `uuid_keys` | jsonb, generated | the `entryUUID` and `stsEntryUuidAlias` values, lower-cased |
-| `class_keys` | jsonb, generated | the `objectClass` values, lower-cased — how a group placed under `ou=users` is found |
+| `class_keys` | jsonb, written | the entry's **group** classes (`groupOfNames`, `groupOfUniqueNames`, `posixGroup`, `groupOfURLs`) as keyed digests, `[]` for anything else (schema version 18) — how a group placed under `ou=users` is found. An entry written before version 18 holds all its classes until it is next written |
+| `attr_names` | jsonb, written | every attribute name the entry holds, lower-cased, in the clear: who holds a credential, and the counts' `userpassword` |
+| `dek_keys` | jsonb, nullable | the data keys the entry holds values under, `{ "<key id>": <values> }`: the entry's own key and the key of each sealed value inside it (schema version 17). NULL for an entry written before version 17, until the service indexes it |
 
 Primary key `(realm, dn_key)`, with an index on `realm`.
 
@@ -139,6 +142,43 @@ container's children, `(realm, parent_key, rdn_value)` for a login name, GIN
 operator class, for `?|`) over `class_keys`. Adding the columns to a
 table that already has rows rewrites it once; running `postgres/schema.sql`
 again as the owner does it.
+
+**Two of those indexes are partial since schema version 18 (#618).** A GIN
+index takes an entry for every key of every row it covers, and a person
+carries about fifteen attribute names and four object classes, nearly all
+of them shared by every other person. So:
+
+* `sts_ldap_entries_asked_names` indexes an expression of `attr_names` that
+  keeps only the names the service asks "who holds this" about (the
+  credential, consent, delegation, key and enrollment attributes;
+  `ASKED_ATTRIBUTES` in `persistence/directory_queries.js`), and only rows
+  that hold one of them;
+* `sts_ldap_entries_group_classes` indexes `class_keys` only where it is not
+  empty, and the service writes only group classes into it.
+
+A person who holds none of those attributes writes no entry to either index.
+On a copy of a 1.2M-entry store, version 17's two indexes cost about two WAL
+records and 1.1 KB of WAL per person inserted; version 18's cost nothing
+measurable, and the attribute-name index went from 23 MB to 16 kB. They
+replace `sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, which
+`postgres/schema.sql` drops.
+
+**Every GIN index on this table except the data keys' has `fastupdate = off`
+(schema version 18).** With PostgreSQL's default, inserts are queued in a
+pending list that every search reads in full until a vacuum merges it; on a
+busy directory that made each login-name or UUID lookup read hundreds of
+pages. With it off, each insert updates the index at once and a lookup reads
+a handful of pages.
+
+**Upgrading a store from version 17.** Run `postgres/schema.sql` as the owner.
+It builds the two new indexes, which reads the table once and holds writers
+off while it does (seconds at a million entries), then drops the two old
+ones, switches the existing GIN indexes to `fastupdate = off` and flushes
+what each has queued. Nothing is rewritten. Entries written before the upgrade keep all their
+object classes in `class_keys`, so they stay in the classes index until they
+are next written; that changes no answer. The service refuses to start
+against a version 17 store whose role cannot build the new indexes, and says
+to run the script.
 
 **It is the one table you can query with SQL, and that is deliberate.** An
 entry is a document without a fixed schema, and JSONB lets Postgres index into
@@ -160,6 +200,82 @@ merge (`persistence/directory_merge.js`), not last-writer-wins.
 The `created_at` and `modified_at` columns are `text` rather than `timestamptz`
 so that they match the LDAP attributes byte for byte. A round trip through
 `timestamptz` would re-render the value in the session's format and time zone.
+
+### `sts_ldap_counts` and `sts_ldap_count_deltas`: the directory's counts
+
+Schema version 16 (#618). A request worker that holds the directory as a
+window used to ask `count(*)` for `ldap.maxEntries`, for a container's count
+on a Directory page, and for the credential tiles on `/admin/users`. A
+`count(*)` is linear in the realm's rows. Each count is now one primary-key
+read of `sts_ldap_counts`:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `realm` | text | the trust realm |
+| `base_key` | text | a normalised DN, or `''` for the whole realm. The count is of the entries **strictly under** it, so every ancestor of a row's DN has a row of its own |
+| `attribute` | text | `''` for every entry, or a counted attribute (`userpassword`) for the entries that hold it |
+| `shard` | smallint | which of sixteen rows of this counter (schema version 19, #630) |
+| `n` | bigint | this shard's part of the count; one shard may be negative |
+
+Primary key `(realm, base_key, attribute, shard)`. **A count is the sum of
+its shards**: each commit adds to the shard of its own server connection
+(`pg_backend_pid() % 16`), so two commits of one realm rarely wait on the
+same row, and every reader sums. A base with no row has nothing under it.
+
+**The database keeps the counts, not the service.** Triggers on
+`sts_ldap_entries` see every write in the transaction that makes it,
+whichever process or tool wrote it:
+
+1. Each INSERT, UPDATE or DELETE statement appends its net change per parent
+   to `sts_ldap_count_deltas`. This table is insert-only, so writers never
+   wait on each other here.
+2. When the transaction commits, a deferred constraint trigger folds that
+   transaction's deltas into `sts_ldap_counts` in one statement, in key
+   order.
+
+A committed transaction leaves no delta rows behind. The counter rows are
+locked only for the last moment of a commit. Updating them on every
+statement would serialise every flush of a realm on the same few rows.
+
+A TRUNCATE empties the counters. The service's role cannot TRUNCATE.
+
+**The counts start with one count of the table.** When the triggers are
+created, by `postgres/schema.sql` or by the driver against an empty store,
+`sts_ldap_entries` is locked against writers and counted. This happens only
+while `sts_ldap_counts` is empty, and it is the only count of the directory
+there is. On a large directory the first `schema.sql` run after upgrading to
+version 16 holds that lock for as long as the count takes: minutes at
+hundreds of millions of rows. After that the counts cost nothing to read.
+
+### `sts_ldap_dek_counts` and `sts_ldap_dek_deltas`: values per data key
+
+Schema version 17 (#623). The data-key jobs (re-encryption and the daily
+count, see [Encryption at rest](encryption-at-rest.md)) need to know which
+directory entries hold a value under a given data key, and how many values
+each key has. They used to read and decrypt every directory entry to find
+out. Now:
+
+* every write of an entry also writes its `dek_keys`;
+* a re-encryption pass reads only the entries whose `dek_keys` name a
+  retiring key (a GIN index on `dek_keys`);
+* `sts_ldap_dek_counts` holds, per data key (`dek_id`) and shard
+  (`shard`, primary key `(dek_id, shard)` since version 19), the number of
+  values (`n`) the directory holds under it; the count is the sum of the
+  key's shards.
+
+The counts are kept by triggers, exactly as `sts_ldap_counts` is: each
+statement appends its net per key to `sts_ldap_dek_deltas`, and a deferred
+constraint trigger folds a transaction's deltas into the counts at commit.
+
+**Upgrading a store from version 16.** The new column is added without a
+default, so the `ALTER` rewrites nothing and every existing entry reads
+NULL ("keys not known"). A partial index finds those entries. The service
+indexes them itself, a bounded batch per run of each data-key job (at most
+10 seconds per run), so a large directory is indexed over a few hours after
+the upgrade. Until that finishes, the jobs re-encrypt what they can find
+but do not count or destroy any data key. Running `postgres/schema.sql`
+again as the owner adds the column, the indexes, the two tables and the
+triggers; it does not need to index the entries.
 
 ### `sts_realms`: the realm registry
 
@@ -216,7 +332,13 @@ only, and `persistence.minted` turns it off.
 | `expires_at` | bigint | **the record's own expiry**, in epoch milliseconds, as the store computed it when it wrote the row, or NULL for a record that does not expire (and for a tombstone). A start reads no row whose expiry has passed, and the `persistence.minted-expiry-purge` job deletes such rows in batches (schema version 12, #333) |
 
 Primary key `(handle, realm, key)`, with indexes on `(handle, realm)`,
-`written_at`, and `expires_at` where it is not NULL.
+`written_at`, and `expires_at` where it is not NULL. Since schema version
+19 (#630) the `written_at` index is a BRIN (`sts_minted_written_brin`) and
+the table's fillfactor is 80: every write of a row sets `written_at`, and a
+btree on it made every update copy the row to a new page and add an entry
+to every index. A BRIN does not, on PostgreSQL 16 and later. Only the
+clean-up jobs read `written_at`; they may read more of the table than they
+did.
 
 A start reads only the rows of the realms that exist: `''` (the shared
 stores), the default realm, and every realm in `sts_realms`. Rows of a realm
@@ -246,7 +368,7 @@ tests):
 | Shared Signals | `ssf_streams.streams`, `ssf_streams.queued`, `ssf_streams.deadLetters`, `ssf_receivers.inbox`, `ssf_dead_letter_report.sweeps`, `caep.register`, `risc.register` |
 | Mail | `mail.outbox`, `mail.preferences`, `mail.templates` |
 | Attribute sources | `attribute_sources.status` |
-| Devices | `devices.events` |
+| Devices | `devices.events`, `devices.androidRecheck` |
 | OpenID Federation | `oidfed.registerGeneration` |
 | Console statistics and audit | `admin_stats.tokens`, `admin_stats.artifacts`, `admin_stats.revokedArtifacts`, `admin_stats.revokedJtis`, `admin_stats.claimSets`, `admin_stats.users`, `admin_stats.calls`, `admin_stats.nums`, `admin_stats.scimCounts`, `claim_attributes.selections`, `xacml_monitor.counters`, `audit.events`, `audit.nums` |
 | Process-wide | `security.rateLimitBuckets`, `ldap.clusterConnections`, `ldap.clusterSignOuts`, `scheduler.runs`, `signing.history`, `tls.listenerAnnounced`, `tls.listenerKeys`, `tls.presentedChains` |
@@ -299,7 +421,14 @@ describes**, so "I have applied up to N" means "I have seen everything
 committed before N". `LISTEN`/`NOTIFY` on the channel `sts_ldap_change` only
 wakes the poll early. Losing a notification costs latency, never correctness.
 The payload is only a pointer, so neither the 8000-byte `NOTIFY` limit nor
-encryption applies to it.
+encryption applies to it. Since #630 the notification is sent **after** the
+transaction commits, and at most once every 25 ms per process for all the
+commits in that window. A notification sent inside the writing transaction
+made every writer wait for a lock at commit.
+
+Autovacuum runs on this table at 2% dead rows
+(`autovacuum_vacuum_scale_factor=0.02`) with ten times the default cost
+limit, because the trim deletes from it all the time.
 
 ### `sts_change_readers`
 

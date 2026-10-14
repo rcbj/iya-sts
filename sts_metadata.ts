@@ -1912,7 +1912,10 @@ const SPECS: Spec[] = [
   { id: 'oidc-key-binding', name: 'OpenID Connect Key Binding 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-key-binding-1_0.html',
-    coverage: 'full (#150, 2026-09-26), in every mode: the bound_key ' +
+    coverage: 'full (#150, 2026-09-26), in every mode while ' +
+              'oauth2.keyBinding is on (the default; off, #315, the scope ' +
+              'is neither advertised nor granted and a request for it is ' +
+              'not refused): the bound_key ' +
               'scope, honoured with response_type=code and dpop_jkt only; ' +
               'a DPoP proof at the token endpoint whose c_s256 is the ' +
               'hash of the authorization or device code; an ID Token with ' +
@@ -3812,8 +3815,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'is the leaf\'s SHA-256 in hex, with an optional `.pem` suffix, ' +
           'matched against the register rather than parsed. NAMED BY THE ' +
           'CERTIFICATE AND NOT BY THE KEY, so a URL names one certificate ' +
-          'for ever: a key rotated since the token was signed is a 404 ' +
-          'rather than a chain over a different key. `no-store`, like every ' +
+          'for ever and never a chain over a different key. A certificate ' +
+          'the slot no longer holds — re-certified over the same key, or ' +
+          'its key rotated — is still served, with the chain it was issued ' +
+          'with, until it expires (#318; the newest eight per slot); then ' +
+          'it is a 404. `no-store`, like every ' +
           'document publishing this service\'s key material. Ungated, ' +
           'because what it returns is already named by the token.' },
   { path: '/crypto/metadata', group: 'PKI',
@@ -5110,6 +5116,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'one, and the machine\'s own figures labelled as such; in a ' +
           'cluster every node by name and the totals, ?node= for one ' +
           '(#332). Mirrors GET /admin/node-health.' },
+  { path: '/admin-api/node-health/:action', group: 'Management API',
+    name: 'Node health actions', specs: ['openapi'],
+    what: 'NON-SPEC (#611). collect-garbage, with { target? }: a full V8 ' +
+          'garbage collection in this node\'s front process (front), one ' +
+          'of its worker threads (its threadId) or all of them (all, the ' +
+          'default), each isolate\'s heap before and after and its pause. ' +
+          'A full collection stops the thread it runs in. The page\'s ' +
+          'Collect buttons. Mirrors POST /admin/node-health.' },
   { path: '/admin-api/encryption', group: 'Management API',
     name: 'Encryption at rest', specs: [],
     what: 'NON-SPEC. Everything /admin/encryption draws, as JSON: the mode, ' +
@@ -5510,6 +5524,20 @@ const ENDPOINTS: EndpointEntry[] = [
           'with its push destination, when its password last rotated and ' +
           'is next due, and how many rotations in a row failed; the ' +
           'realm\'s rotation settings and the totals. No secret value.' },
+  { path: '/admin-api/ownership', group: 'Management API',
+    name: 'Who owns an object, and whether its owners may administer it',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#607). One role, group, service account or ' +
+          'application: its owners, whether it is closed to them — so they ' +
+          'may not read or change it with owner:read and owner:write — and ' +
+          'why, the administrator\'s mark among the reasons. The facts the ' +
+          'access-control policy\'s owner rule decides on.' },
+  { path: '/admin-api/ownership/:action', group: 'Management API',
+    name: 'Close an object to its owners, or open it again',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#607). set-protected: the administrator\'s mark, ' +
+          'stsOwnerProtected on the object\'s own entry — the Closed to its ' +
+          'owners checkbox on each Owners tab of the console.' },
   { path: '/admin-api/devices/monitor', group: 'Management API',
     name: 'The device register, counted', specs: ['openapi'],
     what: 'NON-SPEC (#218). GET /admin/devices/monitor over JSON: the ' +

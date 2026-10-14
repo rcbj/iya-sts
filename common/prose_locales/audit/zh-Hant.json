@@ -1139,6 +1139,10 @@
     "en": "e5e65ad85891ab58",
     "text": "已從群組移除擁有者"
   },
+  "audit.actions.group.owner-protected.label": {
+    "en": "872bbc2dca2a5974",
+    "text": "一個群組對其擁有者關閉，或重新向他們開放"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "以手上的密碼為某人產生了 keytab"
@@ -1366,6 +1370,10 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "設定了角色的描述、顯示名稱或成員類型"
+  },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "在某個節點的處理程序或工作執行緒中執行了一次完整垃圾回收"
   },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",

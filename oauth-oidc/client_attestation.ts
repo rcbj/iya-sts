@@ -183,7 +183,9 @@ const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k', 'priv'];
 // A Symbol, so nothing serialises the per-request answers.
 const ANSWERED = Symbol('sts.clientAttestation.answered');
 
-// challenge -> the second it was issued. PER TRUST REALM AND PERSISTED with
+// credentialDigest(challenge) -> the second it was issued: the challenge's
+// DIGEST and never the challenge (#614), hashed as it is issued and as it is
+// presented, `dpop.issuedNonces`' rule. PER TRUST REALM AND PERSISTED with
 // what is minted, `dpop.issuedNonces`' arrangement: a challenge handed out by
 // one process is presented to another, and the barrier makes the write land
 // before the retry can be asked about it.
@@ -507,7 +509,8 @@ class ClientAttestation {
     cacheRegistry.makeRoom(challenges, Number(config.value(
       'oauth2.clientAttestationChallengeCacheSize')),
       { counter: challengesCount });
-    challenges.set(challenge, Math.floor(Date.now() / 1000));
+    challenges.set(stsCrypto.credentialDigest(challenge),
+                   Math.floor(Date.now() / 1000));
     log.debug("Leaving ClientAttestation.issueChallenge().");
     return challenge;
   }
@@ -518,7 +521,9 @@ class ClientAttestation {
   private challengeIssuedAt(challenge: string): number {
     const { log } = this.deps;
     log.debug("Entering ClientAttestation.challengeIssuedAt().");
-    const issued = Number(challenges.get(challenge));
+    // Hashed as it is presented (#614).
+    const issued = Number(challenges.get(
+      stsCrypto.credentialDigest(challenge)));
     if (!issued ||
         issued < Math.floor(Date.now() / 1000) - challengeTtlS()) {
       challengesCount.miss();

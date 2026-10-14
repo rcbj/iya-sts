@@ -77,6 +77,19 @@ const ROLE_OWNERS_PAGE = '/admin/roles/owners';
 // AN APPLICATION'S OWNERS TAB (#604), the same arrangement.
 const APPLICATION_OWNERS_PAGE = '/admin/applications/owners';
 
+// MONITORING → NODE HEALTH (#611): its Collect buttons' answer is drawn on
+// the page rather than as a notice.
+const NODE_HEALTH_PAGE = '/admin/node-health';
+// DIRECTORY → POLICIES (#609): a named passkey profile's form searches the
+// realm's applications for its applications box. Its forms post to the page
+// itself, and a press is told apart from their Save by `fgsearch` and
+// `fgadd` alone — neither is a field any policy form carries.
+const POLICIES_PAGE = '/admin/policies';
+// The reason `common/ownership.ts` gives for an administrator's mark (#607),
+// to the letter: the in-place redraw after the Owners tab's checkbox adds or
+// takes it off the reasons the page holds.
+const OWNER_MARK_REASON = 'an administrator closed it to its owners';
+
 /**
  * Draws the answers a notice cannot carry.
  *
@@ -116,6 +129,7 @@ class WebAnswers {
   static readonly GROUP_OWNERS_PAGE = GROUP_OWNERS_PAGE;
   static readonly ROLE_OWNERS_PAGE = ROLE_OWNERS_PAGE;
   static readonly APPLICATION_OWNERS_PAGE = APPLICATION_OWNERS_PAGE;
+  static readonly POLICIES_PAGE = POLICIES_PAGE;
 
   /**
    * Every non-empty value of a form field, in the order posted.
@@ -386,7 +400,8 @@ class WebAnswers {
   static isFieldSearch(page: string, fields: Json): boolean {
     return (page === '/admin/applications/edit' ||
             page === SERVICE_ACCOUNT_PAGE || page === GROUP_OWNERS_PAGE ||
-            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE) &&
+            page === ROLE_OWNERS_PAGE || page === APPLICATION_OWNERS_PAGE ||
+            page === POLICIES_PAGE) &&
       (WebAnswers.has(fields, 'fgsearch') || WebAnswers.has(fields, 'fgadd'));
   }
 
@@ -462,6 +477,40 @@ class WebAnswers {
       out[prefix + next] = value;
     }
     return out;
+  }
+
+  // A NAMED PASSKEY PROFILE'S APPLICATIONS BOX (#609) is ONE text box of
+  // comma-separated values, as the profile's save reads it — not the grid's
+  // boxes — so an Add appends the identifier to its text, once.
+  /**
+   * The values of a comma-separated box.
+   *
+   * @param text - the box's text
+   * @returns its values, trimmed, empty ones left out
+   */
+  static listedValues(text: string): string[] {
+    return String(text || '').split(/[,\n]/).map(function (one) {
+      return one.trim();
+    }).filter(Boolean);
+  }
+
+  /**
+   * A comma-separated box's text with a value appended — or as it was when
+   * it holds the value already, in any case.
+   *
+   * @param text - the box's text
+   * @param value - the value to add
+   * @returns the text to draw
+   */
+  static withListedValue(text: string, value: string): string {
+    const held = WebAnswers.listedValues(text);
+    const wanted = String(value || '').trim();
+    if (!wanted || held.some(function (one) {
+      return one.toLowerCase() === wanted.toLowerCase();
+    })) {
+      return held.join(', ');
+    }
+    return held.concat([wanted]).join(', ');
   }
 
   /**
@@ -734,6 +783,31 @@ class WebAnswers {
         error: ok ? [] : (errors.length ? errors : ['Refused.']) } });
       return { json: out, banner: '' };
     }
+    // CLOSED TO ITS OWNERS, SET OR CLEARED (#607): the Owners tab's checkbox
+    // on any of the four pages, drawn again in place — the ownership facts
+    // where that page keeps them, the mark as the answer holds it, and the
+    // answer's sentence beside the checkbox (`state.ownerProtection`).
+    if (action === 'set-protected' &&
+        (page === GROUP_OWNERS_PAGE || page === ROLE_OWNERS_PAGE ||
+         page === APPLICATION_OWNERS_PAGE || page === SERVICE_ACCOUNT_PAGE)) {
+      const out = WebAnswers.copy(json);
+      const holder = page === ROLE_OWNERS_PAGE ? out.role
+        : (page === APPLICATION_OWNERS_PAGE ? out.page
+          : (page === SERVICE_ACCOUNT_PAGE ? out.serviceAccount : out));
+      if (ok && holder && holder.ownership) {
+        const marked = answer.ownerProtected === true;
+        const reasons = (holder.ownership.reasons || [])
+          .filter(function (one: string) {
+            return one !== OWNER_MARK_REASON;
+          }).concat(marked ? [OWNER_MARK_REASON] : []);
+        holder.ownership = Object.assign({}, holder.ownership, {
+          marked: marked, reasons: reasons, protected: reasons.length > 0 });
+      }
+      out.state = Object.assign({}, out.state || {}, { ownerProtection: {
+        notice: ok ? String(answer.message || '') : '',
+        error: ok ? [] : (errors.length ? errors : ['Refused.']) } });
+      return { json: out, banner: '' };
+    }
     // A REFUSED SERVICE ACCOUNT SAVE (#600) keeps the table, the search and
     // the destination as they were, with the refusal above the table.
     if (page === SERVICE_ACCOUNT_PAGE && !ok) {
@@ -772,6 +846,18 @@ class WebAnswers {
       const out = WebAnswers.copy(json);
       out.resolution = answer.resolution;
       return { json: out, banner: kit.note(kit.esc(answer.message || '')) };
+    }
+    // A GARBAGE COLLECTION'S FIGURES (#611): Monitoring → Node Health drawn
+    // again in place with each isolate's heap before and after above the
+    // processes table (`state.collected`), where a notice would have said
+    // only the total. A refusal is the strip's, in the server's words.
+    if (page === NODE_HEALTH_PAGE && action === 'collect-garbage') {
+      const out = WebAnswers.copy(json);
+      out.state = Object.assign({}, out.state || {},
+                                { collected: ok ? answer : null });
+      return { json: out,
+               banner: ok ? '' : kit.warn(kit.esc(errors.join(' ') ||
+                                                  'Refused.')) };
     }
     return null;
   }

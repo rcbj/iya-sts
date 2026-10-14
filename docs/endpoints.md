@@ -32,7 +32,7 @@ what may I call it with, and which specification is it pretending to
 implement". It is a page of the admin console, with the console's sidebar,
 breadcrumb and gate banner. `?format=json` gives the same document
 machine-readably, and the **Download** button at the top of the page is that URL
-asked for as a file (an `<a download>`, since the page runs no script).
+asked for as a file (an `<a download>`).
 
 It reads the endpoint list **off the running Express router**, walked per
 request, so it cannot go stale by omission; the table in `sts_metadata.ts`

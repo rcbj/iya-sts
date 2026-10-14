@@ -172,6 +172,31 @@ function byUuid(realm, uuid) {
 }
 
 /**
+ * The entries holding ANY of a list of `entryUUID` values or aliases, lower-
+ * cased: `byUuid()`'s question for many subjects at once. A page that names
+ * the holder of every token it holds (`admin_stats.js`'s `userKeys()`) asked
+ * `byUuid` once per token in a windowed process, a synchronous round trip
+ * each, and thousands of them made one `GET /admin-api/audit` take a second.
+ * `@> ANY` is answered by a bitmap scan of the same GIN index, one probe per
+ * value.
+ *
+ * @param realm - the realm id
+ * @param uuids - the UUIDs, bare; each `{ key }` once keyed
+ * @returns the statement
+ */
+function withUuids(realm, uuids) {
+  log.debug("Entering withUuids().");
+  const keys = (Array.isArray(uuids) ? uuids : []).map(function (one) {
+    return JSON.stringify([keyed(one, 'uuid', true)]);
+  });
+  log.debug("Leaving withUuids().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND uuid_keys @> ANY($2::jsonb[]) ORDER BY ' +
+                 'dn_key',
+           values: [String(realm), keys] };
+}
+
+/**
  * The entries holding a mail address, compared lower-cased.
  *
  * @param realm - the realm id
@@ -213,6 +238,45 @@ function byAttribute(realm, attribute, value, limit) {
                     pageSize(limit)] };
 }
 
+// THE COLUMN EACH `equalUnder()` KIND READS (#320): only the two whose index
+// holds every value, lower-cased, so an equality on the attribute can be
+// answered from it as a superset.
+const EQUAL_UNDER_COLUMNS = { name: 'name_keys', mail: 'mail_keys' };
+
+/**
+ * The entries at or under a base holding a `uid` (kind `name`) or `mail`
+ * (kind `mail`) value equal to `value`, compared lower-cased — a SUPERSET of
+ * an LDAP equality filter's matches, which the caller then applies (#320).
+ * At most `limit` rows: a caller that gets `limit` back must not assume it
+ * has them all.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the search base's normalised DN
+ * @param kind - `name` or `mail`
+ * @param value - the asserted value
+ * @param limit - at most this many rows (at most 1,000)
+ * @returns the statement
+ * @throws an Error naming a kind with no column
+ */
+function equalUnder(realm, baseKey, kind, value, limit) {
+  log.debug("Entering equalUnder(). " + kind);
+  const column = Object.prototype.hasOwnProperty.call(EQUAL_UNDER_COLUMNS,
+                                                      kind)
+    ? EQUAL_UNDER_COLUMNS[kind] : '';
+  if (!column) {
+    log.debug("Leaving equalUnder(). Unknown kind.");
+    throw new Error('directory_queries: equalUnder has no kind ' +
+                    String(kind));
+  }
+  log.debug("Leaving equalUnder().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND ' + underClause(2, 5, true) + ' AND ' +
+                 column + ' @> $3::jsonb ORDER BY dn_key LIMIT $4',
+           values: [String(realm), String(baseKey),
+                    JSON.stringify([keyed(value, kind, true)]),
+                    pageSize(limit), suffixLength(baseKey)] };
+}
+
 /**
  * One page of the entries under a base, in key order after `afterKey`.
  *
@@ -241,9 +305,154 @@ function page(realm, baseKey, afterKey, limit, options) {
                 pageSize(limit), suffixLength(baseKey)] };
 }
 
+// ---------------------------------------------------------------------------
+// THE COUNTS ARE READ, NOT COUNTED (#618). `sts_ldap_counts` holds, per realm
+// and per base, the entries strictly under it (`attribute` '') and those
+// holding each attribute in COUNTED_ATTRIBUTES, kept by the database's own
+// triggers in the transaction that wrote (`persistence_postgres.js`,
+// SCHEMA_ROUTINES). So `count` and `countHolding` are one primary-key read
+// whatever the size of the directory, where each was a `count(*)` linear in
+// the realm's rows — a range of it since #630, which shards each counter
+// (up to COUNT_SHARDS rows a key) and has every reader `sum()` them. A
+// base with no counter row has nothing under it: the counters are started
+// from one count of the table, under a lock, when the triggers are created,
+// and a missing row is a zero from then on.
+// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTE NAMES A HOLDER QUESTION IS ASKED ABOUT, AND ONLY THOSE, ARE
+// INDEXED (#618 phase 2, schema version 18, 2026-10-14).
+//
+// `attr_names` holds every attribute name of an entry in the clear, about
+// fifteen a person, and until version 18 a GIN index over the whole column
+// took every one of them: on 8081's 1.2M entries twelve names are in 99.9% of
+// rows and fourteen more in a sixth, so a person's insert wrote fifteen-odd
+// GIN entries that could narrow nothing — nobody asks "who holds a `mail`".
+// The index is now over an IMMUTABLE expression of the column that keeps only
+// the names below (`ASKED_NAMES`), and PARTIAL, so an entry holding none of
+// them — nearly every person — writes no GIN entry at all.
+//
+// **THE LIST IS THE NAMES THE CODE ASKS** `withAttribute()` and
+// `anyWithAttribute()` about, read from their callers: `ldap_server.js`'s
+// `eachHolderOfAny()` sites (group membership, consents, delegation flags,
+// Kerberos keys, service accounts, federation links, claim-source tokens,
+// self-issued subjects, the WebAuthn user handle), `holdersAsync()`'s
+// (`credentials.ts`'s Android marker and WebAuthn credentials, `devices.ts`'
+// device keys and marker), `credentialTallies()`'s second factors,
+// `person_assertions.js`'s key pairs and issuers, `cert_enrollment.ts`'s
+// enrolled-certificate attributes and SCIM's HOBA key.
+// `tests/directory_asked_names.js` holds the list to those sites.
+//
+// **A NAME NOT IN THE LIST IS STILL ANSWERED**, by `attr_names ? name` with
+// no index behind it — a scan of the realm's rows under the base, said once
+// in the log — because a holder question that silently answered "nobody"
+// would be worse than a slow one. A new caller adds its name here, which is a
+// new index expression and so a schema version: the expression is part of
+// the index's definition, and the planner uses the index only for a query
+// that repeats it — and its predicate — exactly, which `ASKED_NAMES` and
+// `ASKED_NAMES_HELD` guarantee by being the one place each is written.
+//
+// `userpassword` is not in the list: nearly every person holds one, so an
+// index of its holders narrows nothing, and the two questions asked about it
+// — how many hold one, and whether anybody does — are answered by the
+// counters (`COUNTED_ATTRIBUTES`).
+// ---------------------------------------------------------------------------
+const ASKED_ATTRIBUTES = Object.freeze([
+  'federationlink', 'hobapublickey', 'memberof', 'oauthconsent',
+  'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer',
+  'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens',
+  'stsdefaultdelegationsemantics', 'stsdelegationsemantics',
+  'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate',
+  'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor',
+  'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate',
+  'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject',
+  'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential',
+  'stswebauthnuserhandle'
+]);
+
+// The jsonpath literal and the expression, built once. A name is spelt into
+// SQL here, so each is checked to be a bare lower-case name: nothing in it
+// can end the literal or the path's string.
+function askedNamesExpression() {
+  log.debug("Entering askedNamesExpression().");
+  ASKED_ATTRIBUTES.forEach(function (name) {
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      throw new Error('directory_queries: an asked attribute name must be ' +
+                      'a bare lower-case name: ' + name);
+    }
+  });
+  const path = '$[*] ? (' + ASKED_ATTRIBUTES.map(function (name) {
+    return '@ == "' + name + '"';
+  }).join(' || ') + ')';
+  log.debug("Leaving askedNamesExpression().");
+  return 'jsonb_path_query_array(attr_names, \'' + path + '\')';
+}
+
+/**
+ * The indexed expression over `attr_names`: the entry's names that a holder
+ * question is asked about, as a JSON array. The driver's index and every
+ * query below spell it from here.
+ */
+const ASKED_NAMES = askedNamesExpression();
+
+/**
+ * The partial index's predicate, which a query repeats so the planner may use
+ * the index: the entry holds at least one asked name. `?|` and not
+ * `ASKED_NAMES <> '[]'`, and that is a measured choice: the database checks
+ * a partial index's predicate on every insert and computes the indexed
+ * expression only for a row that passes, and on 8081's people the
+ * jsonpath above cost about 30 µs a row where `?|` over the same names cost
+ * about 2 µs — so a person holding none of them pays the 2.
+ */
+const ASKED_NAMES_HELD = 'attr_names ?| ARRAY[' +
+  ASKED_ATTRIBUTES.map(function (name) {
+    return '\'' + name + '\'';
+  }).join(', ') + ']';
+
+/**
+ * The partial index's predicate over `class_keys`, which since version 18
+ * holds the GROUP classes only (`directory_codec.js`): the entry has one.
+ */
+const GROUP_CLASSES_HELD = 'class_keys <> \'[]\'::jsonb';
+
+// The names already said to have no index, so the log says it once a name.
+const unindexedNoted = new Set();
+
+/**
+ * The condition "holds the attribute" for a holder question: the indexed
+ * expression for an asked name, the bare column otherwise.
+ *
+ * @param name - the attribute name, lower-cased
+ * @param at - the position of the name in the statement's values
+ * @returns the SQL condition
+ */
+function holdsClause(name, at) {
+  log.debug("Entering holdsClause(). " + name);
+  if (ASKED_ATTRIBUTES.indexOf(name) >= 0) {
+    log.debug("Leaving holdsClause(). Indexed.");
+    return ASKED_NAMES + ' ? $' + at + ' AND ' + ASKED_NAMES_HELD;
+  }
+  if (!unindexedNoted.has(name)) {
+    unindexedNoted.add(name);
+    log.warn('directory_queries: the holders of `' + name + '` are asked ' +
+             'of the store, and no index answers for that name — it is ' +
+             'answered by a scan of the rows under the base. Add it to ' +
+             'ASKED_ATTRIBUTES (a schema version) if it is asked on a ' +
+             'request or a job (#618).');
+  }
+  log.debug("Leaving holdsClause(). Not indexed.");
+  return 'attr_names ? $' + at;
+}
+
+/**
+ * The attributes whose holders `sts_ldap_counts` keeps a count of, lower-cased
+ * as `attr_names` holds them. The postgres driver's trigger functions name
+ * the same list; `tests/directory_counts.js` holds the two together.
+ */
+const COUNTED_ATTRIBUTES = ['userpassword'];
+
 /**
  * How many entries are under a base (strictly), or in the whole realm when
- * the base is ''.
+ * the base is '': the counter row, read.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN, or '' for the realm
@@ -251,15 +460,76 @@ function page(realm, baseKey, afterKey, limit, options) {
  */
 function count(realm, baseKey) {
   log.debug("Entering count().");
-  if (!baseKey) {
-    log.debug("Leaving count(). The realm.");
-    return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
-                   'WHERE realm = $1', values: [String(realm)] };
-  }
   log.debug("Leaving count().");
-  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
-                 'realm = $1 AND ' + underClause(2, 3, false),
-           values: [String(realm), String(baseKey), suffixLength(baseKey)] };
+  // The key's SHARDS, summed (#630): the fold adds to one shard per
+  // connection, and only the sum is a count.
+  return { text: 'SELECT COALESCE((SELECT sum(n) FROM sts_ldap_counts ' +
+                 'WHERE realm = $1 AND base_key = $2 AND attribute = ' +
+                 '\'\'), 0)::bigint AS n',
+           values: [String(realm), String(baseKey || '')] };
+}
+
+/**
+ * How many entries are strictly under a base, and how many of them hold an
+ * attribute (by NAME — `attr_names`, the one column of an entry's attributes
+ * the database can read), for a page's tiles (#610): two counter rows read,
+ * for an attribute in COUNTED_ATTRIBUTES. Any other attribute is COUNTED, a
+ * `count(*) FILTER` linear in the realm's rows — no caller asks one today
+ * (`credentialTallies()` asks `userpassword`), and a new one should join
+ * the list rather than take this path.
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param attribute - the attribute name, lower-cased as stored
+ * @returns the statement; its one row's `n` and `holding` are the counts
+ */
+function countHolding(realm, baseKey, attribute) {
+  log.debug("Entering countHolding().");
+  const name = String(attribute).toLowerCase();
+  if (COUNTED_ATTRIBUTES.indexOf(name) >= 0) {
+    log.debug("Leaving countHolding(). Two counters.");
+    return { text: 'SELECT COALESCE(sum(n) FILTER (WHERE attribute = \'\'), ' +
+                   '0)::bigint AS n, COALESCE(sum(n) FILTER (WHERE ' +
+                   'attribute = $3), 0)::bigint AS holding FROM ' +
+                   'sts_ldap_counts WHERE realm = $1 AND base_key = $2 AND ' +
+                   'attribute IN (\'\', $3)',
+             values: [String(realm), String(baseKey), name] };
+  }
+  log.debug("Leaving countHolding(). Not a counted attribute: counted.");
+  return { text: 'SELECT count(*)::bigint AS n, count(*) FILTER (WHERE ' +
+                 'attr_names ? $4)::bigint AS holding FROM sts_ldap_entries ' +
+                 'WHERE realm = $1 AND ' + underClause(2, 3, false),
+           values: [String(realm), String(baseKey), suffixLength(baseKey),
+                    name] };
+}
+
+/**
+ * The entries directly under a container that answer to ANY of a list of
+ * login names — `byName()`'s question for many names at once (#610): an RDN
+ * value, or a `uid` (its lookup form, keyed by `directory_codec.keyArgs()`).
+ *
+ * @param realm - the realm id
+ * @param parentKey - the container's normalised DN (`ou=users,<base>`)
+ * @param names - the names; each `{ key, rdn }` once keyed
+ * @returns the statement
+ */
+function withNames(realm, parentKey, names) {
+  log.debug("Entering withNames().");
+  const list = Array.isArray(names) ? names : [];
+  const rdns = list.map(function (one) {
+    return one && typeof one === 'object'
+      ? String(one.rdn || '')
+      : String(one == null ? '' : one).trim().toLowerCase();
+  });
+  const keys = list.map(function (one) {
+    return JSON.stringify([keyed(one, 'name', true)]);
+  });
+  log.debug("Leaving withNames().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND parent_key = $2 AND (rdn_value = ' +
+                 'ANY($3::text[]) OR name_keys @> ANY($4::jsonb[])) ORDER BY ' +
+                 'dn_key',
+           values: [String(realm), String(parentKey), rdns, keys] };
 }
 
 /**
@@ -279,9 +549,10 @@ function hasChild(realm, key) {
 
 /**
  * One page of the entries under a base that HOLD an attribute (any value),
- * in key order after `afterKey`. `attr_names ? name` has no index behind it here
- * and is a scan of the realm's rows under the base; it answers only the
- * holders, which is what the lists of who holds a credential need.
+ * in key order after `afterKey`: for a name in ASKED_ATTRIBUTES, the partial
+ * GIN index over ASKED_NAMES (#618, schema version 18); for any other, a scan
+ * of the realm's rows under the base. It answers only the holders, which is
+ * what the lists of who holds a credential need.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN
@@ -292,17 +563,20 @@ function hasChild(realm, key) {
  */
 function withAttribute(realm, baseKey, attribute, afterKey, limit) {
   log.debug("Entering withAttribute().");
+  const name = String(attribute).toLowerCase();
   log.debug("Leaving withAttribute().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND ' + underClause(2, 6, false) + ' AND ' +
-                 'attr_names ? $3 AND dn_key > $4 ORDER BY dn_key LIMIT $5',
-           values: [String(realm), String(baseKey),
-                    String(attribute).toLowerCase(), String(afterKey || ''),
-                    pageSize(limit), suffixLength(baseKey)] };
+                 holdsClause(name, 3) + ' AND dn_key > $4 ORDER BY dn_key ' +
+                 'LIMIT $5',
+           values: [String(realm), String(baseKey), name,
+                    String(afterKey || ''), pageSize(limit),
+                    suffixLength(baseKey)] };
 }
 
 /**
- * Whether any entry of a realm holds an attribute.
+ * Whether any entry of a realm holds an attribute: a counter for a counted
+ * attribute, the asked names' index for an asked one, a scan otherwise.
  *
  * @param realm - the realm id
  * @param attribute - the attribute name, lower-cased as the store holds it
@@ -310,16 +584,30 @@ function withAttribute(realm, baseKey, attribute, afterKey, limit) {
  */
 function anyWithAttribute(realm, attribute) {
   log.debug("Entering anyWithAttribute().");
+  const name = String(attribute).toLowerCase();
+  if (COUNTED_ATTRIBUTES.indexOf(name) >= 0) {
+    // A COUNTED ATTRIBUTE IS ASKED OF ITS COUNTER (#618, schema version 18):
+    // the realm's row (`base_key` ''), one primary-key read. `userpassword`
+    // is in nearly every person, so no index of its holders is kept.
+    log.debug("Leaving anyWithAttribute(). The counter.");
+    return { text: 'SELECT 1 AS one FROM sts_ldap_counts WHERE realm = $1 ' +
+                   'AND base_key = \'\' AND attribute = $2 AND n > 0',
+             values: [String(realm), name] };
+  }
   log.debug("Leaving anyWithAttribute().");
   return { text: 'SELECT 1 AS one FROM sts_ldap_entries WHERE realm = $1 ' +
-                 'AND attr_names ? $2 LIMIT 1',
-           values: [String(realm), String(attribute).toLowerCase()] };
+                 'AND ' + holdsClause(name, 2) + ' LIMIT 1',
+           values: [String(realm), name] };
 }
 
 /**
- * The entries strictly under a base holding any of the given object classes
- * (lower-cased), through the GIN index over `class_keys`: the groups a
- * windowed worker must see although it does not hold their container.
+ * The entries strictly under a base holding any of the given GROUP classes
+ * (lower-cased), through the partial GIN index over `class_keys`: the groups
+ * a windowed worker must see although it does not hold their container.
+ * Since schema version 18 the column holds an entry's group classes only
+ * (`directory_codec.js`'s CLASS_INDEXED), so a person writes nothing to the
+ * index; an entry written before then holds all its classes, which answers
+ * the same question.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN
@@ -331,7 +619,8 @@ function classesUnder(realm, baseKey, classes) {
   log.debug("Leaving classesUnder().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND ' + underClause(2, 4, false) + ' AND ' +
-                 'class_keys ?| $3::text[] ORDER BY dn_key',
+                 'class_keys ?| $3::text[] AND ' + GROUP_CLASSES_HELD +
+                 ' ORDER BY dn_key',
            values: [String(realm), String(baseKey),
                     (classes || []).map(function (one) {
                       return keyed(one, 'class', true);
@@ -358,6 +647,117 @@ function namesUnder(realm, baseKey, afterKey, limit) {
                  'FROM sts_ldap_entries WHERE realm = $1 AND ' +
                  underClause(2, 5, false) + ' AND dn_key > $3 ORDER BY ' +
                  'dn_key LIMIT $4',
+           values: [String(realm), String(baseKey), String(afterKey || ''),
+                    pageSize(limit), suffixLength(baseKey)] };
+}
+
+// ---------------------------------------------------------------------------
+// THE WHOLE REALM, A PAGE AT A TIME, FOR `/admin/ldap/directory` (#616).
+//
+// That page lists EVERY entry of a realm — the resident containers and the
+// windowed ones alike — and the store holds all of them, so one statement
+// over the realm answers a page in the store's key order where the page used
+// to walk every row through the synchronous bridge to draw twenty-five.
+// What it can push down, it does: the ORIGIN (a plain column), the ORDER (the
+// primary key, `(realm, dn_key)`), the page (a key cursor, or an OFFSET for
+// a numbered page — linear in the offset, in the database and off the
+// service's event loop) and the counts. What it cannot is the page's `q`,
+// which matches attribute VALUES the database holds sealed
+// (`directory_codec.js`): the caller scans a bounded number of rows for it
+// and says so.
+//
+// An origin of `unstated` is an entry with none, which is how the page names
+// it (`directoryRowOf()`).
+// ---------------------------------------------------------------------------
+// The origin condition, and the value it binds (none for `unstated`).
+function originClause(origin, at) {
+  log.debug("Entering originClause().");
+  const wanted = origin === undefined || origin === null ? '' :
+    String(origin);
+  if (!wanted) {
+    log.debug("Leaving originClause(). Any origin.");
+    return { text: '', values: [] };
+  }
+  if (wanted === 'unstated') {
+    log.debug("Leaving originClause(). None stated.");
+    return { text: ' AND (origin IS NULL OR origin = \'\')', values: [] };
+  }
+  log.debug("Leaving originClause().");
+  return { text: ' AND origin = $' + at, values: [wanted] };
+}
+
+/**
+ * One page of a whole realm's entries in key order, after `afterKey` and
+ * past `offset` rows, optionally of one origin.
+ *
+ * @param realm - the realm id
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @param options - `offset` (rows to skip after the cursor), `origin`
+ * @returns the statement
+ */
+function realmPage(realm, afterKey, limit, options) {
+  log.debug("Entering realmPage().");
+  const o = options || {};
+  const offset = Math.max(0, Math.floor(Number(o.offset) || 0));
+  const origin = originClause(o.origin, 5);
+  log.debug("Leaving realmPage().");
+  return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 AND dn_key > $2' + origin.text + ' ORDER BY ' +
+                 'dn_key LIMIT $3 OFFSET $4',
+           values: [String(realm), String(afterKey || ''), pageSize(limit),
+                    offset].concat(origin.values) };
+}
+
+/**
+ * How many entries a realm holds, optionally of one origin.
+ *
+ * @param realm - the realm id
+ * @param origin - an origin, `unstated`, or '' for any
+ * @returns the statement; its one row's `n` is the count
+ */
+function realmCount(realm, origin) {
+  log.debug("Entering realmCount().");
+  const clause = originClause(origin, 2);
+  log.debug("Leaving realmCount().");
+  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
+                 'WHERE realm = $1' + clause.text,
+           values: [String(realm)].concat(clause.values) };
+}
+
+/**
+ * How many entries of a realm came from each origin, `unstated` for none:
+ * one pass, `GROUP BY`.
+ *
+ * @param realm - the realm id
+ * @returns the statement; its rows are `{ origin, n }`
+ */
+function originCounts(realm) {
+  log.debug("Entering originCounts().");
+  log.debug("Leaving originCounts().");
+  return { text: 'SELECT COALESCE(NULLIF(origin, \'\'), \'unstated\') AS ' +
+                 'origin, count(*)::bigint AS n FROM sts_ldap_entries WHERE ' +
+                 'realm = $1 GROUP BY 1',
+           values: [String(realm)] };
+}
+
+/**
+ * One page of the KEYS and DNs under a base — no attributes, so nothing is
+ * read out of a sealed blob or opened (#616): what a list of names asks
+ * when a name is the entry's RDN (`personNamesUpTo()`).
+ *
+ * @param realm - the realm id
+ * @param baseKey - the base's normalised DN
+ * @param afterKey - the last key of the previous page, or ''
+ * @param limit - the page size (at most 1,000)
+ * @returns the statement
+ */
+function keysUnder(realm, baseKey, afterKey, limit) {
+  log.debug("Entering keysUnder().");
+  log.debug("Leaving keysUnder().");
+  return { text: 'SELECT dn_key, dn FROM sts_ldap_entries WHERE realm = $1 ' +
+                 'AND ' + underClause(2, 5, false) + ' AND dn_key > $3 ' +
+                 'ORDER BY dn_key LIMIT $4',
            values: [String(realm), String(baseKey), String(afterKey || ''),
                     pageSize(limit), suffixLength(baseKey)] };
 }
@@ -400,7 +800,9 @@ function rowOf(row) {
 
 /**
  * The answer to a named query from its result rows: rows in the directory's
- * shape, except `count` (a number) and `hasChild` (a boolean).
+ * shape, except `count` and `realmCount` (a number), `countHolding`
+ * (`{ n, holding }`), `originCounts` (`{ origin: n }`) and `hasChild` (a
+ * boolean).
  *
  * @param name - the query's name
  * @param rows - the result rows
@@ -409,13 +811,35 @@ function rowOf(row) {
 function answerOf(name, rows) {
   log.debug("Entering answerOf().");
   const list = Array.isArray(rows) ? rows : [];
-  if (name === 'count') {
+  if (name === 'count' || name === 'realmCount') {
     log.debug("Leaving answerOf(). A count.");
     return Number((list[0] || {}).n || 0);
+  }
+  if (name === 'countHolding') {
+    log.debug("Leaving answerOf(). Two counts.");
+    return { n: Number((list[0] || {}).n || 0),
+             holding: Number((list[0] || {}).holding || 0) };
+  }
+  if (name === 'originCounts') {
+    // AN OBJECT, NOT AN ARRAY: `directory_codec.openAnswer()` opens the
+    // entries of an array answer and passes anything else through, and
+    // these rows hold no entry.
+    const counted = {};
+    list.forEach(function (row) {
+      counted[String(row.origin)] = Number(row.n || 0);
+    });
+    log.debug("Leaving answerOf(). Counts by origin.");
+    return counted;
   }
   if (name === 'hasChild' || name === 'anyWithAttribute') {
     log.debug("Leaving answerOf(). A yes or a no.");
     return list.length > 0;
+  }
+  if (name === 'keysUnder') {
+    log.debug("Leaving answerOf(). Keys.");
+    return list.map(function (row) {
+      return { key: row.dn_key, dn: row.dn };
+    });
   }
   if (name === 'namesUnder') {
     log.debug("Leaving answerOf(). Names.");
@@ -441,15 +865,23 @@ const QUERIES = {
   byKeys: byKeys,
   byName: byName,
   byUuid: byUuid,
+  withUuids: withUuids,
   byMail: byMail,
   byAttribute: byAttribute,
+  equalUnder: equalUnder,
   page: page,
   count: count,
+  countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  withNames: withNames,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
+  realmPage: realmPage,
+  realmCount: realmCount,
+  originCounts: originCounts,
+  keysUnder: keysUnder,
   residentOnly: residentOnly
 };
 
@@ -475,6 +907,11 @@ function build(name, args) {
 
 module.exports = {
   COLUMNS: COLUMNS,
+  COUNTED_ATTRIBUTES: COUNTED_ATTRIBUTES,
+  ASKED_ATTRIBUTES: ASKED_ATTRIBUTES,
+  ASKED_NAMES: ASKED_NAMES,
+  ASKED_NAMES_HELD: ASKED_NAMES_HELD,
+  GROUP_CLASSES_HELD: GROUP_CLASSES_HELD,
   MAX_PAGE: MAX_PAGE,
   QUERIES: QUERIES,
   build: build,
@@ -483,14 +920,22 @@ module.exports = {
   byKeys: byKeys,
   byName: byName,
   byUuid: byUuid,
+  withUuids: withUuids,
   byMail: byMail,
   byAttribute: byAttribute,
+  equalUnder: equalUnder,
   page: page,
   count: count,
+  countHolding: countHolding,
   hasChild: hasChild,
   withAttribute: withAttribute,
+  withNames: withNames,
   anyWithAttribute: anyWithAttribute,
   classesUnder: classesUnder,
   namesUnder: namesUnder,
+  realmPage: realmPage,
+  realmCount: realmCount,
+  originCounts: originCounts,
+  keysUnder: keysUnder,
   residentOnly: residentOnly
 };

@@ -1384,7 +1384,14 @@ class ApplicationsPage {
               field: 'application', value: row.identifier,
               stateKey: 'applicationOwners', self: '',
               lead: t.html('consoleApplications.owners.lead'),
-              leadRead: t.html('consoleApplications.owners.leadRead') }) },
+              leadRead: t.html('consoleApplications.owners.leadRead') }) +
+            // Closed to its owners (#607).
+            GroupsPage.ownerProtectionSection(t, json.page.ownership, {
+              route: '/admin/applications/owners', id: 'application-owners',
+              kind: 'application', name: row.identifier,
+              back: kit.queryWith(kit.listViewOf('/admin/applications',
+                                                 ctx.query), {}),
+              write: !!ctx.write, state: json.state }) },
         // THE METADATA REFRESH, the only control on this page that reaches off
         // this machine, drawn only for an application that names a URL — see
         // sp_metadata.ts.
@@ -1861,10 +1868,14 @@ class ApplicationsPage {
       // claims and lifetimes sections were drawn above it. Elsewhere the
       // section is the sub-tab's main content and stays at its head.
       const fieldsFirst = group.id === 'oauth' || group.id === 'saml';
+      // THE PASSKEY POLICY CARD (#609), read-only, under Every protocol's
+      // fields: which named passkey policies name this application.
+      const passkeyCard = group.id === 'every'
+        ? ApplicationsPage.applicationPasskeyPolicyCard(row, t) : '';
       return '<div class="subpanel" id="cfg-' + kit.esc(group.id) + '">' +
         (group.id === 'saml' ? samlPanels :
           (fieldsFirst ? fieldForm + sections : sections + fieldForm)) +
-        '</div>';
+        passkeyCard + '</div>';
     }).join('');
     const bar = '<nav class="tabbar subbar" aria-label="' +
       t.html('consoleApplications.a2.tabConfig') + '">' +
@@ -1882,6 +1893,88 @@ class ApplicationsPage {
       'href="#tab-roles">' + t.html('consoleApplications.a2.tabRoles') +
       '</a>' + t.html('consoleApplications.a2.cfgNoteC')) +
       '<div class="subtabs">' + bar + familiesPanel + groupPanels + '</div>';
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PASSKEY POLICY CARD (#609, rcbj's decision 2): on Configuration →
+  // Every protocol, READ-ONLY. Every named passkey policy whose applications
+  // list names this application (its identifier or a client_id), with its
+  // precedence, the one that applies marked — the lowest precedence naming
+  // it, else `default` — each linked to its profile on Directory → Policies,
+  // and a note that a policy selecting by group can still win for a given
+  // person. Nothing here is a control: the relation is the policies'
+  // `stsPasskeySelectApplication`, edited on the Policies page (decision 1).
+  // Drawn from the answer's `page.passkeyPolicies`; an answer from before it
+  // draws nothing.
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the read-only Passkey policy card of an application's Every
+   * protocol sub-tab.
+   *
+   * @param row - the application's view, `page.passkeyPolicies` in it
+   * @param t - the page's translator (#539)
+   * @returns the card as HTML, or '' where the answer carries no member
+   */
+  static applicationPasskeyPolicyCard(row, t) {
+    const pk = row && row.page ? row.page.passkeyPolicies : null;
+    if (!pk || !Array.isArray(pk.policies)) {
+      return '';
+    }
+    const policies = pk.policies;
+    const defaultLink = String(pk.link || '/admin/policies#passkey');
+    const lead = policies.length
+      ? t.html('consoleApplications.passkey.lead',
+               { n: String(policies.length) })
+      : t.html('consoleApplications.passkey.none');
+    const table = !policies.length ? '' :
+      '<table class="pk-policies"><tr><th>' +
+      t.html('consoleApplications.passkey.policy') + '</th><th>' +
+      t.html('consoleApplications.passkey.precedence') + '</th><th>' +
+      t.html('consoleApplications.passkey.namedAs') + '</th><th>' +
+      t.html('consoleApplications.passkey.groups') + '</th><th>' +
+      t.html('consoleApplications.passkey.applies') + '</th></tr>' +
+      policies.map(function (one) {
+        return '<tr' + (one.applies ? ' class="pk-applies"' : '') +
+          '><td><a href="' + kit.esc(one.link || defaultLink) + '">' +
+          kit.esc(one.name) + '</a></td><td>' +
+          kit.esc(String(one.precedence)) + '</td><td>' +
+          kit.codeList([].concat(one.matched || [])) + '</td><td>' +
+          ((one.selectGroups || []).length
+            ? kit.codeList([].concat(one.selectGroups))
+            : '<span class="state-none">—</span>') + '</td><td>' +
+          (one.applies
+            ? '<strong>' + t.html('consoleApplications.passkey.appliesYes') +
+              '</strong>'
+            : '<span class="state-none">' +
+              t.html('consoleApplications.passkey.appliesNo') + '</span>') +
+          '</td></tr>';
+      }).join('') + '</table>';
+    const verdict = policies.length
+      ? t.html('consoleApplications.passkey.winner',
+               { name: String(pk.applies) })
+      : t.html('consoleApplications.passkey.default');
+    // WHERE THE NAME DECIDES (#609): a sign-in names the application by one
+    // of its names — an OAuth client by its client_id — so a name whose
+    // sign-in gets another policy than the one marked is said, one line
+    // each.
+    const byName = pk.appliesBy || {};
+    const differs = Object.keys(byName).filter(function (name) {
+      return byName[name] !== pk.applies;
+    }).map(function (name) {
+      return '<li>' + t.html('consoleApplications.passkey.byName',
+                             { value: name, name: String(byName[name]) }) +
+        '</li>';
+    }).join('');
+    return '<div class="pk-card" id="cfg-every-passkey">' +
+      '<h3>' + t.html('consoleApplications.passkey.heading') + '</h3>' +
+      kit.note(lead) + table +
+      '<p>' + verdict + ' <a href="' + kit.esc(policies.length
+        ? String(policies[0].link || defaultLink) : defaultLink) + '">' +
+      t.html('consoleApplications.passkey.open') + '</a></p>' +
+      (differs ? '<ul>' + differs + '</ul>' : '') +
+      kit.note(t.html('consoleApplications.passkey.groupNote',
+                      { n: String(pk.groupPolicies || 0) })) +
+      '</div>';
   }
 
   /**

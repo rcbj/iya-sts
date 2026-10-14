@@ -419,6 +419,22 @@
     "en": "ce837804788fa2c5",
     "text": "不过期：随主体一起丢弃，在其记录被替换（密码更改或恢复）时丢弃，或在超过上限时作为最近最少使用者被丢弃；从不持久化。"
   },
+  "caches.store.ldap.credential-tallies.title": {
+    "en": "41d340493639d53a",
+    "text": "人员与凭据持有者计数"
+  },
+  "caches.store.ldap.credential-tallies.description": {
+    "en": "b107a5481cd185df",
+    "text": "本领域定义了多少人、多少人持有密码、所有持有凭据属性的人（原始值），以及登录时见过的名称中有多少是这里的人员：即 /admin/users 在不列出整个目录的情况下对整个目录的统计块（#610）。"
+  },
+  "caches.store.ldap.credential-tallies.bound": {
+    "en": "38494f0a059462b2",
+    "text": "结构性：每个领域一份计数和一份名称计数；计数保存的是持有凭据的人，而不是所有人。"
+  },
+  "caches.store.ldap.credential-tallies.lifetime": {
+    "en": "e89a24bb9d11f866",
+    "text": "直到本领域的 ou=users 下有任何写入为止；在把目录作为存储窗口持有的进程中，最多十秒。"
+  },
   "caches.store.ldap.device-index.title": {
     "en": "cb268f1d4224510b",
     "text": "目录设备索引"
@@ -1071,6 +1087,26 @@
     "en": "8d6fb31ae90a70a5",
     "text": "持有且仍然有效的风险状况，因此签发依据它作出决定"
   },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "SAML 1.1 工件"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "SAML 1.1 工件所代表的断言，直到每个工件在 SAML 响应方处被解析一次。以工件的 SHA-256 为键，绝不以工件本身为键。"
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "强制：每个领域 saml11.maxArtifacts 个。达到上限时清除已过期的工件；仍然满的存储会拒绝下一个工件，而不会遗忘一个尚未解析的工件。"
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "直到被解析一次，或直到 saml11.artifactTtlS 过去。"
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "一个已解析的工件"
+  },
   "caches.store.saml11.assertions.title": {
     "en": "8dd27dfb9529ae0c",
     "text": "SAML 1.1 断言"
@@ -1084,12 +1120,32 @@
     "text": "强制：每个领域 saml11.assertionCacheMax 个，丢弃最旧的；指向已丢弃断言的工件会作为未知工件应答。"
   },
   "caches.store.saml11.assertions.lifetime": {
-    "en": "4397e5b8b411e7a8",
-    "text": "不过期：超过 saml11.assertionCacheMax 时丢弃最旧的。"
+    "en": "b163f4a46cb87b30",
+    "text": "直到断言的 NotOnOrAfter，若断言未携带则为 saml11.assertionCacheTtlS；超过 saml11.assertionCacheMax 时丢弃最旧的。"
   },
   "caches.store.saml11.assertions.hitMeaning": {
     "en": "b7e393c624057aea",
     "text": "应答了一个 AssertionIDReference"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "SAML 2.0 工件"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "SAML 2.0 工件所代表的消息，直到每个工件在工件解析服务处被解析一次。以工件的 SHA-256 为键，绝不以工件本身为键。"
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "强制：每个领域 saml2.maxArtifacts 个。达到上限时清除已过期的工件；仍然满的存储会拒绝下一个工件，而不会遗忘一个尚未解析的工件。"
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "直到被解析一次，或直到 saml2.artifactTtlS 过去。"
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "一个已解析的工件"
   },
   "caches.store.scim.digest-nonce-counts.title": {
     "en": "96cc15215936464e",

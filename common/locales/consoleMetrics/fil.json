@@ -4,6 +4,7 @@
   "state.active": "aktibo",
   "tile.calls": "mga tawag sa endpoint",
   "tile.routes": "mga route na tinawag",
+  "tile.healthProbes": "matagumpay na health probe, hindi binibilang bilang tawag",
   "tile.tokensIssued": "mga token na inisyu",
   "tile.tokensRevoked": "mga token na binawi",
   "tile.artifacts": "mga assertion, ticket, credential",

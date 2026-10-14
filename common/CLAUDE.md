@@ -8,6 +8,7 @@ more than one family needs it, not because it felt general.
 |---|---|
 | `compiled_tree.js` | **IS THIS TREE COMPILED (#50, 2026-09-16)?** Lists every `dir/x.ts` with no `x.js` beside it; `server.js` and `tests/run.js` call `refuseUncompiledTree()` first, which exits with `STS-CORE-0093` and says to use the containers. Requires nothing of this service and has no logger, for `config_file.js`'s reason. |
 | `html.ts` | **`Html.esc()`, THE FIRST STATIC UTILITY CLASS (#50).** The HTML escaper converted modules use; unconverted ones keep their own until they are converted. |
+| `heap_collector.ts` | **A FULL GARBAGE COLLECTION OF THE ISOLATE THAT ASKS (#611, 2026-10-13)** — `HeapCollector.collect(log)`, run by Monitoring → Node Health in the front process and, asked over the pool's channel, in each worker thread. `gc` is obtained WITHOUT `--expose-gc` (rcbj: the command line, `process_memory.ts`'s re-exec and the pool's `Worker` flags are untouched): the flag is set for the one `vm.runInNewContext('gc')` that hands it back and CLEARED at once, or every context and worker thread made later would carry a global `gc`; a process started with the flag keeps its own. The figures are `v8.getHeapStatistics()`'s, the isolate's own, and the pause is the call's time. A static utility class over node's `v8` and `vm` only, its logger an argument; it never throws. `tests/heap_collector.js`. |
 | `config_file.js` | The one place that decides what `CONFIG_FILE` means. Requires nothing at all. |
 | `config.js` | Every setting this service has, and the refusal to start without one. The only module `helpers.js` depends on. |
 | `helpers.js` | Log, keys, `signJwt()`, `userFor()`, the cross-protocol parsers. |
@@ -1573,6 +1574,13 @@ false`, a failed channel, or an exit). Four decisions:
 `stats().starts` reports the width of the gate, the number starting and the
 number queued. `tests/request_worker_replacement.js` section 5 holds it.
 
+**#613 (2026-10-13) LOOKED AT STARTING THEM TOGETHER AND KEPT THE GATE**: the
+reason above is memory, and a start still restores the store into its own
+heap. What it did instead was take the work out of each start that grew with
+the data — the identity register pre-fill, a re-publication of every CRL, the
+minted restore held in one piece — which `persistence/CLAUDE.md`, *What a
+start costs*, measures.
+
 **EVERY PROCESS HAS A HEAP LIMIT, AND A DEATH BY MEMORY SAYS WHICH KIND (#341,
 2026-09-29).** Nothing set a V8 heap limit, so each process's heap was sized to
 the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
@@ -1725,6 +1733,122 @@ had been outstanding at one worker, holding the store's pool), a proxied request
 whose client left is released instead of staying queued behind
 `workers.maxSockets`, and the two barrier timeouts log once a second with a
 count. `tests/request_barrier.js` sections 6–9.
+
+**AND AN ANSWER ALREADY COMMITTED WAITED FOR ONE MORE FLUSH TO BE ANNOUNCED
+(#620, 2026-10-14).** Under an LDAPS bulk load on 8081 (two protocol workers,
+postgres, `workers.readYourWrite` on) STS-WORKER-0008 dropped six tickets in
+forty minutes, each answered and unannounced for thirty seconds, and every read
+on the other worker paid the 2,000 ms bound until it went. Since #351 a postgres
+worker answers a write only after its commit, yet the worker's announcement
+still named a ticket only once a LATER flush had finished — so a ticket whose
+write was in the store stayed armed for as long as that flush took or the
+worker's loop was blocked before finishing it. The first drop has its cause in
+the log: worker 2 missed two read barriers (STS-WORKER-0027) and a thread
+reported its loop blocked for 61.7 s (STS-STORE-0068) around it — a
+synchronous walk, which is #616 and #618. Now, where the store holds answers
+for their commit, a finished response and a settled operation are announced
+IN THE SAME TICK as the answer (`common/commit_announcer.ts`,
+`announceAnswered()`, with a truthful `wrote` so a released reader is still
+synced); a response cut off before `finish`, a handler that threw, and every
+answer on ldif or memory still wait for the flush. The flush-gated announcement
+runs beside it for the rows no answer is held for (the call log's success row,
+a search's audit rows) — never the barrier's business. **STS-WORKER-0008 now
+names each ticket it drops** — method and path or operation kind, worker, ages,
+and whether that worker has announced anything since: nothing means STALLED
+or a slow flush, something means the announcement was LOST.
+`tests/request_ticket_announce.js`.
+
+**AND A REQUEST WHOSE CLIENT LEFT WHILE IT WAITED WAS SENT TO A WORKER AS AN
+EMPTY CONNECTION (#624, 2026-10-14).** The first two LOST tickets that line
+named, under the 1M → 10M LDAP load on 8081, were both `GET /healthcheck` on
+worker 4: dispatched, then ANSWERED 93 to 96 s after they were sent, with 6 and
+2579 commits announced since. The log gives the sequence: the probe took its
+ticket, the read barrier held it until worker 4 missed the round
+(STS-WORKER-0027, at the exact second each was sent), and the compose
+healthcheck's 5 s timeout had closed it by then. `proxy()` hangs its
+client-gone handlers only when it is called, so it missed the `close`; and a
+destroyed request never emits `end`, so `upstream.end()` never ran and node
+never sent even the headers. The worker's HTTP parser answered the empty
+connection 408 at `headersTimeout` (70 s, noticed on node's 30 s check), the
+front process took the 408 as an answer and armed the ticket, and the worker —
+which never saw a request, so never ran `finish` or `close` — never named it.
+**So the cause was not the flush-gated announcement** (it is bounded by the
+worker's next two flushes, `persistence.flush()`'s one queued flush); the
+announcement was never owed. `proxy()` now refuses to send a request whose
+response is already destroyed and drops its ticket (`ticketAbandoned()`'s
+argument: nobody is waiting, so nobody is owed it).
+
+Two smaller changes ride with it. **`/healthcheck` is answered by the front
+process with no barrier at all** (`ANSWERED_AT_ONCE`): it is documented as
+liveness only and reads no state, so neither the ticket wait (2,000 ms), the
+worker's barrier (5,000 ms), a `workers.maxSockets` queue nor a blocked worker
+may hold it past a probe's timeout; it says nothing about the workers, by
+design (the cluster barrier, which is not the pool's, still runs). **And a
+worker's response whose `end()` ran before its peer left is announced at once**
+(`CommitAnnouncer.watchResponse()`): `holdUntilCommitted()` calls the real
+`end()` only after the commit, so `writableEnded` means everything the answer
+was held for is in the store; only one closed BEFORE its `end()` still waits
+for the flush, because its handler may yet write. `tests/request_client_gone.js`.
+
+**AND A DISPATCHED LDAP WRITE PAID A CHANGE-LOG PULL IT DID NOT NEED (#626,
+2026-10-14).** `runOperation()` sent every operation through the barrier, so
+under a bulk add from several connections over several workers every add found
+another worker ahead and its worker ran `syncNow()` before the handler. What
+the others wrote was almost always PEOPLE — WINDOWED directory rows, which a
+windowed worker reads from the store whenever it does not hold them, and which
+since #351 are committed before they are answered. The pull mattered only for
+a key the worker HELD (an LRU copy, an absence remembered) and for everything
+that is not a windowed row at all (groups, policies, roles, realms, settings,
+key sets, minted sessions), which a worker learns of only from the pull. So:
+
+* **Every announcement says what it committed** (`commit_announcer.ts`,
+  `windowedKeys`): the realm and key of each windowed directory row, when that
+  is all bar `minted-own` tallies; absent is SHARED. The counts by kind are the
+  driver's, moved at the same COMMIT as `written`
+  (`persistence_postgres.js` `committedMark()` / `committedSince()`, the last
+  4,096 directory keys kept); `persistence.committedChangesSince()` asks the
+  window which keys are windowed. The front process classifies its own commits
+  the same way (`localWriteKinds()`); ldif, memory and the tiered driver keep
+  no counts, so every commit there is shared.
+* **The front process keeps the keys** per announcement (`keyLog`, bounded at
+  4,096 keys, a floor that rises over what it drops) and the generation of the
+  last shared write (`lastSharedGeneration`).
+* **A write in `BARRIER_FREE_WRITES`** (`ldap.add`, `ldap.modify`, `ldap.del`,
+  `ldap.modifyDN`) sent to a worker behind only on windowed rows — no shared
+  write since it last synced, the log reaching back to it, at most 512 keys —
+  skips the sync round and carries `staleKeys`: the keys every OTHER process
+  wrote since it last synced or was last handed keys (`entry.keysThrough`).
+  The worker applies them before the handler (`persistence.applyStaleKeys()`:
+  one `byKeys` per realm, then the pull's own windowed applier key for key —
+  forget, or `markStale()` when busy, and `forgetEntry()` tells the indexes),
+  and pulls after all where it cannot (no window, a resident key, an
+  unreadable store, STS-STORE-0081). **Every later operation on that worker
+  waits for the keys** (`request_worker.ts`, `applyingStaleKeys`), because the
+  front counts them applied from the moment it sends them. The worker is NOT
+  counted synced: an HTTP request there is not gated behind the keys.
+* **Unchanged:** a read (search, compare, bind) takes the barrier; the ticket
+  wait still runs first for a write (a ticket answered and not yet announced
+  is a write whose kind nobody knows — an LDAP operation's announcement goes
+  before its answer on one channel, so under an LDAP load nothing blocks).
+
+**Why no client can see a different answer:** after the keys are applied the
+worker holds, for every row this node announced up to the generation the
+write was sent at, what the pull would have left it — a held windowed copy
+gone or marked stale exactly as the pull marks it, everything else already
+synced. What the pull would add is another NODE's rows, which the generation
+never covered (the cluster barrier is `cluster/CLAUDE.md`'s), and `minted-own`
+tallies, which the barrier never waited for. `claimingTheAdd()` still holds
+the DN and the names across processes. `stats().writes` (`current` / `keyed`
+/ `synced`, `keysSent`, the key log), `stats().syncRounds` and
+`stats().tickets.waited` count it. `tests/request_write_barrier.js`: stub
+workers count the syncs (an add with another worker ahead asks for none and
+waits on no ticket, a search still syncs; a shared write, too many keys or a
+lost floor send the add through the barrier); a windowed child shows each
+hazard with nothing applied and the barrier's answer once the keys are
+(a parent another worker created found, a duplicate by DN or by a name given
+to an existing entry refused, a delete or modify of a deleted entry and a
+rename onto a created DN refused); the driver's counts and the announcement
+are driven too. Six mutants, all caught.
 
 **THE WORKERS HAD THE OTHER HALF OF IT, AND SO DID EVERY POSTGRES PROCESS.**
 `persistence.flush()` answered a caller arriving during a flush with a waiter of
@@ -1953,6 +2077,17 @@ nothing outside the process can read (the heap is in no `/proc` file). Node
 Health's paths are in
 `NEVER_DISPATCHED` for the same reason as Worker Pools'.
 
+**AND A WORKER COLLECTS ITS OWN GARBAGE WHEN ASKED (#611).**
+`collectWorkerGarbage(ids, timeoutMs)` sends `{ collectGarbage, id }` to the
+ready workers named (all, for `null`) over the same channel, and each answers
+`{ collectGarbage, id, pid, collection }` from `request_worker.ts`'s
+`collectGarbage()`: what `heap_collector.ts` measured in that worker's own
+isolate, which nothing else can collect. The answer is `{ asked, answers }`,
+so a caller can tell a worker that was asked and did not answer from one that
+was never asked. Node Health's Collect buttons are the only caller
+(`admin-ui/CLAUDE.md`); `/admin-api/node-health/collect-garbage` is under
+the page's API path, so `NEVER_DISPATCHED` already holds it.
+
 ### A RATE-LIMIT COUNT IS WRITTEN DOWN EVERY TIME IT MOVES (2026-09-14)
 
 `websecurity.ts`'s buckets are a persisted `sharedMap()`, and `attempt()` set a
@@ -2141,7 +2276,8 @@ when the path does not open with the prefix — so the same middleware enters
 it, a request worker derives it by the same rule from the same `originalUrl`,
 and `unknownRealmPath()` catches up on it the same way. A realm may not be
 called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
-from the data leaf `enrollment_profiles.ts`, which realms.js may require and
+from the data leaf `enrollment_profiles.js` — JavaScript because realms.js is
+in the parent's load-time closure (#300) — which realms.js may require and
 `cert_enrollment.ts` could not be), and a realm that already was is never
 read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
 and the "named once" refusal. **A third way needs the argument made again**,
@@ -2688,6 +2824,70 @@ by having its markup rewritten. Without that, pressing "Try it" inside a realm
 would call the DEFAULT realm's API: the page would look right, the call would
 succeed, and it would have changed the wrong service. Another page that builds
 URLs in a script would need the same treatment and would not get it for free.
+
+## Disabled debug lines: one comparison, and a guard where the MESSAGE costs (#627, 2026-10-14)
+
+**The root style rule makes every named function log its entry and exit at
+debug, and every appconfig file runs at info**, so nearly all of those calls
+write nothing. They were not free: bunyan's emitter (`mkLogEmitter()`) copies
+its arguments into a new array and fires the level's dtrace probe (the stub
+on Linux) BEFORE it compares the level. The live all-thread profiles of an
+LDAP bulk load put `(anon)@lib/bunyan.js:1013` at 250–1040 ms per 30 s under
+`realmFor`, `isUnder`, `settingFor`, `partitionId`, the keystore's
+`sealed()`/`dekFor()`, the applications register and the minted applier.
+
+**The mechanism is in `config.js`, just after its `require('bunyan')`, and it
+is two lines**: `quietBelowLevel()` replaces `debug` and `trace` ON BUNYAN'S
+SHARED PROTOTYPE with a wrapper that returns at once when `this._level` is
+above the method's level and there are arguments, and otherwise hands the
+call to bunyan's own emitter unchanged. Why each property holds:
+
+* **Every logger, no call-site edit.** A method is looked up on the prototype
+  at each call, so the shared `sts` logger, the hundred-odd module loggers,
+  child loggers, the vendored and krb5 codec loggers, and a logger made before
+  `config.js` loaded are all covered. A request worker is its own isolate and
+  loads `config.js` too.
+* **A runtime level change works both ways**, because the level is read at the
+  call: `applyLogLevel()`, `STS_LOG_LEVEL`, a console write of
+  `global.logLevel`. A child bunyan gave its own level is judged by it.
+* **`log.debug()` with no arguments is still bunyan's "is debug enabled?"**,
+  answering bunyan's boolean, because a call without arguments is not
+  intercepted. So is a call whose `this` is not a logger (bunyan's warning).
+* **Installed once**: the wrapper carries `quietBelowLevel` and
+  `bunyanEmitter` (bunyan's own function), and a second load of `config.js`
+  over the same bunyan (a test clearing the require cache) leaves it alone.
+* **Why `config.js`**: it is the first module every process loads that holds
+  bunyan, and it is already in the parent project's Kerberos COPY closure
+  (`kerberos/CLAUDE.md`), so no new require and no new COPY line.
+* **Given up**: a real dtrace consumer would not see probes for lines below
+  the level. Linux has none.
+
+**What it cannot do is skip the caller's ARGUMENT**, which JavaScript evaluates
+before entering any function. `'Entering f(). ' + list.length + ' names.'` or
+a `JSON.stringify()` is still built and thrown away. **On a path the profiles
+show hot, such a call is guarded** with bunyan's own check:
+`if (log.debug()) { log.debug('… ' + JSON.stringify(x)); }`. Only there,
+and only where the argument costs something: a constant string, or one
+concatenated with a name already in hand, is left as it is, because the
+wrapper already makes it nearly free and a guard on every line would bury
+the rule the pairs exist for. The `Entering`/`Leaving` pairs are never
+removed: the rule is unchanged, only its cost. Where a pair's own line
+carries a computed message it is guarded in place, and stays where the rule
+puts it.
+
+The sites guarded on 2026-10-14, each because the profiles (or the issue's
+list of hot paths) put it on a per-operation path and its argument allocates:
+`ldap_server.js`'s `ldapAddNow()` and `attributeSnapshot()` (an
+`Object.keys()` per add), `request_pool.js`'s `leastLoaded()` (a `map` and
+`join` over the pool per routed request) and `workerFor()` (a `split` per
+routed request), `admin_rbac.ts`'s `rolesOf()` (a `join` per console and API
+request) and `admin_stats.js`'s `buildUserRowsResolved()` (a second pass
+over every row). The remaining computed messages on those paths are a
+`.length` or a name already in hand, which costs a concatenation and nothing
+else.
+
+`tests/debug_level_cost.js` holds all of it, counting entries into bunyan's
+emitter through a getter on a logger's `_emit` (the emitter's first read).
 
 ## `config.js` is the only place a setting is read
 
@@ -4447,7 +4647,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    no descendants, into a page explaining itself in two directions. The forward
    direction is what `/admin/delegation` and its map are for.
 
-## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au
+## `scope_policy.ts`: which scopes a client may be issued (#110, 2026-09-22) — rule 3au, and rule 3bt
 
 **THE RULES ARE THE ISSUANCE POLICY'S SINCE #305 (part D of #88).** This file
 gathers the FACTS about each requested scope — protected, declared,
@@ -5235,7 +5435,7 @@ The consequence for a reader is the sentence `/admin/ldap/roles` and
 state of a service refusing nobody**, not a sign that the feature failed to
 load.
 
-### A role authorizes permissions (#303, part B of #88, 2026-09-27)
+### 3bq. A role authorizes permissions (#303, part B of #88, 2026-09-27) — and rule 3bs's facts (#304)
 
 A THIRD relation, beside membership and requirement, stored on the ROLE entry
 because rcbj decided it lives there: `rolePermission` names what a holder may
@@ -5294,6 +5494,8 @@ ordinary role (any member kind, edited on `/admin/roles`) and is seeded EMPTY
 `sts-management-api` is not one — the separation #164 decision 2 made.
 `device:compliance` is gated like `admin:*`, at issuance and at
 `/admin-api`'s gate (held ∩ carried). No role is read off a scope now.
+
+#### A role conferred by a client (#454, 2026-10-06) — rule 3cc
 
 **A THIRD WAY OF HOLDING A ROLE: CONFERRED BY A CLIENT (#454, 2026-10-06).**
 A person holds a role as a member (or, for the console roles, through the
@@ -6240,10 +6442,11 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   replaces is SUPERSEDED: it opens, nothing new is sealed under it.
 * **RE-SEALING NEEDS NO KNOWLEDGE OF THE VALUE**: a DEK records its scope,
   realm and class, so `reseal(cipher)` opens under the old DEK and seals under
-  that slot's current one. The store does the walk (`countSealed()` and
+  that slot's current one. The store finds the rows (`countSealed()` and
   `resealSealed()` in `persistence_postgres.js`, a compare-and-set UPDATE per
   row with a change-log row, over `sts_keys`, `sts_minted`,
-  `sts_ldap_entries` and `sts_cluster_secrets`); `resealOwnRows()` rewrites
+  `sts_ldap_entries` and `sts_cluster_secrets` — the directory by its
+  data-key index since #623, below); `resealOwnRows()` rewrites
   this file's own key and PKI rows. **The process running the pass applies the
   directory rows it re-sealed to its own copy** (`persistence.js`'s hook,
   through `applyDirectoryChange()`): the applier skips a process's own change
@@ -6271,6 +6474,32 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   is kept — nothing a digest names outlives the process there.
 * **The settings are per process** (`perProcess`): the jobs run once for the
   service, and a realm cannot carry them.
+* **A PASS WITH NOTHING TO DO READS NOTHING (#623).** On 8081, at 1.5M
+  entries, every hourly pass walked the whole directory twice (re-seal, then
+  count), opening every row on the front process — about 90 s of its thread
+  — for the week after a rotation while the replaced keys waited out the
+  retire period, and re-sealed nothing. Two changes:
+  * `reencrypt()` SKIPS the re-seal and the count when every superseded key's
+    last recorded count (`supersededDeks()` carries `values` and
+    `countedAt`) is 0, that count was taken AFTER the key was superseded
+    (before, the key was still sealing), and no key is due to be destroyed.
+    A key that IS due is re-sealed and counted again in the pass that would
+    destroy it — the #391 rule, a key destroyed only on a zero taken in that
+    pass, is untouched, and a value written back under the key after its
+    zero (a stale copy flushed by some process) is moved then.
+  * THE DIRECTORY HAS A DATA-KEY INDEX (schema version 17,
+    `persistence/CLAUDE.md`): every writer records the keys an entry holds
+    values under in `sts_ldap_entries.dek_keys` (`directory_codec.js`'s
+    `dekKeysOf()`: the blob's key and each inner value's), triggers keep
+    `sts_ldap_dek_counts`, a re-seal reads only `dek_keys ?| <ids>`, and a
+    count reads the counters. Entries written before the column read NULL —
+    keys NOT KNOWN — and both jobs first catch the index up
+    (`store.index()`, the driver's `indexSealed()`: a page at a time through
+    a partial index, opened, yielding between pages, for at most
+    `INDEX_BUDGET_MS`, 10 s, per pass). Until it is complete the store
+    REFUSES a count (`STS-STORE-0080`) rather than answer it short, so the
+    re-encryption job re-seals what the index finds and destroys nothing,
+    and the count job records nothing.
 
 ### WHAT THE CONSOLE AND THE API SHOW AND DO (#391 P5)
 
@@ -6284,7 +6513,10 @@ forms go through one `dataKeysAction()` with FOUR acts (`ACTIONS`):
 * **A VALUE COUNT IS A JOB, NEVER A PAGE VIEW.** `countSealed()` is a pattern
   scan per key; `countAllSealed()` (postgres) is ONE pass per table that pulls
   every DEK id out with `regexp_matches()` and groups — a count of VALUES, so
-  a row holding two counts two. `keys.data-key-count` runs it daily and by
+  a row holding two counts two. The directory's part of both is a read of
+  `sts_ldap_dek_counts` since #623, never a walk; the other tables' LIKE and
+  regexp scans are still linear in those tables (`sts_minted` above all),
+  which is what the re-encryption pass's skip spares the hourly run. `keys.data-key-count` runs it daily and by
   hand and records each count ON THE KEY (`keystore.recordCounts()`: `values`
   and `countedAt` on the record and its row, merged newest-count-wins in
   `unionDekRows()` and `adoptDekRow()`), so every node draws the same figure.
@@ -6958,7 +7190,11 @@ anything rotated goes on its issuer's list as `superseded` automatically.
 **From the root `CLAUDE.md`'s index of things this service does not do:** the
 lists and responders are served at `/pki/crl/{scope}/{ca}`,
 `/pki/ocsp/{scope}/{ca}` and `/pki/ca/{scope}/{ca}.cer` with an index at
-`/pki/revocation`, published into the directory under `ou=crl`, and named inside
+`/pki/revocation`, published into the directory under `ou=crl` (by the
+front process once its listener is bound — `publishStartupCrls()` from
+`server.js`'s `announce()`, since #617; it was inside `pki.start()`, 4 s of
+8081's way to the socket — and by the `pki.crl-directory-refresh` job; not by
+a request worker, since #613: `pki.js`'s `start()` argues both), and named inside
 every certificate this service issues in TWO SCHEMES (http, ldap — it was three,
 with ldaps, until 2026-09-13; `pki_revocation.js`'s `httpBase()` argues it). A
 pane on `/admin/pki` revokes by hand with any of the nine reasons RFC 5280
@@ -8236,6 +8472,13 @@ under `/admin/users`.
 produce** — a person who opens the page and never scans it would be locked out
 by a form they abandoned.
 
+**`credentials.pendingBackupCodes` is keyed by `credentialDigest(handle)`
+since #614** (`pendingCodesKey()`): the handle is what lets a form confirm the
+set and is only looked up and spent. The CODES stay whole in the record — the
+page shows them again until they are confirmed, and they are scrypt-hashed
+then. `pendingTotp` and `pendingKeys` are keyed by a username, which is not a
+credential; the TOTP seed and the WebAuthn options in them are re-drawn.
+
 **The three pending stores are persisted since 2026-09-14 (#46)** —
 `credentials.pendingTotp`, `credentials.pendingBackupCodes` and
 `credentials.pendingKeys`. They were deliberately undeclared, on the argument
@@ -8313,6 +8556,31 @@ hourly `signing.retire` ran during it). The displaced serial is now kept in
 `issuedKeyPairs` with `pki_merge.js`'s `displacedRecord()`, the record a
 cluster merge already keeps: `good` until it expires, `revoked` once something
 revokes it, never unknown. `tests/signing_rotation.js` section J.
+
+### And its `x5u` keeps answering until it expires (2026-10-13, #318)
+
+#185 kept the serial and not the certificate, so `/pki/chain/{scope}/{sha256}.pem`
+— the `x5u` every still-valid token signed under it names — answered 404
+(`STS-PKI-0162`) while OCSP answered `good` for the same certificate. Seen on
+testidp: the realm's Issuing CA was re-issued, the slot re-certified over the
+SAME key, and every token from the previous ten minutes named a chain nobody
+served. For the `jose` use case `displacedRecord()` now also keeps
+`thumbprint`, `certificatePem` and the `chainPem` it was issued with, and
+`jose_certificate_header.js`'s `chainPemFor()` falls back to those (via
+`pki.displacedCertificatesFor()`) after the current certificates:
+
+* **The chain it was issued with, never re-rooted** onto the slot's current
+  one; a revoked one is still served, and its OCSP status says so.
+* **Until `notAfter`**, when the register drops the record anyway.
+* **Bounded**: `pki_merge.trimPublished()` leaves PEMs on the newest
+  `PUBLISHED_PER_SLOT` (8) of a slot; an older record keeps its serial only.
+  A suite that rebuilds the CAs repeatedly would otherwise grow the row by a
+  chain per slot per rebuild for a year. Both writers in `pki.js` and the
+  cluster merge trim, and the merge keeps the copy that still has the PEMs.
+* **Not `xml`**: an XML signature carries its certificate in KeyInfo, so
+  nothing addresses one later.
+
+`tests/pki_rebuild_recertifies.js` section D.
 
 ### And it records only what the CURRENT authority signed (2026-09-15, #46)
 
@@ -9097,6 +9365,17 @@ session's `derivedFromRealm`, where its adopted children live (`derivedFrom()`'s
 `alsoRealm`). That makes the recursion two levels deep for the first time.
 `portal/CLAUDE.md` argues the rest. `authn.adoptRelyingPartySession()` is the
 function, and the portal is its only caller.
+
+**WHAT IT KEEPS OF A CREDENTIAL (#614, 2026-10-13).** A flow in progress
+(`oidc_rp.flows`) is keyed by the DIGEST of its `state`
+(`crypto.credentialDigest()`), hashed as it is minted and as the callback
+presents it, so no row holds a state; the PKCE verifier and the nonce stay on
+the row, the first because it is sent to the token endpoint. `rpTokens` keeps
+its access token WHOLE: the issue asked whether it is only compared (the
+renewal's race check) so that a digest would do, and it is not — the embedded
+debugger, the one surface still a relying party here, verifies it on every
+request at its gate. The refresh token is redeemed and the ID Token re-read,
+so neither can be a digest.
 
 ## `version.js`: M.N.O, and why the build number is not computed at startup (2026-09-06)
 
@@ -10772,6 +11051,14 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   what `tests/no_periodic_timers.js` holds.
 - **A SENT message loses its body.** A dead letter keeps its body for the
   retry, and a captured one keeps it because the body is all it is for.
+  **#614 asked whether a dead letter should, and the answer is yes**: the
+  body holds the reset and verification links and codes, which is why a
+  sent row drops it, but `retry()` re-sends exactly that body and a row
+  without one is refused (`STS-MAIL-0018`, "kept no body"). So a dead
+  letter keeps it until it is retried — after which the retry's own `sent`
+  drops it — or until retention removes the row (`mail.retentionS`,
+  `mail.maxRows`), which is the only way a dead letter is dropped. The
+  links it carries expire on their own lifetimes either way.
 
 **Three rules keep it from being an open relay or a phishing kit:**
 
@@ -11047,6 +11334,16 @@ never a host, port or pid. The Cluster page's row has a `prepare` step
 every peer before the synchronous status block draws; a cell that does not
 answer is drawn unreachable (`STS-CELL-0194`), never dropped.
 
+**THE OUTBOUND SCIM CLIENT'S OPERATIONS (#553)**, registered by
+`scim/scim_client.ts`'s `registerCellOps()` (`scim/CLAUDE.md`, *The outbound
+SCIM client across cells*):
+
+| Operation | Asked by | Answers |
+|---|---|---|
+| `scim-client-group-share` | a group's OWNER cell before it deletes the group, or PUTs the merged membership to a provider without PATCH; and, with `recheck`, another cell telling the owner its share changed | this cell's share of the group at that client — the SERVICE PROVIDER'S opaque ids of its pushed, linked members, never an attribute; with `recheck` the owner queues the group |
+| `scim-client-summary` | the cell drawing Protocols → SCIM → Clients, `GET /admin-api/scim/clients` or `GET /admin-api/scim` (`acrossCells()`), each call bounded by the channel's timeout | every client's counts, pause and last reconciliation in this cell; for the one client named, its queued, retrying and dead deliveries ONLY where `releaseDecision()` (purpose `directory-list`) releases this cell's residents to the asking cell — they name residents. Unanswered: drawn unreachable (`STS-SCIMC-0034`) |
+| `scim-client-act` | `act()`, for `retry-delivery`, `retry-dead`, `purge-dead`, `reconcile` and `deliver-now` with a `cell` naming another cell, or without one (every cell) | the act done HERE (`local`, so it never fans out again), its error code spelt out as `code`, since a Symbol does not cross JSON |
+
 | Module | What it is |
 |---|---|
 | `cells.ts` | The map: this cell, its jurisdiction, the peers (`cells.peers`, JSON), where a new person is homed (`homeFor()`, D1), what a realm lists as permitted transfers, and the startup check (STS-CELL-0001). A leaf: config, error codes, a logger. |
@@ -11091,7 +11388,7 @@ edge of every request a cell relays.
 |---|---|---|---|
 | `holdDecision()` | the handoff of #98 D9: may a session, and the credential-free projection of the entry it stands on, be HELD by the serving cell? | `hold-session` | not a refusal: the session stays at home and every request is relayed there (D4's "strict, with relay") |
 | `serveDecision()` | the edge: may a request about the person be served here at all, even by relaying? | `serve-request` | a REFUSAL, marked `STS-CELL-0183` on the answer for the caller's response — the realm's hard geofence |
-| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer |
+| `releaseDecision()` | the cell that HOLDS the people, before it answers a reader at another cell (#98 D11: another cell's residents on the console, `/admin-api` with `?cell=`) — and, purpose `scim-provision` (#553), a person's home cell before it pushes them to an outbound SCIM client's service provider | `release-attributes` | the residents are withheld, `STS-CELL-0184` on the answer; for `scim-provision` the person is OUT OF SCOPE (`STS-SCIMC-0031`) |
 
 **NOTHING HERE DECIDES.** rcbj's rule — every authorization decision is a
 rule of the issuance policy, and a subsystem sends facts — is followed the
@@ -11129,6 +11426,19 @@ does not have is refused whole — nothing held, served or released,
 resident where they are and there is no transfer. A home cell the service
 does NOT HAVE has jurisdiction `''`, and no rule reads `''` as anybody's home
 or as listed — `*>us` loosens the default for every KNOWN home only.
+
+**A SERVICE PROVIDER IS IN NO CELL (#553).** The outbound SCIM client
+(`scim/scim_client.ts`) sends a person's data to a third party, which is in a
+JURISDICTION its client declares (`scimClientJurisdiction` on the
+application entry) and in no cell. So `releaseDecision()` takes
+`servingJurisdiction` in place of `servingCell` — the serving side of the
+question outright — and a `subject`, the one person (`urn:uuid:<entryUUID>`),
+so a realm's own policy may decide per person; the purpose is
+`scim-provision`. Nothing else changed: the built-in rule reads the purpose
+as it reads any other (it releases on the same jurisdiction or a listed
+transfer), an empty jurisdiction is unknown and never listed, and the
+`cells.permittedTransfers` list a realm writes for its cells — `ca>eu` — is
+the list that lets a person go to an `eu` service provider.
 
 **Single-cell mode asks nothing**: with `cells.id` empty all three answer
 allowed (and nothing relayed) without reaching the gate, so the service is
@@ -11207,6 +11517,57 @@ ask it about every certificate of the chain: `device_attestation.ts`'s
   `credentials.untrustKeyAttestation()` with the same signals. The device's
   STATUS is never touched: a leaked batch key says the attestation proves
   nothing, not that this device was compromised.
+
+### The recheck reads its holders, without blocking, when something moved (#615, 2026-10-13)
+
+**On 8081 (about 191,000 people, a windowed directory) the 17:00 recheck
+stopped every listener for minutes**: `credentials.androidAttestedCredentials()`
+was `persons()` and a `keysOf()` per person — a synchronous store read each,
+on the serving front process — to find one person holding a security key.
+rcbj's decision was all five of #615's points; the module's header has them,
+and what a maintainer must not undo is this:
+
+* **THE MARKERS ARE DERIVED, NEVER WRITTEN BY HAND.**
+  `stsAndroidAttestedCredential` (a person: the credential ids) is written by
+  `ldap_server.js`'s `deriveAndroidMarker()` on every write of
+  `stsWebauthnCredential`, from `credentials.androidMarkerOf()` — so the rule
+  of what is recheckable stays in `credentials.ts`, a removal or an untrusting
+  takes it off, and a socket write of either is refused
+  (`CREDENTIAL_ATTRIBUTE_DOORS`). `stsDeviceAndroidKey` (a device: the key
+  ids) is derived in `devices.ts`'s `write()`, beside the thumbprints. Both
+  merge by value (`directory_merge.js`'s `MULTI`), as the keys do.
+* **THE MARKER DECIDES WHO IS READ, NEVER WHAT IS RECHECKED.** The holders
+  come back raw from the directory's `holdersAsync()` and their keys are
+  interpreted by `keysFromValues()`/`fromEntry()` and
+  `isAndroidRecheckable()`, the census's division of labour.
+* **ASYNCHRONOUS, ON THE READ POOL.** `holdersAsync()` is
+  `DirectoryWindow.holdersAsync()` in a windowed process — `withAttribute()`
+  (the GIN index on `attr_names`) a page at a time through the bridge's
+  `queryAsync()`, which `persistence.js` attaches as the driver's
+  `directoryQuery()`, each row taken as answered rather than re-read by key —
+  and a sliced walk of the in-memory Map otherwise. The chains are asked about
+  in batches of 50 with a `setImmediate` and `stillOwner()` between them.
+* **SKIPPED WHEN NOTHING MOVED.** `devices.androidRecheck` (persisted, per
+  realm, cell tier) holds `covered` — the list version, the registration mark
+  and the backfill version of the last COMPLETE recheck — and `registered`,
+  the mark `credentials.addKey()` and the device register's `create()` /
+  `addKey()` move when an Android-attested key is registered
+  (`noteRegistration()`). A scheduled run skips a realm where neither moved;
+  Run now and a list's activation (`requestRecheck()`, a manual trigger)
+  always run; no list or a stale one rechecks nothing and forgets the
+  version, so the first current list rechecks everything.
+* **THE BACKFILL** runs once per realm (`MARKER_BACKFILL`) before the first
+  recheck, over the holders of the keys themselves, re-reading each person
+  or device whose marker is wrong in the same tick as the rewrite, so a
+  signature counter moved by a sign-in in between is not written back.
+* **A DIRECTORY WITHOUT `holdersAsync()`** (a test's stub) gets the old walks;
+  the run's summary says `WALKED`.
+
+`tests/devices_android_recheck.js` counts it — 3,000 people, 6 holders: the
+walk asks `persons()` once and reads 3,006 keys; the holder path asks
+`persons()` never and reads one holder query of 6 rows — and holds the same
+downgrades, the skip and the backfill. `tests/no_full_directory_walk_in_jobs.js`
+holds the audit of every other job (`cluster/CLAUDE.md`).
 
 ## 3ce. `secret_destinations.ts` and `secrets.js`'s `pushSecret()`: WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06)
 
@@ -11331,7 +11692,7 @@ this definition: it must answer an application to read relationships from.
 The two doors are argued in `oauth-oidc/CLAUDE.md` and `gnap/CLAUDE.md`;
 `tests/registered_targets.js` holds it in both modes.
 
-## Hosted applications and the listeners they are on: `hosted_applications.js`, `listener_map.js` (#472, 2026-10-07)
+## 3cg. Hosted applications and the listeners they are on: `hosted_applications.js`, `listener_map.js` (#472, 2026-10-07)
 
 rcbj: "I want to be able to define custom listeners and map the hosted
 applications to specific listeners ... I want to be able to advertise services
@@ -11432,6 +11793,13 @@ second followed `webauthn.residentKey`, which defaulted to `discouraged`.
     The row's default is the same (answer 2), so both buttons make a
     discoverable credential unless a realm lowers it.
   - Per realm only (answer 3); named policies are #535.
+  - `requireUsernameless` (#608, rcbj 2026-10-13), off: the screen asks for
+    no username and refuses one (`STS-AUTHN-0333`). `requiresUsernameless()`
+    answers the ROWS (it needs `allowUsernameless`, and `validate()` refuses
+    the one without the other); whether a sign-in is held to it is
+    `authn.ts`'s `usernamelessRequired()`, because the application's
+    mechanisms and the hosted surfaces are not this leaf's to know — see
+    `authn/CLAUDE.md`.
 * **What it replaced.** `webauthn.usernameless` and `webauthn.residentKey`
   are retired with no shim. `REPLACED_SETTINGS` refuses a start that names
   either, and its message now names a policy row where a replacement is not
@@ -12091,3 +12459,76 @@ codes only they raised (`STS-SAML-0021`, `0022`, `0042`, `0043`,
 `STS-WSFED-0016`) are retired. The Provider Commands mock
 (`oauth-oidc/command_mock_rp.ts`) went in #591's fifth phase (#596), to the
 test peer's `peer_commands.js`.
+
+
+## 3cn. `ownership.ts`: WHO OWNS WHAT, AND WHAT AN OWNER MAY NOT TOUCH (#607, 2026-10-13)
+
+rcbj: a person may update the roles, groups, service accounts and
+applications they own from the user portal; the portal reaches the
+management API with `owner:read` / `owner:write`; and the check that the
+person is an owner of the object is XACML policy, in ONE place. The policy
+side is `xacml/CLAUDE.md` (the access-control document's second rule), the
+gate's side `mgmt-api/CLAUDE.md` (*OWNERS*), the portal's `portal/CLAUDE.md`.
+What lives here is the FACTS that rule decides on, and the two roles.
+
+**AN OWNER IS NAMED, BY DN.** A role's and a group's `owner` (#604, #603), a
+service account's `stsServiceAccountOwner` (#600), an application's
+`appOwner` (#604) — each value the DN of a person or a group of the realm,
+every door resolving a username or a cn first. A person owns an object when a
+value names them or a group they are in (direct or through `memberOf`,
+`groupsOfUser()`); DNs are compared through `dnKey()` (case, and the spaces
+around a comma, do not matter).
+
+**`ownership.ts` ANSWERS, AND NEVER DECIDES.** `identityOf()` (the person's
+DN and their groups' — the policy's `owner-identity`), `objectOf()` (an
+object's DN, its owner values, `protected` with `reasons`, `marked` — the
+policy's `object-owner` and `object-protected`), `ownsAnything()` (the owner
+roles), `protectionOf()`, and the administrator's mark (`setProtected()`). A
+"may" here would be the `if` rcbj's directive removes; `xacml/xacml_pip.ts`
+asks these for the PDP, and an override of `access-control` may read them
+differently. A library (rule 3): every register is reached lazily.
+
+**OWNER_READ AND OWNER_WRITE ARE COMPUTED** (rcbj's decision 2), from the four
+owner attributes when a decision is made: `roles.js`'s ninth and tenth
+built-ins, and the first that AUTHORIZE a permission (`owner:read`,
+`owner:write` — `OWNER_ROLES`). `holds()` reads `owns` off the context, which
+the leaf cannot work out, so the roles claim, the issuance PEP and the access
+PEP's own `rolesOf()` never carry them; `role_permissions.ts`'s `heldRoles()`
+asks `ownsAnything()` for a named, authenticated person and lists them with
+the configured roles, because what can authorize is what that list is. So the
+narrowing at issuance and held ∩ carried at `/admin-api` work for them as for
+the admin pair, and an owner taken off the last thing they owned is refused
+on their next call. An owner is a person or a group, so an application
+subject never holds them. `owner:read` and `owner:write` are protected
+scopes (#110, `scope_policy.ts`'s `OWNER_SCOPES`); `sts-user-portal` is
+seeded declaring both, with global consent.
+
+**PROTECTED — WHAT OWNING SOMETHING MUST NEVER BECOME** (#607's section 4,
+and rcbj's decision 4). Ownership is delegated administration, so the paths from
+owning to holding this service's permissions are closed as a FACT:
+
+* a role that is built in or native, or that authorizes a permission no owner
+  may come to hold — this service's protected scopes, the native roles' and
+  the owner roles' — since its owner could otherwise add themselves;
+* a group this service grants through by its NAME (the console rosters,
+  `roles.remotePepGroup`, `roles.xacmlUserGroup`), or a member of such a role;
+* one of this service's own applications (`applications.isInternalIdentifier()`
+  — the console's, the portal's, the management API's, the debugger's), one
+  that is a member of such a role, or one DECLARING a protected scope — its
+  owner regenerating the secret would hold what it holds;
+* a service account holding such a role (or REMOTE_PEPS, XACML_USER) — its
+  owner pushing the rotated password to a destination they read would be the
+  same;
+* and anything an administrator MARKED: `stsOwnerProtected` TRUE on the entry
+  (the role's, the group's, the person's, the application's), through each
+  register's own write so every other rule of the object stays its own —
+  `roles.setOwnerProtected()`, `ldap_server.setGroupOwnerProtected()`,
+  `service_accounts.setOwnerProtected()`, `applications.setOwnerProtected()`
+  — at `POST /admin-api/ownership/set-protected` (the *Closed to its
+  owners* checkbox on each object's Owners tab in the console), or an
+  `ldapmodify` by a holder of Admin Write.
+
+**A REGISTER THAT CANNOT BE READ LEAVES THE OBJECT CLOSED**, and owns nobody
+anything: not knowing is not permission, in both directions.
+
+`tests/owner_administration.js` holds the rule, the protections and the roles.

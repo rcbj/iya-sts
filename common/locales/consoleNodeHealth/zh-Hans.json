@@ -56,7 +56,7 @@
   "ecsCpuWhy": "占任务 vCPU 的 {pct}，取代理最近两次采样之间",
   "na": "不适用",
   "tileResident": "常驻内存，所有进程",
-  "about": "容器的 CPU 和内存从其 cgroup（v2）读取，每个进程和工作线程的数据从进程或线程本身读取，均在绘制页面时读取；除上一次 CPU 样本外不保存任何内容。本页不会更改任何内容。",
+  "about": "容器的 CPU 和内存从其 cgroup（v2）读取，每个进程和工作线程的数据从进程或线程本身读取，均在绘制页面时读取；除上一次 CPU 样本外不保存任何内容。本页唯一的控件按需执行一次完整垃圾回收；此处没有其他内容会更改任何东西。",
   "whatThisPageIs": "本页的用途",
   "headMachine": "整台机器，而非容器",
   "loadAverage": "平均负载",
@@ -74,5 +74,17 @@
   "thState": "状态",
   "thAge": "时长",
   "thisNode": "（本节点）",
-  "nodeNamed": "节点 {name}"
+  "nodeNamed": "节点 {name}",
+  "thCollect": "垃圾回收",
+  "collect": "回收",
+  "collectAll": "在每个进程和工作线程中回收垃圾",
+  "notCollectable": "不是本节点的前端进程或其工作线程",
+  "gcWarning": "完整垃圾回收会停止其所在的线程直到完成，在前端进程中这会暂停本节点的每个监听器。这是一种诊断手段：V8 按自己的节奏回收，强制回收未能释放的内存是被占用的，而不是垃圾。每次点击都会记入审计。",
+  "gcResultHead": "已回收垃圾",
+  "gcResultSummary": "已回收 {n} 个 isolate，共释放 {freed}，最长暂停 {pause} 毫秒。下表是在回收之前读取的；重新加载页面以再次读取。",
+  "thIsolate": "Isolate",
+  "thHeapBefore": "回收前的堆",
+  "thHeapAfter": "回收后的堆",
+  "thFreed": "已释放",
+  "thPause": "暂停"
 }

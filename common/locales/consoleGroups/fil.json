@@ -120,5 +120,13 @@
   "owners.isOwnerTip": "Nasa talahanayan na sa itaas.",
   "owners.itself": "ang grupong ito",
   "owners.itselfTip": "Hindi maaaring maging may-ari ng sarili ang isang grupo.",
-  "owners.addTip": "Gawing may-ari ngayon si {value}. Nase-save agad ito."
+  "owners.addTip": "Gawing may-ari ngayon si {value}. Nase-save agad ito.",
+  "ownerProtection.heading": "Nakasara sa mga may-ari nito",
+  "ownerProtection.lead": "Mababasa at mababago ito ng mga may-ari nito sa pamamagitan ng user portal at ng management API, sa loob ng pinapayagan ng owner rule ng access-control policy. Kapag nakasara, hindi nila magagawa, at isang administrator ang nagbabago nito.",
+  "ownerProtection.checkbox": "Nakasara sa mga may-ari nito",
+  "ownerProtection.checkboxTip": "Kapag may tsek, hindi ito mababasa o mababago ng mga may-ari nito sa pamamagitan ng portal o ng management API. Mananatili silang mga may-ari nito.",
+  "ownerProtection.save": "I-save",
+  "ownerProtection.closedAnyway": "Nakasara ito sa mga may-ari nito anuman ang sabihin ng kahon:",
+  "ownerProtection.isMarked": "Isinara ito ng isang administrator sa mga may-ari nito.",
+  "ownerProtection.notMarked": "Walang administrator na nagsara nito sa mga may-ari nito."
 }

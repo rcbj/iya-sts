@@ -438,7 +438,13 @@ function createReplication(label) {
       },
       run: function () {
         return pull().then(function () {
-          return { applied: applied };
+          // A dead process's contributions go, at most once a minute, on
+          // this job rather than a timer of their own (#618).
+          return pruneFanIn(false).then(function (pruned) {
+            return pruned && pruned.dropped.length
+              ? { applied: applied, originsDropped: pruned.dropped.length }
+              : { applied: applied };
+          });
         }, function (err) {
           log.error(errorCodes.tag('STS-STORE-0038') +
                     'persistence: a scheduled change pull failed: ' +
@@ -1014,30 +1020,85 @@ function createReplication(label) {
    */
   function contribute(handle, realmId, key, origin, value) {
     log.debug("Entering contribute().");
+    const id = String(realmId || '');
+    const k = String(key === undefined || key === null ? '' : key);
+    if (value === null || value === undefined) {
+      // A REMOVAL TAKES ITS EMPTY LEVELS WITH IT, AND MAKES NONE (#618,
+      // 2026-10-14). Until then a removal first made any level it lacked,
+      // deleted the origin, and left the key's empty Map behind for ever.
+      // `admin_stats.users` notes every replicated create in every process
+      // and journals the eviction of a note past its MAX_USERS cap, so each
+      // person ever added left an empty Map, its backing table and its key
+      // string in every other process: 796,728 of 798,858 keys held EMPTY
+      // in a request worker's heap at about 974K people on 8081, about 300
+      // bytes a person per isolate, and `everyUserRecord()` walked every
+      // one of them on each read. A removal whose row was gone before this
+      // process read it (an eviction that overtook its note) made the levels
+      // just to empty them. Each step below is one lookup, so a removal is
+      // still O(1); what is held is bounded by what the other processes
+      // HOLD now, not by everything they ever held.
+      const holding = contributions.get(handle);
+      const keysHeld = holding ? holding.get(id) : undefined;
+      const originsHeld = keysHeld ? keysHeld.get(k) : undefined;
+      if (!originsHeld) {
+        log.debug("Leaving contribute(). Nothing held to remove.");
+        return;
+      }
+      originsHeld.delete(origin);
+      if (originsHeld.size === 0) {
+        keysHeld.delete(k);
+        if (keysHeld.size === 0) {
+          holding.delete(id);
+          if (holding.size === 0) {
+            contributions.delete(handle);
+          }
+        }
+      }
+      log.debug("Leaving contribute(). Removed.");
+      return;
+    }
     let byRealm = contributions.get(handle);
     if (!byRealm) {
       byRealm = new Map();
       contributions.set(handle, byRealm);
     }
-    const id = String(realmId || '');
     let byKey = byRealm.get(id);
     if (!byKey) {
       byKey = new Map();
       byRealm.set(id, byKey);
     }
-    const k = String(key === undefined || key === null ? '' : key);
     let byOrigin = byKey.get(k);
     if (!byOrigin) {
       byOrigin = new Map();
       byKey.set(k, byOrigin);
     }
-    if (value === null || value === undefined) {
-      byOrigin.delete(origin);
-      log.debug("Leaving contribute().");
-      return;
-    }
     byOrigin.set(origin, value);
     log.debug("Leaving contribute().");
+  }
+
+  // How much the fan-in holds: handles, realms, keys and values. For the
+  // tests (#618), which count ENTRIES rather than trusting the heap: a
+  // removal that leaves an empty level behind holds no value and still costs
+  // a Map. Linear in what is held, so never called on a request path.
+  /**
+   * Counts what the fan-in holds, for the tests.
+   * @returns the number of handles, realm maps, key maps and values
+   */
+  function contributionCounts() {
+    log.debug("Entering contributionCounts().");
+    const out = { handles: contributions.size, realms: 0, keys: 0,
+                  values: 0 };
+    contributions.forEach(function (byRealm) {
+      out.realms += byRealm.size;
+      byRealm.forEach(function (byKey) {
+        out.keys += byKey.size;
+        byKey.forEach(function (byOrigin) {
+          out.values += byOrigin.size;
+        });
+      });
+    });
+    log.debug("Leaving contributionCounts().");
+    return out;
   }
 
   // What every OTHER process has contributed under this handle, realm and key,
@@ -1191,6 +1252,165 @@ function createReplication(label) {
     });
     log.debug("Leaving origins().");
     return Array.from(all);
+  }
+
+  // ---------------------------------------------------------------------------
+  // A DEAD PROCESS'S CONTRIBUTIONS GO (#618 phase 2, 2026-10-14).
+  //
+  // The removal fix above bounds the fan-in by what the other processes HOLD
+  // — up to a store's cap per ORIGIN — but an origin is a process's start, and
+  // a process that died never removes its rows: every process that started
+  // under a RANDOM origin (no stable name, or its name still held) and every
+  // node that left the cluster left its origin's worth (2,000
+  // `admin_stats.users` records, an audit ring, every counter) in every other
+  // process for as long as that one ran, and a restored process read all of
+  // them back from the store. The number of origins grew with them.
+  //
+  // So an origin that is no longer a LIVE READER of the change log — the
+  // trim's own test: reported within the reader TTL, and naming no cluster
+  // node that left (`liveChangeReaders()`) — is dropped from the fan-in once
+  // it has been absent for the grace (`fanInGraceMs()`), so a process that
+  // has just started and not yet reported, or one whose report failed once,
+  // is never dropped.
+  //
+  // **THE GRACE IS THE READER TTL, AND NEVER LESS THAN FIFTEEN MINUTES**,
+  // because most origins are STABLE since 2026-09-18 — a process restarting
+  // under its name takes its origin back (`adoptOrigin()` in the postgres
+  // driver) and its rows with it — and a contribution dropped while it was
+  // away comes back only as it is rewritten (a counter on its next change,
+  // an audit segment never) or when this process next restarts and restores.
+  // A restart is not a death; fifteen minutes away is. It runs inside the
+  // change-log pull's own scheduler job (a
+  // per-process job, `schedule()`), at most once a FAN_IN_PRUNE_INTERVAL_MS,
+  // which costs one small read of `sts_change_readers` (a row per process)
+  // and, when something is dropped, one walk of what the fan-in holds — itself
+  // bounded by the live origins times the stores' caps. No timer of its own.
+  //
+  // A contribution of a dropped origin that arrives later — a lagging pull
+  // applying its old rows, or the restore of a restarted process — is held
+  // again and dropped again a grace later. What is dropped is only this
+  // process's memory: the rows stay in `sts_minted` until
+  // `persistence.mintedRetention` removes them.
+  // ---------------------------------------------------------------------------
+  const FAN_IN_PRUNE_INTERVAL_MS = 60 * 1000;
+  const FAN_IN_GRACE_FLOOR_MS = 15 * 60 * 1000;
+  // origin -> when this process first saw it held and not live.
+  const absentSince = new Map();
+  let lastPruneAt = 0;
+  let pruning = false;
+  let originsDropped = 0;
+
+  function fanInGraceMs() {
+    log.debug("Entering fanInGraceMs().");
+    log.debug("Leaving fanInGraceMs().");
+    return Math.max(FAN_IN_GRACE_FLOOR_MS, readerTtlMs());
+  }
+
+  // Every contribution of one origin, removed, and every level it empties.
+  function dropOrigin(gone) {
+    log.debug("Entering dropOrigin().");
+    let removed = 0;
+    contributions.forEach(function (byRealm, handle) {
+      byRealm.forEach(function (byKey, realmId) {
+        byKey.forEach(function (byOrigin, k) {
+          if (byOrigin.delete(gone)) {
+            removed += 1;
+            if (byOrigin.size === 0) {
+              byKey.delete(k);
+            }
+          }
+        });
+        if (byKey.size === 0) {
+          byRealm.delete(realmId);
+        }
+      });
+      if (byRealm.size === 0) {
+        contributions.delete(handle);
+      }
+    });
+    log.debug("Leaving dropOrigin(). " + removed + " value(s).");
+    return removed;
+  }
+
+  /**
+   * Drops from the fan-in every origin that has not been a live reader of the
+   * change log for the grace period. Runs at most once a minute unless
+   * `force`; never rejects.
+   * @param force - true to run whatever the interval (the tests)
+   * @param now - the time to judge by, in ms (the tests); Date.now() otherwise
+   * @returns a promise of `{ held, live, dropped, values }`, or null when it
+   *   did not run
+   */
+  function pruneFanIn(force, now) {
+    log.debug("Entering pruneFanIn().");
+    const at = typeof now === 'number' ? now : Date.now();
+    if (!driver || stopped || pruning ||
+        typeof driver.liveChangeReaders !== 'function' ||
+        (!force && at - lastPruneAt < FAN_IN_PRUNE_INTERVAL_MS)) {
+      log.debug("Leaving pruneFanIn(). Not now.");
+      return Promise.resolve(null);
+    }
+    lastPruneAt = at;
+    const held = origins();
+    // Nothing held, nothing to judge: no read of the store.
+    if (!held.length) {
+      absentSince.clear();
+      log.debug("Leaving pruneFanIn(). The fan-in is empty.");
+      return Promise.resolve({ held: 0, live: 0, dropped: [], values: 0 });
+    }
+    pruning = true;
+    log.debug("Leaving pruneFanIn(). Asking who is live.");
+    return Promise.resolve().then(function () {
+      return driver.liveChangeReaders({ readerTtlMs: readerTtlMs(),
+                                        nodeLiveness: tierLabel !== 'global' });
+    }).then(function (liveList) {
+      pruning = false;
+      const live = new Set(liveList || []);
+      const dropped = [];
+      let values = 0;
+      // An origin no longer held needs no clock.
+      const heldSet = new Set(held);
+      absentSince.forEach(function (since, o) {
+        if (!heldSet.has(o)) {
+          absentSince.delete(o);
+        }
+      });
+      held.forEach(function (o) {
+        // Live now: whatever clock it had stops.
+        if (live.has(o)) {
+          absentSince.delete(o);
+          return;
+        }
+        if (!absentSince.has(o)) {
+          absentSince.set(o, at);
+          return;
+        }
+        if (at - absentSince.get(o) >= fanInGraceMs()) {
+          values += dropOrigin(o);
+          absentSince.delete(o);
+          dropped.push(o);
+        }
+      });
+      if (dropped.length) {
+        originsDropped += dropped.length;
+        log.info('persistence: dropped ' + dropped.length + ' dead ' +
+                 'process(es) from the fan-in (' + values + ' value(s)): ' +
+                 'not a live reader of the change log for ' +
+                 Math.round(fanInGraceMs() / 1000) + 's (#618).');
+      }
+      return { held: held.length, live: live.size, dropped: dropped,
+               values: values };
+    }, function (e) {
+      pruning = false;
+      // Nothing is dropped on a failed read: an origin is dropped on the
+      // evidence of the readers' table, never on its absence. The next pull
+      // tries again a minute later.
+      log.warn(errorCodes.tag('STS-STORE-0082') + 'persistence: the live ' +
+               'readers of the change log could not be read (' +
+               ((e && e.message) || String(e)) + '), so no dead process ' +
+               'was dropped from the fan-in this time.');
+      return null;
+    });
   }
 
   // ===========================================================================
@@ -1534,12 +1754,17 @@ function createReplication(label) {
       lastPullAt: lastPullAt,
       lastError: lastError || null,
       otherProcesses: origins().length,
+      // Dead processes dropped from the fan-in since start (#618).
+      originsDropped: originsDropped,
       retention: {
         retentionS: Math.round(retentionMs() / 1000),
         readerTtlS: Math.round(readerTtlMs() / 1000),
         reportedAt: lastReportAt ? new Date(lastReportAt).toISOString() : null,
         reportError: lastReportError || null,
         declaredGoneAt: declaredGoneAt,
+        // How long an origin may be absent from the live readers before its
+        // contributions leave the fan-in (#618).
+        fanInGraceS: Math.round(fanInGraceMs() / 1000),
         // Whether THIS process runs the trim: it is the scheduler's leader
         // and the job is on (#49 P5).
         trimming: trimsHere(),
@@ -1577,6 +1802,10 @@ function createReplication(label) {
     runningPull = null;
     pendingWake = false;
     contributions.clear();
+    absentSince.clear();
+    lastPruneAt = 0;
+    pruning = false;
+    originsDropped = 0;
     if (unwatch) {
       unwatch();
       unwatch = null;
@@ -1611,6 +1840,8 @@ function createReplication(label) {
     reportPosition: reportPosition,
     purgeOnce: purgeOnce,
     contribute: contribute,
+    contributionCounts: contributionCounts,
+    pruneFanIn: pruneFanIn,
     remoteRows: remoteRows,
     remoteSegmentedRows: remoteSegmentedRows,
     remoteKeys: remoteKeys,

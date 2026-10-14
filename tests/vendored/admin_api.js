@@ -1304,9 +1304,13 @@ async function configurationCanBeChangedAndPutBack(doc) {
 //     because a healthcheck answering anything else is exactly the event
 //     somebody hunting a start-up failure came looking for.
 //
-// And the counters are checked to have counted the probes anyway: this is a
-// rule about the event log, where one act is one line, and not about how much
-// the service was asked to do.
+// AND THE METRICS FOLLOW THE SAME RULE SINCE #312 (2026-10-13). This section
+// used to check the opposite — that the call table counted the probes anyway —
+// until a load balancer's probes turned out to be nearly every call testidp's
+// metrics page reported. So now: the successful probes move
+// `calls.healthProbes` and leave the GET /healthcheck row alone, and the
+// refused POST is counted on a row of its own, which is the same control
+// standing beside the absence for the same reason.
 // ---------------------------------------------------------------------------
 const PROBES = 3;
 
@@ -1314,7 +1318,8 @@ async function successfulHealthchecksAreNotInTheAuditLog() {
   log.debug("Entering successfulHealthchecksAreNotInTheAuditLog().");
   log.info("=== The audit log ignores a successful liveness probe ===");
   const before = await get("/metrics");
-  const countedBefore = healthcheckCalls(before);
+  const probesBefore = healthProbes(before);
+  const postsBefore = healthcheckCalls(before, "POST");
   for (let i = 0; i < PROBES; i++) {
     const probe = await common.httpJson(base + "/healthcheck");
     assert.strictEqual(probe.status, 200,
@@ -1405,36 +1410,62 @@ async function successfulHealthchecksAreNotInTheAuditLog() {
   // -------------------------------------------------------------------------
   let after = await get("/metrics");
   const deadline = Date.now() + 45000;
-  while (healthcheckCalls(after) < countedBefore + PROBES &&
+  while ((healthProbes(after) < probesBefore + PROBES ||
+          healthcheckCalls(after, "POST") < postsBefore + 1) &&
          Date.now() < deadline) {
     await new Promise(function (r) { setTimeout(r, 250); });
     after = await get("/metrics");
   }
-  assert.ok(healthcheckCalls(after) >= countedBefore + PROBES,
-      "The metrics page counted " + healthcheckCalls(after) + " calls to " +
-      "/healthcheck against " + countedBefore + " before " + PROBES + " were " +
-      "made. The audit rule is about the event LOG — a counter is one row " +
-      "however often it goes up, so the probes must still be counted.");
-  log.info("[audit] OK — " + PROBES + " successful probes wrote no row, the " +
-           "refused one wrote " + onThePath.length + ", and all of them were " +
-           "counted.");
+  assert.ok(healthProbes(after) >= probesBefore + PROBES,
+      "The metrics page counted " + healthProbes(after) + " successful " +
+      "health probes against " + probesBefore + " before " + PROBES + " were " +
+      "made. They are counted apart from the calls (#312) — `calls." +
+      "healthProbes` — and not dropped.");
+  assert.ok(healthcheckCalls(after, "POST") >= postsBefore + 1,
+      "The refused POST /healthcheck was not counted as a call (" +
+      healthcheckCalls(after, "POST") + " against " + postsBefore + "). " +
+      "Only a SUCCESSFUL probe is left out of the calls; one answering " +
+      "anything else is exactly what should show.");
+  // The GET row is read after the POST has converged, so a probe that WAS
+  // counted as a call has had the same time to arrive. Other jobs and the
+  // compose healthcheck probe too, but every one of those succeeds, so none
+  // of them may move it either.
+  assert.strictEqual(healthcheckCalls(after, "GET"),
+      healthcheckCalls(before, "GET"),
+      "The GET /healthcheck row moved from " + healthcheckCalls(before, "GET") +
+      " to " + healthcheckCalls(after, "GET") + " while only successful " +
+      "probes were made: they are being counted as calls again, which is " +
+      "what #312 removed.");
+  log.info("[audit] OK — " + PROBES + " successful probes wrote no row and " +
+           "were counted as probes rather than calls; the refused one wrote " +
+           onThePath.length + " and was counted as a call.");
   log.debug("Leaving successfulHealthchecksAreNotInTheAuditLog().");
 }
 
-// Every call the metrics table has counted against /healthcheck, whatever the
+// Every call the metrics table has counted against /healthcheck with one
 // method — the row is keyed on the route pattern AND the method, so a GET row
 // and a POST row are two of them.
-function healthcheckCalls(metrics) {
+function healthcheckCalls(metrics, method) {
   log.debug("Entering healthcheckCalls().");
   const rows = (metrics && metrics.calls && metrics.calls.rows) || [];
   let total = 0;
   rows.forEach(function (row) {
-    if (String(row.path || "") === "/healthcheck") {
+    if (String(row.path || "") === "/healthcheck" &&
+        String(row.method || "") === method) {
       total += Number(row.count || 0);
     }
   });
   log.debug("Leaving healthcheckCalls(). " + total);
   return total;
+}
+
+// The successful probes, which are counted apart from the calls (#312).
+function healthProbes(metrics) {
+  log.debug("Entering healthProbes().");
+  const n = Number((metrics && metrics.calls &&
+                    metrics.calls.healthProbes) || 0);
+  log.debug("Leaving healthProbes(). " + n);
+  return n;
 }
 
 // ---------------------------------------------------------------------------

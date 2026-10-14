@@ -192,6 +192,10 @@ const createClaims = require('./directory_create_claims');
 // asked once per entry. This file classifies the reader and the entry and
 // asks it — see *WHO MAY READ THIS DIRECTORY*, below the write half.
 const readPolicy = require('./directory_read_policy');
+// A SEARCH FILTER MATCHED BY EACH ATTRIBUTE'S OWN EQUALITY RULE (#632,
+// 2026-10-14): `(uid=ALICE)` finds `uid=alice`, as RFC 4519's caseIgnoreMatch
+// says. A static utility class that requires nothing, asked once per entry.
+const ldapMatching = require('./ldap_matching');
 // WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26): the rule
 // table and the edit, a LIBRARY that cannot require this file (it is loaded
 // by the console long before this one) and so is handed the two functions it
@@ -1168,21 +1172,32 @@ let boundTlsPort = LDAPS_PORT;
 // bug in the debugger.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// OR A WINDOW ONTO THE STORE, IN A REQUEST OR SURFACE WORKER (#349).
+// OR A WINDOW ONTO THE STORE, IN EVERY PROCESS (#349, #320).
 //
-// With `ldap.workerDirectory=postgres-lru` a worker holds the people and the
-// devices — everything strictly under `ou=users` and `ou=devices` of each
-// realm — as a bounded window, and asks the store for the rest; every other
-// entry is held whole, as here. `ldap/directory_window.ts` is the whole of it,
-// and it has this Map's shape, so nothing below reads it differently. The
-// FRONT process always holds the whole directory: it owns the listeners and
-// its own writes (#349's design; moving it too is a later decision). Memory
-// and ldif stores cannot have a window — `persistence.start()` refuses the
-// setting with them (STS-LDAP-0133).
+// With the window (`ldap.workerDirectory` `auto` on a postgres store and one
+// cell, or `postgres-lru`) a process holds the people and the devices —
+// everything strictly under `ou=users` and `ou=devices` of each realm — as a
+// bounded window, and asks the store for the rest; every other entry is held
+// whole, as here. `ldap/directory_window.ts` is the whole of it, and it has
+// this Map's shape, so nothing below reads it differently. Memory and ldif
+// stores cannot have a window — `persistence.start()` refuses an explicit
+// postgres-lru with them (STS-LDAP-0133), and `auto` does not ask for one.
+//
+// **THE FRONT PROCESS TOO, SINCE #320 (rcbj, 2026-10-13).** #349 kept the
+// front whole because it owns the listeners and writes of its own, and left
+// moving it "a later decision". Nothing in the window is a worker's: the
+// front loads this file before `persistence.start()` exactly as a worker
+// does, so the bridge is attached before anything is restored, and its
+// writes are pinned until flushed like a worker's. What it costs the front is
+// what it costs a worker — a miss stops this process's event loop for one
+// round trip, and a whole walk pages through the store synchronously — paid
+// here on the thread that also holds every socket. What it buys is the
+// largest single thing a node held: the whole directory, plus the write
+// shadow's JSON copy of it, in the one process every deployment has (testidp
+// runs no worker at all).
 // ---------------------------------------------------------------------------
 const directoryWindow = (function () {
-  if (!process.env.STS_REQUEST_WORKER ||
-      String(config.value('ldap.workerDirectory')) !== 'postgres-lru' ||
+  if (!persistence.directoryWindowWanted() ||
       String(config.value('persistence.mode')) !== 'postgres') {
     return null;
   }
@@ -1204,8 +1219,10 @@ const directoryWindow = (function () {
     },
     registry: cacheRegistry
   });
-  log.info('ldap: this worker holds the people and devices as a window ' +
-           'onto the store (ldap.workerDirectory=postgres-lru), at most ' +
+  log.info('ldap: this ' + (process.env.STS_REQUEST_WORKER ? 'worker'
+             : 'front process') + ' holds the people and devices as a ' +
+           'window onto the store (ldap.workerDirectory=' +
+           config.value('ldap.workerDirectory') + '), at most ' +
            config.value('ldap.workerCacheEntries') + ' of them at once.');
   return made;
 })();
@@ -1351,6 +1368,46 @@ function inRealmOf(dn, fn) {
 let directoryVersion = 0;
 
 // ---------------------------------------------------------------------------
+// THE GROUP INDEX'S OWN CLOCK (#618, 2026-10-14): moved by a write that may
+// have changed a GROUP, and by nothing else.
+//
+// `groupIndexNow()` was keyed on `directoryVersion`, which every write moves,
+// so the add's own authorization (`rolesOf()` -> `groupsOfUser()`) rebuilt
+// the index on every LDAP add — about 5 s of every 30 s in a request worker
+// of the 1M load on 8081 — and every person another process made did the
+// same in every other process. The stamps that kept it across a put
+// (`noteGroupIndexPut()`, 2026-09-07) covered only `putEntry()` and the
+// whole-directory applier, not the windowed one, and they were WRONG for an
+// overwrite of a group by a non-group: a group that stopped being one stayed
+// in the index.
+//
+// The rule now lives in `touchDirectory()` — `noteGroupsTouched()` — so
+// every writer is covered without being hooked: a write naming no DN moves
+// this clock; a write naming one moves it when the entry WAS a group when the
+// index was built (`byDn` has it) or IS one now, or when what is there now
+// cannot be known without asking the store (a windowed key this process does
+// not hold). A write to anything else cannot have changed the index — a
+// non-group contributes to neither of its maps, and a person's own `memberOf`
+// is read live by `groupsOfUser()` — so the index survives it, and its
+// answers are the ones a rebuild would give (`tests/group_index_clock.js`).
+// ---------------------------------------------------------------------------
+let groupsVersion = 0;
+
+// ---------------------------------------------------------------------------
+// WHAT HAS BEEN WRITTEN SINCE AN LDAP ADD ASKED ITS NAMES (#625).
+//
+// One watch per add whose names are out being asked (`askBeforeTheAdd()`),
+// from the moment before the question until its body has run: the DNs every
+// write since then landed on, and the usernames (`usernameKeysOf()`: every
+// `uid` and the RDN value, lower-cased) of an entry at such a DN under
+// `ou=users`. `noteHeldNamesTouched()`, from `touchDirectory()`, fills them.
+// Empty except while an add is between its question and its body, so the
+// cost to every other write is one `size` test. Declared here, beside the
+// clocks, for `touchDirectory()`'s temporal dead zone.
+// ---------------------------------------------------------------------------
+const heldNameWatches = new Set();
+
+// ---------------------------------------------------------------------------
 // A NUL BYTE IN A DIRECTORY VALUE, WHICH IS THE ONE THING THIS SOCKET REFUSES
 // ABOUT WHAT A VALUE CONTAINS (2026-09-06).
 //
@@ -1414,9 +1471,16 @@ function refuseNulValues(type, values) {
   return null;
 }
 
-function touchDirectory(dn) {
+// `after`, when the caller has it, is the entry now at `dn` (null for none):
+// the change-log applier of a windowed key holds the store's row and nothing
+// in the window. Left out, the entry is looked up where it is held.
+function touchDirectory(dn, after) {
   log.debug("Entering touchDirectory().");
   directoryVersion++;
+  noteGroupsTouched(dn, after);
+  // And any add holding names it asked first is told what this write
+  // touched (#625).
+  noteHeldNamesTouched(dn, after);
   // WHERE IT LANDED, when the caller said so. See subtreeClocks() below: a
   // caller that names the DN it wrote lets a listing of some OTHER container
   // survive this write, and a caller that says nothing invalidates every
@@ -1550,7 +1614,9 @@ function eachResidentEntry(fn) {
 
 // The windowed entries matching a named question and `predicate`, or null
 // outside a windowed worker (the caller then walks as it always did).
-function windowedFind(name, args, predicate) {
+// `info` is `findWindowed()`'s: `readOnly` takes each row as the store
+// answered it.
+function windowedFind(name, args, predicate, info) {
   log.debug("Entering windowedFind(). " + name);
   if (!directoryWindow) {
     log.debug("Leaving windowedFind(). No window.");
@@ -1558,11 +1624,154 @@ function windowedFind(name, args, predicate) {
   }
   const realmId = realms.currentId();
   const found = directoryWindow.findWindowed(realmId, name,
-    [realmId].concat(args), predicate).map(function (hit) {
+    [realmId].concat(args), predicate, info).map(function (hit) {
     return hit.entry;
   });
   log.debug("Leaving windowedFind(). " + found.length + ".");
   return found;
+}
+
+// AN LDAP SEARCH NARROWED BY THE STORE'S INDEX, IN A WINDOWED PROCESS (#320).
+//
+// A windowed process answers a search by paging every entry under the base
+// out of the store and filtering here, which is linear in the people: 0.8 s
+// for a `(uid=x)` lookup over 20,000 of them, measured, against 0.13 s from
+// a whole directory — and the front process now holds a window too, so on a
+// service with no workers that stopped every socket. The commonest searches
+// an LDAP client makes are equalities on `uid` and `mail`, and the store
+// indexes both, every value lower-cased (`persistence/directory_codec.js`).
+// The filter's equality on both ignores case (caseIgnoreMatch for uid,
+// caseIgnoreIA5Match for mail; `ldap_matching.ts`, #632) and the index
+// trims, so the entries whose LOWER-CASED value equals the lower-cased
+// assertion are a SUPERSET of its matches (exactly them, for a value with
+// no surrounding space); the filter is still applied to every candidate, so
+// the answer cannot change — only how much is read to reach it.
+//
+// Narrowed only where that holds: the filter is such an equality, an AND
+// with a narrowable term, or an OR whose every term is narrowable (the union
+// of their lookups, `indexedLookupsOf()`); the asserted
+// value has no surrounding space (the query trims it); and the store answered
+// fewer rows than its cap, since a capped answer may have cut a match. Every
+// other search walks as before. The resident entries under the base are
+// added from memory, and the window adds what this process changed and has
+// not written (`findWindowed()`).
+const EQUALITY_INDEXED = { uid: 'name', mail: 'mail' };
+const NARROWED_SEARCH_CAP = 1000;
+
+// The index lookups whose union holds every match of `filter`, or null when
+// none can be named (#320): an indexed equality is one lookup; an AND is the
+// lookups of any ONE of its terms (each match satisfies every term); an OR is
+// the lookups of EVERY term, or null if one term has none. Anything else —
+// a NOT, a presence, a substring, a non-indexed attribute — names nothing.
+// Bounded in depth and in lookups, so no filter turns one search into an
+// unbounded number of questions.
+const MAX_NARROWING_LOOKUPS = 16;
+
+/**
+ * The `{ kind, value }` index lookups whose union is a superset of a
+ * filter's matches, or null (#320).
+ *
+ * @param filter - a parsed filter
+ * @param depth - how deep in the filter this is
+ * @returns the lookups, or null
+ */
+function indexedLookupsOf(filter, depth) {
+  log.debug("Entering indexedLookupsOf().");
+  if (!filter || depth > 4) {
+    log.debug("Leaving indexedLookupsOf(). Nothing.");
+    return null;
+  }
+  if (filter.type === 'EqualityFilter') {
+    const kind = EQUALITY_INDEXED[String(filter.attribute || '')
+      .toLowerCase()];
+    const value = filter.value;
+    const usable = !!kind && typeof value === 'string' && value !== '' &&
+      value === value.trim();
+    log.debug("Leaving indexedLookupsOf(). " + (usable ? 'An equality.'
+      : 'Not indexed.'));
+    return usable ? [{ kind: kind, value: value }] : null;
+  }
+  if (filter.type === 'AndFilter') {
+    for (const term of filter.clauses || []) {
+      const found = indexedLookupsOf(term, depth + 1);
+      if (found) {
+        log.debug("Leaving indexedLookupsOf(). An AND's term.");
+        return found;
+      }
+    }
+    log.debug("Leaving indexedLookupsOf(). No AND term.");
+    return null;
+  }
+  if (filter.type === 'OrFilter') {
+    let all = [];
+    for (const term of filter.clauses || []) {
+      const found = indexedLookupsOf(term, depth + 1);
+      if (!found) {
+        log.debug("Leaving indexedLookupsOf(). An OR term names nothing.");
+        return null;
+      }
+      all = all.concat(found);
+      if (all.length > MAX_NARROWING_LOOKUPS) {
+        log.debug("Leaving indexedLookupsOf(). Too many lookups.");
+        return null;
+      }
+    }
+    log.debug("Leaving indexedLookupsOf(). An OR.");
+    return all.length ? all : null;
+  }
+  log.debug("Leaving indexedLookupsOf(). Not narrowable.");
+  return null;
+}
+
+/**
+ * The candidate entries for a search under `base`, narrowed through the
+ * store's `uid` or `mail` index, or null when the search must walk (no
+ * window, no indexed equality, or a capped answer) (#320).
+ *
+ * @param base - the search base, as the client sent it
+ * @param filter - the parsed filter
+ * @returns the candidates (a superset of the matches), or null
+ */
+function indexedSearchCandidates(base, filter) {
+  log.debug("Entering indexedSearchCandidates().");
+  if (!directoryWindow || !filter) {
+    log.debug("Leaving indexedSearchCandidates(). Nothing to narrow.");
+    return null;
+  }
+  const lookups = indexedLookupsOf(filter, 0);
+  if (!lookups || !lookups.length) {
+    log.debug("Leaving indexedSearchCandidates(). No indexed equality.");
+    return null;
+  }
+  const realmId = realms.currentId();
+  const baseKey = normalizeDn(base);
+  const out = [];
+  const seen = new Set();
+  for (const lookup of lookups) {
+    const info = {};
+    const found = directoryWindow.findWindowed(realmId, 'equalUnder',
+      [realmId, baseKey, lookup.kind, lookup.value, NARROWED_SEARCH_CAP],
+      function (entry) {
+        return isUnder(entry.dn, base);
+      }, info);
+    if (Number(info.rows) >= NARROWED_SEARCH_CAP) {
+      log.debug("Leaving indexedSearchCandidates(). Capped; walking.");
+      return null;
+    }
+    found.forEach(function (hit) {
+      if (!seen.has(hit.key)) {
+        seen.add(hit.key);
+        out.push(hit.entry);
+      }
+    });
+  }
+  directoryWindow.eachResident(realmId, function (stored) {
+    if (isUnder(stored.dn, base)) {
+      out.push(stored);
+    }
+  });
+  log.debug("Leaving indexedSearchCandidates(). " + out.length + ".");
+  return out;
 }
 
 // A walk whose callback acts only on entries holding one of `attributes`
@@ -1592,6 +1801,119 @@ function eachHolderOfAny(attributes, fn) {
     });
   });
   log.debug("Leaving eachHolderOfAny().");
+}
+
+// ---------------------------------------------------------------------------
+// THE HOLDERS OF ONE ATTRIBUTE, FOR A BACKGROUND JOB (#615, 2026-10-13).
+//
+// `eachHolderOfAny()` above is what a request asks: synchronous, so in a
+// windowed process each page is a synchronous bridge question and every row
+// the window does not hold is another. A SCHEDULER JOB runs on the serving
+// front process (never in a request worker: `cluster/CLAUDE.md`), so a
+// synchronous read there stops every listener for its length — which is how
+// the Android attestation recheck, walking every person's keys, held 8081's
+// sockets for minutes at about 191,000 people. This is the same question
+// asked so that it does not:
+//
+//   * **IN A WINDOWED PROCESS** the store's holders under the container
+//     (`DirectoryWindow.holdersAsync()`): `persistence/directory_queries.js`'s
+//     `withAttribute()` — the partial GIN index of the asked names,
+//     `sts_ldap_entries_asked_names` (#618) — a page at a time on the
+//     driver's read pool, the event loop given back between pages, each row
+//     taken as the store answered it unless this process holds a newer one;
+//   * **IN MEMORY** the realm's own Map, walked in slices of
+//     `HOLDER_SCAN_SLICE` with the event loop given back between them. That
+//     is O(entries) of in-memory string tests — **a walk, said here**, as
+//     `credentialTallies()` says it: the in-memory directory keeps no index
+//     per attribute — but no store read, and no slice long enough to be
+//     noticed by a socket.
+//
+// `kind` is `person` (under `ou=users`, by `isPersonEntry()`, named by
+// `usernameOfEntry()`) or `device` (under `ou=devices`, named by its `cn`).
+// The answer carries the attributes the caller names, RAW and copied — what
+// they mean is the caller's (`credentials.ts`, `devices.ts`), the census's
+// division of labour — and never the whole entry.
+// ---------------------------------------------------------------------------
+const HOLDER_SCAN_SLICE = 2000;
+
+/**
+ * The people or devices of the ambient realm holding an attribute, with the
+ * named attributes' raw values, read without blocking the event loop.
+ *
+ * @param kind - `person` or `device`
+ * @param attribute - the attribute held (any spelling)
+ * @param names - the attributes to hand over, lower-cased; the held one when
+ *   empty
+ * @returns a promise of `[{ id, dn, attributes }]`, `attributes` keyed by
+ *   the lower-cased names asked for
+ */
+async function holdersAsync(kind, attribute, names) {
+  log.debug('Entering holdersAsync(). kind=' + kind + ' attribute=' +
+            attribute);
+  const container = kind === 'person' ? usersDn()
+    : (kind === 'device' ? devicesDn() : '');
+  if (!container) {
+    log.debug('Leaving holdersAsync(). No such kind.');
+    return [];
+  }
+  const held = String(attribute || '').toLowerCase();
+  const wanted = ((names && names.length) ? names : [held])
+    .map(function (one) {
+      return String(one).toLowerCase();
+    });
+  const base = normalizeDn(container);
+  const suffix = ',' + base;
+  const out = [];
+  const take = function (stored) {
+    const values = stored.attributes[held];
+    if (!Array.isArray(values) || !values.length) {
+      return;
+    }
+    const id = kind === 'person' ? usernameOfEntry(stored)
+      : String((stored.attributes.cn || [])[0] || '');
+    if (!id) {
+      return;
+    }
+    const picked = {};
+    wanted.forEach(function (name) {
+      const have = stored.attributes[name];
+      if (Array.isArray(have) && have.length) {
+        picked[name] = have.slice(0);
+      }
+    });
+    out.push({ id: String(id), dn: stored.dn, attributes: picked });
+  };
+  if (directoryWindow) {
+    const hits = await directoryWindow.holdersAsync(realms.currentId(), base,
+      held, function (entry) {
+        return kind !== 'person' || isPersonEntry(entry);
+      });
+    hits.forEach(function (hit) {
+      take(hit.entry);
+    });
+    log.debug('Leaving holdersAsync(). ' + out.length + ', asked of the ' +
+              'store.');
+    return out;
+  }
+  // The realm's own Map, held now: a realm's map is replaced only by its
+  // removal, and a walk of a removed realm finds what it held.
+  const store = entries.realmMap();
+  let seen = 0;
+  for (const pair of store) {
+    const key = pair[0];
+    if (key !== base && key.endsWith(suffix)) {
+      take(pair[1]);
+    }
+    seen += 1;
+    if (seen % HOLDER_SCAN_SLICE === 0) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+  }
+  log.debug('Leaving holdersAsync(). ' + out.length + ' of ' + seen +
+            ' entries walked in memory.');
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1946,6 +2268,78 @@ function entriesUnder(containerDn) {
   return rows;
 }
 
+// ---------------------------------------------------------------------------
+// HOW MANY ENTRIES A CONTAINER HOLDS, WITHOUT LISTING THEM (#610, 2026-10-13).
+//
+// `/admin/users` headlined the length of its LISTING — the directory's names
+// sliced at `credentials.factorScanLimit` and united with the register's —
+// and reported the realm's size only as the length of `persons()`, which is
+// every name, read to be counted: with a bulk load running it said 7,014
+// people while the directory held 25,000. rcbj wanted the number of people
+// DEFINED, without a full scan. This is the one count every Directory page
+// asks for the container its population lives in, so the pages cannot
+// disagree about what counting means:
+//
+//   * **A windowed container in a windowed process** (#349/#320: `ou=users`,
+//     `ou=devices`) is the store's count through
+//     `DirectoryWindow.recentCountUnder()` — a counter row the database
+//     keeps since #618 (it was a `count(*)`), no row read, at most ten
+//     seconds old for another process's writes, this process's own at once.
+//     That function's header has the measurement and why it is held.
+//   * **Anything else** is what the process holds: the container's cached
+//     listing's length when `entriesUnder()` has one current, and otherwise
+//     a walk of the store's KEYS — `entries` is keyed by the normalised DN,
+//     so it is an `endsWith` per key, no entry read and nothing normalised.
+//     **That is still a walk**, O(entries in the realm), and it is said here
+//     rather than hidden: the in-memory directory keeps no per-container
+//     tally, and keeping one would mean hooking every writer of `entries`,
+//     which this file deliberately does not do (see `touchDirectory()`).
+//     What it costs is a few milliseconds per hundred thousand entries,
+//     against `persons()`'s walk, normalise and sort.
+//
+// Strictly under the container, the container itself excepted —
+// `isPersonEntry()`'s rule, so for `ou=users` it is `personCount()`, which
+// is this.
+// ---------------------------------------------------------------------------
+/**
+ * Counts the entries strictly under a container in the ambient realm,
+ * without listing them.
+ *
+ * @param containerDn - the container's DN
+ * @returns the count
+ */
+function countUnderContainer(containerDn) {
+  log.debug('Entering countUnderContainer(). container=' + containerDn);
+  const key = normalizeDn(containerDn);
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    const reaches = windowedContainersOf(realmId).some(function (c) {
+      return c === key || c.endsWith(',' + key) || key.endsWith(',' + c);
+    });
+    if (reaches) {
+      const counted = directoryWindow.recentCountUnder(realmId, key);
+      log.debug('Leaving countUnderContainer(). ' + counted + ', the ' +
+                'store\'s count.');
+      return counted;
+    }
+  }
+  const held = subtreeClocks().listings.get(key);
+  if (held && held.version === subtreeVersion(containerDn)) {
+    log.debug('Leaving countUnderContainer(). ' + held.rows.length +
+              ', the cached listing.');
+    return held.rows.length;
+  }
+  const suffix = ',' + key;
+  let n = 0;
+  eachResidentEntry(function (stored, storeKey) {
+    if (String(storeKey).endsWith(suffix)) {
+      n += 1;
+    }
+  });
+  log.debug('Leaving countUnderContainer(). ' + n + ', the keys walked.');
+  return n;
+}
+
 function noteUsernameIndexRefresh(stored, wasCurrent) {
   log.debug('Entering noteUsernameIndexRefresh().');
   const cache = usernameIndexes();
@@ -1981,15 +2375,23 @@ function usernameIndexIsCurrent() {
 
 // ---------------------------------------------------------------------------
 // THE GROUP INDEX'S CACHE IS DECLARED HERE RATHER THAN BESIDE ITS BUILDER, and
-// the reason is a temporal dead zone rather than tidiness: `putEntry()` keeps
-// it current (see noteGroupIndexPut() below), `putEntry()` is called while this
+// the reason is a temporal dead zone rather than tidiness: `touchDirectory()`
+// reads it (see noteGroupsTouched() below), `putEntry()` calls that while this
 // module is still loading — the seeding does it — and a `const` declared
 // further down the file would not exist yet when the first seeded entry was
 // written. `buildGroupIndex()`, `groupIndexNow()` and everything else about it
 // stay where they are, with a pointer.
+//
+// `version` is the `groupsVersion` it was built at (#618); `usersDn` and
+// `groupsDn` the two containers the build resolved against — a `memberUid`
+// is read as a DN under the first, and an entry under the second is a group
+// by placement — because a settings change moves them and moves no clock.
+// `seen` and `size` are the net beside the builder: `directoryVersion` and
+// `entries.size` at the last read.
 // ---------------------------------------------------------------------------
 const groupIndexes = realms.keyed(function () {
-  return { index: null, version: -1, size: -1, builds: 0 };
+  return { index: null, version: -1, usersDn: '', groupsDn: '', seen: -1,
+           size: -1, builds: 0 };
 });
 
 const NO_GROUPS = new Map();
@@ -2007,51 +2409,150 @@ function groupIndexIsCurrent() {
   log.debug("Entering groupIndexIsCurrent().");
   const cache = groupIndexes();
   log.debug("Leaving groupIndexIsCurrent().");
-  return !!cache.index && cache.version === directoryVersion &&
-    cache.size === entries.size;
+  return !!cache.index && cache.version === groupsVersion &&
+    cache.usersDn === normalizeDn(usersDn()) &&
+    cache.groupsDn === normalizeDn(groupsDn());
 }
 
 // ---------------------------------------------------------------------------
-// A WRITE THAT CANNOT HAVE CHANGED THE GROUP INDEX, kept rather than rebuilt.
+// WHETHER A WRITE MAY HAVE CHANGED THE GROUP INDEX (#618), called by
+// `touchDirectory()` for every write; see `groupsVersion` for the design.
 //
-// **THE INVARIANT THIS RESTS ON IS NARROW AND HAS TO BE STATED**, because it is
-// the only thing making this safe: `buildGroupIndex()` calls `groupRuleFor()`
+// **THE INVARIANT THIS RESTS ON IS NARROW AND HAS TO BE STATED**, because it
+// is the only thing making it safe: `buildGroupIndex()` calls `groupRuleFor()`
 // on every entry and RETURNS EARLY on a falsy one, so a non-group entry
 // contributes nothing to either half of that index. A person's own `memberOf`
 // is not in there either — `groupsOfUser()` reads it live off the entry and
-// looks the value up in `byDn` — so writing a person cannot change it by that
-// route. **If either of those ever stops being true, this stamp has to go.**
+// looks the value up in `byDn`. **If either of those ever stops being true,
+// this function has to move the clock for every write.**
 //
-// Why it is worth having: `groupIndexNow()` rebuilds on ANY write, which is
-// right when reads are rare relative to writes and quadratic when they are
-// not. A SCIM User resource carries `groups`, so a bulk create asks for this
-// index once per person and invalidated it once per person — 0.379ms at the
-// 500th and 2.567ms at the 3,000th, measured in process, on top of a create
-// that is now flat. The LDAP door never showed it because an `add` builds no
-// SCIM resource.
+// So the question about one DN is "was it a group, or is it one now". WAS is
+// the index's own `byDn` — exact while the index is current, and when it is
+// not the clock has already moved and nothing said here matters. IS is the
+// entry where this process holds it: the realm's Map, or in a windowed
+// process the window WITHOUT asking the store (`heldIn()`) — a windowed key
+// this process does not hold is not known, and moves the clock. A write
+// naming no DN, and any write while the module is still loading (before
+// `groupRuleFor()`'s classes exist), moves it as well. A name the caller
+// passes rather than the one where it is held, `after`, is the change-log
+// applier's: the store's row of a windowed key it does not hold.
 //
-// The size is stamped as well as the version. That check is described where
-// the builder is as a second line of defence against a writer that forgot to
-// bump the version, and leaving it alone would have made this stamp a no-op:
-// a create changes `entries.size` by definition.
+// Per write it is one Map lookup in `byDn` and one held lookup — never a
+// walk, never a store question — which is what lets an LDAP add, and every
+// person another process adds, keep the index (the 2026-09-07 stamps,
+// `noteGroupIndexPut()`, are gone: this covers what they covered, every
+// other writer besides, and the overwrite of a group by a non-group they got
+// wrong).
 // ---------------------------------------------------------------------------
-function noteGroupIndexPut(stored, wasCurrent) {
-  log.debug('Entering noteGroupIndexPut().');
+function noteGroupsTouched(dn, after) {
+  log.debug('Entering noteGroupsTouched().');
+  if (!moduleLoaded || dn === undefined || dn === null || dn === '') {
+    groupsVersion++;
+    log.debug('Leaving noteGroupsTouched(). Anywhere; the clock moves.');
+    return;
+  }
+  const key = normalizeDn(dn);
   const cache = groupIndexes();
-  if (!wasCurrent || !cache.index) {
-    log.debug('Leaving noteGroupIndexPut(). Left to be rebuilt.');
+  if (cache.index && cache.index.byDn.has(key)) {
+    groupsVersion++;
+    log.debug('Leaving noteGroupsTouched(). It was a group.');
     return;
   }
-  if (groupRuleFor(stored)) {
-    // A group, by placement or by object class. This genuinely changes the
-    // index, so it is left to rebuild — which is the ordinary path and the
-    // one every membership write takes.
-    log.debug('Leaving noteGroupIndexPut(). It is a group; left to rebuild.');
+  let now = after;
+  if (now === undefined) {
+    if (directoryWindow) {
+      const held = directoryWindow.heldIn(realms.currentId(), key);
+      if (!held.known) {
+        groupsVersion++;
+        log.debug('Leaving noteGroupsTouched(). Not held; the clock moves.');
+        return;
+      }
+      now = held.entry;
+    } else {
+      now = entries.get(key) || null;
+    }
+  }
+  if (now && groupRuleFor(now)) {
+    groupsVersion++;
+    log.debug('Leaving noteGroupsTouched(). It is a group.');
     return;
   }
-  cache.version = directoryVersion;
-  cache.size = entries.size;
-  log.debug('Leaving noteGroupIndexPut(). Still current.');
+  log.debug('Leaving noteGroupsTouched(). Not a group; the index stands.');
+}
+
+// ---------------------------------------------------------------------------
+// A WRITE, TOLD TO EVERY ADD HOLDING NAMES IT ASKED FIRST (#625).
+//
+// #621 kept an add's answers only while `subtreeVersion(ou=users)` had not
+// moved, and under a bulk load from several connections another add always
+// moved it: the body asked `existingUserEntry()` synchronously again on
+// almost every add — 12 s of every 30 s on a request worker of 8081, the
+// add rate down from about 65/s to 47/s. The answer to "who holds name N"
+// can be changed only by a write to an entry that holds or held N, so that
+// is what is recorded, per watch (`heldNameWatches`):
+//
+//   * EVERY DN WRITTEN, wherever it is. An entry the answer named (it held N
+//     then) can only stop holding N by a write at its DN, and the add's own
+//     DN is checked the same way.
+//   * THE NAMES OF THE ENTRY NOW AT THAT DN, when it is directly under
+//     `ou=users` — its RDN value and every `uid`, lower-cased, the keys
+//     `existingUserEntry()` and the username index match by — so an entry
+//     that has come to hold N, by an add, a modify that gave it a `uid`, or
+//     a row another process wrote and this one applied, is seen. A delete
+//     contributes the RDN value of the DN it emptied.
+//   * EVERYTHING, for a write that names no DN (a rename, a restore, a realm
+//     dropped) or whose entry this process cannot see without asking the
+//     store. Neither is on an add's path; a rename costs the adds in flight
+//     one synchronous question each, as every write did before.
+//
+// The DNs a watch may record are bounded (`HELD_NAMES_TOUCH_LIMIT`); past
+// that it records "everything", the conservative answer.
+// ---------------------------------------------------------------------------
+const HELD_NAMES_TOUCH_LIMIT = 4096;
+
+// Hot path (every write): no Entering/Leaving pair, the exception the code
+// style allows, stated as it requires — with no add between its question
+// and its body this is one `size` test.
+function noteHeldNamesTouched(dn, after) {
+  if (!heldNameWatches.size) {
+    return;
+  }
+  const realmId = realms.currentId();
+  let key = null;
+  let names = null;
+  if (dn !== undefined && dn !== null && dn !== '') {
+    key = normalizeDn(dn);
+    names = [];
+    if (normalizeDn(parentDn(String(dn))) === normalizeDn(usersDn())) {
+      let now = after;
+      if (now === undefined) {
+        if (directoryWindow) {
+          const held = directoryWindow.heldIn(realmId, key);
+          now = held.known ? held.entry : undefined;
+        } else {
+          now = entries.get(key) || null;
+        }
+      }
+      // Unknown: what is at the DN cannot be seen without asking the store,
+      // so any name may now be held there.
+      names = now === undefined ? null
+        : usernameKeysOf(now || { dn: String(dn), attributes: {} });
+    }
+  }
+  heldNameWatches.forEach(function (watch) {
+    if (watch.realm !== realmId || watch.everything) {
+      return;
+    }
+    if (key === null || names === null ||
+        watch.dns.size >= HELD_NAMES_TOUCH_LIMIT) {
+      watch.everything = true;
+      return;
+    }
+    watch.dns.add(key);
+    names.forEach(function (name) {
+      watch.names.add(name);
+    });
+  });
 }
 
 // THE NAMING CONTEXTS THIS SOCKET SERVES: the root, and one per defined realm.
@@ -2393,6 +2894,11 @@ const OWN_NAMES = [
   // `common/credentials.ts` argues all of it.
   'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
   'stsTotpCredential',
+  // THE ANDROID MARKER (#615): the credential ids of the keys above whose
+  // trusted `android-key` attestation the recheck asks Google's status list
+  // about, derived on every write of the keys (`deriveAndroidMarker()`) so
+  // that the recheck reads its holders rather than everybody.
+  'stsAndroidAttestedCredential',
   // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
   // person, that every passkey they register is created under and that a
   // discoverable credential hands back to say whose it is. Not a secret —
@@ -2541,6 +3047,10 @@ const OWN_NAMES = [
   // stsDeviceKey like the thumbprints, so a sign-in finds its device by
   // index.
   'stsDeviceCredentialId',
+  // AND EACH ANDROID-ATTESTED KEY'S ID (#615), derived from stsDeviceKey
+  // like the two above, so the Android attestation recheck reads the
+  // devices holding one rather than every device.
+  'stsDeviceAndroidKey',
   // AND ITS RISK LEVEL (#164 phase 4): LOW, MEDIUM or HIGH, and the last
   // change of it — what CAEP's risk-level-change with principal DEVICE
   // reports, set by phase 5's risk scoring and by a compromise.
@@ -3251,61 +3761,187 @@ function entryByUuid(uuid) {
     log.debug("Leaving entryByUuid(). Not a UUID.");
     return null;
   }
+  let found = residentEntryByUuid(wanted);
+  if (!found && directoryWindow) {
+    // A PERSON OR A DEVICE, ASKED OF THE STORE (#349): a primary value
+    // before an alias, as the index ranks them.
+    found = uuidHolderOf(windowedFind('byUuid', [wanted],
+                                      holdsUuid(wanted)) || [], wanted);
+  }
+  log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
+  return found;
+}
+
+// The entry the UUID index names (the RESIDENT entries in a windowed
+// process), rebuilt first when the store has changed: `entryByUuid()`'s
+// first half, and `locateStoredAsync()`'s (#621).
+function residentEntryByUuid(wanted) {
+  log.debug("Entering residentEntryByUuid().");
   const cache = uuidIndexes();
-  const lookup = function () {
-    const key = cache.index ? cache.index.get(wanted) : null;
-    const stored = key ? entries.get(key) : null;
-    return stored && (entryUuidOf(stored) === wanted ||
-                      entryUuidAliasesOf(stored).indexOf(wanted) >= 0)
-      ? stored : null;
-  };
-  let found = lookup();
+  let found = uuidIndexLookup(cache, wanted);
   if (!found && (cache.dirty || !cache.index)) {
     uuidIndexCount.miss();
-    const index = new Map();
-    let collisions = 0;
-    // The RESIDENT entries in a windowed worker (#349): its people and
-    // devices are asked of the store below.
-    eachResidentEntry(function (entry, key) {
-      const value = entryUuidOf(entry);
-      if (value && !index.has(value)) {
-        index.set(value, key);
-      } else if (value && index.get(value) !== key) {
-        collisions += 1;
-      }
-    });
-    // An alias second, so a primary value always wins the slot.
-    eachResidentEntry(function (entry, key) {
-      entryUuidAliasesOf(entry).forEach(function (alias) {
-        if (!index.has(alias)) {
-          index.set(alias, key);
-        } else if (index.get(alias) !== key) {
-          collisions += 1;
-        }
-      });
-    });
-    cache.index = index;
-    cache.collisions = collisions;
-    cache.dirty = false;
-    found = lookup();
+    rebuildUuidIndex(cache);
+    found = uuidIndexLookup(cache, wanted);
   } else {
     // Answered by the index as it stood — found, or current and saying
     // nobody holds that UUID.
     uuidIndexCount.hit();
   }
-  if (!found && directoryWindow) {
-    // A PERSON OR A DEVICE, ASKED OF THE STORE (#349): a primary value
-    // before an alias, as the index ranks them.
-    const hits = windowedFind('byUuid', [wanted], function (entry) {
-      return entryUuidOf(entry) === wanted ||
-        entryUuidAliasesOf(entry).indexOf(wanted) >= 0;
-    }) || [];
-    found = hits.filter(function (entry) {
-      return entryUuidOf(entry) === wanted;
-    })[0] || hits[0] || null;
-  }
-  log.debug("Leaving entryByUuid(). " + (found ? found.dn : 'None.'));
+  log.debug("Leaving residentEntryByUuid(). " + (found ? found.dn : 'None.'));
   return found;
+}
+
+// The rule the store's candidates for a UUID are asked.
+function holdsUuid(wanted) {
+  log.debug("Entering holdsUuid().");
+  log.debug("Leaving holdsUuid().");
+  return function (entry) {
+    return entryUuidOf(entry) === wanted ||
+      entryUuidAliasesOf(entry).indexOf(wanted) >= 0;
+  };
+}
+
+// Of the store's holders of a UUID, the one holding it as its primary
+// value, else the first holding it as an alias — the index's ranking.
+function uuidHolderOf(hits, wanted) {
+  log.debug("Entering uuidHolderOf().");
+  log.debug("Leaving uuidHolderOf().");
+  return hits.filter(function (entry) {
+    return entryUuidOf(entry) === wanted;
+  })[0] || hits[0] || null;
+}
+
+// The entry the RESIDENT UUID index names for a bare, lower-cased UUID, when
+// that entry still holds it — `entryByUuid()`'s check, so a hit on an entry
+// that left by a path that did not fold it out is a miss.
+function uuidIndexLookup(cache, wanted) {
+  log.debug("Entering uuidIndexLookup().");
+  const key = cache.index ? cache.index.get(wanted) : null;
+  const stored = key ? entries.get(key) : null;
+  const found = stored && (entryUuidOf(stored) === wanted ||
+                           entryUuidAliasesOf(stored).indexOf(wanted) >= 0)
+    ? stored : null;
+  log.debug("Leaving uuidIndexLookup().");
+  return found;
+}
+
+// The UUID index rebuilt from the resident entries: primaries first, then
+// aliases, so a primary value always wins the slot.
+function rebuildUuidIndex(cache) {
+  log.debug("Entering rebuildUuidIndex().");
+  const index = new Map();
+  let collisions = 0;
+  // The RESIDENT entries in a windowed worker (#349): its people and
+  // devices are asked of the store.
+  eachResidentEntry(function (entry, key) {
+    const value = entryUuidOf(entry);
+    if (value && !index.has(value)) {
+      index.set(value, key);
+    } else if (value && index.get(value) !== key) {
+      collisions += 1;
+    }
+  });
+  // An alias second, so a primary value always wins the slot.
+  eachResidentEntry(function (entry, key) {
+    entryUuidAliasesOf(entry).forEach(function (alias) {
+      if (!index.has(alias)) {
+        index.set(alias, key);
+      } else if (index.get(alias) !== key) {
+        collisions += 1;
+      }
+    });
+  });
+  cache.index = index;
+  cache.collisions = collisions;
+  cache.dirty = false;
+  log.debug("Leaving rebuildUuidIndex(). " + index.size + " value(s).");
+}
+
+// ---------------------------------------------------------------------------
+// MANY UUIDS AT ONCE, AND WHY (2026-10-14). In a windowed process a UUID the
+// resident index does not hold — every person's and every device's — was a
+// synchronous `byUuid` round trip, and `admin_stats.js` asks one for the
+// subject of EVERY token and artifact it holds whenever a page names the
+// holders (`userKeys()`, `buildUserRows()`, `holdingsOf()`): a subject naming
+// nobody (a person a test deleted) is asked again on every call. Thousands of
+// them made `GET /admin-api/audit` take over a second on a request worker,
+// and the closed-sets job, which asks it once per audit category and action,
+// three hundred times, was killed by its watchdog in the postgres modes.
+//
+// So the subjects are asked TOGETHER: the resident index first, as
+// `entryByUuid()` asks it, then what it does not hold `withUuids`, one
+// statement per `UUID_BATCH`, each row taken as the store answered it
+// (`findWindowed()`'s `readOnly`) — the same answers as one `entryByUuid()`
+// per value, a primary value before an alias.
+// ---------------------------------------------------------------------------
+const UUID_BATCH = 500;
+
+/**
+ * Finds the entries of the ambient realm holding each of a list of
+ * `entryUUID` values: `entryByUuid()` for many values, asking a windowed
+ * store one statement per `UUID_BATCH` values rather than one per value.
+ *
+ * @param uuids - the UUIDs, bare or `urn:uuid:`
+ * @returns a Map from each bare, lower-cased UUID asked to its entry, or null
+ */
+function entriesByUuids(uuids) {
+  log.debug("Entering entriesByUuids(). " + (uuids || []).length +
+            " value(s).");
+  const out = new Map();
+  (uuids || []).forEach(function (one) {
+    const wanted = String(one || '').trim().toLowerCase()
+      .replace(/^urn:uuid:/, '');
+    if (UUID_SHAPED.test(wanted)) {
+      out.set(wanted, null);
+    }
+  });
+  const cache = uuidIndexes();
+  const missing = function () {
+    return Array.from(out.keys()).filter(function (wanted) {
+      return out.get(wanted) === null;
+    });
+  };
+  out.forEach(function (unused, wanted) {
+    out.set(wanted, uuidIndexLookup(cache, wanted));
+  });
+  if (missing().length && (cache.dirty || !cache.index)) {
+    uuidIndexCount.miss();
+    rebuildUuidIndex(cache);
+    missing().forEach(function (wanted) {
+      out.set(wanted, uuidIndexLookup(cache, wanted));
+    });
+  } else if (out.size) {
+    uuidIndexCount.hit();
+  }
+  const asked = directoryWindow ? missing() : [];
+  for (let at = 0; at < asked.length; at += UUID_BATCH) {
+    const batch = asked.slice(at, at + UUID_BATCH);
+    const wanted = new Set(batch);
+    const hits = windowedFind('withUuids', [batch], function (entry) {
+      return wanted.has(entryUuidOf(entry)) ||
+        entryUuidAliasesOf(entry).some(function (alias) {
+          return wanted.has(alias);
+        });
+    }, { readOnly: true }) || [];
+    // A primary value before an alias, as `entryByUuid()` ranks them.
+    hits.forEach(function (entry) {
+      const value = entryUuidOf(entry);
+      if (wanted.has(value) && out.get(value) === null) {
+        out.set(value, entry);
+      }
+    });
+    hits.forEach(function (entry) {
+      entryUuidAliasesOf(entry).forEach(function (alias) {
+        if (wanted.has(alias) && out.get(alias) === null) {
+          out.set(alias, entry);
+        }
+      });
+    });
+  }
+  log.debug("Leaving entriesByUuids(). " + asked.length + " asked of the " +
+            "store.");
+  return out;
 }
 
 // A NEW PERSON IS GIVEN A LANGUAGE (#539). rcbj: "add a policy default per
@@ -3368,7 +4004,6 @@ function putEntry(dn, attributes, options) {
   // "was the index current a moment ago" is no longer a question the cache can
   // answer about itself. See noteUsernameIndexPut().
   const usernameIndexWasCurrent = usernameIndexIsCurrent();
-  const groupIndexWasCurrent = groupIndexIsCurrent();
   const uuidIndexWasCurrent = indexesCurrent().uuid;
   // The names the entry at this DN answered to BEFORE this write, so that an
   // overwrite can take out the ones it no longer answers to. Read here because
@@ -3405,7 +4040,7 @@ function putEntry(dn, attributes, options) {
   entries.set(normalizeDn(dn), stored);
   touchDirectory(stored.dn);
   noteUsernameIndexPut(stored, hadNames, usernameIndexWasCurrent);
-  noteGroupIndexPut(stored, groupIndexWasCurrent);
+  // The group index needs no note: `touchDirectory()` above decided (#618).
   noteUuidIndexPut(stored, uuidIndexWasCurrent);
   // A group's members, told per person (#145). `previous` is the entry this
   // write replaced — putEntry() builds a fresh object, so it is a true before.
@@ -4323,7 +4958,6 @@ const directoryHooks = {
     // answer the question about itself.
     // ---------------------------------------------------------------------
     const usernameWasCurrent = usernameIndexIsCurrent();
-    const groupWasCurrent = groupIndexIsCurrent();
     const uuidWasCurrent = indexesCurrent().uuid;
     // An entry REPLACED here may carry other UUIDs than the one it replaces
     // (a create race reconciled — see above), so the UUID index follows only
@@ -4353,7 +4987,6 @@ const directoryHooks = {
       touchDirectory(stored.dn);
     });
     noteUsernameIndexRefresh(stored, usernameWasCurrent);
-    noteGroupIndexPut(stored, groupWasCurrent);
     noteUuidIndexPut(stored, uuidWasCurrent && !replaced);
     // AN ANCHOR ANOTHER PROCESS ADDED reaches this process's listeners here:
     // the entry is in the store now, and the truststore array is what a
@@ -4361,42 +4994,20 @@ const directoryHooks = {
     if (isTrustAnchorKey(realmId, key)) {
       reloadTrustAnchorsQuietly();
     }
-    // AND THE IDENTITY REGISTER, for `replaceRealm()`'s reason one row at a
-    // time: `/admin/users` reads a different store from this one, and a person
-    // created in another process would otherwise be in the directory here and
-    // absent from the page that lists people. Seeded entries are skipped on
-    // the same argument made at length below.
-    if (stored.origin !== 'seed') {
-      realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-        if (!isPersonEntry(stored)) {
-          return;
-        }
-        const uid = (stored.attributes.uid || [])[0];
-        // ---------------------------------------------------------------
-        // `created`, NOT `restored` (2026-09-08). Those are two different
-        // provenances and this applier had been reporting the wrong one.
-        //
-        // `restored` means "this person was in a store when this service
-        // started and nobody here saw how they got there" — which is exactly
-        // what the STARTUP restore below reports, and is right there. THIS
-        // function is the replication applier: the entry was written by a
-        // DOOR, in another process, moments ago, in this run. The service
-        // watched it happen; only this process did not.
-        //
-        // The consequence was visible on `/admin/users` and through the
-        // management API: a person created through `POST
-        // /admin-api/users/create` read back as `knownBy: "created"` on the
-        // worker that made them and `"restored"` on the other two, so the
-        // answer depended on which worker replied.
-        // `sts_admin_api_operations` caught it — "the register should say
-        // this entry is known because it was CREATED".
-        //
-        // `noteKnownIdentity()` never overwrites an existing record, so this
-        // cannot downgrade somebody who has actually signed in here.
-        // ---------------------------------------------------------------
-        stats.noteKnownIdentity(uid || stored.dn, 'created');
-      });
-    }
+    // NOT THE IDENTITY REGISTER (#618 phase 2, 2026-10-14). Until then a
+    // person another process made through a door was noted here as
+    // `created` — in EVERY process, so each add cost every other process a
+    // journalled row of `admin_stats.users` and, past `MAX_USERS`, a
+    // journalled eviction and a `usersForgotten` bump: about four change rows
+    // per add on 8081, each sealed, inserted, pulled and applied by every
+    // process again. Nothing needs it. The register is `merge: 'own'`, so the
+    // CREATING process's own `created` record reaches every other process
+    // through the replication fan-in (`everyUserRecord()`), which is how a
+    // person made through `POST /admin-api/users/create` reads back
+    // `knownBy: "created"` whichever worker answers; and `/admin/users` has
+    // listed the directory's people itself since #610, so a person made over
+    // the LDAP socket — which no door notes — is listed as `directory`.
+    // `forgetEntry()` below is the same for a windowed worker.
     log.debug('Leaving applyEntry().');
   },
 
@@ -4411,6 +5022,10 @@ const directoryHooks = {
     const current = indexesCurrent();
     const gone = directoryWindow ? directoryWindow.forget(realmId, key)
       : store.delete(key);
+    if (directoryWindow) {
+      // Its container's held count is stale now (dropCountsAbove()).
+      directoryWindow.dropCountsAbove(realmId, key);
+    }
     if (gone) {
       // In the row's realm, for applyEntry()'s reason (#352), and BY ITS DN,
       // AND THE INDEXES KEPT (#351): this is every OTHER process applying a
@@ -4487,24 +5102,39 @@ const directoryHooks = {
   // `row` is the entry the store now holds (null for a delete), read by the
   // applier as `applyEntry()`'s caller reads it; `keep` is true for a key
   // this process is busy with, which is marked stale by the caller and not
-  // forgotten here. Either way a PERSON the store now holds is noted in the
-  // identity register as `created`, exactly as `applyEntry()` notes one a
-  // process holding the whole directory applies: `/admin/users` in a
-  // windowed worker must list who another process just made.
+  // forgotten here. A person the store now holds is NOT noted in the
+  // identity register, exactly as `applyEntry()` notes nobody (#618 phase
+  // 2): `/admin/users` in a windowed worker lists who another process just
+  // made from the directory and the creator's own record.
   forgetEntry: function (realmId, key, row, keep) {
     log.debug('Entering forgetEntry(). realmId=' + realmId + ', key=' + key);
-    if (directoryWindow && !keep) {
-      directoryWindow.forget(realmId, key);
-      touchDirectory(key);
+    // In the row's realm, for applyEntry()'s reason (#352), and with the row
+    // the store now holds as the entry at the key (#618): the window holds
+    // nothing there once it has forgotten it, and `noteGroupsTouched()` would
+    // otherwise have to treat every person another process made as a group
+    // it could not see.
+    const after = row && row.dn ? row : null;
+    if (directoryWindow) {
+      // Its container's held count is stale now (dropCountsAbove()).
+      directoryWindow.dropCountsAbove(realmId, key);
     }
-    if (row && row.dn && row.origin !== 'seed') {
-      realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-        if (isPersonEntry(row)) {
-          const uid = ((row.attributes || {}).uid || [])[0];
-          stats.noteKnownIdentity(uid || row.dn, 'created');
-        }
-      });
-    }
+    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
+      if (directoryWindow && !keep) {
+        directoryWindow.forget(realmId, key);
+        touchDirectory(key, after);
+      } else if (directoryWindow) {
+        // BUSY HERE: the key is kept until this process's own flush lets it
+        // go (markStale()), and nothing is touched — but a GROUP another
+        // process changed must not leave this index current, so the group
+        // clock is asked on its own.
+        noteGroupsTouched(key, after);
+        // And an add holding names it asked first (#625): a row naming one
+        // of them is news to it whether or not this key is busy here.
+        noteHeldNamesTouched(key, after);
+      }
+    });
+    // No identity-register note for a person another process made: see
+    // `applyEntry()` above (#618 phase 2).
     log.debug('Leaving forgetEntry().');
   },
 
@@ -4520,10 +5150,6 @@ const directoryHooks = {
     // that was deleted in the last run and reseeded in this one, and the
     // person who deleted it would find it back.
     store.clear();
-    // What was put back, walked below for the identity register — the LIST
-    // and not the store, which in a windowed worker holds at most its bound
-    // of these (#349).
-    const restored = [];
     list.forEach(function (row) {
       const stored = storedFromRow(realmId, row);
       if (directoryWindow) {
@@ -4531,11 +5157,6 @@ const directoryHooks = {
       } else {
         store.set(normalizeDn(stored.dn), stored);
       }
-      restored.push(stored);
-    });
-    // A whole realm replaced: its UUID index describes nothing now (#351).
-    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-      uuidIndexes().dirty = true;
     });
     // A whole realm replaced: its UUID index describes nothing now (#351).
     realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
@@ -4548,94 +5169,38 @@ const directoryHooks = {
     touchDirectory();
 
     // -------------------------------------------------------------------
-    // AND THE PEOPLE ARE PUT BACK IN THE IDENTITY REGISTER, WHICH IS A
-    // SEPARATE STORE AND WAS THE FIRST BUG THIS FEATURE HAD.
+    // AND THE IDENTITY REGISTER IS NOT FILLED HERE ANY MORE (#613,
+    // 2026-10-13). IT WAS, FROM 2026-08-27, AND IT COST A NODE ITS START.
     //
-    // `/admin/users`, `/admin-api/users` and the user drill-down do not read
-    // this directory. They read `admin_stats.js`'s identity register, which
-    // until 2026-08-27 could only be filled by somebody AUTHENTICATING — and
-    // that was a complete account of how a person came to be known, because
-    // until then a person could only come to be known that way. A restored
-    // directory is the first thing that ever put an entry under `ou=users`
-    // without a sign-in, and the symptom was exact and misleading: twenty
-    // entries restored, `ldapsearch` and `/admin/ldap/directory` showing all of
-    // them, `/admin/users` reporting `known: 0`. It reads as a failed
-    // restore and is a page reading a different store.
+    // This pass put every restored person into `admin_stats.js`'s register
+    // as `restored`, because `/admin/users` read nothing else and a restored
+    // directory read as `known: 0`. In a windowed process the names came
+    // from the store through the synchronous bridge, a page at a time, and
+    // the whole pass was one synchronous loop: on 8081 (131,546 people,
+    // front + 2 workers) it held the event loop 16.0, 17.7 and 13.7 s, IN
+    // EVERY PROCESS, which made the heartbeat 15 s late (STS-CLUSTER-0025)
+    // and an origin-claim renewal take 22.5 s of a 30 s claim
+    // (STS-STORE-0069). Worse, the register is a MINTED store
+    // (`admin_stats.users`) capped at `MAX_USERS` a realm: every note was
+    // journalled and every eviction past the cap was too, so each process
+    // then flushed ~131K writes and deletes — sealed one by one — into the
+    // store and the change log (the change log moved ~132K positions per
+    // process start), which every other process then pulled. That flush was
+    // the 11.2 s gap after "persistence is postgres" in the front.
     //
-    // They are registered as RESTORED rather than as authenticated —
-    // `noteRestoredIdentity()` argues the distinction and why the counts are
-    // deliberately not brought back with them.
-    //
-    // **THIS IS THE ONE PART OF replaceRealm() THAT ENTERS THE REALM**, and it
-    // is the exception the header above it warns is coming. Everything else
-    // here reaches the store through `entries.realmMap(id)`, which names a
-    // realm directly and needs no ambient one. These two do not have that
-    // shape: `isPersonEntry()` compares against `usersDn()`, and the identity
-    // register is itself a `realms.map()`. Both are ambient by construction,
-    // so this pass runs inside the realm and the rest does not.
+    // Nothing needs it since #610: `/admin/users` and `/admin-api/users`
+    // list the directory's people from the DIRECTORY (`peopleRows()`, a
+    // capped listing and the store's count), so a restored person is on the
+    // page as `directory` without being in the register. The register holds
+    // what THIS service observed — an authentication, a creation through a
+    // door, a person another process just made (`applyEntry()`,
+    // `forgetEntry()`) — and in product mode on postgres it is itself
+    // persisted, so what earlier runs observed comes back with the minted
+    // rows. The one reader that used the register as "does this person
+    // exist", the product-mode WebAuthn enrolment door, asks the directory
+    // as well (authn.ts, `knownPerson()`). ldap/CLAUDE.md has the rest.
     // -------------------------------------------------------------------
-    realms.run(realms.get(realmId) || realms.DEFAULT_REALM, function () {
-      let people = 0;
-      restored.forEach(function (stored) {
-        if (!isPersonEntry(stored)) {
-          return;
-        }
-        // ---------------------------------------------------------------
-        // A SEEDED PERSON IS SKIPPED, AND THAT IS WHAT KEEPS A RESTORED
-        // PROCESS'S /admin/users IDENTICAL TO A FRESH ONE'S.
-        //
-        // alice, bob and carol are written by seed() on every start, in every
-        // realm, and have never been in the identity register — that page's
-        // own description is "every userid this service has been given as part
-        // of an interaction that SUCCEEDED", and being seeded is not an
-        // interaction. Registering them here would mean a fresh service listed
-        // nobody and the same service after one restart listed three people
-        // who had still done nothing, which is a difference somebody would
-        // reasonably read as a bug.
-        //
-        // So what gets registered is what a fresh process would also have had:
-        // people somebody CREATED (`origin: 'console'`, and the SCIM and
-        // management API doors that share it), people an `ldapadd` wrote, and
-        // people who AUTHENTICATED — whose counts start at zero again either
-        // way, because those are statistics about a process.
-        // ---------------------------------------------------------------
-        if (stored.origin === 'seed') {
-          return;
-        }
-        // The `uid` if there is one, and the DN otherwise. A person written by
-        // any door in this service has a uid; one added by hand with ldapadd
-        // may not, and a person the console cannot name at all is worse than
-        // one it names by DN.
-        const uid = (stored.attributes.uid || [])[0];
-        if (stats.noteKnownIdentity(uid || stored.dn, 'restored')) {
-          people++;
-        }
-      });
-      // -----------------------------------------------------------------
-      // A WINDOWED WORKER'S PEOPLE ARE NOT IN `restored` (#349): it read the
-      // resident entries back and none of the people. The register is filled
-      // from the STORE instead, a page of NAMES at a time — the key, the DN,
-      // the origin and the first `uid`, which is everything the loop above
-      // reads of a person — so the register holds what it holds in a process
-      // that restored the whole directory, and no entry is read whole or
-      // kept. Same rule: under `ou=users`, not seeded, `uid` or else the DN.
-      // -----------------------------------------------------------------
-      if (directoryWindow && directoryWindow.attached()) {
-        people += directoryWindow.eachName(realmId, normalizeDn(usersDn()),
-          function (name) {
-            if (name.origin === 'seed') {
-              return false;
-            }
-            return !!stats.noteKnownIdentity(name.uid || name.dn,
-                                             'restored');
-          });
-      }
-      log.info('ldap: ' + people + ' restored person/people in the "' +
-               realmId + '" realm are known to /admin/users, marked as ' +
-               'restored rather than as having authenticated here — they ' +
-               'have not, in this process.');
-    });
-    log.debug('Leaving replaceRealm(). ' + restored.length +
+    log.debug('Leaving replaceRealm(). ' + list.length +
               ' entry/entries.');
   }
 };
@@ -4692,8 +5257,28 @@ function personNameOf(stored) {
   return String(name || '');
 }
 
+// MANY SUBJECTS AT ONCE (2026-10-14): `nameForSubject()` for each, through
+// `entriesByUuids()` — one statement per batch in a windowed process rather
+// than a round trip per subject. Keyed by the subject as given, trimmed and
+// lower-cased; a subject naming nobody, or something other than a person,
+// maps to ''.
+function namesForSubjects(subjects) {
+  log.debug('Entering namesForSubjects(). ' + (subjects || []).length +
+            ' subject(s).');
+  const out = new Map();
+  const found = entriesByUuids(subjects || []);
+  (subjects || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim().toLowerCase();
+    const stored = found.get(text.replace(/^urn:uuid:/, '')) || null;
+    out.set(text, stored && isPersonEntry(stored) ? personNameOf(stored) : '');
+  });
+  log.debug('Leaving namesForSubjects().');
+  return out;
+}
+
 helpers.setSubjectResolver({ subjectFor: subjectForName,
-                             nameFor: nameForSubject });
+                             nameFor: nameForSubject,
+                             namesFor: namesForSubjects });
 
 // An RFC 4514 DN split into its RDNs, leaf first. The split is on commas that
 // are NOT escaped, because a value may legitimately contain one — `O=Example\,
@@ -4900,25 +5485,54 @@ function entryByDidSubject(did) {
     log.debug('Leaving entryByDidSubject().');
     return null;
   }
-  let found = null;
   // Resident entries walked; a person or device asked of the store (#349).
-  const asked = windowedFind('byAttribute', ['didsubject', wanted, 2],
-    function (entry) {
-      return (entry.attributes.didsubject || []).indexOf(wanted) >= 0;
-    });
-  if (asked && asked.length) {
-    found = asked[0];
-  }
+  const found = firstRecording('didsubject', wanted,
+    windowedFind('byAttribute', ['didsubject', wanted, 2],
+                 recordsValue('didsubject', wanted)));
+  log.debug('Leaving entryByDidSubject().');
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// THE ENTRY THAT RECORDED AN IDENTIFIER, the second half of the three
+// look-ups by a recorded value (a certificate subject, a DID, a SPIFFE ID).
+// The store's answer comes first (`asked`, in a windowed process: the
+// people and devices holding the value), then the resident entries; with no
+// window (`asked` null) every entry of the realm is walked, as it always
+// was. One function, so `locateEntry()` and its asynchronous twin
+// `locateStoredAsync()` (#621) cannot come to rank the two halves
+// differently.
+// ---------------------------------------------------------------------------
+/**
+ * The first entry recording a value in an attribute.
+ *
+ * @param attribute - the attribute name, lower-cased as stored
+ * @param wanted - the value, as written
+ * @param asked - the store's matching entries, or null outside a window
+ * @returns the entry, or null
+ */
+function firstRecording(attribute, wanted, asked) {
+  log.debug('Entering firstRecording(). ' + attribute);
+  let found = asked && asked.length ? asked[0] : null;
   (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
     if (found) {
       return;
     }
-    if ((entry.attributes.didsubject || []).indexOf(wanted) >= 0) {
+    if ((entry.attributes[attribute] || []).indexOf(wanted) >= 0) {
       found = entry;
     }
   });
-  log.debug('Leaving entryByDidSubject().');
+  log.debug('Leaving firstRecording().');
   return found;
+}
+
+// The rule the store's candidates for `firstRecording()` are asked.
+function recordsValue(attribute, wanted) {
+  log.debug('Entering recordsValue().');
+  log.debug('Leaving recordsValue().');
+  return function (entry) {
+    return (entry.attributes[attribute] || []).indexOf(wanted) >= 0;
+  };
 }
 
 // The entry that already records this SPIFFE identity, wherever it is and
@@ -4934,23 +5548,10 @@ function entryBySpiffeSubject(id) {
     log.debug('Leaving entryBySpiffeSubject().');
     return null;
   }
-  let found = null;
   // Resident entries walked; a person or device asked of the store (#349).
-  const asked = windowedFind('byAttribute', ['spiffesubject', wanted, 2],
-    function (entry) {
-      return (entry.attributes.spiffesubject || []).indexOf(wanted) >= 0;
-    });
-  if (asked && asked.length) {
-    found = asked[0];
-  }
-  (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
-    if (found) {
-      return;
-    }
-    if ((entry.attributes.spiffesubject || []).indexOf(wanted) >= 0) {
-      found = entry;
-    }
-  });
+  const found = firstRecording('spiffesubject', wanted,
+    windowedFind('byAttribute', ['spiffesubject', wanted, 2],
+                 recordsValue('spiffesubject', wanted)));
   log.debug('Leaving entryBySpiffeSubject().');
   return found;
 }
@@ -5000,6 +5601,110 @@ function existingUserEntry(name) {
   const found = key ? (entries.get(key) || null) : null;
   log.debug('Leaving existingUserEntry().');
   return found;
+}
+
+// ---------------------------------------------------------------------------
+// `existingUserEntry()` FOR MANY NAMES, ASKED ASYNCHRONOUSLY (#621).
+//
+// The same two steps, for every name, in the same order and with the same
+// rule — the entry at `uid=<name>,ou=users` if there is one, else the first
+// by key of the entries directly under `ou=users` that answer to the name
+// (`byName`: a `uid` or the RDN value, either case), with what this process
+// changed and has not written added last — so a name resolves to the entry
+// the synchronous lookup would have handed back. What differs is HOW the
+// store is asked in a windowed process: the direct keys as ONE `byKeys`
+// question per five hundred names (`entriesAtAsync()`), and a `byName` for
+// each name that missed, all through the bridge's `queryAsync()` with the
+// event loop given back between them, each row taken as the store answered
+// it unless this process holds a newer copy, and nothing handed out or put
+// in the window. Outside a window there is no store to wait for: each name
+// is `existingUserEntry()`, a lookup in the username index.
+//
+// **A `byName` PER MISS AND NOT ONE `withNames` FOR ALL OF THEM.** One
+// statement would be fewer questions, and `countPeopleNamed()` asks it that
+// way; but `withNames` ORs a GIN containment over an array, which postgres
+// cannot answer from either index, so it filters every row under
+// `ou=users` — linear in the people, the cost rcbj has ruled out of every
+// request path. `byName` is answered from the two indexes, and a miss is
+// rare where it matters: this service names everybody it creates
+// `uid=<name>`, so only an entry named otherwise (`cn=` from a certificate)
+// or a name nobody holds reaches it. They are asked `BY_NAME_AT_ONCE` at a
+// time, so a page of registry names with no entry is a handful of round
+// trips of the driver's read pool rather than one after another.
+// ---------------------------------------------------------------------------
+const BY_NAME_AT_ONCE = 8;
+
+/**
+ * Finds each name's entry as `existingUserEntry()` does, asking the store
+ * asynchronously in a windowed process.
+ *
+ * @param names - the usernames
+ * @param counter - optional; `pages` and `rows` of the `byKeys` questions
+ *   are added to, and `byName` to how many names were asked by name
+ * @returns a promise of one element per name: the entry, or null
+ */
+async function existingUserEntriesAsync(names, counter) {
+  log.debug('Entering existingUserEntriesAsync(). ' + (names || []).length +
+            ' name(s).');
+  const list = (names || []).map(function (one) {
+    return String(one == null ? '' : one);
+  });
+  if (!directoryWindow) {
+    log.debug('Leaving existingUserEntriesAsync(). No window.');
+    return list.map(existingUserEntry);
+  }
+  const realmId = realms.currentId();
+  const users = normalizeDn(usersDn());
+  const wanted = list.map(function (name) {
+    return name.trim().toLowerCase();
+  });
+  // The DN namePlan() gives a name — built exactly as `existingUserEntry()`
+  // builds it, from the name as given.
+  const direct = list.map(function (name) {
+    return normalizeDn('uid=' + name + ',' + usersDn());
+  });
+  const at = await directoryWindow.entriesAtAsync(realmId,
+    direct.filter(function (key, i) {
+      return !!wanted[i];
+    }), counter);
+  const out = list.map(function (name, i) {
+    return wanted[i] ? (at.get(direct[i]) || null) : null;
+  });
+  // Each name that missed, ONCE: an add proposes its RDN value and its
+  // `uid`, which are usually the same name, and a list may repeat one. The
+  // direct key was the same for both, so the answer is too.
+  const missed = [];
+  const firstOf = new Map();
+  out.forEach(function (found, i) {
+    if (!found && wanted[i] && !firstOf.has(list[i])) {
+      firstOf.set(list[i], i);
+      missed.push(i);
+    }
+  });
+  if (counter) {
+    counter.byName = (counter.byName || 0) + missed.length;
+  }
+  for (let from = 0; from < missed.length; from += BY_NAME_AT_ONCE) {
+    const batch = missed.slice(from, from + BY_NAME_AT_ONCE);
+    const answers = await Promise.all(batch.map(function (i) {
+      return directoryWindow.findWindowedAsync(realmId, 'byName',
+        [realmId, users, wanted[i]], function (entry) {
+          return normalizeDn(parentDn(entry.dn)) === users &&
+            usernameKeysOf(entry).indexOf(wanted[i]) >= 0;
+        });
+    }));
+    batch.forEach(function (i, k) {
+      out[i] = answers[k][0] ? answers[k][0].entry : null;
+    });
+  }
+  out.forEach(function (found, i) {
+    if (!found && wanted[i] && firstOf.get(list[i]) !== i) {
+      out[i] = out[firstOf.get(list[i])];
+    }
+  });
+  log.debug('Leaving existingUserEntriesAsync(). ' + missed.length +
+            ' asked by name.');
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -6907,7 +7612,6 @@ function applyVcAttributes(stored, key) {
   const added = [];
   // Read before the first mutation — see usernameIndexIsCurrent().
   const usernameIndexWasCurrent = usernameIndexIsCurrent();
-  const groupIndexWasCurrent = groupIndexIsCurrent();
   Object.keys(generated).forEach(function (attribute) {
     const have = stored.attributes[attribute] || [];
     if (have.length) {
@@ -6949,7 +7653,6 @@ function applyVcAttributes(stored, key) {
   // ---------------------------------------------------------------------
   touchDirectory(stored.dn);
   noteUsernameIndexRefresh(stored, usernameIndexWasCurrent);
-  noteGroupIndexPut(stored, groupIndexWasCurrent);
   log.debug('ldap: ' + stored.dn + ' gained ' + added.join(', ') +
             ' so that an issued credential has something to assert.');
   log.debug('Leaving applyVcAttributes(). ' + added.length + ' attribute(s) ' +
@@ -7240,23 +7943,10 @@ function locateEntry(key) {
                 'directly.');
       return { dn: direct.dn, stored: direct };
     }
-    let found = null;
     // Resident entries walked; a person asked of the store (#349).
-    const asked = windowedFind('byAttribute', ['x509subject', key, 2],
-      function (entry) {
-        return (entry.attributes.x509subject || []).indexOf(key) >= 0;
-      });
-    if (asked && asked.length) {
-      found = asked[0];
-    }
-    (asked ? eachResidentEntry : eachEntryInRealm)(function (entry) {
-      if (found) {
-        return;
-      }
-      if ((entry.attributes.x509subject || []).indexOf(key) >= 0) {
-        found = entry;
-      }
-    });
+    const found = firstRecording('x509subject', key,
+      windowedFind('byAttribute', ['x509subject', key, 2],
+                   recordsValue('x509subject', key)));
     if (found) {
       log.debug('Leaving locateEntry(). Found by x509subject: ' + found.dn);
       return { dn: found.dn, stored: found };
@@ -7310,6 +8000,82 @@ function locateEntry(key) {
   log.debug('Leaving locateEntry(). A name, so ' + dn +
             ' (nothing there yet).');
   return { dn: dn, stored: null };
+}
+
+// ---------------------------------------------------------------------------
+// `locateEntry()`'s ENTRY, ASKED ASYNCHRONOUSLY (#621), for a caller that
+// can wait and needs only the entry — the credential census. The four
+// identifier shapes in `locateEntry()`'s order, each resolved by the same
+// halves it uses (`residentEntryByUuid()` and `uuidHolderOf()`,
+// `firstRecording()`), with the store's half asked through
+// `findWindowedAsync()`; a NAME is `existingUserEntriesAsync()`. Outside a
+// window it is `locateEntry()` itself, which asks no store.
+// ---------------------------------------------------------------------------
+/**
+ * The entry `locateEntry()` would find for a key, or null.
+ *
+ * @param key - a name, `urn:uuid:` subject, DN, DID or SPIFFE ID
+ * @returns a promise of the entry, or null
+ */
+async function locateStoredAsync(key) {
+  log.debug('Entering locateStoredAsync(). key=' + key);
+  const text = String(key == null ? '' : key);
+  if (!directoryWindow) {
+    log.debug('Leaving locateStoredAsync(). No window.');
+    return locateEntry(text).stored;
+  }
+  const realmId = realms.currentId();
+  const recorded = async function (attribute, wanted) {
+    log.debug('Entering locateStoredAsync()\'s recorded(). ' + attribute);
+    const asked = await directoryWindow.findWindowedAsync(realmId,
+      'byAttribute', [realmId, attribute, wanted, 2],
+      recordsValue(attribute, wanted));
+    log.debug('Leaving locateStoredAsync()\'s recorded().');
+    return firstRecording(attribute, wanted, asked.map(function (hit) {
+      return hit.entry;
+    }));
+  };
+  let found = null;
+  if (/^urn:uuid:/i.test(text)) {
+    const wanted = text.trim().toLowerCase().replace(/^urn:uuid:/, '');
+    if (UUID_SHAPED.test(wanted)) {
+      found = residentEntryByUuid(wanted);
+      if (!found) {
+        const hits = await directoryWindow.findWindowedAsync(realmId,
+          'byUuid', [realmId, wanted], holdsUuid(wanted));
+        found = uuidHolderOf(hits.map(function (hit) {
+          return hit.entry;
+        }), wanted);
+      }
+    }
+  } else if (DN_SHAPED.test(text)) {
+    const at = normalizeDn(text);
+    found = (await directoryWindow.entriesAtAsync(realmId, [at])).get(at) ||
+      null;
+    if (!found) {
+      found = await recorded('x509subject', text);
+    }
+  } else if (DID_SHAPED.test(text) || SPIFFE_SHAPED.test(text)) {
+    const wanted = text.trim();
+    if (wanted) {
+      found = await recorded(DID_SHAPED.test(text) ? 'didsubject'
+                                                  : 'spiffesubject', wanted);
+    }
+  } else {
+    found = (await existingUserEntriesAsync([text]))[0];
+  }
+  log.debug('Leaving locateStoredAsync(). ' + (found ? found.dn : 'None.'));
+  return found || null;
+}
+
+// Whether `locateEntry()` resolves a key as an identifier rather than a
+// name: its first four branches.
+function identifierShaped(key) {
+  log.debug('Entering identifierShaped().');
+  const text = String(key == null ? '' : key);
+  log.debug('Leaving identifierShaped().');
+  return /^urn:uuid:/i.test(text) || DN_SHAPED.test(text) ||
+    DID_SHAPED.test(text) || SPIFFE_SHAPED.test(text);
 }
 
 /**
@@ -7946,9 +8712,9 @@ function groupsFor(dn) {
 // token.** That is the whole reason group_claims.js reads the membership per
 // token and caches nothing, and it is the thing somebody came to a mock
 // directory to watch. This is not a time-based cache and there is no staleness
-// window — `directoryVersion` is bumped by every writer (see touchDirectory()
-// beside the store), and a bumped version rebuilds on the next read, before it
-// answers. What was rejected was a cache with a TTL, which would have bought
+// window — every writer calls touchDirectory() beside the store, which moves
+// `groupsVersion` for any write that may have touched a group (#618), and a
+// moved clock rebuilds on the next read, before it answers. What was rejected was a cache with a TTL, which would have bought
 // the same speed and broken exactly that.
 //
 // Two maps, because the membership is asserted from two ends and this service
@@ -7989,7 +8755,9 @@ function groupsFor(dn) {
 // The cache itself is declared beside the username index, up by the store —
 // see the note there. Everything else about it is here.
 
-function buildGroupIndex() {
+// `uncounted`: a build for comparison (`groupIndexState()`), not kept and
+// not counted among the builds.
+function buildGroupIndex(uncounted) {
   log.debug('Entering buildGroupIndex().');
   const byMember = new Map();
   const byDn = new Map();
@@ -8043,30 +8811,88 @@ function buildGroupIndex() {
       });
     });
   });
-  groupIndexes().builds++;
+  if (!uncounted) {
+    groupIndexes().builds++;
+  }
   log.debug('Leaving buildGroupIndex(). ' + byDn.size + ' group(s) and ' +
             byMember.size + ' member name(s), built ' + groupIndexes().builds +
             ' time(s) so far.');
   return { byMember: byMember, byDn: byDn };
 }
 
-// The index, rebuilt if anything has been written since it was made. See the
-// block above for why the size is checked as well as the version.
+// The index, rebuilt if a GROUP may have been written since it was made
+// (#618: `groupsVersion`, moved by `noteGroupsTouched()`), or if either
+// container it resolved against has moved.
+//
+// THE SIZE NET, outside a window: `entries.size` changed while
+// `directoryVersion` did not means a writer replaced or removed an entry
+// without calling `touchDirectory()` — the block above — and the index is
+// rebuilt rather than trusted. In a windowed process the size is the store's
+// count, which another process's writes move without any write here, so the
+// net is not cast there; the clock is the whole rule.
 function groupIndexNow() {
   log.debug("Entering groupIndexNow().");
   const cache = groupIndexes();
-  if (cache.index && cache.version === directoryVersion &&
-      cache.size === entries.size) {
+  const size = directoryWindow ? -1 : entries.size;
+  const unannounced = !directoryWindow && cache.seen === directoryVersion &&
+    cache.size !== size;
+  if (groupIndexIsCurrent() && !unannounced) {
+    cache.seen = directoryVersion;
+    cache.size = size;
     groupIndexCount.hit();
     log.debug("Leaving groupIndexNow().");
     return cache.index;
   }
   groupIndexCount.miss();
+  // The clock and the containers as they are BEFORE the build: a write the
+  // build could race (none today — it is synchronous) would then rebuild.
+  const version = groupsVersion;
+  const users = normalizeDn(usersDn());
+  const groups = normalizeDn(groupsDn());
   cache.index = buildGroupIndex();
-  cache.version = directoryVersion;
-  cache.size = entries.size;
+  cache.version = version;
+  cache.usersDn = users;
+  cache.groupsDn = groups;
+  cache.seen = directoryVersion;
+  cache.size = size;
   log.debug("Leaving groupIndexNow().");
   return cache.index;
+}
+
+// The index as plain data, in a fixed order, so two can be compared.
+function groupIndexData(index) {
+  log.debug("Entering groupIndexData().");
+  const byDn = Array.from(index.byDn.keys()).sort().map(function (key) {
+    const group = index.byDn.get(key);
+    return [key, group.dn, group.cn, group.rule];
+  });
+  const byMember = Array.from(index.byMember.keys()).sort()
+    .map(function (member) {
+      const groups = index.byMember.get(member);
+      return [member, Array.from(groups.keys()).sort().map(function (key) {
+        return [key, groups.get(key).slice(0)];
+      })];
+    });
+  log.debug("Leaving groupIndexData().");
+  return { byDn: byDn, byMember: byMember };
+}
+
+// What the group index has done in the ambient realm, for
+// `tests/group_index_clock.js` (#618): how many times it was built, the
+// clock it is current for, and the clock now. With `compare`, the index held
+// now and one built afresh (not kept, not counted), each as plain data: the
+// test's "the answers a rebuild gives".
+function groupIndexState(compare) {
+  log.debug("Entering groupIndexState().");
+  const cache = groupIndexes();
+  const out = { builds: cache.builds, version: cache.version,
+                groupsVersion: groupsVersion, current: groupIndexIsCurrent() };
+  if (compare) {
+    out.held = cache.index ? groupIndexData(cache.index) : null;
+    out.fresh = groupIndexData(buildGroupIndex(true));
+  }
+  log.debug("Leaving groupIndexState().");
+  return out;
 }
 
 /**
@@ -8371,6 +9197,9 @@ attributeSources.setDirectory({
   deleteSource: deleteAttributeSourceEntry,
   personAttributes: vcAttributesFor,
   people: attributeSourcePeople,
+  // A page by key after an opaque cursor (#615): what the scheduled refresh
+  // asks, so a run reads one page rather than everybody.
+  peoplePage: attributeSourcePeoplePage,
   apply: applySourcedAttributes,
   seen: attributeSourceSeen
 });
@@ -9721,6 +10550,10 @@ function operationalWriteRefusal(req, operation, dn, types) {
 const CREDENTIAL_ATTRIBUTE_DOORS = {
   stswebauthncredential: '/portal/keys, the sign-in ' +
     'screen, or /admin/users (remove)',
+  // Derived from the keys on every write of them (#615): written by hand it
+  // would hide a key from the Android attestation recheck, or name one.
+  stsandroidattestedcredential: 'the doors of stsWebauthnCredential, ' +
+    'from which it is derived on every write',
   // The handle every passkey is created under (#474): rewritten by hand it
   // would sign the person in as nobody, or as somebody else.
   stswebauthnuserhandle: 'the first passkey registered at /portal/keys or ' +
@@ -9925,6 +10758,38 @@ function anybodyHoldsACredential() {
 // useless to an attacker — so hashing it would make it useless for the only
 // thing it is for.
 // ---------------------------------------------------------------------------
+// THE ANDROID MARKER, DERIVED ON EVERY WRITE OF THE KEYS (#615).
+//
+// `stsAndroidAttestedCredential` names the credential id of each key whose
+// trusted `android-key` attestation kept its chain's serials, so that the
+// scheduler's Android attestation recheck asks the store who HOLDS it — one
+// statement against the `attr_names` index — instead of reading every
+// person's keys. **WHAT QUALIFIES IS `common/credentials.ts`'s RULE**
+// (`androidMarkerOf()`), asked here with the values this file just wrote:
+// this file only puts the answer on the entry, the census's division of
+// labour. Both doors that write the keys call it, so a registration puts it
+// on and a removal or an untrusting (a rewrite of the values) takes it off;
+// a socket write of either attribute is refused (`CREDENTIAL_ATTRIBUTE_DOORS`),
+// so there is no third door. An older `credentials.ts` without the function
+// leaves the entry as it was, and the recheck's backfill puts it right.
+// Called once per write of somebody's keys, which is a sign-in's counter
+// update at most: no hot path, so the pair is kept.
+function deriveAndroidMarker(stored) {
+  log.debug('Entering deriveAndroidMarker().');
+  if (typeof credentials.androidMarkerOf !== 'function') {
+    log.debug('Leaving deriveAndroidMarker(). No rule to ask.');
+    return;
+  }
+  const ids = credentials.androidMarkerOf(
+    stored.attributes.stswebauthncredential || []);
+  if (ids.length) {
+    stored.attributes.stsandroidattestedcredential = ids;
+  } else {
+    delete stored.attributes.stsandroidattestedcredential;
+  }
+  log.debug('Leaving deriveAndroidMarker(). ' + ids.length + '.');
+}
+
 function readWebauthnValues(key) {
   log.debug('Entering readWebauthnValues(). key=' + key);
   const located = locateEntry(String(key || ''));
@@ -9953,6 +10818,7 @@ function writeWebauthnValue(key, value) {
   // for the first, which is the whole reason the attribute is multi-valued.
   const have = stored.attributes.stswebauthncredential || [];
   stored.attributes.stswebauthncredential = have.concat([String(value)]);
+  deriveAndroidMarker(stored);
   touchDirectory();
   log.debug('Leaving writeWebauthnValue(). Written to ' + stored.dn + '.');
   return true;
@@ -9973,6 +10839,7 @@ function replaceWebauthnValues(key, values) {
   } else {
     stored.attributes.stswebauthncredential = values.map(String);
   }
+  deriveAndroidMarker(stored);
   touchDirectory();
   log.debug('Leaving replaceWebauthnValues(). ' +
             ((values || []).length) + ' key(s) left.');
@@ -10434,8 +11301,70 @@ function deleteAttributeSourceEntry(cn) {
   return true;
 }
 
+// THE PEOPLE A PAGE AT A TIME, BY KEY (#615's audit of every scheduler
+// job). `attributeSourcePeople()` below answered one page of 200 by listing
+// every person of the realm, normalising and sorting all their names, and
+// filtering past the cursor — on every run of `attribute-sources.refresh`,
+// every minute while a cycle is open, which in a windowed process is the
+// whole of `ou=users` paged through the synchronous bridge on the serving
+// front process. This answers the same page by the entry's KEY (the
+// normalised DN, which is the store's order): in a windowed process ONE
+// `page()` statement after the cursor (`DirectoryWindow.pageAfter()`); in
+// memory the container's kept listing (`entriesUnder()`, re-walked only
+// after a write there) sorted by key, which is the old cost of the
+// in-memory path and no store read. The cursor is opaque to the caller.
+// The order differs from the old one (DN key, not username), which changes
+// only the order in which a cycle reaches people; a cycle still reaches
+// everybody there was when it started.
+/**
+ * One page of the ambient realm's people after an opaque cursor.
+ *
+ * @param after - the cursor the previous page answered, or ''
+ * @param limit - the page size
+ * @returns `{ names, cursor, more }`
+ */
+function attributeSourcePeoplePage(after, limit) {
+  log.debug('Entering attributeSourcePeoplePage().');
+  const most = Math.max(1, Math.min(1000, Number(limit) || 100));
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  let rows = [];
+  let more = false;
+  if (directoryWindow) {
+    const page = directoryWindow.pageAfter(realms.currentId(), base,
+                                           String(after || ''), most);
+    rows = page.rows;
+    more = page.more;
+  } else {
+    const all = entriesUnder(usersDn()).map(function (stored) {
+      return { key: normalizeDn(stored.dn), entry: stored };
+    }).filter(function (one) {
+      return one.key !== base && one.key.endsWith(suffix) &&
+             (!after || one.key > after);
+    }).sort(function (a, b) {
+      return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+    });
+    more = all.length > most;
+    rows = all.slice(0, most);
+  }
+  const names = [];
+  rows.forEach(function (one) {
+    if (isPersonEntry(one.entry)) {
+      const name = usernameOfEntry(one.entry);
+      if (name) {
+        names.push(String(name));
+      }
+    }
+  });
+  const cursor = rows.length ? rows[rows.length - 1].key : '';
+  log.debug('Leaving attributeSourcePeoplePage(). ' + names.length +
+            (more ? ', and more.' : '.'));
+  return { names: names, cursor: cursor, more: more };
+}
+
 // The people of the ambient realm, by username, sorted — for the scheduled
-// refresh, which pages through them after a cursor (#94).
+// refresh, which pages through them after a cursor (#94). Kept for a caller
+// of the older interface; the refresh asks `attributeSourcePeoplePage()`.
 function attributeSourcePeople(after, limit) {
   log.debug('Entering attributeSourcePeople(). after=' + (after || ''));
   const names = entriesUnder(usersDn()).filter(function (stored) {
@@ -10677,9 +11606,8 @@ function listDeviceEntries() {
 // `ou=devices` (`countUnder()`), with this process's own changes.
 function countDeviceEntries() {
   log.debug('Entering countDeviceEntries().');
-  const n = directoryWindow
-    ? directoryWindow.countUnder(realms.currentId(), normalizeDn(devicesDn()))
-    : entriesUnder(devicesDn()).length;
+  // The container's count (#610), as every Directory page asks for it.
+  const n = countUnderContainer(devicesDn());
   log.debug('Leaving countDeviceEntries(). ' + n + '.');
   return n;
 }
@@ -11076,6 +12004,10 @@ if (typeof credentials.setDirectory === 'function') {
     readWebauthn: readWebauthnValues,
     writeWebauthn: writeWebauthnValue,
     replaceWebauthn: replaceWebauthnValues,
+    // The holders of one attribute, asynchronously, for a background job
+    // (#615): the Android attestation recheck's people and devices.
+    // Checked where it is used; without it the recheck walks as it did.
+    holdersAsync: holdersAsync,
     // The WebAuthn user handle (#474), checked where it is used.
     readWebauthnUserHandle: readWebauthnUserHandle,
     writeWebauthnUserHandle: writeWebauthnUserHandle,
@@ -11423,7 +12355,16 @@ if (typeof mailChannel.setDirectory === 'function') {
       log.debug('Entering personByMail().');
       const wanted = String(address || '').trim().toLowerCase();
       let found = '';
-      if (wanted) {
+      if (wanted && directoryWindow) {
+        // ASKED OF THE STORE'S MAIL INDEX IN A WINDOWED PROCESS (#616): this
+        // is the portal's unauthenticated forgot-password form, and
+        // `allPersons()` paged and copied every person in the realm to
+        // answer it. `peopleByMail()` is the `mail_keys` lookup, in key
+        // order; the first is the answer, as the first in `allPersons()`'
+        // order was.
+        const hits = peopleByMail(wanted);
+        found = hits.length ? hits[0].username || '' : '';
+      } else if (wanted) {
         allPersons().some(function (entry) {
           const values = (entry.attributes && entry.attributes.mail) || [];
           if (values.some(function (v) {
@@ -11676,9 +12617,15 @@ if (typeof personAssertions.setDirectory === 'function') {
 // only an identifier-shaped key (a subject, a DN, a DID, a SPIFFE ID) costs
 // what it always cost, once rather than nine times.
 //
-// **IN #349's WINDOW** each name is one `locateEntry()`, so a person the
-// worker does not hold costs one synchronous round trip; batching the names
-// into one `byKeys()` question is left for the prefetch rcbj deferred.
+// **IN #349's WINDOW THIS IS NOT WHAT A REQUEST ASKS (#621, 2026-10-14).**
+// Each name here is one `locateEntry()`, so a person the window does not
+// hold costs one SYNCHRONOUS round trip: 5,000 of them for `GET
+// /admin-api/users` at `credentials.factorScanLimit`, a request worker
+// frozen for 10 s on 8081 at 382,000 people. The requests ask
+// `credentialCensusAsync()`, below, which resolves every name by the same
+// rule and reads the store a page at a time without holding the event loop;
+// this one is what a synchronous caller (and every caller outside a window,
+// where it asks no store) still gets.
 // ---------------------------------------------------------------------------
 /**
  * Reads the credential attributes of each named person, raw, in one call.
@@ -11693,31 +12640,322 @@ function credentialCensus(names) {
             ' name(s).');
   const out = (names || []).map(function (name) {
     const stored = locateEntry(String(name == null ? '' : name)).stored;
-    if (!stored) {
-      return null;
-    }
-    const a = stored.attributes;
-    const password = (a.userpassword || []).length > 0 &&
-                     !!String(a.userpassword[0]);
-    return {
-      password: password,
-      webauthn: (a.stswebauthncredential || []).slice(0),
-      totp: (a.ststotpcredential || [])[0]
-        ? String(a.ststotpcredential[0]) : '',
-      // The mail channel's `personEntry()` reads only an entry with a name
-      // (`usernameOfEntry()`), so the census hands the four over on the same
-      // condition — otherwise an entry that channel refuses would be counted
-      // as holding an emailed factor.
-      mail: usernameOfEntry(stored)
-        ? { mail: (a.mail || []).slice(0),
-            stsmailverified: (a.stsmailverified || []).slice(0),
-            stsmailfactor: (a.stsmailfactor || []).slice(0),
-            stsmailfactorfailures: (a.stsmailfactorfailures || []).slice(0) }
-        : null
-    };
+    return stored ? censusOfEntry(stored) : null;
   });
   log.debug('Leaving credentialCensus().');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE CENSUS, ASKED ASYNCHRONOUSLY (#621, 2026-10-14; rcbj: "minimize full
+// directory scans and use asynchronous javascript operations, not blocking
+// operations").
+//
+// `credentialCensus()`'s answer — one element per name, the same raw values
+// from `censusOfEntry()` — with each name found as `locateEntry()` finds it,
+// and NOT ONE synchronous question to the store in a windowed process:
+//
+//   * a NAME, which is nearly every name the users list hands over, is
+//     `existingUserEntriesAsync()`: the direct keys as one `byKeys` per five
+//     hundred names, and a `byName` for each that missed, all through the
+//     bridge's `queryAsync()` with the event loop given back between them.
+//     So 5,000 people are ten asynchronous statements, not 5,000 blocking
+//     ones.
+//   * an IDENTIFIER — a `urn:uuid:` subject, a certificate's DN, a DID, a
+//     SPIFFE ID, which reach the list from the identity register — is
+//     `locateStoredAsync()`: `locateEntry()`'s own resolution, its store
+//     question asked asynchronously. They are few (the register keeps at
+//     most `stats.MAX_USERS` identities, and most are names).
+//
+// Each row is taken as the store answered it unless this process holds a
+// newer copy (`heldOrRow()`), which is `locateEntry()`'s answer too: the
+// window's copy is what the synchronous read hands back when it holds one.
+// Nothing is handed out or put in the window, so a census of five thousand
+// people does not evict the people this process is busy with.
+//
+// Outside a window there is nothing to wait for — the username index is a
+// Map — and this is `credentialCensus()`.
+// ---------------------------------------------------------------------------
+/**
+ * `credentialCensus()`, asked asynchronously.
+ *
+ * @param names - the names, as `locateEntry()` takes them
+ * @param counter - optional; what the store was asked, for a test
+ * @returns a promise of one element per name, as `credentialCensus()`
+ */
+async function credentialCensusAsync(names, counter) {
+  log.debug('Entering credentialCensusAsync(). ' + (names || []).length +
+            ' name(s).');
+  const list = (names || []).map(function (name) {
+    return String(name == null ? '' : name);
+  });
+  if (!directoryWindow) {
+    log.debug('Leaving credentialCensusAsync(). No window.');
+    return credentialCensus(list);
+  }
+  const out = list.map(function () {
+    return null;
+  });
+  const plain = [];
+  const shaped = [];
+  list.forEach(function (name, i) {
+    (identifierShaped(name) ? shaped : plain).push(i);
+  });
+  const found = await existingUserEntriesAsync(plain.map(function (i) {
+    return list[i];
+  }), counter);
+  plain.forEach(function (i, at) {
+    out[i] = found[at] ? censusOfEntry(found[at]) : null;
+  });
+  for (const i of shaped) {
+    const stored = await locateStoredAsync(list[i]);
+    out[i] = stored ? censusOfEntry(stored) : null;
+  }
+  if (counter) {
+    counter.identifiers = (counter.identifiers || 0) + shaped.length;
+  }
+  log.debug('Leaving credentialCensusAsync(). ' + plain.length +
+            ' name(s), ' + shaped.length + ' identifier(s).');
+  return out;
+}
+
+// One entry's census values, raw — what `credentialCensus()` hands over per
+// name and `credentialTallies()` per holder (#610).
+// Called once per person in a census, so no Entering/Leaving pair: two lines
+// per person would drown the page's own log.
+function censusOfEntry(stored) {
+  const a = stored.attributes;
+  const password = (a.userpassword || []).length > 0 &&
+                   !!String(a.userpassword[0]);
+  return {
+    password: password,
+    webauthn: (a.stswebauthncredential || []).slice(0),
+    totp: (a.ststotpcredential || [])[0]
+      ? String(a.ststotpcredential[0]) : '',
+    // The mail channel's `personEntry()` reads only an entry with a name
+    // (`usernameOfEntry()`), so the census hands the four over on the same
+    // condition — otherwise an entry that channel refuses would be counted
+    // as holding an emailed factor.
+    mail: usernameOfEntry(stored)
+      ? { mail: (a.mail || []).slice(0),
+          stsmailverified: (a.stsmailverified || []).slice(0),
+          stsmailfactor: (a.stsmailfactor || []).slice(0),
+          stsmailfactorfailures: (a.stsmailfactorfailures || []).slice(0) }
+      : null
+  };
+}
+
+// ---------------------------------------------------------------------------
+// THE WHOLE DIRECTORY'S CREDENTIAL TILES, WITHOUT LISTING EVERYBODY (#610).
+//
+// `/admin/users`' tiles — a second factor, password only, no way in yet —
+// counted the CAPPED list, so on a bulk-loaded realm they described the
+// first five thousand people and said so nowhere. rcbj asked for each to
+// count the realm's whole directory without a full scan. What makes that
+// possible is that every one of them is a question about the FEW people who
+// hold a credential attribute, plus one count:
+//
+//   * `people` and `withPassword` are COUNTED: in a windowed process the
+//     store's two counter rows (#618; a `count(*)` and a `count(*) FILTER`
+//     until then) in one statement (`DirectoryWindow.countHolding()`), the
+//     values themselves
+//     being sealed; in memory, one pass over `ou=users` reading the one
+//     attribute's presence.
+//   * `holders` are the people holding any of the attributes the caller
+//     names — `common/credentials.ts` names them, since what an enrolment
+//     is decided there — each handed over RAW, exactly as
+//     `credentialCensus()` hands a named person over, for that file to
+//     interpret by its own rules (key roles, the sealed TOTP verdict, the
+//     emailed factor under the realm's policy). In a windowed process they
+//     are the store's holders (`holders()`, the `attr_names` probe), read
+//     back through the window; in memory the same pass collects them.
+//
+// So the store reads O(holders) entries and counts the rest, and the memory
+// pass is O(people in the realm) — **a walk, said here**: the in-memory
+// directory keeps no tally per attribute, for `countUnderContainer()`'s
+// reason. "Holds a password" is the attribute's presence with a value in
+// both modes, which is the census's reading of it but for a `userPassword`
+// whose first value is empty — counted here, not there.
+//
+// KEPT until something is written under `ou=users` (the subtree clock, which
+// this process's own writes and the rows it applies move), and in a windowed
+// process for at most ten seconds besides, for another process's writes.
+// ---------------------------------------------------------------------------
+const credentialTalliesMemo = realms.keyed(function () {
+  return { version: -1, at: 0, spec: '', value: null };
+});
+const credentialTalliesCount =
+  cacheRegistry.counter('ldap.credential-tallies');
+
+/**
+ * Counts the ambient realm's people and those holding a password, and hands
+ * over, raw, everybody holding any of the named credential attributes.
+ *
+ * @param spec - `{ password, holding }`: the password attribute and the
+ *   credential attributes, as `credentials.ts` names them
+ * @returns `{ people, withPassword, holders: [{ name, raw }] }`
+ */
+function credentialTallies(spec) {
+  log.debug('Entering credentialTallies().');
+  const passwordAttribute = String((spec && spec.password) || 'userPassword')
+    .toLowerCase();
+  const holding = ((spec && spec.holding) || []).map(function (one) {
+    return String(one).toLowerCase();
+  });
+  const signature = passwordAttribute + '|' + holding.join(',');
+  const version = subtreeVersion(usersDn());
+  const held = credentialTalliesMemo();
+  if (held.value && held.version === version && held.spec === signature &&
+      (!directoryWindow || Date.now() - held.at <= 10000)) {
+    credentialTalliesCount.hit();
+    log.debug('Leaving credentialTallies(). Kept.');
+    return held.value;
+  }
+  credentialTalliesCount.miss();
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  const holds = function (stored, attribute) {
+    const values = stored.attributes[attribute];
+    return Array.isArray(values) && values.length > 0;
+  };
+  const value = { people: 0, withPassword: 0, holders: [] };
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    const counted = directoryWindow.countHolding(realmId, base,
+                                                 passwordAttribute);
+    value.people = counted.n;
+    value.withPassword = counted.holding;
+    const seen = new Set();
+    holding.forEach(function (attribute) {
+      directoryWindow.holders(realmId, base, attribute, function (entry) {
+        return holds(entry, attribute);
+      }).forEach(function (hit) {
+        if (hit.key !== base && hit.key.endsWith(suffix) &&
+            !seen.has(hit.key)) {
+          seen.add(hit.key);
+          value.holders.push({ name: usernameOfEntry(hit.entry),
+                               raw: censusOfEntry(hit.entry) });
+        }
+      });
+    });
+  } else {
+    eachEntryInRealm(function (stored, key) {
+      if (key === base || !String(key).endsWith(suffix)) {
+        return;
+      }
+      value.people += 1;
+      if (holds(stored, passwordAttribute)) {
+        value.withPassword += 1;
+      }
+      if (holding.some(function (attribute) {
+        return holds(stored, attribute);
+      })) {
+        value.holders.push({ name: usernameOfEntry(stored),
+                             raw: censusOfEntry(stored) });
+      }
+    });
+  }
+  held.version = version;
+  held.at = Date.now();
+  held.spec = signature;
+  held.value = value;
+  log.debug('Leaving credentialTallies(). ' + value.people + ' people, ' +
+            value.holders.length + ' holding a credential.');
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// HOW MANY OF A LIST OF NAMES ARE PEOPLE IN THIS DIRECTORY (#610).
+//
+// "Never signed in here" is the directory's people less those of them the
+// register has seen authenticate. The register is small and in memory (at
+// most `stats.MAX_USERS`), so the question is asked per NAME, never per
+// person: in memory the username index, a Map lookup each — the rule
+// `existingUserEntry()` applies, a `uid` or the RDN value, either case; in a
+// windowed process two batched questions rather than one round trip a name —
+// `byKeys` for the DN the name WOULD have (`uid=<name>,ou=users`, which is
+// how this service names everybody it creates), and `withNames` for the
+// names that missed, which finds an entry named otherwise (`cn=…` with a
+// `uid`) by its RDN or its `uid` lookup form. That second statement filters
+// the container's rows, so it is linear in them like a count; the answer is
+// kept for ten seconds while the names and `ou=users` stay the same.
+// ---------------------------------------------------------------------------
+const peopleNamedMemo = realms.keyed(function () {
+  return { version: -1, at: 0, names: '', value: 0 };
+});
+
+/**
+ * Counts how many people in the ambient realm's directory answer to any of
+ * the given names, by `existingUserEntry()`'s rule.
+ *
+ * @param names - the names
+ * @returns the count
+ */
+function countPeopleNamed(names) {
+  log.debug('Entering countPeopleNamed(). ' + (names || []).length +
+            ' name(s).');
+  const wanted = Array.from(new Set((names || []).map(function (one) {
+    return String(one == null ? '' : one).trim().toLowerCase();
+  }).filter(function (one) {
+    return !!one;
+  }))).sort();
+  // PEOPLE, not names: two names one person answers to (a `uid` and the
+  // RDN, say) are one person signed in.
+  if (!directoryWindow) {
+    const index = usernameIndexNow();
+    const people = new Set();
+    wanted.forEach(function (name) {
+      if (index.has(name)) {
+        people.add(index.get(name));
+      }
+    });
+    log.debug('Leaving countPeopleNamed(). ' + people.size + ', from the ' +
+              'index.');
+    return people.size;
+  }
+  const joined = wanted.join('\n');
+  const version = subtreeVersion(usersDn());
+  const held = peopleNamedMemo();
+  if (held.names === joined && held.version === version &&
+      Date.now() - held.at <= 10000) {
+    log.debug('Leaving countPeopleNamed(). ' + held.value + ', kept.');
+    return held.value;
+  }
+  const base = normalizeDn(usersDn());
+  const found = new Set();
+  const people = new Set();
+  const asked = new Set(wanted);
+  // Every name an entry under `ou=users` answers to that is one of these,
+  // and the entry, once.
+  const note = function (entry) {
+    usernameKeysOf(entry).forEach(function (name) {
+      if (asked.has(name)) {
+        found.add(name);
+        people.add(normalizeDn(entry.dn));
+      }
+    });
+  };
+  const isPerson = function (entry, key) {
+    return normalizeDn(parentDn(entry.dn)) === base && !!key;
+  };
+  const dnKeys = wanted.map(function (name) {
+    return normalizeDn('uid=' + escapeDnValue(name) + ',' + usersDn());
+  });
+  (windowedFind('byKeys', [dnKeys], isPerson) || [])
+    .forEach(note);
+  const missed = wanted.filter(function (name) {
+    return !found.has(name);
+  });
+  if (missed.length) {
+    (windowedFind('withNames', [base, missed], isPerson) || [])
+      .forEach(note);
+  }
+  held.names = joined;
+  held.version = version;
+  held.at = Date.now();
+  held.value = people.size;
+  log.debug('Leaving countPeopleNamed(). ' + people.size + ', asked.');
+  return people.size;
 }
 
 // ---------------------------------------------------------------------------
@@ -11766,7 +13004,18 @@ function applicationMatcher() {
 if (typeof credentials.addDirectoryHooks === 'function') {
   credentials.addDirectoryHooks({
     credentialCensus: credentialCensus,
-    applicationMatcher: applicationMatcher
+    credentialCensusAsync: credentialCensusAsync,
+    applicationMatcher: applicationMatcher,
+    // How many people the realm DEFINES, counted rather than listed, and
+    // the first names of them without listing the rest (#610) — the
+    // headline and the capped list of `/admin/users`.
+    personCount: personCount,
+    personNamesUpTo: personNamesUpTo,
+    personNamesUpToAsync: personNamesUpToAsync,
+    // The whole directory's credential tiles, and how many names are
+    // people here (#610).
+    credentialTallies: credentialTallies,
+    countPeopleNamed: countPeopleNamed
   });
 }
 
@@ -13873,6 +15122,9 @@ function operationRequest(operation, req) {
       return String(a);
     });
     shape.sizeLimit = parseInt(req.sizeLimit, 10) || 0;
+    // THE CLIENT'S TIME LIMIT TRAVELS TOO (#616): a windowed search stops
+    // paging at the shorter of it and `ldap.timeLimit`.
+    shape.timeLimit = parseInt(req.timeLimit, 10) || 0;
   }
   log.debug('Leaving operationRequest().');
   return shape;
@@ -13923,6 +15175,7 @@ function operationContext(operation, shape) {
     req.filter = ldap.parseFilter(shape.filter || '(objectclass=*)');
     req.attributes = shape.attributes || [];
     req.sizeLimit = shape.sizeLimit || 0;
+    req.timeLimit = shape.timeLimit || 0;
   }
   log.debug('Leaving operationContext().');
   return req;
@@ -13998,10 +15251,30 @@ function ldapErrorNamed(name, message) {
 // `send()` takes the `SearchEntry` `toSearchEntry()` built and keeps the two
 // members that are the ANSWER, dropping the message id, which belongs to the
 // response this worker is not writing.
+//
+// **AND WITH `emit`, IT STREAMS (#616).** A search that pages the store
+// asynchronously sends entries as it finds them, and the front process
+// should be writing them to the socket while the worker reads the next
+// page, not after the last. So the entries collected since the last batch
+// go out through `emit` once the handler next gives the event loop back (a
+// `setImmediate`, which runs between two pages of the store), and
+// `operationOutcome()` answers only what is left. A handler that finishes in
+// one tick — every other operation, and a search from memory — never lets
+// the batch run, and answers everything at the end as it always did.
 // ---------------------------------------------------------------------------
-function collectingResponse() {
+function collectingResponse(emit) {
   log.debug("Entering collectingResponse().");
-  const out = { entries: [], ended: false, endArg: undefined };
+  const out = { entries: [], ended: false, endArg: undefined, emitted: 0 };
+  let scheduled = false;
+  const flush = function () {
+    scheduled = false;
+    if (!out.entries.length || out.ended) {
+      return;
+    }
+    const batch = out.entries.splice(0);
+    out.emitted += batch.length;
+    emit(batch);
+  };
   log.debug("Leaving collectingResponse().");
   return {
     // Any number will do and none of it travels; it is here because
@@ -14016,6 +15289,10 @@ function collectingResponse() {
                            entry.objectName),
         attributes: plainAttributes(entry.attributes)
       });
+      if (typeof emit === 'function' && !scheduled) {
+        scheduled = true;
+        setImmediate(flush);
+      }
       log.debug("Leaving send().");
     },
     end: function (arg) {
@@ -14045,11 +15322,13 @@ function collectingResponse() {
  *
  * @param operation - the operation's name
  * @param shape - the request, as `operationRequest()` described it
+ * @param emit - optional; handed each batch of search entries as an
+ *   asynchronous search finds them (#616), which the outcome then omits
  * @returns the outcome, `{ ok, entries, ... }` or `{ ok: false, errorName, ...
  * }`, or a promise of it
  * @throws when this process has no handler for the operation
  */
-function performOperation(operation, shape) {
+function performOperation(operation, shape, emit) {
   log.debug('Entering performOperation(). operation=' + operation);
   const handler = LOCAL_HANDLERS[operation];
   if (!handler) {
@@ -14057,7 +15336,7 @@ function performOperation(operation, shape) {
       operation + '" operation.');
   }
   const req = operationContext(operation, shape);
-  const res = collectingResponse();
+  const res = collectingResponse(emit);
   let failure = null;
   let called = false;
   let signal = null;
@@ -14131,11 +15410,14 @@ function operationOutcome(operation, req, res, failure) {
     // `tests/vendored/sts_directory_bulk_load_ldap.js` — over a socket, in a
     // stack, with operations off.
     // ---------------------------------------------------------------------
+    // SPLICED, not read: a streaming search's batch that has not yet run
+    // (`collectingResponse()`) must find nothing, or these would go twice.
+    const already = res.collected.entries.splice(0);
     log.debug('Leaving operationOutcome(). Refused with ' +
-              res.collected.entries.length + ' entry/entries already sent.');
+              already.length + ' entry/entries already sent.');
     return { ok: false, errorName: failure.name || 'OperationsError',
              error: failure.message || '',
-             entries: res.collected.entries };
+             entries: already };
   }
   if (!res.collected.ended) {
     log.debug('Leaving operationOutcome(). The handler ended nothing.');
@@ -14151,10 +15433,31 @@ function operationOutcome(operation, req, res, failure) {
                'sending a result message. See ldap/CLAUDE.md — a handler ' +
                'that neither ends nor fails hangs the client for ever.' };
   }
-  log.debug('Leaving operationOutcome(). ' + res.collected.entries.length +
-            ' entry/entries.');
-  return { ok: true, entries: res.collected.entries,
-           endArg: res.collected.endArg };
+  const rest = res.collected.entries.splice(0);
+  log.debug('Leaving operationOutcome(). ' + rest.length +
+            ' entry/entries' + (res.collected.emitted
+    ? ', ' + res.collected.emitted + ' sent ahead.' : '.'));
+  return { ok: true, entries: rest, endArg: res.collected.endArg };
+}
+
+// SEARCH ENTRIES A WORKER COLLECTED, WRITTEN TO THE REAL RESPONSE: at the end
+// (`applyOperationResult()`), and — for a search that streams (#616) — as
+// each batch arrives from the worker, before the end.
+function sendCollectedEntries(res, entries) {
+  log.debug("Entering sendCollectedEntries().");
+  (entries || []).forEach(function (entry) {
+    res.send(new ldap.SearchEntry({
+      // THE RESPONSE'S OWN MESSAGE ID. See toSearchEntry()'s header for what
+      // sending anything else costs.
+      messageId: res.messageId,
+      objectName: entry.objectName,
+      attributes: (entry.attributes || []).map(function (attribute) {
+        return new ldap.Attribute({ type: attribute.type,
+                                    values: attribute.values });
+      })
+    }));
+  });
+  log.debug("Leaving sendCollectedEntries().");
 }
 
 // ---------------------------------------------------------------------------
@@ -14182,18 +15485,7 @@ function applyOperationResult(operation, req, res, next, result) {
   // entries and code 4 — see performOperation()'s block on the same subject.
   // Every other refusal collected none, so this loop does nothing for them.
   if (operation === 'search') {
-    (result && result.entries || []).forEach(function (entry) {
-      res.send(new ldap.SearchEntry({
-        // THE RESPONSE'S OWN MESSAGE ID. See toSearchEntry()'s header for what
-        // sending anything else costs.
-        messageId: res.messageId,
-        objectName: entry.objectName,
-        attributes: (entry.attributes || []).map(function (attribute) {
-          return new ldap.Attribute({ type: attribute.type,
-                                      values: attribute.values });
-        })
-      }));
-    });
+    sendCollectedEntries(res, result && result.entries);
   }
   if (!result || !result.ok) {
     const err = ldapErrorNamed(result && result.errorName,
@@ -14261,8 +15553,17 @@ function throughTheRequestPool(operation, local) {
                'handled in this process.');
       return local(req, res, next);
     }
+    // A SEARCH STREAMS (#616): each batch the worker sends before its
+    // answer is written to this socket as it arrives, so a search paging
+    // the store reaches its client page by page; the answer carries only
+    // what was not sent ahead of it.
     pool.runOperation('ldap.' + operation, shape,
-                      { affinity: connectionAffinity(req) })
+                      { affinity: connectionAffinity(req),
+                        onPartial: operation === 'search'
+                          ? function (entries) {
+                            sendCollectedEntries(res, entries);
+                          }
+                          : undefined })
       .then(function (answer) {
         if (!answer || !answer.dispatched) {
           return local(req, res, next);
@@ -14338,8 +15639,8 @@ function registerWorkerOperations() {
     if (worker.OPERATIONS && worker.OPERATIONS.has(kind)) {
       return;
     }
-    worker.register(kind, function (shape) {
-      return performOperation(operation, shape);
+    worker.register(kind, function (shape, emit) {
+      return performOperation(operation, shape, emit);
     });
   });
   log.debug('Leaving registerWorkerOperations(). ' +
@@ -15116,18 +16417,17 @@ function ldapAddNow(req, res, next) {
   // hands it.
   // ---------------------------------------------------------------------
   if (normalizeDn(parentDn(dn)) === normalizeDn(usersDn())) {
-    const proposed = [usernameOfEntry({ dn: dn })].concat(
-      req.attributes.filter(function (attr) {
-        return String(attr.type).toLowerCase() === 'uid';
-      }).reduce(function (all, attr) {
-        return all.concat(attr.values);
-      }, []));
+    const proposed = proposedUsernames(req, dn);
     let clash = null;
     proposed.forEach(function (candidate) {
       if (clash) {
         return;
       }
-      clash = existingUserEntry(candidate);
+      // ASKED ALREADY, where the add asked the store first (#621,
+      // `askBeforeTheAdd()`) and nothing under `ou=users` has moved since;
+      // the synchronous lookup otherwise, as always.
+      const held = heldUserEntry(req, candidate);
+      clash = held === undefined ? existingUserEntry(candidate) : held;
     });
     if (clash) {
       log.info('ldap: refusing to add ' + dn + '; ' + clash.dn + ' already ' +
@@ -15228,8 +16528,11 @@ function ldapAddNow(req, res, next) {
     noteAccountChange('created', addedEntry.dn, {},
                       attributeSnapshot(addedEntry));
   }
-  log.debug('ldap: added ' + dn + ' with ' + Object.keys(attributes).length +
-            ' attribute(s).');
+  // Hot (#627): once per add, and the count is a list built to be logged.
+  if (log.debug()) {
+    log.debug('ldap: added ' + dn + ' with ' +
+              Object.keys(attributes).length + ' attribute(s).');
+  }
   // What KIND of thing was created is decided by PLACEMENT and not by the
   // objectClass the client sent, and that is not a shortcut. This directory is
   // schemaless: a client can add a `groupOfNames` under ou=users or an entry
@@ -15284,7 +16587,29 @@ function clearPasswordsIn(attributes) {
   return out;
 }
 
-function screenedThen(passwords, run) {
+// ---------------------------------------------------------------------------
+// SCREENING MAKES THE OPERATION ASYNCHRONOUS, AND IT SAYS SO (#622).
+//
+// With nothing to screen the handler runs in this tick, exactly as before.
+// With something to screen it runs once the screen has answered, a tick or
+// a round trip later — and `performOperation()`, the function a request
+// worker runs, reads an operation's outcome AT ONCE unless the request is
+// marked `stsAsyncOperation` (the bind's arrangement, and
+// `answerAfterCommit()`'s). Unmarked, a dispatched modify carrying a clear
+// password was answered with an operation that "ended nothing" before its
+// handler had run at all, and the change landed after the client was told.
+//
+// So the flag is set HERE, where the asynchrony begins, rather than at each
+// caller: the next handler wrapped in a screen is marked without anybody
+// remembering to. `run` is handed the `next` it must answer through, which
+// is called once whichever path answers — so a body that throws after it
+// has answered sends nothing more — and a body that throws before it has
+// answered is answered here, since inside the promise neither ldapjs nor
+// `performOperation()`'s catch can see the throw: a store the window could
+// not read is `unavailable` (52), as it is there, and anything else an
+// operations error (STS-LDAP-0143).
+// ---------------------------------------------------------------------------
+function screenedThen(req, next, passwords, run) {
   log.debug('Entering screenedThen().');
   let breached = null;
   try {
@@ -15296,23 +16621,275 @@ function screenedThen(passwords, run) {
   }
   if (!breached || !passwords.length || !breached.enabled()) {
     log.debug('Leaving screenedThen(). Nothing to screen.');
-    return run();
+    return run(next);
   }
+  req.stsAsyncOperation = true;
+  let answered = false;
+  const answerOnce = function (err) {
+    log.debug('Entering answerOnce().');
+    answered = true;
+    log.debug('Leaving answerOnce().');
+    return next(err);
+  };
+  const runOnce = function () {
+    log.debug('Entering runOnce().');
+    log.debug('Leaving runOnce().');
+    return run(answerOnce);
+  };
   log.debug('Leaving screenedThen(). Screening.');
   return Promise.all(passwords.map(function (one) {
     return breached.screen(one);
-  })).then(run, function (e) {
+  })).then(runOnce, function (e) {
     log.debug('Caught in screenedThen(): ' + ((e && e.message) || e));
     // screen() never rejects; this is its belt and braces.
-    return run();
+    return runOnce();
+  }).catch(function (e) {
+    const code = errorCodes.codeOf(e);
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131';
+    log.error(errorCodes.tag(store ? code : 'STS-LDAP-0143') + 'ldap: a ' +
+              'screened write to ' + (req.dn ? req.dn.toString() : '') +
+              ' could not be completed: ' + ((e && e.stack) || e));
+    if (answered) {
+      return undefined;
+    }
+    return answerOnce(store
+      ? coded(code, new ldap.UnavailableError('the directory could not be ' +
+                                              'read'))
+      : coded('STS-LDAP-0143', new ldap.OperationsError('the write could ' +
+                                                        'not be completed')));
   });
 }
 
 server.add('', function (req, res, next) {
-  return screenedThen(clearPasswordsIn(req.attributes), function () {
-    return ldapAddNow(req, res, next);
+  const run = function () {
+    return screenedThen(req, next, clearPasswordsIn(req.attributes),
+      function (answer) {
+        return ldapAddNow(req, res, answer);
+      });
+  };
+  if (!addAsksFirst(req)) {
+    return run();
+  }
+  // ASYNCHRONOUS FROM HERE, and said so (`performOperation()` waits for
+  // `next`). `next` is called once, whichever path answers — the bind's
+  // arrangement — so a throw after the body has answered sends nothing
+  // more.
+  req.stsAsyncOperation = true;
+  let answered = false;
+  const answerOnce = next;
+  next = function (err) {
+    answered = true;
+    return answerOnce(err);
+  };
+  return askBeforeTheAdd(req).then(function () {
+    return run();
+  }, function (e) {
+    // NOTHING WAS ASKED THAT THE BODY NEEDS: it asks the store itself,
+    // synchronously, as it did before #621, and reports the store's
+    // failure in its own words if the store is what failed.
+    log.debug('Caught in the LDAP add handler: ' + ((e && e.message) || e));
+    delete req.stsHeldNames;
+    return run();
+  }).catch(function (e) {
+    // THE BODY THREW once the add had gone asynchronous: inside a promise,
+    // where `performOperation()`'s catch cannot see it. A store the window
+    // could not read is `unavailable` (52) as it is there; anything else
+    // is an operations error. Either way the client gets one result.
+    const code = errorCodes.codeOf(e);
+    const store = code === 'STS-LDAP-0130' || code === 'STS-LDAP-0131';
+    log.error(errorCodes.tag(store ? code : 'STS-LDAP-0142') + 'ldap: an ' +
+              'add of ' + (req.dn ? req.dn.toString() : '') + ' could not ' +
+              'be completed: ' + ((e && e.stack) || e));
+    if (answered) {
+      return undefined;
+    }
+    return next(store
+      ? coded(code, new ldap.UnavailableError('the directory could not be ' +
+                                              'read'))
+      : coded('STS-LDAP-0142', new ldap.OperationsError('the add could ' +
+                                                        'not be completed')));
+  }).finally(function () {
+    // THE WATCH GOES WITH THE ADD (#625), however it ended: a watch left
+    // behind would record every write of this process for nothing.
+    releaseHeldNames(req);
   });
 });
+
+// ---------------------------------------------------------------------------
+// AN ADD ASKS THE STORE FIRST, ASYNCHRONOUSLY, IN A WINDOWED PROCESS (#621).
+//
+// The add handler's body is synchronous, and in a window two of its reads
+// were synchronous round trips on every add: `getEntry(dn)` (a new entry is
+// never held, so `slotFor()` asks `byKeys`) and the one-entry-per-person
+// check's `existingUserEntry()` (whose `byName` is asked on every create,
+// since a person not here yet cannot be at the DN tried first). On 8081 at
+// about sixty adds a second they held a request worker 3–6 s of every 30.
+// The handler can wait — it is answered after the commit already
+// (`answeredAfterCommit`) — so it asks both first, through `queryAsync()`:
+//
+//   * THE DN AND THE DIRECT KEYS are read into the window
+//     (`DirectoryWindow.warmAsync()`), so `getEntry(dn)`, the direct half of
+//     `existingUserEntry()` and the write's own `slotFor()` find them held.
+//     A key this process changed, adopted, forgot or flushed while the
+//     question was out is left alone, so the window never holds an answer
+//     older than its own state.
+//   * THE NAMES are resolved by `existingUserEntriesAsync()` — the same rule
+//     as `existingUserEntry()` — and kept on the request
+//     (`req.stsHeldNames`) with a WATCH opened BEFORE the question was asked
+//     (`heldNameWatches`), which records every DN written and every name an
+//     entry written under `ou=users` holds, here or applied from another
+//     process, until the body has run. The body uses an answer only while
+//     nothing written since could have changed it (`heldUserEntry()`): no
+//     write at the add's DN or at the entry the answer named, and no entry
+//     written that holds the name. Otherwise that one name goes back to the
+//     synchronous lookup. **PER NAME, NOT PER CONTAINER (#625)**: #621 kept
+//     the answers while `subtreeVersion(ou=users)` stood still, and under a
+//     bulk load from several connections another add always moved it, so
+//     almost every add asked `byName` twice.
+//
+// **WHY THAT IS AS SAFE AS THE SYNCHRONOUS CHECK.** The answer is a moment
+// older than one asked in the body; what could have happened in that moment
+// is (a) a write in THIS process, or a row another process wrote that this
+// one APPLIED (`forgetEntry()` -> `touchDirectory(key, row)`, which hands
+// the row, so its names are seen without asking the store, busy key or
+// not), both of which the watch records, or (b) a commit by ANOTHER process
+// this one has not applied yet. (b) is a create of one of
+// these names only where several processes write one store — and there
+// `claimingTheAdd()`, outermost and before this runs, holds the DN and every
+// one of these names across the cluster until the add is flushed
+// (`directory_create_claims.ts`), so no other create of them can commit. A
+// MODIFY or a rename elsewhere that gives an existing entry one of the
+// names is not claimed; it was not before either — the synchronous check
+// and the flush that follows it are not atomic across processes — and the
+// store's merge is what answers it, as it always did.
+//
+// Only an add of a WINDOWED entry asks (a person or a device): anything
+// else is resident, and its reads never reach the store.
+// ---------------------------------------------------------------------------
+/**
+ * Whether an LDAP add asks the store before its body runs.
+ *
+ * @param req - the add request
+ * @returns true in a windowed process, for a windowed DN
+ */
+function addAsksFirst(req) {
+  log.debug('Entering addAsksFirst().');
+  if (!directoryWindow || !directoryWindow.attached() || !req || !req.dn) {
+    log.debug('Leaving addAsksFirst(). No window.');
+    return false;
+  }
+  const asks = directoryWindow.isWindowed(realms.currentId(),
+                                          normalizeDn(req.dn.toString()));
+  log.debug('Leaving addAsksFirst(). ' + asks);
+  return asks;
+}
+
+/**
+ * The usernames an add of a person proposes: its naming RDN's value, and
+ * every `uid` it carries — what the one-entry-per-person check asks about.
+ *
+ * @param req - the add request
+ * @param dn - its DN
+ * @returns the names
+ */
+function proposedUsernames(req, dn) {
+  log.debug('Entering proposedUsernames().');
+  const proposed = [usernameOfEntry({ dn: dn })].concat(
+    (req.attributes || []).filter(function (attr) {
+      return String(attr.type).toLowerCase() === 'uid';
+    }).reduce(function (all, attr) {
+      return all.concat(attr.values);
+    }, []));
+  log.debug('Leaving proposedUsernames(). ' + proposed.length + '.');
+  return proposed;
+}
+
+/**
+ * Asks the store, asynchronously, what an add's body is about to read: its
+ * DN and, for a person, the entries its usernames resolve to.
+ *
+ * @param req - the add request; `stsHeldNames` is set on it
+ * @returns a promise, resolved when the answers are held
+ */
+async function askBeforeTheAdd(req) {
+  log.debug('Entering askBeforeTheAdd().');
+  const dn = req.dn.toString();
+  const realmId = realms.currentId();
+  const person = normalizeDn(parentDn(dn)) === normalizeDn(usersDn());
+  const names = person ? proposedUsernames(req, dn).map(function (one) {
+    return String(one == null ? '' : one);
+  }) : [];
+  // THE WATCH FIRST, before anything is asked: a write during the questions
+  // must make their answers unusable, never the other way round. It stays
+  // open until the add has run (`releaseHeldNames()`).
+  let watch = null;
+  if (names.length) {
+    watch = { realm: realmId, everything: false, dns: new Set(),
+              names: new Set() };
+    heldNameWatches.add(watch);
+    req.stsHeldWatch = watch;
+  }
+  await directoryWindow.warmAsync(realmId, [normalizeDn(dn)].concat(
+    names.map(function (name) {
+      return normalizeDn('uid=' + name + ',' + usersDn());
+    })));
+  if (names.length) {
+    const found = await existingUserEntriesAsync(names);
+    const answers = new Map();
+    names.forEach(function (name, i) {
+      answers.set(name, found[i] || null);
+    });
+    req.stsHeldNames = { realm: realmId, dn: normalizeDn(dn), watch: watch,
+                         answers: answers };
+  }
+  log.debug('Leaving askBeforeTheAdd(). ' + names.length + ' name(s).');
+}
+
+/**
+ * Closes the watch an add opened when it asked its names (#625).
+ *
+ * @param req - the add request
+ */
+function releaseHeldNames(req) {
+  log.debug('Entering releaseHeldNames().');
+  if (req && req.stsHeldWatch) {
+    heldNameWatches.delete(req.stsHeldWatch);
+    delete req.stsHeldWatch;
+  }
+  log.debug('Leaving releaseHeldNames(). ' + heldNameWatches.size +
+            ' open.');
+}
+
+/**
+ * What `askBeforeTheAdd()` found for a name, while it still holds: while
+ * nothing written since the question went out could have changed it.
+ *
+ * @param req - the add request
+ * @param name - a proposed username
+ * @returns the entry, null for nobody, or undefined when not held (never
+ *   asked, another realm, or a write since touched the add's DN, the entry
+ *   the answer named, or an entry that holds the name)
+ */
+function heldUserEntry(req, name) {
+  log.debug('Entering heldUserEntry().');
+  const held = req && req.stsHeldNames;
+  const key = String(name == null ? '' : name);
+  if (!held || held.realm !== realms.currentId() || !held.watch ||
+      held.watch.everything || !held.answers.has(key)) {
+    log.debug('Leaving heldUserEntry(). Not held.');
+    return undefined;
+  }
+  const watch = held.watch;
+  const answer = held.answers.get(key);
+  // The name as the username index and `existingUserEntry()` match it.
+  if (watch.names.has(key.trim().toLowerCase()) || watch.dns.has(held.dn) ||
+      (answer && watch.dns.has(normalizeDn(answer.dn)))) {
+    log.debug('Leaving heldUserEntry(). Touched since it was asked.');
+    return undefined;
+  }
+  log.debug('Leaving heldUserEntry(). Held.');
+  return answer;
+}
 
 
 // --- delete ----------------------------------------------------------------
@@ -15665,13 +17242,13 @@ function ldapModifyNow(req, res, next) {
 }
 
 server.modify('', function (req, res, next) {
-  return screenedThen(clearPasswordsIn((req.changes || [])
+  return screenedThen(req, next, clearPasswordsIn((req.changes || [])
     .filter(function (change) {
       return change.operation !== 'delete';
     }).map(function (change) {
       return change.modification;
-    })), function () {
-    return ldapModifyNow(req, res, next);
+    })), function (answer) {
+    return ldapModifyNow(req, res, answer);
   });
 });
 
@@ -16039,28 +17616,43 @@ server.search('', function (req, res, next) {
   // so it neither matches nor counts against the size limit, and counted here
   // for the audit row only.
   let withheldEntries = 0;
-  // A WINDOWED WORKER WALKS ONLY WHAT THE BASE REACHES (#349): the resident
-  // entries under it and the part of the people and devices it names, paged
-  // from the store and handed out to nobody — a search edits nothing, so
-  // nothing it read is held once it has been sent.
-  const candidates = directoryWindow
-    ? (function* () {
-      for (const pair of directoryWindow.walk(realms.currentId(),
-                                              normalizeDn(base), true)) {
-        yield pair[1];
-      }
-    })()
-    : entries.values();
-  for (const stored of candidates) {
-    if (!isUnder(stored.dn, base)) continue;
+  // AN INDEXED EQUALITY IS ANSWERED FROM THE STORE'S INDEX (#320,
+  // `indexedSearchCandidates()`), and otherwise
+  // A WINDOWED PROCESS PAGES ONLY WHAT THE BASE REACHES (#349), AND SINCE
+  // #616 ASYNCHRONOUSLY: the resident entries under it and the part of the
+  // people and devices it names, read from the store a page at a time on
+  // the driver's read pool with the event loop given back between pages,
+  // each entry SENT as it is found, the paging stopped by the size limit or
+  // the time limit (`windowedSearchCandidates()`, below the handler). It
+  // was the synchronous `walk()` until then — 28.5 s of one request
+  // worker's event loop for a search of every group at 200,000 people, the
+  // client timing out and every request dispatched to that worker waiting.
+  // A search for GROUPS asks the store's class index (`classesUnder`) for
+  // the windowed containers instead of paging them at all. Nothing read is
+  // handed out — a search edits nothing.
+  const narrowed = indexedSearchCandidates(base, req.filter);
+  const started = Date.now();
+  const timeLimit = searchTimeLimitSeconds(req);
+  // ONE CANDIDATE, CONSIDERED: scope, visibility, the filter, the size
+  // limit, and sent. True when the search has ENDED — the size limit was
+  // reached and the refusal already passed to `next()` — so whoever is
+  // feeding candidates stops, and stops paging.
+  const consider = function (stored) {
+    if (!isUnder(stored.dn, base)) {
+      return false;
+    }
     const depth = depthUnder(stored.dn, base);
-    if (scope === 'base' && depth !== 0) continue;
-    if (scope === 'one' && depth !== 1) continue;
+    if (scope === 'base' && depth !== 0) {
+      return false;
+    }
+    if (scope === 'one' && depth !== 1) {
+      return false;
+    }
     considered++;
     const view = readViewOf(reader, stored);
     if (!view.visible) {
       withheldEntries++;
-      continue;
+      return false;
     }
     let matches = false;
     try {
@@ -16076,8 +17668,17 @@ server.search('', function (req, res, next) {
       // rather than as a filter that could not see it. `matchableForReader()`:
       // a credential is invisible to a filter, or the filter is an oracle for
       // it. See *THE DIRECTORY'S READ AND BIND SECURITY*.
-      matches = req.filter.matches(matchableForReader(stored, view.rule),
-                                   false);
+      //
+      // AND EACH ASSERTION BY ITS ATTRIBUTE'S OWN EQUALITY RULE (#632):
+      // @ldapjs/filter compares every value but objectClass's exactly, so
+      // `(uid=ALICE)` found nobody stored as `uid=alice`, where RFC 4519
+      // gives uid caseIgnoreMatch (and mail, RFC 4524, caseIgnoreIA5Match).
+      // `ldap_matching.ts` walks the filter, folds case for the attributes
+      // whose rule ignores it, and hands every other leaf to the library
+      // with this same `false`. The store's index (#320) holds those values
+      // lower-cased, so a narrowed search's candidates are still a superset.
+      matches = ldapMatching.matches(req.filter,
+                                     matchableForReader(stored, view.rule));
     } catch (e) {
       // A filter this store cannot evaluate is not a match, and it is worth a
       // line: an extensible-match filter or an unknown matching rule lands
@@ -16088,7 +17689,9 @@ server.search('', function (req, res, next) {
                ': ' + e.message);
       matches = false;
     }
-    if (!matches) continue;
+    if (!matches) {
+      return false;
+    }
     if (sent >= limit) {
       log.info('ldap: the search reached its size limit of ' + limit + '.');
       // A truncated search is `refused` rather than `success`, and the two must
@@ -16141,10 +17744,11 @@ server.search('', function (req, res, next) {
       // already sent stay sent, which is what section 4.5.2 requires: they are
       // a valid partial answer and the code is how the client knows it is
       // partial.
-      return next(coded('STS-LDAP-0021', new ldap.SizeLimitExceededError(
+      next(coded('STS-LDAP-0021', new ldap.SizeLimitExceededError(
         'this search returned its limit of ' + limit + ' entry/entries and ' +
         'the answer is INCOMPLETE; ask for less with a filter, or raise ' +
         'ldap.sizeLimit')));
+      return true;
     }
     res.send(toSearchEntry(stored, req.attributes, res.messageId,
                            view.rule));
@@ -16153,47 +17757,269 @@ server.search('', function (req, res, next) {
         normalizeDn(stored.dn) !== normalizeDn(usersDn())) {
       usersSent++;
     }
+    return false;
+  };
+  // THE END OF A SEARCH THAT CONSIDERED EVERYTHING IN SCOPE: the log line,
+  // the audit row and the result message.
+  const finish = function () {
+    // The other naming contexts are NAMED on a search that found nothing
+    // useful in this one, rather than left for somebody to deduce. A client
+    // searching `dc=example,dc=com` for a person who is in `acme` gets an
+    // empty answer that is correct and unhelpful; this is the line that says
+    // where to look. It is logged rather than returned, because LDAP has no
+    // field for "try over there" — the root DSE is where a client is
+    // supposed to read it.
+    const otherContexts = namingContexts().filter(function (context) {
+      return normalizeDn(context) !== normalizeDn(realmBaseDn(
+          realms.currentId()));
+    });
+    log.info('ldap: the search considered ' + considered + ' entry/entries ' +
+             'in scope and returned ' + sent + '.' +
+             (otherContexts.length
+               ? ' This is the "' + realms.currentId() +
+                 '" realm\'s directory; ' +
+                 otherContexts.length + ' other naming context(s) exist (' +
+                 otherContexts.join(', ') + ') and hold their own entries.'
+               : ''));
+    // A search that returned nothing is still a search and still gets a
+    // row. That is not completeness for its own sake: a filter this store
+    // cannot evaluate, and a presence filter defeated by attribute-name
+    // case, both look exactly like an empty directory from the client's side
+    // (the comment above req.filter.matches is the record of that having
+    // happened here), and the row saying "considered 14, returned 0" is what
+    // tells the two apart.
+    auditLdap(req, {
+      action: usersSent ? 'user.query' : 'directory.search',
+      target: base,
+      summary: 'searched ' + base + ' (' + scope + ') and returned ' + sent +
+               ' of ' + considered + ' entry/entries in scope' +
+               (usersSent ? ', ' + usersSent + ' of them under ou=users'
+                 : ''),
+      detail: { scope: scope, filter: filter, considered: considered,
+                returned: sent, users: usersSent,
+                withheldEntries: withheldEntries, sizeLimit: limit,
+                timeLimit: timeLimit,
+                attributes: (req.attributes || []).join(', ') || '(all)' }
+    });
+    res.end();
+    return next();
+  };
+  if (narrowed || !directoryWindow) {
+    // FROM MEMORY, or the index's bounded answer: synchronous, as always.
+    for (const stored of narrowed || entries.values()) {
+      if (consider(stored)) {
+        log.debug('Leaving the LDAP search handler. The size limit was ' +
+                  'reached.');
+        return undefined;
+      }
+    }
+    log.debug('Leaving the LDAP search handler. ' + sent +
+              ' entry/entries sent.');
+    return finish();
   }
-  // The other naming contexts are NAMED on a search that found nothing useful
-  // in this one, rather than left for somebody to deduce. A client searching
-  // `dc=example,dc=com` for a person who is in `acme` gets an empty answer that
-  // is correct and unhelpful; this is the line that says where to look. It is
-  // logged rather than returned, because LDAP has no field for "try over
-  // there" — the root DSE is where a client is supposed to read it.
-  const otherContexts = namingContexts().filter(function (context) {
-    return normalizeDn(context) !== normalizeDn(realmBaseDn(
-        realms.currentId()));
+  // ASYNCHRONOUS FROM HERE, and said so: `performOperation()` waits for
+  // `next` rather than reading an outcome now, and ldapjs, on the socket,
+  // is content with a handler that calls `next` later.
+  req.stsAsyncOperation = true;
+  (async function () {
+    for await (const stored of windowedSearchCandidates(base, req.filter)) {
+      if (Date.now() - started >= timeLimit * 1000) {
+        searchTimedOut(req, base, scope, filter, {
+          sent: sent, users: usersSent, considered: considered,
+          withheldEntries: withheldEntries, timeLimit: timeLimit,
+          clientTimeLimit: Number(req.timeLimit) || 0
+        }, next);
+        return;
+      }
+      if (consider(stored)) {
+        return;
+      }
+    }
+    finish();
+  })().catch(function (e) {
+    // A PAGE OF THE STORE THAT DID NOT COME: the entries already sent stay
+    // sent, and the client is told unavailable (52) rather than success —
+    // an empty remainder would read as a directory with nothing more in it.
+    const code = errorCodes.codeOf(e) || 'STS-LDAP-0141';
+    log.error(errorCodes.tag(code) + 'ldap: a search of ' + base + ' could ' +
+              'not read the store after ' + sent + ' entry/entries: ' +
+              ((e && e.message) || e));
+    const unavailable = coded(code,
+      new ldap.UnavailableError('the directory could not be read'));
+    next(ldapRefusal(req, code, 'a search of ' + base + ' could not read ' +
+      'the store part way, after ' + sent + ' entry/entries; the client was ' +
+      'told LDAP_UNAVAILABLE', unavailable, base, 'error'));
   });
-  log.info('ldap: the search considered ' + considered + ' entry/entries in ' +
-           'scope and returned ' + sent + '.' +
-           (otherContexts.length
-             ? ' This is the "' + realms.currentId() +
-               '" realm\'s directory; ' +
-               otherContexts.length + ' other naming context(s) exist (' +
-               otherContexts.join(', ') + ') and hold their own entries.'
-             : ''));
-  // A search that returned nothing is still a search and still gets a row. That
-  // is not completeness for its own sake: a filter this store cannot evaluate,
-  // and a presence filter defeated by attribute-name case, both look exactly
-  // like an empty directory from the client's side (the comment above
-  // req.filter.matches is the record of that having happened here), and the row
-  // saying "considered 14, returned 0" is what tells the two apart.
-  auditLdap(req, {
-    action: usersSent ? 'user.query' : 'directory.search',
-    target: base,
-    summary: 'searched ' + base + ' (' + scope + ') and returned ' + sent +
-             ' of ' + considered + ' entry/entries in scope' +
-             (usersSent ? ', ' + usersSent + ' of them under ou=users' : ''),
-    detail: { scope: scope, filter: filter, considered: considered,
-              returned: sent, users: usersSent,
-              withheldEntries: withheldEntries, sizeLimit: limit,
-              attributes: (req.attributes || []).join(', ') || '(all)' }
-  });
-  res.end();
-  log.debug('Leaving the LDAP search handler. ' + sent +
-            ' entry/entries sent.');
-  return next();
+  log.debug('Leaving the LDAP search handler. Reading the store.');
+  return undefined;
 });
+
+// ---------------------------------------------------------------------------
+// THE SEARCH'S TIME LIMIT (#616): `ldap.timeLimit` seconds, or the client's
+// own `timeLimit` where it asked for less (RFC 4511 section 4.5.1.5: zero is
+// "no limit" from the client, which leaves the server's).
+// ---------------------------------------------------------------------------
+/**
+ * The seconds a search may take: `ldap.timeLimit`, or the client's shorter
+ * `timeLimit`.
+ *
+ * @param req - the search request
+ * @returns the limit, in seconds
+ */
+function searchTimeLimitSeconds(req) {
+  log.debug('Entering searchTimeLimitSeconds().');
+  const server = Math.max(1, Number(config.value('ldap.timeLimit')) || 1);
+  const client = parseInt(req && req.timeLimit, 10) || 0;
+  log.debug('Leaving searchTimeLimitSeconds().');
+  return client > 0 ? Math.min(client, server) : server;
+}
+
+// A SEARCH THAT RAN OUT OF TIME: the audit row (refused, like the size
+// limit's — the client holds an INCOMPLETE answer) and `timeLimitExceeded`
+// (3) after the entries already sent, which RFC 4511 section 4.2 lets a
+// server return with a partial result.
+function searchTimedOut(req, base, scope, filter, counts, next) {
+  log.debug('Entering searchTimedOut().');
+  log.info('ldap: the search of ' + base + ' reached its time limit of ' +
+           counts.timeLimit + ' s after ' + counts.sent + ' entry/entries.');
+  auditLdap(req, {
+    action: counts.users ? 'user.query' : 'directory.search',
+    outcome: 'refused', errorCode: 'STS-LDAP-0140',
+    target: base,
+    summary: 'a search of ' + base + ' hit the time limit of ' +
+             counts.timeLimit + ' s after ' + counts.sent +
+             ' entry/entries',
+    detail: { scope: scope, filter: filter, returned: counts.sent,
+              considered: counts.considered, users: counts.users,
+              withheldEntries: counts.withheldEntries,
+              timeLimit: counts.timeLimit,
+              clientTimeLimit: counts.clientTimeLimit || 'none',
+              resultCode: 3,
+              note: 'LDAP_TIME_LIMIT_EXCEEDED; the answer is incomplete' }
+  });
+  log.debug('Leaving searchTimedOut().');
+  next(coded('STS-LDAP-0140', new ldap.TimeLimitExceededError(
+    'this search reached its time limit of ' + counts.timeLimit + ' s and ' +
+    'the answer is INCOMPLETE; narrow it with a filter on uid or mail, or a ' +
+    'smaller base')));
+}
+
+// The GROUP classes a filter's every match must carry, or null (#616): an
+// equality on `objectClass` with a group class; an AND, any one term's; an
+// OR, every term's (null if one term names none). Only the four group
+// classes — the store's class index answers them in one unpaged statement
+// because a realm's groups are few, and the same statement for
+// `inetOrgPerson` would be every person in it.
+function groupClassesOf(filter, depth) {
+  log.debug('Entering groupClassesOf().');
+  if (!filter || depth > 4) {
+    log.debug('Leaving groupClassesOf(). Nothing.');
+    return null;
+  }
+  if (filter.type === 'EqualityFilter') {
+    const named = String(filter.attribute || '').toLowerCase() ===
+      'objectclass';
+    const value = String(filter.value || '').trim().toLowerCase();
+    log.debug('Leaving groupClassesOf(). An equality.');
+    return named && GROUP_CLASSES.indexOf(value) >= 0 ? [value] : null;
+  }
+  if (filter.type === 'AndFilter') {
+    for (const term of filter.clauses || []) {
+      const found = groupClassesOf(term, depth + 1);
+      if (found) {
+        log.debug('Leaving groupClassesOf(). An AND\'s term.');
+        return found;
+      }
+    }
+    log.debug('Leaving groupClassesOf(). No AND term.');
+    return null;
+  }
+  if (filter.type === 'OrFilter') {
+    const all = [];
+    for (const term of filter.clauses || []) {
+      const found = groupClassesOf(term, depth + 1);
+      if (!found) {
+        log.debug('Leaving groupClassesOf(). An OR term names none.');
+        return null;
+      }
+      found.forEach(function (one) {
+        if (all.indexOf(one) < 0) {
+          all.push(one);
+        }
+      });
+    }
+    log.debug('Leaving groupClassesOf(). An OR.');
+    return all.length ? all : null;
+  }
+  log.debug('Leaving groupClassesOf(). Not a group search.');
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// THE CANDIDATES OF A SEARCH NO INDEX NARROWED, IN A WINDOWED PROCESS (#616).
+//
+// An async iterator, so the handler stops PAGING the moment it stops
+// consuming — at the size limit or the time limit — rather than after reading
+// everything. Two shapes:
+//
+//   * **A SEARCH FOR GROUPS** (`groupClassesOf()`) whose base is at or above
+//     the windowed containers: the resident entries under the base, from
+//     memory, and the groups under each windowed container the base reaches,
+//     asked of the store's class index in one statement each
+//     (`classesUnderAsync()`) — the people are not paged at all. This is the
+//     group walk's own arrangement (`eachGroupEntry()`), asked
+//     asynchronously.
+//   * **ANYTHING ELSE**: `walkAsync()` — the resident entries under the
+//     base, then each windowed container the base reaches a page at a time
+//     on the driver's read pool, the event loop given back between pages.
+//
+// Every candidate is still asked the filter, the scope and the reader's view
+// by the handler, so a superset here never changes an answer.
+// ---------------------------------------------------------------------------
+/**
+ * The entries a windowed search considers, read from the store as they are
+ * consumed.
+ *
+ * @param base - the search base, as the client sent it
+ * @param filter - the parsed filter
+ * @returns an async iterator of stored entries
+ */
+async function* windowedSearchCandidates(base, filter) {
+  log.debug('Entering windowedSearchCandidates().');
+  const realmId = realms.currentId();
+  const baseKey = normalizeDn(base);
+  const containers = windowedContainersOf(realmId);
+  const insideOne = containers.some(function (container) {
+    return baseKey.endsWith(',' + container);
+  });
+  const classes = insideOne ? null : groupClassesOf(filter, 0);
+  if (!classes) {
+    for await (const pair of directoryWindow.walkAsync(realmId, baseKey)) {
+      yield pair[1];
+    }
+    log.debug('Leaving windowedSearchCandidates(). Paged.');
+    return;
+  }
+  for (const row of directoryWindow.residentRows(realmId)) {
+    if (isUnder(row.entry.dn, base)) {
+      yield row.entry;
+    }
+  }
+  for (const container of containers) {
+    if (container !== baseKey && !container.endsWith(',' + baseKey) &&
+        baseKey !== '') {
+      continue;
+    }
+    const hits = await directoryWindow.classesUnderAsync(realmId, container,
+      classes, function () {
+        return true;
+      });
+    for (const hit of hits) {
+      yield hit.entry;
+    }
+  }
+  log.debug('Leaving windowedSearchCandidates(). The class index.');
+}
 
 server.unbind(function (req, res, next) {
   log.debug('Entering the LDAP unbind handler.');
@@ -16691,6 +18517,165 @@ function directoryRowOf(stored) {
   };
 }
 
+// WHETHER ONE ENTRY ANSWERS THE PAGE'S `q` (lower-cased): its DN, or any
+// attribute NAME or VALUE as the page SHOWS them — canonical names, withheld
+// values replaced — so the entry is built as a row to be looked into, and
+// only when its DN did not decide.
+function directoryEntryMatches(stored, needle) {
+  log.debug('Entering directoryEntryMatches().');
+  if (String(stored.dn).toLowerCase().indexOf(needle) >= 0) {
+    log.debug('Leaving directoryEntryMatches(). The DN.');
+    return true;
+  }
+  // The NAMES and the VALUES both. See the header: the reader who needs
+  // this box most often has a value in hand and no idea which entry it is
+  // on, which a DN-only search cannot answer at all.
+  const attributes = directoryRowOf(stored).attributes;
+  const found = Object.keys(attributes).some(function (name) {
+    if (name.toLowerCase().indexOf(needle) >= 0) {
+      return true;
+    }
+    return attributes[name].some(function (value) {
+      return String(value).toLowerCase().indexOf(needle) >= 0;
+    });
+  });
+  log.debug('Leaving directoryEntryMatches(). ' + found);
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// /admin/ldap/directory IN A WINDOWED PROCESS (#616, 2026-10-14).
+//
+// The store holds every entry of the realm, so the page is asked of it, on
+// the driver's read pool (`DirectoryWindow.askAsync()`), and the event loop
+// runs while it answers:
+//
+//   * **THE COUNTS ARE THE STORE'S** — `realmCount` (the realm, and the
+//     realm of one origin) and `originCounts` (one `GROUP BY`), never a
+//     walk. Linear in the realm's rows in the database (about 100 ms at
+//     200,000) and nothing on this process's event loop.
+//   * **THE ORDER IS THE STORE'S KEY ORDER** (`ORDER BY dn_key`, the primary
+//     key), where the whole directory's page sorts the DNs as written with
+//     `Intl.Collator`. A collation cannot be pushed into the database, and
+//     the price of sorting here is reading everything; so a windowed page
+//     lists in normalised-DN order, in the database's collation, and says
+//     so (`order: 'key'`, `'dn'` where the directory is held whole).
+//   * **THE ORIGIN FILTER AND THE PAGE ARE PUSHED DOWN**: `realmPage` with
+//     the origin in its WHERE and the page as LIMIT/OFFSET — one statement,
+//     one page's rows read. A deep page costs the database its offset in
+//     index order; the service reads `per` rows.
+//   * **`q` CANNOT BE PUSHED DOWN**, because it matches attribute VALUES and
+//     the database holds them sealed (`persistence/directory_codec.js`). So
+//     a `q` looks inside at most `DIRECTORY_SEARCH_SCAN` entries, in key
+//     order and of the chosen origin, a page at a time asynchronously;
+//     `matched` and the paging are over what it found there, and `search`
+//     says how many it looked at and whether that was all of them. The
+//     console says so under the box.
+//
+// An entry this process created and has not yet flushed is not in the
+// store's answer, for the ms until the flush — `realmPageAsync()` says why.
+// ---------------------------------------------------------------------------
+// How many entries a windowed page's `q` looks inside, at most: ten pages of
+// the window's own page size. A bound on one request's reading, not a
+// setting — the answer says when it was reached.
+const DIRECTORY_SEARCH_SCAN = 5000;
+const DIRECTORY_SEARCH_PAGE = 500;
+
+/**
+ * `/admin/ldap/directory` in a windowed process: counted, filtered by origin
+ * and paged by the store, asynchronously; a `q` looks inside a bounded
+ * number of entries and says so.
+ *
+ * @param req - the request
+ * @returns a promise of the view, `{ title, json }`
+ */
+async function windowedDirectoryView(req) {
+  log.debug('Entering windowedDirectoryView().');
+  const realmId = realms.currentId();
+  const wantedText = String(req.query.q || '').trim();
+  const wantedOrigin = String(req.query.origin || '').trim();
+  const needle = wantedText.toLowerCase();
+  const counts = await Promise.all([
+    directoryWindow.askAsync('realmCount', [realmId, '']),
+    directoryWindow.askAsync('originCounts', [realmId])
+  ]);
+  const count = Number(counts[0]) || 0;
+  const originCounts = counts[1] && typeof counts[1] === 'object'
+    ? counts[1] : {};
+  let matched = 0;
+  let paging = null;
+  let shown = [];
+  let search = null;
+  if (!needle) {
+    matched = wantedOrigin
+      ? Number(await directoryWindow.askAsync('realmCount',
+                                              [realmId, wantedOrigin])) || 0
+      : count;
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    const page = await directoryWindow.realmPageAsync(realmId, '',
+      paging.perPage, { offset: paging.offset, origin: wantedOrigin });
+    shown = page.rows;
+  } else {
+    // THE BOUNDED LOOK INSIDE: pages of the chosen origin in key order, each
+    // entry asked `directoryEntryMatches()`, stopped at the bound.
+    const found = [];
+    let after = '';
+    let scanned = 0;
+    let complete = false;
+    while (scanned < DIRECTORY_SEARCH_SCAN) {
+      const page = await directoryWindow.realmPageAsync(realmId, after,
+        Math.min(DIRECTORY_SEARCH_PAGE, DIRECTORY_SEARCH_SCAN - scanned),
+        { origin: wantedOrigin });
+      scanned += page.asked;
+      page.rows.forEach(function (hit) {
+        if (directoryEntryMatches(hit.entry, needle)) {
+          found.push(hit);
+        }
+      });
+      if (!page.more || !page.last) {
+        complete = true;
+        break;
+      }
+      after = page.last;
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+    matched = found.length;
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    shown = found.slice(paging.offset, paging.offset + paging.perPage);
+    search = { complete: complete, scanned: scanned,
+               scanLimit: DIRECTORY_SEARCH_SCAN };
+  }
+  const origins = Object.keys(originCounts);
+  origins.sort();
+  const counted = {};
+  origins.forEach(function (origin) {
+    counted[origin] = Number(originCounts[origin]) || 0;
+  });
+  const payload = {
+    baseDn: baseDn(),
+    count: count,
+    matched: matched,
+    shown: shown.length,
+    filter: { q: wantedText || null, origin: wantedOrigin || null },
+    origins: origins,
+    originCounts: counted,
+    page: paging.page, pages: paging.pages, perPage: paging.perPage,
+    firstRow: paging.firstRow, lastRow: paging.lastRow,
+    paging: adminViews.pagingJson(paging),
+    order: 'key',
+    search: search,
+    entries: shown.map(function (hit) {
+      return withoutSecrets(directoryRowOf(hit.entry));
+    })
+  };
+  log.debug('Leaving windowedDirectoryView(). ' + shown.length +
+            ' row(s) of ' + matched + ' matched' +
+            (search ? ', ' + search.scanned + ' looked inside.' : '.'));
+  return { title: 'Every entry in the directory', json: payload };
+}
+
 // `a.localeCompare(b)` with no locale is this collator's `compare` — the
 // specification defines it so — built once instead of once per comparison.
 const DIRECTORY_COLLATOR = new Intl.Collator();
@@ -16710,13 +18695,20 @@ const DIRECTORY_COLLATOR = new Intl.Collator();
 // already decide; and the copy is made for the page's rows alone. Same rows,
 // same order, same counts.
 //
-// **IN #349's WINDOW** this is still a whole walk, paged through the store:
-// correct, and O(n) in the store's rows, on an administrator's page. The
-// indexed form — the DNs and origins under the base, ordered, with the count
-// per origin, and the rows of one page by key — is not built.
+// **IN #349's WINDOW IT IS NOT A WALK (#616, 2026-10-14).** It was: every
+// person paged out of the store through the synchronous bridge on a request
+// worker's event loop, 38–45 s at 200,000 people for `?per=1`, every request
+// dispatched to that worker waiting behind it. A windowed process answers
+// out of `windowedDirectoryView()` below instead, asynchronously, with what
+// can be pushed to the store pushed there; this function is the whole
+// directory's, held in memory, and is what it always was.
 // ---------------------------------------------------------------------------
 function ldapDirectoryView(req) {
   log.debug('Entering ldapDirectoryView().');
+  if (directoryWindow) {
+    log.debug('Leaving ldapDirectoryView(). Windowed: asked of the store.');
+    return windowedDirectoryView(req);
+  }
   const listed = [];
   eachEntryInRealm(function (stored) {
     listed.push({
@@ -16736,26 +18728,7 @@ function ldapDirectoryView(req) {
     if (wantedOrigin && entry.origin !== wantedOrigin) {
       return false;
     }
-    if (!needle) {
-      return true;
-    }
-    if (entry.dn.toLowerCase().indexOf(needle) >= 0) {
-      return true;
-    }
-    // The NAMES and the VALUES both. See the header: the reader who needs
-    // this box most often has a value in hand and no idea which entry it is
-    // on, which a DN-only search cannot answer at all. What is searched is
-    // what the page SHOWS — canonical names, withheld values replaced — so
-    // the entry is built as a row to be looked into.
-    const attributes = directoryRowOf(entry.stored).attributes;
-    return Object.keys(attributes).some(function (name) {
-      if (name.toLowerCase().indexOf(needle) >= 0) {
-        return true;
-      }
-      return attributes[name].some(function (value) {
-        return String(value).toLowerCase().indexOf(needle) >= 0;
-      });
-    });
+    return !needle || directoryEntryMatches(entry.stored, needle);
   });
 
   const pagedKeys = directoryPaging(req, filtered, 'entries');
@@ -16803,6 +18776,11 @@ function ldapDirectoryView(req) {
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
     paging: adminViews.pagingJson(paging),
+    // The whole directory is sorted by DN as written, collated; a windowed
+    // one in the store's key order (#616, `windowedDirectoryView()`). And
+    // its `q` looked inside every entry, so there is nothing to say.
+    order: 'dn',
+    search: null,
     entries: paged.shown.map(withoutSecrets)
   };
   log.debug('Leaving ldapDirectoryView(). ' + paged.shown.length +
@@ -18792,15 +20770,9 @@ function isPersonEntry(stored) {
  */
 function personCount() {
   log.debug("Entering personCount().");
-  let n = 0;
-  if (directoryWindow) {
-    // Counted by the store, with this process's own changes (#349).
-    n = directoryWindow.countUnder(realms.currentId(), normalizeDn(usersDn()));
-  } else {
-    eachEntryInRealm(function (stored) {
-      if (isPersonEntry(stored)) n++;
-    });
-  }
+  // The container's count (#610): the store's in a windowed process, the
+  // keys walked otherwise — see `countUnderContainer()`.
+  const n = countUnderContainer(usersDn());
   log.debug("Leaving personCount().");
   return n;
 }
@@ -18919,6 +20891,53 @@ function allPersons() {
   return out;
 }
 
+/**
+ * Whether this process holds its people and devices as a window onto the
+ * store (#349).
+ *
+ * @returns true when windowed
+ */
+function directoryIsWindowed() {
+  log.debug('Entering directoryIsWindowed().');
+  log.debug('Leaving directoryIsWindowed().');
+  return !!directoryWindow;
+}
+
+// ---------------------------------------------------------------------------
+// THE PEOPLE HOLDING ONE ATTRIBUTE, AS `allPersons()` HANDS THEM OVER (#616).
+//
+// For a caller that wants only the people carrying something — SCIM's HOBA
+// key lookup, run on each HOBA-authenticated request — and was asking for
+// everybody and filtering. The holders only (`eachHolderOfAny()`: in a
+// windowed process the store's `attr_names` holders a page at a time, never
+// the realm), each copied as `allPersons()` copies (`entryObject()`), in its
+// order — the normalised key's, which `personRows()` sorts by.
+// ---------------------------------------------------------------------------
+/**
+ * Lists the people in the ambient realm holding an attribute with a value,
+ * copied, in `allPersons()`'s order.
+ *
+ * @param attribute - the attribute name, any case
+ * @returns the entries
+ */
+function personsHolding(attribute) {
+  log.debug('Entering personsHolding(). ' + attribute);
+  const wanted = String(attribute || '').toLowerCase();
+  const found = [];
+  eachHolderOfAny([wanted], function (stored) {
+    if ((stored.attributes[wanted] || []).length && isPersonEntry(stored)) {
+      found.push({ key: normalizeDn(stored.dn), entry: entryObject(stored) });
+    }
+  });
+  found.sort(function (a, b) {
+    return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+  });
+  log.debug('Leaving personsHolding(). ' + found.length + ' person(s).');
+  return found.map(function (one) {
+    return one.entry;
+  });
+}
+
 // The NAMES of every person, in `allPersons()`'s order, with the empty ones
 // dropped — what the `persons()` slots hand to the credential stores and the
 // key-pair register, which ask about names and never needed the entries.
@@ -18938,6 +20957,110 @@ function personNames() {
   });
   log.debug('Leaving personNames(). ' + out.length + ' name(s).');
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// THE FIRST `limit` NAMES, WITHOUT LISTING THE REST (#610, 2026-10-13).
+//
+// `/admin/users` lists at most `credentials.factorScanLimit` of the
+// directory's people and asked `persons()` for ALL of them to do it — in a
+// windowed process every row of `ou=users` paged out of the store and
+// decoded, for a list it then sliced. This answers the slice and whether
+// there was more, which is all that page needs (its count of the people is
+// `personCount()`, above):
+//
+//   * where `personRows()` is already current, or the directory is held in
+//     memory (where `personRows()` is one walk and sort kept until
+//     `ou=users` is written), its first `limit` names — `persons()`'s
+//     prefix, exactly;
+//   * in a windowed process, the first `limit` + 1 KEYS of `ou=users` in
+//     the STORE's key order — since #616 the keys and DNs alone
+//     (`keysUnder`), a thousand to a statement, no entry read or opened, in
+//     at most `limit` / 1,000 + 1 statements where it used to page and
+//     decode `limit` + 1 entries five hundred at a time (about 3 s of a
+//     request worker at 200,000 people; `/admin-api/users` now asks
+//     `personNamesUpToAsync()`, below). **A capped list is therefore a
+//     different subset from `persons()`'s prefix** where the database's
+//     collation orders keys differently from JavaScript (8081's is
+//     en_US.utf8), and the same subset on every request while nothing
+//     moves — it is a capped subset either way, the page says so, and what
+//     it costs is `limit` keys rather than the realm. Below the cap the
+//     paging reaches the end and the names are everybody, entries this
+//     process has not yet written included.
+// ---------------------------------------------------------------------------
+/**
+ * Lists at most `limit` people's names in the ambient realm without listing
+ * the rest, and says whether there were more.
+ *
+ * @param limit - how many names at most
+ * @returns `{ names, more }`
+ */
+function personNamesUpTo(limit) {
+  log.debug('Entering personNamesUpTo(). limit=' + limit);
+  const most = Math.max(1, Math.floor(Number(limit) || 1));
+  const held = personRowsMemo();
+  if (!directoryWindow ||
+      (held.rows && held.version === subtreeVersion(usersDn()))) {
+    const names = personNames();
+    log.debug('Leaving personNamesUpTo(). From the kept rows.');
+    return { names: names.slice(0, most), more: names.length > most };
+  }
+  const first = directoryWindow.keysUnder(realms.currentId(),
+                                          normalizeDn(usersDn()), most);
+  log.debug('Leaving personNamesUpTo(). ' + first.rows.length + ' keyed' +
+            (first.more ? ', and more.' : '.'));
+  return namesOfKeys(first);
+}
+
+// The names of `keysUnder()`'s answer, in key order — a person's name is
+// their entry's RDN value (`usernameOfEntry()`), so the DN is all it reads —
+// with the empty ones dropped.
+function namesOfKeys(answer) {
+  log.debug('Entering namesOfKeys().');
+  const names = [];
+  answer.rows.forEach(function (row) {
+    const name = usernameOfEntry({ dn: row.dn });
+    if (name) {
+      names.push(name);
+    }
+  });
+  log.debug('Leaving namesOfKeys(). ' + names.length + '.');
+  return { names: names, more: !!answer.more };
+}
+
+// ---------------------------------------------------------------------------
+// AND ASYNCHRONOUSLY, FOR A REQUEST THAT CAN WAIT (#616, 2026-10-14).
+//
+// `/admin-api/users` asks for the first `credentials.factorScanLimit` (5,000)
+// names; `personNamesUpTo()` above is that question asked synchronously, and
+// on 8081 its walk held a request worker's event loop for about 3 s at
+// 200,000 people. This asks the store the same question — the KEYS and DNs
+// under `ou=users`, a thousand to a statement, no attribute read or opened
+// (`keysUnder`) — on the driver's read pool, the event loop given back
+// between pages, and stops at `limit` + 1. Outside a window it is the
+// synchronous answer, which is the people already held in memory.
+// ---------------------------------------------------------------------------
+/**
+ * `personNamesUpTo()`, asked of the store asynchronously in a windowed
+ * process.
+ *
+ * @param limit - how many names at most
+ * @returns a promise of `{ names, more }`
+ */
+async function personNamesUpToAsync(limit) {
+  log.debug('Entering personNamesUpToAsync(). limit=' + limit);
+  const most = Math.max(1, Math.floor(Number(limit) || 1));
+  const held = personRowsMemo();
+  if (!directoryWindow ||
+      (held.rows && held.version === subtreeVersion(usersDn()))) {
+    log.debug('Leaving personNamesUpToAsync(). Not asked of the store.');
+    return personNamesUpTo(most);
+  }
+  const first = await directoryWindow.keysUnderAsync(realms.currentId(),
+    normalizeDn(usersDn()), most);
+  log.debug('Leaving personNamesUpToAsync(). ' + first.rows.length +
+            ' keyed' + (first.more ? ', and more.' : '.'));
+  return namesOfKeys(first);
 }
 
 // ---------------------------------------------------------------------------
@@ -19160,8 +21283,11 @@ function attributeSnapshot(stored) {
       out[name] = (stored.attributes[name] || []).slice(0);
     });
   }
-  log.debug('Leaving attributeSnapshot(). ' + Object.keys(out).length +
-            ' attribute(s).');
+  // Hot (#627): once per add. The count is a list built only to be logged.
+  if (log.debug()) {
+    log.debug('Leaving attributeSnapshot(). ' + Object.keys(out).length +
+              ' attribute(s).');
+  }
   return out;
 }
 
@@ -20002,8 +22128,8 @@ function logBatchDangling(batch) {
 // would build again — unless two entries claimed one name or UUID (a
 // directory built by hand over the raw socket), which each index counts as it
 // is built; then it is left to rebuild, as before. A person is not a group,
-// so the group index loses nothing (noteGroupIndexPut()'s invariant); it is
-// re-stamped with the size it now has.
+// so the group index loses nothing — and since #618 needs no stamp:
+// `touchDirectory()` moves its clock only for a group.
 // ---------------------------------------------------------------------------
 function indexesCurrent() {
   log.debug('Entering indexesCurrent().');
@@ -20069,11 +22195,6 @@ function noteIndexesDelete(stored, current) {
     // Another entry may hold one of these UUIDs without the slot; a miss
     // must look.
     uuids.dirty = true;
-  }
-  const groups = groupIndexes();
-  if (current.group && groups.index && !groupRuleFor(stored)) {
-    groups.version = directoryVersion;
-    groups.size = entries.size;
   }
   log.debug('Leaving noteIndexesDelete().');
 }
@@ -21052,6 +23173,96 @@ function removeGroupOwner(group, owner, options) {
 }
 
 /**
+ * A group's ownership facts (#607), for `common/ownership.ts`: its DN, its
+ * cn, its owner values as stored, and whether it is closed to its owners.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @returns `{ dn, cn, owners, ownerProtected }`, or null for no group
+ */
+function groupOwnership(group) {
+  log.debug('Entering groupOwnership().');
+  const found = groupForOwners(group, 'groupOwnership');
+  if (found.refusal) {
+    log.debug('Leaving groupOwnership(). No such group.');
+    return null;
+  }
+  const at = found.stored.attributes || {};
+  const out = {
+    dn: found.stored.dn,
+    cn: String((at.cn || [''])[0]),
+    owners: (at.owner || []).map(String).filter(Boolean),
+    ownerProtected: String((at.stsownerprotected || [''])[0])
+      .toUpperCase() === 'TRUE'
+  };
+  log.debug('Leaving groupOwnership().');
+  return out;
+}
+
+/**
+ * Marks a group closed to its owners, or opens it again (#607, rcbj's
+ * decision 4): `stsOwnerProtected` on the entry, every other attribute kept.
+ *
+ * @param group - the group's `cn`, DN or SCIM id
+ * @param flag - true closes it to its owners
+ * @param options - `actor`, `channel`, `origin` and `protocol`, for the audit
+ *   row
+ * @returns `{ ok: true, changed, dn, ownerProtected }`, or a refusal marked
+ *   with its error code
+ */
+function setGroupOwnerProtected(group, flag, options) {
+  log.debug('Entering setGroupOwnerProtected().');
+  const opts = options || {};
+  const found = groupForOwners(group, 'setGroupOwnerProtected');
+  if (found.refusal) {
+    log.debug('Leaving setGroupOwnerProtected(). No such group.');
+    return found.refusal;
+  }
+  const stored = found.stored;
+  const wanted = flag === true;
+  const was = String(((stored.attributes || {}).stsownerprotected ||
+                      [''])[0]).toUpperCase() === 'TRUE';
+  if (was === wanted) {
+    log.debug('Leaving setGroupOwnerProtected(). Unchanged.');
+    return { ok: true, changed: false, dn: stored.dn,
+             ownerProtected: wanted };
+  }
+  const object = entryObject(stored);
+  const attributes = {};
+  Object.keys(object.attributes).forEach(function (name) {
+    if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0 ||
+        name.toLowerCase() === 'stsownerprotected') {
+      return;
+    }
+    attributes[name] = object.attributes[name].slice(0);
+  });
+  if (wanted) {
+    attributes.stsOwnerProtected = ['TRUE'];
+  }
+  const written = writeGroupEntry(stored.dn, attributes,
+                                  opts.origin || 'console');
+  if (!written.ok) {
+    log.debug('Leaving setGroupOwnerProtected(). Not written: ' +
+              written.reason);
+    return coded(errorCodes.codeOf(written), { ok: false,
+      reason: written.reason,
+      errors: ['The mark could not be written onto ' + stored.dn + ' (' +
+               written.reason + ').'] });
+  }
+  audit.recordDirectory({
+    action: 'group.owner-protected',
+    actor: String(opts.actor || ''),
+    target: stored.dn,
+    protocol: String(opts.protocol || ''),
+    channel: opts.channel || 'internal',
+    summary: stored.dn + (wanted ? ' was closed to its owners'
+                                 : ' was opened to its owners again'),
+    detail: { ownerProtected: wanted }
+  });
+  log.debug('Leaving setGroupOwnerProtected(). Written.');
+  return { ok: true, changed: true, dn: stored.dn, ownerProtected: wanted };
+}
+
+/**
  * Lists the groups of this realm whose `owner` values name any of the DNs
  * given (#604): the user portal's Resources I own, where the DNs are the
  * person's own and those of every group they are in.
@@ -22008,10 +24219,9 @@ function describeDirectoryCaches() {
             ' time(s)',
           validUntil: null,
           valid: inRealmById(id, function () {
-            return cache.version === directoryVersion &&
-              cache.size === entries.size;
+            return groupIndexIsCurrent();
           }),
-          basis: 'directory version'
+          basis: 'group version (#618)'
         });
       });
       return out;
@@ -22109,6 +24319,59 @@ function describeDirectoryCaches() {
             }),
             basis: 'subtree version'
           });
+        });
+      });
+      return out;
+    }
+  });
+  cacheRegistry.register({
+    name: 'ldap.credential-tallies',
+    title: 'People and credential holders, counted',
+    description: 'How many people the realm defines, how many hold a ' +
+      'password, everybody holding a credential attribute (raw), and how ' +
+      'many of the names seen signing in are people here: the tiles of ' +
+      '/admin/users over the whole directory without listing it (#610).',
+    owner: 'ldap/ldap_server.js',
+    scope: 'realm',
+    maxEntries: function () {
+      return 2;
+    },
+    bound: 'Structural: one tally and one name count per realm; the tally ' +
+      'holds the people holding a credential, not everybody.',
+    lifetime: function () {
+      return 'Until anything under the realm\'s ou=users is written, and ' +
+        'in a process holding the directory as a window onto the store ' +
+        'for at most ten seconds.';
+    },
+    entries: function () {
+      const out = [];
+      credentialTalliesMemo.existing().forEach(function (held, id) {
+        if (!held.value) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: 'ou=users (' + held.value.people + ' people, ' +
+            held.value.holders.length + ' holding a credential)',
+          validUntil: directoryWindow ? held.at + 10000 : null,
+          valid: inRealmById(id, function () {
+            return held.version === subtreeVersion(usersDn());
+          }),
+          basis: 'subtree version'
+        });
+      });
+      peopleNamedMemo.existing().forEach(function (held, id) {
+        if (!held.at) {
+          return;
+        }
+        out.push({
+          realm: id,
+          key: 'names seen (' + held.value + ' people here)',
+          validUntil: held.at + 10000,
+          valid: inRealmById(id, function () {
+            return held.version === subtreeVersion(usersDn());
+          }),
+          basis: 'subtree version'
         });
       });
       return out;
@@ -22261,6 +24524,9 @@ function prose() {
 }
 
 module.exports = {
+  // The search narrowing's filter analysis (#320), for
+  // tests/ldap_search_narrowing.js.
+  indexedLookupsOf: indexedLookupsOf,
   // THE CONSOLE'S PROSE (#543 phase 2b): the routes whose answers carry
   // this module's sentences, and the sentences by key.
   PROSE_ROUTES: PROSE_ROUTES,
@@ -22277,6 +24543,7 @@ module.exports = {
   // THE ENTRY UUID (2026-09-14): the lookups a person's `sub` and a SCIM id
   // go through, exported for SCIM and for the tests.
   entryByUuid: entryByUuid,
+  entriesByUuids: entriesByUuids,
   entryUuidOf: entryUuidOf,
   mergeCreateRace: mergeCreateRace,
   dnForResourceId: dnForResourceId,
@@ -22294,9 +24561,19 @@ module.exports = {
   autoCreateUser: autoCreateUser,
   createUser: createUser,
   existingUserEntry: existingUserEntry,
+  // The census's asynchronous resolution and the census itself (#621), for
+  // tests/credential_census_async.js, which compares each with its
+  // synchronous twin and counts what the store was asked.
+  existingUserEntriesAsync: existingUserEntriesAsync,
+  locateStoredAsync: locateStoredAsync,
+  credentialCensus: credentialCensus,
+  credentialCensusAsync: credentialCensusAsync,
+  locateEntry: locateEntry,
   objectFor: objectFor,
   groupsFor: groupsFor,
   groupsOfUser: groupsOfUser,
+  // The group index's builds and clock, for tests/group_index_clock.js (#618).
+  groupIndexState: groupIndexState,
   applicationsDn: applicationsDn,
   spiffeDn: spiffeDn,
   spiffeEntriesDn: spiffeEntriesDn,
@@ -22309,6 +24586,11 @@ module.exports = {
   isPersonEntry: isPersonEntry,
   personCount: personCount,
   allPersons: allPersons,
+  personsHolding: personsHolding,
+  // Whether this process holds its people as a window onto the store
+  // (#349, #616): where a caller with an index-shaped question asks it
+  // instead of listing everybody (SCIM's `userName eq`).
+  directoryIsWindowed: directoryIsWindowed,
   personNames: personNames,
   personDns: personDns,
   residentsPage: residentsPage,
@@ -22457,6 +24739,11 @@ module.exports = {
   MAX_GROUP_OWNERS: MAX_GROUP_OWNERS,
   // What a person owns (#604): the portal's Resources I own.
   groupsOwnedBy: groupsOwnedBy,
+  // Who owns a group, and whether it is closed to them (#607):
+  // `common/ownership.ts`'s reads and its one write here.
+  groupOwnership: groupOwnership,
+  setGroupOwnerProtected: setGroupOwnerProtected,
+  resolveOwner: resolveServiceAccountOwner,
   memberDnFor: memberDnFor,
   deleteGroupEntry: deleteGroupEntry,
   // The sweep, so that somebody provisioned over SCIM gets the same credential
@@ -22479,7 +24766,15 @@ module.exports = {
   // this module's own lookups to what they answer through a window; nothing
   // in the service reads it from here (persistence.js has it through the
   // directory slot).
-  directoryWindow: directoryWindow
+  directoryWindow: directoryWindow,
+  // HOW MANY ADDS HOLD NAMES THEY ASKED FIRST (#625), for
+  // `tests/directory_window_requests.js`: a watch is open from an add's
+  // question until its body has run, and none is left behind.
+  openHeldNameWatches: function () {
+    log.debug('Entering openHeldNameWatches().');
+    log.debug('Leaving openHeldNameWatches().');
+    return heldNameWatches.size;
+  }
 };
 
 // Loaded: from here on a membership note can read what it needs (see

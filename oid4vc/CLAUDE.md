@@ -1016,6 +1016,74 @@ starts a session, so two polls on two nodes cannot both sign somebody in
 (`STS-VC-0062`; a store that cannot be asked, `STS-VC-0063`). The bar door's
 behaviour is unchanged.
 
+## WHAT THE STORES KEEP: DIGESTS, NOT CREDENTIALS (#614, 2026-10-13)
+
+Every store in this family is a declared `realms.map({ persist })`:
+journalled, replicated into every request worker and node, and sealed into
+`sts_minted` in product mode. #614 (rcbj: a SHA-256 digest instead of a
+credential **wherever it is feasible**) has each one keep
+`crypto.credentialDigest()` — base64url SHA-256, the one helper — of a
+bearer value it only looks up, spends or compares, and drop a whole token
+nothing read back. **No migration**: a row persisted before is under the raw
+value, is never found under its digest, and expires on its own `expires`.
+
+| Store | Keeps | Why it is safe to |
+|---|---|---|
+| `vc_offers.preAuthorizedCodes` | keyed by the code's digest; `txCodeDigest`, never `txCode` | the token endpoint looks the code up and spends it; the Transaction Code is compared, digest to digest, with `bytesEqualConstantTime()` |
+| `vc_offers.issuerStates` | keyed by the `issuer_state`'s digest | the authorization endpoint only asks whether it knows the value |
+| `vc_offers.credentialOffers` | keyed by the offer id's digest; the offer itself WHOLE | the id is looked up; the offer is the exception below |
+| `vc_offers.deferredTransactions` | keyed by the `transaction_id`'s digest; no `accessToken` | the deferred endpoint looks the id up; the token was read only to be copied onto the notification row |
+| `vc_offers.deferredAccessTokens` | keyed by the token's digest (since 2026-09-12) | membership is the only question |
+| `vc_issuer.vciNonces` | keyed by `vc_issuer.nonceKey()`, the nonce's digest | a proof's nonce is looked up and spent |
+| `vc_issuer.notificationIds` | the id WHOLE; no `accessToken` | the token was never read; the id is an identifier, like a `jti` |
+| `vc_verifier.vpTransactions` | a verdict's `presentationDigest` and verified claims; never the presentation | the presentation was read only by `?state=` and the log |
+
+**The four `vc_offers` stores are a facade, `DigestKeyedStore`**, that hashes
+whatever `get`/`set`/`has`/`delete` are given, because two of their readers
+are not this family's — `oauth-oidc/oauth2.ts` reads the codes and the
+issuer states — and a caller that SET a raw key would put the credential
+back. That is `deferredAccessTokens`' argument again. Iteration is
+`forEachDigest()` and removal by what it hands out is `deleteDigest()`,
+named so nobody passes a digest to `delete()` and hashes it twice;
+`logout/logout.ts`'s pre-authorized-code row is the one outside walker.
+`vciNonces` is hashed at its call sites instead, because the cache
+registry's ejector and rows walk the plain store. The cluster claims a code,
+a nonce and a Transaction Code failure are spent through hash their own
+value (`cluster/cluster_claims.js`), so they are handed what arrived.
+
+**THE TRANSACTION CODE'S DIGEST IS NOT A SECRET, AND THE COMMENT SAYS SO.**
+Five digits by default: ninety thousand hashes recover it from the row,
+offline, in well under a second. What `txCodeDigest` buys is that the row no
+longer carries the code beside the pre-authorized code it unlocks; the
+protection against guessing is the online attempt limit
+(`oid4vci.txCodeMaxAttempts`) and the offer's short life.
+
+**What stays whole, and why:**
+
+* **The offer served by reference** (`credentialOffers`' value), pre-authorized
+  code and all: OpenID4VCI section 4.1.3 has the wallet fetch it, so the
+  exact document is served from here for `oid4vci.offerTtlS`.
+* **The Request Object** (`vpTransactions`' `requestObject`): served to the
+  wallet by reference.
+* **`notification_id`**: it authorizes nothing but reporting what the wallet
+  did with one credential, behind a token this issuer signed.
+* **OpenID4VP `state` and the request id** (`vpRequests`): public
+  identifiers rather than bearer values. `state` travels in the Authorization
+  Request — by value in the wallet URL or QR code, by reference to anybody
+  holding the `request_uri` — and back in the wallet's answer; it is the
+  console's handle for a verification (`GET /admin-api/verifications?state=`,
+  the open list). Holding it lets nobody do more than answer with a
+  presentation, which must still carry this request's nonce and audience and
+  a holder proof. A sign-in's credentials on the same record are already
+  digests (`bindingHash`, `responseCodeHash`).
+
+**The log follows the store**: the presentation's `logArtifact()` lines name
+it by `presentationDigest` (and an SD-JWT's part count), never the
+`vp_token`. `tests/vc_store_digests.js` drives each flow and then reads each
+store for the raw value, as a key and anywhere in a row's JSON.
+
+---
+
 ## THE BBS KEY IS THE REALM'S, AND ROTATES (2026-09-22, #49 P5, rcbj's D6 answer)
 
 The key bbs-2023 proofs are signed with was one pair for the whole service (a
@@ -1040,7 +1108,7 @@ needed to tell them apart.
 
 ---
 
-## THE W3C VC API AND THE W3C SUITES (#194-#199, 2026-09-26; A PRODUCT SURFACE SINCE #598, 2026-10-12)
+## 3bn. THE W3C VC API AND THE W3C SUITES (#194-#199, 2026-09-26; A PRODUCT SURFACE SINCE #598, 2026-10-12)
 
 The Verifiable Credentials and DID Working Groups' own test suites — VC Data
 Model 2.0, Data Integrity EdDSA and ECDSA, Bitstring Status List,

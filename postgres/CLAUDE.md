@@ -64,6 +64,60 @@ them all.
   building it from the parts would make an override of the whole string
   ambiguous. `tests/postgres_schema.js` notices when they disagree.
 
+## The server's settings, on the command line (#630, 2026-10-14)
+
+**From measuring 8081 under the LDAP bulk load** (`load-users/dbperf/` on
+the host). `docker-compose.yml` passes them after `max_connections`; it
+carries no comments, so the reasons are here. `docs/docker-compose.md`
+lists them for a user.
+
+**THE SAME LIST IS IN `docker-compose-quick.yml` AND
+`docker-compose-run-tests.yml` (#633)**, and in the copy of the quick file
+that `docs/getting-started.md` prints. #630 changed only the first file, so
+the quick start and the suite ran the defaults it had measured against, the
+quick start with 100 connections. `tests/postgres_schema.js` now holds all
+four to one list, name and value, so a setting changes in every file or the
+test fails. The cells layer's two extra databases `extends` the suite's, so
+they carry it too.
+
+* **`shared_buffers=2GB`** (`STS_POSTGRES_SHARED_BUFFERS`): the default 128 MB
+  against a 9.4 GB database read at a 96.9% hit ratio. A variable because
+  the test stacks run up to three of these on one machine (the cells layer
+  `extends` this service); it is a ceiling, not memory taken at start.
+  Launchers set nothing, so no `COMPOSE_ENV` row is owed.
+* **`max_wal_size=8GB`, `checkpoint_timeout=15min`**: every checkpoint was
+  a REQUESTED one (the WAL filled), each followed by a burst of full-page
+  images.
+* **`wal_compression=lz4`**: 4.4 full-page images an add.
+* **`max_parallel_workers_per_gather=0`**: the batched directory lookups
+  went parallel and tripled the server's CPU for nothing; the service's
+  statements are small and many.
+* **`track_io_timing=on`, `log_lock_waits=on`**: what the analysis had to
+  infer from wait sampling, recorded.
+* **`pg_stat_statements` and `auto_explain` preloaded**, with the analysis's
+  exact settings (`track=all`, `max=10000`; plans over 200 ms logged with
+  `analyze`, `buffers` and nested statements, without per-node timing,
+  which is the expensive part of `analyze`). `schema.sql` creates the
+  extension, in `public`, only where the running role may — a superuser
+  here, RDS's master user there — and warns and goes on otherwise. **The
+  application role gets no `pg_read_all_stats`**, as it gets no
+  `pg_monitor` (`persistence/CLAUDE.md`, the metrics page): the view is for
+  the owner, and the service reads none of it.
+
+**THEY TAKE EFFECT AT THE CONTAINER'S NEXT START** (every one is a server
+start parameter, and `shared_preload_libraries` cannot change any other way);
+nothing in the `sts-db` volume changes, and a stack started before this keeps
+the old values until it is restarted.
+
+**RDS IS NOT DONE**: `deploy/aws/environment/rds.tf` and
+`deploy/aws/global/database.tf` still set only the TLS parameters. RDS's own
+defaults already size `shared_buffers` from the instance's memory and load
+`pg_stat_statements`, but `auto_explain`, `wal_compression`,
+`max_parallel_workers_per_gather`, `checkpoint_timeout`, `max_wal_size` and
+`log_lock_waits` would be parameters of those groups (`pending-reboot` for
+the preload), and want a reboot window and an instance-sized
+`max_wal_size` — a decision for the next AWS apply, not a change made blind.
+
 ## The schema is built by an OWNER and used by somebody who cannot change it
 
 **Until 2026-09-06 the service's own database role had to be able to `CREATE
@@ -87,7 +141,10 @@ merged on 2026-09-29 and both tables are created by name — and version
 them, for a request worker that holds the people and devices as a window
 (`persistence/directory_queries.js`) — and version 15 (#432 phase 5)
 `sts_cluster_budgets`, a GNAP right's limits spent with one conditional
-upsert (`cluster/cluster_counters.js`); `sts_app` holds
+upsert (`cluster/cluster_counters.js`) — and version 18 (#618 phase 2) two
+partial indexes in place of two whole ones, and no table
+(`persistence/CLAUDE.md`, *Only the asked names and the group classes are
+indexed*); `sts_app` holds
 `SELECT`, `INSERT`, `UPDATE` and `DELETE` on them and `USAGE` — not `CREATE` —
 on the schema, and is what `STS_DATABASE_URL` dials. `schema.sql` creates both
 halves and argues every line of it; do not argue it again here.
@@ -113,6 +170,25 @@ that `ALTER`, and the driver's own `open()` does the same: an object marked
 an index on a column an older table does not have yet cannot be built before
 it.
 
+**AN INDEX A LATER VERSION REPLACED IS DROPPED BY THE SAME RUN (#618,
+version 18).** `schema.sql` builds `sts_ldap_entries_asked_names` and
+`sts_ldap_entries_group_classes` and only then drops
+`sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, the driver's
+`SCHEMA_RETIRED`, so no question is ever without an index; leaving one
+behind would keep its write cost, which is what the version removes. Both
+builds read the whole table once under the `SHARE` lock `CREATE INDEX` takes
+(seconds at 1.2M entries), inside the script's transaction. **Run it before
+the version-18 image starts**, which cannot build the indexes as `sts_app`
+and is refused; a version-17 process still running meanwhile answers its
+holder and group questions without an index until it is replaced.
+`tests/postgres_schema.js` holds the drops to `SCHEMA_RETIRED` and their
+order. **The same run switches the directory's six GIN indexes to
+`fastupdate = off` and flushes each one's pending list once**
+(`gin_clean_pending_list()`, which only the owner may call):
+`persistence/CLAUDE.md`, *The directory's GIN indexes have no pending list*.
+On 8081 the four lists held ~205,000 tuples each, so the flush is a few
+seconds of index writes inside the script's transaction.
+
 **THE DRIVER STILL CREATES WHAT IS MISSING AND THAT IS NOT A CONTRADICTION.**
 It probes with `to_regclass` first and issues a `CREATE` only for an object that
 is not there, so against a database this script has built it issues none. That
@@ -131,6 +207,16 @@ tables and no `sts_app`, and the service container then restart-loops on
 what it throws away is the directory, the realm registry and the appconfig
 overrides — and, in product mode (the compose stack's default), the sealed
 signing keys and what this service minted under them.
+
+**VERSION 19 (#630) IS THE SAME UPGRADE, AND MORE THAN COLUMNS.** It shards
+the two counter tables (a `shard` column, then a primary key that holds it —
+a `DO` block, because the swap must happen once), replaces the two fold
+routines under new names and drops the old ones, swaps `sts_minted`'s
+`written_at` btree for a BRIN, and sets storage parameters on three tables.
+Every statement is idempotent; checked against a real version-17 database
+with rows and counters in it, and re-run on it and on a fresh one. The
+driver's `SCHEMA_UPGRADES` holds the same statements under the same
+conditions (`persistence/CLAUDE.md`).
 
 **`tests/postgres_schema.js` is what keeps `schema.sql` and the driver from
 drifting**, since the DDL is now written down twice: it fails on a `CREATE`

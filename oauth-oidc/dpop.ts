@@ -326,6 +326,11 @@ const PROOF_CLAIM = Symbol('sts.dpopProofClaim');
 // this behaves as the plain Map it replaced. See common/realms.js.
 // `expiresAt` (#333): the value is when the nonce was ISSUED, epoch seconds;
 // it lives `oauth2.dpopNonceTtlS`.
+// KEYED BY THE NONCE'S DIGEST, NEVER BY THE NONCE (#614,
+// `crypto.credentialDigest()`): the store is only ever asked whether a
+// presented nonce was issued, so it is hashed as it is issued and as it is
+// presented, and a heap snapshot or a replicated row holds no nonce a proof
+// could carry.
 const issuedNonces = realms.map({
   persist: 'dpop.issuedNonces',
   retain: 'age',
@@ -631,7 +636,7 @@ class Dpop {
     cacheRegistry.makeRoom(issuedNonces,
                            Number(config.value('oauth2.dpopNonceCacheSize')),
                            { counter: issuedNoncesCount });
-    issuedNonces.set(nonce, nowSec());
+    issuedNonces.set(stsCrypto.credentialDigest(nonce), nowSec());
     log.debug('Leaving Dpop.issueNonce().');
     return nonce;
   }
@@ -658,7 +663,9 @@ class Dpop {
     const { log } = this.deps;
     log.debug('Entering Dpop.nonceIsCurrent().');
     this.pruneNonces();
-    const ok = !!nonce && issuedNonces.has(String(nonce));
+    // Hashed as it is presented (#614).
+    const ok = !!nonce &&
+      issuedNonces.has(stsCrypto.credentialDigest(String(nonce)));
     if (ok) {
       issuedNoncesCount.hit();
     } else {

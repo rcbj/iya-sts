@@ -1139,6 +1139,10 @@
     "en": "e5e65ad85891ab58",
     "text": "Se quitó un propietario de un grupo"
   },
+  "audit.actions.group.owner-protected.label": {
+    "en": "872bbc2dca2a5974",
+    "text": "Un grupo se cerró a sus propietarios, o se les volvió a abrir"
+  },
   "audit.actions.krb5.keytab.person.label": {
     "en": "7f9ec638380e53d7",
     "text": "Se generó el keytab de una persona a partir de una contraseña proporcionada"
@@ -1366,6 +1370,10 @@
   "audit.actions.roles.describe.label": {
     "en": "896007dff32a6824",
     "text": "Se establecieron la descripción, el nombre para mostrar o los tipos de miembro de un rol"
+  },
+  "audit.actions.node-health.collect-garbage.label": {
+    "en": "cb2531d8ee2f27ce",
+    "text": "Se ejecutó una recolección de basura completa en un proceso o hilo worker de un nodo"
   },
   "audit.actions.saml2.authnrequest.label": {
     "en": "8d29d93421323443",

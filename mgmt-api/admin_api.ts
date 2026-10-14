@@ -111,8 +111,9 @@
 // table's `registerRoutes()`; `common/protocol_stack.ts` calls it at 19,
 // where requiring this module used to register both (#50, R1), so the route
 // order is unchanged. Requiring the module registers nothing. (The schemas
-// are therefore compiled BEFORE the gate is registered rather than after it;
-// neither reads the other.)
+// are therefore recorded BEFORE the gate is registered rather than after it,
+// and since #617 each is compiled only when a request first reaches its
+// operation; neither reads the other.)
 //
 // `PROTOCOL_SETTINGS_OPERATIONS` and `ROUTES` are typed `any[]`, as the
 // JavaScript's JSDoc typed the second: a union of a few hundred object
@@ -142,6 +143,9 @@ import lingeringClose = require('../common/lingering_close');
 // A service account's owner bound, which the document states (#600). A
 // library: the actions layer loaded it long before this module.
 import serviceAccounts = require('../common/service_accounts');
+// Who owns what, and what an owner may not touch (#607): a library whose
+// reads are lazy, so this require moves no route and closes no cycle.
+import ownership = require('../common/ownership');
 // Whether a create can race another node's, and the sentence a refused one
 // carries (#46 section 3). A LIBRARY that registers nothing.
 import createClaims = require('../ldap/directory_create_claims');
@@ -745,8 +749,9 @@ class AdminApi {
    * fresh deep copy of the whole components table (about 170 KB) for each of
    * the 363 validators — and ajv keeps every root it compiled in its cache
    * for the life of the process, so the copies were never collected: about
-   * 60 MB of every process's heap. The copy is made once, in
-   * `compileRequestSchemas()`, and each root points at it. ajv reads a schema
+   * 60 MB of every process's heap. The copy is made once, with the first
+   * validator `validatorFor()` compiles (#617), and each root points at it.
+   * ajv reads a schema
    * and never writes to it, so a shared subtree is exactly what the copies
    * were, 363 times fewer; what each validator accepts and refuses, and the
    * words it refuses in, are unchanged.
@@ -777,22 +782,38 @@ class AdminApi {
     return route + '\u0000' + (action || '');
   }
 
+  // ---------------------------------------------------------------------------
+  // THE REQUEST SCHEMAS ARE COMPILED ON FIRST USE (#617, 2026-10-14).
+  //
+  // Every one of the 363 was compiled by ajv when the instance was wired —
+  // in every process, at every start, ~1.2 s of the ~3 s the management
+  // API's load cost on 8081 (measured in the tests image: 1144 ms for
+  // `compileRequestSchemas()` against 4 ms to build the whole route table),
+  // and almost none of them is ever reached by a given process. Now `wire()`
+  // only RECORDS each operation's schema under its validator key, and
+  // `validatorFor()` compiles one the first time a request reaches it and
+  // keeps it. What a validator accepts and refuses, and the words it refuses
+  // in, are unchanged; the routes, the gate and the console's closed sets are
+  // registered exactly where and when they were (rule 1). The one thing that
+  // moves is WHEN a schema this repository wrote that ajv will not compile is
+  // reported (STS-API-0010): at its operation's first request rather than at
+  // start — so `compileAllRequestSchemas()` compiles the lot on demand, and
+  // `tests/admin_api_lazy_validators.js` asks it to and holds that none fails.
+  // ---------------------------------------------------------------------------
   /**
-   * Compiles every request schema in the route table into a validator.
+   * Records every request schema in the route table under its validator key,
+   * to be compiled by `validatorFor()` when first needed.
    *
-   * A schema that will not compile is logged under `STS-API-0010` and its
-   * operation goes on unvalidated.
-   *
-   * @returns how many validators were built
+   * @returns how many schemas were recorded
    */
   compileRequestSchemas() {
-    const { log, errorCodes, spec } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.compileRequestSchemas().");
-    let built = 0;
-    // ONE copy of the enforced components for every root below (#365; see
-    // `compilable()`).
-    const components = { schemas: self.structureOnly(spec.SCHEMAS) };
+    let recorded = 0;
+    validators.clear();
+    validatorSources.clear();
+    sharedComponents = null;
     ROUTES.forEach(function (entry) {
       const route = entry.route || entry.path;
       const rows = entry.actions || [];
@@ -800,40 +821,105 @@ class AdminApi {
         if (!action.requestBody) {
           return;
         }
-        try {
-          validators.set(self.validatorKeyOf(route, action.action),
-                         ajv.compile(self.compilable(action.requestBody,
-                                                     components)));
-          built = built + 1;
-        } catch (e) {
-          // A schema this repository wrote that ajv will not compile. Logged by
-          // operation so it names the row to fix; the operation goes on working
-          // unvalidated, because a management API that would not start is worse
-          // than one operation whose body is unchecked.
-          log.error(errorCodes.tag('STS-API-0010') +
-                    'admin-api: the request schema for ' + action.operationId +
-                    ' would not compile and that operation is unvalidated: ' +
-                    e.message);
-        }
+        validatorSources.set(self.validatorKeyOf(route, action.action),
+                             { schema: action.requestBody,
+                               name: action.operationId });
+        recorded = recorded + 1;
       });
       if (entry.requestBody) {
-        try {
-          validators.set(self.validatorKeyOf(route, ''),
-                         ajv.compile(self.compilable(entry.requestBody,
-                                                     components)));
-          built = built + 1;
-        } catch (e) {
-          log.error(errorCodes.tag('STS-API-0010') +
-                    'admin-api: the request schema for ' +
-                    (entry.operationId || route) +
-                    ' would not compile and that operation is unvalidated: ' +
-                    e.message);
-        }
+        validatorSources.set(self.validatorKeyOf(route, ''),
+                             { schema: entry.requestBody,
+                               name: entry.operationId || route });
+        recorded = recorded + 1;
       }
     });
-    log.debug("Leaving AdminApi.compileRequestSchemas(). " + built +
-              " validator(s).");
-    return built;
+    log.debug("Leaving AdminApi.compileRequestSchemas(). " + recorded +
+              " schema(s) recorded, none compiled yet.");
+    return recorded;
+  }
+
+  /**
+   * Returns the compiled validator for a validator key, compiling it the
+   * first time; null when the operation has no schema or its schema would
+   * not compile (logged once under `STS-API-0010`).
+   *
+   * @param key - the key from `validatorKeyOf()`
+   * @returns the validator, or null
+   */
+  validatorFor(key) {
+    const { log, errorCodes, spec } = this.deps;
+    log.debug("Entering AdminApi.validatorFor().");
+    if (validators.has(key)) {
+      log.debug("Leaving AdminApi.validatorFor(). Compiled already.");
+      return validators.get(key);
+    }
+    const source = validatorSources.get(key);
+    if (!source) {
+      log.debug("Leaving AdminApi.validatorFor(). No schema.");
+      return null;
+    }
+    // ONE copy of the enforced components for every root (#365; see
+    // `compilable()`), made with the first validator.
+    if (!sharedComponents) {
+      sharedComponents = { schemas: this.structureOnly(spec.SCHEMAS) };
+    }
+    let compiled = null;
+    try {
+      compiled = ajv.compile(this.compilable(source.schema,
+                                             sharedComponents));
+    } catch (e) {
+      // A schema this repository wrote that ajv will not compile. Logged by
+      // operation so it names the row to fix; the operation goes on working
+      // unvalidated, because a management API that would not answer is worse
+      // than one operation whose body is unchecked. Remembered as null, so it
+      // is said once rather than on every request.
+      log.error(errorCodes.tag('STS-API-0010') +
+                'admin-api: the request schema for ' + source.name +
+                ' would not compile and that operation is unvalidated: ' +
+                e.message);
+    }
+    validators.set(key, compiled);
+    log.debug("Leaving AdminApi.validatorFor(). " +
+              (compiled ? "Compiled." : "Would not compile."));
+    return compiled;
+  }
+
+  /**
+   * Compiles every recorded request schema now, for a test or a caller that
+   * wants every one checked at once.
+   *
+   * @returns `{ built, failed }`, the operations' names that would not
+   *   compile in `failed`
+   */
+  compileAllRequestSchemas() {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminApi.compileAllRequestSchemas().");
+    let built = 0;
+    const failed = [];
+    validatorSources.forEach(function (source, key) {
+      if (self.validatorFor(key)) {
+        built = built + 1;
+      } else {
+        failed.push(source.name);
+      }
+    });
+    log.debug("Leaving AdminApi.compileAllRequestSchemas(). " + built +
+              " built, " + failed.length + " failed.");
+    return { built: built, failed: failed };
+  }
+
+  /**
+   * Says how many request validators this process has compiled so far, and
+   * how many schemas are recorded.
+   *
+   * @returns `{ compiled, recorded }`
+   */
+  validatorCounts() {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.validatorCounts().");
+    log.debug("Leaving AdminApi.validatorCounts().");
+    return { compiled: validators.size, recorded: validatorSources.size };
   }
 
   // ---------------------------------------------------------------------------
@@ -1017,8 +1103,8 @@ class AdminApi {
                 "body.");
       return { ok: true };
     }
-    const validate = validators.get(this.validatorKeyOf(route, action)) ||
-                     validators.get(this.validatorKeyOf(route, ''));
+    const validate = this.validatorFor(this.validatorKeyOf(route, action)) ||
+                     this.validatorFor(this.validatorKeyOf(route, ''));
     if (!validate) {
       // No schema for this operation — a GET, an unknown action the handler is
       // about to refuse by name, or a row that carries none. Not this
@@ -1067,6 +1153,12 @@ class AdminApi {
     // WHAT ONLY THE CONSOLE DRAWS, LEFT OUT OF A MANAGEMENT ANSWER (#454):
     // the members the registration loop names for an operation whose
     // console twin answers them (`withConsoleRoutes()`).
+    // AN OWNER'S READ (#607): the one object, not the register around it.
+    const ownerProjection = res.locals && res.locals.ownerProjection;
+    if (typeof ownerProjection === 'function' && status === 200 && body &&
+        typeof body === 'object' && !Array.isArray(body)) {
+      body = ownerProjection(body);
+    }
     const consoleMembers = res.locals && res.locals.consoleMembers;
     if (consoleMembers && status === 200 && body && typeof body === 'object' &&
         !Array.isArray(body)) {
@@ -1303,7 +1395,13 @@ class AdminApi {
         save: 'Writes `cn=default,ou=passkeyPolicies` in this realm\'s ' +
               'directory, REPLACING what is there; a realm with no entry of ' +
               'its own follows the default realm\'s. `allowUsernameless` ' +
-              '(off by default) offers a passkey sign-in with no username. ' +
+              '(on by default) offers a passkey sign-in with no username. ' +
+              '`requireUsernameless` (off, #608) makes it the only way in ' +
+              'for an application whose `appAuthnMechanism` is `webauthn` ' +
+              'alone: no username field, and a sign-in naming a person ' +
+              'refused; it needs `allowUsernameless`, and the `default` ' +
+              'profile never applies it to the admin console, the debugger ' +
+              'or the user portal. ' +
               'While it is off, "Use a security key" asks the authenticator ' +
               'for a discoverable credential (`residentKey: required`), as ' +
               '"Create a passkey" always does; while it is on, it asks ' +
@@ -1326,7 +1424,7 @@ class AdminApi {
               'are the names a passkey prompt and a new key show. ' +
               '`aggregateDevices` (on) offers a person\'s passkeys as one ' +
               'sign-in choice; off, one per passkey.',
-        example: { allowUsernameless: false,
+        example: { allowUsernameless: false, requireUsernameless: false,
                    securityKeyResidentKey: 'required',
                    backupEligibility: 'allow',
                    enforcePinLength: false, minPinLength: 4,
@@ -4581,15 +4679,33 @@ class AdminApi {
           { name: 'failing', in: 'query', required: false,
             schema: { type: 'string', enum: ['true'] },
             description: '`true`: only accounts whose last rotation ' +
-                         'failed.' }
+                         'failed.' },
+          { name: 'account', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'One service account, by username (#607): the ' +
+                         'answer is `{ found, account }` alone — `account` ' +
+                         'as a row of `accounts` is, with ' +
+                         '`ownerProtected` — and an owner of the account ' +
+                         'may ask it with owner:read.' }
         ] as any[]).concat(this.pagingParameters()),
-        responseDescription: 'The accounts, the policy and the totals.',
+        responseDescription: 'The accounts, the policy and the totals; or, ' +
+                             'with `account`, that one account.',
         responseSchema: { type: 'object',
           description: '`policy`, `totals`, `filter`, `accounts` and ' +
-                       '`paging`.' },
+                       '`paging`; or `found` and `account`.' },
         handler: function (req, res) {
           log.debug("Entering the management API service accounts " +
                     "endpoint.");
+          // ONE ACCOUNT (#607): the read an owner may ask, and the facts the
+          // portal's page draws — never the realm's other accounts.
+          const one = String((req.query || {}).account || '').trim();
+          if (one) {
+            const facts = serviceAccounts.of(one);
+            self.sendJson(res, 200, { found: !!facts, account: facts });
+            log.debug("Leaving the management API service accounts " +
+                      "endpoint. One account.");
+            return;
+          }
           self.sendJson(res, 200,
                         adminViews.serviceAccountsMonitorJson(req.query));
           log.debug("Leaving the management API service accounts " +
@@ -5036,6 +5152,94 @@ class AdminApi {
           });
           log.debug("Leaving the management API node health endpoint.");
         } },
+
+      // ---------------------------------------------------------------------
+      // NODE HEALTH'S ONE CONTROL (#611): a full garbage collection, on
+      // demand. `nodeHealthAdmin.collectGarbage()` — the function the page's
+      // Collect buttons are sent to — and nothing else. Under
+      // `/admin-api/node-health`, so `request_pool.js`'s NEVER_DISPATCHED
+      // already pins it to the front process: only that process knows the
+      // worker threads and can ask them. A POST, so `admin:write`; a service
+      // operation, so a realm's own token is refused it (its `mirrors` is a
+      // service page, `admin_scope.ts`).
+      // ---------------------------------------------------------------------
+      { method: 'POST', route: BASE + '/node-health/:action', tag: 'Service',
+        mirrors: 'POST /admin/node-health',
+        handler: function (req, res) {
+          log.debug("Entering the management API node health action.");
+          nodeHealthAdmin.collectGarbage(self.withAction(req, parseBody(req)),
+                                         self.callerNameOf(res))
+            .then(function (result) {
+              const out = Object.assign({}, result);
+              delete out.status;
+              delete out.errorCode;
+              if (!result.ok) {
+                errorCodes.mark(res, result.errorCode || 'STS-CORE-0160');
+                self.sendJson(res, result.status || 400, out);
+                log.debug("Leaving the management API node health action. " +
+                          "Refused.");
+                return;
+              }
+              self.sendJson(res, 200, out);
+              log.debug("Leaving the management API node health action.");
+            }).catch(function (e) {
+              log.debug("Caught in the management API node health action: " +
+                        ((e && e.message) || e));
+              log.error(errorCodes.tag('STS-CORE-0158') + 'A garbage ' +
+                        'collection could not be run: ' +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-CORE-0158');
+              self.sendJson(res, 500, { ok: false, errors: [
+                'The garbage collection could not be run.'] });
+            });
+          log.debug("Leaving handler().");
+        },
+        actions: [
+          { action: 'collect-garbage', operationId: 'collectGarbage',
+            summary: 'Run a full V8 garbage collection in this node\'s ' +
+                     'front process, one of its worker threads, or all',
+            description: 'THIS NODE only — the front process that answers ' +
+                         'and its own request and hosted-surface worker ' +
+                         'THREADS, never another node of a cluster. ' +
+                         '`target` is `all` (the default: the front ' +
+                         'process\'s main thread and every ready worker ' +
+                         'thread), `front`, or a worker thread\'s ' +
+                         '`threadId` as GET /admin-api/node-health lists ' +
+                         'it. Each worker thread is a V8 isolate of its ' +
+                         'own and collects itself, asked over the pool\'s ' +
+                         'channel and waited for up to ten seconds. A FULL ' +
+                         'COLLECTION STOPS THE THREAD IT RUNS IN UNTIL IT ' +
+                         'FINISHES; in the front process that pauses every ' +
+                         'listener of the node. A diagnostic. Answers 200 ' +
+                         'with `rows`, one per isolate collected or asked ' +
+                         '(`kind` `process` or `thread`, `pid`, ' +
+                         '`threadId`, `role`, `ok`, `heapUsedBeforeBytes`, ' +
+                         '`heapTotalBeforeBytes`, `heapUsedAfterBytes`, ' +
+                         '`heapTotalAfterBytes`, `freedBytes`, ' +
+                         '`durationMs` — the pause — and `error`), ' +
+                         '`unanswered` (worker threads that did not answer ' +
+                         'in time), `totals` and `message`; 400 for an ' +
+                         'unknown action or a malformed `target`, 404 for a ' +
+                         'thread this node does not have, 500 when the ' +
+                         'front process alone was asked and could not ' +
+                         'collect. Audited. A service operation: a ' +
+                         'realm\'s own administrator is refused it.',
+            requestBodyRequired: false,
+            requestBody: {
+              type: 'object',
+              properties: {
+                target: { oneOf: [{ type: 'string' },
+                                  { type: 'integer', minimum: 0 }],
+                          description: '`all`, `front`, or a worker ' +
+                                       'thread\'s threadId; `all` when ' +
+                                       'absent.' }
+              },
+              examples: [{ target: 'all' }],
+              additionalProperties: false
+            },
+            responseDescription: 'Each isolate\'s heap before and after ' +
+                                  'its collection, and the pause.' }
+        ] },
 
       // ---------------------------------------------------------------------
       // THE DATABASE REPORT. `databaseAdmin.databaseView()` and nothing else,
@@ -5942,7 +6146,28 @@ class AdminApi {
                      'remembers. OpenAPI cannot spell a parameter whose name ' +
                      'is built at runtime, and a `session-{id}Page` in the ' +
                      'list would generate a client that sends a literal ' +
-                     '`{id}` — so it is here in words instead.',
+                     '`{id}` — so it is here in words instead.\n\nTHE ' +
+                     'LIST IS CAPPED AND THE COUNT IS NOT (#610). ' +
+                     '`directoryPeople` is how many people the realm\'s ' +
+                     'directory defines, counted by the directory without ' +
+                     'listing them (null where it offers no count). The ' +
+                     'rows are at most `scanLimit` of those people — ' +
+                     '`scanned` of them read, `capped` true when the ' +
+                     'directory held more — united with everybody this ' +
+                     'service has seen, so `known` is the length of that ' +
+                     'list and never the size of the directory. ' +
+                     '`directoryCounts` is what the page\'s tiles draw, ' +
+                     'over every person the directory defines, without ' +
+                     'listing them: `people`; `signedInHere`, those of ' +
+                     'them the register has seen authenticate (it keeps ' +
+                     'the most recent identities only), and ' +
+                     '`neverSignedInHere`, the rest; `withSecond`, ' +
+                     '`withTotp`, `withKeys`, `primaryKeys`, `unreadable`, ' +
+                     '`withPassword`, `passwordOnly` (a password and no ' +
+                     'second factor) and `noWayIn` (neither a password nor ' +
+                     'a sign-in key). Null where the directory offers no ' +
+                     'such count. `factors`, `authenticatedHere` and the ' +
+                     '`factor` filter stay the LIST\'s.',
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'user', in: 'query', required: false,
@@ -6013,8 +6238,27 @@ class AdminApi {
           log.debug("Entering the management API users endpoint.");
           // The person's current risk, read first (#62) — the console's
           // route does the same, so the two answers agree.
+          // The list's directory names are asked of the store
+          // asynchronously (#616: `usersJsonAsync()`), which held a request
+          // worker's event loop for seconds at 200,000 people.
           return adminViews.riskFor(req.query).then(function (risk) {
-            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+            return adminViews.usersJsonAsync(req, risk);
+          }).then(function (json) {
+            self.sendJson(res, 200, json);
+          }, function (e) {
+            log.debug("Caught in the management API users endpoint: " +
+                      ((e && e.message) || e));
+            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                     'STS-LDAP-0139') +
+                      'admin-api: the users list ' +
+                      'could not be read from the store: ' +
+                      ((e && e.message) || e));
+            res.setHeader('Retry-After', '5');
+            errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                 'STS-LDAP-0139');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
           });
           log.debug("Leaving the management API users endpoint.");
         } },
@@ -8814,7 +9058,14 @@ class AdminApi {
                      'NAME and any attribute VALUE, case-insensitively — ' +
                      'values because the caller who needs this most often ' +
                      'has a thumbprint or a secret in hand and no idea which ' +
-                     'entry carries it.\n\nTHE REPLY IS THIS REALM\'S ' +
+                     'entry carries it.\n\nWHERE THE DIRECTORY IS HELD AS ' +
+                     'A WINDOW ONTO THE STORE (#616) the counts, the ' +
+                     '`origin` filter, the order and the page are asked of ' +
+                     'the store, so the order is the store\'s key order ' +
+                     '(`order: key`), and a `q` — which matches values the ' +
+                     'store holds sealed — looks inside at most a bounded ' +
+                     'number of entries and says how many in `search`.\n\n' +
+                     'THE REPLY IS THIS REALM\'S ' +
                      'DIRECTORY AND NO OTHER. Since 2026-08-25 each trust ' +
                      'realm has a subtree of its own; reach another ' +
                      'realm\'s through its own path prefix.',
@@ -8833,9 +9084,35 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/DirectoryEntryList' },
         handler: function (req, res) {
           log.debug("Entering the management API directory entries endpoint.");
-          self.sendJson(res, 200,
-                        adminViews.directoryPageJson('directory', req));
-          log.debug("Leaving the management API directory entries endpoint.");
+          // A PROMISE IN A WINDOWED PROCESS (#616): the page is asked of the
+          // store asynchronously there, so the event loop runs while the
+          // database answers. Awaited here and the rejection CAUGHT —
+          // Express 4 does not look at what a handler returns — as a 503:
+          // the store could not be read, which says nothing about the
+          // directory's contents. The rejection's own code where it carries
+          // one (the bridge's STS-LDAP-0130/0131), STS-LDAP-0139 otherwise.
+          Promise.resolve(adminViews.directoryPageJson('directory', req))
+            .then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving the management API directory entries " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API directory entries " +
+                        "endpoint: " + ((e && e.message) || e));
+              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                       'STS-LDAP-0139') +
+                        'admin-api: the directory ' +
+                        'page could not be read from the store: ' +
+                        ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                   'STS-LDAP-0139');
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving the management API directory entries " +
+                        "endpoint. Unavailable.");
+            });
         } },
 
       { method: 'GET', path: BASE + '/ldap/applications', tag: 'LDAP',
@@ -9428,7 +9705,11 @@ class AdminApi {
                      'module that performs the algorithm.\n\nThe scan stops ' +
                      'at 5,000 people (`capped`), because reading a ' +
                      'credential per person happens on the one thread that ' +
-                     'answers every socket this service holds.',
+                     'answers every socket this service holds — the ' +
+                     'scan, not the count: `counts` is over the capped ' +
+                     'roster, and `directoryPeople` and `directoryCounts` ' +
+                     'over every person the directory defines, as on ' +
+                     'GET /admin-api/users (#610).',
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'q', in: 'query', required: false, schema: { type: 'string' },
@@ -9445,8 +9726,26 @@ class AdminApi {
           'The roster, the counts, and the RFC 6238 settings.',
         handler: function (req, res) {
           log.debug("Entering the management API multi-factor endpoint.");
-          self.sendJson(res, 200, adminViews.mfaRosterJson(req));
-          log.debug("Leaving the management API multi-factor endpoint.");
+          // The list's directory names asked asynchronously (#616), as
+          // `GET /admin-api/users` asks them.
+          adminViews.mfaRosterJsonAsync(req).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API multi-factor endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API multi-factor " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                     'STS-LDAP-0139') +
+                      'admin-api: the roster could ' +
+                      'not be read from the store: ' +
+                      ((e && e.message) || e));
+            res.setHeader('Retry-After', '5');
+            errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                 'STS-LDAP-0139');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
+          });
         } },
 
       { method: 'POST', route: BASE + '/mfa/:action',
@@ -11682,8 +11981,10 @@ class AdminApi {
                      '`found: true`: `state`, `nonce`, ' +
                      '`client_id`, `requested`, `dcql_query`, `received` ' +
                      '(whether a wallet has answered) and `verdict` (`ok`, ' +
-                     '`checks`, `claims`, `disclosed`, …, null until it ' +
-                     'answers). A state this realm holds no record of is ' +
+                     '`checks`, `claims`, `disclosed`, …, and ' +
+                     '`presentationDigest`, the SHA-256 of the ' +
+                     'presentation, which is never kept itself; null until ' +
+                     'it answers). A state this realm holds no record of is ' +
                      '404 with `found: false` (STS-VC-0042).\n\nWithout ' +
                      '`state`: the realm\'s open ' +
                      'verifications, newest first — at most `limit` of ' +
@@ -13131,7 +13432,24 @@ class AdminApi {
                      'reply pages its attribute list under `attributesPage` ' +
                      'rather than `page`, which is the convention for a ' +
                      'reply holding a list that is not the top-level ' +
-                     'one.\n\n**This reply carries credentials** — ' +
+                     'one.\n\n**The ?application= reply\'s ' +
+                     '`page.passkeyPolicies`** (#609) is what the console ' +
+                     'draws as the read-only Passkey policy card of the ' +
+                     'Every protocol sub-tab: every named passkey policy of ' +
+                     'this realm whose `stsPasskeySelectApplication` names ' +
+                     'the application — by its identifier or a client_id, ' +
+                     'trimmed and in any case, as a sign-in is matched — ' +
+                     'in precedence order, each with `name`, `dn`, ' +
+                     '`precedence`, `matched` (the values that named it), ' +
+                     '`selectGroups`, `applies` and `link`; `applies` (the ' +
+                     'lowest precedence naming it by any of its names, else ' +
+                     '`default`); `appliesBy` (for each name, the policy a ' +
+                     'sign-in naming the application by it gets before any ' +
+                     'person is known — an OAuth sign-in names the ' +
+                     'client_id); and `groupPolicies`, how many named ' +
+                     'policies select by group and could still win for a ' +
+                     'given person. Nothing about it is stored on the ' +
+                     'application.\n\n**This reply carries credentials** — ' +
                      '`oauthClientSecret` and `appRegistrationAccessToken`, ' +
                      'opened. They are sealed at rest wherever the process ' +
                      'holds a durable key-encryption key, but anyone who ' +
@@ -17854,8 +18172,20 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/Scim' },
         handler: function (req, res) {
           log.debug("Entering the management API SCIM endpoint.");
-          self.sendJson(res, 200, adminViews.scimJson(req));
-          log.debug("Leaving the management API SCIM endpoint.");
+          // Every cell's outbound SCIM clients (#553): asked of the other
+          // cells, bounded; never rejects.
+          adminViews.scimJsonAcrossCells(req).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API SCIM endpoint.");
+          }, function (e) {
+            log.error(errorCodes.tag('STS-SCIMC-0018') + 'the SCIM view ' +
+                      'failed: ' + ((e && e.message) || e));
+            errorCodes.mark(res, 'STS-SCIMC-0018');
+            self.sendJson(res, 500, { ok: false,
+                                      errors: ['The view could not be ' +
+                                               'drawn.'] });
+            log.debug("Leaving the management API SCIM endpoint. Threw.");
+          });
         } },
 
       // WHAT THAT SURFACE IS ACTUALLY DOING, as opposed to what it is. The
@@ -21925,6 +22255,119 @@ class AdminApi {
         ] },
 
       // -----------------------------------------------------------------------
+      // OWNERSHIP (#607): what an OWNER may administer through this API, and
+      // the administrator's mark that closes an object to its owners (rcbj's
+      // decision 4). The facts are `common/ownership.ts`'s — the same ones
+      // the access-control policy's owner rule reads through the PIP — so
+      // this answer and that decision cannot disagree. The mark is an
+      // attribute on the object's own entry (`stsOwnerProtected`); its
+      // CONSOLE CONTROL is a checkbox on each object's Owners tab (rcbj,
+      // 2026-10-13), posting `set-protected` to that tab's route, and an
+      // `ldapmodify` by a holder of Admin Write reaches it too.
+      // -----------------------------------------------------------------------
+      { method: 'GET', path: BASE + '/ownership', tag: 'Ownership',
+        operationId: 'getOwnership',
+        summary: 'Who owns an object, and whether its owners may ' +
+                 'administer it',
+        description: 'One role, group, service account or application ' +
+                     '(#607): `found`, its `dn`, its `owners` (DNs as ' +
+                     'stored), `protected` — whether it is CLOSED to its ' +
+                     'owners, who may then not administer it through this ' +
+                     'API with owner:read and owner:write — with ' +
+                     '`reasons`, one sentence each, and `marked`, whether ' +
+                     'an administrator\'s mark is one of them. An object is ' +
+                     'closed when it is a native or built-in role, a role ' +
+                     'authorizing a permission of this service, a group ' +
+                     'this service grants through by its name or a member ' +
+                     'of such a role, one of this service\'s own ' +
+                     'applications or one declaring or holding such a ' +
+                     'permission, a service account holding one, or marked.',
+        mirrors: 'no console form — the owner rule\'s facts; the mark is ' +
+                 'stsOwnerProtected on the entry',
+        parameters: [
+          { name: 'kind', in: 'query', required: true,
+            schema: { type: 'string', enum: ownership.KINDS.slice(0) },
+            description: 'Which kind of object.' },
+          { name: 'name', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'A role\'s name, a group\'s cn or DN, a service ' +
+                         'account\'s username, an application\'s ' +
+                         'identifier.' }
+        ],
+        responseDescription: 'The object\'s ownership facts.',
+        responseSchema: { type: 'object',
+          description: '`kind`, `name`, `found`, `dn`, `owners`, ' +
+                       '`protected`, `reasons` and `marked`.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API ownership endpoint.");
+          const query = req.query || {};
+          self.sendJson(res, 200, ownership.objectOf(String(query.kind || ''),
+                                                     String(query.name || '')));
+          log.debug("Leaving the management API ownership endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/ownership/:action', tag: 'Ownership',
+        // THE OWNERS TABS' CHECKBOX: each posts `set-protected` to its own
+        // tab's route, which is what resolves the form to this operation.
+        mirrors: 'POST /admin/roles/owners, POST /admin/groups/owners, ' +
+                 'POST /admin/applications/owners, POST ' +
+                 '/admin/users/service-account',
+        handler: function (req, res) {
+          log.debug("Entering the management API ownership action endpoint.");
+          const body = parseBody(req);
+          const action = String(req.params.action || '');
+          if (action !== 'set-protected') {
+            errorCodes.mark(res, 'STS-API-0134');
+            self.sendJson(res, 400, { ok: false, errors: ['Unknown action "' +
+              action.slice(0, 64) + '". The one is: set-protected.'] });
+            log.debug("Leaving the management API ownership action " +
+                      "endpoint. Unknown action.");
+            return;
+          }
+          const caller = res.locals.apiCaller || {};
+          const result = ownership.setProtected(body.kind, body.name,
+            body.protected === true || String(body.protected) === 'true',
+            { actor: String(caller.name || ''), channel: 'http',
+              protocol: 'management API', origin: 'management API' });
+          if (!result.ok) {
+            errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0134');
+          }
+          self.sendJson(res, result.ok ? 200 : 400, result);
+          log.debug("Leaving the management API ownership action endpoint.");
+        },
+        actions: [
+          { action: 'set-protected', operationId: 'setOwnerProtected',
+            summary: 'Close an object to its owners, or open it again',
+            description: 'Writes `stsOwnerProtected` on the object\'s own ' +
+                         'entry (#607, rcbj\'s decision 4), keeping ' +
+                         'everything else: `protected` true closes it — its ' +
+                         'owners may no longer read or change it through ' +
+                         'this API with owner:read and owner:write — and ' +
+                         'false takes the mark off, which opens it unless ' +
+                         'another reason closes it (`GET ' + BASE +
+                         '/ownership`). An owner stays an owner either way.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                kind: { type: 'string', enum: ownership.KINDS.slice(0),
+                        description: 'Which kind of object.' },
+                name: { type: 'string',
+                        description: 'The object, as GET ' + BASE +
+                                     '/ownership names it.' },
+                protected: { type: ['boolean', 'string'],
+                             description: 'true closes it to its owners; ' +
+                                          'false opens it again.' }
+              },
+              required: ['kind', 'name', 'protected'],
+              examples: [{ kind: 'role', name: 'staff', protected: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it changed, and the mark as it ' +
+                                 'now stands (`ownerProtected`).' }
+        ] },
+
+      // -----------------------------------------------------------------------
       // POLICIES (2026-09-12; every kind since #64). Two operations over
       // `adminViews.policiesView()` and `adminActions.policiesAction()` — the
       // same two functions /admin/policies calls, so the page and this
@@ -23667,6 +24110,78 @@ class AdminApi {
                                      path === BASE + DEVICE_COMPLIANCE_PATH);
   }
 
+  // ---------------------------------------------------------------------------
+  // THE OBJECT AN OWNER WOULD ADMINISTER (#607): the row of OWNER_OPERATIONS
+  // the request is, the object it names, the action, and — for an
+  // application action that writes attributes — every attribute it would
+  // write, read the way the handler reads them (`fieldsCoveredBy()`), so the
+  // owner rule is asked about each. Null for a request that is not one an
+  // owner may ask, or that names no object.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the object an owner's request would administer.
+   *
+   * @param req - the request, inside the gate (`req.path` below BASE)
+   * @returns `{ kind, id, action, attributes, project }`, or null
+   */
+  ownedOperationOf(req) {
+    const { log, parseBody, adminActions } = this.deps;
+    log.debug("Entering AdminApi.ownedOperationOf().");
+    const path = String(req.path || '').replace(/\/+$/, '')
+      .replace(new RegExp('^' + BASE + '(?=/)'), '');
+    const method = String(req.method || '').toUpperCase();
+    let matched: OwnerOperation | null = null;
+    let action = '';
+    OWNER_OPERATIONS.forEach(function (row) {
+      if (matched || row.method !== method) {
+        return;
+      }
+      if (row.path && row.path === path) {
+        matched = row;
+        action = 'read';
+        return;
+      }
+      const found = row.pattern ? row.pattern.exec(path) : null;
+      if (found) {
+        matched = row;
+        action = found[1];
+      }
+    });
+    if (!matched) {
+      log.debug("Leaving AdminApi.ownedOperationOf(). Not an owner's " +
+                "operation.");
+      return null;
+    }
+    const row: OwnerOperation = matched;
+    const query = req.query || {};
+    const body = method === 'GET' ? {} : (parseBody(req) || {});
+    const id = row.target(query, body).trim();
+    if (!id) {
+      log.debug("Leaving AdminApi.ownedOperationOf(). It names no object.");
+      return null;
+    }
+    // THE ATTRIBUTES AN APPLICATION ACT WOULD WRITE: one for the three
+    // single-attribute acts, every one an `update-fields` body covers, and
+    // the declared families where it carries them.
+    let attributes: string[] = [];
+    if (row.kind === 'application') {
+      if (['set', 'add', 'remove'].indexOf(action) >= 0) {
+        attributes = [String(body.attribute || '')].filter(Boolean);
+      } else if (action === 'update-fields') {
+        attributes = adminActions.fieldsCoveredBy(body).slice(0);
+        if ((body.protocolsPresent || body.protocols !== undefined ||
+             body.protocol !== undefined) &&
+            attributes.indexOf('appAllowedProtocol') < 0) {
+          attributes.push('appAllowedProtocol');
+        }
+      }
+    }
+    log.debug("Leaving AdminApi.ownedOperationOf(). " + row.kind + " " +
+              action + ".");
+    return { kind: row.kind, id: id, action: action,
+             attributes: attributes, project: row.project || null };
+  }
+
   // The operation a request is, as the CONSOLE path it mirrors and the action
   // it names: `/admin-api/pki/build-root` is a POST of `build-root` to
   // `/admin/pki`, `/admin-api/config/set-many` one of `set-many` to
@@ -23737,9 +24252,11 @@ class AdminApi {
     const { log, realms, scopePolicy } = this.deps;
     log.debug("Entering AdminApi.declaredAdminScopes().");
     const clientId = String(claims.client_id || '');
-    // The device compliance feed's scope (#164) is held to the same rule.
+    // The device compliance feed's scope (#164) is held to the same rule,
+    // and an owner's two (#607).
     const held = scopePolicy.ADMIN_SCOPES
-      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE]);
+      .concat([scopePolicy.DEVICE_COMPLIANCE_SCOPE])
+      .concat(scopePolicy.OWNER_SCOPES);
     const undeclared = realms.run(realms.get(tokenRealm), function () {
       return scopes.filter(function (one) {
         return held.indexOf(one) >= 0 &&
@@ -24512,7 +25029,41 @@ class AdminApi {
         const scopes = declared.kept;
         const effective = rolePermissions.effectiveRoles(claims, scopes,
                                                          tokenRealm);
-        const neededScope = scopesWanted;
+        // ---------------------------------------------------------------------
+        // AN OWNER'S TOKEN (#607). A token carrying `owner:read` or
+        // `owner:write` and NOT the admin scope this operation needs is an
+        // owner's question: the scope it uses is the owner one, and the
+        // policy is asked the owner rule's question — which object, which
+        // action, OWNER_READ or OWNER_WRITE — beside the administrator's.
+        // Only for an operation an owner may ask (OWNER_OPERATIONS), and only
+        // in the realm that issued the token: an owner's identity and the
+        // object's owner values are DNs of ONE realm's directory, and the
+        // same username in another realm is a different person. Anything
+        // else is refused in so many words here (STS-API-0132), because the
+        // policy's refusal would only say a role was missing.
+        // ---------------------------------------------------------------------
+        const ownerScope = req.method === 'GET' ? 'owner:read' : 'owner:write';
+        const ownerPath = !mdmFeed && !consoleOp &&
+          carried.indexOf(scopesWanted) < 0 &&
+          carried.indexOf(ownerScope) >= 0;
+        const owned = ownerPath ? self.ownedOperationOf(req) : null;
+        if (ownerPath && (!owned || tokenRealm !== realms.currentId())) {
+          errorCodes.mark(res, 'STS-API-0132');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'This access token carries ' + ownerScope + ' and not ' +
+            scopesWanted + ', so it is an OWNER\'s token, and an owner\'s ' +
+            'token reaches only the operations on one role, group, service ' +
+            'account or application it names — GET ' + BASE + '/roles?role=, ' +
+            '/groups?group=, /applications?application= or ' +
+            '/service-accounts?account=, and POST ' + BASE + '/roles/{action}, ' +
+            '/groups/{action}, /applications/{action} or /users/{action} ' +
+            'naming the object' + (owned ? ', in the realm that issued the ' +
+            'token' : '') + '. A list is not one: what you own is ' +
+            '/account-api/owned/{kind}. ' + req.method + ' ' +
+            (req.originalUrl || req.url) + ' is ' + (owned
+              ? 'in another realm.' : 'not one of these.')] });
+        }
+        const neededScope = ownerPath ? ownerScope : scopesWanted;
         if (declared.undeclared.indexOf(neededScope) >= 0) {
           errorCodes.mark(res, 'STS-API-0123');
           return self.sendJson(res, 403, { error: 'forbidden', errors: [
@@ -24536,7 +25087,11 @@ class AdminApi {
             // THE ROLE THAT AUTHORIZES IT, and where it is granted: a
             // person's console role on the roster, anything else on the
             // role itself (#309: device:compliance is DEVICE_COMPLIANCE's).
-            (effective.subject.kind !== 'application' &&
+            (ownerPath
+              ? 'An owner\'s scope is authorized by owning something in ' +
+                'the realm that issued the token: be named an owner of a ' +
+                'role, group, service account or application there'
+              : effective.subject.kind !== 'application' &&
              neededScope !== 'device:compliance'
               ? 'Grant the console role on /admin/rbac (or POST ' +
                 '/admin-api/rbac/grant)'
@@ -24601,10 +25156,22 @@ class AdminApi {
               : (req.method === 'GET' ? ['ADMIN_READ'] : ['ADMIN_WRITE'])));
         const requiredAllRoles = consoleOp && !frameOnly
           ? [req.method === 'GET' ? 'ADMIN_READ' : 'ADMIN_WRITE'] : [];
+        // THE OWNER RULE'S QUESTION (#607), on an owner's token: the object,
+        // the action, the attributes it writes, the person, and the owner
+        // role it needs. The administrator's requirement above is still
+        // asked, so the first rule decides exactly as before and the second
+        // can only add an owner.
+        const ownedObject = owned ? {
+          kind: owned.kind, id: owned.id, action: owned.action,
+          attributes: owned.attributes,
+          requiredRole: req.method === 'GET' ? 'OWNER_READ' : 'OWNER_WRITE',
+          person: String(effective.subject.name || '')
+        } : null;
         const policy = accessGate.check({
           resource: accessGate.RESOURCE.MANAGEMENT_API,
           action: req.method === 'GET' ? accessGate.ACTION.READ
                                        : accessGate.ACTION.WRITE,
+          ownedObject: ownedObject,
           // THE REQUIREMENT IS STATED HERE AND ENFORCED THERE. `requiredRoles`
           // travels in the REQUEST — the `access-control` document is written
           // to take it from there, which is what lets one policy decide for
@@ -24618,6 +25185,25 @@ class AdminApi {
                      sessionId: null },
           context: { method: req.method, path: req.originalUrl || req.url }
         });
+        if (!policy.allowed && ownedObject) {
+          log.info('admin-api: the access policy\'s owner rule refused ' +
+                   req.method + ' ' + (req.originalUrl || req.url) + ' for ' +
+                   ownedObject.person + '. ' + policy.why);
+          errorCodes.mark(res, 'STS-API-0133');
+          return self.sendJson(res, 403, { error: 'forbidden', errors: [
+            'The access policy\'s owner rule refused this request. An owner ' +
+            'may ' + (req.method === 'GET' ? 'read' : 'change') + ' the ' +
+            ownedObject.kind + ' "' + ownedObject.id + '" only when it ' +
+            'names them, or a group they are in, as an owner; when it is ' +
+            'not closed to its owners (a native or protected role, a group ' +
+            'or application this service grants through, or one an ' +
+            'administrator closed); when "' + ownedObject.action + '" is ' +
+            'an action its kind allows an owner' +
+            (ownedObject.attributes.length ? ', and every attribute it ' +
+              'writes (' + ownedObject.attributes.join(', ') + ') is one an ' +
+              'owner may write' : '') +
+            '; and never to take its last owner off. ' + policy.why] });
+        }
         if (!policy.allowed) {
           log.info('admin-api: the access policy refused ' + req.method + ' ' +
                    (req.originalUrl || req.url) + ' for ' + who + '. ' +
@@ -24675,6 +25261,13 @@ class AdminApi {
         // its token is the session, so the caller this gate verified is
         // who they are asked about.
         req.adminApiCaller = res.locals.apiCaller;
+        // WHAT AN OWNER IS ANSWERED (#607): a read whose answer carries more
+        // than the one object — the role register around one role — is
+        // narrowed to it in `sendJson()`.
+        if (owned && owned.project) {
+          res.locals.ownerProjection = owned.project;
+        }
+        res.locals.apiCaller.owner = !!owned;
         return next();
       }
       // ---------------------------------------------------------------------
@@ -24851,12 +25444,17 @@ class AdminApi {
   }
 }
 
-// Compiled once at require time, keyed by the operation the request will reach.
-// A schema that will not compile is a MAINTAINER's mistake rather than a
+// Compiled on first use (#617; `validatorFor()`), keyed by the operation the
+// request will reach, from the schemas `compileRequestSchemas()` records. A
+// schema that will not compile is a MAINTAINER's mistake rather than a
 // caller's, so it is logged loudly and that operation is left unvalidated
-// rather than taking the whole service down at require time — the same
-// judgement `ldap_server.js` makes about a listener that will not bind.
+// rather than refusing every request — the same judgement `ldap_server.js`
+// makes about a listener that will not bind.
 const validators = new Map();
+const validatorSources = new Map();
+// The one `{ schemas: structureOnly(spec.SCHEMAS) }` every validator's root
+// points at (#365), made with the first validator compiled.
+let sharedComponents: any = null;
 import docs = require('./admin_api_docs');
 // `docs` is required for its place in the require order and nothing of it is
 // read here; this reference keeps TypeScript from eliding the require.
@@ -24901,6 +25499,129 @@ const BASE = '/admin-api';
 // The device compliance feed's path below BASE (#164 phase 3): the one
 // operation whose token carries device:compliance rather than an admin scope.
 const DEVICE_COMPLIANCE_PATH = '/device-compliance';
+// ---------------------------------------------------------------------------
+// THE OPERATIONS AN OWNER MAY ASK (#607), below BASE: one object of the four
+// kinds a person may own, read or changed. `ownedOperationOf()` reads a
+// request against this table; a request it does not find is not an owner's
+// question, and a token carrying only the owner scopes is refused there
+// (STS-API-0132) rather than asked. WHICH of these an owner may take, on
+// which object, is the access-control policy's owner rule — never this
+// table, which only names the object the request reaches.
+//
+//   kind      what the policy's urn:sts:xacml:object-kind says
+//   path      the path below BASE, or a pattern whose group is the action
+//   target    how the request names the object: a query parameter for a
+//             read, a body member for an act
+//   project   for a read whose answer carries more than the one object:
+//             what of it an owner is answered
+//
+// A READ needs its target: `GET /roles` with no `role` is the whole register,
+// a list, and lists are refused to an owner (rcbj's decision 6) — the portal
+// lists through `/account-api/owned/*`.
+// ---------------------------------------------------------------------------
+interface OwnerOperation {
+  method: string;
+  kind: string;
+  path?: string;
+  pattern?: RegExp;
+  target: (query: any, body: any) => string;
+  project?: (answer: any) => any;
+}
+// The application attributes an owner's read answers: the access-control
+// template's default `ownerApplicationAttributes`, which are what the portal
+// draws a form for. A realm whose policy lists fewer refuses the write.
+const OWNER_APPLICATION_FIELDS = ['appName', 'appHomePageUrl', 'appCorsOrigin',
+  'oauthRedirectUri', 'oauthPostLogoutRedirectUri',
+  'oauthFrontchannelLogoutUri', 'oauthBackchannelLogoutUri',
+  'samlAssertionConsumerService', 'samlSingleLogoutService'];
+const OWNER_OPERATIONS: OwnerOperation[] = [
+  { method: 'GET', kind: 'role', path: '/roles',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.role || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      log.debug("Leaving project().");
+      return { role: answer && answer.role };
+    } },
+  // The group alone: the drill-down's answer also carries every group in
+  // the realm (the list the console draws beside it).
+  { method: 'GET', kind: 'group', path: '/groups',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.group || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      const group = (answer && answer.group) || null;
+      log.debug("Leaving project().");
+      return { found: !!(answer && answer.found), group: group && {
+        dn: group.dn, cn: group.cn, description: group.description,
+        members: group.members, memberCount: group.memberCount,
+        owners: group.owners, maxOwners: group.maxOwners },
+        membersPaging: answer && answer.membersPaging };
+    } },
+  // The application's own facts and the attributes an owner may write: the
+  // drill-down's answer also carries what the console draws its tabs from —
+  // other applications' permissions among them.
+  { method: 'GET', kind: 'application', path: '/applications',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.application || '');
+    },
+    project: function project(answer) {
+      log.debug("Entering project().");
+      const a = answer || {};
+      const fields: Record<string, unknown> = {};
+      OWNER_APPLICATION_FIELDS.forEach(function (name) {
+        if (a.fields && a.fields[name] !== undefined) {
+          fields[name] = a.fields[name];
+        }
+      });
+      log.debug("Leaving project().");
+      return { found: !!a.found, identifier: a.identifier, name: a.name,
+               description: a.description, kinds: a.kinds,
+               protocols: a.protocols, fields: fields,
+               owners: (a.page && a.page.owners) || [],
+               maxOwners: a.page && a.page.maxOwners };
+    } },
+  { method: 'GET', kind: 'service-account', path: '/service-accounts',
+    target: function target(query) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(query.account || '');
+    } },
+  { method: 'POST', kind: 'role', pattern: /^\/roles\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.role || '');
+    } },
+  { method: 'POST', kind: 'group', pattern: /^\/groups\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.group || '');
+    } },
+  { method: 'POST', kind: 'application',
+    pattern: /^\/applications\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.application || '');
+    } },
+  { method: 'POST', kind: 'service-account',
+    pattern: /^\/users\/([a-z][a-z-]*)$/,
+    target: function target(query, body) {
+      log.debug("Entering target().");
+      log.debug("Leaving target().");
+      return String(body.user || body.username || '');
+    } }
+];
 // THE ACCESS GATE, armed by `xacml/xacml_access_pep.ts` at 23c. A LEAF
 // (rule 3): with no decider installed `check()` answers "allowed", so a
 // process without the XACML family behaves exactly as this file did before.
@@ -25172,5 +25893,15 @@ export = {
    * Forwards to `AdminApi.checkRequestBody()` on the installed instance: a
    * test asks it what a body sent to an operation would be refused for.
    */
-  checkRequestBody: slot.forward('checkRequestBody')
+  checkRequestBody: slot.forward('checkRequestBody'),
+  /**
+   * Forwards to `AdminApi.compileAllRequestSchemas()` on the installed
+   * instance: every request schema compiled now (#617), for a test.
+   */
+  compileAllRequestSchemas: slot.forward('compileAllRequestSchemas'),
+  /**
+   * Forwards to `AdminApi.validatorCounts()` on the installed instance: how
+   * many request validators are compiled and how many recorded (#617).
+   */
+  validatorCounts: slot.forward('validatorCounts')
 };

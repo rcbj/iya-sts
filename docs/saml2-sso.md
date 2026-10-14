@@ -264,6 +264,12 @@ stands for the whole Response. The service provider resolves it with an
   the happy path passes either way. `saml2.artifactTtlS` is only the upper
   bound on how long an unresolved one lives;
 * the resolver must be **the service provider the artifact was issued to**;
+* the service keeps only the **SHA-256 of each artifact** it handed out, never
+  the artifact (#614), and at most `saml2.maxArtifacts` unresolved ones per
+  realm: past that it **refuses the next artifact** — the person gets a 503
+  page and nothing is sent to the service provider, because this binding has
+  no way to carry a failure without an artifact — rather than forget one a
+  service provider has not resolved yet;
 * where signed requests are required, the resolver must **prove it** — by
   signing the `ArtifactResolve` or by presenting one of its registered
   certificates as the TLS client certificate. A refused caller does not spend
@@ -595,6 +601,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.unsolicitedSso` | `STS_SAML2_UNSOLICITED_SSO` | `true` | yes | Answer `/saml2/unsolicited`: identity-provider-initiated sign-in. |
 | `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a LogoutResponse goes when the service provider registered no SingleLogoutService. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the person signs in — and how old its `IssueInstant` may be. |
+| `saml2.maxArtifacts` | `STS_SAML2_MAX_ARTIFACTS` | `10000` | yes | Unresolved artifacts kept per realm; a store full of live ones refuses the next HTTP-Artifact sign-in with a 503 page (`STS-SAML-0110`) rather than forget one. |
 | `saml2.redirectWarnLength` | `STS_SAML2_REDIRECT_WARN_LENGTH` | `8000` | yes | A Redirect-binding Response longer than this is logged at WARN (and still sent). |
 | `saml2.spMetadataMaxBytes` | `STS_SAML2_SP_METADATA_MAX_BYTES` | `524288` | yes | The size cap on a fetched or uploaded service provider metadata document. |
 | `saml2.spMetadataRefresh` | `STS_SAML2_SP_METADATA_REFRESH` | `true` | yes | Refetch stale service provider metadata in the background; expiry is enforced either way. |

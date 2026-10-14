@@ -6,8 +6,9 @@ directory is also the STORE for four other things: people, groups, applications
 (`../common/applications.js`) and the SPIFFE registry (`../spiffe/spiffe_registry.ts`).
 
 **It is built on the `node-ldapjs` SUBMODULE and the library is not patched.** See
-the root `CLAUDE.md` for the submodule's placement rules, which have already cost
-something three times.
+*node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork*,
+below, for the submodule's placement rules, which have already cost something
+three times.
 
 **636 RE-KEYS WHEN THE LISTENER CERTIFICATE IS RE-ISSUED (2026-09-21)** — `rekeyLdaps()`,
 registered on `tls_server.onServerCertificateChange()`, runs at bind and again after
@@ -574,8 +575,20 @@ because `realms.map()` drops the whole store with the realm.
 **rcbj's decisions on #349**: with `ldap.workerDirectory=postgres-lru` a
 request or surface worker holds `ldap/directory_window.ts` as `entries` — the
 same Map shape, answering the ambient realm, with `realmMap(id)` — so not one
-reader or writer in this file changed. The front process always holds the
-whole directory.
+reader or writer in this file changed.
+
+**SINCE #320 (rcbj, 2026-10-13) THE FRONT PROCESS DOES TOO, AND IT IS THE
+DEFAULT.** `ldap.workerDirectory` gained `auto` — the window where it can work
+(a postgres store, one cell), the whole directory elsewhere — and the gate in
+`ldap_server.js` no longer asks whether this is a worker; the decision is
+`persistence.directoryWindowWanted()`. Nothing in the window was a worker's:
+the front loads this file before `persistence.start()` exactly as a worker
+does. Measured on one front process with no workers (testidp's shape), 20,000
+people, heap after a forced GC: 134.0 MB whole, 87.4 MB windowed. The cost is
+the front's: a miss stops its event loop — every socket — for one round
+trip, and a whole walk pages synchronously, which matters most where a
+scheduler job or a page answered in the front walks the people. A memory,
+ldif or multi-cell service is unchanged.
 
 * **Resident**: every entry NOT strictly under a realm's `ou=users` or
   `ou=devices` (`windowedContainersOf()`), held whole — groups stay resident,
@@ -595,16 +608,37 @@ whole directory.
   everything held plus every EVICTED entry a caller still holds (a WeakRef).
   A digest could say "changed" and could not be that base, which is why #343's
   digest is not used here.
+* **The journal's keys are LOOKED UP, never scanned for (#612, 2026-10-13).**
+  `collect(named)` — every flush — probes `realm\nkey` in the LRU and the
+  ghost map for each named key and each realm in `realmsHeld` (every
+  insertion goes through `put()`), O(|named| x realms). It used to walk
+  every LRU key and every ghost; a ghost is made on each eviction and left
+  only when the `FinalizationRegistry` ran, so a 200K bulk load's flush grew
+  with uptime — 7.4 s of a 15.6 s profile, the add rate halved in 33K adds.
+  A ghost whose `WeakRef` is empty is dropped wherever it is met. Only
+  `collect(null)` (a write naming nothing, a realm change, a failed
+  whole-walk flush) still walks both, by definition; the other per-write
+  walks are of `dirty`, bounded by one flush's changes. The answer is the
+  walk's except in ORDER, which nothing reads (the postgres driver sorts by
+  key). Section L of the test counts the walks and compares with the old.
 * **A row another process wrote** is `forgetEntry()`-ed (read again next
   time) unless the key is busy here, in which case this process's own flush
   goes first and the store merges.
-* **The identity register is a whole directory's** (rcbj, 2026-09-29).
-  `replaceRealm()` fills it from the store in a windowed worker — a page of
-  NAMES at a time (`namesUnder`: key, DN, origin, first `uid`), the same
-  rule as the loop over restored entries, no entry read whole — and
-  `forgetEntry()`, handed the row the applier read, notes a person another
-  process made as `created`, as `applyEntry()` does. Section K of the test
-  compares the two modes.
+* **The identity register is NOT a whole directory's any more** (#613,
+  2026-10-13; rcbj's 2026-09-29 rule that it was is reversed by the issue).
+  `replaceRealm()` filled it from the store in a windowed worker, a page of
+  NAMES at a time through the synchronous bridge, and that pass is gone
+  (*Restoring*, below). **Since #618 phase 2 (2026-10-14) neither
+  `forgetEntry()` nor `applyEntry()` notes a person another process made**:
+  that note cost every other process a journalled `admin_stats.users` row
+  and, past `MAX_USERS`, a journalled eviction and a `usersForgotten` bump
+  for every add anywhere (about 3 of the 9.7 change rows an LDAP add wrote
+  on 8081). The register is `merge: 'own'`, so the CREATING process's
+  `created` record reaches every other process through the fan-in
+  (`everyUserRecord()`), and `/admin/users` lists the directory's people
+  itself (#610). Section K of the test compares the two modes: the same
+  register, with neither a restored nor a replicated person in either;
+  `tests/change_rows_per_add.js` counts the rows.
 * **The hooks** use `adopt()` (a row the store holds, not a write) in
   `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
   `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
@@ -614,7 +648,8 @@ whole directory.
   own net: a change detector beside `directoryVersion`, not a cap.
 * **`ldap.maxEntries` is a PER-REALM cap on the STORE in a windowed worker**
   (rcbj): `cappedEntries()` asks the window's `capCount()` — the realm's rows
-  counted by the store at most ten seconds ago, plus this process's net since.
+  counted by the store at most ten seconds ago (a counter row read since
+  #618), plus this process's net since.
   Everywhere else it is `totalEntries()`, what the process holds, as before.
 * **The walks that can say what they want do** (phase 5), and each is the old
   walk outside a windowed worker:
@@ -624,7 +659,8 @@ whole directory.
     `allGroupEntries()`, `membershipsNaming()`, `dropMemberships()`,
     `logBatchDangling()`): the resident entries, and the windowed
     containers' entries with a group class, asked of the store
-    (`classesUnder`, the GIN index over the generated `class_keys`) and read
+    (`classesUnder`, the partial GIN index over `class_keys`, which holds
+    an entry's group classes only since schema version 18, #618) and read
     back through the window. `groupRuleFor()` is placement-blind, so **a
     group under `ou=users` or `ou=devices` is seen**, and the membership
     lookups, the group index, the listings and a search answer as a whole
@@ -633,7 +669,23 @@ whole directory.
   - `memberOfClaims()` (#352's claims index), `holdingAny()` and
     `holdersWithValues()` visit the holders only (`eachHolderOfAny()`);
     `personRows()` pages `ou=users` read-only; `batchHasChildren()` asks
-    `hasChildren()`; `countDeviceEntries()` is `countUnder()`.
+    `hasChildren()`; `countDeviceEntries()` and `personCount()` are
+    `countUnderContainer()` (#610): `recentCountUnder()`, the store's count
+    of the container at most ten seconds old plus this process's own creates
+    and deletes since (since #618 the store's count is a counter row the
+    database keeps, `sts_ldap_counts` — `persistence/CLAUDE.md`; it was a
+    `count(*)`, linear in the realm's rows, 13–15 ms for 29,303 on 8081),
+    and outside a window the realm's KEYS
+    walked with an `endsWith`, no entry read — still a walk, said there.
+    `personNamesUpTo(limit)` reads only the first `limit` + 1 KEYS
+    (`keysUnder`: key and DN, no entry read or opened; #616), and
+    `personNamesUpToAsync()` asks the same asynchronously for
+    `/admin-api/users` and `/admin-api/mfa`;
+    `credentialTallies()` is `countHolding()` (two counter rows since #618;
+    it was one `count(*) FILTER` over `attr_names`) and `holders()` per
+    credential attribute, and
+    `countPeopleNamed()` is `byKeys` plus one `withNames` —
+    `admin-core/CLAUDE.md`, *the tiles count the directory*.
   - `windowedFind()` for an indexed question (`directory_queries.js`), each
     answer read back through the window and asked the service's own rule, the
     entries changed here and not yet written added: `existingUserEntry()`
@@ -642,23 +694,150 @@ whole directory.
     `entryBySpiffeSubject()`, `locateEntry()`'s `x509subject`, `objectFor()`'s
     `alsoNamed` (`byAttribute`), `peopleByMail()` (`byMail`),
     `peopleByFederationLink()`.
+  - **`entriesByUuids()` — `entryByUuid()` for MANY values (2026-10-14)**:
+    the resident index, then `withUuids`, one statement per 500 values, each
+    row taken as the store answered it (`findWindowed()`'s `readOnly`, no
+    `byKeys` per row). It answers the subject resolver's `namesFor()`, which
+    `admin_stats.js`'s `withSubjectsResolved()` asks once for every subject
+    of the held tokens and artifacts before `userKeys()`, `buildUserRows()`
+    or `holdingsOf()` files them. Each of those had asked `byUuid` once per
+    record — a synchronous round trip, repeated on every call for a subject
+    naming nobody — so `GET /admin-api/audit` (`knownUserKeys()`) took over a
+    second on a request worker and `sts_admin_closed_sets` outlived its
+    watchdog in the postgres modes (`tests/subjects_resolved_together.js`).
   - `eachHolderOfAny()` for a walk that acts only on holders of an attribute
     (`withAttribute`, paged): consent, claim-source tokens, self-issued
     subjects, federation links, claimed memberships, delegation flags, a
     person attribute's holders, Kerberos key infos; `anybodyHoldsACredential()`
     asks `anyWithAttribute`.
-  - `personCount()` is the store's count; `allPersons()` pages `ou=users`
-    alone; `entriesUnder()` pages a windowed container and does NOT cache it;
-    the LDAP search walks only what its base reaches, read-only and lazily, so
-    a size limit stops the paging.
-  - **Still whole walks, correct and paged**: `populateVcAttributes()`
-    (development only), `ldapDirectoryView()`, the realm-retirement
+  - **`holdersAsync(kind, attribute, names)` — the holders for a SCHEDULER
+    JOB (#615)**, offered to `credentials.ts` and through `deviceStore()` to
+    `devices.ts`: `DirectoryWindow.holdersAsync()` asks `withAttribute` a
+    page at a time through the bridge's `queryAsync()` (the driver's
+    `directoryQuery()` on the read pool) with a `setImmediate` between
+    pages, and takes each row as the store answered it unless this process
+    holds a newer one — no `byKeys` per row, nothing handed out; outside a
+    window a walk of the realm's Map in slices of 2,000 with a yield
+    between. It hands over the named attributes RAW. The Android recheck's
+    markers, `stsAndroidAttestedCredential` (derived by
+    `deriveAndroidMarker()` in both doors that write `stsWebauthnCredential`)
+    and `stsDeviceAndroidKey`, are what it is asked about —
+    `common/CLAUDE.md` 3cf.
+  - `attributeSourcePeoplePage()` (#615) is ONE `page()` after a key cursor
+    (`DirectoryWindow.pageAfter()`), which `attribute-sources.refresh` asks
+    instead of `attributeSourcePeople()`'s list-and-sort of everybody.
+  - `personCount()` is the store's count (above); `allPersons()` pages
+    `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
+  - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,
+    rcbj: "minimize full directory scans and use asynchronous javascript
+    operations, not blocking operations").** On 8081 at 200,000 people
+    `/admin-api/ldap/directory?per=1` held a request worker 38–45 s, an LDAP
+    search for every group 28.5 s, `/admin-api/users` 3 s. The window's
+    asynchronous questions — `askAsync()`, `walkAsync()`,
+    `classesUnderAsync()`, `realmPageAsync()`, `keysUnderAsync()` — ask
+    through the bridge's `queryAsync()` (the driver's read pool), give the
+    event loop back between pages, and hand nothing out:
+    - **`/admin/ldap/directory`** (`windowedDirectoryView()`) is a promise:
+      the store's `realmCount` and `originCounts`, and ONE `realmPage` with
+      the origin filter and LIMIT/OFFSET pushed down. Its order is the
+      store's key order (`order: 'key'`; the whole directory's is the
+      collated DN, `'dn'`). A `q` matches values the store holds sealed, so
+      it looks inside at most `DIRECTORY_SEARCH_SCAN` (5,000) entries and
+      says so in `search` and on the page. `GET /admin-api/ldap/directory`
+      awaits it and answers 503 (STS-LDAP-0139) when the store fails.
+    - **An LDAP search no index narrows** (`windowedSearchCandidates()`) is
+      asynchronous (`req.stsAsyncOperation`): `walkAsync()` of what the
+      base reaches, or — for a filter whose matches must carry a GROUP
+      class — the resident entries and `classesUnderAsync()` per windowed
+      container, no person paged. It stops paging at `ldap.sizeLimit` and
+      at `ldap.timeLimit` or the client's shorter `timeLimit`
+      (`timeLimitExceeded`, 3, STS-LDAP-0140, the entries sent kept); a page
+      that fails ends it `unavailable` (52, STS-LDAP-0141).
+    - **THE CREDENTIAL CENSUS AND AN LDAP ADD (#621, 2026-10-14).** Not
+      walks, and still blocking: `/admin-api/users`' census asked
+      `locateEntry()` of each of up to `credentials.factorScanLimit`
+      (5,000) names, one synchronous round trip per person the window did
+      not hold — a request worker frozen 10 s on 8081 at 382,000 people —
+      and every LDAP add asked `getEntry(dn)` and the one-entry-per-person
+      `byName` synchronously, 3–6 s of every 30 at sixty adds a second.
+      Two read-only questions of the window, asked through `queryAsync()`
+      and taking each row as `heldOrRow()` does: `entriesAtAsync(keys)`
+      (held keys from what is held, the rest `byKeys` five hundred at a
+      time with a yield between) and `findWindowedAsync()` (`findWindowed()`'s
+      answer, in its order, local changes last). On them:
+      `existingUserEntriesAsync(names)` is `existingUserEntry()`'s rule for
+      many names — the direct keys in pages, then ONE `byName` per name that
+      missed, eight at a time; NOT `withNames`, whose OR over a GIN array
+      containment filters every row under `ou=users` — and
+      `locateStoredAsync()` is `locateEntry()`'s entry for the four
+      identifier shapes, sharing its halves (`firstRecording()`,
+      `residentEntryByUuid()`, `uuidHolderOf()`) so the two cannot rank
+      differently. **`credentialCensusAsync()`** is the census on them —
+      5,006 names were ten `byKeys`, six `byName` and four identifier
+      questions, none synchronous, where the synchronous census asked
+      5,015 — and `credentials.factorCensusAsync()`,
+      `adminViews.peopleAndCensusAsync()`, `usersJsonAsync()` and
+      `mfaRosterJsonAsync()` carry it to both API doors.
+      **An LDAP add of a windowed DN asks first** (`askBeforeTheAdd()`,
+      `req.stsAsyncOperation`): `DirectoryWindow.warmAsync()` reads the DN
+      and the names' direct keys into the window — a key this process
+      wrote, adopted, forgot, flushed or came to hold while the question
+      was out is left alone (`watched`), so no slot is older than the
+      process — and the names are resolved and kept on the request with a
+      WATCH opened BEFORE the questions (`heldNameWatches`, until the body
+      has run). **PER NAME AND PER DN, NOT PER CONTAINER (#625,
+      2026-10-14)**: #621 kept the answers while `ou=users`' subtree clock
+      stood, and under the 10M load's eight connections another add always
+      moved it — almost every add asked `byName` twice, 12 s of every 30
+      on a request worker, 65 adds/s down to 47. `touchDirectory()` now
+      tells every open watch the DN written and the usernames
+      (`usernameKeysOf()`, lower-cased) of the entry now there when it is
+      directly under `ou=users` — a row applied from another process
+      included, busy key or not (`forgetEntry()` hands the row); a write
+      naming no DN (a rename, a restore) or an entry this process cannot
+      see without asking marks the watch "everything", as does passing
+      `HELD_NAMES_TOUCH_LIMIT` DNs. The body uses an answer
+      (`heldUserEntry()`) unless a write since touched the add's DN, the
+      entry the answer named, or an entry that holds the name; only that
+      name goes back to the synchronous lookup. A commit by another process
+      of one of the names that this one has not applied is what no watch
+      can see, and `claimingTheAdd()` holds every one of them across the
+      cluster first (`directory_create_claims.ts`); with no claims only this
+      process writes. A modify elsewhere that gives an entry one of the
+      names is not claimed, as before — seen once applied, else answered by
+      the store's merge. An add now asks one `byKeys` and one `byName`,
+      asynchronously, and the body neither, under a stream of adds of other
+      names too; a throw from the body once asynchronous is answered (52
+      for the store, else STS-LDAP-0142).
+      `count` may still be asked synchronously, `ldap.maxEntries`' reading
+      at most once in ten seconds per realm. Still synchronous and O(page)
+      on `/admin-api/users`: the shown rows' decoration
+      (`mechanismsFor()` per row, about nine `locateEntry()`s, most held
+      after the first), and the tiles' `credentialTallies()` and
+      `countPeopleNamed()` — counts, the holders, and one `withNames`.
+    - **Still whole walks on a request path**, recorded as `owed` in
+      `tests/no_full_directory_walk_in_requests.js` with what would remove
+      each: the role screen's candidates (`personDns()`), the cells page's
+      residents (`residentsPage()`), SCIM's user list for any filter but
+      `userName eq` (asked of the name index since #616), and
+      `/admin/ldap/devices`. Fixed by #616's audit besides: the RFC 7523/7522
+      issuer lookup (the key pair's holders), the portal's forgot-password
+      address (`peopleByMail()`), and SCIM's HOBA key (`personsHolding()`).
+  - **Still whole walks, correct and paged, off the request path**:
+    `populateVcAttributes()` (development only), the realm-retirement
     announcement and the seed; `buildUsernameIndex()` is not reached.
 * **A bridge failure inside an LDAP operation** answers `unavailable` (52),
   `STS-LDAP-0130`/`0131`, from `performOperation()`; over HTTP the worker's
   last error middleware answers 503 (`common/CLAUDE.md`).
 
-`tests/directory_window.js`, section H loading this file as a windowed worker.
+`tests/directory_window.js`, section H loading this file as a windowed worker;
+`tests/directory_window_requests.js` counts #616's questions (synchronous and
+asynchronous, by name, and the rows answered) over thousands of people —
+and #621's census and LDAP add (sections E and F), with each answer
+compared with the synchronous path's, F9–F14 the adds interleaved under a
+stream of others (#625) — and
+`tests/no_full_directory_walk_in_requests.js` holds the request handlers to
+no synchronous walk of every person or device but its argued exemptions.
 
 ### The socket picks a store, and it picks it from the DN
 
@@ -1028,6 +1207,17 @@ used to write `undefined` into it, and every SCIM list after that threw
 sixteen mutants across this file and the others the change touched, all caught, and
 twenty more for the race, the rename and the timestamp.
 
+## A DOOR THAT IS NOT THIS FILE: THE BULK IMPORT (#629, 2026-10-14)
+
+`persistence/bulk_import.js` writes people into `ou=users` without this
+file running — offline, with the service stopped — and promises the rows are
+what an LDAP add by an Admin Write binder would have left. So **a change to
+what `putEntry()`, `fillPreferredLanguage()`, `verifyWrittenMail()` or the
+one-entry-per-person rule (`existingUserEntry()`, `byName`) does on a create
+is owed there too**, in `storedOf()` and `classify()`. Its normalizeDn is
+this file's rule, spelt again. `persistence/CLAUDE.md` (*THE BULK IMPORT*)
+has the rest.
+
 ## A CREATE WAS A FUNCTION OF DIRECTORY SIZE, AND THE USERNAME INDEX IS WHY IT IS NOT (2026-09-07)
 
 `existingUserEntry()` is where the one-entry-per-person rule is ENFORCED: every
@@ -1153,6 +1343,35 @@ would not exist yet. The builder and `groupIndexNow()` stayed where they are.
 Flat at 0.05ms after, and a group write is still visible to the very next
 read — which is the property `groupsOfUser()` exists to keep and the one thing
 here worth a test of its own.
+
+### AND SINCE #618 THE STAMP IS GONE: THE GROUP INDEX HAS A CLOCK OF ITS OWN (2026-10-14)
+
+The stamp covered `putEntry()` and the whole-directory applier and nothing
+else. On the 1M load on 8081 every LDAP add still rebuilt the index — the
+add's own authorization asks `rolesOf()` → `groupsOfUser()`, and the person
+another worker had added a moment before had reached this one through the
+WINDOWED applier (`forgetEntry()`), which stamped nothing: about 5 s of
+every 30 s of a request worker. And the stamp was wrong in one case: a group
+OVERWRITTEN by a non-group was stamped as "not a group" and stayed in the
+index.
+
+So the index is keyed on `groupsVersion`, moved by `touchDirectory()` itself
+(`noteGroupsTouched()`) — every writer covered, none hooked. A write naming
+no DN moves it; a write naming one moves it when the entry WAS a group when
+the index was built (the index's own `byDn`) or IS one now, read where this
+process holds it and never from the store (`DirectoryWindow.heldIn()`: a
+windowed key it does not hold moves the clock). `forgetEntry()` hands it the
+store's row, so a person another process made is classified without a round
+trip. The invariant above is what makes it exact; the index also keeps the
+`usersDn()` and `groupsDn()` it resolved against. The size net is kept
+outside a window (a size that moved while `directoryVersion` did not), and
+not cast in one, where the size is the store's count. What still moves the
+clock for nothing is a DN-less `touchDirectory()` — fifty-eight callers,
+none on an add.
+`tests/group_index_clock.js` interleaves person adds, replicated person and
+group changes, local group writes and overwrites, in both modes, and checks
+after each step that the index held equals a fresh build — and, in a window,
+that an add asks the store nothing a rebuild asks.
 
 ### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
 
@@ -1533,17 +1752,42 @@ version of it must not be believed over the current one.
 deleted in the last run and reseeded in this one, and the person who deleted it
 would find it back.
 
-**It also refills `admin_stats.js`'s identity register, and that was a real
+**IT DOES NOT FILL `admin_stats.js`'s IDENTITY REGISTER ANY MORE (#613,
+2026-10-13), and the four paragraphs below are the history of why it did.**
+The pass registered every restored person as `restored` — on 8081, 131,546 of
+them in each of three processes: 16.0, 17.7 and 13.7 s of blocked event loop,
+because in a windowed process the names came through the synchronous bridge a
+page at a time, and then ~131K journalled writes and deletes of the minted
+register (it keeps `MAX_USERS` a realm, so each note past the cap evicted one)
+sealed and flushed into the store and the change log at every start. The
+register held 2,000 of the 131,546 at the end of it. What it was for is done
+by the page since #610: `/admin/users` and `/admin-api/users` list the
+directory's people from the directory (`peopleRows()`: the first
+`credentials.factorScanLimit` names and the store's count), so a restored
+person is a `directory` row, and the tiles count everybody whether the
+register knows them or not. The register holds what this service OBSERVED —
+a sign-in, a creation through a door, a person another process just made —
+and in product mode on postgres it is a persisted minted store, so what it
+observed in earlier runs is restored with the minted rows. The one reader that
+treated it as *does this person exist*, the product-mode WebAuthn enrolment
+door, asks the directory as well (`authn.ts`, `knownPerson()`), which fixes it
+for the people past the cap too. The readers that only want a LINK target
+(`knownUserKeys()`) or a chooser's history (`user_graph.ts`) list a restored
+person who has done nothing here as *never here*, which is what they are.
+`persistence/CLAUDE.md`, *What a start costs*, has the other start-up costs.
+`tests/startup_large_directory.js` holds it.
+
+**It also refilled `admin_stats.js`'s identity register, and that was a real
 bug.** A restored directory came back with twenty entries — `ldapsearch` and
 `/admin/ldap/directory` showed all of them — and `/admin/users` reported `known: 0`,
 because that page has never read this directory. It reads the identity register,
 which until 2026-08-27 could only be filled by somebody AUTHENTICATING; a
 restored directory is the first thing that ever put an entry under `ou=users`
-without a sign-in. They go in through `noteKnownIdentity()` and are marked
-RESTORED rather than authenticated, so `authenticatedHere` keeps counting
+without a sign-in. They went in through `noteKnownIdentity()` and were marked
+RESTORED rather than authenticated, so `authenticatedHere` kept counting
 sign-ins rather than people.
 
-**A SEEDED PERSON IS SKIPPED**, and that is what keeps a restored process's
+**A SEEDED PERSON WAS SKIPPED**, and that is what kept a restored process's
 `/admin/users` identical to a fresh one's. alice, bob and carol are written by
 `seed()` on every start in every realm and have never been in that register —
 the page's own description is "every userid this service has been given as part
@@ -1562,10 +1806,9 @@ while that page's own blurb said "a person can be created here ahead of their
 first sign-in". It calls `noteKnownIdentity(name, 'created')` now. That call is
 safe on the authentication path because `recordAuthentication()` builds the
 record before it reaches the observer and `autoCreateUser()`, and
-`noteKnownIdentity()` returns early for a key it already has. **That pass is the one part of `replaceRealm()`
-that DOES enter the realm**, because `isPersonEntry()` compares against
-`usersDn()` and the register is itself a `realms.map()` — both ambient by
-construction.
+`noteKnownIdentity()` returns early for a key it already has. That pass was
+the one part of `replaceRealm()` that entered the realm; with it gone,
+`replaceRealm()` enters one only to mark the realm's UUID index stale.
 
 `persistence/CLAUDE.md` argues the rest, including why this is not a node-ldapjs
 feature and could not be.
@@ -1644,9 +1887,69 @@ on a connection. `toSearchEntry()` builds a `SearchResultEntry` instance with th
 response's `messageId`, which sidesteps both. The comments there explain it;
 read them before "simplifying" that function back to a plain object.
 
-The rest of the submodule's rules — where it must sit, why `--recursive`
-matters, and why `.npmrc` carries `omit=dev` — are in the root `CLAUDE.md`,
-because they are facts about the package root rather than about this module.
+### A filter is matched by each attribute's own rule (#632, 2026-10-14)
+
+`@ldapjs/filter`'s `matches()` compares every value exactly but
+`objectClass`'s, so `(uid=LOAD-x)` found nobody stored as `uid=load-x` —
+while `existingUserEntry()`, the console, SCIM and the store's own index
+(`name_keys`, `mail_keys`, lower-cased) all found her. RFC 4519 gives `uid`
+caseIgnoreMatch and RFC 4524 gives `mail` caseIgnoreIA5Match. The search
+handler now asks `ldap_matching.ts` (a leaf, a static class), which walks
+AND / OR / NOT itself, folds case for an equality or substring on an
+attribute whose RFC rule ignores it — the table is RFC 4519's, RFC 4524's and
+RFC 2798's case-ignoring attributes — and hands every other leaf to the
+library unchanged. **It is not a patch to the library and does not belong in
+the fork**: a library that has no schema cannot know `uid`'s rule, and this
+directory's schemaless stance ends where a STANDARD attribute's matching rule
+begins. `scim/scim_client.ts`'s scope filter asks the same class, so a scope
+filter on `uid` agrees with a search.
+
+Every path that answers a filter goes through it: the whole directory's walk,
+the windowed index-narrowed candidates (#320's `equalUnder`, whose lower-cased
+keys were already a superset and are now exactly the matches for a value with
+no surrounding space), and #616's asynchronous paging. The compare handler
+was already case-insensitive for EVERY attribute and is unchanged. Case is the
+whole of it — RFC 4518's insignificant-space handling is not done, here or in
+the index. `tests/ldap_filter_matching.js` holds the matcher and both modes;
+reverting the handler to `req.filter.matches()` turns 22 of its assertions
+red.
+
+### node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork
+
+**The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —
+the first change is the `routeAnonymousBinds` server option
+(the bind refusals, below), the second `encodeErrorMessage`, which
+sends a refusal's text as its diagnosticMessage (#261). A change goes in THE FORK, never as a
+patch from this repository into the library: an option whose default is
+upstream's behaviour, a test in the fork's own `test/` (tap), a line in its
+`docs/`, a commit pushed to `rcbj/node-ldapjs`, and the submodule pin bumped
+here in the same change that starts using it. The service asks whether an
+option took rather than assuming the submodule is current, because an older
+checkout ignores an option it does not know.
+
+`ldap_server.js` is built on `ldapjs` 3.0.7, which resolves to `./node-ldapjs` —
+a git submodule pinned to [`rcbj/node-ldapjs`](https://github.com/rcbj/node-ldapjs)
+(`"ldapjs": "file:node-ldapjs"` in package.json). Three things follow, and all of
+them have already cost something:
+
+* **This repository is itself a submodule of the parent project, so this one is
+  NESTED.** `git submodule update --init sts` over there stops one level short of
+  it; `--recursive` is required, and the parent's launchers and CI workflows pass
+  it. An uninitialised submodule is an EMPTY DIRECTORY, so the COPY succeeds, npm
+  installs a package with no `main`, and the failure arrives at runtime as
+  `Cannot find module 'ldapjs'` — which names a package.
+* **It has to sit inside this package root.** npm installs a `file:` dependency as
+  a symlink and node resolves that package's own requires by walking up from where
+  the REAL directory lives, so a copy one level up never reaches `node_modules`
+  here. The failure is `Cannot find module 'abstract-logging'` from inside ldapjs.
+* **`npm install` brings its devDependencies.** ldapjs's are tap and eslint —
+  about 200 packages and a dozen advisories that have nothing to do with this
+  service. `.npmrc` carries `omit=dev` and the Dockerfile passes `--omit=dev` as
+  well; the duplication is deliberate.
+
+(Moved here from the root `CLAUDE.md` on 2026-10-13; it was there because these
+are facts about the package root, and the root keeps the two warnings that
+reach outside this directory.)
 
 ---
 
@@ -1900,11 +2203,17 @@ parser at both ends" argument, transposed.
   not hold would leave `/admin/sessions` unable to date the session and every
   other worker's mirror showing the socket as unbound — so a global sign-out
   would find nobody to sign out.
-* **The search is COLLECTED, not streamed.** The worker fills an array and the
-  front process sends it. That cost is bounded by the thing that already bounds
-  it: `maxSearchResults()` caps a search at `ldap.sizeLimit` whether it ran here
-  or in a worker, so the array is never larger than an answer this service was
-  already willing to build.
+* **The search is STREAMED since #616**, where it was collected. A search
+  that pages the store asynchronously hands each batch of entries to the
+  operation's `emit` (`collectingResponse(emit)`, flushed on a
+  `setImmediate`, between two pages); the worker sends it as a PART
+  (`{ operation, id, partial: true }`, `request_worker.ts`), the pool hands
+  it to the caller's `onPartial` (`request_pool.js` `receiveOperation()`),
+  and `throughTheRequestPool()` writes it to the socket while the worker
+  reads the next page. The answer carries only what was not sent ahead
+  (`operationOutcome()` splices, so a batch is never sent twice). A search
+  answered in one tick never lets a batch run and answers whole, as before;
+  either way `ldap.sizeLimit` bounds what one search sends.
 * **The `SearchEntry` message itself.** `toSearchEntry()` decides WHICH
   attributes go back — requested, operational, canonically spelled — and that is
   store logic, so it runs in the worker. What crosses is the plain
@@ -1963,6 +2272,16 @@ compare is held only for directory or key changes, never for its audit rows.
 `persistence/CLAUDE.md`, *A write is answered after its commit*, argues the
 rest; `tests/answer_after_commit.js` section C drives an add both ways.
 
+**Anything that makes a handler asynchronous marks the request, where the
+asynchrony begins** (#622). `screenedThen()` — the breach screen an add or
+modify carrying a clear `userPassword` runs first (#62 P6) — did not, so a
+dispatched modify was answered "ended nothing" before its handler ran, and
+the change landed after the client was told. It now sets
+`req.stsAsyncOperation` itself, hands the body a `next` that answers once,
+and answers a body that throws inside the promise (`unavailable` for an
+unreadable store, otherwise STS-LDAP-0143). With nothing to screen the
+handler still runs in the same tick. `tests/breached_passwords.js` section F.
+
 ### The wrapper goes on at REGISTRATION, beside the realm wrapper
 
 For that wrapper's reason, stated one section up: seven bodies each remembering
@@ -2005,6 +2324,28 @@ a dispatched write visible is the read barrier — `runOperation()` takes a tick
 and waits on the generation exactly as a dispatched path does, which it did not
 until 2026-09-12: the barrier was built for HTTP and nothing took an operation
 through it, so a dispatched operation was outside read-your-write entirely.
+
+**A WRITE (add, modify, delete, modifyDN) SKIPS THE PULL WHERE IT COULD NOT
+CHANGE ITS ANSWER (#626, 2026-10-14).** When everything its worker has not
+caught up on is windowed directory rows (people, devices), the write is sent
+without the sync round and carries those rows' keys, and the worker applies
+them first — `persistence.applyStaleKeys()`, the pull's own windowed applier
+key for key — so a copy this worker held of a key another worker changed (an
+absence remembered, an entry since renamed, deleted or given a `uid`) is
+dropped and read from the store, exactly as the pull would have dropped it. A
+key it does not hold was always read from the store. Anything shared pending
+(a group, a policy, a setting, a realm) sends the write through the whole
+barrier; reads always take it. Three things decide an add's answer and each is
+held: **uniqueness** by `claimingTheAdd()` across processes and the store's
+`byName` after the stale copies are gone; **a parent or referenced entry**
+another connection created and was answered for, by its key being applied;
+**the same connection's order** by affinity and the worker's queue behind the
+keys. The add path in this file is unchanged — the keys are applied before the
+handler runs, in `request_worker.ts`, so `askBeforeTheAdd()` (#621, #625) asks
+the store about keys nothing stale is held for. `common/CLAUDE.md` (#626) has
+the mechanism and the argument; `tests/request_write_barrier.js` section B
+shows each hazard with nothing applied and the barrier's answer once the keys
+are.
 
 ### What is asserted, and what is not
 
@@ -2068,7 +2409,7 @@ endpoint list stops meaning anything.
 of these pages answers a question about what is in this service's directory,
 which is the question the four pages under the console's *Directory* heading
 already answer; the only thing that made them a separate surface was that they
-happened to have been written here. Four things follow, and each is worth
+happened to have been written here. Three things follow, and each is worth
 knowing before touching any of it.
 
 * **THEY ARE STILL BUILT HERE, and that is not a leftover.** A console page is
@@ -3024,6 +3365,62 @@ the handler), a SCIM create of a User or a Group, and `POST
   dispatched request workers on a shared store): no round trip on a single node,
   so a bulk load is as fast as it was, and the console's and admin API's create
   answer synchronously as before.
+* **Two arbiters, one rule (#628, 2026-10-14).** It was 2 INSERTs, a
+  catch-up, and 2 DELETEs after the commit, each its own transaction — the
+  most frequent statements on 8081's postgres under a bulk load. Now
+  (`directory_create_claims.ts`, `arbitratedHere()`):
+  * **One node — cluster `off` or `active-passive` — is decided by its FRONT
+    PROCESS in memory** (`directory_create_arbiter.ts`): a worker asks over
+    the worker channel (`{ createClaim }`, routed by `request_pool.js`), the
+    front asks itself. **No claim statement at all.** The line is the cluster
+    mode because only `active-active` lets another NODE write: a standby
+    restores and binds nothing until it holds the lease and a node that lost
+    it cannot commit, and `off` is one container by `cluster.js`'s own
+    statement. An unknown mode is the store's.
+  * **`active-active` is decided by the store in ONE statement**
+    (`cluster_claims.claimMany()`, `persistence_postgres.js`): the DN and the
+    username together, all or none — a partial take (overlapping, different
+    sets) is aborted INSIDE the statement by casting a sentence built from the
+    CTE's count to an integer, which PostgreSQL logs as an ERROR naming
+    `sts_cluster_claims: a partial claim`; it is only ever a collision. **The
+    release is a statement of the flush transaction that writes the entry**
+    (`persistence.releaseClaimsAtCommit()`), so a waiting create sees the
+    entry the instant the claim goes; where the write has committed already
+    (a door that answers after its commit, an LDAP add claimed in the front
+    and run in a worker) it is one DELETE of its own. **The claim statement
+    and a DELETE of its own commit with `synchronous_commit` off** (a
+    `set_config(…, true)` CTE in the statement; `NO_FLUSH_WAIT` in the
+    driver): they were about 60% of 8081's WAL-flush waits, and a replay went
+    from 120 to 318 adds a second. Safe because the claim is visible at
+    commit whether flushed or not, the entry's own synchronous commit flushes
+    the claim's WAL before it, and a DELETE lost in a crash only leaves the
+    claim until its lifetime. The release inside the flush stays synchronous
+    — it is the entry's commit.
+  * **Both keep the claim's semantics**: all or none; wait and ask again
+    until `CLAIM_WAIT_MS`; given back at once on a refusal, after the commit
+    on a success; a flush that FAILS keeps the claim until it expires (two
+    minutes) — the accepted cost of releasing in the commit, logged
+    `STS-CLUSTER-0164`, a create of that name meanwhile being
+    `STS-LDAP-0092`. **A worker that dies gives back everything it held at
+    once** (`reap()` → `workerExited()`).
+  * **The winner's catch-up.** The store path still pulls on every win (a
+    deleted row cannot say who held it). The front remembers, per key, who
+    last gave it back after a COMMITTED create, and says `catchUp` only to a
+    winner that has not FINISHED a pull since — a holder is current only once
+    it reports its pull done (`op: 'caughtUp'`); counting it current when it
+    was told to pull let a second create in the same worker look before the
+    pull landed (23 duplicates of 24 in the first test run). A name nobody has
+    created costs no pull. It is the pull a read barrier would make in that
+    worker, made here because the barrier runs only with
+    `workers.readYourWrite` on.
+  * **Bounded**: 16,384 live claims (`STS-LDAP-0144`, fail closed — only a
+    leak reaches it) and 8,192 remembered keys, the oldest forgotten first;
+    forgetting one makes every holder that has not pulled since pull once.
+    A worker's question unanswered for 10s is `STS-LDAP-0145`.
+  * `tests/directory_create_cluster_claims.js` holds all of it: the
+    statements counted (B1 two against B2's control of four, B5 none), the
+    same names raced by two node processes on one store (C) and by two
+    workers on one node (D), a refused create, a failed flush, a dead worker.
 * **Claimed since 2026-09-14 too**: a SCIM Bulk create (in the ingress, which
   scimmy awaits — `scim/CLAUDE.md`) and the console's own forms, `POST
   /admin/users` and `/admin/users/new` and `POST /admin/groups` with

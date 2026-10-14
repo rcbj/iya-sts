@@ -87,6 +87,10 @@ const certificates = realms.map({ persist: 'acme.certificates' });
 // RFC 9773 certID -> certificate id.
 const renewals = realms.map({ persist: 'acme.renewalInfo' });
 // The random part of every Replay-Nonce already presented, with its expiry.
+// KEYED BY ITS `credentialDigest()` (#614): a spent nonce is only ever asked
+// about, so the store holds no nonce, spent or not — the issue's rule for
+// every one-time value, applied here although a Replay-Nonce is public and
+// MAC-bound and grants nothing on its own.
 const usedNonces = realms.map({ persist: 'acme.usedNonces', retain: 'age',
                                 // #333: the value IS the expiry, seconds.
                                 expiresAt: realms.expiryField(null, 1000) });
@@ -592,9 +596,10 @@ class AcmeStore {
    * @returns true when spent now
    */
   spendNonce(id, expiresS) {
-    const { log } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering AcmeStore.spendNonce().");
-    if (usedNonces.has(id)) {
+    const key = stsCrypto.credentialDigest(String(id));
+    if (usedNonces.has(key)) {
       usedNoncesCount.hit();
       log.debug("Leaving AcmeStore.spendNonce(). Already spent.");
       return false;
@@ -619,7 +624,7 @@ class AcmeStore {
       log.debug("Leaving AcmeStore.spendNonce(). The history is full.");
       return false;
     }
-    usedNonces.set(id, Number(expiresS));
+    usedNonces.set(key, Number(expiresS));
     log.debug("Leaving AcmeStore.spendNonce(). Spent.");
     return true;
   }

@@ -545,7 +545,14 @@ class GroupsPage {
             html: GroupsPage.ownersSection(t, group,
               !!json.canWrite && !!ctx.write,
               kit.queryWith(kit.listViewOf('/admin/groups', ctx.query), {}),
-              json.state) }
+              json.state) +
+              // Closed to its owners (#607).
+              GroupsPage.ownerProtectionSection(t, json.ownership, {
+                route: '/admin/groups/owners', id: 'group-owners',
+                kind: 'group', name: group.dn,
+                back: kit.queryWith(kit.listViewOf('/admin/groups',
+                                                   ctx.query), {}),
+                write: !!json.canWrite && !!ctx.write, state: json.state }) }
         ]) +
         back + GroupsPage.groupsLinks(t);
     }
@@ -750,6 +757,71 @@ class GroupsPage {
              'fg-findbtn') +
       '</div>' + results + '</div></form>';
     return head + search;
+  }
+
+  // ---------------------------------------------------------------------------
+  // CLOSED TO ITS OWNERS (#607; rcbj, 2026-10-13: "expose the closed to
+  // owners checkbox on the Directory pages"). Under the owners on each of
+  // the four Owners tabs — a role's, a group's, an application's and a
+  // service account's: the administrator's mark (`stsOwnerProtected`) as a
+  // checkbox and a Save, posting `set-protected` to the tab's own route,
+  // which resolves to `POST /admin-api/ownership/set-protected`. Beside it,
+  // every OTHER reason the object is closed to its owners — a native role,
+  // a roster group, this service's own application — which no checkbox
+  // opens: the owner rule closes those whatever the mark says. The reasons
+  // are the server's sentences, and so English (#539).
+  // ---------------------------------------------------------------------------
+  /**
+   * Draws the Owners tab's "closed to its owners" checkbox.
+   *
+   * @param t - the translator
+   * @param ownership - `{ marked, protected, reasons }`, or nothing
+   * @param opts - `route`, `id` (the tab's anchor), `kind`, `name`,
+   *   `back`, `write`, and the page's `state`
+   * @returns the HTML; '' where the page carries no ownership facts
+   */
+  static ownerProtectionSection(t, ownership, opts) {
+    if (!ownership) {
+      return '';
+    }
+    const o = opts || {};
+    const anchor = '#' + (o.id || 'owners') + '-protection';
+    const drawn = (o.state && o.state.ownerProtection) || {};
+    const said = (drawn.error && drawn.error.length
+      ? kit.warn(kit.esc(drawn.error.join(' '))) : '') +
+      (drawn.notice ? kit.note(kit.esc(drawn.notice)) : '');
+    const mark = 'an administrator closed it to its owners';
+    const others = (ownership.reasons || []).filter(function (one) {
+      return one !== mark;
+    });
+    const otherNote = others.length
+      ? kit.note(t.html('consoleGroups.ownerProtection.closedAnyway') +
+        ' ' + kit.esc(others.join('; ')) + '.')
+      : '';
+    const head = '<h3 id="' + kit.esc(anchor.slice(1)) + '">' +
+      t.html('consoleGroups.ownerProtection.heading') + '</h3>' +
+      kit.note(t.html('consoleGroups.ownerProtection.lead')) + said;
+    if (!o.write) {
+      return head + kit.note(ownership.marked
+        ? t.html('consoleGroups.ownerProtection.isMarked')
+        : t.html('consoleGroups.ownerProtection.notMarked')) + otherNote;
+    }
+    const hidden = function (name, value) {
+      return '<input type="hidden" name="' + name + '" value="' +
+        kit.esc(value) + '">';
+    };
+    return head + '<form method="post" action="' +
+      kit.esc(o.route + anchor) + '" class="sa-form">' +
+      hidden('action', 'set-protected') + hidden('kind', o.kind) +
+      hidden('name', o.name) + hidden('back', o.back || '') +
+      '<label class="fg-bool"' +
+      kit.tip(t.text('consoleGroups.ownerProtection.checkboxTip')) + '>' +
+      '<input type="checkbox" name="protected" value="true"' +
+      (ownership.marked ? ' checked' : '') + '> ' +
+      t.html('consoleGroups.ownerProtection.checkbox') + '</label>' +
+      '<div class="formrow"><button type="submit">' +
+      t.html('consoleGroups.ownerProtection.save') + '</button></div>' +
+      '</form>' + otherNote;
   }
 
   // A member's link. To the group page when the member is itself a group, so

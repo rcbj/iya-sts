@@ -60,8 +60,8 @@
     "text": "Muling pagsusuri ng Android attestation"
   },
   "sched.jobs.devices.android-status-recheck.describe": {
-    "en": "f918ea71421d9df1",
-    "text": "Tinatanong ang aktibong Android attestation status list tungkol sa bawat nakatagong Android chain — mga device key at WebAuthn credential, sa bawat realm — at ibinababa ang mga nire-revoke o sinu-suspend nito: self-asserted, na-audit, CAEP credential-change. Pinapatakbo kapag na-activate ang isang list, at araw-araw."
+    "en": "610a48914c017400",
+    "text": "Tinatanong ang aktibong Android attestation status list tungkol sa bawat nakaimbak na Android chain — mga susi ng device at mga WebAuthn credential, sa bawat realm — at ibinababa ang mga binawi o sinuspinde nito: self-asserted, na-audit, CAEP credential-change. Binabasa lamang ang mga tao at device na minarkahang may hawak nito, isang pahina sa bawat pagkakataon, at nilalaktawan ang realm kung saan hindi gumalaw ang listahan o ang mga pagpaparehistro mula sa huling muling pagsusuri. Tumatakbo kapag na-activate ang isang listahan, at araw-araw."
   },
   "sched.jobs.devices.android-status-refresh.title": {
     "en": "95d19bd56eac78af",

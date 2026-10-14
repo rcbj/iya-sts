@@ -324,6 +324,9 @@ stsModeNeedsPostgres()
 # nothing failing. 100 minutes is that run's pace (about 80) with room;
 # STS_CLUSTER_MODE_TIMEOUT overrides it, as STS_MODE_TIMEOUT does the others.
 # The CI cluster job's own timeout is held above it by tests/teardown_bounds.js.
+# 130 MINUTES SINCE 2026-10-13: CI's cluster run on main 8fe81efa was stopped
+# by the 100-minute bound at job 734 of 774, nothing wedged — the suite had
+# simply grown past it (#591-#604 added jobs and the console's tabs).
 #
 # `single-node` HAS ONE OF ITS OWN SINCE 2026-09-24, for the same reason one
 # step smaller: product mode on postgres with request workers, and the same
@@ -337,7 +340,7 @@ stsModeNeedsPostgres()
 stsModeTimeout()
 {
   case "$1" in
-    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-6000}" ;;
+    cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-7800}" ;;
     single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
