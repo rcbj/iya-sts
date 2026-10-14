@@ -1445,11 +1445,10 @@ a time*). An operator with memory to spare raises the setting.
 **What is still linear and was left**, and why: a store WITHOUT the window
 (memory, ldif, cells, or `ldap.workerDirectory=memory`) restores every entry in
 `replaceRealm()` in one pass — the directory is the data there, held whole by
-choice (40,000 people: ~0.2 s in `tests/startup_large_directory.js`); and the
-replication appliers note a person ANOTHER process created as `created` in
-every process's register (`applyEntry()`, `forgetEntry()`), which is per
-change and not at start, but during a bulk load is one minted write per person
-per process — the candidate for the next look.
+choice (40,000 people: ~0.2 s in `tests/startup_large_directory.js`). The
+replication appliers' note of a person ANOTHER process created, which was the
+next candidate named here, is gone (#618 phase 2, *WHAT ONE ADD WRITES TO THE
+CHANGE LOG*, below).
 
 `tests/startup_large_directory.js` holds the fix: 40,000 people behind a
 window restore with the loop held under 250 ms, no person read from the store
@@ -1543,6 +1542,53 @@ listener.
 * **`audit.events`' 594 rows (13.6 MB)** decrypted into every process's fan-in
   at every start — the next-largest cost, read by the console's audit pages,
   which workers answer.
+
+## WHAT ONE ADD WRITES TO THE CHANGE LOG (#618 phase 2, 2026-10-14)
+
+**Every minted row a flush writes is a row of `sts_changes` too**: sealed,
+inserted, NOTIFY'd, and then pulled, opened and applied by every other
+process. On 8081 (about 3M entries, 55 LDAP adds a second) one LDAP add cost
+about 9.7 of them, and PostgreSQL spent about 1.6 cores on it.
+
+| Store | Before | After | Why it was written |
+|---|---|---|---|
+| directory | 1 | 1 | the entry |
+| `admin_stats.users` (own) | 4.0 | 0 | every OTHER process noted the replicated create in its identity register, and past `MAX_USERS` journalled the eviction |
+| `risc.register` | 2.3 | 0 | a blank row per account created, and past `risc.maxAccountsTracked` the eviction of the oldest |
+| `admin_stats.nums` (own) | 0.9 | 0 | `usersForgotten`, bumped by those evictions |
+| `audit.events` (own) | 0.8 | ≤ 1 | the add's audit event |
+| `audit.nums` (own) | 0.7 | ≤ 1 | its counter |
+
+The two fixes are argued where they live: the appliers' note in
+`ldap/CLAUDE.md` (the creator's record reaches every process through the
+fan-in) and the RISC row in `ssf/CLAUDE.md` (a row is kept when it says
+something an absent row does not).
+
+**A COUNTER IS ALREADY ONE ROW PER FLUSH**: the journal is a Set of keys, and
+a `realms.obj()` store journals its one key, so ten audit events in one flush
+write `audit.nums` once. What makes it one row per ADD is the cadence — in
+postgres mode the flush delay is 0 and a request worker flushes at every
+commit announcement — and that cadence is the read-your-write barrier's, so
+it stays. `audit.nums` could leave the change log only by being derived from
+the ring (its `recorded` is the ring's absolute end); that is not done.
+
+**AN EVICTION FROM A CAPPED STORE IS STILL JOURNALLED AS A DELETE**, and has to
+be: a row not deleted stays in `sts_minted` and in every other process's
+fan-in for ever, which is the store and the heap growing with the directory
+— the defect `tests/replication_fan_in_bounded.js` holds. The fix was to stop
+writing the rows that were evicted, not to stop deleting them. What still
+pays it: a person made through a DOOR (`createUser()`: the console,
+`/admin-api/users/create`, SCIM) is noted `created` in the creating process's
+register, and past `MAX_USERS` that is a note and an eviction — two rows, in
+that one process only.
+
+`tests/change_rows_per_add.js` counts what the stores journal (a persist
+observer) with a flush after every operation, past both caps, in a process
+holding the whole directory and in a windowed worker: a replicated create
+journals nothing, a local LDAP add at most the audit event and its counter,
+ten adds in one flush the counter once; a door create is still `created`, and
+an account created disabled, a service account and an update of a held
+account still have their RISC rows. Seven mutants, all caught.
 
 ## Adding a driver
 
