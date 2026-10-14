@@ -42,6 +42,18 @@
 // check is already atomic, and a round trip per create would slow every bulk
 // load for nothing.
 //
+// **AND DECIDED BY WHOEVER CAN SEE EVERY WRITER (#628, 2026-10-14).** Where
+// the only other writers are this node's own request workers — the cluster
+// `off` or `active-passive` — the node's FRONT PROCESS decides, in memory,
+// over the worker channel (`directory_create_arbiter.ts`), and a create's
+// claim costs the database nothing. Where other NODES write too —
+// `active-active` — the store decides, and it costs ONE statement: the DN and
+// the username claimed together, all or none (`cluster_claims.claimMany()`),
+// given back by a statement of the very flush transaction that writes the
+// entry (`persistence.js`, `releaseClaimsAtCommit()`). It was four: two
+// claims and two deletes, each its own transaction. `arbitratedHere()`
+// argues the line; the arbiter's header lists the rules both paths keep.
+//
 // The doors: an LDAP add (`ldap_server.js`, at registration), a SCIM create
 // (`scim/scim.ts`), `POST /admin-api/users/create` and
 // `/admin-api/groups/create` — and since 2026-09-14 a SCIM Bulk create
@@ -116,14 +128,32 @@ interface ClaimSpec {
   waitMs?: number;
 }
 
-// A claim held, or refused. `settle` is present on a held one.
+// A claim held, or refused. `settle` is present on a held one, and answers a
+// promise of whether the claim went back (`{ released, error }`); `catchUp`
+// says whether the winner must pull the store before its door looks.
 interface HeldClaim {
   ok: boolean;
-  settle?: (succeeded?: boolean) => void;
+  settle?: (succeeded?: boolean) => any;
+  catchUp?: boolean;
+  // Called once the catch-up has finished (one node: the front process is
+  // told, so the next create in this process need not pull again).
+  caughtUp?: () => void;
   reason?: string;
   code?: string;
   what?: string;
   whatKind?: string;
+  index?: number;
+}
+
+// The front process's arbitration on one node (`directory_create_arbiter.ts`),
+// as much of it as this module uses.
+interface CreateArbiter {
+  ask(keys: string[], ttlMs: number): Promise<{
+    ok: boolean; reservation?: string; catchUp?: boolean; through?: number;
+    reason?: string; index?: number; code?: string;
+  }>;
+  give(reservation: string, keys: string[], committed: boolean): void;
+  caughtUp(through: number): void;
 }
 
 // The parts of the persistence store this module uses.
@@ -142,14 +172,20 @@ interface DirectoryCreateClaimsDeps {
   log: {
     debug(message: string): void;
     info(message: string): void;
+    warn(message: string): void;
   };
   config: { value(key: string): unknown };
   errorCodes: { tag(code: string): string };
   claims: {
-    claim(spec: object): Promise<any>;
-    release(handle: unknown): unknown;
+    claimMany(spec: object): Promise<any>;
+    releaseMany(handles: unknown[]): Promise<any>;
+    releaseAtCommit(handles: unknown[]): Promise<any>;
   };
   isActiveActive(): boolean;
+  // `cluster/cluster.js`'s mode: 'off', 'active-passive' or 'active-active'.
+  clusterMode(): string;
+  // LAZY: the arbiter on one node (#628), required at the first claim.
+  loadArbiter(): CreateArbiter;
   // LAZY: see `persistence()`.
   loadPersistence(): ClaimsPersistence;
   // A LOADED `ldap_server.js`, or null: see `claimFor()`.
@@ -234,9 +270,26 @@ class DirectoryCreateClaims {
       isActiveActive: function () {
         return cluster.isActiveActive();
       },
+      clusterMode: function () {
+        return String(cluster.mode() || '');
+      },
       loadPersistence: DirectoryCreateClaims.persistenceModule,
-      loadedDirectory: DirectoryCreateClaims.cachedDirectory
+      loadedDirectory: DirectoryCreateClaims.cachedDirectory,
+      loadArbiter: DirectoryCreateClaims.arbiterModule
     };
+  }
+
+  // The default `loadArbiter`, passed by `defaultDeps()`.
+  /**
+   * Returns this process's arbiter of one node's create claims, required
+   * lazily; the default `loadArbiter`.
+   *
+   * @returns the arbiter
+   */
+  static arbiterModule(): CreateArbiter {
+    log.debug("Entering DirectoryCreateClaims.arbiterModule().");
+    log.debug("Leaving DirectoryCreateClaims.arbiterModule().");
+    return require('./directory_create_arbiter').arbiter;
   }
 
   // The default `loadPersistence`, passed by `defaultDeps()`.
@@ -309,16 +362,60 @@ class DirectoryCreateClaims {
   }
 
   // -------------------------------------------------------------------------
+  // WHICH ARBITER: THE STORE, OR THIS NODE'S FRONT PROCESS (#628, 2026-10-14).
+  //
+  // The claim exists for the writers of one store. Which writers those can be
+  // is the cluster mode's to say, and only `active-active` lets another NODE
+  // write while this one does:
+  //
+  // * `active-active` — every node writes; the store decides, one statement
+  //   per claim (`cluster_claims.claimMany()`), released in the flush that
+  //   commits the create.
+  // * `active-passive` — one node serves at a time, and a standby has bound
+  //   nothing and restored nothing until it holds the service lease; a node
+  //   that lost the lease cannot commit (the fence is checked inside every
+  //   write transaction). So the only concurrent writers are this node's own
+  //   processes.
+  // * `off` — one container, by definition: `cluster/cluster.js` says at
+  //   start that the change log alone is "correct for one container and NOT
+  //   for several", and two containers on one store with the cluster off
+  //   already get no claim at all unless they dispatch, and none of the
+  //   barrier, the fence or the agreement. So, again, this node's processes.
+  //
+  // So everything but `active-active` is decided by the front process in
+  // memory (`directory_create_arbiter.ts`), and `active-active` by the store.
+  // A mode this module does not know is the store's: unsure is the store.
+  // -------------------------------------------------------------------------
+  /**
+   * Says whether this node's own front process decides its create claims
+   * (one node: cluster `off` or `active-passive`) rather than the store
+   * (`active-active`, where other nodes write too).
+   *
+   * @returns true when the front process arbitrates
+   */
+  arbitratedHere(): boolean {
+    const { log, isActiveActive, clusterMode } = this.deps;
+    log.debug("Entering DirectoryCreateClaims.arbitratedHere().");
+    const mode = clusterMode();
+    const here = !isActiveActive() &&
+      (mode === 'off' || mode === 'active-passive');
+    log.debug("Leaving DirectoryCreateClaims.arbitratedHere(). " +
+              (here ? 'The front process.' : 'The store.'));
+    return here;
+  }
+
+  // -------------------------------------------------------------------------
   // claim({ realm, dns, usernames }) -> Promise of
-  //   { ok: true, settle(succeeded) }
+  //   { ok: true, settle(succeeded), catchUp }
   //   { ok: false, reason: 'used' | 'store', code, what }
   //
   // `dns` are NORMALISED DNs and `usernames` are lower-cased; both are the
   // caller's to compute, because deciding what a DN and a username are is
-  // `ldap_server.js`'s job. Every value is claimed or none is: a partial set
-  // is given back before the refusal is answered. `settle(true)` releases
-  // once the write has been flushed; `settle(false)` releases now. A value
-  // another request holds is waited for — `waitMs`, `CLAIM_WAIT_MS` by
+  // `ldap_server.js`'s job. Every value is claimed or none is (#628: in one
+  // statement, or one decision of the front process). `settle(true)` gives
+  // the claim back once the write has committed — in the very transaction
+  // that commits it, on the store — and `settle(false)` gives it back now. A
+  // value another request holds is waited for — `waitMs`, `CLAIM_WAIT_MS` by
   // default, which only a test passes — before `used` is answered.
   // -------------------------------------------------------------------------
   /**
@@ -327,9 +424,10 @@ class DirectoryCreateClaims {
    *
    * @param spec - `realm`, `dns` (normalised), `usernames` (lower-cased) and
    * `waitMs` (default `CLAIM_WAIT_MS`, for tests)
-   * @returns a promise of `{ ok: true, settle(succeeded) }`, where
-   * `settle(true)` releases after the flush and `settle(false)` at once, or `{
-   * ok: false, reason: 'used' | 'store', code, what }`
+   * @returns a promise of `{ ok: true, settle(succeeded), catchUp }`, where
+   * `settle(true)` releases once the write has committed and
+   * `settle(false)` at once, or `{ ok: false, reason: 'used' | 'store',
+   * code, what }`
    */
   claim(spec?: ClaimSpec): Promise<HeldClaim> {
     const self = this;
@@ -338,8 +436,11 @@ class DirectoryCreateClaims {
     const o: ClaimSpec = spec || {};
     const wanted: Wanted[] = [];
     (o.dns || []).forEach(function (dn) {
-      if (dn) {
-        wanted.push({ scope: 'directory.dn', value: String(dn) });
+      const value = dn ? String(dn) : '';
+      if (value && !wanted.some(function (one) {
+        return one.scope === 'directory.dn' && one.value === value;
+      })) {
+        wanted.push({ scope: 'directory.dn', value: value });
       }
     });
     (o.usernames || []).forEach(function (name) {
@@ -356,6 +457,7 @@ class DirectoryCreateClaims {
       return Promise.resolve({ ok: true, settle: function () {} });
     }
     const realm = String(o.realm || '');
+    const here = this.arbitratedHere();
     const waitMs = o.waitMs === undefined
       ? DirectoryCreateClaims.CLAIM_WAIT_MS
       : Math.max(0, Number(o.waitMs) || 0);
@@ -363,7 +465,8 @@ class DirectoryCreateClaims {
     let attempts = 0;
     const attempt = function (): Promise<HeldClaim> {
       attempts += 1;
-      return self.claimAll(wanted, realm).then(function (answer) {
+      return (here ? self.claimHere(wanted, realm)
+        : self.claimInStore(wanted, realm)).then(function (answer) {
         if (answer.ok || answer.reason === 'store' ||
             Date.now() >= deadline) {
           return answer;
@@ -376,15 +479,16 @@ class DirectoryCreateClaims {
         }).then(attempt);
       });
     };
-    log.debug("Leaving DirectoryCreateClaims.claim(). Asking for " +
+    log.debug("Leaving DirectoryCreateClaims.claim(). Asking " +
+              (here ? 'the front process' : 'the store') + " for " +
               wanted.length + ".");
     return attempt().then(function (answer): HeldClaim | Promise<HeldClaim> {
       if (!answer.ok) {
         log.info(errorCodes.tag(answer.code) + 'ldap: a create of ' +
                  answer.whatKind + answer.what + ' was refused: ' +
                  (answer.reason === 'store'
-                   ? 'the store that decides whether it is already being ' +
-                     'created elsewhere could not be asked.'
+                   ? 'whether it is already being created elsewhere could ' +
+                     'not be decided.'
                    : 'another request was still creating it after ' +
                      waitMs + 'ms and ' + attempts + ' attempt(s).'));
         return { ok: false, reason: answer.reason, code: answer.code,
@@ -399,10 +503,25 @@ class DirectoryCreateClaims {
       // whoever held it committed before releasing, so the door's own check
       // now sees the entry and refuses the duplicate. A catch-up that fails is
       // not a refusal; the flush's merge still keeps the first add.
+      //
+      // **ONLY WHEN IT HAS TO, ON ONE NODE (#628).** The store's claim cannot
+      // say who held a row it deleted, so every winner there pulls. The front
+      // process remembers which holder last committed a create of each key,
+      // and says `catchUp` only to a winner that has not pulled since — the
+      // pull a read barrier would make in that worker, made here because the
+      // barrier runs only with `workers.readYourWrite` on.
       // ---------------------------------------------------------------------
+      if (!answer.catchUp) {
+        return answer;
+      }
       return Promise.resolve().then(function () {
         return self.persistence().syncNow();
-      }).catch(function (e) {
+      }).then(function () {
+        if (answer.caughtUp) {
+          answer.caughtUp();
+        }
+      }, function (e) {
+        // NOT REPORTED AS CAUGHT UP: the next create here pulls again.
         log.debug("Caught in DirectoryCreateClaims.claim(): " +
                   ((e && e.message) || e));
       }).then(function () {
@@ -411,72 +530,140 @@ class DirectoryCreateClaims {
     });
   }
 
-  // One attempt at every value in `wanted`: all of them held, or none (a
-  // partial set is given back) and the first refusal described.
-  private claimAll(wanted: Wanted[], realm: string): Promise<HeldClaim> {
+  // The refusal of one attempt: `one` is the value somebody else holds.
+  private refusal(reason: string | undefined, one: Wanted | undefined,
+                  code?: string): HeldClaim {
+    const { log } = this.deps;
+    log.debug("Entering DirectoryCreateClaims.refusal().");
+    const store = reason === 'store';
+    const what = one || { scope: 'directory.dn', value: '' };
+    log.debug("Leaving DirectoryCreateClaims.refusal().");
+    return { ok: false, reason: store ? 'store' : 'used',
+             code: code || (store ? 'STS-LDAP-0093' : 'STS-LDAP-0092'),
+             what: what.value,
+             whatKind: what.scope === 'directory.dn' ? 'the DN '
+               : 'the username ' };
+  }
+
+  // A held claim: `release(succeeded)` gives it back, once whatever the
+  // caller settles it with — the first settle decides.
+  private granted(catchUp: boolean,
+                  release: (succeeded: boolean) => Promise<any>): HeldClaim {
+    const { log } = this.deps;
+    log.debug("Entering DirectoryCreateClaims.granted().");
+    let settled: Promise<any> | null = null;
+    log.debug("Leaving DirectoryCreateClaims.granted().");
+    return {
+      ok: true,
+      catchUp: catchUp,
+      settle: function (succeeded) {
+        log.debug("Entering settle().");
+        if (settled) {
+          log.debug("Leaving settle(). Already settled.");
+          return settled;
+        }
+        settled = Promise.resolve().then(function () {
+          return release(!!succeeded);
+        }).catch(function (e) {
+          log.debug("Caught in settle(): " + ((e && e.message) || e));
+          return { released: false, error: (e && e.message) || String(e) };
+        });
+        log.debug("Leaving settle(). " +
+                  (succeeded ? 'Released at the commit.' : 'Released now.'));
+        return settled;
+      }
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE ATTEMPT IN THE STORE (active-active): every value in ONE statement,
+  // all or none (#628, `cluster_claims.claimMany()`). Given back at the
+  // commit — in the transaction that writes the entry, where this process
+  // writes it — or now; and the winner always catches up, since a deleted
+  // row cannot say who held it.
+  // -------------------------------------------------------------------------
+  private claimInStore(wanted: Wanted[], realm: string): Promise<HeldClaim> {
     const self = this;
     const { log, claims } = this.deps;
-    log.debug("Entering DirectoryCreateClaims.claimAll().");
-    log.debug("Leaving DirectoryCreateClaims.claimAll().");
-    return Promise.all(wanted.map(function (one) {
-      return claims.claim({ scope: one.scope, value: one.value,
-                            realm: realm,
-                            ttlMs: DirectoryCreateClaims.CLAIM_TTL_MS })
-        .then(function (answer) {
-          return { one: one, answer: answer };
-        });
-    })).then(function (answers): HeldClaim {
-      const held = answers.filter(function (row) {
-        return row.answer.ok;
-      }).map(function (row) {
-        return row.answer.handle;
-      });
-      const releaseAll = function () {
-        held.forEach(function (handle) {
-          claims.release(handle);
-        });
-      };
-      const refused = answers.find(function (row) {
-        return !row.answer.ok;
-      });
-      if (refused) {
-        releaseAll();
-        const store = refused.answer.reason === 'store';
-        return { ok: false, reason: refused.answer.reason,
-                 code: store ? 'STS-LDAP-0093' : 'STS-LDAP-0092',
-                 what: refused.one.value,
-                 whatKind: refused.one.scope === 'directory.dn' ? 'the DN '
-                   : 'the username ' };
+    log.debug("Entering DirectoryCreateClaims.claimInStore().");
+    log.debug("Leaving DirectoryCreateClaims.claimInStore().");
+    return claims.claimMany({
+      entries: wanted.map(function (one) {
+        return { scope: one.scope, value: one.value };
+      }),
+      realm: realm,
+      ttlMs: DirectoryCreateClaims.CLAIM_TTL_MS
+    }).then(function (answer): HeldClaim {
+      if (!answer || !answer.ok) {
+        return self.refusal(answer && answer.reason,
+                            wanted[Number(answer && answer.index) || 0]);
       }
-      let settled = false;
-      const granted: HeldClaim = {
-        ok: true,
-        settle: function (succeeded) {
-          log.debug("Entering settle().");
-          if (settled) {
-            log.debug("Leaving settle(). Already settled.");
-            return;
-          }
-          settled = true;
-          if (!succeeded) {
-            releaseAll();
-            log.debug("Leaving settle(). Released at once.");
-            return;
-          }
-          // AFTER THE WRITE IS IN THE STORE. A flush with nothing dirty
-          // resolves at once, which is the dispatched case: the worker that
-          // wrote has already committed before its answer reached this
-          // process.
-          Promise.resolve().then(function () {
-            return self.persistence().flush();
-          }).catch(function (e) {
-            log.debug("Caught in settle(): " + ((e && e.message) || e));
-          }).then(releaseAll);
-          log.debug("Leaving settle(). Released after the flush.");
-        }
-      };
-      return granted;
+      const handles = answer.handles || [];
+      return self.granted(true, function (succeeded) {
+        // AFTER THE WRITE IS IN THE STORE. Where this process wrote it, that
+        // is the flush transaction itself; where it has committed already —
+        // a door that answers after its commit, or a dispatched worker that
+        // committed before its answer reached this process — one statement
+        // of its own.
+        return succeeded ? claims.releaseAtCommit(handles)
+          : claims.releaseMany(handles).then(function (count) {
+            return { released: Number(count) > 0 };
+          });
+      });
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // ONE ATTEMPT ON ONE NODE: the front process decides, in memory
+  // (`directory_create_arbiter.ts`). Given back after this process's flush
+  // has committed — a flush that fails keeps it until it expires, as a
+  // rolled-back release does in the store — or now.
+  // -------------------------------------------------------------------------
+  private claimHere(wanted: Wanted[], realm: string): Promise<HeldClaim> {
+    const self = this;
+    const { log, errorCodes, loadArbiter } = this.deps;
+    log.debug("Entering DirectoryCreateClaims.claimHere().");
+    const arbiter = loadArbiter();
+    const keys = wanted.map(function (one) {
+      return realm + '\u0000' + one.scope + '\u0000' + one.value;
+    });
+    log.debug("Leaving DirectoryCreateClaims.claimHere().");
+    return arbiter.ask(keys, DirectoryCreateClaims.CLAIM_TTL_MS)
+      .then(function (answer): HeldClaim {
+        if (!answer || !answer.ok) {
+          return self.refusal(answer && answer.reason,
+                              wanted[Number(answer && answer.index) || 0],
+                              answer && answer.code);
+        }
+        const reservation = String(answer.reservation);
+        const through = Number(answer.through) || 0;
+        const held = self.granted(!!answer.catchUp, function (succeeded) {
+          if (!succeeded) {
+            arbiter.give(reservation, keys, false);
+            return Promise.resolve({ released: true });
+          }
+          return Promise.resolve().then(function () {
+            return self.persistence().flush();
+          }).then(function (result: any) {
+            if (result && result.error) {
+              log.warn(errorCodes.tag('STS-CLUSTER-0164') + 'ldap: the ' +
+                       'flush after a create failed, so its claim stays ' +
+                       'held until it expires; a create of the same name ' +
+                       'before then waits and is refused as in progress ' +
+                       '(STS-LDAP-0092).');
+              return { released: false, error: result.error };
+            }
+            arbiter.give(reservation, keys, true);
+            return { released: true };
+          });
+        });
+        if (held.catchUp) {
+          held.caughtUp = function () {
+            arbiter.caughtUp(through);
+          };
+        }
+        return held;
+      });
   }
 
   // -------------------------------------------------------------------------
