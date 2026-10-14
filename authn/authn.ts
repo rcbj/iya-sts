@@ -1780,6 +1780,46 @@ class Authn {
   }
 
   // ---------------------------------------------------------------------------
+  // DOES THIS PERSON EXIST, FOR THE PRODUCT-MODE ENROLMENT DOOR (#613).
+  //
+  // The door asked `stats.knownUser()`, the identity register, which was
+  // filled with every restored person at start-up — and the register keeps
+  // `stats.MAX_USERS` identities a realm, so on a directory larger than that
+  // most people were not in it and were refused a key as "nobody". #613
+  // stopped the pre-fill (it held the event loop for seconds in every
+  // process), and the question is the DIRECTORY's anyway: the register first,
+  // because it answers from memory for anybody seen, and then the person's
+  // entry in the ambient realm (`personDnOf`, one lookup; in a windowed
+  // process one read of the store). A directory that cannot answer counts as
+  // nobody, which refuses rather than creates — the door's own direction.
+  // ---------------------------------------------------------------------------
+  /**
+   * Says whether a name is a person this realm knows: seen by the identity
+   * register, or holding an entry in the directory.
+   *
+   * @param username - the name as presented
+   * @returns true when the person exists
+   */
+  knownPerson(username) {
+    const { log, stats, credentials } = this.deps;
+    log.debug("Entering Authn.knownPerson().");
+    if (stats.knownUser(username)) {
+      log.debug("Leaving Authn.knownPerson(). The register knows them.");
+      return true;
+    }
+    let dn = '';
+    try {
+      dn = String(credentials.deviceStore('personDnOf', [username]) || '');
+    } catch (e) {
+      log.debug("Caught in Authn.knownPerson(): " + ((e && e.message) || e));
+      // Nobody, for the reason above: refusing is the safe direction.
+      dn = '';
+    }
+    log.debug("Leaving Authn.knownPerson(). " + (dn ? "An entry." : "None."));
+    return !!dn;
+  }
+
+  // ---------------------------------------------------------------------------
   // THE TRACKING SESSION: A COOKIE FROM THE FIRST PROTOCOL REQUEST
   // (2026-09-07).
   //
@@ -13034,7 +13074,7 @@ class Authn {
                              'the sign-in screen.' },
                         'STS-AUTHN-0206');
           } else if (!mode.autoCreates() &&
-                     !stats.knownUser(step.username)) {
+                     !this.knownPerson(step.username)) {
             log.info('authn: product mode, so a WebAuthn key was NOT ' +
                      'enrolled for "' + step.username + '" — there is no ' +
                      'directory entry for them and enrolling would create ' +

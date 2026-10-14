@@ -624,13 +624,14 @@ ldif or multi-cell service is unchanged.
 * **A row another process wrote** is `forgetEntry()`-ed (read again next
   time) unless the key is busy here, in which case this process's own flush
   goes first and the store merges.
-* **The identity register is a whole directory's** (rcbj, 2026-09-29).
-  `replaceRealm()` fills it from the store in a windowed worker — a page of
-  NAMES at a time (`namesUnder`: key, DN, origin, first `uid`), the same
-  rule as the loop over restored entries, no entry read whole — and
-  `forgetEntry()`, handed the row the applier read, notes a person another
-  process made as `created`, as `applyEntry()` does. Section K of the test
-  compares the two modes.
+* **The identity register is NOT a whole directory's any more** (#613,
+  2026-10-13; rcbj's 2026-09-29 rule that it was is reversed by the issue).
+  `replaceRealm()` filled it from the store in a windowed worker, a page of
+  NAMES at a time through the synchronous bridge, and that pass is gone
+  (*Restoring*, below). `forgetEntry()`, handed the row the applier read,
+  still notes a person another process made as `created`, as `applyEntry()`
+  does. Section K of the test compares the two modes: the same register,
+  with no restored person in either.
 * **The hooks** use `adopt()` (a row the store holds, not a write) in
   `applyEntry()` and `replaceRealm()`, `forget()` in `removeEntry()`;
   `realmEntries()` and `entryAt()` answer the RESIDENT half only, so the write
@@ -1569,17 +1570,42 @@ version of it must not be believed over the current one.
 deleted in the last run and reseeded in this one, and the person who deleted it
 would find it back.
 
-**It also refills `admin_stats.js`'s identity register, and that was a real
+**IT DOES NOT FILL `admin_stats.js`'s IDENTITY REGISTER ANY MORE (#613,
+2026-10-13), and the four paragraphs below are the history of why it did.**
+The pass registered every restored person as `restored` — on 8081, 131,546 of
+them in each of three processes: 16.0, 17.7 and 13.7 s of blocked event loop,
+because in a windowed process the names came through the synchronous bridge a
+page at a time, and then ~131K journalled writes and deletes of the minted
+register (it keeps `MAX_USERS` a realm, so each note past the cap evicted one)
+sealed and flushed into the store and the change log at every start. The
+register held 2,000 of the 131,546 at the end of it. What it was for is done
+by the page since #610: `/admin/users` and `/admin-api/users` list the
+directory's people from the directory (`peopleRows()`: the first
+`credentials.factorScanLimit` names and the store's count), so a restored
+person is a `directory` row, and the tiles count everybody whether the
+register knows them or not. The register holds what this service OBSERVED —
+a sign-in, a creation through a door, a person another process just made —
+and in product mode on postgres it is a persisted minted store, so what it
+observed in earlier runs is restored with the minted rows. The one reader that
+treated it as *does this person exist*, the product-mode WebAuthn enrolment
+door, asks the directory as well (`authn.ts`, `knownPerson()`), which fixes it
+for the people past the cap too. The readers that only want a LINK target
+(`knownUserKeys()`) or a chooser's history (`user_graph.ts`) list a restored
+person who has done nothing here as *never here*, which is what they are.
+`persistence/CLAUDE.md`, *What a start costs*, has the other start-up costs.
+`tests/startup_large_directory.js` holds it.
+
+**It also refilled `admin_stats.js`'s identity register, and that was a real
 bug.** A restored directory came back with twenty entries — `ldapsearch` and
 `/admin/ldap/directory` showed all of them — and `/admin/users` reported `known: 0`,
 because that page has never read this directory. It reads the identity register,
 which until 2026-08-27 could only be filled by somebody AUTHENTICATING; a
 restored directory is the first thing that ever put an entry under `ou=users`
-without a sign-in. They go in through `noteKnownIdentity()` and are marked
-RESTORED rather than authenticated, so `authenticatedHere` keeps counting
+without a sign-in. They went in through `noteKnownIdentity()` and were marked
+RESTORED rather than authenticated, so `authenticatedHere` kept counting
 sign-ins rather than people.
 
-**A SEEDED PERSON IS SKIPPED**, and that is what keeps a restored process's
+**A SEEDED PERSON WAS SKIPPED**, and that is what kept a restored process's
 `/admin/users` identical to a fresh one's. alice, bob and carol are written by
 `seed()` on every start in every realm and have never been in that register —
 the page's own description is "every userid this service has been given as part
@@ -1598,10 +1624,9 @@ while that page's own blurb said "a person can be created here ahead of their
 first sign-in". It calls `noteKnownIdentity(name, 'created')` now. That call is
 safe on the authentication path because `recordAuthentication()` builds the
 record before it reaches the observer and `autoCreateUser()`, and
-`noteKnownIdentity()` returns early for a key it already has. **That pass is the one part of `replaceRealm()`
-that DOES enter the realm**, because `isPersonEntry()` compares against
-`usersDn()` and the register is itself a `realms.map()` — both ambient by
-construction.
+`noteKnownIdentity()` returns early for a key it already has. That pass was
+the one part of `replaceRealm()` that entered the realm; with it gone,
+`replaceRealm()` enters one only to mark the realm's UUID index stale.
 
 `persistence/CLAUDE.md` argues the rest, including why this is not a node-ldapjs
 feature and could not be.

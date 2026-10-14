@@ -606,6 +606,15 @@ early return in that function is load-bearing on the authentication path:
 and `autoCreateUser()`, so without it somebody signing in for the first time
 would be marked as not having signed in.
 
+**THE RESTORE HALF WAS TAKEN OUT AGAIN BY #613 (2026-10-13); the create half
+stays.** `/admin/users` has listed the directory's people from the directory
+since #610 (`admin-core/admin_views.ts`'s `peopleRows()`: a capped listing and
+the store's count), so the `known: 0` page this section describes cannot
+recur without the register's help, and the help had become the most expensive
+thing a start did: `ldap/CLAUDE.md`, *Restoring*, has the figures. A restored
+person is a `directory` row now, and the register holds what this service
+observed.
+
 ## The seam is closed (2026-09-06)
 
 **This section was a checklist of what a later phase would need. Every item on
@@ -1205,10 +1214,11 @@ does four things differently. `ldap/CLAUDE.md` argues the window itself.
   the `residentOnly` question with each realm's windowed containers from the
   slot's `windowedContainers()`): the people and devices are read when first
   asked for, which takes the directory out of a worker's start (#333 measured
-  it at a fifth of a sixty-eight-second start). The identity register is
-  still filled with every restored person: `replaceRealm()` reads their
-  NAMES from the store a page at a time (`ldap/CLAUDE.md`). A realm's seed is
-  still built at require time in every process.
+  it at a fifth of a sixty-eight-second start). The identity register was
+  still filled with every restored person, from their NAMES read a page at
+  a time, until #613 removed that pass (`ldap/CLAUDE.md`): nothing under a
+  windowed container is read at start now. A realm's seed is still built at
+  require time in every process.
 
 `tests/directory_window.js` section F drives all of it through this module
 over a `pg` double, including a change made here and one made there to the
@@ -1382,6 +1392,46 @@ handles; an expired row not restored, a live one and a non-expiring one
 restored; the undefined realm's row left out and purged; the hook's value
 written, NULL for a hook that throws; the job a cluster
 job; one run bounded at 100,000 rows with `more`, the next finishing.
+
+## WHAT A START COSTS THAT GROWS WITH THE DATA (#613, 2026-10-13)
+
+Measured on 8081 (product, postgres, the window on, 131,546 people in the
+default realm, front + 2 protocol workers): about 1 m 35 s from the first log
+line to the second worker ready, each process's event loop held 14–18 s at
+once, a heartbeat 15 s late (STS-CLUSTER-0025) and an origin-claim renewal
+that took 22.5 s of a 30 s claim (STS-STORE-0069). A larger directory would
+have cost the node its membership. Four costs, and what became of each;
+`tests/tools/startup_profile.js` measures the first three above the SQL
+(`docker run --rm <tests image> node tests/tools/startup_profile.js`):
+
+| Cost on 8081 | Cause | Now |
+|---|---|---|
+| 14–18 s held, per process, in `replaceRealm()` | the identity register pre-fill: every restored person's name read through the synchronous bridge (263 pages of 500) and noted | **gone** — `ldap/CLAUDE.md`, *Restoring*. The notes alone are 0.43 s for 131,546 names in the profile; the rest was the bridge |
+| the 11.2 s gap after `sts: persistence is postgres` | the same pass's journal: the register is a minted store capped at `MAX_USERS`, so the pre-fill journalled 131,546 keys (2,000 writes, 129,546 deletes of rows that never existed), and the bootstrap's `flushMinted()` (`credentials.bootstrapOnce()`) waited for them to be sealed, written and appended to the change log — which moved ~132K positions per process start and was then pulled by every other process | **gone** with it. The profile holds the loop 2.6 s for that flush against a `Map`; on postgres it was the gap. Attributed from the change log's movement and the profile, not re-measured on 8081, which was not restarted |
+| ~4–5 s per process restoring ~48K minted rows | `restore()`'s loop — open, parse and restore every row — was one synchronous `forEach` | **sliced**: `restoreInSlices()` in `persistence_minted.js` yields every 50 ms; writes between slices are kept aside like the writes made while the rows were loading, and flushed after. 48K small rows: 0.60 s in one piece before, under 60 ms at a time now. The total is unchanged and still linear in the rows (the #333 filter is what bounds the rows) |
+| ~2 s per process publishing 279 CRLs | every process signed and wrote every authority's CRL into the shared directory at start | **once a node**: a request worker publishes none (`common/pki.js`, `start()`); the front did before forking it |
+
+**The workers still start one after another** (`workers.startConcurrency`,
+default 1): #342's reason is the node's memory, not time, and it has not
+changed — each start restores the store into its own heap. With the pre-fill
+and the CRLs gone a worker's start loses ~18 s, and the listener already binds
+after the first worker of each pool (`common/CLAUDE.md`, *Workers start one at
+a time*). An operator with memory to spare raises the setting.
+
+**What is still linear and was left**, and why: a store WITHOUT the window
+(memory, ldif, cells, or `ldap.workerDirectory=memory`) restores every entry in
+`replaceRealm()` in one pass — the directory is the data there, held whole by
+choice (40,000 people: ~0.2 s in `tests/startup_large_directory.js`); and the
+replication appliers note a person ANOTHER process created as `created` in
+every process's register (`applyEntry()`, `forgetEntry()`), which is per
+change and not at start, but during a bulk load is one minted write per person
+per process — the candidate for the next look.
+
+`tests/startup_large_directory.js` holds the fix: 40,000 people behind a
+window restore with the loop held under 250 ms, no person read from the store
+and the register the same size as with 400; the whole directory in memory
+leaves the register empty; 40,000 minted rows restore with the loop never held
+250 ms.
 
 ## Adding a driver
 

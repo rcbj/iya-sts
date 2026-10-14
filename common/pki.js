@@ -10970,6 +10970,14 @@ let keySetProvider = null;
 // ---------------------------------------------------------------------------
 let keySetHeldProvider = null;
 
+// Is this a request worker (#613)? A function of its own because `start()`
+// below names a local `process` (the process branch), which shadows node's.
+function inRequestWorker() {
+  log.debug("Entering inRequestWorker().");
+  log.debug("Leaving inRequestWorker().");
+  return !!process.env.STS_REQUEST_WORKER;
+}
+
 /**
  * Builds the certificate hierarchy at startup, where there is none, and
  * certifies the keys this service already holds.
@@ -11117,7 +11125,28 @@ async function start(opts) {
   // module requires this one, so a require at load time would close a cycle
   // (rule 2) — and a failure is logged and never fatal: a service whose
   // directory would not take a CRL is a service that still issues.
+  //
+  // **AND ONCE A NODE, NOT ONCE A PROCESS (#613, 2026-10-13).** A request
+  // worker started here as well, and every one of them signed and wrote the
+  // same lists into the same shared directory — 279 on 8081, about 2 s of
+  // each worker's start, and 279 change-log rows that every other process
+  // then applied. The front process publishes before it forks a worker (its
+  // `pki.start()` runs in `service_state.ts` before the pool starts), so a
+  // worker's restore reads lists that are current, and what the front or
+  // the `pki.crl-directory-refresh` job writes later reaches it through the
+  // change log like every other directory write. The refresh job is still
+  // registered here: it is a cluster job and runs on the leader alone.
   // -------------------------------------------------------------------------
+  if (inRequestWorker()) {
+    log.debug('pki: a request worker publishes no CRL into the directory at ' +
+              'start; the front process did, before forking it.');
+    require('./pki_revocation').keepDirectoryCurrent();
+    reportPinsWithSignersOff(realmIds);
+    log.debug('Leaving pki.start(). A request worker: ' + branches +
+              ' realm branch(es), ' + certified + ' key(s) certified.');
+    return { ok: true, built: true, branches: branches,
+             certified: certified };
+  }
   try {
     const published = await require('./pki_revocation')
       .publishAll([PROCESS_SCOPE].concat(realmIds));

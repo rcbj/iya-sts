@@ -1574,6 +1574,13 @@ false`, a failed channel, or an exit). Four decisions:
 `stats().starts` reports the width of the gate, the number starting and the
 number queued. `tests/request_worker_replacement.js` section 5 holds it.
 
+**#613 (2026-10-13) LOOKED AT STARTING THEM TOGETHER AND KEPT THE GATE**: the
+reason above is memory, and a start still restores the store into its own
+heap. What it did instead was take the work out of each start that grew with
+the data — the identity register pre-fill, a re-publication of every CRL, the
+minted restore held in one piece — which `persistence/CLAUDE.md`, *What a
+start costs*, measures.
+
 **EVERY PROCESS HAS A HEAP LIMIT, AND A DEATH BY MEMORY SAYS WHICH KIND (#341,
 2026-09-29).** Nothing set a V8 heap limit, so each process's heap was sized to
 the machine, and a task that ran out got an anonymous SIGKILL from the kernel:
@@ -6973,7 +6980,9 @@ anything rotated goes on its issuer's list as `superseded` automatically.
 **From the root `CLAUDE.md`'s index of things this service does not do:** the
 lists and responders are served at `/pki/crl/{scope}/{ca}`,
 `/pki/ocsp/{scope}/{ca}` and `/pki/ca/{scope}/{ca}.cer` with an index at
-`/pki/revocation`, published into the directory under `ou=crl`, and named inside
+`/pki/revocation`, published into the directory under `ou=crl` (by the
+front process at start and by the `pki.crl-directory-refresh` job — not by a
+request worker, since #613: `pki.js`'s `start()` argues it), and named inside
 every certificate this service issues in TWO SCHEMES (http, ldap — it was three,
 with ldaps, until 2026-09-13; `pki_revocation.js`'s `httpBase()` argues it). A
 pane on `/admin/pki` revokes by hand with any of the nine reasons RFC 5280

@@ -341,12 +341,19 @@ a store that broke afterwards, which is recorded and is not fatal.
 
 ### A restored person has not signed in
 
-Somebody restored from the store shows on `/admin/users` as **restored** rather
-than as having authenticated. They exist — an entry, searchable over 389,
-readable over SCIM, and a token issued to them carries their attributes — and
-they have not signed in during *this* process, so they are not counted among the
-sign-ins. Their counts and their event list are statistics, and start at zero
-with everything else.
+Somebody restored from the store shows on `/admin/users` as a **directory**
+person rather than as having authenticated. They exist — an entry, searchable
+over 389, readable over SCIM, and a token issued to them carries their
+attributes — and the page lists them from the directory itself, so they are
+not counted among the sign-ins.
+
+The restore does not copy the directory's people into the register of people
+this service has *seen* (it did until 2026-10-13; at a hundred thousand people
+that copy held every process's event loop for seconds at every start). In
+product mode on postgres the register is itself persisted, so the people it saw
+in earlier runs come back with the rest of what this service mints; in every
+other configuration their counts and their event list are statistics, and
+start at zero with everything else.
 
 ### Settings come back as runtime overrides, not as a new layer
 
