@@ -4303,6 +4303,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "Gaano katagal hinahawakan ang isang AuthnRequest habang nasa sign-in screen ang browser, o sa pagitan ng POST-binding request at ng GET na pinagbabaguhan nito. Lampas dito, tinatanggihan ang pagbalik na may pahinang nagpapangalan sa value na ito. Ito dati ang constant na REQUEST_TTL_MS sa saml2_sso.js."
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Mga hindi pa nare-resolve na artifact na itinatago"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "Ilang SAML 2.0 artifact ang maaaring maghintay na ma-resolve, bawat trust realm. Inaalis muna ang mga expired; ang store na puno pa rin ay TINATANGGIHAN ang susunod na sign-in sa HTTP-Artifact binding gamit ang isang page (HTTP 503) sa halip na kalimutan ang artifact na hindi pa nare-resolve ng service provider."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Babala sa haba ng redirect-binding (character)"
@@ -4438,6 +4446,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "Ilang iniisyung assertion ang itinatago ng SAML responder, bawat trust realm, para mahingi ulit ng relying party ang isa sa pamamagitan ng AssertionIDReference. Unang lumalabas ang pinakaluma. Ito dati ang constant na ASSERTION_CACHE_MAX sa saml11_sso.js."
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "Tagal ng itinatagong assertion na walang NotOnOrAfter (segundo)"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "Gaano katagal maaaring hingin sa pamamagitan ng AssertionIDReference ang isang iniisyung assertion kapag wala itong NotOnOrAfter. Ang mayroon — bawat assertion na binubuo ng serbisyong ito — ay itinatago hanggang sa NotOnOrAfter nito at hindi na lalampas."
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Mga hindi pa nare-resolve na artifact na itinatago"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "Ilang SAML 1.1 artifact ang maaaring maghintay na ma-resolve, bawat trust realm. Inaalis muna ang mga expired; ang store na puno pa rin ay TINATANGGIHAN ang susunod na Browser/Artifact sign-in gamit ang isang page (HTTP 503) sa halip na kalimutan ang artifact na hindi pa nare-resolve ng relying party."
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",

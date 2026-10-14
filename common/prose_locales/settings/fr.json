@@ -4303,6 +4303,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "Durée pendant laquelle une AuthnRequest est conservée pendant que le navigateur est sur l’écran de connexion, ou entre une requête en liaison POST et le GET en lequel elle est transformée. Au-delà, le retour est refusé avec une page nommant cette valeur. C’était la constante REQUEST_TTL_MS de saml2_sso.js."
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Artefacts non résolus conservés"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "Combien d’artefacts SAML 2.0 peuvent attendre d’être résolus, par domaine de confiance. Les artefacts expirés sont effacés d’abord ; un magasin encore plein REFUSE la connexion suivante sur la liaison HTTP-Artifact avec une page (HTTP 503) plutôt que d’oublier un artefact qu’un fournisseur de services n’a pas encore résolu."
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Seuil d’avertissement de longueur de la liaison Redirect (caractères)"
@@ -4438,6 +4446,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "Nombre d’assertions émises que le répondeur SAML conserve, par domaine de confiance, afin qu’une partie de confiance puisse en redemander une par AssertionIDReference. La plus ancienne part en premier. C’était la constante ASSERTION_CACHE_MAX de saml11_sso.js."
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "Durée de conservation d’une assertion sans NotOnOrAfter (secondes)"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "Pendant combien de temps une assertion émise reste disponible par AssertionIDReference lorsqu’elle ne porte pas de NotOnOrAfter. Une assertion qui en porte un — toutes celles que ce service construit — est conservée jusqu’à son NotOnOrAfter et pas au-delà."
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "Artefacts non résolus conservés"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "Combien d’artefacts SAML 1.1 peuvent attendre d’être résolus, par domaine de confiance. Les artefacts expirés sont effacés d’abord ; un magasin encore plein REFUSE la connexion Browser/Artifact suivante avec une page (HTTP 503) plutôt que d’oublier un artefact qu’une partie de confiance n’a pas encore résolu."
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",

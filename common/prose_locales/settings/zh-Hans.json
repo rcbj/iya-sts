@@ -4303,6 +4303,14 @@
     "en": "5622b8dd257d1d0a",
     "text": "在浏览器停留在登录界面期间，或在 POST 绑定请求与其转换成的 GET 之间，AuthnRequest 被保留的时长。超过此时长，返回时会被拒绝，并显示一个指明此值的页面。原为 saml2_sso.js 中的常量 REQUEST_TTL_MS。"
   },
+  "saml2.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "保留的未解析工件数"
+  },
+  "saml2.maxArtifacts|description": {
+    "en": "fa19aebde480379c",
+    "text": "每个信任领域中可以等待解析的 SAML 2.0 工件数量。先清除已过期的工件；仍然满的存储会以一个页面（HTTP 503）拒绝 HTTP-Artifact 绑定上的下一次登录，而不会遗忘服务提供方尚未解析的工件。"
+  },
   "saml2.redirectWarnLength|label": {
     "en": "6aca92fd45d0b1ed",
     "text": "Redirect 绑定长度警告（字符）"
@@ -4438,6 +4446,22 @@
   "saml11.assertionCacheMax|description": {
     "en": "53f2bb7a501337d8",
     "text": "SAML 响应方按信任领域保留多少个已签发的断言，以便依赖方可以通过 AssertionIDReference 再次请求。最旧的最先移除。原为 saml11_sso.js 中的常量 ASSERTION_CACHE_MAX。"
+  },
+  "saml11.assertionCacheTtlS|label": {
+    "en": "34d17c0ba9e29713",
+    "text": "无 NotOnOrAfter 的保留断言有效期（秒）"
+  },
+  "saml11.assertionCacheTtlS|description": {
+    "en": "cc84e4a1c39a35e3",
+    "text": "已签发的断言在未携带 NotOnOrAfter 时，可通过 AssertionIDReference 获取的时长。携带 NotOnOrAfter 的断言——本服务构建的每个断言都携带——保留到其 NotOnOrAfter 为止，不再延长。"
+  },
+  "saml11.maxArtifacts|label": {
+    "en": "7628dfa2a5d1a37f",
+    "text": "保留的未解析工件数"
+  },
+  "saml11.maxArtifacts|description": {
+    "en": "79f98702ed5854f4",
+    "text": "每个信任领域中可以等待解析的 SAML 1.1 工件数量。先清除已过期的工件；仍然满的存储会以一个页面（HTTP 503）拒绝下一次 Browser/Artifact 登录，而不会遗忘依赖方尚未解析的工件。"
   },
   "wstrust.tokenLifetimeMin|label": {
     "en": "4175ce1d6bae5af4",

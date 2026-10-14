@@ -1071,6 +1071,26 @@
     "en": "8d6fb31ae90a70a5",
     "text": "isang standing na hawak at valid pa, kaya ito ang ginamit sa pagpapasya sa issuance"
   },
+  "caches.store.saml11.artifacts.title": {
+    "en": "952a2cd74bae711c",
+    "text": "Mga SAML 1.1 artifact"
+  },
+  "caches.store.saml11.artifacts.description": {
+    "en": "82d0e75b9091cc8e",
+    "text": "Ang mga assertion na kinakatawan ng mga SAML 1.1 artifact, hanggang ma-resolve nang isang beses ang bawat isa sa SAML responder. Naka-key sa SHA-256 ng artifact, hindi kailanman sa artifact mismo."
+  },
+  "caches.store.saml11.artifacts.bound": {
+    "en": "8ada19f46ebcec4a",
+    "text": "Ipinapatupad: saml11.maxArtifacts bawat realm. Inaalis ang mga expired na artifact pagdating sa limitasyon; ang store na puno pa rin ay TINATANGGIHAN ang susunod na artifact sa halip na kalimutan ang isang hindi pa nare-resolve."
+  },
+  "caches.store.saml11.artifacts.lifetime": {
+    "en": "a85bf33aa7f6b5fe",
+    "text": "Hanggang ma-resolve nang isang beses, o hanggang lumipas ang saml11.artifactTtlS."
+  },
+  "caches.store.saml11.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "isang artifact na na-resolve"
+  },
   "caches.store.saml11.assertions.title": {
     "en": "8dd27dfb9529ae0c",
     "text": "Mga SAML 1.1 assertion"
@@ -1084,12 +1104,32 @@
     "text": "Ipinapatupad: saml11.assertionCacheMax bawat realm, tinatanggal ang pinakaluma; ang artifact na nagpapangalan ng tinanggal na assertion ay sinasagot bilang hindi kilala."
   },
   "caches.store.saml11.assertions.lifetime": {
-    "en": "4397e5b8b411e7a8",
-    "text": "Walang expiry: tinatanggal ang pinakaluma kapag lumampas sa saml11.assertionCacheMax."
+    "en": "b163f4a46cb87b30",
+    "text": "Hanggang sa NotOnOrAfter ng assertion, o saml11.assertionCacheTtlS kapag wala itong ganoon; tinatanggal ang pinakaluma kapag lumampas sa saml11.assertionCacheMax."
   },
   "caches.store.saml11.assertions.hitMeaning": {
     "en": "b7e393c624057aea",
     "text": "isang AssertionIDReference na nasagot"
+  },
+  "caches.store.saml2.artifacts.title": {
+    "en": "5f8f30f78880af2b",
+    "text": "Mga SAML 2.0 artifact"
+  },
+  "caches.store.saml2.artifacts.description": {
+    "en": "f4d58e16296562ae",
+    "text": "Ang mga mensaheng kinakatawan ng mga SAML 2.0 artifact, hanggang ma-resolve nang isang beses ang bawat isa sa Artifact Resolution Service. Naka-key sa SHA-256 ng artifact, hindi kailanman sa artifact mismo."
+  },
+  "caches.store.saml2.artifacts.bound": {
+    "en": "44cfb6d812b7e9cf",
+    "text": "Ipinapatupad: saml2.maxArtifacts bawat realm. Inaalis ang mga expired na artifact pagdating sa limitasyon; ang store na puno pa rin ay TINATANGGIHAN ang susunod na artifact sa halip na kalimutan ang isang hindi pa nare-resolve."
+  },
+  "caches.store.saml2.artifacts.lifetime": {
+    "en": "1e22e3573b691653",
+    "text": "Hanggang ma-resolve nang isang beses, o hanggang lumipas ang saml2.artifactTtlS."
+  },
+  "caches.store.saml2.artifacts.hitMeaning": {
+    "en": "cd691b2189f1c009",
+    "text": "isang artifact na na-resolve"
   },
   "caches.store.scim.digest-nonce-counts.title": {
     "en": "96cc15215936464e",
