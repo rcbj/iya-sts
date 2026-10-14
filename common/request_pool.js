@@ -193,6 +193,74 @@ let finishedTickets = new Set();
 const finishedAt = new Map();
 let ticketWaiters = [];
 
+// ---------------------------------------------------------------------------
+// WHAT EACH TICKET WAS, FOR THE LINE THAT DROPS ONE (#620, 2026-10-14).
+//
+// STS-WORKER-0008 said how many tickets it dropped and nothing else, so six
+// of them under a bulk load on 8081 left nothing to go on but timestamps: not
+// the request, not the worker, not whether that worker had announced anything
+// at all since. Those are the two causes the line names, and they are told
+// apart by exactly that last fact — a worker that has said NOTHING since it
+// answered is stalled or stuck in a flush; one that has announced since
+// without naming the ticket has lost it.
+//
+// ticket -> { what, entry, dispatchedAt, answeredAt, heardAtAnswer }.
+// Written at dispatch and forgotten wherever the ticket is, so it holds what
+// `outstanding` holds and no more. `what` is the method and path (no query
+// string) or the operation's kind — never a body, an identity or a header.
+// ---------------------------------------------------------------------------
+const ticketInfo = new Map();
+
+// Forgets a ticket's description; called beside every `outstanding.delete()`.
+function forgetTicket(ticket) {
+  log.debug("Entering forgetTicket().");
+  ticketInfo.delete(ticket);
+  log.debug("Leaving forgetTicket().");
+}
+
+// One dropped ticket, in a phrase: what it was, which worker answered it, how
+// long ago, and whether that worker has announced anything since. `now` is
+// reapStuckTickets()' clock, which a test moves; absent, it is the time.
+/**
+ * Describes one outstanding ticket for STS-WORKER-0008.
+ *
+ * @param ticket - the ticket number
+ * @param now - optional; the current time in milliseconds
+ * @returns the description
+ */
+function describeTicket(ticket, now) {
+  log.debug("Entering describeTicket().");
+  const info = ticketInfo.get(ticket);
+  if (!info) {
+    log.debug("Leaving describeTicket(). Nothing recorded.");
+    return 'ticket ' + ticket + ' (not recorded)';
+  }
+  // THE ENTRY ITSELF, not a pid looked up in the table: a worker that died
+  // has had its tickets released by reap(), so the owner of a ticket reaped
+  // here is one that is still running.
+  const owner = info.entry;
+  const at = now || Date.now();
+  const secs = function (since) {
+    return since ? ((at - since) / 1000).toFixed(1) + 's' : '?';
+  };
+  const heard = (owner.announcements || 0) - info.heardAtAnswer;
+  let state;
+  if (heard > 0) {
+    state = 'that worker has announced ' + heard + ' commit(s) since without ' +
+      'naming it (last ' + secs(owner.lastAnnouncedAt) + ' ago): LOST';
+  } else {
+    state = 'that worker has announced nothing since (' +
+      (owner.lastAnnouncedAt
+        ? 'last ' + secs(owner.lastAnnouncedAt) + ' ago'
+        : 'never') +
+      ', ' + (owner.inFlight || 0) + ' in flight): STALLED or a slow flush';
+  }
+  log.debug("Leaving describeTicket().");
+  return 'ticket ' + ticket + ' ' + info.what + ' on ' +
+    (owner.pool || PROTOCOL_POOL) + ' worker ' + owner.pid + ', answered ' + secs(info.answeredAt) +
+    ' ago (dispatched ' + secs(info.dispatchedAt) + ' ago); ' + state;
+}
+
 // The highest ticket for which EVERY earlier ticket is confirmed too. A reader
 // is satisfied when this reaches the number it arrived at.
 // **ONLY A FINISHED REQUEST CAN BLOCK A READER (2026-09-07).**
@@ -339,9 +407,11 @@ function dropSettledWaiter() {
  * Issues a read-barrier ticket for a request about to be sent to a worker.
  *
  * @param entry - the worker's table entry
+ * @param what - optional; the method and path, or the operation's kind, named
+ *   should the ticket ever be dropped (STS-WORKER-0008)
  * @returns the ticket number, or undefined when read-your-write is off
  */
-function dispatchTicket(entry) {
+function dispatchTicket(entry, what) {
   log.debug("Entering dispatchTicket().");
   if (!readYourWrite()) {
     log.debug("Leaving dispatchTicket().");
@@ -349,6 +419,11 @@ function dispatchTicket(entry) {
   }
   issuedTickets++;
   outstanding.add(issuedTickets);
+  // What it is, for STS-WORKER-0008 should it ever be dropped (#620).
+  ticketInfo.set(issuedTickets, { what: String(what || 'a request'),
+                                  entry: entry,
+                                  dispatchedAt: Date.now(),
+                                  answeredAt: 0, heardAtAnswer: 0 });
   if (!entry.tickets) { entry.tickets = new Set(); }
   entry.tickets.add(issuedTickets);
   log.debug("Leaving dispatchTicket().");
@@ -385,6 +460,13 @@ function ticketFinished(entry, ticket) {
   }
   finishedTickets.add(ticket);
   finishedAt.set(ticket, Date.now());
+  const info = ticketInfo.get(ticket);
+  if (info) {
+    info.answeredAt = Date.now();
+    // How many announcements this worker had made when it answered: the
+    // difference later is what describeTicket() tells the two causes by.
+    info.heardAtAnswer = entry.announcements || 0;
+  }
   log.debug("Leaving ticketFinished().");
 }
 
@@ -435,6 +517,7 @@ function ticketAbandoned(entry, ticket) {
   outstanding.delete(ticket);
   finishedTickets.delete(ticket);
   finishedAt.delete(ticket);
+  forgetTicket(ticket);
   if (entry && entry.tickets) {
     entry.tickets.delete(ticket);
   }
@@ -467,6 +550,10 @@ function ticketAbandoned(entry, ticket) {
 // ---------------------------------------------------------------------------
 const REAP_AFTER_MS = 30000;
 let reaped = 0;
+// How many dropped tickets one STS-WORKER-0008 line describes; the rest are
+// counted. Enough to show a pattern, few enough that a backlog of thousands
+// is still one readable line.
+const REAP_DESCRIBED = 5;
 
 // `at` is the clock, and it is a parameter for one reason: the threshold is
 // thirty seconds and a test that waited thirty seconds to assert one `if` is a
@@ -503,10 +590,15 @@ function reapStuckTickets(need, clock) {
     log.debug('Leaving reapStuckTickets(). Nothing old enough.');
     return;
   }
+  // WHAT THEY WERE, described before they are forgotten (#620).
+  const described = gone.slice(0, REAP_DESCRIBED).map(function (t) {
+    return describeTicket(t, now);
+  });
   gone.forEach(function (t) {
     outstanding.delete(t);
     finishedTickets.delete(t);
     finishedAt.delete(t);
+    forgetTicket(t);
     workers.forEach(function (entry) {
       if (entry.tickets) {
         entry.tickets.delete(t);
@@ -539,7 +631,11 @@ function reapStuckTickets(need, clock) {
            'after waiting the full barrier bound for each — so this changes ' +
            'no answer and removes that wait. Either a worker lost an ' +
            'announcement (see ticketAbandoned()) or its flush has been ' +
-           'running longer than that, which a bulk load can do.');
+           'running longer than that, which a bulk load can do. Dropped: ' +
+           described.join('; ') +
+           (gone.length > described.length
+             ? '; and ' + (gone.length - described.length) + ' more'
+             : '') + '.');
   log.debug('Leaving reapStuckTickets(). ' + gone.length + ' dropped.');
 }
 
@@ -1989,6 +2085,10 @@ function receiveCommitted(entry, committed) {
   // flush started, because each one carried its ticket in a header — so this is
   // an exact set rather than a count compared against an ordinal this process
   // guessed. See ticketFinished() above for what the guess cost.
+  // Counted for describeTicket() (#620): an announcement is evidence that
+  // this worker is alive and announcing, whatever it names.
+  entry.announcements = (entry.announcements || 0) + 1;
+  entry.lastAnnouncedAt = Date.now();
   const covered = (committed || {}).tickets;
   if (Array.isArray(covered) && entry.tickets) {
     covered.forEach(function (t) {
@@ -1999,6 +2099,7 @@ function receiveCommitted(entry, committed) {
       outstanding.delete(ticket);
       finishedTickets.delete(ticket);
       finishedAt.delete(ticket);
+      forgetTicket(ticket);
       entry.tickets.delete(ticket);
     });
   }
@@ -2920,6 +3021,7 @@ function reap(entry, code, reason) {
       outstanding.delete(t);
       finishedTickets.delete(t);
       finishedAt.delete(t);
+      forgetTicket(t);
     });
     entry.tickets.clear();
     if (answered) {
@@ -4869,7 +4971,8 @@ function middleware(options) {
       // dispatched BEFORE it, and only then registers itself as outstanding
       // for everything that comes after.
       awaitCommitConfirmations(entry).then(function () {
-        const ticket = dispatchTicket(entry);
+        const ticket = dispatchTicket(entry, req.method + ' ' +
+          String(req.originalUrl || req.url || '').split('?')[0]);
         // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST REQUEST, before
         // the generation is read — a bump after this line would be a bump this
         // request does not wait for. See noteLocalWrites().
@@ -5775,7 +5878,7 @@ function runOperation(kind, args, opts) {
   }
   log.debug("Leaving runOperation().");
   return awaitCommitConfirmations(entry).then(function () {
-    const ticket = dispatchTicket(entry);
+    const ticket = dispatchTicket(entry, 'operation ' + kind);
     // WHAT THIS PROCESS ITSELF HAS WRITTEN SINCE THE LAST ONE, before the
     // generation is read. It matters more here than on the HTTP path, not
     // less: the front process is the one that holds every socket this service
@@ -6325,6 +6428,7 @@ function reset() {
   outstanding.clear();
   finishedTickets.clear();
   finishedAt.clear();
+  ticketInfo.clear();
   ticketWaiters = [];
   settledWaiters = 0;
   reaped = 0;
@@ -6417,6 +6521,9 @@ module.exports = {
   ticketFinished: ticketFinished,
   ticketAbandoned: ticketAbandoned,
   reapStuckTickets: reapStuckTickets,
+  // What STS-WORKER-0008 says about one ticket (#620), exported so that
+  // `tests/request_ticket_announce.js` can hold the two causes apart.
+  describeTicket: describeTicket,
   awaitCommitConfirmations: awaitCommitConfirmations,
   receiveCommitted: receiveCommitted,
   // THE SYNC HALF OF THE BARRIER AND THE PROXY, exported for the same file
