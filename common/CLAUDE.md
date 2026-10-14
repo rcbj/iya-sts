@@ -1758,6 +1758,38 @@ and whether that worker has announced anything since: nothing means STALLED
 or a slow flush, something means the announcement was LOST.
 `tests/request_ticket_announce.js`.
 
+**AND A REQUEST WHOSE CLIENT LEFT WHILE IT WAITED WAS SENT TO A WORKER AS AN
+EMPTY CONNECTION (#624, 2026-10-14).** The first two LOST tickets that line
+named, under the 1M → 10M LDAP load on 8081, were both `GET /healthcheck` on
+worker 4: dispatched, then ANSWERED 93 to 96 s after they were sent, with 6 and
+2579 commits announced since. The log gives the sequence: the probe took its
+ticket, the read barrier held it until worker 4 missed the round
+(STS-WORKER-0027, at the exact second each was sent), and the compose
+healthcheck's 5 s timeout had closed it by then. `proxy()` hangs its
+client-gone handlers only when it is called, so it missed the `close`; and a
+destroyed request never emits `end`, so `upstream.end()` never ran and node
+never sent even the headers. The worker's HTTP parser answered the empty
+connection 408 at `headersTimeout` (70 s, noticed on node's 30 s check), the
+front process took the 408 as an answer and armed the ticket, and the worker —
+which never saw a request, so never ran `finish` or `close` — never named it.
+**So the cause was not the flush-gated announcement** (it is bounded by the
+worker's next two flushes, `persistence.flush()`'s one queued flush); the
+announcement was never owed. `proxy()` now refuses to send a request whose
+response is already destroyed and drops its ticket (`ticketAbandoned()`'s
+argument: nobody is waiting, so nobody is owed it).
+
+Two smaller changes ride with it. **`/healthcheck` is answered by the front
+process with no barrier at all** (`ANSWERED_AT_ONCE`): it is documented as
+liveness only and reads no state, so neither the ticket wait (2,000 ms), the
+worker's barrier (5,000 ms), a `workers.maxSockets` queue nor a blocked worker
+may hold it past a probe's timeout; it says nothing about the workers, by
+design (the cluster barrier, which is not the pool's, still runs). **And a
+worker's response whose `end()` ran before its peer left is announced at once**
+(`CommitAnnouncer.watchResponse()`): `holdUntilCommitted()` calls the real
+`end()` only after the commit, so `writableEnded` means everything the answer
+was held for is in the store; only one closed BEFORE its `end()` still waits
+for the flush, because its handler may yet write. `tests/request_client_gone.js`.
+
 **THE WORKERS HAD THE OTHER HALF OF IT, AND SO DID EVERY POSTGRES PROCESS.**
 `persistence.flush()` answered a caller arriving during a flush with a waiter of
 its own, and a postgres store has a caller per WRITE — so waiters re-chained on
