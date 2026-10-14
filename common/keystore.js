@@ -4148,7 +4148,11 @@ function rotationDue(days) {
  * The superseded DEKs this process holds: not current for their slot,
  * activated before the current one, not destroyed.
  *
- * @returns `[{ id, scope, realm, cls, supersededAt }]`
+ * @returns `[{ id, scope, realm, cls, supersededAt, values, countedAt }]` —
+ *   `values` the last recorded count of what is sealed under the key and
+ *   `countedAt` when it was taken (null and 0 where it was never counted),
+ *   which the re-encryption job reads to skip a pass with nothing to do
+ *   (#623)
  */
 function supersededDeks() {
   log.debug("Entering supersededDeks().");
@@ -4164,7 +4168,9 @@ function supersededDeks() {
       return;
     }
     out.push({ id: rec.id, scope: rec.scope, realm: rec.realm, cls: rec.cls,
-               supersededAt: activationOf(current) });
+               supersededAt: activationOf(current),
+               values: rec.countedAt ? (Number(rec.values) || 0) : null,
+               countedAt: Number(rec.countedAt) || 0 });
   });
   log.debug("Leaving supersededDeks(). " + out.length + ".");
   return out;
@@ -4294,7 +4300,12 @@ function sealedStore() {
   log.debug("Leaving sealedStore().");
   return ok ? { count: store.countSealed, reseal: store.resealSealed,
                 countAll: typeof store.countAllSealed === 'function'
-                  ? store.countAllSealed : null } : null;
+                  ? store.countAllSealed : null,
+                // The directory's data-key index brought up to date for the
+                // rows written before it existed (#623); null where the
+                // store keeps none.
+                index: typeof store.indexSealed === 'function'
+                  ? store.indexSealed : null } : null;
 }
 
 // ---------------------------------------------------------------------------
