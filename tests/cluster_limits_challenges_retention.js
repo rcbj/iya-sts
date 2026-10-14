@@ -358,8 +358,10 @@ function childMain() {
       // issueDigestNonce(), put in the store the way replication restores a
       // row.
       const foreignNonce = nodeCrypto.randomBytes(18).toString('base64');
-      realms.handleFor('scim.digestNonces').restore('', foreignNonce,
-                                                    { at: Date.now() });
+      // Under its digest, as the store keeps it since #614.
+      realms.handleFor('scim.digestNonces').restore('',
+        require(ROOT + '/common/crypto').credentialDigest(foreignNonce),
+        { at: Date.now() });
       const first = await scimAuth.authenticateSpent(
         digestRequest(foreignNonce, '00000001'), 'read');
       note(first.ok && first.scheme === 'digest',
