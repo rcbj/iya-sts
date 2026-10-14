@@ -1189,7 +1189,11 @@ does four things differently. `ldap/CLAUDE.md` argues the window itself.
   (`STS-LDAP-0133`), in every process, before anything is opened; and on
   postgres it hands the window its bridge (`common/sync_query.ts`, dialled
   with the driver's `bridgeConnection()`) BEFORE the restore. `stop()` ends
-  the bridge's thread after the last flush.
+  the bridge's thread after the last flush. **The bridge also carries
+  `queryAsync()` since #615**: the same question through the driver's
+  `directoryQuery()` (same builder, same keyed values, same opened answer)
+  on the read pool, for a scheduler job that can wait —
+  `DirectoryWindow.holdersAsync()`, the Android recheck's holders.
 * **The flush asks the window first** — `collect()`, with the journal or null
   for a write that named nothing — before deciding whether anything is dirty:
   an entry edited in place is found only by comparison, and the window lets go

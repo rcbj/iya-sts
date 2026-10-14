@@ -114,7 +114,7 @@ const EXEMPT = {
     'credentials.androidAttestedCredentials(), the walk #615 replaced, ' +
     'reached only where the directory offers no holdersAsync(); the job ' +
     'reads the holders of stsAndroidAttestedCredential ' +
-    '(tests/android_recheck_holders.js counts it: persons() never)' },
+    '(tests/devices_android_recheck.js counts it: persons() never)' },
   'attribute-sources.refresh|people': { fallback:
     'the directory\'s people() — every person listed and sorted for one ' +
     'page — reached only where the directory offers no peoplePage(); the ' +

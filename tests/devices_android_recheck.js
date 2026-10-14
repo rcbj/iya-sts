@@ -3,7 +3,7 @@
 
 'use strict';
 //
-// File: android_recheck_holders.js
+// File: devices_android_recheck.js
 //
 // ===========================================================================
 // THE ANDROID ATTESTATION RECHECK READS ITS HOLDERS, NOT EVERYBODY (#615).
@@ -37,6 +37,11 @@
 //      a page at a time through `queryAsync()` where the bridge has it,
 //      never `byKeys` per row, and through `query()` where it has not.
 //   G. THE RULES: what the marker names, for a person's keys and a device's.
+//
+// NAMED TO RUN AFTER `attestation_revocation.js` AND `device_enrolment.js`:
+// the suite is one process, and a status list this file activates is the
+// active list for every file after it — `attestation_revocation.js`'s C1
+// asks what happens with none.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -50,7 +55,7 @@ const revocation = require('../common/attestation_revocation');
 const ldap = require('../ldap/ldap_server');
 const queries = require('../persistence/directory_queries');
 
-const log = require('bunyan').createLogger({ name: 'android_recheck_holders',
+const log = require('bunyan').createLogger({ name: 'devices_android_recheck',
   level: process.env.LOG_LEVEL || 'info' });
 
 const STAMP = Date.now().toString(36);

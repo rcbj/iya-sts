@@ -777,6 +777,8 @@ next beat. It is the one addition this feature made to `cluster.js`.
 | `spiffe.sigstore-tuf-refresh` | cluster, service; `spiffe.dockerSigstoreTufRefreshS` (daily), off while `spiffe.dockerSigstoreTufRootFile` is empty — the sigstore trust root through TUF, a failure keeping the last verified set (#170) | `spiffe/spiffe_sigstore_tuf.ts`, `spiffe/CLAUDE.md` |
 | `process.memory-report` | per-process; every 5 minutes — one log line per process (front, protocol worker, surface worker) with its rss, heap used and total, heap limit, external and array buffers; a request worker also sends its figures to the front process, which reports them beside that worker's exit (#341) | `common/process_memory.ts`, `common/CLAUDE.md` |
 | `caches.eject-expired` | per-process, quiet; every minute — each store's own `eject()` | `admin-ui/caches_admin.ts`, `common/CLAUDE.md` 3ap (P5) |
+| `devices.android-status-refresh` | cluster, service; `devices.androidStatusRefreshS` (daily), off while `devices.androidStatusUrl` is empty — downloads Google's Android attestation status list and activates it, which queues the recheck | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |
+| `devices.android-status-recheck` | cluster, service (loops over realms); daily and on a list's activation — the people and devices MARKED as holding an Android-attested key, asked of the store asynchronously, a realm skipped when neither the list nor the registrations moved since its last complete recheck (#615) | `common/attestation_revocation.ts`, `common/CLAUDE.md` 3cf |
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token, dated by the `exp` the revocation carries since #345 (not per-process: the revocation set is replicated, so one delete on the leader reaches every process) | `common/admin_stats.js` (P5; the ticket's "tracked tokens"), `common/CLAUDE.md` 3b |
 | `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or applications whose every secret has expired, and removes expired secrets an application holds an unexpired one beside (never its last) | `common/signing_rotation.ts`, `common/applications.js` (P5) |
 
@@ -785,6 +787,25 @@ next beat. It is the one addition this feature made to `cluster.js`.
 timer has gone. **P5 of #49 emptied the `becomes` half (2026-09-22)**; what is
 left is `permanent`: the heartbeat and origin-claim renewal the scheduler
 stands on, and one-shot timeouts and debounces.
+
+**NO JOB WALKS EVERY PERSON OR DEVICE WITHOUT SAYING WHY (#615,
+2026-10-13).** A job runs on the serving front process, which since #320
+holds the directory as a window: a walk of `ou=users` or `ou=devices` there
+is the container paged through the SYNCHRONOUS bridge on the thread that
+holds every socket — the Android recheck at 191,000 people stopped 8081's
+listeners for minutes. A job reads the HOLDERS of an attribute
+(`eachHolderOfAny()`, or `holdersAsync()` where it can wait), or one page
+after a cursor (`attribute-sources.refresh`'s `peoplePage()` since #615), or
+it is on `tests/no_full_directory_walk_in_jobs.js`'s argued exemption list,
+which follows each job's `run` by name to the walks and only ever shrinks.
+The audit #615 made of every registered job: the Android recheck and the
+attribute-source refresh were fixed; `scim-client.reconcile` reads everybody
+in scope by design (exempt, with what would remove it); `keys.data-key-
+reencrypt` and `keys.data-key-count` walk every row of `sts_ldap_entries`
+store-side, asynchronously on the maintenance pool, which needs an indexed
+data-key column to avoid (recorded as `INDIRECT`, the name-following cannot
+see them); every other job reads holders, resident containers or its own
+stores.
 
 **Two things P5 added to the scheduler for them:**
 
