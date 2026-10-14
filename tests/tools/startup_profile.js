@@ -187,7 +187,7 @@ async function main() {
   driver = mapDriver();
   minted.reset();
   minted.setDriver(driver, 'postgres');
-  const store = realms.map({ persist: 'profile.rows' });
+  const store = realms.map({ persist: 'test.profile.rows' });
   for (let i = 0; i < mintedRows; i++) {
     store.set('row-' + i, { n: i, who: 'person' + (i % 1000),
                             at: Date.now(), scopes: ['openid', 'profile'] });
