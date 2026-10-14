@@ -10970,6 +10970,14 @@ let keySetProvider = null;
 // ---------------------------------------------------------------------------
 let keySetHeldProvider = null;
 
+// Is this a request worker (#613)? A function of its own because `start()`
+// below names a local `process` (the process branch), which shadows node's.
+function inRequestWorker() {
+  log.debug("Entering inRequestWorker().");
+  log.debug("Leaving inRequestWorker().");
+  return !!process.env.STS_REQUEST_WORKER;
+}
+
 /**
  * Builds the certificate hierarchy at startup, where there is none, and
  * certifies the keys this service already holds.
@@ -11129,7 +11137,7 @@ async function start(opts) {
   // change log like every other directory write. The refresh job is still
   // registered here: it is a cluster job and runs on the leader alone.
   // -------------------------------------------------------------------------
-  if (process.env.STS_REQUEST_WORKER) {
+  if (inRequestWorker()) {
     log.debug('pki: a request worker publishes no CRL into the directory at ' +
               'start; the front process did, before forking it.');
     require('./pki_revocation').keepDirectoryCurrent();

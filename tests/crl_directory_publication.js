@@ -343,6 +343,49 @@ async function run(t) {
             'pki.start() armed the refresh timer, and arming it again does ' +
             'nothing — without it every ldap:// list was past its nextUpdate ' +
             'an hour after start');
+
+    t.log.info('=== F. a request worker publishes nothing at start (#613) ===');
+
+    // The front process publishes before it forks a worker, and the shared
+    // directory carries the lists to it; a worker re-signing and re-writing
+    // every list cost ~2 s of each worker's start on 8081 (279 lists).
+    const installed = revocation.currentDirectory();
+    let writes = 0;
+    revocation.setDirectory({
+      publishCrl: function (scope, ca, der) {
+        log.debug("Entering publishCrl().");
+        writes += 1;
+        log.debug("Leaving publishCrl().");
+        return installed.publishCrl(scope, ca, der);
+      },
+      baseDnFor: function (scope) {
+        log.debug("Entering baseDnFor().");
+        log.debug("Leaving baseDnFor().");
+        return installed.baseDnFor(scope);
+      }
+    });
+    const wasWorker = process.env.STS_REQUEST_WORKER;
+    try {
+      process.env.STS_REQUEST_WORKER = '1';
+      const asWorker = await pki.start({ realmIds: ['', REALM] });
+      t.check(asWorker.ok && writes === 0,
+              'pki.start() in a request worker builds nothing new and writes ' +
+              'no CRL into the directory', JSON.stringify({
+                ok: asWorker.ok, writes: writes }));
+      delete process.env.STS_REQUEST_WORKER;
+      await pki.start({ realmIds: ['', REALM] });
+      t.check(writes >= all.length,
+              'and in the front process it writes every authority\'s list, ' +
+              'so the check above is not one that cannot fail',
+              writes + ' of ' + all.length);
+    } finally {
+      if (wasWorker === undefined) {
+        delete process.env.STS_REQUEST_WORKER;
+      } else {
+        process.env.STS_REQUEST_WORKER = wasWorker;
+      }
+      revocation.restoreDirectory(installed);
+    }
   } finally {
     realms.remove(REALM);
     restoreAuthority(pki, keystore, before);
