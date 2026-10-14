@@ -11737,7 +11737,9 @@ class AdminViews {
    * second-factor roster.
    *
    * @param req - the request
-   * @param opts - optional; `directoryFirst`, as `peopleRows()` takes it
+   * @param opts - optional; `directoryFirst`, as `peopleRows()` takes it,
+   *   or `population` and `census` asked already (#621,
+   *   `peopleAndCensusAsync()`)
    * @returns the JSON
    */
   usersListJson(req, opts?) {
@@ -11750,7 +11752,7 @@ class AdminViews {
     // been bulk loaded this is the difference between a page that answers *who
     // holds no second factor* and one that answers it for the first two
     // thousand people it happens to remember.
-    const population = this.peopleRows(opts);
+    const population = (opts && opts.population) || this.peopleRows(opts);
     const all = population.rows;
     const self = this;
     // The second-factor filter, which arrived with the roster on 2026-09-10. It
@@ -11792,8 +11794,15 @@ class AdminViews {
     // the directory, each sealed TOTP secret opened at most once per process.
     // The census gives the same facts `mechanismsFor()` would, folded across
     // spellings by the same `mergeFactors()`, so the numbers do not move.
+    //
+    // **ASKED ALREADY, ASYNCHRONOUSLY, by a caller that could wait (#621)**:
+    // the API's two doors hand in the census `peopleCensusAsync()` built over
+    // this same population, so no store question is asked here for it. Only
+    // the rows' keys are read, and the lines above add flags to the rows,
+    // never keys, so a census of `population.rows` is a census of `all`.
     // -----------------------------------------------------------------------
-    const census = this.peopleCensus(population, all);
+    const census = (opts && opts.population === population && opts.census)
+      || this.peopleCensus(population, all);
     const factorsOf = function (row) {
       return census.get(row.key) || null;
     };
@@ -12224,9 +12233,43 @@ class AdminViews {
    */
   peopleCensus(population, rows) {
     const { log, credentials } = this.deps;
-    const self = this;
     log.debug("Entering AdminViews.peopleCensus(). " + rows.length +
               " row(s).");
+    const facts = credentials.factorCensus(this.censusNamesOf(population,
+                                                              rows));
+    const out = this.peopleCensusOf(population, rows, facts);
+    log.debug("Leaving AdminViews.peopleCensus().");
+    return out;
+  }
+
+  // `peopleCensus()` WITH THE DIRECTORY ASKED ASYNCHRONOUSLY (#621):
+  // `credentials.factorCensusAsync()`, which in a windowed process reads the
+  // people a page at a time without holding the event loop, united per row
+  // by the same `peopleCensusOf()`.
+  /**
+   * `peopleCensus()`, with the directory asked asynchronously.
+   *
+   * @param population - what `peopleRows()` returned
+   * @param rows - the rows to answer for
+   * @returns a promise of the Map `peopleCensus()` answers
+   */
+  async peopleCensusAsync(population, rows) {
+    const { log, credentials } = this.deps;
+    log.debug("Entering AdminViews.peopleCensusAsync(). " + rows.length +
+              " row(s).");
+    const names = this.censusNamesOf(population, rows);
+    const facts = typeof credentials.factorCensusAsync === 'function'
+      ? await credentials.factorCensusAsync(names)
+      : credentials.factorCensus(names);
+    const out = this.peopleCensusOf(population, rows, facts);
+    log.debug("Leaving AdminViews.peopleCensusAsync().");
+    return out;
+  }
+
+  // Every spelling's name of the rows, in the order the census is asked.
+  censusNamesOf(population, rows) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.censusNamesOf().");
     const spellings = population.spellings || new Map();
     const names = [];
     rows.forEach(function (row) {
@@ -12234,7 +12277,16 @@ class AdminViews {
         names.push(holder.username);
       });
     });
-    const facts = credentials.factorCensus(names);
+    log.debug("Leaving AdminViews.censusNamesOf(). " + names.length + ".");
+    return names;
+  }
+
+  // Each row's facts, united across its spellings with `mergeFactors()`.
+  peopleCensusOf(population, rows, facts) {
+    const { log } = this.deps;
+    const self = this;
+    log.debug("Entering AdminViews.peopleCensusOf().");
+    const spellings = population.spellings || new Map();
     const out = new Map();
     rows.forEach(function (row) {
       let merged = null;
@@ -12244,8 +12296,30 @@ class AdminViews {
       });
       out.set(row.key, merged);
     });
-    log.debug("Leaving AdminViews.peopleCensus().");
+    log.debug("Leaving AdminViews.peopleCensusOf().");
     return out;
+  }
+
+  // THE POPULATION AND ITS CENSUS, FOR A CALLER THAT CAN WAIT (#616, #621):
+  // the directory's first names asked asynchronously, the population built
+  // from them (the registry and the names: no store question), and the
+  // census of every row asked asynchronously — so `usersListJson()`, handed
+  // both, asks the store nothing for either.
+  /**
+   * The users list's population and census, the directory asked
+   * asynchronously.
+   *
+   * @returns a promise of `{ population, census }`, as `usersListJson()`
+   *   takes them in its options
+   */
+  async peopleAndCensusAsync() {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.peopleAndCensusAsync().");
+    const first = await this.directoryFirstNames();
+    const population = this.peopleRows({ directoryFirst: first });
+    const census = await this.peopleCensusAsync(population, population.rows);
+    log.debug("Leaving AdminViews.peopleAndCensusAsync().");
+    return { population: population, census: census };
   }
 
   // ---------------------------------------------------------------------------
@@ -13023,9 +13097,11 @@ class AdminViews {
   async mfaRosterJsonAsync(req) {
     const { log } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJsonAsync().");
-    const first = await this.directoryFirstNames();
+    // The population AND its census (#621): the census was 5,000
+    // synchronous store questions here in a windowed process.
+    const asked = await this.peopleAndCensusAsync();
     log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
-    return this.mfaRosterJson(req, { directoryFirst: first });
+    return this.mfaRosterJson(req, asked);
   }
 
   // `usersJson()` FOR A CALLER THAT CAN WAIT (#616): the list's directory
@@ -13043,9 +13119,10 @@ class AdminViews {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersJsonAsync().");
     const wanted = String((req.query || {}).user || '').trim();
-    const first = wanted ? null : await this.directoryFirstNames();
+    // The population AND its census (#621), asked asynchronously.
+    const asked = wanted ? null : await this.peopleAndCensusAsync();
     log.debug("Leaving AdminViews.usersJsonAsync().");
-    return this.usersJson(req, risk, { directoryFirst: first });
+    return this.usersJson(req, risk, asked);
   }
 
   /**
@@ -13801,6 +13878,7 @@ export = {
   usersListJson: slot.forward('usersListJson'),
   usersJsonAsync: slot.forward('usersJsonAsync'),
   mfaRosterJsonAsync: slot.forward('mfaRosterJsonAsync'),
+  peopleAndCensusAsync: slot.forward('peopleAndCensusAsync'),
   federationRow: slot.forward('federationRow'),
   federationDetailJson: slot.forward('federationDetailJson'),
   federationJson: slot.forward('federationJson'),
