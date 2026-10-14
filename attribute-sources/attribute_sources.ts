@@ -157,6 +157,10 @@ interface DirectoryHooks {
   deleteSource(cn: string): boolean;
   personAttributes(key: string): Record<string, string[]> | null;
   people(after: string, limit: number): string[];
+  // One page by key after an opaque cursor (#615); absent from an older
+  // directory, and `people()` is asked instead.
+  peoplePage?(after: string, limit: number):
+    { names: string[]; cursor: string; more: boolean };
   apply(key: string, sourceId: string,
         changes: Record<string, string[] | null>):
     { found: boolean; changed: string[] };
@@ -807,17 +811,36 @@ class AttributeSources {
         log.debug("Leaving AttributeSources.runScheduled(). Not the owner.");
         return { sources: done, stopped: 'no longer the owner' };
       }
-      const after = running ? String(was.cursor || '') : '';
-      const page = dir.people(after, batch);
+      // A PAGE BY KEY where the directory offers it (#615): one store
+      // question a run, where `people()` listed and sorted every person to
+      // answer two hundred. Its cursor is the directory's opaque key, so a
+      // cursor of the older kind (a username) starts the cycle again.
+      const paged = typeof dir.peoplePage === 'function';
+      const byKey = was.cursorKind === 'key';
+      const after = running && paged === byKey ? String(was.cursor || '')
+                                               : '';
+      let page: string[] = [];
+      let next = '';
+      let ended = true;
+      if (paged) {
+        const answer = dir.peoplePage!(after, batch);
+        page = answer.names;
+        next = answer.cursor;
+        ended = !answer.more;
+      } else {
+        page = dir.people(after, batch);
+        next = page[page.length - 1] || '';
+        ended = page.length < batch;
+      }
       let failures = 0;
       for (const username of page) {
         const result = await this.refreshPerson(username, 'schedule',
                                                 source.id);
         failures += result.failures.length;
       }
-      const ended = page.length < batch;
       this.noteStatus(source, { force: true, cleared: failures === 0,
-        fields: { cursor: ended ? '' : page[page.length - 1],
+        fields: { cursor: ended ? '' : next,
+                  cursorKind: paged ? 'key' : 'name',
                   cursorOpen: !ended,
                   cycleEndedAt: ended ? now() : was.cycleEndedAt,
                   lastRunAt: new Date(now()).toISOString(),

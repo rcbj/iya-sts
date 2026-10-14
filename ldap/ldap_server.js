@@ -1749,6 +1749,119 @@ function eachHolderOfAny(attributes, fn) {
 }
 
 // ---------------------------------------------------------------------------
+// THE HOLDERS OF ONE ATTRIBUTE, FOR A BACKGROUND JOB (#615, 2026-10-13).
+//
+// `eachHolderOfAny()` above is what a request asks: synchronous, so in a
+// windowed process each page is a synchronous bridge question and every row
+// the window does not hold is another. A SCHEDULER JOB runs on the serving
+// front process (never in a request worker: `cluster/CLAUDE.md`), so a
+// synchronous read there stops every listener for its length — which is how
+// the Android attestation recheck, walking every person's keys, held 8081's
+// sockets for minutes at about 191,000 people. This is the same question
+// asked so that it does not:
+//
+//   * **IN A WINDOWED PROCESS** the store's holders under the container
+//     (`DirectoryWindow.holdersAsync()`): `persistence/directory_queries.js`'s
+//     `withAttribute()` — `attr_names ? name`, the GIN index
+//     `sts_ldap_entries_attr_names` — a page at a time on the driver's read
+//     pool, the event loop given back between pages, each row taken as the
+//     store answered it unless this process holds a newer one;
+//   * **IN MEMORY** the realm's own Map, walked in slices of
+//     `HOLDER_SCAN_SLICE` with the event loop given back between them. That
+//     is O(entries) of in-memory string tests — **a walk, said here**, as
+//     `credentialTallies()` says it: the in-memory directory keeps no index
+//     per attribute — but no store read, and no slice long enough to be
+//     noticed by a socket.
+//
+// `kind` is `person` (under `ou=users`, by `isPersonEntry()`, named by
+// `usernameOfEntry()`) or `device` (under `ou=devices`, named by its `cn`).
+// The answer carries the attributes the caller names, RAW and copied — what
+// they mean is the caller's (`credentials.ts`, `devices.ts`), the census's
+// division of labour — and never the whole entry.
+// ---------------------------------------------------------------------------
+const HOLDER_SCAN_SLICE = 2000;
+
+/**
+ * The people or devices of the ambient realm holding an attribute, with the
+ * named attributes' raw values, read without blocking the event loop.
+ *
+ * @param kind - `person` or `device`
+ * @param attribute - the attribute held (any spelling)
+ * @param names - the attributes to hand over, lower-cased; the held one when
+ *   empty
+ * @returns a promise of `[{ id, dn, attributes }]`, `attributes` keyed by
+ *   the lower-cased names asked for
+ */
+async function holdersAsync(kind, attribute, names) {
+  log.debug('Entering holdersAsync(). kind=' + kind + ' attribute=' +
+            attribute);
+  const container = kind === 'person' ? usersDn()
+    : (kind === 'device' ? devicesDn() : '');
+  if (!container) {
+    log.debug('Leaving holdersAsync(). No such kind.');
+    return [];
+  }
+  const held = String(attribute || '').toLowerCase();
+  const wanted = ((names && names.length) ? names : [held])
+    .map(function (one) {
+      return String(one).toLowerCase();
+    });
+  const base = normalizeDn(container);
+  const suffix = ',' + base;
+  const out = [];
+  const take = function (stored) {
+    const values = stored.attributes[held];
+    if (!Array.isArray(values) || !values.length) {
+      return;
+    }
+    const id = kind === 'person' ? usernameOfEntry(stored)
+      : String((stored.attributes.cn || [])[0] || '');
+    if (!id) {
+      return;
+    }
+    const picked = {};
+    wanted.forEach(function (name) {
+      const have = stored.attributes[name];
+      if (Array.isArray(have) && have.length) {
+        picked[name] = have.slice(0);
+      }
+    });
+    out.push({ id: String(id), dn: stored.dn, attributes: picked });
+  };
+  if (directoryWindow) {
+    const hits = await directoryWindow.holdersAsync(realms.currentId(), base,
+      held, function (entry) {
+        return kind !== 'person' || isPersonEntry(entry);
+      });
+    hits.forEach(function (hit) {
+      take(hit.entry);
+    });
+    log.debug('Leaving holdersAsync(). ' + out.length + ', asked of the ' +
+              'store.');
+    return out;
+  }
+  // The realm's own Map, held now: a realm's map is replaced only by its
+  // removal, and a walk of a removed realm finds what it held.
+  const store = entries.realmMap();
+  let seen = 0;
+  for (const pair of store) {
+    const key = pair[0];
+    if (key !== base && key.endsWith(suffix)) {
+      take(pair[1]);
+    }
+    seen += 1;
+    if (seen % HOLDER_SCAN_SLICE === 0) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+  }
+  log.debug('Leaving holdersAsync(). ' + out.length + ' of ' + seen +
+            ' entries walked in memory.');
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // THE USERNAME INDEX, AND WHY IT IS INCREMENTAL WHERE THE GROUP INDEX IS NOT.
 //
 // `existingUserEntry()` is where the one-entry-per-person rule is enforced:
@@ -2618,6 +2731,11 @@ const OWN_NAMES = [
   // `common/credentials.ts` argues all of it.
   'stsWebauthnCredential', 'stsActivationToken', 'stsActivationExpires',
   'stsTotpCredential',
+  // THE ANDROID MARKER (#615): the credential ids of the keys above whose
+  // trusted `android-key` attestation the recheck asks Google's status list
+  // about, derived on every write of the keys (`deriveAndroidMarker()`) so
+  // that the recheck reads its holders rather than everybody.
+  'stsAndroidAttestedCredential',
   // THE WEBAUTHN USER HANDLE (#474): 64 random bytes, base64url, one per
   // person, that every passkey they register is created under and that a
   // discoverable credential hands back to say whose it is. Not a secret —
@@ -2766,6 +2884,10 @@ const OWN_NAMES = [
   // stsDeviceKey like the thumbprints, so a sign-in finds its device by
   // index.
   'stsDeviceCredentialId',
+  // AND EACH ANDROID-ATTESTED KEY'S ID (#615), derived from stsDeviceKey
+  // like the two above, so the Android attestation recheck reads the
+  // devices holding one rather than every device.
+  'stsDeviceAndroidKey',
   // AND ITS RISK LEVEL (#164 phase 4): LOW, MEDIUM or HIGH, and the last
   // change of it — what CAEP's risk-level-change with principal DEVICE
   // reports, set by phase 5's risk scoring and by a compromise.
@@ -8532,6 +8654,9 @@ attributeSources.setDirectory({
   deleteSource: deleteAttributeSourceEntry,
   personAttributes: vcAttributesFor,
   people: attributeSourcePeople,
+  // A page by key after an opaque cursor (#615): what the scheduled refresh
+  // asks, so a run reads one page rather than everybody.
+  peoplePage: attributeSourcePeoplePage,
   apply: applySourcedAttributes,
   seen: attributeSourceSeen
 });
@@ -9882,6 +10007,10 @@ function operationalWriteRefusal(req, operation, dn, types) {
 const CREDENTIAL_ATTRIBUTE_DOORS = {
   stswebauthncredential: '/portal/keys, the sign-in ' +
     'screen, or /admin/users (remove)',
+  // Derived from the keys on every write of them (#615): written by hand it
+  // would hide a key from the Android attestation recheck, or name one.
+  stsandroidattestedcredential: 'the doors of stsWebauthnCredential, ' +
+    'from which it is derived on every write',
   // The handle every passkey is created under (#474): rewritten by hand it
   // would sign the person in as nobody, or as somebody else.
   stswebauthnuserhandle: 'the first passkey registered at /portal/keys or ' +
@@ -10086,6 +10215,38 @@ function anybodyHoldsACredential() {
 // useless to an attacker — so hashing it would make it useless for the only
 // thing it is for.
 // ---------------------------------------------------------------------------
+// THE ANDROID MARKER, DERIVED ON EVERY WRITE OF THE KEYS (#615).
+//
+// `stsAndroidAttestedCredential` names the credential id of each key whose
+// trusted `android-key` attestation kept its chain's serials, so that the
+// scheduler's Android attestation recheck asks the store who HOLDS it — one
+// statement against the `attr_names` index — instead of reading every
+// person's keys. **WHAT QUALIFIES IS `common/credentials.ts`'s RULE**
+// (`androidMarkerOf()`), asked here with the values this file just wrote:
+// this file only puts the answer on the entry, the census's division of
+// labour. Both doors that write the keys call it, so a registration puts it
+// on and a removal or an untrusting (a rewrite of the values) takes it off;
+// a socket write of either attribute is refused (`CREDENTIAL_ATTRIBUTE_DOORS`),
+// so there is no third door. An older `credentials.ts` without the function
+// leaves the entry as it was, and the recheck's backfill puts it right.
+// Called once per write of somebody's keys, which is a sign-in's counter
+// update at most: no hot path, so the pair is kept.
+function deriveAndroidMarker(stored) {
+  log.debug('Entering deriveAndroidMarker().');
+  if (typeof credentials.androidMarkerOf !== 'function') {
+    log.debug('Leaving deriveAndroidMarker(). No rule to ask.');
+    return;
+  }
+  const ids = credentials.androidMarkerOf(
+    stored.attributes.stswebauthncredential || []);
+  if (ids.length) {
+    stored.attributes.stsandroidattestedcredential = ids;
+  } else {
+    delete stored.attributes.stsandroidattestedcredential;
+  }
+  log.debug('Leaving deriveAndroidMarker(). ' + ids.length + '.');
+}
+
 function readWebauthnValues(key) {
   log.debug('Entering readWebauthnValues(). key=' + key);
   const located = locateEntry(String(key || ''));
@@ -10114,6 +10275,7 @@ function writeWebauthnValue(key, value) {
   // for the first, which is the whole reason the attribute is multi-valued.
   const have = stored.attributes.stswebauthncredential || [];
   stored.attributes.stswebauthncredential = have.concat([String(value)]);
+  deriveAndroidMarker(stored);
   touchDirectory();
   log.debug('Leaving writeWebauthnValue(). Written to ' + stored.dn + '.');
   return true;
@@ -10134,6 +10296,7 @@ function replaceWebauthnValues(key, values) {
   } else {
     stored.attributes.stswebauthncredential = values.map(String);
   }
+  deriveAndroidMarker(stored);
   touchDirectory();
   log.debug('Leaving replaceWebauthnValues(). ' +
             ((values || []).length) + ' key(s) left.');
@@ -10595,8 +10758,70 @@ function deleteAttributeSourceEntry(cn) {
   return true;
 }
 
+// THE PEOPLE A PAGE AT A TIME, BY KEY (#615's audit of every scheduler
+// job). `attributeSourcePeople()` below answered one page of 200 by listing
+// every person of the realm, normalising and sorting all their names, and
+// filtering past the cursor — on every run of `attribute-sources.refresh`,
+// every minute while a cycle is open, which in a windowed process is the
+// whole of `ou=users` paged through the synchronous bridge on the serving
+// front process. This answers the same page by the entry's KEY (the
+// normalised DN, which is the store's order): in a windowed process ONE
+// `page()` statement after the cursor (`DirectoryWindow.pageAfter()`); in
+// memory the container's kept listing (`entriesUnder()`, re-walked only
+// after a write there) sorted by key, which is the old cost of the
+// in-memory path and no store read. The cursor is opaque to the caller.
+// The order differs from the old one (DN key, not username), which changes
+// only the order in which a cycle reaches people; a cycle still reaches
+// everybody there was when it started.
+/**
+ * One page of the ambient realm's people after an opaque cursor.
+ *
+ * @param after - the cursor the previous page answered, or ''
+ * @param limit - the page size
+ * @returns `{ names, cursor, more }`
+ */
+function attributeSourcePeoplePage(after, limit) {
+  log.debug('Entering attributeSourcePeoplePage().');
+  const most = Math.max(1, Math.min(1000, Number(limit) || 100));
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  let rows = [];
+  let more = false;
+  if (directoryWindow) {
+    const page = directoryWindow.pageAfter(realms.currentId(), base,
+                                           String(after || ''), most);
+    rows = page.rows;
+    more = page.more;
+  } else {
+    const all = entriesUnder(usersDn()).map(function (stored) {
+      return { key: normalizeDn(stored.dn), entry: stored };
+    }).filter(function (one) {
+      return one.key !== base && one.key.endsWith(suffix) &&
+             (!after || one.key > after);
+    }).sort(function (a, b) {
+      return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+    });
+    more = all.length > most;
+    rows = all.slice(0, most);
+  }
+  const names = [];
+  rows.forEach(function (one) {
+    if (isPersonEntry(one.entry)) {
+      const name = usernameOfEntry(one.entry);
+      if (name) {
+        names.push(String(name));
+      }
+    }
+  });
+  const cursor = rows.length ? rows[rows.length - 1].key : '';
+  log.debug('Leaving attributeSourcePeoplePage(). ' + names.length +
+            (more ? ', and more.' : '.'));
+  return { names: names, cursor: cursor, more: more };
+}
+
 // The people of the ambient realm, by username, sorted — for the scheduled
-// refresh, which pages through them after a cursor (#94).
+// refresh, which pages through them after a cursor (#94). Kept for a caller
+// of the older interface; the refresh asks `attributeSourcePeoplePage()`.
 function attributeSourcePeople(after, limit) {
   log.debug('Entering attributeSourcePeople(). after=' + (after || ''));
   const names = entriesUnder(usersDn()).filter(function (stored) {
@@ -11236,6 +11461,10 @@ if (typeof credentials.setDirectory === 'function') {
     readWebauthn: readWebauthnValues,
     writeWebauthn: writeWebauthnValue,
     replaceWebauthn: replaceWebauthnValues,
+    // The holders of one attribute, asynchronously, for a background job
+    // (#615): the Android attestation recheck's people and devices.
+    // Checked where it is used; without it the recheck walks as it did.
+    holdersAsync: holdersAsync,
     // The WebAuthn user handle (#474), checked where it is used.
     readWebauthnUserHandle: readWebauthnUserHandle,
     writeWebauthnUserHandle: writeWebauthnUserHandle,

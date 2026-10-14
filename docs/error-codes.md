@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4330** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4333** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 295
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 296
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 712
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 109
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 32
@@ -84,7 +84,7 @@ is an ordinary outcome.
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 12
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 355
-* [Device register (`STS-DEVICE`)](#sts-device) — 50
+* [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 29
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 98
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 34
@@ -1459,6 +1459,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0333` | A sign-in at the sign-in screen named a person where the passkey policy requires a passkey sign-in with no username (requireUsernameless, #608): the application signs in with a passkey alone, and the screen asks for no username. | none — the sign-in screen is drawn again |
 | `STS-AUTHN-0334` | Counting this realm's people for the users list's headline (#610) threw; the list is drawn without the directory's count. | — |
 | `STS-AUTHN-0335` | Counting this realm's credential holders, or which names seen signing in are people in its directory, for the users list's tiles (#610) threw; those tiles are drawn from the list instead. | — |
+| `STS-AUTHN-0336` | Writing the Android marker (stsAndroidAttestedCredential) of a person whose security keys say it is missing or wrong, during the Android attestation recheck's backfill, threw; that person's keys are rechecked only once a later write of them derives it (#615). | — |
 
 ## STS-OAUTH
 
@@ -4124,6 +4125,8 @@ Raised from: common/devices.ts, admin-ui/devices_admin.ts.
 | `STS-DEVICE-0048` | An Android Key Attestation chain's revocation could not be checked — no current Android attestation status list, or a stale one — and devices.androidRevocationRequired treats that as unattested in product mode (#256). | the registration's own refusal in product (STS-DEVICE-0024) |
 | `STS-DEVICE-0049` | A newly activated Android attestation status list could not queue the recheck of the stored chains (#256); the daily devices.android-status-recheck run reaches them. | none — a warning in the log |
 | `STS-DEVICE-0050` | A TPM key attestation in a device certificate request was not proved FRESH — its TPMS_ATTEST extraData is not a live nonce this realm issued at EST /nonce to the same client and cookie, or the request came over SCEP, which has no nonce operation — and product mode requires freshness (common/mode.js requiresFreshKeyAttestation(); draft-ietf-lamps-csr-attestation section 6.2, draft-ietf-lamps-attestation-freshness) (#257). | EST 403 / SCEP failInfo badRequest |
+| `STS-DEVICE-0051` | An Android-attested key was registered and the Android attestation recheck could not be told (its registration mark not moved); the key was checked at registration, and a recheck after the next status list reaches it (#615). | — |
+| `STS-DEVICE-0052` | The Android attestation recheck's backfill could not write a device whose stsDeviceAndroidKey marker is missing or wrong; that device's keys are rechecked only once a later write of it derives the marker (#615). | — |
 
 ## STS-SVCACCT
 

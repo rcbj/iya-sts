@@ -888,6 +888,17 @@ class Credentials {
   /** The attribute that holds a person's security keys. */
   static readonly WEBAUTHN_ATTRIBUTE = 'stsWebauthnCredential';
 
+  // THE ANDROID MARKER (#615): the credential id of every key on the entry
+  // whose trusted `android-key` attestation kept its chain's serials — the
+  // keys the Android attestation recheck asks about. DERIVED, never written
+  // by hand: `ldap_server.js` recomputes it from `androidMarkerOf()` on every
+  // write of `stsWebauthnCredential`, so a removal and an untrusting take it
+  // off as surely as a registration puts it on. It exists so that the
+  // recheck's question is "who holds this attribute" — one statement against
+  // the store's `attr_names` index — rather than "read everybody's keys".
+  /** The derived attribute naming a person's Android-attested keys. */
+  static readonly ANDROID_MARKER_ATTRIBUTE = 'stsAndroidAttestedCredential';
+
   // WHAT A KEY IS FOR. Two roles and no third, because a key can do exactly two
   // things here (this was written when a key was the only second factor; an
   // authenticator app and recovery codes joined it on 2026-09-10, and neither
@@ -3214,6 +3225,13 @@ class Credentials {
     }
     log.info('credentials: a security key was enrolled for ' + name +
              ' as a ' + role + ' credential.');
+    // AN ANDROID-ATTESTED KEY MOVES THE RECHECK'S REGISTRATION MARK (#615),
+    // so the next recheck does not skip as "nothing changed". The key was
+    // asked about at registration, so this is the belt to that brace; the
+    // marker itself is derived by the directory on the write above.
+    if (Credentials.androidMarkerOf([JSON.stringify(record)]).length) {
+      Credentials.noteAndroidRegistration('a security key of ' + name);
+    }
     // THE HANDLE ADOPTED (#474): a ceremony for somebody whose entry did not
     // exist yet (the sign-in screen's first use, in development) created the
     // key under a handle nobody stored. It becomes theirs if they hold none.
@@ -3500,20 +3518,251 @@ class Credentials {
     }
     people.forEach((name) => {
       this.keysOf(name).forEach(function (key) {
-        const att = key && key.attestation;
-        if (att && att.format === 'android-key' && att.trusted === true &&
-            att.androidRevocation &&
-            Array.isArray(att.androidRevocation.chainSerials) &&
-            att.androidRevocation.chainSerials.length) {
+        if (Credentials.isAndroidRecheckable(key)) {
           out.push({ username: String(name),
                      credentialId: String(key.credentialId),
-                     chainSerials: att.androidRevocation.chainSerials
-                       .slice() });
+                     chainSerials: key.attestation.androidRevocation
+                       .chainSerials.slice() });
         }
       });
     });
     log.debug('Leaving Credentials.androidAttestedCredentials(). ' +
               out.length + '.');
+    return out;
+  }
+
+  /**
+   * Says whether a stored key is one the Android attestation recheck asks
+   * about: a trusted `android-key` statement whose chain's serials were kept.
+   *
+   * @param key - a stored key row
+   * @returns true for such a key
+   */
+  static isAndroidRecheckable(key: any): boolean {
+    helpers.log.debug("Entering Credentials.isAndroidRecheckable().");
+    const att = key && key.attestation;
+    const out = !!(att && att.format === 'android-key' &&
+      att.trusted === true && att.androidRevocation &&
+      Array.isArray(att.androidRevocation.chainSerials) &&
+      att.androidRevocation.chainSerials.length && key.credentialId);
+    helpers.log.debug("Leaving Credentials.isAndroidRecheckable(). " + out);
+    return out;
+  }
+
+  /**
+   * The Android marker's values for a person's stored
+   * `stsWebauthnCredential` values: the credential id of each key
+   * `isAndroidRecheckable()` says yes to, sorted. What `ldap_server.js`
+   * writes as `stsAndroidAttestedCredential` on every write of the keys
+   * (#615); a value that is not JSON this service wrote is skipped, and
+   * `keysOf()` is what warns about it.
+   *
+   * @param values - the stored values
+   * @returns the credential ids, sorted; empty for none
+   */
+  static androidMarkerOf(values: unknown[]): string[] {
+    helpers.log.debug("Entering Credentials.androidMarkerOf().");
+    const out: string[] = [];
+    (Array.isArray(values) ? values : []).forEach(function (value) {
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(String(value));
+      } catch (e) {
+        helpers.log.debug("Caught in Credentials.androidMarkerOf(): " +
+                          ((e && e.message) || e));
+        // Not a key this service wrote: not a key the recheck can ask
+        // about, and `keysOf()` reports it where it is read.
+        parsed = null;
+      }
+      if (parsed && Credentials.isAndroidRecheckable(parsed)) {
+        out.push(String(parsed.credentialId));
+      }
+    });
+    out.sort();
+    helpers.log.debug("Leaving Credentials.androidMarkerOf(). " + out.length +
+                      ".");
+    return out;
+  }
+
+  // ===========================================================================
+  // THE RECHECK'S POPULATION, READ FROM THE HOLDERS ONLY (#615, 2026-10-13).
+  //
+  // `androidAttestedCredentials()` above asks `persons()` for every name in
+  // the realm and then `keysOf()` for each — in a windowed process a
+  // synchronous store read per person. At about 191,000 people on 8081 the
+  // daily recheck held the front process's event loop for minutes, every
+  // listener with it, to find the one person who held a security key.
+  //
+  // **THE DIRECTORY HANDS OVER RAW VALUES OF ITS HOLDERS AND THIS FILE
+  // INTERPRETS THEM**, the census's rule (`factorCensus()`): the directory's
+  // `holdersAsync()` answers the people holding the Android marker — one
+  // statement a page against the store's `attr_names` index, asked on the
+  // driver's read pool, the event loop given back between pages — with
+  // their `stsWebauthnCredential` values, and `keysFromValues()` and
+  // `isAndroidRecheckable()` decide which of those are the keys asked
+  // about, exactly as for one person. The marker narrows WHO is read; it
+  // never decides WHAT is rechecked — a marked id whose key no longer
+  // qualifies is not rechecked, and every qualifying key of a marked
+  // person is.
+  //
+  // **WHERE THE DIRECTORY OFFERS NO `holdersAsync()`** (a test's stub, an
+  // older `ldap_server.js`) the old walk answers, which is the old cost and
+  // the same answer; `viaHolders` says which happened.
+  // ===========================================================================
+  /**
+   * Lists every WebAuthn credential in the realm whose trusted `android-key`
+   * attestation kept its chain's serials, reading only the people the
+   * directory says carry the Android marker.
+   *
+   * @returns a promise of `{ rows: [{ username, credentialId, chainSerials
+   *   }], holders, viaHolders }`
+   */
+  async androidAttestedCredentialsAsync(): Promise<any> {
+    const { log } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, ANDROID_MARKER_ATTRIBUTE } = Credentials;
+    const directory = this.directory;
+    log.debug('Entering Credentials.androidAttestedCredentialsAsync().');
+    if (!directory || typeof directory.holdersAsync !== 'function') {
+      const walked = this.androidAttestedCredentials();
+      log.debug('Leaving Credentials.androidAttestedCredentialsAsync(). ' +
+                'Walked: no holder query.');
+      return { rows: walked, holders: null, viaHolders: false };
+    }
+    const webauthn = WEBAUTHN_ATTRIBUTE.toLowerCase();
+    const holders = await directory.holdersAsync('person',
+      ANDROID_MARKER_ATTRIBUTE, [webauthn]) || [];
+    const rows = [];
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const name = String(holder.id);
+      const raw = (holder.attributes || {})[webauthn] || [];
+      this.keysFromValues(raw, name).forEach(function (key) {
+        if (Credentials.isAndroidRecheckable(key)) {
+          rows.push({ username: name,
+                      credentialId: String(key.credentialId),
+                      chainSerials: key.attestation.androidRevocation
+                        .chainSerials.slice() });
+        }
+      });
+      if ((i + 1) % Credentials.HOLDER_BATCH === 0) {
+        await Credentials.yieldToLoop();
+      }
+    }
+    log.debug('Leaving Credentials.androidAttestedCredentialsAsync(). ' +
+              rows.length + ' key(s) of ' + holders.length + ' holder(s).');
+    return { rows: rows, holders: holders.length, viaHolders: true };
+  }
+
+  // How many holders are interpreted between two yields to the event loop.
+  private static readonly HOLDER_BATCH = 200;
+
+  // Tells `attestation_revocation.ts` an Android-attested key was registered
+  // (#615). Reached lazily, as every other module here reaches it: it is
+  // built later in the composition root, and a registration must not fail
+  // because the recheck's bookkeeping could not be reached — the daily run
+  // after a list change reaches the key regardless.
+  /**
+   * Moves the Android recheck's registration mark.
+   *
+   * @param what - what was registered, for the log
+   */
+  static noteAndroidRegistration(what: string): void {
+    helpers.log.debug("Entering Credentials.noteAndroidRegistration().");
+    try {
+      const revocation = require('./attestation_revocation');
+      if (typeof revocation.noteRegistration === 'function') {
+        revocation.noteRegistration(what);
+      }
+    } catch (e) {
+      helpers.log.warn(errorCodes.tag('STS-DEVICE-0051') + 'credentials: ' +
+                       'the Android recheck was not told of ' + what + ': ' +
+                       ((e && e.message) || e) + '. A recheck after the ' +
+                       'next status list reaches it regardless.');
+    }
+    helpers.log.debug("Leaving Credentials.noteAndroidRegistration().");
+  }
+
+  // The event loop's turn, between two batches of a background job's work.
+  private static yieldToLoop(): Promise<void> {
+    helpers.log.debug("Entering Credentials.yieldToLoop().");
+    helpers.log.debug("Leaving Credentials.yieldToLoop().");
+    return new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE MARKER'S BACKFILL (#615): a key registered before the marker existed
+  // carries none, so the first recheck after the upgrade puts it where it
+  // belongs. It reads the holders of `stsWebauthnCredential` itself — every
+  // person with a security key, which is the population the marker is a
+  // subset of, never everybody — and rewrites the keys of each whose marker
+  // is not what `androidMarkerOf()` says, so `ldap_server.js` derives it.
+  //
+  // **THE REWRITE READS THE KEYS AGAIN, SYNCHRONOUSLY, IN THE SAME TICK AS
+  // THE WRITE**, never the values the holder query answered: those are as
+  // old as the page, and a sign-in between the two moves a key's signature
+  // counter, which writing the old values back would undo. One lookup per
+  // person whose marker is wrong, which after the first run is nobody.
+  // ---------------------------------------------------------------------------
+  /**
+   * Puts the Android marker on every person whose security keys say it
+   * belongs there and takes it off where they do not.
+   *
+   * @param stillOwner - asked between batches; false stops the backfill
+   * @returns a promise of `{ available, holders, written, failed, stopped }`
+   */
+  async backfillAndroidMarkers(stillOwner?: () => boolean): Promise<any> {
+    const { log, errorCodes } = this.deps;
+    const { WEBAUTHN_ATTRIBUTE, ANDROID_MARKER_ATTRIBUTE } = Credentials;
+    const directory = this.directory;
+    log.debug('Entering Credentials.backfillAndroidMarkers().');
+    const out = { available: false, holders: 0, written: 0, failed: 0,
+                  stopped: false };
+    if (!directory || typeof directory.holdersAsync !== 'function' ||
+        typeof directory.readWebauthn !== 'function' ||
+        typeof directory.replaceWebauthn !== 'function') {
+      log.debug('Leaving Credentials.backfillAndroidMarkers(). No holder ' +
+                'query.');
+      return out;
+    }
+    out.available = true;
+    const webauthn = WEBAUTHN_ATTRIBUTE.toLowerCase();
+    const marker = ANDROID_MARKER_ATTRIBUTE.toLowerCase();
+    const holders = await directory.holdersAsync('person', WEBAUTHN_ATTRIBUTE,
+                                                 [webauthn, marker]) || [];
+    out.holders = holders.length;
+    for (let i = 0; i < holders.length; i += 1) {
+      const holder = holders[i];
+      const attrs = holder.attributes || {};
+      const want = Credentials.androidMarkerOf(attrs[webauthn] || []);
+      const have = (attrs[marker] || []).map(String).sort();
+      if (want.join('\n') !== have.join('\n')) {
+        try {
+          const name = String(holder.id);
+          const fresh = directory.readWebauthn(name) || [];
+          if (directory.replaceWebauthn(name, fresh)) {
+            out.written += 1;
+          } else {
+            out.failed += 1;
+          }
+        } catch (e) {
+          out.failed += 1;
+          log.error(errorCodes.tag('STS-AUTHN-0336') + 'credentials: the ' +
+                    'Android marker of ' + holder.id + ' could not be ' +
+                    'written: ' + ((e && e.message) || e));
+        }
+      }
+      if ((i + 1) % Credentials.HOLDER_BATCH === 0) {
+        if (stillOwner && !stillOwner()) {
+          out.stopped = true;
+          break;
+        }
+        await Credentials.yieldToLoop();
+      }
+    }
+    log.debug('Leaving Credentials.backfillAndroidMarkers(). ' +
+              out.written + ' written of ' + out.holders + '.');
     return out;
   }
 
@@ -9367,6 +9616,13 @@ export = {
   addKeyClaimed: slot.forward('addKeyClaimed'),
   noteKeyUsed: slot.forward('noteKeyUsed'),
   androidAttestedCredentials: slot.forward('androidAttestedCredentials'),
+  androidAttestedCredentialsAsync:
+    slot.forward('androidAttestedCredentialsAsync'),
+  backfillAndroidMarkers: slot.forward('backfillAndroidMarkers'),
+  androidMarkerOf: Credentials.androidMarkerOf,
+  noteAndroidRegistration: Credentials.noteAndroidRegistration,
+  isAndroidRecheckable: Credentials.isAndroidRecheckable,
+  ANDROID_MARKER_ATTRIBUTE: Credentials.ANDROID_MARKER_ATTRIBUTE,
   untrustKeyAttestation: slot.forward('untrustKeyAttestation'),
   noteKeyAttestationRefused: slot.forward('noteKeyAttestationRefused'),
   noteKeyCloned: slot.forward('noteKeyCloned'),

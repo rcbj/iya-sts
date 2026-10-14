@@ -6198,6 +6198,13 @@ const CODES = [
       'seen signing in are people in its directory, for the users list\'s ' +
       'tiles (#610) threw; those tiles are drawn from the list instead.',
     spec: '' },
+  { code: 'STS-AUTHN-0336',
+    summary: 'Writing the Android marker (stsAndroidAttestedCredential) of ' +
+      'a person whose security keys say it is missing or wrong, during the ' +
+      'Android attestation recheck\'s backfill, threw; that person\'s ' +
+      'keys are rechecked only once a later write of them derives it ' +
+      '(#615).',
+    spec: '' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -17944,6 +17951,18 @@ const CODES = [
       'draft-ietf-lamps-csr-attestation section 6.2, ' +
       'draft-ietf-lamps-attestation-freshness) (#257).',
     spec: 'EST 403 / SCEP failInfo badRequest' },
+  { code: 'STS-DEVICE-0051',
+    summary: 'An Android-attested key was registered and the Android ' +
+      'attestation recheck could not be told (its registration mark not ' +
+      'moved); the key was checked at registration, and a recheck after ' +
+      'the next status list reaches it (#615).',
+    spec: '' },
+  { code: 'STS-DEVICE-0052',
+    summary: 'The Android attestation recheck\'s backfill could not write ' +
+      'a device whose stsDeviceAndroidKey marker is missing or wrong; that ' +
+      'device\'s keys are rechecked only once a later write of it derives ' +
+      'the marker (#615).',
+    spec: '' },
   // ===== SVCACCT ===========================================================
   { code: 'STS-SVCACCT-0001',
     summary: 'A service-account policy profile other than `default` was ' +

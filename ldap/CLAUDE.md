@@ -684,6 +684,22 @@ ldif or multi-cell service is unchanged.
     subjects, federation links, claimed memberships, delegation flags, a
     person attribute's holders, Kerberos key infos; `anybodyHoldsACredential()`
     asks `anyWithAttribute`.
+  - **`holdersAsync(kind, attribute, names)` — the holders for a SCHEDULER
+    JOB (#615)**, offered to `credentials.ts` and through `deviceStore()` to
+    `devices.ts`: `DirectoryWindow.holdersAsync()` asks `withAttribute` a
+    page at a time through the bridge's `queryAsync()` (the driver's
+    `directoryQuery()` on the read pool) with a `setImmediate` between
+    pages, and takes each row as the store answered it unless this process
+    holds a newer one — no `byKeys` per row, nothing handed out; outside a
+    window a walk of the realm's Map in slices of 2,000 with a yield
+    between. It hands over the named attributes RAW. The Android recheck's
+    markers, `stsAndroidAttestedCredential` (derived by
+    `deriveAndroidMarker()` in both doors that write `stsWebauthnCredential`)
+    and `stsDeviceAndroidKey`, are what it is asked about —
+    `common/CLAUDE.md` 3cf.
+  - `attributeSourcePeoplePage()` (#615) is ONE `page()` after a key cursor
+    (`DirectoryWindow.pageAfter()`), which `attribute-sources.refresh` asks
+    instead of `attributeSourcePeople()`'s list-and-sort of everybody.
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it;
     the LDAP search walks only what its base reaches, read-only and lazily, so

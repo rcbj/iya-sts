@@ -392,5 +392,12 @@ module.exports = {
   describe: 'the directive enforced: every repeating timer outside ' +
             'cluster/scheduler.ts is a recorded exception, and the list only ' +
             'shrinks',
-  run: run
+  run: run,
+  // The source reader, shared with `tests/no_full_directory_walk_in_jobs.js`
+  // (#615), which reads the same files for another directive.
+  walk: walk,
+  blank: blank,
+  matching: matching,
+  functionsOf: functionsOf,
+  SKIP: SKIP
 };

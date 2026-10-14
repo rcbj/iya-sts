@@ -2766,14 +2766,32 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       const codec = typeof driver.entryCodec === 'function'
         ? driver.entryCodec() : codecModule.create('cell');
       const asked = bridge;
-      directory.window.attach({
+      /** @type {{ query: (name: string, args: unknown[]) => unknown,
+       *    queryAsync?: (name: string, args: unknown[]) => Promise<unknown> }}
+       */
+      const answering = {
         query: function (name, args) {
           log.debug("Entering the keyed bridge query(). " + name);
           log.debug("Leaving the keyed bridge query().");
           return codecModule.openAnswer(codec, name,
             asked.query(name, codecModule.keyArgs(name, args)));
         }
-      });
+      };
+      // AND THE SAME QUESTION ASKED ASYNCHRONOUSLY (#615), for a caller that
+      // can wait — a scheduler job reading the holders of an attribute
+      // (`DirectoryWindow.holdersAsync()`). The driver's `directoryQuery()`
+      // builds the same statement from `directory_queries.js`, keys the
+      // values and opens the answer with the same codec, on the read pool,
+      // so the event loop runs while the store answers. Absent from a driver
+      // without it, and the window then asks synchronously.
+      if (typeof driver.directoryQuery === 'function') {
+        answering.queryAsync = function (name, args) {
+          log.debug("Entering the asynchronous directory query(). " + name);
+          log.debug("Leaving the asynchronous directory query().");
+          return driver.directoryQuery(name, args);
+        };
+      }
+      directory.window.attach(answering);
       log.info('persistence: this worker reads the people and devices it ' +
                'does not hold from the store, through the directory bridge ' +
                '(ldap.workerDirectory=postgres-lru).');

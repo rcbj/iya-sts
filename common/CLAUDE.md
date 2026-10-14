@@ -11280,6 +11280,57 @@ ask it about every certificate of the chain: `device_attestation.ts`'s
   STATUS is never touched: a leaked batch key says the attestation proves
   nothing, not that this device was compromised.
 
+### The recheck reads its holders, without blocking, when something moved (#615, 2026-10-13)
+
+**On 8081 (about 191,000 people, a windowed directory) the 17:00 recheck
+stopped every listener for minutes**: `credentials.androidAttestedCredentials()`
+was `persons()` and a `keysOf()` per person — a synchronous store read each,
+on the serving front process — to find one person holding a security key.
+rcbj's decision was all five of #615's points; the module's header has them,
+and what a maintainer must not undo is this:
+
+* **THE MARKERS ARE DERIVED, NEVER WRITTEN BY HAND.**
+  `stsAndroidAttestedCredential` (a person: the credential ids) is written by
+  `ldap_server.js`'s `deriveAndroidMarker()` on every write of
+  `stsWebauthnCredential`, from `credentials.androidMarkerOf()` — so the rule
+  of what is recheckable stays in `credentials.ts`, a removal or an untrusting
+  takes it off, and a socket write of either is refused
+  (`CREDENTIAL_ATTRIBUTE_DOORS`). `stsDeviceAndroidKey` (a device: the key
+  ids) is derived in `devices.ts`'s `write()`, beside the thumbprints. Both
+  merge by value (`directory_merge.js`'s `MULTI`), as the keys do.
+* **THE MARKER DECIDES WHO IS READ, NEVER WHAT IS RECHECKED.** The holders
+  come back raw from the directory's `holdersAsync()` and their keys are
+  interpreted by `keysFromValues()`/`fromEntry()` and
+  `isAndroidRecheckable()`, the census's division of labour.
+* **ASYNCHRONOUS, ON THE READ POOL.** `holdersAsync()` is
+  `DirectoryWindow.holdersAsync()` in a windowed process — `withAttribute()`
+  (the GIN index on `attr_names`) a page at a time through the bridge's
+  `queryAsync()`, which `persistence.js` attaches as the driver's
+  `directoryQuery()`, each row taken as answered rather than re-read by key —
+  and a sliced walk of the in-memory Map otherwise. The chains are asked about
+  in batches of 50 with a `setImmediate` and `stillOwner()` between them.
+* **SKIPPED WHEN NOTHING MOVED.** `devices.androidRecheck` (persisted, per
+  realm, cell tier) holds `covered` — the list version, the registration mark
+  and the backfill version of the last COMPLETE recheck — and `registered`,
+  the mark `credentials.addKey()` and the device register's `create()` /
+  `addKey()` move when an Android-attested key is registered
+  (`noteRegistration()`). A scheduled run skips a realm where neither moved;
+  Run now and a list's activation (`requestRecheck()`, a manual trigger)
+  always run; no list or a stale one rechecks nothing and forgets the
+  version, so the first current list rechecks everything.
+* **THE BACKFILL** runs once per realm (`MARKER_BACKFILL`) before the first
+  recheck, over the holders of the keys themselves, re-reading each person
+  or device whose marker is wrong in the same tick as the rewrite, so a
+  signature counter moved by a sign-in in between is not written back.
+* **A DIRECTORY WITHOUT `holdersAsync()`** (a test's stub) gets the old walks;
+  the run's summary says `WALKED`.
+
+`tests/devices_android_recheck.js` counts it — 3,000 people, 6 holders: the
+walk asks `persons()` once and reads 3,006 keys; the holder path asks
+`persons()` never and reads one holder query of 6 rows — and holds the same
+downgrades, the skip and the backfill. `tests/no_full_directory_walk_in_jobs.js`
+holds the audit of every other job (`cluster/CLAUDE.md`).
+
 ## 3ce. `secret_destinations.ts` and `secrets.js`'s `pushSecret()`: WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06)
 
 rcbj's design on #221: a service account is a person entry with a flag (P1),

@@ -358,6 +358,8 @@ const CELL_MINTED = [
   'claim_attributes.selections', 'consent_screen.pending',
   'credentials.pendingBackupCodes', 'credentials.pendingKeys',
   'credentials.pendingTotp', 'delegation.acts', 'devices.challenges',
+  // What the Android attestation recheck last covered in this cell (#615).
+  'devices.androidRecheck',
   'devices.events', 'dpop.issuedNonces', 'federation.signalBlocks',
   'federation.unmapped', 'federation_sp.contexts',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
