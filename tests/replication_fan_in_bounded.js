@@ -32,7 +32,14 @@
 //      under the same key stays, and is still answered;
 //   5. the module's own fan-in (the one `admin_stats` reads) returns to where
 //      it was after five thousand `admin_stats.users` notes are removed, and
-//      the users register lists none of them.
+//      the users register lists none of them;
+//   6. A DEAD PROCESS'S CONTRIBUTIONS GO (#618 phase 2): an origin that is
+//      not a live reader of the change log is dropped from the fan-in once it
+//      has been absent for the grace period, and not before; a live one, and
+//      one that turns live inside the grace, is kept; the levels a dropped
+//      origin empties go with it; a failed read of the readers drops
+//      nothing; the change-log pull's own scheduler job does it, at most once
+//      a minute, with no timer of its own.
 //
 // WHY IN PROCESS: the fan-in needs a second origin, which is a second process
 // or a restart, and how much it holds is visible to nothing outside it.
@@ -61,12 +68,162 @@ function theirRecord(key) {
            lastAt: 0, isClient: false, knownBy: 'created' };
 }
 
+// A coordinating driver whose live readers the test says (#618 phase 2).
+function readersDriver(live) {
+  log.debug("Entering readersDriver().");
+  const d = {
+    asked: 0,
+    fail: false,
+    origin: function () {
+      log.debug("Entering origin().");
+      log.debug("Leaving origin().");
+      return 'node-self';
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(0);
+    },
+    changeCeiling: function () {
+      log.debug("Entering changeCeiling().");
+      log.debug("Leaving changeCeiling().");
+      return Promise.resolve(0);
+    },
+    changesSince: function () {
+      log.debug("Entering changesSince().");
+      log.debug("Leaving changesSince().");
+      return Promise.resolve([]);
+    },
+    reportChangeReader: function () {
+      log.debug("Entering reportChangeReader().");
+      log.debug("Leaving reportChangeReader().");
+      return Promise.resolve({ inserted: true });
+    },
+    liveChangeReaders: function () {
+      log.debug("Entering liveChangeReaders().");
+      d.asked += 1;
+      log.debug("Leaving liveChangeReaders().");
+      return d.fail ? Promise.reject(new Error('the readers are unreadable'))
+        : Promise.resolve(Array.from(live));
+    }
+  };
+  log.debug("Leaving readersDriver().");
+  return d;
+}
+
+// Section 6: a dead process's contributions go.
+async function deadOrigins(t) {
+  log.debug("Entering deadOrigins().");
+  // `persistence.coordinate` is restart-only: varied through the
+  // environment, as tests/replication.js does.
+  const before = process.env.STS_PERSISTENCE_COORDINATE;
+  process.env.STS_PERSISTENCE_COORDINATE = 'true';
+  replication.reset();
+  const live = new Set(['node-live']);
+  const driver = readersDriver(live);
+  await replication.start(driver, {});
+  const OTHER = 'audit.events';
+  const fill = function () {
+    ['node-live', 'node-dead', 'node-new'].forEach(function (o) {
+      replication.contribute(HANDLE, DEFAULT, 'both-' + STAMP, o,
+                             theirRecord('both-' + STAMP + '-' + o));
+    });
+    replication.contribute(HANDLE, DEFAULT, 'dead-only-' + STAMP, 'node-dead',
+                           theirRecord('dead-only-' + STAMP));
+    replication.contribute(OTHER, 'acme', '', 'node-dead', [{ n: 1 }]);
+    replication.contribute(OTHER, DEFAULT, '', 'node-live', [{ n: 2 }]);
+  };
+  fill();
+  const held = replication.contributionCounts();
+  const graceMs = replication.status().retention.fanInGraceS * 1000;
+  t.check(graceMs >= 15 * 60 * 1000 &&
+          graceMs >= replication.status().retention.readerTtlS * 1000,
+          '6. the grace is the reader TTL and never less than fifteen ' +
+          'minutes: a restart under a stable origin is not a death',
+          String(graceMs));
+  const t0 = Date.now();
+  const first = await replication.pruneFanIn(true, t0);
+  t.check(first && first.dropped.length === 0 &&
+          JSON.stringify(replication.contributionCounts()) ===
+            JSON.stringify(held),
+          '6a. an origin first seen not live is only noted: nothing is ' +
+          'dropped at once', JSON.stringify(first));
+  const early = await replication.pruneFanIn(true, t0 + graceMs - 1);
+  t.check(early && early.dropped.length === 0 &&
+          JSON.stringify(replication.contributionCounts()) ===
+            JSON.stringify(held),
+          '6b. nor before the grace period (' + graceMs + ' ms) has passed',
+          JSON.stringify(early));
+  live.add('node-new');
+  const late = await replication.pruneFanIn(true, t0 + graceMs);
+  const both = replication.remoteRows(HANDLE, DEFAULT, 'both-' + STAMP)
+    .map(function (r) {
+      return r.key;
+    }).sort();
+  const after = replication.contributionCounts();
+  t.check(late && JSON.stringify(late.dropped) === '["node-dead"]' &&
+          late.values === 3 &&
+          JSON.stringify(both) === JSON.stringify(
+            ['both-' + STAMP + '-node-live', 'both-' + STAMP + '-node-new']),
+          '6c. after the grace the dead origin is dropped, and the live one ' +
+          'and the one that turned live inside the grace are kept',
+          JSON.stringify({ late: late, both: both }));
+  t.check(replication.remoteRows(HANDLE, DEFAULT,
+                                 'dead-only-' + STAMP).length === 0 &&
+          replication.remoteKeys(HANDLE, DEFAULT)
+            .indexOf('dead-only-' + STAMP) < 0 &&
+          replication.remoteRows(OTHER, 'acme', '').length === 0 &&
+          replication.remoteRows(OTHER, DEFAULT, '').length === 1 &&
+          after.values === held.values - 3 && after.keys === held.keys - 2 &&
+          after.realms === held.realms - 1,
+          '6d. the levels only the dead origin held go with it: its key, ' +
+          'and its realm under a handle another origin still holds',
+          JSON.stringify({ held: held, after: after }));
+  t.check(replication.origins().sort().join(',') === 'node-live,node-new',
+          '6e. and it is no longer among the other processes',
+          replication.origins().join(','));
+
+  // A failed read of the readers drops nothing.
+  replication.contribute(HANDLE, DEFAULT, 'gone-' + STAMP, 'node-gone',
+                         theirRecord('gone-' + STAMP));
+  await replication.pruneFanIn(true, t0 + graceMs + 1);
+  driver.fail = true;
+  const failed = await replication.pruneFanIn(true, t0 + 3 * graceMs);
+  t.check(failed === null &&
+          replication.remoteRows(HANDLE, DEFAULT, 'gone-' + STAMP).length ===
+            1,
+          '6f. a failed read of the live readers drops nothing — an origin ' +
+          'is dropped on the readers\' evidence, never on its absence');
+  driver.fail = false;
+
+  // The change-log pull's own job does it, at most once a minute.
+  replication.reset();
+  await replication.start(driver, {});
+  fill();
+  const job = require('../cluster/scheduler').job(
+    'persistence.change-log-pull');
+  const asked = driver.asked;
+  await job.run();
+  await job.run();
+  t.check(!!job && job.kind === 'per-process' && driver.asked === asked + 1,
+          '6g. the change-log pull\'s per-process job asks who is live, and ' +
+          'twice in a minute asks once', String(driver.asked - asked));
+  replication.reset();
+  if (before === undefined) {
+    delete process.env.STS_PERSISTENCE_COORDINATE;
+  } else {
+    process.env.STS_PERSISTENCE_COORDINATE = before;
+  }
+  log.debug("Leaving deadOrigins().");
+}
+
 module.exports = {
   name: 'replication_fan_in_bounded',
   describe: 'the replication fan-in of merge: \'own\' stores holds what the ' +
             'other processes hold now: a removal takes its empty levels ' +
             'with it, so thirty thousand noted-and-evicted people leave a ' +
-            'bounded number of entries (#618)',
+            'bounded number of entries, and a dead process\'s ' +
+            'contributions go after a grace period (#618)',
   run: async function run(t) {
     log.debug("Entering run().");
     // An instance of its own, so the counts are this test's and nothing
@@ -170,6 +327,9 @@ module.exports = {
             'none of them',
             JSON.stringify({ baseline: baseline, grown: grown, back: back,
                              listed: listed }));
+
+    // --- 6. a dead process's contributions go ----------------------------
+    await deadOrigins(t);
     log.debug("Leaving run().");
   }
 };

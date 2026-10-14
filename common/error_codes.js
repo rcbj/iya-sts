@@ -1714,6 +1714,12 @@ const CODES = [
       'in place of the read barrier\'s change-log pull (#626), so it ' +
       'pulled the whole change log instead, as every write did before.',
     spec: 'none — the write waits for the pull and is answered as before' },
+  { code: 'STS-STORE-0082',
+    summary: 'The live readers of the change log could not be read, so no ' +
+      'dead process was dropped from the fan-in of merge-own stores this ' +
+      'time; nothing is dropped on a failed read, and the next change-log ' +
+      'pull tries again a minute later (#618).',
+    spec: 'none — the fan-in keeps what it held' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

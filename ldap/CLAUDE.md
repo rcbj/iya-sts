@@ -659,7 +659,8 @@ ldif or multi-cell service is unchanged.
     `allGroupEntries()`, `membershipsNaming()`, `dropMemberships()`,
     `logBatchDangling()`): the resident entries, and the windowed
     containers' entries with a group class, asked of the store
-    (`classesUnder`, the GIN index over the generated `class_keys`) and read
+    (`classesUnder`, the partial GIN index over `class_keys`, which holds
+    an entry's group classes only since schema version 18, #618) and read
     back through the window. `groupRuleFor()` is placement-blind, so **a
     group under `ou=users` or `ou=devices` is seen**, and the membership
     lookups, the group index, the listings and a search answer as a whole

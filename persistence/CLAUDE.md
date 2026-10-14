@@ -1476,6 +1476,38 @@ bounded by what the other processes HOLD (origins x the store's own cap).
 thirty thousand notes and evictions through three origins and holds the count
 at the cap.
 
+**And a dead process's contributions go (#618 phase 2, 2026-10-14)**, which
+closes the "never aged out" above for the fan-in in memory. The cap is per
+ORIGIN, and a random origin, or a node that left the cluster, never removes
+its rows — so every such process left up to a cap of each store in every
+other process until that one restarted, and the restart read them back.
+`pruneFanIn()` drops an origin that has not been a LIVE READER of the change
+log (`liveChangeReaders()`: `sts_change_readers`, reported within the reader
+TTL and naming no node that left — the trim's own test, read without
+deleting) for the grace, `max(reader TTL, 15 minutes)`. The floor is because
+most origins are stable since 2026-09-18: a process restarting under its
+name takes its origin back, and anything dropped while it was away returns
+only as it is rewritten (a counter on its next change, an audit segment
+never) or when the reading process restarts. **It is not a job of its own**:
+the change-log pull's per-process job runs it after a pull, at most once a
+minute, one read of a table with a row per process, and a walk of the fan-in
+only when an origin is dropped. A failed read drops nothing
+(`STS-STORE-0082`): an origin is dropped on the readers' evidence, never on
+its absence. Only memory is dropped; the rows stay in `sts_minted` under
+`mintedRetention`. `tests/replication_fan_in_bounded.js` section 6.
+
+**The second map the heap snapshot saw growing** (4K to 6.4K slots in 21
+minutes, mostly deleted-entry slots) is THIS process's own
+`admin_stats.users` partition (`realms.map`, the one `userRecord()` caps):
+the same 3,987 live records in both snapshots of 8081's worker, and 4,840
+holes in the second. The holes are V8's: an ordered hash table marks a
+deleted entry and reclaims it at its next rehash, so note-then-evict churn
+fills the table with holes up to its capacity, which is bounded by about
+twice the live count. It is bounded, and nothing was changed for it. (Why a
+worker holds 3,987 records under a cap of 2,000 was not settled: `restore`
+writes a row without the cap, and a row whose origin is this process's is
+restored rather than fanned in.)
+
 `tests/minted_persistence.js` sections 6 and 6b hold it against a stub driver
 that applies the same WHERE: the filter's realms, cutoff and short-lived
 handles; an expired row not restored, a live one and a non-expiring one
@@ -2014,6 +2046,110 @@ about 90 s of the thread at 1.5M entries on 8081), so:
 `sts_ldap_entries` without naming `dek_keys`) and, with
 `STS_TEST_POSTGRES_URL`, the triggers' exactness against a real database;
 `tests/no_full_directory_walk_in_jobs.js` holds that the walk stays gone.
+
+### Only the asked names and the group classes are indexed (#618, schema version 18)
+
+**Two GIN indexes took a key for every name and every class of every entry,
+and nothing asked about most of them.** On a copy of 8081's 1.2M-entry store:
+`attr_names` averaged 15.2 names a row, twelve of them in 99.9% of rows and
+fourteen more in a sixth; `class_keys` held four classes a row, each in more
+than 99%. So a person insert wrote about nineteen GIN entries that no
+question could narrow by — nobody asks "who holds a `mail`" or "who is an
+`inetOrgPerson`". Version 18 replaces both, PARTIAL, with nothing a person
+writes to:
+
+* **`sts_ldap_entries_asked_names`** is a GIN over
+  `directory_queries.ASKED_NAMES`, an IMMUTABLE `jsonb_path_query_array()`
+  of `attr_names` keeping only `ASKED_ATTRIBUTES` — the names
+  `withAttribute()` and `anyWithAttribute()` are asked about, read from their
+  callers — `WHERE directory_queries.ASKED_NAMES_HELD`
+  (`attr_names ?| ARRAY[…]`).
+  Every query spells both from those two constants, because the planner uses
+  an expression index only for its own expression and a partial one only
+  where the query repeats its predicate. **The predicate is `?|` and not
+  `<expression> <> '[]'`, and that was measured**: the database checks a
+  partial index's predicate on every insert and computes the expression only
+  for a row that passes, and the jsonpath cost about 30 µs a row where `?|`
+  over the same names cost about 2. **A name not in the list is still
+  answered**, by `attr_names ? $n` with no index (said once in the log),
+  because a holder question that answered "nobody" would be worse than a
+  slow one; a new caller adds its name to the list, which changes the index
+  expression and so is a schema version. `tests/directory_asked_names.js`
+  reads the names out of the call sites and fails on one the list lacks, or a
+  listed name nobody asks.
+* **`userpassword` is not in the list**: nearly every person holds one. The
+  two questions asked about it are the counters' — `countHolding()` already,
+  and `anyWithAttribute()` (`anybodyHoldsACredential()`) now reads the
+  realm's counter row instead of the index.
+* **`sts_ldap_entries_group_classes`** is a GIN over `class_keys` `WHERE
+  class_keys <> '[]'`, and `directory_codec.js` writes into `class_keys`
+  only the GROUP classes (`CLASS_INDEXED`, which is `ldap_server.js`'s
+  `GROUP_CLASSES`): `classesUnder()`, the one question asked of the column,
+  is only ever asked for those. **It is the column that is narrowed, not an
+  expression**, because the values are keyed digests the database cannot
+  read. `keyArgs()` refuses `classesUnder` for any other class rather than
+  answer "nobody". An entry written before version 18 holds all its classes
+  until it is next written; the question answers the same over either, so
+  nothing is migrated — it only stays in the index until then.
+* **The two indexes they replace are RETIRED** (`SCHEMA_RETIRED`): an index
+  nothing reads is still written on every insert. `schema.sql` drops them
+  after building their replacements, and `open()` drops any still in the
+  catalogue (probed through `pg_class`, so a fake `pg` answering every
+  `to_regclass` as present issues no DROP) — which only a role that may
+  will; the least-privileged role finds none once the script has run, and
+  is refused with `STS-STORE-0029` on a version-17 store, whose new indexes
+  it cannot build.
+
+Measured on the 1.2M-entry copy (EXPLAIN ANALYZE of a 20,000-person INSERT
+inside a rolled-back transaction, alternated): about 265K WAL records and
+80 MB for version 17's indexes, about 222K and 58 MB for version 18's — the
+same as with neither index — so about 2.1 WAL records and 1.1 KB of WAL less
+per person. The names' index went from 23 MB to 16 kB; the classes' stays at
+6 MB until the old rows are rewritten. Every query still plans on its index
+(bitmap scans on `sts_ldap_entries_asked_names` and
+`sts_ldap_entries_group_classes`, custom and generic plans), and the
+password question is a primary-key read of `sts_ldap_counts`. The figures
+are on #618.
+
+### The directory's GIN indexes have no pending list (#618, schema version 18)
+
+**Every directory GIN index but `dek_keys`' is `WITH (fastupdate = off)`.**
+With the default, an insert lands in the index's pending list, merged only at
+`gin_pending_list_limit` (4 MB) or by a vacuum, and EVERY SEARCH READS THE
+WHOLE LIST. On 8081 under the bulk load the names', uuids', mails' and
+values' lists held about 205,000 tuples (503 pages) each, so every `byName()`
+and `byUuid()` probe read ~500 buffers, 8.9–17.6 ms, beside 0.02 ms for the
+RDN branch of the same query; when autovacuum flushed them the add rate went
+from 45 to 73 a second and the database CPU per add halved
+(`load-users/dbperf/`). Off, an insert pays its entries at once — about
+0.04 ms a person for the four on the 1.2M-entry copy — and a probe after
+60,000 committed inserts read 4 buffers in 0.01 ms with no pending tuple.
+The two partial indexes above take it too: a person writes nothing to them,
+so a list there would buy nothing and only be read. `dek_keys`' keeps the
+default: one or two keys a row, searched only by the hourly job.
+
+An existing store is switched by `SCHEMA_RELOPTIONS` — `ALTER INDEX … SET
+(fastupdate = off)` and one `gin_clean_pending_list()`, because turning the
+option off stops the list growing and does not empty it. `open()` probes
+`pg_class.reloptions` and issues them only where the option is missing (so
+the least-privileged role issues none once `schema.sql` has run);
+`schema.sql` carries the same statements after the CREATEs.
+`tests/postgres_schema.js` and `tests/directory_queries.js` (C8) hold it.
+
+### The data-key index catches up in hours, not days (#618)
+
+On 8081 `sts_ldap_entries_dek_unknown` (#623) was 245 MB over 2.93M entries
+still NULL. The catch-up WAS running — the 13:00Z re-encryption pass logged
+46,500 entries indexed in its ten seconds — but the job was hourly, so the
+rest would have taken about 62 hours, every data-key count refused
+(`STS-STORE-0080`) meanwhile; and the pass returned before indexing at all
+when no key was superseded, leaving a store that never rotated the daily
+count's ten seconds (~60 days at that size). `data_key_rotation.ts` now
+indexes on every re-encryption pass, superseded keys or none, and the job's
+interval is `INDEX_CATCHUP_MS` (five minutes) while the last pass left
+entries unindexed — ten seconds of the front process in every three hundred,
+about five hours at 2.9M — and an hour again once it is complete.
+`tests/data_key_rotation.js` K5 and K6.
 
 ### The schema version moved to 2
 

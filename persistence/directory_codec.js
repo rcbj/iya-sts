@@ -23,7 +23,8 @@
 //   mail_keys   `mail`, lower-cased                — `byMail()`
 //   uuid_keys   `entryUUID` and its aliases        — `byUuid()`,
 //                                                   `withUuids()`
-//   class_keys  `objectClass`, lower-cased         — `classesUnder()`
+//   class_keys  the GROUP `objectClass` values     — `classesUnder()`
+//               (CLASS_INDEXED), lower-cased; none for anything else
 //   value_keys  `name=value` of VALUE_INDEXED       — `byAttribute()`
 //   attr_names  the attribute NAMES, in the clear  — `withAttribute()`
 //
@@ -60,6 +61,24 @@ const DIGEST_LABEL = 'directory-index';
 // ID, a certificate subject, a login name, a federation link).
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
                        'federationlink'];
+
+// THE OBJECT CLASSES `class_keys` HOLDS: THE GROUP CLASSES, AND ONLY THOSE
+// (#618 phase 2, schema version 18). `classesUnder()` is the one question
+// asked of the column, and it is only ever asked for a group class
+// (`ldap_server.js`'s GROUP_CLASSES, which `tests/directory_queries.js` holds
+// to this list): "the groups placed under `ou=users` or `ou=devices`". Until
+// version 18 the column held every class, so every person wrote four GIN
+// entries — `top`, `person`, `organizationalPerson`, `inetOrgPerson`, each
+// in more than 99% of 8081's rows — that narrowed nothing. A person now
+// writes `[]`, which the partial index leaves out. An entry written before
+// version 18 still holds all its classes until it is next written, and the
+// question answers the same over either: a group class is in both.
+//
+// The database cannot narrow the column itself — each value is a keyed
+// digest it cannot read — which is why this is done where the digests are
+// made rather than by a generated column or an index expression.
+const CLASS_INDEXED = Object.freeze(['groupofnames', 'groupofuniquenames',
+                                     'posixgroup', 'groupofurls']);
 
 function keystore() {
   log.debug("Entering keystore().");
@@ -157,7 +176,10 @@ function indexOf(attrs) {
     mailKeys: keyed('mail', lowered(valuesOf(a, 'mail'))),
     uuidKeys: keyed('uuid', lowered(valuesOf(a, 'entryuuid')
       .concat(valuesOf(a, 'stsentryuuidalias')))),
-    classKeys: keyed('class', lowered(valuesOf(a, 'objectclass'))),
+    classKeys: keyed('class', lowered(valuesOf(a, 'objectclass'))
+      .filter(function (one) {
+        return CLASS_INDEXED.indexOf(one) >= 0;
+      })),
     valueKeys: valueKeys,
     attrNames: unique(Object.keys(a).map(function (one) {
       return one.toLowerCase();
@@ -314,7 +336,16 @@ function keyArgs(name, args) {
     a[2] = { key: lookupOf('attr:' + lower(a[1]), String(a[2])) };
   } else if (name === 'classesUnder') {
     a[2] = (a[2] || []).map(function (one) {
-      return { key: lookupOf('class', lower(one)) };
+      const wanted = lower(one);
+      // A class the column does not hold would be answered "nobody" by a
+      // question that looks right, so it is refused where it is asked.
+      if (CLASS_INDEXED.indexOf(wanted) < 0) {
+        log.debug("Leaving keyArgs(). A class that is not indexed.");
+        throw new Error('directory_codec: classesUnder is asked only for ' +
+                        'the group classes (' + CLASS_INDEXED.join(', ') +
+                        '), not ' + wanted);
+      }
+      return { key: lookupOf('class', wanted) };
     });
   }
   log.debug("Leaving keyArgs().");
@@ -367,6 +398,7 @@ function openAnswer(codec, name, answer) {
 module.exports = {
   LABEL: LABEL,
   VALUE_INDEXED: VALUE_INDEXED,
+  CLASS_INDEXED: CLASS_INDEXED,
   create: create,
   // The same, for the postgres driver, whose own factory is `create()`: a
   // `create(` in its body reads to tests/no_periodic_timers.js as the

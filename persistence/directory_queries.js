@@ -316,6 +316,131 @@ function page(realm, baseKey, afterKey, limit, options) {
 // counters are started from one count of the table, under a lock, when the
 // triggers are created, and a missing row is a zero from then on.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE ATTRIBUTE NAMES A HOLDER QUESTION IS ASKED ABOUT, AND ONLY THOSE, ARE
+// INDEXED (#618 phase 2, schema version 18, 2026-10-14).
+//
+// `attr_names` holds every attribute name of an entry in the clear, about
+// fifteen a person, and until version 18 a GIN index over the whole column
+// took every one of them: on 8081's 1.2M entries twelve names are in 99.9% of
+// rows and fourteen more in a sixth, so a person's insert wrote fifteen-odd
+// GIN entries that could narrow nothing — nobody asks "who holds a `mail`".
+// The index is now over an IMMUTABLE expression of the column that keeps only
+// the names below (`ASKED_NAMES`), and PARTIAL, so an entry holding none of
+// them — nearly every person — writes no GIN entry at all.
+//
+// **THE LIST IS THE NAMES THE CODE ASKS** `withAttribute()` and
+// `anyWithAttribute()` about, read from their callers: `ldap_server.js`'s
+// `eachHolderOfAny()` sites (group membership, consents, delegation flags,
+// Kerberos keys, service accounts, federation links, claim-source tokens,
+// self-issued subjects, the WebAuthn user handle), `holdersAsync()`'s
+// (`credentials.ts`'s Android marker and WebAuthn credentials, `devices.ts`'
+// device keys and marker), `credentialTallies()`'s second factors,
+// `person_assertions.js`'s key pairs and issuers, `cert_enrollment.ts`'s
+// enrolled-certificate attributes and SCIM's HOBA key.
+// `tests/directory_asked_names.js` holds the list to those sites.
+//
+// **A NAME NOT IN THE LIST IS STILL ANSWERED**, by `attr_names ? name` with
+// no index behind it — a scan of the realm's rows under the base, said once
+// in the log — because a holder question that silently answered "nobody"
+// would be worse than a slow one. A new caller adds its name here, which is a
+// new index expression and so a schema version: the expression is part of
+// the index's definition, and the planner uses the index only for a query
+// that repeats it — and its predicate — exactly, which `ASKED_NAMES` and
+// `ASKED_NAMES_HELD` guarantee by being the one place each is written.
+//
+// `userpassword` is not in the list: nearly every person holds one, so an
+// index of its holders narrows nothing, and the two questions asked about it
+// — how many hold one, and whether anybody does — are answered by the
+// counters (`COUNTED_ATTRIBUTES`).
+// ---------------------------------------------------------------------------
+const ASKED_ATTRIBUTES = Object.freeze([
+  'federationlink', 'hobapublickey', 'memberof', 'oauthconsent',
+  'stsacmeeabkey', 'stsandroidattestedcredential', 'stsassertionissuer',
+  'stsassertionjwks', 'stscertificatehostname', 'stsclaimsourcetokens',
+  'stsdefaultdelegationsemantics', 'stsdelegationsemantics',
+  'stsdeviceandroidkey', 'stsdevicekey', 'stsenrolledcertificate',
+  'stsenrolledprivatekey', 'stskrb5keyinfo', 'stskrb5keys', 'stsmailfactor',
+  'stsmayact', 'stsnotdelegated', 'stssamlassertioncertificate',
+  'stssamlassertionissuer', 'stsscepchallenge', 'stsselfissuedsubject',
+  'stsserviceaccount', 'ststotpcredential', 'stswebauthncredential',
+  'stswebauthnuserhandle'
+]);
+
+// The jsonpath literal and the expression, built once. A name is spelt into
+// SQL here, so each is checked to be a bare lower-case name: nothing in it
+// can end the literal or the path's string.
+function askedNamesExpression() {
+  log.debug("Entering askedNamesExpression().");
+  ASKED_ATTRIBUTES.forEach(function (name) {
+    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+      throw new Error('directory_queries: an asked attribute name must be ' +
+                      'a bare lower-case name: ' + name);
+    }
+  });
+  const path = '$[*] ? (' + ASKED_ATTRIBUTES.map(function (name) {
+    return '@ == "' + name + '"';
+  }).join(' || ') + ')';
+  log.debug("Leaving askedNamesExpression().");
+  return 'jsonb_path_query_array(attr_names, \'' + path + '\')';
+}
+
+/**
+ * The indexed expression over `attr_names`: the entry's names that a holder
+ * question is asked about, as a JSON array. The driver's index and every
+ * query below spell it from here.
+ */
+const ASKED_NAMES = askedNamesExpression();
+
+/**
+ * The partial index's predicate, which a query repeats so the planner may use
+ * the index: the entry holds at least one asked name. `?|` and not
+ * `ASKED_NAMES <> '[]'`, and that is a measured choice: the database checks
+ * a partial index's predicate on every insert and computes the indexed
+ * expression only for a row that passes, and on 8081's people the
+ * jsonpath above cost about 30 µs a row where `?|` over the same names cost
+ * about 2 µs — so a person holding none of them pays the 2.
+ */
+const ASKED_NAMES_HELD = 'attr_names ?| ARRAY[' +
+  ASKED_ATTRIBUTES.map(function (name) {
+    return '\'' + name + '\'';
+  }).join(', ') + ']';
+
+/**
+ * The partial index's predicate over `class_keys`, which since version 18
+ * holds the GROUP classes only (`directory_codec.js`): the entry has one.
+ */
+const GROUP_CLASSES_HELD = 'class_keys <> \'[]\'::jsonb';
+
+// The names already said to have no index, so the log says it once a name.
+const unindexedNoted = new Set();
+
+/**
+ * The condition "holds the attribute" for a holder question: the indexed
+ * expression for an asked name, the bare column otherwise.
+ *
+ * @param name - the attribute name, lower-cased
+ * @param at - the position of the name in the statement's values
+ * @returns the SQL condition
+ */
+function holdsClause(name, at) {
+  log.debug("Entering holdsClause(). " + name);
+  if (ASKED_ATTRIBUTES.indexOf(name) >= 0) {
+    log.debug("Leaving holdsClause(). Indexed.");
+    return ASKED_NAMES + ' ? $' + at + ' AND ' + ASKED_NAMES_HELD;
+  }
+  if (!unindexedNoted.has(name)) {
+    unindexedNoted.add(name);
+    log.warn('directory_queries: the holders of `' + name + '` are asked ' +
+             'of the store, and no index answers for that name — it is ' +
+             'answered by a scan of the rows under the base. Add it to ' +
+             'ASKED_ATTRIBUTES (a schema version) if it is asked on a ' +
+             'request or a job (#618).');
+  }
+  log.debug("Leaving holdsClause(). Not indexed.");
+  return 'attr_names ? $' + at;
+}
+
 /**
  * The attributes whose holders `sts_ldap_counts` keeps a count of, lower-cased
  * as `attr_names` holds them. The postgres driver's trigger functions name
@@ -420,9 +545,10 @@ function hasChild(realm, key) {
 
 /**
  * One page of the entries under a base that HOLD an attribute (any value),
- * in key order after `afterKey`. `attr_names ? name` has no index behind it here
- * and is a scan of the realm's rows under the base; it answers only the
- * holders, which is what the lists of who holds a credential need.
+ * in key order after `afterKey`: for a name in ASKED_ATTRIBUTES, the partial
+ * GIN index over ASKED_NAMES (#618, schema version 18); for any other, a scan
+ * of the realm's rows under the base. It answers only the holders, which is
+ * what the lists of who holds a credential need.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN
@@ -433,17 +559,20 @@ function hasChild(realm, key) {
  */
 function withAttribute(realm, baseKey, attribute, afterKey, limit) {
   log.debug("Entering withAttribute().");
+  const name = String(attribute).toLowerCase();
   log.debug("Leaving withAttribute().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND ' + underClause(2, 6, false) + ' AND ' +
-                 'attr_names ? $3 AND dn_key > $4 ORDER BY dn_key LIMIT $5',
-           values: [String(realm), String(baseKey),
-                    String(attribute).toLowerCase(), String(afterKey || ''),
-                    pageSize(limit), suffixLength(baseKey)] };
+                 holdsClause(name, 3) + ' AND dn_key > $4 ORDER BY dn_key ' +
+                 'LIMIT $5',
+           values: [String(realm), String(baseKey), name,
+                    String(afterKey || ''), pageSize(limit),
+                    suffixLength(baseKey)] };
 }
 
 /**
- * Whether any entry of a realm holds an attribute.
+ * Whether any entry of a realm holds an attribute: a counter for a counted
+ * attribute, the asked names' index for an asked one, a scan otherwise.
  *
  * @param realm - the realm id
  * @param attribute - the attribute name, lower-cased as the store holds it
@@ -451,16 +580,30 @@ function withAttribute(realm, baseKey, attribute, afterKey, limit) {
  */
 function anyWithAttribute(realm, attribute) {
   log.debug("Entering anyWithAttribute().");
+  const name = String(attribute).toLowerCase();
+  if (COUNTED_ATTRIBUTES.indexOf(name) >= 0) {
+    // A COUNTED ATTRIBUTE IS ASKED OF ITS COUNTER (#618, schema version 18):
+    // the realm's row (`base_key` ''), one primary-key read. `userpassword`
+    // is in nearly every person, so no index of its holders is kept.
+    log.debug("Leaving anyWithAttribute(). The counter.");
+    return { text: 'SELECT 1 AS one FROM sts_ldap_counts WHERE realm = $1 ' +
+                   'AND base_key = \'\' AND attribute = $2 AND n > 0',
+             values: [String(realm), name] };
+  }
   log.debug("Leaving anyWithAttribute().");
   return { text: 'SELECT 1 AS one FROM sts_ldap_entries WHERE realm = $1 ' +
-                 'AND attr_names ? $2 LIMIT 1',
-           values: [String(realm), String(attribute).toLowerCase()] };
+                 'AND ' + holdsClause(name, 2) + ' LIMIT 1',
+           values: [String(realm), name] };
 }
 
 /**
- * The entries strictly under a base holding any of the given object classes
- * (lower-cased), through the GIN index over `class_keys`: the groups a
- * windowed worker must see although it does not hold their container.
+ * The entries strictly under a base holding any of the given GROUP classes
+ * (lower-cased), through the partial GIN index over `class_keys`: the groups
+ * a windowed worker must see although it does not hold their container.
+ * Since schema version 18 the column holds an entry's group classes only
+ * (`directory_codec.js`'s CLASS_INDEXED), so a person writes nothing to the
+ * index; an entry written before then holds all its classes, which answers
+ * the same question.
  *
  * @param realm - the realm id
  * @param baseKey - the base's normalised DN
@@ -472,7 +615,8 @@ function classesUnder(realm, baseKey, classes) {
   log.debug("Leaving classesUnder().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND ' + underClause(2, 4, false) + ' AND ' +
-                 'class_keys ?| $3::text[] ORDER BY dn_key',
+                 'class_keys ?| $3::text[] AND ' + GROUP_CLASSES_HELD +
+                 ' ORDER BY dn_key',
            values: [String(realm), String(baseKey),
                     (classes || []).map(function (one) {
                       return keyed(one, 'class', true);
@@ -760,6 +904,10 @@ function build(name, args) {
 module.exports = {
   COLUMNS: COLUMNS,
   COUNTED_ATTRIBUTES: COUNTED_ATTRIBUTES,
+  ASKED_ATTRIBUTES: ASKED_ATTRIBUTES,
+  ASKED_NAMES: ASKED_NAMES,
+  ASKED_NAMES_HELD: ASKED_NAMES_HELD,
+  GROUP_CLASSES_HELD: GROUP_CLASSES_HELD,
   MAX_PAGE: MAX_PAGE,
   QUERIES: QUERIES,
   build: build,
