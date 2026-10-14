@@ -177,8 +177,8 @@ function deviceId(i) {
 }
 
 // The table: `people` people, a device each for the first twenty (two for
-// p000001, the second a WebAuthn one), and a service account and a GROUP
-// p000001 owns.
+// p000001, the second a WebAuthn one), and a person entry and a GROUP whose
+// `owner` is p000001.
 function table(users, people) {
   log.debug('Entering table().');
   const shared = require('./directory_window');
@@ -209,8 +209,8 @@ function table(users, people) {
   }
   device(20, uid(1), { id: 'w20', kind: 'webauthn', thumbprint: 'W20',
                        material: { credentialId: 'cred-20' } });
-  // A SERVICE ACCOUNT p000001 owns: a person under ou=users, windowed like
-  // a device, whose `owner` is the same DN.
+  // A PERSON ENTRY NAMING p000001 IN `owner` (an LDAP client may write
+  // one): windowed like a device, the same value, and not a device.
   put('uid=svc-p1,' + users, { uid: ['svc-p1'],
     objectclass: ['inetOrgPerson'], cn: ['svc'], sn: ['svc'],
     owner: ['uid=' + uid(1) + ',' + users] });
@@ -238,7 +238,7 @@ async function personPage(t, ctx) {
           JSON.stringify(ids) === JSON.stringify([deviceId(1),
                                                   deviceId(20)].sort()),
           'B1. the person page lists exactly the person\'s two devices — ' +
-          'not the service account or the group that names them its owner',
+          'not the person entry or the group that names them its owner',
           JSON.stringify(ids));
   t.check(walked(bridge.counts) === 0,
           'B2. ASKED, NOT WALKED: no page, holder question or key listing ' +

@@ -1026,6 +1026,53 @@ else while a sibling still names the first owner, and answering "none"
 would be wrong, not merely slow. The comment above `DEVICE_INDEXED` argues
 it.
 
+**IN A WINDOWED PROCESS THE INDEX IS NOT BUILT, AND THE STORE IS ASKED
+(#636, 2026-10-14).** The index was a whole process's bargain: built from
+`entriesUnder(devicesDn())`, rebuilt on a miss whenever the subtree clock
+had moved — and every write under `ou=devices` in ANY process moves it, a
+recognition's `lastUsed` included. In a windowed process that listing is
+the container paged through the synchronous bridge, and **a `page()` under
+`ou=devices` costs the whole directory, not the register**: its WHERE is
+`right(dn_key, n) = ',ou=devices,…'`, which no index narrows, so the
+database reads the realm's keys in order until the page is full or the
+keys run out — and with fewer devices than a page, they run out at the
+realm's last key. At 6.4M people that was STS-DEVICE-0029 on token
+requests and a 503 from `/admin-api/users?user=` (the person page's
+devices, `devices.listForOwner()`, the same walk), STS-LDAP-0130 when the
+bridge's 2 s ran out. Now:
+
+* `windowedDeviceEntries()` answers a lookup with one indexed question:
+  `cn` is the device's own DN (`deviceDn()`, a key read), and the four
+  others are `byAttribute` against `value_keys`, which holds
+  `stsDeviceKeyThumbprint`, `stsDeviceSecretHash`, `stsDeviceCredentialId`
+  and `owner` since #636 (`persistence/CLAUDE.md`), narrowed to the
+  entries directly under `ou=devices` (`parent_key`). Each answer goes
+  through `windowedFind()` — read back through the window, this process's
+  unwritten changes added — and is asked the index's own rule (under the
+  container, carrying the value), so the answer is the index's, first by
+  key. `deviceEntryByIndex()` returns it before touching the index.
+* **`deviceEntriesOwnedBy(ownerDn)`** is a seventh hook: every device of an
+  owner, the same question with `owner` (at most `DEVICE_OWNER_LIMIT`,
+  1,000, far above `devices.maxPerPerson`), and outside a window the
+  container's kept listing filtered. `devices.listForOwner()` asks it.
+* **The owner is compared as written**, as the index always compared it:
+  a device's `owner` is its owner's entry's DN, and so is what every caller
+  asks with.
+* **A device row written before #636 is not found in a windowed process**
+  until it is next written: its `value_keys` lack the four. Nothing
+  migrates it (rcbj: every install is rebuilt).
+* The lookups stay SYNCHRONOUS, one round trip each, because
+  `common/devices.ts`' are; what is gone is any cost that grows.
+
+**What still pages `ou=devices` on a request**, each costing the realm in a
+windowed process for the reason above: `/admin-api/ldap/devices`
+(`ldapDevicesView()`, owed in `tests/no_full_directory_walk_in_requests.js`),
+and `/admin-api/devices`' list with no owner and its counts
+(`devices.list()`, `devices.counts()`, `common/CLAUDE.md`). What would stop
+them is the shape of `windowedDirectoryView()` for one container —
+`parent_key` pages (one level: a device is `cn=<id>,ou=devices`) and the
+counter rows — or an index the suffix comparison can use.
+
 **`GET /admin/ldap/devices` is the NINTH container page** (#218), drawn here
 beside the other eight and handed to `admin.setDirectoryPages()` with them
 (`DIRECTORY_PAGE_NAMES` has nine): the entries attribute by attribute, and

@@ -10489,8 +10489,24 @@ each argued there:
   * `holdsAny()` reads `owner`. Several entries share one owner, so the
     index keeps one entry per value, and a stale hit now REBUILDS rather
     than answering "none" (`ldap/ldap_server.js`).
-  * `listForOwner()` still walks. It wants every device an owner has, and
-    its callers are pages and a Native SSO grant.
+  * **`listForOwner()` stopped walking in #636 (2026-10-14).** It read
+    every device (`all()`) to keep an owner's, and its callers are the
+    console's person page, the portal's devices, a Native SSO grant on a
+    token request and the per-owner cap. It asks the directory's
+    `deviceEntriesOwnedBy()` (`ownedEntries()`), and `list()` with an
+    `owner` does too; `all()` is left only where the directory offers no
+    such hook. **In a windowed process none of the lookups builds the
+    index**: each is one indexed question to the store
+    (`ldap/CLAUDE.md`, *`ou=devices`*), because the index was rebuilt from
+    a walk of `ou=devices` after every write there in any process — a
+    recognition is one — and that walk cost the whole directory.
+    STS-DEVICE-0029 on a token request, and `/admin-api/users?user=` 503
+    at 6.4M people. `tests/device_lookups_windowed.js`.
+  * **Still every device, on a console page**: `list()` with no owner and
+    `counts()`, for `/admin-api/devices` and its tiles, and
+    `/admin-api/ldap/devices` — `tests/no_full_directory_walk_in_requests.js`
+    does not see the first two (the names are too common to follow), and
+    they cost the realm, not the register, in a windowed process.
 
 ### Remembered browsers (#265, 2026-09-26): `browser_devices.ts`
 

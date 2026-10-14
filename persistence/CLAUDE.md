@@ -1154,6 +1154,19 @@ postgres driver writes and reads every entry through it.
   `parent_key` and `rdn_value` are still generated from the DN. A database
   built before version 14 is refused at open (STS-STORE-0074): #391 recreates
   rather than migrates, and the service's role may not alter the schema.
+* **`value_keys` HOLDS A DEVICE'S FOUR LOOKUPS SINCE #636 (2026-10-14)**:
+  `stsDeviceKeyThumbprint`, `stsDeviceSecretHash`, `stsDeviceCredentialId`
+  and `owner` joined `VALUE_INDEXED`, so a windowed process recognises a
+  device, and lists an owner's, with one `byAttribute` rather than a walk of
+  `ou=devices` (`ldap/CLAUDE.md`, *`ou=devices`*). `byAttribute` takes an
+  optional parent (`parent_key = $4`): `owner` is also a group's, and an
+  owner's devices are the rows directly under `ou=devices`. **`keyArgs()`
+  refuses `byAttribute` for an attribute `value_keys` does not hold**, as it
+  refuses `classesUnder` for a class `class_keys` does not: either would
+  answer "nobody" to a question that looks right. No schema version: the
+  column and its index are unchanged, only what the service writes into
+  them, and a row written before is not rewritten (it is found again once
+  next written).
 * **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
   windowed directory's bridge thread builds a statement and shapes its rows
   with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
