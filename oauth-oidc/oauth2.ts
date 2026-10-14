@@ -19334,7 +19334,8 @@ class OAuth2Server {
       acr: record.approval.acr || undefined, grant: 'ciba',
       // The approving sign-on session, as the poll's issue passes it (#239).
       session_id: record.approval.sessionId || undefined,
-      ciba_auth_req_id: record.id,
+      // Still on the row: it leaves once this push is queued (#614).
+      ciba_auth_req_id: record.authReqId,
       grant_id: plan ? plan.id : undefined,
       grant_gen: plan ? plan.gen : undefined
     };
