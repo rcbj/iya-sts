@@ -247,7 +247,7 @@ function statements(t) {
     .test(s.PRESENT_KEYS), 'C1. the batch is checked by DN, one statement');
   t.check(/parent_key = \$2 AND rdn_value = ANY\(\$3::text\[\]\)/
     .test(s.HELD_RDNS) &&
-          /parent_key = \$2 AND name_keys @> ANY\(\$3::jsonb\[\]\)/
+          /WHERE name_keys @> ANY\(\$3::jsonb\[\]\)\) SELECT name_keys FROM hit WHERE realm = \$1 AND parent_key = \$2/
             .test(s.HELD_NAME_KEYS),
           'C2. and by both of byName()\'s lookups, for every name, one ' +
           'statement each and no correlated EXISTS');
@@ -416,6 +416,11 @@ function writeFile(file, n, stamp) {
   log.debug("Entering writeFile().");
   const gen = require('./tools/generate-people-ldif');
   const parts = ['version: 1', ''];
+  // A person whose uid is not their RDN, FIRST, so a later batch's record
+  // named by that uid is held by the digest alone.
+  parts.push('dn: uid=alias-' + stamp + ',' + USERS +
+             '\nobjectClass: inetOrgPerson\nuid: alias-' + stamp +
+             '\nuid: aliasname-' + stamp + '\ncn: a\nsn: x\n');
   for (let i = 1; i <= n; i++) {
     parts.push(gen.recordOf(stamp, i, BASE));
   }
@@ -426,6 +431,13 @@ function writeFile(file, n, stamp) {
   // alice is seeded, and a second person proposes her name; load-<stamp>-1
   // is earlier in the file under its own DN; load-<stamp>-2 is repeated.
   parts.push(p('alice-' + stamp, 'uid: alice\n'));
+  // cn=remote-pep-1 is seeded with no uid: its name is held by the RDN alone.
+  parts.push(p('pep-' + stamp, 'uid: remote-pep-1\n'));
+  // Held by the uid (not the RDN) of the record first in the file.
+  parts.push(p('aliasname-' + stamp));
+  // Two records in ONE batch proposing one name: the first wins.
+  parts.push(p('twin-a-' + stamp, 'uid: twin-' + stamp + '\n'));
+  parts.push(p('twin-b-' + stamp, 'uid: twin-' + stamp + '\n'));
   parts.push(p('dup-' + stamp, 'uid: load-' + stamp + '-1\n'));
   parts.push(p('load-' + stamp + '-2'));
   parts.push(p('bad-' + stamp, 'userPassword: secret\n'));
@@ -481,13 +493,13 @@ async function realDatabase(t, dir) {
                                            '--batch=700',
                                            '--report=' + reportFile]);
     const r = first.report || {};
-    t.check(first.status === 3 && r.imported === n + 1,
+    t.check(first.status === 3 && r.imported === n + 3,
             'D1. the import imported every person (and last-), and exits 3 ' +
             'for the records it did not import', 'status ' + first.status +
             ' ' + JSON.stringify(r).slice(0, 3000) + ' ' +
             first.stderr.slice(-3000));
-    t.check(r.taken === 2 && r.present === 1 && r.refused === 2 &&
-            r.refusals['STS-LDAP-0160'] === 2 &&
+    t.check(r.taken === 5 && r.present === 1 && r.refused === 2 &&
+            r.refusals['STS-LDAP-0160'] === 5 &&
             r.refusals['STS-LDAP-0156'] === 1 &&
             r.refusals['STS-LDAP-0155'] === 1,
             'D3. a second alice (seeded) and a uid held earlier in the file are ' +
@@ -500,11 +512,18 @@ async function realDatabase(t, dir) {
     }) && (r.examples || []).some(function (e) {
       return e.reason.indexOf('uid=alice-' + stamp + ',') >= 0 &&
         e.reason.indexOf('held by uid=alice,ou=users,') >= 0;
-    }), 'D3. the report names who holds the name', JSON.stringify(
+    }) && ['pep-', 'aliasname-', 'twin-b-'].every(function (one) {
+      return (r.examples || []).some(function (e) {
+        return e.code === 'STS-LDAP-0160' &&
+          e.reason.indexOf('uid=' + one + stamp + ',') >= 0;
+      });
+    }), 'D3. the report names who holds the name, and a name held by an ' +
+       'RDN alone, by a uid alone, and twice in one batch are each caught',
+    JSON.stringify(
       r.examples));
     const after = (await db.query('SELECT count(*)::int AS n FROM ' +
                                   'sts_ldap_entries')).rows[0].n;
-    t.equal(after - before, n + 1, 'D1. that many rows are in the table');
+    t.equal(after - before, n + 3, 'D1. that many rows are in the table');
     const rows = (await db.query(
       'SELECT dn_key, dn, attrs, origin, created_at, modified_at, ' +
       'name_keys, mail_keys, uuid_keys, class_keys, value_keys, attr_names, ' +
@@ -554,7 +573,7 @@ async function realDatabase(t, dir) {
     const second = runChild('import', env, ['--file=' + file,
                                             '--report=' + reportFile]);
     const r2 = second.report || {};
-    t.check(r2.imported === 0 && r2.present === n + 2 && r2.taken === 2 &&
+    t.check(r2.imported === 0 && r2.present === n + 4 && r2.taken === 5 &&
             (await db.query('SELECT count(*)::int AS n FROM ' +
                             'sts_ldap_entries')).rows[0].n === after,
             'D4. a re-run adds nothing: every person is present', JSON

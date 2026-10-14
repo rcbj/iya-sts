@@ -117,6 +117,13 @@ Every committed batch logs `committed through record R`. A run that stopped
 for any reason can be resumed with `--skip=R`. Running again without `--skip`
 is also correct, only slower, because every record is checked first.
 
+**On schema version 17, run it as the table's owner.** That schema's name
+index keeps a GIN pending list, which the per-batch name check reads in full
+every time. The import merges the list after every batch, which needs the
+owner (or `MAINTAIN`). As the application role it is refused once
+(`STS-LDAP-0161`) and the import gets slower as the list grows. Schema 18 has
+no pending list on that index.
+
 At the end, the import merges the directory's GIN pending lists and analyzes
 the table, so the first sign-ins after a large import do not pay for it. Both
 need the table's owner. If the application role is refused (`STS-LDAP-0161`),

@@ -1210,6 +1210,15 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   79 s against 30,000 entries. Now: `dn_key = ANY()`, `rdn_value = ANY()`
   and `name_keys @> ANY($::jsonb[])` (a bitmap scan, one GIN probe a digest),
   matched in JavaScript — `byName()`'s rule for every name of every record.
+  **Two more planner traps, both measured:** with `realm`/`parent_key` in
+  the same WHERE as `@> ANY()` the planner walked the `(realm, parent_key,
+  rdn_value)` btree and compared every person with every digest (14.7 s a
+  batch at 20,000 entries), so the digests go through a MATERIALIZED CTE on
+  the GIN index alone, with `SET LOCAL enable_seqscan = off` in the batch;
+  and on schema 17 the name index's `fastupdate` pending list is read whole
+  by every probe (25.8 s for 5,000 probes at 25,000 entries, 13 ms merged),
+  so it is merged after every batch where permitted (`namePendingMerger()`;
+  schema 18 has `fastupdate = off` and nothing to merge).
 * **ONE TRANSACTION A BATCH UNDER `SHARE ROW EXCLUSIVE`** from the check to
   the commit: readers go on, no other writer can make a checked name taken.
   The insert is `INSERT … SELECT FROM unnest($n::text[]…) ON CONFLICT DO

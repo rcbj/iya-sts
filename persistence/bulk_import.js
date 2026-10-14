@@ -309,9 +309,16 @@ const PRESENT_KEYS =
 const HELD_RDNS =
   'SELECT rdn_value FROM sts_ldap_entries WHERE realm = $1 AND ' +
   'parent_key = $2 AND rdn_value = ANY($3::text[])';
+// THE DIGESTS ARE ASKED OF THE GIN INDEX ALONE, the realm and container
+// applied to what it found: with `realm` and `parent_key` in the same WHERE,
+// the planner (its statistics a fraction of the table during a load) walked
+// the btree over `(realm, parent_key, rdn_value)` and compared every person
+// with every digest — 14.7 s for one batch at 20,000 entries. The CTE leaves
+// it the GIN bitmap only (`enable_seqscan` is off in the batch).
 const HELD_NAME_KEYS =
-  'SELECT name_keys FROM sts_ldap_entries WHERE realm = $1 AND ' +
-  'parent_key = $2 AND name_keys @> ANY($3::jsonb[])';
+  'WITH hit AS MATERIALIZED (SELECT realm, parent_key, name_keys FROM ' +
+  'sts_ldap_entries WHERE name_keys @> ANY($3::jsonb[])) ' +
+  'SELECT name_keys FROM hit WHERE realm = $1 AND parent_key = $2';
 
 // Who holds a name, for the report (the first twenty only).
 const HOLDER =
@@ -565,8 +572,9 @@ async function importFile(options) {
       })[0];
       if (clash) {
         report.taken += 1;
-        example(one.r, 'STS-LDAP-0160', 'the username ' + clash + ' is ' +
-                'held by ' + byName.get(clash) + ', earlier in the file');
+        example(one.r, 'STS-LDAP-0160', 'the username ' + clash + ' of ' +
+                one.c.dn + ' is held by ' + byName.get(clash) + ', earlier ' +
+                'in the file');
         continue;
       }
       byKey.set(one.c.dnKey, true);
