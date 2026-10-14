@@ -703,7 +703,9 @@ function childMain() {
       form: { response_type: 'code', redirect_uri: REDIRECT, scope: 'openid',
               code_challenge: CHALLENGE, code_challenge_method: 'S256',
               acr_values: 'mfa', step_up_honoured: '1' } });
-    const pushed = r.status === 201 ? par.get(r.json.request_uri) : null;
+    // Kept under the request_uri's digest since #614.
+    const pushed = r.status === 201 ?
+      par.get(par.keyOf(r.json.request_uri)) : null;
     note(pushed && pushed.parameters.acr_values === 'mfa' &&
          pushed.parameters.step_up_honoured === undefined,
          '3i2. a push keeps acr_values and has the marker stripped',
