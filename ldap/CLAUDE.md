@@ -641,7 +641,8 @@ ldif or multi-cell service is unchanged.
   own net: a change detector beside `directoryVersion`, not a cap.
 * **`ldap.maxEntries` is a PER-REALM cap on the STORE in a windowed worker**
   (rcbj): `cappedEntries()` asks the window's `capCount()` — the realm's rows
-  counted by the store at most ten seconds ago, plus this process's net since.
+  counted by the store at most ten seconds ago (a counter row read since
+  #618), plus this process's net since.
   Everywhere else it is `totalEntries()`, what the process holds, as before.
 * **The walks that can say what they want do** (phase 5), and each is the old
   walk outside a windowed worker:
@@ -663,15 +664,18 @@ ldif or multi-cell service is unchanged.
     `hasChildren()`; `countDeviceEntries()` and `personCount()` are
     `countUnderContainer()` (#610): `recentCountUnder()`, the store's count
     of the container at most ten seconds old plus this process's own creates
-    and deletes since (a `count(*)` is linear in the realm's rows — 13–15 ms
-    for 29,303 on 8081, measured), and outside a window the realm's KEYS
+    and deletes since (since #618 the store's count is a counter row the
+    database keeps, `sts_ldap_counts` — `persistence/CLAUDE.md`; it was a
+    `count(*)`, linear in the realm's rows, 13–15 ms for 29,303 on 8081),
+    and outside a window the realm's KEYS
     walked with an `endsWith`, no entry read — still a walk, said there.
     `personNamesUpTo(limit)` reads only the first `limit` + 1 KEYS
     (`keysUnder`: key and DN, no entry read or opened; #616), and
     `personNamesUpToAsync()` asks the same asynchronously for
     `/admin-api/users` and `/admin-api/mfa`;
-    `credentialTallies()` is `countHolding()` (one `count(*) FILTER` over
-    `attr_names`) and `holders()` per credential attribute, and
+    `credentialTallies()` is `countHolding()` (two counter rows since #618;
+    it was one `count(*) FILTER` over `attr_names`) and `holders()` per
+    credential attribute, and
     `countPeopleNamed()` is `byKeys` plus one `withNames` —
     `admin-core/CLAUDE.md`, *the tiles count the directory*.
   - `windowedFind()` for an indexed question (`directory_queries.js`), each
@@ -1244,6 +1248,35 @@ would not exist yet. The builder and `groupIndexNow()` stayed where they are.
 Flat at 0.05ms after, and a group write is still visible to the very next
 read — which is the property `groupsOfUser()` exists to keep and the one thing
 here worth a test of its own.
+
+### AND SINCE #618 THE STAMP IS GONE: THE GROUP INDEX HAS A CLOCK OF ITS OWN (2026-10-14)
+
+The stamp covered `putEntry()` and the whole-directory applier and nothing
+else. On the 1M load on 8081 every LDAP add still rebuilt the index — the
+add's own authorization asks `rolesOf()` → `groupsOfUser()`, and the person
+another worker had added a moment before had reached this one through the
+WINDOWED applier (`forgetEntry()`), which stamped nothing: about 5 s of
+every 30 s of a request worker. And the stamp was wrong in one case: a group
+OVERWRITTEN by a non-group was stamped as "not a group" and stayed in the
+index.
+
+So the index is keyed on `groupsVersion`, moved by `touchDirectory()` itself
+(`noteGroupsTouched()`) — every writer covered, none hooked. A write naming
+no DN moves it; a write naming one moves it when the entry WAS a group when
+the index was built (the index's own `byDn`) or IS one now, read where this
+process holds it and never from the store (`DirectoryWindow.heldIn()`: a
+windowed key it does not hold moves the clock). `forgetEntry()` hands it the
+store's row, so a person another process made is classified without a round
+trip. The invariant above is what makes it exact; the index also keeps the
+`usersDn()` and `groupsDn()` it resolved against. The size net is kept
+outside a window (a size that moved while `directoryVersion` did not), and
+not cast in one, where the size is the store's count. What still moves the
+clock for nothing is a DN-less `touchDirectory()` — fifty-eight callers,
+none on an add.
+`tests/group_index_clock.js` interleaves person adds, replicated person and
+group changes, local group writes and overwrites, in both modes, and checks
+after each step that the index held equals a fresh build — and, in a window,
+that an add asks the store nothing a rebuild asks.
 
 ### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
 

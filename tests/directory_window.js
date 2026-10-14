@@ -1500,7 +1500,8 @@ module.exports = {
             'double, the refusal, and collect(named) looking keys up',
   run: run,
   // The stand-in bridge and its rows, shared with
-  // `tests/directory_window_requests.js` (#616).
+  // `tests/directory_window_requests.js` (#616) and, for its windowed
+  // child, `tests/group_index_clock.js` (#618).
   fakeBridge: fakeBridge,
   row: row
 };

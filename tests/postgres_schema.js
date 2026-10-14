@@ -160,6 +160,67 @@ function checkTheDdlAgrees(t, sql) {
   log.debug("Leaving checkTheDdlAgrees().");
 }
 
+// Statements split on `;` OUTSIDE a dollar-quoted body (#618): a plpgsql
+// function holds semicolons of its own, which `statementsIn()` cuts through
+// — harmless there, since it compares only tables and indexes.
+function quotedAwareStatements(sql) {
+  log.debug("Entering quotedAwareStatements().");
+  const body = sql.split('\n').filter(function (line) {
+    return !/^\s*--/.test(line) && !/^\s*\\/.test(line);
+  }).join('\n');
+  const out = [];
+  let current = '';
+  let quoted = false;
+  for (let i = 0; i < body.length; i++) {
+    if (body.slice(i, i + 2) === '$$') {
+      quoted = !quoted;
+      current += '$$';
+      i += 1;
+      continue;
+    }
+    if (body[i] === ';' && !quoted) {
+      out.push(normalize(current));
+      current = '';
+      continue;
+    }
+    current += body[i];
+  }
+  out.push(normalize(current));
+  log.debug("Leaving quotedAwareStatements().");
+  return out.filter(function (statement) {
+    return statement.length > 0;
+  });
+}
+
+// THE COUNTS' FUNCTIONS AND TRIGGERS (#618) are the driver's, statement for
+// statement, and the script starts the counters with the driver's one count.
+function checkTheRoutinesAgree(t, sql) {
+  log.debug("Entering checkTheRoutinesAgree().");
+  const all = quotedAwareStatements(sql);
+  const fromScript = all.filter(function (statement) {
+    return /^CREATE (OR REPLACE |CONSTRAINT )*(FUNCTION|TRIGGER)/i
+      .test(statement);
+  });
+  const fromDriver = (driver.SCHEMA_ROUTINES || []).map(function (one) {
+    return normalize(one.statement);
+  });
+  t.equal(fromScript.length, fromDriver.length,
+          'postgres/schema.sql holds as many functions and triggers as the ' +
+          'driver (' + fromDriver.length + ')');
+  fromDriver.forEach(function (statement) {
+    t.check(fromScript.indexOf(statement) >= 0,
+            'postgres/schema.sql carries the driver\'s ' +
+            statement.slice(0, 70) + '…', statement);
+  });
+  t.check(all.indexOf(normalize(driver.COUNTS_BACKFILL)) >= 0,
+          'and starts the counters with the driver\'s one count');
+  t.check(all.indexOf(normalize(driver.LOCK_FOR_BACKFILL)) >= 0 &&
+          all.indexOf(normalize(driver.LOCK_FOR_BACKFILL)) <
+            all.indexOf(normalize(driver.COUNTS_BACKFILL)),
+          'under the lock that keeps every writer out, taken first');
+  log.debug("Leaving checkTheRoutinesAgree().");
+}
+
 function checkTheVersionAgrees(t, sql) {
   log.debug("Entering checkTheVersionAgrees().");
   // The script writes the version row so that a database built by an owner
@@ -290,6 +351,7 @@ function run(t) {
   log.debug("Entering run().");
   const sql = fs.readFileSync(SCHEMA_SQL, 'utf8');
   checkTheDdlAgrees(t, sql);
+  checkTheRoutinesAgree(t, sql);
   checkTheVersionAgrees(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);

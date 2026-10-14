@@ -210,6 +210,103 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON sts_ldap_entries USING
 -- placed under `ou=users` or `ou=devices` found without a walk.
 CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries USING gin (class_keys);
 
+-- THE DIRECTORY'S COUNTS, KEPT RATHER THAN COUNTED (#618, schema version 16):
+-- per realm and per base (every ancestor of a row's DN, '' for the realm),
+-- the entries strictly under it (`attribute` '') and those holding a counted
+-- attribute. Triggers on `sts_ldap_entries` append each statement's net to
+-- `sts_ldap_count_deltas`, and a deferred constraint trigger folds a
+-- transaction's deltas into `sts_ldap_counts` at COMMIT. The driver's
+-- SCHEMA_ROUTINES carries the argument.
+CREATE TABLE IF NOT EXISTS sts_ldap_counts (
+  realm     text   NOT NULL,
+  base_key  text   NOT NULL,
+  attribute text   NOT NULL,
+  n         bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (realm, base_key, attribute));
+
+CREATE TABLE IF NOT EXISTS sts_ldap_count_deltas (
+  txid       xid8    NOT NULL DEFAULT pg_current_xact_id(),
+  realm      text    NOT NULL,
+  parent_key text    NOT NULL,
+  n          bigint  NOT NULL,
+  holding    bigint  NOT NULL,
+  fold       boolean NOT NULL DEFAULT false);
+
+CREATE INDEX IF NOT EXISTS sts_ldap_count_deltas_txid ON sts_ldap_count_deltas (txid);
+
+-- No writer may land between the count below and the triggers: CREATE
+-- TRIGGER takes this lock too, and it is taken first so that a run against a
+-- database whose triggers already exist holds it as well.
+LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE;
+
+CREATE OR REPLACE FUNCTION sts_ldap_count_bases(parent text) RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$
+  SELECT parent
+  UNION ALL SELECT substr(parent, i + 1) FROM generate_series(1, length(parent)) AS i WHERE substr(parent, i, 1) = ','
+  UNION ALL SELECT '' WHERE parent <> ''
+$$;
+
+CREATE OR REPLACE FUNCTION sts_ldap_count_note() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE added bigint;
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding)
+    SELECT realm, parent_key, count(*), count(*) FILTER (WHERE attr_names ? 'userpassword')
+    FROM new_rows GROUP BY realm, parent_key;
+  ELSIF TG_OP = 'DELETE' THEN
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding)
+    SELECT realm, parent_key, -count(*), -count(*) FILTER (WHERE attr_names ? 'userpassword')
+    FROM old_rows GROUP BY realm, parent_key;
+  ELSE
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding)
+    SELECT realm, parent_key, sum(n), sum(h) FROM (SELECT realm, parent_key, 1 AS n, CASE WHEN attr_names ? 'userpassword' THEN 1 ELSE 0 END AS h FROM new_rows
+      UNION ALL SELECT realm, parent_key, -1, CASE WHEN attr_names ? 'userpassword' THEN -1 ELSE 0 END FROM old_rows) AS c
+    GROUP BY realm, parent_key HAVING sum(n) <> 0 OR sum(h) <> 0;
+  END IF;
+  GET DIAGNOSTICS added = ROW_COUNT;
+  IF added > 0 AND NOT EXISTS (SELECT 1 FROM sts_ldap_count_deltas WHERE txid = pg_current_xact_id() AND fold) THEN
+    INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding, fold) VALUES ('', '', 0, 0, true);
+  END IF;
+  RETURN NULL;
+END $$;
+
+CREATE OR REPLACE FUNCTION sts_ldap_count_fold() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  WITH folded AS (DELETE FROM sts_ldap_count_deltas WHERE txid = pg_current_xact_id() RETURNING realm, parent_key, n, holding),
+  bases AS (SELECT f.realm, b.base_key, sum(f.n) AS n, sum(f.holding) AS holding FROM folded AS f CROSS JOIN LATERAL sts_ldap_count_bases(f.parent_key) AS b(base_key) WHERE f.n <> 0 OR f.holding <> 0 GROUP BY f.realm, b.base_key)
+  INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, n)
+  SELECT realm, base_key, attribute, n FROM (SELECT realm, base_key, '' AS attribute, n FROM bases WHERE n <> 0
+    UNION ALL SELECT realm, base_key, 'userpassword', holding FROM bases WHERE holding <> 0) AS d
+  ORDER BY realm, base_key, attribute
+  ON CONFLICT (realm, base_key, attribute) DO UPDATE SET n = c.n + EXCLUDED.n;
+  RETURN NULL;
+END $$;
+
+CREATE OR REPLACE FUNCTION sts_ldap_count_truncate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  DELETE FROM sts_ldap_counts;
+  DELETE FROM sts_ldap_count_deltas;
+  RETURN NULL;
+END $$;
+
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_insert AFTER INSERT ON sts_ldap_entries REFERENCING NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_update AFTER UPDATE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_delete AFTER DELETE ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note();
+CREATE OR REPLACE TRIGGER sts_ldap_entries_count_truncate AFTER TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_truncate();
+-- A constraint trigger has no OR REPLACE.
+DROP TRIGGER IF EXISTS sts_ldap_count_deltas_fold ON sts_ldap_count_deltas;
+CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold AFTER INSERT ON sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold();
+
+-- THE ONE COUNT OF THE DIRECTORY: the counters started from the rows already
+-- there, under the lock above, and only when they hold nothing — running this
+-- file again adds nothing. Linear in the rows, once.
+INSERT INTO sts_ldap_counts (realm, base_key, attribute, n)
+SELECT e.realm, b.base_key, a.attribute, count(*)
+FROM sts_ldap_entries AS e
+CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key) AS b(base_key)
+CROSS JOIN LATERAL (SELECT '' AS attribute UNION ALL SELECT 'userpassword' WHERE e.attr_names ? 'userpassword') AS a
+WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_counts)
+GROUP BY e.realm, b.base_key, a.attribute;
+
 CREATE TABLE IF NOT EXISTS sts_realms (
   id          text PRIMARY KEY,
   name        text,
@@ -765,7 +862,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (15) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (16) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

@@ -57,8 +57,9 @@
 // when first asked, moved by this process's own creates and deletes. Another
 // process's creates do not move it until `exactCount()` reads the store
 // again: it is what the directory's caches compare as a change detector
-// beside `directoryVersion`, and `ldap.maxEntries` is a SQL count
-// (`exactCount()`), not this.
+// beside `directoryVersion`, and `ldap.maxEntries` is the store's count
+// (`exactCount()`), not this — since #618 a counter row read, never a
+// `count(*)`.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -659,6 +660,36 @@ class DirectoryWindow {
     }
     const slot = this.lru.peek(slotKey(realmId, key));
     return slot && slot.entry ? slot.entry : null;
+  }
+
+  // Hot path (every write of the directory, through `touchDirectory()`): no
+  // Entering/Leaving pair, the exception the code style allows, stated as it
+  // requires.
+  /**
+   * What this process holds at a key, WITHOUT asking the store (#618): the
+   * group index's question "is the entry just written a group", which must
+   * never cost a round trip. A resident key is always known (the Map is
+   * the whole truth); a windowed key is known when the window, what was
+   * handed out since the last flush, or an evicted entry a caller still
+   * holds has it — an absence held counts — and is NOT known otherwise.
+   *
+   * @param realmId - the realm id
+   * @param key - the normalised DN
+   * @returns `{ known, entry }`; `entry` null for none
+   */
+  heldIn(realmId: string, key: string): { known: boolean;
+                                          entry: Entry | null } {
+    if (!this.isWindowed(realmId, key)) {
+      return { known: true,
+               entry: this.residentOf(realmId).get(key) || null };
+    }
+    const ck = slotKey(realmId, key);
+    const slot = this.lru.peek(ck) || this.touched.get(ck) ||
+      this.liveGhost(ck);
+    if (!slot) {
+      return { known: false, entry: null };
+    }
+    return { known: true, entry: slot.entry };
   }
 
   /**
@@ -1629,6 +1660,14 @@ class DirectoryWindow {
   // most ten seconds old, plus this process's own creates and deletes under
   // the container since (`write()` moves it). Another process's writes
   // reach it within ten seconds; this process's at once.
+  //
+  // SINCE #618 THE STORE'S ANSWER IS A COUNTER, NOT A COUNT: `count` and
+  // `countHolding` read `sts_ldap_counts`, which the database's triggers
+  // keep in the transaction that wrote (`persistence/directory_queries.js`),
+  // one primary-key read whatever the realm's size. The ten seconds are
+  // kept — a question to the store from the front's event loop is still a
+  // round trip — and so is every caller's arithmetic: the store's committed
+  // count plus this process's own net not yet written, as before.
   // ---------------------------------------------------------------------
   /**
    * How many entries are strictly under a base: the store's count, read

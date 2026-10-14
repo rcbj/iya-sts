@@ -161,6 +161,49 @@ The `created_at` and `modified_at` columns are `text` rather than `timestamptz`
 so that they match the LDAP attributes byte for byte. A round trip through
 `timestamptz` would re-render the value in the session's format and time zone.
 
+### `sts_ldap_counts` and `sts_ldap_count_deltas`: the directory's counts
+
+Schema version 16 (#618). A request worker that holds the directory as a
+window used to ask `count(*)` for `ldap.maxEntries`, for a container's count
+on a Directory page, and for the credential tiles on `/admin/users`. A
+`count(*)` is linear in the realm's rows. Each count is now one primary-key
+read of `sts_ldap_counts`:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `realm` | text | the trust realm |
+| `base_key` | text | a normalised DN, or `''` for the whole realm. The count is of the entries **strictly under** it, so every ancestor of a row's DN has a row of its own |
+| `attribute` | text | `''` for every entry, or a counted attribute (`userpassword`) for the entries that hold it |
+| `n` | bigint | the count |
+
+Primary key `(realm, base_key, attribute)`. A base with no row has nothing
+under it.
+
+**The database keeps the counts, not the service.** Triggers on
+`sts_ldap_entries` see every write in the transaction that makes it,
+whichever process or tool wrote it:
+
+1. Each INSERT, UPDATE or DELETE statement appends its net change per parent
+   to `sts_ldap_count_deltas`. This table is insert-only, so writers never
+   wait on each other here.
+2. When the transaction commits, a deferred constraint trigger folds that
+   transaction's deltas into `sts_ldap_counts` in one statement, in key
+   order.
+
+A committed transaction leaves no delta rows behind. The counter rows are
+locked only for the last moment of a commit. Updating them on every
+statement would serialise every flush of a realm on the same few rows.
+
+A TRUNCATE empties the counters. The service's role cannot TRUNCATE.
+
+**The counts start with one count of the table.** When the triggers are
+created, by `postgres/schema.sql` or by the driver against an empty store,
+`sts_ldap_entries` is locked against writers and counted. This happens only
+while `sts_ldap_counts` is empty, and it is the only count of the directory
+there is. On a large directory the first `schema.sql` run after upgrading to
+version 16 holds that lock for as long as the count takes: minutes at
+hundreds of millions of rows. After that the counts cost nothing to read.
+
 ### `sts_realms`: the realm registry
 
 | Column | Type | Meaning |

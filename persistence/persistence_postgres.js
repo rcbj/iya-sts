@@ -223,7 +223,10 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // 14 IS #222's: `sts_minted.key_sealed`, the name beside its digest.
 // 15 SINCE 2026-10-03, for `sts_cluster_budgets` (#432 phase 5): a budget
 // spent against a limit, one conditional upsert per spend.
-const SCHEMA_VERSION = 15;
+// 16 SINCE 2026-10-14, for `sts_ldap_counts`, `sts_ldap_count_deltas` and
+// the triggers that keep them (#618): the directory's counts kept rather
+// than counted.
+const SCHEMA_VERSION = 16;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -426,6 +429,50 @@ const SCHEMA_OBJECTS = [
   { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
   'USING gin (class_keys)' },
+  // -------------------------------------------------------------------------
+  // THE DIRECTORY'S COUNTS, KEPT RATHER THAN COUNTED (#618, schema version
+  // 16). A request worker holding the directory as a window asked the store
+  // `count(*)` for `ldap.maxEntries`, a container's headline and the
+  // credential tiles — linear in the realm's rows (13–15 ms at 29,303 on
+  // 8081, so seconds at 200M). Now each is one primary-key read of
+  // `sts_ldap_counts`: per realm, per BASE (every ancestor of a row's DN, and
+  // '' for the whole realm, so "strictly under a base" is one row whatever
+  // the base), the entries under it (`attribute` '') and those holding each
+  // COUNTED attribute (`directory_queries.COUNTED_ATTRIBUTES`).
+  //
+  // THE DATABASE KEEPS THEM, not this driver: statement-level triggers on
+  // `sts_ldap_entries` (SCHEMA_ROUTINES below) see every writer — the
+  // flush, the merge, a removed realm, a cell conversion, a hand-run
+  // statement — in the transaction that wrote. A trigger does NOT update the
+  // counter rows itself: every write of a realm touches the same few rows
+  // (the realm's '', the base DN, `ou=users`), and a lock on them held from a
+  // flush's first statement to its commit would serialise every flush of
+  // the realm and close a deadlock with the entry locks the flush takes in
+  // key order. So each statement appends its net per parent to
+  // `sts_ldap_count_deltas` (insert only, no lock anybody waits on), and ONE
+  // deferred constraint trigger folds the transaction's deltas into
+  // `sts_ldap_counts` at COMMIT — one statement, in key order, after every
+  // entry lock is held: the counter rows are locked only for the commit's
+  // tail. A committed transaction leaves no delta behind.
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_counts', statement:
+  'CREATE TABLE IF NOT EXISTS sts_ldap_counts (' +
+  '  realm     text   NOT NULL,' +
+  '  base_key  text   NOT NULL,' +
+  '  attribute text   NOT NULL,' +
+  '  n         bigint NOT NULL DEFAULT 0,' +
+  '  PRIMARY KEY (realm, base_key, attribute))' },
+  { name: 'sts_ldap_count_deltas', statement:
+  'CREATE TABLE IF NOT EXISTS sts_ldap_count_deltas (' +
+  '  txid       xid8    NOT NULL DEFAULT pg_current_xact_id(),' +
+  '  realm      text    NOT NULL,' +
+  '  parent_key text    NOT NULL,' +
+  '  n          bigint  NOT NULL,' +
+  '  holding    bigint  NOT NULL,' +
+  '  fold       boolean NOT NULL DEFAULT false)' },
+  { name: 'sts_ldap_count_deltas_txid', statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_count_deltas_txid ON ' +
+  'sts_ldap_count_deltas (txid)' },
   { name: 'sts_realms', statement:
   'CREATE TABLE IF NOT EXISTS sts_realms (' +
   '  id          text PRIMARY KEY,' +
@@ -1134,6 +1181,166 @@ const SCHEMA_COLUMNS = [
  */
 const SCHEMA =
     SCHEMA_OBJECTS.map(function (object) { return object.statement; });
+
+// ---------------------------------------------------------------------------
+// THE FUNCTIONS AND TRIGGERS THAT KEEP `sts_ldap_counts` (#618, schema
+// version 16) — see the two tables in SCHEMA_OBJECTS for the design. A
+// function or a trigger is not a relation, so `to_regclass()` cannot probe
+// it: `open()` asks `pg_proc` and `pg_trigger` by name instead, and creates
+// only what is missing, for the reason SCHEMA_OBJECTS gives.
+// `postgres/schema.sql` holds the same statements (a constraint trigger has
+// no `OR REPLACE`, so the script drops it first), and
+// `tests/postgres_schema.js` compares them.
+//
+//   * `sts_ldap_count_bases(parent)`: the bases a row with that parent is
+//     STRICTLY under — the parent, each suffix of it after a comma, and ''
+//     (the realm). `normalizeDn()`'s simplification, as `parent_key`'s.
+//   * `sts_ldap_count_note()`: each statement's net per (realm, parent):
+//     rows, and rows whose `attr_names` hold `userpassword`, appended to the
+//     deltas; the transaction's first delta also appends the one row whose
+//     `fold` arms the commit-time fold. The count over a TRANSITION table is
+//     of the statement's own rows, never the directory's.
+//   * `sts_ldap_count_fold()`: at COMMIT, the transaction's deltas deleted
+//     and added to the counters, expanded to every base, in key order.
+//   * `sts_ldap_count_truncate()`: a TRUNCATE (an owner's; the service's role
+//     has none) fires no row trigger, so it empties the counters too.
+//
+// THE ATTRIBUTES COUNTED are written into the functions, and
+// `directory_queries.COUNTED_ATTRIBUTES` names the same list; the test holds
+// them together. `userpassword` is the only one asked today — the
+// credential tiles' "has a password" (#610); every other holder question is
+// answered by the holders themselves (`withAttribute`), not a count.
+// ---------------------------------------------------------------------------
+const COUNT_BASES_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_bases(parent text) ' +
+  'RETURNS SETOF text LANGUAGE sql IMMUTABLE AS $$ ' +
+  'SELECT parent ' +
+  'UNION ALL SELECT substr(parent, i + 1) FROM generate_series(1, ' +
+  'length(parent)) AS i WHERE substr(parent, i, 1) = \',\' ' +
+  'UNION ALL SELECT \'\' WHERE parent <> \'\' $$';
+
+const COUNT_NOTE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_note() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'DECLARE added bigint; ' +
+  'BEGIN ' +
+  'IF TG_OP = \'INSERT\' THEN ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding) ' +
+  'SELECT realm, parent_key, count(*), count(*) FILTER (WHERE attr_names ? ' +
+  '\'userpassword\') FROM new_rows GROUP BY realm, parent_key; ' +
+  'ELSIF TG_OP = \'DELETE\' THEN ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding) ' +
+  'SELECT realm, parent_key, -count(*), -count(*) FILTER (WHERE attr_names ' +
+  '? \'userpassword\') FROM old_rows GROUP BY realm, parent_key; ' +
+  'ELSE ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding) ' +
+  'SELECT realm, parent_key, sum(n), sum(h) FROM (' +
+  'SELECT realm, parent_key, 1 AS n, CASE WHEN attr_names ? ' +
+  '\'userpassword\' THEN 1 ELSE 0 END AS h FROM new_rows ' +
+  'UNION ALL SELECT realm, parent_key, -1, CASE WHEN attr_names ? ' +
+  '\'userpassword\' THEN -1 ELSE 0 END FROM old_rows) AS c ' +
+  'GROUP BY realm, parent_key HAVING sum(n) <> 0 OR sum(h) <> 0; ' +
+  'END IF; ' +
+  'GET DIAGNOSTICS added = ROW_COUNT; ' +
+  'IF added > 0 AND NOT EXISTS (SELECT 1 FROM sts_ldap_count_deltas WHERE ' +
+  'txid = pg_current_xact_id() AND fold) THEN ' +
+  'INSERT INTO sts_ldap_count_deltas (realm, parent_key, n, holding, fold) ' +
+  'VALUES (\'\', \'\', 0, 0, true); ' +
+  'END IF; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+const COUNT_FOLD_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_fold() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'WITH folded AS (DELETE FROM sts_ldap_count_deltas WHERE txid = ' +
+  'pg_current_xact_id() RETURNING realm, parent_key, n, holding), ' +
+  'bases AS (SELECT f.realm, b.base_key, sum(f.n) AS n, sum(f.holding) AS ' +
+  'holding FROM folded AS f CROSS JOIN LATERAL ' +
+  'sts_ldap_count_bases(f.parent_key) AS b(base_key) WHERE f.n <> 0 OR ' +
+  'f.holding <> 0 GROUP BY f.realm, b.base_key) ' +
+  'INSERT INTO sts_ldap_counts AS c (realm, base_key, attribute, n) ' +
+  'SELECT realm, base_key, attribute, n FROM (' +
+  'SELECT realm, base_key, \'\' AS attribute, n FROM bases WHERE n <> 0 ' +
+  'UNION ALL SELECT realm, base_key, \'userpassword\', holding FROM bases ' +
+  'WHERE holding <> 0) AS d ORDER BY realm, base_key, attribute ' +
+  'ON CONFLICT (realm, base_key, attribute) DO UPDATE SET n = c.n + ' +
+  'EXCLUDED.n; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+const COUNT_TRUNCATE_FUNCTION =
+  'CREATE OR REPLACE FUNCTION sts_ldap_count_truncate() RETURNS trigger ' +
+  'LANGUAGE plpgsql AS $$ ' +
+  'BEGIN ' +
+  'DELETE FROM sts_ldap_counts; ' +
+  'DELETE FROM sts_ldap_count_deltas; ' +
+  'RETURN NULL; ' +
+  'END $$';
+
+/**
+ * The functions and triggers that keep the directory's counts (#618), each
+ * `{ kind, name, table?, statement }`, probed by name and created where
+ * missing, functions first.
+ */
+const SCHEMA_ROUTINES = [
+  { kind: 'function', name: 'sts_ldap_count_bases',
+    statement: COUNT_BASES_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_count_note',
+    statement: COUNT_NOTE_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_count_fold',
+    statement: COUNT_FOLD_FUNCTION },
+  { kind: 'function', name: 'sts_ldap_count_truncate',
+    statement: COUNT_TRUNCATE_FUNCTION },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_insert',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_insert AFTER INSERT ' +
+    'ON sts_ldap_entries REFERENCING NEW TABLE AS new_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_count_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_update',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_update AFTER UPDATE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows NEW TABLE AS ' +
+    'new_rows FOR EACH STATEMENT EXECUTE FUNCTION sts_ldap_count_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_delete',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_delete AFTER DELETE ' +
+    'ON sts_ldap_entries REFERENCING OLD TABLE AS old_rows FOR EACH ' +
+    'STATEMENT EXECUTE FUNCTION sts_ldap_count_note()' },
+  { kind: 'trigger', name: 'sts_ldap_entries_count_truncate',
+    table: 'sts_ldap_entries', statement:
+    'CREATE OR REPLACE TRIGGER sts_ldap_entries_count_truncate AFTER ' +
+    'TRUNCATE ON sts_ldap_entries FOR EACH STATEMENT EXECUTE FUNCTION ' +
+    'sts_ldap_count_truncate()' },
+  { kind: 'trigger', name: 'sts_ldap_count_deltas_fold',
+    table: 'sts_ldap_count_deltas', statement:
+    'CREATE CONSTRAINT TRIGGER sts_ldap_count_deltas_fold AFTER INSERT ON ' +
+    'sts_ldap_count_deltas DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN ' +
+    '(NEW.fold) EXECUTE FUNCTION sts_ldap_count_fold()' }
+];
+
+// ---------------------------------------------------------------------------
+// THE ONE PLACE THE DIRECTORY IS COUNTED: once, when the counters start
+// (#618). Run under a lock that keeps every writer out — `CREATE TRIGGER`
+// takes SHARE ROW EXCLUSIVE on the table, and `LOCK_FOR_BACKFILL` says so
+// out loud for a run where the triggers were already there — so no write can
+// fall between the count and the first trigger. Only when the counters hold
+// nothing: a second run, a second process, or the script after the driver,
+// adds nothing. Linear in the rows, ONCE: at 200M a long first start, said
+// in `docs/postgres-schema.md`.
+// ---------------------------------------------------------------------------
+const LOCK_FOR_BACKFILL =
+  'LOCK TABLE sts_ldap_entries IN SHARE ROW EXCLUSIVE MODE';
+const COUNTS_BACKFILL =
+  'INSERT INTO sts_ldap_counts (realm, base_key, attribute, n) ' +
+  'SELECT e.realm, b.base_key, a.attribute, count(*) ' +
+  'FROM sts_ldap_entries AS e ' +
+  'CROSS JOIN LATERAL sts_ldap_count_bases(e.parent_key) AS b(base_key) ' +
+  'CROSS JOIN LATERAL (SELECT \'\' AS attribute UNION ALL SELECT ' +
+  '\'userpassword\' WHERE e.attr_names ? \'userpassword\') AS a ' +
+  'WHERE NOT EXISTS (SELECT 1 FROM sts_ldap_counts) ' +
+  'GROUP BY e.realm, b.base_key, a.attribute';
 
 
 // ===========================================================================
@@ -2974,6 +3181,59 @@ function create(options) {
             });
           });
           return chain;
+        }).then(function () {
+          // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
+          // function or a trigger is not a relation `to_regclass()` knows —
+          // and created where missing, functions first. When this process
+          // created a counting trigger, the counters start here: under the
+          // lock, the one count of the directory (COUNTS_BACKFILL).
+          const functions = SCHEMA_ROUTINES.filter(function (one) {
+            return one.kind === 'function';
+          }).map(function (one) { return one.name; });
+          const triggers = SCHEMA_ROUTINES.filter(function (one) {
+            return one.kind === 'trigger';
+          }).map(function (one) { return one.name; });
+          return client.query(
+            'SELECT p.proname AS name FROM pg_proc p JOIN pg_namespace n ON ' +
+            'n.oid = p.pronamespace WHERE n.nspname = current_schema() AND ' +
+            'p.proname = ANY($1::text[]) UNION SELECT t.tgname FROM ' +
+            'pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN ' +
+            'pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ' +
+            'current_schema() AND t.tgname = ANY($2::text[])',
+            [functions, triggers]).then(function (result) {
+            const present = new Set(((result && result.rows) || [])
+              .map(function (row) { return row.name; }));
+            const missing = SCHEMA_ROUTINES.filter(function (one) {
+              return !present.has(one.name);
+            });
+            if (!missing.length) {
+              return null;
+            }
+            let chain = Promise.resolve();
+            missing.forEach(function (one) {
+              chain = chain.then(function () {
+                return client.query(one.statement).then(function () {
+                  created.push(one.name);
+                });
+              });
+            });
+            const startsCounting = missing.some(function (one) {
+              return one.kind === 'trigger';
+            });
+            if (!startsCounting) {
+              return chain;
+            }
+            return chain.then(function () {
+              return client.query(LOCK_FOR_BACKFILL);
+            }).then(function () {
+              return client.query(COUNTS_BACKFILL);
+            }).then(function (r) {
+              log.info('persistence: the directory\'s counts start here ' +
+                       '(#618): ' + ((r && r.rowCount) || 0) + ' counter ' +
+                       'row(s) written from one count of sts_ldap_entries, ' +
+                       'under a lock; the triggers keep them from now on.');
+            });
+          });
         }).then(function () {
           // DML, and the one statement here that runs on every open. The
           // script writes this row too; `ON CONFLICT DO NOTHING` is what
@@ -7246,6 +7506,9 @@ module.exports = {
   METRIC_PROBES: METRIC_PROBES,
   CHANNEL: CHANNEL,
   SCHEMA: SCHEMA,
+  SCHEMA_ROUTINES: SCHEMA_ROUTINES,
+  LOCK_FOR_BACKFILL: LOCK_FOR_BACKFILL,
+  COUNTS_BACKFILL: COUNTS_BACKFILL,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
   SCHEMA_VERSION: SCHEMA_VERSION,
