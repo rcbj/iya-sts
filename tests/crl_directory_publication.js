@@ -353,6 +353,9 @@ async function run(t) {
     // `pki.start()` publishes nothing in either; the front's lists are
     // written by `publishStartupCrls()`, which `server.js` calls once the
     // listener is bound — one at a time, yielding between them.
+    // The first `pki.start()` above, in this (front) process, left its lists
+    // for publishStartupCrls(); published here, before anything is counted.
+    await pki.publishStartupCrls();
     const installed = revocation.currentDirectory();
     let writes = 0;
     let turns = 0;
