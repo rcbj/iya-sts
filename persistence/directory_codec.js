@@ -290,8 +290,9 @@ function keyArgs(name, args) {
  */
 function openAnswer(codec, name, answer) {
   log.debug("Entering openAnswer(). " + name);
-  if (!Array.isArray(answer)) {
-    log.debug("Leaving openAnswer(). Not rows.");
+  // KEYS AND DNs ONLY (`keysUnder`, #616): nothing sealed to open.
+  if (!Array.isArray(answer) || name === 'keysUnder') {
+    log.debug("Leaving openAnswer(). Not entries.");
     return answer;
   }
   const out = [];

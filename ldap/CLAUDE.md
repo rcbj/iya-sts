@@ -669,9 +669,13 @@ ldif or multi-cell service is unchanged.
     `count(*)`, linear in the realm's rows, 13–15 ms for 29,303 on 8081),
     and outside a window the realm's KEYS
     walked with an `endsWith`, no entry read — still a walk, said there.
-    `personNamesUpTo(limit)` pages only the first `limit` + 1 people;
+    `personNamesUpTo(limit)` reads only the first `limit` + 1 KEYS
+    (`keysUnder`: key and DN, no entry read or opened; #616), and
+    `personNamesUpToAsync()` asks the same asynchronously for
+    `/admin-api/users` and `/admin-api/mfa`;
     `credentialTallies()` is `countHolding()` (two counter rows since #618;
-    it was one `count(*) FILTER` over `attr_names`) and `holders()` per credential attribute, and
+    it was one `count(*) FILTER` over `attr_names`) and `holders()` per
+    credential attribute, and
     `countPeopleNamed()` is `byKeys` plus one `withNames` —
     `admin-core/CLAUDE.md`, *the tiles count the directory*.
   - `windowedFind()` for an indexed question (`directory_queries.js`), each
@@ -704,17 +708,52 @@ ldif or multi-cell service is unchanged.
     (`DirectoryWindow.pageAfter()`), which `attribute-sources.refresh` asks
     instead of `attributeSourcePeople()`'s list-and-sort of everybody.
   - `personCount()` is the store's count (above); `allPersons()` pages
-    `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it;
-    the LDAP search walks only what its base reaches, read-only and lazily, so
-    a size limit stops the paging.
-  - **Still whole walks, correct and paged**: `populateVcAttributes()`
-    (development only), `ldapDirectoryView()`, the realm-retirement
+    `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
+  - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,
+    rcbj: "minimize full directory scans and use asynchronous javascript
+    operations, not blocking operations").** On 8081 at 200,000 people
+    `/admin-api/ldap/directory?per=1` held a request worker 38–45 s, an LDAP
+    search for every group 28.5 s, `/admin-api/users` 3 s. The window's
+    asynchronous questions — `askAsync()`, `walkAsync()`,
+    `classesUnderAsync()`, `realmPageAsync()`, `keysUnderAsync()` — ask
+    through the bridge's `queryAsync()` (the driver's read pool), give the
+    event loop back between pages, and hand nothing out:
+    - **`/admin/ldap/directory`** (`windowedDirectoryView()`) is a promise:
+      the store's `realmCount` and `originCounts`, and ONE `realmPage` with
+      the origin filter and LIMIT/OFFSET pushed down. Its order is the
+      store's key order (`order: 'key'`; the whole directory's is the
+      collated DN, `'dn'`). A `q` matches values the store holds sealed, so
+      it looks inside at most `DIRECTORY_SEARCH_SCAN` (5,000) entries and
+      says so in `search` and on the page. `GET /admin-api/ldap/directory`
+      awaits it and answers 503 (STS-LDAP-0139) when the store fails.
+    - **An LDAP search no index narrows** (`windowedSearchCandidates()`) is
+      asynchronous (`req.stsAsyncOperation`): `walkAsync()` of what the
+      base reaches, or — for a filter whose matches must carry a GROUP
+      class — the resident entries and `classesUnderAsync()` per windowed
+      container, no person paged. It stops paging at `ldap.sizeLimit` and
+      at `ldap.timeLimit` or the client's shorter `timeLimit`
+      (`timeLimitExceeded`, 3, STS-LDAP-0140, the entries sent kept); a page
+      that fails ends it `unavailable` (52, STS-LDAP-0141).
+    - **Still whole walks on a request path**, recorded as `owed` in
+      `tests/no_full_directory_walk_in_requests.js` with what would remove
+      each: the role screen's candidates (`personDns()`), the cells page's
+      residents (`residentsPage()`), SCIM's user list for any filter but
+      `userName eq` (asked of the name index since #616), and
+      `/admin/ldap/devices`. Fixed by #616's audit besides: the RFC 7523/7522
+      issuer lookup (the key pair's holders), the portal's forgot-password
+      address (`peopleByMail()`), and SCIM's HOBA key (`personsHolding()`).
+  - **Still whole walks, correct and paged, off the request path**:
+    `populateVcAttributes()` (development only), the realm-retirement
     announcement and the seed; `buildUsernameIndex()` is not reached.
 * **A bridge failure inside an LDAP operation** answers `unavailable` (52),
   `STS-LDAP-0130`/`0131`, from `performOperation()`; over HTTP the worker's
   last error middleware answers 503 (`common/CLAUDE.md`).
 
-`tests/directory_window.js`, section H loading this file as a windowed worker.
+`tests/directory_window.js`, section H loading this file as a windowed worker;
+`tests/directory_window_requests.js` counts #616's questions (synchronous and
+asynchronous, by name, and the rows answered) over thousands of people, and
+`tests/no_full_directory_walk_in_requests.js` holds the request handlers to
+no synchronous walk of every person or device but its argued exemptions.
 
 ### The socket picks a store, and it picks it from the DN
 
@@ -2042,11 +2081,17 @@ parser at both ends" argument, transposed.
   not hold would leave `/admin/sessions` unable to date the session and every
   other worker's mirror showing the socket as unbound — so a global sign-out
   would find nobody to sign out.
-* **The search is COLLECTED, not streamed.** The worker fills an array and the
-  front process sends it. That cost is bounded by the thing that already bounds
-  it: `maxSearchResults()` caps a search at `ldap.sizeLimit` whether it ran here
-  or in a worker, so the array is never larger than an answer this service was
-  already willing to build.
+* **The search is STREAMED since #616**, where it was collected. A search
+  that pages the store asynchronously hands each batch of entries to the
+  operation's `emit` (`collectingResponse(emit)`, flushed on a
+  `setImmediate`, between two pages); the worker sends it as a PART
+  (`{ operation, id, partial: true }`, `request_worker.ts`), the pool hands
+  it to the caller's `onPartial` (`request_pool.js` `receiveOperation()`),
+  and `throughTheRequestPool()` writes it to the socket while the worker
+  reads the next page. The answer carries only what was not sent ahead
+  (`operationOutcome()` splices, so a batch is never sent twice). A search
+  answered in one tick never lets a batch run and answers whole, as before;
+  either way `ldap.sizeLimit` bounds what one search sends.
 * **The `SearchEntry` message itself.** `toSearchEntry()` decides WHICH
   attributes go back — requested, operational, canonically spelled — and that is
   store logic, so it runs in the worker. What crosses is the plain

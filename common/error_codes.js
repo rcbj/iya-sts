@@ -1333,6 +1333,12 @@ const CODES = [
       'restart itself with one (no process.execve, or the call failed), so ' +
       'it runs without a limit; its request workers still get one (#341).',
     spec: '' },
+  { code: 'STS-WORKER-0049',
+    summary: 'A part of an operation\'s answer that a request worker sent ' +
+      'ahead of it (#616: an LDAP search streaming its entries) could not ' +
+      'be handed to the caller waiting in the front process — its socket ' +
+      'write threw. The operation itself still ends with its answer.',
+    spec: '' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',
@@ -12743,6 +12749,25 @@ const CODES = [
     summary: 'A group owner remove named a value the group does not list as ' +
       'an owner (#603).',
     spec: 'HTTP 400 (API) or a refusal on the group page' },
+  { code: 'STS-LDAP-0139',
+    summary: 'GET /admin-api/ldap/directory, /admin-api/users or ' +
+      '/admin-api/mfa in a process holding the directory as a window (#616) ' +
+      'asked the store for its counts, its page or its first names ' +
+      'asynchronously and the store failed to answer. The page is refused ' +
+      'rather than drawn out of what this process happens to hold.',
+    spec: 'HTTP 503 with Retry-After' },
+  { code: 'STS-LDAP-0140',
+    summary: 'An LDAP search reached its time limit (#616) — the client\'s ' +
+      'timeLimit or ldap.timeLimit, whichever is shorter — before it had ' +
+      'considered everything under its base. The entries already sent are ' +
+      'a partial answer and the paging of the store stops there.',
+    spec: 'RFC 4511 section 4.5.1.5: timeLimitExceeded (3)' },
+  { code: 'STS-LDAP-0141',
+    summary: 'An LDAP search read from the store asynchronously (#616) and ' +
+      'a page of the read failed part way. The entries already sent stay ' +
+      'sent; the search ends unavailable rather than answering as though ' +
+      'the rest of the directory were empty.',
+    spec: 'RFC 4511: unavailable (52)' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

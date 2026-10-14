@@ -169,6 +169,7 @@
   "directory.placeholder": "a DN, an attribute name, or a value",
   "directory.cameFrom": "Came from",
   "directory.searchNote": "The box matches the DN, any attribute NAME and any attribute VALUE, case-insensitively. Values are searched because the reader who needs this most often has a thumbprint or a secret in hand and no idea which entry carries it, which a search over DNs alone cannot answer.",
+  "directory.searchLimited": "<strong>The box looked inside the first {scanned} entries in key order, not all of them.</strong> Attribute values are sealed in the store, so a search of them cannot be asked of it, and one request reads at most {limit}. Choose an origin, or put more of the DN in the box, to narrow what is looked inside.",
   "directory.thAttributes": "Attributes",
   "directory.noMatch": "No entry matches.",
   "directory.filterHiding": "The filter above may be hiding some.",

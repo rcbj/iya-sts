@@ -2672,6 +2672,24 @@ const SCHEMAS = {
                  description: 'Every value of `origin` present in this ' +
                               'realm, which is what the `origin` parameter ' +
                               'may be set to.' },
+      // #616: what a windowed process could and could not ask of the store.
+      order: { type: 'string', enum: ['dn', 'key'],
+               description: 'How the entries are ordered: `dn`, by DN as ' +
+                            'written, collated (the directory held whole); ' +
+                            '`key`, by normalised DN in the store\'s key ' +
+                            'order (a process holding the directory as a ' +
+                            'window, which asks the store for one page ' +
+                            'rather than sorting everything).' },
+      search: { oneOf: [{ type: 'null' }, openObject(
+        'Where `q` was given in a windowed process: how many entries it ' +
+        'looked inside (`scanned`, at most `scanLimit`, in key order and of ' +
+        'the chosen origin) and whether that was all of them (`complete`). ' +
+        'Attribute values are sealed in the store, so the search cannot be ' +
+        'asked of it; `matched` and the paging are over what was looked ' +
+        'inside. Null where nothing was bounded.', {
+          complete: { type: 'boolean' },
+          scanned: { type: 'integer' },
+          scanLimit: { type: 'integer' } })] },
       entries: { type: 'array',
                  items: openObject('One entry: `dn`, `origin` and ' +
                                    '`attributes`.', {}) }

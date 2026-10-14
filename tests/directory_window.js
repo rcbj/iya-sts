@@ -1499,7 +1499,9 @@ module.exports = {
             'scans and size, other processes, persistence.js over a pg ' +
             'double, the refusal, and collect(named) looking keys up',
   run: run,
-  // The synchronous stand-in for the bridge, for another test's windowed
-  // child (`tests/group_index_clock.js`, #618).
-  fakeBridge: fakeBridge
+  // The stand-in bridge and its rows, shared with
+  // `tests/directory_window_requests.js` (#616) and, for its windowed
+  // child, `tests/group_index_clock.js` (#618).
+  fakeBridge: fakeBridge,
+  row: row
 };

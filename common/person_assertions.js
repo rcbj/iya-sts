@@ -510,10 +510,12 @@ function recordOf(name, raw, openKeys) {
 // get past the registered-issuer refusal and be judged on its `x5c` alone.
 // Holding a key pair is the thing an operator DID.
 //
-// **IT IS A SCAN, AND THE COST IS WRITTEN DOWN HERE RATHER THAN HIDDEN.** One
-// read per person in the realm, on an assertion grant whose `iss` matched no
-// application — so a realm carrying the bulk-load job's five thousand entries
-// pays five thousand reads for such a request. Reading `iss` as a username
+// **IT IS A SCAN OF THE KEY PAIR'S HOLDERS, AND THE COST IS WRITTEN DOWN HERE
+// RATHER THAN HIDDEN.** One read per person holding the profile's key pair
+// (since #616, which follows from the rule just above; it was one read per
+// person in the realm, so a realm carrying the bulk-load job's five thousand
+// entries paid five thousand reads for a grant whose `iss` matched no
+// application). Reading `iss` as a username
 // FIRST would make the common case one read, and it was refused: a DECLARED
 // value has to win over a bare name (that is what `issuerEntry()` does for an
 // application, and what lets somebody assert under a URI), and a shortcut that
@@ -535,7 +537,8 @@ function recordOf(name, raw, openKeys) {
  * profile.
  *
  * A declared issuer wins over a bare username, and a person with no key pair
- * for the profile is no issuer. A scan: one read per person in the realm.
+ * for the profile is no issuer. One read per HOLDER of the profile's key
+ * pair (#616), not per person in the realm.
  *
  * @param iss - the assertion's issuer
  * @param purpose - `jwt` (the default) or `saml`
@@ -549,7 +552,21 @@ function issuerFor(iss, purpose) {
     log.debug('Leaving issuerFor(). No directory, issuer or profile.');
     return null;
   }
-  const names = directory.persons() || [];
+  // THE HOLDERS OF THE PROFILE'S KEY PAIR, NOT EVERY PERSON (#616). A person
+  // with no key pair for the profile is no issuer (below), so only they need
+  // be read — and `holdingAny()` asks the directory for exactly them, in
+  // `persons()`' order (in a windowed process the store's `attr_names`
+  // holders, a page at a time). This was `persons()`, which in a windowed
+  // process paged every person in the realm out of the store on the token
+  // endpoint's thread for each assertion grant whose `iss` named no
+  // application. A directory without `holdingAny()` is walked as before.
+  const holderNames = typeof directory.holdingAny === 'function'
+    ? (directory.holdingAny([KEY_PAIR_ATTRIBUTES[saml ? 'saml' : 'jwt']
+      .present]) || []).map(function (one) {
+      return String(one.username);
+    })
+    : null;
+  const names = holderNames || directory.persons() || [];
   let fallback = null;
   for (let i = 0; i < names.length; i++) {
     const record = recordFor(names[i]);

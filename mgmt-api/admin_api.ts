@@ -6238,8 +6238,27 @@ class AdminApi {
           log.debug("Entering the management API users endpoint.");
           // The person's current risk, read first (#62) — the console's
           // route does the same, so the two answers agree.
+          // The list's directory names are asked of the store
+          // asynchronously (#616: `usersJsonAsync()`), which held a request
+          // worker's event loop for seconds at 200,000 people.
           return adminViews.riskFor(req.query).then(function (risk) {
-            self.sendJson(res, 200, adminViews.usersJson(req, risk));
+            return adminViews.usersJsonAsync(req, risk);
+          }).then(function (json) {
+            self.sendJson(res, 200, json);
+          }, function (e) {
+            log.debug("Caught in the management API users endpoint: " +
+                      ((e && e.message) || e));
+            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                     'STS-LDAP-0139') +
+                      'admin-api: the users list ' +
+                      'could not be read from the store: ' +
+                      ((e && e.message) || e));
+            res.setHeader('Retry-After', '5');
+            errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                 'STS-LDAP-0139');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
           });
           log.debug("Leaving the management API users endpoint.");
         } },
@@ -9039,7 +9058,14 @@ class AdminApi {
                      'NAME and any attribute VALUE, case-insensitively — ' +
                      'values because the caller who needs this most often ' +
                      'has a thumbprint or a secret in hand and no idea which ' +
-                     'entry carries it.\n\nTHE REPLY IS THIS REALM\'S ' +
+                     'entry carries it.\n\nWHERE THE DIRECTORY IS HELD AS ' +
+                     'A WINDOW ONTO THE STORE (#616) the counts, the ' +
+                     '`origin` filter, the order and the page are asked of ' +
+                     'the store, so the order is the store\'s key order ' +
+                     '(`order: key`), and a `q` — which matches values the ' +
+                     'store holds sealed — looks inside at most a bounded ' +
+                     'number of entries and says how many in `search`.\n\n' +
+                     'THE REPLY IS THIS REALM\'S ' +
                      'DIRECTORY AND NO OTHER. Since 2026-08-25 each trust ' +
                      'realm has a subtree of its own; reach another ' +
                      'realm\'s through its own path prefix.',
@@ -9058,9 +9084,35 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/DirectoryEntryList' },
         handler: function (req, res) {
           log.debug("Entering the management API directory entries endpoint.");
-          self.sendJson(res, 200,
-                        adminViews.directoryPageJson('directory', req));
-          log.debug("Leaving the management API directory entries endpoint.");
+          // A PROMISE IN A WINDOWED PROCESS (#616): the page is asked of the
+          // store asynchronously there, so the event loop runs while the
+          // database answers. Awaited here and the rejection CAUGHT —
+          // Express 4 does not look at what a handler returns — as a 503:
+          // the store could not be read, which says nothing about the
+          // directory's contents. The rejection's own code where it carries
+          // one (the bridge's STS-LDAP-0130/0131), STS-LDAP-0139 otherwise.
+          Promise.resolve(adminViews.directoryPageJson('directory', req))
+            .then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving the management API directory entries " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API directory entries " +
+                        "endpoint: " + ((e && e.message) || e));
+              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                       'STS-LDAP-0139') +
+                        'admin-api: the directory ' +
+                        'page could not be read from the store: ' +
+                        ((e && e.message) || e));
+              res.setHeader('Retry-After', '5');
+              errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                   'STS-LDAP-0139');
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving the management API directory entries " +
+                        "endpoint. Unavailable.");
+            });
         } },
 
       { method: 'GET', path: BASE + '/ldap/applications', tag: 'LDAP',
@@ -9674,8 +9726,26 @@ class AdminApi {
           'The roster, the counts, and the RFC 6238 settings.',
         handler: function (req, res) {
           log.debug("Entering the management API multi-factor endpoint.");
-          self.sendJson(res, 200, adminViews.mfaRosterJson(req));
-          log.debug("Leaving the management API multi-factor endpoint.");
+          // The list's directory names asked asynchronously (#616), as
+          // `GET /admin-api/users` asks them.
+          adminViews.mfaRosterJsonAsync(req).then(function (json) {
+            self.sendJson(res, 200, json);
+            log.debug("Leaving the management API multi-factor endpoint.");
+          }, function (e) {
+            log.debug("Caught in the management API multi-factor " +
+                      "endpoint: " + ((e && e.message) || e));
+            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
+                                     'STS-LDAP-0139') +
+                      'admin-api: the roster could ' +
+                      'not be read from the store: ' +
+                      ((e && e.message) || e));
+            res.setHeader('Retry-After', '5');
+            errorCodes.mark(res, errorCodes.codeOf(e) ||
+                                 'STS-LDAP-0139');
+            self.sendJson(res, 503, { error: 'temporarily_unavailable',
+              error_description: 'The directory could not be read; try ' +
+                'again shortly.' });
+          });
         } },
 
       { method: 'POST', route: BASE + '/mfa/:action',

@@ -1510,6 +1510,8 @@
   "ldap.workerDirectoryTimeoutMs|description": "With ldap.workerDirectory=postgres-lru, how long a request worker waits for the database when it needs a directory entry it does not hold. The worker does nothing else while it waits, so this is also the longest a database outage can hold one of its requests; past it the request is refused (503, STS-LDAP-0130).",
   "ldap.sizeLimit|label": "Search size limit",
   "ldap.sizeLimit|description": "The server-side size limit for a search, which is what produces LDAP_SIZE_LIMIT_EXCEEDED.",
+  "ldap.timeLimit|label": "Search time limit (s)",
+  "ldap.timeLimit|description": "The server-side time limit for a search, in seconds, which is what produces LDAP_TIME_LIMIT_EXCEEDED; a client's own shorter timeLimit wins. The entries sent before it are the answer, marked incomplete.",
   "ldap.plainListener|label": "Plain LDAP listener",
   "ldap.plainListener|description": "Whether the unencrypted listener on ldap.port is started at all. On by default, which is what this service always did. Off leaves LDAPS on ldap.tlsPort as the only way in — which is what a deployment whose binds are VERIFIED (product mode) wants, since a simple bind on 389 sends the password in the clear. Product mode with it on logs a warning at startup saying exactly that.",
   "ldap.plainListener|restartReason": "the socket is bound when the process starts",

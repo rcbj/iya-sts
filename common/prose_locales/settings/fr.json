@@ -6043,6 +6043,14 @@
     "en": "0c2877143f2fb6ec",
     "text": "La limite de taille côté serveur d’une recherche, qui est ce qui produit LDAP_SIZE_LIMIT_EXCEEDED."
   },
+  "ldap.timeLimit|label": {
+    "en": "9c041bfdb05c473c",
+    "text": "Limite de temps des recherches (s)"
+  },
+  "ldap.timeLimit|description": {
+    "en": "b74ec7b68f9251f2",
+    "text": "La limite de temps côté serveur d’une recherche, en secondes, qui est ce qui produit LDAP_TIME_LIMIT_EXCEEDED ; le timeLimit propre d’un client l’emporte lorsqu’il est plus court. Les entrées envoyées avant elle sont la réponse, marquée incomplète."
+  },
   "ldap.plainListener|label": {
     "en": "a53db95491bc8b0b",
     "text": "Écouteur LDAP en clair"

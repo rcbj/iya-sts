@@ -373,5 +373,12 @@ module.exports = {
   describe: 'no scheduler job walks every person, every device or every ' +
             'directory row unless it is a recorded, argued exemption (#615)',
   run: run,
-  audit: audit
+  audit: audit,
+  // Shared with `tests/no_full_directory_walk_in_requests.js` (#616), which
+  // asks the same question of the request handlers.
+  STOP: STOP,
+  SINKS: SINKS,
+  BARRIERS: BARRIERS,
+  MAX_DEFINITIONS: MAX_DEFINITIONS,
+  callsIn: callsIn
 };

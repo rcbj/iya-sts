@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4335** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4339** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -52,7 +52,7 @@ is an ordinary outcome.
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 18
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 92
-* [Worker pools (`STS-WORKER`)](#sts-worker) — 48
+* [Worker pools (`STS-WORKER`)](#sts-worker) — 49
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 79
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 96
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 99
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -298,6 +298,7 @@ Raised from: common/request_pool.js, common/request_worker.ts, common/service_st
 | `STS-WORKER-0046` | A request worker ran out of heap: its heap reached its limit (workers.heapLimitMb, #341) — ERR_WORKER_OUT_OF_MEMORY for a worker thread since #364, a SIGABRT of a worker process before. | Nothing directly: requests in flight on it were answered 502 |
 | `STS-WORKER-0047` *(retired)* | A request worker was SIGKILLed while the container cgroup's oom_kill count rose: the kernel's OOM killer ended it because the container reached its memory limit (#341). Retired by #364: a worker is a thread, and the kernel's OOM killer ends the whole process. | — |
 | `STS-WORKER-0048` | A heap limit was due for the front process and it could not restart itself with one (no process.execve, or the call failed), so it runs without a limit; its request workers still get one (#341). | — |
+| `STS-WORKER-0049` | A part of an operation's answer that a request worker sent ahead of it (#616: an LDAP search streaming its entries) could not be handed to the caller waiting in the front process — its socket write threw. The operation itself still ends with its answer. | — |
 
 ## STS-STORE
 
@@ -2926,6 +2927,9 @@ Raised from: ldap/.
 | `STS-LDAP-0136` | A group owner add named the group itself (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-LDAP-0137` | A group owner add was refused: the group already names the most owners a group may (MAX_GROUP_OWNERS, 25) (#603). | HTTP 400 (API) or a refusal on the group page |
 | `STS-LDAP-0138` | A group owner remove named a value the group does not list as an owner (#603). | HTTP 400 (API) or a refusal on the group page |
+| `STS-LDAP-0139` | GET /admin-api/ldap/directory, /admin-api/users or /admin-api/mfa in a process holding the directory as a window (#616) asked the store for its counts, its page or its first names asynchronously and the store failed to answer. The page is refused rather than drawn out of what this process happens to hold. | HTTP 503 with Retry-After |
+| `STS-LDAP-0140` | An LDAP search reached its time limit (#616) — the client's timeLimit or ldap.timeLimit, whichever is shorter — before it had considered everything under its base. The entries already sent are a partial answer and the paging of the store stops there. | RFC 4511 section 4.5.1.5: timeLimitExceeded (3) |
+| `STS-LDAP-0141` | An LDAP search read from the store asynchronously (#616) and a page of the read failed part way. The entries already sent stay sent; the search ends unavailable rather than answering as though the rest of the directory were empty. | RFC 4511: unavailable (52) |
 
 ## STS-ATTR
 
