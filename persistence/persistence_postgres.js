@@ -3871,19 +3871,28 @@ function create(options) {
       const shortLived = Array.isArray(filter.ageHandles)
         ? filter.ageHandles.map(String) : [];
       const aged = staleBefore > 0 && shortLived.length > 0;
+      // The stores a request worker does not read back (#617; see
+      // `persistence_minted.js`, notInWorkers()).
+      const skipped = Array.isArray(filter.skipHandles)
+        ? filter.skipHandles.map(String) : [];
+      const binds = [TOMBSTONE, filter.realms.map(String),
+                     Number(filter.nowMs) || Date.now()];
+      let where = 'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
+        '(expires_at IS NULL OR expires_at > $3)';
+      if (aged) {
+        binds.push(shortLived, staleBefore);
+        where += ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
+                 'AND written_at < to_timestamp($5 / 1000.0))';
+      }
+      if (skipped.length) {
+        binds.push(skipped);
+        where += ' AND NOT (handle = ANY($' + binds.length + '::text[]))';
+      }
       log.debug("Leaving loadMinted().");
       return readPool.query(
         'SELECT handle, realm, key, body, (extract(epoch from written_at) ' +
         '* 1000)::bigint AS written_ms, expires_at, key_sealed ' +
-        'FROM sts_minted ' +
-        'WHERE body <> $1 AND realm = ANY($2::text[]) AND ' +
-        '(expires_at IS NULL OR expires_at > $3)' +
-        (aged ? ' AND NOT (expires_at IS NULL AND handle = ANY($4::text[]) ' +
-                'AND written_at < to_timestamp($5 / 1000.0))' : ''),
-        aged ? [TOMBSTONE, filter.realms.map(String),
-                Number(filter.nowMs) || Date.now(), shortLived, staleBefore]
-             : [TOMBSTONE, filter.realms.map(String),
-                Number(filter.nowMs) || Date.now()]
+        'FROM sts_minted ' + where, binds
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return {
