@@ -250,6 +250,16 @@ class DirectoryWindow {
   // Keys another process changed while this one was busy with them: dropped
   // once this process's own flush has let them go (see `markStale()`).
   private readonly stale: Set<string> = new Set();
+  // THE KEYS A `warmAsync()` IS ASKING THE STORE ABOUT (#621), and whether
+  // anything has happened to each since it asked: composite key -> how many
+  // asks are out for it and whether it MOVED (written, adopted, forgotten,
+  // committed or released here). A slot is put from the store's answer only
+  // for a key that did not move while the question was out, so an answer
+  // older than this process's own state is never what the window holds.
+  // Empty except while a warm is waiting, so the check on the hot paths is
+  // one `size` test.
+  private readonly watched: Map<string, { asks: number; moved: boolean }> =
+    new Map();
   private touchScheduled = false;
 
   /**
@@ -309,6 +319,7 @@ class DirectoryWindow {
     log.debug("Entering DirectoryWindow.attach().");
     this.bridge = bridge;
     this.touchScheduled = false;
+    this.movedEverywhere();
     this.lru.keys().forEach((key) => {
       if (!this.dirty.has(key)) {
         this.lru.delete(key);
@@ -485,6 +496,7 @@ class DirectoryWindow {
   // pair, the exception the code style allows, stated as it requires.
   private write(realmId: string, key: string, entry: Entry | null): boolean {
     const ck = slotKey(realmId, key);
+    this.moved(ck);
     const before = this.slotFor(realmId, key);
     const existed = !!(before && before.entry);
     const slot: Slot = { entry: entry,
@@ -571,6 +583,7 @@ class DirectoryWindow {
       return;
     }
     const ck = slotKey(realmId, key);
+    this.moved(ck);
     if (this.dirty.has(ck)) {
       // A change made here stands; the flush writes it against this base.
       const held = this.lru.peek(ck) as Slot;
@@ -597,6 +610,7 @@ class DirectoryWindow {
       return this.residentOf(realmId).delete(key);
     }
     const ck = slotKey(realmId, key);
+    this.moved(ck);
     const held = this.lru.peek(ck);
     this.lru.delete(ck);
     this.ghosts.delete(ck);
@@ -1375,6 +1389,248 @@ class DirectoryWindow {
     return answer;
   }
 
+  // ---------------------------------------------------------------------
+  // MANY KEYS, AND ONE INDEXED QUESTION, ASKED WITHOUT HOLDING THE EVENT
+  // LOOP (#621, 2026-10-14).
+  //
+  // `GET /admin-api/users` handed up to `credentials.factorScanLimit`
+  // (5,000) names to the credential census, and the census found each with
+  // `locateEntry()`: one SYNCHRONOUS `byKeys` round trip per person the
+  // window did not hold, and one `byName` for each that was not at
+  // `uid=<name>`. On 8081 at 382,000 people that froze a request worker for
+  // 10 s every time the page was asked for. These are the two halves of
+  // `locateEntry()`'s resolution of a name — the key, then the index —
+  // asked the way #616's questions are: through the bridge's `queryAsync()`,
+  // the event loop given back between pages, each row taken as the store
+  // answered it unless this process holds a newer one (`heldOrRow()`), and
+  // NOTHING handed out or put in the LRU.
+  // ---------------------------------------------------------------------
+  /**
+   * The entries at many keys, as this process holds them: a key held here
+   * (in the window, handed out, or evicted and still held by a caller) is
+   * answered from what is held — an absence or a delete made here included
+   * — and the rest are asked of the store with `byKeys`, a page at a time,
+   * asynchronously.
+   *
+   * @param realmId - the realm id
+   * @param keys - normalised DNs; a resident key is answered from memory
+   * @param counter - optional; `pages` and `rows` are added to
+   * @returns a promise of a Map from each key to its entry, or to null
+   */
+  async entriesAtAsync(realmId: string, keys: string[],
+                       counter?: { pages: number; rows: number }):
+      Promise<Map<string, Entry | null>> {
+    log.debug("Entering DirectoryWindow.entriesAtAsync(). " + keys.length);
+    const out = new Map<string, Entry | null>();
+    const ask: string[] = [];
+    keys.forEach((key) => {
+      if (out.has(key) || ask.indexOf(key) >= 0) {
+        return;
+      }
+      if (!this.isWindowed(realmId, key)) {
+        out.set(key, this.residentOf(realmId).get(key) || null);
+        return;
+      }
+      const held = this.heldSlot(realmId, key);
+      if (held) {
+        out.set(key, held.entry);
+      } else {
+        ask.push(key);
+      }
+    });
+    for (let from = 0; from < ask.length && this.bridge; from += PAGE) {
+      if (from > 0) {
+        await DirectoryWindow.yieldToLoop();
+      }
+      const page = ask.slice(from, from + PAGE);
+      const rows = (await this.askAsync('byKeys', [realmId, page]) as Row[]) ||
+        [];
+      if (counter) {
+        counter.pages += 1;
+        counter.rows += rows.length;
+      }
+      rows.forEach((row) => {
+        out.set(row.key, this.heldOrRow(realmId, row));
+      });
+      // A key the store has no row for is absent — unless this process
+      // came to hold it while the question was out.
+      page.forEach((key) => {
+        if (!out.has(key)) {
+          const held = this.heldSlot(realmId, key);
+          out.set(key, held ? held.entry : null);
+        }
+      });
+    }
+    ask.forEach(function (key) {
+      if (!out.has(key)) {
+        // No store yet (before `attach()`): nothing can be known about it.
+        out.set(key, null);
+      }
+    });
+    log.debug("Leaving DirectoryWindow.entriesAtAsync(). " + ask.length +
+              ' asked.');
+    return out;
+  }
+
+  /**
+   * `findWindowed()`, asked asynchronously and read-only: the windowed
+   * entries of a realm matching an indexed question and `predicate`, each
+   * as this process holds it, in the store's key order, the entries changed
+   * here and not yet written that match added last — the order
+   * `findWindowed()` answers in, so a caller taking the first answer takes
+   * the entry it would have taken.
+   *
+   * @param realmId - the realm id
+   * @param name - one of `persistence/directory_queries.js`'s queries
+   * @param args - its arguments
+   * @param predicate - the service's own rule, asked of each candidate
+   * @returns a promise of `[{ key, entry }]`
+   */
+  async findWindowedAsync(realmId: string, name: string, args: unknown[],
+                          predicate: (entry: Entry, key: string) => boolean):
+      Promise<Array<{ key: string; entry: Entry }>> {
+    log.debug("Entering DirectoryWindow.findWindowedAsync(). " + name);
+    const out: Array<{ key: string; entry: Entry }> = [];
+    const seen = new Set<string>();
+    const rows = (await this.askAsync(name, args) as Row[]) || [];
+    rows.forEach((row) => {
+      if (seen.has(row.key) || !this.isWindowed(realmId, row.key)) {
+        return;
+      }
+      seen.add(row.key);
+      const entry = this.heldOrRow(realmId, row);
+      if (entry && predicate(entry, row.key)) {
+        out.push({ key: row.key, entry: entry });
+      }
+    });
+    this.dirty.forEach((ck) => {
+      const cut = ck.indexOf('\n');
+      const key = ck.slice(cut + 1);
+      if (ck.slice(0, cut) !== realmId || seen.has(key)) {
+        return;
+      }
+      const slot = this.lru.peek(ck);
+      if (slot && slot.entry && predicate(slot.entry, key)) {
+        seen.add(key);
+        out.push({ key: key, entry: slot.entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.findWindowedAsync(). " + out.length +
+              '.');
+    return out;
+  }
+
+  // ---------------------------------------------------------------------
+  // THE KEYS AN OPERATION IS ABOUT TO READ, READ FIRST AND ASYNCHRONOUSLY
+  // (#621): an LDAP add asks `getEntry(dn)` and then writes the DN, and in a
+  // window both reach `slotFor()`, whose miss is a synchronous `byKeys` on
+  // the event loop — every add, since a new person is never held. The add
+  // can wait, so it asks here first, and the synchronous body finds the
+  // slot held: exactly what `slotFor()` would have put, put a moment
+  // earlier.
+  //
+  // **AN ANSWER OLDER THAN THIS PROCESS'S OWN STATE IS NEVER PUT.** Between
+  // the question and its answer this process may write the key, adopt or
+  // forget a row another process wrote, or flush — and the store's answer
+  // then predates what the window should hold. Each key is WATCHED while
+  // its question is out (`watched`, moved by every one of those), and a
+  // key that moved, or is held by the time the answer comes, is left
+  // alone: the synchronous read asks the store then, as it always did.
+  // ---------------------------------------------------------------------
+  /**
+   * Reads the slots of some windowed keys from the store, asynchronously,
+   * and puts in the window those that nothing here changed meanwhile —
+   * absences included, as `slotFor()` holds them.
+   *
+   * @param realmId - the realm id
+   * @param keys - normalised DNs; resident or held keys are skipped
+   * @returns a promise of how many slots were put
+   */
+  async warmAsync(realmId: string, keys: string[]): Promise<number> {
+    log.debug("Entering DirectoryWindow.warmAsync(). " + keys.length);
+    const ask = keys.filter((key, at) => {
+      return keys.indexOf(key) === at && this.isWindowed(realmId, key) &&
+        !this.heldSlot(realmId, key);
+    }).slice(0, PAGE);
+    if (!ask.length || !this.bridge) {
+      log.debug("Leaving DirectoryWindow.warmAsync(). Nothing to ask.");
+      return 0;
+    }
+    const cks = ask.map(function (key) {
+      return slotKey(realmId, key);
+    });
+    cks.forEach((ck) => {
+      const one = this.watched.get(ck) || { asks: 0, moved: false };
+      one.asks += 1;
+      this.watched.set(ck, one);
+    });
+    let rows: Row[] = [];
+    const movedOf: boolean[] = [];
+    try {
+      rows = (await this.askAsync('byKeys', [realmId, ask]) as Row[]) || [];
+    } finally {
+      cks.forEach((ck) => {
+        const one = this.watched.get(ck);
+        movedOf.push(!one || one.moved);
+        if (one) {
+          one.asks -= 1;
+          if (one.asks <= 0) {
+            this.watched.delete(ck);
+          }
+        }
+      });
+    }
+    const byKey = new Map<string, Row>();
+    rows.forEach(function (row) {
+      byKey.set(row.key, row);
+    });
+    let put = 0;
+    ask.forEach((key, at) => {
+      if (movedOf[at] || this.heldSlot(realmId, key)) {
+        return;
+      }
+      const row = byKey.get(key);
+      this.put(cks[at], row ? this.slotFromRow(realmId, row)
+                            : { entry: null, base: null });
+      put += 1;
+    });
+    log.debug("Leaving DirectoryWindow.warmAsync(). " + put + ' put.');
+    return put;
+  }
+
+  // What this process holds for a windowed key without asking the store:
+  // the window, what was handed out, an evicted entry a caller still holds
+  // — `slotFor()`'s first three places, looked at and not moved.
+  // Hot path (once per key asked about): no Entering/Leaving pair, the
+  // exception the code style allows, stated as it requires.
+  private heldSlot(realmId: string, key: string): Slot | null {
+    const ck = slotKey(realmId, key);
+    return this.lru.peek(ck) || this.touched.get(ck) ||
+      this.liveGhost(ck) || null;
+  }
+
+  // A watched key moved (see `watched`).
+  // Hot path (every write, adoption, forgetting and commit): no
+  // Entering/Leaving pair, the exception the code style allows, stated as
+  // it requires.
+  private moved(ck: string): void {
+    if (this.watched.size) {
+      const one = this.watched.get(ck);
+      if (one) {
+        one.moved = true;
+      }
+    }
+  }
+
+  // Every watched key moved: the store attached again, or a realm dropped.
+  private movedEverywhere(): void {
+    log.debug("Entering DirectoryWindow.movedEverywhere().");
+    this.watched.forEach(function (one) {
+      one.moved = true;
+    });
+    log.debug("Leaving DirectoryWindow.movedEverywhere().");
+  }
+
   // What `KeysUnder` reads of the window: whether a key is held deleted or
   // held at all, and the entries created here under a base.
   // Hot path (once per key paged): no Entering/Leaving pair, the exception
@@ -1726,6 +1982,7 @@ class DirectoryWindow {
 
   private dropRealm(realmId: string): void {
     log.debug("Entering DirectoryWindow.dropRealm().");
+    this.movedEverywhere();
     this.resident.delete(realmId);
     this.realmsHeld.delete(realmId);
     const prefix = realmId + '\n';
@@ -1873,6 +2130,7 @@ class DirectoryWindow {
   // Hot path (every read or write of the directory): no Entering/Leaving
   // pair, the exception the code style allows, stated as it requires.
   private release(ck: string): void {
+    this.moved(ck);
     if (this.dirty.delete(ck)) {
       this.lru.unpin(ck);
     }
@@ -1903,6 +2161,7 @@ class DirectoryWindow {
     });
     changes.upserts.concat(changes.deletes).forEach((change) => {
       const ck = slotKey(change.realm, change.key);
+      this.moved(ck);
       const sent = this.inFlight.get(ck);
       this.inFlight.delete(ck);
       const slot = this.lru.peek(ck);
