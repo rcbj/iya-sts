@@ -1841,6 +1841,14 @@ const CODES = [
     summary: 'A spend against a shared budget could not be refunded: the ' +
       'store could not be asked (#432 phase 5).',
     spec: '' },
+  { code: 'STS-CLUSTER-0164',
+    summary: 'The flush that was to give back a directory create\'s ' +
+      'claims (its DN and username) failed, so they stay held until they ' +
+      'expire (two minutes): the release is a statement of the transaction ' +
+      'that writes the entry, or follows that flush on one node, and goes ' +
+      'back with it (#628). A create of one of those names before then ' +
+      'waits and is refused as in progress (STS-LDAP-0092).',
+    spec: '' },
   // ===== CELL ==============================================================
   { code: 'STS-CELL-0001',
     summary: 'The cell settings are inconsistent (an id without a ' +
@@ -12791,6 +12799,19 @@ const CODES = [
       'operations error, or unavailable (52) when the store could not be ' +
       'read (STS-LDAP-0130, STS-LDAP-0131).',
     spec: 'RFC 4511: operationsError (1)' },
+  { code: 'STS-LDAP-0144',
+    summary: 'A directory create was refused because this node\'s front ' +
+      'process, which decides its own workers\' create claims in memory ' +
+      '(#628), already holds as many claims as it may. That many creates ' +
+      'are never in flight at once, so something is not giving its claims ' +
+      'back; logged once when the ceiling is reached (fail closed).',
+    spec: 'LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM' },
+  { code: 'STS-LDAP-0145',
+    summary: 'A directory create in a request worker was refused because ' +
+      'the front process did not answer its create claim in time, or could ' +
+      'not be asked (#628). A grant that arrives later is given straight ' +
+      'back (fail closed).',
+    spec: 'LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM' },
   // ===== ATTR ==============================================================
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +

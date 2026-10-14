@@ -239,6 +239,24 @@ const SCHEMA_VERSION = 17;
 // the check ran.
 const DB_NOW = '(extract(epoch from clock_timestamp()) * 1000)::bigint';
 
+// ---------------------------------------------------------------------------
+// GIVING CLAIMS BACK, SEVERAL AT ONCE (#628, 2026-10-14): each row pinned to
+// its own reservation, as `releaseClaim()` pins one. One statement for a
+// directory create's DN and username, sent on its own by `releaseClaims()`
+// for a create that was refused, and INSIDE the transaction that writes the
+// created entry by `saveDirectory()` for one that succeeded — so the entry
+// and the release commit together, and a create waiting on the name sees the
+// entry exactly when the claim is gone.
+// ---------------------------------------------------------------------------
+const RELEASE_CLAIMS_SQL =
+  'DELETE FROM sts_cluster_claims c USING unnest($1::text[], $2::text[], ' +
+  '$3::text[], $4::text[]) AS r(scope, realm, key, reservation) WHERE ' +
+  'c.scope = r.scope AND c.realm = r.realm AND c.key = r.key AND ' +
+  'c.reservation = r.reservation';
+
+// The sentence `claimMany()` aborts a partial claim with, and recognises.
+const PARTIAL_CLAIM = 'sts_cluster_claims: a partial claim';
+
 // The advisory lock two joining nodes serialise on, so that "is every live
 // node configured the same as me" and "write my row" are one decision. An
 // advisory lock needs no privilege, which is why it is usable by `sts_app`.
@@ -2017,6 +2035,20 @@ function dialOptions(url, verifyTls, ca) {
 function create(options) {
   const url = options.url;
   const log = options.log;
+
+  // The four parameter arrays of RELEASE_CLAIMS_SQL (above, at module level),
+  // for `[{ scope, realm, key, reservation }]` (#628). Here for the driver's
+  // logger.
+  function releaseClaimsParams(rows) {
+    log.debug("Entering releaseClaimsParams().");
+    const pick = function (name) {
+      return rows.map(function (row) {
+        return String(row[name] || '');
+      });
+    };
+    log.debug("Leaving releaseClaimsParams().");
+    return [pick('scope'), pick('realm'), pick('key'), pick('reservation')];
+  }
 
   // The two helpers of SEALED_VALUE (above, at module level), here for the
   // driver's logger.
@@ -4162,6 +4194,19 @@ function create(options) {
           });
         });
 
+        // THE CREATES' CLAIMS, GIVEN BACK IN THIS TRANSACTION (#628): the
+        // claims `persistence.js` was handed for writes this flush (or an
+        // earlier one) carries, so a create waiting on the name finds the
+        // entry committed in the same instant the claim goes. A transaction
+        // that rolls back keeps them: they stay until they expire.
+        const releasing = change.releaseClaims || [];
+        if (releasing.length) {
+          chain = chain.then(function () {
+            return client.query(RELEASE_CLAIMS_SQL,
+                                releaseClaimsParams(releasing));
+          });
+        }
+
         return chain.then(function () {
           // ONE LOG ROW PER MOVED ENTRY, and the old 50-entry `capped` flag is
           // gone with the payload it protected. It existed because Postgres
@@ -5662,6 +5707,98 @@ function create(options) {
       ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
+    },
+
+    // -----------------------------------------------------------------------
+    // SEVERAL CLAIMS IN ONE STATEMENT, ALL OR NONE (#628, 2026-10-14).
+    //
+    // A directory create claims its DN and its username together
+    // (`ldap/directory_create_claims.ts`), and it was two `claimOnce()`s —
+    // two statements, and two DELETEs to give a partial set back. This is one
+    // INSERT of every row under one reservation, with `claimOnce()`'s
+    // conflict rule per row: an expired row is taken over, a live one is not.
+    //
+    // **ALL OR NONE, INSIDE THE STATEMENT.** A statement takes every row, or
+    // none — a live row on every key, the ordinary refusal, and nothing was
+    // written — or SOME, which happens only when two creates want
+    // overlapping but different sets (one DN, two usernames). A partial take
+    // must never be seen to hold anything, so the final SELECT turns it into
+    // an ERROR, which aborts the statement and every row it inserted: a
+    // sentence cast to an integer, built from the count the CTE returned so
+    // that the planner cannot fold it at plan time. PostgreSQL logs that
+    // ERROR with the sentence; it is only ever a collision. The rows go in in
+    // (scope, key) order, which every claimant uses, so two claimants of one
+    // set queue on its first row rather than deadlocking.
+    //
+    // `rows` is `[{ scope, key }]`, all in `realmId`. Resolves
+    // `{ claimed: true, claimedAt }` or `{ claimed: false, refused }`, where
+    // `refused` is the index in `rows` of a row somebody else holds.
+    // -----------------------------------------------------------------------
+    claimMany: function (rows, realmId, opts) {
+      log.debug('Entering claimMany(). rows=' + (rows || []).length);
+      const o = opts || {};
+      const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
+      const reservation = String(o.reservation || '');
+      const claimant = o.origin ? String(o.origin) : processId;
+      const list = (rows || []).map(function (row) {
+        return { scope: String(row.scope), key: String(row.key) };
+      });
+      log.debug("Leaving claimMany().");
+      return pool.query(
+        'WITH wanted AS (SELECT w.scope, w.key, w.ord FROM ' +
+        'unnest($1::text[], $2::text[]) WITH ORDINALITY AS w(scope, key, ' +
+        'ord)), taken AS (INSERT INTO sts_cluster_claims (scope, realm, ' +
+        'key, reservation, origin, claimed_at, expires_at) SELECT ' +
+        'w.scope, $3, w.key, $4, $5, ' + DB_NOW + ', ' + DB_NOW + ' + $6 ' +
+        'FROM wanted w ORDER BY w.scope, w.key ON CONFLICT (scope, realm, ' +
+        'key) DO UPDATE SET reservation = EXCLUDED.reservation, origin = ' +
+        'EXCLUDED.origin, claimed_at = EXCLUDED.claimed_at, expires_at = ' +
+        'EXCLUDED.expires_at WHERE sts_cluster_claims.expires_at <= ' +
+        'EXCLUDED.claimed_at RETURNING scope, key, claimed_at), counted AS ' +
+        '(SELECT count(*)::int AS n, max(claimed_at) AS claimed_at, ' +
+        '(SELECT min(w.ord) FROM wanted w WHERE NOT EXISTS (SELECT 1 FROM ' +
+        'taken t WHERE t.scope = w.scope AND t.key = w.key))::int AS ' +
+        'refused FROM taken) SELECT n, claimed_at, refused, CASE WHEN n > 0 ' +
+        'AND n < $7::int THEN (\'' + PARTIAL_CLAIM + ' of \' || n || ' +
+        '\' of \' || $7::int || \' rows is rolled back; first refused ' +
+        'row \' || refused)::int ELSE 0 END AS partial FROM counted',
+        [list.map(function (row) { return row.scope; }),
+         list.map(function (row) { return row.key; }),
+         String(realmId || ''), reservation, claimant, ttlMs, list.length]
+      ).then(function (r) {
+        const row = (r.rows || [])[0] || {};
+        if (Number(row.n) === list.length) {
+          return { claimed: true, claimedAt: Number(row.claimed_at) };
+        }
+        return { claimed: false,
+                 refused: Math.max(0, (Number(row.refused) || 1) - 1) };
+      }, function (e) {
+        const message = String((e && e.message) || e);
+        if (message.indexOf(PARTIAL_CLAIM) < 0) {
+          throw e;
+        }
+        log.debug("Caught in claimMany(): " + message);
+        const first = /first refused row (\d+)/.exec(message);
+        return { claimed: false, partial: true,
+                 refused: Math.max(0, (first ? Number(first[1]) : 1) - 1) };
+      });
+    },
+
+    // Several claims given back in ONE statement (#628), each pinned to its
+    // reservation as `releaseClaim()` pins one. `rows` is
+    // `[{ scope, realm, key, reservation }]`; resolves the count released.
+    releaseClaims: function (rows) {
+      log.debug("Entering releaseClaims(). rows=" + (rows || []).length);
+      const list = rows || [];
+      if (!list.length) {
+        log.debug("Leaving releaseClaims(). None.");
+        return Promise.resolve(0);
+      }
+      log.debug("Leaving releaseClaims().");
+      return pool.query(RELEASE_CLAIMS_SQL, releaseClaimsParams(list))
+        .then(function (r) {
+          return r.rowCount || 0;
+        });
     },
 
     purgeClaims: function () {

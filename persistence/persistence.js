@@ -718,6 +718,123 @@ function directoryThrough(target) {
   return waiting;
 }
 
+// ---------------------------------------------------------------------------
+// A CREATE'S CLAIMS, GIVEN BACK IN THE TRANSACTION THAT COMMITS IT (#628,
+// 2026-10-14).
+//
+// A directory create claims its DN and username across the nodes that share
+// this store (`ldap/directory_create_claims.ts`) and gives them back once its
+// entry has committed. That was a flush and then a DELETE per claim, each a
+// transaction of its own; now `cluster_claims.releaseAtCommit()` hands the
+// claim rows here with the directory generation of the moment — every write
+// the create made is at or below it — and the first directory transaction
+// whose take covers that generation deletes them as one of its statements.
+// So the entry and the end of its claim commit together, and a create
+// waiting on the name sees the entry in the same instant the claim goes.
+//
+// * **A transaction that fails keeps them.** The DELETE rolls back with the
+//   entry, and the claims stay held until they expire (two minutes): a
+//   create of the same name in that window waits and is refused as in
+//   progress (STS-LDAP-0092). rcbj accepted that cost on #628;
+//   STS-CLUSTER-0164 says when it is paid.
+// * **Writes already committed have no transaction to ride** — the usual
+//   case where a door answers after its commit (#351), as an LDAP add does
+//   — and are given back by one statement of their own, at once.
+// * Claims that a running transaction did not take wait for the next flush,
+//   which the call asks for.
+//
+// `{ rows, through, resolve }`, oldest first.
+// ---------------------------------------------------------------------------
+let claimReleases = [];
+
+/**
+ * Gives a create's claims back in the flush transaction that commits this
+ * process's directory writes made so far, or at once when they have all
+ * committed. A transaction that fails leaves them held until they expire.
+ *
+ * @param rows - `[{ scope, realm, key, reservation }]`, as
+ *   `cluster/cluster_claims.js` holds them
+ * @returns a promise of `{ released }`, with `error` when the transaction
+ *   that carried them failed; it never rejects
+ */
+function releaseClaimsAtCommit(rows) {
+  log.debug("Entering releaseClaimsAtCommit().");
+  const list = rows || [];
+  if (!list.length || !enabled() || !driver ||
+      typeof driver.releaseClaims !== 'function') {
+    log.debug("Leaving releaseClaimsAtCommit(). No store to release in.");
+    return Promise.resolve({ released: false,
+                             error: list.length ? 'no claims store' : '' });
+  }
+  const answer = new Promise(function (resolve) {
+    claimReleases.push({ rows: list, through: dirGeneration,
+                         resolve: resolve });
+  });
+  flush().catch(function (e) {
+    log.debug("Caught in releaseClaimsAtCommit(): " +
+              ((e && e.message) || e));
+  });
+  log.debug("Leaving releaseClaimsAtCommit().");
+  return answer;
+}
+
+// The waiting releases whose writes are covered by generation `takenAt`,
+// taken off the list.
+function takeClaimReleases(takenAt) {
+  log.debug("Entering takeClaimReleases().");
+  if (!claimReleases.length) {
+    log.debug("Leaving takeClaimReleases(). None waiting.");
+    return [];
+  }
+  const taken = [];
+  const kept = [];
+  claimReleases.forEach(function (one) {
+    (one.through <= takenAt ? taken : kept).push(one);
+  });
+  claimReleases = kept;
+  log.debug("Leaving takeClaimReleases(). " + taken.length + " taken.");
+  return taken;
+}
+
+// Every claim row of several waiting releases, as one list.
+function claimReleaseRows(list) {
+  log.debug("Entering claimReleaseRows().");
+  const rows = [];
+  list.forEach(function (one) {
+    one.rows.forEach(function (row) {
+      rows.push(row);
+    });
+  });
+  log.debug("Leaving claimReleaseRows().");
+  return rows;
+}
+
+function settleClaimReleases(list, answer) {
+  log.debug("Entering settleClaimReleases().");
+  list.forEach(function (one) {
+    one.resolve(answer);
+  });
+  log.debug("Leaving settleClaimReleases().");
+}
+
+// Releases whose writes have committed, given back by one statement of their
+// own. Never rejects: a failure leaves the claims held until they expire.
+function releaseClaimsAlone(list) {
+  log.debug("Entering releaseClaimsAlone().");
+  log.debug("Leaving releaseClaimsAlone().");
+  return Promise.resolve().then(function () {
+    return driver.releaseClaims(claimReleaseRows(list));
+  }).then(function () {
+    settleClaimReleases(list, { released: true });
+  }, function (e) {
+    log.warn(errorCodes.tag('STS-CLUSTER-0014') + 'persistence: giving ' +
+             'back ' + list.length + ' create claim set(s) failed: ' +
+             ((e && e.message) || e) + '. They stay held until they expire.');
+    settleClaimReleases(list, { released: false,
+                                error: (e && e.message) || String(e) });
+  });
+}
+
 /**
  * Reports that a directory entry changed, and schedules a flush.
  * @param dn - the entry's DN; empty or undefined marks the whole directory
@@ -1429,6 +1546,17 @@ function flush() {
     // its failure put a dirty bit back.
     dirCommittedAt = dirGeneration;
     settleDirWaiters(null);
+    // A CREATE'S CLAIMS (#628) whose writes have all committed already —
+    // the ordinary case for a door that answers after its commit — have no
+    // transaction to ride, and are given back on their own.
+    const committedReleases = takeClaimReleases(dirGeneration);
+    if (committedReleases.length) {
+      log.debug('Leaving flush(). Nothing is dirty; releasing ' +
+                committedReleases.length + ' claim set(s).');
+      return releaseClaimsAlone(committedReleases).then(function () {
+        return { written: false };
+      });
+    }
     log.debug('Leaving flush(). Nothing is dirty.');
     return Promise.resolve({ written: false });
   }
@@ -1471,6 +1599,10 @@ function flush() {
   // reason: what is sent is what the shadows are advanced by.
   const realmChanges = wantRealms ? realmsDelta(removals) : null;
   const configChanges = wantConfig ? appconfigDelta() : null;
+
+  // The claims this flush's directory transaction gives back (#628): taken
+  // when the transaction is sent, and answered when it settles.
+  let carriedReleases = [];
 
   // THE DATA-KEY ROWS LAND FIRST (#391): a directory entry carrying a value
   // sealed under a data encryption key made since the last flush must not
@@ -1530,19 +1662,34 @@ function flush() {
         windowed.upserts.concat(windowed.deletes).map(function (row) {
           return row.realm;
         })))) : changes.touched;
+    // THE CLAIMS OF THE CREATES THIS TRANSACTION COMMITS (#628), every one
+    // whose writes were made at or before `takenAt` — so in this
+    // transaction or an earlier one — given back by a statement of it.
+    carriedReleases = typeof driver.releaseClaims === 'function'
+      ? takeClaimReleases(takenAt) : [];
     return driver.saveDirectory({
       upserts: sentUpserts,
       deletes: sentDeletes,
       touched: sentTouched,
       removedRealms: changes.removedRealms,
+      releaseClaims: claimReleaseRows(carriedReleases),
       all: live
     }).then(function (result) {
+      settleClaimReleases(carriedReleases, { released: true });
+      carriedReleases = [];
       advanceShadow(changes, changes.removedRealms);
       if (windowWrites) {
         win.committed(windowed, result && result.outcomes);
       }
       applyDirectoryOutcomes(changes, result && result.outcomes);
     });
+  }).then(function () {
+    // THE CLAIMS WHOSE WRITES HAVE COMMITTED AND WHICH NO DIRECTORY
+    // TRANSACTION CARRIED (#628): this flush wrote no entry, or they were
+    // handed over while its transaction ran. Given back on their own, and a
+    // failure to do so is not this flush's failure.
+    const alone = takeClaimReleases(takenAt);
+    return alone.length ? releaseClaimsAlone(alone) : null;
   }).then(function () {
     if (!wantRealms) {
       return null;
@@ -1615,6 +1762,19 @@ function flush() {
     // and nothing is lost. Logged below as STS-STORE-0002.
     failures++;
     lastError = err.message;
+    // THE CLAIMS THE FAILED TRANSACTION CARRIED (#628) were rolled back with
+    // it, so they are still held, and they stay held until they expire: the
+    // accepted cost of releasing in the commit (STS-CLUSTER-0164).
+    if (carriedReleases.length) {
+      log.warn(errorCodes.tag('STS-CLUSTER-0164') + 'persistence: the ' +
+               'flush that was to give back ' + carriedReleases.length +
+               ' create claim set(s) failed, so they stay held until they ' +
+               'expire; a create of one of those names before then waits ' +
+               'and is refused as in progress (STS-LDAP-0092).');
+      settleClaimReleases(carriedReleases,
+                          { released: false, error: err.message });
+      carriedReleases = [];
+    }
     if (windowWrites) {
       // The window's keys are still changed; the next flush takes them.
       win.failed(windowed);
@@ -4427,6 +4587,9 @@ module.exports = {
   stop: stop,
   releaseOrigin: releaseOrigin,
   flush: flush,
+  // A create's claims, given back in the transaction that commits it (#628);
+  // see the note above `releaseClaimsAtCommit()`.
+  releaseClaimsAtCommit: releaseClaimsAtCommit,
   directoryChanged: directoryChanged,
   realmsChanged: realmsChanged,
   configChanged: configChanged,

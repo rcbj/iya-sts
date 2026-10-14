@@ -383,6 +383,233 @@ function release(handle) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// SEVERAL VALUES, CLAIMED TOGETHER (#628, 2026-10-14).
+//
+//   claimMany({ entries: [{ scope, value }], ttlMs, realm })
+//
+// Every value or none, under ONE reservation: a directory create claims its
+// DN and its username, and was two `claim()`s and, on a refusal of either, a
+// release of the other. On postgres it is ONE statement
+// (`persistence_postgres.js`, `claimMany()`), which takes every row or none;
+// in memory it is this process's map, which nothing between the check and
+// the set can interrupt.
+//
+// Resolves `{ ok: true, handles, claimedAt }`, `{ ok: false, reason: 'used',
+// index }` — `index` is an entry somebody else holds — or `{ ok: false,
+// reason: 'store', why }`. It never rejects. A store with `claimOnce()` and
+// no `claimMany()` (a test's double) is asked row by row, and a partial set
+// is given back before the answer, which is what the callers did before.
+// ---------------------------------------------------------------------------
+/**
+ * Claims several single-use values together, every one or none, under one
+ * reservation. `opts` holds `entries` (`[{ scope, value }]`), `ttlMs` and
+ * `realm`. Resolves `{ ok: true, handles, claimedAt }`, `{ ok: false,
+ * reason: 'used', index }` or `{ ok: false, reason: 'store', why }`; it never
+ * rejects.
+ *
+ * @param {any} opts
+ * @returns {Promise<any>}
+ */
+function claimMany(opts) {
+  log.debug("Entering claimMany().");
+  const o = opts || {};
+  const entries = o.entries || [];
+  const malformed = !entries.length || entries.some(function (one) {
+    return !one || !one.scope || one.value === undefined ||
+      one.value === null || one.value === '';
+  });
+  if (malformed) {
+    log.debug("Leaving claimMany(). Malformed.");
+    return Promise.resolve({ ok: false, reason: 'store',
+      why: 'a claim needs a scope and a value for every entry' });
+  }
+  const realmId = o.realm === undefined ? realms.currentId()
+    : String(o.realm || '');
+  const ttlMs = Math.min(MAX_TTL_MS,
+                         Math.max(1000, Math.floor(Number(o.ttlMs) || 0)));
+  const reservation = stsCrypto.randomBytes(12).toString('base64url');
+  const handles = entries.map(function (one) {
+    return { scope: String(one.scope), realm: realmId,
+             key: digestOf(one.scope, one.value), reservation: reservation };
+  });
+  const theStore = store();
+  if (!theStore) {
+    const now = Date.now();
+    claimsSinceSweep += 1;
+    if (claimsSinceSweep >= MEMORY_SWEEP_EVERY) {
+      claimsSinceSweep = 0;
+      sweepMemory(now);
+    }
+    const keys = handles.map(function (handle) {
+      return memoryKey(handle.scope, realmId, handle.key);
+    });
+    const held = keys.findIndex(function (key) {
+      const existing = memory.get(key);
+      return !!existing && existing.expiresAt > now;
+    });
+    if (held >= 0) {
+      log.debug("Leaving claimMany(). Used, in memory.");
+      return Promise.resolve({ ok: false, reason: 'used', index: held });
+    }
+    // SET BEFORE ANY AWAIT, every one: nothing above yields.
+    keys.forEach(function (key) {
+      memory.set(key, { reservation: reservation, claimedAt: now,
+                        expiresAt: now + ttlMs });
+    });
+    log.debug("Leaving claimMany(). Claimed, in memory.");
+    return Promise.resolve({ ok: true, handles: handles, claimedAt: now });
+  }
+  ensurePurgeJob();
+  if (typeof theStore.claimMany !== 'function') {
+    log.debug("Leaving claimMany(). Row by row.");
+    return claimRowByRow(theStore, handles, ttlMs);
+  }
+  log.debug("Leaving claimMany(). Asking the store.");
+  return Promise.resolve().then(function () {
+    return theStore.claimMany(handles.map(function (handle) {
+      return { scope: handle.scope, key: handle.key };
+    }), realmId, { ttlMs: ttlMs, reservation: reservation });
+  }).then(function (answer) {
+    if (answer && answer.claimed) {
+      return { ok: true, handles: handles,
+               claimedAt: Number(answer.claimedAt) || Date.now() };
+    }
+    return { ok: false, reason: 'used',
+             index: Number((answer && answer.refused) || 0) };
+  }, function (e) {
+    storeFailed(handles[0].scope, e);
+    return { ok: false, reason: 'store', why: (e && e.message) || String(e) };
+  });
+}
+
+// `claimMany()` against a store with only `claimOnce()`: each row in turn,
+// and a partial set given back.
+function claimRowByRow(theStore, handles, ttlMs) {
+  log.debug("Entering claimRowByRow().");
+  log.debug("Leaving claimRowByRow().");
+  return Promise.all(handles.map(function (handle) {
+    return Promise.resolve().then(function () {
+      return theStore.claimOnce(handle.scope, handle.realm, handle.key,
+                                { ttlMs: ttlMs,
+                                  reservation: handle.reservation });
+    }).then(function (answer) {
+      return { ok: !!(answer && answer.claimed), store: false, why: '' };
+    }, function (e) {
+      storeFailed(handle.scope, e);
+      return { ok: false, store: true, why: (e && e.message) || String(e) };
+    });
+  })).then(function (answers) {
+    const refused = answers.findIndex(function (one) {
+      return !one.ok;
+    });
+    if (refused < 0) {
+      return { ok: true, handles: handles, claimedAt: Date.now() };
+    }
+    releaseMany(handles.filter(function (handle, i) {
+      return answers[i].ok;
+    }));
+    const failed = answers.find(function (one) {
+      return one.store;
+    });
+    return failed ? { ok: false, reason: 'store', why: failed.why }
+      : { ok: false, reason: 'used', index: refused };
+  });
+}
+
+// Gives several claims back: ONE statement on a store that has
+// `releaseClaims()`, each in turn otherwise. Never rejects.
+/**
+ * Gives several claims back, in one statement where the store can. A failure
+ * leaves them held until they expire.
+ *
+ * @param handles - handles claim() or claimMany() returned
+ * @returns a promise of how many were released; it never rejects
+ */
+function releaseMany(handles) {
+  log.debug("Entering releaseMany().");
+  const list = (handles || []).filter(function (handle) {
+    return handle && handle.key;
+  });
+  if (!list.length) {
+    log.debug("Leaving releaseMany(). Nothing to release.");
+    return Promise.resolve(0);
+  }
+  const theStore = store();
+  if (!theStore || typeof theStore.releaseClaims !== 'function') {
+    log.debug("Leaving releaseMany(). One at a time.");
+    return Promise.all(list.map(release)).then(function (answers) {
+      return answers.filter(Boolean).length;
+    });
+  }
+  log.debug("Leaving releaseMany(). Asking the store.");
+  return Promise.resolve().then(function () {
+    return theStore.releaseClaims(list);
+  }).then(function (count) {
+    return Number(count) || 0;
+  }, function (e) {
+    log.warn(errorCodes.tag('STS-CLUSTER-0014') + 'cluster claims: releasing ' +
+             list.length + ' "' + list[0].scope + '" claim(s) failed: ' +
+             ((e && e.message) || e) + '. They stay held until they expire.');
+    return 0;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// GIVEN BACK WHEN WHAT THEY GUARDED HAS COMMITTED (#628).
+//
+// On the store the persistence layer writes through, the release rides the
+// flush that commits this process's directory writes made so far: its
+// DELETE is a statement of THAT transaction (`persistence.js`,
+// `releaseClaimsAtCommit()`), so the entry a create wrote and the end of its
+// claim commit together — and a flush that fails rolls the release back with
+// the entry, leaving the claims until they expire. Anywhere else it is the
+// old order: a flush, then a release, and a flush that fails releases
+// nothing.
+// ---------------------------------------------------------------------------
+/**
+ * Gives claims back once this process's writes so far have committed: in
+ * the flush transaction that commits them where the store can, otherwise
+ * after a flush. A flush that fails leaves them held until they expire.
+ *
+ * @param handles - handles claim() or claimMany() returned
+ * @returns a promise of `{ released }`, with `error` when the flush failed;
+ *   it never rejects
+ */
+function releaseAtCommit(handles) {
+  log.debug("Entering releaseAtCommit().");
+  const list = (handles || []).filter(function (handle) {
+    return handle && handle.key;
+  });
+  if (!list.length) {
+    log.debug("Leaving releaseAtCommit(). Nothing to release.");
+    return Promise.resolve({ released: false });
+  }
+  // LAZY, see the header.
+  const persistence = require('../persistence/persistence');
+  const theStore = store();
+  if (theStore && typeof persistence.releaseClaimsAtCommit === 'function' &&
+      typeof persistence.currentDriver === 'function' &&
+      persistence.currentDriver() === theStore) {
+    log.debug("Leaving releaseAtCommit(). In the flush's transaction.");
+    return persistence.releaseClaimsAtCommit(list);
+  }
+  log.debug("Leaving releaseAtCommit(). After a flush.");
+  return Promise.resolve().then(function () {
+    return persistence.flush();
+  }).then(function (result) {
+    if (result && result.error) {
+      return { released: false, error: result.error };
+    }
+    return releaseMany(list).then(function (count) {
+      return { released: count > 0 };
+    });
+  }, function (e) {
+    log.debug("Caught in releaseAtCommit(): " + ((e && e.message) || e));
+    return { released: false, error: (e && e.message) || String(e) };
+  });
+}
+
 // Binds a claim to a response: kept when it finishes 2xx or 3xx, released
 // otherwise — the shape `used_assertions.js` gives an assertion. A redirect
 // counts as success because the protocols that spend codes in a browser answer
@@ -530,8 +757,11 @@ function claimInProcess(opts) {
  */
 module.exports = {
   claim: claim,
+  claimMany: claimMany,
   claimInProcess: claimInProcess,
   release: release,
+  releaseMany: releaseMany,
+  releaseAtCommit: releaseAtCommit,
   releaseUnlessSucceeded: releaseUnlessSucceeded,
   isClaimed: isClaimed,
   digestOf: digestOf,

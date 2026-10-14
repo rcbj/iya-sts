@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **4342** of them, in **46** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **4345** of them, in **46** subsystems.
 
 ## Where a code appears
 
@@ -54,7 +54,7 @@ is an ordinary outcome.
 * [Service core (`STS-CORE`)](#sts-core) — 92
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 49
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 80
-* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 30
+* [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 31
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 87
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 18
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 143
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 141
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 212
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 101
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 103
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -427,6 +427,7 @@ Raised from: cluster/.
 | `STS-CLUSTER-0041` | Standing down from a lease early failed in the store; the lease expires on its own within one node lifetime, and this node does not renew it. | — |
 | `STS-CLUSTER-0162` | The store every node shares could not be asked to spend against a budget (a GNAP right's limits); the operation was refused (#432 phase 5). | — |
 | `STS-CLUSTER-0163` | A spend against a shared budget could not be refunded: the store could not be asked (#432 phase 5). | — |
+| `STS-CLUSTER-0164` | The flush that was to give back a directory create's claims (its DN and username) failed, so they stay held until they expire (two minutes): the release is a statement of the transaction that writes the entry, or follows that flush on one node, and goes back with it (#628). A create of one of those names before then waits and is refused as in progress (STS-LDAP-0092). | — |
 
 ## STS-CELL
 
@@ -2933,6 +2934,8 @@ Raised from: ldap/.
 | `STS-LDAP-0141` | An LDAP search read from the store asynchronously (#616) and a page of the read failed part way. The entries already sent stay sent; the search ends unavailable rather than answering as though the rest of the directory were empty. | RFC 4511: unavailable (52) |
 | `STS-LDAP-0142` | An LDAP add asked the store its questions asynchronously before its body ran (#621), and the body then threw something other than a store it could not read (which keeps STS-LDAP-0130/0131 and is answered unavailable). Thrown inside a promise, it would have left the add without a result; it is answered operationsError instead, and logged with the stack. | RFC 4511: operationsError (1) |
 | `STS-LDAP-0143` | An LDAP add or modify carrying a clear password was screened for a data breach (#622), which made it asynchronous, and its handler then threw where neither ldapjs nor a request worker could see it. The client is answered once rather than never: an operations error, or unavailable (52) when the store could not be read (STS-LDAP-0130, STS-LDAP-0131). | RFC 4511: operationsError (1) |
+| `STS-LDAP-0144` | A directory create was refused because this node's front process, which decides its own workers' create claims in memory (#628), already holds as many claims as it may. That many creates are never in flight at once, so something is not giving its claims back; logged once when the ceiling is reached (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
+| `STS-LDAP-0145` | A directory create in a request worker was refused because the front process did not answer its create claim in time, or could not be asked (#628). A grant that arrives later is given straight back (fail closed). | LDAP_UNAVAILABLE (52); HTTP 503 on /admin-api, 500 on SCIM |
 
 ## STS-ATTR
 
