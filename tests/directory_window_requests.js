@@ -552,7 +552,7 @@ async function run(t) {
   log.debug('Entering run().');
   await windowQuestions(t);
   t.log.info('=== B–D. through the directory, as a windowed worker ===');
-  inChild(t, 16);
+  inChild(t, 15);
   log.debug('Leaving run().');
 }
 
