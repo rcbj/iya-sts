@@ -16551,8 +16551,11 @@ function ldapAddNow(req, res, next) {
     noteAccountChange('created', addedEntry.dn, {},
                       attributeSnapshot(addedEntry));
   }
-  log.debug('ldap: added ' + dn + ' with ' + Object.keys(attributes).length +
-            ' attribute(s).');
+  // Hot (#627): once per add, and the count is a list built to be logged.
+  if (log.debug()) {
+    log.debug('ldap: added ' + dn + ' with ' +
+              Object.keys(attributes).length + ' attribute(s).');
+  }
   // What KIND of thing was created is decided by PLACEMENT and not by the
   // objectClass the client sent, and that is not a shortcut. This directory is
   // schemaless: a client can add a `groupOfNames` under ou=users or an entry
@@ -21294,8 +21297,11 @@ function attributeSnapshot(stored) {
       out[name] = (stored.attributes[name] || []).slice(0);
     });
   }
-  log.debug('Leaving attributeSnapshot(). ' + Object.keys(out).length +
-            ' attribute(s).');
+  // Hot (#627): once per add. The count is a list built only to be logged.
+  if (log.debug()) {
+    log.debug('Leaving attributeSnapshot(). ' + Object.keys(out).length +
+              ' attribute(s).');
+  }
   return out;
 }
 

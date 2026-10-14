@@ -3574,9 +3574,14 @@ function leastLoaded(pool, among) {
   // is answered correctly either way — so the numbers the decision was made on
   // are logged beside the decision. This is the line that found the fanout
   // sending everything to one worker.
-  log.debug('leastLoaded(): ' + live.map(function (one) {
-    return one.pid + '(' + one.inFlight + '/' + one.served + ')';
-  }).join(' ') + ' -> ' + (chosen ? chosen.pid : '(none)'));
+  //
+  // Built only when it will be written (#627): this runs for every request
+  // and operation the pool routes.
+  if (log.debug()) {
+    log.debug('leastLoaded(): ' + live.map(function (one) {
+      return one.pid + '(' + one.inFlight + '/' + one.served + ')';
+    }).join(' ') + ' -> ' + (chosen ? chosen.pid : '(none)'));
+  }
   log.debug("Leaving leastLoaded().");
   return chosen;
 }
@@ -3969,9 +3974,12 @@ function remember(key, entry) {
 // `among` narrows a NEW choice to those workers — the batch lane — and never
 // overrides a binding the key already holds. See the batch lane's header.
 function workerFor(key, pool, among) {
-  log.debug('Entering workerFor(). key=' +
-            (key ? key.split(':')[0] : '(none)') + ' pool=' +
-            (pool || PROTOCOL_POOL));
+  // Hot (#627): every routed request; the split is built only to be logged.
+  if (log.debug()) {
+    log.debug('Entering workerFor(). key=' +
+              (key ? key.split(':')[0] : '(none)') + ' pool=' +
+              (pool || PROTOCOL_POOL));
+  }
   const candidates = among && among.length ? among : null;
   if (!key) {
     // Either this path fans out by policy, or it is the first hop of a flow and
