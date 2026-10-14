@@ -519,8 +519,6 @@ class VcVerifier {
     deps.log.debug("Leaving VcVerifier.constructor().");
   }
 
-  // What the composition root passes, from the real modules — what
-  // loading this module passed before #50's R2.
   // ---------------------------------------------------------------------------
   // THE PRESENTATION IS KEPT AS ITS DIGEST (#614). A verdict carried the
   // whole `vp_token` presentation — an SD-JWT with every disclosure and its
@@ -556,6 +554,8 @@ class VcVerifier {
     return stsCrypto.credentialDigest(text);
   }
 
+  // What the composition root passes, from the real modules — what
+  // loading this module passed before #50's R2.
   /**
    * Returns the dependencies built from the real modules.
    *
