@@ -8973,9 +8973,9 @@ const SETTINGS = [
     max: 1000000, runtime: true,
     description: 'How many SAML 1.1 artifacts may wait to be resolved, per ' +
                  'trust realm. Expired artifacts are cleared first; a store ' +
-                 'still full REFUSES the next Browser/Artifact sign-in with a ' +
-                 'page (HTTP 503) rather than forget an artifact a relying ' +
-                 'party has not resolved yet.' },
+                 'still full REFUSES the next Browser/Artifact sign-in ' +
+                 'with a page (HTTP 503) rather than forget an artifact a ' +
+                 'relying party has not resolved yet.' },
 
   // --- WS-Trust ------------------------------------------------------------
 
