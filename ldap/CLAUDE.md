@@ -1207,6 +1207,35 @@ Flat at 0.05ms after, and a group write is still visible to the very next
 read — which is the property `groupsOfUser()` exists to keep and the one thing
 here worth a test of its own.
 
+### AND SINCE #618 THE STAMP IS GONE: THE GROUP INDEX HAS A CLOCK OF ITS OWN (2026-10-14)
+
+The stamp covered `putEntry()` and the whole-directory applier and nothing
+else. On the 1M load on 8081 every LDAP add still rebuilt the index — the
+add's own authorization asks `rolesOf()` → `groupsOfUser()`, and the person
+another worker had added a moment before had reached this one through the
+WINDOWED applier (`forgetEntry()`), which stamped nothing: about 5 s of
+every 30 s of a request worker. And the stamp was wrong in one case: a group
+OVERWRITTEN by a non-group was stamped as "not a group" and stayed in the
+index.
+
+So the index is keyed on `groupsVersion`, moved by `touchDirectory()` itself
+(`noteGroupsTouched()`) — every writer covered, none hooked. A write naming
+no DN moves it; a write naming one moves it when the entry WAS a group when
+the index was built (the index's own `byDn`) or IS one now, read where this
+process holds it and never from the store (`DirectoryWindow.heldIn()`: a
+windowed key it does not hold moves the clock). `forgetEntry()` hands it the
+store's row, so a person another process made is classified without a round
+trip. The invariant above is what makes it exact; the index also keeps the
+`usersDn()` and `groupsDn()` it resolved against. The size net is kept
+outside a window (a size that moved while `directoryVersion` did not), and
+not cast in one, where the size is the store's count. What still moves the
+clock for nothing is a DN-less `touchDirectory()` — fifty-eight callers,
+none on an add.
+`tests/group_index_clock.js` interleaves person adds, replicated person and
+group changes, local group writes and overwrites, in both modes, and checks
+after each step that the index held equals a fresh build — and, in a window,
+that an add asks the store nothing a rebuild asks.
+
 ### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
 
 With the create flat and the group index kept, the SCIM door was STILL growing
