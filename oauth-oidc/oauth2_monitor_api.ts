@@ -167,7 +167,9 @@ class OAuth2MonitorApi {
           'totals, the OAuth errors returned, one row per client_id ' +
           'with every counter (paged by `clientsPage` and `per`), and ' +
           '— for RFC 9126 — the pushed requests the store still ' +
-          'holds, newest first: request_uri, client, authorization ' +
+          'holds, newest first: the digest of the request_uri (its ' +
+          'handle; the request_uri itself is not kept), client, ' +
+          'authorization ' +
           'server, state, created and expiry, reads, whether and how ' +
           'the client authenticated, form or request object, the ' +
           'redirect_uri and whether section 2.4 let it in ' +
@@ -283,31 +285,34 @@ class OAuth2MonitorApi {
           { action: 'delete-pushed-request',
             operationId: 'deletePushedRequest',
             summary: 'Withdraw a pushed authorization request (RFC 9126)',
-            description: 'Removes one request_uri from this realm\'s store ' +
+            description: 'Removes one pushed request, named by the ' +
+              'SHA-256 of its request_uri, from this realm\'s store ' +
               'of pushed authorization requests, live or spent. The ' +
               'authorization endpoint refuses it from then on with ' +
               '400 invalid_request_uri, exactly as it refuses one ' +
               'that expired and was swept; a browser already on the ' +
               'sign-in or consent screen with it is refused when it ' +
               'comes back. Counted as `par.deleted` and written to ' +
-              'the audit log. A value not in the ' +
-              '`urn:ietf:params:oauth:request_uri:` namespace, or one ' +
-              'this realm does not hold, is refused 400.',
+              'the audit log. A value that is not a handle (43 ' +
+              'characters of base64url), or one this realm does not ' +
+              'hold, is refused 400. The store keeps no request_uri ' +
+              '(#614), so the handle is the only name it answers to.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
               properties: {
-                request_uri: {
-                  type: 'string', minLength: 1, maxLength: 512,
-                  description: 'The whole request_uri, as listed ' +
-                               'by GET /admin-api/oauth2/monitor.' }
+                request_uri_digest: {
+                  type: 'string', minLength: 1, maxLength: 64,
+                  description: 'The request\'s handle: the base64url ' +
+                               'SHA-256 of its whole request_uri, as ' +
+                               'listed by GET /admin-api/oauth2/monitor.' }
               },
-              required: ['request_uri'],
-              examples: [{ request_uri: 'urn:ietf:params:oauth:request_uri:' +
-                                        'bwc4JK-ESC0w8acc191e-Y1LTC2' }],
+              required: ['request_uri_digest'],
+              examples: [{ request_uri_digest:
+                             'Q2dS8m6k1nVv3zJ0bYQm9vX0kq3w8yQ7Zr0aLx5tP2E' }],
               additionalProperties: false
             },
-            responseDescription: 'The request_uri withdrawn, the client it ' +
+            responseDescription: 'The handle withdrawn, the client it ' +
                                  'was bound to and the state it was in.' }
         ] }
     ];

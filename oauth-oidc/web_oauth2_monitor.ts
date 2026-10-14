@@ -100,15 +100,16 @@ class OAuth2MonitorPage {
     return out;
   }
 
-  // A request_uri is 34 characters of namespace and 43 of reference, which does
-  // not fit a table cell beside eleven others. The cell shows the start of the
-  // reference and opens to the whole value — in the markup, so it can be
-  // selected and copied with no script.
-  static requestUriCell(uri: Json) {
-    const value = String(uri || '');
-    const reference = value.slice(value.lastIndexOf(':') + 1);
-    return '<details><summary><code title="' + esc(value) + '">…:' +
-           esc(reference.slice(0, 10)) + '…</code></summary><code>' +
+  // A pushed request is named by its HANDLE, the SHA-256 of its request_uri
+  // (#614): the store keeps no request_uri, so there is none to show. The
+  // cell shows the handle shortened as `/admin/caches` shows a key —
+  // `sha256:` and twelve hex characters — and opens to the whole digest, in
+  // the markup, so it can be selected and copied with no script.
+  static requestUriCell(one: Json) {
+    const value = String((one && one.request_uri_digest) || '');
+    const shown = String((one && one.request_uri_shown) || '');
+    return '<details><summary><code title="' + esc(value) + '">' +
+           esc(shown) + '</code></summary><code>' +
            esc(value) + '</code></details>';
   }
 
@@ -227,7 +228,7 @@ class OAuth2MonitorPage {
       (one.redirect_uri_unregistered
       ? '<div class="state-invalid">' +
         t.html('consoleOauth2Monitor.unregistered') + '</div>' : '');
-    return '<tr><td>' + self.requestUriCell(one.request_uri) + '</td><td>' +
+    return '<tr><td>' + self.requestUriCell(one) + '</td><td>' +
       self.code(one.client_id) + '</td><td>' +
       self.code(one.authorization_server) +
       '</td><td>' + esc(one.state) + (one.spent_at ? '<div class="sub">' +
@@ -244,7 +245,8 @@ class OAuth2MonitorPage {
       (one.scope ? ' · ' + esc(one.scope) : '') + '</div></td><td>' +
       self.code(one.dpop_jkt) + '</td><td><form method="post" action="' +
       esc(PAGE) + '">' + self.hidden('action', 'delete-pushed-request') +
-      self.hidden('request_uri', one.request_uri) + self.hidden('back', back) +
+      self.hidden('request_uri_digest', one.request_uri_digest) +
+      self.hidden('back', back) +
       '<button type="submit" class="danger" title="' +
       esc(t.text('consoleOauth2Monitor.withdrawTitle')) + '">' +
       t.html('consoleOauth2Monitor.withdraw') + '</button>' +
@@ -273,7 +275,7 @@ class OAuth2MonitorPage {
     };
     return self.filterHtml(held, t) + nav.head +
       '<table id="pushed-requests">' +
-      '<thead><tr><th>request_uri</th>' +
+      '<thead><tr><th>request_uri (SHA-256)</th>' +
       th('consoleOauth2Monitor.colClient') +
       th('consoleOauth2Monitor.colAs') + th('consoleOauth2Monitor.colState') +
       th('consoleOauth2Monitor.colCreated') +

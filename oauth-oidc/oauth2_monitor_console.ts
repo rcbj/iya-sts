@@ -116,8 +116,11 @@ const QUERY = vz.looseObject({
   format: vt.opt(vt.oneOf(['json', 'JSON', 'html']))
 });
 
+// BY THE HANDLE (#614): the digest of the whole request_uri, which is what
+// the store is keyed by and the page lists. The request_uri itself is held
+// nowhere, so it cannot be what names a request here.
 const DELETE_BODY = vz.looseObject({
-  request_uri: vz.string().min(1).max(512)
+  request_uri_digest: vz.string().min(1).max(64)
 });
 
 /**
@@ -432,10 +435,11 @@ class OAuth2MonitorConsole {
    * Performs an action from the page or the API: withdrawing a pushed
    * authorization request.
    *
-   * @param body - the posted body, naming `action` and the `request_uri`
+   * @param body - the posted body, naming `action` and the
+   *   `request_uri_digest`
    * @param context - `via` (`console` or `api`) and `actor`, for the audit row
-   * @returns `{ ok: true, request_uri, client_id, state, message }`, or `{ ok:
-   *   false, errors }` carrying its error code
+   * @returns `{ ok: true, request_uri_digest, client_id, state, message }`,
+   *   or `{ ok: false, errors }` carrying its error code
    */
   monitorAction(body: Json, context?: Json): Json {
     const { log, par, audit } = this.deps;
@@ -455,26 +459,27 @@ class OAuth2MonitorConsole {
     const parsed = DELETE_BODY.safeParse(body || {});
     if (!parsed.success) {
       log.debug("Leaving OAuth2MonitorConsole.monitorAction(). No usable " +
-                "request_uri.");
+                "request_uri_digest.");
       return self.refused('STS-ADMIN-0702', 'The delete-pushed-request ' +
-                          'action needs `request_uri`: the whole value a ' +
-                          'push answered, as listed on ' +
+                          'action needs `request_uri_digest`: the handle ' +
+                          'a pushed request is listed by on ' +
                           '/admin/oauth2/monitor.');
     }
-    const uri = parsed.data.request_uri;
-    if (!par.isPushedRequestUri(uri)) {
-      log.debug("Leaving OAuth2MonitorConsole.monitorAction(). Not in the " +
-                "namespace.");
+    const handle = parsed.data.request_uri_digest;
+    if (!par.isHandle(handle)) {
+      log.debug("Leaving OAuth2MonitorConsole.monitorAction(). Not a " +
+                "handle.");
       return self.refused('STS-ADMIN-0703', 'That is not a pushed ' +
-                          'request_uri: every one this service issues ' +
-                          'begins "' + par.REQUEST_URI_PREFIX +
-                          '" (RFC 9126 section 2.2).');
+                          'request\'s handle: each is the SHA-256 of its ' +
+                          'request_uri, 43 characters of base64url, as ' +
+                          'listed in `request_uri_digest`. The request_uri ' +
+                          'itself is not held here (#614).');
     }
-    const before = par.get(uri);
-    if (!before || !par.remove(uri)) {
+    const before = par.get(handle);
+    if (!before || !par.remove(handle)) {
       log.debug("Leaving OAuth2MonitorConsole.monitorAction(). Not held.");
       return self.refused('STS-ADMIN-0704', 'No pushed authorization ' +
-                          'request with that request_uri is held in this ' +
+                          'request with that handle is held in this ' +
                           'realm. It was never pushed here, it expired and ' +
                           'was swept, or it was already withdrawn.');
     }
@@ -494,7 +499,7 @@ class OAuth2MonitorConsole {
     log.debug("Leaving OAuth2MonitorConsole.monitorAction(). Withdrawn.");
     return {
       ok: true,
-      request_uri: uri,
+      request_uri_digest: handle,
       client_id: before.client_id,
       state: before.state,
       message: 'The pushed authorization request for client ' +

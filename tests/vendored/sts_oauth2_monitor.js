@@ -37,8 +37,8 @@
 //      cutover is the static console's token sending that form to its
 //      operation (`console_signin.js`'s `act()`), answered as the operation
 //      answers rather than with a 303.
-//   5. **THE NEGATIVES**: an unknown request_uri and a value outside the
-//      namespace refused 400 with no error code in the reply, an unknown
+//   5. **THE NEGATIVES**: an unknown handle and a value that is not a handle
+//      refused 400 with no error code in the reply, an unknown
 //      action refused naming the one there is, a query the page does not
 //      accept refused, and the API refused to a caller holding nothing. (A
 //      form with no CSRF token went with the server-rendered console: the
@@ -58,6 +58,12 @@
 // spends one in process and the state filter is asserted here on its other
 // two words.
 //
+// **A PUSHED REQUEST IS NAMED BY ITS HANDLE (#614)**: the SHA-256 of its
+// request_uri, which is all the store keeps of one. The job computes each
+// handle itself from the request_uri the push answered — an oracle of its
+// own rather than the service's word — lists and withdraws by it, and holds
+// that the request_uri itself is in no answer and no page.
+//
 // It works in the DEFAULT realm, with client ids carrying this run's stamp,
 // rather than in a throwaway realm: the console's session is the default
 // realm's, and reading a realm's page through it is a claim about the console
@@ -68,6 +74,7 @@
 // ===========================================================================
 
 const assert = require("assert");
+const crypto = require("crypto");
 const { Command, Option } = require("commander");
 const names = require("./random_username.js");
 const consoleSignIn = require("./console_signin.js");
@@ -109,7 +116,7 @@ const PAGE = "/admin/oauth2/monitor";
 // A section that stops being called takes its assertions with it and the run
 // still says "passed"; this is the floor that notices. 42 since the #446
 // cutover took the CSRF-less form's refusal with the console's session.
-const FLOOR = 42;
+const FLOOR = 44;
 
 var checks = 0;
 function check(what, fn) {
@@ -235,6 +242,15 @@ async function clientRow(client) {
   }
 }
 
+// The handle the store holds a request under (#614): the base64url SHA-256
+// of the whole request_uri.
+function digestOf(requestUri) {
+  log.debug("Entering digestOf().");
+  log.debug("Leaving digestOf().");
+  return crypto.createHash("sha256").update(String(requestUri), "utf8")
+    .digest("base64url");
+}
+
 function authorizeUrl(client, requestUri) {
   log.debug("Entering authorizeUrl().");
   log.debug("Leaving authorizeUrl().");
@@ -276,7 +292,8 @@ async function setUp() {
     assert.strictEqual(b.status, 201, String(b.raw).slice(0, 300));
   });
   log.debug("Leaving setUp().");
-  return { a: pushed, b: b.body.request_uri };
+  return { a: pushed, b: b.body.request_uri,
+           ad: pushed.map(digestOf), bd: digestOf(b.body.request_uri) };
 }
 
 // ---------------------------------------------------------------------------
@@ -313,8 +330,8 @@ async function theApiListsThePushes(held) {
         function () {
           assert.strictEqual(list.total, 3, JSON.stringify(list).slice(0, 400));
           assert.deepStrictEqual(list.items.map(function (one) {
-            return one.request_uri;
-          }).sort(), held.a.slice().sort());
+            return one.request_uri_digest;
+          }).sort(), held.ad.slice().sort());
           assert.deepStrictEqual(list.filter,
                                  { state: "all", client_id: CLIENT_A });
         });
@@ -346,6 +363,20 @@ async function theApiListsThePushes(held) {
         "store", function () {
           assert.ok(JSON.stringify(list).indexOf(SECRET) < 0);
           assert.strictEqual(row.parameters.client_secret, undefined);
+        });
+  check("and no request_uri either (#614): each row names its request by " +
+        "the handle, shown shortened as /admin/caches shows a key",
+        function () {
+          held.a.forEach(function (uri) {
+            assert.ok(JSON.stringify(list).indexOf(uri.slice(PREFIX.length)) <
+                      0, "a request_uri is in the list");
+          });
+          assert.strictEqual(row.request_uri, undefined);
+          assert.ok(/^sha256:[0-9a-f]{12}…$/.test(row.request_uri_shown),
+                    row.request_uri_shown);
+          assert.strictEqual(row.request_uri_shown.slice(7, 19),
+            Buffer.from(row.request_uri_digest, "base64url").toString("hex")
+              .slice(0, 12));
         });
   const rowA = await clientRow(CLIENT_A);
   const rowB = await clientRow(CLIENT_B);
@@ -381,18 +412,18 @@ async function pagingAndFilters(held) {
         "each showing the same row look perfectly well paged one at a time",
         function () {
           const seen = first.items.concat(second.items).map(function (one) {
-            return one.request_uri;
+            return one.request_uri_digest;
           });
-          assert.deepStrictEqual(seen.slice().sort(), held.a.slice().sort());
+          assert.deepStrictEqual(seen.slice().sort(), held.ad.slice().sort());
         });
   const byPage = (await parSection(who + "&per=2&page=2")).pushedRequests;
   check("the console's page and per reach the same row as offset=2",
         function () {
           assert.strictEqual(byPage.offset, 2);
           assert.deepStrictEqual(byPage.items.map(function (one) {
-            return one.request_uri;
+            return one.request_uri_digest;
           }), second.items.map(function (one) {
-            return one.request_uri;
+            return one.request_uri_digest;
           }));
         });
   const past = (await parSection(who + "&offset=50")).pushedRequests;
@@ -407,7 +438,7 @@ async function pagingAndFilters(held) {
   check("the client filter isolates " + CLIENT_B + "'s one push",
         function () {
           assert.strictEqual(onlyB.total, 1);
-          assert.strictEqual(onlyB.items[0].request_uri, held.b);
+          assert.strictEqual(onlyB.items[0].request_uri_digest, held.bd);
         });
   const live = (await parSection(who + "&state=live")).pushedRequests;
   const spent = (await parSection(who + "&state=spent")).pushedRequests;
@@ -436,20 +467,20 @@ async function theApiWithdraws(held) {
   const afterRead = (await parSection("client_id=" +
                                       encodeURIComponent(CLIENT_A)))
     .pushedRequests.items.filter(function (one) {
-      return one.request_uri === held.a[2];
+      return one.request_uri_digest === held.ad[2];
     })[0];
   check("and that read is on the row and in the counters", function () {
     assert.ok(afterRead && afterRead.reads >= 1, JSON.stringify(afterRead));
   });
   const withdrawn = await postApi("/oauth2/monitor/delete-pushed-request",
-                                  { request_uri: held.a[0] });
+                                  { request_uri_digest: held.ad[0] });
   check("POST /admin-api/oauth2/monitor/delete-pushed-request withdraws it " +
         "and says whose it was", function () {
           assert.strictEqual(withdrawn.status, 200, withdrawn.raw);
           assert.strictEqual(withdrawn.body.ok, true);
           assert.strictEqual(withdrawn.body.client_id, CLIENT_A);
           assert.strictEqual(withdrawn.body.state, "live");
-          assert.strictEqual(withdrawn.body.request_uri, held.a[0]);
+          assert.strictEqual(withdrawn.body.request_uri_digest, held.ad[0]);
         });
   const gone = (await parSection("client_id=" +
                                  encodeURIComponent(CLIENT_A))).pushedRequests;
@@ -457,7 +488,7 @@ async function theApiWithdraws(held) {
         "GET", function () {
           assert.strictEqual(gone.total, 2);
           assert.ok(gone.items.every(function (one) {
-            return one.request_uri !== held.a[0];
+            return one.request_uri_digest !== held.ad[0];
           }));
         });
   const refused = await send(authorizeUrl(CLIENT_A, held.a[0]));
@@ -500,8 +531,10 @@ async function theConsoleWithdraws(held) {
         "carries none of what the page shows", function () {
     assert.strictEqual(anonymous.status, 200, "status " + anonymous.status);
     assert.ok(/console\.js/.test(anonymous.raw), anonymous.raw.slice(0, 200));
-    assert.ok(anonymous.raw.indexOf(held.a[1]) < 0,
-              "a held request_uri is in the console's document");
+    assert.ok(anonymous.raw.indexOf(held.a[1]) < 0 &&
+              anonymous.raw.indexOf(held.ad[1]) < 0,
+              "a held request_uri or its handle is in the console's " +
+              "document");
   });
   const consoleClient = await consoleSignIn.signInToTheConsole(base,
     OPERATOR, log, { grant: "write" });
@@ -517,7 +550,8 @@ async function theConsoleWithdraws(held) {
           assert.ok(page.html.length > 200, page.html.slice(0, 200));
         });
   check("it draws the RFC 9126 section, every counter's label, and the two " +
-        "pushed requests still held — each request_uri WHOLE in the markup",
+        "pushed requests still held — each by its WHOLE handle in the " +
+        "markup, and no request_uri anywhere in it (#614)",
         function () {
           assert.ok(page.html.indexOf("Pushed authorization requests " +
                                       "(RFC 9126)") >= 0);
@@ -525,10 +559,16 @@ async function theConsoleWithdraws(held) {
                     0);
           assert.ok(page.html.indexOf("request_uris deleted by an " +
                                       "administrator") >= 0);
-          assert.ok(page.html.indexOf(held.a[1]) >= 0, "held.a[1] not drawn");
-          assert.ok(page.html.indexOf(held.a[2]) >= 0, "held.a[2] not drawn");
-          assert.ok(page.html.indexOf(held.a[0]) < 0,
-            "the withdrawn request_uri is still drawn");
+          assert.ok(page.html.indexOf(held.ad[1]) >= 0,
+            "held.ad[1] not drawn");
+          assert.ok(page.html.indexOf(held.ad[2]) >= 0,
+            "held.ad[2] not drawn");
+          assert.ok(page.html.indexOf(held.ad[0]) < 0,
+            "the withdrawn request is still drawn");
+          held.a.forEach(function (uri) {
+            assert.ok(page.html.indexOf(uri.slice(PREFIX.length)) < 0,
+              "a request_uri is drawn");
+          });
           assert.ok(page.html.indexOf("client_secret_basic") >= 0);
         });
   check("with no script in it, and a Withdraw form per row", function () {
@@ -556,7 +596,7 @@ async function theConsoleWithdraws(held) {
         });
 
   const pressed = await consoleClient.act(PAGE, {
-    action: "delete-pushed-request", request_uri: held.a[1] });
+    action: "delete-pushed-request", request_uri_digest: held.ad[1] });
   check("pressing Withdraw is answered by the operation: 200, ok, with the " +
         "sentence the console draws in its notice", function () {
           assert.strictEqual(pressed.status, 200,
@@ -567,7 +607,7 @@ async function theConsoleWithdraws(held) {
   const after = (await parSection(who)).pushedRequests;
   check("the store holds one request for " + CLIENT_A + " now", function () {
     assert.strictEqual(after.total, 1);
-    assert.strictEqual(after.items[0].request_uri, held.a[2]);
+    assert.strictEqual(after.items[0].request_uri_digest, held.ad[2]);
   });
   const refusedHere = await send(authorizeUrl(CLIENT_A, held.a[1]));
   check("and the request_uri the console withdrew is refused at " +
@@ -576,7 +616,7 @@ async function theConsoleWithdraws(held) {
           assert.ok(/invalid_request_uri/.test(refusedHere.raw));
         });
   const again = await consoleClient.act(PAGE, {
-    action: "delete-pushed-request", request_uri: held.a[1] });
+    action: "delete-pushed-request", request_uri_digest: held.ad[1] });
   check("withdrawing it a second time is refused with a reason, not " +
         "answered as a success, and no error code reaches the browser",
         function () {
@@ -592,12 +632,12 @@ async function theConsoleWithdraws(held) {
 // ---------------------------------------------------------------------------
 // 5. THE API'S REFUSALS.
 // ---------------------------------------------------------------------------
-async function theApiRefuses() {
+async function theApiRefuses(held) {
   log.debug("Entering theApiRefuses().");
   log.info("=== 5. refusals ===");
   const unknown = await postApi("/oauth2/monitor/delete-pushed-request",
-    { request_uri: PREFIX + "never-pushed-" + STAMP });
-  check("an unknown request_uri is refused 400 naming why, with no error " +
+    { request_uri_digest: digestOf(PREFIX + "never-pushed-" + STAMP) });
+  check("an unknown handle is refused 400 naming why, with no error " +
         "code in the reply", function () {
           assert.strictEqual(unknown.status, 400, unknown.raw);
           assert.strictEqual(unknown.body.ok, false);
@@ -606,14 +646,21 @@ async function theApiRefuses() {
           assert.ok(!/STS-[A-Z]+-\d{4}/.test(unknown.raw), unknown.raw);
         });
   const foreign = await postApi("/oauth2/monitor/delete-pushed-request",
-    { request_uri: "https://rp.parmon.example.test/request.jwt" });
-  check("a value outside the request_uri namespace is refused 400",
+    { request_uri_digest: "https://rp.parmon.example.test/request.jwt" });
+  check("a value that is not a handle is refused 400, naming what one is",
         function () {
           assert.strictEqual(foreign.status, 400, foreign.raw);
-          assert.ok(/urn:ietf:params:oauth:request_uri:/.test(foreign.raw));
+          assert.ok(/43 characters of base64url/.test(foreign.raw),
+                    foreign.raw);
+        });
+  const byUri = await postApi("/oauth2/monitor/delete-pushed-request",
+    { request_uri: held.a[2] });
+  check("a request_uri itself is not a name the withdrawal answers to " +
+        "(#614): refused 400, and the request is still held", function () {
+          assert.strictEqual(byUri.status, 400, byUri.raw);
         });
   const empty = await postApi("/oauth2/monitor/delete-pushed-request", {});
-  check("a body with no request_uri is refused 400", function () {
+  check("a body with no request_uri_digest is refused 400", function () {
     assert.strictEqual(empty.status, 400, empty.raw);
   });
   const action = await postApi("/oauth2/monitor/no-such-action", {});
@@ -645,7 +692,8 @@ async function theApiRefuses() {
   const none = { Authorization: "none" };
   const anonRead = await getApi("/oauth2/monitor", none);
   const anonWrite = await postApi("/oauth2/monitor/delete-pushed-request",
-                                  { request_uri: target }, none);
+                                  { request_uri_digest: digestOf(target) },
+                                  none);
   if (index.body && index.body.protected === true) {
     check("with nothing presented, the read is refused 401", function () {
       assert.strictEqual(anonRead.status, 401, anonRead.raw.slice(0, 200));
@@ -656,7 +704,7 @@ async function theApiRefuses() {
     const still = (await parSection("client_id=" +
                                     encodeURIComponent(CLIENT_A)))
       .pushedRequests.items.filter(function (one) {
-        return one.request_uri === target;
+        return one.request_uri_digest === digestOf(target);
       });
     check("the request an anonymous caller tried to withdraw is still held",
           function () {
@@ -682,7 +730,7 @@ async function test() {
   await pagingAndFilters(held);
   await theApiWithdraws(held);
   await theConsoleWithdraws(held);
-  await theApiRefuses();
+  await theApiRefuses(held);
   assert.ok(checks >= FLOOR,
     "only " + checks + " checks ran, against a floor of " + FLOOR + ". A " +
     "section that stops being called takes its assertions with it.");
@@ -697,11 +745,11 @@ program
       "pushed authorization requests from two clients of this run listed " +
       "with what each push was and counted per client, paged by " +
       "offset/limit and page/per and filtered by state and client_id, a " +
-      "request_uri withdrawn through the API and through a real console " +
-      "form and then refused " +
+      "request withdrawn by its handle (the request_uri's SHA-256, #614) " +
+      "through the API and through a real console form and then refused " +
       "invalid_request_uri at /oauth2/authorize, and the refusals — an " +
-      "unknown request_uri, a foreign value, an unknown action, a form with " +
-      "no CSRF token and a caller holding nothing.")
+      "unknown handle, a value that is not one, a request_uri itself, an " +
+      "unknown action and a caller holding nothing.")
   // Accepted and ignored: run-report.js passes --url to every job.
   .addOption(new Option("-u, --url <url>",
       "base url (unused: this test needs no browser)"))

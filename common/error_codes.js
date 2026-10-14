@@ -19263,17 +19263,19 @@ const CODES = [
       '{ ok: false, errors } on /admin-api)' },
   { code: 'STS-ADMIN-0702',
     summary: 'A withdrawal of a pushed authorization request carried no ' +
-      'request_uri, or one longer than the store could ever hold.',
+      'request_uri_digest (the handle it is listed by), or one longer than ' +
+      'a handle could ever be.',
     spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
       '{ ok: false, errors } on /admin-api)' },
   { code: 'STS-ADMIN-0703',
     summary: 'A withdrawal of a pushed authorization request named a value ' +
-      'that is not in the urn:ietf:params:oauth:request_uri: namespace this ' +
-      'service issues pushed request_uris from (RFC 9126 section 2.2).',
+      'that is not a handle: the base64url SHA-256 of a request_uri, 43 ' +
+      'characters, which is all the store keeps of one (#614).',
     spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +
       '{ ok: false, errors } on /admin-api)' },
   { code: 'STS-ADMIN-0704',
-    summary: 'A withdrawal named a request_uri this realm does not hold: it ' +
+    summary: 'A withdrawal named a pushed request this realm does not hold: ' +
+      'it ' +
       'was never pushed here, it expired and was swept, or it was already ' +
       'withdrawn.',
     spec: 'the caller\'s refusal (a 303 with error= on the console, HTTP 400 ' +

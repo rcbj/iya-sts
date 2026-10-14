@@ -671,9 +671,9 @@ const AUTH_CODE_TTL_MS = 5 * 60 * 1000;
 // delete by the code a request PRESENTS: so the store holds
 // `crypto.credentialDigest(code)`, computed at the moment the code is minted
 // or presented, and the code itself is in no row, no replicated change and no
-// heap snapshot. The cluster claim on a code (`cluster_claims.digestOf()`) hashes on its own and
-// is still handed the code. A row of the old shape is simply not found under
-// its new key and goes on its own `expires`.
+// heap snapshot. The cluster claim on a code (`cluster_claims.digestOf()`)
+// hashes on its own and is still handed the code. A row of the old shape is
+// simply not found under its new key and goes on its own `expires`.
 // TOMBSTONED (2026-09-14, #46): a redeemed or expired code's delete leaves a
 // tombstone in the store, so a node holding an older copy of the row cannot
 // write it back. `persistence/persistence_minted.js` carries the mechanism.
