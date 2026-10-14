@@ -62,13 +62,16 @@
 //
 // **5. EVERYTHING THE PAGE SAYS IS IN THE STORE.** Runs are rows of
 // `scheduler.runs`, a persisted per-realm `realms.map` (a service-wide job's
-// runs are the default realm's), so /admin/scheduler drawn by ANY process on
-// ANY node shows what the leader did. So are the leader's own row (who leads,
-// since when, when it last ticked), the per-process jobs' latest run in each
-// process, and the queued commands — a manual run (#48's button) and a
-// step-down — which are written by whichever process served the request and
-// picked up by the leader at its next tick. Nothing here is answered out of
-// this process's memory that another process would answer differently.
+// runs are the default realm's), so /admin/scheduler drawn by the front
+// process of ANY node shows what the leader did. (By the front process since
+// #617: a request worker no longer reads the history back at its start, and
+// the page and its API are pinned to the front — see `runStore` below.) So
+// are the leader's own row (who leads, since when, when it last ticked), the
+// per-process jobs' latest run in each process, and the queued commands — a
+// manual run (#48's button) and a step-down — which are written by whichever
+// process served the request and picked up by the leader at its next tick.
+// Nothing here is answered out of one front process's memory that another
+// would answer differently.
 //
 // **6. IT NEVER HOLDS THE THREAD.** A job's `run()` is asynchronous and is
 // expected to yield: the cluster heartbeat is a JavaScript timer, and a job
@@ -342,6 +345,15 @@ function compareRows(a: Json, b: Json): number {
 const runStore = realms.map({
   persist: 'scheduler.runs',
   tombstone: true,
+  // NOT READ BACK BY A REQUEST WORKER (#617): the run history was 42,740 of
+  // the 52,234 rows each of 8081's processes restored at every start, and in
+  // a worker nothing reads it whole — /admin/scheduler and its API are
+  // answered by the front process (`common/request_pool.js`,
+  // NEVER_DISPATCHED). A worker still writes its per-process rows and a
+  // queued manual run, and still applies every run row the change log
+  // brings after its start. Point 5 above holds for the processes that draw
+  // the page: every FRONT process, on any node.
+  restoreInWorkers: false,
   mergeRow: function (mine: Json, theirs: Json): Json {
     helpers.log.debug("Entering mergeRow().");
     helpers.log.debug("Leaving mergeRow().");

@@ -1277,7 +1277,10 @@ where it was:
   for two renewals, the claim lapsed with no other process anywhere, and
   the process exited saying another one held it
   (`tests/persistence_origin.js` section B2). The membership node id is still random per start: a node whose
-  membership lapsed must not come back as itself. A platform that gives each
+  membership lapsed must not come back as itself. **Since #617 a request
+  worker gives its claim back as it exits, and a claim whose node membership
+  has LEFT or EXPIRED is taken over rather than waited out** — see *What a
+  start waits on*, below. A platform that gives each
   container a random host name needs `cluster.nodeName` set for any of this
   to apply.
 * **TWO ACCUMULATORS WERE NEVER FANNED IN** — `admin_stats.scimCounts`
@@ -1413,7 +1416,7 @@ have cost the node its membership. Four costs, and what became of each;
 | 14–18 s held, per process, in `replaceRealm()` | the identity register pre-fill: every restored person's name read through the synchronous bridge (263 pages of 500) and noted | **gone** — `ldap/CLAUDE.md`, *Restoring*. The notes alone are 0.43 s for 131,546 names in the profile; the rest was the bridge |
 | the 11.2 s gap after `sts: persistence is postgres` | the same pass's journal: the register is a minted store capped at `MAX_USERS`, so the pre-fill journalled 131,546 keys (2,000 writes, 129,546 deletes of rows that never existed), and the bootstrap's `flushMinted()` (`credentials.bootstrapOnce()`) waited for them to be sealed, written and appended to the change log — which moved ~132K positions per process start and was then pulled by every other process | **gone** with it. The profile holds the loop 2.6 s for that flush against a `Map`; on postgres it was the gap. Attributed from the change log's movement and the profile, not re-measured on 8081, which was not restarted |
 | ~4–5 s per process restoring ~48K minted rows | `restore()`'s loop — open, parse and restore every row — was one synchronous `forEach` | **sliced**: `restoreInSlices()` in `persistence_minted.js` yields every 50 ms; writes between slices are kept aside like the writes made while the rows were loading, and flushed after. 48K small rows: 0.60 s in one piece before, under 60 ms at a time now. The total is unchanged and still linear in the rows (the #333 filter is what bounds the rows) |
-| ~2 s per process publishing 279 CRLs | every process signed and wrote every authority's CRL into the shared directory at start | **once a node**: a request worker publishes none (`common/pki.js`, `start()`); the front did before forking it |
+| ~2 s per process publishing 279 CRLs | every process signed and wrote every authority's CRL into the shared directory at start | **once a node**: a request worker publishes none (`common/pki.js`, `start()`); the front did before forking it — and since #617 after its listener binds (next section) |
 
 **The workers still start one after another** (`workers.startConcurrency`,
 default 1): #342's reason is the node's memory, not time, and it has not
@@ -1436,6 +1439,93 @@ window restore with the loop held under 250 ms, no person read from the store
 and the register the same size as with 400; the whole directory in memory
 leaves the register empty; 40,000 minted rows restore with the loop never held
 250 ms.
+
+## WHAT A START WAITS ON (#617, 2026-10-14)
+
+Measured on 8081 (product, postgres, 23 realms, ~200K entries, 52K minted
+rows, two request workers): 31.7 s from container start to the listener —
+about 18 s in the front process before its first worker was forked, then 13.5
+s of that worker, because the listener binds once the first worker of each
+pool is ready. Four things on that path were not needed there, and each moved:
+
+* **The CRLs** (4.2 s of the front, 279 lists): published after the listener
+  binds, from `server.js`'s `announce()`, yielding between lists —
+  `common/pki.js` (`publishStartupCrls()`) argues why nothing before the socket
+  needs them.
+* **The origin claim** (2 s of the first worker, and up to the claim's 30 s):
+  a worker held its claim until it lapsed, because only the front process
+  ever released one (`stop()`). Now `common/request_worker.ts` calls
+  `persistence.releaseOrigin()` once its server has closed — the journals
+  written first, the claim given back last, the thread exiting at once — and
+  the postgres driver's `adoptOrigin()` TAKES OVER a claim whose node
+  membership has gone: a claim records the membership that took it (after an
+  `@` in the row's informational `origin` column, so the schema version is
+  unchanged), and one whose membership's `sts_cluster_nodes` row has left or
+  expired is replaced in one statement. A claim of a LIVE membership —
+  another container under this node name, a sibling worker of the same front
+  still draining — and one naming no membership (clustering off, or a front
+  that has not joined yet) are waited for exactly as before, and the old
+  holder is fenced as after a lapse. A front process joins under the id it
+  took its claim with (`cluster.plannedNodeId()`). `tests/persistence_origin.js`
+  section B3.
+* **`scheduler.runs` in a request worker** (42,740 of the 52,234 rows): not
+  restored — `restoreInWorkers: false` at its declaration, the page and its
+  API pinned to the front process (`cluster/CLAUDE.md`, *A request worker does
+  not read the history back*). Why not lazily, or every store: a minted store
+  is a synchronous `Map` every request reads in memory, so a row a worker did
+  not restore is a row it answers WITHOUT — the change log brings only what
+  is written after the worker's start. A store can be left out only where
+  nothing a worker answers reads it whole, and the run history is the one
+  that is true of and worth it; `admin_stats.users` (8,177 rows) and
+  `audit.events` (594 rows, 13.6 MB, the fan-in) are read by console pages a
+  worker answers, and stay.
+* **The management API's request validators** (~1.3 s of every process's
+  module load): compiled on first use (`mgmt-api/CLAUDE.md`).
+
+| Process, phase | 8081 before (log) | After | How the after was got |
+|---|---|---|---|
+| front: module load | 5.7 s | ~4.4 s | management API load and wire 1,250–1,431 ms → 37–49 ms, tests image, three runs each |
+| front: open, origin, join | 0.1 s | 0.1 s | unchanged (its predecessor's `stop()` released the claim) |
+| front: keys | 2.0 s | 2.0 s | unchanged |
+| front: directory | 1.4 s | 1.4 s | unchanged |
+| front: minted restore (52,234 rows) | 3.0 s | 3.0 s | unchanged: the front restores every store |
+| front: PKI | 0.4 s | 0.4 s | unchanged |
+| front: CRLs into the directory | 4.2 s | 0 before the listener | after it, yielding (`tests/crl_directory_publication.js` F) |
+| **front: to the first fork** | **~18 s** | **~12.5 s** | sum |
+| worker 1: module load | 5.3 s | ~4.0 s | as the front's |
+| worker 1: waiting for its origin claim | 2.0 s (up to 30 s) | 0 | `waitedMs: 0`, B3 |
+| worker 1: keys | 1.7 s | 1.7 s | unchanged |
+| worker 1: directory | 1.3 s | 1.3 s | unchanged |
+| worker 1: minted restore | 2.5 s (52,234 rows) | ~0.5–0.9 s (9,494 rows) | above the SQL, `tests/tools/startup_profile.js` `split`: 900 ms → 161 ms; the query reads 18% of the rows and about 37% of the bytes |
+| **worker 1: to ready** | **13.5 s** | **~8.5 s** | sum |
+| **container start to listener** | **31.7 s** | **~21 s** | front + worker 1 |
+
+**The after column is measured in process and summed, not measured on a
+stack**: the 8081 container was not restarted, and a private product stack
+with 52K minted rows and 200K entries was not built for this. A second worker
+(and every worker the pool forks later) saves the same ~5 s, behind the
+listener.
+
+**Found on the way and left, with why:**
+
+* **The change log's starting point is taken AFTER the restore.**
+  `coordinate()` asks `latestChangeSeq()` once every store is restored, and
+  `replication.start()` treats everything at or below it as applied — so a
+  change committed after a restore's own read and before that call is in
+  neither, and a process that starts behind a live listener (every worker
+  after the first) can answer without it. Taking the mark BEFORE the minted
+  restore's read would close the minted half (re-applying a minted change is
+  idempotent: the applier reads the current row) and shrink the rest; it was
+  not changed here because it moves the replication contract every process
+  starts on, and wants the full suite.
+* **The keystore's start** (2.0 s front, 1.7 s each worker: 25 authorities,
+  204 data encryption keys) and **each process writing the default realm's
+  certificate authority back to the store at every start** ("written to the
+  store, encrypted", and "built by worker 2; every process here now agrees"
+  eight times on 8081) — not looked into.
+* **`audit.events`' 594 rows (13.6 MB)** decrypted into every process's fan-in
+  at every start — the next-largest cost, read by the console's audit pages,
+  which workers answer.
 
 ## Adding a driver
 

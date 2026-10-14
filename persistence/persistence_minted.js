@@ -2015,8 +2015,35 @@ function restoreFilter(nowMs) {
     // 0 is "no write-age rule": `persistence.mintedRetention` 0 keeps
     // everything, as it always did.
     staleBefore: retention ? nowMs - retention : 0,
-    ageHandles: shortLivedHandles()
+    ageHandles: shortLivedHandles(),
+    // What a request worker does not read back at all (#617).
+    skipHandles: process.env.STS_REQUEST_WORKER ? notInWorkers() : []
   };
+}
+
+// ---------------------------------------------------------------------------
+// THE STORES A REQUEST WORKER DOES NOT RESTORE (#617, 2026-10-14):
+// `restoreInWorkers: false` at `realms.map()` (`common/realms.js` argues the
+// declaration). On 8081, 42,740 of the 52,234 rows every process read back at
+// every start were `scheduler.runs` — 34 MB of 55 MB of sealed bodies, each
+// opened and parsed — and in a request worker nothing reads that store whole:
+// /admin/scheduler and `GET /admin-api/scheduler` are answered by the front
+// process (`common/request_pool.js`, NEVER_DISPATCHED). The query leaves the
+// rows out (`loadMinted()`'s `skipHandles`) and the loop below skips any a
+// driver returned anyway. **What still holds**: the worker applies the change
+// log from the high-water mark it takes after its restore, exactly as before,
+// so every row written after its start reaches it; it writes its own rows,
+// and the flush merges them with the stored ones (`mergeRow`); and the front
+// process restores everything, as every process did.
+// ---------------------------------------------------------------------------
+function notInWorkers() {
+  log.debug("Entering notInWorkers().");
+  log.debug("Leaving notInWorkers().");
+  return realms.handles().filter(function (one) {
+    return one.restoreInWorkers === false;
+  }).map(function (one) {
+    return one.handle;
+  });
 }
 
 // THE STORES THE WRITE-AGE RULE COVERS: `retain: 'age'`. It is applied only
@@ -2201,7 +2228,11 @@ function restore() {
     droppedUnknown = 0;
     const staleHandles = new Set();
 
+    const skipped = new Set(filter.skipHandles || []);
     return restoreInSlices(rows || [], aside, function (row) {
+      if (skipped.has(row.handle)) {
+        return;
+      }
       const store = realms.handleFor(row.handle);
       if (!store) {
         droppedUnknown++;
@@ -2299,6 +2330,9 @@ function restore() {
       log.info('persistence: ' + restored + ' minted row(s) restored across ' +
                realms.handles().length + ' declared store(s) and ' +
                filter.realms.length + ' realm partition(s)' +
+               (skipped.size ? ' — a request worker reads none of ' +
+                Array.from(skipped).join(', ') + ', which only the front ' +
+                'process answers from' : '') +
                (droppedUnreadable ? ', ' + droppedUnreadable + ' unreadable ' +
                                     '(written under a different ' +
                                     'key-encryption key?)' : '') +

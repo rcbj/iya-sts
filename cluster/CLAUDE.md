@@ -646,7 +646,9 @@ remembers a failure as a success.
 * **Everything the page draws is in the store** (`scheduler.runs`, a
   persisted per-realm `realms.map`): runs, the leader's row, each process's
   latest per-process run, and the command rows. A manual run or a step-down
-  asked of any node is a row the leader obeys at its next tick.
+  asked of any node is a row the leader obeys at its next tick. **The page
+  and its API are the FRONT process's since #617** — see *A request worker
+  does not read the history back*, below.
 
 **THE RUN HISTORY'S BOUND IS PER JOB (2026-09-29, #338).** Measured on
 testidp: 126,160 run rows, growing by about a thousand every few minutes, and
@@ -689,6 +691,26 @@ leader's row never. `scheduler.historyDays` and `scheduler.maxRuns` are gone.
 * **Rows written before #338 carry no expiry** and are all restored until the
   purge has been through them: on testidp, with its backlog, that is a few
   runs of the job after the deploy.
+
+**A REQUEST WORKER DOES NOT READ THE HISTORY BACK (#617, 2026-10-14).** Even
+bounded, the history was **42,740 of the 52,234 minted rows** each of 8081's
+processes restored at every start (34 MB of 55 MB of sealed bodies), and in a
+request worker nothing reads it whole. So `runStore` declares
+`restoreInWorkers: false` (`common/realms.js`), a worker's restore leaves its
+rows out of the query (`persistence_minted.js`, `notInWorkers()`), and
+`/admin/scheduler` and `/admin-api/scheduler` (with `/run` and `/step-down`)
+are pinned to the front process (`request_pool.js`'s `NEVER_DISPATCHED`),
+which restores the store as before and runs the front's read barrier before it
+answers. That also ends the arrangement above in which the page was a surface
+worker's and the API a protocol worker's. **What a worker still does:** it
+applies every run row the change log brings after its start, writes its own
+per-process rows and any manual run a request queues (merged with the stored
+row by `mergeRow`, as always), and runs its per-process jobs from
+`processSlots`, which never read the store. What it gives up is the
+"already queued" match of `requestRun()` against a run queued BEFORE it
+started and not yet picked up by the leader — a window of one tick, in which
+a second click on a worker that has just started queues a second manual run.
+`tests/worker_minted_restore.js` holds it.
 
 **A REMOVED REALM'S JOBS GO WITH IT (#338).** A realm job is registered ONCE
 and runs in every realm `realms.list()` names (`realmIdsFor()`), so there is

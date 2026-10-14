@@ -607,6 +607,7 @@ async function theClusterAgrees() {
     });
     answers.push(r);
   }
+  const readsEndedMs = Date.now();
   check("every node answered through the balancer", function () {
     assert.strictEqual(Object.keys(seen).length, EXPECTED_NODES,
                        JSON.stringify(Object.keys(seen)));
@@ -618,11 +619,21 @@ async function theClusterAgrees() {
   });
   check("and the same next run of the history job, to the second",
         function () {
+          const job = jobOf(answers[0], "scheduler.history");
+          const every = Number(job.schedule && job.schedule.everyMs) || 0;
           const times = answers.map(function (r) {
             return Date.parse(jobOf(r, "scheduler.history").nextRunAt);
           });
-          assert.ok(Math.max.apply(null, times) - Math.min.apply(null, times) <
-                    1000, JSON.stringify(times));
+          const low = Math.min.apply(null, times);
+          const spread = Math.max.apply(null, times) - low;
+          // A SLOT DUE DURING THE READS (2026-10-13): sixteen reports took
+          // about 70 s on two nodes, the 01:50 slot ran between them, and
+          // the last answered 02:00 — one interval on, the earlier already
+          // past when the reads ended. That is the nodes agreeing about the
+          // instant each was asked, as thePageAndTheApiAgree() allows.
+          const ranBetween = every > 0 && Math.abs(spread - every) < 1000 &&
+            low <= readsEndedMs;
+          assert.ok(spread < 1000 || ranBetween, JSON.stringify(times));
         });
   const was = answers[0].leader.node;
   const asked = await api("POST", "/admin-api/scheduler/step-down", {});
