@@ -5733,7 +5733,8 @@ function operationDispatched(kind) {
  * @param kind - `family.operation`
  * @param args - the operation's arguments
  * @param opts - optional; `affinity` names what to stick to, such as an LDAP
- *   connection id
+ *   connection id; `onPartial(part)` is handed each part of the answer the
+ *   worker sends ahead of it (#616)
  * @returns a promise of `{ dispatched, result }`
  */
 function runOperation(kind, args, opts) {
@@ -5760,7 +5761,7 @@ function runOperation(kind, args, opts) {
   }
   if (!readYourWrite()) {
     log.debug('Leaving runOperation(). Sent without a barrier.');
-    return sendOperation(entry, kind, args, 0);
+    return sendOperation(entry, kind, args, 0, options.onPartial);
   }
   log.debug("Leaving runOperation().");
   return awaitCommitConfirmations(entry).then(function () {
@@ -5774,10 +5775,10 @@ function runOperation(kind, args, opts) {
     noteLocalWrites(localWriteCount());
     const wanted = generation;
     if (entry.generation >= wanted) {
-      return sendOperation(entry, kind, args, ticket);
+      return sendOperation(entry, kind, args, ticket, options.onPartial);
     }
     return barrier(entry, wanted).then(function () {
-      return sendOperation(entry, kind, args, ticket);
+      return sendOperation(entry, kind, args, ticket, options.onPartial);
     });
   });
 }
@@ -5785,12 +5786,16 @@ function runOperation(kind, args, opts) {
 // The send itself, split out so that the three paths above share one copy of
 // the bookkeeping. A ticket of 0 means read-your-write is off and there is
 // none.
-function sendOperation(entry, kind, args, ticket) {
+function sendOperation(entry, kind, args, ticket, onPartial) {
   log.debug('Entering sendOperation(). kind=' + kind + ' pid=' + entry.pid);
   const id = nextOperationId++;
   const promise = new Promise(function (resolve, reject) {
     pendingOperations.set(id, { resolve: resolve, reject: reject, kind: kind,
                                 pid: entry.pid, ticket: ticket,
+                                // A part of the answer sent ahead of it
+                                // (#616), or null to ignore any.
+                                onPartial: typeof onPartial === 'function'
+                                  ? onPartial : null,
                                 // For the pool's response time (#327).
                                 sentAt: Date.now() });
   });
@@ -5823,6 +5828,22 @@ function receiveOperation(entry, message) {
   const pending = pendingOperations.get(message.id);
   if (!pending) {
     log.debug('Leaving receiveOperation(). Nothing is waiting for that id.');
+    return;
+  }
+  // A PART OF THE ANSWER, AHEAD OF IT (#616): handed on, and the operation
+  // stays pending — the answer is still to come, last, on the same channel.
+  // A caller that asked for none ignores it.
+  if (message.partial) {
+    if (pending.onPartial) {
+      try {
+        pending.onPartial(message.result);
+      } catch (e) {
+        log.error(errorCodes.tag('STS-WORKER-0049') + 'request_pool: a part ' +
+                  'of the ' + pending.kind + ' operation\'s answer could ' +
+                  'not be delivered: ' + ((e && e.message) || e));
+      }
+    }
+    log.debug('Leaving receiveOperation(). A part.');
     return;
   }
   pendingOperations.delete(message.id);

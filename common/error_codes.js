@@ -1333,6 +1333,12 @@ const CODES = [
       'restart itself with one (no process.execve, or the call failed), so ' +
       'it runs without a limit; its request workers still get one (#341).',
     spec: '' },
+  { code: 'STS-WORKER-0049',
+    summary: 'A part of an operation\'s answer that a request worker sent ' +
+      'ahead of it (#616: an LDAP search streaming its entries) could not ' +
+      'be handed to the caller waiting in the front process — its socket ' +
+      'write threw. The operation itself still ends with its answer.',
+    spec: '' },
   // ===== STORE =============================================================
   { code: 'STS-STORE-0001',
     summary: 'A scheduled persistence flush threw past its own handler.',

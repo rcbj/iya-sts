@@ -298,7 +298,10 @@ const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 const PROTOCOL_WORKER_HEADER = 'x-sts-pool-protocol-worker';
 
 // An operation handler: a value or a promise, both answered the same way.
-type OperationHandler = (args: any) => any;
+// Its second argument, `emit`, sends a PART of the answer ahead of the rest
+// (#616: an LDAP search streaming the entries it finds while it reads the
+// next page of the store); a handler that never calls it answers whole.
+type OperationHandler = (args: any, emit: (part: any) => void) => any;
 
 // What a `RequestWorker` needs from the rest of the service, each named for
 // the module that supplies it.
@@ -1373,8 +1376,16 @@ class RequestWorker {
       return;
     }
     let result;
+    // A PART, ahead of the answer, on the same channel and so in order
+    // before it (#616). The front process hands it to whoever is waiting
+    // for this id and keeps waiting; a part after the answer is impossible,
+    // since the answer is sent last.
+    const emit = (part: any): void => {
+      WorkerChannel.send({ operation: true, id: message.id, partial: true,
+                           result: part });
+    };
     try {
-      result = fn(message.args);
+      result = fn(message.args, emit);
     } catch (e) {
       // It RAN, so it is announced: a handler that threw part way through may
       // still have written.
