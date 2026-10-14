@@ -1887,6 +1887,33 @@ on a connection. `toSearchEntry()` builds a `SearchResultEntry` instance with th
 response's `messageId`, which sidesteps both. The comments there explain it;
 read them before "simplifying" that function back to a plain object.
 
+### A filter is matched by each attribute's own rule (#632, 2026-10-14)
+
+`@ldapjs/filter`'s `matches()` compares every value exactly but
+`objectClass`'s, so `(uid=LOAD-x)` found nobody stored as `uid=load-x` —
+while `existingUserEntry()`, the console, SCIM and the store's own index
+(`name_keys`, `mail_keys`, lower-cased) all found her. RFC 4519 gives `uid`
+caseIgnoreMatch and RFC 4524 gives `mail` caseIgnoreIA5Match. The search
+handler now asks `ldap_matching.ts` (a leaf, a static class), which walks
+AND / OR / NOT itself, folds case for an equality or substring on an
+attribute whose RFC rule ignores it — the table is RFC 4519's, RFC 4524's and
+RFC 2798's case-ignoring attributes — and hands every other leaf to the
+library unchanged. **It is not a patch to the library and does not belong in
+the fork**: a library that has no schema cannot know `uid`'s rule, and this
+directory's schemaless stance ends where a STANDARD attribute's matching rule
+begins. `scim/scim_client.ts`'s scope filter asks the same class, so a scope
+filter on `uid` agrees with a search.
+
+Every path that answers a filter goes through it: the whole directory's walk,
+the windowed index-narrowed candidates (#320's `equalUnder`, whose lower-cased
+keys were already a superset and are now exactly the matches for a value with
+no surrounding space), and #616's asynchronous paging. The compare handler
+was already case-insensitive for EVERY attribute and is unchanged. Case is the
+whole of it — RFC 4518's insignificant-space handling is not done, here or in
+the index. `tests/ldap_filter_matching.js` holds the matcher and both modes;
+reverting the handler to `req.filter.matches()` turns 22 of its assertions
+red.
+
 ### node-ldapjs is a SUBMODULE, it is nested, and it is changed only in the fork
 
 **The fork is `rcbj/node-ldapjs` and it is ours to change (2026-09-18)** —

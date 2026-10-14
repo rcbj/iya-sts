@@ -192,6 +192,10 @@ const createClaims = require('./directory_create_claims');
 // asked once per entry. This file classifies the reader and the entry and
 // asks it — see *WHO MAY READ THIS DIRECTORY*, below the write half.
 const readPolicy = require('./directory_read_policy');
+// A SEARCH FILTER MATCHED BY EACH ATTRIBUTE'S OWN EQUALITY RULE (#632,
+// 2026-10-14): `(uid=ALICE)` finds `uid=alice`, as RFC 4519's caseIgnoreMatch
+// says. A static utility class that requires nothing, asked once per entry.
+const ldapMatching = require('./ldap_matching');
 // WHAT AN ADMINISTRATOR MAY CHANGE ON A PERSON (#228, 2026-09-26): the rule
 // table and the edit, a LIBRARY that cannot require this file (it is loaded
 // by the console long before this one) and so is handed the two functions it
@@ -1636,10 +1640,12 @@ function windowedFind(name, args, predicate, info) {
 // service with no workers that stopped every socket. The commonest searches
 // an LDAP client makes are equalities on `uid` and `mail`, and the store
 // indexes both, every value lower-cased (`persistence/directory_codec.js`).
-// The filter's equality is case-sensitive (@ldapjs/filter's `matches()`), so
-// the entries whose LOWER-CASED value equals the lower-cased assertion are a
-// SUPERSET of its matches; the filter is still applied to every candidate,
-// so the answer cannot change — only how much is read to reach it.
+// The filter's equality on both ignores case (caseIgnoreMatch for uid,
+// caseIgnoreIA5Match for mail; `ldap_matching.ts`, #632) and the index
+// trims, so the entries whose LOWER-CASED value equals the lower-cased
+// assertion are a SUPERSET of its matches (exactly them, for a value with
+// no surrounding space); the filter is still applied to every candidate, so
+// the answer cannot change — only how much is read to reach it.
 //
 // Narrowed only where that holds: the filter is such an equality, an AND
 // with a narrowable term, or an OR whose every term is narrowable (the union
@@ -17662,8 +17668,17 @@ server.search('', function (req, res, next) {
       // rather than as a filter that could not see it. `matchableForReader()`:
       // a credential is invisible to a filter, or the filter is an oracle for
       // it. See *THE DIRECTORY'S READ AND BIND SECURITY*.
-      matches = req.filter.matches(matchableForReader(stored, view.rule),
-                                   false);
+      //
+      // AND EACH ASSERTION BY ITS ATTRIBUTE'S OWN EQUALITY RULE (#632):
+      // @ldapjs/filter compares every value but objectClass's exactly, so
+      // `(uid=ALICE)` found nobody stored as `uid=alice`, where RFC 4519
+      // gives uid caseIgnoreMatch (and mail, RFC 4524, caseIgnoreIA5Match).
+      // `ldap_matching.ts` walks the filter, folds case for the attributes
+      // whose rule ignores it, and hands every other leaf to the library
+      // with this same `false`. The store's index (#320) holds those values
+      // lower-cased, so a narrowed search's candidates are still a superset.
+      matches = ldapMatching.matches(req.filter,
+                                     matchableForReader(stored, view.rule));
     } catch (e) {
       // A filter this store cannot evaluate is not a match, and it is worth a
       // line: an extensible-match filter or an unknown matching rule lands

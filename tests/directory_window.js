@@ -36,6 +36,11 @@
 //      LRU or the ghosts, probes independent of how many ghosts there are,
 //      a dead ghost pruned when met, and the old walk's answer on a seeded
 //      random mix over two realms.
+//   M. A FIRST START WRITES THE WHOLE SEED (#631): the real directory,
+//      seeded at require time, over an EMPTY store double, then
+//      `persistence.start()` and its first flush — windowed and whole, in
+//      two children — and the same rows reach the table: the base DN, the
+//      containers, the groups and the applications as well as the people.
 //
 // WHAT NEEDS AN HTTP RUN (on #349): the whole service in a windowed worker —
 // every protocol family's reads and writes through the window, the change
@@ -1210,6 +1215,29 @@ function scenarioRows(base) {
   ];
 }
 
+// M. A FIRST START, IN A CHILD: the real directory over an empty store
+// double, `persistence.start()`, and what the first flushes write. A
+// request worker with no slot, so the double need not answer the origin
+// claim (`adoptStableOrigin()` asks nothing without a stable name); the
+// first flush is the same code in a front process.
+async function firstStart() {
+  log.debug("Entering firstStart().");
+  const db = fakeDatabase();
+  installFakePg(db);
+  const persistence = require('../persistence/persistence');
+  const ldap = require('../ldap/ldap_server');
+  await persistence.start();
+  for (let i = 0; i < 4; i++) {
+    await tick(20);
+    await persistence.flush();
+  }
+  const keys = Array.from(db.entries.keys()).sort();
+  log.debug("Leaving firstStart(). " + keys.length);
+  return { windowed: !!ldap.directoryWindow,
+           base: ldap.baseDn().toLowerCase(), keys: keys,
+           lastError: persistence.status().lastError || '' };
+}
+
 function twoModes() {
   log.debug("Entering twoModes().");
   const ldap = require('../ldap/ldap_server');
@@ -1292,6 +1320,13 @@ async function childMain() {
                        JSON.stringify({ answers: answers, seen: [],
                                         threw: '' }));
       process.exit(0);
+    } else if (process.env.DW_PART === 'first-whole' ||
+               process.env.DW_PART === 'first-lru') {
+      const answers = await firstStart();
+      fs.writeFileSync(process.env.PROBE_OUT,
+                       JSON.stringify({ answers: answers, seen: [],
+                                        threw: '' }));
+      process.exit(0);
     } else if (process.env.DW_PART === 'ldap') {
       throughTheDirectory(t);
     } else if (process.env.DW_PART === 'refusal') {
@@ -1334,6 +1369,15 @@ function answersOf(t, part) {
     env.LDAP_WORKER_DIRECTORY = 'postgres-lru';
     env.STS_PERSISTENCE_MODE = 'postgres';
     env.LDAP_WORKER_CACHE_ENTRIES = '100';
+  }
+  if (part === 'first-whole' || part === 'first-lru') {
+    // #631: `auto` is the default that windows a postgres store (#320), and
+    // `memory` holds the whole directory over the same store.
+    env.STS_REQUEST_WORKER = '1';
+    delete env.STS_REQUEST_WORKER_SLOT;
+    env.STS_PERSISTENCE_MODE = 'postgres';
+    env.STS_PERSISTENCE_COORDINATE = 'true';
+    env.LDAP_WORKER_DIRECTORY = part === 'first-lru' ? 'auto' : 'memory';
   }
   const child = childProcess.spawnSync(process.execPath, [__filename],
     { cwd: path.join(__dirname, '..'), env: env, encoding: 'utf8',
@@ -1395,6 +1439,47 @@ function sameAnswers(t) {
           'K2. THE IDENTITY REGISTER IS THE SAME in a windowed worker, ' +
           'knownBy and all — the store is not walked for names');
   log.debug("Leaving sameAnswers().");
+}
+
+// M. A FIRST START WRITES THE WHOLE SEED (#631). A windowed first start
+// wrote the people its window pinned and nothing resident — no base DN, no
+// container — because the first flush read its empty journal beside the
+// window's writes as "nothing resident to walk".
+function firstStartWritesTheSeed(t) {
+  log.debug("Entering firstStartWritesTheSeed().");
+  const whole = answersOf(t, 'first-whole');
+  const lru = answersOf(t, 'first-lru');
+  if (!whole || !lru) {
+    log.debug("Leaving firstStartWritesTheSeed(). A child failed.");
+    return;
+  }
+  t.check(!whole.windowed && lru.windowed,
+          'M0. one child holds the whole directory and the other a window ' +
+          'onto the same empty store');
+  const holds = function (answer, key) {
+    return answer.keys.indexOf('default\n' + key) >= 0;
+  };
+  const base = whole.base;
+  t.check(holds(whole, base) && holds(whole, 'ou=users,' + base) &&
+          holds(whole, 'ou=groups,' + base) &&
+          holds(whole, 'uid=alice,ou=users,' + base),
+          'M1. (whole directory) the first start writes the base DN, the ' +
+          'containers and the seeded people', whole.keys.length + ' rows');
+  t.check(holds(lru, base) && holds(lru, 'ou=users,' + base) &&
+          holds(lru, 'ou=groups,' + base) &&
+          holds(lru, 'ou=applications,' + base),
+          'M2. A WINDOWED FIRST START WRITES THE BASE DN AND THE ' +
+          'CONTAINERS (#631) — the resident half of the seed, beside the ' +
+          'people its window pinned', lru.keys.length + ' rows: ' +
+          lru.keys.slice(0, 8).join(' | '));
+  t.equal(JSON.stringify(lru.keys), JSON.stringify(whole.keys),
+          'M3. and the windowed first start writes exactly the rows a ' +
+          'whole-directory first start does', 'whole ' + whole.keys.length +
+          ', windowed ' + lru.keys.length);
+  t.check(!whole.lastError && !lru.lastError,
+          'M4. and neither store reports a failed write',
+          whole.lastError + ' ' + lru.lastError);
+  log.debug("Leaving firstStartWritesTheSeed().");
 }
 
 function inChild(t, part, minimum) {
@@ -1488,6 +1573,8 @@ function run(t) {
   inChild(t, 'ldap', 10);
   t.log.info('=== J, K. the same directory in both modes ===');
   sameAnswers(t);
+  t.log.info('=== M. a first start writes the whole seed (#631) ===');
+  firstStartWritesTheSeed(t);
   log.debug("Leaving run().");
 }
 
@@ -1500,7 +1587,8 @@ module.exports = {
   describe: 'the directory as a bounded window onto the store (#349): ' +
             'routing, writes and in-place edits, the flush\'s answers, ' +
             'scans and size, other processes, persistence.js over a pg ' +
-            'double, the refusal, and collect(named) looking keys up',
+            'double, the refusal, collect(named) looking keys up, and a ' +
+            'first start writing the whole seed (#631)',
   run: run,
   // The stand-in bridge and its rows, shared with
   // `tests/directory_window_requests.js` (#616) and, for its windowed

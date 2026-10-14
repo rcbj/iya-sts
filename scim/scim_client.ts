@@ -140,6 +140,9 @@ import OutboundTls = require('../common/outbound_tls');
 import InstanceSlot = require('../common/instance_slot');
 import Rules = require('./scim_client_rules');
 import outbound = require('../oauth-oidc/outbound_delivery');
+// The directory's own filter matching (#632): a scope filter on `uid` or
+// `mail` ignores case as an LDAP search of the same entries does. A leaf.
+import LdapMatching = require('../ldap/ldap_matching');
 
 type Json = any;
 
@@ -1104,8 +1107,8 @@ class ScimClients {
     if (c.scopeMode === 'filter') {
       let answer = false;
       try {
-        answer = !!ldapjs().parseFilter(c.scopeFilter)
-          .matches(this.matchable(entry), false);
+        answer = LdapMatching.matches(
+          ldapjs().parseFilter(c.scopeFilter), this.matchable(entry));
       } catch (e) {
         log.debug("Caught in ScimClients.inScope(): " +
                   ((e && e.message) || e));

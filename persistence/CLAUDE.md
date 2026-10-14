@@ -310,6 +310,23 @@ The shadow is now primed only for realms whose contents actually came OUT of the
 store. A realm that was seeded rather than loaded gets an empty shadow, so every
 one of its entries is new and is written.
 
+### And the second, which was the same loss through the JOURNAL (#631, 2026-10-14)
+
+An empty shadow is only half of it: the first flush must also LOOK at every
+entry, and it was left to infer that from an empty journal (the seed runs
+before the store is enabled, so `directoryChanged()` journals none of it). In
+a windowed process — every postgres process since #320 — the window's pinned
+seed (the people) made the flush read "empty journal beside window writes" as
+"nothing resident to walk": the people reached the table and the base DN, the
+containers, the groups and the applications did not (24 rows of 59 on the
+whole stack; the bulk import's own test seeded with
+`LDAP_WORKER_DIRECTORY=memory` to dodge it). `openStore()` now sets
+`dirtyEverything` beside `directoryDirty`, so the first flush is a whole diff
+and the window's `collect(null)` in every process, whatever was journalled
+before it ran. It walks what an empty journal already made it walk; nothing
+new is paid at start. `tests/directory_window.js` section M starts the real
+directory over an empty store double in both modes and compares the rows.
+
 ## When the flush happens
 
 Both modes schedule; they differ only in the delay.
