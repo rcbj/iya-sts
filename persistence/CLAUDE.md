@@ -832,6 +832,18 @@ containers against this store need, and three things changed here for it:
 `cluster/cluster_secrets.ts`. The four `sts_cluster_*` tables are schema version
 5.
 
+**A CREATE'S CLAIMS GO BACK IN THE FLUSH THAT COMMITS IT (#628, 2026-10-14).**
+`releaseClaimsAtCommit(rows)` queues claim rows with the directory generation
+of the moment; the first `saveDirectory()` whose take covers that generation
+carries them as `change.releaseClaims`, and the driver deletes them as the
+last statement before COMMIT (the tiered driver sends each to the tier its
+scope is claimed in). Rows whose writes committed earlier are deleted alone
+— on the "nothing is dirty" path, or after a directory step that carried
+none. **A transaction that fails rolls them back, and they are not queued
+again**: the claims stay until they expire (`STS-CLUSTER-0164`), the cost
+rcbj accepted. `cluster/CLAUDE.md`, *Claims and shared secrets*, and
+`ldap/CLAUDE.md`, *SEVERAL NODES: A CREATE CLAIMS ITS NAME*, have the rest.
+
 **WHAT THE CLUSTER BARRIER HOLDS A RESPONSE ON (2026-09-14, #46 follow-up).** It
 was `persistence.pendingWrites()` — anything dirty, journalled, scheduled or in
 flight anywhere in the process — and that held nearly every request behind the
