@@ -1263,13 +1263,14 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   by every probe (25.8 s for 5,000 probes at 25,000 entries, 13 ms merged),
   so it is merged after every batch where permitted (`namePendingMerger()`;
   schema 18 has `fastupdate = off` and nothing to merge).
-* **ONE TRANSACTION A BATCH UNDER THE REALM'S IMPORT LOCK** —
-  `pg_advisory_xact_lock(629, hashtext(realm))` — from the authoritative
-  check to the commit: no other import can make a checked name taken. The
-  insert is `INSERT … SELECT FROM unnest($n::text[]…) ON CONFLICT DO
-  NOTHING RETURNING dn_key`, and a count short of what was checked free
-  rolls back (STS-LDAP-0159). No `COPY`: the image has no COPY client, and
-  the application role cannot create a staging table.
+* **ONE TRANSACTION A BATCH, COMMITTED UNDER THE REALM'S IMPORT LOCK** —
+  `pg_advisory_xact_lock(629, hashtext(realm))` — taken AFTER the insert,
+  held through the authoritative check to the commit (see *THE INSERT AND
+  THE SEAL ARE OUTSIDE THE LOCK*, below). The insert is `INSERT … SELECT
+  FROM unnest($n::text[]…) ON CONFLICT DO NOTHING RETURNING dn_key`; a DN it
+  did not insert is one another import inserted meanwhile, and counts as
+  present. No `COPY`: the image has no COPY client, and the application
+  role cannot create a staging table.
 * **IT WAS `LOCK TABLE … SHARE ROW EXCLUSIVE` UNTIL #637, AND THAT IS WHAT
   KEPT AUTOVACUUM OFF THE TABLE.** Every table lock mode that keeps writers
   out conflicts with autovacuum's SHARE UPDATE EXCLUSIVE, and a lock request
@@ -1287,19 +1288,36 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   before its flush, so a duplicate could arise on its side with or without
   the lock. The guard against a running service is the refusal
   (STS-LDAP-0153), asked before every batch and again under the lock.
-* **THE SEAL IS OUTSIDE THE LOCK (#637), SO SEVERAL IMPORTS PAY.** A batch
-  is checked ONCE without the lock (present and taken records are dropped
-  and reported, so a re-run still seals nothing), sealed, its data keys
-  settled, and only then does it take the lock, read the ceiling, check
-  AGAIN what it sealed, and insert. A name another import committed between
-  the two checks is caught by the second; its seal is thrown away. Sealing
-  and indexing are most of a batch's CPU, and one import was CPU-bound at
-  ~66% of a core with postgres idle half the time — under the old table
-  lock N imports would have run their seals one at a time. The report's
+* **THE INSERT AND THE SEAL ARE OUTSIDE THE LOCK (#637), SO SEVERAL IMPORTS
+  PAY.** A batch: (1) a FIRST LOOK, the three statements without the lock —
+  present and taken records dropped and reported, so a re-run still seals
+  nothing; (2) the seal and `settleDeks()`; (3) `BEGIN`, the INSERT in
+  `dn_key` order; (4) the lock; the live check; the three statements AGAIN
+  ON A SECOND CONNECTION; `DROP_OWN` of the batch's rows whose name another
+  import committed first, and of any past the ceiling; `COMMIT`. **Why it
+  holds:** every import commits under the lock and a commit is visible
+  before its lock is released, so a batch holding the lock sees every other
+  import's committed rows; their uncommitted rows will see this one's once
+  it commits. Two batches never both commit a name. **Why a second
+  connection:** it cannot see the batch's own uncommitted rows. Asked in the
+  batch's own transaction, every one of its digests matched its own row and
+  the name check took ~580 ms a batch under the lock against ~60 ms finding
+  nothing, and a WHERE `NOT (dn_key = ANY($own))` compared each own row with
+  the whole array (both measured; a lone import fell to 2,600 a second).
+  **Why `dn_key` order:** the primary key is the one unique index, so the
+  only wait between two inserts is on another import's uncommitted row of
+  the same DN (overlapping files), and two batches taking the same keys in
+  the same order cannot wait on each other in a cycle; D7 runs the same
+  people in opposite orders. **Measured** (postgres 18 with 4 cores, 5,000 a
+  batch, as a non-owner): one import 4,200 a second holding the lock 14% of
+  its run (develop's: 4,750, since it checks once); two 6,400; four 10,500;
+  six 11,800, the database the limit. Under the old table lock, with the
+  seal and the insert inside, four ran at 1.6 times one. The report's
   `lockSeconds` and `lockWaitSeconds` say how much of a run could not
-  overlap. `docs/bulk-import.md` (*Several imports at once*) is the
-  operator's half: files should not overlap, and if they do the rule holds
-  and the winner is a race.
+  overlap. **Mixing builds is NOT safe**: an older import takes the table
+  lock, does not take this one, and checks before it inserts, so it and a
+  new one over overlapping files could both admit a name.
+  `docs/bulk-import.md` (*Several imports at once*) is the operator's half.
 * **WHAT ELSE SEVERAL IMPORTS SHARE, AND WHY EACH IS SAFE** (read for #637):
   `sts_change_readers` — an import never reports there (only
   `persistence_replication.js` does, and the import does not start it), so
@@ -1307,8 +1325,9 @@ on #629 (the comment of 2026-10-14). What a maintainer needs:
   keyed by `txid` and folded at COMMIT into this connection's shard, and
   batches of one realm commit one at a time anyway; `REALM_COUNT` — summed
   over the sixteen shards (it read ONE shard from #630 until #637, so the
-  ceiling was checked against a fraction of the realm) and read under the
-  lock, so the ceiling is exact across imports; the realm's `directory`
+  ceiling was checked against a fraction of the realm — D6 fails with the
+  old statement) and read under the lock, so the ceiling is exact across
+  imports, the rows past it deleted before the commit; the realm's `directory`
   data key — two imports making the first one at once each queue a row
   write, and `mergeKeys()` UNIONS the row under `FOR UPDATE`, so both keys
   are kept and each process seals under its own (no key lost; the service

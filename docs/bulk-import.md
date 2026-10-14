@@ -139,11 +139,14 @@ to it.
 You can run several imports at once against one store, each on its own file,
 to load faster than one process can parse and seal.
 
-**What is safe.** Every batch of every import takes the realm's import lock
-(a PostgreSQL advisory lock) for its last step: it checks its names against
-the store again, inserts, and commits. Imports of one realm therefore check
-and insert one at a time, and everything before that step runs side by side:
-reading the file, checking the batch once without the lock, and sealing it.
+**What is safe.** Each batch is read, checked once, sealed and inserted side
+by side with the other imports. Then it takes the realm's import lock (a
+PostgreSQL advisory lock) for its last step. Under the lock it checks its
+usernames again against everything already committed, takes back any person
+whose username another import committed first, and commits. Imports of a
+realm therefore commit one at a time, and each one checks against all the
+others' committed people before it commits.
+
 In detail:
 - The one-entry-per-person rule holds across imports exactly as it holds
   across the batches of one import.
@@ -163,20 +166,24 @@ In detail:
 person, so that no DN and no username is in two files. If they do overlap,
 nothing breaks the rule. A DN in both files is imported once, and the other
 import counts it as present. A username proposed by two different DNs is
-imported for whichever import reaches it first, and the other import
+imported for whichever import commits it first, and the other import
 reports it as taken (`STS-LDAP-0160`). Which import wins a name is a race,
 so overlapping files give you a directory that depends on timing.
 
 **Run every import from the same build.** An import from before #637 locks
 the table instead, which does not hold an import from this build out of its
-check. Two such imports of overlapping files could both admit a name.
+check. Two such imports of overlapping files could both admit a name. With
+files that do not overlap, mixing builds is safe but slow, because the older
+import's table lock stops the newer ones while it holds it.
 
-**How many.** Start with as many imports as you have cores to spare for
-them, and no more than four. Each import's report gives `seconds`,
+**How many.** Four at once is a good start. On a test machine (PostgreSQL 18
+with four cores, 5,000 people a batch), one import ran at about 4,200 people
+a second, two at once at 6,400, four at 10,500, and six at 11,800. Past
+four, the database was the limit. Each import's report gives `seconds`,
 `lockSeconds` (time holding the lock) and `lockWaitSeconds` (time waiting for
-it). When `lockWaitSeconds` grows to a large share of `seconds`, the imports
-are queueing for the lock and another one will not help. At that point the
-database's insert is the limit, not the import.
+it). A lone import holds the lock for about a seventh of its run. If
+`lockWaitSeconds` becomes a large share of `seconds`, or the database's CPU
+is saturated, another import will not help.
 
 ## Making a test file
 
