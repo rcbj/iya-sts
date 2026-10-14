@@ -3529,6 +3529,192 @@ function applyDirectoryChange(change) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// WHAT THIS PROCESS COMMITTED, BY KIND, AND ANOTHER PROCESS'S DIRECTORY ROWS
+// APPLIED BY KEY (#626).
+//
+// `common/request_pool.js` sends a dispatched LDAP write through the read
+// barrier — a ticket wait and a change-log pull in the worker — so that
+// anything answered before it is visible to it. Under a bulk add from
+// several connections every add found the other workers ahead and paid a
+// pull first. But what those workers wrote was, almost always, PEOPLE: rows
+// of a windowed key, which a worker holding a window reads from the store
+// whenever it does not hold them. The pull mattered only for a key the
+// worker DID hold, a copy that may be older than the store's.
+//
+// So the pool is told what each announced commit was, and when everything
+// a worker has not caught up on is windowed directory rows, it hands the
+// write those KEYS instead of a pull, and the worker applies just them —
+// `applyStaleKeys()`, the windowed branch of applyDirectoryChange() for each
+// one, so the held copy is dropped (or marked stale when busy here) and the
+// indexes are told exactly as the pull would have told them. Anything else
+// committed — a realm, a setting, a key set, a group, a policy, a minted
+// session — is "shared", and the next write takes the whole barrier.
+//
+// `committedChangesSince()` is the writer's half: it reads the driver's
+// counts by kind (`persistence_postgres.js`, `otherWritten`) and asks the
+// directory which keys are windowed. A driver without the counts (ldif,
+// memory, the tiered driver) answers null, which is "shared".
+// ---------------------------------------------------------------------------
+/**
+ * Where this process's committed change rows stand, by kind, for
+ * `committedChangesSince()`.
+ *
+ * @returns an opaque mark, or null when the driver keeps no such counts
+ */
+function committedChangeMark() {
+  log.debug("Entering committedChangeMark().");
+  if (!driver || typeof driver.committedMark !== 'function') {
+    log.debug("Leaving committedChangeMark(). Not kept.");
+    return null;
+  }
+  log.debug("Leaving committedChangeMark().");
+  return driver.committedMark();
+}
+
+/**
+ * What this process committed since a mark: the windowed directory keys
+ * when that is ALL it committed (bar per-process tallies), or null.
+ *
+ * @param mark - from `committedChangeMark()` or a previous answer
+ * @param counts - optional; what answers `committedSince(mark)` in the
+ *   driver's place, for a test
+ * @returns `{ mark, windowedKeys }`; `windowedKeys` is an array of
+ *   `{ realm, key }`, or null for "something else, or unknown"
+ */
+function committedChangesSince(mark, counts) {
+  log.debug("Entering committedChangesSince().");
+  const source = counts || driver;
+  if (!mark || !source || typeof source.committedSince !== 'function') {
+    log.debug("Leaving committedChangesSince(). Unknown.");
+    return { mark: committedChangeMark(), windowedKeys: null };
+  }
+  const since = source.committedSince(mark);
+  const window = directory && directory.window;
+  if (since.other || !Array.isArray(since.directory) || !window) {
+    log.debug("Leaving committedChangesSince(). Shared.");
+    return { mark: since.mark, windowedKeys: null };
+  }
+  const seen = new Set();
+  const keys = [];
+  for (let i = 0; i < since.directory.length; i++) {
+    const one = since.directory[i];
+    if (!window.isWindowed(one.realm, one.key)) {
+      log.debug("Leaving committedChangesSince(). A resident key.");
+      return { mark: since.mark, windowedKeys: null };
+    }
+    const ck = one.realm + '\n' + one.key;
+    if (!seen.has(ck)) {
+      seen.add(ck);
+      keys.push({ realm: one.realm, key: one.key });
+    }
+  }
+  log.debug("Leaving committedChangesSince(). " + keys.length +
+            " windowed key(s).");
+  return { mark: since.mark, windowedKeys: keys };
+}
+
+// The rows at some keys of one realm, read from the store: one `byKeys`
+// where the driver answers the directory's queries, a `readEntry()` each
+// otherwise. Each row is `{ key, entry }`.
+function readStaleRows(realmId, keys) {
+  log.debug("Entering readStaleRows(). " + keys.length);
+  if (typeof driver.directoryQuery === 'function') {
+    log.debug("Leaving readStaleRows(). One byKeys.");
+    return Promise.resolve(driver.directoryQuery('byKeys', [realmId, keys]));
+  }
+  log.debug("Leaving readStaleRows(). One readEntry() each.");
+  return Promise.all(keys.map(function (key) {
+    return driver.readEntry(realmId, key);
+  })).then(function (rows) {
+    return rows.filter(function (row) {
+      return !!row;
+    });
+  });
+}
+
+/**
+ * Applies another process's directory rows at some windowed keys, as the
+ * change log's pull would: each key's row is read from the store, and the
+ * held copy is forgotten — or marked stale, when this process is busy with
+ * it — with the directory's indexes told (`forgetEntry()`).
+ *
+ * Answers false, having applied nothing, where it cannot stand in for a pull:
+ * no window here, a key that is not windowed here, no driver, or a store
+ * that could not be read. The caller then pulls (`syncNow()`).
+ * @param keys - `[{ realm, key }]`, normalised DNs
+ * @param reader - optional; `(realmId, keys)` resolving to the rows, for a
+ *   test; the store otherwise
+ * @returns a promise of whether they were applied
+ */
+function applyStaleKeys(keys, reader) {
+  log.debug("Entering applyStaleKeys().");
+  const list = Array.isArray(keys) ? keys : [];
+  if (!list.length) {
+    log.debug("Leaving applyStaleKeys(). Nothing to apply.");
+    return Promise.resolve(true);
+  }
+  const window = directory && directory.window;
+  const read = reader || (driver && (typeof driver.directoryQuery ===
+    'function' || typeof driver.readEntry === 'function') ? readStaleRows
+    : null);
+  if (!window || typeof directory.forgetEntry !== 'function' || !read ||
+      !list.every(function (one) {
+        return one && window.isWindowed(String(one.realm), String(one.key));
+      })) {
+    log.debug("Leaving applyStaleKeys(). Not here; the caller pulls.");
+    return Promise.resolve(false);
+  }
+  const byRealm = new Map();
+  list.forEach(function (one) {
+    const realmId = String(one.realm);
+    const held = byRealm.get(realmId) || [];
+    if (held.indexOf(String(one.key)) < 0) {
+      held.push(String(one.key));
+    }
+    byRealm.set(realmId, held);
+  });
+  log.debug("Leaving applyStaleKeys(). Reading " + list.length + ".");
+  return Promise.all(Array.from(byRealm.keys()).map(function (realmId) {
+    const realmKeys = byRealm.get(realmId);
+    return Promise.resolve(read(realmId, realmKeys)).then(function (rows) {
+      const found = new Map();
+      (rows || []).forEach(function (row) {
+        if (row && row.key) {
+          found.set(String(row.key), row);
+        }
+      });
+      realmKeys.forEach(function (key) {
+        const row = found.get(key) || null;
+        // applyDirectoryChange()'s windowed branch, key for key.
+        const busy = window.busy(realmId, key);
+        if (busy) {
+          window.markStale(realmId, key);
+        }
+        const was = restoring;
+        restoring = true;
+        try {
+          directory.forgetEntry(realmId, key, row ? row.entry : null, busy);
+        } finally {
+          restoring = was;
+        }
+      });
+    });
+  })).then(function () {
+    return true;
+  }, function (e) {
+    // NOT A REFUSAL: the caller pulls instead, which is what it did before
+    // #626 on every write. Some keys may have been applied; applying them
+    // again in the pull is what the pull does to every row anyway.
+    log.warn(errorCodes.tag('STS-STORE-0081') + 'persistence: the ' +
+             'directory rows another process wrote could not be read by ' +
+             'key (' + ((e && e.message) || e) + '); this process is ' +
+             'catching up with the whole change log instead.');
+    return false;
+  });
+}
+
+
 function applyRealmsChange() {
   log.debug("Entering applyRealmsChange().");
   if (!persistsRealms()) {
@@ -4767,6 +4953,11 @@ module.exports = {
    * Waits until everything committed before the call is applied here.
    * @returns `persistence_replication.syncNow()`'s promise
    */
+  // #626: what this process committed by kind, and another's directory
+  // rows applied by key. See committedChangesSince().
+  committedChangeMark: committedChangeMark,
+  committedChangesSince: committedChangesSince,
+  applyStaleKeys: applyStaleKeys,
   syncNow: function () {
     log.debug("Entering syncNow().");
     log.debug("Leaving syncNow().");
