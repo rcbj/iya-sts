@@ -1410,6 +1410,38 @@ bounded by what the other processes HOLD (origins x the store's own cap).
 thirty thousand notes and evictions through three origins and holds the count
 at the cap.
 
+**And a dead process's contributions go (#618 phase 2, 2026-10-14)**, which
+closes the "never aged out" above for the fan-in in memory. The cap is per
+ORIGIN, and a random origin, or a node that left the cluster, never removes
+its rows — so every such process left up to a cap of each store in every
+other process until that one restarted, and the restart read them back.
+`pruneFanIn()` drops an origin that has not been a LIVE READER of the change
+log (`liveChangeReaders()`: `sts_change_readers`, reported within the reader
+TTL and naming no node that left — the trim's own test, read without
+deleting) for the grace, `max(reader TTL, 15 minutes)`. The floor is because
+most origins are stable since 2026-09-18: a process restarting under its
+name takes its origin back, and anything dropped while it was away returns
+only as it is rewritten (a counter on its next change, an audit segment
+never) or when the reading process restarts. **It is not a job of its own**:
+the change-log pull's per-process job runs it after a pull, at most once a
+minute, one read of a table with a row per process, and a walk of the fan-in
+only when an origin is dropped. A failed read drops nothing
+(`STS-STORE-0082`): an origin is dropped on the readers' evidence, never on
+its absence. Only memory is dropped; the rows stay in `sts_minted` under
+`mintedRetention`. `tests/replication_fan_in_bounded.js` section 6.
+
+**The second map the heap snapshot saw growing** (4K to 6.4K slots in 21
+minutes, mostly deleted-entry slots) is THIS process's own
+`admin_stats.users` partition (`realms.map`, the one `userRecord()` caps):
+the same 3,987 live records in both snapshots of 8081's worker, and 4,840
+holes in the second. The holes are V8's: an ordered hash table marks a
+deleted entry and reclaims it at its next rehash, so note-then-evict churn
+fills the table with holes up to its capacity, which is bounded by about
+twice the live count. It is bounded, and nothing was changed for it. (Why a
+worker holds 3,987 records under a cap of 2,000 was not settled: `restore`
+writes a row without the cap, and a row whose origin is this process's is
+restored rather than fanned in.)
+
 `tests/minted_persistence.js` sections 6 and 6b hold it against a stub driver
 that applies the same WHERE: the filter's realms, cutoff and short-lived
 handles; an expired row not restored, a live one and a non-expiring one

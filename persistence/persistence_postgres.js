@@ -5967,6 +5967,35 @@ function create(options) {
       });
     },
 
+    // THE READERS STILL LIVE (#618 phase 2): every origin that has reported
+    // within `readerTtlMs` and, by membership, names no node that left —
+    // the trim's own test of "not gone", asked without deleting anything.
+    // What the fan-in of `merge: 'own'` stores keeps (`persistence_replication
+    // .js`, `pruneFanIn()`): a contribution from an origin not in this list
+    // is a dead process's. One row per process that coordinates, so the
+    // answer is as small as the cluster.
+    liveChangeReaders: function (opts) {
+      log.debug("Entering liveChangeReaders().");
+      const o = opts || {};
+      const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
+      const byMembership = o.nodeLiveness !== false;
+      log.debug("Leaving liveChangeReaders().");
+      return pool.query(
+        'SELECT r.origin FROM sts_change_readers r WHERE r.reported_at >= ' +
+        DB_NOW + ' - $1::bigint' +
+        (byMembership
+          ? ' AND (r.node_id = \'\' OR EXISTS (SELECT 1 FROM ' +
+            'sts_cluster_nodes n WHERE n.node_id = r.node_id AND ' +
+            'n.left_at = 0 AND n.expires_at > ' + DB_NOW + '))'
+          : ''),
+        [readerTtlMs]
+      ).then(function (r) {
+        return ((r && r.rows) || []).map(function (row) {
+          return String(row.origin);
+        });
+      });
+    },
+
     // THE TRIM, in one statement so that the readers it declares gone and the
     // bound it computes are one snapshot. A reader is GONE when it has not
     // reported for `readerTtlMs`, or when it names a cluster node whose

@@ -1708,6 +1708,14 @@ const CODES = [
       'no key is destroyed on it. The jobs index those entries a bounded ' +
       'batch per pass, once (#623).',
     spec: 'none — the count job and the re-encryption job wait' },
+  // STS-STORE-0081 is #626's (feature/626), numbered before this; left out
+  // here so the two merge without renumbering.
+  { code: 'STS-STORE-0082',
+    summary: 'The live readers of the change log could not be read, so no ' +
+      'dead process was dropped from the fan-in of merge-own stores this ' +
+      'time; nothing is dropped on a failed read, and the next change-log ' +
+      'pull tries again a minute later (#618).',
+    spec: 'none — the fan-in keeps what it held' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
