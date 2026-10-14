@@ -65,12 +65,13 @@
 // runs are the default realm's), so /admin/scheduler drawn by the front
 // process of ANY node shows what the leader did. (By the front process since
 // #617: a request worker no longer reads the history back at its start, and
-// the page and its API are pinned to the front — see `runStore` below.) So are the leader's own row (who leads,
-// since when, when it last ticked), the per-process jobs' latest run in each
-// process, and the queued commands — a manual run (#48's button) and a
-// step-down — which are written by whichever process served the request and
-// picked up by the leader at its next tick. Nothing here is answered out of
-// this process's memory that another process would answer differently.
+// the page and its API are pinned to the front — see `runStore` below.) So
+// are the leader's own row (who leads, since when, when it last ticked), the
+// per-process jobs' latest run in each process, and the queued commands — a
+// manual run (#48's button) and a step-down — which are written by whichever
+// process served the request and picked up by the leader at its next tick.
+// Nothing here is answered out of one front process's memory that another
+// would answer differently.
 //
 // **6. IT NEVER HOLDS THE THREAD.** A job's `run()` is asynchronous and is
 // expected to yield: the cluster heartbeat is a JavaScript timer, and a job
