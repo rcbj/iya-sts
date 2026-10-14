@@ -12035,9 +12035,11 @@ class AdminViews {
   //
   // Most directory people are ALREADY on `stats.userRows()`: every door that
   // creates one — the console, `POST /admin-api/users/create`, a SCIM create,
-  // an LDAP add, a restore from the persistence store — calls
-  // `stats.noteKnownIdentity()`, which is what put `knownBy` on a row. So on a
-  // small service the union adds nothing at all.
+  // an LDAP add — calls `stats.noteKnownIdentity()`, which is what put
+  // `knownBy` on a row. So on a small service that has not restarted the
+  // union adds nothing at all. A RESTORE no longer does (#613): a restored
+  // person not seen since is a row of the directory side, `knownBy:
+  // 'directory'`.
   //
   // **THE REGISTRY IS CAPPED AT `stats.MAX_USERS` AND THE DIRECTORY IS NOT.**
   // Two thousand against `ldap.maxEntries`, so a realm with five thousand

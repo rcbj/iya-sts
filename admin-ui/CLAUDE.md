@@ -5846,8 +5846,11 @@ who have never signed in.**
 
 The gap is smaller than it looks and it is not zero. Every door that creates a
 directory person — the console, `POST /admin-api/users/create`, a SCIM create,
-an LDAP add, a restore from the store — calls `stats.noteKnownIdentity()`, so on
-a small service the union adds nothing at all. **But the registry is capped at
+an LDAP add — calls `stats.noteKnownIdentity()`, so on a small service that has
+not restarted the union adds nothing at all. **A restore no longer does (#613,
+2026-10-13)**: it held every process's event loop for seconds at start on a
+large directory (`ldap/CLAUDE.md`, *Restoring*), so a person restored and not
+seen since is on this page from the directory side, as `directory`. **But the registry is capped at
 `stats.MAX_USERS` and the directory is not**: two thousand against
 `ldap.maxEntries`, so a realm that has been bulk loaded has thousands of people
 invisible to every console page that asks a question about people. `peopleRows()`
