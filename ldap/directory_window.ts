@@ -1218,14 +1218,15 @@ class DirectoryWindow {
    * @param afterKey - the last key of the previous page, or ''
    * @param limit - the page size (at most 1,000)
    * @param options - `offset` (rows past the cursor to skip) and `origin`
-   * @returns a promise of `{ rows: [{ key, entry }], more, asked }` —
-   *   `asked` how many rows the store answered, `more` when that was a full
-   *   page
+   * @returns a promise of `{ rows: [{ key, entry }], more, asked, last }`
+   *   — `asked` how many rows the store answered, `more` when that was a
+   *   full page, `last` the last key it answered (the next page's cursor,
+   *   '' for none)
    */
   async realmPageAsync(realmId: string, afterKey: string, limit: number,
                        options?: { offset?: number; origin?: string }):
       Promise<{ rows: Array<{ key: string; entry: Entry }>; more: boolean;
-                asked: number }> {
+                asked: number; last: string }> {
     log.debug("Entering DirectoryWindow.realmPageAsync().");
     const asked = (await this.askAsync('realmPage',
       [realmId, String(afterKey || ''), limit, options || {}]) as Row[]) ||
@@ -1242,7 +1243,8 @@ class DirectoryWindow {
     });
     log.debug("Leaving DirectoryWindow.realmPageAsync(). " + out.length +
               ' of ' + asked.length + '.');
-    return { rows: out, more: asked.length >= limit, asked: asked.length };
+    return { rows: out, more: asked.length >= limit, asked: asked.length,
+             last: asked.length ? asked[asked.length - 1].key : '' };
   }
 
   /**

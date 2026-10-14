@@ -8956,7 +8956,14 @@ class AdminApi {
                      'NAME and any attribute VALUE, case-insensitively — ' +
                      'values because the caller who needs this most often ' +
                      'has a thumbprint or a secret in hand and no idea which ' +
-                     'entry carries it.\n\nTHE REPLY IS THIS REALM\'S ' +
+                     'entry carries it.\n\nWHERE THE DIRECTORY IS HELD AS ' +
+                     'A WINDOW ONTO THE STORE (#616) the counts, the ' +
+                     '`origin` filter, the order and the page are asked of ' +
+                     'the store, so the order is the store\'s key order ' +
+                     '(`order: key`), and a `q` — which matches values the ' +
+                     'store holds sealed — looks inside at most a bounded ' +
+                     'number of entries and says how many in `search`.\n\n' +
+                     'THE REPLY IS THIS REALM\'S ' +
                      'DIRECTORY AND NO OTHER. Since 2026-08-25 each trust ' +
                      'realm has a subtree of its own; reach another ' +
                      'realm\'s through its own path prefix.',
@@ -8975,9 +8982,33 @@ class AdminApi {
         responseSchema: { $ref: '#/components/schemas/DirectoryEntryList' },
         handler: function (req, res) {
           log.debug("Entering the management API directory entries endpoint.");
-          self.sendJson(res, 200,
-                        adminViews.directoryPageJson('directory', req));
-          log.debug("Leaving the management API directory entries endpoint.");
+          // A PROMISE IN A WINDOWED PROCESS (#616): the page is asked of the
+          // store asynchronously there, so the event loop runs while the
+          // database answers. Awaited here and the rejection CAUGHT —
+          // Express 4 does not look at what a handler returns — as a 503:
+          // the store could not be read, which says nothing about the
+          // directory's contents. The rejection's own code where it carries
+          // one (the bridge's STS-LDAP-0130/0131), STS-LDAP-0139 otherwise.
+          Promise.resolve(adminViews.directoryPageJson('directory', req))
+            .then(function (json) {
+              self.sendJson(res, 200, json);
+              log.debug("Leaving the management API directory entries " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API directory entries " +
+                        "endpoint: " + ((e && e.message) || e));
+              const code = errorCodes.codeOf(e) || 'STS-LDAP-0139';
+              log.error(errorCodes.tag(code) + 'admin-api: the directory ' +
+                        'page could not be read from the store: ' +
+                        ((e && e.message) || e));
+              errorCodes.mark(res, code);
+              res.setHeader('Retry-After', '5');
+              self.sendJson(res, 503, { error: 'temporarily_unavailable',
+                error_description: 'The directory could not be read; try ' +
+                  'again shortly.' });
+              log.debug("Leaving the management API directory entries " +
+                        "endpoint. Unavailable.");
+            });
         } },
 
       { method: 'GET', path: BASE + '/ldap/applications', tag: 'LDAP',

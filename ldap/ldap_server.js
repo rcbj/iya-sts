@@ -17309,6 +17309,165 @@ function directoryRowOf(stored) {
   };
 }
 
+// WHETHER ONE ENTRY ANSWERS THE PAGE'S `q` (lower-cased): its DN, or any
+// attribute NAME or VALUE as the page SHOWS them — canonical names, withheld
+// values replaced — so the entry is built as a row to be looked into, and
+// only when its DN did not decide.
+function directoryEntryMatches(stored, needle) {
+  log.debug('Entering directoryEntryMatches().');
+  if (String(stored.dn).toLowerCase().indexOf(needle) >= 0) {
+    log.debug('Leaving directoryEntryMatches(). The DN.');
+    return true;
+  }
+  // The NAMES and the VALUES both. See the header: the reader who needs
+  // this box most often has a value in hand and no idea which entry it is
+  // on, which a DN-only search cannot answer at all.
+  const attributes = directoryRowOf(stored).attributes;
+  const found = Object.keys(attributes).some(function (name) {
+    if (name.toLowerCase().indexOf(needle) >= 0) {
+      return true;
+    }
+    return attributes[name].some(function (value) {
+      return String(value).toLowerCase().indexOf(needle) >= 0;
+    });
+  });
+  log.debug('Leaving directoryEntryMatches(). ' + found);
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// /admin/ldap/directory IN A WINDOWED PROCESS (#616, 2026-10-14).
+//
+// The store holds every entry of the realm, so the page is asked of it, on
+// the driver's read pool (`DirectoryWindow.askAsync()`), and the event loop
+// runs while it answers:
+//
+//   * **THE COUNTS ARE THE STORE'S** — `realmCount` (the realm, and the
+//     realm of one origin) and `originCounts` (one `GROUP BY`), never a
+//     walk. Linear in the realm's rows in the database (about 100 ms at
+//     200,000) and nothing on this process's event loop.
+//   * **THE ORDER IS THE STORE'S KEY ORDER** (`ORDER BY dn_key`, the primary
+//     key), where the whole directory's page sorts the DNs as written with
+//     `Intl.Collator`. A collation cannot be pushed into the database, and
+//     the price of sorting here is reading everything; so a windowed page
+//     lists in normalised-DN order, in the database's collation, and says
+//     so (`order: 'key'`, `'dn'` where the directory is held whole).
+//   * **THE ORIGIN FILTER AND THE PAGE ARE PUSHED DOWN**: `realmPage` with
+//     the origin in its WHERE and the page as LIMIT/OFFSET — one statement,
+//     one page's rows read. A deep page costs the database its offset in
+//     index order; the service reads `per` rows.
+//   * **`q` CANNOT BE PUSHED DOWN**, because it matches attribute VALUES and
+//     the database holds them sealed (`persistence/directory_codec.js`). So
+//     a `q` looks inside at most `DIRECTORY_SEARCH_SCAN` entries, in key
+//     order and of the chosen origin, a page at a time asynchronously;
+//     `matched` and the paging are over what it found there, and `search`
+//     says how many it looked at and whether that was all of them. The
+//     console says so under the box.
+//
+// An entry this process created and has not yet flushed is not in the
+// store's answer, for the ms until the flush — `realmPageAsync()` says why.
+// ---------------------------------------------------------------------------
+// How many entries a windowed page's `q` looks inside, at most: ten pages of
+// the window's own page size. A bound on one request's reading, not a
+// setting — the answer says when it was reached.
+const DIRECTORY_SEARCH_SCAN = 5000;
+const DIRECTORY_SEARCH_PAGE = 500;
+
+/**
+ * `/admin/ldap/directory` in a windowed process: counted, filtered by origin
+ * and paged by the store, asynchronously; a `q` looks inside a bounded
+ * number of entries and says so.
+ *
+ * @param req - the request
+ * @returns a promise of the view, `{ title, json }`
+ */
+async function windowedDirectoryView(req) {
+  log.debug('Entering windowedDirectoryView().');
+  const realmId = realms.currentId();
+  const wantedText = String(req.query.q || '').trim();
+  const wantedOrigin = String(req.query.origin || '').trim();
+  const needle = wantedText.toLowerCase();
+  const counts = await Promise.all([
+    directoryWindow.askAsync('realmCount', [realmId, '']),
+    directoryWindow.askAsync('originCounts', [realmId])
+  ]);
+  const count = Number(counts[0]) || 0;
+  const originCounts = counts[1] && typeof counts[1] === 'object'
+    ? counts[1] : {};
+  let matched = 0;
+  let paging = null;
+  let shown = [];
+  let search = null;
+  if (!needle) {
+    matched = wantedOrigin
+      ? Number(await directoryWindow.askAsync('realmCount',
+                                              [realmId, wantedOrigin])) || 0
+      : count;
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    const page = await directoryWindow.realmPageAsync(realmId, '',
+      paging.perPage, { offset: paging.offset, origin: wantedOrigin });
+    shown = page.rows;
+  } else {
+    // THE BOUNDED LOOK INSIDE: pages of the chosen origin in key order, each
+    // entry asked `directoryEntryMatches()`, stopped at the bound.
+    const found = [];
+    let after = '';
+    let scanned = 0;
+    let complete = false;
+    while (scanned < DIRECTORY_SEARCH_SCAN) {
+      const page = await directoryWindow.realmPageAsync(realmId, after,
+        Math.min(DIRECTORY_SEARCH_PAGE, DIRECTORY_SEARCH_SCAN - scanned),
+        { origin: wantedOrigin });
+      scanned += page.asked;
+      page.rows.forEach(function (hit) {
+        if (directoryEntryMatches(hit.entry, needle)) {
+          found.push(hit);
+        }
+      });
+      if (!page.more || !page.last) {
+        complete = true;
+        break;
+      }
+      after = page.last;
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+    matched = found.length;
+    paging = adminViews.pagingOf(req.query, matched, { noun: 'entries' });
+    shown = found.slice(paging.offset, paging.offset + paging.perPage);
+    search = { complete: complete, scanned: scanned,
+               scanLimit: DIRECTORY_SEARCH_SCAN };
+  }
+  const origins = Object.keys(originCounts);
+  origins.sort();
+  const counted = {};
+  origins.forEach(function (origin) {
+    counted[origin] = Number(originCounts[origin]) || 0;
+  });
+  const payload = {
+    baseDn: baseDn(),
+    count: count,
+    matched: matched,
+    shown: shown.length,
+    filter: { q: wantedText || null, origin: wantedOrigin || null },
+    origins: origins,
+    originCounts: counted,
+    page: paging.page, pages: paging.pages, perPage: paging.perPage,
+    firstRow: paging.firstRow, lastRow: paging.lastRow,
+    paging: adminViews.pagingJson(paging),
+    order: 'key',
+    search: search,
+    entries: shown.map(function (hit) {
+      return withoutSecrets(directoryRowOf(hit.entry));
+    })
+  };
+  log.debug('Leaving windowedDirectoryView(). ' + shown.length +
+            ' row(s) of ' + matched + ' matched' +
+            (search ? ', ' + search.scanned + ' looked inside.' : '.'));
+  return { title: 'Every entry in the directory', json: payload };
+}
+
 // `a.localeCompare(b)` with no locale is this collator's `compare` — the
 // specification defines it so — built once instead of once per comparison.
 const DIRECTORY_COLLATOR = new Intl.Collator();
@@ -17328,13 +17487,20 @@ const DIRECTORY_COLLATOR = new Intl.Collator();
 // already decide; and the copy is made for the page's rows alone. Same rows,
 // same order, same counts.
 //
-// **IN #349's WINDOW** this is still a whole walk, paged through the store:
-// correct, and O(n) in the store's rows, on an administrator's page. The
-// indexed form — the DNs and origins under the base, ordered, with the count
-// per origin, and the rows of one page by key — is not built.
+// **IN #349's WINDOW IT IS NOT A WALK (#616, 2026-10-14).** It was: every
+// person paged out of the store through the synchronous bridge on a request
+// worker's event loop, 38–45 s at 200,000 people for `?per=1`, every request
+// dispatched to that worker waiting behind it. A windowed process answers
+// out of `windowedDirectoryView()` below instead, asynchronously, with what
+// can be pushed to the store pushed there; this function is the whole
+// directory's, held in memory, and is what it always was.
 // ---------------------------------------------------------------------------
 function ldapDirectoryView(req) {
   log.debug('Entering ldapDirectoryView().');
+  if (directoryWindow) {
+    log.debug('Leaving ldapDirectoryView(). Windowed: asked of the store.');
+    return windowedDirectoryView(req);
+  }
   const listed = [];
   eachEntryInRealm(function (stored) {
     listed.push({
@@ -17354,26 +17520,7 @@ function ldapDirectoryView(req) {
     if (wantedOrigin && entry.origin !== wantedOrigin) {
       return false;
     }
-    if (!needle) {
-      return true;
-    }
-    if (entry.dn.toLowerCase().indexOf(needle) >= 0) {
-      return true;
-    }
-    // The NAMES and the VALUES both. See the header: the reader who needs
-    // this box most often has a value in hand and no idea which entry it is
-    // on, which a DN-only search cannot answer at all. What is searched is
-    // what the page SHOWS — canonical names, withheld values replaced — so
-    // the entry is built as a row to be looked into.
-    const attributes = directoryRowOf(entry.stored).attributes;
-    return Object.keys(attributes).some(function (name) {
-      if (name.toLowerCase().indexOf(needle) >= 0) {
-        return true;
-      }
-      return attributes[name].some(function (value) {
-        return String(value).toLowerCase().indexOf(needle) >= 0;
-      });
-    });
+    return !needle || directoryEntryMatches(entry.stored, needle);
   });
 
   const pagedKeys = directoryPaging(req, filtered, 'entries');
@@ -17421,6 +17568,11 @@ function ldapDirectoryView(req) {
     page: paging.page, pages: paging.pages, perPage: paging.perPage,
     firstRow: paging.firstRow, lastRow: paging.lastRow,
     paging: adminViews.pagingJson(paging),
+    // The whole directory is sorted by DN as written, collated; a windowed
+    // one in the store's key order (#616, `windowedDirectoryView()`). And
+    // its `q` looked inside every entry, so there is nothing to say.
+    order: 'dn',
+    search: null,
     entries: paged.shown.map(withoutSecrets)
   };
   log.debug('Leaving ldapDirectoryView(). ' + paged.shown.length +

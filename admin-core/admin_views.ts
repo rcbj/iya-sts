@@ -1911,6 +1911,8 @@ class AdminViews {
    * @param name - the directory page's name
    * @param req - the request
    * @returns the page's JSON, or a no-directory answer when none is loaded
+   *   — or a PROMISE of the JSON where the page is asked of the store
+   *   asynchronously (`/admin/ldap/directory` in a windowed process, #616)
    */
   directoryPageJson(name, req) {
     const { log } = this.deps;
@@ -1925,6 +1927,12 @@ class AdminViews {
                         'this reader when it is required.' };
     }
     const view = directoryPages[name](req);
+    if (view && typeof view.then === 'function') {
+      log.debug('Leaving AdminViews.directoryPageJson(). Asynchronous.');
+      return view.then(function (done) {
+        return done.json;
+      });
+    }
     log.debug('Leaving AdminViews.directoryPageJson().');
     return view.json;
   }

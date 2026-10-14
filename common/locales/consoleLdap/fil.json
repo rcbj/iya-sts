@@ -169,6 +169,7 @@
   "directory.placeholder": "isang DN, pangalan ng attribute, o value",
   "directory.cameFrom": "Pinagmulan",
   "directory.searchNote": "Tinutugma ng kahon ang DN, anumang PANGALAN ng attribute at anumang VALUE ng attribute, nang hindi pinapansin ang laki ng titik. Hinahanap ang mga value dahil kadalasan ang pinakanangangailangan nito ay may hawak na thumbprint o secret at walang ideya kung aling entry ang may dala nito, bagay na hindi masasagot ng paghahanap sa mga DN lang.",
+  "directory.searchLimited": "<strong>Tiningnan ng kahon ang loob ng unang {scanned} na entry ayon sa pagkakasunod ng key, hindi ang lahat.</strong> Naka-seal sa store ang mga value ng attribute, kaya hindi ito maitatanong sa store, at hanggang {limit} lang ang nababasa ng isang request. Pumili ng pinagmulan, o ilagay ang mas marami sa DN sa kahon, para paliitin ang titingnan.",
   "directory.thAttributes": "Mga attribute",
   "directory.noMatch": "Walang tugmang entry.",
   "directory.filterHiding": "Maaaring may itinatago ang filter sa itaas.",
