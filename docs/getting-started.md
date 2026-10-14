@@ -231,6 +231,22 @@ services:
       - >-
         /usr/local/share/sts/generate-tls.sh &&
         exec docker-entrypoint.sh postgres
+        -c max_connections=200
+        -c shared_buffers=${STS_POSTGRES_SHARED_BUFFERS:-2GB}
+        -c max_wal_size=8GB
+        -c checkpoint_timeout=15min
+        -c wal_compression=lz4
+        -c max_parallel_workers_per_gather=0
+        -c track_io_timing=on
+        -c shared_preload_libraries=pg_stat_statements,auto_explain
+        -c pg_stat_statements.track=all
+        -c pg_stat_statements.max=10000
+        -c auto_explain.log_min_duration=200ms
+        -c auto_explain.log_analyze=on
+        -c auto_explain.log_timing=off
+        -c auto_explain.log_buffers=on
+        -c auto_explain.log_nested_statements=on
+        -c log_lock_waits=on
         -c ssl=on
         -c ssl_cert_file=/var/lib/postgresql/tls/server.crt
         -c ssl_key_file=/var/lib/postgresql/tls/server.key
@@ -433,6 +449,24 @@ docker compose up -d --wait
   capability removed before the service starts. A shell as that user can read
   the service's own OpenBao client credential (mode 0600), and no other
   secret on disk or in its environment.
+* **Upgrading to a newer image.** Pull it and `docker compose up -d`, then
+  bring the database's schema up to the image's: the `postgres-init`
+  container copies the new `schema.sql` on every `up`, but the database runs
+  it by itself only on its first start, and the service refuses to start on
+  an older schema (`STS-STORE-0029` in `docker compose logs sts`). Run it
+  once as the owner, then start the service again:
+
+  ```bash
+  docker compose exec postgres bash -c 'psql -v ON_ERROR_STOP=1 -U sts -d sts \
+    -v sts_schema=sts -v sts_app_role="$STS_DB_APP_USER" \
+    -v sts_app_password="$STS_DB_APP_PASSWORD" \
+    -f /usr/local/share/sts/schema.sql'
+  docker compose up -d sts
+  ```
+
+  Every statement in it can be run again, so running it when nothing changed
+  does no harm. A change to the database's server settings in this file takes
+  effect when the `postgres` container is recreated, which `up -d` does.
 * **Stopping it.** `docker compose down` keeps everything in the named
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.

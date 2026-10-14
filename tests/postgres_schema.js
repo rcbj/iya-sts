@@ -69,6 +69,13 @@ const ROOT = path.join(__dirname, '..');
 const SCHEMA_SQL = path.join(ROOT, 'postgres', 'schema.sql');
 const APPLY_SH = path.join(ROOT, 'postgres', 'apply-schema.sh');
 const COMPOSE = path.join(ROOT, 'docker-compose.yml');
+// THE TWO OTHER FILES THAT START THIS DATABASE (#633): the quick start from
+// published images, and the containerized suite (whose cells layer `extends`
+// its postgres, so it is covered by this one).
+const OTHER_COMPOSE = [
+  path.join(ROOT, 'docker-compose-quick.yml'),
+  path.join(ROOT, 'docker-compose-run-tests.yml')
+];
 
 // The default the script, the wrapper and the compose file all have to agree
 // on. Spelt once here so that a deliberate rename is one edit in four files
@@ -527,6 +534,77 @@ function checkTheRoleNameAgrees(t) {
   log.debug("Leaving checkTheRoleNameAgrees().");
 }
 
+// THE SERVER'S SETTINGS ARE THE SAME IN EVERY FILE THAT STARTS IT (#633).
+// #630 measured them under a bulk load and put them in docker-compose.yml
+// alone, so the quick start and the suite ran the defaults it had measured
+// against — 128 MB of buffers, no statement statistics, and (the quick start)
+// the default 100 connections that 200 had replaced. Read as `-c name=value`
+// pairs from the postgres command; every name and value has to match,
+// shared_buffers' substitution included.
+function serverSettings(text) {
+  log.debug("Entering serverSettings().");
+  const at = text.indexOf('exec docker-entrypoint.sh postgres');
+  const settings = {};
+  if (at < 0) {
+    log.debug("Leaving serverSettings().");
+    return null;
+  }
+  const end = text.indexOf('healthcheck:', at);
+  const command = text.slice(at, end < 0 ? undefined : end);
+  const pair = /-c\s+([a-z_.]+)=([^\s']+)/g;
+  let m;
+  while ((m = pair.exec(command)) !== null) {
+    settings[m[1]] = m[2];
+  }
+  log.debug("Leaving serverSettings().");
+  return settings;
+}
+
+function checkTheServerSettingsAgree(t) {
+  log.debug("Entering checkTheServerSettingsAgree().");
+  const want = serverSettings(fs.readFileSync(COMPOSE, 'utf8'));
+  t.check(!!want && Object.keys(want).length > 0,
+          'docker-compose.yml starts postgres with settings on its command');
+  t.check(!!want && /pg_stat_statements/.test(
+            want.shared_preload_libraries || ''),
+          'and preloads pg_stat_statements, the extension schema.sql makes');
+  for (const file of OTHER_COMPOSE) {
+    const name = path.basename(file);
+    const got = serverSettings(fs.readFileSync(file, 'utf8'));
+    t.check(!!got, name + ' starts postgres through docker-entrypoint.sh');
+    if (!want || !got) {
+      continue;
+    }
+    for (const key of Object.keys(want)) {
+      t.check(got[key] === want[key],
+              name + ' sets ' + key + ' as docker-compose.yml does',
+              key + '=' + got[key] + ', want ' + want[key]);
+    }
+    for (const key of Object.keys(got)) {
+      t.check(key in want,
+              name + ' sets nothing docker-compose.yml does not: ' + key);
+    }
+  }
+  log.debug("Leaving checkTheServerSettingsAgree().");
+}
+
+// AND THE QUICK START IS PRINTED, WHOLE, IN docs/getting-started.md (#633),
+// for a reader with no checkout. The copy had drifted from nothing until the
+// file gained the settings above, and a reader who pastes the page gets the
+// page, so the first yaml block there is held to the file, its two SPDX
+// lines aside.
+function checkTheQuickStartPageAgrees(t) {
+  log.debug("Entering checkTheQuickStartPageAgrees().");
+  const page = fs.readFileSync(path.join(ROOT, 'docs', 'getting-started.md'),
+                               'utf8');
+  const block = /```yaml\n([\s\S]*?)```/.exec(page);
+  const file = fs.readFileSync(OTHER_COMPOSE[0], 'utf8')
+    .split('\n').slice(2).join('\n');
+  t.check(!!block && block[1] === file,
+          'docs/getting-started.md prints docker-compose-quick.yml as it is');
+  log.debug("Leaving checkTheQuickStartPageAgrees().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   const sql = fs.readFileSync(SCHEMA_SQL, 'utf8');
@@ -538,6 +616,8 @@ function run(t) {
   checkTheVersionAgrees(t, sql);
   checkThePrivilegeIsNarrow(t, sql);
   checkTheRoleNameAgrees(t);
+  checkTheServerSettingsAgree(t);
+  checkTheQuickStartPageAgrees(t);
   log.debug("Leaving run().");
 }
 
