@@ -5181,7 +5181,11 @@ const SETTINGS = [
                  'the rest of the code\'s lifetime. RFC 9700, OAuth 2.1, ' +
                  'FAPI and product mode ignore it. It exists for the parent ' +
                  'project\'s development-mode job that still asserts the ' +
-                 'old courtesy (#187).' },
+                 'old courtesy (#187). On, each redeemed code\'s WHOLE ' +
+                 'token response — access token, refresh token and ID ' +
+                 'Token — is kept for the rest of its lifetime so that it ' +
+                 'can be sent again; off, only the issued tokens\' jti ' +
+                 'values are kept (#614).' },
 
   { key: 'oauth2.maxPendingTransactions', group: 'OAuth 2.0 / OIDC',
     label: 'RFC 9700: remembered transactions (per realm)',

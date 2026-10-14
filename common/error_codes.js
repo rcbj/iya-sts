@@ -9465,6 +9465,13 @@ const CODES = [
       'needs a person and does not count here (#551).',
     spec: 'none — issued without that scope (RFC 6749 section 3.3); ' +
       'invalid_scope when nothing else was asked for' },
+  { code: 'STS-OAUTH-0958',
+    summary: 'An authorization code was presented again under ' +
+      'oauth2.codeReplayIdempotent, and the record of its redemption holds ' +
+      'no response to replay: it was redeemed while the relaxation was not ' +
+      'in force, and only its jtis were kept (#614). Refused, and what it ' +
+      'bought is revoked.',
+    spec: '400 invalid_grant (RFC 6749 sections 4.1.2 and 10.5)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
