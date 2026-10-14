@@ -782,15 +782,32 @@ ldif or multi-cell service is unchanged.
       and the names' direct keys into the window — a key this process
       wrote, adopted, forgot, flushed or came to hold while the question
       was out is left alone (`watched`), so no slot is older than the
-      process — and the names are resolved and kept on the request with
-      `ou=users`' subtree clock from BEFORE the questions; the body uses an
-      answer only while that clock stands (`heldUserEntry()`). A commit by
-      another process of one of the names is what the clock cannot see, and
-      `claimingTheAdd()` holds every one of them across the cluster first
-      (`directory_create_claims.ts`); with no claims only this process
-      writes. An add now asks one `byKeys` and one `byName`,
-      asynchronously, and the body neither; a throw from the body once
-      asynchronous is answered (52 for the store, else STS-LDAP-0142).
+      process — and the names are resolved and kept on the request with a
+      WATCH opened BEFORE the questions (`heldNameWatches`, until the body
+      has run). **PER NAME AND PER DN, NOT PER CONTAINER (#625,
+      2026-10-14)**: #621 kept the answers while `ou=users`' subtree clock
+      stood, and under the 10M load's eight connections another add always
+      moved it — almost every add asked `byName` twice, 12 s of every 30
+      on a request worker, 65 adds/s down to 47. `touchDirectory()` now
+      tells every open watch the DN written and the usernames
+      (`usernameKeysOf()`, lower-cased) of the entry now there when it is
+      directly under `ou=users` — a row applied from another process
+      included, busy key or not (`forgetEntry()` hands the row); a write
+      naming no DN (a rename, a restore) or an entry this process cannot
+      see without asking marks the watch "everything", as does passing
+      `HELD_NAMES_TOUCH_LIMIT` DNs. The body uses an answer
+      (`heldUserEntry()`) unless a write since touched the add's DN, the
+      entry the answer named, or an entry that holds the name; only that
+      name goes back to the synchronous lookup. A commit by another process
+      of one of the names that this one has not applied is what no watch
+      can see, and `claimingTheAdd()` holds every one of them across the
+      cluster first (`directory_create_claims.ts`); with no claims only this
+      process writes. A modify elsewhere that gives an entry one of the
+      names is not claimed, as before — seen once applied, else answered by
+      the store's merge. An add now asks one `byKeys` and one `byName`,
+      asynchronously, and the body neither, under a stream of adds of other
+      names too; a throw from the body once asynchronous is answered (52
+      for the store, else STS-LDAP-0142).
       `count` may still be asked synchronously, `ldap.maxEntries`' reading
       at most once in ten seconds per realm. Still synchronous and O(page)
       on `/admin-api/users`: the shown rows' decoration
@@ -816,7 +833,8 @@ ldif or multi-cell service is unchanged.
 `tests/directory_window_requests.js` counts #616's questions (synchronous and
 asynchronous, by name, and the rows answered) over thousands of people —
 and #621's census and LDAP add (sections E and F), with each answer
-compared with the synchronous path's — and
+compared with the synchronous path's, F9–F14 the adds interleaved under a
+stream of others (#625) — and
 `tests/no_full_directory_walk_in_requests.js` holds the request handlers to
 no synchronous walk of every person or device but its argued exemptions.
 

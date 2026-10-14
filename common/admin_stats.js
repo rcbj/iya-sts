@@ -6251,9 +6251,13 @@ function buildUserRowsResolved(onlyKey) {
   // Most recently active first, which on a mock is nearly always the person
   // being debugged right now.
   out.sort(function (a, b) { return b.lastActivityAt - a.lastActivityAt; });
-  log.debug("Leaving buildUserRowsResolved(). " + out.length + " user(s), " +
-            out.filter(function (r) { return r.authenticated; }).length + " " +
-                "authenticated here.");
+  // A second pass over every row, made only when it will be written (#627).
+  if (log.debug()) {
+    log.debug("Leaving buildUserRowsResolved(). " + out.length +
+              " user(s), " + out.filter(function (r) {
+                return r.authenticated;
+              }).length + " authenticated here.");
+  }
   return out;
 }
 

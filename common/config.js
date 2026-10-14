@@ -210,6 +210,88 @@ const path = require('path');
 const bunyan = require('bunyan');
 
 // ---------------------------------------------------------------------------
+// A DISABLED `debug` OR `trace` LINE COSTS ONE COMPARISON (#627).
+//
+// The style rule makes every named function log its entry and exit at debug,
+// and every appconfig file runs at info, so nearly every one of those calls
+// is a line nobody will see. Bunyan's own emitter (`mkLogEmitter()`) still
+// did work for each: it copied its arguments into a fresh array and fired the
+// level's dtrace probe — a stub on Linux, but a call — BEFORE it compared the
+// level, and under a bulk load that was 250–480 ms per 30 s on the front
+// process's operation path and as much on the request workers' add path.
+//
+// So the two methods are wrapped ONCE, on bunyan's shared prototype, by the
+// first module every process loads that holds bunyan — this one, which
+// helpers.js, realms.js, persistence and nearly every module that makes a
+// logger require before they make it. Being on the PROTOTYPE is what makes it
+// central rather than a call-site edit, and it is in this file rather than a
+// new one because this file is already in the parent project's Kerberos COPY
+// closure (kerberos/CLAUDE.md), which a new require would have grown:
+//
+// * every logger is covered: the shared `sts` logger, the hundred or so that
+//   modules make for themselves, child loggers, and the vendored and
+//   parent-owned modules' loggers (the eight krb5 codecs included), none of
+//   which is edited. A method is looked up on the prototype at each call, so
+//   a logger made BEFORE this ran is covered as well;
+// * the level is read at the CALL, not cached, so `logger.level()` at runtime
+//   (applyLogLevel() below, STS_LOG_LEVEL, the console) takes effect at once in
+//   both directions, and a child that bunyan gave a level of its own is judged
+//   by that level;
+// * each request worker is its own V8 isolate with its own module cache, and
+//   loads this file before any route module, so it installs its own copy.
+//
+// What it preserves: `log.debug()` with NO arguments is bunyan's documented
+// "is this level enabled?" and still answers bunyan's boolean, because a call
+// without arguments is handed to bunyan untouched; so is any call whose
+// `this` is not a logger (bunyan's own "unbound log method" warning); and
+// every enabled call reaches bunyan exactly as before. What it gives up: a
+// real dtrace consumer would no longer see probes fire for lines below the
+// level — on Linux the provider is the stub (dtrace-provider has no USDT
+// support there) and nothing can watch them.
+//
+// What it CANNOT do is stop the caller building the message: an argument is
+// evaluated before any function is entered. Where a hot path builds an
+// expensive one, the call site asks `log.debug()` first (common/CLAUDE.md,
+// *Disabled debug lines*).
+//
+// No logger exists yet, so the installer logs nothing (common/config_file.js
+// has the same exemption); the wrapper is the hottest function in the service
+// and is itself what an Entering/Leaving pair would call, so it carries none —
+// a line inside log.debug() would be infinite recursion.
+// ---------------------------------------------------------------------------
+/**
+ * Wraps one of bunyan's level methods so a call below the logger's level
+ * returns before bunyan does any work (#627).
+ *
+ * @param {any} Logger - bunyan's Logger class (the module's export)
+ * @param {number} minLevel - the method's level (bunyan.DEBUG, bunyan.TRACE)
+ * @param {string} name - the method's name
+ */
+function quietBelowLevel(Logger, minLevel, name) {
+  const emit = Logger.prototype[name];
+  if (emit.quietBelowLevel === true) {
+    // Already installed: a test that clears the require cache loads this file
+    // again over the same bunyan, and a second wrapper would only add a call.
+    return;
+  }
+  // Hot path: every disabled debug line in the service runs this, so it has
+  // no Entering/Leaving pair (and one would recurse).
+  /** @this {any} */
+  const quiet = function () {
+    if (this && this._level > minLevel && arguments.length !== 0) {
+      return undefined;
+    }
+    return emit.apply(this, arguments);
+  };
+  quiet.quietBelowLevel = true;
+  quiet.bunyanEmitter = emit;
+  Logger.prototype[name] = quiet;
+}
+
+quietBelowLevel(bunyan, bunyan.TRACE, 'trace');
+quietBelowLevel(bunyan, bunyan.DEBUG, 'debug');
+
+// ---------------------------------------------------------------------------
 // THE APPCONFIG LAYER, which is TWO FILES unioned rather than one.
 //
 // env/defaults.js is the base and is not selected by anything: it carries the
