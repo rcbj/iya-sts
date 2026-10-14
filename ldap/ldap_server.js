@@ -16935,11 +16935,11 @@ server.search('', function (req, res, next) {
     log.error(errorCodes.tag(code) + 'ldap: a search of ' + base + ' could ' +
               'not read the store after ' + sent + ' entry/entries: ' +
               ((e && e.message) || e));
+    const unavailable = coded(code,
+      new ldap.UnavailableError('the directory could not be read'));
     next(ldapRefusal(req, code, 'a search of ' + base + ' could not read ' +
       'the store part way, after ' + sent + ' entry/entries; the client was ' +
-      'told LDAP_UNAVAILABLE',
-      new ldap.UnavailableError('the directory could not be read'), base,
-      'error'));
+      'told LDAP_UNAVAILABLE', unavailable, base, 'error'));
   });
   log.debug('Leaving the LDAP search handler. Reading the store.');
   return undefined;
