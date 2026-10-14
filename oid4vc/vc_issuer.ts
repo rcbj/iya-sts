@@ -3552,6 +3552,8 @@ export = {
   vciNonces: vciNonces,
   // The key a c_nonce is stored under in `vciNonces` (#614).
   nonceKey: VcIssuer.nonceKey,
+  // For tests/vc_store_digests.js (#614): what a notification row holds.
+  notificationIds: notificationIds,
   VCI_NONCE_TTL_MS: VcIssuer.VCI_NONCE_TTL_MS,
   // The request-encryption half, for `tests/vci_request_encryption_key.js`:
   // what a realm PUBLISHES, what it will DECRYPT, and what it last SAW. A JWE
