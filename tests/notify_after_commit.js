@@ -190,11 +190,15 @@ async function aBurst(t) {
   const driver = driverOver(state);
   const N = 300;
   const began = Date.now();
-  // Concurrent and sequential both: thirty at a time, ten rounds.
-  for (let round = 0; round < N / 30; round += 1) {
+  // Concurrent and sequential both: ten at a time, thirty rounds a few
+  // milliseconds apart, so the burst spans several windows.
+  for (let round = 0; round < N / 10; round += 1) {
+    if (round > 0) {
+      await sleep(7);
+    }
     const batch = [];
-    for (let i = 0; i < 30; i += 1) {
-      const k = round * 30 + i;
+    for (let i = 0; i < 10; i += 1) {
+      const k = round * 10 + i;
       batch.push(k % 2 === 0
         ? driver.saveOverrides({}, setting(k))
         : driver.saveKeys('r' + k, '$aesgcm$2$x'));
@@ -214,8 +218,10 @@ async function aBurst(t) {
           'C2. ' + sent.length + ' notify(ies) for ' + N + ' commits over ' +
           span + ' ms: at most one a ' + WINDOW_MS + ' ms window (ceiling ' +
           ceiling + ')', String(sent.length));
-  t.check(sent.length < N, 'C3. fewer notifies than commits — coalesced',
-          sent.length + ' of ' + N);
+  t.check(sent.length < N / 4, 'C3. far fewer notifies than commits — ' +
+          'coalesced', sent.length + ' of ' + N);
+  t.check(sent.length >= 3, 'C3a. and the burst spanned several windows, ' +
+          'each announced', String(sent.length));
   for (let i = 1; i < sent.length; i += 1) {
     if (sent[i].at - sent[i - 1].at < WINDOW_MS - 2) {
       t.bad('C4. two notifies inside one window',

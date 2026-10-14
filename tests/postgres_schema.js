@@ -294,6 +294,21 @@ function checkTheUpgradesAgree(t, sql) {
               step.when);
     });
   });
+  // AND THE OTHER WAY ROUND: every storage parameter the script sets, and
+  // every index or routine it drops, is a step the driver takes too — or a
+  // store the driver brings level is slower than one the script did.
+  const driverStatements = [].concat.apply([], steps.map(function (step) {
+    return step.statements.map(normalize);
+  }));
+  statementsIn(sql).filter(function (statement) {
+    return /^ALTER TABLE \S+ SET \(/.test(statement) ||
+      /^DROP (INDEX|FUNCTION) IF EXISTS sts_(minted_written|ldap_count_fold|ldap_dek_fold)\b/
+        .test(statement);
+  }).forEach(function (statement) {
+    t.check(driverStatements.indexOf(statement) >= 0,
+            'the driver takes the script\'s ' + statement.slice(0, 70),
+            JSON.stringify(driverStatements));
+  });
   t.check(text.indexOf('CREATE EXTENSION IF NOT EXISTS pg_stat_statements') >=
             0, 'the script creates pg_stat_statements');
   log.debug("Leaving checkTheUpgradesAgree().");

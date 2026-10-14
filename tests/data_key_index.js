@@ -183,6 +183,14 @@ async function theCount(t) {
           'directory\'s kept counter', JSON.stringify(counts));
   const all = await driver.countAllSealed();
   t.check(all.dekAAAAAAA >= 7, 'C2. countAllSealed() too', JSON.stringify(all));
+  // THE SHARDS (#630): a key's count is the sum of its rows, one a shard.
+  const reads = statements.filter(function (one) {
+    return /FROM sts_ldap_dek_counts/.test(one.sql);
+  });
+  t.check(reads.length > 0 && reads.every(function (one) {
+    return /sum\(n\)/.test(one.sql) && /GROUP BY dek_id/.test(one.sql);
+  }), 'C2a. every read of sts_ldap_dek_counts sums a key\'s shards',
+          JSON.stringify(reads.map(function (one) { return one.sql; })));
   const walks = walksIn(statements);
   t.equal(walks.length, 0, 'C3. NO STATEMENT READ AN ENTRY: the directory ' +
           'is counted from sts_ldap_dek_counts (it was every row, opened)',
