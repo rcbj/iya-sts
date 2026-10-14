@@ -813,6 +813,8 @@ async function importFile(options) {
       let mine = [];
       if (looked.length) {
         const column = function (name) {
+          log.debug("Entering column(). " + name);
+          log.debug("Leaving column().");
           return looked.map(function (one) {
             return one.row[name];
           });

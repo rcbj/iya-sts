@@ -304,6 +304,8 @@ function pgDouble(answer) {
   log.debug("Entering pgDouble().");
   const seen = [];
   const query = function (where) {
+    log.debug("Entering query(). " + where);
+    log.debug("Leaving query().");
     return function (text, params) {
       seen.push([where, String(text), params || []]);
       const rows = answer(String(text), params || [], where);
@@ -539,6 +541,8 @@ async function batchOrder(t, dir) {
           'the insert is in DN order', JSON.stringify(report)
             .slice(0, 1500));
   const whereOf = function (text, after) {
+    log.debug("Entering whereOf().");
+    log.debug("Leaving whereOf().");
     const at = db.seen.findIndex(function (one, i) {
       return i > after && one[1] === text;
     });
@@ -1082,6 +1086,7 @@ async function realDatabase(t, dir) {
     // then two files proposing the same usernames under different DNs.
     const m = Math.max(10, Math.floor(n / 2));
     const fileOf = async function (name, stampOf, uidOf) {
+      log.debug("Entering fileOf(). " + name);
       const out = path.join(dir, name);
       const sink = fs.createWriteStream(out);
       if (uidOf) {
@@ -1097,6 +1102,7 @@ async function realDatabase(t, dir) {
       await new Promise(function (resolve) {
         sink.end(resolve);
       });
+      log.debug("Leaving fileOf().");
       return out;
     };
     const p1 = await fileOf('p1.ldif', 'p1' + stamp);
@@ -1129,6 +1135,8 @@ async function realDatabase(t, dir) {
     const after8 = (await db.query('SELECT count(*)::int AS n FROM ' +
                                    'sts_ldap_entries')).rows[0].n;
     const sum = function (field) {
+      log.debug("Entering sum(). " + field);
+      log.debug("Leaving sum().");
       return overlap.reduce(function (acc, one) {
         return acc + Number(((one.report || {})[field]) || 0);
       }, 0);
@@ -1167,6 +1175,8 @@ async function realDatabase(t, dir) {
     const after10 = (await db.query('SELECT count(*)::int AS n FROM ' +
                                     'sts_ldap_entries')).rows[0].n;
     const total = function (field) {
+      log.debug("Entering total(). " + field);
+      log.debug("Leaving total().");
       return both.reduce(function (acc, one) {
         return acc + Number(((one.report || {})[field]) || 0);
       }, 0);
