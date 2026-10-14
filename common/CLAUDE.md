@@ -10772,6 +10772,14 @@ that queued it and swept by a CLUSTER scheduler job. It differs in two ways:
   what `tests/no_periodic_timers.js` holds.
 - **A SENT message loses its body.** A dead letter keeps its body for the
   retry, and a captured one keeps it because the body is all it is for.
+  **#614 asked whether a dead letter should, and the answer is yes**: the
+  body holds the reset and verification links and codes, which is why a
+  sent row drops it, but `retry()` re-sends exactly that body and a row
+  without one is refused (`STS-MAIL-0018`, "kept no body"). So a dead
+  letter keeps it until it is retried — after which the retry's own `sent`
+  drops it — or until retention removes the row (`mail.retentionS`,
+  `mail.maxRows`), which is the only way a dead letter is dropped. The
+  links it carries expire on their own lifetimes either way.
 
 **Three rules keep it from being an open relay or a phishing kit:**
 
