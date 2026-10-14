@@ -143,8 +143,8 @@ const EXEMPT = {
   'ldap/ldap_server.js|ldapDevicesView|listDeviceEntries': { owed:
     '/admin-api/ldap/devices lists every device entry (ou=devices, ' +
     'windowed) to draw a page. What would stop it: the shape of ' +
-    'windowedDirectoryView() for one container — realmPage under ou=devices with the count ' +
-    'from countUnderContainer() (#616\'s audit)' }
+    'windowedDirectoryView() for one container — realmPage under ' +
+    'ou=devices with the count from countUnderContainer() (#616\'s audit)' }
 };
 
 // The handler registrations a file makes: the text of each one's arguments
