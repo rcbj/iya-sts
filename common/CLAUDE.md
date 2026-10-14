@@ -1790,6 +1790,66 @@ worker's response whose `end()` ran before its peer left is announced at once**
 was held for is in the store; only one closed BEFORE its `end()` still waits
 for the flush, because its handler may yet write. `tests/request_client_gone.js`.
 
+**AND A DISPATCHED LDAP WRITE PAID A CHANGE-LOG PULL IT DID NOT NEED (#626,
+2026-10-14).** `runOperation()` sent every operation through the barrier, so
+under a bulk add from several connections over several workers every add found
+another worker ahead and its worker ran `syncNow()` before the handler. What
+the others wrote was almost always PEOPLE — WINDOWED directory rows, which a
+windowed worker reads from the store whenever it does not hold them, and which
+since #351 are committed before they are answered. The pull mattered only for
+a key the worker HELD (an LRU copy, an absence remembered) and for everything
+that is not a windowed row at all (groups, policies, roles, realms, settings,
+key sets, minted sessions), which a worker learns of only from the pull. So:
+
+* **Every announcement says what it committed** (`commit_announcer.ts`,
+  `windowedKeys`): the realm and key of each windowed directory row, when that
+  is all bar `minted-own` tallies; absent is SHARED. The counts by kind are the
+  driver's, moved at the same COMMIT as `written`
+  (`persistence_postgres.js` `committedMark()` / `committedSince()`, the last
+  4,096 directory keys kept); `persistence.committedChangesSince()` asks the
+  window which keys are windowed. The front process classifies its own commits
+  the same way (`localWriteKinds()`); ldif, memory and the tiered driver keep
+  no counts, so every commit there is shared.
+* **The front process keeps the keys** per announcement (`keyLog`, bounded at
+  4,096 keys, a floor that rises over what it drops) and the generation of the
+  last shared write (`lastSharedGeneration`).
+* **A write in `BARRIER_FREE_WRITES`** (`ldap.add`, `ldap.modify`, `ldap.del`,
+  `ldap.modifyDN`) sent to a worker behind only on windowed rows — no shared
+  write since it last synced, the log reaching back to it, at most 512 keys —
+  skips the sync round and carries `staleKeys`: the keys every OTHER process
+  wrote since it last synced or was last handed keys (`entry.keysThrough`).
+  The worker applies them before the handler (`persistence.applyStaleKeys()`:
+  one `byKeys` per realm, then the pull's own windowed applier key for key —
+  forget, or `markStale()` when busy, and `forgetEntry()` tells the indexes),
+  and pulls after all where it cannot (no window, a resident key, an
+  unreadable store, STS-STORE-0081). **Every later operation on that worker
+  waits for the keys** (`request_worker.ts`, `applyingStaleKeys`), because the
+  front counts them applied from the moment it sends them. The worker is NOT
+  counted synced: an HTTP request there is not gated behind the keys.
+* **Unchanged:** a read (search, compare, bind) takes the barrier; the ticket
+  wait still runs first for a write (a ticket answered and not yet announced
+  is a write whose kind nobody knows — an LDAP operation's announcement goes
+  before its answer on one channel, so under an LDAP load nothing blocks).
+
+**Why no client can see a different answer:** after the keys are applied the
+worker holds, for every row this node announced up to the generation the
+write was sent at, what the pull would have left it — a held windowed copy
+gone or marked stale exactly as the pull marks it, everything else already
+synced. What the pull would add is another NODE's rows, which the generation
+never covered (the cluster barrier is `cluster/CLAUDE.md`'s), and `minted-own`
+tallies, which the barrier never waited for. `claimingTheAdd()` still holds
+the DN and the names across processes. `stats().writes` (`current` / `keyed`
+/ `synced`, `keysSent`, the key log), `stats().syncRounds` and
+`stats().tickets.waited` count it. `tests/request_write_barrier.js`: stub
+workers count the syncs (an add with another worker ahead asks for none and
+waits on no ticket, a search still syncs; a shared write, too many keys or a
+lost floor send the add through the barrier); a windowed child shows each
+hazard with nothing applied and the barrier's answer once the keys are
+(a parent another worker created found, a duplicate by DN or by a name given
+to an existing entry refused, a delete or modify of a deleted entry and a
+rename onto a created DN refused); the driver's counts and the announcement
+are driven too. Six mutants, all caught.
+
 **THE WORKERS HAD THE OTHER HALF OF IT, AND SO DID EVERY POSTGRES PROCESS.**
 `persistence.flush()` answered a caller arriving during a flush with a waiter of
 its own, and a postgres store has a caller per WRITE — so waiters re-chained on
