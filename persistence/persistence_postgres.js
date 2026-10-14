@@ -230,7 +230,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // and `sts_ldap_dek_counts`, `sts_ldap_dek_deltas` and the triggers that
 // keep them (#623): which data keys each entry holds values under, so the
 // re-encryption job and the data-key count never open the directory.
-const SCHEMA_VERSION = 17;
+// 18 SINCE 2026-10-14, for the two narrowed directory indexes (#618 phase
+// 2): `sts_ldap_entries_asked_names` (the attribute names a holder question
+// asks, an expression of `attr_names`) and `sts_ldap_entries_group_classes`
+// (`class_keys`, which holds the group classes only), both PARTIAL, in place
+// of `sts_ldap_entries_attr_names` and `sts_ldap_entries_classes`, which
+// indexed every name and every class of every entry (SCHEMA_RETIRED).
+const SCHEMA_VERSION = 18;
 
 // THE DATABASE'S CLOCK, in the milliseconds every cluster table stores. See the
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
@@ -424,6 +430,29 @@ const LDAP_GENERATED = {
 // `postgres/schema.sql` holds the same statements for the owner to run, and
 // `tests/postgres_schema.js` fails if the two lists disagree.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// THE DIRECTORY'S GIN INDEXES TAKE EVERY INSERT DIRECTLY (#618 phase 2,
+// schema version 18): `fastupdate = off`.
+//
+// With PostgreSQL's default a GIN insert goes to the index's PENDING LIST,
+// which is merged into the tree only when it reaches
+// `gin_pending_list_limit` (4 MB) or a vacuum runs — and EVERY SEARCH READS
+// THE WHOLE PENDING LIST, whatever it asks. On 8081 under the bulk load the
+// lists of the names, uuids, mails and values indexes each held about
+// 205,000 tuples (503 pages), so every `byName()` and `byUuid()` probe —
+// a login, a uniqueness check, a holder's subject — scanned 500 buffers and
+// took 8.9–17.6 ms where the RDN branch beside it took 0.02 ms; when
+// autovacuum flushed them, the add rate went from 45 to 73 a second and the
+// database CPU per add halved. With the list off, an insert pays its GIN
+// entries at once (about 0.04 ms a person on the 1.2M-entry copy for the
+// four, 20,000 inserts alternated) and a probe reads only the tree: 4
+// buffers and 0.008 ms against 152 and 2.1 ms behind a 60,000-tuple list.
+// The two partial indexes of version 18 take it too: a person writes
+// nothing to either, so the list buys nothing there and would only be read.
+// An existing index is switched by SCHEMA_RELOPTIONS and its list flushed.
+// ---------------------------------------------------------------------------
+const GIN_DIRECT = 'WITH (fastupdate = off)';
+
 /**
  * Every table and index of the schema, each `{ name, statement }`.
  *
@@ -478,29 +507,46 @@ const SCHEMA_OBJECTS = [
   '(realm, parent_key, rdn_value)' },
   { name: 'sts_ldap_entries_names', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_names ON sts_ldap_entries ' +
-  'USING gin (name_keys jsonb_path_ops)' },
+  'USING gin (name_keys jsonb_path_ops) ' + GIN_DIRECT },
   { name: 'sts_ldap_entries_mails', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_mails ON sts_ldap_entries ' +
-  'USING gin (mail_keys jsonb_path_ops)' },
+  'USING gin (mail_keys jsonb_path_ops) ' + GIN_DIRECT },
   { name: 'sts_ldap_entries_uuids', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_uuids ON sts_ldap_entries ' +
-  'USING gin (uuid_keys jsonb_path_ops)' },
+  'USING gin (uuid_keys jsonb_path_ops) ' + GIN_DIRECT },
   // The attribute values `byAttribute()` asks for, as keyed digests (#391
   // phase 6) — where the GIN over `attrs` was, which a sealed blob makes
   // nothing to index.
   { name: 'sts_ldap_entries_values', afterColumns: true, statement:
   'CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries ' +
-  'USING gin (value_keys jsonb_path_ops)' },
-  // The attribute NAMES, GIN with the default operator class for `?`.
-  { name: 'sts_ldap_entries_attr_names', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_attr_names ON ' +
-  'sts_ldap_entries USING gin (attr_names)' },
-  // The object classes, GIN with the DEFAULT operator class: `?|` (any of
-  // the group classes) is what it is asked, and `jsonb_path_ops` answers
-  // only containment.
-  { name: 'sts_ldap_entries_classes', afterColumns: true, statement:
-  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_classes ON sts_ldap_entries ' +
-  'USING gin (class_keys)' },
+  'USING gin (value_keys jsonb_path_ops) ' + GIN_DIRECT },
+  // -------------------------------------------------------------------------
+  // THE ATTRIBUTE NAMES A HOLDER QUESTION ASKS, AND THE GROUP CLASSES — AND
+  // NOTHING ELSE (#618 phase 2, schema version 18). Both GIN with the
+  // DEFAULT operator class (`?` and `?|`; `jsonb_path_ops` answers only
+  // containment), and both PARTIAL, so an entry that is neither a holder of
+  // an asked attribute nor a group — nearly every person — writes no GIN
+  // entry to either. Until version 18 they indexed every attribute name
+  // (about fifteen a person, twelve of them in 99.9% of rows) and every
+  // object class (four a person, each in more than 99%): about nineteen GIN
+  // entries a person insert that narrowed nothing.
+  //   * the names: an IMMUTABLE expression of `attr_names` keeping only
+  //     `directory_queries.js`'s ASKED_ATTRIBUTES, which every query that
+  //     reads it repeats character for character (`ASKED_NAMES`), because
+  //     the planner uses an expression index only for its own expression;
+  //   * the classes: `class_keys` itself, which the service writes with the
+  //     group classes only since this version (`directory_codec.js`'s
+  //     CLASS_INDEXED) — the column holds keyed digests the database cannot
+  //     read, so it cannot be narrowed by an expression here.
+  // -------------------------------------------------------------------------
+  { name: 'sts_ldap_entries_asked_names', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_asked_names ON ' +
+  'sts_ldap_entries USING gin ((' + directoryQueries.ASKED_NAMES + ')) ' +
+  GIN_DIRECT + ' WHERE ' + directoryQueries.ASKED_NAMES_HELD },
+  { name: 'sts_ldap_entries_group_classes', afterColumns: true, statement:
+  'CREATE INDEX IF NOT EXISTS sts_ldap_entries_group_classes ON ' +
+  'sts_ldap_entries USING gin (class_keys) ' + GIN_DIRECT + ' WHERE ' +
+  directoryQueries.GROUP_CLASSES_HELD },
   // -------------------------------------------------------------------------
   // WHICH ENTRIES HOLD A VALUE UNDER A DATA KEY (#623, schema version 17).
   // Until this, the re-encryption job and the data-key count WALKED every
@@ -1213,6 +1259,50 @@ const SCHEMA_OBJECTS = [
   '  version int PRIMARY KEY,' +
   '  applied_at timestamptz NOT NULL DEFAULT now())' }
 ];
+
+// OBJECTS A LATER VERSION REPLACED (#618 phase 2, schema version 18). An
+// index that is no longer read is still WRITTEN on every insert, which is the
+// cost version 18 exists to remove, so leaving one behind on an older
+// database would keep the cost and lose the reason. Each is probed by name
+// like SCHEMA_OBJECTS and dropped where present — by `postgres/schema.sql`,
+// which the owner runs for the version, and by this driver when its role may
+// (a local database it built itself); the least-privileged role finds none to
+// drop once the script has run. `tests/postgres_schema.js` holds the script
+// to this list.
+/**
+ * The objects a later schema version replaced, each `{ name, statement }`,
+ * dropped where they are still present.
+ */
+const SCHEMA_RETIRED = [
+  // Every attribute name of every entry: `sts_ldap_entries_asked_names`.
+  { name: 'sts_ldap_entries_attr_names', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_attr_names' },
+  // Every object class of every entry: `sts_ldap_entries_group_classes`.
+  { name: 'sts_ldap_entries_classes', statement:
+  'DROP INDEX IF EXISTS sts_ldap_entries_classes' }
+];
+
+// AN INDEX'S STORAGE PARAMETER, SET ON ONE THAT ALREADY EXISTS (#618 phase
+// 2, schema version 18). `CREATE INDEX IF NOT EXISTS` does nothing to an
+// index that is there, so the four GIN indexes an older store built with the
+// pending list on are switched by these, and the list they hold is flushed
+// once (`gin_clean_pending_list()`): turning it off stops it growing and
+// does not empty it, and every search goes on reading what is in it.
+// `open()` probes `pg_class.reloptions` and issues them only where the
+// option is missing; `postgres/schema.sql` carries the same statements.
+/**
+ * The storage parameters set on existing indexes, each `{ name, statement,
+ * flush }`, issued where `pg_class.reloptions` lacks the option.
+ */
+const SCHEMA_RELOPTIONS = ['names', 'mails', 'uuids', 'values',
+                           'asked_names', 'group_classes'].map(
+  function (suffix) {
+    const name = 'sts_ldap_entries_' + suffix;
+    return { name: name, option: 'fastupdate=off',
+             statement: 'ALTER INDEX ' + name + ' SET (fastupdate = off)',
+             flush: 'SELECT gin_clean_pending_list(\'' + name +
+                    '\'::regclass)' };
+  });
 
 // COLUMNS ADDED TO A TABLE THAT MAY ALREADY EXIST (2026-09-18). A table in
 // SCHEMA_OBJECTS is created whole when it is missing, and `CREATE TABLE IF NOT
@@ -3583,6 +3673,72 @@ function create(options) {
             });
           });
           return chain;
+        }).then(function () {
+          // THE STORAGE PARAMETERS (SCHEMA_RELOPTIONS), set where an index
+          // lacks one, and its pending list flushed once.
+          return client.query(
+            'SELECT c.relname AS name, c.reloptions AS options FROM ' +
+            'pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace ' +
+            'WHERE n.nspname = current_schema() AND c.relname = ' +
+            'ANY($1::text[])',
+            [SCHEMA_RELOPTIONS.map(function (one) { return one.name; })])
+            .then(function (result) {
+              const lacking = ((result && result.rows) || [])
+                .filter(function (row) {
+                  const options = Array.isArray(row.options) ? row.options
+                    : [];
+                  const wanted = SCHEMA_RELOPTIONS.filter(function (one) {
+                    return one.name === row.name;
+                  })[0];
+                  return wanted && options.indexOf(wanted.option) < 0;
+                }).map(function (row) { return row.name; });
+              let chain = Promise.resolve();
+              SCHEMA_RELOPTIONS.forEach(function (one) {
+                if (lacking.indexOf(one.name) < 0) {
+                  return;
+                }
+                chain = chain.then(function () {
+                  return client.query(one.statement);
+                }).then(function () {
+                  return client.query(one.flush);
+                }).then(function () {
+                  log.info('persistence: ' + one.name + ' now takes every ' +
+                           'insert directly (fastupdate off) and its ' +
+                           'pending list was flushed (#618).');
+                });
+              });
+              return chain;
+            });
+        }).then(function () {
+          // WHAT A LATER VERSION REPLACED (SCHEMA_RETIRED), dropped where it
+          // is still there — after its replacement exists, so no question
+          // is ever without an index — and probed first, in the catalogue
+          // by name as the routines are, so a store the script has brought
+          // level issues no DROP.
+          return client.query(
+            'SELECT c.relname AS name FROM pg_class c JOIN pg_namespace n ' +
+            'ON n.oid = c.relnamespace WHERE n.nspname = current_schema() ' +
+            'AND c.relname = ANY($1::text[])',
+            [SCHEMA_RETIRED.map(function (object) {
+              return object.name;
+            })]).then(function (result) {
+            const present = new Set(((result && result.rows) || [])
+              .map(function (row) { return row.name; }));
+            let chain = Promise.resolve();
+            SCHEMA_RETIRED.forEach(function (object) {
+              if (!present.has(object.name)) {
+                return;
+              }
+              chain = chain.then(function () {
+                return client.query(object.statement).then(function () {
+                  log.info('persistence: dropped ' + object.name + ', which ' +
+                           'schema version ' + SCHEMA_VERSION + ' replaced ' +
+                           '(#618).');
+                });
+              });
+            });
+            return chain;
+          });
         }).then(function () {
           // THE COUNTS' FUNCTIONS AND TRIGGERS (#618), probed by name — a
           // function or a trigger is not a relation `to_regclass()` knows —
@@ -6171,6 +6327,35 @@ function create(options) {
       });
     },
 
+    // THE READERS STILL LIVE (#618 phase 2): every origin that has reported
+    // within `readerTtlMs` and, by membership, names no node that left —
+    // the trim's own test of "not gone", asked without deleting anything.
+    // What the fan-in of `merge: 'own'` stores keeps (`persistence_replication
+    // .js`, `pruneFanIn()`): a contribution from an origin not in this list
+    // is a dead process's. One row per process that coordinates, so the
+    // answer is as small as the cluster.
+    liveChangeReaders: function (opts) {
+      log.debug("Entering liveChangeReaders().");
+      const o = opts || {};
+      const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
+      const byMembership = o.nodeLiveness !== false;
+      log.debug("Leaving liveChangeReaders().");
+      return pool.query(
+        'SELECT r.origin FROM sts_change_readers r WHERE r.reported_at >= ' +
+        DB_NOW + ' - $1::bigint' +
+        (byMembership
+          ? ' AND (r.node_id = \'\' OR EXISTS (SELECT 1 FROM ' +
+            'sts_cluster_nodes n WHERE n.node_id = r.node_id AND ' +
+            'n.left_at = 0 AND n.expires_at > ' + DB_NOW + '))'
+          : ''),
+        [readerTtlMs]
+      ).then(function (r) {
+        return ((r && r.rows) || []).map(function (row) {
+          return String(row.origin);
+        });
+      });
+    },
+
     // THE TRIM, in one statement so that the readers it declares gone and the
     // bound it computes are one snapshot. A reader is GONE when it has not
     // reported for `readerTtlMs`, or when it names a cluster node whose
@@ -8104,6 +8289,9 @@ module.exports = {
   DEK_COUNTS_BACKFILL: DEK_COUNTS_BACKFILL,
   SCHEMA_OBJECTS: SCHEMA_OBJECTS,
   SCHEMA_COLUMNS: SCHEMA_COLUMNS,
+  SCHEMA_RETIRED: SCHEMA_RETIRED,
+  SCHEMA_RELOPTIONS: SCHEMA_RELOPTIONS,
+  GIN_DIRECT: GIN_DIRECT,
   SCHEMA_VERSION: SCHEMA_VERSION,
   poolMax: poolMax,
   // What `pg` is given for a connection string (#98): for

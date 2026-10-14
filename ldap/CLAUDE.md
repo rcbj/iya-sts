@@ -659,7 +659,8 @@ ldif or multi-cell service is unchanged.
     `allGroupEntries()`, `membershipsNaming()`, `dropMemberships()`,
     `logBatchDangling()`): the resident entries, and the windowed
     containers' entries with a group class, asked of the store
-    (`classesUnder`, the GIN index over the generated `class_keys`) and read
+    (`classesUnder`, the partial GIN index over `class_keys`, which holds
+    an entry's group classes only since schema version 18, #618) and read
     back through the window. `groupRuleFor()` is placement-blind, so **a
     group under `ou=users` or `ou=devices` is seen**, and the membership
     lookups, the group index, the listings and a search answer as a whole
@@ -1205,6 +1206,17 @@ used to write `undefined` into it, and every SCIM list after that threw
 `tests/stable_subject.js` is the contract, in two processes for the determinism claims;
 sixteen mutants across this file and the others the change touched, all caught, and
 twenty more for the race, the rename and the timestamp.
+
+## A DOOR THAT IS NOT THIS FILE: THE BULK IMPORT (#629, 2026-10-14)
+
+`persistence/bulk_import.js` writes people into `ou=users` without this
+file running — offline, with the service stopped — and promises the rows are
+what an LDAP add by an Admin Write binder would have left. So **a change to
+what `putEntry()`, `fillPreferredLanguage()`, `verifyWrittenMail()` or the
+one-entry-per-person rule (`existingUserEntry()`, `byName`) does on a create
+is owed there too**, in `storedOf()` and `classify()`. Its normalizeDn is
+this file's rule, spelt again. `persistence/CLAUDE.md` (*THE BULK IMPORT*)
+has the rest.
 
 ## A CREATE WAS A FUNCTION OF DIRECTORY SIZE, AND THE USERNAME INDEX IS WHY IT IS NOT (2026-09-07)
 
