@@ -33,7 +33,9 @@
 //      attributes into `value_keys` and a lookup keyed the same way finds
 //      them; it refuses a `byAttribute` for an attribute it does not index
 //      (it would answer "nobody"); `byAttribute` narrowed to a parent asks
-//      `parent_key`.
+//      `parent_key`; and `hasChild` — asked of every person an LDAP delete
+//      or rename, or `deletePerson()`, is about — is a `parent_key` probe,
+//      where its suffix comparison read every key of the realm for a leaf.
 //   B. THE PERSON PAGE, in a child loading the directory as a windowed
 //      request worker: `usersJsonAsync()` for one person asks no page, no
 //      holder question and no key listing, and lists exactly that person's
@@ -109,6 +111,12 @@ function storeHalf(t) {
           under.values[3] === 'ou=devices,dc=x' && under.values[2] === 5,
           'A4. byAttribute under a parent asks parent_key beside value_keys, ' +
           'and without one is as it was', under.text);
+  const child = queries.hasChild('default', 'uid=alice,ou=users,dc=x');
+  t.check(/parent_key = \$2 LIMIT 1/.test(child.text) &&
+          !/right\(/.test(child.text) && child.values.length === 2,
+          'A5. hasChild asks for a CHILD by parent_key (an indexed probe), ' +
+          'not a suffix no index narrows — a leaf read every key of the ' +
+          'realm', child.text);
   log.debug('Leaving storeHalf().');
 }
 

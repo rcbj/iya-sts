@@ -546,8 +546,21 @@ function withNames(realm, parentKey, names) {
            values: [String(realm), String(parentKey), rdns, keys] };
 }
 
+// WHETHER ANYTHING IS UNDER A KEY ASKS FOR A CHILD, NOT A DESCENDANT (#636,
+// 2026-10-14). It was `underClause()` — `right(dn_key, n) = ',' || key` —
+// which no index narrows, and for a LEAF (every person an LDAP delete, a
+// rename or `deletePerson()` asks about) `LIMIT 1` is never met, so the
+// database read every key of the realm: at 6.4M people, a synchronous
+// question on the request's event loop past the bridge's 2 s. A direct
+// child is `parent_key = key`, the `(realm, parent_key, dn_key)` index's
+// first probe. The two answers agree on every tree this service writes: an
+// entry is added only under an entry that exists, and a non-leaf cannot be
+// deleted or renamed, so nothing has a descendant and no child. An orphan
+// made some other way (rows written into the table by hand) would read as a
+// leaf here, and its parent could then be deleted, which leaves it the
+// orphan it already was.
 /**
- * Whether anything is under a key: `hasChildren()`'s question.
+ * Whether anything is directly under a key: `hasChildren()`'s question.
  *
  * @param realm - the realm id
  * @param key - the entry's normalised DN
@@ -557,8 +570,8 @@ function hasChild(realm, key) {
   log.debug("Entering hasChild().");
   log.debug("Leaving hasChild().");
   return { text: 'SELECT 1 AS one FROM sts_ldap_entries WHERE realm = $1 ' +
-                 'AND ' + underClause(2, 3, false) + ' LIMIT 1',
-           values: [String(realm), String(key), suffixLength(key)] };
+                 'AND parent_key = $2 LIMIT 1',
+           values: [String(realm), String(key)] };
 }
 
 /**

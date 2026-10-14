@@ -599,6 +599,16 @@ ldif or multi-cell service is unchanged.
 * **Walks** (`forEach`, `values`, `keys`, `for…of`) page through the store;
   `hasChildren()` asks it (`hasChildIn()`). Correct and O(n) in rows — the hot
   walks become indexed questions in #349's phase 5.
+  **`hasChild` asks for a CHILD since #636 (2026-10-14)**, `parent_key =
+  key` on the `(realm, parent_key, dn_key)` index. It asked for a
+  descendant by the suffix comparison `page()` uses, which no index
+  narrows, and for a LEAF — every person an LDAP delete or rename or
+  `deletePerson()` asks about — `LIMIT 1` was never met, so the database
+  read the realm's every key, synchronously, on the request: past the
+  bridge's 2 s at 6.4M people. The answers agree on every tree this
+  service writes (an add needs its parent; a non-leaf is neither deleted
+  nor renamed); `persistence/directory_queries.js` says what an orphan
+  written by hand would do. `tests/device_lookups_windowed.js` A5.
 * **Writes stay local and are PINNED until flushed.** What changed is found by
   comparing each candidate's JSON with its BASE — the JSON it had when loaded
   or last written, kept for held entries only, and the base of the store's
