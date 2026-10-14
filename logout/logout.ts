@@ -1308,7 +1308,11 @@ class Logout {
           log.debug("Entering vci-code.collect().");
           const rows = [];
           const at = Date.now();
-          vcOffers.preAuthorizedCodes.forEach((record, code) => {
+          // The store is keyed by the code's DIGEST since #614, and holds no
+          // code: the handle is drawn from the digest, and the row's
+          // `secret` — which never leaves this module — is the digest that
+          // terminate() deletes by.
+          vcOffers.preAuthorizedCodes.forEachDigest((record, code) => {
             const username = (record.user && record.user.username) || '';
             if (stats.holderKeyOf(username, record.user && record.user.sub) !==
                 ctx.key) return;
@@ -1318,7 +1322,7 @@ class Logout {
               label: 'a pre-authorized code for ' +
                      (record.configurationIds || []).join(', ') ||
                          'a credential',
-              detail: (record.txCode ?
+              detail: (record.txCodeDigest ?
                        'a transaction code is required with it' :
                        'no ' +
                   'transaction code') +
@@ -1334,7 +1338,7 @@ class Logout {
         terminate: (r, ctx) => {
           log.debug("Entering vci-code.terminate().");
           let found = '';
-          vcOffers.preAuthorizedCodes.forEach((record, code) => {
+          vcOffers.preAuthorizedCodes.forEachDigest((record, code) => {
             const username = (record.user && record.user.username) || '';
             if (stats.holderKeyOf(username, record.user && record.user.sub) !==
                 ctx.key) return;
@@ -1347,7 +1351,7 @@ class Logout {
                                          'expired, so there is nothing left ' +
                                          'to end' };
           }
-          vcOffers.preAuthorizedCodes.delete(found);
+          vcOffers.preAuthorizedCodes.deleteDigest(found);
           log.debug("Leaving vci-code.terminate().");
           return { ok: true, message: 'a pre-authorized code was discarded; ' +
                                       'the Credential Offer it came from ' +

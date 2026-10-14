@@ -11715,8 +11715,10 @@ class AdminApi {
                      '`found: true`: `state`, `nonce`, ' +
                      '`client_id`, `requested`, `dcql_query`, `received` ' +
                      '(whether a wallet has answered) and `verdict` (`ok`, ' +
-                     '`checks`, `claims`, `disclosed`, …, null until it ' +
-                     'answers). A state this realm holds no record of is ' +
+                     '`checks`, `claims`, `disclosed`, …, and ' +
+                     '`presentationDigest`, the SHA-256 of the ' +
+                     'presentation, which is never kept itself; null until ' +
+                     'it answers). A state this realm holds no record of is ' +
                      '404 with `found: false` (STS-VC-0042).\n\nWithout ' +
                      '`state`: the realm\'s open ' +
                      'verifications, newest first — at most `limit` of ' +
