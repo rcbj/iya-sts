@@ -865,6 +865,48 @@ class DirectoryWindow {
     return out;
   }
 
+  // ONE PAGE OF A CONTAINER AFTER A KEY, FOR A JOB THAT WALKS IT A PAGE PER
+  // RUN (#615's audit: `attribute-sources.refresh`). `walk()` starts at the
+  // container's first key every time; a job whose cursor survives between
+  // runs asks for the page after it — the store's `page()` question, ONE
+  // statement, in key order — and each row is taken as the store answered
+  // it unless this process holds a newer one, handing nothing out.
+  // An entry this process created and has not written yet is not in the
+  // store's page and is not here: the next cycle meets it.
+  /**
+   * The windowed entries strictly under a base whose keys follow `afterKey`,
+   * at most `limit` of them, in key order.
+   *
+   * @param realmId - the realm id
+   * @param base - the base's normalised DN
+   * @param afterKey - the last key of the previous page, or ''
+   * @param limit - the page size
+   * @returns `{ rows: [{ key, entry }], more }` — `more` when the store
+   *   answered a full page
+   */
+  pageAfter(realmId: string, base: string, afterKey: string, limit: number):
+      { rows: Array<{ key: string; entry: Entry }>; more: boolean } {
+    log.debug("Entering DirectoryWindow.pageAfter().");
+    const out: Array<{ key: string; entry: Entry }> = [];
+    const asked = this.bridge
+      ? (this.bridge.query('page', [realmId, base, String(afterKey || ''),
+                                    limit, { self: false }]) as Row[]) || []
+      : [];
+    asked.forEach((row) => {
+      if (row.key === base || !this.isWindowed(realmId, row.key)) {
+        return;
+      }
+      const ck = slotKey(realmId, row.key);
+      const slot = this.lru.peek(ck) || this.touched.get(ck) ||
+        this.liveGhost(ck) || this.slotFromRow(realmId, row);
+      if (slot.entry) {
+        out.push({ key: row.key, entry: slot.entry });
+      }
+    });
+    log.debug("Leaving DirectoryWindow.pageAfter(). " + out.length + '.');
+    return { rows: out, more: asked.length >= limit };
+  }
+
   // `holders()` FOR A BACKGROUND JOB (#615, 2026-10-13). The scheduler's
   // Android attestation recheck read every person through the synchronous
   // bridge, one entry at a time, on the serving front process — 191,000

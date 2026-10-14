@@ -8654,6 +8654,9 @@ attributeSources.setDirectory({
   deleteSource: deleteAttributeSourceEntry,
   personAttributes: vcAttributesFor,
   people: attributeSourcePeople,
+  // A page by key after an opaque cursor (#615): what the scheduled refresh
+  // asks, so a run reads one page rather than everybody.
+  peoplePage: attributeSourcePeoplePage,
   apply: applySourcedAttributes,
   seen: attributeSourceSeen
 });
@@ -10755,8 +10758,70 @@ function deleteAttributeSourceEntry(cn) {
   return true;
 }
 
+// THE PEOPLE A PAGE AT A TIME, BY KEY (#615's audit of every scheduler
+// job). `attributeSourcePeople()` below answered one page of 200 by listing
+// every person of the realm, normalising and sorting all their names, and
+// filtering past the cursor — on every run of `attribute-sources.refresh`,
+// every minute while a cycle is open, which in a windowed process is the
+// whole of `ou=users` paged through the synchronous bridge on the serving
+// front process. This answers the same page by the entry's KEY (the
+// normalised DN, which is the store's order): in a windowed process ONE
+// `page()` statement after the cursor (`DirectoryWindow.pageAfter()`); in
+// memory the container's kept listing (`entriesUnder()`, re-walked only
+// after a write there) sorted by key, which is the old cost of the
+// in-memory path and no store read. The cursor is opaque to the caller.
+// The order differs from the old one (DN key, not username), which changes
+// only the order in which a cycle reaches people; a cycle still reaches
+// everybody there was when it started.
+/**
+ * One page of the ambient realm's people after an opaque cursor.
+ *
+ * @param after - the cursor the previous page answered, or ''
+ * @param limit - the page size
+ * @returns `{ names, cursor, more }`
+ */
+function attributeSourcePeoplePage(after, limit) {
+  log.debug('Entering attributeSourcePeoplePage().');
+  const most = Math.max(1, Math.min(1000, Number(limit) || 100));
+  const base = normalizeDn(usersDn());
+  const suffix = ',' + base;
+  let rows = [];
+  let more = false;
+  if (directoryWindow) {
+    const page = directoryWindow.pageAfter(realms.currentId(), base,
+                                           String(after || ''), most);
+    rows = page.rows;
+    more = page.more;
+  } else {
+    const all = entriesUnder(usersDn()).map(function (stored) {
+      return { key: normalizeDn(stored.dn), entry: stored };
+    }).filter(function (one) {
+      return one.key !== base && one.key.endsWith(suffix) &&
+             (!after || one.key > after);
+    }).sort(function (a, b) {
+      return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+    });
+    more = all.length > most;
+    rows = all.slice(0, most);
+  }
+  const names = [];
+  rows.forEach(function (one) {
+    if (isPersonEntry(one.entry)) {
+      const name = usernameOfEntry(one.entry);
+      if (name) {
+        names.push(String(name));
+      }
+    }
+  });
+  const cursor = rows.length ? rows[rows.length - 1].key : '';
+  log.debug('Leaving attributeSourcePeoplePage(). ' + names.length +
+            (more ? ', and more.' : '.'));
+  return { names: names, cursor: cursor, more: more };
+}
+
 // The people of the ambient realm, by username, sorted — for the scheduled
-// refresh, which pages through them after a cursor (#94).
+// refresh, which pages through them after a cursor (#94). Kept for a caller
+// of the older interface; the refresh asks `attributeSourcePeoplePage()`.
 function attributeSourcePeople(after, limit) {
   log.debug('Entering attributeSourcePeople(). after=' + (after || ''));
   const names = entriesUnder(usersDn()).filter(function (stored) {
