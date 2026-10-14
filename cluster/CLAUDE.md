@@ -599,6 +599,26 @@ setting says (`maxConcurrentRuns()`), so the scheduler cannot take every
 connection from the requests. `tests/scheduler.js` section M holds it; the
 mutant that drops the tick after a run ends fails three assertions.
 
+**A TICK READS THE PENDING ROWS, NOT THE HISTORY (#623).** Finding the
+queued manual runs read every row of `scheduler.runs` in every realm, and
+the step-down commands the default realm's whole partition, at every tick:
+13–19 s of the front process's thread at some ticks on 8081, whose history
+was some 42,000 rows. Now the scheduler keeps `pendingRows`, an index of
+every queued or running MANUAL run and every queued COMMAND, and the tick,
+`obeyCommands()` and `requestRun()`'s "already queued" match read it —
+O(pending), whatever the history holds. **KEPT ON WRITE, CHECKED ON READ:** an
+entry is added by `writeRow()` (this process's only writer of run rows) and
+by the store's `watch()` — `runStore`'s `reconcile.restore` hook, which sees
+every row read back at a start or brought by the change log, so a run queued
+by a request worker or another node is indexed where the leader is. Nothing
+removes an entry when a row ends: `pending()` reads each entry's row and
+drops the ones gone (purge, tombstone) or no longer pending, so no path that
+ends a row — several, some in other processes — has to know the index
+exists; `forgetRealm()` drops a removed realm's. A test's store without
+`watch()` is written by this process alone. `tests/scheduler.js` section O
+holds it, counted: 10,000 history rows, a tick that iterates no partition and
+reads twelve rows by key.
+
 **EVERY PROCESS MUST REGISTER THE SAME JOBS (2026-09-22).** A registration is
 the owner's load-time call, so a job registered LAZILY — at a process's first
 claim, first count, first assertion — is listed by the processes that have

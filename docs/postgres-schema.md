@@ -9,7 +9,7 @@ each column, and why the tables are shaped that way. [Persistence](persistence.m
 covers turning the store on, the compose stack and what survives a restart.
 This page covers only what is in the database.
 
-**Schema version 12**: 27 tables in a schema of their own, `sts`.
+**Schema version 17**: 39 tables in a schema of their own, `sts`.
 
 ## Where the schema is written down
 
@@ -125,6 +125,7 @@ The [LDAP directory](ldap.md) has one row per entry, for every realm. The
 | `mail_keys` | jsonb, generated | the `mail` values, lower-cased |
 | `uuid_keys` | jsonb, generated | the `entryUUID` and `stsEntryUuidAlias` values, lower-cased |
 | `class_keys` | jsonb, generated | the `objectClass` values, lower-cased — how a group placed under `ou=users` is found |
+| `dek_keys` | jsonb, nullable | the data keys the entry holds values under, `{ "<key id>": <values> }`: the entry's own key and the key of each sealed value inside it (schema version 17). NULL for an entry written before version 17, until the service indexes it |
 
 Primary key `(realm, dn_key)`, with an index on `realm`.
 
@@ -203,6 +204,34 @@ while `sts_ldap_counts` is empty, and it is the only count of the directory
 there is. On a large directory the first `schema.sql` run after upgrading to
 version 16 holds that lock for as long as the count takes: minutes at
 hundreds of millions of rows. After that the counts cost nothing to read.
+
+### `sts_ldap_dek_counts` and `sts_ldap_dek_deltas`: values per data key
+
+Schema version 17 (#623). The data-key jobs (re-encryption and the daily
+count, see [Encryption at rest](encryption-at-rest.md)) need to know which
+directory entries hold a value under a given data key, and how many values
+each key has. They used to read and decrypt every directory entry to find
+out. Now:
+
+* every write of an entry also writes its `dek_keys`;
+* a re-encryption pass reads only the entries whose `dek_keys` name a
+  retiring key (a GIN index on `dek_keys`);
+* `sts_ldap_dek_counts` holds, per data key (`dek_id`, primary key), the
+  number of values (`n`) the directory holds under it.
+
+The counts are kept by triggers, exactly as `sts_ldap_counts` is: each
+statement appends its net per key to `sts_ldap_dek_deltas`, and a deferred
+constraint trigger folds a transaction's deltas into the counts at commit.
+
+**Upgrading a store from version 16.** The new column is added without a
+default, so the `ALTER` rewrites nothing and every existing entry reads
+NULL ("keys not known"). A partial index finds those entries. The service
+indexes them itself, a bounded batch per run of each data-key job (at most
+10 seconds per run), so a large directory is indexed over a few hours after
+the upgrade. Until that finishes, the jobs re-encrypt what they can find
+but do not count or destroy any data key. Running `postgres/schema.sql`
+again as the owner adds the column, the indexes, the two tables and the
+triggers; it does not need to index the entries.
 
 ### `sts_realms`: the realm registry
 
