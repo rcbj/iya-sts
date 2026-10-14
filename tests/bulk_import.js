@@ -23,8 +23,9 @@
 //      lock is the realm's advisory lock; the count sums its shards.
 //   E. AGAINST A pg DOUBLE (#637): a role that does not own the table is
 //      issued no gin_clean_pending_list(), ANALYZE or table lock; MAINTAIN
-//      analyzes (17+); a batch seals outside the lock and checks again
-//      under it, and a name committed in between is not inserted.
+//      analyzes (17+); a batch seals and inserts outside the lock and
+//      checks against every other row under it, and a name another import
+//      committed first is deleted again before the commit.
 //   D. AGAINST A REAL POSTGRES, when STS_TEST_POSTGRES_URL names one the test
 //      may create a database in (an owner; STS_TEST_POSTGRES_CA for its CA):
 //      a database of its own, the service started once in a child to seed
@@ -269,6 +270,14 @@ function statements(t) {
           'C4. the check and the insert are one transaction holding the ' +
           'realm\'s import lock: an advisory lock (#637), never a table ' +
           'lock, which cancels a running autovacuum');
+  t.check(/AND NOT \(dn_key = ANY\(\$4::text\[\]\)\)$/.test(s.OTHER_RDNS) &&
+          /AND NOT \(dn_key = ANY\(\$4::text\[\]\)\)$/
+            .test(s.OTHER_NAME_KEYS) &&
+          s.OTHER_RDNS.replace(/ AND NOT .*$/, '') === s.HELD_RDNS &&
+          /^DELETE FROM sts_ldap_entries WHERE realm = \$1 AND dn_key = ANY\(\$2::text\[\]\)$/
+            .test(s.DROP_OWN),
+          'C8. the check under the lock asks byName()\'s two lookups of ' +
+          'every row but the batch\'s own, and deletes only its own');
   t.check(/coalesce\(sum\(n\), 0\)/.test(s.REALM_COUNT),
           'C6. the realm\'s count is the SUM of its counter shards (#630)');
   t.check(/^ANALYZE \(SKIP_LOCKED\) sts_ldap_entries$/.test(s.ANALYZE) &&
@@ -446,13 +455,23 @@ async function batchOrder(t, dir) {
       return [{ n: 7 }];
     }
     if (text === s.HELD_RDNS) {
+      events.push('look' + (locked ? ' locked' : ''));
+      return [];
+    }
+    if (text === s.OTHER_RDNS) {
       events.push('check' + (locked ? ' locked' : ''));
-      return locked ? [{ rdn_value: 'load-e-2' }] : [];
+      return [{ rdn_value: 'load-e-2' }];
     }
     if (text === s.INSERT) {
       events.push('insert' + (locked ? ' locked' : ''));
       return params[2].map(function (k) {
         return { dn_key: k };
+      });
+    }
+    if (text === s.DROP_OWN) {
+      events.push('drop ' + params[1].join(';') + (locked ? ' locked' : ''));
+      return params[1].map(function () {
+        return {};
       });
     }
     if (text === s.HOLDER) {
@@ -495,19 +514,38 @@ async function batchOrder(t, dir) {
     }
   });
   const order = events.join(',');
-  t.check(/^check,seal(,seal)*,settle,lock,count locked,check locked,insert locked$/
+  t.check(/^look,seal(,seal)*,settle,insert,lock,check locked,count locked,drop uid=load-e-2,ou=users,dc=example,dc=com locked$/
     .test(order),
-          'E5. a batch is looked up, then SEALED AND SETTLED OUTSIDE THE ' +
-          'LOCK, then counted, checked again and inserted under it', order);
+          'E5. a batch is looked up, SEALED, SETTLED AND INSERTED OUTSIDE ' +
+          'THE LOCK, then checked against every other row, counted and ' +
+          'cut under it', order);
   const inserted = db.seen.filter(function (one) {
     return one[1] === s.INSERT;
   })[0];
+  const dropped = db.seen.filter(function (one) {
+    return one[1] === s.DROP_OWN;
+  });
+  const own = 'uid=load-e-2,' + USERS.toLowerCase();
+  const sorted = inserted ? inserted[2][2].slice(0).sort() : [];
   t.check(report.imported === 5 && report.taken === 1 && inserted &&
-          inserted[2][2].indexOf('uid=load-e-2,' + USERS.toLowerCase()) < 0 &&
-          inserted[2][2].length === 5 && sealedFor.length === 6,
-          'E6. a name another import committed between the first look and ' +
-          'the lock is caught under the lock and not inserted (its seal is ' +
-          'thrown away)', JSON.stringify(report).slice(0, 1500));
+          inserted[2][2].length === 6 && dropped.length === 1 &&
+          JSON.stringify(dropped[0][2][1]) === JSON.stringify([own]) &&
+          sealedFor.length === 6 &&
+          JSON.stringify(sorted) === JSON.stringify(inserted[2][2]),
+          'E6. a name another import committed after the first look is ' +
+          'caught under the lock and its row deleted before the commit; ' +
+          'the insert is in DN order', JSON.stringify(report)
+            .slice(0, 1500));
+  const checked = db.seen.filter(function (one) {
+    return one[1] === s.OTHER_RDNS || one[1] === s.OTHER_NAME_KEYS;
+  });
+  t.check(checked.length === 2 && checked.every(function (one) {
+    return JSON.stringify(one[2][3].slice(0).sort()) === JSON.stringify(
+      sorted);
+  }), 'E6. the check under the lock leaves out exactly the batch\'s own ' +
+     'rows', JSON.stringify(checked.map(function (one) {
+       return one[2][3];
+     })));
   t.check(texts(db).every(function (one) {
     return !/LOCK TABLE|gin_clean_pending_list|^ANALYZE/i.test(one);
   }) && db.seen.some(function (one) {
@@ -564,16 +602,17 @@ async function batchOrder(t, dir) {
     } catch (e) {
       refused = String((e && e.message) || e);
     }
-    const inserts = live.seen.filter(function (one) {
-      return one[1] === s.INSERT;
-    }).length;
-    t.check(/STS-LDAP-0153/.test(refused) && inserts === 0 &&
-            (when === 1 ? sealed === 0 : sealed === 6),
+    const order = texts(live);
+    const at = order.indexOf(s.INSERT);
+    const committedAfter = at >= 0 && order.slice(at).indexOf('COMMIT') >= 0;
+    t.check(/STS-LDAP-0153/.test(refused) && !committedAfter &&
+            (when === 1 ? sealed === 0 && at < 0
+              : sealed === 6 && order.slice(at).indexOf('ROLLBACK') >= 0),
             'E8. a service seen running ' + (when === 1
               ? 'before the batch is refused before anything is sealed'
               : 'only once the lock is held is refused before the insert') +
-            ' (STS-LDAP-0153)', refused + ' sealed ' + sealed + ' inserts ' +
-            inserts);
+            ' (STS-LDAP-0153), and nothing is committed', refused +
+            ' sealed ' + sealed + ' ' + JSON.stringify(order).slice(0, 800));
   }
   log.debug("Leaving batchOrder().");
 }
