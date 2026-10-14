@@ -890,9 +890,11 @@ async function streamQuestions(t, ldap, w, rows, users, add) {
           'watch behind');
 
   // F12: two adds of the SAME name, at different DNs, among adds of other
-  // names: the later body's answer (nobody) was asked before the earlier
-  // one wrote, so that name must be asked again — synchronously — and the
-  // add refused.
+  // names: one is made and the other refused, and only that name is ever
+  // asked again. (Which door refuses depends on timing: a write in THIS
+  // process before the later add's `byName` resolves is in that answer —
+  // `findWindowedAsync()` adds what is held here — and one after it is in
+  // the watch; F8 and F13 are the cases only the watch can catch.)
   slow.reset();
   const dupes = await Promise.all(wave('c', 3).concat([
     add('cn=dupe-one,' + users, 'stream-dupe'),
@@ -907,10 +909,10 @@ async function streamQuestions(t, ldap, w, rows, users, add) {
   });
   t.check(made.length === 1 && refused.length === 1 &&
           allOk(dupes.slice(0, 3).concat(dupes.slice(5))) &&
-          asked(slow.counts.sync, 'byName') === 1,
-          'F12. A NAME ANOTHER ADD WROTE WHILE THIS ONE WAS ASKING refuses ' +
-          'it: that name alone is asked again, synchronously, and the ' +
-          'adds of other names around it ask nothing',
+          asked(slow.counts.sync, 'byName') <= 1,
+          'F12. TWO ADDS OF ONE NAME in a stream of others: one is made, ' +
+          'the other refused, and at most that name is asked again ' +
+          'synchronously — the adds of other names around it ask nothing',
           JSON.stringify({ pair: pair, counts: slow.counts }));
 
   // F13: a row another process wrote, applied while a stream of adds is
