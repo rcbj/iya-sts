@@ -464,7 +464,12 @@ const ASSERTION_LIFETIME_S = 60;
 const REQUEST_OBJECT_LIFETIME_S = 300;
 const PAR_PATH = '/oauth2/par';
 
-// A flow in progress, per realm, keyed by `state`. `federation_sp.ts`'s
+// A flow in progress, per realm, keyed by the DIGEST of its `state` (#614,
+// `crypto.credentialDigest()`): the state is only ever looked up and spent
+// by the value a callback presents, so it is hashed as it is minted and as
+// it comes back, and no row holds one. The PKCE verifier stays whole — it is
+// sent to the token endpoint — and so does the nonce, read against the ID
+// Token's. `federation_sp.ts`'s
 // decision 3 exactly: the partner — here, the browser — carries an opaque
 // handle and every fact about the request stays on this side. The `returnTo`
 // in particular must never ride in a parameter, because a return address a
@@ -2348,6 +2353,13 @@ class OidcRelyingParty {
     const kept = previous || {};
     const expiresIn = Number(json.expires_in);
     const tokens = {
+      // KEPT WHOLE, AND CHECKED FOR (#614). The issue asked whether the
+      // access token is only compared — the renewal's race check below — so
+      // that a digest would do. It is not: the embedded debugger, the one
+      // surface still a relying party of this module, VERIFIES it on every
+      // request (`debugger_server.ts`'s gate: signature, audience,
+      // permission), which needs the token itself. The refresh token is
+      // redeemed and the ID Token re-read, so neither can be a digest either.
       accessToken: String(json.access_token || ''),
       tokenType: String(json.token_type || 'Bearer'),
       scope: String(json.scope || kept.scope || ''),
@@ -2514,7 +2526,7 @@ class OidcRelyingParty {
       const pkce = self.pkcePair();
       const state = stsCrypto.randomBytes(24).toString('base64url');
       const nonce = stsCrypto.randomBytes(24).toString('base64url');
-      store.set(state, {
+      store.set(stsCrypto.credentialDigest(state), {
         surface: surface.id,
         nonce: nonce,
         verifier: pkce.verifier,
@@ -2663,13 +2675,15 @@ class OidcRelyingParty {
 
     log.debug("Leaving OidcRelyingParty.handleCallback().");
     return this.inFlowRealm(surface, async function () {
-      const flow = flows.get(state);
+      // Hashed as it is presented (#614).
+      const flowKey = stsCrypto.credentialDigest(state);
+      const flow = flows.get(flowKey);
       // SPENT ON SIGHT, whatever happens next. A state is single use: the
       // second presentation of one is either a browser reloading a page it
       // should not reload or somebody replaying a code, and both must fail.
       // Deleting before the work rather than after it is what makes that
       // true even where the work throws.
-      flows.delete(state);
+      flows.delete(flowKey);
       if (!flow) {
         log.debug('Leaving OidcRelyingParty.handleCallback(). No such ' +
                   'flow.');

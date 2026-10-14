@@ -33,7 +33,11 @@
 //   8. the lifetime: 300 seconds by default, 300 accepted, 301 refused;
 //   9. `oauth2.codeReplayIdempotent` on: the old leniency — a refused
 //      request leaves the code redeemable, and an identical repeat gets the
-//      same tokens — the control that tells the rule from a broken endpoint.
+//      same tokens — the control that tells the rule from a broken endpoint;
+//      and a code redeemed while it was off has nothing to replay;
+//  10. what the stores keep (#614): both code stores keyed by the code's
+//      digest and holding no code; a redemption's jtis and no tokens, and
+//      the whole response only under the setting.
 // ===========================================================================
 
 const fs = require('fs');
@@ -246,6 +250,7 @@ function childMain() {
 
     // --- 6. a successful redemption, then a repeat --------------------------
     code = await newCode();
+    const code6 = code;
     const ok = await redeem(code);
     note(ok.status === 200 && ok.json && ok.json.access_token,
          '6a. a correct first presentation is redeemed', tail(ok));
@@ -310,7 +315,43 @@ function childMain() {
     note(again.status === 200 && again.json && then.json &&
          again.json.access_token === then.json.access_token,
          '9b. and an identical repeat gets the same tokens', tail(again));
+    const before = await redeem(code6);
+    note(before.status === 400 && before.json &&
+         before.json.error === 'invalid_grant' &&
+         /no token response was kept/.test(String(before.text)),
+         '9c. a code redeemed while the setting was off has nothing to ' +
+         'replay, and is refused (STS-OAUTH-0958)', tail(before));
     config.clearOverride('oauth2.codeReplayIdempotent');
+
+    // --- 10. what the stores keep (#614) -------------------------------------
+    const stsCrypto = require(ROOT_DIR + '/common/crypto');
+    const realmsModule = require(ROOT_DIR + '/common/realms');
+    const rowsOf = function (handle) {
+      return [].concat.apply([], realmsModule.list().map(function (r) {
+        return realmsModule.handleFor(handle).dump(r.id);
+      }));
+    };
+    const redeemedRows = rowsOf('oauth2.redeemedCodes');
+    const everything = JSON.stringify(rowsOf('oauth2.authzCodes')) +
+      JSON.stringify(redeemedRows);
+    const row6 = redeemedRows.filter(function (one) {
+      return one.key === stsCrypto.credentialDigest(code6);
+    })[0];
+    const row9 = redeemedRows.filter(function (one) {
+      return one.key === stsCrypto.credentialDigest(code);
+    })[0];
+    note(everything.indexOf(code6) < 0 && everything.indexOf(code) < 0 &&
+         everything.indexOf(ok.json.access_token) < 0 && row6 &&
+         Array.isArray(row6.value.jtis) && row6.value.jtis.length >= 1 &&
+         row6.value.response === undefined,
+         '10a. both stores are keyed by the code\'s digest and hold no ' +
+         'code; a redemption keeps its jtis and not its tokens',
+         JSON.stringify(row6).slice(0, 300));
+    note(row9 && row9.value.response &&
+         row9.value.response.access_token === then.json.access_token,
+         '10b. under oauth2.codeReplayIdempotent the whole response is ' +
+         'kept, because an identical repeat must get it back',
+         JSON.stringify(row9 ? Object.keys(row9.value) : null));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

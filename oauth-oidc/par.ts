@@ -81,6 +81,18 @@
 // process and a browser arriving at another is the ordinary case in dispatch
 // mode, and the store is shared the way every store is (root `CLAUDE.md`).
 //
+// **KEYED BY THE DIGEST OF THE WHOLE REQUEST_URI, NEVER BY THE REQUEST_URI
+// (#614).** A request_uri is a bearer reference for its lifetime: whoever
+// holds it, with the client_id, starts that client's sign-in. Every use of
+// the store is a lookup by the value a request PRESENTS, so the store holds
+// `crypto.credentialDigest(request_uri)` and the record does not repeat the
+// URI. The digest is the HANDLE the monitoring page and `/admin-api` list a
+// request by and withdraw it by (`delete-pushed-request`'s
+// `request_uri_digest`), shown shortened as `cache_registry.digestKey()`
+// shows a key — `sha256:` and twelve hex characters, the same twelve
+// `/admin/caches` would show for the URI. A row of the old shape is simply
+// not found and goes at its own `expiresAt`.
+//
 // **A FULL STORE REFUSES; IT NEVER FORGETS A LIVE ONE** — the used-assertion
 // history's rule, for its reason turned round: a request_uri forgotten while
 // somebody signs in is a sign-in that fails for nothing they did.
@@ -135,7 +147,8 @@ const REFERENCE_BYTES = 32;
 // The authorization server a request was pushed at when a caller names none.
 const DEFAULT_AUTHORIZATION_SERVER = 'default';
 
-// request_uri -> the pushed request. See the header for the shape.
+// credentialDigest(request_uri) -> the pushed request (#614). See the header
+// for the shape.
 // `expiresAt` (#333): the record's own expiry — see common/realms.js.
 const pushedRequests = realms.map({ persist: 'oauth2.pushedRequests',
                                     retain: 'age',
@@ -236,9 +249,56 @@ class PushedRequests {
            REQUEST_URI_PREFIX && text.length > REQUEST_URI_PREFIX.length;
   }
 
+  // The digest a request_uri is held under (#614): of the WHOLE value, the
+  // namespace included, as it is presented.
+  /**
+   * Returns the key a request_uri is held under, and the handle a page or
+   * the API names it by.
+   *
+   * @param requestUri - the whole request_uri
+   * @returns its digest, 43 characters of base64url
+   */
+  static keyOf(requestUri: unknown): string {
+    helpers.log.debug("Entering PushedRequests.keyOf().");
+    helpers.log.debug("Leaving PushedRequests.keyOf().");
+    return stsCrypto.credentialDigest(String(requestUri === undefined ||
+      requestUri === null ? '' : requestUri));
+  }
+
+  // The handle as a page shows it, `cache_registry.digestKey()`'s shape: the
+  // first twelve hex characters of the same SHA-256.
+  /**
+   * Shortens a request's handle for a page, as `digestKey()` shows a key.
+   *
+   * @param key - the handle
+   * @returns `sha256:` and twelve hex characters
+   */
+  static shownHandle(key: string): string {
+    helpers.log.debug("Entering PushedRequests.shownHandle().");
+    helpers.log.debug("Leaving PushedRequests.shownHandle().");
+    return 'sha256:' + Buffer.from(String(key || ''), 'base64url')
+      .toString('hex').slice(0, 12) + '…';
+  }
+
+  // Whether a value is the shape of a handle, for the delete action's
+  // check: 43 characters of base64url.
+  /**
+   * Tells whether a value has the shape of a request's handle.
+   *
+   * @param value - the value
+   * @returns true when it is 43 characters of base64url
+   */
+  static isHandle(value: unknown): boolean {
+    helpers.log.debug("Entering PushedRequests.isHandle().");
+    helpers.log.debug("Leaving PushedRequests.isHandle().");
+    return /^[A-Za-z0-9_-]{43}$/.test(String(value === undefined ||
+      value === null ? '' : value));
+  }
+
   // The one place a stored record becomes something a page or an API shows:
-  // every fact, and the parameters, and never anything else.
-  private describe(record: Json, now?: number): Json {
+  // every fact, and the parameters, and never anything else — and never the
+  // request_uri, which the store does not hold (#614): its handle instead.
+  private describe(key: string, record: Json, now?: number): Json {
     const { log } = this.deps;
     log.debug("Entering PushedRequests.describe().");
     const at = typeof now === 'number' ? now : Date.now();
@@ -246,7 +306,8 @@ class PushedRequests {
       : (record.expiresAt <= at ? 'expired' : 'live');
     log.debug("Leaving PushedRequests.describe(). " + state);
     return {
-      request_uri: record.requestUri,
+      request_uri_digest: key,
+      request_uri_shown: PushedRequests.shownHandle(key),
       client_id: record.clientId,
       authorization_server: record.authorizationServer,
       state: state,
@@ -372,8 +433,7 @@ class PushedRequests {
     const params = Object.assign({}, options.params || {});
     delete params.request;
     delete params.request_uri;
-    pushedRequests.set(requestUri, {
-      requestUri: requestUri,
+    pushedRequests.set(PushedRequests.keyOf(requestUri), {
       clientId: clientId,
       authorizationServer: String(options.authorizationServer ||
                                   DEFAULT_AUTHORIZATION_SERVER),
@@ -463,7 +523,9 @@ class PushedRequests {
         'begins "' + REQUEST_URI_PREFIX + '" (RFC 9126 section 2.2).');
     }
     const now = Date.now();
-    const record = pushedRequests.get(uri);
+    // Hashed as it is presented (#614).
+    const key = PushedRequests.keyOf(uri);
+    const record = pushedRequests.get(key);
     if (!record) {
       log.debug("Leaving PushedRequests.resolve(). Unknown.");
       return refused('STS-OAUTH-0410', 'the request_uri is not one this ' +
@@ -503,7 +565,7 @@ class PushedRequests {
         'request again.');
     }
     record.reads = (record.reads || 0) + 1;
-    pushedRequests.set(uri, record);
+    pushedRequests.set(key, record);
     monitor.record(client, 'par.resolved');
     log.debug("Leaving PushedRequests.resolve(). Read " + record.reads +
               " time(s).");
@@ -540,14 +602,14 @@ class PushedRequests {
   spend(requestUri: unknown): boolean {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.spend().");
-    const uri = String(requestUri || '');
-    const record = pushedRequests.get(uri);
+    const key = PushedRequests.keyOf(requestUri || '');
+    const record = pushedRequests.get(key);
     if (!record || record.spentAt) {
       log.debug("Leaving PushedRequests.spend(). Nothing to spend.");
       return false;
     }
     record.spentAt = Date.now();
-    pushedRequests.set(uri, record);
+    pushedRequests.set(key, record);
     monitor.record(record.clientId, 'par.spent');
     log.debug("Leaving PushedRequests.spend().");
     return true;
@@ -576,8 +638,8 @@ class PushedRequests {
                    options.state : 'all';
     const client = options.clientId ? String(options.clientId) : '';
     const rows: Json[] = [];
-    pushedRequests.forEach(function (record) {
-      const shown = self.describe(record, now);
+    pushedRequests.forEach(function (record, key) {
+      const shown = self.describe(String(key), record, now);
       if (wanted !== 'all' && shown.state !== wanted) {
         return;
       }
@@ -605,38 +667,42 @@ class PushedRequests {
     };
   }
 
+  // BY THE HANDLE (#614): what the monitoring page and the API list, and
+  // the only name for a request this service still has.
   /**
    * Describes one pushed request.
    *
-   * @param requestUri - the request_uri
+   * @param handle - the request's handle, the digest of its request_uri
    * @returns its description, or null
    */
-  get(requestUri: unknown): Json | null {
+  get(handle: unknown): Json | null {
     const { log } = this.deps;
     log.debug("Entering PushedRequests.get().");
-    const record = pushedRequests.get(String(requestUri || ''));
+    const key = String(handle || '');
+    const record = pushedRequests.get(key);
     log.debug("Leaving PushedRequests.get(). " +
               (record ? 'Found.' : 'Not found.'));
-    return record ? this.describe(record) : null;
+    return record ? this.describe(key, record) : null;
   }
 
-  // An administrator withdrew a request_uri. Answers whether there was one.
+  // An administrator withdrew a request_uri, by its handle (#614). Answers
+  // whether there was one.
   /**
-   * Withdraws a request_uri, for an administrator.
+   * Withdraws a pushed request, for an administrator.
    *
-   * @param requestUri - the request_uri
+   * @param handle - the request's handle, the digest of its request_uri
    * @returns true when there was one
    */
-  remove(requestUri: unknown): boolean {
+  remove(handle: unknown): boolean {
     const { log, monitor } = this.deps;
     log.debug("Entering PushedRequests.remove().");
-    const uri = String(requestUri || '');
-    const record = pushedRequests.get(uri);
+    const key = String(handle || '');
+    const record = pushedRequests.get(key);
     if (!record) {
       log.debug("Leaving PushedRequests.remove(). Nothing to remove.");
       return false;
     }
-    pushedRequests.delete(uri);
+    pushedRequests.delete(key);
     monitor.record(record.clientId, 'par.deleted');
     log.debug("Leaving PushedRequests.remove().");
     return true;
@@ -647,7 +713,8 @@ class PushedRequests {
 // A PUSHED REQUEST HANDED TO ANOTHER CELL (#98 D9). A flow that restarts at
 // its person's home cell starts from the authorization request, and one that
 // names a request_uri names a record THIS cell holds — so the record is sent
-// home first, under the same reference, and the browser pinned there finds it.
+// home first, under the same key (the reference's digest, #614 — the
+// reference itself is not sent), and the browser pinned there finds it.
 // The reference keeps this cell's tag, which is harmless: a pinned browser's
 // affinity wins over an artifact's tag on a browser route
 // (`common/cell_placement.ts`), and the record is only ever read by the cell
@@ -674,8 +741,9 @@ class PushedRequestHandover {
     helpers.log.debug("Entering PushedRequestHandover.handOver().");
     const realm = realms.get(realmId) || realms.get(realms.DEFAULT_ID);
     let record = null;
+    const key = PushedRequests.keyOf(requestUri);
     realms.run(realm, function () {
-      record = pushedRequests.get(String(requestUri));
+      record = pushedRequests.get(key);
     });
     if (!record) {
       helpers.log.debug("Leaving PushedRequestHandover.handOver(). None.");
@@ -683,8 +751,7 @@ class PushedRequestHandover {
     }
     helpers.log.debug("Leaving PushedRequestHandover.handOver().");
     return require('../common/cell_channel').call(cellId,
-      'adopt-pushed-request', { realm: realmId,
-                                requestUri: String(requestUri),
+      'adopt-pushed-request', { realm: realmId, key: key,
                                 record: record })
       .then(function () {
         return true;
@@ -694,14 +761,14 @@ class PushedRequestHandover {
   /**
    * Takes a pushed request another cell handed over.
    *
-   * @param body - `{ realm, requestUri, record }`
+   * @param body - `{ realm, key, record }`, the key the reference's digest
    * @returns `{ adopted: true }`
    * @throws an Error for a malformed hand-over or an unknown realm
    */
   static adopt(body: any): { adopted: boolean } {
     helpers.log.debug("Entering PushedRequestHandover.adopt().");
-    const uri = String((body && body.requestUri) || '');
-    if (uri.indexOf(REQUEST_URI_PREFIX) !== 0 || !body.record ||
+    const key = String((body && body.key) || '');
+    if (!PushedRequests.isHandle(key) || !body.record ||
         typeof body.record !== 'object') {
       helpers.log.debug("Leaving PushedRequestHandover.adopt(). Malformed.");
       throw new Error('not a pushed authorization request');
@@ -713,7 +780,7 @@ class PushedRequestHandover {
       throw new Error('no such realm');
     }
     realms.run(realm, function () {
-      pushedRequests.set(uri, body.record);
+      pushedRequests.set(key, body.record);
     });
     helpers.log.info('par: a pushed authorization request was handed over ' +
                      'from another cell, for a flow restarting here.');
@@ -768,6 +835,9 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   REQUEST_URI_PREFIX: PushedRequests.REQUEST_URI_PREFIX,
+  keyOf: PushedRequests.keyOf,
+  shownHandle: PushedRequests.shownHandle,
+  isHandle: PushedRequests.isHandle,
   // Handed between cells (#98 D9).
   handOver: PushedRequestHandover.handOver,
   isPushedRequestUri: slot.forward('isPushedRequestUri'),

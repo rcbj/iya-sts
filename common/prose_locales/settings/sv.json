@@ -2188,8 +2188,8 @@
     "text": "Besvara en upprepad kodinlösen med samma tokener"
   },
   "oauth2.codeReplayIdempotent|description": {
-    "en": "0f31c5227700295a",
-    "text": "**SVAGARE ÄN SPECIFIKATIONEN — låt den vara av.** Av (standard) visas en auktoriseringskod upp EN gång: dess första tokenbegäran förbrukar den, vilket utfall den begäran än får — en felaktig code_verifier, en misslyckad klientautentisering, vad som helst — och en andra uppvisning vägras och återkallar det som den första gav (RFC 6749 avsnitt 4.1.2 och 10.5; #424). På lämnar en vägrad begäran koden inlösbar så att klienten kan rätta och försöka igen, och en IDENTISK upprepning av en inlösen besvaras med de tokener den redan fått, under resten av kodens livslängd. RFC 9700, OAuth 2.1, FAPI och produktionsläget ignorerar den. Den finns för moderprojektets jobb i utvecklingsläge som fortfarande förutsätter den gamla artigheten (#187)."
+    "en": "77b14590b7ee604f",
+    "text": "**SVAGARE ÄN SPECIFIKATIONEN — låt den vara av.** Av (standard) visas en auktoriseringskod upp EN gång: dess första tokenbegäran förbrukar den, vilket utfall den begäran än får — en felaktig code_verifier, en misslyckad klientautentisering, vad som helst — och en andra uppvisning vägras och återkallar det som den första gav (RFC 6749 avsnitt 4.1.2 och 10.5; #424). På lämnar en vägrad begäran koden inlösbar så att klienten kan rätta och försöka igen, och en IDENTISK upprepning av en inlösen besvaras med de tokener den redan fått, under resten av kodens livslängd. RFC 9700, OAuth 2.1, FAPI och produktionsläget ignorerar den. Den finns för moderprojektets jobb i utvecklingsläge som fortfarande förutsätter den gamla artigheten (#187). På behålls HELA tokensvaret för varje inlöst kod — åtkomsttoken, uppdateringstoken och ID-token — under resten av dess livstid så att det kan skickas igen; av behålls bara de utfärdade tokenernas jti-värden (#614)."
   },
   "oauth2.maxPendingTransactions|label": {
     "en": "5aa99aa732e7fa2e",

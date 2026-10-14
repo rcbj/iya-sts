@@ -8,10 +8,12 @@
 // ===========================================================================
 // RFC 8628 AND OPENID CONNECT KEY BINDING (#150, 2026-09-26), in process.
 //
-//   1. the device codes: a user code normalised, pending then slow_down with
+//   1. the device codes: held under their digests and never as themselves
+//      (#614), a user code normalised, pending then slow_down with
 //      the interval grown by five, answered once, redeemed once, another
 //      client's poll finding nothing, expiry, and the sweep;
-//   2. DPoP: an ML-DSA-44 proof verified and bound to its AKP thumbprint, an
+//   2. DPoP: a server nonce held under its digest (#614), an ML-DSA-44
+//      proof verified and bound to its AKP thumbprint, an
 //      SLH-DSA proof refused, an AKP key carrying `priv` refused, and an AKP
 //      key naming another parameter set refused;
 //   3. Key Binding: c_s256 required where bound_key was granted and ignored
@@ -23,6 +25,7 @@ delete process.env.CONFIG_FILE;
 
 const crypto = require('crypto');
 const config = require('../common/config');
+const realms = require('../common/realms');
 const stsCrypto = require('../common/crypto');
 const device = require('../oauth-oidc/device_authorization');
 const dpop = require('../oauth-oidc/dpop');
@@ -114,10 +117,21 @@ async function body(t) {
     made.userCode.slice(4);
   t.check(/^[A-Z]{8}$/.test(made.userCode) &&
           /^[A-Za-z0-9_-]{43}$/.test(made.deviceCode) &&
-          d.byUserCode(typed) && d.byUserCode(typed).deviceCode ===
-            made.deviceCode,
+          d.byUserCode(typed) && d.byUserCode(typed).deviceKey ===
+            stsCrypto.credentialDigest(made.deviceCode) &&
+          d.byUserCode(typed).userCode === made.userCode,
           '1a. a 256-bit device code and an eight-letter user code, found ' +
           'however it is typed (section 6.1)');
+  // #614: the store holds the two codes' digests and neither code.
+  const rows = JSON.stringify(realms.handleFor('oauth2.deviceCodes')
+    .dump('default'));
+  t.check(rows.indexOf(made.deviceCode) < 0 &&
+          rows.indexOf(made.userCode) < 0 &&
+          rows.indexOf('d|' + stsCrypto.credentialDigest(made.deviceCode)) >=
+            0 &&
+          rows.indexOf('u|' + stsCrypto.credentialDigest(made.userCode)) >= 0,
+          '1a-ii. the store is keyed by the codes\' digests and holds ' +
+          'neither code (#614)', rows.slice(0, 300));
   const initial = Number(made.interval);
   const first = d.poll(made.deviceCode, 'dev-client');
   const fast = d.poll(made.deviceCode, 'dev-client');
@@ -169,6 +183,19 @@ async function body(t) {
           !other.ok && other.errorCode === 'STS-OAUTH-0102',
           '2c. an AKP key with priv, or naming another parameter set, is ' +
           'refused', JSON.stringify([priv.errorCode, other.errorCode]));
+
+  // #614: a server nonce is held under its digest, never as itself, and is
+  // still found current when presented.
+  const nonce = dpop.issueNonce();
+  const nonceRows = JSON.stringify(realms.handleFor('dpop.issuedNonces')
+    .dump('default'));
+  t.check(dpop.nonceIsCurrent(nonce) && !dpop.nonceIsCurrent(
+            stsCrypto.credentialDigest(nonce)) &&
+          nonceRows.indexOf(nonce) < 0 &&
+          nonceRows.indexOf(stsCrypto.credentialDigest(nonce)) >= 0,
+          '2e. a DPoP nonce is held under its digest, found when presented, ' +
+          'and its digest is not itself a nonce (#614)',
+          nonceRows.slice(0, 200));
 
   t.log.info('=== 3. Key Binding ===');
   const code = 'a-code-' + crypto.randomBytes(8).toString('hex');

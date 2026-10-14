@@ -287,6 +287,30 @@ function childMain() {
          postsTo('/bc/slow')[0].token === postsTo('/bc/slow')[1].token,
          'A2. and the retry resends the SAME token (the relying party ' +
          'deduplicates on jti)');
+    // #614: once it has landed, the row keeps the token's digest and the
+    // jti, and not the token.
+    const landedRows = [];
+    realms.list().forEach(function (r) {
+      realms.handleFor('oauth2.backchannelDeliveries').dump(r.id)
+        .forEach(function (one) {
+          if (one.value && one.value.state === 'sent') {
+            landedRows.push(one.value);
+          }
+        });
+    });
+    const slowToken = (postsTo('/bc/slow')[0] || {}).token || '';
+    note(slowToken && landedRows.length >= 1 &&
+         JSON.stringify(landedRows).indexOf(slowToken) < 0 &&
+         landedRows.every(function (one) {
+           return one.token === undefined && !!one.jti &&
+                  /^[A-Za-z0-9_-]{43}$/.test(String(one.tokenDigest || ''));
+         }) &&
+         landedRows.some(function (one) {
+           return one.tokenDigest === stsCrypto.credentialDigest(slowToken);
+         }),
+         'A3. a landed delivery keeps its jti and its token\'s digest, and ' +
+         'not the Logout Token (#614)',
+         JSON.stringify(landedRows).slice(0, 400));
     config.setOverride('oauth2.backchannelLogoutTimeoutMs', 2000);
 
     // --- B. a process dies mid-delivery ----------------------------------------

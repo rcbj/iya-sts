@@ -9105,6 +9105,17 @@ session's `derivedFromRealm`, where its adopted children live (`derivedFrom()`'s
 `portal/CLAUDE.md` argues the rest. `authn.adoptRelyingPartySession()` is the
 function, and the portal is its only caller.
 
+**WHAT IT KEEPS OF A CREDENTIAL (#614, 2026-10-13).** A flow in progress
+(`oidc_rp.flows`) is keyed by the DIGEST of its `state`
+(`crypto.credentialDigest()`), hashed as it is minted and as the callback
+presents it, so no row holds a state; the PKCE verifier and the nonce stay on
+the row, the first because it is sent to the token endpoint. `rpTokens` keeps
+its access token WHOLE: the issue asked whether it is only compared (the
+renewal's race check) so that a digest would do, and it is not — the embedded
+debugger, the one surface still a relying party here, verifies it on every
+request at its gate. The refresh token is redeemed and the ID Token re-read,
+so neither can be a digest.
+
 ## `version.js`: M.N.O, and why the build number is not computed at startup (2026-09-06)
 
 **It is a PORT of the parent project's `client/version.js`, not an invention**,

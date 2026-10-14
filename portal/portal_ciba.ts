@@ -236,7 +236,9 @@ class PortalCiba {
             return { name: k, value: JSON.stringify(one.requestContext[k])
                                        .slice(0, 200) };
           }) : null;
-      return { id: String(one.id), clientName: one.clientName,
+      // The row's handle, its digest (#614): the row holds no auth_req_id
+      // to show, and `ciba.get()` takes the handle back.
+      return { id: String(one.key), clientName: one.clientName,
                bindingMessage: one.bindingMessage || '',
                requestContext: context, scope: one.scope,
                acrValues: (one.acrValues || []).slice(0),
