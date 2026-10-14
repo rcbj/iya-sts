@@ -86,13 +86,32 @@ function world(options) {
     settles: 0
   };
 
+  // THE STORE'S `watch()` (#623): every node's scheduler is told of every
+  // row any node — or a test — sets, which is what the change log and a
+  // start's restore do for the real store. Instantly, as the store is.
+  const watchers = [];
+  const watchedMap = function (key) {
+    const m = new Map();
+    const set = m.set.bind(m);
+    m.set = function (k, v) {
+      set(k, v);
+      watchers.forEach(function (fn) {
+        fn(key, v);
+      });
+      return m;
+    };
+    return m;
+  };
   const store = {
     realmMap: function (id) {
       const key = String(id || 'default');
       if (!w.stores.has(key)) {
-        w.stores.set(key, new Map());
+        w.stores.set(key, watchedMap(key));
       }
       return w.stores.get(key);
+    },
+    watch: function (fn) {
+      watchers.push(fn);
     }
   };
 
@@ -334,6 +353,8 @@ function world(options) {
   };
 
   w.settle = settle;
+  // The store itself, for a test that fills a partition through it (#623).
+  w.store = store;
 
   w.runRows = function (realmId) {
     const out = [];

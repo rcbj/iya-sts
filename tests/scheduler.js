@@ -47,6 +47,8 @@
 //   N. a removed realm (#338): a run still going there writes nothing back,
 //      nothing runs there again, the report and Run now forget it, and the
 //      sweep deletes the rows naming it;
+//   O. a tick reads the queued manual runs and commands through an index
+//      kept on write, never the run history (#623) — counted;
 //   K. the real module: its own history job (a cluster job every ten
 //      minutes, whose rows carry the #333 expiry) and the two P1 jobs are
 //      registered by their owners, the realm-removal hook is wired, and the
@@ -952,6 +954,105 @@ async function run(t) {
   }
 
   // -------------------------------------------------------------------------
+  t.log.info('=== O. a tick reads the queued rows, not the history (#623) ===');
+  {
+    // Thousands of finished runs in two realms, two manual runs queued and
+    // a step-down command — and a tick that must start the runs, obey the
+    // command and walk none of the history. Counted, not timed: every
+    // iteration of a partition (forEach, for…of, keys/values/entries) and
+    // every row read by key is counted while the tick runs.
+    const HISTORY = 5000;
+    const w = kit.world({ clustered: true });
+    const a = w.node('a');
+    const b = w.node('b');
+    let ran = 0;
+    [a, b].forEach(function (node) {
+      node.scheduler.register(baseJob({ id: 'test.manual', manualOnly: true,
+        everyMs: undefined, run: function () {
+          ran++;
+        } }));
+      node.scheduler.register(baseJob({ id: 'test.realm', scope: 'realm',
+        manualOnly: true, everyMs: undefined, run: function () {
+          ran++;
+        } }));
+      node.scheduler.start('front');
+    });
+    await w.advance(10000);
+    const leader = w.leaderOf() === 'a' ? a : b;
+    const other = leader === a ? b : a;
+    t.check(!!w.leaderOf(), 'one of the two nodes leads');
+    ['default', 'acme'].forEach(function (realmId) {
+      const map = w.store.realmMap(realmId);
+      for (let i = 0; i < HISTORY; i++) {
+        map.set('s-old-' + i, { runId: 's-old-' + i, kind: 'run',
+                                jobId: 'test.realm', realm: realmId,
+                                trigger: i % 2 ? 'manual' : 'schedule',
+                                state: 'succeeded', queuedAt: i,
+                                endedAt: w.db - 1000 });
+      }
+    });
+    // Queued on the node that does NOT lead, as a request worker or another
+    // node would: the leader learns of the rows through the store's watch.
+    const first = other.scheduler.requestRun('test.manual', {});
+    const second = other.scheduler.requestRun('test.realm', { realm: 'acme' });
+    t.check(first.ok && second.ok, 'two manual runs are queued on the node ' +
+            'that does not lead', JSON.stringify([first, second]));
+    let iterations = 0;
+    let reads = 0;
+    const counted = [];
+    ['default', 'acme'].forEach(function (realmId) {
+      const map = w.stores.get(realmId);
+      ['forEach', 'keys', 'values', 'entries', Symbol.iterator]
+        .forEach(function (name) {
+          const real = map[name];
+          map[name] = function () {
+            iterations++;
+            return real.apply(map, arguments);
+          };
+          counted.push([map, name, real]);
+        });
+      const get = map.get;
+      map.get = function (k) {
+        reads++;
+        return get.call(map, k);
+      };
+      counted.push([map, 'get', get]);
+    });
+    const before = ran;
+    await leader.scheduler.tick();
+    await w.settle();
+    counted.forEach(function (one) {
+      one[0][one[1]] = one[2];
+    });
+    t.check(ran - before === 2,
+            'the tick starts both queued manual runs, learnt through the ' +
+            'store\'s watch', JSON.stringify({ ran: ran - before }));
+    t.check(iterations === 0,
+            'and iterates no partition of the run store: ' + (2 * HISTORY) +
+            ' history rows were read by none of it (was every row of every ' +
+            'realm, at every tick)',
+            JSON.stringify({ iterations: iterations }));
+    t.check(reads < 50,
+            'it reads rows by key only: the queued ones, the leader\'s row ' +
+            'and the runs it writes (' + reads + '), never the ' +
+            (2 * HISTORY) + ' history rows', JSON.stringify({ reads: reads }));
+    t.check(!leader.scheduler.requestRun('test.manual', {}).alreadyQueued,
+            'a run that has ended is no longer "already queued"');
+    // The index drops what it no longer needs once a tick has read it.
+    await leader.scheduler.tick();
+    await w.settle();
+    const left = leader.scheduler.pending().filter(function (pair) {
+      return pair.row.state === 'queued';
+    });
+    t.check(left.length <= 1,
+            'and the index holds only what is still pending',
+            JSON.stringify(left.map(function (p) { return p.row.runId; })));
+    t.check(leader.scheduler.pendingRows.size <= 2,
+            'its entries are the pending rows, not the history (' +
+            leader.scheduler.pendingRows.size + ')');
+  }
+
+  // -------------------------------------------------------------------------
   t.log.info('=== K. the real module ===');
   {
     const mod = require(ROOT + '/cluster/scheduler');
@@ -990,6 +1091,23 @@ async function run(t) {
     t.check(forgotten.indexOf(tmp) >= 0,
             'realms.remove() tells the process\'s scheduler, in every ' +
             'process that applies a removal', JSON.stringify(forgotten));
+    // A ROW ADMITTED FROM ANOTHER PROCESS (#623) — the change log's, or a
+    // start's restore — reaches the scheduler's index through the store's
+    // reconciler, and is admitted unchanged.
+    const runId = 'm-k623-' + Date.now().toString(36);
+    const row = { runId: runId, kind: 'run', jobId: 'scheduler.history',
+                  realm: 'default', trigger: 'manual', state: 'queued',
+                  queuedAt: 1 };
+    handle.restore('default', runId, row);
+    const indexed = mod.scheduler.pending().some(function (pair) {
+      return pair.row.runId === runId;
+    });
+    const stored = mod.runStore.realmMap('default').get(runId);
+    handle.remove('default', runId);
+    t.check(indexed && stored && stored.state === 'queued',
+            'a manual run restored or replicated into scheduler.runs is in ' +
+            'the scheduler\'s index of the rows a tick reads, and stored as ' +
+            'it came', JSON.stringify({ indexed: indexed }));
     require(ROOT + '/authn/authn');
     t.check(mod.jobIds().indexOf('authn.session-expiry') >= 0,
             'authn/authn registers authn.session-expiry at load',
@@ -1015,6 +1133,7 @@ module.exports = {
   describe: 'the scheduler in one process: registration, where it runs, ' +
             'once per slot by the database clock, cron, the run lifecycle, ' +
             'off states, manual runs, the report, per-process jobs, the ' +
-            'bounded run history, removed realms',
+            'bounded run history, removed realms, a tick that reads no ' +
+            'history',
   run: run
 };
